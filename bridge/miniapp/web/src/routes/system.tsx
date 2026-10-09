@@ -3,12 +3,16 @@ import { ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { rootRoute } from "./root";
 import { api } from "../lib/api";
+import { useSpentUsage } from "../lib/accounts";
+import { useChat } from "../lib/chat";
 import { ThemeCards } from "../components/ThemePicker";
 import { TOOL_STYLES, useToolStyle } from "../lib/toolwidget";
 import { useFoldsOpen } from "../lib/folds";
 
 /* SYSTEM — the controls that belong to the app rather than to one chat: the
-   palette, and what's left of the Claude limits this phone is spending. */
+   palette, and what's left of the Claude limits this phone is spending — the
+   login the open chat runs on, which a profile pick or a fallback handover
+   changes. */
 
 function fmtReset(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -53,11 +57,8 @@ function Bucket({
 }
 
 function SystemPage() {
-  const { data: usage } = useQuery({
-    queryKey: ["usage"],
-    queryFn: () => api.getUsage(),
-    refetchInterval: 60000,
-  });
+  const { sessionSlot } = useChat();
+  const { usage, tag, who } = useSpentUsage(sessionSlot);
   const { data: state } = useQuery({ queryKey: ["state"], queryFn: () => api.getState() });
 
   return (
@@ -68,14 +69,23 @@ function SystemPage() {
       </div>
 
       <div className="space-y-2">
-        <div className="text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">LIMITS</div>
+        <div className="flex min-w-0 items-baseline gap-2 text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">
+          LIMITS
+          {tag && (
+            <span className="truncate tracking-wider text-[var(--tg-hint)]">
+              {[tag, who].filter(Boolean).join(" · ")}
+            </span>
+          )}
+        </div>
         {usage?.available ? (
           <div className="space-y-1.5">
             <Bucket label="5 HOUR" bucket={usage.five_hour} />
             <Bucket label="WEEK" bucket={usage.seven_day} />
           </div>
         ) : (
-          <div className="text-xs text-[var(--tg-hint)]">Usage unavailable.</div>
+          <div className="text-xs text-[var(--tg-hint)]">
+            {sessionSlot === null ? "This chat runs on another agent: no Claude limits." : "Usage unavailable."}
+          </div>
         )}
       </div>
 

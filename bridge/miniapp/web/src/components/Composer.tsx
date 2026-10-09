@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square, Minimize2 } from "lucide-react";
 import { useChat } from "../lib/chat";
+import { loginLeft, loginSlot, useAccounts } from "../lib/accounts";
 import { api, type EffortLevel, type ModelId, type Profile } from "../lib/api";
 import { isExact, rankCommands, slashQuery } from "../lib/slash";
 import { Banner, Button } from "./ui";
@@ -51,7 +52,8 @@ function OptionRow({
 }: {
   label: string;
   value: string;
-  options: { id: string; label: string; title?: string }[];
+  // hint: a reading after the label (a profile's "91% left")
+  options: { id: string; label: string; title?: string; hint?: ReactNode }[];
   onPick: (id: string) => void;
 }) {
   return (
@@ -73,11 +75,21 @@ function OptionRow({
             }`}
           >
             {o.label}
+            {o.hint}
           </button>
         ))}
       </div>
     </div>
   );
+}
+
+// What a profile's Claude login has left, after its name: amber once its
+// tighter window is past normal, red when it's spent.
+function leftHint(m: { left: number; severity?: string } | null): ReactNode {
+  if (!m) return undefined;
+  const tone = m.severity === "critical" || m.severity === "exceeded" ? "text-red-400"
+    : m.severity && m.severity !== "normal" ? "text-amber-400" : "text-muted-foreground";
+  return <span className={`ml-1.5 tabular-nums ${tone}`}>{m.left}% left</span>;
 }
 
 // A knob set by hand in a session bound to a profile: its value wins over the
@@ -134,9 +146,15 @@ export function Composer() {
     profilesError,
     overrides,
     sessionAgent,
+    sessionSlot,
     sessionId,
   } = useChat();
   const onAgent = sessionAgent !== "claude";
+  // Each PROFILE pill says what its Claude login has left; NO PROFILE runs on
+  // the default login.
+  const logins = useAccounts().data?.accounts;
+  const leftOf = (agent?: string, account?: string) =>
+    leftHint(loginLeft(logins?.find((a) => a.slot === loginSlot(agent, account))));
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -235,7 +253,7 @@ export function Composer() {
       className="fixed inset-x-0 z-10 mx-auto max-w-screen-sm border-t border-border bg-[var(--tg-bg)] px-3 pb-3 pt-2"
       style={{ bottom: "var(--tabbar-h)" }}
     >
-      <UsageStrip />
+      <UsageStrip slot={sessionSlot} />
 
       {zoom && (
         <ImageLightbox
@@ -362,8 +380,9 @@ export function Composer() {
                   label="PROFILE"
                   value={profileId}
                   options={[
-                    { id: "", label: "NO PROFILE" },
-                    ...profiles.map((p) => ({ id: p.id, label: p.name, title: describeProfile(p) })),
+                    { id: "", label: "NO PROFILE", hint: leftOf() },
+                    ...profiles.map((p) => ({ id: p.id, label: p.name, title: describeProfile(p),
+                                              hint: leftOf(p.agent, p.account) })),
                   ]}
                   onPick={(v) => void pickProfile(v)}
                 />

@@ -447,8 +447,10 @@ def handle_fallback_command(chat_id: int, text: str) -> bool:
     rest = rest.strip()
     try:
         if verb == "add":
-            send(chat_id, f"✅ Added the current login as account {accounts.add()}. "
-                          "It stays available while you log back in as your usual one.")
+            slot = accounts.add()
+            send(chat_id, f"✅ Added the current login as account {slot}. "
+                          "It stays available while you log back in as your usual one."
+                          + _new_login_profile(slot))
         elif verb == "login":
             # The sign-in parks on its code prompt in a fresh profile; /accounts
             # code <code> finishes it. Nothing here touches the ambient login.
@@ -465,7 +467,8 @@ def handle_fallback_command(chat_id: int, text: str) -> bool:
                 who = done["email"] or "that account"
                 send(chat_id, f"✅ Signed back in as {who} (account {done['slot']})."
                      if done.get("relogin") else
-                     f"✅ Added {who} as account {done['slot']}.")
+                     f"✅ Added {who} as account {done['slot']}."
+                     + _new_login_profile(done["slot"]))
         elif verb in ("remove", "disable", "enable") and rest.isdigit():
             getattr(accounts, verb)(int(rest))
             send(chat_id, f"✅ Account {rest} {verb}d.")
@@ -481,6 +484,24 @@ def handle_fallback_command(chat_id: int, text: str) -> bool:
     return True
 
 
+def _new_login_profile(slot: int) -> str:
+    """The reply line naming the profile an added login gets
+    (profiles.add_default), so the person knows how to switch to it."""
+    p = next((p for p in profiles.all_profiles()
+              if (p.get("agent") or profiles.CLAUDE) == profiles.CLAUDE
+              and p.get("account") == str(slot)), None)
+    return f"\nIts profile: /profile {p['name']}" if p else ""
+
+
+def _left_note(p: dict) -> str:
+    """' · 91% left' on a Claude profile whose login's meter reads, so the list
+    shows how much quota a switch would give you."""
+    if (p.get("agent") or profiles.CLAUDE) != profiles.CLAUDE:
+        return ""
+    left = accounts.headroom(profiles.claude_slot(p) or accounts.DEFAULT_SLOT)
+    return "" if left is None else f" · {left}% left"
+
+
 def handle_profile_command(chat_id: int, text: str) -> None:
     """/profile — list profiles; /profile <name> — bind this chat's session;
     /profile none — unbind (it keeps running what the profile gave it)."""
@@ -490,7 +511,7 @@ def handle_profile_command(chat_id: int, text: str) -> None:
     if not arg:
         cur = (s or {}).get("profile_id")
         lines = [f"{'✅' if p['id'] == cur else '•'} {p['name']} — {p['agent']}"
-                 f"{' · ' + p['model'] if p['model'] else ''}" for p in rows]
+                 f"{' · ' + p['model'] if p['model'] else ''}{_left_note(p)}" for p in rows]
         send(chat_id, ("\n".join(lines) or "No profiles yet — make one in the dashboard.")
              + "\n\n/profile <name> binds this chat's session · /profile none unbinds")
         return

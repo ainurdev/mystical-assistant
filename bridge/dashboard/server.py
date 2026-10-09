@@ -339,8 +339,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/accounts":
             from bridge import accounts, ladder
             return self._json({
-                "accounts": [{**a, **accounts.meter(a["slot"])}
-                             for a in accounts.list_accounts()],
+                "accounts": accounts.with_meters(),
                 "default_policy": ladder.default_policy(),
                 "pending_login": accounts.pending_login()})
         if path == "/local/profiles":

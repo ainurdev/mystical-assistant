@@ -74,7 +74,12 @@ export interface SessionBrief {
   effort?: string | null; // null = none set (Auto)
   profile_id?: string | null; // the profile it is bound to (bridge/profiles.py); null = none
   agent?: string; // who runs it: "claude" until agent profiles land
+  account?: string; // its profile's Claude login slot; "" = the default login
   overrides?: string[]; // knobs set by hand in it, over its profile: model | permission_mode | effort
+  // The Claude login it is spending now, whose usage the strip shows: the turn
+  // in flight's (a fallback handover moves it off the profile's), else the one
+  // its next turn takes. null = it runs on another agent. Absent from an older bridge.
+  slot?: number | null;
 }
 
 /** Which half of the picker a settings POST was for: the only half a running
@@ -544,6 +549,22 @@ export interface UsageInfo {
   }[];
 }
 
+// One Claude login and its meter (bridge accounts.with_meters): the rows the
+// dashboard's Accounts panel lists. Read-only here.
+export interface AccountInfo {
+  slot: number;
+  email: string | null;
+  alias: string | null;
+  disabled: boolean;
+  default: boolean; // the ambient ~/.claude login
+  left: number | null; // % of the tighter usage window unspent; null = meter unreadable
+  resets_at: string | null; // when that window rolls and `left` goes back up
+  five_hour: UsageBucket | null;
+  seven_day: UsageBucket | null;
+  logged_in: boolean; // false = the login expired; only a re-login fixes it
+  plan: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Error type so the UI can distinguish auth / busy / generic failures.
 // ---------------------------------------------------------------------------
@@ -651,6 +672,8 @@ export const api = {
   getRunning: () => request<RunningInfo>("/api/running"),
 
   getUsage: () => request<UsageInfo>("/api/usage"),
+  // Every login with its meter. A bridge older than the route answers 404.
+  getAccounts: () => request<{ accounts: AccountInfo[] }>("/api/accounts"),
 
   getIssues: () => request<IssuesInfo>("/api/github/issues"),
   // the active project's tracker tasks; session_id marks the one its branch names

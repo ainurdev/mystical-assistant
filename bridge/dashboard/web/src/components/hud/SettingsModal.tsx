@@ -118,6 +118,10 @@ export interface SettingsModalProps {
   profilesAvailable: boolean;
   profilesError: string | null; // why the last load failed (not a 404)
   onProfilesChanged: () => void;
+  // A login was added, removed, signed back in or switched on or off. A new
+  // login comes with its own profile (bridge profiles.add_default), so the
+  // composer reloads both its profiles and its meters rather than waiting a minute.
+  onAccountsChanged: () => void;
   onOpenInspector: () => void;
   projects: ProjectsSettingsProps;
 }
@@ -3301,7 +3305,7 @@ function HooksPanel() {
   );
 }
 
-function AccountsPanel() {
+function AccountsPanel({ onChanged }: { onChanged: () => void }) {
   const [rows, setRows] = useState<AccountInfo[] | null>(null);
   const [policy, setPolicy] = useState("ask");
   const [busy, setBusy] = useState(false);
@@ -3330,6 +3334,7 @@ function AccountsPanel() {
     setErr(null);
     try {
       await api.accountAction(action, slot);
+      onChanged();
       await load();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "failed");
@@ -3462,6 +3467,7 @@ function AccountsPanel() {
             url={login.url}
             onDone={async () => {
               setLogin(null);
+              onChanged();
               await load();
             }}
             onSubmit={async (code) => {
@@ -4096,6 +4102,7 @@ export function SettingsModal(props: SettingsModalProps) {
     profilesAvailable,
     profilesError,
     onProfilesChanged,
+    onAccountsChanged,
     onOpenInspector,
     projects,
     startTab,
@@ -4758,7 +4765,7 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "mcp" && <McpPanel />}
             {shown === "hooks" && <HooksPanel />}
-            {shown === "accounts" && <AccountsPanel />}
+            {shown === "accounts" && <AccountsPanel onChanged={onAccountsChanged} />}
             {shown === "plugins" && <RivendellPanel />}
 
             {shown === "system" && (

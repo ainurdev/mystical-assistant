@@ -19,7 +19,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (agents, browser, config, devserver, git, github,
+from bridge import (accounts, agents, browser, config, devserver, git, github,
                     hooks, httpgz, models, native, profiles, project_config, relevance,
                     runner, state, store, trackers, transcript_jsonl,
                     transcript_page, usage)
@@ -170,6 +170,22 @@ def _ctx_ceiling(autocompact) -> int:
     return int(autocompact) if str(autocompact or "").isdigit() else config.CONTEXT_WINDOW
 
 
+def _run_slot(s: dict, run: dict) -> "int | None":
+    """The Claude login this session is spending right now, so the usage meters
+    belong to it. That is the turn in flight's login, because a fallback-ladder
+    handover moves the turn off the profile's account. With no turn in flight it
+    is the login the next turn will take: the profile's, else the default one.
+    None when the session runs on another agent, which has no Claude quota."""
+    job = runner.live_job(s["id"])
+    if job is not None:
+        if (job.runtime or "").startswith("acp:"):
+            return None
+        return job.account_slot or accounts.DEFAULT_SLOT
+    if run["agent"] != profiles.CLAUDE:
+        return None
+    return profiles.claude_slot(run) or accounts.DEFAULT_SLOT
+
+
 def _session_brief(s: dict) -> dict:
     cwd = s.get("cwd")
     # The branch the session is *working* on: the worktree its shell moved into
@@ -184,6 +200,7 @@ def _session_brief(s: dict) -> dict:
     # work_cwd only catches a shell that *moved* — so the name comes from the
     # working path either way.
     work = wt if wt_branch else (cwd or "")
+    run = profiles.brief(s)
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             "created": s.get("created"), "updated": s["updated"], "archived": s["archived"],
             "origin": s.get("origin"), "cwd": cwd,
@@ -193,7 +210,8 @@ def _session_brief(s: dict) -> dict:
             "autocompact": s.get("autocompact"),
             # The session's effective run settings (profile + hand-set
             # overrides, defaults filled in) — both composers load these.
-            **profiles.brief(s),
+            **run,
+            "slot": _run_slot(s, run),
             "goal": store.parse_goal(s.get("goal")),
             "lifecycle": s.get("lifecycle"),
             "work_cwd": wt if wt_branch else None,
@@ -388,6 +406,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_agent_activity(chat_id, qs)
                 if path == "/api/usage":
                     return self._json(usage.get_usage())
+                if path == "/api/accounts":
+                    # Read-only: adding and removing logins stays on the
+                    # dashboard and the bot.
+                    return self._json({"accounts": accounts.with_meters()})
                 if path == "/api/profiles":
                     return self._api_profiles(chat_id)
                 if path == "/api/github/issues":

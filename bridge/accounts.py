@@ -658,12 +658,23 @@ def meter(slot: int) -> dict:
     """Everything an account row says about this login's quota. Both windows,
     not just the tighter one: the weekly cap is usually what's binding, but its
     reset is days out, and "when do I get going again" is the 5-hour one.
+    `limits` carries a model's own weekly cap, so the MODEL menu can show it for
+    whichever login runs the session, not only the ambient one.
     `logged_in` False separates a dead login (re-login) from a meter the usage
     endpoint just wouldn't serve (wait)."""
     m = usage_for(slot)
     return {"left": headroom(slot), "resets_at": resets_at(slot),
             "five_hour": m.get("five_hour"), "seven_day": m.get("seven_day"),
+            "limits": m.get("limits") or [],
             "logged_in": usage.has_token(credentials_path(slot))}
+
+
+def with_meters() -> list:
+    """Every login with its meter(). The Accounts panel lists these, and both
+    composers read from them the in-use login's usage and how much each
+    profile's login has left. Both servers call this one function so they
+    return the same rows."""
+    return [{**a, **meter(a["slot"])} for a in list_accounts()]
 
 
 def pick(exclude=(), strategy: str = "best") -> "int | None":

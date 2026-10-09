@@ -56,6 +56,10 @@ export interface SessionBrief {
   agent?: string; // who runs it: "claude" until agent profiles land
   account?: string; // its profile's Claude login slot; "" = the default login
   overrides?: string[]; // knobs set by hand in it, over its profile: model | permission_mode | effort | disabled_tools
+  // The Claude login it is spending now, whose usage the meters show: the turn
+  // in flight's (a fallback handover moves it off the profile's), else the one
+  // its next turn takes. null = it runs on another agent. Absent from an older bridge.
+  slot?: number | null;
 }
 
 /** Which picker a settings POST was for: a running turn is switched only to
@@ -861,6 +865,7 @@ export interface AccountInfo {
   resets_at: string | null; // when that window rolls and `left` goes back up
   five_hour: UsageBucket | null; // both windows, so a row can show the near reset
   seven_day: UsageBucket | null; //   as well as the cap that's actually binding
+  limits?: UsageInfo["limits"]; // a model's own caps, for the MODEL menu (absent from an older bridge)
   logged_in: boolean; // false = the OAuth token is gone/expired; only a re-login fixes it
   plan: string | null; // "MAX 20x" / "TEAM 5x" / "PRO", off the login's own credentials
 }

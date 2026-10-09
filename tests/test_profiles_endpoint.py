@@ -17,6 +17,8 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(profiles, "PATH", str(tmp_path / "profiles.json"))
     monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "project_config.json"))
     monkeypatch.setattr(accounts, "list_accounts", lambda: [{"slot": 1, "disabled": False}])
+    # /profile notes each login's headroom; no meter here, so no note.
+    monkeypatch.setattr(accounts, "headroom", lambda slot: None)
     monkeypatch.setattr(models, "model_ids", lambda: {"claude-opus-5-5", "claude-fable-5-1"})
     monkeypatch.setattr(store, "default_disabled_tools", lambda: [])
     monkeypatch.setattr(relevance, "gate", lambda *a, **k: None)

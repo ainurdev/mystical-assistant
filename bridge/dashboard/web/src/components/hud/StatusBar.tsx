@@ -1,6 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { api, type GitStatus } from "../../api";
-import type { AgentOption } from "../../models";
 
 /* Where the open session's branch stands against its remote. `upstream: ""`
    means the branch was never pushed — ahead/behind are 0 there too, so the
@@ -33,7 +32,9 @@ function syncChip(git: GitStatus): { text: string; warn: boolean; title: string 
 export interface StatusBarProps {
   usedPct: number | null;      // null → usage unknown, shown as "—"
   resetLabel?: string | null;
-  agent?: AgentOption | null;  // who runs the next turn — the meter is theirs
+  // The login those two are for ("A2" and who it is), when there's more than
+  // one: the session's profile or a fallback handover picks it, not the footer.
+  login?: { tag: string; who: string } | null;
   agentLabel?: string | null;  // the open session runs on another agent (lib/agents): its name, no Claude meter
   repo: string;
   changes: number;
@@ -61,7 +62,7 @@ const zlabel = (t: string): ReactNode => (
  *  login's windows are SETTINGS ▸ ACCOUNTS, and the context fill is the
  *  composer's CTX lamps. */
 export function StatusBar(props: StatusBarProps) {
-  const { usedPct, resetLabel, agent, agentLabel, repo, changes, git, branch, onSynced, onPalette, rightOpen } = props;
+  const { usedPct, resetLabel, login, agentLabel, repo, changes, git, branch, onSynced, onPalette, rightOpen } = props;
   const [hovered, setHovered] = useState(false);
 
   // A switch settles the session-scoped chips in the way the right panel's
@@ -75,10 +76,9 @@ export function StatusBar(props: StatusBarProps) {
   // everything around when they land.
   const gitPending = git == null && repo !== "—";
 
-  // The meter has to belong to whoever is actually running the turns. usedPct
-  // is the *ambient* login's 5-hour window (from /local/usage), so it only
-  // stands for the default account; another login reports its own headroom, and
-  // another agent has no Claude quota to report at all.
+  // The meter belongs to whoever is actually running the turns: usedPct and
+  // resetLabel are the 5-hour window of the login the session spends (App's
+  // spentUsage), and another agent has no Claude quota to report at all.
   const sync = git?.is_repo ? syncChip(git) : null;
   // Every link of the branch chain is the same box; .chain draws the hairline
   // between them, since inline styles can't say :first-child.
@@ -124,9 +124,6 @@ export function StatusBar(props: StatusBarProps) {
         busyLabel: "PULLING…",
         title: `Fast-forward ${git?.behind} commit${git?.behind === 1 ? "" : "s"} from ${git?.upstream}` }
     : null;
-  const pct = !agent || agent.def ? usedPct
-    : agent.left === null ? null : 100 - agent.left;
-  const showReset = resetLabel && (!agent || agent.def);
 
   // The branch chain — one bordered group, under the CHANGES panel it
   // describes (or at the end of the chat's strip when that track is collapsed).
@@ -216,8 +213,16 @@ export function StatusBar(props: StatusBarProps) {
         ) : (
           <>
             {zlabel("USED")}
+            {/* Keyed on the login, like the session chips: a profile pick or a
+                fallback handover replays the swap, and the bar regrows. */}
+            {login && (
+              <span key={login.tag} title={`${login.who} — the login this session is spending`}
+                style={{ ...swap, fontFamily: "var(--mono)", fontSize: "var(--t95)", letterSpacing: "normal", color: "var(--acc)", flex: "none" }}>
+                {login.tag}
+              </span>
+            )}
             <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", letterSpacing: "normal", color: "var(--txh)", flex: "none" }}>
-              {pct === null ? "—" : `${pct}%`}
+              {usedPct === null ? "—" : `${usedPct}%`}
             </span>
             <span
               style={{
@@ -229,23 +234,22 @@ export function StatusBar(props: StatusBarProps) {
                 position: "relative",
                 overflow: "hidden",
               }}
-              title={agent && !agent.def
-                ? `${agent.label} — percent of its tighter usage window spent`
-                : undefined}
+              title={login ? `${login.who}: its 5-hour window` : undefined}
             >
               <span
+                key={login?.tag}
                 style={{
                   position: "absolute",
                   left: 0,
                   top: 0,
                   bottom: 0,
-                  width: `${pct ?? 0}%`,
+                  width: `${usedPct ?? 0}%`,
                   background: "var(--acc)",
                   animation: "grow 1.2s ease both .4s",
                 }}
               />
             </span>
-            {showReset && (
+            {resetLabel && (
               <span style={{ display: "flex", alignItems: "baseline", gap: 5, flex: "none" }}>
                 {zlabel("RESET")}
                 <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", letterSpacing: "normal", color: "var(--txm)" }}>{resetLabel}</span>

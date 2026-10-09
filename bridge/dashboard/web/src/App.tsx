@@ -22,7 +22,7 @@ import {
   type AcpAgentsInfo,
   type RivendellInstance,
 } from "./api";
-import { modelOptions, latestPerFamily, runPicks, snapModel, type AgentOption } from "./models";
+import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
 import { agentPickers, NO_PICKS, sendPicks, setAgentLabels } from "./lib/agents";
 import { activeOf, mergeDelta, type Turn } from "./chat";
@@ -1042,17 +1042,24 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [markBoot]);
 
+  // Every login with its meter (bridge accounts.with_meters). The footer and the
+  // MODEL menu read the one the open session spends, and the PROFILE menu reads
+  // what each profile's login has left. Polled on the usage tick below, and
+  // reloaded at once after SETTINGS ▸ ACCOUNTS changes one.
+  const loadAccounts = useCallback(() => api.accounts()
+    .then((a) => {
+      setAccounts(a.accounts);
+      markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
+    })
+    .catch(() => markBoot("auth", "fail", "NO LOGIN")), [markBoot]);
+
   useEffect(() => {
     let live = true;
     const tick = async () => {
       try { const u = await api.usage(); if (live) setUsage(u); } catch { /* ignore */ }
-      // Same 60s tick: the per-account meters + which agents you can pick from.
-      try {
-        const a = await api.accounts();
-        if (!live) return;
-        setAccounts(a.accounts);
-        markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
-      } catch { markBoot("auth", "fail", "NO LOGIN"); }
+      // Same 60s tick: every login's meter, then which agents you can pick from.
+      await loadAccounts();
+      if (!live) return;
       // ponytail: options a TEST or a turn just cached reach the composer on this 60s tick, not at once.
       try {
         const g = await api.acpAgents();
@@ -1064,12 +1071,14 @@ export function App() {
     void tick();
     const id = setInterval(tick, 60000);
     return () => { live = false; clearInterval(id); };
-  }, [markBoot]);
+  }, [loadAccounts]);
 
   // Profiles change only when someone edits them — here (SETTINGS) or on
-  // another dashboard — so they load on mount, after every edit and whenever
-  // the PROFILES panel opens, unpolled. A bridge started before they existed
-  // answers its catch-all 404; any other failure says so, here and in the panel.
+  // another dashboard — or when a login is added, which gets one of its own
+  // (bridge profiles.add_default). So they load on mount, after every edit or
+  // account change and whenever the PROFILES panel opens, unpolled. A bridge
+  // started before they existed answers its catch-all 404; any other failure
+  // says so, here and in the panel.
   const loadProfiles = useCallback(() => api.profiles()
     .then((r) => { setProfiles(r); setProfilesAvailable(true); setProfilesError(null); })
     .catch((e) => {
@@ -1079,6 +1088,8 @@ export function App() {
       notify("error", `Couldn't load profiles — ${msg}`);
     }), []);
   useEffect(() => { void loadProfiles(); }, [loadProfiles]);
+  const onAccountsChanged = useCallback(() => { void loadAccounts(); void loadProfiles(); },
+    [loadAccounts, loadProfiles]);
   // The open session's PROFILE pick. The bridge binds it whatever the session
   // has run on before (another agent excepted: a 409, whose message says so)
   // and answers with its new brief — the pickers follow from that.
@@ -1752,11 +1763,23 @@ export function App() {
   ];
 
   const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
+  // The login the open session spends: its turn in flight's, else the one its
+  // next turn takes. The footer meter and the MODEL menu's show that login, so
+  // a profile pick or a fallback handover moves them at once: every login's
+  // meter is already in `accounts`. The default login still reads /local/usage,
+  // which carries its per-model caps on an older bridge too.
+  const spendSlot = spendingSlot(selected);
+  const spender = accounts.find((a) => a.slot === spendSlot) ?? null;
+  const spentUsage = spendSlot === DEFAULT_SLOT ? usage : spender ? loginUsage(spender) : null;
   // No usage payload (no token / upstream down long enough that the bridge's
   // last-good copy went stale) reads as unknown — not as a real 0%.
-  const fiveHour = usage?.available ? usage.five_hour : null;
+  const fiveHour = spentUsage?.available ? spentUsage.five_hour : null;
   const usedPct = fiveHour ? Math.round(fiveHour.percent) : null;
   const resetLabel = fiveHour ? fmtReset(fiveHour.resets_at) : null;
+  // Which login the meter is, once there's more than one to tell apart.
+  const spendTag = spendSlot !== null && accounts.filter((a) => !a.disabled).length > 1
+    ? { tag: `A${spendSlot}`, who: spender?.email ?? `Account ${spendSlot}` }
+    : null;
   const projectNames = useMemo(() => projectGroups.map((g) => g.rel), [projectGroups]);
   // Model picker options — the live list served from /local/state (Models API).
   const modelOpts = useMemo(() => modelOptions(state?.models), [state?.models]);
@@ -1788,20 +1811,6 @@ export function App() {
     setEffortState(r.effort as EffortLevel | "");
   }, [sessionId, selected?.agent, selected?.model, selected?.permission_mode, selected?.effort, selected?.profile_id,
       selected?.overrides?.join(), boundProfile?.model, boundProfile?.mode, boundProfile?.effort]);
-
-  // The Claude logins that can run a turn, the ambient one leading. Option ids
-  // are the strings the bridge stores as a turn's runtime, so the status bar
-  // and the transcript badge name the same thing.
-  const agentOpts = useMemo<AgentOption[]>(() => accounts.filter((a) => !a.disabled).map((a) => ({
-    id: `claude:${a.slot}`,
-    label: [`A${a.slot} · ${a.email ?? "unknown"}`, a.plan, a.default && "DEFAULT"].filter(Boolean).join(" · "),
-    def: a.default, left: a.left,
-  })), [accounts]);
-  // Who runs the open session's next turn: its profile's login, else the
-  // ambient one — so the footer meter and the MODEL menu's are theirs.
-  const account = selected?.account;
-  const activeAgent = (account && agentOpts.find((o) => o.id === `claude:${account}`))
-    || agentOpts.find((o) => o.def) || agentOpts[0] || null;
 
   // Switched an extra off while looking at the view it owns: the tab is gone, so
   // sitting there would strand you on a screen with no way back to it. (The
@@ -2298,8 +2307,8 @@ export function App() {
                           />
                         </div>
                       }
-                      disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={usage} effort={effort}
-                      agent={activeAgent} agentPick={agentPick} profile={selected?.profile_id ?? ""}
+                      disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={spentUsage} effort={effort}
+                      accounts={accounts} agentPick={agentPick} profile={selected?.profile_id ?? ""}
                       profiles={profilesAvailable ? profiles?.profiles : undefined} onProfile={(id) => void pickProfile(id)}
                       overrides={selected?.overrides}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
@@ -2341,7 +2350,7 @@ export function App() {
 
               <StatusBar
                 usedPct={usedPct} resetLabel={resetLabel}
-                agent={activeAgent} agentLabel={agentPick?.label} rightOpen={settings.rightOpen}
+                login={spendTag} agentLabel={agentPick?.label} rightOpen={settings.rightOpen}
                 // The footer reports the session you have open, not the bridge's
                 // active project — those differ while you read another session.
                 repo={sessionProject ?? "—"} git={sessionGit}
@@ -2397,6 +2406,7 @@ export function App() {
                 sessionTools={selected?.disabled_tools ?? []}
                 profiles={profiles} profilesAvailable={profilesAvailable} profilesError={profilesError}
                 onProfilesChanged={() => void loadProfiles()}
+                onAccountsChanged={onAccountsChanged}
                 onOpenInspector={() => { setSettingsOpen(false); setInspectorOpen(true); }}
                 projects={{
                   groups: projectGroups.filter((g) => !removedProjects[g.rel]),

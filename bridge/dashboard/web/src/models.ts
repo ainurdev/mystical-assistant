@@ -1,4 +1,4 @@
-import type { UsageInfo } from "./api";
+import type { AccountInfo, UsageBucket, UsageInfo } from "./api";
 
 export interface ModelOption {
   id: string; // full model id (e.g. "claude-opus-4-8"), or a short CLI alias
@@ -13,12 +13,39 @@ export interface ModelRow extends ModelOption {
   title?: string;   // every window that applies, for the row's tooltip
 }
 
-/** A Claude login that can run a turn (another agent: lib/agents). */
-export interface AgentOption {
-  id: string; // 'claude:<slot>' — a turn's runtime tag
-  label: string; // the footer meter's tooltip
-  def: boolean; // the ambient ~/.claude login
-  left: number | null; // % of this account's tighter usage window unspent
+/** bridge accounts.DEFAULT_SLOT: the ambient ~/.claude login. */
+export const DEFAULT_SLOT = 1;
+
+/** The Claude login an agent and account run on: the account's slot, or the
+ *  default login when it names none (bridge profiles.claude_slot). null for
+ *  another agent, which spends no Claude quota. */
+export function loginSlot(agent = "claude", account = ""): number | null {
+  if (agent !== "claude") return null;
+  return /^\d+$/.test(account) ? Number(account) : DEFAULT_SLOT;
+}
+
+/** The login the open session spends: the bridge's `slot`, which follows a
+ *  turn the fallback ladder moved to another account. A bridge older than that
+ *  field gives only the profile's login. No session open: the default login. */
+export function spendingSlot(s?: { slot?: number | null; agent?: string; account?: string } | null): number | null {
+  if (!s) return DEFAULT_SLOT;
+  return s.slot !== undefined ? s.slot : loginSlot(s.agent, s.account);
+}
+
+/** One login's meter as the usage payload the footer and modelRows read. */
+export function loginUsage(a: AccountInfo): UsageInfo {
+  return { available: !!(a.five_hour || a.seven_day), five_hour: a.five_hour, seven_day: a.seven_day,
+           limits: a.limits };
+}
+
+/** What a login has left, for a picker row: the tighter window's unspent share
+ *  (bridge accounts.headroom) with that window's severity. null when the meter
+ *  doesn't read or the login is switched off. */
+export function loginLeft(a?: AccountInfo | null): { left: number; severity?: string } | null {
+  if (!a || a.disabled || a.left === null) return null;
+  const tight = [a.five_hour, a.seven_day].reduce<UsageBucket | null>(
+    (t, b) => (b && (t === null || b.percent > t.percent) ? b : t), null);
+  return { left: a.left, severity: tight?.severity };
 }
 
 // Shown only until /local/state delivers the live list (Anthropic Models API,

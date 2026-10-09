@@ -25,6 +25,7 @@ import type {
 import { usePersistentState } from "./persistentState";
 import { lastOpen, rememberOpen } from "./lastopen";
 import { modelOptions, runPicks, snapModel } from "./models";
+import { spendingSlot } from "./accounts";
 import { withName } from "../components/ImageLightbox";
 
 export interface Attachment {
@@ -225,6 +226,9 @@ export interface ChatContextValue {
   // profile's). Another agent's model/mode/effort ids are its own, so the
   // composer hides Claude's pickers and nothing of theirs is sent.
   sessionAgent: string;
+  // The Claude login the open session is spending (bridge brief `slot`): the
+  // usage strip and SYSTEM's limits show its windows. null = another agent.
+  sessionSlot: number | null;
   sessions: SessionBrief[];
   sessionId: string | null;
   selectSession: (id: string) => void;
@@ -358,6 +362,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     try {
       const { session } = await api.setSessionProfile(sid, pid);
       setSessions((prev) => prev.map((s) => (s.id === sid ? session : s)));
+      // `brief` reads the 5s poll's copy first, so the answer goes there too:
+      // the pill and the usage strip move now, not on the next beat.
+      qc.setQueryData<{ sessions: SessionBrief[] }>(["sessions", project], (d) =>
+        d && { ...d, sessions: d.sessions.map((s) => (s.id === sid ? session : s)) });
       setPickProfileErr(null);
     } catch (e) {
       setPickProfileErr(e instanceof Error ? e.message : "Failed to set profile.");
@@ -581,6 +589,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // The open session's profile, which the pickers read through (runPicks).
   const boundProfile = profilesQ.data?.profiles.find((p) => p.id === brief?.profile_id) ?? null;
   const sessionAgent = brief?.agent ?? "claude";
+  const sessionSlot = spendingSlot(brief);
   useEffect(() => {
     if (!brief) return;
     const r = runPicks(brief, { model: defModel, perm: defPerm, effort: defEffort }, boundProfile);
@@ -821,6 +830,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     profilesError: pickProfileErr ?? profilesLoadErr,
     overrides: brief?.overrides ?? [],
     sessionAgent,
+    sessionSlot,
     sessions,
     sessionId,
     selectSession,

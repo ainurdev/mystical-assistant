@@ -2,7 +2,8 @@
 // The picker's Opus reset (docs/superpowers/specs/session-run-settings-design.md):
 // a stored claude-fable-5-1 snapped to Opus on every reload because the snap ran
 // against the pre-load alias FALLBACK. And runPicks: which picks a session shows.
-import { familyOf, runPicks, snapModel } from "./models.ts";
+// And whose meter the footer and pickers read (spendingSlot, loginLeft).
+import { DEFAULT_SLOT, familyOf, loginLeft, loginSlot, loginUsage, runPicks, snapModel, spendingSlot } from "./models.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -82,4 +83,24 @@ const seed = runPicks({ model: null, permission_mode: "bypassPermissions", effor
   { model: "claude-fable-5-1", mode: "plan", effort: "max" });
 ok(seed.model === "claude-fable-5-1" && seed.perm === "plan" && seed.effort === "max",
   "a session bound before its first turn starts from the profile, not what it was created with");
+
+// Whose quota the meters show: the bridge's slot wins, so a turn the fallback
+// ladder moved to account 2 reads as 2 even with no profile.
+ok(spendingSlot({ slot: 2, account: "" }) === 2, "the bridge's slot wins over the profile's login");
+ok(spendingSlot({ slot: null, agent: "codex" }) === null, "another agent spends no Claude login");
+ok(spendingSlot({ agent: "claude", account: "3" }) === 3 && spendingSlot({ account: "" }) === DEFAULT_SLOT,
+  "an older bridge without slot: the profile's login, else the default");
+ok(spendingSlot(null) === DEFAULT_SLOT, "no session open: the default login");
+ok(loginSlot("claude", "") === DEFAULT_SLOT && loginSlot("codex", "k1") === null, "a profile's login");
+const A2 = { slot: 2, email: "b@x.com", alias: null, disabled: false, default: false, left: 91,
+  resets_at: null, logged_in: true, plan: null, limits: [],
+  five_hour: { percent: 9, resets_at: null, severity: "normal" },
+  seven_day: { percent: 2, resets_at: null, severity: "normal" } };
+ok(loginUsage(A2).available && loginUsage(A2).five_hour?.percent === 9, "a login's row reads as its usage");
+ok(!loginUsage({ ...A2, five_hour: null, seven_day: null }).available, "no window read: unknown, not 0%");
+const weekBound = { ...A2, left: 5, seven_day: { percent: 95, resets_at: null, severity: "warning" } };
+ok(loginLeft(weekBound)?.left === 5 && loginLeft(weekBound)?.severity === "warning",
+  "a login's headroom carries its tighter window's severity");
+ok(loginLeft({ ...A2, left: null }) === null && loginLeft({ ...A2, disabled: true }) === null && loginLeft(undefined) === null,
+  "no meter for an unread, switched-off or missing login");
 console.log("models.check: all ok");

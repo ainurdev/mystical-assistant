@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
-import { api, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
-import { modelRows, type AgentOption } from "../models";
+import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
+import { loginLeft, loginSlot, modelRows } from "../models";
 import { describe, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago } from "../lib/surfaces";
@@ -359,7 +359,7 @@ function RunPopover<M extends string>({
 }
 
 export function Composer({
-  disabled, running, model, models, usage, agent: activeAgent, agentPick, profile, profiles, onProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink,
 }: {
@@ -374,11 +374,11 @@ export function Composer({
   onOpenMap?: () => void;
   model: ModelId;
   models: { id: ModelId; label: string }[];
-  // The ambient login's usage meter — the MODEL menu shows what each model has left.
+  // The usage of the login the session is spending (its turn in flight's, else
+  // its next turn's): the MODEL menu shows what each model has left on it.
   usage?: UsageInfo | null;
-  // Which Claude login runs the session's next turn (its profile's) — the
-  // MODEL menu's usage meters are its. Read-only here: a profile changes it.
-  agent?: AgentOption | null;
+  // Every login with its meter: the PROFILE menu shows what each profile's has left.
+  accounts?: AccountInfo[];
   // The session runs on another agent (lib/agents): its own options replace
   // Claude's lists, a picker it advertised nothing for hides, and a ◇ chip
   // names it beside PROFILE. null/undefined = a Claude session.
@@ -431,26 +431,32 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run">("");
   const { compact, lead, sendKey } = useChatChrome();
-  // MODEL rows grouped by usage pool, each with what it has left. The meter is
-  // the ambient login's, so it only decorates the rows while that login is the
-  // one running the turns; another account gets the plain list.
+  // MODEL rows grouped by usage pool, each with what it has left on the login
+  // the session is spending, whichever account that is.
   const modelOpts = useMemo(
     () => agentPick ? agentPick.model ?? []
-      : modelRows(models, !activeAgent || activeAgent.def ? usage : null).map((r) => ({
+      : modelRows(models, usage).map((r) => ({
         ...r, tail: r.left === undefined ? undefined : <LeftMeter left={r.left} severity={r.severity} />,
       })),
-    [models, usage, activeAgent, agentPick],
+    [models, usage, agentPick],
   );
   const permOpts = agentPick ? agentPick.mode ?? [] : PERMS;
-  // PROFILE rows: each ends in what it sets, so the menu answers "what does
-  // picking this change" without a trip to settings.
-  const profileRows = useMemo(
-    () => [{ id: "", label: "NO PROFILE" }, ...(profiles ?? []).map((p) => ({
+  // PROFILE rows: each ends in what it sets, then what its Claude login has
+  // left, so the menu answers "what does picking this change" without a trip
+  // to settings. NO PROFILE runs on the default login.
+  const profileRows = useMemo(() => {
+    const left = (agent?: string, account?: string) => {
+      const m = loginLeft(accounts?.find((a) => a.slot === loginSlot(agent, account)));
+      return m && <LeftMeter left={m.left} severity={m.severity} />;
+    };
+    return [{ id: "", label: "NO PROFILE", tail: left() }, ...(profiles ?? []).map((p) => ({
       id: p.id, label: p.name,
-      tail: <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" }}>{describe(p)}</span>,
-    }))],
-    [profiles],
-  );
+      tail: <>
+        <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" }}>{describe(p)}</span>
+        {left(p.agent, p.account)}
+      </>,
+    }))];
+  }, [profiles, accounts]);
   const own = (k: string) => !!overrides?.includes(k);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<MarkdownInputHandle>(null);
