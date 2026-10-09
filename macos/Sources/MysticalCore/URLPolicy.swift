@@ -36,9 +36,23 @@ public enum URLPolicy {
     /// link (App.tsx), `skipboot` skips the intro a reload would replay.
     public static func session(_ base: URL, _ sessionId: String) -> URL {
         var c = URLComponents(url: base, resolvingAgainstBaseURL: false)!
-        var q = (c.queryItems ?? []).filter { !["s", "skipboot"].contains($0.name) }
+        var q = (c.queryItems ?? []).filter { !linkItems.contains($0.name) }
         q += [URLQueryItem(name: "s", value: sessionId), URLQueryItem(name: "skipboot", value: nil)]
         c.queryItems = q
         return c.url!
     }
+
+    /// Whether the page loaded from `loaded` is still the dashboard at `current`:
+    /// same port and token. A `session` link to it counts — reloading that
+    /// would replay the intro the link skipped.
+    public static func sameDashboard(_ loaded: URL?, _ current: URL) -> Bool {
+        guard let loaded else { return false }
+        let rest = { (u: URL) in
+            (URLComponents(url: u, resolvingAgainstBaseURL: false)?.queryItems ?? [])
+                .filter { !linkItems.contains($0.name) }
+        }
+        return loaded.port == current.port && rest(loaded) == rest(current)
+    }
+
+    private static let linkItems = ["s", "skipboot"]
 }

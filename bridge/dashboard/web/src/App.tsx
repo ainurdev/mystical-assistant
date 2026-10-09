@@ -592,6 +592,16 @@ export function App() {
     if (s.project !== activeProject) selectProjectBg(s.project);
   }
 
+  // Mystical.app's menu bar opens a session here in place, the way a
+  // notification click does, instead of reloading onto ?s= (DashboardWindow.open).
+  useEffect(() => {
+    (window as Window & { __mysticalOpenSession?: (id: string) => boolean }).__mysticalOpenSession = (id) => {
+      const s = sessions.find((x) => x.id === id);
+      if (s) selectSession(s); else openSession(id);
+      return true;
+    };
+  });
+
   // --- polls (unchanged data flow) ---
   useEffect(() => {
     let live = true;

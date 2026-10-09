@@ -81,18 +81,13 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         }
         if bridge.up, let url = bridge.status?.dashboardURL {
             // Same dashboard still showing: leave it alone — it reconnects itself.
-            if showingPage, sameDashboard(loaded, url) { return }
+            if showingPage, URLPolicy.sameDashboard(loaded, url) { return }
             load(url)
             return
         }
         // One missed poll is a restart's first second; two is down.
         guard bridge.misses >= 2 || !(bridge.status?.answering ?? false) else { return }
         cover(bridge.status?.running == true ? .waiting : .stopped)
-    }
-
-    private func sameDashboard(_ a: URL?, _ b: URL) -> Bool {
-        guard let a else { return false }
-        return a.port == b.port && a.query == b.query
     }
 
     private func load(_ url: URL) {
@@ -108,11 +103,18 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         placeholder.isHidden = false
     }
 
-    /// Open one session: a full load of `?s=<id>` — the dashboard's own deep link.
+    /// Open one session: the page showing switches to it in place (App.tsx
+    /// `__mysticalOpenSession`); without one, a full load of `?s=<id>` — the
+    /// dashboard's own deep link.
     func open(session id: String) {
-        guard let base = bridge.status?.dashboardURL else { return show() }
-        load(URLPolicy.session(base, id))
         show()
+        guard let base = bridge.status?.dashboardURL else { return }
+        Task {
+            if showingPage, (try? await webView.callAsyncJavaScript(
+                "return window.__mysticalOpenSession?.(id) === true",
+                arguments: ["id": id], contentWorld: .page)) as? Bool == true { return }
+            load(URLPolicy.session(base, id))
+        }
     }
 
     /// A banner was clicked: let the page that made it handle it (it already

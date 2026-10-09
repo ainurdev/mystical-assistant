@@ -87,6 +87,19 @@ let origin = URL(string: "http://127.0.0.1:8790")!
     #expect(items.contains { $0.name == "skipboot" })
 }
 
+@Test func aSessionLinkIsStillTheSameDashboard() {
+    // The menu bar opens a session with ?s=…&skipboot; the next poll must not
+    // take that for a new dashboard and reload it, replaying the intro.
+    for base in [URL(string: "http://127.0.0.1:8790/?token=abc")!, URL(string: "http://127.0.0.1:8790/")!] {
+        #expect(URLPolicy.sameDashboard(URLPolicy.session(base, "s1"), base), "\(base)")
+        #expect(URLPolicy.sameDashboard(base, base))
+    }
+    let base = URL(string: "http://127.0.0.1:8790/?token=abc")!
+    #expect(!URLPolicy.sameDashboard(base, URL(string: "http://127.0.0.1:8790/?token=new")!))
+    #expect(!URLPolicy.sameDashboard(base, URL(string: "http://127.0.0.1:8791/?token=abc")!))
+    #expect(!URLPolicy.sameDashboard(nil, base))
+}
+
 // MARK: notification shim
 
 @Test func identifierIsTheTagSoRepeatsReplace() {
