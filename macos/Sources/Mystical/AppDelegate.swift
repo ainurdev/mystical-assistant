@@ -46,6 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         dashboard.sync()
         let n = bridge.waiting.count
         statusItem.button?.title = n > 0 ? " \(n)" : ""
+        NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil
         statusItem.button?.toolTip = n > 0 ? "\(n) waiting on you" : "mystical//assistant"
         statusItem.button?.appearsDisabled = !bridge.up
     }

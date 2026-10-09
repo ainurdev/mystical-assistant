@@ -32,6 +32,7 @@ enum Probe {
             "running": bridge.status?.running ?? NSNull(),
             "supervised": bridge.status?.supervised ?? NSNull(),
             "waiting": bridge.waiting.map { ["id": $0.id, "title": $0.title, "label": $0.label] },
+            "badge": NSApp.dockTile.badgeLabel ?? NSNull(),
             "permission": notifier.permission,
             "activationPolicy": NSApp.activationPolicy() == .regular ? "regular" : "accessory",
         ]
