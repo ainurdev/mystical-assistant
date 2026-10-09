@@ -1311,6 +1311,53 @@ export interface UpdateInfo {
   files: { path: string; status: string; add: number; del: number }[];
 }
 
+// --- MOVE: export / import this bridge (bridge/movejob.py) ---------------------
+// One item of the EXPORT or IMPORT list. `ref` is what `skip` takes; the rest
+// are the facts its chips draw, and on IMPORT, `do` is what it would do here.
+export interface MoveItem {
+  ref: string;
+  label?: string;
+  do?: string | null;       // clone · present · skip · add · merge · keep · behind · park · fail
+  unpushed?: number; uncommitted?: boolean; untracked?: number; stashes?: number;
+  worktrees?: number; config?: number; mystical?: number; remote?: boolean; files?: number;
+  oauth?: boolean; marketplace?: boolean; enabled?: boolean; keys?: number; dir?: string;
+  hook?: boolean; transcripts?: number; bytes?: number; local?: number;
+  add?: number; kept?: number; behind?: number; off?: string[]; error?: string | null;
+}
+export type MoveSectionKey = "repos" | "mcp" | "plugins" | "claude" | "history" | "bridge";
+export interface MoveSection { key: MoveSectionKey; items: MoveItem[] }
+export interface MovePlan {
+  host: string; base: string; out: string; loose: string[]; sections: MoveSection[];
+}
+export interface MoveFile { path: string; name: string; dir: string; bytes: number; mtime: number }
+export interface MoveFrom {
+  host?: string; platform?: string; home?: string; base?: string; at?: number;
+  mystical?: string; claude?: string;
+}
+export interface MoveRead {
+  file: string; bytes: number; at: number; from: MoveFrom; only?: string[] | null;
+  sections: MoveSection[];
+}
+export interface MoveStep { key: string; done: number; total: number; state: string }
+export interface MoveNext {
+  key: "restart" | "rivendell" | "mcp" | "parked" | "delete";
+  text: string; items?: string[]; path?: string; bytes?: number;
+}
+export interface MoveJob {
+  id: string; kind: "export" | "read" | "import"; title: string;
+  status: "running" | "done" | "failed" | "cancelled";
+  pct: number; elapsed: number; eta: number | null;
+  bytes: number | null; total: number | null; rate: number | null;
+  steps: MoveStep[]; now: string[]; log: string[]; error: string | null;
+  started: number; ended: number | null;
+  out?: string; file?: string; skip?: string[];
+  result?: { path?: string; bytes?: number; park?: string; report?: Record<string, Record<string, unknown[]>> } | null;
+  next?: MoveNext[];
+}
+/** Fired on window when the MOVE tab starts, ends or dismisses a job, so the
+ *  dock polls now rather than on its next idle beat. */
+export const MOVE_EVENT = "hud:move";
+
 export const api = {
   state: () => req<DashState>("/local/state"),
   update: () => req<UpdateInfo>("/local/update"),
@@ -1936,6 +1983,19 @@ export const api = {
     ),
   setLessonsForRepo: (project: string, on: boolean) =>
     req<{ repo_enabled: boolean }>("/local/learn/toggle", { method: "POST", body: { project, on } }),
+  // --- MOVE ---
+  movePlan: () => req<MovePlan>("/local/move/plan"),
+  moveFiles: () => req<{ files: MoveFile[] }>("/local/move/files"),
+  moveJobs: () => req<{ jobs: MoveJob[] }>("/local/move/jobs"),
+  moveRead: () => req<{ read: MoveRead | null }>("/local/move/read"),
+  moveExport: (out: string, skip: string[]) =>
+    req<MoveJob>("/local/move/export", { method: "POST", body: { out, skip } }),
+  moveStartRead: (path: string) => req<MoveJob>("/local/move/read", { method: "POST", body: { path } }),
+  moveImport: (skip: string[]) => req<MoveJob>("/local/move/import", { method: "POST", body: { skip } }),
+  moveCancel: () => req<{ ok: boolean }>("/local/move/cancel", { method: "POST", body: {} }),
+  moveDismiss: (id: string) => req<{ ok: boolean }>("/local/move/dismiss", { method: "POST", body: { id } }),
+  moveForget: () => req<{ ok: boolean }>("/local/move/forget", { method: "POST", body: {} }),
+  moveDelete: (path: string) => req<{ ok: boolean }>("/local/move/delete", { method: "POST", body: { path } }),
 };
 
 /** Query string for a run context (cwd/project/branch), omitting blanks. */

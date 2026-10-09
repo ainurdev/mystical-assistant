@@ -3768,3 +3768,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   --purple-d: #d2b4ff; --purple-h: #e6d3ff; --purple-g: #a48fcc;
 }
 [data-theme="void"] .isle-glass { background: rgba(25, 25, 25, 0.94) !important; }
+
+/* MOVE dock (components/hud/MoveDock.tsx): the SWEEP bar's running sheen. */
+.movesweep { animation: movesweep 2.2s linear infinite; }
+@keyframes movesweep { from { background-position: 100% 0; } to { background-position: -50% 0; } }
+@media (prefers-reduced-motion: reduce) { .movesweep { animation: none; } }

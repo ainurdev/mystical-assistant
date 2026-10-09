@@ -801,6 +801,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/update":
             # the platform's own checkout — new commits waiting upstream?
             return self._json(selfupdate.check())
+        if path.startswith("/local/move/"):
+            # MOVE: export/import this bridge (bridge/movejob.py). The plan runs
+            # a few git reads per repo, so the panel asks for it on open only.
+            from bridge import movejob
+            what = path[len("/local/move/"):]
+            if what == "plan":
+                return self._json(movejob.plan())
+            if what == "files":
+                return self._json({"files": movejob.files()})
+            if what == "jobs":
+                return self._json({"jobs": movejob.jobs()})
+            if what == "read":
+                return self._json({"read": movejob.read_state()})
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
@@ -1218,6 +1231,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": ok, "output": output})
         if path == "/local/update/publish":
             return self._publish_update(chat)
+        if path.startswith("/local/move/"):
+            from bridge import movejob
+            got = movejob.post(path[len("/local/move/"):], body)
+            err = got.get("error")
+            return self._json(got, 404 if err == "not found" else 400 if err else 200)
         if path == "/local/restart":
             # no pull, no rebuild — just re-exec the bridge (and with it this
             # dashboard) so code already on disk becomes the code running.

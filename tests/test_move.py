@@ -597,3 +597,173 @@ def test_config_files_are_carried_and_examples_are_not():
         assert move._is_config(p), p
     for p in (".env.example", ".env.sample", "node_modules/x.js", "dist/app.js"):
         assert not move._is_config(p), p
+
+
+# --- the dashboard's MOVE tab: plan, skip, inspect, progress, cancel -----------
+
+class Recorder(move.Progress):
+    """A Progress that keeps what it was told, and stops when `stop_at` checks
+    have passed."""
+
+    def __init__(self, stop_at=None):
+        self.steps, self.ticks, self.lines, self.read = [], 0, [], []
+        self.checks, self.stop_at = 0, stop_at
+
+    def step(self, key, total=0):
+        self.steps.append((key, total))
+
+    def tick(self, label=None, n=1):
+        self.ticks += n
+
+    def line(self, text):
+        self.lines.append(text)
+
+    def bytes(self, done, total):
+        self.read.append((done, total))
+
+    def check(self):
+        self.checks += 1
+        if self.stop_at is not None and self.checks > self.stop_at:
+            raise move.Cancelled()
+
+
+def _items(sections, key):
+    return {i["ref"]: i for s in sections if s["key"] == key for i in s["items"]}
+
+
+def test_plan_lists_every_item_with_what_it_would_carry(world):
+    world["fake"].machine = world["old"]
+    world["fake"].marketplaces = [{"name": "mk1", "source": "github", "repo": "acme/mk1"}]
+    world["fake"].plugins = [{"id": "p1@mk1", "scope": "user", "enabled": True}]
+    before = _state_of(world["app"])
+    p = move.plan(m=world["old"])
+    assert _state_of(world["app"]) == before, "the plan reads, it never writes"
+    old = world["old"]
+    repos = _items(p["sections"], "repos")
+    assert set(repos) == {"acme/app", "solo"}
+    app = repos["acme/app"]
+    assert app["unpushed"] >= 2 and app["uncommitted"] and app["stashes"] == 1
+    assert app["worktrees"] == 1 and app["config"] == 1 and app["mystical"] > 0 and app["remote"]
+    assert repos["solo"]["remote"] is False and repos["solo"]["unpushed"] == 2
+    assert p["loose"] == ["notes"]
+    mcp = _items(p["sections"], "mcp")
+    assert set(mcp) == {"ctx", "docs", "web", "db (acme/app)", "g (gone)"}
+    assert mcp["web"]["oauth"] and not mcp["ctx"]["oauth"]
+    assert set(_items(p["sections"], "plugins")) == {"marketplace mk1", "p1@mk1"}
+    claude = _items(p["sections"], "claude")
+    assert {"settings.json", "CLAUDE.md", "skills/mine", "hooks/stop.sh",
+            "~/.claude/statusline.sh"} <= set(claude)
+    assert "skills/synced" not in claude
+    history = _items(p["sections"], "history")
+    assert history[move._enc(world["app"])]["label"] == "acme/app"
+    assert history[move._enc(world["app"])]["transcripts"] == 1
+    assert history[move._enc(old.home)]["label"] == "~"
+    assert "prompts" in history
+    bridge = _items(p["sections"], "bridge")
+    assert bridge[".env"]["local"] == 3, "BASE_PATH, the bot token and RIVENDELL_ENABLE stay"
+    assert {"rivendell_instances.json", "freeagents.json", "bridge.db"} <= set(bridge)
+    assert "nextup.json" not in bridge
+
+
+def test_skip_leaves_unticked_items_out_of_the_file(world):
+    path = _export(world, skip={"repos:solo", "mcp:web", "mcp:db (acme/app)", "history",
+                                "claude:skills/mine", "plugins:p1@mk1", "bridge:bridge.db"})
+    with tarfile.open(path) as tar:
+        names = tar.getnames()
+        man = json.load(tar.extractfile("manifest.json"))
+    assert [r["path"] for r in man["repos"]] == ["acme/app"]
+    assert man["loose"] == ["notes/"], "an unticked repo is not 'not git'"
+    assert set(man["mcp"]["user"]) == {"ctx", "docs"}
+    assert list(man["mcp"]["local"]) == [os.path.join(world["old"].base, "gone")]
+    assert man["plugins"]["plugins"] == []
+    assert man["history"] == {"skipped": True}
+    assert not any(n.startswith(("claude/projects", "claude/skills/mine")) for n in names)
+    assert man["bridge"]["db"] is False and "bridge/bridge.db" not in names
+
+
+def test_export_reports_each_step_and_a_cancel_removes_the_file(world):
+    rec = Recorder()
+    _export(world, progress=rec)
+    assert [k for k, _ in rec.steps] == ["repos", "mcp", "plugins", "claude", "history", "bridge"]
+    assert rec.steps[0] == ("repos", 2)
+    out = os.path.join(world["root"], "move.tar.gz")
+    os.remove(out)
+    with pytest.raises(move.Cancelled):
+        _export(world, progress=Recorder(stop_at=1))
+    assert not os.path.exists(out), "a cancelled export leaves no partial file"
+
+
+def test_read_unpacks_with_progress_and_says_what_each_item_would_do(world):
+    path = _export(world)
+    new = world["new"]
+    world["fake"].machine = new
+    world["fake"].marketplaces = [{"name": "claude-plugins-official", "source": "github",
+                                   "repo": "anthropics/claude-plugins-official"}]
+    world["fake"].plugins = []
+    root = os.path.join(world["root"], "read")
+    rec = Recorder()
+    man = move.unpack(path, root, progress=rec)
+    assert man["from"]["home"] == world["old"].home
+    assert rec.read[-1][0] == rec.read[-1][1] == os.path.getsize(path)
+    got = move.inspect(root, m=new)
+    assert os.listdir(new.base) == [], "READ changes nothing"
+    assert not os.path.exists(os.path.join(new.state, "moved"))
+    secs = got["sections"]
+    assert {r: i["do"] for r, i in _items(secs, "repos").items()} == \
+        {"acme/app": "clone", "solo": "clone"}
+    assert _items(secs, "repos")["acme/app"]["worktrees"] == 1
+    mcp = _items(secs, "mcp")
+    assert mcp["web"]["do"] == "present" and mcp["docs"]["do"] == "add" and mcp["docs"]["oauth"]
+    assert mcp["g (gone)"]["do"] == "behind"
+    assert _items(secs, "claude")["settings.json"]["do"] == "merge"
+    assert _items(secs, "claude")["skills/mine"]["do"] == "add"
+    assert _items(secs, "history")[move._enc(world["app"])]["label"] == "acme/app"
+    bridge = _items(secs, "bridge")
+    assert bridge[".env"]["do"] == "merge" and bridge[".env"]["behind"] == 3
+    assert bridge["rivendell_instances.json"]["off"] == ["production"]
+    assert bridge["bridge.db"]["do"] == "park"
+
+
+def test_import_skips_what_was_unticked_and_lists_whats_left(world):
+    path = _export(world)
+    new = world["new"]
+    world["fake"].machine = new
+    world["fake"].marketplaces = []
+    world["fake"].plugins = []
+    root = os.path.join(world["root"], "read")
+    move.unpack(path, root)
+    rec = Recorder()
+    got = move.apply(root, m=new, skip={"repos:solo", "mcp:docs", "history:prompts"},
+                     progress=rec, log=lambda *a: None)
+    assert os.path.isdir(os.path.join(new.base, "acme", "app"))
+    assert not os.path.exists(os.path.join(new.base, "solo"))
+    assert "docs" not in {a[2] for a, _ in world["fake"].added(["mcp", "add-json"])}
+    assert not os.path.exists(os.path.join(new.claude, "history.jsonl"))
+    assert [k for k, _ in rec.steps] == ["repos", "plugins", "claude", "mcp", "history", "bridge"]
+    assert {n["key"] for n in got["next"]} == {"restart", "rivendell", "parked"}
+    assert any(f.startswith("import-") for f in os.listdir(got["park"]))
+
+
+def test_a_cancelled_import_stops_before_the_next_repo_and_keeps_its_report(world):
+    path = _export(world)
+    new = world["new"]
+    world["fake"].machine = new
+    root = os.path.join(world["root"], "read")
+    move.unpack(path, root)
+    with pytest.raises(move.Cancelled):
+        move.apply(root, m=new, progress=Recorder(stop_at=1), log=lambda *a: None)
+    assert os.listdir(new.base) == [], "no repo started after the cancel"
+    host = os.listdir(os.path.join(new.state, "moved"))[0]
+    assert any(f.startswith("import-") for f in os.listdir(os.path.join(new.state, "moved", host)))
+
+
+def test_a_file_that_is_not_a_move_is_refused(tmp_path):
+    bad = tmp_path / "x.tar.gz"
+    with tarfile.open(bad, "w:gz") as tar:
+        data = b"hello"
+        ti = tarfile.TarInfo("readme.txt")
+        ti.size = len(data)
+        import io
+        tar.addfile(ti, io.BytesIO(data))
+    with pytest.raises(SystemExit):
+        move.unpack(str(bad), str(tmp_path / "out"))

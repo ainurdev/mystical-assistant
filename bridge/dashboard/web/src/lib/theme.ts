@@ -416,6 +416,45 @@ export interface HudSettings {
   // Which key sends from the composer. "enter": Enter sends, Shift+Enter is a
   // newline. "ctrl-enter": Enter is a newline, Ctrl/Cmd+Enter sends.
   sendKey: SendKey;
+  // MOVE ▸ PROGRESS: how the export/import dock draws (components/hud/MoveDock).
+  move: MovePrefs;
+}
+
+export type MoveBar = "line" | "blocks" | "ascii" | "sweep";
+export type MoveThick = "thin" | "regular" | "thick";
+// Theme tokens only, so a bar follows a palette switch.
+export type MoveColor = "acc" | "ok" | "purple" | "info" | "warn";
+export type MoveCorner = "tl" | "tr" | "bl" | "br";
+export type MoveMini = "pill" | "edge" | "frame";
+export interface MovePrefs {
+  bar: MoveBar; thick: MoveThick; exportColor: MoveColor; importColor: MoveColor;
+  corner: MoveCorner; mini: MoveMini;
+  steps: boolean; log: boolean; eta: boolean; speed: boolean; // what a card shows
+  startMin: boolean; autoHide: boolean; motion: boolean;
+}
+export const MOVE_DEFAULTS: MovePrefs = {
+  bar: "line", thick: "regular", exportColor: "acc", importColor: "purple", corner: "br",
+  mini: "pill", steps: true, log: true, eta: true, speed: true,
+  startMin: false, autoHide: true, motion: true,
+};
+
+function toMove(v: unknown): MovePrefs {
+  const p = (v && typeof v === "object" ? v : {}) as Partial<Record<keyof MovePrefs, unknown>>;
+  const pick = <T extends string>(x: unknown, ok: readonly T[], d: T): T => ok.includes(x as T) ? (x as T) : d;
+  const flag = (x: unknown, d: boolean) => (typeof x === "boolean" ? x : d);
+  const colors = ["acc", "ok", "purple", "info", "warn"] as const;
+  const d = MOVE_DEFAULTS;
+  return {
+    bar: pick(p.bar, ["line", "blocks", "ascii", "sweep"] as const, d.bar),
+    thick: pick(p.thick, ["thin", "regular", "thick"] as const, d.thick),
+    exportColor: pick(p.exportColor, colors, d.exportColor),
+    importColor: pick(p.importColor, colors, d.importColor),
+    corner: pick(p.corner, ["tl", "tr", "bl", "br"] as const, d.corner),
+    mini: pick(p.mini, ["pill", "edge", "frame"] as const, d.mini),
+    steps: flag(p.steps, d.steps), log: flag(p.log, d.log), eta: flag(p.eta, d.eta),
+    speed: flag(p.speed, d.speed), startMin: flag(p.startMin, d.startMin),
+    autoHide: flag(p.autoHide, d.autoHide), motion: flag(p.motion, d.motion),
+  };
 }
 
 export type ChatLayout = "default" | "compact";
@@ -442,7 +481,7 @@ const DEFAULTS: HudSettings = {
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "stamp", chatBg: "none",
-  layout: "default", sendKey: "enter",
+  layout: "default", sendKey: "enter", move: MOVE_DEFAULTS,
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -555,6 +594,7 @@ export function loadSettings(): HudSettings {
         chatBg: toChatBg(p.chatBg),
         sendKey: p.sendKey === "ctrl-enter" ? "ctrl-enter" : "enter",
         layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
+        move: toMove(p.move),
       };
     }
   } catch {

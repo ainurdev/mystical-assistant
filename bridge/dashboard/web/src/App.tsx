@@ -79,6 +79,7 @@ import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
 import { shellCols } from "./lib/shell";
 import { dismiss, notify, setNoticeSound } from "./components/hud/Notifications";
+import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
 import { linkAlertText } from "./lib/rivendelltasks";
 import { BootIntro } from "./components/hud/BootIntro";
@@ -2420,6 +2421,7 @@ export function App() {
               />
             )}
             {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
+            <MoveDock settings={settings} />
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
                 settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}

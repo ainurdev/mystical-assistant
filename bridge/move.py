@@ -105,6 +105,40 @@ _GH_SSH = re.compile(r"^(?:git@github\.com:|ssh://git@github\.com/)([^/\s]+/[^/\
 _ENV_LINE = re.compile(r"^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)=(.*)$")
 
 
+class Cancelled(BaseException):
+    """The dashboard's CANCEL. A BaseException so the one-item-never-sinks-the-
+    rest guards (`except Exception`) let it through."""
+
+
+class Progress:
+    """What a running export or import tells whoever watches it. This one tells
+    nobody, for the CLI; bridge/movejob.py hands in one the dashboard reads.
+    `skip` holds what not to carry: "repos" drops a whole section, "repos:acme/app"
+    one item. The refs are the ones plan() and inspect() list."""
+
+    def step(self, key, total=0):       # a section starts; total = its items, 0 = unknown
+        pass
+
+    def item(self, label):              # an item starts (clones run several at once)
+        pass
+
+    def tick(self, label=None, n=1):    # an item is done
+        pass
+
+    def line(self, text):               # a log line
+        pass
+
+    def bytes(self, done, total):       # bytes read, while unpacking
+        pass
+
+    def check(self):                    # raises Cancelled once asked to stop
+        pass
+
+
+def _skips(skip, section, ref=None) -> bool:
+    return section in skip or (ref is not None and f"{section}:{ref}" in skip)
+
+
 # ---------------------------------------------------------------------------
 # Machines and paths
 # ---------------------------------------------------------------------------
@@ -339,11 +373,13 @@ class _Pack:
 
     _INLINE = 32 * 1024 * 1024
 
-    def __init__(self, tar, tmp):
+    def __init__(self, tar, tmp, check=None):
         self.tar, self.tmp, self.bytes = tar, tmp, 0
+        self.check = check or (lambda: None)        # a cancel lands between files, not folders
 
     def file(self, src, arc) -> int:
         """Bytes added, 0 when src isn't a readable regular file."""
+        self.check()
         try:
             st = os.stat(src)
             if not stat.S_ISREG(st.st_mode):
@@ -665,9 +701,11 @@ def _export_repo(m, rel, arc, pack) -> dict:
     return r
 
 
-def _export_plugins(m) -> dict:
+def _export_plugins(m, skip=()) -> dict:
     """Marketplaces and plugins, from the CLI's own --json; the files it keeps
     when that CLI is too old to answer."""
+    if "plugins" in skip:
+        return {"marketplaces": [], "plugins": []}
     mk = _claude_json(["plugin", "marketplace", "list", "--json"])
     pl = _claude_json(["plugin", "list", "--json"])
     if mk is None:
@@ -689,7 +727,9 @@ def _export_plugins(m) -> dict:
                 "enabled": bool(p.get("enabled", True)), "project": p.get("projectPath")}
                for p in pl or []
                if p.get("id") and p.get("scope") != _SYNCED and not p["id"].endswith("@" + _SYNCED)]
-    return {"marketplaces": marketplaces, "plugins": plugins}
+    return {"marketplaces": [x for x in marketplaces
+                             if not _skips(skip, "plugins", f"marketplace {x['name']}")],
+            "plugins": [x for x in plugins if not _skips(skip, "plugins", x["id"])]}
 
 
 def _command_paths(settings, home, base) -> "list[str]":
@@ -713,14 +753,21 @@ def _command_paths(settings, home, base) -> "list[str]":
     return sorted(set(found))
 
 
-def export(out=None, m=None, history=True, only=None, log=print) -> str:
+def default_out(m) -> str:
+    host = socket.gethostname().split(".")[0] or "old"
+    return os.path.join(m.home, f"mystical-move-{_slug(host)}-{time.strftime('%Y%m%d-%H%M')}.tar.gz")
+
+
+def export(out=None, m=None, history=True, only=None, log=print, skip=(), progress=None) -> str:
     """Write the move file. Returns its path. `only` (paths under BASE_PATH)
     narrows it to those repos and nothing else: a top-up for one repo after
-    the full move, which imports over the first without touching it."""
+    the full move, which imports over the first without touching it. `skip`
+    and `progress` are the dashboard's (see Progress)."""
     m = m or Machine()
+    p = progress or Progress()
+    skip = set(skip) | (set() if history else {"history"})
     host = socket.gethostname().split(".")[0] or "old"
-    out = os.path.abspath(out or os.path.join(
-        m.home, f"mystical-move-{_slug(host)}-{time.strftime('%Y%m%d-%H%M')}.tar.gz"))
+    out = os.path.abspath(out or default_out(m))
     _, commit, _ = _git(REPO_ROOT, "rev-parse", "--short", "HEAD")
     _, cv, _ = _claude(["--version"])
     man = {"format": FORMAT, "from": {
@@ -733,17 +780,25 @@ def export(out=None, m=None, history=True, only=None, log=print) -> str:
             fd = os.open(out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
             with os.fdopen(fd, "wb") as fh, \
                     tarfile.open(fileobj=fh, mode="w:gz", compresslevel=6) as tar:
-                pack = _Pack(tar, tmp)
-                man["repos"], man["loose"] = _export_repos(m, pack, log, only)
+                pack = _Pack(tar, tmp, p.check)
+                man["repos"], man["loose"] = _export_repos(m, pack, log, only, skip, p)
                 if only:
                     man.update(only=list(only), mcp={}, plugins={}, claude={}, bridge={},
                                history={"skipped": True})
                 else:
-                    man["mcp"] = _export_mcp(m)
-                    man["plugins"] = _export_plugins(m)
-                    man["claude"] = _export_claude(m, pack)
-                    man["history"] = _export_history(m, pack) if history else {"skipped": True}
-                    man["bridge"] = _export_bridge(m, pack, tmp)
+                    for key, fn in (("mcp", lambda: _export_mcp(m, skip)),
+                                    ("plugins", lambda: _export_plugins(m, skip)),
+                                    ("claude", lambda: _export_claude(m, pack, skip))):
+                        p.check()
+                        p.step(key, 1)
+                        man[key] = fn()
+                        p.tick()
+                    man["history"] = {"skipped": True} if "history" in skip else \
+                        _export_history(m, pack, skip, p)
+                    p.check()
+                    p.step("bridge", 1)
+                    man["bridge"] = _export_bridge(m, pack, tmp, skip)
+                    p.tick()
                 pack.data("manifest.json", json.dumps(man, indent=1).encode())
     except BaseException:
         try:
@@ -756,16 +811,21 @@ def export(out=None, m=None, history=True, only=None, log=print) -> str:
     return out
 
 
-def _export_repos(m, pack, log, only=None):
+def _export_repos(m, pack, log, only=None, skip=(), p=None):
+    p = p or Progress()
     repos = []
-    found = _find_repos(m.base)
+    every = found = _find_repos(m.base)
     if only:
         want = [o.strip("/") for o in only]
         found = [rel for rel in found if any(rel == o or rel.startswith(o + "/") for o in want)]
         missing = [o for o in want if not any(rel == o or rel.startswith(o + "/") for rel in found)]
         if missing:
             raise SystemExit(f"no repo under {m.base} at: {', '.join(missing)}")
+    found = [rel for rel in found if not _skips(skip, "repos", rel)]
+    p.step("repos", len(found))
     for i, rel in enumerate(found):
+        p.check()
+        p.item(rel)
         try:
             r = _export_repo(m, rel, f"repos/{i:04d}", pack)
         except Exception as e:                                 # one repo never sinks the rest
@@ -777,10 +837,11 @@ def _export_repos(m, pack, log, only=None):
             bits.append("uncommitted changes")
         log(f"  {rel}" + (f"  ({', '.join(bits)})" if bits else "") +
             (f"  ✘ {r['error']}" if r.get("error") else ""))
+        p.tick(rel)
         repos.append(r)
-    tops = {rel.split(os.sep)[0] for rel in found}
+    tops = {rel.split(os.sep)[0] for rel in every}
     loose = []
-    if "." not in found and not only:
+    if "." not in every and not only:
         for name in sorted(os.listdir(m.base)):
             full = os.path.join(m.base, name)
             if name.startswith(".") or name in tops:
@@ -789,56 +850,87 @@ def _export_repos(m, pack, log, only=None):
     return repos, loose
 
 
-def _export_mcp(m) -> dict:
+def _mcp_ref(name, proj, base) -> str:
+    """How an MCP server is named in a list: bare for the user scope, with its
+    project (relative to BASE_PATH when under it) for a local one."""
+    if proj is None:
+        return name
+    return f"{name} ({os.path.relpath(proj, base) if proj.startswith(base + os.sep) else proj})"
+
+
+def _export_mcp(m, skip=()) -> dict:
     cj = _read_json(m.claude_json) or {}
-    local = {p: v["mcpServers"] for p, v in (cj.get("projects") or {}).items()
-             if isinstance(v, dict) and isinstance(v.get("mcpServers"), dict) and v["mcpServers"]}
-    return {"user": cj.get("mcpServers") or {}, "local": local}
+    user = {n: c for n, c in (cj.get("mcpServers") or {}).items()
+            if not _skips(skip, "mcp", _mcp_ref(n, None, m.base))}
+    local = {}
+    for proj, v in (cj.get("projects") or {}).items():
+        if isinstance(v, dict) and isinstance(v.get("mcpServers"), dict):
+            kept = {n: c for n, c in v["mcpServers"].items()
+                    if not _skips(skip, "mcp", _mcp_ref(n, proj, m.base))}
+            if kept:
+                local[proj] = kept
+    return {"user": user, "local": local}
 
 
-def _export_claude(m, pack) -> dict:
+def _export_claude(m, pack, skip=()) -> dict:
     c = {"dirs": {}, "home_files": []}
+    if "claude" in skip:
+        return c
     settings = _read_json(os.path.join(m.claude, "settings.json"))
-    if isinstance(settings, dict):
+    if isinstance(settings, dict) and not _skips(skip, "claude", "settings.json"):
         c["settings"] = settings
     for name in ("CLAUDE.md", "keybindings.json"):
+        if _skips(skip, "claude", name):
+            continue
         if pack.file(os.path.join(m.claude, name), f"claude/{name}") or \
                 os.path.isfile(os.path.join(m.claude, name)):
             c.setdefault("files", []).append(name)
     for d in _CLAUDE_DIRS:
         src = os.path.join(m.claude, d)
         if os.path.isdir(src):
-            n, _ = pack.tree(src, f"claude/{d}", skip=lambda rel: rel.split("/")[0] == _SYNCED)
+            n, _ = pack.tree(src, f"claude/{d}", skip=lambda rel, d=d: rel.split("/")[0] == _SYNCED
+                             or _skips(skip, "claude", f"{d}/{rel.split('/')[0]}"))
             if n:
                 c["dirs"][d] = n
     for rel in _command_paths(settings, m.home, m.base):
-        if pack.file(os.path.join(m.home, rel), f"home/{rel}"):
+        if not _skips(skip, "claude", f"~/{rel}") and \
+                pack.file(os.path.join(m.home, rel), f"home/{rel}"):
             c["home_files"].append(rel)
     return c
 
 
-def _export_history(m, pack) -> dict:
+def _export_history(m, pack, skip=(), p=None) -> dict:
+    p = p or Progress()
     h = {"files": 0, "bytes": 0, "transcripts": 0, "prompts": False}
-    if os.path.isdir(m.projects):
-        h["files"], h["bytes"] = pack.tree(m.projects, "claude/projects")
-        for d in os.listdir(m.projects):
-            full = os.path.join(m.projects, d)
-            if os.path.isdir(full):
-                h["transcripts"] += sum(1 for n in os.listdir(full) if n.endswith(".jsonl"))
-    h["prompts"] = bool(pack.file(os.path.join(m.claude, "history.jsonl"), "claude/history.jsonl"))
+    dirs = sorted(d for d in os.listdir(m.projects) if os.path.isdir(os.path.join(m.projects, d))
+                  and not _skips(skip, "history", d)) if os.path.isdir(m.projects) else []
+    p.step("history", len(dirs))
+    for d in dirs:
+        p.check()
+        full = os.path.join(m.projects, d)
+        p.item(d)
+        n, size = pack.tree(full, f"claude/projects/{d}")
+        h["files"] += n
+        h["bytes"] += size
+        h["transcripts"] += sum(1 for x in os.listdir(full) if x.endswith(".jsonl"))
+        p.tick(d)
+    if not _skips(skip, "history", "prompts"):
+        h["prompts"] = bool(pack.file(os.path.join(m.claude, "history.jsonl"),
+                                      "claude/history.jsonl"))
     return h
 
 
-def _export_bridge(m, pack, tmp) -> dict:
-    b = {"env": bool(pack.file(m.env_file, "bridge/env")), "state": [], "mystical": [],
-         "db": False}
+def _export_bridge(m, pack, tmp, skip=()) -> dict:
+    b = {"env": not _skips(skip, "bridge", ".env") and bool(pack.file(m.env_file, "bridge/env")),
+         "state": [], "mystical": [], "db": False}
     for name in _STATE_FILES:
-        if pack.file(os.path.join(m.state, name), f"bridge/state/{name}"):
+        if not _skips(skip, "bridge", name) and \
+                pack.file(os.path.join(m.state, name), f"bridge/state/{name}"):
             b["state"].append(name)
-    for name, p in (("freeagents.json", m.freeagents), ("weather.json", m.weather)):
-        if pack.file(p, f"bridge/mystical/{name}"):
+    for name, path in (("freeagents.json", m.freeagents), ("weather.json", m.weather)):
+        if not _skips(skip, "bridge", name) and pack.file(path, f"bridge/mystical/{name}"):
             b["mystical"].append(name)
-    if os.path.isfile(m.db):
+    if os.path.isfile(m.db) and not _skips(skip, "bridge", "bridge.db"):
         snap = os.path.join(tmp, "bridge.db")
         src, dst = sqlite3.connect(m.db, timeout=30), sqlite3.connect(snap)
         try:
@@ -848,6 +940,151 @@ def _export_bridge(m, pack, tmp) -> dict:
             dst.close()
         b["db"] = bool(pack.file(snap, "bridge/bridge.db"))
     return b
+
+
+def _repo_facts(m, rel) -> dict:
+    """What one repo would carry, read without building anything: the EXPORT
+    list's chips. Same read-only git as export (--no-optional-locks)."""
+    path = m.base if rel == "." else os.path.join(m.base, rel)
+    rc, n, _ = _git(path, "rev-list", "--count", "--branches", "--tags", "--not", "--remotes")
+    rc2, st, _ = _git(path, "status", "--porcelain=v1", "--untracked-files=normal")
+    lines = st.splitlines() if rc2 == 0 else []
+    rc3, stashes, _ = _git(path, "stash", "list", "--format=%H")
+    rc4, ig, _ = _git(path, "ls-files", "-z", "--others", "--ignored", "--exclude-standard",
+                      "--directory")
+    config = sum(1 for x in (ig.split("\0") if rc4 == 0 else [])
+                 if x and not x.endswith("/") and _is_config(x) and not x.startswith(".mystical/"))
+    config += sum(1 for x in lines if x.startswith("?? ") and _is_config(x[3:]))
+    extra = 0
+    for root, _, names in os.walk(os.path.join(path, ".mystical")):
+        for name in names:
+            if not name.endswith(".log"):
+                try:
+                    extra += os.path.getsize(os.path.join(root, name))
+                except OSError:
+                    pass
+    return {"unpushed": int(n.strip() or 0) if rc == 0 else 0,
+            "uncommitted": any(not x.startswith("??") for x in lines),
+            "untracked": sum(1 for x in lines if x.startswith("??")),
+            "stashes": len(stashes.split()) if rc3 == 0 else 0,
+            "worktrees": sum(1 for w in _worktrees(path) if os.path.isdir(w["path"])),
+            "config": config, "mystical": extra, "remote": bool(_remotes(path))}
+
+
+def _transcript_cwd(folder):
+    """The cwd a transcript folder's sessions ran in, from the first that says."""
+    for n in sorted(os.listdir(folder)):
+        if not n.endswith(".jsonl"):
+            continue
+        try:
+            with open(os.path.join(folder, n), encoding="utf-8", errors="replace") as f:
+                for i, line in enumerate(f):
+                    if i > 200:
+                        break
+                    if '"cwd"' not in line:
+                        continue
+                    try:
+                        o = json.loads(line)
+                    except ValueError:
+                        continue
+                    if isinstance(o, dict) and isinstance(o.get("cwd"), str):
+                        return o["cwd"]
+        except OSError:
+            continue
+    return None
+
+
+def _tree_size(path) -> "tuple[int, int]":
+    """(transcripts, bytes) in a ~/.claude/projects folder."""
+    size = 0
+    for root, _, names in os.walk(path):
+        for n in names:
+            try:
+                size += os.path.getsize(os.path.join(root, n))
+            except OSError:
+                pass
+    return sum(1 for n in os.listdir(path) if n.endswith(".jsonl")), size
+
+
+def _oauth(cfg) -> bool:
+    """An HTTP server with no Authorization header of its own signs in with
+    OAuth, and that login stays on the machine it was made on."""
+    return isinstance(cfg, dict) and cfg.get("type") in ("http", "sse") and not any(
+        k.lower() == "authorization" for k in (cfg.get("headers") or {}))
+
+
+def _short(path, m) -> str:
+    """A path as the lists show it: under BASE_PATH relative, under home with ~."""
+    if path == m.base or path.startswith(m.base + os.sep):
+        return os.path.relpath(path, m.base)
+    if path == m.home or path.startswith(m.home + os.sep):
+        return "~" + path[len(m.home):]
+    return path
+
+
+def plan(m=None) -> dict:
+    """What export would carry, item by item, for the dashboard's EXPORT list.
+    Every item's ref is what `skip` takes to leave it out."""
+    m = m or Machine()
+    rels = _find_repos(m.base)
+    with ThreadPoolExecutor(_CLONE_WORKERS) as pool:
+        facts = list(pool.map(lambda rel: _repo_facts(m, rel), rels))
+    tops = {rel.split(os.sep)[0] for rel in rels}
+    loose = [] if "." in rels else [n for n in sorted(os.listdir(m.base))
+                                    if not n.startswith(".") and n not in tops]
+
+    mx = _export_mcp(m)
+    mcp = [{"ref": _mcp_ref(n, None, m.base), "oauth": _oauth(c)} for n, c in sorted(mx["user"].items())]
+    mcp += [{"ref": _mcp_ref(n, proj, m.base), "oauth": _oauth(c)}
+            for proj, servers in sorted(mx["local"].items()) for n, c in sorted(servers.items())]
+
+    px = _export_plugins(m)
+    plugins = [{"ref": f"marketplace {x['name']}", "marketplace": True} for x in px["marketplaces"]]
+    plugins += [{"ref": x["id"], "enabled": x["enabled"]} for x in px["plugins"]]
+
+    claude = []
+    settings = _read_json(os.path.join(m.claude, "settings.json"))
+    if isinstance(settings, dict):
+        claude.append({"ref": "settings.json", "keys": len(settings)})
+    claude += [{"ref": n} for n in ("CLAUDE.md", "keybindings.json")
+               if os.path.isfile(os.path.join(m.claude, n))]
+    for d in _CLAUDE_DIRS:
+        src = os.path.join(m.claude, d)
+        if os.path.isdir(src):
+            claude += [{"ref": f"{d}/{n}", "dir": d} for n in sorted(os.listdir(src)) if n != _SYNCED]
+    claude += [{"ref": f"~/{rel}", "hook": True} for rel in _command_paths(settings, m.home, m.base)]
+
+    history = []
+    if os.path.isdir(m.projects):
+        for d in sorted(os.listdir(m.projects)):
+            full = os.path.join(m.projects, d)
+            if os.path.isdir(full):
+                n, size = _tree_size(full)
+                cwd = _transcript_cwd(full)
+                history.append({"ref": d, "label": _short(cwd, m) if cwd and _enc(cwd) == d else d,
+                                "transcripts": n, "bytes": size})
+    if os.path.isfile(os.path.join(m.claude, "history.jsonl")):
+        history.append({"ref": "prompts", "label": "prompt history",
+                        "bytes": os.path.getsize(os.path.join(m.claude, "history.jsonl"))})
+
+    bridge = []
+    if os.path.isfile(m.env_file):
+        with open(m.env_file, encoding="utf-8", errors="replace") as f:
+            keys = [k for k, _ in _parse_env(f.read())]
+        bridge.append({"ref": ".env", "keys": sum(1 for k in keys if k not in _ENV_LOCAL),
+                       "local": sum(1 for k in keys if k in _ENV_LOCAL)})
+    bridge += [{"ref": n} for n in _STATE_FILES if os.path.isfile(os.path.join(m.state, n))]
+    bridge += [{"ref": n} for n, path in (("freeagents.json", m.freeagents),
+                                         ("weather.json", m.weather)) if os.path.isfile(path)]
+    if os.path.isfile(m.db):
+        bridge.append({"ref": "bridge.db", "bytes": os.path.getsize(m.db)})
+
+    return {"host": socket.gethostname().split(".")[0], "base": m.base, "out": default_out(m),
+            "loose": loose, "sections": [
+                {"key": "repos", "items": [{"ref": r, **f} for r, f in zip(rels, facts)]},
+                {"key": "mcp", "items": mcp}, {"key": "plugins", "items": plugins},
+                {"key": "claude", "items": claude}, {"key": "history", "items": history},
+                {"key": "bridge", "items": bridge}]}
 
 
 def _print_export(man, out, log) -> None:
@@ -896,16 +1133,52 @@ def _print_export(man, out, log) -> None:
 # Import
 # ---------------------------------------------------------------------------
 
-def _extract(path, dest) -> None:
-    with tarfile.open(path, "r:gz") as tar:
-        if hasattr(tarfile, "data_filter"):
-            tar.extractall(dest, filter="data")
-            return
-        for mem in tar.getmembers():                  # Pythons without extraction filters
-            name = mem.name
-            if name.startswith("/") or ".." in name.split("/") or not (mem.isfile() or mem.isdir()):
-                raise ValueError(f"refusing archive member {name!r}")
-        tar.extractall(dest)
+def _extract(path, dest, p=None) -> None:
+    """Member by member, so a cancel lands between files and the compressed bytes
+    read so far are a true progress reading. dest is always a folder of our own
+    that the caller removes on failure, so a refused member mid-way leaves
+    nothing behind."""
+    p = p or Progress()
+    total = os.path.getsize(path)
+    with open(path, "rb") as raw, tarfile.open(fileobj=raw, mode="r|gz") as tar:
+        for mem in tar:
+            p.check()
+            if hasattr(tarfile, "data_filter"):
+                tar.extract(mem, dest, filter="data")
+            else:                                   # Pythons without extraction filters
+                name = mem.name
+                if name.startswith("/") or ".." in name.split("/") or \
+                        not (mem.isfile() or mem.isdir()):
+                    raise ValueError(f"refusing archive member {name!r}")
+                tar.extract(mem, dest)
+            p.bytes(raw.tell(), total)
+
+
+def unpack(path, dest, progress=None) -> dict:
+    """READ's first half: the file unpacked into dest. Returns its manifest."""
+    _extract(path, dest, progress)
+    man = _read_json(os.path.join(dest, "manifest.json"))
+    if not isinstance(man, dict) or man.get("format") != FORMAT:
+        raise SystemExit(f"{path}: not a mystical export (or from a newer mystical)")
+    return man
+
+
+def _replay(root, man, m, dry, log, skip=(), progress=None) -> "_Import":
+    imp = _Import(root, man, m, dry, log, skip, progress)
+    src = man["from"]
+    log(f"{'dry run — nothing changes. ' if dry else ''}importing {src.get('host')} "
+        f"({src.get('base')}) into {m.base}")
+    try:
+        # Plugins before claude: a hook or status line may run a plugin's script.
+        for step in (imp.repos, imp.plugins, imp.claude, imp.mcp, imp.history, imp.bridge):
+            imp.p.check()
+            try:
+                step()
+            except Exception as e:                  # one broken step never sinks the rest
+                imp.note(step.__name__, "failed", f"{type(e).__name__}: {e}")
+    finally:
+        imp.finish()                                # a cancelled import still records what got in
+    return imp
 
 
 def import_file(path, m=None, dry=False, log=print) -> dict:
@@ -913,27 +1186,39 @@ def import_file(path, m=None, dry=False, log=print) -> dict:
     m = m or Machine()
     path = os.path.abspath(path)
     with tempfile.TemporaryDirectory(prefix="mystical-import-") as root:
-        _extract(path, root)
-        man = _read_json(os.path.join(root, "manifest.json"))
-        if not isinstance(man, dict) or man.get("format") != FORMAT:
-            raise SystemExit(f"{path}: not a mystical export (or from a newer mystical)")
-        imp = _Import(root, man, m, dry, log)
-        src = man["from"]
-        log(f"{'dry run — nothing changes. ' if dry else ''}importing {src.get('host')} "
-            f"({src.get('base')}) into {m.base}")
-        # Plugins before claude: a hook or status line may run a plugin's script.
-        for step in (imp.repos, imp.plugins, imp.claude, imp.mcp, imp.history, imp.bridge):
-            try:
-                step()
-            except Exception as e:                  # one broken step never sinks the rest
-                imp.note(step.__name__, "failed", f"{type(e).__name__}: {e}")
-        imp.finish()
-        return imp.rep
+        return _replay(root, unpack(path, root), m, dry, log).rep
+
+
+def inspect(root, m=None, progress=None) -> dict:
+    """READ's second half: the dry run over an unpacked file, item by item, for
+    the dashboard's IMPORT list. Each item says what it would do here."""
+    m = m or Machine()
+    man = _read_json(os.path.join(root, "manifest.json")) or {}
+    imp = _replay(root, man, m, True, lambda *a: None, progress=progress)
+    return {"from": man.get("from") or {}, "only": man.get("only"),
+            "sections": imp.items(), "report": imp.rep}
+
+
+def apply(root, m=None, skip=(), progress=None, log=print) -> dict:
+    """IMPORT: an unpacked file replayed for real, minus `skip`."""
+    m = m or Machine()
+    man = _read_json(os.path.join(root, "manifest.json")) or {}
+    imp = _replay(root, man, m, False, log, skip, progress)
+    return {"report": imp.rep, "park": imp.park, "next": next_steps(imp.rep, imp.park)}
+
+
+# A note's key, as the one-word outcome the IMPORT list shows beside an item.
+_DO = {"clone": "clone", "cloned": "clone", "present": "present", "skipped": "skip",
+       "failed": "fail", "add": "add", "added": "add", "left behind": "behind",
+       "kept": "keep", "parked": "park", "settings added": "merge", "state added": "add",
+       "state merged": "merge", ".env added": "merge"}
 
 
 class _Import:
-    def __init__(self, root, man, m, dry, log):
+    def __init__(self, root, man, m, dry, log, skip=(), progress=None):
         self.root, self.man, self.m, self.dry, self.log = root, man, m, dry, log
+        self.skip, self.p = set(skip), progress or Progress()
+        self.outcome, self.facts = {}, {}
         src = man.get("from") or {}
         self.host = _slug(src.get("host") or "old")
         self.remap = Remap([(b, m.base) for b in src.get("bases") or [src.get("base")]] +
@@ -944,9 +1229,16 @@ class _Import:
         self._lock = threading.Lock()
         self._https = False
 
-    def note(self, section, key, item) -> None:
+    def note(self, section, key, item, ref=None) -> None:
+        """One line of the report. `ref` names the list item it is the outcome of."""
         with self._lock:
             self.rep.setdefault(section, {}).setdefault(key, []).append(item)
+            if ref is not None:
+                self.outcome[(section, ref)] = _DO.get(key, key)
+        self.p.line(f"{section}: {key} {item}")
+
+    def skips(self, section, ref=None) -> bool:
+        return _skips(self.skip, section, ref)
 
     def arc(self, rel):
         return os.path.join(self.root, rel) if rel else None
@@ -954,7 +1246,8 @@ class _Import:
     # -- repos -------------------------------------------------------------
 
     def repos(self):
-        items = self.man.get("repos") or []
+        items = [r for r in self.man.get("repos") or [] if not self.skips("repos", r.get("path"))]
+        self.p.step("repos", len(items))
         urls = [u for r in items for u in (r.get("remotes") or {}).values()]
         if not self.dry and any(_GH_SSH.match(u) for u in urls) and not _github_ssh_ok():
             self._https = True
@@ -972,13 +1265,20 @@ class _Import:
 
     def _repo_safe(self, r):
         try:
+            self.p.check()
+        except Cancelled:
+            return                                  # the pool drains; _replay raises it after
+        self.p.item(r.get("path"))
+        try:
             self._repo(r)
         except Exception as e:
-            self.note("repos", "failed", f"{r.get('path')}: {type(e).__name__}: {e}")
+            self.note("repos", "failed", f"{r.get('path')}: {type(e).__name__}: {e}",
+                      ref=r.get("path"))
             self._park_repo(r)
         if not self.dry:
             with self._lock:
                 self.log(f"  {r.get('path')}")
+        self.p.tick(r.get("path"))
 
     def _transport(self, url):
         mt = _GH_SSH.match(url or "")
@@ -988,12 +1288,13 @@ class _Import:
         rel = r["path"]
         dest = self.m.base if rel == "." else os.path.join(self.m.base, rel)
         if r.get("error"):
-            self.note("repos", "failed", f"{rel}: the export couldn't read it ({r['error']})")
+            self.note("repos", "failed", f"{rel}: the export couldn't read it ({r['error']})",
+                      ref=rel)
             return
         if rel == "." and not os.path.exists(os.path.join(dest, ".git")):
             # The old BASE_PATH was itself a repo. Cloning into this one would put
             # it around every other repo arriving here, so it waits for a hand.
-            self.note("repos", "skipped", "BASE_PATH itself was a repo on the old machine")
+            self.note("repos", "skipped", "BASE_PATH itself was a repo on the old machine", ref=rel)
             self._park_repo(r)
             return
         bundle = self.arc(r.get("bundle"))
@@ -1001,22 +1302,22 @@ class _Import:
         if os.path.exists(os.path.join(dest, ".git")) or os.path.isfile(dest) or \
                 (os.path.isdir(dest) and os.listdir(dest)):
             if not self._same_repo(dest, r):
-                self.note("repos", "skipped", f"{rel}: something else is already there")
+                self.note("repos", "skipped", f"{rel}: something else is already there", ref=rel)
                 self._park_repo(r)
                 return
-            self.note("repos", "present", rel)
+            self.note("repos", "present", rel, ref=rel)
         elif self.dry:
             self.note("repos", "clone", rel + (f" (+{r['unpushed']} commit(s) from the file)"
-                                               if r.get("unpushed") else ""))
+                                               if r.get("unpushed") else ""), ref=rel)
             return
         else:
             ok, how = self._clone(r, dest, bundle)
             if not ok:
-                self.note("repos", "failed", f"{rel}: {how}")
+                self.note("repos", "failed", f"{rel}: {how}", ref=rel)
                 self._park_repo(r)
                 return
             fresh = True
-            self.note("repos", "cloned", rel + (f" ({how})" if how else ""))
+            self.note("repos", "cloned", rel + (f" ({how})" if how else ""), ref=rel)
         if self.dry:
             return
 
@@ -1256,7 +1557,10 @@ class _Import:
 
     def claude(self):
         c = self.man.get("claude") or {}
+        self.p.step("claude", 1)
         for name in c.get("files") or []:
+            if self.skips("claude", name):
+                continue
             src = os.path.join(self.root, "claude", name)
             dst = os.path.join(self.m.claude, name)
             if not os.path.isfile(src):
@@ -1268,7 +1572,7 @@ class _Import:
                     os.makedirs(self.m.claude, exist_ok=True)
                     with open(dst, "w", encoding="utf-8") as f:
                         f.write(text)
-                self.note("claude", "added", name)
+                self.note("claude", "added", name, ref=name)
             else:
                 with open(dst, encoding="utf-8", errors="replace") as f:
                     same = f.read() == text
@@ -1279,29 +1583,39 @@ class _Import:
                         with open(os.path.join(self.m.claude, side), "w", encoding="utf-8") as f:
                             f.write(text)
                     self.note("claude", "kept", f"{name} (this machine's; the old one is "
-                              f"~/.claude/{side})")
+                              f"~/.claude/{side})", ref=name)
+                else:
+                    self.outcome[("claude", name)] = "present"
         for d, _ in (c.get("dirs") or {}).items():
             src_root = os.path.join(self.root, "claude", d)
             if not os.path.isdir(src_root):
                 continue
             for name in sorted(os.listdir(src_root)):
+                ref = f"{d}/{name}"
+                if self.skips("claude", ref):
+                    continue
                 dst = os.path.join(self.m.claude, d, name)
                 if os.path.lexists(dst):
-                    self.note("claude", "present", f"{d}/{name}")
+                    self.note("claude", "present", ref, ref=ref)
                     continue
                 if not self.dry:
                     self._copy(os.path.join(src_root, name), dst)
-                self.note("claude", "added", f"{d}/{name}")
+                self.note("claude", "added", ref, ref=ref)
         for rel in c.get("home_files") or []:
+            ref = f"~/{rel}"
+            if self.skips("claude", ref):
+                continue
             dst = os.path.join(self.m.home, rel)
             if os.path.lexists(dst):
+                self.outcome[("claude", ref)] = "present"
                 continue
             if not self.dry:
                 self._copy(os.path.join(self.root, "home", rel), dst)
-            self.note("claude", "added", f"~/{rel}")
+            self.note("claude", "added", ref, ref=ref)
         # Last, so a hook's script is already in place when _runnable looks for it.
-        if isinstance(c.get("settings"), dict):
+        if isinstance(c.get("settings"), dict) and not self.skips("claude", "settings.json"):
             self._settings(self.remap.obj(c["settings"]))
+        self.p.tick()
 
     def _will_exist(self, path) -> bool:
         """In a dry run nothing was copied: count what this import would bring."""
@@ -1450,7 +1764,9 @@ class _Import:
             if not self.dry:
                 _backup(path, self.stamp)
                 _write_private(path, (json.dumps(mine, indent=2) + "\n").encode())
-            self.note("claude", "settings added", ", ".join(sorted(set(added))))
+            self.note("claude", "settings added", ", ".join(sorted(set(added))), ref="settings.json")
+        else:
+            self.outcome[("claude", "settings.json")] = "present"
         if conflicts:
             self.note("claude", "settings kept (this machine's)", ", ".join(sorted(set(conflicts))))
 
@@ -1460,126 +1776,126 @@ class _Import:
         x = self.man.get("mcp") or {}
         cj = _read_json(self.m.claude_json) or {}
         have = set(cj.get("mcpServers") or {})
-        for name, cfg in sorted((x.get("user") or {}).items()):
+        user = {n: c for n, c in (x.get("user") or {}).items() if not self.skips("mcp", n)}
+        local = {proj: {n: c for n, c in servers.items()
+                        if not self.skips("mcp", _mcp_ref(n, self.remap.text(proj), self.m.base))}
+                 for proj, servers in (x.get("local") or {}).items()}
+        self.p.step("mcp", len(user) + sum(len(v) for v in local.values()))
+        for name, cfg in sorted(user.items()):
+            self.p.check()
             if name in have:
-                self.note("mcp", "present", name)
+                self.note("mcp", "present", name, ref=name)
             else:
                 self._add_mcp(name, self.remap.obj(cfg), "user", self.m.home, name)
+            self.p.tick()
         projects = cj.get("projects") or {}
-        for old_proj, servers in sorted((x.get("local") or {}).items()):
+        for old_proj, servers in sorted(local.items()):
             proj = self.remap.text(old_proj)
-            rel = os.path.relpath(proj, self.m.base) if proj.startswith(self.m.base) else proj
             here = set(((projects.get(proj) or {}).get("mcpServers") or {}))
             for name, cfg in sorted(servers.items()):
-                label = f"{name} ({rel})"
+                self.p.check()
+                label = _mcp_ref(name, proj, self.m.base)
                 if not (os.path.isdir(proj) or self._will_exist(proj + "/")):
-                    self.note("mcp", "left behind", f"{label}: that folder isn't here")
+                    self.note("mcp", "left behind", f"{label}: that folder isn't here", ref=label)
                 elif name in here:
-                    self.note("mcp", "present", label)
+                    self.note("mcp", "present", label, ref=label)
                 else:
                     self._add_mcp(name, self.remap.obj(cfg), "local", proj, label)
+                self.p.tick()
 
     def _add_mcp(self, name, cfg, scope, cwd, label):
         if not isinstance(cfg, dict) or name.startswith("-"):
             return
         if self.dry:
-            self.note("mcp", "add", label)
+            self.note("mcp", "add", label, ref=label)
             return
         rc, out, err = _claude(["mcp", "add-json", name, json.dumps(cfg), "--scope", scope],
                                cwd=cwd)
         if rc != 0:
-            self.note("mcp", "failed", f"{label}: {_last(err or out) or f'exit {rc}'}")
+            self.note("mcp", "failed", f"{label}: {_last(err or out) or f'exit {rc}'}", ref=label)
             return
         cmd = cfg.get("command")
         if isinstance(cmd, str) and cmd and not (
                 shutil.which(cmd) or os.access(_home(cmd, self.m.home), os.X_OK)):
-            self.note("mcp", "added", f"{label} — but its command {cmd} isn't on this machine")
+            self.note("mcp", "added", f"{label} — but its command {cmd} isn't on this machine",
+                      ref=label)
         else:
-            self.note("mcp", "added", label)
-        if cfg.get("type") in ("http", "sse") and not any(
-                k.lower() == "authorization" for k in (cfg.get("headers") or {})):
+            self.note("mcp", "added", label, ref=label)
+        if _oauth(cfg):
             self.note("mcp", "may need a login", label)
 
     def plugins(self):
         x = self.man.get("plugins") or {}
-        if not (x.get("marketplaces") or x.get("plugins")):
+        mks = [mk for mk in x.get("marketplaces") or []
+               if not self.skips("plugins", f"marketplace {mk['name']}")]
+        pls = [p for p in x.get("plugins") or [] if not self.skips("plugins", p["id"])]
+        self.p.step("plugins", len(mks) + len(pls))
+        if not (mks or pls):
             return
         have_mk = {mk.get("name") for mk in
                    (_claude_json(["plugin", "marketplace", "list", "--json"]) or [])}
-        for mk in x.get("marketplaces") or []:
+        for mk in mks:
+            self.p.check()
+            ref = f"marketplace {mk['name']}"
+            self.p.tick()
             if mk["name"] in have_mk:
-                self.note("plugins", "present", f"marketplace {mk['name']}")
+                self.note("plugins", "present", ref, ref=ref)
                 continue
             src = self.remap.text(mk["source"])
             if self.dry:
-                self.note("plugins", "add", f"marketplace {mk['name']}")
+                self.note("plugins", "add", ref, ref=ref)
                 continue
             rc, out, err = _claude(["plugin", "marketplace", "add", src], cwd=self.m.home)
-            self.note("plugins", "added" if rc == 0 else "failed", f"marketplace {mk['name']}" +
-                      ("" if rc == 0 else f": {_last(err or out)}"))
+            self.note("plugins", "added" if rc == 0 else "failed", ref +
+                      ("" if rc == 0 else f": {_last(err or out)}"), ref=ref)
         have = {p.get("id") for p in (_claude_json(["plugin", "list", "--json"]) or [])}
-        for p in x.get("plugins") or []:
+        for p in pls:
+            self.p.check()
+            self.p.tick()
             if p["id"] in have:
-                self.note("plugins", "present", p["id"])
+                self.note("plugins", "present", p["id"], ref=p["id"])
                 continue
             scope = p["scope"] if p["scope"] in ("user", "project", "local") else "user"
             cwd = self.m.home if scope == "user" else self.remap.text(p.get("project") or "")
             if not cwd or not os.path.isdir(cwd):
-                self.note("plugins", "left behind", f"{p['id']}: its project isn't here")
+                self.note("plugins", "left behind", f"{p['id']}: its project isn't here", ref=p["id"])
                 continue
             if self.dry:
-                self.note("plugins", "add", p["id"])
+                self.note("plugins", "add", p["id"], ref=p["id"])
                 continue
             rc, out, err = _claude(["plugin", "install", p["id"], "--scope", scope], cwd=cwd)
             if rc != 0:
-                self.note("plugins", "failed", f"{p['id']}: {_last(err or out)}")
+                self.note("plugins", "failed", f"{p['id']}: {_last(err or out)}", ref=p["id"])
                 continue
             if not p.get("enabled", True):
                 _claude(["plugin", "disable", p["id"]], cwd=cwd)
-            self.note("plugins", "added", p["id"])
+            self.note("plugins", "added", p["id"], ref=p["id"])
 
     # -- history -----------------------------------------------------------
 
     def history(self):
         src = os.path.join(self.root, "claude", "projects")
-        if os.path.isdir(src):
-            for d in sorted(os.listdir(src)):
-                sd = os.path.join(src, d)
-                if os.path.isdir(sd):
-                    self._history_dir(sd, os.path.join(self.m.projects, self._folder(sd, d)))
-        self._prompts()
+        dirs = [d for d in sorted(os.listdir(src)) if os.path.isdir(os.path.join(src, d))
+                and not self.skips("history", d)] if os.path.isdir(src) else []
+        self.p.step("history", len(dirs))
+        for d in dirs:
+            self.p.check()
+            sd = os.path.join(src, d)
+            self._history_dir(sd, os.path.join(self.m.projects, self._folder(sd, d)), d)
+            self.p.tick()
+        if not self.skips("history", "prompts"):
+            self._prompts()
 
     def _folder(self, sd, name) -> str:
         """Where a transcript folder goes. Named from the cwd its transcripts record
         when that cwd encodes to the old name; by encoded prefix otherwise (memory-
         only folders, and Claude's shortened names for very long paths)."""
-        cwd = None
-        for n in sorted(os.listdir(sd)):
-            if not n.endswith(".jsonl"):
-                continue
-            try:
-                with open(os.path.join(sd, n), encoding="utf-8", errors="replace") as f:
-                    for i, line in enumerate(f):
-                        if i > 200:
-                            break
-                        if '"cwd"' not in line:
-                            continue
-                        try:
-                            o = json.loads(line)
-                        except ValueError:
-                            continue
-                        if isinstance(o, dict) and isinstance(o.get("cwd"), str):
-                            cwd = o["cwd"]
-                            break
-            except OSError:
-                continue
-            if cwd:
-                break
+        cwd = _transcript_cwd(sd)
         if cwd and _enc(cwd) == name:
             return _enc(self.remap.text(cwd))
         return self.remap.folder(name)
 
-    def _history_dir(self, src, dst):
+    def _history_dir(self, src, dst, ref=None):
         copied = present = 0
         for root, _, names in os.walk(src):
             for n in sorted(names):
@@ -1602,6 +1918,8 @@ class _Import:
             self.note("history", "transcripts", copied)
         if present:
             self.note("history", "present", present)
+        if ref is not None:
+            self.outcome[("history", ref)] = "add" if copied else "present"
 
     def _rewrite(self, src, dst):
         """Copy, swapping old paths line by line (transcripts can be large)."""
@@ -1644,6 +1962,7 @@ class _Import:
                 mine = [x.rstrip("\n") for x in f if x.strip()]
         have = set(mine)
         new = [x for x in old if x not in have]
+        self.outcome[("history", "prompts")] = "add" if new else "present"
         if not new:
             return
         self.note("history", "prompts", len(new))
@@ -1673,17 +1992,21 @@ class _Import:
 
     def bridge(self):
         b = self.man.get("bridge") or {}
-        if b.get("env"):
+        self.p.step("bridge", 1)
+        if b.get("env") and not self.skips("bridge", ".env"):
             with open(os.path.join(self.root, "bridge", "env"), encoding="utf-8",
                       errors="replace") as f:
                 self._env(f.read())
         for name in b.get("state") or []:
-            self._state(name, os.path.join(self.root, "bridge", "state", name),
-                        os.path.join(self.m.state, name))
+            if not self.skips("bridge", name):
+                self._state(name, os.path.join(self.root, "bridge", "state", name),
+                            os.path.join(self.m.state, name))
         for name in b.get("mystical") or []:
-            dst = self.m.freeagents if name == "freeagents.json" else self.m.weather
-            self._state(name, os.path.join(self.root, "bridge", "mystical", name), dst)
-        if b.get("db"):
+            if not self.skips("bridge", name):
+                dst = self.m.freeagents if name == "freeagents.json" else self.m.weather
+                self._state(name, os.path.join(self.root, "bridge", "mystical", name), dst)
+        self.p.tick()
+        if b.get("db") and not self.skips("bridge", "bridge.db"):
             dst = os.path.join(self.park, "bridge.db")
             if not self.dry:
                 os.makedirs(self.park, exist_ok=True)
@@ -1692,7 +2015,7 @@ class _Import:
             # ponytail: parked, not merged. The conversations are already in the
             # transcripts above; what only the DB has (renamed titles, goals, turn
             # costs) needs a merge across two live schema versions, its own job.
-            self.note("bridge", "parked", f"the old bridge.db, at {dst}")
+            self.note("bridge", "parked", f"the old bridge.db, at {dst}", ref="bridge.db")
 
     def _env(self, text):
         old = _parse_env(text)
@@ -1723,6 +2046,8 @@ class _Import:
                      f"{time.strftime('%Y-%m-%d')}.\n")
             body += "".join(f"{k}={v}\n" for k, v in add)
             _write_private(path, body.encode())
+        self.facts[("bridge", ".env")] = {"add": len(add), "kept": len(kept), "behind": len(behind)}
+        self.outcome[("bridge", ".env")] = "merge" if add else "present"
         if add:
             self.note("bridge", ".env added", ", ".join(k for k, _ in add))
         if kept:
@@ -1744,10 +2069,11 @@ class _Import:
                     inst["enable"] = False
                     off.append(inst.get("name") or iid)
         mine = _read_json(dst)
+        self.outcome[("bridge", name)] = "present"
         if not isinstance(mine, dict):
             if not self.dry:
                 _write_json(dst, old)
-            self.note("bridge", "state added", name)
+            self.note("bridge", "state added", name, ref=name)
         else:
             added, conflicts = [], []
             _merge(mine, old, added, conflicts)
@@ -1755,8 +2081,9 @@ class _Import:
                 if not self.dry:
                     _backup(dst, self.stamp)
                     _write_json(dst, mine)
-                self.note("bridge", "state merged", name)
+                self.note("bridge", "state merged", name, ref=name)
         if off:
+            self.facts[("bridge", name)] = {"off": off}
             self.note("bridge", "rivendell (OFF)", ", ".join(off))
 
     # -- the report --------------------------------------------------------
@@ -1779,23 +2106,102 @@ class _Import:
                 shown = ", ".join(str(i) for i in items[:10])
                 more = f" … and {len(items) - 10} more" if len(items) > 10 else ""
                 log(f"  {key:<14} {len(items):>3}  {shown}{more}")
-        nxt = []
-        if self.rep.get("bridge", {}).get(".env added") or \
-                any(k in self.rep.get("bridge", {}) for k in ("state added", "state merged")):
-            nxt.append("Restart the bridge so the new .env and settings load.")
-        if self.rep.get("bridge", {}).get("rivendell (OFF)"):
-            nxt.append("Rivendell came over switched OFF. Turn it on (Settings ▸ PLUGINS) only "
-                       "once the old machine's bridge is stopped, or both will run its jobs.")
-        if self.rep.get("mcp", {}).get("may need a login"):
-            nxt.append("MCP servers that sign in with OAuth need it once more here: "
-                       "dashboard ▸ MCP ▸ re-authenticate.")
-        if not self.dry and (self.rep.get("repos", {}).get("parked") or
-                             self.rep.get("bridge", {}).get("parked")):
-            nxt.append(f"What wasn't applied is kept at {self.park} — nothing was dropped.")
+        nxt = next_steps(self.rep, self.park, self.dry)
         if nxt:
             log("")
             for n in nxt:
-                log(f"  → {n}")
+                log(f"  → {n['text']}")
+
+    # -- the dashboard's IMPORT list ------------------------------------------
+
+    def items(self) -> list:
+        """Every item the file holds, by the ref `skip` takes, with what it does
+        here (`do`, from this run's notes) and the facts its chips show."""
+        man = self.man
+
+        def do(section, ref):
+            return self.outcome.get((section, ref))
+
+        repos = []
+        for r in man.get("repos") or []:
+            cks = [r.get("main") or {}, *(r.get("worktrees") or [])]
+            files = [f for c in cks for f in c.get("files") or []]
+            repos.append({"ref": r["path"], "do": do("repos", r["path"]),
+                          "unpushed": r.get("unpushed") or 0, "stashes": len(r.get("stashes") or []),
+                          "worktrees": len(r.get("worktrees") or []),
+                          "uncommitted": any(c.get("patch") for c in cks),
+                          "files": len(files), "config": sum(1 for f in files if _is_config(f)),
+                          "error": r.get("error")})
+        pl = man.get("plugins") or {}
+        plugins = [{"ref": f"marketplace {x['name']}", "marketplace": True,
+                    "do": do("plugins", f"marketplace {x['name']}")} for x in pl.get("marketplaces") or []]
+        plugins += [{"ref": x["id"], "do": do("plugins", x["id"])} for x in pl.get("plugins") or []]
+        c = man.get("claude") or {}
+        claude = []
+        if isinstance(c.get("settings"), dict):
+            claude.append({"ref": "settings.json", "keys": len(c["settings"]),
+                           "do": do("claude", "settings.json")})
+        claude += [{"ref": n, "do": do("claude", n)} for n in c.get("files") or []]
+        for d in c.get("dirs") or {}:
+            src = os.path.join(self.root, "claude", d)
+            if os.path.isdir(src):
+                claude += [{"ref": f"{d}/{n}", "dir": d, "do": do("claude", f"{d}/{n}")}
+                           for n in sorted(os.listdir(src))]
+        claude += [{"ref": f"~/{rel}", "hook": True, "do": do("claude", f"~/{rel}")}
+                    for rel in c.get("home_files") or []]
+        mx = man.get("mcp") or {}
+        mcp = [{"ref": n, "oauth": _oauth(cfg), "do": do("mcp", n)}
+               for n, cfg in sorted((mx.get("user") or {}).items())]
+        for old_proj, servers in sorted((mx.get("local") or {}).items()):
+            for n, cfg in sorted(servers.items()):
+                ref = _mcp_ref(n, self.remap.text(old_proj), self.m.base)
+                mcp.append({"ref": ref, "oauth": _oauth(cfg), "do": do("mcp", ref)})
+        history = []
+        src = os.path.join(self.root, "claude", "projects")
+        for d in sorted(os.listdir(src)) if os.path.isdir(src) else []:
+            sd = os.path.join(src, d)
+            if os.path.isdir(sd):
+                n, size = _tree_size(sd)
+                cwd = _transcript_cwd(sd)
+                history.append({"ref": d, "transcripts": n, "bytes": size, "do": do("history", d),
+                                "label": _short(self.remap.text(cwd), self.m)
+                                if cwd and _enc(cwd) == d else d})
+        if os.path.isfile(os.path.join(self.root, "claude", "history.jsonl")):
+            history.append({"ref": "prompts", "label": "prompt history",
+                            "do": do("history", "prompts")})
+        b = man.get("bridge") or {}
+        bridge = []
+        if b.get("env"):
+            bridge.append({"ref": ".env", "do": do("bridge", ".env"),
+                           **self.facts.get(("bridge", ".env"), {})})
+        bridge += [{"ref": n, "do": do("bridge", n), **self.facts.get(("bridge", n), {})}
+                   for n in (b.get("state") or []) + (b.get("mystical") or [])]
+        if b.get("db"):
+            bridge.append({"ref": "bridge.db", "do": "park"})
+        return [{"key": "repos", "items": repos}, {"key": "plugins", "items": plugins},
+                {"key": "claude", "items": claude}, {"key": "mcp", "items": mcp},
+                {"key": "history", "items": history}, {"key": "bridge", "items": bridge}]
+
+
+def next_steps(rep, park, dry=False) -> "list[dict]":
+    """What only the user can do after an import: the CLI's closing lines and the
+    dashboard's WHAT'S LEFT. `key` is what the dashboard puts a button on."""
+    b = rep.get("bridge", {})
+    out = []
+    if b.get(".env added") or any(k in b for k in ("state added", "state merged")):
+        out.append({"key": "restart", "text": "Restart the bridge so the new .env and settings load."})
+    if b.get("rivendell (OFF)"):
+        out.append({"key": "rivendell", "items": b["rivendell (OFF)"],
+                    "text": "Rivendell came over switched OFF. Turn it on (Settings ▸ PLUGINS) only "
+                            "once the old machine's bridge is stopped, or both will run its jobs."})
+    if rep.get("mcp", {}).get("may need a login"):
+        out.append({"key": "mcp", "items": rep["mcp"]["may need a login"],
+                    "text": "MCP servers that sign in with OAuth need it once more here: "
+                            "dashboard ▸ MCP ▸ re-authenticate."})
+    if not dry and (rep.get("repos", {}).get("parked") or b.get("parked")):
+        out.append({"key": "parked", "path": park,
+                    "text": f"What wasn't applied is kept at {park} — nothing was dropped."})
+    return out
 
 
 def _merge(mine: dict, theirs: dict, added: list, conflicts: list, path="") -> dict:

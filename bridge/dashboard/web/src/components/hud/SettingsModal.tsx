@@ -10,6 +10,8 @@ import {
   Power, Radio, ScanLine, Scissors, ScrollText, Search, Server, Shapes,
   ShieldQuestion, SlidersHorizontal, Sparkles, Square, SquareTerminal, Sun, TriangleAlert, Type,
   Upload, Volume2, Waypoints, type LucideIcon,
+  ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, LayoutPanelTop,
+  ListChecks, Package, PackageOpen, PanelBottom, Timer, Truck,
 } from "lucide-react";
 import { CHAT_BGS, TOOL_STYLES, type ChatBg, type ToolStyle } from "../../lib/toolwidget";
 import { AgentRail, PromptBubble } from "../Transcript";
@@ -38,7 +40,16 @@ import {
   type TrackerConnection,
   type UpdateInfo,
   type Weather,
+  MOVE_EVENT,
+  type MoveFile,
+  type MoveItem,
+  type MoveJob,
+  type MovePlan,
+  type MoveRead,
+  type MoveSection,
+  type MoveSectionKey,
 } from "../../api";
+import { Bar, Frame, JobCard, MOVE_COLORS, Pill, THICK, fmtBytes, fmtDur, nextAction, nextLabel } from "./MoveDock";
 import {
   canInstall as canInstallNow, install, isInstalled, subscribe,
 } from "../../lib/installprompt";
@@ -57,6 +68,10 @@ import {
   themeUnfilter,
   type HudSettings,
   type Indicator,
+  type MoveBar,
+  type MoveColor,
+  type MovePrefs,
+  type MoveThick,
   type ThemeKey,
 } from "../../lib/theme";
 import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWrite } from "../../lib/profiles";
@@ -139,7 +154,7 @@ export interface SettingsModalProps {
 
 export type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
   | "projects" | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts"
-  | "plugins" | "system"
+  | "plugins" | "system" | "move"
   | "report";
 
 // The rail carries the same three-way split the comment above describes, but
@@ -185,6 +200,8 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "External dashboards the bridge runs work for. Rivendell's \"Request review\" and \"Implement using AI\" buttons become autonomous Claude runs here — one connection per Rivendell (production, local, staging)." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
     about: "The bridge itself: its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
+  { key: "move", label: "MOVE", hint: "export · import", icon: Truck, group: "THE WORK",
+    about: "Carry this bridge to another machine. EXPORT packs your repos' unpushed work, MCP servers, plugins, Claude Code settings and chat history into one file; IMPORT replays a file from another machine here." },
   // Not a setting — a readout. It lives here because the chrome that used to
   // carry it (the strip's TODAY chip) is gone, and a page is a better home for
   // it than the popover it also still is, on the brand cap and the clock's menu.
@@ -236,6 +253,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
   { tab: "report", sec: "WEEK", terms: "report weekly today turns time tokens usage spend per project rhythm" },
+  { tab: "move", sec: "WHAT GOES", terms: "move export import migrate new machine laptop transfer backup restore tar file progress bar dock minimize" },
 ];
 
 type Hit = { tab: Tab; sec: string; row?: string; hint?: string };
@@ -4080,6 +4098,681 @@ function ProfilesPanel({
   );
 }
 
+// ---- MOVE -------------------------------------------------------------------
+// Export this bridge to one file, or import a file from another machine. The
+// bridge runs both (bridge/movejob.py); the dock (MoveDock.tsx) draws their
+// progress. Three pages under one strip, like INDICATOR's picker: what goes,
+// what comes in, and how the bar looks.
+
+type MoveSub = "export" | "import" | "progress";
+const MOVE_SUBS: { key: MoveSub; label: string; icon: LucideIcon }[] = [
+  { key: "export", label: "EXPORT", icon: HardDriveUpload },
+  { key: "import", label: "IMPORT", icon: HardDriveDownload },
+  { key: "progress", label: "PROGRESS", icon: Gauge },
+];
+const MOVE_GROUP: Record<MoveSectionKey, string> = {
+  repos: "REPOS", mcp: "MCP SERVERS", plugins: "PLUGINS", claude: "CLAUDE CODE", history: "HISTORY", bridge: "BRIDGE",
+};
+const TN = {
+  warn: "var(--warn)", mid: "var(--txm)", vio: "var(--purple)", acc: "var(--acc)", dim: "var(--txl)", err: "var(--err)",
+};
+type ChipSpec = [string, string];
+// What an item would do here, as the IMPORT list says it.
+const DO_CHIP: Record<string, ChipSpec> = {
+  clone: ["CLONE", TN.acc], add: ["ADD", TN.acc], merge: ["MERGE", TN.mid], present: ["ALREADY HERE", TN.dim],
+  skip: ["SOMETHING ELSE IS THERE", TN.warn], keep: ["THIS MACHINE'S STAYS", TN.mid],
+  behind: ["LEFT BEHIND", TN.warn], park: ["PARKED", TN.dim], fail: ["FAILS", TN.err],
+};
+// Items an import can't do anything with: no box to tick.
+const MOVE_NA = new Set(["present", "skip", "behind"]);
+const plural = (n: number, one: string, many = one + (one === one.toUpperCase() ? "S" : "s")) => `${n} ${n === 1 ? one : many}`;
+
+function MoveChip({ c }: { c: ChipSpec }) {
+  return (
+    <span style={{
+      display: "inline-flex", alignItems: "center", fontSize: "var(--t8)", letterSpacing: 1, padding: "1px 6px",
+      border: `1px solid color-mix(in srgb, ${c[1]} 35%, transparent)`, color: c[1], whiteSpace: "nowrap", lineHeight: 1.6,
+    }}>
+      {c[0]}
+    </span>
+  );
+}
+
+function itemChips(sec: MoveSectionKey, it: MoveItem, mode: "export" | "import"): ChipSpec[] {
+  const c: ChipSpec[] = [];
+  if (mode === "import" && it.do && DO_CHIP[it.do]) c.push(DO_CHIP[it.do]);
+  if (sec === "repos") {
+    if (it.unpushed) c.push([mode === "import" ? `+${plural(it.unpushed, "COMMIT")}` : `${it.unpushed} UNPUSHED`, TN.warn]);
+    if (it.uncommitted) c.push(["UNCOMMITTED", TN.warn]);
+    if (it.worktrees) c.push([plural(it.worktrees, "WORKTREE"), TN.mid]);
+    if (it.stashes) c.push([plural(it.stashes, "STASH", "STASHES"), TN.mid]);
+    if (it.config) c.push([it.config === 1 ? ".ENV" : `${it.config} .ENV`, TN.vio]);
+    if (mode === "import" && it.files) c.push([plural(it.files, "FILE"), TN.mid]);
+    if (mode === "export" && it.untracked) c.push([`${it.untracked} UNTRACKED`, TN.mid]);
+    if (mode === "export" && (it.mystical ?? 0) >= 1024) c.push([`.MYSTICAL ${fmtBytes(it.mystical).toUpperCase()}`, TN.mid]);
+    if (mode === "export" && it.remote === false) c.push(["NO REMOTE", TN.warn]);
+    if (mode === "export" && !c.length) c.push(["CLONE ONLY", TN.dim]);
+  }
+  if (sec === "mcp" && it.oauth) c.push([mode === "import" ? "LOGIN AFTER" : "OAUTH", TN.warn]);
+  if (sec === "plugins" && it.marketplace) c.push(["MARKETPLACE", TN.dim]);
+  if (sec === "claude" && it.hook) c.push(["HOOK SCRIPT", TN.dim]);
+  if (sec === "history" && it.transcripts) c.push([plural(it.transcripts, "TRANSCRIPT"), TN.mid]);
+  if ((sec === "history" || sec === "bridge") && it.bytes) c.push([fmtBytes(it.bytes).toUpperCase(), TN.dim]);
+  if (sec === "bridge") {
+    if (it.keys) c.push([plural(it.keys, "KEY"), TN.mid]);
+    if (it.add) c.push([`+${plural(it.add, "KEY")}`, TN.acc]);
+    if (it.local || it.behind) c.push([`${it.local || it.behind} STAY`, TN.dim]);
+    if (it.off?.length) c.push(["ARRIVES OFF", TN.warn]);
+  }
+  return c;
+}
+
+/** What a group's row says under its name. */
+function groupSummary(sec: MoveSection, mode: "export" | "import", ctx: { loose?: string[]; from?: string; here?: string }): string {
+  const it = sec.items;
+  const sum = (f: (x: MoveItem) => number) => it.reduce((a, x) => a + f(x), 0);
+  if (!it.length) return "Nothing here.";
+  if (mode === "import") {
+    if (sec.key === "repos") {
+      const n = (d: string) => it.filter((x) => x.do === d).length;
+      return [n("clone") && `${n("clone")} to clone`, n("present") && `${n("present")} already here`,
+        n("skip") && `${n("skip")} where something else is`].filter(Boolean).join(" · ");
+    }
+    if (sec.key === "claude") return "Skills, agents and a CLAUDE.md that already exist here stay as they are.";
+    if (sec.key === "history" && ctx.from && ctx.here) return `Paths rewritten from ${ctx.from} to ${ctx.here}, so History lists them and they resume.`;
+    return "";
+  }
+  if (sec.key === "repos") {
+    const bits = [sum((x) => x.unpushed ?? 0) && `${sum((x) => x.unpushed ?? 0)} commits no remote has`,
+      sum((x) => x.stashes ?? 0) && plural(sum((x) => x.stashes ?? 0), "stash", "stashes"),
+      sum((x) => (x.uncommitted ? 1 : 0)) && `uncommitted work in ${sum((x) => (x.uncommitted ? 1 : 0))}`,
+      sum((x) => x.worktrees ?? 0) && plural(sum((x) => x.worktrees ?? 0), "worktree")].filter(Boolean);
+    return `${bits.length ? `${bits.join(" · ")}. ` : ""}Each repo is cloned again from its remote there; the file carries only what the remote lacks.` +
+      (ctx.loose?.length ? ` Not git, so left behind: ${ctx.loose.slice(0, 6).join(", ")}${ctx.loose.length > 6 ? " …" : ""}.` : "");
+  }
+  if (sec.key === "mcp") {
+    const o = it.filter((x) => x.oauth).length;
+    return `${it.slice(0, 5).map((x) => x.ref).join(", ")}${it.length > 5 ? ` +${it.length - 5}` : ""}.` +
+      (o ? ` The ${o} that sign in with OAuth arrive logged out.` : "");
+  }
+  if (sec.key === "plugins") {
+    const p = it.filter((x) => !x.marketplace), mk = it.length - p.length;
+    return `${p.slice(0, 4).map((x) => x.ref.split("@")[0]).join(", ")}${p.length > 4 ? ` +${p.length - 4}` : ""}${mk ? `, from ${plural(mk, "marketplace", "marketplaces").toLowerCase()}` : ""}.`;
+  }
+  if (sec.key === "claude") {
+    const dirs = new Map<string, number>();
+    for (const x of it) if (x.dir) dirs.set(x.dir, (dirs.get(x.dir) ?? 0) + 1);
+    return [...it.filter((x) => !x.dir && !x.hook).map((x) => x.ref),
+      ...[...dirs].map(([d, n]) => `${n} ${n === 1 ? d.replace(/s$/, "") : d}`),
+      it.some((x) => x.hook) && "the scripts your hooks run"].filter(Boolean).join(" · ") + ".";
+  }
+  if (sec.key === "history") {
+    const proj = it.filter((x) => x.ref !== "prompts");
+    return `${sum((x) => x.transcripts ?? 0)} transcripts in ${proj.length} projects, ${fmtBytes(sum((x) => x.bytes ?? 0))}.`;
+  }
+  const env = it.find((x) => x.ref === ".env"), db = it.find((x) => x.ref === "bridge.db");
+  const state = it.filter((x) => x !== env && x !== db).length;
+  return [env && `.env without its ${env.local ?? 0} per-machine keys`, state && plural(state, "settings file"),
+    db && `a bridge.db snapshot (${fmtBytes(db.bytes)}), parked on arrival, not merged`].filter(Boolean).join(" · ") + ".";
+}
+
+function MoveCheck({ state, onClick, label }: { state: "on" | "off" | "part" | "na"; onClick?: () => void; label: string }) {
+  return (
+    <button
+      role="checkbox"
+      aria-checked={state === "on" ? true : state === "part" ? "mixed" : false}
+      aria-label={label}
+      disabled={state === "na"}
+      onClick={onClick}
+      style={{
+        appearance: "none", width: 12, height: 12, padding: 0, flex: "none", position: "relative", background: "transparent",
+        cursor: state === "na" ? "default" : "pointer",
+        border: `1px ${state === "na" ? "dashed" : "solid"} color-mix(in srgb, var(--acc) ${state === "na" ? 22 : 50}%, transparent)`,
+      }}
+    >
+      {state === "on" && <i style={{ position: "absolute", inset: 2, background: "var(--acc)" }} />}
+      {state === "part" && <i style={{ position: "absolute", left: 2, right: 2, top: 4, height: 2, background: "var(--acc)" }} />}
+    </button>
+  );
+}
+
+const SHOW_ITEMS = 10;   // a group's items shown before "+N MORE"
+
+/** One group of the EXPORT or IMPORT list: a tri-state box for the whole
+ *  section, its summary, and the items under it when opened. */
+function MoveGroup({ sec, mode, skip, setSkip, open, onOpen, first, ctx }: {
+  sec: MoveSection; mode: "export" | "import"; skip: Set<string>; setSkip: (f: (s: Set<string>) => Set<string>) => void;
+  open: boolean; onOpen: () => void; first: boolean; ctx: { loose?: string[]; from?: string; here?: string };
+}) {
+  const [all, setAll] = useState(false);
+  const na = (x: MoveItem) => mode === "import" && MOVE_NA.has(x.do ?? "");
+  const live = sec.items.filter((x) => !na(x));
+  const off = live.filter((x) => skip.has(`${sec.key}:${x.ref}`)).length;
+  const state = !live.length ? "na" : off === 0 ? "on" : off === live.length ? "off" : "part";
+  const flip = () => setSkip((s) => {
+    const n = new Set(s);
+    for (const x of live) { const k = `${sec.key}:${x.ref}`; if (state === "off") n.delete(k); else n.add(k); }
+    return n;
+  });
+  // Work no remote has first: unpushed commits, then uncommitted changes, then
+  // stashes and worktrees, then loose files. Ten rows in, a clean repo can wait.
+  const weight = (x: MoveItem) => (x.unpushed ? 8 : 0) + (x.uncommitted ? 4 : 0) +
+    (x.stashes || x.worktrees ? 2 : 0) + (x.config || x.untracked ? 1 : 0);
+  const items = sec.key === "repos" ? [...sec.items].sort((a, b) => weight(b) - weight(a)) : sec.items;
+  const shown = all ? items : items.slice(0, SHOW_ITEMS);
+  const groupChips: ChipSpec[] = [];
+  if (mode === "import" && sec.key !== "repos") {
+    const n = new Map<string, number>();
+    for (const x of sec.items) if (x.do && DO_CHIP[x.do]) n.set(x.do, (n.get(x.do) ?? 0) + 1);
+    for (const [d, k] of n) groupChips.push([`${k} ${DO_CHIP[d][0]}`, DO_CHIP[d][1]]);
+    const o = sec.items.filter((x) => x.oauth).length;
+    if (sec.key === "mcp" && o) groupChips.push([`${o} NEED A LOGIN AFTER`, TN.warn]);
+    if (sec.key === "bridge" && sec.items.some((x) => x.off?.length)) groupChips.push(["RIVENDELL ARRIVES OFF", TN.warn]);
+  }
+  const summary = groupSummary(sec, mode, ctx) + (mode === "export" && off && state === "part" ? ` ${off} unticked.` : "");
+  return (
+    <div data-row={MOVE_GROUP[sec.key]} style={{ marginTop: first ? 0 : 13, paddingTop: first ? 0 : 13, borderTop: first ? undefined : RULE }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 11 }}>
+        <span style={{ marginTop: 2 }}><MoveCheck state={state} onClick={flip} label={MOVE_GROUP[sec.key]} /></span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <button onClick={onOpen} aria-expanded={open} disabled={!sec.items.length}
+            style={{ appearance: "none", border: 0, background: "none", padding: 0, width: "100%", cursor: sec.items.length ? "pointer" : "default", display: "flex", alignItems: "center", gap: 8, fontFamily: "inherit", textAlign: "left" }}>
+            <span style={{ fontSize: "var(--t10)", letterSpacing: 1.5, color: state === "off" ? "var(--txl)" : "var(--txb)" }}>{MOVE_GROUP[sec.key]}</span>
+            {sec.items.length > 0 && <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t10)", color: state === "off" ? "var(--txl)" : "var(--txm)" }}>{sec.items.length}</span>}
+            <span style={{ flex: 1 }} />
+            {sec.items.length > 0 && (open ? <ChevronDown size={13} color="var(--txd)" /> : <ChevronRight size={13} color="var(--txd)" />)}
+          </button>
+          {summary && <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 4, lineHeight: 1.6 }}>{summary}</div>}
+          {groupChips.length > 0 && <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 6 }}>{groupChips.map((c) => <MoveChip key={c[0]} c={c} />)}</div>}
+          {open && (
+            <div style={{ margin: "11px 0 2px", borderLeft: "1px dashed color-mix(in srgb, var(--acc) 16%, transparent)", paddingLeft: 12 }}>
+              {shown.map((x) => {
+                const k = `${sec.key}:${x.ref}`;
+                const s = na(x) ? "na" : skip.has(k) ? "off" : "on";
+                return (
+                  <div key={x.ref} style={{ display: "flex", alignItems: "center", gap: 9, padding: "4px 0", minHeight: 24 }}>
+                    <MoveCheck state={s} label={x.ref}
+                      onClick={() => setSkip((p) => { const n = new Set(p); if (n.has(k)) n.delete(k); else n.add(k); return n; })} />
+                    <span title={x.ref} style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0, color: s === "off" ? "var(--txl)" : s === "na" ? "var(--txf)" : "var(--tx)" }}>
+                      {x.label ?? x.ref}
+                    </span>
+                    <span style={{ display: "flex", gap: 4, flex: "none", marginLeft: "auto" }}>
+                      {itemChips(sec.key, x, mode).map((c) => <MoveChip key={c[0]} c={c} />)}
+                    </span>
+                  </div>
+                );
+              })}
+              {items.length > SHOW_ITEMS && (
+                <button onClick={() => setAll(!all)} style={{ appearance: "none", border: 0, background: "none", cursor: "pointer", padding: "6px 0 2px", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, color: "var(--txd)" }}>
+                  {all ? "− FEWER" : `+ ${items.length - SHOW_ITEMS} MORE`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The skip list the bridge takes: a whole section when none of it is ticked. */
+function toSkip(sections: MoveSection[], skip: Set<string>, mode: "export" | "import"): string[] {
+  const out: string[] = [];
+  for (const s of sections) {
+    const live = s.items.filter((x) => !(mode === "import" && MOVE_NA.has(x.do ?? "")));
+    const off = live.filter((x) => skip.has(`${s.key}:${x.ref}`));
+    if (live.length && off.length === live.length) out.push(s.key);
+    else out.push(...off.map((x) => `${s.key}:${x.ref}`));
+  }
+  return out;
+}
+
+function MoveList({ sections, mode, skip, setSkip, ctx, stays }: {
+  sections: MoveSection[]; mode: "export" | "import"; skip: Set<string>;
+  setSkip: (f: (s: Set<string>) => Set<string>) => void; ctx: { loose?: string[]; from?: string; here?: string }; stays: string;
+}) {
+  const [open, setOpen] = useState<Set<string>>(() => new Set(["repos"]));
+  return (
+    <div style={CARD}>
+      {sections.map((s, i) => (
+        <MoveGroup key={s.key} sec={s} mode={mode} skip={skip} setSkip={setSkip} first={i === 0} ctx={ctx}
+          open={open.has(s.key)} onOpen={() => setOpen((o) => { const n = new Set(o); if (n.has(s.key)) n.delete(s.key); else n.add(s.key); return n; })} />
+      ))}
+      <div style={{ marginTop: 13, paddingTop: 13, borderTop: RULE, display: "flex", gap: 11, alignItems: "flex-start" }}>
+        <Lock size={12} strokeWidth={1.7} aria-hidden style={{ color: "var(--txf)", marginTop: 1, flex: "none" }} />
+        <div>
+          <div style={{ fontSize: "var(--t10)", letterSpacing: 1.5, color: "var(--txf)" }}>STAYS ON EACH MACHINE</div>
+          <div style={{ fontSize: "var(--t95)", color: "var(--txf)", marginTop: 4, lineHeight: 1.6 }}>{stays}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BigBtn({ children, onClick, disabled }: { children: ReactNode; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      appearance: "none", cursor: disabled ? "default" : "pointer", border: "1px solid var(--acc)", background: "var(--acc)",
+      color: "var(--acc-on)", fontFamily: "inherit", fontSize: "var(--t11)", letterSpacing: 2, padding: "9px 20px",
+      opacity: disabled ? 0.4 : 1, flex: "none",
+    }}>
+      {children}
+    </button>
+  );
+}
+
+const moved = () => window.dispatchEvent(new Event(MOVE_EVENT));
+const isStale = (e: Error) => e.message === "not found";
+const STALE_MSG = "The bridge is running older code than this dashboard, so it has no MOVE yet. Restart it (SYSTEM ▸ PLATFORM) and this page fills in.";
+
+function MoveExport({ busy }: { busy: boolean }) {
+  const [plan, setPlan] = useState<MovePlan | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+  const [skip, setSkip] = useState<Set<string>>(() => new Set());
+  const [out, setOut] = useState("");
+  const [startErr, setStartErr] = useState("");
+  useEffect(() => {
+    api.movePlan().then((p) => { setPlan(p); setOut(p.out); }, (e: Error) => setErr(isStale(e) ? STALE_MSG : `Couldn't look at this machine: ${e.message}`));
+  }, []);
+  if (err) return <Placeholder icon={TriangleAlert}>{err}</Placeholder>;
+  if (!plan) return <Placeholder icon={LoaderCircle} spin>looking at this machine: its repos, MCP servers, history…</Placeholder>;
+  const sk = toSkip(plan.sections, skip, "export");
+  const count = (k: MoveSectionKey) => {
+    const s = plan.sections.find((x) => x.key === k);
+    return s && !sk.includes(k) ? s.items.filter((x) => !skip.has(`${k}:${x.ref}`)).length : 0;
+  };
+  const start = () => {
+    setStartErr("");
+    api.moveExport(out, sk).then(moved, (e: Error) => setStartErr(e.message));
+  };
+  return (
+    <>
+      <Section title="WHAT GOES" icon={Package}
+        desc="Everything here that no remote keeps. Untick what the next machine shouldn't get."
+        info="Repos are cloned again from their remotes on the next machine; the file carries only what no remote has: commits on no remote, stashes, the uncommitted diff, untracked files and git-ignored config such as .env. MCP servers and plugins go back through the claude CLI, and history is rewritten to the new home and BASE_PATH so it lists and resumes.">
+        <MoveList sections={plan.sections} mode="export" skip={skip} setSkip={setSkip} ctx={{ loose: plan.loose }}
+          stays="Logins (Claude, gh, MCP sign-ins), the Telegram bot token and chat list, BASE_PATH and the tunnel. Rivendell links arrive switched OFF." />
+      </Section>
+      <Section title="THE FILE" icon={FileArchive} top
+        desc="Where the export is written. It holds secrets: move it straight to the next machine, import it, then delete it.">
+        <div style={CARD}>
+          <div style={{ ...CAPTION, width: "auto", marginBottom: 6 }}>SAVE AS</div>
+          <input value={out} onChange={(e) => setOut(e.target.value)} spellCheck={false} aria-label="save as"
+            style={{ ...field, width: "100%", fontFamily: "var(--mono)", letterSpacing: 0, fontSize: "var(--t105)" }} />
+          <div style={{ ...NOTE, marginTop: 6 }}>Written so only you can read it (0600).</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18 }}>
+          <span style={{ fontSize: "var(--t95)", color: "var(--txd)", lineHeight: 1.6 }}>
+            {busy ? "A move is running; follow it in the dock."
+              : `${count("repos")} repos · ${count("mcp")} MCP · ${count("plugins")} plugins · ${count("claude") ? "Claude Code" : "no Claude Code"} · ${count("history")} history projects · ${count("bridge") ? "bridge" : "no bridge"}`}
+          </span>
+          <span style={{ flex: 1 }} />
+          <BigBtn disabled={busy || !out.trim()} onClick={start}>▸ EXPORT</BigBtn>
+        </div>
+        {startErr && <div style={{ ...NOTE, color: "var(--err)", textAlign: "right" }}>{startErr}</div>}
+      </Section>
+    </>
+  );
+}
+
+const dateOf = (t?: number) => (t ? new Date(t * 1000).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
+
+function MoveImported({ job }: { job: MoveJob }) {
+  const [full, setFull] = useState(false);
+  const rep = (job.result?.report ?? {}) as Record<string, Record<string, unknown[]>>;
+  const list = (s: string, k: string) => rep[s]?.[k] ?? [];
+  const nums = (s: string, k: string, re: RegExp) => list(s, k).reduce<number>((a, x) =>
+    a + (typeof x === "number" ? x : Number(String(x).match(re)?.[1] ?? 0)), 0);
+  const failed = Object.values(rep).reduce((a, sec) => a + (sec.failed?.length ?? 0), 0);
+  const stats: [number, string, string?][] = [
+    [list("repos", "cloned").length, "REPOS CLONED"], [list("repos", "worktrees").length, "WORKTREES"],
+    [nums("repos", "unpushed", /: (\d+) commit/), "COMMITS RESTORED"], [nums("repos", "stashes", /: (\d+)$/), "STASHES"],
+    [list("mcp", "added").length, "MCP SERVERS"], [list("plugins", "added").length, "PLUGINS"],
+    [nums("history", "transcripts", /(\d+)/), "TRANSCRIPTS"],
+    failed ? [failed, "FAILED", "var(--err)"] : [list("repos", "parked").length + list("bridge", "parked").length, "PARKED", "var(--txm)"],
+  ];
+  const next = job.next ?? [];
+  return (
+    <>
+      <Section title="IMPORTED" icon={CircleCheck}
+        desc={<>From {job.title}{job.ended ? ` on ${dateOf(job.ended)}` : ""}, in {fmtDur(job.elapsed)}. The full report is kept in <span style={{ fontFamily: "var(--mono)" }}>{job.result?.park}</span>.</>}>
+        <div style={{ ...CARD, display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "14px 18px" }}>
+          {stats.map(([v, l, tone]) => (
+            <div key={l} style={{ padding: "4px 0" }}>
+              <div className="glow" style={{ fontSize: "var(--t22)", color: tone ?? "var(--txb)", lineHeight: 1.1 }}>{v}</div>
+              <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txd)", marginTop: 5 }}>{l}</div>
+            </div>
+          ))}
+        </div>
+      </Section>
+      <Section title="WHAT'S LEFT" icon={ListChecks} top
+        desc="Things only you can do. They stay on the dock card too, until you dismiss it.">
+        {next.length === 0 ? (
+          <Placeholder icon={CircleCheck}>Nothing left: it's all in.</Placeholder>
+        ) : (
+          <div style={CARD}>
+            {next.map((n, i) => {
+              const [label, act, danger] = nextAction(n);
+              return (
+                <Row key={n.key} first={i === 0}
+                  label={<><span style={{ fontFamily: "var(--mono)", color: "var(--purple)", marginRight: 10 }}>{i + 1}</span><span style={{ color: "var(--txb)" }}>{nextLabel(n).toUpperCase()}</span></>}
+                  desc={<>{n.text}{n.items?.length ? <> <span style={{ color: "var(--txm)" }}>{n.items.join(" · ")}</span></> : null}</>}>
+                  <MiniBtn danger={danger} onClick={act}>{label}</MiniBtn>
+                </Row>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+      <Section title="FULL REPORT" icon={ScrollText} top>
+        <div style={CARD}>
+          <button onClick={() => setFull(!full)} aria-expanded={full} style={{ appearance: "none", border: 0, background: "none", padding: 0, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, width: "100%", fontFamily: "inherit" }}>
+            {full ? <ChevronDown size={13} color="var(--txd)" /> : <ChevronRight size={13} color="var(--txd)" />}
+            <span style={KEY_TX}>{full ? "HIDE" : "SHOW EVERY LINE"}</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ fontSize: "var(--t95)", color: "var(--txd)" }}>
+              {Object.entries(rep).map(([s, keys]) => `${s} ${Object.keys(keys).length}`).join(" · ")}
+            </span>
+          </button>
+          {full && (
+            <pre style={{ margin: "12px 0 0", fontFamily: "var(--mono)", fontSize: "var(--t95)", color: "var(--txm)", lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {Object.entries(rep).map(([s, keys]) => `${s}\n${Object.entries(keys).map(([k, items]) =>
+                `  ${k}: ${items.every((x) => typeof x === "number") ? items.reduce<number>((a, x) => a + (x as number), 0) : items.join(", ")}`).join("\n")}`).join("\n")}
+            </pre>
+          )}
+        </div>
+      </Section>
+      <div style={{ display: "flex", marginTop: 18 }}>
+        <span style={{ flex: 1 }} />
+        <MiniBtn onClick={() => void api.moveDismiss(job.id).then(moved)}>IMPORT ANOTHER FILE</MiniBtn>
+      </div>
+    </>
+  );
+}
+
+function MoveImport({ jobs, busy }: { jobs: MoveJob[]; busy: boolean }) {
+  const [files, setFiles] = useState<MoveFile[] | null>(null);
+  const [read, setRead] = useState<MoveRead | null | undefined>(undefined);
+  const [err, setErr] = useState<string | null>(null);
+  const [path, setPath] = useState("");
+  const [startErr, setStartErr] = useState("");
+  const [skip, setSkip] = useState<Set<string>>(() => new Set());
+  const ended = jobs.filter((j) => j.status !== "running").map((j) => j.id).join();
+  useEffect(() => {
+    api.moveFiles().then((r) => setFiles(r.files), (e: Error) => setErr(isStale(e) ? STALE_MSG : e.message));
+    api.moveRead().then((r) => setRead(r.read), () => setRead(null));
+  }, [ended]);
+  const running = jobs.find((j) => j.status === "running");
+  const last = [...jobs].reverse().find((j) => j.kind === "import");
+  const go = (p: Promise<unknown>) => { setStartErr(""); p.then(moved, (e: Error) => setStartErr(e.message)); };
+
+  if (err) return <Placeholder icon={TriangleAlert}>{err}</Placeholder>;
+  if (running && running.kind !== "export")
+    return <Placeholder icon={LoaderCircle} spin>{running.kind === "read" ? `reading ${running.title}` : `importing from ${running.title}`}… follow it in the dock.</Placeholder>;
+  if (last?.status === "done") return <MoveImported job={last} />;
+  if (read === undefined || files === null) return <Placeholder icon={LoaderCircle} spin>looking for move files…</Placeholder>;
+
+  if (read) {
+    const sk = toSkip(read.sections, skip, "import");
+    const count = (k: MoveSectionKey) => {
+      const s = read.sections.find((x) => x.key === k);
+      return s && !sk.includes(k) ? s.items.filter((x) => !MOVE_NA.has(x.do ?? "") && !skip.has(`${k}:${x.ref}`)).length : 0;
+    };
+    const f = read.from;
+    return (
+      <>
+        <Section title="THE FILE" icon={FileArchive} desc="Read: unpacked and dry-run. Nothing here has changed yet.">
+          <div style={CARD}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <FileArchive size={14} strokeWidth={1.7} color="var(--purple)" style={{ flex: "none" }} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t105)", color: "var(--txb)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{read.file.split("/").pop()}</span>
+              <span style={{ flex: 1 }} />
+              <span style={{ fontFamily: "var(--mono)", fontSize: "var(--t95)", color: "var(--txd)" }}>{fmtBytes(read.bytes)}</span>
+            </div>
+            <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 5, paddingLeft: 22, fontFamily: "var(--mono)" }}>{read.file}</div>
+            <div style={{ ...ASIDE, margin: "10px 0 0 22px", display: "grid", gridTemplateColumns: "44px 1fr", rowGap: 3 }}>
+              <span style={{ letterSpacing: 1.5, color: "var(--txl)" }}>FROM</span>
+              <span style={{ color: "var(--txm)" }}>{[f.host, f.platform, f.base].filter(Boolean).join(" · ")}</span>
+              <span style={{ letterSpacing: 1.5, color: "var(--txl)" }}>MADE</span>
+              <span style={{ color: "var(--txm)" }}>{[dateOf(f.at), f.mystical && `mystical ${f.mystical}`, f.claude].filter(Boolean).join(" · ")}</span>
+              {read.only?.length ? <><span style={{ letterSpacing: 1.5, color: "var(--txl)" }}>ONLY</span><span style={{ color: "var(--txm)" }}>{read.only.join(", ")} (a top-up)</span></> : null}
+            </div>
+          </div>
+        </Section>
+        <Section title="WHAT COMES IN" icon={PackageOpen} top
+          desc="What the file holds and what each part does here. This machine wins every conflict; whatever can't apply is parked, never dropped.">
+          <MoveList sections={read.sections} mode="import" skip={skip} setSkip={setSkip}
+            ctx={{ from: f.base, here: (read as MoveRead & { here?: string }).here }}
+            stays="Your logins, bot token, BASE_PATH, DASH_TOKEN and tunnel. The per-machine .env keys in the file are skipped." />
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 18 }}>
+            <span style={{ fontSize: "var(--t95)", color: "var(--txd)" }}>
+              {busy ? "A move is running; follow it in the dock."
+                : `${count("repos")} repos · ${count("plugins")} plugins · ${count("claude")} Claude files · ${count("mcp")} MCP · ${count("history")} history · ${count("bridge") ? "bridge" : "no bridge"}`}
+            </span>
+            <span style={{ flex: 1 }} />
+            <MiniBtn disabled={busy} onClick={() => void api.moveForget().then(() => setRead(null))}>FORGET FILE</MiniBtn>
+            <BigBtn disabled={busy} onClick={() => go(api.moveImport(sk))}>{last ? "▸ IMPORT AGAIN" : "▸ IMPORT"}</BigBtn>
+          </div>
+          {startErr && <div style={{ ...NOTE, color: "var(--err)", textAlign: "right" }}>{startErr}</div>}
+        </Section>
+      </>
+    );
+  }
+
+  return (
+    <Section title="THE FILE" icon={FileArchive}
+      desc="Move files in your home, Downloads, Desktop and the bridge's incoming folder. READ unpacks one and works out what it would do; nothing changes until IMPORT.">
+      <div style={CARD}>
+        {files.length === 0 && (
+          <div style={{ ...NOTE, marginTop: 0 }}>No mystical-move-*.tar.gz in those folders. Give its path below.</div>
+        )}
+        {files.map((x, i) => (
+          <Row key={x.path} first={i === 0}
+            label={<span style={{ display: "flex", alignItems: "center", gap: 8, fontFamily: "var(--mono)", letterSpacing: 0, color: "var(--tx)" }}><FileArchive size={14} strokeWidth={1.7} color="var(--txd)" />{x.name}</span>}
+            desc={<span style={{ paddingLeft: 22 }}>{x.dir} · {dateOf(x.mtime)} · {fmtBytes(x.bytes)}</span>}>
+            <MiniBtn disabled={busy} onClick={() => go(api.moveStartRead(x.path))}>READ</MiniBtn>
+          </Row>
+        ))}
+        <Row first={files.length === 0} label="OR A PATH">
+          <input value={path} onChange={(e) => setPath(e.target.value)} placeholder="/path/to/mystical-move-….tar.gz" spellCheck={false}
+            onKeyDown={(e) => { if (e.key === "Enter" && path.trim()) go(api.moveStartRead(path.trim())); }}
+            style={{ ...field, width: 380, fontFamily: "var(--mono)", letterSpacing: 0 }} />
+          <MiniBtn disabled={busy || !path.trim()} onClick={() => go(api.moveStartRead(path.trim()))}>READ</MiniBtn>
+        </Row>
+      </div>
+      {startErr && <div style={{ ...NOTE, color: "var(--err)" }}>{startErr}</div>}
+      {busy && <div style={NOTE}>A move is running; follow it in the dock.</div>}
+    </Section>
+  );
+}
+
+const SWATCH_NAME: Record<MoveColor, string> = { acc: "ACCENT", ok: "GREEN", purple: "VIOLET", info: "BLUE", warn: "AMBER" };
+function Swatches({ value, onPick }: { value: MoveColor; onPick: (c: MoveColor) => void }) {
+  return (
+    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+      {(Object.keys(MOVE_COLORS) as MoveColor[]).map((k) => (
+        <button key={k} title={SWATCH_NAME[k]} aria-label={SWATCH_NAME[k]} aria-pressed={k === value} onClick={() => onPick(k)}
+          style={{
+            appearance: "none", cursor: "pointer", width: 18, height: 18, padding: 0, border: 0, background: MOVE_COLORS[k],
+            outline: `1px solid ${k === value ? MOVE_COLORS[k] : "transparent"}`, outlineOffset: 2,
+            opacity: k === value ? 1 : 0.55, boxShadow: k === value ? `0 0 8px ${MOVE_COLORS[k]}` : "none",
+          }} />
+      ))}
+      <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txm)", width: 52, marginLeft: 6 }}>{SWATCH_NAME[value]}</span>
+    </div>
+  );
+}
+
+const DEMO: MoveJob = {
+  id: "demo", kind: "export", title: "a pretend run", status: "running", pct: 62, elapsed: 112, eta: 68,
+  bytes: 412 * 1024 * 1024, total: null, rate: 38 * 1024 * 1024, error: null, started: 0, ended: null,
+  steps: [{ key: "repos", done: 20, total: 20, state: "done" }, { key: "history", done: 412, total: 741, state: "running" },
+    { key: "bridge", done: 0, total: 0, state: "queued" }],
+  now: ["ainurhq/rivendell"], log: ["history: mystical-assistant · 212 transcripts", "history: ainurhq/rivendell · 88 MB"],
+};
+const DEMO_IMPORT: MoveJob = { ...DEMO, id: "demo-i", kind: "import", pct: 38, eta: 190 };
+
+function MoveProgress({ settings, onPatch }: { settings: HudSettings; onPatch: (p: Partial<HudSettings>) => void }) {
+  const m = settings.move;
+  const set = (p: Partial<MovePrefs>) => onPatch({ move: { ...m, ...p } });
+  const sample = (style: MoveBar) => (
+    <div style={{ padding: "4px 11px 12px", display: "flex" }}>
+      <Bar style={style} pct={62} color={MOVE_COLORS[m.exportColor]} h={THICK[m.thick]} cells={16} chars={18} motion={m.motion} />
+    </div>
+  );
+  const corner = (k: MovePrefs["corner"]) => {
+    const pos: CSSProperties = { top: k[0] === "t" ? 4 : undefined, bottom: k[0] === "b" ? 4 : undefined, left: k[1] === "l" ? 4 : undefined, right: k[1] === "r" ? 4 : undefined };
+    const on = m.corner === k;
+    return <button key={k} aria-label={`dock ${k}`} aria-pressed={on} onClick={() => set({ corner: k })}
+      style={{ position: "absolute", ...pos, width: 18, height: 10, padding: 0, appearance: "none", cursor: "pointer", background: on ? "var(--acc)" : "transparent", border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 25%, transparent)"}`, boxShadow: on ? "0 0 6px var(--acc)" : "none" }} />;
+  };
+  const CORNER_NAME = { tl: "TOP LEFT", tr: "TOP RIGHT", bl: "BOTTOM LEFT", br: "BOTTOM RIGHT" } as const;
+  const shows: [keyof MovePrefs, string][] = [["steps", "STEPS"], ["log", "LOG"], ["eta", "TIME LEFT"], ["speed", "SPEED"]];
+  return (
+    <>
+      <Section title="PREVIEW" icon={PanelBottom} desc="The dock as your picks draw it, on a pretend export. Every change below shows here first.">
+        <div style={{ ...CARD, display: "flex", gap: 26, alignItems: "flex-start", justifyContent: "center", padding: "18px 16px" }}>
+          <JobCard job={DEMO} prefs={m} preview />
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 4 }}>
+            <div style={{ ...CAPTION, width: "auto" }}>MINIMIZED</div>
+            {m.mini === "frame" ? (
+              <div style={{ display: "flex", gap: 10 }}><Frame job={DEMO} prefs={m} /><Frame job={DEMO_IMPORT} prefs={m} /></div>
+            ) : m.mini === "edge" ? (
+              <div style={{ width: 200, height: 40, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", position: "relative", background: "var(--panel3)" }}>
+                <div style={{ position: "absolute", left: 0, top: 0, height: 2, width: "62%", background: MOVE_COLORS[m.exportColor], boxShadow: `0 0 8px ${MOVE_COLORS[m.exportColor]}` }} />
+                <span style={{ position: "absolute", right: 6, top: 2, fontSize: "var(--t8)", letterSpacing: 1.5, color: MOVE_COLORS[m.exportColor], border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", borderTop: 0, padding: "1px 5px" }}>EXPORT 62%</span>
+              </div>
+            ) : (
+              <><Pill job={DEMO} prefs={m} /><Pill job={DEMO_IMPORT} prefs={m} /></>
+            )}
+          </div>
+        </div>
+      </Section>
+      <Section title="THE BAR" icon={Gauge} top desc="How every bar in the dock is drawn.">
+        <div style={CARD}>
+          <div style={{ ...CAPTION, width: "auto", marginBottom: 8 }}>STYLE</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+            <PickTile label="LINE" hint="one solid fill" on={m.bar === "line"} onPick={() => set({ bar: "line" })}>{sample("line")}</PickTile>
+            <PickTile label="BLOCKS" hint="cells, like the context meter" on={m.bar === "blocks"} onPick={() => set({ bar: "blocks" })}>{sample("blocks")}</PickTile>
+            <PickTile label="ASCII" hint="a terminal redraw" on={m.bar === "ascii"} onPick={() => set({ bar: "ascii" })}>{sample("ascii")}</PickTile>
+            <PickTile label="SWEEP" hint="a running sheen" on={m.bar === "sweep"} onPick={() => set({ bar: "sweep" })}>{sample("sweep")}</PickTile>
+          </div>
+          <Row label="THICKNESS" desc="ASCII draws in text, so it keeps one size.">
+            <div style={{ width: 250 }}>
+              <Segmented options={[{ label: "THIN", value: "thin" }, { label: "REGULAR", value: "regular" }, { label: "THICK", value: "thick" }]}
+                value={m.thick} onPick={(thick) => set({ thick: thick as MoveThick })} />
+            </div>
+          </Row>
+          <Row label="EXPORT COLOUR"><Swatches value={m.exportColor} onPick={(exportColor) => set({ exportColor })} /></Row>
+          <Row label="IMPORT COLOUR" desc="Theme colours, so a bar follows when you switch palettes. READ uses the import colour.">
+            <Swatches value={m.importColor} onPick={(importColor) => set({ importColor })} />
+          </Row>
+        </div>
+      </Section>
+      <Section title="THE DOCK" icon={LayoutPanelTop} top desc="Where the cards sit, what a minimized card becomes, and what a card shows.">
+        <div style={CARD}>
+          <Row first label="CORNER">
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div style={{ width: 72, height: 46, border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", position: "relative", background: "var(--panel3)" }}>
+                {(["tl", "tr", "bl", "br"] as const).map(corner)}
+              </div>
+              <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txm)", width: 92 }}>{CORNER_NAME[m.corner]}</span>
+            </div>
+          </Row>
+          <div style={{ marginTop: 13, paddingTop: 13, borderTop: RULE }}>
+            <div style={{ ...KEY_TX, marginBottom: 8 }}>MINIMIZED AS</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
+              <PickTile label="PILL" hint="a chip in the corner" on={m.mini === "pill"} onPick={() => set({ mini: "pill" })}>
+                <div style={{ padding: "4px 11px 12px" }}><Pill job={DEMO} prefs={{ ...m, eta: false }} /></div>
+              </PickTile>
+              <PickTile label="EDGE" hint="a line along the window's top" on={m.mini === "edge"} onPick={() => set({ mini: "edge" })}>
+                <div style={{ padding: "10px 11px 18px" }}><div style={{ height: 2, width: "62%", background: MOVE_COLORS[m.exportColor], boxShadow: `0 0 6px ${MOVE_COLORS[m.exportColor]}` }} /></div>
+              </PickTile>
+              <PickTile label="FRAME" hint="a square whose edge fills" on={m.mini === "frame"} onPick={() => set({ mini: "frame" })}>
+                <div style={{ padding: "4px 11px 10px" }}><Frame job={DEMO} prefs={m} size={26} /></div>
+              </PickTile>
+            </div>
+          </div>
+          <div style={{ marginTop: 13, paddingTop: 13, borderTop: RULE }}>
+            <div style={{ ...KEY_TX, marginBottom: 8 }}>THE CARD SHOWS</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {shows.map(([k, label]) => (
+                <button key={k} onClick={() => set({ [k]: !m[k] })} aria-pressed={!!m[k]}
+                  style={{ appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "5px 10px", background: "transparent", color: m[k] ? "var(--txb)" : "var(--txd)", border: `1px solid color-mix(in srgb, var(--acc) ${m[k] ? 40 : 16}%, transparent)` }}>
+                  <span style={{ width: 12, height: 12, border: "1px solid color-mix(in srgb, var(--acc) 50%, transparent)", position: "relative", flex: "none" }}>
+                    {m[k] && <i style={{ position: "absolute", inset: 2, background: "var(--acc)" }} />}
+                  </span>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Section>
+      <Section title="BEHAVIOUR" icon={Timer} top>
+        <div style={CARD}>
+          <Row first label="START MINIMIZED" desc="A new job opens folded, as its minimized form.">
+            <Switch on={m.startMin} onClick={() => set({ startMin: !m.startMin })} />
+          </Row>
+          <Row label="HIDE AFTER SUCCESS" desc="A job that succeeds folds away 10 s after it ends, unless it left you something to do. A failed or cancelled one stays until you dismiss it.">
+            <Switch on={m.autoHide} onClick={() => set({ autoHide: !m.autoHide })} />
+          </Row>
+          <Row label="MOTION" desc="The sweep, the filling cells and the caret. Off whenever your system asks for reduced motion.">
+            <Switch on={m.motion} onClick={() => set({ motion: !m.motion })} />
+          </Row>
+        </div>
+        <div style={NOTE}>A finished job plays your NOTIFY sound and shows a desktop banner, if those are on.</div>
+      </Section>
+    </>
+  );
+}
+
+function MovePanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p: Partial<HudSettings>) => void }) {
+  // The dock's SETTINGS ▸ and REVIEW ▸ name the page to land on.
+  const [sub, setSub] = useState<MoveSub>(() => {
+    const f = takeSettingsFocus();
+    return f === "import" || f === "progress" ? f : "export";
+  });
+  const [jobs, setJobs] = useState<MoveJob[]>([]);
+  useEffect(() => {
+    let t = 0;
+    let live = true;
+    const tick = () => {
+      window.clearTimeout(t);
+      api.moveJobs().then((r) => {
+        if (!live) return;
+        setJobs(r.jobs);
+        t = window.setTimeout(tick, r.jobs.some((j) => j.status === "running") ? 1000 : 5000);
+      }, () => { if (live) t = window.setTimeout(tick, 10000); });
+    };
+    tick();
+    window.addEventListener(MOVE_EVENT, tick);
+    return () => { live = false; window.clearTimeout(t); window.removeEventListener(MOVE_EVENT, tick); };
+  }, []);
+  const running = jobs.find((j) => j.status === "running");
+  return (
+    <>
+      <div style={{ display: "flex", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel) 92%, transparent)", marginBottom: 26 }}>
+        {MOVE_SUBS.map((t) => {
+          const on = sub === t.key;
+          const dot = running && (t.key === "export" ? running.kind === "export" : t.key === "import" && running.kind !== "export");
+          return (
+            <button key={t.key} onClick={() => setSub(t.key)} aria-pressed={on}
+              style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, borderBottom: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: on ? "var(--txb)" : "var(--txd)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "9px 4px", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
+              <t.icon size={12} strokeWidth={1.7} aria-hidden />
+              {t.label}
+              {dot && <i style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--purple)", boxShadow: "0 0 6px var(--purple)" }} />}
+            </button>
+          );
+        })}
+      </div>
+      {sub === "export" && <MoveExport busy={!!running} />}
+      {sub === "import" && <MoveImport jobs={jobs} busy={!!running} />}
+      {sub === "progress" && <MoveProgress settings={settings} onPatch={onPatch} />}
+    </>
+  );
+}
+
 export function SettingsModal(props: SettingsModalProps) {
   const {
     host,
@@ -4767,6 +5460,7 @@ export function SettingsModal(props: SettingsModalProps) {
             {shown === "hooks" && <HooksPanel />}
             {shown === "accounts" && <AccountsPanel onChanged={onAccountsChanged} />}
             {shown === "plugins" && <RivendellPanel />}
+            {shown === "move" && <MovePanel settings={settings} onPatch={onPatch} />}
 
             {shown === "system" && (
               <>

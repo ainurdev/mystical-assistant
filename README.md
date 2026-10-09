@@ -371,6 +371,15 @@ Logins, the bot token and the Rivendell link stay behind, and Rivendell arrives
 switched off. Turn it on once the old bridge is stopped, because two linked
 bridges would both run every job. The file holds secrets, so delete it after.
 
+The dashboard does the same from **Settings ▸ MOVE**, item by item. EXPORT lists
+every repo, MCP server, plugin, skill and history project, with what each would
+carry, and you untick what shouldn't go. IMPORT reads a file (that is the dry
+run), shows what each item would do on this machine, and imports only what's
+ticked. Each job gets a progress card in a corner of the dashboard that you can
+fold to a pill, a line along the top of the window, or a square. PROGRESS picks
+the bar's style, colours and corner. The jobs run inside the bridge, so a reload
+or a closed tab loses nothing.
+
 **If something's off**
 
 | Symptom | Fix |
