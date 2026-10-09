@@ -22,6 +22,7 @@ import shutil
 import socket
 import subprocess
 import threading
+import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -65,6 +66,23 @@ def _ws_authorized(host: str, origin: str, token: str) -> bool:
 
 def _chat() -> int:
     return config.DASH_CHAT_ID
+
+
+# The tray companions (windows/tray.ps1, linux/tray.py) alert only while no
+# dashboard page that raises its own OS alerts is polling; such a page asks for
+# /local/running?alerts=1. 90 s outlasts Chrome's once-a-minute timers in a
+# hidden window. -inf, not 0.0: monotonic() can be under 90 just after boot,
+# which is exactly when a login-started bridge comes up.
+_WATCH_S = 90
+_alerts_at = float("-inf")
+
+
+def _watched(qs) -> bool:
+    global _alerts_at
+    now = time.monotonic()
+    if qs.get("alerts") == ["1"]:
+        _alerts_at = now
+    return now - _alerts_at < _WATCH_S
 
 
 def web_built() -> bool:
@@ -306,7 +324,7 @@ class Handler(BaseHTTPRequestHandler):
             archived = qs.get("archived", ["0"])[0] == "1"
             return self._json({"sessions": profiles.history(chat, include_archived=archived)})
         if path == "/local/running":
-            return self._json(runner.running_snapshot(chat))
+            return self._json({**runner.running_snapshot(chat), "watched": _watched(qs)})
         if path == "/local/queue":
             sid = (qs.get("session", [""])[0] or "").strip()
             return self._json(queue_manager.snapshot(sid) if sid else

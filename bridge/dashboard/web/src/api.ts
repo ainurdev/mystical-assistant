@@ -1594,7 +1594,9 @@ export const api = {
     `?id=${encodeURIComponent(id)}&token=${encodeURIComponent(TOKEN)}`,
   select: (dir: string) =>
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
-  running: () => req<RunningInfo>("/local/running"),
+  // alerts: this page raises its own OS alerts, so the tray companion stays quiet.
+  running: (alerts = false) =>
+    req<RunningInfo>(alerts ? "/local/running?alerts=1" : "/local/running"),
   usage: () => req<UsageInfo>("/local/usage"),
   today: () => req<TodayInfo>("/local/today"),
   report: (back = 0) =>
