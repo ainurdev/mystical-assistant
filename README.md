@@ -317,6 +317,7 @@ mystical export     pack this machine up for a new one (one file)
 mystical import F   replay that file on the new machine (--dry-run to preview)
 mystical app        macOS: build + install Mystical.app into ~/Applications
 mystical app open   macOS: open it
+mystical app        Linux/WSL: start the tray icon now (it also comes up at login)
 ```
 
 **On a Mac**
@@ -348,6 +349,21 @@ AT LOGIN switch toggles it): up at login, restarted after a crash, and
 `mystical start|stop|restart` go through `launchctl` once it's installed. The
 agent pins a PATH where `python3` is 3.10+ and `claude` is found — launchd's
 default has neither. Rebuild the app (`mystical app`) after moving the checkout.
+
+**On Windows (WSL) and Linux**
+
+The dashboard's own window comes from your browser: INSTALL AS APP in the
+dashboard's SYSTEM tab, then START AT LOGIN and OPEN THE WINDOW TOO to have it
+open at login. OPEN THE WINDOW TOO also starts a **tray icon**, Mystical.app's
+menu bar for these systems. It shows how many sessions are waiting on you, with
+a row for each, plus start/stop/restart and alerts while no dashboard window is
+open. A window that's open alerts by itself, so the tray stays quiet then.
+`mystical app` starts it now instead of at the next login. There's nothing to
+build. On Windows it's PowerShell (`windows/tray.ps1`). On Linux it's the system
+python3 with the distro's GTK bindings (`linux/tray.py`), and `mystical doctor`
+names the packages if they're missing. GNOME shows tray icons only with the
+AppIndicator extension, which Ubuntu ships and Fedora doesn't. The alerts work
+without it.
 
 **Moving to a new machine**
 
