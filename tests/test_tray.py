@@ -6,6 +6,7 @@ Run: python3 -m pytest tests/test_tray.py -q"""
 
 import importlib.util
 import os
+import re
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _spec = importlib.util.spec_from_file_location(
@@ -127,3 +128,22 @@ def test_the_windows_tray_stays_readable_by_windows_powershell_5_1():
     code = [ln for ln in raw.decode("ascii").splitlines() if not ln.lstrip().startswith("#")]
     for op in ("??", "?.", "&&", "||"):
         assert not any(op in ln for ln in code), f"{op} is PowerShell 7 only"
+
+
+def test_startup_passes_only_arguments_the_linux_tray_takes():
+    from bridge import startup
+    argv = startup._tray_argv(False, "/usr/bin/google-chrome", "Profile 5")
+    assert argv[:2] == ["/usr/bin/python3", os.path.join(startup._REPO, "linux", "tray.py")]
+    a = tray.parser().parse_args(argv[2:])
+    assert (a.browser, a.profile) == ("/usr/bin/google-chrome", "Profile 5")
+
+
+def test_startup_passes_only_parameters_the_windows_tray_declares():
+    from bridge import startup
+    argv = startup._tray_argv(
+        True, "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe", "Profile 2")
+    passed = {name[1:] for name in argv[argv.index("-File") + 2:][::2]}
+    text = open(os.path.join(_ROOT, "windows", "tray.ps1"), encoding="ascii").read()
+    declared = set(re.findall(r"\$(\w+)", text.split("param(", 1)[1].split("\n)", 1)[0]))
+    assert passed == {"Port", "Distro", "User", "Repo", "Browser", "BrowserProfile"}
+    assert passed <= declared, passed - declared

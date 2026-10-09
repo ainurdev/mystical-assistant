@@ -21,6 +21,11 @@ runs run.sh (the systemd unit's counterpart: up at login, restarted after a
 crash), the other opens Mystical.app (macos/) — the window half. Same rules as
 systemd: switching on never starts a second bridge beside a hand-launched one,
 switching off never stops the one you are talking through.
+
+The window half also starts the **tray companion** (windows/tray.ps1 under WSL,
+linux/tray.py on a Linux desktop): Mystical.app's menu bar for these systems.
+It runs from this checkout with what the OS ships, so there is nothing to
+install; launch_tray() is `mystical app` for not waiting until the next login.
 """
 from __future__ import annotations
 
@@ -40,6 +45,11 @@ CMD_NAME = "mystical-assistant.cmd"
 # ~/.config/autostart, whereas systemd's graphical-session.target only exists on
 # the desktops that bothered to wire it up.
 _AUTOSTART = os.path.expanduser("~/.config/autostart/mystical-assistant.desktop")
+# The tray's own entry beside the window's, so the desktop's startup-apps list
+# shows, and can switch off, each one on its own.
+_TRAY_AUTOSTART = os.path.expanduser("~/.config/autostart/mystical-tray.desktop")
+# Windows exes aren't on a WSL PATH; this one is on every Windows 10/11.
+_POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 _UNIT_DIR = os.path.expanduser("~/.config/systemd/user")
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -243,17 +253,25 @@ def _script(open_window: bool, profile: str | None = None) -> str:
         "",
         f'wsl.exe -d {distro} -u {user} -e bash -c "for i in $(seq 1 240); do '
         f'curl -sf -o /dev/null http://127.0.0.1:{port}/ && exit 0; sleep 0.25; done; exit 1"',
+        'set "UP=%errorlevel%"',
+    ]
+    browser = _browser()
+    if open_window:
+        prof = (profile or _profile(browser, port)) if browser else None
+        lines += ["", "REM The tray icon comes up whether or not the bridge did,",
+                  "REM so a failed start still leaves you a tray with Start in it.",
+                  'start "" powershell.exe '
+                  + " ".join(map(_cmd_arg, _tray_argv(True, browser, prof)))]
+    lines += [
         "",
-        "if errorlevel 1 (",
+        'if not "%UP%"=="0" (',
         f"  echo mystical//assistant did not answer on :{port} within 60s.",
         f"  echo Check it with:  wsl -d {distro} -- systemctl --user status {UNIT}",
         "  pause",
         "  exit /b 1",
         ")",
     ]
-    browser = _browser()
     if open_window and browser:
-        prof = profile or _profile(browser, port)
         pick = f' --profile-directory="{prof}"' if prof else ""
         lines += ["", f'start "" "{_win_path(browser)}"{pick} '
                       f'--app=http://localhost:{port}/']
@@ -279,6 +297,92 @@ def _desktop(profile: str | None = None) -> str:
             f'Exec=sh -c "until curl -sf -o /dev/null http://127.0.0.1:{port}/; '
             f'do sleep 0.25; done; exec {browser}{pick} --app=http://localhost:{port}/"\n'
             "X-GNOME-Autostart-enabled=true\n")
+
+
+def _tray_ps1() -> str:
+    """Where Windows finds windows/tray.ps1: the distro's \\\\wsl$ share, or the
+    drive path when the checkout lives on /mnt/<drive>."""
+    p = os.path.join(_REPO, "windows", "tray.ps1")
+    return _win_path(p) if p.startswith("/mnt/") else f"\\\\wsl$\\{_distro()}" + p.replace("/", "\\")
+
+
+def _tray_argv(windows: bool, browser: str | None, profile: str | None) -> list[str]:
+    """The tray's command line, with the same port, browser and profile as the
+    window line beside it. `windows`: powershell.exe's arguments for
+    windows/tray.ps1. Otherwise: linux/tray.py on the system interpreter,
+    where the distro's PyGObject lives."""
+    from bridge import config
+    port = str(config.DASH_PORT)
+    if windows:
+        argv = ["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass",
+                "-File", _tray_ps1(), "-Port", port, "-Distro", _distro(),
+                "-User", getpass.getuser(), "-Repo", _REPO]
+        argv += ["-Browser", _win_path(browser)] if browser else []
+        return argv + (["-BrowserProfile", profile] if profile else [])
+    argv = ["/usr/bin/python3", os.path.join(_REPO, "linux", "tray.py"), "--port", port]
+    argv += ["--browser", browser] if browser else []
+    return argv + (["--profile", profile] if profile else [])
+
+
+def _cmd_arg(a: str) -> str:
+    """One argument of a .cmd line, quoted when it has a space (cmd.exe and
+    PowerShell's own parser both split there)."""
+    return f'"{a}"' if " " in a or not a else a
+
+
+def _exec_arg(a: str) -> str:
+    # shortcut: quotes spaces only. A path holding " ` $ or \ needs the Desktop
+    # Entry spec's double escaping; none of ours do. Escape them if one must.
+    return f'"{a}"' if " " in a else a
+
+
+def _tray_desktop(profile: str | None = None) -> str:
+    """The autostart entry for linux/tray.py."""
+    from bridge import config
+    browser = _browser()
+    prof = (profile or _profile(browser, config.DASH_PORT)) if browser else None
+    return ("[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=mystical//assistant tray\n"
+            "Comment=What's waiting on you, and alerts while the window is closed\n"
+            f"Exec={' '.join(map(_exec_arg, _tray_argv(False, browser, prof)))}\n"
+            "X-GNOME-Autostart-enabled=true\n")
+
+
+def _remove(*paths: str) -> None:
+    for p in paths:
+        if os.path.isfile(p):
+            os.remove(p)
+
+
+def launch_tray() -> None:
+    """Start the tray now, detached: `mystical app` on Linux and WSL, so it
+    doesn't wait for the next login. Raises RuntimeError with a line worth
+    showing when it can't start."""
+    from bridge import config
+    win, browser = _wsl(), _browser()
+    # shortcut: the profile is the auto-guess, not a pin from the SYSTEM tab;
+    # they agree unless the pinned profile never opened the dashboard.
+    prof = _profile(browser, config.DASH_PORT) if browser else None
+    argv = _tray_argv(win, browser, prof)
+    if win:
+        if not os.path.isfile(_POWERSHELL):
+            raise RuntimeError(f"no Windows PowerShell at {_POWERSHELL}")
+        # A Windows working dir: run from a WSL path, Windows sees a UNC cwd.
+        argv, cwd = [_POWERSHELL, *argv], os.path.dirname(_POWERSHELL)
+    else:
+        try:
+            check = subprocess.run([*argv[:2], "--check"], capture_output=True,
+                                   text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            raise RuntimeError(f"can't run {argv[0]}: {e}") from e
+        if check.returncode:
+            raise RuntimeError(check.stderr.strip() or "the tray's GTK bindings are missing")
+        cwd = None
+    # A tray started from inside a bridge session lives in the bridge unit's
+    # cgroup and goes down with its next restart; the login entry's doesn't.
+    subprocess.Popen(argv, cwd=cwd, start_new_session=True, stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 # --- macOS: launchd -----------------------------------------------------------
@@ -482,18 +586,18 @@ def apply(login: bool, window: bool, profile: str | None = None) -> dict:
             with open(cmd, "w", encoding="utf-8", newline="") as f:
                 f.write(_script(window, profile))
         elif window and _browser():
-            os.makedirs(os.path.dirname(_AUTOSTART), exist_ok=True)
-            with open(_AUTOSTART, "w", encoding="utf-8") as f:
-                f.write(_desktop(profile))
-        elif os.path.isfile(_AUTOSTART):
-            os.remove(_AUTOSTART)
+            for path, text in ((_AUTOSTART, _desktop(profile)),
+                               (_TRAY_AUTOSTART, _tray_desktop(profile))):
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(text)
+        else:
+            _remove(_AUTOSTART, _TRAY_AUTOSTART)
     else:
         r = _systemctl("disable", UNIT)
         if r.returncode:
             raise RuntimeError((r.stderr or r.stdout).strip() or "systemctl disable failed")
         # Deliberately NOT `systemctl stop`: whoever flicked this switch is almost
         # certainly talking to us through the bridge it would kill.
-        for f in (cmd, None if cmd else _AUTOSTART):
-            if f and os.path.isfile(f):
-                os.remove(f)
+        _remove(*((cmd,) if cmd else (_AUTOSTART, _TRAY_AUTOSTART)))
     return state()
