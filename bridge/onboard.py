@@ -7,6 +7,7 @@ import termios
 import time
 import tty
 from urllib.parse import urlencode
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 # site/public/mystical.svg rendered 512x512 (Telegram wants a square JPG and
@@ -160,8 +161,31 @@ def _call(token, method, **params):
         return json.loads(r.read())
 
 
+_conflict_told = False
+
+
 def _get_updates(token):
-    return _call(token, "getUpdates")
+    """getUpdates, but a 409 is a reason to explain and keep polling, not a
+    traceback: Telegram allows ONE consumer per token, so it means another bridge
+    (another machine, an old install) is polling this bot, or a webhook is set.
+    That consumer would eat the user's message, so they need to stop it."""
+    global _conflict_told
+    try:
+        return _call(token, "getUpdates")
+    except HTTPError as e:
+        if e.code != 409:
+            raise
+        if not _conflict_told:
+            _conflict_told = True
+            try:
+                why = json.loads(e.read()).get("description", "")
+            except Exception:  # noqa: BLE001 — the hint below stands without it
+                why = ""
+            print(f"  \u25b2 Telegram says: {why or '409 Conflict'}\n"
+                  "  \u25b2 Something else is reading this bot's messages \u2014 a bridge running\n"
+                  "  \u25b2 on another machine, or a webhook. Stop it; still waiting\u2026",
+                  file=sys.stderr)
+        return None
 
 
 def avatar_upload(jpeg, boundary="mysticalbotpic"):
