@@ -68,7 +68,8 @@ FORMAT = 1
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 FILE_MAX = 5 * 1024 * 1024          # one untracked or ignored file
-REPO_FILES_MAX = 50 * 1024 * 1024   # all of one repo's loose files, worktrees included
+WORK_MAX = 100 * 1024 * 1024        # one repo's config + untracked files, worktrees included
+EXTRA_MAX = 100 * 1024 * 1024       # one repo's .mystical/ files: drafts never starve the work
 UNTRACKED_MAX = 2000                # untracked files carried per checkout
 _DEPTH = 4                          # how far below BASE_PATH a repo is looked for
 _SKIP_DIRS = {"node_modules", "__pycache__", "venv", "dist", "build", "target", "vendor"}
@@ -425,6 +426,23 @@ def _find_repos(base) -> "list[str]":
     return sorted(out)
 
 
+def _prerequisites(bundle) -> "list[str]":
+    """The commits a bundle builds on, from its header ("-<sha> ..." lines). None
+    for a bundle of a whole history, which shares nothing with anyone."""
+    if not bundle or not os.path.isfile(bundle):
+        return []
+    shas = []
+    with open(bundle, "rb") as f:
+        if not f.readline().startswith(b"# v"):
+            return []
+        for line in f:
+            if line in (b"\n", b""):
+                break
+            if line.startswith(b"-"):
+                shas.append(line[1:].split()[0].decode("ascii", "replace"))
+    return shas
+
+
 def _remotes(repo) -> "dict[str, str]":
     rc, out, _ = _git(repo, "config", "--get-regexp", r"^remote\..*\.url$")
     got = {}
@@ -498,10 +516,12 @@ def _bundle(repo, want: "dict[str, str]", remote_tips: "list[tuple[str, str]]", 
         return True, int(n.strip() or 0), ""
 
 
-def _export_checkout(path, arc, pack, budget, head) -> dict:
-    """One checkout's uncommitted state: a patch of tracked changes, plus the
-    untracked files and the ignored config files, as plain files."""
-    out = {"arc": arc, "patch": None, "files": [], "skipped": []}
+def _export_checkout(path, arc, pack, head) -> dict:
+    """One checkout's uncommitted state. The patch of tracked changes is packed
+    here; its loose files are only listed, by class, for _pack_files to carry
+    in priority order across the whole repo."""
+    out = {"arc": arc, "patch": None, "files": [], "skipped": [],
+           "_loose": {"config": [], "untracked": [], "extra": []}}
     rc, st, err = _git(path, "status", "--porcelain=v1", "-z", "--untracked-files=all")
     if rc != 0:
         out["skipped"].append({"path": ".", "why": f"git status failed: {err[:200]}"})
@@ -533,45 +553,61 @@ def _export_checkout(path, arc, pack, budget, head) -> dict:
             out["skipped"].append({"path": ".", "why": f"git diff failed: {err[:200]}"})
         os.remove(patch)
 
-    carried = []
+    loose = out["_loose"]
     rc, ig, _ = _git(path, "ls-files", "-z", "--others", "--ignored", "--exclude-standard",
                      "--directory")
     for p in ig.split("\0") if rc == 0 else []:
         if p and not p.endswith("/") and _is_config(p) and not p.startswith(".mystical/"):
-            carried.append(p)
+            loose["config"].append(p)
         elif p.endswith(".claude/") and os.path.isfile(os.path.join(path, p, "settings.local.json")):
-            carried.append(p + "settings.local.json")
+            loose["config"].append(p + "settings.local.json")
+    for p in untracked:
+        (loose["config"] if _is_config(p) else loose["untracked"]).append(p)
+    if len(loose["untracked"]) > UNTRACKED_MAX:
+        out["skipped"].append({"path": f"{len(loose['untracked']) - UNTRACKED_MAX} more untracked "
+                               "files", "why": f"over {UNTRACKED_MAX} per checkout"})
+        del loose["untracked"][UNTRACKED_MAX:]
     mystical = os.path.join(path, ".mystical")
     if os.path.isdir(mystical):
         for root, dirs, names in os.walk(mystical):
             dirs[:] = sorted(dirs)
             for n in sorted(names):
                 if not n.endswith(".log"):
-                    carried.append(os.path.relpath(os.path.join(root, n), path))
-
-    files = untracked[:UNTRACKED_MAX] + [p for p in dict.fromkeys(carried) if p not in untracked]
-    if len(untracked) > UNTRACKED_MAX:
-        out["skipped"].append({"path": f"{len(untracked) - UNTRACKED_MAX} more untracked files",
-                               "why": f"over {UNTRACKED_MAX} per checkout"})
-    for p in files:
-        full = os.path.join(path, p)
-        try:
-            size = os.stat(full).st_size
-        except OSError:
-            continue
-        if not os.path.isfile(full):
-            continue
-        if size > FILE_MAX:
-            out["skipped"].append({"path": p, "size": size, "why": f"over {_size(FILE_MAX)}"})
-            continue
-        if budget[0] + size > REPO_FILES_MAX:
-            out["skipped"].append({"path": p, "size": size,
-                                   "why": f"repo past {_size(REPO_FILES_MAX)} of loose files"})
-            continue
-        if pack.file(full, f"{arc}/files/{p}") or size == 0:
-            out["files"].append(p)
-            budget[0] += size
+                    loose["extra"].append(os.path.relpath(os.path.join(root, n), path))
     return out
+
+
+def _pack_files(checkouts, pack) -> None:
+    """Carry each checkout's loose files, most precious class first and across
+    every checkout of the repo before the next class: config (.env), then the
+    untracked work, then .mystical/ extras with a budget of their own. Packing
+    checkout by checkout let one checkout's design drafts use the whole budget
+    and strand a worktree's new source files (seen on a real move, 2026-10-09)."""
+    budgets = {"config": [0, WORK_MAX], "extra": [0, EXTRA_MAX]}
+    budgets["untracked"] = budgets["config"]           # config and work share one
+    for cls in ("config", "untracked", "extra"):
+        used = budgets[cls]
+        for path, c in checkouts:
+            for p in c["_loose"][cls]:
+                full = os.path.join(path, p)
+                try:
+                    size = os.stat(full).st_size
+                except OSError:
+                    continue
+                if not os.path.isfile(full):
+                    continue
+                if size > FILE_MAX:
+                    c["skipped"].append({"path": p, "size": size, "why": f"over {_size(FILE_MAX)}"})
+                    continue
+                if used[0] + size > used[1]:
+                    c["skipped"].append({"path": p, "size": size, "why": f"repo past {_size(used[1])}"
+                                         f" of {'.mystical files' if cls == 'extra' else 'loose files'}"})
+                    continue
+                if pack.file(full, f"{c['arc']}/files/{p}") or size == 0:
+                    c["files"].append(p)
+                    used[0] += size
+    for _, c in checkouts:
+        del c["_loose"]
 
 
 def _export_repo(m, rel, arc, pack) -> dict:
@@ -611,8 +647,8 @@ def _export_repo(m, rel, arc, pack) -> dict:
     elif err:
         r["warnings"].append(f"commits no remote has were NOT carried: {err[:200]}")
 
-    budget = [0]
-    r["main"] = _export_checkout(path, f"{arc}/main", pack, budget, sha)
+    r["main"] = _export_checkout(path, f"{arc}/main", pack, sha)
+    checkouts = [(path, r["main"])]
     r["worktrees"] = []
     for i, w in enumerate(wts):
         if not os.path.isdir(w["path"]):
@@ -622,8 +658,10 @@ def _export_repo(m, rel, arc, pack) -> dict:
             r["warnings"].append(f"worktree outside BASE_PATH not carried: {w['path']}")
             continue
         e = {"path": wrel, "branch": w["branch"], "sha": w["sha"]}
-        e.update(_export_checkout(w["path"], f"{arc}/wt{i}", pack, budget, w["sha"]))
+        e.update(_export_checkout(w["path"], f"{arc}/wt{i}", pack, w["sha"]))
         r["worktrees"].append(e)
+        checkouts.append((w["path"], e))
+    _pack_files(checkouts, pack)
     return r
 
 
@@ -675,8 +713,10 @@ def _command_paths(settings, home, base) -> "list[str]":
     return sorted(set(found))
 
 
-def export(out=None, m=None, history=True, log=print) -> str:
-    """Write the move file. Returns its path."""
+def export(out=None, m=None, history=True, only=None, log=print) -> str:
+    """Write the move file. Returns its path. `only` (paths under BASE_PATH)
+    narrows it to those repos and nothing else: a top-up for one repo after
+    the full move, which imports over the first without touching it."""
     m = m or Machine()
     host = socket.gethostname().split(".")[0] or "old"
     out = os.path.abspath(out or os.path.join(
@@ -694,12 +734,16 @@ def export(out=None, m=None, history=True, log=print) -> str:
             with os.fdopen(fd, "wb") as fh, \
                     tarfile.open(fileobj=fh, mode="w:gz", compresslevel=6) as tar:
                 pack = _Pack(tar, tmp)
-                man["repos"], man["loose"] = _export_repos(m, pack, log)
-                man["mcp"] = _export_mcp(m)
-                man["plugins"] = _export_plugins(m)
-                man["claude"] = _export_claude(m, pack)
-                man["history"] = _export_history(m, pack) if history else {"skipped": True}
-                man["bridge"] = _export_bridge(m, pack, tmp)
+                man["repos"], man["loose"] = _export_repos(m, pack, log, only)
+                if only:
+                    man.update(only=list(only), mcp={}, plugins={}, claude={}, bridge={},
+                               history={"skipped": True})
+                else:
+                    man["mcp"] = _export_mcp(m)
+                    man["plugins"] = _export_plugins(m)
+                    man["claude"] = _export_claude(m, pack)
+                    man["history"] = _export_history(m, pack) if history else {"skipped": True}
+                    man["bridge"] = _export_bridge(m, pack, tmp)
                 pack.data("manifest.json", json.dumps(man, indent=1).encode())
     except BaseException:
         try:
@@ -712,9 +756,15 @@ def export(out=None, m=None, history=True, log=print) -> str:
     return out
 
 
-def _export_repos(m, pack, log):
+def _export_repos(m, pack, log, only=None):
     repos = []
     found = _find_repos(m.base)
+    if only:
+        want = [o.strip("/") for o in only]
+        found = [rel for rel in found if any(rel == o or rel.startswith(o + "/") for o in want)]
+        missing = [o for o in want if not any(rel == o or rel.startswith(o + "/") for rel in found)]
+        if missing:
+            raise SystemExit(f"no repo under {m.base} at: {', '.join(missing)}")
     for i, rel in enumerate(found):
         try:
             r = _export_repo(m, rel, f"repos/{i:04d}", pack)
@@ -730,7 +780,7 @@ def _export_repos(m, pack, log):
         repos.append(r)
     tops = {rel.split(os.sep)[0] for rel in found}
     loose = []
-    if "." not in found:
+    if "." not in found and not only:
         for name in sorted(os.listdir(m.base)):
             full = os.path.join(m.base, name)
             if name.startswith(".") or name in tops:
@@ -871,7 +921,8 @@ def import_file(path, m=None, dry=False, log=print) -> dict:
         src = man["from"]
         log(f"{'dry run — nothing changes. ' if dry else ''}importing {src.get('host')} "
             f"({src.get('base')}) into {m.base}")
-        for step in (imp.repos, imp.claude, imp.mcp, imp.plugins, imp.history, imp.bridge):
+        # Plugins before claude: a hook or status line may run a plugin's script.
+        for step in (imp.repos, imp.plugins, imp.claude, imp.mcp, imp.history, imp.bridge):
             try:
                 step()
             except Exception as e:                  # one broken step never sinks the rest
@@ -990,13 +1041,20 @@ class _Import:
                            input="".join(f"delete {x}\n" for x in out.split()).encode())
 
     def _same_repo(self, dest, r) -> bool:
+        """Same remote, or shared history. The second covers a repo that moved: a
+        transferred GitHub repo keeps answering at its old URL, so the old machine
+        never learned the new one. Shared means an old tip is already here, or
+        every commit the bundle builds on is (its tips may never have been pushed)."""
         if not os.path.exists(os.path.join(dest, ".git")):
             return False
         theirs = {_norm_url(u) for u in (r.get("remotes") or {}).values()}
-        if theirs:
-            return bool(theirs & {_norm_url(u) for u in _remotes(dest).values()})
-        sha = (r.get("head") or {}).get("sha")
-        return bool(sha) and _git(dest, "cat-file", "-e", f"{sha}^{{commit}}")[0] == 0
+        if theirs & {_norm_url(u) for u in _remotes(dest).values()}:
+            return True
+        tips = [(r.get("head") or {}).get("sha")] + [b["sha"] for b in r.get("branches") or []]
+        if any(self._has(dest, x) for x in tips if x):
+            return True
+        base = _prerequisites(self.arc(r.get("bundle")))
+        return bool(base) and all(self._has(dest, x) for x in base)
 
     def _clone(self, r, dest, bundle):
         remotes = r.get("remotes") or {}
@@ -1030,6 +1088,14 @@ class _Import:
                 return False, (err.splitlines()[-1] if err else "clone failed")
             _git(dest, "remote", "remove", "origin")
             return True, "from the file, it has no remote"
+        if not (r.get("head") or {}).get("sha"):
+            # `git init` and files only: nothing to clone, everything is loose.
+            branch = (r.get("head") or {}).get("branch") or "main"
+            rc, _, err = _run(["git", "init", "-q", f"--initial-branch={branch}", dest])
+            if rc != 0:
+                undo()
+                return False, _last(err) or "git init failed"
+            return True, "recreated, it has no commits yet"
         return False, "no remote, and no commits in the file to rebuild it from"
 
     def _has(self, dest, sha) -> bool:
@@ -1060,6 +1126,8 @@ class _Import:
                 up = b.get("upstream") or ""
                 if up.startswith("refs/remotes/") and self._ref(dest, up):
                     _git(dest, "branch", f"--set-upstream-to={up[len('refs/remotes/'):]}", name)
+            elif _git(dest, "merge-base", "--is-ancestor", sha, have)[0] == 0:
+                continue                      # this machine's branch already holds it
             else:
                 side = f"moved/{self.host}/{name}"
                 if self._ref(dest, f"refs/heads/{side}") is None:
@@ -1140,6 +1208,8 @@ class _Import:
         wdest = os.path.join(self.m.base, w["path"])
         if os.path.exists(wdest):
             self.note("repos", "present", w["path"])
+            # A top-up export may carry files the first one left out.
+            self._checkout_state(wdest, w, w["path"], False, w.get("sha"))
             return
         os.makedirs(os.path.dirname(wdest), exist_ok=True)
         if w.get("branch") and self._ref(dest, f"refs/heads/{w['branch']}"):
@@ -1243,6 +1313,12 @@ class _Import:
         for rel in c.get("home_files") or []:
             if path == os.path.join(self.m.home, rel):
                 return True
+        cache = os.path.join(self.m.claude, "plugins", "cache") + "/"
+        if path.startswith(cache):
+            # A plugin this import installs: its files aren't here to look at yet.
+            mkt, _, rest = path[len(cache):].partition("/")
+            ids = {p.get("id") for p in (self.man.get("plugins") or {}).get("plugins") or []}
+            return f"{rest.partition('/')[0]}@{mkt}" in ids
         if path.startswith(self.m.claude + "/"):
             rel = os.path.relpath(path, self.m.claude)
             return os.path.exists(os.path.join(self.root, "claude", rel))
@@ -1303,6 +1379,39 @@ class _Import:
                 return False
         return True
 
+    def _installed_version(self, cmd: str) -> str:
+        """A hook or status line running a plugin's script names the version the
+        old machine had cached (plugins/cache/<mkt>/<plugin>/<version>/...). Point
+        it at the version installed here, newest first, when that one is absent."""
+        cache = os.path.join(self.m.claude, "plugins", "cache") + "/"
+
+        def fix(mt):
+            p = mt.group(0)
+            if not p.startswith(cache) or os.path.exists(p):
+                return p
+            parts = p[len(cache):].split("/")
+            if len(parts) < 4:
+                return p
+            root, rest = os.path.join(cache, parts[0], parts[1]), "/".join(parts[3:])
+            try:
+                versions = sorted(os.listdir(root), reverse=True,
+                                  key=lambda v: os.path.getmtime(os.path.join(root, v)))
+            except OSError:
+                return p
+            for v in versions:
+                if os.path.exists(os.path.join(root, v, rest)):
+                    return os.path.join(root, v, rest)
+            return p
+
+        return re.sub(r"/[^\s'\"]+", fix, cmd or "")
+
+    def _versioned(self, entry: dict) -> dict:
+        e = json.loads(json.dumps(entry))
+        for h in e.get("hooks") or []:
+            if isinstance(h, dict) and isinstance(h.get("command"), str):
+                h["command"] = self._installed_version(h["command"])
+        return e
+
     def _settings(self, old):
         path = os.path.join(self.m.claude, "settings.json")
         mine = _read_json(path)
@@ -1313,6 +1422,7 @@ class _Import:
         _merge(mine, old, added, conflicts)
         for event, entries in (hooks or {}).items():
             for entry in entries if isinstance(entries, list) else []:
+                entry = self._versioned(entry or {})
                 cmds = [h.get("command", "") for h in (entry or {}).get("hooks") or []
                         if isinstance(h, dict) and h.get("type") == "command"]
                 bad = [x for x in cmds if not self._runnable(x)]
@@ -1325,6 +1435,8 @@ class _Import:
                     lst.append(entry)
                     added.append(f"hooks.{event}")
         if isinstance(status, dict):
+            if isinstance(status.get("command"), str):
+                status = dict(status, command=self._installed_version(status["command"]))
             if "statusLine" not in mine:
                 if self._runnable(status.get("command", "")):
                     mine["statusLine"] = status
@@ -1730,12 +1842,14 @@ def main(argv=None) -> int:
     e = sub.add_parser("export", help="write one file holding repos, MCPs, settings and history")
     e.add_argument("--out", help="where to write it (default: ~/mystical-move-<host>-<time>.tar.gz)")
     e.add_argument("--no-history", action="store_true", help="leave the chat transcripts out")
+    e.add_argument("--only", action="append", metavar="PATH",
+                   help="just this repo (path under BASE_PATH; repeatable) and nothing else")
     i = sub.add_parser("import", help="replay an export onto this machine")
     i.add_argument("file")
     i.add_argument("--dry-run", action="store_true", help="say what would happen, change nothing")
     a = ap.parse_args(argv)
     if a.cmd == "export":
-        export(a.out, history=not a.no_history)
+        export(a.out, history=not a.no_history, only=a.only)
     else:
         import_file(a.file, dry=a.dry_run)
     return 0

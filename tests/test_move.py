@@ -14,6 +14,7 @@ old repo untouched and that a second import changes nothing.
 
 import json
 import os
+import shutil
 import sqlite3
 import stat
 import subprocess
@@ -442,6 +443,101 @@ def test_a_checkout_already_here_on_other_work_gets_the_patch_parked(world):
     assert _git(app, "rev-parse", f"moved/{host}/main") == _git(world["app"], "rev-parse", "main")
     assert any(x.startswith("acme/app: was already here") for x in rep["repos"]["parked"])
     assert _git(app, "rev-parse", "feat") == _git(world["app"], "rev-parse", "feat")
+
+
+def test_work_is_carried_before_mystical_extras(world, monkeypatch):
+    """A repo's drafts can't use up the budget its worktree's new files need."""
+    monkeypatch.setattr(move, "WORK_MAX", 64 * 1024)
+    monkeypatch.setattr(move, "EXTRA_MAX", 64 * 1024)
+    for i in range(4):
+        _write(os.path.join(world["app"], ".mystical", "drafts", f"d{i}.html"), "x" * 30_000)
+    path = _export(world)
+    with tarfile.open(path) as tar:
+        man = json.load(tar.extractfile("manifest.json"))
+    app = man["repos"][0]
+    wt = app["worktrees"][0]
+    assert "wt-new.txt" in wt["files"], "the worktree's new file came before main's drafts"
+    assert ".env" in app["main"]["files"] and "new.txt" in app["main"]["files"]
+    assert any(s["path"].startswith(".mystical/drafts/") and ".mystical files" in s["why"]
+               for s in app["main"]["skipped"])
+
+
+def test_only_exports_the_named_repo_and_nothing_else(world):
+    path = move.export(os.path.join(world["root"], "top-up.tar.gz"), m=world["old"],
+                       only=["solo"], log=lambda *a: None)
+    with tarfile.open(path) as tar:
+        man = json.load(tar.extractfile("manifest.json"))
+        names = tar.getnames()
+    assert [r["path"] for r in man["repos"]] == ["solo"]
+    assert man["claude"] == {} and man["mcp"] == {} and man["bridge"] == {}
+    assert man["history"] == {"skipped": True} and man["loose"] == []
+    assert not any(n.startswith(("claude/", "bridge/")) for n in names)
+    with pytest.raises(SystemExit):
+        move.export(os.path.join(world["root"], "x.tar.gz"), m=world["old"], only=["nope"],
+                    log=lambda *a: None)
+
+
+def test_a_top_up_fills_in_an_existing_worktree(world):
+    _import(world, _export(world))
+    wt = os.path.join(world["new"].base, ".worktrees", "acme-app", "wt")
+    os.remove(os.path.join(wt, "wt-new.txt"))
+    top = move.export(os.path.join(world["root"], "top-up.tar.gz"), m=world["old"],
+                      only=["acme/app"], log=lambda *a: None)
+    _import(world, top)
+    assert open(os.path.join(wt, "wt-new.txt")).read() == "wt untracked\n"
+    assert open(os.path.join(wt, "a.txt")).read() == "one\nwt change\n", "applied once, not twice"
+
+
+def test_a_repo_that_moved_is_recognised_by_its_history(world):
+    """The old machine still knew the repo by its old URL (a transferred GitHub
+    repo keeps answering there); this machine cloned the new one."""
+    path = _export(world)
+    moved = os.path.join(world["root"], "remotes", "moved-app.git")
+    shutil.copytree(os.path.join(world["root"], "remotes", "app.git"), moved)
+    app = os.path.join(world["new"].base, "acme", "app")
+    subprocess.run(["git", "clone", "-q", moved, app], check=True, capture_output=True)
+    rep = _import(world, path)
+    assert "acme/app" in rep["repos"]["present"]
+    assert not rep["repos"].get("skipped")
+    assert open(os.path.join(app, ".env")).read() == "SECRET=1\n"
+    host = os.listdir(os.path.join(world["new"].state, "moved"))[0]
+    assert _git(app, "rev-parse", f"moved/{host}/main") == _git(world["app"], "rev-parse", "main")
+
+
+def test_an_old_tip_this_machine_already_holds_gets_no_side_branch(world):
+    path = _export(world)
+    _import(world, path)
+    app = os.path.join(world["new"].base, "acme", "app")
+    _git(app, "stash", "-q")
+    _write(os.path.join(app, "later.txt"), "later\n")
+    _git(app, "add", "later.txt")
+    _git(app, "commit", "-qm", "work done on the new machine")
+    _import(world, path)
+    assert "moved/" not in _git(app, "branch", "--list")
+
+
+def test_a_repo_with_no_commits_is_recreated(world):
+    fresh = os.path.join(world["old"].base, "fresh")
+    os.makedirs(fresh)
+    _git(fresh, "init", "-q", "-b", "trunk")
+    _write(os.path.join(fresh, "notes.md"), "idea\n")
+    rep = _import(world, _export(world))
+    new = os.path.join(world["new"].base, "fresh")
+    assert _git(new, "symbolic-ref", "--short", "HEAD") == "trunk"
+    assert open(os.path.join(new, "notes.md")).read() == "idea\n"
+    assert any(x.startswith("fresh (recreated") for x in rep["repos"]["cloned"])
+
+
+def test_hooks_follow_the_plugin_version_installed_here(tmp_path):
+    home = os.path.realpath(str(tmp_path))
+    imp = move._Import.__new__(move._Import)
+    imp.m = move.Machine(home=home, base=home, db=os.path.join(home, "db"),
+                         env_file=os.path.join(home, ".env"), mystical=home)
+    cache = os.path.join(home, ".claude", "plugins", "cache", "mk", "pony")
+    _write(os.path.join(cache, "4.9.0", "hooks", "status.sh"), "#!/bin/sh\n", 0o755)
+    old = f'bash "{cache}/4.8.4/hooks/status.sh"'
+    assert imp._installed_version(old) == f'bash "{cache}/4.9.0/hooks/status.sh"'
+    assert imp._installed_version("bash /usr/bin/true") == "bash /usr/bin/true"
 
 
 # --- the pieces --------------------------------------------------------------
