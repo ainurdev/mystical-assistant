@@ -621,7 +621,7 @@ export function App() {
       // The bridge is the source of truth for HIDE; an older backend omits the
       // field, in which case the cached localStorage set stands.
       if (p.hidden) setHiddenProjects(Object.fromEntries(p.hidden.map((rel) => [rel, true])));
-      setProjectNames(p.names ?? {});
+      setProjectNames(p.names ?? {}, p.projects ?? []);
       setProjectRemotes(p.remotes ?? {});
       markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
     } catch { markBoot("projects", "fail", "NO SCAN"); /* old backend without discovery — panel stays session-derived */ }
