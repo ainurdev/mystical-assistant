@@ -203,6 +203,22 @@ def test_no_upstream_yields_nothing():
     d = tempfile.mkdtemp()
     subprocess.run(["git", "init", "-q", d], check=True)
     assert g.incoming(d) == []
+    assert g.outgoing(d) == []
+
+
+def test_outgoing_lists_unpushed_commits_newest_first():
+    """The SHIP panel lists what a push would send: the mirror of incoming().
+    A clean tree with commits ahead used to list nothing (files only)."""
+    _origin, clone = _clone_with_upstream()
+    _commit(clone, "two\n", "feat: second")
+    _commit(clone, "three\n", "fix: third")
+    assert [c["subject"] for c in g.outgoing(clone)] == ["fix: third", "feat: second"]
+    assert all(c["sha"] for c in g.outgoing(clone))
+    assert g.incoming(clone) == []
+    selfupdate.REPO = clone
+    info = selfupdate.check()
+    assert info["ahead"] == 2 and info["files"] == []
+    assert [c["subject"] for c in info["outgoing"]] == ["fix: third", "feat: second"]
 
 
 if __name__ == "__main__":

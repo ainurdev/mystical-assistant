@@ -498,10 +498,8 @@ def pull(cwd: str, timeout: int = 60) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
-def incoming(cwd: str, limit: int = 20) -> list[dict]:
-    """Commits the upstream branch has that this checkout doesn't (newest first).
-    Empty when there's no upstream configured. Needs a recent fetch() to be true."""
-    rc, out, _ = _run(cwd, "log", f"-{limit}", "--format=%h\t%s", "HEAD..@{u}")
+def _commits(cwd: str, rng: str, limit: int) -> list[dict]:
+    rc, out, _ = _run(cwd, "log", f"-{limit}", "--format=%h\t%s", rng)
     if rc != 0:
         return []
     commits = []
@@ -510,6 +508,18 @@ def incoming(cwd: str, limit: int = 20) -> list[dict]:
         if sha:
             commits.append({"sha": sha, "subject": subject})
     return commits
+
+
+def incoming(cwd: str, limit: int = 20) -> list[dict]:
+    """Commits the upstream branch has that this checkout doesn't (newest first).
+    Empty when there's no upstream configured. Needs a recent fetch() to be true."""
+    return _commits(cwd, "HEAD..@{u}", limit)
+
+
+def outgoing(cwd: str, limit: int = 20) -> list[dict]:
+    """The mirror: commits here that the upstream doesn't have — what a push
+    sends (newest first). Empty without an upstream, like status()'s ahead."""
+    return _commits(cwd, "@{u}..HEAD", limit)
 
 
 _LOG_FMT = "%H\x1f%P\x1f%an\x1f%at\x1f%D\x1f%s"

@@ -205,6 +205,16 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[], project?: s
                         <span style={{ color: "var(--err)", flex: "none" }}>−{f.del}</span>
                       </div>
                     ))}
+                    {(info.outgoing ?? []).map((c) => (
+                      <div key={c.sha} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", color: "var(--txm)", padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        <span style={{ color: "var(--warn)" }}>{c.sha}</span> {c.subject}
+                      </div>
+                    ))}
+                    {info.outgoing && info.ahead > info.outgoing.length && (
+                      <div style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", color: "var(--txf)", padding: "2px 0" }}>
+                        … {info.ahead - info.outgoing.length} more
+                      </div>
+                    )}
                   </div>
                 </>
               )}

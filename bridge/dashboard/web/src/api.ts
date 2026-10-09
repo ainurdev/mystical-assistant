@@ -1289,7 +1289,7 @@ export interface Doc {
 }
 
 // The platform's own checkout vs its upstream — powers the header sync button,
-// both directions: behind/commits is theirs, ahead/dirty/files is ours.
+// both directions: behind/commits is theirs, ahead/dirty/files/outgoing is ours.
 export interface UpdateInfo {
   repo: boolean;
   path: string; // the bridge's own checkout — named in the "fix with Claude" prompt
@@ -1301,6 +1301,7 @@ export interface UpdateInfo {
   ahead: number;
   dirty: number;
   commits: { sha: string; subject: string }[];
+  outgoing?: { sha: string; subject: string }[]; // unpushed, newest first; absent on an older bridge
   files: { path: string; status: string; add: number; del: number }[];
 }
 

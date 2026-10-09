@@ -35,7 +35,7 @@ def check() -> dict:
     waiting upstream) and ours (uncommitted changes, unpushed commits)."""
     if not git.is_repo(REPO):
         return {"repo": False, "path": REPO, "branch": "", "behind": 0,
-                "ahead": 0, "dirty": 0, "commits": [], "files": []}
+                "ahead": 0, "dirty": 0, "commits": [], "outgoing": [], "files": []}
     git.fetch(REPO)
     st = git.status(REPO)
     # FIX WITH CLAUDE starts its session here, so name the checkout the way
@@ -44,7 +44,8 @@ def check() -> dict:
     return {"repo": True, "path": REPO, "branch": st["branch"],
             "project": browser.rel(real) if browser.within_base(real) else "",
             "behind": st["behind"], "ahead": st["ahead"], "dirty": st["dirty"],
-            "commits": git.incoming(REPO), "files": st["files"][:50]}
+            "commits": git.incoming(REPO), "outgoing": git.outgoing(REPO),
+            "files": st["files"][:50]}
 
 
 _DASH_WEB = os.path.join(REPO, "bridge", "dashboard", "web")
