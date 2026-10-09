@@ -41,8 +41,9 @@ import signal
 import sys
 
 from bridge import (config, devserver, dream, envsettings, landing, limits,
-                    native_activity, onboard, pubsub, recovery, report,
-                    rivendell, runner, selfupdate, state, store, toolsets, tunnel)
+                    native_activity, onboard, profiles, pubsub, recovery,
+                    report, rivendell, runner, selfupdate, state, store,
+                    toolsets, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -151,6 +152,7 @@ def main():
     signal.signal(signal.SIGINT, _on_stop_signal)
     signal.signal(signal.SIGTERM, _on_stop_signal)   # bare `kill` now shuts down cleanly too
     store.init()
+    profiles.seed_defaults()       # one profile per login, the first boot only
     # Discovery mode exists to learn a chat id off an incoming message; with no
     # bot there is no message to learn it from, and stopping here would leave a
     # dashboard-only install with no dashboard.

@@ -1,6 +1,7 @@
 """profiles.py: CRUD validation, effective() precedence, save_pick, bind, delete.
 Spec: docs/superpowers/specs/profiles-and-acp-agents.md (Part 1)."""
 import json
+import os
 
 import pytest
 
@@ -161,6 +162,33 @@ def test_refusal_names_a_dead_claude_slot(monkeypatch):
                         lambda: [{"slot": 1, "disabled": False}])
     msg = profiles.refusal(profiles.effective(s), CHAT)
     assert msg and "Work" in msg and "2" in msg
+
+
+def test_seed_defaults_once_one_per_usable_login(monkeypatch):
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [])
+    profiles.seed_defaults()
+    assert not os.path.exists(profiles.PATH)      # no login yet: a later boot still seeds
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [
+        {"slot": 1, "email": "me@x.io", "alias": None, "disabled": False},
+        {"slot": 2, "email": "work@x.io", "alias": "Work", "disabled": False},
+        {"slot": 3, "email": "old@x.io", "alias": None, "disabled": True}])
+    profiles.seed_defaults()
+    assert [(p["name"], p["account"], p["model"]) for p in profiles.all_profiles()] == [
+        ("me@x.io", "1", ""), ("Work", "2", "")]
+    profiles.delete(profiles.all_profiles()[0]["id"])
+    profiles.seed_defaults()                      # the file exists now: nothing comes back
+    assert [p["account"] for p in profiles.all_profiles()] == ["2"]
+
+
+def test_add_default_falls_back_to_the_slot_and_never_raises(monkeypatch):
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [
+        {"slot": 1, "email": "me@x.io", "disabled": False},
+        {"slot": 2, "disabled": False}, {"slot": 3, "disabled": True}])
+    _mk(name="me@x.io", account="1")
+    assert profiles.add_default(1)["name"] == "Account 1"    # email taken
+    assert profiles.add_default(2)["name"] == "Account 2"    # no email, no alias
+    assert profiles.add_default(2) is None                   # both names taken
+    assert profiles.add_default(3) is None                   # disabled
 
 
 # Part 2: profiles on a non-Claude agent (acp_agents presets).

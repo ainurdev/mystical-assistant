@@ -265,7 +265,15 @@ def add(slot: "int | None" = None, alias: "str | None" = None) -> int:
         os.chmod(dst, 0o600)
         reg[str(slot)] = {"email": email, "alias": alias, "disabled": False}
         _save(reg)
+    _default_profile(slot)
     return slot
+
+
+def _default_profile(slot: int) -> None:
+    """A new login gets a profile that runs on it, as profiles.seed_defaults
+    gives the logins there at first boot. Outside _lock: it lists accounts."""
+    from bridge import profiles                 # lazy: profiles imports this module
+    profiles.add_default(slot)
 
 
 # --- browser sign-in: add a *different* account without a terminal -----------
@@ -480,6 +488,7 @@ def submit_login_code(slot: int, code: str, timeout: float = 90) -> dict:
         reg[str(slot)] = {"email": email, "alias": login.alias, "disabled": False}
         _save(reg)
     ensure_profile(slot)     # now that a login exists, its mcpOAuth sync applies
+    _default_profile(slot)
     return {"slot": slot, "email": email}
 
 

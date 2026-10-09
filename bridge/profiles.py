@@ -22,11 +22,17 @@ slot and an agent account lives in acp_agents; a profile only names one. This
 replaces the dashboard's browser-only PROFILES card (lib/profiles.ts), whose
 saved entries the dashboard imports here once.
 
+Defaults: the first boot with no profiles.json seeds one profile per usable
+Claude login, named by its alias or email (seed_defaults), and a login added
+later gets its own from accounts (add_default). Once the file exists the
+person owns the list, so a deleted default stays deleted.
+
 Stdlib only.
 """
 
 import json
 import os
+import sys
 import threading
 import uuid
 
@@ -182,6 +188,41 @@ def delete(pid: str) -> None:
                          None if p.get("tools") is None else json.dumps(p["tools"]),
                          clear=(p.get("agent") or CLAUDE) != CLAUDE)
     project_config.drop_profile(pid)
+
+
+def default_name(a: dict) -> str:
+    """A seeded profile's name: the login's alias, else its email, else its slot."""
+    return str(a.get("alias") or a.get("email") or f"Account {a['slot']}")[:NAME_MAX]
+
+
+def add_default(slot: int) -> "dict | None":
+    """One profile that just runs on this Claude login: its name and slot, every
+    other knob left to the defaults. Never raises (an account add must not fail
+    over it): a taken name falls back to "Account N", a taken "Account N" to
+    nothing. None when nothing was made."""
+    a = next((a for a in accounts.list_accounts()
+              if a["slot"] == int(slot) and not a.get("disabled")), None)
+    if a is None:
+        return None
+    for name in (default_name(a), f"Account {a['slot']}"):
+        try:
+            return create({"name": name, "account": str(a["slot"])})
+        except (ValueError, OSError) as e:
+            err = e
+    print(f"[profiles] no default profile for account {slot}: {err}", file=sys.stderr)
+    return None
+
+
+def seed_defaults() -> None:
+    """At boot, before anyone has touched profiles.json: one profile per usable
+    Claude login, so the pickers offer the accounts without a trip to the editor.
+    Once only: the file existing means the person owns the list from then on
+    (a deleted default stays deleted), and with no login yet nothing is written,
+    so the next boot still seeds."""
+    if os.path.exists(PATH):
+        return
+    for a in accounts.list_accounts():
+        add_default(a["slot"])
 
 
 def effective(session: "dict | None") -> dict:
