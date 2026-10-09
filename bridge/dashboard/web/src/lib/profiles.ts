@@ -20,10 +20,11 @@ export interface Profile {
 export interface ProfilesInfo {
   profiles: Profile[];
   project_defaults: Record<string, string>; // project rel -> the profile its new sessions get
+  default?: string | null; // what a project without one gets: the picked one, else the first login's; absent on an older bridge
 }
 
-/** POST /local/profiles: create, or update / delete by id. */
-export type ProfileWrite = Partial<Profile> & { action: "create" | "update" | "delete" };
+/** POST /local/profiles: create, or update / delete / make default by id ("" = back to the first login's). */
+export type ProfileWrite = Partial<Profile> & { action: "create" | "update" | "delete" | "default" };
 
 const NAME_MAX = 32; // bridge/profiles.py NAME_MAX
 

@@ -3975,6 +3975,11 @@ function ProfilesPanel({
             {describe(p)}
           </span>
           <span style={{ flex: 1 }} />
+          {info.default !== undefined && (p.id === info.default
+            ? <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--acc)", flex: "none" }}
+                title="new sessions get this profile unless their project names another">DEFAULT</span>
+            : <button onClick={() => void write({ action: "default", id: p.id })} disabled={busy}
+                style={btn("var(--txd)")} title="new sessions get this profile unless their project names another">MAKE DEFAULT</button>)}
           <button onClick={() => edit(p)} disabled={busy} style={btn("var(--acc)")}>EDIT</button>
           <button onClick={() => void write({ action: "delete", id: p.id }, () => form?.id === p.id && setForm(null))}
             disabled={busy} style={btn("var(--err)")} title="delete profile — its sessions keep what it gave them">✕</button>

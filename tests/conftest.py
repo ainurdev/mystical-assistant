@@ -88,6 +88,20 @@ acp_agents.ACCOUNTS_FILE = os.path.join(_acp_tmp, "agent-accounts.json")
 acp_agents.OPTIONS_FILE = os.path.join(_acp_tmp, "acp-options.json")
 acp_agents.HOMES = os.path.join(_acp_tmp, "agent-homes")
 
+# A profiles.json one test leaves behind would bind every later test's new
+# sessions to its first profile (profiles.default_profile), so each test gets
+# an empty list and no picked default.
+from bridge import profiles, store  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _no_profiles(monkeypatch, tmp_path):
+    monkeypatch.setattr(profiles, "PATH", str(tmp_path / "conftest-profiles.json"))
+    try:
+        store.set_setting(profiles.DEFAULT_KEY, None)
+    except Exception:  # noqa: BLE001 - a test that never ran store.init()
+        pass
+
 # An empty selection is not a failure. pytest counts session.testscollected AFTER
 # -k/-m deselection (_pytest/main.py:870), so a filter that matches nothing lands
 # on the same `testscollected == 0` branch as a bad path or a file with no tests

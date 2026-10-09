@@ -141,7 +141,8 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                     <select value={profiles.project_defaults[r.rel] ?? ""} onChange={(e) => onSetProfile?.(r.rel, e.target.value)}
                       title="Default profile — what a new session in this project is bound to"
                       style={{ background: "var(--panel3)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t85)", letterSpacing: ".5px", padding: "4px 6px", maxWidth: 150, flex: "none" }}>
-                      <option value="">No default</option>
+                      <option value="">{profiles.default === undefined ? "No default"
+                        : `Default (${profiles.profiles.find((p) => p.id === profiles.default)?.name ?? "none"})`}</option>
                       {profiles.profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   )}

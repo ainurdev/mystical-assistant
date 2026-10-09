@@ -20,6 +20,7 @@ def isolated(monkeypatch, tmp_path):
         {"slot": 3, "disabled": True}])
     monkeypatch.setattr(models, "model_ids", lambda: {"claude-opus-5-5", "claude-fable-5-1"})
     monkeypatch.setattr(store, "default_disabled_tools", lambda: ["mcp__x"])
+    store.set_setting(profiles.DEFAULT_KEY, None)
 
 
 def _mk(**kw):
@@ -137,6 +138,33 @@ def test_delete_unbinds_freezes_and_clears_project_defaults():
 def test_project_default_ignores_a_profile_that_is_gone(tmp_path):
     project_config.set_profile("/pf-stale", "p_gone")
     assert profiles.project_default("/pf-stale") is None
+
+
+def test_a_project_without_its_own_default_gets_the_first_usable_claude_profile():
+    assert profiles.project_default("/pf-none") is None     # no profiles: unbound
+    dead = _mk(name="Dead", account="2")
+    first = _mk(name="First", account="1")
+    _mk(name="Later", account="2")
+    assert profiles.project_default("/pf-none") == dead["id"]
+    dead_acct = [{"slot": 1, "disabled": False}]
+    with pytest.MonkeyPatch.context() as m:
+        m.setattr(accounts, "list_accounts", lambda: dead_acct)  # slot 2 gone
+        assert profiles.project_default("/pf-none") == first["id"]
+
+
+def test_the_picked_default_wins_until_its_profile_is_gone():
+    _mk(name="First", account="1")
+    later = _mk(name="Later", account="2")
+    own = _mk(name="Own", account="1")
+    profiles.set_project_default("/pf-own", own["id"])
+    assert profiles.api_write({"action": "default", "id": later["id"]}) == (
+        {"ok": True, "default": later["id"]}, 200)
+    assert profiles.project_default("/pf-none") == later["id"]
+    assert profiles.project_default("/pf-own") == own["id"]  # a project's own still wins
+    assert profiles.api_list()["default"] == later["id"]
+    assert profiles.api_write({"action": "default", "id": "p_gone"})[1] == 404
+    profiles.delete(later["id"])
+    assert profiles.project_default("/pf-none") == profiles.all_profiles()[0]["id"]
 
 
 def test_api_write_reports_errors_as_statuses():

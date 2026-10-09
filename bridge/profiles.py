@@ -27,6 +27,11 @@ Claude login, named by its alias or email (seed_defaults), and a login added
 later gets its own from accounts (add_default). Once the file exists the
 person owns the list, so a deleted default stays deleted.
 
+A new session in a project with no default profile of its own gets the
+bridge-wide one (default_profile): the one picked in PROFILES (a `settings`
+row), else the first Claude profile on a usable login, which after seeding is
+the first account added. So a new session is only unbound by unbinding it.
+
 Stdlib only.
 """
 
@@ -320,9 +325,34 @@ def bind(session: dict, pid: "str | None") -> "tuple[dict, int]":
     return {"ok": True, "profile_id": pid}, 200
 
 
+DEFAULT_KEY = "default_profile"
+
+
+def default_profile() -> "str | None":
+    """The profile a new session gets when its project names none: the picked
+    one, else the first Claude profile whose login is usable (or unset)."""
+    rows = all_profiles()
+    picked = store.get_setting(DEFAULT_KEY)
+    if any(p["id"] == picked for p in rows):
+        return picked
+    return next((p["id"] for p in rows if (p.get("agent") or CLAUDE) == CLAUDE
+                 and (not p.get("account") or (p["account"].isdigit()
+                                               and claude_slot_usable(int(p["account"]))))),
+                None)
+
+
+def set_default_profile(pid: "str | None") -> None:
+    """"" or None goes back to the first account's profile."""
+    if pid and not get(pid):
+        raise KeyError(pid)
+    store.set_setting(DEFAULT_KEY, pid or None)
+
+
 def project_default(project: str) -> "str | None":
+    """The profile a new session in this project is bound to: the project's
+    own, else the bridge-wide default."""
     pid = project_config.profile(project)
-    return pid if get(pid) else None
+    return pid if get(pid) else default_profile()
 
 
 def set_project_default(project: str, pid: "str | None") -> None:
@@ -361,13 +391,14 @@ def refusal(eff: dict, chat_id) -> "str | None":
 
 
 def api_list() -> dict:
-    return {"profiles": all_profiles(),
+    return {"profiles": all_profiles(), "default": default_profile(),
             "project_defaults": {k: v for k, v in project_config.profiles_by_project().items()
                                  if get(v)}}
 
 
 def api_write(body: dict) -> "tuple[dict, int]":
-    """POST …/profiles: {action: create|update|delete, id?, …fields}."""
+    """POST …/profiles: {action: create|update|delete|default, id?, …fields}.
+    default with id "" goes back to the first account's profile."""
     action = body.get("action")
     try:
         if action == "create":
@@ -377,11 +408,14 @@ def api_write(body: dict) -> "tuple[dict, int]":
         if action == "delete":
             delete(str(body.get("id") or ""))
             return {"ok": True}, 200
+        if action == "default":
+            set_default_profile(str(body.get("id") or "").strip() or None)
+            return {"ok": True, "default": default_profile()}, 200
     except KeyError:
         return {"error": "no such profile"}, 404
     except ValueError as e:
         return {"error": str(e)}, 400
-    return {"error": "action must be create, update or delete"}, 400
+    return {"error": "action must be create, update, delete or default"}, 400
 
 
 def agent_for(session: "dict | None", profile_id=None, project=None) -> str:
