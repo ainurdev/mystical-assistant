@@ -1713,7 +1713,11 @@ class _Import:
             elif k not in dict(add):
                 add.append((k, v))
         if add and not self.dry:
-            _backup(path, self.stamp)
+            # Kept with the rest of the move, not beside .env: that is the repo
+            # folder, and an un-ignored .env.bak is one `git add -A` from public.
+            if os.path.isfile(path):
+                os.makedirs(self.park, exist_ok=True)
+                shutil.copy2(path, os.path.join(self.park, f"env.bak-{self.stamp}"))
             body = mine_text + ("" if mine_text.endswith("\n") or not mine_text else "\n")
             body += (f"\n# Carried from {self.host} by `mystical import`, "
                      f"{time.strftime('%Y-%m-%d')}.\n")

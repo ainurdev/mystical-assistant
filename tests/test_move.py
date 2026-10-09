@@ -361,7 +361,10 @@ def test_bridge_config_merges_and_per_machine_keys_stay_behind(world):
                  'ASK_SYSTEM_PROMPT="line one\nline two"',
                  f'RIVENDELL_WORKDIR="{new.base}/acme/app"'):
         assert line in env
-    assert any(n.startswith(".env.bak-") for n in os.listdir(os.path.dirname(new.env_file)))
+    assert not any(".bak" in n for n in os.listdir(os.path.dirname(new.env_file))), \
+        "no secrets copy left in the repo folder"
+    host = os.listdir(os.path.join(new.state, "moved"))[0]
+    assert any(n.startswith("env.bak-") for n in os.listdir(os.path.join(new.state, "moved", host)))
     assert set(rep["bridge"][".env left behind (per machine)"][0].split(", ")) == \
         {"TELEGRAM_BOT_TOKEN", "BASE_PATH", "RIVENDELL_ENABLE"}
 
