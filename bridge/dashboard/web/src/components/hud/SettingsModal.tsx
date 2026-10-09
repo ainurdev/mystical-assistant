@@ -3464,7 +3464,22 @@ function AccountsPanel() {
               setLogin(null);
               await load();
             }}
-            onSubmit={(code) => api.loginSubmit(login.slot, code)}
+            onSubmit={async (code) => {
+              try {
+                await api.loginSubmit(login.slot, code);
+              } catch (e) {
+                // The bridge keeps a sign-in going only through a paste worth
+                // retrying (half a code). Any other failure ended it, and this
+                // box could only fail again: back to the buttons, with the reason.
+                const r = await api.accounts().catch(() => null);
+                if (r && !r.pending_login) {
+                  setLogin(null);
+                  setRows(r.accounts);
+                  setErr(e instanceof Error ? e.message : "sign-in failed");
+                }
+                throw e;
+              }
+            }}
             onCancel={async () => {
               await api.loginCancel(login.slot).catch(() => {});
               setLogin(null);

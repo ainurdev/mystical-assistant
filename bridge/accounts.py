@@ -152,20 +152,25 @@ def _sync_user_mcp(p: str) -> None:
             cfg["mcpServers"] = merged
             _write_json(cfg_path, cfg)
     tokens = credentials.load(os.path.join(CLAUDE_HOME, CREDENTIALS)).get("mcpOAuth")
-    dst = os.path.join(p, CREDENTIALS)
-    # No credentials means a sign-in is (or may be) in flight: writing some
-    # here would read as that login succeeding (see submit_login_code).
-    raw = credentials.read(dst) if isinstance(tokens, dict) and tokens else b""
-    if raw:
-        creds = credentials.parse(raw)
+    if not (isinstance(tokens, dict) and tokens):
+        return
+
+    def with_ambient_tokens(creds: dict) -> "dict | None":
         cur = creds.get("mcpOAuth") or {}
         merged = dict(cur)
         for name, tok in tokens.items():
             if name not in cur or _expires(tok) > _expires(cur[name]):
                 merged[name] = tok
-        if merged != cur:
-            creds["mcpOAuth"] = merged
-            credentials.write(dst, json.dumps(creds, indent=2).encode())
+        return None if merged == cur else {**creds, "mcpOAuth": merged}
+
+    # No credentials means a sign-in is (or may be) in flight: writing some
+    # here would read as that login succeeding (see submit_login_code), so
+    # update() never creates them. It also holds the CLI's lock, so a claude
+    # refreshing this slot's token mid-merge can't have its new one undone.
+    try:
+        credentials.update(os.path.join(p, CREDENTIALS), with_ambient_tokens)
+    except credentials.Busy:
+        pass                     # that claude is writing them now; the next spawn syncs
 
 
 # --- registry (ROOT/accounts.json) ------------------------------------------
@@ -297,11 +302,22 @@ def _default_profile(slot: int) -> None:
 # the code on stdin, and the credentials it writes land in the slot. The ambient
 # login is never touched, so the two halves of this (begin_login → the user
 # signs in in a browser → submit_login_code) are a complete add-an-account flow.
+#
+# After a good code the CLI writes the account's identity, then its tokens, then
+# keeps going: it fetches the org role into that identity, checks the login
+# against policy, and flushes telemetry before it exits. So the sign-in is over
+# when the process exits, not when the tokens first show up. Killing it at that
+# point cut the rest off midway, with the CLI possibly inside one of its own
+# config writes.
 
 _LOGIN_ARGS = ("auth", "login", "--claudeai")
 _OSC8 = re.compile(rb"\x1b]8;;(https://[^\x1b\x07]+)")   # terminal hyperlink target
 _ANSI = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]|\x1b][^\x1b\x07]*(?:\x1b\\|\x07)?")
 _PROMPT = re.compile(r".*Paste code here[^>]*>\s*")      # the one prompt this flow hits
+# What the CLI says to a pasted line that isn't CODE#STATE. It then waits for
+# another line rather than exiting, so the same sign-in can take a second paste.
+_PARTIAL = b"Invalid code"
+_WRAP_UP = 20            # seconds the CLI gets to finish once its tokens are stored
 _pending: dict = {}                                      # slot -> _Login
 
 
@@ -326,6 +342,11 @@ class _Login:
         self.creds_at = _creds_mark(credentials_path(slot))
         self.buf = bytearray()
         threading.Thread(target=self._pump, daemon=True).start()
+
+    def stored(self) -> bool:
+        """Whether this sign-in has written its tokens yet."""
+        mark = _creds_mark(credentials_path(self.slot))
+        return bool(mark) and mark != self.creds_at
 
     def _pump(self) -> None:
         fd = self.proc.stdout.fileno()
@@ -429,38 +450,55 @@ def begin_login(alias: "str | None" = None, timeout: float = 30,
 
 def submit_login_code(slot: int, code: str, timeout: float = 90) -> dict:
     """Hand the pasted code to the waiting sign-in and register the slot once
-    its credentials land."""
+    the CLI has finished with it: exited 0 with its tokens stored. A paste the
+    CLI turns down for its shape leaves the sign-in running for another try;
+    anything else that fails ends it."""
     slot = int(slot)
     login = _pending.get(slot)
     if login is None:
         raise LoginFailed("that sign-in is no longer running — start it again")
-    code = (code or "").strip()
+    # A code has no whitespace in it; a paste from a phone can (a wrapped line,
+    # a stray space), and a line break would reach the CLI as two half-codes.
+    code = "".join((code or "").split())
     if not code:
         raise ValueError("paste the code from the sign-in page")
+    said = len(login.buf)                 # only what the CLI says from here on
     try:
         login.proc.stdin.write(code.encode() + b"\n")
         login.proc.stdin.flush()
     except OSError:
         cancel_login(slot)
         raise LoginFailed("the sign-in exited before the code arrived")
-    dst = credentials_path(slot)
     deadline = time.time() + timeout
-    while time.time() < deadline:
-        mark = _creds_mark(dst)
-        if mark and mark != login.creds_at:
-            break
-        if login.proc.poll() is not None:
-            detail = login.tail()
-            cancel_login(slot)
-            raise LoginFailed(detail or "sign-in failed — check the code and retry")
+    stored = False
+    while login.proc.poll() is None and time.time() < deadline:
+        if _PARTIAL in login.buf[said:]:
+            raise LoginFailed("That isn't the whole code. Copy all of it (it has a "
+                              "# in the middle) and paste it again.")
+        if not stored and login.stored():
+            stored = True                 # what's left is the CLI's own wrap-up
+            deadline = min(deadline, time.time() + _WRAP_UP)
         time.sleep(0.25)
-    else:
+    stored = stored or login.stored()
+    status = login.proc.poll()
+    if status is None and not stored:
         cancel_login(slot)
         raise LoginFailed("sign-in timed out — the code may have expired")
+    if status not in (None, 0) or not stored:
+        detail = login.tail()
+        cancel_login(slot)
+        if status == 0:
+            raise LoginFailed("the sign-in finished without storing a login — "
+                              "start it again")
+        raise LoginFailed(detail or "sign-in failed — check the code and retry")
+    # Exited 0, or stored and still busy at the deadline: the tokens are in, so
+    # the account is too, and close() ends a wrap-up that hung.
     _pending.pop(slot, None)
     login.close()
-    # The CLI can write credentials a beat before the identity; the email is
-    # what dedup and the account list run on, so give it a moment to land.
+    # The CLI writes the identity before the tokens, so after a clean exit the
+    # email is already there. The grace covers a wrap-up cut short at the
+    # deadline, and a CLI that orders them the other way: dedup and the account
+    # list run on the email, so give it a moment to land.
     email = None
     ident = (IDENTITY if slot == DEFAULT_SLOT
              else os.path.join(profile_dir(slot), ".claude.json"))

@@ -116,33 +116,48 @@ def pytest_sessionfinish(session, exitstatus):
 # bridge/credentials.py reads a Mac's login through the `security` tool, as the
 # CLI does. This `security` speaks the three generic-password verbs both use,
 # backed by one JSON file, so the macOS paths run on Linux: the suite can't
-# reach a real Keychain, and must never touch one.
+# reach a real Keychain, and must never touch one. It takes them in argv or, as
+# `security -i`, one per line on stdin, with the secret as -w text or -X hex;
+# every argv it is run with is logged, since an argv is what `ps` shows.
 
 _FAKE_SECURITY = """#!/usr/bin/env python3
-import json, os, sys
+import json, os, shlex, sys
 store = os.environ["FAKE_KEYCHAIN"]
-items = json.load(open(store)) if os.path.exists(store) else {}
-verb, args = sys.argv[1], sys.argv[2:]
-opt = lambda flag: args[args.index(flag) + 1] if flag in args else ""
-key = opt("-a") + "\\0" + opt("-s")
-if verb == "find-generic-password":
-    if key not in items:
-        sys.stderr.write("security: SecKeychainSearchCopyNext: The specified item "
-                         "could not be found in the keychain.\\n")
-        sys.exit(44)
-    sys.stdout.write(items[key] + "\\n")
-elif verb == "add-generic-password":
-    if key in items and "-U" not in args:
-        sys.exit(45)                      # errSecDuplicateItem
-    items[key] = opt("-w")
-    json.dump(items, open(store, "w"))
-elif verb == "delete-generic-password":
-    if key not in items:
-        sys.exit(44)
-    del items[key]
-    json.dump(items, open(store, "w"))
-else:
-    sys.exit(2)
+with open(store + ".argv", "a") as log:
+    log.write(json.dumps(sys.argv[1:]) + "\\n")
+
+def run(verb, args):
+    items = json.load(open(store)) if os.path.exists(store) else {}
+    opt = lambda flag: args[args.index(flag) + 1] if flag in args else ""
+    key = opt("-a") + "\\0" + opt("-s")
+    if verb == "find-generic-password":
+        if key not in items:
+            sys.stderr.write("security: SecKeychainSearchCopyNext: The specified item "
+                             "could not be found in the keychain.\\n")
+            return 44
+        sys.stdout.write(items[key] + "\\n")
+    elif verb == "add-generic-password":
+        if key in items and "-U" not in args:
+            return 45                     # errSecDuplicateItem
+        items[key] = bytes.fromhex(opt("-X")).decode() if "-X" in args else opt("-w")
+        json.dump(items, open(store, "w"))
+    elif verb == "delete-generic-password":
+        if key not in items:
+            return 44
+        del items[key]
+        json.dump(items, open(store, "w"))
+    else:
+        return 2
+    return 0
+
+if sys.argv[1:] == ["-i"]:
+    status = 0
+    for line in sys.stdin:
+        words = shlex.split(line)
+        if words:
+            status = run(words[0], words[1:])
+    sys.exit(status)
+sys.exit(run(sys.argv[1], sys.argv[2:]))
 """
 
 
@@ -152,6 +167,11 @@ class FakeKeychain:
 
     def _items(self) -> dict:
         return json.load(open(self.store)) if os.path.exists(self.store) else {}
+
+    def argvs(self) -> list:
+        """Every argv the stand-in `security` has been run with."""
+        log = self.store + ".argv"
+        return [json.loads(ln) for ln in open(log)] if os.path.exists(log) else []
 
     def get(self, service: str) -> "str | None":
         return self._items().get(self._key(service))
