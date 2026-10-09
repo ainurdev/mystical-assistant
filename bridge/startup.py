@@ -15,6 +15,12 @@ wake — the unit already came up at boot — so the launcher is only the window
 Everything here is best-effort and reversible, and `state()` never raises — a machine
 with no /mnt/c, several Windows profiles, or no systemd just reports
 `supported: False` with a reason, and the UI hides the switches.
+
+On macOS both halves are **launchd LaunchAgents** in ~/Library/LaunchAgents: one
+runs run.sh (the systemd unit's counterpart: up at login, restarted after a
+crash), the other opens Mystical.app (macos/) — the window half. Same rules as
+systemd: switching on never starts a second bridge beside a hand-launched one,
+switching off never stops the one you are talking through.
 """
 from __future__ import annotations
 
@@ -23,6 +29,7 @@ import glob
 import json
 import os
 import platform
+import plistlib
 import re
 import shutil
 import subprocess
@@ -35,6 +42,13 @@ CMD_NAME = "mystical-assistant.cmd"
 _AUTOSTART = os.path.expanduser("~/.config/autostart/mystical-assistant.desktop")
 _UNIT_DIR = os.path.expanduser("~/.config/systemd/user")
 _REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# macOS: launchd agents. Labels are reverse-DNS of the project's domain; bin/mystical
+# and macos/ name the same two, so a change here is a change there.
+BRIDGE_LABEL = "cloud.ainurhq.mystical.bridge"
+APP_LABEL = "cloud.ainurhq.mystical.app"
+_AGENT_DIR = os.path.expanduser("~/Library/LaunchAgents")
+_MAC_APP = os.path.expanduser("~/Applications/Mystical.app")
 
 # Chrome first, Edge as the fallback: both render the PWA, but an installed app
 # lives in whichever one installed it, and Chrome is the common case.
@@ -166,6 +180,17 @@ def _has_systemd() -> bool:
 
 
 # --- the two artefacts --------------------------------------------------------
+def _pinned_path(exes, tail) -> list[str]:
+    """The dirs holding `exes`, then `tail` — de-duplicated, pyenv shims out."""
+    parts = [os.path.dirname(p) for p in map(shutil.which, exes) if p] + list(tail)
+    path, seen = [], set()
+    for p in parts:
+        if p not in seen and "/.pyenv/shims" not in p:
+            seen.add(p)
+            path.append(p)
+    return path
+
+
 def _unit_text() -> str:
     """The unit, with PATH pinned. A user unit inherits a minimal PATH that finds
     neither `claude` nor node's MCP servers, and the pyenv shims have to stay OUT
@@ -180,15 +205,9 @@ def _unit_text() -> str:
     leftover that ignores SIGTERM (twice in the 30 days to 2026-10-06, a
     `docker` CLI). TimeoutStopSec stays at the 90s default: a stop takes about a
     second, and stop_children gives its children 10s in all."""
-    parts = [os.path.dirname(p) for p in
-             (shutil.which("claude"), shutil.which("node")) if p]
-    parts += ["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin",
-              "/sbin", "/bin", "/usr/lib/wsl/lib"]
-    path, seen = [], set()
-    for p in parts:
-        if p not in seen and "/.pyenv/shims" not in p:
-            seen.add(p)
-            path.append(p)
+    path = _pinned_path(("claude", "node"),
+                        ["/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin",
+                         "/sbin", "/bin", "/usr/lib/wsl/lib"])
     return f"""[Unit]
 Description=mystical//assistant bridge (Telegram + dashboard)
 After=network-online.target
@@ -262,9 +281,134 @@ def _desktop(profile: str | None = None) -> str:
             "X-GNOME-Autostart-enabled=true\n")
 
 
+# --- macOS: launchd -----------------------------------------------------------
+def _darwin() -> bool:
+    return platform.system() == "Darwin"
+
+
+def _launchctl(*args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["launchctl", *args], capture_output=True, text=True,
+                          timeout=20)
+
+
+def _agent(label: str) -> str:
+    return os.path.join(_AGENT_DIR, f"{label}.plist")
+
+
+def _bridge_plist() -> bytes:
+    """The agent that runs the bridge, with PATH pinned for the same reason as the
+    systemd unit — and one more: launchd's default PATH resolves python3 to the
+    system 3.9, which the bridge refuses. So python3's own dir rides along with
+    claude's and node's, ahead of Homebrew and the system dirs.
+
+    KeepAlive only on an unsuccessful exit: a crash comes back after
+    ThrottleInterval, a clean stop stays stopped. `mystical stop` boots the agent
+    out instead of signalling it, so this never fights a deliberate stop."""
+    path = _pinned_path(("claude", "node", "python3"),
+                        ["/opt/homebrew/bin", "/opt/homebrew/sbin", "/usr/local/bin",
+                         "/usr/bin", "/bin", "/usr/sbin", "/sbin"])
+    log = os.path.join(os.environ.get("BRIDGE_STATE_DIR")
+                       or os.path.expanduser("~/.bridge_state"), "mystical.log")
+    return plistlib.dumps({
+        "Label": BRIDGE_LABEL,
+        "ProgramArguments": [os.path.join(_REPO, "run.sh")],
+        "WorkingDirectory": _REPO,
+        "EnvironmentVariables": {
+            "PATH": ":".join(path),
+            "LANG": os.environ.get("LANG") or "en_US.UTF-8",
+            "PYTHONUNBUFFERED": "1",
+        },
+        "RunAtLoad": True,
+        "KeepAlive": {"SuccessfulExit": False},
+        "ThrottleInterval": 5,
+        "StandardOutPath": log,
+        "StandardErrorPath": log,
+    })
+
+
+def _app_plist() -> bytes:
+    """The window half: open the app at login. The app waits for the bridge itself,
+    so there is no curl loop here."""
+    return plistlib.dumps({
+        "Label": APP_LABEL,
+        "ProgramArguments": ["/usr/bin/open", "-a", _MAC_APP],
+        "RunAtLoad": True,
+    })
+
+
+def _disabled_labels() -> set[str]:
+    out = _launchctl("print-disabled", f"gui/{os.getuid()}").stdout
+    return set(re.findall(r'"([^"]+)" => (?:disabled|true)', out))
+
+
+def _write_if_changed(path: str, data: bytes) -> None:
+    # Only rewrite when it differs, so a hand-tuned agent survives a window toggle.
+    try:
+        with open(path, "rb") as f:
+            if f.read() == data:
+                return
+    except OSError:
+        pass
+    with open(path, "wb") as f:
+        f.write(data)
+
+
+def _mac_state() -> dict:
+    printed = _launchctl("print", f"gui/{os.getuid()}/{BRIDGE_LABEL}")
+    login = (os.path.isfile(_agent(BRIDGE_LABEL))
+             and BRIDGE_LABEL not in _disabled_labels())
+    return {
+        "supported": True,
+        "reason": None,
+        "login": login,
+        "window": login and os.path.isfile(_agent(APP_LABEL)),
+        # Loaded AND holding a pid: the bridge running now is the agent's own.
+        "supervised": printed.returncode == 0
+                      and bool(re.search(r"^\s*pid = \d+", printed.stdout, re.M)),
+        "browser": "Mystical.app" if os.path.isdir(_MAC_APP) else None,
+        "profiles": [],
+        "profile": None,
+    }
+
+
+def _mac_apply(login: bool, window: bool) -> dict:
+    uid = os.getuid()
+    if login:
+        if window and not os.path.isdir(_MAC_APP):
+            raise RuntimeError("build the Mac app first: mystical app")
+        os.makedirs(_AGENT_DIR, exist_ok=True)
+        _write_if_changed(_agent(BRIDGE_LABEL), _bridge_plist())
+        # enable, never bootstrap: a hand-launched bridge already holds the ports.
+        # The agent takes over at next login, or at the next `mystical restart`.
+        r = _launchctl("enable", f"gui/{uid}/{BRIDGE_LABEL}")
+        if r.returncode:
+            raise RuntimeError((r.stderr or r.stdout).strip() or "launchctl enable failed")
+        if window:
+            _write_if_changed(_agent(APP_LABEL), _app_plist())
+            _launchctl("enable", f"gui/{uid}/{APP_LABEL}")
+        elif os.path.isfile(_agent(APP_LABEL)):
+            os.remove(_agent(APP_LABEL))
+    else:
+        r = _launchctl("disable", f"gui/{uid}/{BRIDGE_LABEL}")
+        if r.returncode:
+            raise RuntimeError((r.stderr or r.stdout).strip() or "launchctl disable failed")
+        # Deliberately NOT bootout — same reason as systemd's missing `stop`.
+        for label in (BRIDGE_LABEL, APP_LABEL):
+            if os.path.isfile(_agent(label)):
+                os.remove(_agent(label))
+    return _mac_state()
+
+
 # --- public API ---------------------------------------------------------------
 def state() -> dict:
     """Never raises — the UI needs something to render on every host."""
+    if _darwin():
+        try:
+            return _mac_state()
+        except (OSError, subprocess.SubprocessError) as e:
+            return {"supported": False, "reason": f"launchctl: {e}",
+                    "login": False, "window": False, "supervised": False,
+                    "browser": None, "profiles": [], "profile": None}
     if not _has_systemd():
         return {"supported": False, "reason": "no systemd on this machine",
                 "login": False, "window": False, "supervised": False,
@@ -313,6 +457,8 @@ def apply(login: bool, window: bool, profile: str | None = None) -> dict:
     """Write or remove both artefacts. Raises RuntimeError with something worth
     showing the user; the caller turns that into a 400. `profile` pins the
     browser profile the window opens in; None keeps the auto-guess."""
+    if _darwin():
+        return _mac_apply(login, window)
     st = state()
     if not st["supported"]:
         raise RuntimeError(st["reason"] or "not supported on this machine")
