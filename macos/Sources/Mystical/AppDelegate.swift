@@ -53,6 +53,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: menu bar menu — rebuilt each time it opens, from the latest poll
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        // Supervision can change under us (the SYSTEM tab, a terminal); re-read
+        // it for the next open rather than block this one on a subprocess.
+        if !busy { Task { await bridge.refreshStatus() } }
         menu.removeAllItems()
         menu.addItem(disabled(stateLine()))
         if !bridge.waiting.isEmpty {
