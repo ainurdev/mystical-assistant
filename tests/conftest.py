@@ -9,10 +9,13 @@ and, worse, point tests at the real ~/.bridge_state DB and the real chat-id
 allow-list. We hard-assign (not setdefault) so a shell value can never leak in.
 """
 
+import json
 import os
 import shutil
 import sys
 import tempfile
+
+import pytest
 
 # Every mkdtemp() below and in the tests lands under one root that the session
 # removes when it ends (pytest_sessionfinish). The suite used to leave ~3,400
@@ -98,3 +101,74 @@ def pytest_sessionfinish(session, exitstatus):
     # ponytail: a killed run (SIGKILL, power) still leaves its root behind;
     # it's one dir named mystical-tests-*, so a stale sweep is easy if it adds up.
     shutil.rmtree(_TMP_ROOT, ignore_errors=True)
+
+
+# --- a stand-in macOS Keychain --------------------------------------------------
+# bridge/credentials.py reads a Mac's login through the `security` tool, as the
+# CLI does. This `security` speaks the three generic-password verbs both use,
+# backed by one JSON file, so the macOS paths run on Linux: the suite can't
+# reach a real Keychain, and must never touch one.
+
+_FAKE_SECURITY = """#!/usr/bin/env python3
+import json, os, sys
+store = os.environ["FAKE_KEYCHAIN"]
+items = json.load(open(store)) if os.path.exists(store) else {}
+verb, args = sys.argv[1], sys.argv[2:]
+opt = lambda flag: args[args.index(flag) + 1] if flag in args else ""
+key = opt("-a") + "\\0" + opt("-s")
+if verb == "find-generic-password":
+    if key not in items:
+        sys.stderr.write("security: SecKeychainSearchCopyNext: The specified item "
+                         "could not be found in the keychain.\\n")
+        sys.exit(44)
+    sys.stdout.write(items[key] + "\\n")
+elif verb == "add-generic-password":
+    if key in items and "-U" not in args:
+        sys.exit(45)                      # errSecDuplicateItem
+    items[key] = opt("-w")
+    json.dump(items, open(store, "w"))
+elif verb == "delete-generic-password":
+    if key not in items:
+        sys.exit(44)
+    del items[key]
+    json.dump(items, open(store, "w"))
+else:
+    sys.exit(2)
+"""
+
+
+class FakeKeychain:
+    def __init__(self, store):
+        self.store = store
+
+    def _items(self) -> dict:
+        return json.load(open(self.store)) if os.path.exists(self.store) else {}
+
+    def get(self, service: str) -> "str | None":
+        return self._items().get(self._key(service))
+
+    def put(self, service: str, text: str) -> None:
+        items = self._items()
+        items[self._key(service)] = text
+        json.dump(items, open(self.store, "w"))
+
+    @staticmethod
+    def _key(service: str) -> str:
+        from bridge import credentials
+        return credentials._user() + "\0" + service
+
+
+@pytest.fixture
+def fake_keychain(monkeypatch):
+    """Flip bridge.credentials into its macOS mode against a fake `security`
+    on PATH. Yields a FakeKeychain to seed and inspect items by service name."""
+    from bridge import credentials
+    d = tempfile.mkdtemp()
+    script = os.path.join(d, "security")
+    with open(script, "w") as f:
+        f.write(_FAKE_SECURITY)
+    os.chmod(script, 0o755)
+    monkeypatch.setenv("PATH", d + os.pathsep + os.environ.get("PATH", ""))
+    monkeypatch.setenv("FAKE_KEYCHAIN", os.path.join(d, "keychain.json"))
+    monkeypatch.setattr(credentials, "KEYCHAIN", True)
+    return FakeKeychain(os.path.join(d, "keychain.json"))

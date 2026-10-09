@@ -2,7 +2,8 @@
 
 Slot 1 is the ambient ~/.claude login and is never redirected. Slots 2+ live in
 ROOT/<slot>/ as *thin overlays*: .credentials.json is a real file (that account's
-tokens) and everything else is a symlink back to ~/.claude, so transcripts,
+tokens; on a Mac its own Keychain item instead -- bridge/credentials.py reads
+both) and everything else is a symlink back to ~/.claude, so transcripts,
 skills, plugins and settings stay shared. Sharing projects/ is what lets any
 account --resume any session, and is why the bridge's six ~/.claude readers
 (transcript_jsonl, machine, skills, agents, native, models) need no changes.
@@ -30,7 +31,7 @@ import sys
 import threading
 import time
 
-from bridge import usage
+from bridge import credentials, usage
 
 ROOT = os.path.expanduser(os.environ.get("ACCOUNTS_DIR", "~/.mystical/accounts"))
 CLAUDE_HOME = os.path.expanduser("~/.claude")
@@ -74,10 +75,21 @@ def env_for(slot: "int | None") -> dict:
 
 
 def credentials_path(slot: "int | None") -> str:
-    """Where this slot's OAuth tokens live."""
+    """Where this slot's OAuth tokens live (read through bridge.credentials:
+    on a Mac the path names a Keychain item rather than a file)."""
     home = CLAUDE_HOME if (not slot or int(slot) == DEFAULT_SLOT) \
         else profile_dir(int(slot))
     return os.path.join(home, CREDENTIALS)
+
+
+def _wipe(slot: int) -> None:
+    """Drop a slot's profile dir and its tokens wherever the platform keeps
+    them: a removed account's refresh token must not outlive the account.
+    Never slot 1 -- its tokens are the user's own ~/.claude login."""
+    if int(slot) == DEFAULT_SLOT:
+        return
+    credentials.forget(credentials_path(slot))
+    shutil.rmtree(profile_dir(slot), ignore_errors=True)
 
 
 def ensure_profile(slot: int) -> str:
@@ -139,12 +151,13 @@ def _sync_user_mcp(p: str) -> None:
         if merged != cfg.get("mcpServers"):
             cfg["mcpServers"] = merged
             _write_json(cfg_path, cfg)
-    tokens = _read_json(os.path.join(CLAUDE_HOME, CREDENTIALS)).get("mcpOAuth")
+    tokens = credentials.load(os.path.join(CLAUDE_HOME, CREDENTIALS)).get("mcpOAuth")
     dst = os.path.join(p, CREDENTIALS)
-    # No credentials file means a sign-in is (or may be) in flight: creating one
+    # No credentials means a sign-in is (or may be) in flight: writing some
     # here would read as that login succeeding (see submit_login_code).
-    if isinstance(tokens, dict) and tokens and os.path.exists(dst):
-        creds = _read_json(dst)
+    raw = credentials.read(dst) if isinstance(tokens, dict) and tokens else b""
+    if raw:
+        creds = credentials.parse(raw)
         cur = creds.get("mcpOAuth") or {}
         merged = dict(cur)
         for name, tok in tokens.items():
@@ -152,7 +165,7 @@ def _sync_user_mcp(p: str) -> None:
                 merged[name] = tok
         if merged != cur:
             creds["mcpOAuth"] = merged
-            _write_json(dst, creds)
+            credentials.write(dst, json.dumps(creds, indent=2).encode())
 
 
 # --- registry (ROOT/accounts.json) ------------------------------------------
@@ -189,10 +202,10 @@ def _email_at(path: str) -> "str | None":
         return None
 
 
-def _plan_at(path: str) -> "str | None":
-    """'MAX 20x' / 'TEAM 5x' / 'PRO' from a credentials file's own subscription
-    fields; None when there is no type to read (pending or pre-plan login)."""
-    oauth = _read_json(path).get("claudeAiOauth") or {}
+def _plan_of(creds: dict) -> "str | None":
+    """'MAX 20x' / 'TEAM 5x' / 'PRO' from a login's own subscription fields;
+    None when there is no type to read (pending or pre-plan login)."""
+    oauth = creds.get("claudeAiOauth") or {}
     sub = oauth.get("subscriptionType")
     if not sub:
         return None
@@ -220,10 +233,11 @@ def list_accounts() -> list:
     with _lock:
         reg = _load()
     out = []
-    if os.path.exists(credentials_path(DEFAULT_SLOT)):
+    ambient = credentials.read(credentials_path(DEFAULT_SLOT))
+    if ambient:
         out.append({"slot": DEFAULT_SLOT, "email": _email_at(IDENTITY),
                     "alias": None, "disabled": False, "default": True,
-                    "plan": _plan_at(credentials_path(DEFAULT_SLOT))})
+                    "plan": _plan_of(credentials.parse(ambient))})
     for key, e in reg.items():
         if not str(key).isdigit() or int(key) == DEFAULT_SLOT:
             continue
@@ -233,16 +247,17 @@ def list_accounts() -> list:
         live = _email_at(os.path.join(profile_dir(slot), ".claude.json"))
         out.append({"slot": slot, "email": live or e.get("email"),
                     "alias": e.get("alias"), "disabled": bool(e.get("disabled")),
-                    "default": False, "plan": _plan_at(credentials_path(slot))})
+                    "default": False,
+                    "plan": _plan_of(credentials.load(credentials_path(slot)))})
     return sorted(out, key=lambda a: a["slot"])
 
 
 def add(slot: "int | None" = None, alias: "str | None" = None) -> int:
     """Snapshot the current ~/.claude login into a slot and build its overlay.
-    The user logs in with `claude /login` first; we only copy what's on disk."""
-    src = credentials_path(DEFAULT_SLOT)
-    if not os.path.exists(src):
-        raise NoLogin(f"no login at {src} — run `claude /login` first")
+    The user logs in with `claude /login` first; we only copy what the CLI stored."""
+    tokens = credentials.read(credentials_path(DEFAULT_SLOT))
+    if not tokens:
+        raise NoLogin("no Claude login on this machine — run `claude /login` first")
     email = _email_at(IDENTITY)
     with _lock:
         reg = _load()
@@ -260,9 +275,7 @@ def add(slot: "int | None" = None, alias: "str | None" = None) -> int:
         if slot == DEFAULT_SLOT:
             raise ValueError("slot 1 is the ambient ~/.claude login")
         ensure_profile(slot)
-        dst = credentials_path(slot)
-        shutil.copyfile(src, dst)
-        os.chmod(dst, 0o600)
+        credentials.write(credentials_path(slot), tokens)
         reg[str(slot)] = {"email": email, "alias": alias, "disabled": False}
         _save(reg)
     _default_profile(slot)
@@ -293,16 +306,12 @@ _pending: dict = {}                                      # slot -> _Login
 
 
 def _creds_mark(path: str) -> str:
-    """Fingerprint of a credentials file — "" when it isn't there or is empty.
+    """Fingerprint of a login's credentials — "" when there are none.
     What "this sign-in wrote credentials" is measured against: a re-auth
-    overwrites a file that already exists, so existence proves nothing, and
+    overwrites credentials that already exist, so existence proves nothing, and
     mtime is too coarse to trust (two writes can share one clock tick). The
     token itself is never kept — a fresh sign-in always changes the hash."""
-    try:
-        with open(path, "rb") as f:
-            data = f.read()
-    except OSError:
-        return ""
+    data = credentials.read(path)
     return hashlib.sha256(data).hexdigest() if data else ""
 
 
@@ -396,8 +405,8 @@ def begin_login(alias: "str | None" = None, timeout: float = 30,
         with _lock:
             slot = _free_slot(_load())
         # An unregistered slot dir is spoil from an earlier attempt: wipe it, or
-        # a stale .credentials.json would read as this sign-in succeeding.
-        shutil.rmtree(profile_dir(slot), ignore_errors=True)
+        # its stale credentials would read as this sign-in succeeding.
+        _wipe(slot)
     env = {**os.environ, "BROWSER": "true"}     # the browser is the user's, not ours
     if slot == DEFAULT_SLOT:
         env.pop("CLAUDE_CONFIG_DIR", None)      # slot 1 *is* the ambient ~/.claude
@@ -480,7 +489,7 @@ def submit_login_code(slot: int, code: str, timeout: float = 90) -> dict:
     if taken is None and email and email == _email_at(IDENTITY):
         taken = DEFAULT_SLOT
     if taken is not None:
-        shutil.rmtree(profile_dir(slot), ignore_errors=True)
+        _wipe(slot)
         raise LoginFailed(f"{email} is already account {taken}. Sign in as a "
                           "different account to add one.")
     with _lock:
@@ -503,7 +512,7 @@ def cancel_login(slot: int) -> None:
     with _lock:
         registered = str(slot) in _load()
     if not registered:
-        shutil.rmtree(profile_dir(slot), ignore_errors=True)
+        _wipe(slot)
 
 
 def _resume_dead_turn(slot: int) -> None:
@@ -533,7 +542,7 @@ def remove(slot: int) -> None:
         reg = _load()
         reg.pop(str(slot), None)
         _save(reg)
-    shutil.rmtree(profile_dir(slot), ignore_errors=True)
+    _wipe(slot)
 
 
 def _set_disabled(slot: int, value: bool) -> None:

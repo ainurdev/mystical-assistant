@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 
-from bridge import config
+from bridge import config, credentials
 
 _CREDS = os.path.expanduser("~/.claude/.credentials.json")
 _TTL = 3600.0     # cache a good fetch this long (s)
@@ -25,12 +25,8 @@ _refreshing = False
 
 
 def _oauth_token() -> str | None:
-    """Claude Code's subscription OAuth access token, if present on disk."""
-    try:
-        with open(_CREDS) as f:
-            return (json.load(f).get("claudeAiOauth") or {}).get("accessToken")
-    except (OSError, ValueError):
-        return None
+    """Claude Code's subscription OAuth access token, if the machine has a login."""
+    return (credentials.load(_CREDS).get("claudeAiOauth") or {}).get("accessToken")
 
 
 def _fallback() -> list[dict]:

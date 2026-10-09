@@ -1,8 +1,8 @@
 """Claude usage (5-hour + 7-day limits) for the chat composer.
 
-Reads the local OAuth access token from ~/.claude/.credentials.json, calls the
-account usage endpoint, and returns only computed percentages / reset times /
-severities. The token never leaves this process and is never returned to a
+Reads the local OAuth access token from the login's credentials (the file, or
+the Keychain on a Mac -- bridge/credentials.py), calls the account usage
+endpoint, and returns only computed percentages / reset times / severities. The token never leaves this process and is never returned to a
 client. Results are cached for CACHE_TTL seconds so polling clients can't hammer
 the upstream.
 
@@ -19,6 +19,8 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime
+
+from bridge import credentials
 
 CREDENTIALS_FILE = os.path.expanduser("~/.claude/.credentials.json")
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
@@ -38,11 +40,7 @@ def _entry(path: str) -> dict:
 
 
 def _token(path: str) -> str | None:
-    try:
-        with open(path) as f:
-            oauth = json.load(f).get("claudeAiOauth") or {}
-    except (OSError, ValueError):
-        return None
+    oauth = credentials.load(path).get("claudeAiOauth") or {}
     exp = oauth.get("expiresAt")
     if isinstance(exp, (int, float)) and exp and time.time() * 1000 > exp:
         return None  # token expired

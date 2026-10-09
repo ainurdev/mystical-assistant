@@ -5,6 +5,7 @@ symlinked back to ~/.claude so transcripts/skills/settings stay shared. Env is
 pinned before importing the package so config picks it up.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -354,8 +355,18 @@ home = os.environ.get("CLAUDE_CONFIG_DIR") or os.environ["FAKE_CLAUDE_HOME"]
 if code != "good-code":
     sys.stdout.write("Login failed: Request failed with status code 400\\n")
     sys.exit(1)
-with open(os.path.join(home, ".credentials.json"), "w") as fh:
-    json.dump({"claudeAiOauth": {"accessToken": "slot-token-%d" % os.getpid()}}, fh)
+creds = {"claudeAiOauth": {"accessToken": "slot-token-%d" % os.getpid()}}
+if os.environ.get("FAKE_KEYCHAIN"):
+    # On a Mac the real CLI keeps the login in the Keychain, under a service
+    # name hashed from the config dir, and never writes the file.
+    import getpass, hashlib, subprocess
+    svc = "Claude Code-credentials-" + hashlib.sha256(home.encode()).hexdigest()[:8]
+    subprocess.run(["security", "add-generic-password", "-U", "-a",
+                    os.environ.get("USER") or getpass.getuser(), "-s", svc,
+                    "-w", json.dumps(creds)], check=True)
+else:
+    with open(os.path.join(home, ".credentials.json"), "w") as fh:
+        json.dump(creds, fh)
 with open(os.path.join(home, ".claude.json"), "w") as fh:
     json.dump({"oauthAccount": {"emailAddress": "other@example.com"}}, fh)
 '''
@@ -499,6 +510,83 @@ def test_a_new_sign_in_never_inherits_a_stale_slot_credential():
     finally:
         accounts.cancel_login(2)
         undo()
+
+
+# --- macOS: the login lives in the Keychain, not in a file -------------------
+# The CLI on a Mac writes ~/.claude/.credentials.json only when the Keychain
+# refuses; a bridge reading just the file saw no login at all there.
+
+def _keychain_service(config_dir):
+    return "Claude Code-credentials-" + hashlib.sha256(config_dir.encode()).hexdigest()[:8]
+
+
+def _mac_login(fake_keychain, home, **oauth):
+    os.remove(os.path.join(home, ".credentials.json"))      # a Mac has no such file
+    fake_keychain.put(_keychain_service(home),
+                      json.dumps({"claudeAiOauth": {"accessToken": "kc-token", **oauth}}))
+
+
+def test_on_macos_the_ambient_login_is_read_from_the_keychain(fake_keychain):
+    _fresh_root()
+    home = _fake_claude_home()
+    _fake_identity("mac@example.com")
+    _mac_login(fake_keychain, home, subscriptionType="max",
+               rateLimitTier="default_claude_max_20x")
+
+    got = accounts.list_accounts()
+
+    assert [a["slot"] for a in got] == [1]
+    assert got[0]["email"] == "mac@example.com"
+    assert got[0]["plan"] == "MAX 20x"
+
+
+def test_on_macos_add_copies_the_login_into_the_slots_own_keychain_item(fake_keychain):
+    """COPY CURRENT LOGIN: the slot's item is the one `claude` reads under
+    CLAUDE_CONFIG_DIR=<profile dir>; REMOVE takes the tokens with it."""
+    _fresh_root()
+    home = _fake_claude_home()
+    _fake_identity("mac@example.com")
+    _mac_login(fake_keychain, home)
+
+    slot = accounts.add()
+
+    assert slot == 2
+    assert "kc-token" in fake_keychain.get(_keychain_service(accounts.profile_dir(2)))
+    assert not os.path.exists(accounts.credentials_path(2))
+    assert [a["slot"] for a in accounts.list_accounts()] == [1, 2]
+
+    accounts.remove(2)
+
+    assert fake_keychain.get(_keychain_service(accounts.profile_dir(2))) is None
+
+
+def test_on_macos_a_sign_in_is_seen_landing_in_the_keychain(fake_keychain):
+    """ADD ANOTHER ACCOUNT waits for the slot's credentials to appear; on a Mac
+    they appear in the Keychain, and waiting on the file timed out."""
+    _fresh_root()
+    home = _fake_claude_home()
+    _fake_identity("mine@example.com")
+    _mac_login(fake_keychain, home)
+    undo = _fake_cli()
+    try:
+        accounts.begin_login()
+        done = accounts.submit_login_code(2, "good-code", timeout=10)
+        assert done["email"] == "other@example.com"
+        assert "slot-token" in fake_keychain.get(_keychain_service(accounts.profile_dir(2)))
+        assert [a["slot"] for a in accounts.list_accounts()] == [1, 2]
+    finally:
+        undo()
+
+
+def test_cancelling_a_sign_in_that_never_ran_leaves_the_ambient_login_alone():
+    """A stale UI can cancel slot 1 with nothing pending; the wipe that cleans
+    a half-made slot must never reach the user's own login (file or Keychain)."""
+    _fresh_root()
+    home = _fake_claude_home()
+    _fake_identity()
+    accounts.cancel_login(1)
+    assert os.path.exists(os.path.join(home, ".credentials.json"))
+    assert [a["slot"] for a in accounts.list_accounts()] == [1]
 
 
 # --- pick(): which account takes over ---------------------------------------
