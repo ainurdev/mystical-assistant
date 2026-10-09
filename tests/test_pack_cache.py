@@ -74,6 +74,14 @@ def test_stable_content_always_present(monkeypatch):
     assert runner._LOG_NOTE in _sysprompt(_cmd(sid))
 
 
+def test_push_note_always_present(monkeypatch):
+    """Every session is told a failed push goes to a new session, never a retry."""
+    _stub_pack(monkeypatch, "GRAPH")
+    sid = str(uuid.uuid4())
+    _cmd(sid, new=True)
+    assert runner._PUSH_NOTE in _sysprompt(_cmd(sid))
+
+
 def test_repo_gets_self_ignoring_mystical_dir(tmp_path):
     """The note sends files to .mystical/; a repo must have it, ignored by itself."""
     (tmp_path / ".git").mkdir()
@@ -86,7 +94,7 @@ def test_repo_gets_self_ignoring_mystical_dir(tmp_path):
 
 
 def test_acp_first_prompt_carries_mystical_note(tmp_path, monkeypatch):
-    """ACP has no system prompt: a new agent session gets the note on its first
+    """ACP has no system prompt: a new agent session gets the notes on its first
     prompt, a resumed one doesn't, and the repo gets its .mystical/ either way."""
     (tmp_path / ".git").mkdir()
     sent = []
@@ -102,5 +110,5 @@ def test_acp_first_prompt_carries_mystical_note(tmp_path, monkeypatch):
         job = runner.AcpJob("j", 555, store_session_id="s")
         job.runtime = "acp:fake"
         runner._consume_acp(job, "hi", [], str(tmp_path), None, None, None)
-    assert sent == [runner._MYSTICAL_NOTE + "\n\nhi", "hi"]
+    assert sent == [runner._MYSTICAL_NOTE + "\n\n" + runner._PUSH_NOTE + "\n\nhi", "hi"]
     assert (tmp_path / ".mystical" / ".gitignore").read_text() == "*\n"

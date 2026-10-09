@@ -94,6 +94,16 @@ _LOG_NOTE = (
     "read that file (e.g. tail it) to inspect dev-server logs.\n\n"
     + _MYSTICAL_NOTE)
 
+# A failed push stays failed in its session: retried, a denied one reads as a
+# bypass to the permission check. A new session on the branch starts from the
+# human's own ask — the dashboard's push buttons open one, git's message drafted.
+_PUSH_NOTE = (
+    "If a git push is denied (a permission check refuses it) or rejected (the "
+    "remote refuses it), don't retry it and don't route around it with another "
+    "command, tool or API. Say what failed, in git's words, and suggest the "
+    "human handle it in a new session on that branch: Mystical's dashboard "
+    "opens one from its push buttons, with the failure as an unsent draft.")
+
 
 def _ensure_mystical(cwd: "str | None") -> None:
     """The note promises .mystical/; make it exist. Repos only, not every cwd."""
@@ -149,13 +159,13 @@ def _graph_refresh_after_turn(chat_id: int, cwd: "str | None") -> None:
 
 
 def _compose_system_prompt(graph: str = "") -> str:
-    """ASK prompt + dev-log note, then the graph pack.
+    """ASK prompt + the dev-log and push notes, then the graph pack.
 
     Ordering does NOT protect the cache: the whole string lands in
     --append-system-prompt, which sits after the last cache breakpoint, so any
     change re-writes all of it. What protects the cache is only sending the
     volatile packs once per session — see _base_cmd."""
-    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE,
+    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE,
                          graph.strip()) if p]
     return "\n\n".join(parts)
 
@@ -2219,7 +2229,7 @@ def _consume_acp(job: AcpJob, prompt: str, image_paths: list[str], cwd: str,
         label=p["label"], login_hint=acp_agents.login_hint(p, job.acp_account),
         auth_method=acp_agents.auth_method(p, job.acp_account),
         text=(_with_images(prompt, image_paths) if agent_sid
-              else _MYSTICAL_NOTE + "\n\n" + _with_images(prompt, image_paths)),
+              else _MYSTICAL_NOTE + "\n\n" + _PUSH_NOTE + "\n\n" + _with_images(prompt, image_paths)),
         agent_session_id=agent_sid,
         opts={"model": model, "permission_mode": permission_mode, "effort": effort},
         on_spawn=lambda conn: threading.Thread(target=_watchdog, args=(job, conn),

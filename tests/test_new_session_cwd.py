@@ -73,3 +73,22 @@ def test_dashboard_new_session_runs_in_the_given_worktree(dirs):
     h._json = lambda obj, code=200: box.update(obj=obj, code=code)
     h._post_api("/local/sessions", {"project": PROJ, "cwd": wt})
     assert store.get_session(box["obj"]["session"]["id"])["cwd"] == wt
+
+
+def _dash(body):
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    h._post_api("/local/sessions", body)
+    return store.get_session(box["obj"]["session"]["id"])
+
+
+def test_dashboard_new_session_for_a_branch_runs_in_its_worktree(dirs):
+    """A failed push opens a session by branch, not path: it lands in the branch's tree."""
+    _proj, wt = dirs
+    assert _dash({"project": PROJ, "branch": "feat/x"})["cwd"] == wt
+
+
+def test_dashboard_new_session_for_a_branch_without_a_worktree_uses_the_project(dirs):
+    proj, _wt = dirs
+    assert _dash({"project": PROJ, "branch": "main"})["cwd"] == proj

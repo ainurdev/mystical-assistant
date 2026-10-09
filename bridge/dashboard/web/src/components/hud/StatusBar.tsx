@@ -45,6 +45,9 @@ export interface StatusBarProps {
   // Push or pull landed — the footer's git poll is 10s, too slow to watch a
   // chip you just changed, so the owner of that poll re-reads it now.
   onSynced?: () => void;
+  // A push git refused: hand it to a new session on this branch, git's
+  // message as its unsent draft (App's pushFailedSession).
+  onPushFailed?: (output: string) => void;
   onPalette: () => void;
   // Right panel expanded — the shell tracks (and zone layout) follow it.
   rightOpen: boolean;
@@ -62,7 +65,7 @@ const zlabel = (t: string): ReactNode => (
  *  login's windows are SETTINGS ▸ ACCOUNTS, and the context fill is the
  *  composer's CTX lamps. */
 export function StatusBar(props: StatusBarProps) {
-  const { usedPct, resetLabel, login, agentLabel, repo, changes, git, branch, onSynced, onPalette, rightOpen } = props;
+  const { usedPct, resetLabel, login, agentLabel, repo, changes, git, branch, onSynced, onPushFailed, onPalette, rightOpen } = props;
   const [hovered, setHovered] = useState(false);
 
   // A switch settles the session-scoped chips in the way the right panel's
@@ -94,16 +97,22 @@ export function StatusBar(props: StatusBarProps) {
     git.behind > 0 && !git.ahead;
   const [busy, setBusy] = useState(false);
   const [syncErr, setSyncErr] = useState("");
+  const [pushErr, setPushErr] = useState("");   // git's refusal of a push, for NEW SESSION
   const [actHov, setActHov] = useState(false);
+  const [newHov, setNewHov] = useState(false);
   async function doSync(kind: "push" | "pull") {
     if (repo === "—" || busy) return;
     setBusy(true);
     setSyncErr("");
+    setPushErr("");
     try {
       const r = kind === "push"
         ? await api.gitPush(repo, branch || undefined)
         : await api.gitPull(repo, branch || undefined);
-      if (!r.ok) setSyncErr(r.output || `${kind} failed`);
+      if (!r.ok) {
+        setSyncErr(r.output || `${kind} failed`);
+        if (kind === "push") setPushErr(r.output || "push failed");
+      }
       else onSynced?.();
     } catch (e) { setSyncErr((e as Error).message); }
     finally { setBusy(false); }
@@ -187,6 +196,28 @@ export function StatusBar(props: StatusBarProps) {
           onMouseLeave={() => setActHov(false)}
         >
           {busy ? action.busyLabel : syncErr ? "FAILED" : action.label}
+        </button>
+      )}
+      {/* A failed push isn't retried here or by an agent in the session that
+          saw it (runner._PUSH_NOTE): it goes to a new session on the branch. */}
+      {pushErr && onPushFailed && (
+        <button
+          type="button"
+          onClick={() => { onPushFailed(pushErr); setPushErr(""); setSyncErr(""); }}
+          title="Handle it in a new session on this branch, with git's message as an unsent draft"
+          style={{
+            ...seg,
+            font: "inherit",
+            flex: "none",
+            border: 0,
+            background: `color-mix(in srgb, var(--acc) ${newHov ? 18 : 9}%, transparent)`,
+            color: "var(--acc)",
+            cursor: "pointer",
+          }}
+          onMouseEnter={() => setNewHov(true)}
+          onMouseLeave={() => setNewHov(false)}
+        >
+          NEW SESSION
         </button>
       )}
     </span>

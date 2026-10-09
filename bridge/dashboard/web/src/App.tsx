@@ -54,6 +54,7 @@ import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
 import { recall, remember, type Anchor } from "./lib/scrollmem";
 import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { branchForSession } from "./lib/issuebranch";
+import { pushFailedDraft } from "./lib/pushfailed";
 import { push, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
@@ -1480,16 +1481,24 @@ export function App() {
     if (cur) openSession(cur.id);
   }
 
-  /** A new session in `project`; `draft` waits in its composer, unsent (the
-   *  RIVENDELL tab's WORK ON IT). */
-  async function newSession(project: string, draft?: string) {
+  /** A new session in `project`, in `branch`'s worktree when given; `draft`
+   *  waits in its composer, unsent (the RIVENDELL tab's WORK ON IT). */
+  async function newSession(project: string, draft?: string, branch?: string) {
     openBlank();
     try {
-      const { session } = await api.createSession(project);
+      const { session } = await api.createSession(project, undefined, undefined, branch);
       setSessions((prev) => [session, ...prev]);
       if (draft) setDrafts((d) => ({ ...d, [session.id]: draft }));
       openSession(session.id);
     } catch { setLoadingSession(false); }
+  }
+
+  /** A push button's HANDLE IN A NEW SESSION: a session on the branch that
+   *  failed to push, with git's message as its unsent draft (lib/pushfailed). */
+  function pushFailedSession(project: string | null | undefined, branch: string | null | undefined, output: string) {
+    if (!project) return;
+    void newSession(project, pushFailedDraft(branch, output), branch || undefined);
+    toChat();
   }
 
   async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string,
@@ -1729,6 +1738,7 @@ export function App() {
         <FilesPanel
           project={sessionProject} branch={sessionBranch} changedOnly
           onOpenFile={openFileFromPanel}
+          onPushFailed={(output) => pushFailedSession(sessionProject, sessionBranch, output)}
           // A "commit message ready" click lands back here: this session, this tab.
           onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "changes", rightOpen: true }); }}
         />
@@ -2367,6 +2377,7 @@ export function App() {
                 changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
                 branch={sessionBranch}
                 onSynced={() => setGitNonce((n) => n + 1)}
+                onPushFailed={(output) => pushFailedSession(sessionProject, sessionBranch, output)}
                 onPalette={() => setPaletteOpen(true)}
               />
             </div>
@@ -2385,6 +2396,7 @@ export function App() {
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); toChat(); }}
                 onWorktreeSession={(rel, branch, create, parent, firstPrompt) => { void worktreeSession(rel, branch, create, parent, firstPrompt); setAnalyzeProject(null); }}
+                onPushFailed={(branch, output) => { setAnalyzeProject(null); pushFailedSession(analyzeProject, branch, output); }}
                 // GIT tab review notes. The chat goes to where they went, so you
                 // see the agent pick them up. A session mid-turn queues them.
                 onSendTo={(text, to) => {

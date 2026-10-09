@@ -69,6 +69,9 @@ interface Props {
                       firstPrompt?: string) => void;
   /** GIT tab review notes → a session on the branch, or a new one in its tree. */
   onSendTo: SendTo;
+  /** A push git refused → a new session on that branch, git's message as its
+      unsent draft (App's pushFailedSession). */
+  onPushFailed?: (branch: string, output: string) => void;
 }
 
 const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
@@ -335,7 +338,7 @@ export function AnalyzeModal(props: Props) {
             <ChangesTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
               onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} initialFile={props.initialFile}
               sessions={props.sessions} activeSession={props.activeSession} worktrees={worktrees}
-              onSendTo={props.onSendTo} />
+              onSendTo={props.onSendTo} onPushFailed={props.onPushFailed} />
           )}
           {tab === "worktrees" && (
             <WorktreesTab project={project} sessions={props.sessions} worktrees={worktrees}
@@ -385,10 +388,11 @@ const DIFF_VIEW: Record<DiffRow["kind"], { bg: string; sign: string; color: stri
 };
 
 function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, initialFile,
-                      sessions, activeSession, worktrees, onSendTo }: {
+                      sessions, activeSession, worktrees, onSendTo, onPushFailed }: {
   project: string; branch: string; branchOpts: BranchOpt[]; onPickBranch: (b: string) => void;
   onRefreshGit: () => void; initialFile?: string;
   sessions: SessionBrief[]; activeSession?: string | null; worktrees: Worktree[]; onSendTo: SendTo;
+  onPushFailed?: (branch: string, output: string) => void;
 }) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
@@ -403,6 +407,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   const [msg, setMsg] = useState("");
   const [genBusy, setGenBusy] = useState(false);
   const [gitOp, setGitOp] = useState("");
+  const [pushErr, setPushErr] = useState("");   // git's refusal of the last push, until the next
   const [menuOpen, setMenuOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   // Which files are staged for the next commit. `sel` above is the *focused*
@@ -551,6 +556,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
     try {
       const r = await api.gitPush(project, branch || undefined);
       showOp(r.ok ? `Pushed ${branch} to origin` : `Push failed: ${r.output}`);
+      setPushErr(r.ok ? "" : r.output || "Push failed.");
       if (r.ok) { load(); onRefreshGit(); }
     } finally { setBusy(false); }
   }
@@ -664,6 +670,17 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
                 <button onClick={() => void doCommit()} disabled={!checked.size || !msg.trim() || busy} {...hp("commit")}
                   style={{ width: "100%", appearance: "none", cursor: checked.size && msg.trim() && !busy ? "pointer" : "not-allowed", border: "1px solid var(--acc)", background: hov === "commit" ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8, opacity: !checked.size || !msg.trim() || busy ? 0.45 : 1 }}>COMMIT {checked.size} FILE{checked.size === 1 ? "" : "S"}</button>
               </div>
+              {/* Not a retry: the push goes to a new session on the branch,
+                  which you send yourself (runner._PUSH_NOTE tells agents the same).
+                  Above PUSH, so a second press there still retries. */}
+              {pushErr && onPushFailed && (
+                <div style={{ padding: "0 9px 7px" }}>
+                  <button onClick={() => onPushFailed(branch, pushErr)} {...hp("pushfail")}
+                    title="Handle it in a new session on this branch, with git's message as an unsent draft"
+                    style={{ width: "100%", appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 35%, transparent)", background: hov === "pushfail" ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8 }}>
+                    PUSH FAILED ▸ HANDLE IN A NEW SESSION</button>
+                </div>
+              )}
               <div style={{ display: "flex", gap: 7, padding: "0 9px 9px" }}>
                 <button onClick={() => void doPush()} title="push to origin" {...hp("push")}
                   style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "push" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>

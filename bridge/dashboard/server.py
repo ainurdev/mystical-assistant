@@ -853,8 +853,12 @@ class Handler(BaseHTTPRequestHandler):
             # .worktrees) while still grouping under its logical project.
             wt = (body.get("cwd") or "").strip()
             wt_abs = os.path.realpath(wt) if wt else None
+            # Or a branch names it (a failed push hands its branch to a new
+            # session); _worktree_cwd falls back to the project checkout.
+            branch = (body.get("branch") or "").strip()
             cwd = (wt_abs if wt_abs and browser.within_base(wt_abs)
                    and os.path.isdir(wt_abs) else None) \
+                or (_worktree_cwd(project, branch) if branch else None) \
                 or _abs_project(project) or state.project_dir(chat)
             # Bound to the project's default profile, as a session a run creates
             # is (runner._resolve_session) — and then with no seeded mode, so

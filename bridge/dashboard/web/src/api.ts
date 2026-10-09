@@ -1337,13 +1337,15 @@ export const api = {
   // through the upload dir so the transcript can render (and zoom) them.
   attachmentUrl: (path: string) =>
     `/local/attachment?path=${encodeURIComponent(path)}`,
-  createSession: (project: string, cwd?: string, title?: string) =>
+  // `branch` instead of `cwd`: the bridge runs it in that branch's worktree.
+  createSession: (project: string, cwd?: string, title?: string, branch?: string) =>
     req<{ session: SessionBrief }>("/local/sessions", {
       method: "POST",
       body: {
         project,
         ...(cwd ? { cwd } : {}),
         ...(title ? { title } : {}),
+        ...(branch ? { branch } : {}),
       },
     }),
   // Copy a session's whole transcript into a new one. The copy forks its claude
