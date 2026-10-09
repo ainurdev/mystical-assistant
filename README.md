@@ -315,7 +315,25 @@ mystical logs       follow the log
 mystical run        run in the foreground (Ctrl-C to quit)
 mystical export     pack this machine up for a new one (one file)
 mystical import F   replay that file on the new machine (--dry-run to preview)
+mystical app        macOS: build + install Mystical.app into ~/Applications
+mystical app open   macOS: open it
 ```
+
+**On a Mac**
+
+`mystical app` builds **Mystical.app** with the Swift that ships in the Command
+Line Tools (`xcode-select --install`; no Xcode, no developer account). It's the
+dashboard in its own window, plus what a browser tab can't do: a menu bar icon
+with the sessions waiting on you, and macOS notifications that keep coming with
+the window closed (turn them on in the dashboard's notification settings, inside
+the app). Closing the window keeps it running in the menu bar; ⌘Q quits the app,
+never the bridge.
+
+The bridge itself can run under **launchd** (setup asks; the SYSTEM tab's START
+AT LOGIN switch toggles it): up at login, restarted after a crash, and
+`mystical start|stop|restart` go through `launchctl` once it's installed. The
+agent pins a PATH where `python3` is 3.10+ and `claude` is found — launchd's
+default has neither. Rebuild the app (`mystical app`) after moving the checkout.
 
 **Moving to a new machine**
 

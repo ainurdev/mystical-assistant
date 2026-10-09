@@ -54,11 +54,12 @@ ${c_c}✦ mystical${c_d}//${c_0}${c_c}assistant${c_0} ${c_d}— control the brid
   ${c_b}🔗${c_0} mystical ${c_c}design-link${c_0} <rel> <id>  link a repo to a Claude Design project
   ${c_b}📦${c_0} mystical ${c_c}export${c_0}    pack repos, MCPs, settings and history into one file for a new machine
   ${c_b}📥${c_0} mystical ${c_c}import${c_0} <file> [--dry-run]  replay that file on the new machine
+  ${c_b}🍎${c_0} mystical ${c_c}app${c_0} ${c_c}[open]${c_0}  build + install Mystical.app (macOS), or open it
 EOF
 }
 
 case "${1:-start}" in
-  build|doctor|-h|--help|help|design-link) : ;;   # build/diagnostics/help/design-link need no .env
+  build|doctor|-h|--help|help|design-link|app) : ;;   # build/diagnostics/help/design-link need no .env
   *) [ -f "$ENV_FILE" ] || die ".env not found at $ENV_FILE — run ./setup.sh to create it." ;;
 esac
 
@@ -100,6 +101,24 @@ wait_dash() {
   done
   return 1
 }
+
+# --- launchd handover (macOS) -------------------------------------------------
+# The macOS counterpart of the systemd block above, and the same contract: once
+# the LaunchAgent is installed (bridge/startup.py writes it; the SYSTEM tab's
+# START AT LOGIN switch or setup.sh flips it) it is the supervisor, so
+# start/stop/restart go through launchctl. A plain kill of a KeepAlive job would
+# just be relaunched, and a hand-launched copy beside it would fight for the port.
+LABEL="cloud.ainurhq.mystical.bridge"          # bridge/startup.py: BRIDGE_LABEL
+AGENT="$HOME/Library/LaunchAgents/$LABEL.plist"
+GUI="gui/$(id -u)"
+darwin() { [ "$(uname -s)" = Darwin ]; }
+agent_installed() {
+  darwin && [ -f "$AGENT" ] || return 1
+  ! launchctl print-disabled "$GUI" 2>/dev/null | grep -qE "\"$LABEL\" => (disabled|true)"
+}
+agent_loaded() { darwin && launchctl print "$GUI/$LABEL" >/dev/null 2>&1; }
+agent_pid() { darwin && launchctl print "$GUI/$LABEL" 2>/dev/null | awk '$1=="pid"{print $3; exit}'; }
+agent_active() { [ -n "$(agent_pid || true)" ]; }
 
 env_port() {   # $1 = var name in .env, $2 = default — mirror dash_url's parsing
   local p
@@ -180,6 +199,15 @@ cmd_start() {
     cmd_status
     return 0
   fi
+  if agent_installed; then
+    say "  ${c_c}⚡${c_0} starting via launchd ${c_d}($LABEL — logs: $LOG)${c_0}"
+    if agent_loaded; then launchctl kickstart "$GUI/$LABEL" || die "launchctl kickstart failed."
+    else launchctl bootstrap "$GUI" "$AGENT" || die "launchctl bootstrap $AGENT failed."; fi
+    rm -f "$PID_FILE"
+    wait_dash || warn "Started, but the dashboard hasn't answered yet — tail $LOG"
+    cmd_status
+    return 0
+  fi
   say "  ${c_c}⚡${c_0} starting the bridge… ${c_d}(logs: $LOG)${c_0}"
   if command -v setsid >/dev/null 2>&1; then
     setsid env PYTHONUNBUFFERED=1 "$RUN_SH" >>"$LOG" 2>&1 < /dev/null &
@@ -209,6 +237,21 @@ cmd_stop() {
     rm -f "$PID_FILE"
     ok "Stopped."
     return 0
+  fi
+  # Unloading is the only stop launchd honours for a KeepAlive job; it SIGTERMs
+  # the bridge (clean _shutdown) and reaps its process group. The agent stays
+  # installed, so the next login or `mystical start` brings it back.
+  if agent_loaded; then
+    local apid; apid="$(agent_pid || true)"
+    say "  ${c_y}■${c_0} stopping via launchd ${c_d}($LABEL)${c_0}…"
+    launchctl bootout "$GUI/$LABEL" 2>/dev/null || true
+    local i
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+      { [ -n "$apid" ] && kill -0 "$apid" 2>/dev/null; } || break; sleep 1
+    done
+    rm -f "$PID_FILE"
+    # A hand-launched bridge can still be up beside an agent that wasn't running.
+    [ -z "$(bridge_pid || true)" ] && { ok "Stopped."; return 0; }
   fi
   local pid; pid="$(bridge_pid || true)"
   if [ -z "$pid" ]; then warn "Not running."; rm -f "$PID_FILE"; return 0; fi
@@ -260,7 +303,9 @@ cmd_status() {
     # 000 (nothing listening) to 0 — leading zeros aren't valid JSON numbers.
     # ponytail: printf, not jq — every value here is a port, a status code, a URL
     # or a path, so there is nothing to escape. Add escaping when that changes.
-    local sup=null; if unit_active; then sup='"systemd"'; elif unit_enabled; then sup='"hand-launched"'; fi
+    local sup=null
+    if unit_active; then sup='"systemd"'; elif agent_active; then sup='"launchd"'
+    elif unit_enabled || agent_installed; then sup='"hand-launched"'; fi
     local murl=null; [ -n "$purl" ] && murl="\"$purl\""
     printf '{"running":true,"pid":%s,"supervised":%s,"log":"%s"' "$pid" "$sup" "$LOG"
     printf ',"dashboard":{"port":%s,"http":%s,"url":"%s"}' "$dport" "$((10#${d:-0}))" "$(dash_url)"
@@ -278,8 +323,10 @@ cmd_status() {
   # healthy above, but nothing restarts it any more.
   if unit_active; then
     row 🛡️ supervised "${c_g}systemd${c_0} $c_d($UNIT)$c_0"
-  elif unit_enabled; then
-    row 🛡️ supervised "${c_y}no${c_0} — hand-launched; the unit is enabled and takes over at next boot"
+  elif agent_active; then
+    row 🛡️ supervised "${c_g}launchd${c_0} $c_d($LABEL)$c_0"
+  elif unit_enabled || agent_installed; then
+    row 🛡️ supervised "${c_y}no${c_0} — hand-launched; the agent/unit takes over at next login or 'mystical restart'"
   fi
   row 📜 logs "$LOG"
 }
@@ -288,15 +335,41 @@ cmd_logs() { [ -f "$LOG" ] || die "No log yet at $LOG — start it first."; exec
 cmd_run()  { web_build; exec env PYTHONUNBUFFERED=1 "$RUN_SH"; }
 cmd_doctor() { exec "$REPO/setup.sh" --check-only; }
 
+# kickstart -k has launchd itself kill and relaunch the job, so the restart lands
+# even when the caller is a Claude session inside the bridge that dies with it.
+cmd_restart() {
+  if agent_active; then
+    say "  ${c_c}↻${c_0} restarting via launchd ${c_d}($LABEL)${c_0}"
+    launchctl kickstart -k "$GUI/$LABEL" || die "launchctl kickstart -k failed."
+    rm -f "$PID_FILE"
+    sleep 1
+    wait_dash || warn "Restarted, but the dashboard hasn't answered yet — tail $LOG"
+    cmd_status
+    return 0
+  fi
+  cmd_stop; cmd_start
+}
+
+APP="$HOME/Applications/Mystical.app"
+cmd_app() {
+  darwin || die "Mystical.app is macOS-only."
+  case "${1:-}" in
+    "")   exec "$REPO/macos/build.sh" ;;
+    open) [ -d "$APP" ] || die "not built yet — run: mystical app"; exec open "$APP" ;;
+    *)    die "unknown option for app: $1 — 'mystical app' builds, 'mystical app open' opens" ;;
+  esac
+}
+
 case "${1:-start}" in
   start)            cmd_start ;;
   stop)             cmd_stop ;;
-  restart)          cmd_stop; cmd_start ;;
+  restart)          cmd_restart ;;
   build)            web_build force ;;
   status)           cmd_status "${2:-}" ;;
   logs)             cmd_logs ;;
   run|fg)           cmd_run ;;
   doctor)           cmd_doctor ;;
+  app)              cmd_app "${2:-}" ;;
   design-link)
     # Persist a repo -> Claude Design project link. Called by a Claude session
     # doing the linking, which may be running in any repo — the bridge package

@@ -13,6 +13,13 @@ import pytest
 from bridge import startup
 
 
+@pytest.fixture(autouse=True)
+def _not_darwin(monkeypatch):
+    """Every test below the macOS block is about systemd/WSL; on a Mac dev box
+    state() would otherwise take the launchd branch."""
+    monkeypatch.setattr(startup, "_darwin", lambda: False)
+
+
 def test_win_path_converts_wsl_mounts():
     assert startup._win_path("/mnt/c/Program Files/Google/chrome.exe") == \
         r"C:\Program Files\Google\chrome.exe"
@@ -266,3 +273,97 @@ def _fake_systemctl(calls):
         calls.append(args)
         return R()
     return run
+
+
+# --- macOS: launchd agents ---------------------------------------------------
+class _R:
+    def __init__(self, rc=0, out=""):
+        self.returncode, self.stdout, self.stderr = rc, out, ""
+
+
+@pytest.fixture
+def mac(monkeypatch, tmp_path):
+    """A Mac with its LaunchAgents dir and ~/Applications under tmp_path, and a
+    launchctl that records instead of acting."""
+    calls = []
+    printed = {"out": "", "rc": 113}
+    disabled = {"out": ""}
+
+    def fake(*args):
+        calls.append(args)
+        if args[0] == "print":
+            return _R(printed["rc"], printed["out"])
+        if args[0] == "print-disabled":
+            return _R(0, disabled["out"])
+        return _R()
+
+    monkeypatch.setattr(startup, "_darwin", lambda: True)
+    monkeypatch.setattr(startup, "_launchctl", fake)
+    monkeypatch.setattr(startup, "_AGENT_DIR", str(tmp_path / "LaunchAgents"))
+    monkeypatch.setattr(startup, "_MAC_APP", str(tmp_path / "Applications/Mystical.app"))
+    return {"calls": calls, "printed": printed, "disabled": disabled, "tmp": tmp_path}
+
+
+def _plist(mac, label):
+    import plistlib
+    with open(mac["tmp"] / "LaunchAgents" / f"{label}.plist", "rb") as f:
+        return plistlib.load(f)
+
+
+def test_mac_bridge_agent_pins_a_path_python3_310_can_be_found_on(monkeypatch, mac):
+    """launchd's default PATH finds the system python3 (3.9, refused) and no claude."""
+    monkeypatch.setattr(startup.shutil, "which", lambda exe: {
+        "claude": "/Users/u/.local/bin/claude",
+        "node": "/Users/u/.pyenv/shims/node",
+        "python3": "/opt/homebrew/bin/python3",
+    }.get(exe))
+    startup.apply(True, False)
+    p = _plist(mac, startup.BRIDGE_LABEL)
+    path = p["EnvironmentVariables"]["PATH"].split(":")
+    assert path[0] == "/Users/u/.local/bin"
+    assert path.index("/opt/homebrew/bin") < path.index("/usr/bin")
+    assert not any(".pyenv/shims" in d for d in path)
+    assert len(path) == len(set(path))
+    assert p["ProgramArguments"] == [os.path.join(startup._REPO, "run.sh")]
+    assert p["KeepAlive"] == {"SuccessfulExit": False}   # crash restart only
+    assert p["StandardOutPath"].endswith("mystical.log")
+
+
+def test_mac_login_on_enables_and_never_starts_a_second_bridge(mac):
+    st = startup.apply(True, False)
+    verbs = [c[0] for c in mac["calls"]]
+    assert ("enable", f"gui/{os.getuid()}/{startup.BRIDGE_LABEL}") in mac["calls"]
+    assert "bootstrap" not in verbs and "kickstart" not in verbs, verbs
+    assert st["login"] is True and st["window"] is False
+
+
+def test_mac_login_off_never_stops_the_running_bridge(mac):
+    startup.apply(True, False)
+    mac["calls"].clear()
+    st = startup.apply(False, False)
+    verbs = [c[0] for c in mac["calls"]]
+    assert "disable" in verbs
+    assert "bootout" not in verbs and "kill" not in verbs, verbs
+    assert not (mac["tmp"] / "LaunchAgents" / f"{startup.BRIDGE_LABEL}.plist").exists()
+    assert st["login"] is False
+
+
+def test_mac_window_needs_the_app_built(mac):
+    with pytest.raises(RuntimeError, match="mystical app"):
+        startup.apply(True, True)
+    (mac["tmp"] / "Applications/Mystical.app").mkdir(parents=True)
+    st = startup.apply(True, True)
+    assert st["window"] is True and st["browser"] == "Mystical.app"
+    assert _plist(mac, startup.APP_LABEL)["ProgramArguments"][:2] == ["/usr/bin/open", "-a"]
+    # Window off again removes only the app agent.
+    st = startup.apply(True, False)
+    assert st["window"] is False and st["login"] is True
+
+
+def test_mac_state_reads_disabled_and_supervised(mac):
+    startup.apply(True, False)
+    assert startup.state()["supervised"] is False          # not loaded
+    mac["printed"].update(rc=0, out="\tstate = running\n\tpid = 4242\n")
+    assert startup.state()["supervised"] is True
+    mac["disabled"]["out"] = f'\t\t"{startup.BRIDGE_LABEL}" => disabled\n'
+    assert startup.state()["login"] is False               # plist there, but disabled

@@ -52,6 +52,10 @@ doctor() {
   else warn "opencode — missing: sessions stop at the usage limit (setup offers to install it)"; fi
   if have graphify; then ok "graphify — projects map themselves after the first turn"
   else warn "graphify — missing: no project maps. Install: pipx install graphifyy"; fi
+  if [ "$(uname -s)" = Darwin ]; then
+    if have swift; then ok "swift — builds the Mac app (Mystical.app)"
+    else warn "swift — missing: no Mac app. Install: xcode-select --install"; fi
+  fi
   return $hard
 }
 
@@ -349,6 +353,38 @@ case ":${PATH_ORIG:-$PATH}:" in
           ok "added to ${rc/#$HOME/\~} (open a new shell, or run: export PATH=\"\$HOME/.local/bin:\$PATH\")" ;;
      esac ;;
 esac
+
+# -- macOS: the app, and the bridge at login ----------------------------------
+# Both asked only while missing, like everything above. The agent goes through
+# bridge/startup.py — the same code as the dashboard's START AT LOGIN switch —
+# and the "start now" below then goes through launchd.
+if [ "$(uname -s)" = Darwin ]; then
+  if [ ! -d "$HOME/Applications/Mystical.app" ] && have swift; then
+    step "🍎" "Mac app"
+    echo "Mystical.app puts the dashboard in its own window and the menu bar, and"
+    echo "notifies you when a session needs you — even with the window closed."
+    printf "Build it into ~/Applications (about a minute)? [Y/n]: "
+    read -r ans || ans=n
+    case "${ans:-y}" in
+      [Nn]*) warn "skipped — build it any time with: mystical app" ;;
+      *) "$REPO/macos/build.sh" || warn "build failed — retry with: mystical app" ;;
+    esac
+  fi
+  if [ ! -f "$HOME/Library/LaunchAgents/cloud.ainurhq.mystical.bridge.plist" ]; then
+    step "🔁" "Start at login"
+    echo "A launchd agent can run the bridge for you: up when you log in, and"
+    echo "restarted if it ever crashes. Toggle it later in the dashboard's SYSTEM tab."
+    printf "Start the bridge at login? [Y/n]: "
+    read -r ans || ans=n
+    case "${ans:-y}" in
+      [Nn]*) warn "skipped — the bridge runs only when you start it" ;;
+      *) win=False; [ -d "$HOME/Applications/Mystical.app" ] && win=True
+         if PYTHONPATH="$REPO" python3 -c "from bridge import startup; startup.apply(True, $win)"; then
+           ok "launchd agent installed${c_d} — it takes over at the next 'mystical restart' or login${c_0}"
+         else warn "couldn't install the launchd agent — see the error above"; fi ;;
+    esac
+  fi
+fi
 
 # -- recap: on a re-run this is the only output, so it has to stand alone -----
 step "✨" "Ready"

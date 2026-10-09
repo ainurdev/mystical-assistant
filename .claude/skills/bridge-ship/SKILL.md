@@ -58,6 +58,27 @@ Commit first — an uncommitted edit plus a restart is how work gets lost.
 **Tell the user before you do it.** Losing the turn mid-conversation is
 surprising unless they asked for the restart.
 
+## macOS: launchd instead of systemd
+
+`mystical status` showing `supervised launchd` means the LaunchAgent
+`cloud.ainurhq.mystical.bridge` owns the bridge. There's no cgroup: launchd
+kills the job's process group, which your session is in. But
+`mystical restart` there is `launchctl kickstart -k`, and launchd itself does
+the kill *and* the relaunch, so the restart lands even though your turn dies:
+
+```sh
+mystical restart     # under launchd: safe to call from inside a session
+```
+
+Don't `kill` a launchd bridge to stop it — KeepAlive relaunches a crash. Stop
+is `launchctl bootout` (what `mystical stop` does). Hand-launched (no
+`supervised` line) on a Mac: no `setsid` binary exists, so detach with
+`nohup bash -c 'sleep 2; mystical restart' >/dev/null 2>&1 &`.
+
+`Mystical.app` is a separate process and survives all of this. It's built from
+a checkout (`MysticalRepo` in its Info.plist), so rebuild it with `mystical app`
+from master after merging app changes; `macos/probe.sh` shows you what it shows.
+
 ## Web bundles
 
 `dist/` is git-ignored and nothing is committed, so a surface with no bundle
