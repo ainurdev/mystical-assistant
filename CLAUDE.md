@@ -4,7 +4,10 @@ A bridge that runs Claude Code on this machine, driven from three surfaces:
 a **Telegram bot** (`bridge/dispatch.py`), a **Telegram Mini App**
 (`bridge/miniapp/`, port 8787), and a **localhost dashboard**
 (`bridge/dashboard/`, port 8790). Landing page on 8791. Python stdlib only on
-the backend — no framework, no ORM, no async runtime.
+the backend — no framework, no ORM, no async runtime. On macOS, **Mystical.app**
+(`macos/`, Swift, system frameworks only) wraps the dashboard in a native window
++ menu bar; `macos/probe.sh` snapshots it without Screen Recording permission,
+and `cd macos && swift test` runs its tests.
 
 ## The one thing that bites everyone
 
