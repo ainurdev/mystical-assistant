@@ -264,8 +264,7 @@ class Tray:
         for sid, title in self.rows:
             item(f"    {title}", lambda sid=sid: self.open(sid))
         menu.append(Gtk.SeparatorMenuItem())
-        # AppIndicator gives a left click to the menu; a middle click opens the dashboard.
-        self.ind.set_secondary_activate_target(item("Open dashboard", lambda: self.open(None)))
+        opener = item("Open dashboard", lambda: self.open(None))
         idle = self.busy is None
         item("Start bridge", lambda: self.bridge("start"), idle and not self.up)
         item("Stop bridge", lambda: self.bridge("stop"), idle and self.up)
@@ -274,6 +273,9 @@ class Tray:
         item("Quit tray", Gtk.main_quit)
         menu.show_all()
         self.ind.set_menu(menu)
+        # AppIndicator gives a left click to the menu; a middle click opens the
+        # dashboard. Only after set_menu: the target must be a child of its menu.
+        self.ind.set_secondary_activate_target(opener)
 
     def open(self, sid):
         def work():
