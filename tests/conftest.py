@@ -56,6 +56,15 @@ os.environ["ACCOUNTS_DIR"] = os.path.join(tempfile.mkdtemp(), "accounts")
 # toolsets._fill catches the OSError and returns [].
 os.environ["CLAUDE_BIN"] = os.path.join(tempfile.mkdtemp(), "no-real-claude")
 
+# bridge/credentials.py decides KEYCHAIN from sys.platform at import, so on a Mac
+# every test that touches a login ran the real `security` against the
+# developer's login Keychain: reading their live tokens, and leaving an item
+# behind for every slot a test wrote (2026-10-09: 68 of them in one afternoon).
+# Off for the whole suite; the fake_keychain fixture turns it back on against
+# the stand-in `security` below.
+from bridge import credentials  # noqa: E402
+credentials.KEYCHAIN = False
+
 # Claude Code's live-session registry is a path frozen at import in bridge.machine,
 # with no env knob. native.scan() now indexes what that registry lists, so leave it
 # pointed at the developer's real ~/.claude/sessions and the suite would index the
