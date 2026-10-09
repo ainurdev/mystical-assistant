@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { projectName, projectTint } from "../../lib/surfaces";
+import { projectGivenName, projectName, projectTint } from "../../lib/surfaces";
 import { parentOf, type ProjectGroup } from "./ProjectsPanel";
 
 /* The PROJECTS tab of SETTINGS — project rows (dot, name, HIDDEN badge, sess
@@ -118,7 +118,7 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                       }}
                       style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: tint.color, border: `1px solid ${tint.border}`, padding: "0 5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", outline: "none", fontFamily: "inherit", width: 160, flex: "none" }} />
                   ) : (
-                    <span onClick={() => setEditing({ rel: r.rel, value: r.name })}
+                    <span onClick={() => setEditing({ rel: r.rel, value: projectGivenName(r.rel) || basename(r.rel) })}
                       title={`${r.rel} — click to rename (display only)`}
                       style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: tint.color, border: `1px solid ${tint.border}`, padding: "0 5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "text" }}>{r.name}</span>
                   )}

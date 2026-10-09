@@ -87,19 +87,62 @@ function dirName(name: string | null | undefined): string {
 // refreshed with the projects listing. Module-level rather than context, so the
 // panels that already call projectName() need no new prop.
 let projectNames: Record<string, string> = {};
+// What each listed rel prints as. Worked out once per listing, not per render:
+// a chip or row costs the same single lookup it always did.
+let projectLabels: Record<string, string> = {};
 
-/** Apply the bridge's rel -> name map. Rides the tint subscription: both are
- *  "how a project is labelled", both change rarely, both re-render the root. */
-export function setProjectNames(map: Record<string, string>): void {
+/** Apply the bridge's rel -> name map, plus the rels it listed so twins can be
+ *  told apart. Rides the tint subscription: both are "how a project is
+ *  labelled", both change rarely, both re-render the root. */
+export function setProjectNames(map: Record<string, string>, rels: Iterable<string> = []): void {
   projectNames = map;
+  projectLabels = projectLabelsFor(rels, map);
   tintVersion++;
   tintSubs.forEach((fn) => fn());
 }
 
+/** What to print for each rel: the name it was given, else its basename — and
+ *  where two projects would read the same, as many parent folders as it takes
+ *  to tell them apart: "efas/app" and "nr/app", not "app" twice. A project with
+ *  no twin stays bare. */
+export function projectLabelsFor(rels: Iterable<string>, names: Record<string, string> = projectNames): Record<string, string> {
+  const twins = new Map<string, string[]>();
+  const seen = new Set<string>();
+  for (const raw of rels) {
+    const rel = raw.replace(/\/+$/, "");
+    if (seen.has(rel)) continue;
+    seen.add(rel);
+    const base = names[rel] || dirName(rel);
+    const group = twins.get(base);
+    if (group) group.push(rel); else twins.set(base, [rel]);
+  }
+  const out: Record<string, string> = {};
+  for (const [base, group] of twins) {
+    if (group.length === 1) { out[group[0]] = base; continue; }
+    const parents = group.map((rel) => rel.split("/").filter(Boolean).slice(0, -1));
+    const deepest = Math.max(...parents.map((p) => p.length));
+    let depth = 1;
+    while (depth < deepest && new Set(parents.map((p) => p.slice(-depth).join("/"))).size < group.length) depth++;
+    group.forEach((rel, i) => {
+      const head = parents[i].slice(-depth).join("/");
+      out[rel] = head ? `${head}/${base}` : base;
+    });
+  }
+  return out;
+}
+
 /** A project's display name: the name it was given, else the basename of its
- *  rel path — panels print this where a 4-char tag used to go. */
+ *  rel path, with parent folders in front when another listed project reads
+ *  the same — panels print this where a 4-char tag used to go. */
 export function projectName(name: string | null | undefined): string {
-  return projectNames[(name ?? "").replace(/\/+$/, "")] || dirName(name);
+  const rel = (name ?? "").replace(/\/+$/, "");
+  return projectLabels[rel] || projectNames[rel] || dirName(name);
+}
+
+/** The name a project was given, or "" — what a rename box starts from, since
+ *  the display name may carry a parent folder that was never typed. */
+export function projectGivenName(name: string | null | undefined): string {
+  return projectNames[(name ?? "").replace(/\/+$/, "")] || "";
 }
 
 export function setProjectTint(name: string | null | undefined, ov: TintOverride): void {
