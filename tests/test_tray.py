@@ -117,3 +117,13 @@ def test_check_exits_1_and_names_the_packages(monkeypatch, capsys):
     monkeypatch.setattr(tray, "bindings", gone)
     assert tray.main(["--check"]) == 1
     assert "gir1.2-notify-0.7" in capsys.readouterr().err
+
+
+def test_the_windows_tray_stays_readable_by_windows_powershell_5_1():
+    """5.1 reads a BOM-less script as ANSI, so the file stays ASCII (glyphs come
+    from code points); and it has none of PowerShell 7's operators."""
+    raw = open(os.path.join(_ROOT, "windows", "tray.ps1"), "rb").read()
+    assert raw.isascii(), "build glyphs from code points: [char]0x23F8"
+    code = [ln for ln in raw.decode("ascii").splitlines() if not ln.lstrip().startswith("#")]
+    for op in ("??", "?.", "&&", "||"):
+        assert not any(op in ln for ln in code), f"{op} is PowerShell 7 only"
