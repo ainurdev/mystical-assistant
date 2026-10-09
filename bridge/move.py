@@ -183,10 +183,12 @@ class Remap:
 # Processes
 # ---------------------------------------------------------------------------
 
-def _run(argv, cwd=None, timeout=600, stdout=None) -> "tuple[int, str, str]":
+def _run(argv, cwd=None, timeout=600, stdout=None, unset=()) -> "tuple[int, str, str]":
     """(rc, stdout, stderr), never raising. GIT_TERMINAL_PROMPT=0 makes a remote
     that wants a password fail instead of waiting on a terminal nobody watches."""
     env = dict(os.environ, GIT_TERMINAL_PROMPT="0")
+    for k in unset:
+        env.pop(k, None)
     try:
         p = subprocess.run(argv, cwd=cwd, env=env, timeout=timeout,
                            stdin=subprocess.DEVNULL, stderr=subprocess.PIPE,
@@ -225,8 +227,13 @@ def _claude_path() -> str:
 
 def _claude(args, cwd=None) -> "tuple[int, str, str]":
     """Every `claude` CLI call goes through here, so tests can swap it out and
-    the suite never touches the real ~/.claude.json."""
-    return _run([_claude_path(), *args], cwd=cwd, timeout=180)
+    the suite never touches the real ~/.claude.json.
+
+    Always the main login's config: a bridge session running on a second account
+    has CLAUDE_CONFIG_DIR pointing into its profile, and `claude mcp add-json`
+    there would land in that slot's .claude.json. User MCP servers belong in the
+    ambient one, which bridge/accounts.py syncs into every slot, one way."""
+    return _run([_claude_path(), *args], cwd=cwd, timeout=180, unset=("CLAUDE_CONFIG_DIR",))
 
 
 def _claude_json(args, cwd=None):

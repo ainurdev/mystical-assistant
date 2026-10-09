@@ -446,6 +446,15 @@ def test_a_checkout_already_here_on_other_work_gets_the_patch_parked(world):
 
 # --- the pieces --------------------------------------------------------------
 
+def test_claude_calls_target_the_main_login(monkeypatch):
+    seen = {}
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/somewhere/accounts/2")
+    monkeypatch.setattr(move.subprocess, "run", lambda argv, **kw: seen.update(kw) or
+                        subprocess.CompletedProcess(argv, 0, b"", b""))
+    move._claude(["mcp", "list"])
+    assert "CLAUDE_CONFIG_DIR" not in seen["env"], "a second account's slot isn't where MCPs live"
+
+
 def test_remap_matches_whole_path_segments_longest_first():
     r = move.Remap([("/home/u/projects", "/Users/m/Projects"), ("/home/u", "/Users/m")])
     assert r.text("/home/u/projects/app") == "/Users/m/Projects/app"
