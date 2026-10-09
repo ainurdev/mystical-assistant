@@ -28,6 +28,9 @@ import argparse
 import fcntl
 import json
 import os
+import subprocess
+import sys
+import threading
 import urllib.parse
 import urllib.request
 
@@ -168,3 +171,157 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--check", action="store_true",
                    help="exit 0 if the GTK bindings import, else name the packages")
     return p
+
+
+def open_url(url: str, browser: str | None, profile: str | None) -> None:
+    """In the installed window's browser and profile, as an app window; the
+    desktop's default browser when there's no Chromium-family one."""
+    argv = ([browser, *([f"--profile-directory={profile}"] if profile else []),
+             f"--app={url}"] if browser else ["xdg-open", url])
+    subprocess.Popen(argv, start_new_session=True, stdin=subprocess.DEVNULL,
+                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def run_mystical(cmd: str) -> tuple[int, str]:
+    """bin/mystical start|stop|restart through a login+interactive shell — the
+    PATH your terminal has (nvm's npm, for a stale bundle), not the desktop
+    session's. (exit code, the output's last lines)."""
+    p = subprocess.run(["bash", "-lic", f"'{REPO}/bin/mystical' {cmd}"],
+                       stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    return p.returncode, "\n".join((p.stdout + p.stderr).strip().splitlines()[-12:])
+
+
+class Tray:
+    """The icon, its menu and its alerts. Every GTK call happens on the main
+    loop's thread; HTTP and bridge commands run on worker threads and hand
+    their results back through GLib.idle_add."""
+
+    def __init__(self, a, AppIndicator, GLib, Gtk, Notify):
+        self.a, self.GLib, self.Gtk, self.Notify = a, GLib, Gtk, Notify
+        self.prev, self.titles, self.rows = None, {}, []
+        self.up, self.busy, self.shown = False, None, None
+        self.notes = {}                   # session id -> its one Notify.Notification
+        self.icon = ICON if os.path.isfile(ICON) else "dialog-information"
+        Notify.init("mystical")
+        self.ind = AppIndicator.Indicator.new(
+            "mystical-tray", self.icon, AppIndicator.IndicatorCategory.APPLICATION_STATUS)
+        self.ind.set_status(AppIndicator.IndicatorStatus.ACTIVE)
+        self.ind.set_title("mystical")
+        self.render()
+        self.poll()
+        GLib.timeout_add_seconds(POLL_S, self.poll)
+
+    def poll(self):
+        def work():
+            running = fetch(self.a.port, "/local/running")
+            self.GLib.idle_add(self.landed, running)
+        threading.Thread(target=work, daemon=True).start()
+        return True                       # keep the 4 s timer
+
+    def landed(self, running):
+        news, self.prev, self.rows = step(self.prev, running, self.titles)
+        self.up = running is not None
+        for n in news:
+            self.notify(n)
+        self.render()
+        return False                      # idle_add: once
+
+    def notify(self, n):
+        # One per session, updated in place: a chatty session replaces its own
+        # alert instead of stacking a column of them.
+        note = self.notes.get(n["id"])
+        if note is None:
+            note = self.Notify.Notification.new(n["title"], n["body"], self.icon)
+            note.add_action("default", "Open", lambda _n, _a, sid: self.open(sid), n["id"])
+            self.notes[n["id"]] = note
+        else:
+            note.update(n["title"], n["body"], self.icon)
+        try:
+            note.show()
+        except self.GLib.Error:
+            pass                          # no notification daemon: the menu still says it
+
+    def render(self):
+        n = len(self.rows)
+        head = self.busy or ("● running" if self.up else "○ stopped")
+        if n:
+            head += f" · {n} waiting on you"
+        if (head, tuple(self.rows)) == self.shown:
+            return                        # re-sending an open menu over D-Bus makes it flicker
+        self.shown = (head, tuple(self.rows))
+        self.ind.set_label(str(n) if n else "", "99")
+        Gtk, menu = self.Gtk, self.Gtk.Menu()
+
+        def item(label, on=None, enabled=True):
+            it = Gtk.MenuItem(label=label)
+            if on:
+                it.connect("activate", lambda _w: on())
+            it.set_sensitive(bool(on) and enabled)
+            menu.append(it)
+            return it
+
+        item(head)
+        for sid, title in self.rows:
+            item(f"    {title}", lambda sid=sid: self.open(sid))
+        menu.append(Gtk.SeparatorMenuItem())
+        # AppIndicator gives a left click to the menu; a middle click opens the dashboard.
+        self.ind.set_secondary_activate_target(item("Open dashboard", lambda: self.open(None)))
+        idle = self.busy is None
+        item("Start bridge", lambda: self.bridge("start"), idle and not self.up)
+        item("Stop bridge", lambda: self.bridge("stop"), idle and self.up)
+        item("Restart bridge", lambda: self.bridge("restart"), idle and self.up)
+        menu.append(Gtk.SeparatorMenuItem())
+        item("Quit tray", Gtk.main_quit)
+        menu.show_all()
+        self.ind.set_menu(menu)
+
+    def open(self, sid):
+        def work():
+            manifest = fetch(self.a.port, "/manifest.webmanifest") or {}
+            open_url(session_url(self.a.port, manifest.get("start_url"), sid),
+                     self.a.browser, self.a.profile)
+        threading.Thread(target=work, daemon=True).start()
+
+    def bridge(self, cmd):
+        self.busy = {"start": "… starting", "stop": "… stopping",
+                     "restart": "… restarting"}[cmd]
+        self.render()
+
+        def work():
+            rc, tail = run_mystical(cmd)
+            self.GLib.idle_add(self.ran, cmd, rc, tail)
+        threading.Thread(target=work, daemon=True).start()
+
+    def ran(self, cmd, rc, tail):
+        self.busy = None
+        self.render()
+        if rc:
+            d = self.Gtk.MessageDialog(message_type=self.Gtk.MessageType.ERROR,
+                                       buttons=self.Gtk.ButtonsType.CLOSE,
+                                       text=f"mystical {cmd} failed (exit {rc})")
+            d.format_secondary_text(tail)
+            d.run()
+            d.destroy()
+        return False
+
+
+def main(argv=None) -> int:
+    a = parser().parse_args(argv)
+    why = missing()
+    if why:
+        print(why, file=sys.stderr)
+        return 1
+    if a.check:
+        return 0
+    lock = single_instance()
+    if lock is None:
+        return 0                          # another tray runs already; one is plenty
+    AppIndicator, GLib, Gtk, Notify = bindings()
+    # The 4 s timer holds the Tray through its bound poll, so it needs no name.
+    Tray(a, AppIndicator, GLib, Gtk, Notify)
+    Gtk.main()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

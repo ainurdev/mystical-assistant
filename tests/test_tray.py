@@ -109,3 +109,11 @@ def test_missing_bindings_name_the_packages(monkeypatch):
     monkeypatch.setattr(tray, "bindings", gone)
     why = tray.missing()
     assert "gir1.2-ayatanaappindicator3-0.1" in why and "libayatana-appindicator-gtk3" in why
+
+
+def test_check_exits_1_and_names_the_packages(monkeypatch, capsys):
+    def gone():
+        raise ValueError("Namespace AyatanaAppIndicator3 not available")
+    monkeypatch.setattr(tray, "bindings", gone)
+    assert tray.main(["--check"]) == 1
+    assert "gir1.2-notify-0.7" in capsys.readouterr().err
