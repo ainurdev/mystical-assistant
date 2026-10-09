@@ -5,7 +5,7 @@ import sys
 import threading
 
 from bridge import (accounts, config, graphmap, ladder, limits, profiles, report,
-                    state, store, usage)
+                    state, store, tgfiles, usage)
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -28,7 +28,9 @@ HELP = (
     "/policy — what to do when a chat hits the usage limit\n"
     "/profile [name|none] — show or set this chat's run profile\n"
     "/status — everything at a glance\n"
-    "/help — this message")
+    "/help — this message\n\n"
+    "Send a file or photo too (20 MB max): its caption is the prompt, or it goes "
+    "with your next message.")
 
 
 def _open_app(chat_id: int):
@@ -191,6 +193,7 @@ def _question_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
 def on_message(msg: dict):
     chat_id = msg["chat"]["id"]
     text = (msg.get("text") or "").strip()
+    sent = tgfiles.incoming(msg)
 
     if not config.ALLOWED_CHAT_IDS:
         print(f"[discovery] chat_id={chat_id} "
@@ -200,6 +203,10 @@ def on_message(msg: dict):
         return
     if chat_id not in config.ALLOWED_CHAT_IDS:
         print(f"[blocked] unauthorized chat_id={chat_id}", file=sys.stderr)
+        return
+    if sent:
+        # A file is never a command: its caption is the prompt, or it waits.
+        _on_file(chat_id, sent, (msg.get("caption") or "").strip())
         return
     if not text:
         send(chat_id, "Send a text prompt, or /help.")
@@ -284,14 +291,48 @@ def on_message(msg: dict):
              panel_kb(chat_id, s["id"] if s else None, key))
         return
 
-    # Plain text -> prompt to Claude in the active project. Claim this session's
-    # run slot; a run in another project/session is unaffected.
+    _run_prompt(chat_id, text)
+
+
+def _run_prompt(chat_id: int, text: str, files: list[str] | None = None) -> None:
+    """Plain text -> prompt to Claude in the active project, with any files sent
+    before it. Claim this session's run slot; a run in another project/session
+    is unaffected. A busy session keeps the files waiting for the next try."""
     key = state.project_key(chat_id)
     session = store.ensure_session(chat_id, key, profile_id=profiles.project_default(key))
     if not state.acquire_run(session["id"], chat_id):
+        for p in files or []:
+            tgfiles.hold(chat_id, p)
         send(chat_id, "⏳ Still working on this session — please wait.")
         return
-    threading.Thread(target=handle_task, args=(chat_id, text, session), daemon=True).start()
+    files = (files or []) + tgfiles.take(chat_id)
+    threading.Thread(target=handle_task, args=(chat_id, text, session, files),
+                     daemon=True).start()
+
+
+def _on_file(chat_id: int, sent: dict, caption: str) -> None:
+    """Download off the poll thread (up to 20 MB), then run the caption with it,
+    or hold it for the next message when there's no caption."""
+    why = tgfiles.too_big(sent)
+    if why:
+        send(chat_id, why)
+        return
+
+    def work():
+        try:
+            path = tgfiles.save(sent)
+        except ValueError as e:
+            send(chat_id, str(e))
+            return
+        if caption:
+            _run_prompt(chat_id, caption, [path])
+        else:
+            n = tgfiles.hold(chat_id, path)
+            send(chat_id, f"📎 Got {os.path.basename(path)}. "
+                          + ("It goes" if n == 1 else f"These {n} files go")
+                          + " with your next message.")
+
+    threading.Thread(target=work, daemon=True).start()
 
 
 # --- fallback ladder: the usage-limit approval card + /accounts, /policy ------

@@ -536,8 +536,34 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
             d.get("session_id"), d.get("total_cost_usd"), bool(d.get("is_error")))
 
 
-def handle_task(chat_id: int, prompt: str, session: dict):
+def adopt_uploads(job_id: str, paths: list[str] | None) -> list[str]:
+    """Move files that arrived before their turn existed (a file sent to the bot)
+    into the turn's own upload dir: the turn id IS where store.load and both
+    surfaces look for its attachments."""
+    out: list[str] = []
+    if not paths:
+        return out
+    d = os.path.join(config.UPLOAD_DIR, job_id)
+    os.makedirs(d, exist_ok=True)
+    for i, p in enumerate(paths):
+        dest = os.path.join(d, f"{i + 1}-{os.path.basename(p)}")
+        try:
+            os.replace(p, dest)
+            try:
+                os.rmdir(os.path.dirname(p))           # its own tg-<ms> folder, now empty
+            except OSError:
+                pass
+            out.append(dest)
+        except OSError as e:
+            print(f"[runner] attachment dropped: {e}", file=sys.stderr)
+    return out
+
+
+def handle_task(chat_id: int, prompt: str, session: dict,
+                attachments: list[str] | None = None):
     """Runs in a thread; the caller already claimed `session`'s run slot.
+    `attachments` are files sent to the bot (bridge/tgfiles.py), handed to the
+    model as the Mini App's are.
 
     Runs on the session's effective model and mode (its own picks, else its
     bound profile's). A mode replaces EXTRA_CLAUDE_ARGS (_base_cmd), so a
@@ -563,14 +589,16 @@ def handle_task(chat_id: int, prompt: str, session: dict):
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
         started = time.time()
         job_id = uuid.uuid4().hex
-        store.start_turn(session["id"], job_id, prompt, [], model=eff["model"],
+        files = adopt_uploads(job_id, attachments)
+        store.start_turn(session["id"], job_id, prompt, files, model=eff["model"],
                          sha=git.head_sha(state.project_dir(chat_id)))
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
             session["id"], session["claude_session_id"])
         result, sid, cost, is_error = run_blocking(
-            chat_id, prompt, resume_id=claude_sid, new_session=is_new, fork=fork,
+            chat_id, _with_images(prompt, files), resume_id=claude_sid, new_session=is_new,
+            fork=fork,
             model=eff["model"], permission_mode=eff["permission_mode"],
             account_slot=profiles.claude_slot(eff))
         # Journal (persist + publish) so SSE subscribers see bot-driven turns
