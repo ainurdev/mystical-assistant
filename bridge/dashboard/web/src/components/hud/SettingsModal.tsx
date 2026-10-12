@@ -3893,8 +3893,16 @@ function ProfilesPanel({
   onChanged: () => void;
   onPatch: (patch: Partial<HudSettings>) => void; // retires the old AGENT pick
 }) {
-  // The profile in the form: id "" = a new one. null = no form open.
-  const [form, setForm] = useState<Profile | null>(null);
+  // A new profile starts from the open session's picks.
+  const blank = (): Profile => ({ id: "", name: "", agent: "claude", account: "", model: settings.model,
+                                  mode: settings.perm, effort: settings.effort, tools: null });
+  // The profile in the form: id "" = a new one. null = no form open. The
+  // composer's + NEW PROFILE opens this tab on a blank one (lib/opensettings).
+  const [form, setForm] = useState<Profile | null>(() => takeSettingsFocus() === "new" ? blank() : null);
+  // That form sits below RUN DEFAULTS, so bring it up once the tab's
+  // scroll-to-top (a layout effect) has run. Its NAME box already has focus.
+  const formRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { formRef.current?.scrollIntoView({ block: "nearest" }); }, []);
   // ON = SAVE sends the open session's tool switches as the profile's; OFF = null.
   const [useTools, setUseTools] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -4010,7 +4018,7 @@ function ProfilesPanel({
         </div>
       ))}
       {form ? (
-        <div style={{ marginTop: info.profiles.length ? 8 : 0, paddingTop: info.profiles.length ? 12 : 0, borderTop: info.profiles.length ? RULE : undefined }}>
+        <div ref={formRef} style={{ marginTop: info.profiles.length ? 8 : 0, paddingTop: info.profiles.length ? 12 : 0, borderTop: info.profiles.length ? RULE : undefined }}>
           <div style={{ ...ROW, marginTop: 0 }}>
             <span style={CAPTION}>NAME</span>
             <input value={form.name} maxLength={32} autoFocus placeholder="name this profile"
@@ -4088,9 +4096,7 @@ function ProfilesPanel({
         </div>
       ) : (
         <div style={{ ...ROW, marginTop: info.profiles.length ? 12 : 11 }}>
-          <button style={btn("var(--acc)")} disabled={busy}
-            onClick={() => edit({ id: "", name: "", agent: "claude", account: "", model: settings.model,
-                                  mode: settings.perm, effort: settings.effort, tools: null })}>+ NEW PROFILE</button>
+          <button style={btn("var(--acc)")} disabled={busy} onClick={() => edit(blank())}>+ NEW PROFILE</button>
           {err && <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{err}</span>}
         </div>
       )}

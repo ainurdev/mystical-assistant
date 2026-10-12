@@ -5,6 +5,7 @@ import { loginLeft, loginSlot, modelRows } from "../models";
 import { describe, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago } from "../lib/surfaces";
+import { openSettings } from "../lib/opensettings";
 import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
 import { ICON_BODY } from "../lib/fileicons.gen";
@@ -114,6 +115,9 @@ function modeRow(id: string): { id: string; label: string; title?: string } {
 // A knob set by hand in a session bound to a profile: its value wins over the
 // profile's until you pick the profile's own again (bridge profiles.save_pick).
 const OVERRIDE_TIP = "set in this session; pick the profile's value to follow it again";
+// The PROFILE menu's last row isn't a profile: it opens SETTINGS ▸ SESSION on a
+// blank profile form. Real ids are p_<hex>, so this one never clashes.
+const NEW_PROFILE = "+new";
 function OverrideDot() {
   return <span title={OVERRIDE_TIP} style={{ color: "var(--acc)", flex: "none" }}>•</span>;
 }
@@ -443,19 +447,19 @@ export function Composer({
   const permOpts = agentPick ? agentPick.mode ?? [] : PERMS;
   // PROFILE rows: each ends in what it sets, then what its Claude login has
   // left, so the menu answers "what does picking this change" without a trip
-  // to settings. NO PROFILE runs on the default login.
+  // to settings. There is no unbinding from here, only binding or making one.
   const profileRows = useMemo(() => {
     const left = (agent?: string, account?: string) => {
       const m = loginLeft(accounts?.find((a) => a.slot === loginSlot(agent, account)));
       return m && <LeftMeter left={m.left} severity={m.severity} />;
     };
-    return [{ id: "", label: "NO PROFILE", tail: left() }, ...(profiles ?? []).map((p) => ({
+    return [...(profiles ?? []).map((p) => ({
       id: p.id, label: p.name,
       tail: <>
         <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" }}>{describe(p)}</span>
         {left(p.agent, p.account)}
       </>,
-    }))];
+    })), { id: NEW_PROFILE, label: "+ NEW PROFILE" }];
   }, [profiles, accounts]);
   const own = (k: string) => !!overrides?.includes(k);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -750,13 +754,18 @@ export function Composer({
   // Pieces both layouts place: DEFAULT strings them along one control row;
   // COMPACT moves the profile and ponytail chips to the row's right end and
   // folds model / mode / effort into the RunPopover over SEND. A profile the
-  // list doesn't have (it failed to load) shows as its id. Re-picking the
+  // list doesn't have (it failed to load) shows as its id, and a session
+  // bound to none as NO PROFILE. Re-picking the
   // current one is no change: a bind would also drop the knobs set by hand.
   const profileDrop = (right: boolean) => profiles && (
     <Drop label="PROFILE" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileRows}
-      fallback={{ id: profile, label: profile }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
+      fallback={{ id: profile, label: profile || "NO PROFILE" }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
       onToggle={() => setOpenDrop((d) => (d === "profile" ? "" : "profile"))}
-      onPick={(id) => { if (id !== profile) onProfile(id); setOpenDrop(""); }} />
+      onPick={(id) => {
+        if (id === NEW_PROFILE) openSettings("session", "new");
+        else if (id !== profile) onProfile(id);
+        setOpenDrop("");
+      }} />
   );
   // Which agent runs this session, when it isn't Claude. A label, not a
   // control: a session keeps the agent it first ran on.
