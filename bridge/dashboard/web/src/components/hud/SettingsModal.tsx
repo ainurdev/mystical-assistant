@@ -3325,6 +3325,11 @@ function HooksPanel() {
 
 function AccountsPanel({ onChanged }: { onChanged: () => void }) {
   const [rows, setRows] = useState<AccountInfo[] | null>(null);
+  // Opened on one login (the composer's PROFILE menu, on a profile whose login
+  // has expired): its row comes into view once the list lands, RE-LOGIN lit.
+  const [focus] = useState(() => Number(takeSettingsFocus()) || null);
+  const focusRow = useRef<HTMLDivElement>(null);
+  useEffect(() => { focusRow.current?.scrollIntoView({ block: "center" }); }, [rows === null]);
   const [policy, setPolicy] = useState("ask");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -3427,7 +3432,8 @@ function AccountsPanel({ onChanged }: { onChanged: () => void }) {
           // Wraps: on a phone the usage and the three buttons can't share one
           // line with the email, plan and DEFAULT — neither side could shrink,
           // so they printed over each other. Now the controls take a line.
-          <div key={a.slot} style={{ ...KV, flexWrap: "wrap", gap: "8px 12px", marginTop: a.slot === rows[0].slot ? 0 : 10 }}>
+          <div key={a.slot} ref={a.slot === focus ? focusRow : undefined}
+            style={{ ...KV, flexWrap: "wrap", gap: "8px 12px", marginTop: a.slot === rows[0].slot ? 0 : 10 }}>
             <span style={{ flex: "1 1 220px", minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ ...KEY_TX, color: "var(--acc)", flex: "none" }}>A{a.slot}</span>
               <span
@@ -3460,11 +3466,11 @@ function AccountsPanel({ onChanged }: { onChanged: () => void }) {
                 </span>
               ))}
               {!windowLabels(a).length && (
-                <span style={{ fontSize: "var(--t105)", color: "var(--txd)" }}>
+                <span style={{ fontSize: "var(--t105)", color: a.logged_in === false ? "var(--err)" : "var(--txd)" }}>
                   {a.logged_in === false ? "LOGIN EXPIRED" : "USAGE UNKNOWN"}
                 </span>
               )}
-              <MiniBtn disabled={busy || !!login} onClick={() => void startLogin(a.slot)}>
+              <MiniBtn disabled={busy || !!login} hot={a.slot === focus} onClick={() => void startLogin(a.slot)}>
                 RE-LOGIN
               </MiniBtn>
               {!a.default && (
@@ -3833,12 +3839,15 @@ function MiniBtn({
   onClick,
   disabled,
   danger,
+  hot,
   title,
 }: {
   children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
+  /** The one button the panel was opened for: lit, and it flashes on arrival. */
+  hot?: boolean;
   /** An icon-only button has to say what it is somewhere. */
   title?: string;
 }) {
@@ -3854,9 +3863,10 @@ function MiniBtn({
       style={{
         appearance: "none",
         cursor: disabled ? "default" : "pointer",
-        border: `1px solid color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} 24%, transparent)`,
-        background: hov && !disabled ? `color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} 10%, transparent)` : "transparent",
-        color: disabled ? "var(--txd)" : danger ? "var(--warn)" : "var(--tx)",
+        border: `1px solid color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} ${hot ? 100 : 24}%, transparent)`,
+        background: (hov || hot) && !disabled ? `color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} ${hot ? 16 : 10}%, transparent)` : "transparent",
+        color: disabled ? "var(--txd)" : danger ? "var(--warn)" : hot ? "var(--acc)" : "var(--tx)",
+        animation: hot ? "resultflash 1.2s ease 3" : undefined,
         fontFamily: "inherit",
         fontSize: "var(--t95)",
         letterSpacing: 1,

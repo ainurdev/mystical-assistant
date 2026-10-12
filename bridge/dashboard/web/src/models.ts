@@ -48,6 +48,14 @@ export function loginLeft(a?: AccountInfo | null): { left: number; severity?: st
   return { left: a.left, severity: tight?.severity };
 }
 
+/** The login a profile runs on, when that login is dead (bridge accounts.meter
+ *  logged_in: no token left to renew, or a turn already died on it), so only a
+ *  re-login brings it back. null for a live or unlisted login, or another agent. */
+export function deadLogin(accounts: AccountInfo[] | undefined, agent?: string, account?: string): number | null {
+  const slot = loginSlot(agent, account);
+  return slot !== null && accounts?.find((a) => a.slot === slot)?.logged_in === false ? slot : null;
+}
+
 // Shown only until /local/state delivers the live list (Anthropic Models API,
 // via bridge/models.py) — or if that API/token is unavailable and the backend
 // serves its own fallback. This is a pre-load safety net, not the source.

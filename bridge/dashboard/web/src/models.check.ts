@@ -3,7 +3,7 @@
 // a stored claude-fable-5-1 snapped to Opus on every reload because the snap ran
 // against the pre-load alias FALLBACK. And runPicks: which picks a session shows.
 // And whose meter the footer and pickers read (spendingSlot, loginLeft).
-import { DEFAULT_SLOT, familyOf, loginLeft, loginSlot, loginUsage, runPicks, snapModel, spendingSlot } from "./models.ts";
+import { DEFAULT_SLOT, deadLogin, familyOf, loginLeft, loginSlot, loginUsage, runPicks, snapModel, spendingSlot } from "./models.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -103,4 +103,9 @@ ok(loginLeft(weekBound)?.left === 5 && loginLeft(weekBound)?.severity === "warni
   "a login's headroom carries its tighter window's severity");
 ok(loginLeft({ ...A2, left: null }) === null && loginLeft({ ...A2, disabled: true }) === null && loginLeft(undefined) === null,
   "no meter for an unread, switched-off or missing login");
+const dead = [{ ...A2, logged_in: false }];
+ok(deadLogin(dead, "claude", "2") === 2 && deadLogin([A2], "claude", "2") === null,
+  "a profile on a dead login names that login; a live one doesn't");
+ok(deadLogin(dead, "codex", "2") === null && deadLogin(undefined, "claude", "2") === null
+  && deadLogin(dead, "claude", "") === null, "never another agent's, before the logins load, or a login not listed");
 console.log("models.check: all ok");

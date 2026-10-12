@@ -48,9 +48,13 @@ def _token(path: str) -> str | None:
 
 
 def has_token(path: str) -> bool:
-    """A usable OAuth token at this path. False is the one unreadable-meter
-    state that waiting doesn't fix: the login has to be redone."""
-    return _token(path) is not None
+    """A login the CLI can still use: a live access token, or a refresh token it
+    renews one from on its next run. An idle login's access token lapses within
+    hours; that only leaves its meter unreadable until it runs again. False is
+    the one unreadable-meter state that waiting doesn't fix: the login has to
+    be redone."""
+    oauth = credentials.load(path).get("claudeAiOauth") or {}
+    return bool(oauth.get("refreshToken")) or _token(path) is not None
 
 
 def _fetch(token: str) -> dict | None:

@@ -661,12 +661,15 @@ def meter(slot: int) -> dict:
     `limits` carries a model's own weekly cap, so the MODEL menu can show it for
     whichever login runs the session, not only the ambient one.
     `logged_in` False separates a dead login (re-login) from a meter the usage
-    endpoint just wouldn't serve (wait)."""
+    endpoint just wouldn't serve (wait): no token to renew, or a turn already
+    died on this login (runner._auth_dead, cleared by the sign-in)."""
+    from bridge import runner                   # lazy: runner imports the world
     m = usage_for(slot)
     return {"left": headroom(slot), "resets_at": resets_at(slot),
             "five_hour": m.get("five_hour"), "seven_day": m.get("seven_day"),
             "limits": m.get("limits") or [],
-            "logged_in": usage.has_token(credentials_path(slot))}
+            "logged_in": usage.has_token(credentials_path(slot))
+                         and int(slot) not in runner._auth_dead}
 
 
 def with_meters() -> list:

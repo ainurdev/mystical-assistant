@@ -131,6 +131,25 @@ def test_no_token_is_unavailable():
         restore()
 
 
+def test_an_idle_login_that_can_renew_its_token_is_still_logged_in():
+    """Only the access token lapses on an idle login: claude renews it from the
+    refresh token on its next run. Without either, the login has to be redone."""
+    saved = usage.credentials.load
+    past = (time.time() - 3600) * 1000
+    try:
+        usage.credentials.load = lambda _p: {"claudeAiOauth": {
+            "accessToken": "a", "refreshToken": "r", "expiresAt": past}}
+        assert usage.has_token("x")
+        usage.credentials.load = lambda _p: {"claudeAiOauth": {"accessToken": "a", "expiresAt": past}}
+        assert not usage.has_token("x")
+        usage.credentials.load = lambda _p: {"claudeAiOauth": {"accessToken": "a"}}
+        assert usage.has_token("x")                   # a token that never expires
+        usage.credentials.load = lambda _p: {}
+        assert not usage.has_token("x")
+    finally:
+        usage.credentials.load = saved
+
+
 # --- per-account usage (multi-account fallback ladder) -----------------------
 
 def _stub_paths(by_token: dict):

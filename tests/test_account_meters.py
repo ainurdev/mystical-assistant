@@ -105,6 +105,13 @@ def test_meter_carries_a_models_own_cap_for_any_login():
     assert accounts.meter(2)["left"] == 91 and accounts.meter(2)["limits"] == []
 
 
+def test_a_login_a_turn_died_on_reads_expired_until_it_signs_in_again(monkeypatch):
+    monkeypatch.setitem(runner._auth_dead, 2, {"sid": "gone", "chat_id": CHAT})
+    assert accounts.meter(1)["logged_in"] and not accounts.meter(2)["logged_in"]
+    runner.resume_after_login(2)                     # what a sign-in calls
+    assert accounts.meter(2)["logged_in"]
+
+
 def test_both_servers_list_the_same_logins_with_their_meters():
     h, box = _handler(dash)
     h._get_api("/local/accounts", {})

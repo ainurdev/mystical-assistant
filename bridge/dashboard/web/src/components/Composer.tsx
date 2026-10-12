@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
-import { loginLeft, loginSlot, modelRows } from "../models";
+import { deadLogin, loginLeft, loginSlot, modelRows } from "../models";
 import { describe, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago } from "../lib/surfaces";
@@ -55,7 +55,7 @@ const COMPACT_SUGGEST = 0.75;
 const CTX_SEGMENTS = 8;
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
-type DropOption<T extends string> = { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string };
+type DropOption<T extends string> = { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string; tone?: string };
 
 /** The rows of a picker menu — shared by the chip dropdowns and the COMPACT
  *  layout's run popover, which lists the same models (with the same usage
@@ -94,7 +94,7 @@ function MenuRows<T extends string>({ options, value, onPick }: {
               }}
             >
               <span style={{ width: 8, color: "var(--acc)", flex: "none" }}>{on ? "✓" : ""}</span>
-              <span style={{ flex: 1 }}>{o.label}</span>
+              <span style={{ flex: 1, color: o.tone }}>{o.label}</span>
               {o.tail}
             </button>
           </Fragment>
@@ -123,7 +123,7 @@ function OverrideDot() {
 }
 
 function Drop<T extends string>({
-  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot,
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone,
 }: {
   label: string;
   // A field glyph printed inside the chip. The identity of the field then
@@ -135,8 +135,8 @@ function Drop<T extends string>({
   value: T;
   // short → what the chip shows; group → a heading printed once above each run
   // of rows sharing it; tail → right-aligned decoration (the usage meters, what
-  // a profile sets)
-  options: { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string }[];
+  // a profile sets); tone → the label's colour (a profile whose login expired)
+  options: DropOption<T>[];
   // What the chip shows when `value` isn't in `options` (default: the first row).
   fallback?: { id: string; label: string; short?: string };
   open: boolean;
@@ -153,14 +153,17 @@ function Drop<T extends string>({
   title?: string;
   // The value is the session's own, over its profile's (OverrideDot).
   dot?: boolean;
+  // The chip's text and border colour, when the value is in trouble (a
+  // profile whose login has expired).
+  tone?: string;
 }) {
   const cur = options.find((o) => o.id === value) ?? fallback ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
   // min-width rides a custom property so the tight end of the layout ladder can
   // drop it to 0 (inline styles win over any stylesheet rule otherwise).
   const btn: CSSProperties = {
-    appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
-    background: "color-mix(in srgb, var(--panel2) 60%, transparent)", color: "var(--txh)", fontFamily: "inherit",
+    appearance: "none", cursor: "pointer", border: `1px solid color-mix(in srgb, ${tone ?? "var(--acc)"} ${tone ? 55 : 25}%, transparent)`,
+    background: "color-mix(in srgb, var(--panel2) 60%, transparent)", color: tone ?? "var(--txh)", fontFamily: "inherit",
     fontSize: "var(--t95)", letterSpacing: ".3px", display: "flex",
     alignItems: "center", gap: code ? 7 : 10, justifyContent: code ? "flex-start" : "space-between",
     padding: code ? "4px 8px 4px 5px" : "4px 9px",
@@ -448,19 +451,29 @@ export function Composer({
   // PROFILE rows: each ends in what it sets, then what its Claude login has
   // left, so the menu answers "what does picking this change" without a trip
   // to settings. There is no unbinding from here, only binding or making one.
+  // A profile whose login has expired reads red and says so: picking it opens
+  // that login's RE-LOGIN instead (onPick below).
   const profileRows = useMemo(() => {
     const left = (agent?: string, account?: string) => {
       const m = loginLeft(accounts?.find((a) => a.slot === loginSlot(agent, account)));
       return m && <LeftMeter left={m.left} severity={m.severity} />;
     };
-    return [...(profiles ?? []).map((p) => ({
-      id: p.id, label: p.name,
-      tail: <>
-        <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" }}>{describe(p)}</span>
-        {left(p.agent, p.account)}
-      </>,
-    })), { id: NEW_PROFILE, label: "+ NEW PROFILE" }];
+    return [...(profiles ?? []).map((p) => {
+      const dead = deadLogin(accounts, p.agent, p.account);
+      return {
+        id: p.id, label: p.name,
+        ...(dead !== null && { tone: "var(--err)", title: `Account ${dead}'s Claude login has expired. Opens SETTINGS ▸ ACCOUNTS to sign it in again.` }),
+        tail: <>
+          <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" }}>{describe(p)}</span>
+          {dead !== null
+            ? <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--err)", flex: "none" }}>LOGIN EXPIRED ▸</span>
+            : left(p.agent, p.account)}
+        </>,
+      };
+    }), { id: NEW_PROFILE, label: "+ NEW PROFILE" }];
   }, [profiles, accounts]);
+  const bound = profiles?.find((p) => p.id === profile);
+  const boundDead = bound ? deadLogin(accounts, bound.agent, bound.account) : null;
   const own = (k: string) => !!overrides?.includes(k);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<MarkdownInputHandle>(null);
@@ -757,12 +770,19 @@ export function Composer({
   // list doesn't have (it failed to load) shows as its id, and a session
   // bound to none as NO PROFILE. Re-picking the
   // current one is no change: a bind would also drop the knobs set by hand.
+  // One on an expired login opens SETTINGS ▸ ACCOUNTS on that login instead:
+  // a session bound to it could only fail.
   const profileDrop = (right: boolean) => profiles && (
     <Drop label="PROFILE" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileRows}
       fallback={{ id: profile, label: profile || "NO PROFILE" }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
+      tone={boundDead !== null ? "var(--err)" : undefined}
+      title={boundDead !== null ? `PROFILE — ${bound?.name}: account ${boundDead}'s Claude login has expired; pick it in this menu to sign in again.` : undefined}
       onToggle={() => setOpenDrop((d) => (d === "profile" ? "" : "profile"))}
       onPick={(id) => {
+        const p = profiles.find((x) => x.id === id);
+        const dead = p ? deadLogin(accounts, p.agent, p.account) : null;
         if (id === NEW_PROFILE) openSettings("session", "new");
+        else if (dead !== null) openSettings("accounts", String(dead));
         else if (id !== profile) onProfile(id);
         setOpenDrop("");
       }} />
