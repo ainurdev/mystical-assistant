@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Castle, FileDiff, FileText, FolderTree, GitBranch, GraduationCap, ListOrdered, ListTodo, Sparkles,
+  Castle, FileDiff, FolderTree, GitBranch, GraduationCap, ListOrdered, Sparkles,
 } from "lucide-react";
 import {
   api,
@@ -64,14 +64,12 @@ import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, RightCap, Strip } from "./components/hud/Strip";
 import { StatusBar } from "./components/hud/StatusBar";
-import { TaskQueuePanel } from "./components/hud/TaskQueuePanel";
 import { QueuePanel } from "./components/hud/QueuePanel";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { SkillsPanel } from "./components/hud/SkillsTab";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
-import { DocsPanel } from "./components/hud/DocsPanel";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitTab } from "./components/GitTab";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
@@ -1768,13 +1766,6 @@ export function App() {
       ),
     }] : []),
     {
-      // No `scope`: the shelf spans repos and holds a search and a reading
-      // position, so a project switch must not remount it.
-      id: "docs", label: "Docs", icon: <FileText {...RAIL} />, ownScroll: true,
-      render: () => <DocsPanel project={sessionProject} />,
-    },
-    { id: "todo", label: "To-do", icon: <ListTodo {...RAIL} />, render: () => <TaskQueuePanel projects={projectNames} onFeed={feed} /> },
-    {
       id: "queue", label: "Queue", icon: <ListOrdered {...RAIL} />, ownScroll: true, scope: "project" as const,
       render: () => <QueuePanel project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }} />,
     },
@@ -1806,7 +1797,6 @@ export function App() {
   const spendTag = spendSlot !== null && accounts.filter((a) => !a.disabled).length > 1
     ? { tag: `A${spendSlot}`, who: spender?.email ?? `Account ${spendSlot}` }
     : null;
-  const projectNames = useMemo(() => projectGroups.map((g) => g.rel), [projectGroups]);
   // Model picker options — the live list served from /local/state (Models API).
   const modelOpts = useMemo(() => modelOptions(state?.models), [state?.models]);
   // The composer lists one model per family unless settings says otherwise;

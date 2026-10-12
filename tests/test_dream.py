@@ -13,7 +13,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bridge import aifeatures, docs, dream  # noqa: E402
+from bridge import aifeatures, dream  # noqa: E402
 
 NOON = time.mktime((2026, 9, 12, 12, 0, 0, 0, 0, -1))
 FOUR_AM = time.mktime((2026, 9, 12, 4, 0, 0, 0, 0, -1))
@@ -100,23 +100,6 @@ def test_pack_is_truncated_rather_than_allowed_to_flood_the_prompt(monkeypatch):
         with open(os.path.join(d, ".mystical", "docs", "dream.md"), "w") as f:
             f.write("\n".join(f"- a fairly wordy lesson number {i}" for i in range(300)))
         assert len(dream.pack(d)) < dream._MAX_CHARS + 400
-
-
-# --- the switch takes its UI with it -----------------------------------------
-
-def test_the_digest_leaves_the_docs_tab_when_the_switch_is_off(monkeypatch):
-    with tempfile.TemporaryDirectory() as d:
-        os.makedirs(os.path.join(d, ".mystical", "docs"))
-        with open(os.path.join(d, ".mystical", "docs", "dream.md"), "w") as f:
-            f.write("# What this repo has taught you\n\n- one thing\n")
-        with open(os.path.join(d, "README.md"), "w") as f:
-            f.write("# readme\n\nwords\n")
-        _on(monkeypatch, False)
-        paths = {doc["path"] for doc in docs.docs(d)}
-        assert ".mystical/docs/dream.md" not in paths
-        assert "README.md" in paths            # the rest of the tab is untouched
-        _on(monkeypatch, True)
-        assert ".mystical/docs/dream.md" in {doc["path"] for doc in docs.docs(d)}
 
 
 # --- the pass itself ---------------------------------------------------------

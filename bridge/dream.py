@@ -12,10 +12,8 @@ to `<repo>/.mystical/docs/dream.md`. Replacing is what keeps this honest: a
 digest that grows every night is a log, and a log is what the transcripts already
 are. Ten lines is the whole budget, so the model has to *choose*.
 
-`.mystical/docs/` because `bridge/docs.py` already walks it for the DOCS tab —
-the digest gets a reader without a panel, a route or a client method. And
-`devserver.mystical_dir` self-ignores from git, so a repo's dream never lands in
-its history.
+`.mystical/docs/` because `devserver.mystical_dir` self-ignores from git, so a
+repo's dream never lands in its history.
 
 The file is then a third prompt-pack source in `runner._base_cmd`, beside the
 graph map (~400 tokens) and the tracker digest (~300), sent once per session so

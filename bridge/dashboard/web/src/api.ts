@@ -1283,17 +1283,6 @@ export interface Lesson {
   project?: string; // only in the ALL scope, where a lesson can be from any repo
 }
 
-// A markdown doc on disk, listed by the DOCS tab (bridge/docs.py).
-export interface Doc {
-  path: string; // repo-relative, forward slashes — also its identity when reading one
-  dir: string; // the folder holding it — the subject the tab groups by ("" = repo root)
-  name: string;
-  title: string; // its first "# " heading, or the filename de-slugged
-  at: number; // epoch seconds
-  size: number;
-  project?: string; // only in the ALL scope, where a doc can be from any repo
-}
-
 // The platform's own checkout vs its upstream — powers the header sync button,
 // both directions: behind/commits is theirs, ahead/dirty/files/outgoing is ours.
 export interface UpdateInfo {
@@ -1967,13 +1956,6 @@ export const api = {
     req<GraphState>("/local/graph/update", { method: "POST", body: { project } }),
   graphHtmlUrl: (project: string) =>
     `/local/graph/html?project=${encodeURIComponent(project)}`,
-  // --- DOCS tab: the markdown a repo was written with. "*" = every repo. ---
-  docs: (project: string) =>
-    req<{ docs: Doc[] }>(`/local/docs?project=${encodeURIComponent(project)}`),
-  doc: (project: string, path: string) =>
-    req<{ path: string; body: string }>(
-      `/local/docs?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}`,
-    ),
   // --- LEARN tab: per-turn lessons in <repo>/.mystical/learn/ ---
   lessons: (project: string) =>
     req<{ lessons: Lesson[]; repo_enabled: boolean }>(

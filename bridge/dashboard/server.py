@@ -736,24 +736,6 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None or not q:
                 return self._json({"error": "invalid project or query"}, 400)
             return self._json({"text": graphmap.explain(abs_p, q)})
-        if path == "/local/docs":
-            from bridge import docs as projdocs
-            project = qs.get("project", [None])[0]
-            if project == "*":
-                # ALL scope — every repo's docs, each tagged with its project.
-                return self._json({"docs": projdocs.all_docs()})
-            abs_p = _abs_project(project)
-            if abs_p is None:
-                return self._json({"error": "invalid project"}, 400)
-            # One doc's markdown, same shape as /local/learn: the tab renders it
-            # itself, so this is a body and not a page.
-            rel = (qs.get("path", [""])[0] or "").strip()
-            if rel:
-                body = projdocs.read(abs_p, rel)
-                if body is None:
-                    return self._json({"error": "not found"}, 404)
-                return self._json({"path": rel, "body": body})
-            return self._json({"docs": projdocs.docs(abs_p)})
         if path == "/local/learn":
             from bridge import learn
             project = qs.get("project", [None])[0]

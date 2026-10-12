@@ -101,9 +101,8 @@ FEATURES = (
               "to its .mystical/docs/dream.md. Every later session in that repo "
               "opens carrying them (~400 tokens, once per session, beside the "
               "project map), so the bridge stops starting from zero every "
-              "morning. Read it in the DOCS tab. Off, no pass runs, nothing is "
-              "injected, and the digest leaves the DOCS list; the file stays on "
-              "disk."},
+              "morning. Off, no pass runs and nothing is injected; the file "
+              "stays on disk."},
     {"key": "tailstate", "env": "TAIL_STATE_AI", "label": "ENDED-ON-A-QUESTION",
      "hint": "flags a turn that finished needing you, instead of calling it done",
      "cost": "1 haiku call per turn ending in a question",
