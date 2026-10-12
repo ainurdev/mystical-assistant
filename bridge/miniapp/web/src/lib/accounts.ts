@@ -3,9 +3,9 @@ import { api, type AccountInfo, type UsageInfo } from "./api";
 
 // Which Claude login a session spends, and what each login has left. The usage
 // strip reads the login that is actually running the turns (a profile pick or
-// a fallback handover changes it), and the PROFILE pills show how much quota a
+// a fallback handover changes it), and the PROFILE rows show how much quota a
 // switch would give you. Mirrors bridge/dashboard/web/src/models.ts (loginSlot,
-// spendingSlot, loginLeft) by hand: the two web apps share no source.
+// spendingSlot, loginWindows) by hand: the two web apps share no source.
 
 /** bridge accounts.DEFAULT_SLOT: the ambient ~/.claude login. */
 export const DEFAULT_SLOT = 1;
@@ -24,13 +24,12 @@ export function spendingSlot(s?: { slot?: number | null; agent?: string; account
   return s.slot !== undefined ? s.slot : loginSlot(s.agent, s.account);
 }
 
-/** What a login has left: the tighter window's unspent share and that
- *  window's severity. null when the meter doesn't read or the login is off. */
-export function loginLeft(a?: AccountInfo | null): { left: number; severity?: string } | null {
-  if (!a || a.disabled || a.left === null) return null;
-  const tight = [a.five_hour, a.seven_day].reduce<AccountInfo["five_hour"]>(
-    (t, b) => (b && (t === null || b.percent > t.percent) ? b : t), null);
-  return { left: a.left, severity: tight?.severity };
+/** What a login has left in each window (5H, WK), each with its own
+ *  severity. Empty when the meter doesn't read or the login is off. */
+export function loginWindows(a?: AccountInfo | null): { tag: string; left: number; severity: string }[] {
+  if (!a || a.disabled || a.left === null) return [];
+  return ([["5H", a.five_hour], ["WK", a.seven_day]] as const).flatMap(([tag, b]) =>
+    b ? [{ tag, left: Math.max(0, 100 - Math.round(b.percent)), severity: b.severity }] : []);
 }
 
 /** Every login with its meter, polled every 60s. */

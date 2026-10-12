@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square, Minimize2 } from "lucide-react";
 import { useChat } from "../lib/chat";
-import { loginLeft, loginSlot, useAccounts } from "../lib/accounts";
+import { loginSlot, loginWindows, useAccounts } from "../lib/accounts";
 import { api, type EffortLevel, type ModelId, type Profile } from "../lib/api";
 import { isExact, rankCommands, slashQuery } from "../lib/slash";
 import { Banner, Button } from "./ui";
@@ -43,7 +43,8 @@ const PERMS: { id: string; label: string }[] = [
 /** One setting as a wrapped row of chips — three of these fit on a phone
  *  screen at once, where three stacked radio lists meant scrolling to find
  *  the group you wanted. Picking doesn't close the menu: you're usually here
- *  to change more than one thing. */
+ *  to change more than one thing. Options with a note (PROFILE: what each
+ *  sets) stack as full-width rows instead, the note under the label. */
 function OptionRow({
   label,
   value,
@@ -52,14 +53,16 @@ function OptionRow({
 }: {
   label: string;
   value: string;
-  // hint: a reading after the label (a profile's "91% left")
-  options: { id: string; label: string; title?: string; hint?: ReactNode }[];
+  // hint: a reading after the label (a profile's "5H 64% · WK 88% left");
+  // note: a line under it (what the profile sets)
+  options: { id: string; label: string; title?: string; hint?: ReactNode; note?: string }[];
   onPick: (id: string) => void;
 }) {
+  const stack = options.some((o) => o.note);
   return (
     <div className="px-1 pb-1.5">
       <div className="px-1 py-1 text-[10px] tracking-[1.5px] text-muted-foreground">{label}</div>
-      <div role="radiogroup" aria-label={label} className="flex flex-wrap gap-1">
+      <div role="radiogroup" aria-label={label} className={`flex gap-1 ${stack ? "flex-col" : "flex-wrap"}`}>
         {options.map((o) => (
           <button
             key={o.id}
@@ -68,7 +71,7 @@ function OptionRow({
             aria-checked={o.id === value}
             title={o.title}
             onClick={() => onPick(o.id)}
-            className={`rounded-lg border px-2 py-1.5 text-xs transition-colors ${
+            className={`rounded-lg border px-2 py-1.5 text-left text-xs transition-colors ${
               o.id === value
                 ? "border-[var(--brand-soft)] text-[var(--brand-soft)]"
                 : "border-border text-foreground/70 active:opacity-70"
@@ -76,6 +79,7 @@ function OptionRow({
           >
             {o.label}
             {o.hint}
+            {o.note && <span className="mt-0.5 block text-[10px] tracking-[.5px] text-muted-foreground">{o.note}</span>}
           </button>
         ))}
       </div>
@@ -83,13 +87,19 @@ function OptionRow({
   );
 }
 
-// What a profile's Claude login has left, after its name: amber once its
-// tighter window is past normal, red when it's spent.
-function leftHint(m: { left: number; severity?: string } | null): ReactNode {
-  if (!m) return undefined;
-  const tone = m.severity === "critical" || m.severity === "exceeded" ? "text-red-400"
-    : m.severity && m.severity !== "normal" ? "text-amber-400" : "text-muted-foreground";
-  return <span className={`ml-1.5 tabular-nums ${tone}`}>{m.left}% left</span>;
+// What a profile's Claude login has left in each window, after its name: a
+// window reads amber once past normal, red when it's spent.
+function leftHint(ws: { tag: string; left: number; severity: string }[]): ReactNode {
+  if (!ws.length) return undefined;
+  const tone = (s: string) => s === "critical" || s === "exceeded" ? "text-red-400"
+    : s && s !== "normal" ? "text-amber-400" : undefined;
+  return (
+    <span className="ml-1.5 tabular-nums text-muted-foreground">
+      {ws.map((w, i) => (
+        <Fragment key={w.tag}>{i > 0 && " · "}<span className={tone(w.severity)}>{w.tag} {w.left}%</span></Fragment>
+      ))} left
+    </span>
+  );
 }
 
 // A knob set by hand in a session bound to a profile: its value wins over the
@@ -108,10 +118,9 @@ function dotSelected<T extends { id: string; label: string; title?: string }>(
   return options.map((o) => (o.id === value ? { ...o, label: `${o.label} •`, title: OVERRIDE_TIP } : o));
 }
 
-// "FABLE-5-1 · PLAN · HIGH" — what a session bound to this profile runs with.
-// The chip's hover title: at 390px there's no room for a note line under each
-// pill. Mirrors bridge/dashboard/web/src/lib/profiles.ts describe() (hand-kept
-// copy — the two web apps don't share source).
+// "FABLE-5-1 · PLAN · HIGH" — what a session bound to this profile runs with,
+// the line under each PROFILE row. Mirrors bridge/dashboard/web/src/lib/profiles.ts
+// describe() (hand-kept copy — the two web apps don't share source).
 function describeProfile(p: Profile): string {
   const bits = [p.agent !== "claude" ? `◇ ${p.agent}` : p.account && `A${p.account}`, p.model.replace(/^claude-/, ""),
     p.mode.replace(/([a-z])([A-Z])/g, "$1 $2"), p.effort, p.tools && `${p.tools.length} off`];
@@ -150,11 +159,11 @@ export function Composer() {
     sessionId,
   } = useChat();
   const onAgent = sessionAgent !== "claude";
-  // Each PROFILE pill says what its Claude login has left; NO PROFILE runs on
-  // the default login.
+  // Each PROFILE row says what its Claude login has left in each window; NO
+  // PROFILE runs on the default login.
   const logins = useAccounts().data?.accounts;
   const leftOf = (agent?: string, account?: string) =>
-    leftHint(loginLeft(logins?.find((a) => a.slot === loginSlot(agent, account))));
+    leftHint(loginWindows(logins?.find((a) => a.slot === loginSlot(agent, account))));
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
   const barRef = useRef<HTMLDivElement>(null);
@@ -381,7 +390,7 @@ export function Composer() {
                   value={profileId}
                   options={[
                     { id: "", label: "NO PROFILE", hint: leftOf() },
-                    ...profiles.map((p) => ({ id: p.id, label: p.name, title: describeProfile(p),
+                    ...profiles.map((p) => ({ id: p.id, label: p.name, note: describeProfile(p),
                                               hint: leftOf(p.agent, p.account) })),
                   ]}
                   onPick={(v) => void pickProfile(v)}

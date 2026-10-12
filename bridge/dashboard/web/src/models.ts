@@ -1,4 +1,4 @@
-import type { AccountInfo, UsageBucket, UsageInfo } from "./api";
+import type { AccountInfo, UsageInfo } from "./api";
 
 export interface ModelOption {
   id: string; // full model id (e.g. "claude-opus-4-8"), or a short CLI alias
@@ -38,14 +38,11 @@ export function loginUsage(a: AccountInfo): UsageInfo {
            limits: a.limits };
 }
 
-/** What a login has left, for a picker row: the tighter window's unspent share
- *  (bridge accounts.headroom) with that window's severity. null when the meter
- *  doesn't read or the login is switched off. */
-export function loginLeft(a?: AccountInfo | null): { left: number; severity?: string } | null {
-  if (!a || a.disabled || a.left === null) return null;
-  const tight = [a.five_hour, a.seven_day].reduce<UsageBucket | null>(
-    (t, b) => (b && (t === null || b.percent > t.percent) ? b : t), null);
-  return { left: a.left, severity: tight?.severity };
+/** What a login has left, for a PROFILE row: each window on its own (5H, WK),
+ *  with its own severity and reset. Empty when the meter doesn't read or the
+ *  login is switched off. */
+export function loginWindows(a?: AccountInfo | null): Window[] {
+  return !a || a.disabled || a.left === null ? [] : sharedWindows(loginUsage(a));
 }
 
 /** The login a profile runs on, when that login is dead (bridge accounts.meter
@@ -145,6 +142,17 @@ function resetAt(iso: string | null | undefined): string {
 
 interface Window { tag: string; name: string; left: number; severity: string; resets: string }
 
+const win = (tag: string, name: string, b: { percent: number; severity: string; resets_at: string | null }): Window =>
+  ({ tag, name, left: Math.max(0, 100 - Math.round(b.percent)), severity: b.severity, resets: resetAt(b.resets_at) });
+
+/** The windows every model draws from: the 5-hour session and the all-models week. */
+function sharedWindows(usage: UsageInfo): Window[] {
+  const shared: Window[] = [];
+  if (usage.five_hour) shared.push(win("5H", "5h session", usage.five_hour));
+  if (usage.seven_day) shared.push(win("WK", "week, all models", usage.seven_day));
+  return shared;
+}
+
 /**
  * Picker rows with the "Claude " prefix dropped and, when the usage meter is
  * readable, sorted into the pool each model draws from: everything shares
@@ -156,11 +164,7 @@ interface Window { tag: string; name: string; left: number; severity: string; re
 export function modelRows(models: ModelOption[], usage?: UsageInfo | null): ModelRow[] {
   const short = models.map((m) => ({ id: m.id, label: m.label.replace(/^Claude /, "") }));
   if (!usage?.available) return short;
-  const win = (tag: string, name: string, b: { percent: number; severity: string; resets_at: string | null }): Window =>
-    ({ tag, name, left: Math.max(0, 100 - Math.round(b.percent)), severity: b.severity, resets: resetAt(b.resets_at) });
-  const shared: Window[] = [];
-  if (usage.five_hour) shared.push(win("5H", "5h session", usage.five_hour));
-  if (usage.seven_day) shared.push(win("WK", "week, all models", usage.seven_day));
+  const shared = sharedWindows(usage);
   const scoped = (usage.limits ?? []).filter((l) => l.scope?.model && typeof l.percent === "number");
   const heading = (name: string, ws: Window[]) =>
     ws.length ? `${name} · ${ws.map((w) => `${w.tag} ${w.left}%`).join(" · ")} LEFT` : name;

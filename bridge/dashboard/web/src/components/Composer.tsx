@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
-import { deadLogin, loginLeft, loginSlot, modelRows } from "../models";
+import { deadLogin, loginSlot, loginWindows, modelRows } from "../models";
 import { describe, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago } from "../lib/surfaces";
@@ -196,12 +196,13 @@ function Drop<T extends string>({
 
 // A fuel gauge in the MODEL menu: how much of a usage window is still unspent
 // (fill = left, so a full bar is a full tank), in the same track/fill idiom as
-// the footer's USED meter.
-function LeftMeter({ left, severity }: { left: number; severity?: string }) {
+// the footer's USED meter. A PROFILE row has one per window, tagged 5H / WK.
+function LeftMeter({ left, severity, tag, title }: { left: number; severity?: string; tag?: string; title?: string }) {
   const c = severity === "critical" || severity === "exceeded" ? "var(--err)"
     : severity && severity !== "normal" ? "var(--warn)" : "var(--acc)";
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
+    <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
+      {tag && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)" }}>{tag}</span>}
       <span style={{ width: 44, height: 3, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
         <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${left}%`, background: c }} />
       </span>
@@ -449,15 +450,15 @@ export function Composer({
   );
   const permOpts = agentPick ? agentPick.mode ?? [] : PERMS;
   // PROFILE rows: each ends in what it sets, then what its Claude login has
-  // left, so the menu answers "what does picking this change" without a trip
-  // to settings. There is no unbinding from here, only binding or making one.
+  // left in each window (5H, WK; the reset on hover), so the menu answers
+  // "what does picking this change" without a trip to settings. There is no
+  // unbinding from here, only binding or making one.
   // A profile whose login has expired reads red and says so: picking it opens
   // that login's RE-LOGIN instead (onPick below).
   const profileRows = useMemo(() => {
-    const left = (agent?: string, account?: string) => {
-      const m = loginLeft(accounts?.find((a) => a.slot === loginSlot(agent, account)));
-      return m && <LeftMeter left={m.left} severity={m.severity} />;
-    };
+    const left = (agent?: string, account?: string) =>
+      loginWindows(accounts?.find((a) => a.slot === loginSlot(agent, account))).map((w) =>
+        <LeftMeter key={w.tag} tag={w.tag} left={w.left} severity={w.severity} title={`${w.name}: ${w.left}% left${w.resets}`} />);
     return [...(profiles ?? []).map((p) => {
       const dead = deadLogin(accounts, p.agent, p.account);
       return {

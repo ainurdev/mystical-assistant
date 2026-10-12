@@ -2,8 +2,8 @@
 // The picker's Opus reset (docs/superpowers/specs/session-run-settings-design.md):
 // a stored claude-fable-5-1 snapped to Opus on every reload because the snap ran
 // against the pre-load alias FALLBACK. And runPicks: which picks a session shows.
-// And whose meter the footer and pickers read (spendingSlot, loginLeft).
-import { DEFAULT_SLOT, deadLogin, familyOf, loginLeft, loginSlot, loginUsage, runPicks, snapModel, spendingSlot } from "./models.ts";
+// And whose meter the footer and pickers read (spendingSlot, loginWindows).
+import { DEFAULT_SLOT, deadLogin, familyOf, loginSlot, loginWindows, loginUsage, runPicks, snapModel, spendingSlot } from "./models.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -98,10 +98,13 @@ const A2 = { slot: 2, email: "b@x.com", alias: null, disabled: false, default: f
   seven_day: { percent: 2, resets_at: null, severity: "normal" } };
 ok(loginUsage(A2).available && loginUsage(A2).five_hour?.percent === 9, "a login's row reads as its usage");
 ok(!loginUsage({ ...A2, five_hour: null, seven_day: null }).available, "no window read: unknown, not 0%");
+// A PROFILE row reads each window on its own, not one blended number.
 const weekBound = { ...A2, left: 5, seven_day: { percent: 95, resets_at: null, severity: "warning" } };
-ok(loginLeft(weekBound)?.left === 5 && loginLeft(weekBound)?.severity === "warning",
-  "a login's headroom carries its tighter window's severity");
-ok(loginLeft({ ...A2, left: null }) === null && loginLeft({ ...A2, disabled: true }) === null && loginLeft(undefined) === null,
+ok(loginWindows(weekBound).map((w) => `${w.tag} ${w.left} ${w.severity}`).join() === "5H 91 normal,WK 5 warning",
+  "a login's 5H and WK windows, each with what it has left and its own severity");
+ok(loginWindows({ ...A2, five_hour: { percent: 104, resets_at: null, severity: "exceeded" }, seven_day: null })
+  .map((w) => `${w.tag} ${w.left}`).join() === "5H 0", "an overspent window reads 0; one not read is left out");
+ok([{ ...A2, left: null }, { ...A2, disabled: true }, undefined].every((a) => loginWindows(a).length === 0),
   "no meter for an unread, switched-off or missing login");
 const dead = [{ ...A2, logged_in: false }];
 ok(deadLogin(dead, "claude", "2") === 2 && deadLogin([A2], "claude", "2") === null,
