@@ -137,3 +137,40 @@ def test_handle_task_refuses_a_dead_slot_without_running(monkeypatch):
     runner.handle_task(CHAT, "hi", s)
     assert len(sent) == 1
     assert sent[0].startswith("⚠️") and "account 2" in sent[0]
+
+
+# Every session the bridge makes is bound, so its PROFILE picker never reads
+# NO PROFILE while a profile's login runs it.
+
+def test_a_rivendell_run_session_is_bound_to_the_claude_default():
+    from bridge import rivendell
+    p = _profile()
+    sid = rivendell.Worker({"id": "t1", "name": "test", "model": "opus"})._new_session(_fresh_project())
+    row = store.get_session(sid)
+    assert row["profile_id"] == p["id"] and row["permission_mode"] == "bypassPermissions"
+
+
+def test_continuing_a_native_session_binds_its_projects_claude_profile(monkeypatch):
+    p, own = _profile(), _profile(name="Own", account="1")
+    monkeypatch.setattr(runner.transcript_jsonl, "find_transcript", lambda sid: None)
+    s = store.create_session(CHAT, "/pr-native", cwd=config.BASE_PATH, origin="terminal")
+    runner._adopt_native(store.get_session(s["id"]), "dashboard")
+    row = store.get_session(s["id"])
+    assert row["profile_id"] == p["id"] and row["origin"] == "bridge"
+    picked = store.create_session(CHAT, "/pr-native", origin="terminal", profile_id=own["id"])
+    runner._adopt_native(store.get_session(picked["id"]), "dashboard")
+    assert store.get_session(picked["id"])["profile_id"] == own["id"]   # one picked stays
+
+
+def test_a_refused_turn_is_not_auto_resumed(monkeypatch):
+    """The same refusal comes back every time: resuming it would only pile up
+    nudge turns and pushes, AUTO_RESUME_MAX of them."""
+    s = store.create_session(CHAT, "/pr-refused", cwd=config.BASE_PATH)
+    store.set_claude_session_id(s["id"], "csid-refused")      # it ran before
+
+    def boom(*a, **k):
+        raise AssertionError("must not resume a refused turn")
+    monkeypatch.setattr(runner, "start_streaming_job", boom)
+    job = runner.Job("j-refused", CHAT, s["id"])
+    job.status, job.refusal = "error", "Profile 'P' runs on Claude account 2, which is gone"
+    assert runner._maybe_auto_resume(job, config.BASE_PATH, None, None) is False

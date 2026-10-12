@@ -1533,8 +1533,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         _resume_fails.pop(sid, None)             # healthy turn resets the cap
         limits.note_ok(sid)                      # ...and closes any limit episode
         return False
-    if job.status != "error" or job.interrupted:
-        return False
+    if job.status != "error" or job.interrupted or job.refusal:
+        return False                              # a refused turn is refused again
     if not config.AUTO_RESUME or state.shutting_down:
         return False                              # shutdown → boot recovery's job
     if limits.is_limit_error(job.result or job.error_msg):
@@ -2465,14 +2465,18 @@ def _adopt_native(session: dict, origin: str | None) -> None:
     """Move a session that started in VSCode/terminal under the bridge's store on
     its first continuation: import its JSONL transcript once (so the full prior
     history renders from the store next to new turns), give it the continuing
-    surface's permission posture, and mark it bridge-origin. Resume continuity
-    (claude_session_id) and cwd are preserved."""
+    surface's permission posture and its project's Claude profile (it is new
+    to the bridge, and its history is Claude's), and mark it bridge-origin.
+    Resume continuity (claude_session_id) and cwd are preserved."""
     path = transcript_jsonl.find_transcript(session.get("claude_session_id"))
     if path:
         data = transcript_jsonl.parse_jsonl(path)
         store.import_transcript(session["id"], data["turns"], data["events"])
     if not session.get("permission_mode"):
         store.set_permission_mode(session["id"], _surface_default_permission(origin))
+    if not session.get("profile_id"):
+        store.set_session_field(session["id"], "profile_id",
+                                profiles.claude_default(session["project"]))
     store.set_origin(session["id"], "bridge")
 
 

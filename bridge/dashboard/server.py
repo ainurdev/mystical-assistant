@@ -1618,8 +1618,11 @@ class Handler(BaseHTTPRequestHandler):
         git._run(dest, "init")
         git._run(dest, "commit", "--allow-empty", "-m", "init")
         rel = browser.rel(dest)
+        # Bound like /local/sessions, but keeping the seeded mode: its first
+        # turn starts here, with no picks from a composer to fill one in.
         s = store.create_session(chat, rel, origin="dashboard", cwd=dest,
-                                 permission_mode=config.NEW_SESSION_PERMISSION_MODE)
+                                 permission_mode=config.NEW_SESSION_PERMISSION_MODE,
+                                 profile_id=profiles.project_default(rel))
         job_id = None
         if prompt:
             job = runner.start_streaming_job(chat, prompt, [], dest,

@@ -3903,8 +3903,6 @@ function ProfilesPanel({
   // scroll-to-top (a layout effect) has run. Its NAME box already has focus.
   const formRef = useRef<HTMLDivElement>(null);
   useEffect(() => { formRef.current?.scrollIntoView({ block: "nearest" }); }, []);
-  // ON = SAVE sends the open session's tool switches as the profile's; OFF = null.
-  const [useTools, setUseTools] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [logins, setLogins] = useState<AccountInfo[]>([]);
@@ -3937,7 +3935,7 @@ function ProfilesPanel({
   }, [info]);
 
   const set = (patch: Partial<Profile>) => setForm((f) => f && { ...f, ...patch });
-  const edit = (p: Profile) => { setErr(null); setForm(p); setUseTools(p.tools !== null); };
+  const edit = (p: Profile) => { setErr(null); setForm(p); };
   const warn = (text: string) => <div style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{text}</div>;
   async function write(body: ProfileWrite, done?: () => void) {
     setBusy(true);
@@ -4079,15 +4077,17 @@ function ProfilesPanel({
           {!isAgent && (
             <div style={ROW}>
               <span style={KEY_TX}>USE THIS SESSION&apos;S TOOL SWITCHES</span>
-              {useTools && <span style={{ ...CAPTION, width: "auto" }}>{sessionTools.length} OFF</span>}
+              {form.tools && <span style={{ ...CAPTION, width: "auto" }}>{form.tools.length} OFF</span>}
               <span style={{ flex: 1 }} />
-              <Switch on={useTools} onClick={() => setUseTools(!useTools)} />
+              {/* ON = the profile carries tool switches: its own while you edit it, the
+                  open session's once switched on here. OFF = null, the bridge's defaults. */}
+              <Switch on={form.tools !== null} onClick={() => set({ tools: form.tools ? null : sessionTools })} />
             </div>
           )}
           <div style={{ ...ROW, flexWrap: "wrap" }}>
             <button disabled={busy || !form.name.trim()} style={btn("var(--ok)")}
               onClick={() => {
-                const { id, ...fields } = { ...form, tools: useTools && !isAgent ? sessionTools : null };
+                const { id, ...fields } = { ...form, tools: isAgent ? null : form.tools };
                 void write(id ? { action: "update", id, ...fields } : { action: "create", ...fields }, () => setForm(null));
               }}>SAVE</button>
             <button onClick={() => { setForm(null); setErr(null); }} style={btn("var(--txm)")}>CANCEL</button>

@@ -957,9 +957,10 @@ def duplicate(session_id: str) -> dict | None:
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         c.execute("UPDATE sessions SET title=?, title_source=?, fork_from=?, "
-                  "fallback_policy=?, model=?, updated=? WHERE id=?",
+                  "fallback_policy=?, model=?, effort=?, updated=? WHERE id=?",
                   (title, "manual", src.get("claude_session_id"),
-                   src.get("fallback_policy"), src.get("model"), now, copy["id"]))
+                   src.get("fallback_policy"), src.get("model"), src.get("effort"),
+                   now, copy["id"]))
         # New turn ids so the two sessions' turns never collide; events follow
         # their turn through the same map.
         idmap = {}

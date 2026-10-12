@@ -1199,11 +1199,14 @@ export function App() {
   async function send(
     text: string, images: string[],
     // newAgent: the agent of a session minted for this prompt (startIn), which
-    // this render's `sessions` doesn't know yet.
-    opts?: { force?: boolean; sessionId?: string; project?: string; newAgent?: string },
+    // this render's `sessions` doesn't know yet; picks: that session's own,
+    // where the composer's are still the session you left's.
+    opts?: { force?: boolean; sessionId?: string; project?: string; newAgent?: string;
+             picks?: { model: string; perm: string; effort: string } },
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return false;
+    const pk = opts?.picks ?? { model, perm: permMode, effort };
     // `/goal <objective>` sets the session's objective instead of prompting; a
     // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
     // this only records what the session is for.
@@ -1236,7 +1239,7 @@ export function App() {
     const enqueue = async () => {
       const ok = await queue.enqueue({
         // An agent's effort id isn't Claude's: the session's own applies when it runs.
-        text, prompt: text, images, project, effort: (!agentPick && knobs && effort) || undefined,
+        text, prompt: text, images, project, effort: (!agentPick && knobs && pk.effort) || undefined,
       }, sid);
       if (!ok) notify("error", `Couldn't queue the prompt in “${sessionName()}”.`);
       return ok;
@@ -1251,8 +1254,8 @@ export function App() {
     try {
       const res = await api.run({
         prompt: text, images, project,
-        session_id: sid, model: (knobs && model) || undefined, effort: (knobs && effort) || undefined,
-        permission_mode: (knobs && permMode) || undefined, ponytail: ponytail || undefined,
+        session_id: sid, model: (knobs && pk.model) || undefined, effort: (knobs && pk.effort) || undefined,
+        permission_mode: (knobs && pk.perm) || undefined, ponytail: ponytail || undefined,
         force: opts?.force || undefined,
       });
       // Held: this looks like different work from the session it would resume.
@@ -1272,7 +1275,7 @@ export function App() {
       // or a session minted for this prompt reads as never-run until the next
       // poll and the picker flips to this browser's defaults meanwhile.
       if (knobs) setSessions((prev) => prev.map((s) => (s.id === sid
-        ? { ...s, model, permission_mode: permMode || s.permission_mode, effort: effort || null } : s)));
+        ? { ...s, model: pk.model, permission_mode: pk.perm || s.permission_mode, effort: pk.effort || null } : s)));
       liveTurns.current.add(res.job_id);
       markWorking(res.session_id || sid);
       // Only paint the turn if that session is still the one on screen; if you
@@ -1453,8 +1456,12 @@ export function App() {
       setSessions((prev) => [session, ...prev]);
       openSession(session.id);
       toChat();
+      // Its profile's picks, else this browser's: what its composer shows once
+      // it opens, not the picks of the session it was started from.
+      const picks = runPicks(session, { model: settings.model, perm: settings.perm, effort: settings.effort },
+                             profiles?.profiles.find((p) => p.id === session.profile_id) ?? null);
       return await send(prompt, opts?.images ?? [],
-                        { sessionId: session.id, project, force: opts?.force, newAgent: session.agent ?? "claude" });
+                        { sessionId: session.id, project, force: opts?.force, newAgent: session.agent ?? "claude", picks });
     } catch (e) {
       setLoadingSession(false);
       notify("error", (e as Error).message);

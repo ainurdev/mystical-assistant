@@ -31,6 +31,9 @@ A new session in a project with no default profile of its own gets the
 bridge-wide one (default_profile): the one picked in PROFILES (a `settings`
 row), else the first Claude profile on a usable login, which after seeding is
 the first account added. So a new session is only unbound by unbinding it.
+That holds for every way one is made (the servers, the bot, Rivendell, a run);
+a VS Code or terminal session gets its project's Claude one when the bridge
+first continues it (runner._adopt_native).
 
 Stdlib only.
 """
@@ -303,6 +306,10 @@ def bind(session: dict, pid: "str | None") -> "tuple[dict, int]":
     new = get(pid)
     if pid and new is None:
         return {"error": "no such profile"}, 404
+    if pid and pid == session.get("profile_id"):
+        # Re-picking it is no change: the knobs set by hand stay (save_pick
+        # is how one goes back to following the profile).
+        return {"ok": True, "profile_id": pid}, 200
     eff = effective(session)
     new_agent = (new or {}).get("agent") or CLAUDE
     history = (store.count_turns(session["id"]) or session.get("claude_session_id")
@@ -353,6 +360,14 @@ def project_default(project: str) -> "str | None":
     own, else the bridge-wide default."""
     pid = project_config.profile(project)
     return pid if get(pid) else default_profile()
+
+
+def claude_default(project: str) -> "str | None":
+    """project_default() when it runs on Claude, else None: for a session whose
+    history is Claude's (a native one) or whose caller brings a Claude model
+    (Rivendell), which an agent profile could only refuse."""
+    p = get(project_default(project))
+    return p["id"] if p and (p.get("agent") or CLAUDE) == CLAUDE else None
 
 
 def set_project_default(project: str, pid: "str | None") -> None:

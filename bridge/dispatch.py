@@ -125,7 +125,8 @@ def _next_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     # chat to its repo — the same switch the project browser's "use" makes.
     state.active[chat_id] = item["cwd"]
     session = store.create_session(chat_id, rel(item["cwd"]), origin="bot",
-                                   cwd=item["cwd"])
+                                   cwd=item["cwd"],
+                                   profile_id=profiles.project_default(rel(item["cwd"])))
     store.set_subject_title(session["id"], item["title"])
     if not state.acquire_run(session["id"], chat_id):
         answer_cb(cb["id"], "That session is busy.")
@@ -244,7 +245,7 @@ def on_message(msg: dict):
         return
     if text == "/new":
         key = state.project_key(chat_id)
-        s = store.create_session(chat_id, key)
+        s = store.create_session(chat_id, key, profile_id=profiles.project_default(key))
         send(chat_id, "🆕 Fresh Claude session.", panel_kb(chat_id, s["id"], key))
         return
     if cmd0 == "/server":

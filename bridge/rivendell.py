@@ -1196,12 +1196,15 @@ class Worker:
     def _new_session(self, workdir: str) -> str:
         """A fresh store session in `workdir` for one autonomous run. Pre-created:
         ensure_session with an unknown id would silently fall back to the
-        project's LATEST session and resume the previous run."""
-        from bridge import store                 # local import: heavy module
+        project's LATEST session and resume the previous run. Bound to the
+        project's Claude profile like any new session, so it shows the login it
+        runs on (an agent one would refuse this Claude model)."""
+        from bridge import profiles, store       # local import: heavy module
         from bridge.browser import rel
         session = store.create_session(
             config.DASH_CHAT_ID, rel(workdir), session_id=uuid.uuid4().hex,
-            origin=self.origin, cwd=workdir, permission_mode="bypassPermissions")
+            origin=self.origin, cwd=workdir, permission_mode="bypassPermissions",
+            profile_id=profiles.claude_default(rel(workdir)))
         # Its model on the row beside its mode: a resume (boot recovery, a limit
         # park) runs the session's model, and nobody picks one for a plugin run.
         store.set_run_settings(session["id"], model=self.model)

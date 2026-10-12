@@ -350,3 +350,32 @@ def test_an_agent_session_cannot_move_to_another_account(fake_agent):
     j, code = profiles.api_write({"action": "update", "id": one["id"], "account": "a_2"})
     assert code == 400 and "already ran under its account" in j["error"]
     assert profiles.update(one["id"], {"effort": "high"})["effort"] == "high"   # other knobs still edit
+
+
+def test_rebinding_the_bound_profile_keeps_the_knobs_set_by_hand():
+    """The Mini App and the bot's /profile send the current one again; that
+    must not wipe the session's own picks the way switching profiles does."""
+    p = _mk()
+    s = store.create_session(CHAT, "/pf-rebind", profile_id=p["id"])
+    store.set_session_field(s["id"], "effort", "low")
+    assert profiles.bind(store.get_session(s["id"]), p["id"]) == (
+        {"ok": True, "profile_id": p["id"]}, 200)
+    assert store.get_session(s["id"])["effort"] == "low"
+
+
+def test_claude_default_is_the_project_default_unless_it_runs_another_agent(fake_agent):
+    assert profiles.claude_default("/pf-cd") is None             # no profiles yet
+    c = _mk(name="C", account="1")
+    assert profiles.claude_default("/pf-cd") == c["id"]
+    fake = profiles.create({"name": "F", "agent": "fake"})
+    profiles.set_project_default("/pf-cd", fake["id"])
+    assert profiles.project_default("/pf-cd") == fake["id"]
+    assert profiles.claude_default("/pf-cd") is None
+
+
+def test_a_duplicate_keeps_the_effort_beside_the_model():
+    s = store.create_session(CHAT, "/pf-dup-effort")
+    store.set_session_field(s["id"], "model", "claude-opus-5-5")
+    store.set_session_field(s["id"], "effort", "high")
+    copy = store.duplicate(s["id"])
+    assert (copy["model"], copy["effort"]) == ("claude-opus-5-5", "high")
