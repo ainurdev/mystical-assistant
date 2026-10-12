@@ -56,6 +56,13 @@ doctor() {
     if have swift; then ok "swift — builds the Mac app (Mystical.app)"
     else warn "swift — missing: no Mac app. Install: xcode-select --install"; fi
   fi
+  # A Linux desktop (WSL's tray is PowerShell, always there): the tray icon
+  # needs the distro's GTK bindings, and linux/tray.py --check names them.
+  if [ "$(uname -s)" = Linux ] && [ -n "${XDG_CURRENT_DESKTOP:-}" ] \
+     && ! grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+    if msg="$(/usr/bin/python3 "$REPO/linux/tray.py" --check 2>&1)"; then ok "tray bindings — the tray icon can run"
+    else warn "tray bindings — missing: no tray icon. ${msg#mystical tray: }"; fi
+  fi
   return $hard
 }
 

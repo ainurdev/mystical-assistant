@@ -45,7 +45,9 @@ SettingsModal.tsx, README     copy
 
 Both trays are the same small program:
 
-1. Every 4 s (the dashboard's own cadence) `GET http://localhost:<port>/local/running`.
+1. Every 4 s (the dashboard's own cadence) `GET http://127.0.0.1:<port>/local/running`:
+   the address the bridge binds. `localhost` can try ::1 first, and Windows takes
+   about two seconds to refuse that; windows still open on `localhost`, below.
    GETs need no token, and a native client sends no `Sec-Fetch-Site`, so the
    cross-site backstop lets it through, as it does for the Mac app's menu bar.
 2. Diff the `status` map against the previous poll (rules below). If
@@ -78,6 +80,9 @@ minus "started":
 | done | was `working`, now not `working`/`awaiting`/`parked` | `✓ <title>` | "finished" |
 | parked | state becomes `parked` | `⏳ <title>` | label, else "parked" |
 
+- **Native sessions never count as done.** A VS Code or terminal session reads
+  `working` only within 3 s of its last transcript write (`native_activity`), so
+  every long tool call would look finished. Found in review.
 - **The first poll is the baseline.** Nothing that predates the tray is news
   (same as the dashboard's `statusSeen`). The same goes for the first poll after
   the bridge comes back up.

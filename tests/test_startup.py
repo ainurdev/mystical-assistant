@@ -20,6 +20,13 @@ def _not_darwin(monkeypatch):
     monkeypatch.setattr(startup, "_darwin", lambda: False)
 
 
+@pytest.fixture(autouse=True)
+def _tray_entry_in_tmp(monkeypatch, tmp_path):
+    """The tray's autostart entry would otherwise land in the real ~/.config."""
+    monkeypatch.setattr(startup, "_TRAY_AUTOSTART",
+                        str(tmp_path / "autostart/mystical-tray.desktop"))
+
+
 def test_win_path_converts_wsl_mounts():
     assert startup._win_path("/mnt/c/Program Files/Google/chrome.exe") == \
         r"C:\Program Files\Google\chrome.exe"
@@ -50,7 +57,8 @@ def test_script_waits_rather_than_sleeping():
     text = startup._script(True)
     assert "for i in $(seq 1 240)" in text
     assert "sleep 0.25" in text
-    assert "errorlevel 1" in text
+    # Captured, not tested in place: the tray's `start` line runs in between.
+    assert 'set "UP=%errorlevel%"' in text and 'if not "%UP%"=="0" (' in text
 
 
 def test_script_takes_an_explicit_profile_over_the_guess(monkeypatch):
@@ -273,6 +281,108 @@ def _fake_systemctl(calls):
         calls.append(args)
         return R()
     return run
+
+
+def _wsl_box(monkeypatch):
+    monkeypatch.setattr(startup, "_REPO", "/home/u/projects/mystical-assistant")
+    monkeypatch.setattr(startup, "_distro", lambda: "Ubuntu")
+    monkeypatch.setattr(startup.getpass, "getuser", lambda: "u")
+    monkeypatch.setattr(startup, "_browser",
+                        lambda: "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe")
+    monkeypatch.setattr(startup, "_profile", lambda *_: "Profile 2")
+
+
+def test_script_starts_the_tray_with_the_window(monkeypatch):
+    from bridge import config
+    _wsl_box(monkeypatch)
+    text = startup._script(True)
+    line = next(ln for ln in text.split("\r\n") if "tray.ps1" in ln)
+    assert line.startswith('start "" powershell.exe -NoProfile -WindowStyle Hidden '
+                           '-ExecutionPolicy Bypass -File ')
+    assert r"\\wsl$\Ubuntu\home\u\projects\mystical-assistant\windows\tray.ps1" in line
+    assert (f"-Port {config.DASH_PORT} -Distro Ubuntu -User u "
+            "-Repo /home/u/projects/mystical-assistant") in line
+    assert r'-Browser "C:\Program Files\Google\Chrome\Application\chrome.exe"' in line
+    assert '-BrowserProfile "Profile 2"' in line
+    # Ahead of the bail-out: a bridge that didn't answer still gets its tray.
+    assert text.index("tray.ps1") < text.index('if not "%UP%"=="0"')
+    assert "tray.ps1" not in startup._script(False)
+
+
+def test_a_checkout_on_a_windows_drive_runs_the_tray_from_there(monkeypatch):
+    _wsl_box(monkeypatch)
+    monkeypatch.setattr(startup, "_REPO", "/mnt/d/src/mystical-assistant")
+    assert r"-File D:\src\mystical-assistant\windows\tray.ps1" in startup._script(True)
+
+
+def test_linux_tray_entry_follows_the_window_switch(tmp_path, monkeypatch):
+    from bridge import config
+    entry = tmp_path / "autostart/mystical-assistant.desktop"
+    tray = tmp_path / "autostart/mystical-tray.desktop"
+    monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_AUTOSTART", str(entry))
+    monkeypatch.setattr(startup, "_TRAY_AUTOSTART", str(tray))
+    monkeypatch.setattr(startup, "_REPO", "/home/u/m")
+    monkeypatch.setattr(startup, "_has_systemd", lambda: True)
+    monkeypatch.setattr(startup, "_browser", lambda: "/usr/bin/google-chrome")
+    monkeypatch.setattr(startup, "_profile", lambda *_: "Profile 5")
+    monkeypatch.setattr(startup, "_profiles", lambda _b: [])
+    monkeypatch.setattr(startup, "_unit_text", lambda: "[Unit]\n")
+    monkeypatch.setattr(startup, "_systemctl", _fake_systemctl([]))
+    monkeypatch.setattr(startup.subprocess, "run", lambda *a, **k: None)
+    monkeypatch.setattr(startup, "_UNIT_DIR", str(tmp_path / "systemd"))
+
+    startup.apply(True, True)
+    assert (f"Exec=/usr/bin/python3 /home/u/m/linux/tray.py --port {config.DASH_PORT} "
+            '--browser /usr/bin/google-chrome --profile "Profile 5"\n') in tray.read_text()
+    startup.apply(True, False)                    # window off: both entries go
+    assert not tray.exists() and not entry.exists()
+    startup.apply(True, True)
+    startup.apply(False, False)                   # login off: both go too
+    assert not tray.exists() and not entry.exists()
+
+
+def test_launch_tray_on_wsl_runs_windows_powershell_from_a_windows_dir(tmp_path, monkeypatch):
+    _wsl_box(monkeypatch)
+    ps = tmp_path / "powershell.exe"
+    ps.write_text("")
+    monkeypatch.setattr(startup, "_wsl", lambda: True)
+    monkeypatch.setattr(startup, "_POWERSHELL", str(ps))
+    seen = {}
+    monkeypatch.setattr(startup.subprocess, "Popen",
+                        lambda argv, **kw: seen.update(argv=argv, **kw))
+    startup.launch_tray()
+    assert seen["argv"][0] == str(ps) and "-File" in seen["argv"]
+    assert seen["cwd"] == str(tmp_path) and seen["start_new_session"] is True
+
+
+def test_launch_tray_on_wsl_says_when_there_is_no_powershell(tmp_path, monkeypatch):
+    _wsl_box(monkeypatch)
+    monkeypatch.setattr(startup, "_wsl", lambda: True)
+    monkeypatch.setattr(startup, "_POWERSHELL", str(tmp_path / "nope.exe"))
+    with pytest.raises(RuntimeError, match="PowerShell"):
+        startup.launch_tray()
+
+
+def test_launch_tray_on_linux_checks_the_bindings_first(monkeypatch):
+    from bridge import config
+    monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_REPO", "/home/u/m")
+    monkeypatch.setattr(startup, "_browser", lambda: None)
+
+    class R:
+        returncode = 1
+        stderr = "mystical tray: the GTK bindings are missing (No module named 'gi')."
+    monkeypatch.setattr(startup.subprocess, "run", lambda argv, **kw: R())
+    started = []
+    monkeypatch.setattr(startup.subprocess, "Popen", lambda argv, **kw: started.append(argv))
+    with pytest.raises(RuntimeError, match="GTK bindings"):
+        startup.launch_tray()
+    assert not started
+    R.returncode = 0
+    startup.launch_tray()
+    assert started == [["/usr/bin/python3", "/home/u/m/linux/tray.py",
+                        "--port", str(config.DASH_PORT)]]
 
 
 # --- macOS: launchd agents ---------------------------------------------------

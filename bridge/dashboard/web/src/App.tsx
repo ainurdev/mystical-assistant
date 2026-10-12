@@ -55,7 +55,7 @@ import { recall, remember, type Anchor } from "./lib/scrollmem";
 import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
-import { push, shouldPush } from "./lib/push";
+import { push, pushGranted, shouldPush } from "./lib/push";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
@@ -914,11 +914,16 @@ export function App() {
     applyRestore();
   }, [turns, loadingSession, jumpToBottom, applyRestore, endRestore, loadOlder]);
 
+  // Tells the bridge this page alerts by itself, so the tray companion
+  // (windows/, linux/) stays quiet rather than alerting twice. A ref: the poll
+  // below is set up once, and the toggle can change under it.
+  const alertsOn = useRef(false);
+  useEffect(() => { alertsOn.current = settings.push && pushGranted(); }, [settings.push]);
   useEffect(() => {
     let live = true;
     const tick = async () => {
       try {
-        const r = await api.running();
+        const r = await api.running(alertsOn.current);
         if (!live) return;
         setStatusMap(new Map(Object.entries(r.status ?? {})));
       } catch { /* ignore */ }

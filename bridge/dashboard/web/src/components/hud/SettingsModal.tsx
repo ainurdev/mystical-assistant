@@ -2029,7 +2029,7 @@ function StartupSection() {
     <Section
       title="STARTUP"
       top
-      info="Two separate things. Installing puts the dashboard in your Start Menu as its own window, with no tab strip or address bar — that is the browser's doing and it never leaves this machine. Starting at login is the bridge's: a systemd user unit brings it up (a launchd agent on a Mac, where OPEN THE WINDOW TOO opens Mystical.app — build it with `mystical app`), and under WSL — where nothing runs until Windows touches the distro — a small script in the Startup folder is what wakes it. Switching login off leaves the bridge you are using alone; it only stops the next boot from starting one."
+      info="Two separate things. Installing puts the dashboard in your Start Menu as its own window, with no tab strip or address bar — that is the browser's doing and it never leaves this machine. Starting at login is the bridge's: a systemd user unit brings it up (a launchd agent on a Mac, where OPEN THE WINDOW TOO opens Mystical.app — build it with `mystical app`; on Windows and Linux it also starts a tray icon with what's waiting on you), and under WSL — where nothing runs until Windows touches the distro — a small script in the Startup folder is what wakes it. Switching login off leaves the bridge you are using alone; it only stops the next boot from starting one."
     >
       <div style={CARD}>
         <Row
