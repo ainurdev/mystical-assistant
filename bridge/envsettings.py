@@ -128,6 +128,24 @@ SETTINGS = (
               "to the known install dirs so a stripped PATH (systemd, cron, a "
               "non-login shell) can't make it vanish. Set an absolute path to pin one "
               "install."},
+    {"key": "FFMPEG_BIN", "type": "str", "live": True,
+     "group": "RUNS", "label": "FFMPEG", "hint": "the ffmpeg a video job extracts audio and frames with",
+     "placeholder": "ffmpeg",
+     "about": "Rivendell's video kind (a client's recording in their drive) runs ffmpeg "
+              "on this machine for the audio track and one frame per screen change. "
+              "A bare name is looked up on PATH; a missing tool fails the job with "
+              "'command not found' and the viewer offers another bridge."},
+    {"key": "WHISPER_BIN", "type": "str", "live": True,
+     "group": "RUNS", "label": "WHISPER", "hint": "whisper.cpp's whisper-cli, for the transcript",
+     "placeholder": "whisper-cli",
+     "about": "The speech-to-text of the video kind: brew install whisper-cpp. Runs on "
+              "the Apple GPU; a 10-minute recording takes about half a minute."},
+    {"key": "WHISPER_MODEL", "type": "str", "live": True,
+     "group": "RUNS", "label": "WHISPER MODEL", "hint": "the ggml model file whisper-cli loads",
+     "placeholder": "~/.cache/whisper-cpp/ggml-large-v3-turbo.bin",
+     "about": "Download once per machine from huggingface.co/ggerganov/whisper.cpp "
+              "(large-v3-turbo, 1.6 GB, good on Dutch and English). The transcript's "
+              "language is set per file in Rivendell, never detected."},
     {"key": "MCP_SERVERS", "type": "str", "live": True,
      "group": "RUNS", "label": "MCP SEED", "hint": "servers a new session starts with, comma-separated",
      "placeholder": "playwright,chrome-devtools",

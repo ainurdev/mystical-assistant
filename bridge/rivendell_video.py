@@ -53,7 +53,7 @@ def extract_audio(src: str, wav: str) -> None:
 
 def transcribe(wav: str, language: str) -> list[dict]:
     """whisper-cli writes <wav>.json next to the wav; offsets are milliseconds."""
-    _run([config.WHISPER_BIN, "-m", config.WHISPER_MODEL, "-f", wav, "-l", language,
+    _run([config.WHISPER_BIN, "-m", os.path.expanduser(config.WHISPER_MODEL), "-f", wav, "-l", language,
           "-oj", "-of", wav, "-np"], "transcription", 3600)
     try:
         with open(wav + ".json", encoding="utf-8") as f:
