@@ -460,6 +460,51 @@ def test_run_video_transcribe_makes_media_then_asks_claude_and_posts_json(monkey
                                 "chapters": [], "keyPoints": [], "screens": [{"index": 1, "timeMs": 0, "caption": "Home"}]}
 
 
+def test_run_video_keeps_the_runs_failure_beside_the_transcript_and_cleans_the_workdir(monkeypatch, tmp_path):
+    """A Claude run that times out still delivers the transcript (COMPLETED with
+    the reason as `error`, so the viewer can say why there is no summary), and
+    the client's recording and its audio do not stay on this Mac."""
+    from bridge import rivendell_video as rv
+    w = _worker(workdir=str(tmp_path))
+    monkeypatch.setattr(rivendell.config, "UPLOAD_DIR", str(tmp_path))
+    posted = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {
+        "prompt": "p {{TRANSCRIPT}} {{SCREENS}}", "kind": "TRANSCRIBE", "language": "en",
+        "file": {"id": "f1", "name": "S.mov", "kind": "video", "durationMs": 1}, "downloadUrl": "u", "screens": []})
+    monkeypatch.setattr(w, "_post_phase", lambda rid, phase: None)
+    monkeypatch.setattr(rv, "download", lambda url, dest, timeout=900: open(dest, "wb").write(b"v"))
+    monkeypatch.setattr(rv, "extract_audio", lambda src, wav: open(wav, "wb").write(b"a"))
+    monkeypatch.setattr(rv, "transcribe", lambda wav, lang: [{"startMs": 0, "endMs": 1, "text": "hi"}])
+
+    def frames(src, out_dir, **kw):
+        os.makedirs(out_dir, exist_ok=True)
+        p = os.path.join(out_dir, "0001.jpg"); open(p, "wb").write(b"\xff\xd8\xff")
+        return [{"index": 1, "timeMs": 0, "path": p}]
+    monkeypatch.setattr(rv, "pick_frames", frames)
+    monkeypatch.setattr(w, "_api_put_bytes", lambda path, data, ct: None)
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None, image_paths=None: _StubJob("error", error_msg="run timed out"))
+    monkeypatch.setattr(w, "_wait_job", lambda job, timeout: (False, "run timed out after 3600s"))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kp, rid, ok, text, error=None: posted.append((kp, rid, ok, json.loads(text)["summary"], error)))
+    w._run_video("v1", "S.mov")
+    assert posted == [("video-requests", "v1", True, None, "run timed out after 3600s")]
+    workdir = os.path.join(str(tmp_path), "video-v1")
+    assert not os.path.exists(os.path.join(workdir, "source"))
+    assert not os.path.exists(os.path.join(workdir, "audio.wav"))
+    assert os.path.exists(os.path.join(workdir, "screens", "0001.jpg"))
+
+
+def test_post_result_carries_an_error_beside_a_completed_result(monkeypatch):
+    """COMPLETED with `error`: the transcript landed, the summary did not, and Rivendell shows why."""
+    w = _worker()
+    sent = []
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: sent.append((path, payload)))
+    monkeypatch.setattr(w, "_ping_done", lambda *a: None)
+    w._post_result("video-requests", "v1", True, "{}", error="run timed out after 3600s")
+    assert sent == [("/plugin/video-requests/v1/result",
+                     {"status": "COMPLETED", "result": "{}", "error": "run timed out after 3600s", "model": "opus"})]
+
+
 def test_run_video_tool_failure_posts_failed(monkeypatch, tmp_path):
     from bridge import rivendell_video as rv
     w = _worker(workdir=str(tmp_path))

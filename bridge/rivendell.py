@@ -543,20 +543,25 @@ class Worker:
                               f"prompt fetch failed: {e}")
             return None
 
-    def _post_result(self, kind_path: str, request_id: str, ok: bool, text: str) -> None:
+    def _post_result(self, kind_path: str, request_id: str, ok: bool, text: str,
+                     error: "str | None" = None) -> None:
         """Report the outcome. The run was expensive, so a network or server
         failure is retried with backoff; a 4xx is Rivendell refusing this very
         body, which waiting can't change, so it isn't. A Rivendell whose hello
         said "result-details" also gets `details` (_result_details); if it
         refuses them (400), the plain result goes again at once without them —
         the result is what counts, and the deployed API 400s any field it
-        doesn't know. `error` is cut to Rivendell's _ERROR_MAX. Only a result
-        that landed gets the "job done" ping."""
+        doesn't know. `error` is cut to Rivendell's _ERROR_MAX; with `ok` it
+        rides beside the result (a video's transcript landed, its summary did
+        not, and the viewer says why). Only a result that landed gets the
+        "job done" ping."""
         payload = {
             "status": "COMPLETED" if ok else "FAILED",
             ("result" if ok else "error"): text if ok else text[:_ERROR_MAX],
             "model": self.model,
         }
+        if ok and error:
+            payload["error"] = error[:_ERROR_MAX]
         if "result-details" in self.features:
             try:
                 if (details := self._result_details(request_id)):
@@ -1557,11 +1562,22 @@ class Worker:
         finally:
             self._untrack(request_id)
         if kind == "TRANSCRIBE":
-            # The transcript is made; a bad summary only leaves that part empty.
+            # The transcript is made; a bad summary only leaves that part empty,
+            # and a run that failed says why beside it.
             result = rv.transcribe_result(resp.get("language") or "en", segments, frames, text if ok else "")
-            self._post_result("video-requests", request_id, True, json.dumps(result))
+            if ok:
+                self._post_result("video-requests", request_id, True, json.dumps(result))
+            else:
+                self._post_result("video-requests", request_id, True, json.dumps(result), error=text)
         else:
             self._post_result("video-requests", request_id, ok, text)
+        # The client's recording and its audio do not stay on this Mac; the frames
+        # do (the transcript in the dashboard may show them) until the upload sweep.
+        for name in ("source", "audio.wav", "audio.wav.json"):
+            try:
+                os.remove(os.path.join(workdir, name))
+            except OSError:
+                pass
 
     def _run_in_workdir(self, what: str, kind: str, request_id: str,
                         name: "str | None", mcp_on: "str | None" = None) -> None:
