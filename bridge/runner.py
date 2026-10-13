@@ -759,6 +759,9 @@ class Job:
         # tool_use id -> {notes, resolves} from a Record/Attach call, held until
         # its result comes back with the file.
         self.clip_meta: dict[str, dict] = {}
+        # tool_use id -> the image file a Read opened, so the chat shows that
+        # file and not the copy the CLI shrank for the model (_save_result_images).
+        self.read_paths: dict[str, str] = {}
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -1977,6 +1980,8 @@ def _handle_event(job: Job, d: dict):
                                                or job.task_status.get(tid, "pending"))
                 elif name.endswith(("__Record", "__Attach")):
                     job.clip_meta[b.get("id")] = _clip_meta(job, inp)
+                elif name == "Read" and isinstance(inp.get("file_path"), str):
+                    job.read_paths[b.get("id")] = inp["file_path"]
                 job.open_tools[b.get("id")] = (name, time.time())
                 ev = {"type": "tool", "name": name, "id": b.get("id"),
                       "summary": _summarize_tool(name, inp)}
@@ -1995,7 +2000,8 @@ def _handle_event(job: Job, d: dict):
                 ms = int((time.time() - t0) * 1000) if t0 else 0
                 ev = transcript_jsonl.tool_done(
                     rid, name, ms, b, d.get("tool_use_result"))
-                imgs = _save_result_images(job.id, rid, b.get("content"))
+                imgs = _save_result_images(job.id, rid, b.get("content"),
+                                           job.read_paths.pop(rid, None))
                 if (clip := _save_result_file(job.id, rid, name, b.get("content"))):
                     imgs = imgs + [clip]
                     # Only on the event that actually carries a file: a panel
@@ -2036,14 +2042,32 @@ _MCP_IMG_MAX = 4                    # images kept per tool result
 _MCP_IMG_BYTES = 8 * 1024 * 1024    # per image, decoded
 
 
-def _save_result_images(job_id: str, rid: str, content) -> list[str]:
+def _save_result_images(job_id: str, rid: str, content,
+                        original: "str | None" = None) -> list[str]:
     """Images a tool handed back (Playwright, chrome-devtools, Figma…), written
     next to the run's uploads so the transcript can show them instead of the word
     "image". Paths, not base64: a screenshot is a megabyte, and the event goes
     into the store and down every SSE stream. Best-effort — a tool result must
-    never fail because its screenshot didn't land."""
+    never fail because its screenshot didn't land.
+
+    `original` is the image file a Read opened. The CLI shrinks an image to
+    2000px on its long side before the model sees it (toolUseResult.dimensions
+    says so), and that shrunk copy is all the stream carries -- a 2561x6111
+    design shot reached the chat at 838x2000. So a Read's image is the file
+    itself, copied like an Attach, as long as it is still there."""
     if not isinstance(content, list):
         return []
+    if original and (mimetypes.guess_type(original)[0] or "").startswith("image/") \
+            and any(isinstance(b, dict) and b.get("type") == "image" for b in content):
+        try:
+            if 0 < os.path.getsize(original) <= _MCP_FILE_BYTES:
+                d = os.path.join(config.UPLOAD_DIR, job_id)
+                os.makedirs(d, exist_ok=True)
+                fp = os.path.join(d, f"mcp-{rid or 'tool'}-0{os.path.splitext(original)[1].lower()}")
+                shutil.copy2(original, fp)
+                return [fp]
+        except OSError as e:          # gone or unreadable: the shrunk copy still lands
+            print(f"[runner] read image original dropped: {e}", file=sys.stderr)
     out: list[str] = []
     for i, b in enumerate(content):
         if len(out) >= _MCP_IMG_MAX or not isinstance(b, dict):

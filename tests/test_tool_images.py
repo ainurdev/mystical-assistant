@@ -76,3 +76,49 @@ def test_non_base64_source_is_ignored():
 def test_media_type_picks_the_extension():
     out = runner._save_result_images("job8", "rid", [_block(PNG, "image/jpeg")])   # noqa: SLF001
     assert out and out[0].endswith(".jpg") or out[0].endswith(".jpeg")
+
+
+def test_a_read_image_is_the_file_itself_not_the_shrunk_copy(tmp_path):
+    # The CLI hands the model a copy shrunk to 2000px; the human gets the original.
+    src = tmp_path / "shot.PNG"
+    src.write_bytes(PNG + b"\0" * 64)
+    out = runner._save_result_images("job9", "rid9", [_block(PNG)], str(src))   # noqa: SLF001
+    assert len(out) == 1 and out[0].endswith("mcp-rid9-0.png")
+    with open(out[0], "rb") as f:
+        assert f.read() == src.read_bytes()
+
+
+def test_a_read_original_gone_or_not_an_image_falls_back_to_the_block(tmp_path):
+    gone = runner._save_result_images(                                # noqa: SLF001
+        "job10", "rid", [_block(PNG)], str(tmp_path / "gone.png"))
+    txt = tmp_path / "notes.txt"
+    txt.write_text("x")
+    text = runner._save_result_images("job11", "rid", [_block(PNG)], str(txt))   # noqa: SLF001
+    for out in (gone, text):
+        assert len(out) == 1
+        with open(out[0], "rb") as f:
+            assert f.read() == PNG
+
+
+def test_a_read_with_no_image_block_copies_nothing(tmp_path):
+    src = tmp_path / "shot.png"
+    src.write_bytes(PNG)
+    assert runner._save_result_images(                                # noqa: SLF001
+        "job12", "rid", [{"type": "text", "text": "err"}], str(src)) == []
+
+
+def test_a_read_through_the_event_stream_shows_the_original(tmp_path, monkeypatch):
+    # tool_use Read -> tool_result image: the tool_done event points at the file,
+    # not at the CLI's shrunk copy, and the bookkeeping entry is consumed.
+    monkeypatch.setattr(runner.config, "UPLOAD_DIR", str(tmp_path / "up"))
+    src = tmp_path / "design.png"
+    src.write_bytes(PNG + b"\0" * 64)
+    j = runner.Job("j-read", 555)
+    runner._handle_event(j, {"type": "assistant", "message": {"content": [        # noqa: SLF001
+        {"type": "tool_use", "id": "t1", "name": "Read", "input": {"file_path": str(src)}}]}})
+    runner._handle_event(j, {"type": "user", "message": {"content": [             # noqa: SLF001
+        {"type": "tool_result", "tool_use_id": "t1", "content": [_block(PNG)]}]}})
+    ev = next(e for e in j.events if e.get("type") == "tool_done")
+    with open(ev["images"][0], "rb") as f:
+        assert f.read() == src.read_bytes()
+    assert not j.read_paths
