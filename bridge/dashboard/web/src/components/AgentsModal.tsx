@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { api, type AgentInfo, type WorkflowInfo, type AgentActivity } from "../api";
 import { Markdown } from "./Markdown";
 
@@ -168,7 +169,10 @@ export function AgentsModal({
     </div>
   );
 
-  return (
+  // Portalled into the themed container: the chat column's entrance animation
+  // makes it a containing block for position:fixed, which squeezed the modal
+  // between the sidebars.
+  return createPortal(
     <div
       onClick={onClose}
       role="dialog"
@@ -316,6 +320,7 @@ export function AgentsModal({
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.querySelector("[data-theme]") ?? document.body,
   );
 }
