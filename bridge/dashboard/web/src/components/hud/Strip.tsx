@@ -4,7 +4,7 @@ import { NotificationCenter } from "./Notifications";
 import { UpdateButton } from "./UpdateButton";
 import { WeekPanel } from "./WeekPanel";
 import { setClock12 } from "../../lib/surfaces";
-import { isMacApp } from "../../lib/mac";
+import { isMacApp, macLights } from "../../lib/mac";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -59,6 +59,10 @@ const seg = (on: boolean): CSSProperties => ({
 export function Brand() {
   const [week, setWeek] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  // Mystical.app: the traffic lights appear over the cap while it's hovered,
+  // and the logo slides out from under them (lib/mac, DashboardWindow).
+  const [lights, setLights] = useState(false);
+  const hover = (on: boolean) => { if (isMacApp()) { setLights(on); macLights(on); } };
 
   // Closes on a press anywhere outside the cap, like the clock's popovers.
   useEffect(() => {
@@ -73,8 +77,7 @@ export function Brand() {
   return (
     // Relative + a stacking context above the sessions list under it, so the
     // report draws over the panel rather than behind it.
-    // Mystical.app: the cap sits in the title bar, so it starts past the traffic lights (9…69pt).
-    <div ref={ref} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: isMacApp() ? "0 12px 0 78px" : "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    <div ref={ref} onMouseEnter={() => hover(true)} onMouseLeave={() => hover(false)} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: lights ? "0 12px 0 78px" : "0 12px", transition: "padding-left .2s ease", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
       <svg
         viewBox="0 0 100 100"
         style={{ width: 19, height: 19, flex: "none", overflow: "visible" }}

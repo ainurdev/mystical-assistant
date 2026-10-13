@@ -50,14 +50,16 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         window.setFrameAutosaveName("Dashboard")
         // The HUD's top row is the title bar: transparent, no drawn title (the
         // window's title still names Mission Control and the Window menu). The
-        // page reads the bar's height from --mac-titlebar (injected below), insets
-        // its nameplate past the traffic lights and asks for a drag (Notifier
-        // "drag") from the row's bare surface, since a web view never moves the window.
+        // traffic lights show only while the page's Brand cap is hovered (Notifier
+        // "lights"), and the page asks for a drag (Notifier "drag") from the row's
+        // bare surface, since a web view never moves the window. --mac-titlebar
+        // (injected below) tells the page the bar's height.
         window.titlebarAppearsTransparent = true
         window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
         super.init(window: window)
         window.delegate = self
+        for b in lights { b.isHidden = true; b.alphaValue = 0 }
         let bar = window.frame.height - window.contentLayoutRect.height
         webView.configuration.userContentController.addUserScript(WKUserScript(
             source: "document.documentElement.style.setProperty('--mac-titlebar','\(Int(bar > 0 ? bar : 28))px')",
@@ -167,6 +169,25 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate()
+    }
+
+    /// The traffic lights sit over the Brand cap and show only while it is
+    /// hovered; hidden, they take no clicks, so at rest the logo sits where
+    /// they were. The hide waits for the fade, unless a show came first.
+    private var lightsShown = false
+    private var lights: [NSButton] {
+        [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].compactMap { window?.standardWindowButton($0) }
+    }
+    func showLights(_ show: Bool) {
+        guard show != lightsShown else { return }
+        lightsShown = show
+        if show { lights.forEach { $0.isHidden = false } }
+        NSAnimationContext.runAnimationGroup({ [self] ctx in
+            ctx.duration = 0.18
+            lights.forEach { $0.animator().alphaValue = show ? 1 : 0 }
+        }, completionHandler: { [weak self] in
+            MainActor.assumeIsolated { if let self, !self.lightsShown { self.lights.forEach { $0.isHidden = true } } }
+        })
     }
 
     func reload() {
