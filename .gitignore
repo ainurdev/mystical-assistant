@@ -5,7 +5,7 @@
 .bridge_uploads/
 
 # Node deps, anywhere — a scoped rule once let tools/selector-plugin commit 139MB
-node_modules/
+node_modules
 
 # Python
 __pycache__/
