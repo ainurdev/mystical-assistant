@@ -16,6 +16,7 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
     /// The dashboard URL last loaded, and whether that load is showing.
     private var loaded: URL?
     private var showingPage = false
+    private var titleObs: NSKeyValueObservation?
     var onVisibilityChange: ((Bool) -> Void)?
     var onStart: (() -> Void)?
 
@@ -47,8 +48,25 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         window.isReleasedWhenClosed = false
         window.center()
         window.setFrameAutosaveName("Dashboard")
+        // The HUD runs under a transparent title bar; the page pads its top by
+        // --mac-titlebar (injected below) so nothing sits under the traffic lights.
+        window.titlebarAppearsTransparent = true
+        window.styleMask.insert(.fullSizeContentView)
         super.init(window: window)
         window.delegate = self
+        let bar = window.frame.height - window.contentLayoutRect.height
+        webView.configuration.userContentController.addUserScript(WKUserScript(
+            source: "document.documentElement.style.setProperty('--mac-titlebar','\(Int(bar > 0 ? bar : 28))px')",
+            injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        // The page's title is the window's — the open session, once the page
+        // names it (lib/mac.ts). An older dist's static title loses its suffix.
+        titleObs = webView.observe(\.title, options: [.new]) { [weak self] _, _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                let t = (self.webView.title ?? "").replacingOccurrences(of: " — dashboard", with: "")
+                self.window?.title = t.isEmpty ? "mystical//assistant" : t
+            }
+        }
 
         let root = NSView()
         for v in [webView, placeholder] as [NSView] {
@@ -123,6 +141,17 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         show()
         let arg = String(data: try! JSONSerialization.data(withJSONObject: [id]), encoding: .utf8)!
         webView.evaluateJavaScript("window.__mysticalNotificationClick?.(...\(arg)) === true") {
+            [weak self] result, _ in
+            guard (result as? Bool) != true, id.hasPrefix("tag:") else { return }
+            Task { @MainActor in self?.open(session: String(id.dropFirst(4))) }
+        }
+    }
+
+    /// A banner button was tapped: run the page's handler where it is — the
+    /// window stays wherever it was. If that page is gone, open the session.
+    func notificationAction(_ id: String, _ action: String) {
+        let arg = String(data: try! JSONSerialization.data(withJSONObject: [id, action]), encoding: .utf8)!
+        webView.evaluateJavaScript("window.__mysticalNotificationAction?.(...\(arg)) === true") {
             [weak self] result, _ in
             guard (result as? Bool) != true, id.hasPrefix("tag:") else { return }
             Task { @MainActor in self?.open(session: String(id.dropFirst(4))) }

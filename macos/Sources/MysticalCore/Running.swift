@@ -28,4 +28,13 @@ public enum Running {
             return WaitingSession(id: sid, title: titles[sid] ?? label, label: label)
         }.sorted { ($0.title, $0.id) < ($1.title, $1.id) }
     }
+
+    /// Sessions mid-turn, from every source — a terminal session working is as
+    /// busy as a bridge one. Drives the menu bar's busy glyph.
+    public static func working(_ data: Data) -> Int {
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return 0 }
+        let status = root["status"] as? [String: [String: Any]] ?? [:]
+        return status.values.filter { $0["state"] as? String == "working" }.count
+    }
 }

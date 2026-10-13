@@ -4,31 +4,46 @@ import MysticalCore
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let bridge = Bridge()
-    private let notifier = Notifier()
+    private lazy var notifier = Notifier(version: bridge.version)
     private var dashboard: DashboardWindow!
+    private var floating: FloatingPanel!
     private var statusItem: NSStatusItem!
     private var busy = false
+    private var rebuilding = false
 
     func applicationDidFinishLaunching(_ note: Notification) {
+        // Native chrome in the theme's mode from the first frame; the page
+        // corrects it on load (Notifier "appearance").
+        applyAppearance(light: UserDefaults.standard.bool(forKey: "appearanceLight"))
         NSApp.mainMenu = MainMenu.build(target: self)
         dashboard = DashboardWindow(bridge: bridge, notifier: notifier)
-        // Dock icon while the window is up; menu bar only while it's hidden.
-        dashboard.onVisibilityChange = { visible in
-            NSApp.setActivationPolicy(visible ? .regular : .accessory)
-        }
+        dashboard.onVisibilityChange = { [weak self] visible in self?.applyPolicy(windowVisible: visible) }
         dashboard.onStart = { [weak self] in self?.lifecycle("start") }
         notifier.onClick = { [weak self] id in self?.dashboard.notificationClicked(id) }
+        notifier.onAction = { [weak self] id, action in self?.dashboard.notificationAction(id, action) }
+        notifier.onAppearance = { [weak self] light in self?.applyAppearance(light: light) }
+        notifier.onRebuild = { [weak self] in self?.rebuildApp() }
+        notifier.onPrefs = { [weak self] _ in
+            guard let self else { return }
+            self.applyPolicy(windowVisible: self.dashboard.window?.isVisible ?? false)
+            self.syncFloating()
+        }
+        floating = FloatingPanel { [weak self] id in self?.dashboard.open(session: id) }
+        // The panel yields to the dashboard: gone while it's in front, back when it isn't.
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.didResignKeyNotification] {
+            NotificationCenter.default.addObserver(forName: name, object: dashboard.window, queue: .main) {
+                [weak self] _ in MainActor.assumeIsolated { self?.syncFloating() }
+            }
+        }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let image = NSImage(systemSymbolName: "sparkle", accessibilityDescription: "mystical")
-        image?.isTemplate = true
-        statusItem.button?.image = image
         statusItem.button?.imagePosition = .imageLeading
         let menu = NSMenu()
         menu.delegate = self
         statusItem.menu = menu
 
         Probe.install(window: dashboard, bridge: bridge, notifier: notifier)
+        Capture.install()
         bridge.onChange = { [weak self] in self?.bridgeChanged() }
         bridge.start()
         // Launched at login by the window agent, or by hand: either way, show it.
@@ -42,13 +57,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return true
     }
 
+    /// mystical:// links — build.sh registers the scheme, DeepLink says what they mean.
+    func application(_ app: NSApplication, open urls: [URL]) {
+        for url in urls {
+            switch DeepLink.parse(url) {
+            case .open: dashboard.show()
+            case .session(let id): dashboard.open(session: id)
+            case nil: break
+            }
+        }
+    }
+
+    /// Right-click on the Dock icon: the rows that get you somewhere. The
+    /// lifecycle verbs stay in the menu bar — a Dock menu is not for stopping things.
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        let menu = NSMenu()
+        let rows = waitingItems()
+        if !rows.isEmpty {
+            menu.addItem(disabled("Waiting on you"))
+            rows.forEach(menu.addItem)
+            menu.addItem(.separator())
+        }
+        menu.addItem(item("Open Dashboard", #selector(showDashboard), ""))
+        return menu
+    }
+
+    /// Dock icon while the window is up or KEEP IN DOCK is on; menu bar only otherwise.
+    private func applyPolicy(windowVisible: Bool) {
+        NSApp.setActivationPolicy(windowVisible || notifier.prefs.keepInDock ? .regular : .accessory)
+    }
+
+    private func applyAppearance(light: Bool) {
+        NSApp.appearance = NSAppearance(named: light ? .aqua : .darkAqua)
+    }
+
+    private func syncFloating() {
+        let w = dashboard.window
+        floating.update(bridge.waiting, show: notifier.prefs.floating,
+                        dashboardInFront: (w?.isVisible ?? false) && (w?.isKeyWindow ?? false))
+    }
+
     private func bridgeChanged() {
         dashboard.sync()
         let n = bridge.waiting.count
+        let working = bridge.working
+        let image = NSImage(systemSymbolName: working > 0 ? "sparkles" : "sparkle",
+                            accessibilityDescription: working > 0 ? "mystical, working" : "mystical")
+        image?.isTemplate = true
+        statusItem.button?.image = image
         statusItem.button?.title = n > 0 ? " \(n)" : ""
         NSApp.dockTile.badgeLabel = n > 0 ? "\(n)" : nil
-        statusItem.button?.toolTip = n > 0 ? "\(n) waiting on you" : "mystical//assistant"
+        var parts: [String] = []
+        if working > 0 { parts.append("\(working) working") }
+        if n > 0 { parts.append("\(n) waiting on you") }
+        statusItem.button?.toolTip = parts.isEmpty ? "mystical//assistant" : parts.joined(separator: " · ")
         statusItem.button?.appearsDisabled = !bridge.up
+        syncFloating()
     }
 
     // MARK: menu bar menu — rebuilt each time it opens, from the latest poll
@@ -59,17 +123,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !busy { Task { await bridge.refreshStatus() } }
         menu.removeAllItems()
         menu.addItem(disabled(stateLine()))
-        if !bridge.waiting.isEmpty {
+        let rows = waitingItems()
+        if !rows.isEmpty {
             menu.addItem(.separator())
             menu.addItem(disabled("Waiting on you"))
-            for w in bridge.waiting {
-                let item = NSMenuItem(title: w.title, action: #selector(openWaiting(_:)), keyEquivalent: "")
-                item.target = self
-                item.representedObject = w.id
-                item.toolTip = w.label
-                item.indentationLevel = 1
-                menu.addItem(item)
-            }
+            rows.forEach(menu.addItem)
         }
         menu.addItem(.separator())
         menu.addItem(item("Open Dashboard", #selector(showDashboard), "0"))
@@ -81,10 +139,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(item("Restart Bridge", #selector(restartBridge), "", enabled: running && !busy))
         menu.addItem(item("Show Log", #selector(showLog), "", enabled: bridge.status?.log != nil))
         menu.addItem(.separator())
+        menu.addItem(disabled("Mystical \(bridge.version)"))
+        menu.addItem(item("Rebuild App", #selector(rebuildApp), "", enabled: !rebuilding && !bridge.repoMissing))
+        menu.addItem(.separator())
         menu.addItem(item("Quit Mystical", #selector(NSApplication.terminate(_:)), "q", target: NSApp))
     }
 
+    private func waitingItems() -> [NSMenuItem] {
+        bridge.waiting.map { w in
+            let i = NSMenuItem(title: w.title, action: #selector(openWaiting(_:)), keyEquivalent: "")
+            i.target = self
+            i.representedObject = w.id
+            i.toolTip = w.label
+            i.indentationLevel = 1
+            return i
+        }
+    }
+
     private func stateLine() -> String {
+        if rebuilding { return "● rebuilding the app…" }
         if busy { return "● working…" }
         guard let s = bridge.status else {
             return bridge.repoMissing ? "● checkout not found — rebuild: mystical app" : "● checking…"
@@ -135,6 +208,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc private func stopBridge() { lifecycle("stop") }
     @objc private func restartBridge() { lifecycle("restart") }
 
+    /// `mystical app`. A success quits and reopens us from build.sh, so `done`
+    /// only ever reports a failure (or a build with nothing to swap).
+    @objc private func rebuildApp() {
+        guard !rebuilding else { return }
+        rebuilding = true
+        let log = bridge.rebuildApp { [weak self] code, out in
+            guard let self else { return }
+            self.rebuilding = false
+            if code != 0 { self.alert("mystical app failed", String(out.suffix(1500))) }
+        }
+        if log == nil {
+            rebuilding = false
+            alert("mystical app", "couldn't start the build — is the checkout still at \(bridge.repo)?")
+        }
+    }
+
     private func lifecycle(_ verb: String) {
         guard !busy else { return }
         busy = true
@@ -142,13 +231,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let failure = await bridge.lifecycle(verb)
             busy = false
             bridgeChanged()
-            if let failure {
-                let a = NSAlert()
-                a.messageText = "mystical \(verb) failed"
-                a.informativeText = String(failure.suffix(1500))
-                a.runModal()
-            }
+            if let failure { alert("mystical \(verb) failed", String(failure.suffix(1500))) }
         }
+    }
+
+    private func alert(_ title: String, _ text: String) {
+        let a = NSAlert()
+        a.messageText = title
+        a.informativeText = text
+        a.runModal()
     }
 }
 

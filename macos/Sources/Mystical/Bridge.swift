@@ -12,9 +12,13 @@ final class Bridge {
     /// The building shell's PATH, stamped by build.sh. An app opened from Finder
     /// gets /usr/bin:/bin:/usr/sbin:/sbin, where `mystical start` finds no npm.
     let path: String
+    /// This bundle's build (`git describe`), stamped by build.sh.
+    let version: String
 
     private(set) var status: BridgeStatus?
     private(set) var waiting: [WaitingSession] = []
+    /// Sessions mid-turn, every source — the menu bar's busy glyph.
+    private(set) var working = 0
     /// Consecutive failed polls — one blip (a restart's first second) is not "down".
     private(set) var misses = 0
     var onChange: (() -> Void)?
@@ -26,6 +30,7 @@ final class Bridge {
         let info = Bundle.main.infoDictionary ?? [:]
         repo = info["MysticalRepo"] as? String ?? ""
         path = info["MysticalPath"] as? String ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        version = info["MysticalVersion"] as? String ?? "dev"
     }
 
     var launcher: String { (repo as NSString).appendingPathComponent("bin/mystical") }
@@ -60,12 +65,14 @@ final class Bridge {
            (resp as? HTTPURLResponse)?.statusCode == 200,
            let w = Running.waiting(data) {
             waiting = w
+            working = Running.working(data)
             misses = 0
             // Back from down: re-read status (new pid, maybe a new token).
             if !wasUp || status?.answering != true { await refreshStatus(); return }
         } else {
             misses += 1
             waiting = []
+            working = 0
             if misses == 1 || Date().timeIntervalSince(lastStatusCheck) > 10 {
                 await refreshStatus(); return
             }
@@ -105,5 +112,37 @@ final class Bridge {
         misses = 0
         await refreshStatus()
         return code == 0 ? nil : out
+    }
+
+    /// `mystical app`, detached: build.sh quits and reopens this app when it is
+    /// done, so the child can't share our pipes — writing to a pipe whose reader
+    /// has quit is a SIGPIPE mid-swap. Output goes to app-build.log beside the
+    /// bridge's own log. `done` runs only when the build ends with us still here
+    /// (a failure, or nothing to do); a success quits us first. Nil = couldn't start.
+    func rebuildApp(done: @escaping @MainActor (Int32, String) -> Void) -> String? {
+        let logDir = status?.log.map { ($0 as NSString).deletingLastPathComponent }
+            ?? NSHomeDirectory() + "/.bridge_state"
+        let log = logDir + "/app-build.log"
+        try? FileManager.default.createDirectory(atPath: logDir, withIntermediateDirectories: true)
+        guard FileManager.default.createFile(atPath: log, contents: nil),
+              let fh = FileHandle(forWritingAtPath: log) else { return nil }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: launcher)
+        p.arguments = ["app"]
+        p.currentDirectoryURL = URL(fileURLWithPath: repo)
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = path
+        p.environment = env
+        p.standardOutput = fh
+        p.standardError = fh
+        p.standardInput = FileHandle.nullDevice
+        p.terminationHandler = { proc in
+            try? fh.close()
+            let tail = (try? String(contentsOfFile: log, encoding: .utf8)) ?? ""
+            let code = proc.terminationStatus
+            Task { @MainActor in done(code, tail) }
+        }
+        do { try p.run() } catch { return nil }
+        return log
     }
 }

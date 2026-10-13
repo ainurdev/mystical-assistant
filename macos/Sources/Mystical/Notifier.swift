@@ -3,8 +3,14 @@ import MysticalCore
 import UserNotifications
 import WebKit
 
-/// The native half of NotificationShim: the page's `new Notification(...)`
-/// becomes a macOS banner, and a click on the banner runs the page's onclick.
+/// The page's line to the app — every `{op, …}` the shim's handler carries.
+///
+/// Notifications first: the page's `new Notification(...)` becomes a macOS
+/// banner, a click runs the page's onclick, and a banner button runs the page's
+/// onaction (NotificationShim). Then the MAC APP tab's ops: `settings` / `set`
+/// for the app-owned switches (MacPrefs), `appearance` so native chrome follows
+/// the theme, `rebuild` for `mystical app`. One handler, because the page has
+/// one `postMessage` target and every op is a few lines.
 @MainActor
 final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
                       UNUserNotificationCenterDelegate {
@@ -13,8 +19,22 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
     private(set) var permission = "default"
     /// Called with the shim id of a clicked banner.
     var onClick: ((String) -> Void)?
+    /// Called with (shim id, action id) when a banner button is tapped.
+    var onAction: ((String, String) -> Void)?
+    /// The page changed a switch (already saved).
+    var onPrefs: ((MacPrefs) -> Void)?
+    /// The page's theme is light (true) or dark.
+    var onAppearance: ((Bool) -> Void)?
+    var onRebuild: (() -> Void)?
 
-    override init() {
+    /// The MAC APP tab's switches, UserDefaults-backed; the app reads them here.
+    private(set) var prefs = MacPrefs(.standard)
+    private let version: String
+    /// Button sets already registered with the center, by category id.
+    private var categories: [String: UNNotificationCategory] = [:]
+
+    init(version: String) {
+        self.version = version
         super.init()
         center.delegate = self
         Task { await refreshPermission() }
@@ -27,6 +47,13 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
             authorized: [.authorized, .provisional].contains(s.authorizationStatus),
             denied: s.authorizationStatus == .denied)
         return permission
+    }
+
+    /// What the page's `settings` / `set` get back.
+    private var settingsReply: [String: Any] {
+        var d: [String: Any] = prefs.dict
+        d["version"] = version
+        return d
     }
 
     // MARK: page -> app
@@ -52,6 +79,19 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
             content.title = body["title"] as? String ?? ""
             content.body = body["body"] as? String ?? ""
             content.userInfo = ["id": id]
+            let actions = NotificationShim.actions(body["actions"])
+            if !actions.isEmpty {
+                let cat = NotificationShim.category(for: actions)
+                if categories[cat] == nil {
+                    // No .foreground: a button answers the card where you are.
+                    categories[cat] = UNNotificationCategory(
+                        identifier: cat,
+                        actions: actions.map { UNNotificationAction(identifier: $0.id, title: $0.title, options: []) },
+                        intentIdentifiers: [], options: [])
+                    center.setNotificationCategories(Set(categories.values))
+                }
+                content.categoryIdentifier = cat
+            }
             // No sound: the dashboard plays the one you picked for this event.
             center.add(UNNotificationRequest(identifier: id, content: content, trigger: nil))
             replyHandler(nil, nil)
@@ -59,6 +99,22 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
             if let id = body["id"] as? String {
                 center.removeDeliveredNotifications(withIdentifiers: [id])
             }
+            replyHandler(nil, nil)
+        case "settings":
+            replyHandler(settingsReply, nil)
+        case "set":
+            guard let key = body["key"] as? String, let value = body["value"] as? Bool,
+                  prefs.set(key, value) else { return replyHandler(nil, "unknown setting") }
+            prefs.save(.standard)
+            onPrefs?(prefs)
+            replyHandler(settingsReply, nil)
+        case "appearance":
+            let light = body["light"] as? Bool ?? false
+            UserDefaults.standard.set(light, forKey: "appearanceLight")
+            onAppearance?(light)
+            replyHandler(nil, nil)
+        case "rebuild":
+            onRebuild?()
             replyHandler(nil, nil)
         default:
             replyHandler(nil, "unknown op")
@@ -79,6 +135,10 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
                                             didReceive response: UNNotificationResponse) async {
         let id = response.notification.request.content.userInfo["id"] as? String
             ?? response.notification.request.identifier
-        await MainActor.run { self.onClick?(id) }
+        let action = response.actionIdentifier
+        await MainActor.run {
+            if action == UNNotificationDefaultActionIdentifier { self.onClick?(id) }
+            else if action != UNNotificationDismissActionIdentifier { self.onAction?(id, action) }
+        }
     }
 }

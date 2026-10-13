@@ -174,3 +174,86 @@ func shimContext(permission: String, reply: String = "granted") -> (JSContext, (
     ctx.evaluateScript(NotificationShim.source(permission: "denied"))
     #expect(ctx.evaluateScript("window.Notification === first && Notification.permission === 'granted'").toBool())
 }
+
+// MARK: busy count
+
+@Test func workingCountsEverySourceMidTurn() {
+    let json = #"{"status":{"a":{"state":"working","source":"bridge"},"b":{"state":"awaiting"},"c":{"state":"working","source":"native"},"d":{"state":"live"}}}"#
+    #expect(Running.working(Data(json.utf8)) == 2)
+    #expect(Running.working(Data("nope".utf8)) == 0)
+}
+
+// MARK: deep links
+
+@Test func deepLinksOpenSessionsAndTheWindow() {
+    #expect(DeepLink.parse(URL(string: "mystical://session/abc-123")!) == .session("abc-123"))
+    #expect(DeepLink.parse(URL(string: "mystical://open?s=abc")!) == .session("abc"))
+    #expect(DeepLink.parse(URL(string: "mystical://open")!) == .open)
+    #expect(DeepLink.parse(URL(string: "mystical://session")!) == .open)
+    if let bare = URL(string: "mystical://") { #expect(DeepLink.parse(bare) == .open) }
+}
+
+@Test func deepLinksNeverCommand() {
+    #expect(DeepLink.parse(URL(string: "mystical://restart")!) == nil)
+    #expect(DeepLink.parse(URL(string: "https://example.com/session/x")!) == nil)
+}
+
+// MARK: prefs
+
+@Test func prefsRoundTripThroughDefaults() {
+    let d = UserDefaults(suiteName: "test.mystical.\(UUID().uuidString)")!
+    var p = MacPrefs(d)
+    #expect(p == MacPrefs())   // nothing stored yet: the defaults
+    #expect(p.keepInDock && !p.floating && !p.titleFollowsSession)
+    let known = p.set("floating", true), unknown = p.set("volume", true)
+    #expect(known && !unknown)   // "volume" is not a setting
+    p.save(d)
+    #expect(MacPrefs(d).floating)
+    #expect(MacPrefs(d).dict["keepInDock"] == true)
+}
+
+// MARK: banner buttons
+
+@Test func shimPostsActionsAndRunsOnaction() {
+    let (ctx, sent) = shimContext(permission: "granted")
+    ctx.evaluateScript(#"var got = null; var n = new Notification("⏸ fix", { tag: "s1", actions: [{ action: "allow", title: "Allow" }, { action: "deny", title: "Deny" }] }); n.onaction = function (a) { got = a; };"#)
+    let acts = sent().first?["actions"] as? [[String: Any]]
+    #expect(acts?.map { $0["id"] as? String } == ["allow", "deny"])
+    #expect(acts?.map { $0["title"] as? String } == ["Allow", "Deny"])
+    #expect(ctx.evaluateScript(#"window.__mysticalNotificationAction("tag:s1", "deny")"#).toBool())
+    #expect(ctx.evaluateScript("got").toString() == "deny")
+    #expect(!ctx.evaluateScript(#"window.__mysticalNotificationAction("tag:gone", "deny")"#).toBool())
+    // No buttons asked for: an empty list, never undefined.
+    ctx.evaluateScript(#"new Notification("t", { tag: "s2" });"#)
+    #expect((sent().last?["actions"] as? [Any])?.isEmpty == true)
+}
+
+@Test func actionsAreSanitisedForTheCenter() {
+    let raw: [[String: Any]] = [
+        ["id": "allow", "title": "Allow"],
+        ["id": "", "title": "no id"],
+        ["id": "x", "title": ""],
+        ["id": "allow", "title": "twice"],
+        ["id": "long", "title": String(repeating: "a", count: 60)],
+        ["id": "c", "title": "C"], ["id": "d", "title": "D"], ["id": "e", "title": "E"],
+    ]
+    let a = NotificationShim.actions(raw)
+    #expect(a.map(\.id) == ["allow", "long", "c", "d"])
+    #expect(a[1].title.count == 40)
+    #expect(NotificationShim.actions(nil).isEmpty)
+    #expect(NotificationShim.category(for: a) == NotificationShim.category(for: a))
+    #expect(NotificationShim.category(for: []) != NotificationShim.category(for: a))
+}
+
+// MARK: capture
+
+@Test func captureRequestNeedsAnAbsoluteDir() {
+    let r = CaptureRequest.parse(#"{"dir":"/tmp/cap","window":" Safari "}"#)
+    #expect(r == CaptureRequest(dir: "/tmp/cap", window: "Safari"))
+    #expect(CaptureRequest.parse(#"{"dir":"/tmp/cap","window":""}"#)?.window == nil)
+    #expect(CaptureRequest.parse(#"{"dir":"rel"}"#) == nil)
+    #expect(CaptureRequest.parse("junk") == nil)
+    #expect(CaptureRequest.matches("safari", title: "Apple — Safari", app: nil))
+    #expect(CaptureRequest.matches("mystical", title: nil, app: "Mystical"))
+    #expect(!CaptureRequest.matches("xcode", title: "a", app: "b"))
+}

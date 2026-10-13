@@ -78,14 +78,18 @@ plistlib.dump({
     "MysticalRepo": repo,
     "MysticalPath": path,
     "MysticalVersion": version,
+    # mystical://session/<id> and mystical://open (MysticalCore/DeepLink.swift).
+    "CFBundleURLTypes": [{"CFBundleURLName": ident, "CFBundleURLSchemes": ["mystical"]}],
 }, open(out, "wb"))
 PY
 
 codesign --force --sign - "$APP" >/dev/null 2>&1 || die "codesign failed"
 
 # Swap it in. Quitting the app is harmless — launchd owns the bridge, not the app.
+# A build to another destination (MYSTICAL_APP_DEST, a dev bundle) leaves the
+# installed app running and doesn't open itself.
 was_running=0
-if pgrep -xq Mystical; then
+if [ -z "${MYSTICAL_APP_DEST:-}" ] && pgrep -xq Mystical; then
   was_running=1
   osascript -e "tell application id \"$ID\" to quit" >/dev/null 2>&1 || true
   for _ in 1 2 3 4 5 6 7 8 9 10; do pgrep -xq Mystical || break; sleep 0.5; done
