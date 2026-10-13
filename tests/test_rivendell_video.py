@@ -48,7 +48,10 @@ def test_pick_frames_reads_showinfo_moments_and_caps_the_count(tmp_path, monkeyp
     out = tmp_path / "frames"
     stderr = "".join(f"[Parsed_showinfo_1 @ 0x1] n:{i} pts:{i} pts_time:{i * 10}.5 fmt:yuv\n" for i in range(50))
 
+    calls = []
+
     def run(cmd, **kw):
+        calls.append(cmd)
         os.makedirs(out, exist_ok=True)
         for i in range(1, 51):
             (out / f"{i:04d}.jpg").write_bytes(b"\xff\xd8\xff")
@@ -56,6 +59,8 @@ def test_pick_frames_reads_showinfo_moments_and_caps_the_count(tmp_path, monkeyp
     monkeypatch.setattr(rv.subprocess, "run", run)
     frames = rv.pick_frames("in.mov", str(out), max_frames=40)
     assert len(frames) == 40
+    cmd = calls[0]
+    assert "-fps_mode" in cmd and cmd[cmd.index("-fps_mode") + 1] == "vfr" and "-vsync" not in cmd   # ffmpeg 9 dropped -vsync
     assert frames[0] == {"index": 1, "timeMs": 500, "path": str(out / "0001.jpg")}
     assert frames[-1]["index"] == 40
     assert len({f["timeMs"] for f in frames}) == 40          # an even spread, no repeats

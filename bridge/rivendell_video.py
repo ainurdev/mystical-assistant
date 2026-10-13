@@ -77,7 +77,7 @@ def pick_frames(src: str, out_dir: str, max_frames: int = 40, threshold: float =
     os.makedirs(out_dir, exist_ok=True)
     select = f"select='eq(n\\,0)+gt(scene\\,{threshold})'"
     proc = _run([config.FFMPEG_BIN, "-y", "-hide_banner", "-nostats", "-i", src,
-                 "-vf", f"{select},showinfo,scale='min(1280\\,iw)':-2", "-vsync", "vfr", "-q:v", "4",
+                 "-vf", f"{select},showinfo,scale='min(1280\\,iw)':-2", "-fps_mode", "vfr", "-q:v", "4",
                  os.path.join(out_dir, "%04d.jpg")], "frame extraction", 1800)
     moments = [int(round(float(m) * 1000)) for m in _SHOWINFO_TIME.findall(proc.stderr or "")]
     files = sorted(f for f in os.listdir(out_dir) if f.endswith(".jpg"))
