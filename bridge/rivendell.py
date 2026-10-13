@@ -1224,7 +1224,7 @@ class Worker:
             return False, "run finished without producing any result text"
         return False, job.error_msg or job.result or "run errored"
 
-    def _new_session(self, workdir: str) -> str:
+    def _new_session(self, workdir: str, title: "str | None" = None) -> str:
         """A fresh store session in `workdir` for one autonomous run. Pre-created:
         ensure_session with an unknown id would silently fall back to the
         project's LATEST session and resume the previous run. Bound to the
@@ -1239,22 +1239,26 @@ class Worker:
         # Its model on the row beside its mode: a resume (boot recovery, a limit
         # park) runs the session's model, and nobody picks one for a plugin run.
         store.set_run_settings(session["id"], model=self.model)
+        if title:
+            store.rename(session["id"], title)   # manual: the titler leaves a given name alone
         return session["id"]
 
     def _start_run(self, prompt: str, workdir: str, hang_timeout: "float | None" = None,
-                   mcp_on: "str | None" = None, image_paths: "list[str] | None" = None):
+                   mcp_on: "str | None" = None, image_paths: "list[str] | None" = None,
+                   title: "str | None" = None):
         """One autonomous Claude run in `workdir` through the normal runner.
         `hang_timeout` is the silence the watchdog allows it (the kind's own
         timeout for a review or an implementation). `mcp_on` names an MCP
         server the run must have whatever the operator's tool defaults say
         (a newspaper is nothing without `rivendell`). `image_paths` are files
-        the run must open first (a video's frames). Returns the job, or
-        None if a run could not be started."""
+        the run must open first (a video's frames). `title` names the session
+        (a video's kind and file) where the prompt's first line would not.
+        Returns the job, or None if a run could not be started."""
         from bridge import runner                # local import: heavy module
         return runner.start_streaming_job(
             config.DASH_CHAT_ID, prompt, image_paths or [], project=workdir,
             model=self.model, permission_mode="bypassPermissions",
-            session_id=self._new_session(workdir), origin=self.origin,
+            session_id=self._new_session(workdir, title), origin=self.origin,
             mcp_on=mcp_on, hang_timeout=hang_timeout)
 
     def _run_review(self, request_id: str, slug: "str | None") -> None:
@@ -1510,19 +1514,25 @@ class Worker:
         if resp is None:
             return
         kind = resp.get("kind") or "TRANSCRIBE"
-        workdir = os.path.join(config.UPLOAD_DIR, f"video-{request_id}")
-        screens_dir = os.path.join(workdir, "screens")
+        # Every video run shares one project (the dashboard groups sessions by
+        # it); each request keeps its files in a folder of its own under it.
+        # shortcut: _prune_uploads ages the shared folder as one, so a request's
+        # frames stay until no video has run for UPLOAD_KEEP_DAYS; prune per
+        # request if the folder grows.
+        workdir = os.path.join(config.UPLOAD_DIR, "videos")
+        files = os.path.join(workdir, request_id)
+        screens_dir = os.path.join(files, "screens")
         os.makedirs(screens_dir, exist_ok=True)
         timeout = self.inst.get("review_timeout", 3600)
         segments, frames = [], []
         try:
             if kind == "TRANSCRIBE":
                 file = resp.get("file") or {}
-                src = os.path.join(workdir, "source")
+                src = os.path.join(files, "source")
                 self._post_phase(request_id, "download")
                 rv.download(resp["downloadUrl"], src)
                 self._post_phase(request_id, "audio")
-                wav = os.path.join(workdir, "audio.wav")
+                wav = os.path.join(files, "audio.wav")
                 rv.extract_audio(src, wav)
                 self._post_phase(request_id, "transcript")
                 segments = rv.transcribe(wav, resp.get("language") or "en")
@@ -1552,7 +1562,8 @@ class Worker:
             return
 
         print(f"rivendell[{self.name}]: video {kind.lower()} {request_id} ({name or '?'}) running in {workdir}")
-        job = self._start_run(prompt, workdir, hang_timeout=timeout, image_paths=images)
+        job = self._start_run(prompt, workdir, hang_timeout=timeout, image_paths=images,
+                              title=f"{kind.capitalize()} · {name or request_id}")
         if job is None:  # can't happen for a fresh session; never hang the queue
             self._post_result("video-requests", request_id, False, "could not start a Claude run (session busy)")
             return
@@ -1575,7 +1586,7 @@ class Worker:
         # do (the transcript in the dashboard may show them) until the upload sweep.
         for name in ("source", "audio.wav", "audio.wav.json"):
             try:
-                os.remove(os.path.join(workdir, name))
+                os.remove(os.path.join(files, name))
             except OSError:
                 pass
 

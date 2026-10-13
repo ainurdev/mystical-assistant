@@ -445,14 +445,16 @@ def test_run_video_transcribe_makes_media_then_asks_claude_and_posts_json(monkey
     monkeypatch.setattr(w, "_post_phase", lambda rid, phase: phases.append(phase))
     monkeypatch.setattr(w, "_api_put_bytes", lambda path, data, ct: puts.append((path, data, ct)))
     monkeypatch.setattr(w, "_start_run",
-                        lambda prompt, workdir, hang_timeout=None, image_paths=None:
-                        ran.append((prompt, workdir, image_paths)) or _StubJob("done", result='{"summary": "S", "screens": [{"index": 1, "caption": "Home"}]}'))
+                        lambda prompt, workdir, hang_timeout=None, image_paths=None, title=None:
+                        ran.append((prompt, workdir, image_paths, title)) or _StubJob("done", result='{"summary": "S", "screens": [{"index": 1, "caption": "Home"}]}'))
     monkeypatch.setattr(w, "_post_result", lambda kp, rid, ok, text: posted.append((kp, rid, ok, text)))
     w._run_video("v1", "S.mov")
     assert phases == ["download", "audio", "transcript", "screens", "summary"]
     assert puts == [("/plugin/video-requests/v1/screens/1?timeMs=0", b"\xff\xd8\xff", "application/octet-stream")]
-    prompt, workdir, images = ran[0]
-    assert "0:00  hi" in prompt and "{{" not in prompt and images == [os.path.join(workdir, "screens", "0001.jpg")]
+    prompt, workdir, images, title = ran[0]
+    # One project for every video run; this request's files in a folder under it.
+    assert workdir == os.path.join(str(tmp_path), "videos") and title == "Transcribe · S.mov"
+    assert "0:00  hi" in prompt and "{{" not in prompt and images == [os.path.join(workdir, "v1", "screens", "0001.jpg")]
     kp, rid, ok, text = posted[0]
     assert (kp, rid, ok) == ("video-requests", "v1", True)
     assert json.loads(text) == {"language": "en", "transcriber": rv.TRANSCRIBER,
@@ -482,13 +484,13 @@ def test_run_video_keeps_the_runs_failure_beside_the_transcript_and_cleans_the_w
         return [{"index": 1, "timeMs": 0, "path": p}]
     monkeypatch.setattr(rv, "pick_frames", frames)
     monkeypatch.setattr(w, "_api_put_bytes", lambda path, data, ct: None)
-    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None, image_paths=None: _StubJob("error", error_msg="run timed out"))
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None, image_paths=None, title=None: _StubJob("error", error_msg="run timed out"))
     monkeypatch.setattr(w, "_wait_job", lambda job, timeout: (False, "run timed out after 3600s"))
     monkeypatch.setattr(w, "_post_result",
                         lambda kp, rid, ok, text, error=None: posted.append((kp, rid, ok, json.loads(text)["summary"], error)))
     w._run_video("v1", "S.mov")
     assert posted == [("video-requests", "v1", True, None, "run timed out after 3600s")]
-    workdir = os.path.join(str(tmp_path), "video-v1")
+    workdir = os.path.join(str(tmp_path), "videos", "v1")
     assert not os.path.exists(os.path.join(workdir, "source"))
     assert not os.path.exists(os.path.join(workdir, "audio.wav"))
     assert os.path.exists(os.path.join(workdir, "screens", "0001.jpg"))
@@ -534,12 +536,12 @@ def test_run_video_ask_fetches_screens_and_posts_the_answer(monkeypatch, tmp_pat
     monkeypatch.setattr(rv, "download", lambda url, dest, timeout=900: fetched.append((url, dest)) or open(dest, "wb").write(b"j"))
     monkeypatch.setattr(w, "_post_phase", lambda rid, phase: None)
     monkeypatch.setattr(w, "_start_run",
-                        lambda prompt, workdir, hang_timeout=None, image_paths=None:
-                        ran.append((prompt, image_paths)) or _StubJob("done", result="Three things."))
+                        lambda prompt, workdir, hang_timeout=None, image_paths=None, title=None:
+                        ran.append((prompt, image_paths, title)) or _StubJob("done", result="Three things."))
     monkeypatch.setattr(w, "_post_result", lambda kp, rid, ok, text: posted.append((kp, rid, ok, text)))
     w._run_video("a1", "S.mov")
     assert fetched[0][0] == "https://bucket/2.jpg" and fetched[0][1].endswith(os.path.join("screens", "2.jpg"))
-    assert ran == [("answer this", [fetched[0][1]])]
+    assert ran == [("answer this", [fetched[0][1]], "Ask · S.mov")]
     assert posted == [("video-requests", "a1", True, "Three things.")]
 
 
@@ -1801,7 +1803,7 @@ def _queue_worker(monkeypatch, claim, **inst):
     monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.01)
     monkeypatch.setattr(w, "_claim", lambda kind_path, rid: claim)
     monkeypatch.setattr(w, "_find_checkout", lambda slug: "/repo")
-    monkeypatch.setattr(w, "_new_session", lambda workdir: "sess-1")
+    monkeypatch.setattr(w, "_new_session", lambda workdir, title=None: "sess-1")
     monkeypatch.setattr(w, "_start_run",
                         lambda prompt, workdir, hang_timeout=None: (_ for _ in ()).throw(AssertionError("queue mode starts no single turn")))
     monkeypatch.setattr(w, "_post_result",
