@@ -10,8 +10,8 @@ import WebKit
 /// onaction (NotificationShim). Then the MAC APP tab's ops: `settings` / `set`
 /// for the app-owned switches (MacPrefs), `appearance` so native chrome follows
 /// the theme, `rebuild` for `mystical app`, `drag` to move the window from the
-/// HUD's top row (the title bar's stand-in) and `lights` to show the traffic
-/// lights while its Brand cap is hovered. One handler, because the page has
+/// HUD's top row (the title bar's stand-in) and `window` for the traffic lights
+/// the page draws there (close, minimize, zoom). One handler, because the page has
 /// one `postMessage` target and every op is a few lines.
 @MainActor
 final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
@@ -28,8 +28,6 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
     /// The page's theme is light (true) or dark.
     var onAppearance: ((Bool) -> Void)?
     var onRebuild: (() -> Void)?
-    /// The Brand cap is hovered (true) or not: show or hide the traffic lights.
-    var onLights: ((Bool) -> Void)?
 
     /// The MAC APP tab's switches, UserDefaults-backed; the app reads them here.
     private(set) var prefs = MacPrefs(.standard)
@@ -127,8 +125,17 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
                 message.webView?.window?.performDrag(with: e)
             }
             replyHandler(nil, nil)
-        case "lights":
-            onLights?(body["show"] as? Bool ?? false)
+        case "window":
+            // The page's traffic lights; AppKit's are hidden (DashboardWindow).
+            // Close goes through performClose, so the window hides as always.
+            if let w = message.webView?.window {
+                switch body["action"] as? String {
+                case "close": w.performClose(nil)
+                case "minimize": w.miniaturize(nil)
+                case "zoom": w.toggleFullScreen(nil)
+                default: break
+                }
+            }
             replyHandler(nil, nil)
         default:
             replyHandler(nil, "unknown op")

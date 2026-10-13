@@ -23,7 +23,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         notifier.onAction = { [weak self] id, action in self?.dashboard.notificationAction(id, action) }
         notifier.onAppearance = { [weak self] light in self?.applyAppearance(light: light) }
         notifier.onRebuild = { [weak self] in self?.rebuildApp() }
-        notifier.onLights = { [weak self] show in self?.dashboard.showLights(show) }
         notifier.onPrefs = { [weak self] _ in
             guard let self else { return }
             self.applyPolicy(windowVisible: self.dashboard.window?.isVisible ?? false)

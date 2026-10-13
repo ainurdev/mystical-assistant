@@ -45,8 +45,8 @@ export const macAppearance = (light: boolean): void => { void post({ op: "appear
 export const macRebuild = (): void => { void post({ op: "rebuild" }); };
 /** A press on the HUD's top row, the title bar's stand-in: the app drags the window. */
 export const macDrag = (): void => { void post({ op: "drag" }); };
-/** The Brand cap is hovered (or not): the app shows (hides) the traffic lights over it. */
-export const macLights = (show: boolean): void => { void post({ op: "lights", show }); };
+/** The page's traffic lights (Strip's Brand): close hides the window, minimize, zoom = full screen. */
+export const macWindow = (action: "close" | "minimize" | "zoom"): void => { void post({ op: "window", action }); };
 
 function subscribe(fn: () => void): () => void {
   listeners.add(fn);

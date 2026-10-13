@@ -4,7 +4,7 @@ import { NotificationCenter } from "./Notifications";
 import { UpdateButton } from "./UpdateButton";
 import { WeekPanel } from "./WeekPanel";
 import { setClock12 } from "../../lib/surfaces";
-import { isMacApp, macLights } from "../../lib/mac";
+import { isMacApp, macWindow } from "../../lib/mac";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -59,10 +59,11 @@ const seg = (on: boolean): CSSProperties => ({
 export function Brand() {
   const [week, setWeek] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
-  // Mystical.app: the traffic lights appear over the cap while it's hovered,
-  // and the logo slides out from under them (lib/mac, DashboardWindow).
-  const [lights, setLights] = useState(false);
-  const hover = (on: boolean) => { if (isMacApp()) { setLights(on); macLights(on); } };
+  // Mystical.app: the cap is the window's title bar, and its traffic lights
+  // are drawn here, not by AppKit (DashboardWindow hides the native ones): they
+  // fade in while the cap is hovered and the logo slides out from under them.
+  const mac = isMacApp();
+  const [hot, setHot] = useState(false);
 
   // Closes on a press anywhere outside the cap, like the clock's popovers.
   useEffect(() => {
@@ -77,7 +78,10 @@ export function Brand() {
   return (
     // Relative + a stacking context above the sessions list under it, so the
     // report draws over the panel rather than behind it.
-    <div ref={ref} onMouseEnter={() => hover(true)} onMouseLeave={() => hover(false)} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: lights ? "0 12px 0 78px" : "0 12px", transition: "padding-left .2s ease", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    <div ref={ref} onMouseEnter={mac ? () => setHot(true) : undefined} onMouseLeave={mac ? () => setHot(false) : undefined} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+      {mac && <Lights show={hot} />}
+      {/* A transform, not padding: the slide composites instead of reflowing the row. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 9, transform: hot ? "translate3d(66px,0,0)" : "translate3d(0,0,0)", transition: "transform .28s cubic-bezier(.2,.8,.2,1)" }}>
       <svg
         viewBox="0 0 100 100"
         style={{ width: 19, height: 19, flex: "none", overflow: "visible" }}
@@ -114,9 +118,44 @@ export function Brand() {
       <span style={{ fontSize: "var(--t12)", letterSpacing: "2.6px", color: "var(--txb)", whiteSpace: "nowrap" }}>
         MYSTICAL<span style={{ color: "var(--acc)" }}>//</span><span style={{ color: "var(--txd)" }}>ASSISTANT</span>
       </span>
+      </div>
       <span style={{ flex: 1, minWidth: 6 }} />
       <ReportButton on={week} onClick={() => setWeek((v) => !v)} />
       {week && <WeekPanel left />}
+    </div>
+  );
+}
+
+/** macOS traffic lights, the page's own: close hides the window (the app's
+ *  rule), minimize miniaturizes, zoom goes full screen (Notifier "window").
+ *  Glyphs while the group is hovered, like the real ones. Absolute at the
+ *  cap's left edge, in the room the logo's slide makes. */
+function Lights({ show }: { show: boolean }) {
+  const [hover, setHover] = useState(false);
+  const dots: [string, "close" | "minimize" | "zoom", string][] = [
+    ["#ff5f57", "close", "×"], ["#febc2e", "minimize", "–"], ["#28c840", "zoom", "+"],
+  ];
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ position: "absolute", left: 13, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 8, opacity: show ? 1 : 0, transition: "opacity .2s ease", pointerEvents: show ? "auto" : "none" }}
+    >
+      {dots.map(([fill, action, glyph]) => (
+        <button
+          key={action}
+          aria-label={action}
+          onClick={() => macWindow(action)}
+          style={{
+            appearance: "none", cursor: "default", width: 12, height: 12, borderRadius: 6, padding: 0, border: 0,
+            background: fill, boxShadow: "inset 0 0 0 1px rgba(0,0,0,.15)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontFamily: "system-ui", fontSize: 10, lineHeight: 1, fontWeight: 700, color: "rgba(0,0,0,.55)",
+          }}
+        >
+          {hover ? glyph : ""}
+        </button>
+      ))}
     </div>
   );
 }
