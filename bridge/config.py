@@ -288,6 +288,13 @@ UPLOAD_DIR = os.path.join(BASE_PATH, ".bridge_uploads")
 # (dashboard GET /local/attachment); each run's end prunes dirs older than this.
 UPLOAD_KEEP_DAYS = int(os.environ.get("UPLOAD_KEEP_DAYS", "7"))
 
+# The video kind's tools (rivendell_video.py): ffmpeg for audio and frames,
+# whisper.cpp for the transcript. Installed per bridge Mac (brew install ffmpeg whisper-cpp).
+FFMPEG_BIN = os.environ.get("FFMPEG_BIN", "ffmpeg")
+WHISPER_BIN = os.environ.get("WHISPER_BIN", "whisper-cli")
+WHISPER_MODEL = os.path.expanduser(
+    os.environ.get("WHISPER_MODEL", "~/.cache/whisper-cpp/ggml-large-v3-turbo.bin"))
+
 # --- Session store -----------------------------------------------------------
 # SQLite source of truth for conversations (sessions/turns/events). Lives in
 # $HOME (outside the repo), git-ignored, mode 600.

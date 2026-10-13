@@ -398,6 +398,151 @@ def test_handle_message_deck_requests():
     assert _drain(w) == [("deck", "k7", "Northwind weekly review")]
 
 
+def test_handle_message_video_requests():
+    """video-request events queue as "video" with the file's name."""
+    w = _worker()
+    ev = json.dumps({"type": "video-request", "requestId": "v7", "kind": "TRANSCRIBE",
+                     "file": {"id": "f1", "name": "Studentenkaart.mov"}}).encode()
+    w._handle_message(ev)
+    w._handle_message(ev)                          # duplicate: dropped
+    assert _drain(w) == [("video", "v7", "Studentenkaart.mov")]
+
+
+def test_catch_up_queues_video_requests(monkeypatch):
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+
+    def api(path, payload=None):
+        if path == "/plugin/video-requests":
+            return [{"id": "v1", "kind": "ASK", "fileId": "f1", "fileName": "Contract.mov", "language": "en"}]
+        return []
+    monkeypatch.setattr(w, "_api", api)
+    w._catch_up()
+    assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [("video:v1", "Contract.mov")]
+
+
+def test_run_video_transcribe_makes_media_then_asks_claude_and_posts_json(monkeypatch, tmp_path):
+    """A TRANSCRIBE run: download, audio, whisper, frames (each a phase and the
+    frames each a PUT), then one Claude run on the filled prompt with the frames
+    attached, then the merged JSON result."""
+    from bridge import rivendell_video as rv
+    w = _worker(workdir=str(tmp_path))
+    monkeypatch.setattr(rivendell.config, "UPLOAD_DIR", str(tmp_path))
+    phases, puts, posted, ran = [], [], [], []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {
+        "prompt": "sum up\n{{TRANSCRIPT}}\n{{SCREENS}}", "kind": "TRANSCRIBE", "language": "en",
+        "file": {"id": "f1", "name": "S.mov", "kind": "video", "durationMs": 1000},
+        "downloadUrl": "https://bucket/S.mov", "screens": []})
+    monkeypatch.setattr(rv, "download", lambda url, dest, timeout=900: open(dest, "wb").write(b"v"))
+    monkeypatch.setattr(rv, "extract_audio", lambda src, wav: open(wav, "wb").write(b"a"))
+    monkeypatch.setattr(rv, "transcribe", lambda wav, lang: [{"startMs": 0, "endMs": 1000, "text": "hi"}])
+
+    def frames(src, out_dir, **kw):
+        os.makedirs(out_dir, exist_ok=True)
+        p = os.path.join(out_dir, "0001.jpg"); open(p, "wb").write(b"\xff\xd8\xff")
+        return [{"index": 1, "timeMs": 0, "path": p}]
+    monkeypatch.setattr(rv, "pick_frames", frames)
+    monkeypatch.setattr(w, "_post_phase", lambda rid, phase: phases.append(phase))
+    monkeypatch.setattr(w, "_api_put_bytes", lambda path, data, ct: puts.append((path, data, ct)))
+    monkeypatch.setattr(w, "_start_run",
+                        lambda prompt, workdir, hang_timeout=None, image_paths=None:
+                        ran.append((prompt, workdir, image_paths)) or _StubJob("done", result='{"summary": "S", "screens": [{"index": 1, "caption": "Home"}]}'))
+    monkeypatch.setattr(w, "_post_result", lambda kp, rid, ok, text: posted.append((kp, rid, ok, text)))
+    w._run_video("v1", "S.mov")
+    assert phases == ["download", "audio", "transcript", "screens", "summary"]
+    assert puts == [("/plugin/video-requests/v1/screens/1?timeMs=0", b"\xff\xd8\xff", "application/octet-stream")]
+    prompt, workdir, images = ran[0]
+    assert "0:00  hi" in prompt and "{{" not in prompt and images == [os.path.join(workdir, "screens", "0001.jpg")]
+    kp, rid, ok, text = posted[0]
+    assert (kp, rid, ok) == ("video-requests", "v1", True)
+    assert json.loads(text) == {"language": "en", "transcriber": rv.TRANSCRIBER,
+                                "segments": [{"startMs": 0, "endMs": 1000, "text": "hi"}], "summary": "S",
+                                "chapters": [], "keyPoints": [], "screens": [{"index": 1, "timeMs": 0, "caption": "Home"}]}
+
+
+def test_run_video_keeps_the_runs_failure_beside_the_transcript_and_cleans_the_workdir(monkeypatch, tmp_path):
+    """A Claude run that times out still delivers the transcript (COMPLETED with
+    the reason as `error`, so the viewer can say why there is no summary), and
+    the client's recording and its audio do not stay on this Mac."""
+    from bridge import rivendell_video as rv
+    w = _worker(workdir=str(tmp_path))
+    monkeypatch.setattr(rivendell.config, "UPLOAD_DIR", str(tmp_path))
+    posted = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {
+        "prompt": "p {{TRANSCRIPT}} {{SCREENS}}", "kind": "TRANSCRIBE", "language": "en",
+        "file": {"id": "f1", "name": "S.mov", "kind": "video", "durationMs": 1}, "downloadUrl": "u", "screens": []})
+    monkeypatch.setattr(w, "_post_phase", lambda rid, phase: None)
+    monkeypatch.setattr(rv, "download", lambda url, dest, timeout=900: open(dest, "wb").write(b"v"))
+    monkeypatch.setattr(rv, "extract_audio", lambda src, wav: open(wav, "wb").write(b"a"))
+    monkeypatch.setattr(rv, "transcribe", lambda wav, lang: [{"startMs": 0, "endMs": 1, "text": "hi"}])
+
+    def frames(src, out_dir, **kw):
+        os.makedirs(out_dir, exist_ok=True)
+        p = os.path.join(out_dir, "0001.jpg"); open(p, "wb").write(b"\xff\xd8\xff")
+        return [{"index": 1, "timeMs": 0, "path": p}]
+    monkeypatch.setattr(rv, "pick_frames", frames)
+    monkeypatch.setattr(w, "_api_put_bytes", lambda path, data, ct: None)
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None, image_paths=None: _StubJob("error", error_msg="run timed out"))
+    monkeypatch.setattr(w, "_wait_job", lambda job, timeout: (False, "run timed out after 3600s"))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kp, rid, ok, text, error=None: posted.append((kp, rid, ok, json.loads(text)["summary"], error)))
+    w._run_video("v1", "S.mov")
+    assert posted == [("video-requests", "v1", True, None, "run timed out after 3600s")]
+    workdir = os.path.join(str(tmp_path), "video-v1")
+    assert not os.path.exists(os.path.join(workdir, "source"))
+    assert not os.path.exists(os.path.join(workdir, "audio.wav"))
+    assert os.path.exists(os.path.join(workdir, "screens", "0001.jpg"))
+
+
+def test_post_result_carries_an_error_beside_a_completed_result(monkeypatch):
+    """COMPLETED with `error`: the transcript landed, the summary did not, and Rivendell shows why."""
+    w = _worker()
+    sent = []
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: sent.append((path, payload)))
+    monkeypatch.setattr(w, "_ping_done", lambda *a: None)
+    w._post_result("video-requests", "v1", True, "{}", error="run timed out after 3600s")
+    assert sent == [("/plugin/video-requests/v1/result",
+                     {"status": "COMPLETED", "result": "{}", "error": "run timed out after 3600s", "model": "opus"})]
+
+
+def test_run_video_tool_failure_posts_failed(monkeypatch, tmp_path):
+    from bridge import rivendell_video as rv
+    w = _worker(workdir=str(tmp_path))
+    monkeypatch.setattr(rivendell.config, "UPLOAD_DIR", str(tmp_path))
+    posted = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {
+        "prompt": "p", "kind": "TRANSCRIBE", "language": "en",
+        "file": {"id": "f1", "name": "S.mov", "kind": "video", "durationMs": 1}, "downloadUrl": "u", "screens": []})
+    monkeypatch.setattr(w, "_post_phase", lambda rid, phase: None)
+    monkeypatch.setattr(rv, "download", lambda url, dest, timeout=900: open(dest, "wb").write(b"v"))
+    monkeypatch.setattr(rv, "extract_audio", lambda src, wav: (_ for _ in ()).throw(rv.VideoToolError("ffmpeg: command not found")))
+    monkeypatch.setattr(w, "_start_run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Claude run without media")))
+    monkeypatch.setattr(w, "_post_result", lambda kp, rid, ok, text: posted.append((ok, text)))
+    w._run_video("v1", "S.mov")
+    assert posted == [(False, "ffmpeg: command not found")]
+
+
+def test_run_video_ask_fetches_screens_and_posts_the_answer(monkeypatch, tmp_path):
+    from bridge import rivendell_video as rv
+    w = _worker(workdir=str(tmp_path))
+    monkeypatch.setattr(rivendell.config, "UPLOAD_DIR", str(tmp_path))
+    posted, ran, fetched = [], [], []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {
+        "prompt": "answer this", "kind": "ASK", "language": "en",
+        "file": {"id": "f1", "name": "S.mov", "kind": "video", "durationMs": 1}, "downloadUrl": None,
+        "screens": [{"index": 2, "timeMs": 5000, "caption": None, "url": "https://bucket/2.jpg"}]})
+    monkeypatch.setattr(rv, "download", lambda url, dest, timeout=900: fetched.append((url, dest)) or open(dest, "wb").write(b"j"))
+    monkeypatch.setattr(w, "_post_phase", lambda rid, phase: None)
+    monkeypatch.setattr(w, "_start_run",
+                        lambda prompt, workdir, hang_timeout=None, image_paths=None:
+                        ran.append((prompt, image_paths)) or _StubJob("done", result="Three things."))
+    monkeypatch.setattr(w, "_post_result", lambda kp, rid, ok, text: posted.append((kp, rid, ok, text)))
+    w._run_video("a1", "S.mov")
+    assert fetched[0][0] == "https://bucket/2.jpg" and fetched[0][1].endswith(os.path.join("screens", "2.jpg"))
+    assert ran == [("answer this", [fetched[0][1]])]
+    assert posted == [("video-requests", "a1", True, "Three things.")]
+
+
 def test_catch_up_queues_deck_requests(monkeypatch):
     """Catch-up lists open deck drafts by their site's title."""
     w = _worker()
@@ -423,10 +568,11 @@ def test_dedup_is_separate_across_all_kinds():
                        ("task-description-request", {"task": {}}),
                        ("changelog-request", {"project": {}}),
                        ("news-request", {"user": {}}),
-                       ("deck-request", {"site": {}})):
+                       ("deck-request", {"site": {}}),
+                       ("video-request", {"kind": "TRANSCRIBE", "file": {"id": "f", "name": "n"}})):
         w._handle_message(json.dumps({"type": typ, "requestId": "same", **extra}).encode())
     kinds = [k for (k, _rid, _s) in _drain(w)]
-    assert kinds == ["review", "impl", "todolist", "taskdesc", "changelog", "news", "deck"]
+    assert kinds == ["review", "impl", "todolist", "taskdesc", "changelog", "news", "deck", "video"]
 
 
 def test_run_todolist_runs_in_workdir_without_checkout(monkeypatch):
@@ -575,14 +721,17 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     monkeypatch.setattr(w, "_run_changelog", lambda rid, slug: calls.append(("changelog", rid, slug)))
     monkeypatch.setattr(w, "_run_news", lambda rid, slug: calls.append(("news", rid, slug)))
     monkeypatch.setattr(w, "_run_deck", lambda rid, slug: calls.append(("deck", rid, slug)))
+    monkeypatch.setattr(w, "_run_video", lambda rid, slug: calls.append(("video", rid, slug)))
     w._run_accepted({"kind": "impl", "request_id": "i1", "slug": "acme/app"})
     w._run_accepted({"kind": "todolist", "request_id": "t1", "slug": "Proj"})
     w._run_accepted({"kind": "changelog", "request_id": "c1", "slug": "Proj"})
     w._run_accepted({"kind": "news", "request_id": "n1", "slug": "Mahdi"})
     w._run_accepted({"kind": "deck", "request_id": "k1", "slug": "Deck"})
+    w._run_accepted({"kind": "video", "request_id": "v1", "slug": "S.mov"})
     w._run_accepted({"kind": "review", "request_id": "r1", "slug": None})
     assert calls == [("impl", "i1", "acme/app"), ("todolist", "t1", "Proj"),
-                     ("changelog", "c1", "Proj"), ("news", "n1", "Mahdi"), ("deck", "k1", "Deck"), ("review", "r1", None)]
+                     ("changelog", "c1", "Proj"), ("news", "n1", "Mahdi"), ("deck", "k1", "Deck"),
+                     ("video", "v1", "S.mov"), ("review", "r1", None)]
 
 
 def test_reject_refuses_as_dismissed_without_claiming(monkeypatch):

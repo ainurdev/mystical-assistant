@@ -543,20 +543,25 @@ class Worker:
                               f"prompt fetch failed: {e}")
             return None
 
-    def _post_result(self, kind_path: str, request_id: str, ok: bool, text: str) -> None:
+    def _post_result(self, kind_path: str, request_id: str, ok: bool, text: str,
+                     error: "str | None" = None) -> None:
         """Report the outcome. The run was expensive, so a network or server
         failure is retried with backoff; a 4xx is Rivendell refusing this very
         body, which waiting can't change, so it isn't. A Rivendell whose hello
         said "result-details" also gets `details` (_result_details); if it
         refuses them (400), the plain result goes again at once without them —
         the result is what counts, and the deployed API 400s any field it
-        doesn't know. `error` is cut to Rivendell's _ERROR_MAX. Only a result
-        that landed gets the "job done" ping."""
+        doesn't know. `error` is cut to Rivendell's _ERROR_MAX; with `ok` it
+        rides beside the result (a video's transcript landed, its summary did
+        not, and the viewer says why). Only a result that landed gets the
+        "job done" ping."""
         payload = {
             "status": "COMPLETED" if ok else "FAILED",
             ("result" if ok else "error"): text if ok else text[:_ERROR_MAX],
             "model": self.model,
         }
+        if ok and error:
+            payload["error"] = error[:_ERROR_MAX]
         if "result-details" in self.features:
             try:
                 if (details := self._result_details(request_id)):
@@ -632,6 +637,22 @@ class Worker:
             print(f"rivendell[{self.name}]: progress post failed for {request_id}: {e}")
             return (isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500
                     and e.code not in (408, 429))
+
+    def _post_phase(self, request_id: str, phase: str) -> None:
+        """Where a video run is (download, audio, transcript, screens, summary,
+        answer); shown in the viewer. Best-effort: a lost beat changes nothing."""
+        try:
+            self._api(f"/plugin/video-requests/{request_id}/phase", {"phase": phase})
+        except Exception as e:  # noqa: BLE001
+            print(f"rivendell[{self.name}]: phase post failed for {request_id}: {e}")
+
+    def _api_put_bytes(self, path: str, data: bytes, content_type: str) -> None:
+        """One raw PUT against this instance (a video frame)."""
+        req = urllib.request.Request(
+            self.api_url + path, data=data, method="PUT",
+            headers={"Authorization": f"Bearer {self.token}", "Content-Type": content_type})
+        with urllib.request.urlopen(req, timeout=120):
+            pass
 
     def _rivendell_answer(self, obj: dict) -> None:
         """A NEEDS YOU answer given in Rivendell. Only the bridge's owner may
@@ -806,6 +827,11 @@ class Worker:
                 self._apply_policy(self._enqueue("deck", item["id"], item.get("siteTitle")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: deck catch-up failed: {e}")
+        try:
+            for item in self._api("/plugin/video-requests"):
+                self._apply_policy(self._enqueue("video", item["id"], item.get("fileName")))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: video catch-up failed: {e}")
         with self._q_lock:
             return len(self._pending) - before
 
@@ -987,6 +1013,11 @@ class Worker:
             print(f"rivendell[{self.name}]: deck draft requested for "
                   f"{site.get('title', '?')}")
             return self._enqueue("deck", obj["requestId"], site.get("title"))
+        if obj.get("type") == "video-request" and obj.get("requestId"):
+            file = obj.get("file") or {}
+            print(f"rivendell[{self.name}]: video {str(obj.get('kind') or '').lower() or 'job'} "
+                  f"requested for {file.get('name', '?')}")
+            return self._enqueue("video", obj["requestId"], file.get("name"))
         return None
 
     def _block_on_token(self, detail: str) -> None:
@@ -1211,16 +1242,17 @@ class Worker:
         return session["id"]
 
     def _start_run(self, prompt: str, workdir: str, hang_timeout: "float | None" = None,
-                   mcp_on: "str | None" = None):
+                   mcp_on: "str | None" = None, image_paths: "list[str] | None" = None):
         """One autonomous Claude run in `workdir` through the normal runner.
         `hang_timeout` is the silence the watchdog allows it (the kind's own
         timeout for a review or an implementation). `mcp_on` names an MCP
         server the run must have whatever the operator's tool defaults say
-        (a newspaper is nothing without `rivendell`). Returns the job, or
+        (a newspaper is nothing without `rivendell`). `image_paths` are files
+        the run must open first (a video's frames). Returns the job, or
         None if a run could not be started."""
         from bridge import runner                # local import: heavy module
         return runner.start_streaming_job(
-            config.DASH_CHAT_ID, prompt, [], project=workdir,
+            config.DASH_CHAT_ID, prompt, image_paths or [], project=workdir,
             model=self.model, permission_mode="bypassPermissions",
             session_id=self._new_session(workdir), origin=self.origin,
             mcp_on=mcp_on, hang_timeout=hang_timeout)
@@ -1466,6 +1498,87 @@ class Worker:
         rivendell; one that doesn't fit the slides fails there, with why."""
         self._run_in_workdir("deck", "deck", request_id, title)
 
+    def _run_video(self, request_id: str, name: "str | None") -> None:
+        """A drive video job. The Mac does what Claude cannot (rivendell_video:
+        download, ffmpeg, whisper.cpp), each step reported as a phase and each
+        frame PUT up; then one Claude run reads the transcript and the frames
+        and writes the summary (TRANSCRIBE) or the answer (ASK). A tool failure
+        lands FAILED with its message; an unreadable summary still posts the
+        transcript, since that is the expensive part."""
+        from bridge import rivendell_video as rv     # local import: keeps the tests' monkeypatching simple
+        resp = self._claim("video-requests", request_id)
+        if resp is None:
+            return
+        kind = resp.get("kind") or "TRANSCRIBE"
+        workdir = os.path.join(config.UPLOAD_DIR, f"video-{request_id}")
+        screens_dir = os.path.join(workdir, "screens")
+        os.makedirs(screens_dir, exist_ok=True)
+        timeout = self.inst.get("review_timeout", 3600)
+        segments, frames = [], []
+        try:
+            if kind == "TRANSCRIBE":
+                file = resp.get("file") or {}
+                src = os.path.join(workdir, "source")
+                self._post_phase(request_id, "download")
+                rv.download(resp["downloadUrl"], src)
+                self._post_phase(request_id, "audio")
+                wav = os.path.join(workdir, "audio.wav")
+                rv.extract_audio(src, wav)
+                self._post_phase(request_id, "transcript")
+                segments = rv.transcribe(wav, resp.get("language") or "en")
+                if file.get("kind") == "video":
+                    self._post_phase(request_id, "screens")
+                    frames = rv.pick_frames(src, screens_dir)
+                    for f in frames:
+                        with open(f["path"], "rb") as fh:
+                            self._api_put_bytes(f"/plugin/video-requests/{request_id}/screens/{f['index']}?timeMs={f['timeMs']}",
+                                                fh.read(), "application/octet-stream")
+                self._post_phase(request_id, "summary")
+                prompt = rv.fill_prompt(resp["prompt"], rv.render_transcript(segments), rv.render_screens(frames))
+                images = [f["path"] for f in frames]
+            else:
+                images = []
+                for s in resp.get("screens") or []:
+                    dest = os.path.join(screens_dir, f"{s['index']}.jpg")
+                    rv.download(s["url"], dest)
+                    images.append(dest)
+                self._post_phase(request_id, "answer")
+                prompt = resp["prompt"]
+        except rv.VideoToolError as e:
+            self._post_result("video-requests", request_id, False, str(e))
+            return
+        except Exception as e:  # noqa: BLE001 — anything else is still this run's failure
+            self._post_result("video-requests", request_id, False, f"bridge error: {e}")
+            return
+
+        print(f"rivendell[{self.name}]: video {kind.lower()} {request_id} ({name or '?'}) running in {workdir}")
+        job = self._start_run(prompt, workdir, hang_timeout=timeout, image_paths=images)
+        if job is None:  # can't happen for a fresh session; never hang the queue
+            self._post_result("video-requests", request_id, False, "could not start a Claude run (session busy)")
+            return
+        self._track(request_id, "video", name, job.store_session_id, label=None, link=None)
+        try:
+            ok, text = self._wait_job(job, timeout)
+        finally:
+            self._untrack(request_id)
+        if kind == "TRANSCRIBE":
+            # The transcript is made; a bad summary only leaves that part empty,
+            # and a run that failed says why beside it.
+            result = rv.transcribe_result(resp.get("language") or "en", segments, frames, text if ok else "")
+            if ok:
+                self._post_result("video-requests", request_id, True, json.dumps(result))
+            else:
+                self._post_result("video-requests", request_id, True, json.dumps(result), error=text)
+        else:
+            self._post_result("video-requests", request_id, ok, text)
+        # The client's recording and its audio do not stay on this Mac; the frames
+        # do (the transcript in the dashboard may show them) until the upload sweep.
+        for name in ("source", "audio.wav", "audio.wav.json"):
+            try:
+                os.remove(os.path.join(workdir, name))
+            except OSError:
+                pass
+
     def _run_in_workdir(self, what: str, kind: str, request_id: str,
                         name: "str | None", mcp_on: "str | None" = None) -> None:
         """Run a request that needs NO checkout: its whole context is rendered
@@ -1506,6 +1619,7 @@ class Worker:
         "changelog": "changelog-requests",
         "news": "news-requests",
         "deck": "deck-requests",
+        "video": "video-requests",
     }
 
     # -- Telegram ping for queued (non-auto-accepted) requests --
@@ -1517,6 +1631,7 @@ class Worker:
         "changelog": "changelog",
         "news": "newspaper",
         "deck": "deck draft",
+        "video": "video transcript",
     }
 
     def _label(self, item: dict) -> str:
@@ -1663,6 +1778,8 @@ class Worker:
                 self._run_news(request_id, slug)
             elif kind == "deck":
                 self._run_deck(request_id, slug)
+            elif kind == "video":
+                self._run_video(request_id, slug)
             else:
                 self._run_review(request_id, slug)
         except Exception as e:  # noqa: BLE001 — worker must outlive any run
