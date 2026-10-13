@@ -7,7 +7,8 @@ a **Telegram bot** (`bridge/dispatch.py`), a **Telegram Mini App**
 the backend — no framework, no ORM, no async runtime. On macOS, **Mystical.app**
 (`macos/`, Swift, system frameworks only) wraps the dashboard in a native window
 + menu bar; `macos/probe.sh` snapshots it without Screen Recording permission,
-and `cd macos && swift test` runs its tests.
+`macos/capture.sh` captures the real screen through the app (it holds that
+permission; a session's shell never can), and `cd macos && swift test` runs its tests.
 
 ## The one thing that bites everyone
 

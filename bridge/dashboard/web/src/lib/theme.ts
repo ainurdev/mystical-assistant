@@ -35,7 +35,9 @@ export type ThemeKey =
   | "nocturne"
   | "studio"
   | "signal"
-  | "foundry";
+  | "foundry"
+  | "cupertino"
+  | "graphite";
 
 /**
  * AURORA is one theme in four colours — same glass, same CRT, only the
@@ -64,7 +66,7 @@ export const CLAUDE_KEYS: ThemeKey[] = ["claude", "claude-ocean", "claude-fern",
  *      white is 1.02x, i.e. invisible. `:root[data-light]` in index.css
  *      re-derives every alpha-tinted token at light-appropriate strength.
  */
-export const LIGHT_KEYS: ThemeKey[] = ["normal", "newsprint", "candy", "apex", "gloam", "riso", "foundry"];
+export const LIGHT_KEYS: ThemeKey[] = ["normal", "newsprint", "candy", "apex", "gloam", "riso", "foundry", "cupertino"];
 
 export function isLight(t: ThemeKey): boolean {
   return LIGHT_KEYS.includes(t);
@@ -253,6 +255,13 @@ export const THEME_DEFS: ThemeDef[] = [
   // plate has no corners to round. Out of COLORFUL: its warn is a burnt amber
   // ~15° off the orange accent, trade-dress rather than accident.
   { key: "foundry", name: "FOUNDRY", feel: "shop floor · concrete & safety orange", filter: "none", ops: [], sw: "#a34305", bg: "rgba(220,220,214,.55)", pbg: "#dcdcd6", crt: false, swp: false, glw: false, canvas: "#dcdcd6", font: "'Archivo',system-ui,-apple-system,sans-serif", prad: "0", chat: "stamp", pal: { acc: "#a34305", "acc-on": "#ffffff", "accent-rgb": "163 67 5", ok: "#2f6b46", warn: "#845706", err: "#b02a1e", "err-hi": "#9c2318", "err-b": "#851d13", "err-g": "#9e6861", info: "#1d5d8c", "info-hi": "#184f77", "info-b": "#134263", purple: "#7b3ab8", "purple-d": "#6e33a6", "purple-h": "#622d94", "purple-b": "#552682", "purple-g": "#886a9c", txb: "#0d0d0f", txh: "#242529", tx: "#323339", txm: "#42444b", txd: "#4d5057", txf: "#53565e", txl: "#5b5d66", txg: "#73757e", panel: "#eeeee8", panel2: "#e8e8e2", panel3: "#e2e2dc", canvas: "#dcdcd6", mono: "'Space Mono',monospace" } },
+  // CUPERTINO — macOS in daylight: SF for type, SF Mono for code, Apple's system
+  // colours deepened until they clear this file's ink floors (Apple's #007aff is
+  // 3.98:1 on white; the test wants 4.45), rounded like an AppKit sheet. No CRT.
+  { key: "cupertino", name: "CUPERTINO", feel: "system light · San Francisco & blue", filter: "none", ops: [], sw: "#0b5fd6", bg: "rgba(235,237,240,.55)", pbg: "#ebedf0", crt: false, swp: false, glw: false, canvas: "#ebedf0", font: "-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif", prad: "10px", chat: "halo", pal: { acc: "#0b5fd6", "acc-on": "#ffffff", "accent-rgb": "11 95 214", ok: "#1a6f34", warn: "#8f4a00", err: "#c4000f", "err-hi": "#a8000c", "err-b": "#8e000a", "err-g": "#bf5a55", info: "#0a6d99", "info-hi": "#085b80", "info-b": "#064a68", purple: "#7d3cd1", "purple-d": "#6e34ba", "purple-h": "#6030a6", "purple-b": "#52298d", "purple-g": "#8a6cb5", txb: "#0d0d0f", txh: "#1c1c1e", tx: "#2c2c2e", txm: "#3a3a3c", txd: "#48484a", txf: "#4f4f52", txl: "#58585c", txg: "#6e6e73", panel: "#ffffff", panel2: "#f6f7f9", panel3: "#f0f1f4", canvas: "#ebedf0", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
+  // GRAPHITE — the same Mac after dark: Apple's dark-mode system colours as they
+  // ship, on the window grey, SF and SF Mono, AppKit radii. No CRT.
+  { key: "graphite", name: "GRAPHITE", feel: "system dark · San Francisco & blue", filter: "none", ops: [], sw: "#0a84ff", bg: "rgba(28,28,30,.55)", pbg: "#1c1c1e", crt: false, swp: false, glw: false, canvas: "#1c1c1e", font: "-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif", prad: "10px", chat: "halo", pal: { acc: "#0a84ff", "acc-on": "#ffffff", "accent-rgb": "10 132 255", ok: "#30d158", warn: "#ffd60a", err: "#ff453a", "err-hi": "#ff6b63", "err-b": "#ff928c", "err-g": "#8a4a46", info: "#64d2ff", "info-hi": "#8fdfff", "info-b": "#b9ecff", purple: "#bf5af2", "purple-d": "#ad4fe0", "purple-h": "#cf7ef6", "purple-b": "#dfa6f9", "purple-g": "#7a5a8a", txb: "#ffffff", txh: "#f2f2f7", tx: "#e5e5ea", txm: "#c7c7cc", txd: "#aeaeb2", txf: "#9f9fa4", txl: "#8e8e93", txg: "#636366", panel: "#2c2c2e", panel2: "#27272a", panel3: "#212124", canvas: "#1c1c1e", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
 ];
 
 export const THEMES: ThemeKey[] = THEME_DEFS.map((t) => t.key);

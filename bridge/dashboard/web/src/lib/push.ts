@@ -30,13 +30,19 @@ export async function requestPush(): Promise<boolean> {
 }
 
 /** Fire one notification. `tag` collapses repeats for the same session, so a
- *  chatty session replaces its own notification instead of stacking twenty. */
-export function push(title: string, body: string, tag?: string, onClick?: () => void): void {
+ *  chatty session replaces its own notification instead of stacking twenty.
+ *  `buttons` + `onAction`: the standard `actions` option, which only Mystical.app
+ *  honours (browsers keep it for service workers) — a tap answers without
+ *  opening the window (lib/banner). */
+export function push(title: string, body: string, tag?: string, onClick?: () => void,
+                     buttons?: { action: string; title: string }[], onAction?: (action: string) => void): void {
   if (!pushGranted()) return;
   try {
-    const n = new Notification(title, { body, tag, icon: "/favicon.svg" });
+    const opts = { body, tag, icon: "/favicon.svg", actions: buttons?.length ? buttons : undefined } as NotificationOptions;
+    const n = new Notification(title, opts) as Notification & { onaction?: (action: string) => void };
     // Clicking should land you in the dashboard, on the session that pinged.
     n.onclick = () => { window.focus(); onClick?.(); n.close(); };
+    if (onAction) n.onaction = onAction;
   } catch {
     /* some browsers throw for notifications outside a service worker; ignore */
   }

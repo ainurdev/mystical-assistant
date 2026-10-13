@@ -117,6 +117,18 @@ export interface AnswerSelection {
   labels: string[];
   notes?: string;   // free text when the prepared options don't fit
 }
+/** One card a running job is blocked on (runner.py Job.pending). */
+export interface PendingCard {
+  request_id: string;
+  kind: "permission" | "question";
+  tool_name?: string;
+  summary?: string;       // permission: what the tool would do
+  questions?: Question[]; // question: the ask itself
+}
+export interface JobSnapshot {
+  status: string;
+  pending: PendingCard[];
+}
 
 export type RunEvent =
   | { type: "text"; text: string }
@@ -1600,6 +1612,10 @@ export const api = {
   ) => req(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
   interrupt: (jobId: string) =>
     req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
+  // A live job without its events (the cursor is past them all): the pending
+  // cards, which a Mystical.app banner turns into buttons (lib/banner).
+  job: (jobId: string) =>
+    req<JobSnapshot>(`/local/run/${encodeURIComponent(jobId)}?cursor=1000000000`),
   server: (action: "start" | "stop", opts: { cmd?: string } & RunCtx = {}) =>
     req<{ message: string; server: DevServerInfo; servers: DevServerInfo[] }>(
       "/local/server", { method: "POST", body: { action, ...opts } }),

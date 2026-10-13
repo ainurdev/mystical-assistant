@@ -11,7 +11,7 @@ import {
   ShieldQuestion, SlidersHorizontal, Sparkles, Square, SquareTerminal, Sun, TriangleAlert, Type,
   Upload, Volume2, Waypoints, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, LayoutPanelTop,
-  ListChecks, Package, PackageOpen, PanelBottom, Timer, Truck,
+  ListChecks, Package, PackageOpen, PanelBottom, Timer, Truck, AppWindowMac, Pin,
 } from "lucide-react";
 import { CHAT_BGS, TOOL_STYLES, type ChatBg, type ToolStyle } from "../../lib/toolwidget";
 import { AgentRail, PromptBubble } from "../Transcript";
@@ -83,6 +83,7 @@ import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { RADIO_STATIONS } from "../../lib/ambient";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
+import { isMacApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
 import {
   audition,
   catLabel,
@@ -155,7 +156,7 @@ export interface SettingsModalProps {
 export type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
   | "projects" | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts"
   | "plugins" | "system" | "move"
-  | "report";
+  | "report" | "mac";
 
 // The rail carries the same three-way split the comment above describes, but
 // as two headings rather than ten peers: what the HUD is like, and what the
@@ -180,6 +181,10 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "What surrounds the work: the weather beside the header clock, and the Claude·FM radio." },
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD",
     about: "How the dashboard tells you a session finished, failed, or is waiting on you: a desktop banner, a sound, or both." },
+  // Only inside Mystical.app (RAIL and the search both skip it elsewhere): the
+  // switches that are the app's, not the page's (lib/mac).
+  { key: "mac", label: "MAC APP", hint: "window · dock · panel", icon: AppWindowMac, group: "THE HUD",
+    about: "What only the Mac app can do: the window's title, the Dock icon, the floating WAITING ON YOU panel, and rebuilding the app after an update." },
   // First under THE WORK: the repo is the biggest unit of it, and this was a
   // modal behind SYSTEM ▸ MANAGE ▸ OPEN, which nobody found.
   { key: "projects", label: "PROJECTS", hint: "name · hide · import", icon: FolderTree, group: "THE WORK",
@@ -208,6 +213,7 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   { key: "report", label: "REPORT", hint: "turns · time · tokens", icon: BarChart3, group: "THE WORK",
     about: "Where the week went: turns, time and tokens per project, the rhythm day by day, and how it compares with the week before." },
 ];
+const RAIL = TABS.filter((t) => t.key !== "mac" || isMacApp());
 
 // ---- SEARCH -----------------------------------------------------------------
 // Ten categories deep, "where do I turn X off" is a hunt through all ten. One
@@ -232,6 +238,9 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
   { tab: "notifications", sec: "SOUND", terms: "tone chime volume packs peonping mute" },
   { tab: "notifications", sec: "PER EVENT", terms: "sound per event pack finished needs you error" },
+  { tab: "mac", sec: "WINDOW", terms: "mac app title bar session name dock icon keep cmd-tab space" },
+  { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space" },
+  { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission" },
   { tab: "session", sec: "RUN DEFAULTS", terms: "model mode effort ponytail permission plan bypass opus sonnet" },
   { tab: "session", sec: "PROFILES", terms: "preset saved knobs tools agent account login bind default" },
   { tab: "ai", sec: "MODEL-SPENDING EXTRAS", terms: "features titles guard next-up scout summaries cost tokens" },
@@ -271,7 +280,7 @@ function search(q: string, env: EnvSetting[], hidden: Set<string>): Hit[] {
   if (!words.length) return [];
   const label = (t: Tab) => TABS.find((x) => x.key === t)!.label;
   const all: (Hit & { hay: string })[] = [
-    ...INDEX.filter((e) => !hidden.has(e.sec)).map((e) => ({
+    ...INDEX.filter((e) => !hidden.has(e.sec) && (e.tab !== "mac" || isMacApp())).map((e) => ({
       tab: e.tab, sec: e.sec, hay: `${label(e.tab)} ${e.sec} ${e.terms}`.toLowerCase(),
     })),
     ...env.map((s) => ({
@@ -1999,6 +2008,83 @@ function EnvField({ s, busy, onSave }: {
  *  starts itself, and a launcher — a .cmd in the Windows Startup folder under WSL,
  *  a ~/.config/autostart entry otherwise — owns whether the window comes up with it. Turning login OFF never stops the running bridge — you are
  *  almost certainly talking to it. */
+// ---- MAC APP ----------------------------------------------------------------
+// The switches Mystical.app owns (macos/, MacPrefs.swift), read and written over
+// its message handler (lib/mac) so the app has them before any page has loaded.
+const MAC_BTN: CSSProperties = {
+  appearance: "none", cursor: "pointer",
+  border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
+  background: "transparent", color: "var(--acc)",
+  fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none",
+};
+
+function MacPanel() {
+  const mac = useMacSettings();
+  const [busy, setBusy] = useState(false);
+  const flip = (k: MacSwitch) => {
+    if (!mac || busy) return;
+    setBusy(true);
+    void macSet(k, !mac[k]).finally(() => setBusy(false));
+  };
+  if (!mac) {
+    return (
+      <Section title="MAC APP" icon={AppWindowMac} desc="No answer from Mystical.app.">
+        <div style={{ ...CARD, color: "var(--txl)", fontSize: "var(--t11)", lineHeight: 1.5 }}>
+          The app running this window predates these settings. Rebuild it from the menu
+          bar (Rebuild App) or with <code>mystical app</code>, then reopen.
+        </div>
+      </Section>
+    );
+  }
+  return (
+    <>
+      <Section title="WINDOW" icon={AppWindowMac} desc="The one window, and what it says about itself.">
+        <div style={CARD}>
+          <Row
+            first
+            label="SESSION IN THE TITLE"
+            desc="The title bar — and ⌘-Tab, Mission Control — names the open session instead of the app."
+          >
+            <Switch on={mac.titleFollowsSession} onClick={() => flip("titleFollowsSession")} />
+          </Row>
+          <Row
+            label="KEEP IN DOCK"
+            desc="The Dock icon stays while the window is closed, so ⌘-Tab and the Dock's Assign To Space keep working. Off: menu bar only, until you open it again."
+          >
+            <Switch on={mac.keepInDock} onClick={() => flip("keepInDock")} />
+          </Row>
+        </div>
+      </Section>
+      <Section title="PANEL" icon={Pin} desc="Who is waiting, readable from any app." top>
+        <div style={CARD}>
+          <Row
+            first
+            label="WAITING ON YOU PANEL"
+            desc="A small always-on-top list of the sessions waiting on you, on every Space, while the dashboard isn't in front. Click a row to open that session."
+          >
+            <Switch on={mac.floating} onClick={() => flip("floating")} />
+          </Row>
+        </div>
+      </Section>
+      <Section title="APP" icon={Package} desc="The native shell itself." top>
+        <div style={CARD}>
+          <Row
+            first
+            label="VERSION"
+            desc={`Mystical.app ${mac.version}. A bridge update doesn't rebuild the app — REBUILD does, from the checkout, and reopens it.`}
+          >
+            <button onClick={macRebuild} style={MAC_BTN}>REBUILD</button>
+          </Row>
+          <Row
+            label="SCREEN CAPTURE"
+            desc="A session can capture your screen, or one window, through the app (macos/capture.sh). macOS asks for Screen Recording the first time: allow Mystical in System Settings, then quit and reopen the app."
+          />
+        </div>
+      </Section>
+    </>
+  );
+}
+
 function StartupSection() {
   const [st, setSt] = useState<StartupState | null>(null);
   const [busy, setBusy] = useState(false);
@@ -5009,9 +5095,9 @@ export function SettingsModal(props: SettingsModalProps) {
             lets it turn from a side rail into a top strip on a phone. */}
         <div className="setbody">
           <div className="setrail" ref={rail}>
-            {TABS.map((t, i) => (
+            {RAIL.map((t, i) => (
               <Fragment key={t.key}>
-                {t.group !== TABS[i - 1]?.group && <div className="setgroup">{t.group}</div>}
+                {t.group !== RAIL[i - 1]?.group && <div className="setgroup">{t.group}</div>}
                 <button
                   className={tab === t.key ? "on" : undefined}
                   aria-current={tab === t.key ? "page" : undefined}
@@ -5477,6 +5563,7 @@ export function SettingsModal(props: SettingsModalProps) {
             {shown === "accounts" && <AccountsPanel onChanged={onAccountsChanged} />}
             {shown === "plugins" && <RivendellPanel />}
             {shown === "move" && <MovePanel settings={settings} onPatch={onPatch} />}
+            {shown === "mac" && <MacPanel />}
 
             {shown === "system" && (
               <>

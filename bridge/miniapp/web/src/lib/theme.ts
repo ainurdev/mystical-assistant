@@ -33,7 +33,8 @@ export type ThemeKey =
   | "nocturne"
   | "studio"
   | "void"
-  | "signal";
+  | "signal"
+  | "graphite";
 
 export interface ThemeDef {
   key: ThemeKey;
@@ -65,6 +66,7 @@ export const THEMES: ThemeDef[] = [
   { key: "studio", name: "STUDIO", feel: "graphite & violet · the design mocks", sw: "#8b7cf6", page: "#08080a", font: "'Space Grotesk',system-ui,-apple-system,sans-serif", prad: "7px", crt: false, pal: { acc: "#8b7cf6", "acc-on": "#0c0a1a", "accent-rgb": "139 124 246", ok: "#4ade80", warn: "#fbbf24", err: "#f87171", "err-hi": "#fca5a5", "err-b": "#fecaca", "err-g": "#8a5c5c", info: "#60a5fa", "info-hi": "#93c5fd", "info-b": "#bfdbfe", purple: "#cf8df5", "purple-d": "#c07bef", "purple-h": "#dcabf8", "purple-b": "#ecd3fb", "purple-g": "#7d6597", txb: "#ecedf4", txh: "#d9dae4", tx: "#c3c5d3", txm: "#a8abbd", txd: "#9497ab", txf: "#8a8da2", txl: "#80839a", txg: "#5f6277", panel: "#14141b", panel2: "#0f0f15", panel3: "#0a0a0e", canvas: "#08080a", mono: "'JetBrains Mono',monospace" } },
   { key: "void", name: "VOID", feel: "true black · colour only where it means something", sw: "#ffffff", page: "#000000", font: "system-ui,-apple-system,'Segoe UI',sans-serif", prad: "0", crt: false, pal: { acc: "#ffffff", "acc-on": "#000000", "accent-rgb": "255 255 255", ok: "#4ade80", warn: "#fbbf24", err: "#f87171", "err-hi": "#fca5a5", "err-b": "#fecaca", "err-g": "#8a5c5c", info: "#60a5fa", "info-hi": "#93c5fd", "info-b": "#bfdbfe", purple: "#c084fc", "purple-d": "#a855f7", "purple-h": "#d8b4fe", "purple-b": "#e9d5ff", "purple-g": "#6f5b86", txb: "#ffffff", txh: "#ededed", tx: "#d4d4d4", txm: "#b4b4b4", txd: "#9a9a9a", txf: "#8d8d8d", txl: "#828282", txg: "#565656", panel: "#121212", panel2: "#0b0b0b", panel3: "#070707", canvas: "#000000", mono: "'JetBrains Mono',monospace" } },
   { key: "signal", name: "SIGNAL", feel: "black box · chartreuse go, level inks", sw: "#9ade4a", page: "#0a0a0b", font: "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace", prad: "0", crt: false, pal: { acc: "#9ade4a", "acc-on": "#0c0c0d", "accent-rgb": "154 222 74", ok: "#9ade4a", warn: "#e8b13c", err: "#ff6b5e", "err-hi": "#ff938a", "err-b": "#ffb8b1", "err-g": "#8f5f5a", info: "#7fb8ff", "info-hi": "#a5cdff", "info-b": "#cce2ff", purple: "#a98bff", "purple-d": "#9a79f2", "purple-h": "#bfa3ff", "purple-b": "#d9c9ff", "purple-g": "#6d6383", txb: "#f2f2ee", txh: "#e4e4df", tx: "#dcdcd8", txm: "#a5a5ad", txd: "#8b8b93", txf: "#77777f", txl: "#5a5a60", txg: "#33333a", panel: "#131316", panel2: "#101012", panel3: "#0c0c0d", canvas: "#0a0a0b", mono: "'JetBrains Mono',monospace" } },
+  { key: "graphite", name: "GRAPHITE", feel: "system dark · San Francisco & blue", sw: "#0a84ff", page: "#1c1c1e", font: "-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif", prad: "10px", crt: false, pal: { acc: "#0a84ff", "acc-on": "#ffffff", "accent-rgb": "10 132 255", ok: "#30d158", warn: "#ffd60a", err: "#ff453a", "err-hi": "#ff6b63", "err-b": "#ff928c", "err-g": "#8a4a46", info: "#64d2ff", "info-hi": "#8fdfff", "info-b": "#b9ecff", purple: "#bf5af2", "purple-d": "#ad4fe0", "purple-h": "#cf7ef6", "purple-b": "#dfa6f9", "purple-g": "#7a5a8a", txb: "#ffffff", txh: "#f2f2f7", tx: "#e5e5ea", txm: "#c7c7cc", txd: "#aeaeb2", txf: "#9f9fa4", txl: "#8e8e93", txg: "#636366", panel: "#2c2c2e", panel2: "#27272a", panel3: "#212124", canvas: "#1c1c1e", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
 ];
 
 /** AURORA is one profile in four colours; the picker draws it as one row. */

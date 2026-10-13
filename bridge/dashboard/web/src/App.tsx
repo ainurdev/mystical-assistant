@@ -17,6 +17,7 @@ import {
   type RunPick,
   type SessionBrief,
   type SessionStatus,
+  type RunningJob,
   type UsageInfo,
   type AccountInfo,
   type AcpAgentsInfo,
@@ -56,6 +57,8 @@ import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
 import { push, pushGranted, shouldPush } from "./lib/push";
+import { isMacApp, macAppearance, useMacSettings } from "./lib/mac";
+import { bannerActions, bannerAnswer, bannerBody } from "./lib/banner";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
@@ -223,6 +226,9 @@ export function App() {
   // that don't exist while it's off.
   const ai = useAiFeatures();
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
+  // The live jobs behind the status map: a session's job id is what a banner's
+  // buttons answer to (Mystical.app, lib/banner).
+  const jobsRef = useRef<RunningJob[]>([]);
   const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
   const [pins, togglePin] = useSessionPins();
   // Owned here because the LEARN tab's badge counts what the LEARN panel marks —
@@ -491,6 +497,8 @@ export function App() {
     // autofill — follows color-scheme, so a light theme has to say so or those
     // render light-text-on-dark inside an otherwise white dashboard.
     root.style.colorScheme = isLight(settings.theme) ? "light" : "dark";
+    // Mystical.app: its alerts, file picker and title bar follow the same ground.
+    macAppearance(isLight(settings.theme));
     // `data-light` drives the light-ground token overrides in index.css — the
     // alpha washes and borders authored for a dark ground are invisible on paper.
     if (isLight(settings.theme)) root.dataset.light = "";
@@ -601,6 +609,16 @@ export function App() {
       return true;
     };
   });
+
+  // Mystical.app mirrors the page title into the window's (and so ⌘-Tab and
+  // Mission Control): the open session when SESSION IN THE TITLE is on, else the
+  // app's name. A browser tab keeps index.html's title.
+  const mac = useMacSettings();
+  useEffect(() => {
+    if (!isMacApp()) return;
+    const open = mac?.titleFollowsSession ? sessions.find((x) => x.id === sessionId)?.title : "";
+    document.title = open || "mystical//assistant";
+  }, [mac?.titleFollowsSession, sessionId, sessions]);
 
   // --- polls (unchanged data flow) ---
   useEffect(() => {
@@ -924,6 +942,7 @@ export function App() {
         const r = await api.running(alertsOn.current);
         if (!live) return;
         setStatusMap(new Map(Object.entries(r.status ?? {})));
+        jobsRef.current = r.jobs ?? [];
       } catch { /* ignore */ }
     };
     void tick();
@@ -970,8 +989,8 @@ export function App() {
     // Different events still each get their voice — that's the whole point of
     // assigning them separately.
     const rang = new Set<PushEvent>();
-    const ping = (ev: PushEvent, title: string, body: string, id: string) => {
-      if (settings.push) push(title, body, id, reveal(id));
+    const ping = (ev: PushEvent, title: string, body: string, id: string, banner = true) => {
+      if (banner && settings.push) push(title, body, id, reveal(id));
       if (settings.pushSound && !rang.has(ev)) {
         rang.add(ev);
         playSound(settings.pushSounds[ev], settings.pushVolume, settings.pushTone);
@@ -981,9 +1000,26 @@ export function App() {
       if (shouldPush(id, sessionId)) ping("done", `✓ ${name(id)}`, "finished", id);
     for (const [id, st] of statusMap) {
       const was = prev.get(id)?.state;
-      if (st.state === "awaiting" && was !== "awaiting" && shouldPush(id, sessionId))
-        ping(st.kind === "permission" ? "permission" : "question", `⏸ ${name(id)}`,
-          st.label || "waiting on you", id);
+      if (st.state === "awaiting" && was !== "awaiting" && shouldPush(id, sessionId)) {
+        const ev: PushEvent = st.kind === "permission" ? "permission" : "question";
+        const title = `⏸ ${name(id)}`;
+        const body = st.label || "waiting on you";
+        const job = st.kind ? jobsRef.current.find((j) => j.session_id === id)?.job_id : undefined;
+        if (isMacApp() && job && settings.push) {
+          // In Mystical.app the banner carries the card's buttons (lib/banner):
+          // the sound now, the banner once the card is fetched.
+          ping(ev, title, body, id, false);
+          void api.job(job).then((snap) => {
+            const card = snap.pending?.[0];
+            const buttons = bannerActions(card);
+            const answer = (a: string) => {
+              const b = bannerAnswer(card, a);
+              if (b) void api.respond(job, b).catch(() => { /* the card is still in the transcript */ });
+            };
+            push(title, bannerBody(card) || body, id, reveal(id), buttons, buttons.length ? answer : undefined);
+          }).catch(() => push(title, body, id, reveal(id)));
+        } else ping(ev, title, body, id);
+      }
       // Parked is the bridge saying "this died but I'll bring it back" — worth
       // hearing wherever you are, including in the session you're looking at.
       else if (st.state === "parked" && was !== "parked")
@@ -2218,6 +2254,9 @@ export function App() {
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
+            // Mystical.app runs the HUD under a transparent title bar and sets
+            // this var to its height (DashboardWindow); a browser has none.
+            paddingTop: "var(--mac-titlebar, 0px)",
             filter: themeFilter(settings.theme),
             background: themeCanvas(settings.theme),
             fontFamily: fontStack(settings.font, settings.theme) || undefined,
