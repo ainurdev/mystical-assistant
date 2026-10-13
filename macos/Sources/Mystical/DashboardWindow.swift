@@ -189,6 +189,14 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
 
     // MARK: NSWindowDelegate
 
+    /// Full screen puts nothing at the top: with the menu bar unavailable rather
+    /// than auto-hiding, the title strip that slides down with it stays away too
+    /// (AppKit pairs hideMenuBar with hideDock). The page's traffic lights still
+    /// answer a hover, so the green dot is the way back out, or ⌃⌘F.
+    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
+        [.fullScreen, .hideMenuBar, .hideDock]
+    }
+
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         sender.orderOut(nil)
         onVisibilityChange?(false)
