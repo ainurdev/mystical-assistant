@@ -2,6 +2,15 @@ import AppKit
 import MysticalCore
 import WebKit
 
+/// The dashboard's window: while it stands in for full screen it may cover the
+/// menu bar's strip, which AppKit otherwise trims every frame to leave free.
+final class HUDWindow: NSWindow {
+    var coversScreen = false
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        coversScreen ? frameRect : super.constrainFrameRect(frameRect, to: screen)
+    }
+}
+
 /// The one window: the dashboard in a WKWebView, plus the host duties a bare web
 /// view silently drops — file pickers, confirm()/prompt(), downloads, links
 /// that belong in a browser. Closing it only hides it, so the page (and with it
@@ -39,7 +48,7 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         let zoom = UserDefaults.standard.double(forKey: "pageZoom")
         webView.pageZoom = zoom > 0 ? zoom : 1
 
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
+        let window = HUDWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "mystical//assistant"
@@ -189,12 +198,28 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
 
     // MARK: NSWindowDelegate
 
-    /// Full screen puts nothing at the top: with the menu bar unavailable rather
-    /// than auto-hiding, the title strip that slides down with it stays away too
-    /// (AppKit pairs hideMenuBar with hideDock). The page's traffic lights still
-    /// answer a hover, so the green dot is the way back out, or ⌃⌘F.
-    func window(_ window: NSWindow, willUseFullScreenPresentationOptions proposed: NSApplication.PresentationOptions) -> NSApplication.PresentationOptions {
-        [.fullScreen, .hideMenuBar, .hideDock]
+    /// Full screen, the pre-Lion kind: the window fills the screen (HUDWindow lets
+    /// it cover the menu bar's strip), the menu bar and Dock auto-hide and come
+    /// back at the edges, and the window keeps its Space. AppKit's own full screen
+    /// is not used: its menu-bar reveal slides a detached, empty title strip down
+    /// with it (NSToolbarFullScreenWindow), and nothing public hides that.
+    private var unzoomedFrame: NSRect?
+    @objc func toggleSimpleFullScreen(_ sender: Any?) {
+        guard let window = window as? HUDWindow else { return }
+        if let frame = unzoomedFrame {
+            unzoomedFrame = nil
+            NSApp.presentationOptions = []
+            window.level = .normal
+            window.coversScreen = false
+            window.setFrame(frame, display: true, animate: true)
+        } else if let screen = window.screen ?? NSScreen.main {
+            unzoomedFrame = window.frame
+            NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
+            // Without a Dock icon the app owns no menu bar to hide: cover it instead.
+            if NSApp.activationPolicy() != .regular { window.level = .popUpMenu }
+            window.coversScreen = true
+            window.setFrame(screen.frame, display: true, animate: true)
+        }
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
