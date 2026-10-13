@@ -57,7 +57,7 @@ import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
 import { push, pushGranted, shouldPush } from "./lib/push";
-import { isMacApp, macAppearance, useMacSettings } from "./lib/mac";
+import { isMacApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
 import { bannerActions, bannerAnswer, bannerBody } from "./lib/banner";
 import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
@@ -619,6 +619,22 @@ export function App() {
     const open = mac?.titleFollowsSession ? sessions.find((x) => x.id === sessionId)?.title : "";
     document.title = open || "mystical//assistant";
   }, [mac?.titleFollowsSession, sessionId, sessions]);
+
+  // Mystical.app draws no title of its own: the HUD's top row is the title bar
+  // (DashboardWindow sets --mac-titlebar to the bar's height), so a press on the
+  // row's bare surface — a cap or the chat header, not a control and not the
+  // transcript — drags the window, the way the bar's gaps would.
+  useEffect(() => {
+    if (!isMacApp()) return;
+    const bar = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--mac-titlebar")) || 0;
+    const down = (e: MouseEvent) => {
+      if (e.button !== 0 || e.clientY > bar) return;
+      if ((e.target as Element).closest("button,a,input,textarea,select,[role=button],[contenteditable],.mscroll")) return;
+      macDrag();
+    };
+    window.addEventListener("mousedown", down);
+    return () => window.removeEventListener("mousedown", down);
+  }, []);
 
   // --- polls (unchanged data flow) ---
   useEffect(() => {
@@ -2254,9 +2270,6 @@ export function App() {
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
-            // Mystical.app runs the HUD under a transparent title bar and sets
-            // this var to its height (DashboardWindow); a browser has none.
-            paddingTop: "var(--mac-titlebar, 0px)",
             filter: themeFilter(settings.theme),
             background: themeCanvas(settings.theme),
             fontFamily: fontStack(settings.font, settings.theme) || undefined,

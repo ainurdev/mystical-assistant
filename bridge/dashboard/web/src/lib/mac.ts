@@ -43,6 +43,8 @@ export const macSet = (key: MacSwitch, value: boolean): Promise<MacSettings | nu
 export const macAppearance = (light: boolean): void => { void post({ op: "appearance", light }); };
 /** `mystical app` — rebuilds the bundle from the checkout and reopens it. */
 export const macRebuild = (): void => { void post({ op: "rebuild" }); };
+/** A press on the HUD's top row, the title bar's stand-in: the app drags the window. */
+export const macDrag = (): void => { void post({ op: "drag" }); };
 
 function subscribe(fn: () => void): () => void {
   listeners.add(fn);

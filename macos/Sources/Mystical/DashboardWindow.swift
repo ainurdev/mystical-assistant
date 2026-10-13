@@ -48,9 +48,13 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         window.isReleasedWhenClosed = false
         window.center()
         window.setFrameAutosaveName("Dashboard")
-        // The HUD runs under a transparent title bar; the page pads its top by
-        // --mac-titlebar (injected below) so nothing sits under the traffic lights.
+        // The HUD's top row is the title bar: transparent, no drawn title (the
+        // window's title still names Mission Control and the Window menu). The
+        // page reads the bar's height from --mac-titlebar (injected below), insets
+        // its nameplate past the traffic lights and asks for a drag (Notifier
+        // "drag") from the row's bare surface, since a web view never moves the window.
         window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.styleMask.insert(.fullSizeContentView)
         super.init(window: window)
         window.delegate = self

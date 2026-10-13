@@ -4,6 +4,7 @@ import { NotificationCenter } from "./Notifications";
 import { UpdateButton } from "./UpdateButton";
 import { WeekPanel } from "./WeekPanel";
 import { setClock12 } from "../../lib/surfaces";
+import { isMacApp } from "../../lib/mac";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -72,7 +73,8 @@ export function Brand() {
   return (
     // Relative + a stacking context above the sessions list under it, so the
     // report draws over the panel rather than behind it.
-    <div ref={ref} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    // Mystical.app: the cap sits in the title bar, so it starts past the traffic lights (9…69pt).
+    <div ref={ref} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: isMacApp() ? "0 12px 0 78px" : "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
       <svg
         viewBox="0 0 100 100"
         style={{ width: 19, height: 19, flex: "none", overflow: "visible" }}

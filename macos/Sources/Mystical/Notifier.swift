@@ -9,7 +9,8 @@ import WebKit
 /// banner, a click runs the page's onclick, and a banner button runs the page's
 /// onaction (NotificationShim). Then the MAC APP tab's ops: `settings` / `set`
 /// for the app-owned switches (MacPrefs), `appearance` so native chrome follows
-/// the theme, `rebuild` for `mystical app`. One handler, because the page has
+/// the theme, `rebuild` for `mystical app`, `drag` to move the window from the
+/// HUD's top row (the title bar's stand-in). One handler, because the page has
 /// one `postMessage` target and every op is a few lines.
 @MainActor
 final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
@@ -115,6 +116,13 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
             replyHandler(nil, nil)
         case "rebuild":
             onRebuild?()
+            replyHandler(nil, nil)
+        case "drag":
+            // The press that sent this is still the current event (the page posts
+            // on mousedown); moving the mouse first just makes it the drag.
+            if let e = NSApp.currentEvent, [.leftMouseDown, .leftMouseDragged].contains(e.type) {
+                message.webView?.window?.performDrag(with: e)
+            }
             replyHandler(nil, nil)
         default:
             replyHandler(nil, "unknown op")

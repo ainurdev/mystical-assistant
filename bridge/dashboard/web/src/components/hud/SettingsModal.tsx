@@ -2043,7 +2043,7 @@ function MacPanel() {
           <Row
             first
             label="SESSION IN THE TITLE"
-            desc="The title bar — and ⌘-Tab, Mission Control — names the open session instead of the app."
+            desc="Mission Control and the Window menu name the open session instead of the app."
           >
             <Switch on={mac.titleFollowsSession} onClick={() => flip("titleFollowsSession")} />
           </Row>
