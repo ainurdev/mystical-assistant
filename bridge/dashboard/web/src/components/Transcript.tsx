@@ -372,8 +372,13 @@ export function Transcript({
     // padding (62px). This lowers it to 86px, clear of the header island with
     // its LAST row open: the line scroll-mt-[86px] draws for scrollIntoView.
     scrollPaddingStart: 24,
-    measureElement: (el) => {
-      const h = el.getBoundingClientRect().height;
+    measureElement: (el, entry) => {
+      // LAYOUT size, never getBoundingClientRect: that one is post-transform,
+      // and rows mount while the panel's entrance animation (enterZoom / mpop)
+      // still has the column at scale(.9-.98). Every turn then cached ~3% short,
+      // a transform settling fires no ResizeObserver to correct it, and each
+      // turn slid up over the gap under it — 22px of spacing landing as 6-17.
+      const h = entry?.borderBoxSize?.[0]?.blockSize ?? (el as HTMLElement).offsetHeight;
       const k = el.getAttribute("data-key");
       if (k) sizesRef.current.set(k, h);
       return h;

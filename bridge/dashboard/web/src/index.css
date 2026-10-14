@@ -3170,9 +3170,13 @@ input {
   --d-edge: 45%;
   --d-bw: 1px;
   --d-ink: var(--tx);
-  --d-rad: min(var(--prad, 0px), 10px);
+  /* DOSSIER's own corner, not the theme's: a card per turn is the language's
+     shape the way HALO's radius is HALO's, and on a 0-radius ground (VOID,
+     AURORA) square cards stacked edge to edge read as one long table. */
+  --d-rad: 10px;
   --d-hair: color-mix(in oklab, var(--txl) 55%, var(--panel));
-  --d-big: calc(var(--t13) + 2.5px);
+  --d-big: calc(var(--t13) + 1px);
+  --d-face: var(--ui-font, var(--mono));
 }
 [data-style="dossier"][data-scheme="contrast"] {
   --d-think: color-mix(in oklab, var(--purple) 80%, var(--txb));
@@ -3187,10 +3191,21 @@ input {
   gap: 0; overflow: hidden; background: var(--panel);
   border: var(--d-bw) solid var(--d-hair); border-radius: var(--d-rad);
 }
+/* Turns are separate documents: a real gap between cards. It is a margin
+   INSIDE the row wrapper (whose own pb-3 stops it collapsing out), so the
+   virtualizer's measurement of the row includes it — spacing set on the
+   wrapper from here raced that measurement and landed anywhere from 8 to 22px. */
+[data-style="dossier"] .dturn { margin-bottom: 10px; }
+/* Prose in the theme's reading face — the scroller pins a mono for the HUD,
+   and a paragraph of answer set in it reads a size larger than it is. Code,
+   paths and tool rows stay mono. */
+[data-style="dossier"] :is(.dprompt .md, .res-body .md, .dwork .abub .md, .dwork .thought-text) { font-family: var(--d-face); }
+[data-style="dossier"] .chatcard { font-family: var(--d-face); }
+[data-style="dossier"] :is(.dprompt, .res-body, .dwork, .chatcard) :is(code, pre, .font-mono) { font-family: var(--mono); }
 
 /* ── tier 1: you ── */
 [data-style="dossier"] .dprompt {
-  display: block; position: relative; padding: 11px 16px 13px;
+  display: block; position: relative; padding: 13px 18px 15px;
   background: color-mix(in oklab, var(--d-you) var(--d-tint), var(--panel));
   border-left: 4px solid var(--d-you);
   border-bottom: 1px solid color-mix(in oklab, var(--d-you) var(--d-edge), var(--panel));
@@ -3200,14 +3215,14 @@ input {
   max-width: 100%; padding: 0; border: 0; background: none;
 }
 [data-style="dossier"] .pbub .md {
-  font-size: var(--d-big); font-weight: 500; line-height: 1.55; color: var(--txb);
+  font-size: var(--d-big); font-weight: 500; line-height: 1.6; color: var(--txb);
 }
 [data-style="dossier"] .pnum {
   display: flex; gap: 6px; margin-bottom: 4px;
   font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--d-you);
 }
 [data-style="dossier"] .pnum > i { font-style: normal; color: var(--txd); }
-[data-style="dossier"] .pstamp { position: absolute; top: 11px; right: 16px; margin: 0; }
+[data-style="dossier"] .pstamp { position: absolute; top: 13px; right: 18px; margin: 0; }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
 
 /* ── tier 3: the work ── */
@@ -3217,9 +3232,9 @@ input {
 [data-style="dossier"] .dreply > * + *,
 [data-style="dossier"] .rstream > * + * { margin-top: 0; }
 [data-style="dossier"] .dreply > :not(.rstream, .agent-rail),
-[data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 10px 16px; }
+[data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 12px 18px; }
 [data-style="dossier"] .dwork {
-  background: var(--panel2); padding: 6px 16px 8px;
+  background: var(--panel2); padding: 9px 18px 10px;
   border-bottom: 1px solid var(--d-hair);
 }
 [data-style="dossier"] .dwork + .dwork { margin-top: 0; }
@@ -3324,18 +3339,18 @@ input {
 }
 [data-style="dossier"] .resblk[data-bad] .res { border-left-color: var(--err); }
 [data-style="dossier"] .res-head {
-  border-bottom: 0; padding: 11px 16px 0;
+  border-bottom: 0; padding: 14px 18px 0;
 }
 /* a result with no words (they were the prose a card already showed) is a
    receipt, not an answer: it keeps the clock and drops to the ghost tier */
 [data-style="dossier"] .res:not(:has(.res-body)) { border-left-width: 2px; border-left-color: var(--d-hair); }
-[data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 7px 16px; color: var(--txf); }
+[data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 8px 18px; color: var(--txf); }
 [data-style="dossier"] .res-head {
   font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm);
 }
 [data-style="dossier"] .resblk[data-bad] .res-head { color: var(--err); }
 [data-style="dossier"] .resblk:not([data-bad]) .res-meta::before { content: "✓ done"; color: var(--ok); letter-spacing: .5px; }
-[data-style="dossier"] .res-body { padding: 4px 16px 14px; font-size: var(--d-big); line-height: 1.65; }
+[data-style="dossier"] .res-body { padding: 6px 18px 16px; font-size: var(--d-big); line-height: 1.65; }
 [data-style="dossier"] .res-body .md { color: var(--txb); }
 [data-style="dossier"] .res-fade { background: linear-gradient(to bottom, transparent, var(--panel)); }
 [data-style="dossier"] .res-fold { border-top: 1px solid var(--d-hair); }
@@ -3343,7 +3358,7 @@ input {
 [data-layout="compact"] [data-style="dossier"] .res { max-width: none; }
 
 /* ── tier 2: waiting on you ── */
-[data-style="dossier"] .chatcard { margin: 10px 0; border-radius: var(--d-rad); background: var(--panel); }
+[data-style="dossier"] .chatcard { margin: 10px 0; border-radius: calc(var(--d-rad) - 2px); background: var(--panel); }
 [data-style="dossier"] .chatcard:is(.qcard-live, .pcard-live) {
   border: calc(var(--d-bw) + .5px) solid var(--d-ask);
   box-shadow: 0 0 0 4px color-mix(in oklab, var(--d-ask) 14%, transparent), 0 14px 28px -18px var(--shadow-pop, rgba(0,0,0,.5));
@@ -3368,8 +3383,8 @@ input {
 }
 
 /* ── what ends a turn ── */
-[data-style="dossier"] .resblk + .ev-stop { border-top: 1px solid var(--d-hair); margin: 0; padding: 8px 16px 10px; }
-[data-style="dossier"] .doutcome { padding: 8px 16px 10px; margin: 0; border-top: 1px solid var(--d-hair); }
+[data-style="dossier"] .resblk + .ev-stop { border-top: 1px solid var(--d-hair); margin: 0; padding: 9px 18px 11px; }
+[data-style="dossier"] .doutcome { padding: 9px 18px 11px; margin: 0; border-top: 1px solid var(--d-hair); }
 
 /* Hooks DOSSIER reads that every other language must not see. */
 .pnum { display: none; }

@@ -2280,6 +2280,10 @@ export function App() {
             ...themeVars(settings.theme),
             // The theme's corner, for the transcript's DOSSIER cards to read.
             "--prad": themePrad(settings.theme) || "0px",
+            // The theme's reading face, for DOSSIER's prose: the scroller pins
+            // JetBrains Mono inline (hud/Terminal), so nothing inside it could
+            // otherwise reach the voice this container was given.
+            ...(fontStack(settings.font, settings.theme) ? { "--ui-font": fontStack(settings.font, settings.theme) } : {}),
           } as CSSProperties}
         >
             {/* Three flush columns, each divided from the next by one hairline —
