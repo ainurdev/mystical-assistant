@@ -139,6 +139,15 @@ export function projectName(name: string | null | undefined): string {
   return projectLabels[rel] || projectNames[rel] || dirName(name);
 }
 
+/** Two letters that stand for a project on a monogram tile: the initials of
+ *  its first two words ("top-cbr-mux" → TC, "mystical-assistant" → MA), or the
+ *  first two letters of a one-word name ("rivendell" → RI). */
+export function projectInitials(name: string | null | undefined): string {
+  const words = projectName(name).split(/[\s/_.-]+/).filter(Boolean);
+  const two = words.length > 1 ? words[0][0] + words[1][0] : (words[0] ?? "?").slice(0, 2);
+  return two.toUpperCase();
+}
+
 /** The name a project was given, or "" — what a rename box starts from, since
  *  the display name may carry a parent folder that was never typed. */
 export function projectGivenName(name: string | null | undefined): string {

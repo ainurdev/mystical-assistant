@@ -506,6 +506,10 @@ export function App() {
     // alpha washes and borders authored for a dark ground are invisible on paper.
     if (isLight(settings.theme)) root.dataset.light = "";
     else delete root.dataset.light;
+    // Mirrored on <html> so menus portalled to <body> (ContextMenu, the
+    // lightbox, AgentsModal) sit under the same [data-theme] rules as the
+    // container they were opened from — a FLINT context menu is a FLINT one.
+    root.dataset.theme = settings.theme;
     // Palette themes override the design tokens on :root (not just the themed
     // wrapper) so the DERIVED tokens (--primary/--card/--border/--ac-*, defined
     // via var() in :root) re-resolve to the palette too. Filter themes clear

@@ -114,8 +114,8 @@ export function Brand() {
           style={{ transformOrigin: "50px 50px", transform: "rotate(45deg)" }}
         />
       </svg>
-      <span style={{ fontSize: "var(--t12)", letterSpacing: "2.6px", color: "var(--txb)", whiteSpace: "nowrap" }}>
-        MYSTICAL<span style={{ color: "var(--acc)" }}>//</span><span style={{ color: "var(--txd)" }}>ASSISTANT</span>
+      <span className="wordmark" style={{ fontSize: "var(--t12)", letterSpacing: "2.6px", color: "var(--txb)", whiteSpace: "nowrap" }}>
+        <span className="bw-a">MYSTICAL</span><span className="bw-sep" style={{ color: "var(--acc)" }}>//</span><span className="bw-b" style={{ color: "var(--txd)" }}>ASSISTANT</span>
       </span>
       </div>
       <span style={{ flex: 1, minWidth: 6 }} />

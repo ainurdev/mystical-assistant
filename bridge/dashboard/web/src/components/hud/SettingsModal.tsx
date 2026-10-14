@@ -58,6 +58,7 @@ import {
   AURORA_KEYS,
   BASE_FONTS,
   CLAUDE_KEYS,
+  FLINT_KEYS,
   FONTS,
   fontStack,
   isLight,
@@ -1106,8 +1107,9 @@ type ThemeCard = { key: ThemeKey; variants?: ThemeKey[] };
 const CARDS: ThemeCard[] = [
   { key: "aqua", variants: AURORA_KEYS },
   { key: "claude", variants: CLAUDE_KEYS },
+  { key: "flint-ember", variants: FLINT_KEYS },
   ...THEME_DEFS
-    .filter((t) => !AURORA_KEYS.includes(t.key) && !CLAUDE_KEYS.includes(t.key))
+    .filter((t) => !AURORA_KEYS.includes(t.key) && !CLAUDE_KEYS.includes(t.key) && !FLINT_KEYS.includes(t.key))
     .map((t) => ({ key: t.key })),
 ];
 
@@ -1249,6 +1251,13 @@ function ThemeCardGrid({
                 {card.variants.map((k) => {
                   const c = themeDef(k);
                   const live = settings.theme === k;
+                  // A two-role variant (FLINT) shows both of its hues — you and
+                  // what waits on you — and its name, since four orange/magenta
+                  // splits are told apart by which side is which.
+                  const ask = c.pal?.ask;
+                  const fill = c.pal?.acc2
+                    ? `linear-gradient(90deg, ${comp(c.sw)}, ${comp(c.pal.acc2)})`
+                    : ask ? `linear-gradient(90deg, ${comp(c.sw)} 50%, ${comp(ask)} 50%)` : comp(c.sw);
                   return (
                     <button
                       key={k}
@@ -1258,13 +1267,19 @@ function ThemeCardGrid({
                         appearance: "none",
                         cursor: "pointer",
                         flex: 1,
-                        height: 12,
+                        height: ask ? 16 : 12,
                         padding: 0,
-                        background: comp(c.sw),
+                        background: fill,
                         border: `1px solid ${live ? comp("#f2fbf9") : "rgba(0,0,0,.45)"}`,
                         borderRadius: t.prad || "0",
+                        fontSize: "var(--t7)",
+                        letterSpacing: 0.8,
+                        fontWeight: 600,
+                        color: "#140a06",
                       }}
-                    />
+                    >
+                      {ask ? k.split("-")[1].toUpperCase() : null}
+                    </button>
                   );
                 })}
               </div>

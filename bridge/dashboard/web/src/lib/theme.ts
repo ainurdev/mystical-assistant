@@ -37,7 +37,11 @@ export type ThemeKey =
   | "signal"
   | "foundry"
   | "cupertino"
-  | "graphite";
+  | "graphite"
+  | "flint-ember"
+  | "flint-fuchsia"
+  | "flint-sunset"
+  | "flint-kiln";
 
 /**
  * AURORA is one theme in four colours — same glass, same CRT, only the
@@ -72,7 +76,13 @@ export function isLight(t: ThemeKey): boolean {
   return LIGHT_KEYS.includes(t);
 }
 
-const FAMILIES: ThemeKey[][] = [AURORA_KEYS, CLAUDE_KEYS];
+/** FLINT is one dark theme in four colourings. Unlike CLAUDE's accents these
+ *  are not one hue swapped: each sets TWO roles — `acc` is you (your prompt,
+ *  the active row, SEND) and `ask` is what waits on you (a question, a
+ *  permission) — and SUNSET and KILN move the ground too. */
+export const FLINT_KEYS: ThemeKey[] = ["flint-ember", "flint-fuchsia", "flint-sunset", "flint-kiln"];
+
+const FAMILIES: ThemeKey[][] = [AURORA_KEYS, CLAUDE_KEYS, FLINT_KEYS];
 
 /** Two keys that are the same profile in another colour/ground. */
 export function sameFamily(a: ThemeKey, b: ThemeKey): boolean {
@@ -136,6 +146,30 @@ const CLAUDE_DEFS: ThemeDef[] = CLAUDE_ACCENTS.map(([key, name, feel, acc]) => (
   font: "ui-sans-serif,-apple-system,'Segoe UI',system-ui,sans-serif", prad: "8px", chat: "dossier",
   pal: { ...CLAUDE_PAL, acc, "accent-rgb": rgbTriplet(acc) },
 }));
+
+// FLINT: neutral graphite, flat, hairline-ruled, Geist. One ink ladder and one
+// set of semantics for all four; the variants differ in ground and in which hue
+// carries which role. `ask` (what waits on you), `acc2` (SUNSET's gradient end),
+// `tool` and `think` are extra roles only FLINT's stylesheet reads (index.css,
+// FLINT) — a quiet steel and a muted lilac, so the work never wears an accent.
+const FLINT_INK: Record<string, string> = { ok: "#30d158", warn: "#f5c542", err: "#ff5d5d", "err-hi": "#ff8a85", "err-b": "#ffb3ae", "err-g": "#8a4d4a", info: "#64b5ff", "info-hi": "#93cbff", "info-b": "#c3e2ff", purple: "#c49bff", "purple-d": "#b585ff", "purple-h": "#d5b8ff", "purple-b": "#e6d6ff", "purple-g": "#6f6290", tool: "#9fb3cc", think: "#b8a9d9", txb: "#fafafa", txh: "#ececef", tx: "#d4d4d8", txm: "#b4b4bc", txd: "#9a9aa3", txf: "#8d8d96", txl: "#808089", txg: "#55555c", panel: "#18181b", panel2: "#131315", panel3: "#0e0e10", canvas: "#0c0c0e", mono: "'Geist Mono','JetBrains Mono',ui-monospace,monospace" };
+const FLINT_WARM: Record<string, string> = { tool: "#b9b0a6", think: "#c3a9d6", txb: "#fbf7f3", txh: "#efe9e3", tx: "#d8d2cc", txm: "#bbb3aa", txd: "#a0978d", txf: "#938a80", txl: "#867d73", txg: "#5a534c", panel: "#1b1816", panel2: "#151311", panel3: "#0f0d0c", canvas: "#0e0c0b" };
+const FLINT_KILN: Record<string, string> = { tool: "#8e98a8", think: "#a8a2b8", panel: "#141415", panel2: "#0f0f10", panel3: "#0a0a0b", canvas: "#09090a" };
+const ORANGE = "#ff8a3d", MAGENTA = "#ff4fa3";
+const FLINT_VARIANTS: [ThemeKey, string, string, string, string, Record<string, string>][] = [
+  ["flint-ember", "FLINT", "graphite · orange is you, magenta waits on you", ORANGE, MAGENTA, {}],
+  ["flint-fuchsia", "FLINT FUCHSIA", "graphite · magenta is you, orange waits on you", MAGENTA, ORANGE, {}],
+  ["flint-sunset", "FLINT SUNSET", "warm graphite · one orange → magenta gradient", "#ff7a45", "#ec4fa9", { ...FLINT_WARM, acc2: "#e64aa8" }],
+  ["flint-kiln", "FLINT KILN", "near-black · no tints, accents only as bars", ORANGE, MAGENTA, FLINT_KILN],
+];
+const FLINT_DEFS: ThemeDef[] = FLINT_VARIANTS.map(([key, name, feel, acc, ask, over]) => {
+  const pal: Record<string, string> = { ...FLINT_INK, ...over, acc, ask, "acc-on": "#160b05", "accent-rgb": rgbTriplet(acc) };
+  return {
+    key, name, feel, filter: "none", ops: [], sw: acc, bg: "rgba(10,10,12,.55)", pbg: pal.canvas,
+    crt: false, swp: false, glw: false, canvas: pal.canvas,
+    font: "'Geist',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "10px", chat: "dossier", pal,
+  };
+});
 
 export const THEME_DEFS: ThemeDef[] = [
   { key: "aqua", name: "AURORA", feel: "orbital glass · clean signal", filter: "none", ops: [], sw: "#7fe9d8", bg: "rgba(10,26,32,.55)", pbg: "#04090b", crt: true, swp: true, glw: true, canvas: "#060a0a", font: "", prad: "0", chat: "dossier" },
@@ -262,6 +296,7 @@ export const THEME_DEFS: ThemeDef[] = [
   // GRAPHITE — the same Mac after dark: Apple's dark-mode system colours as they
   // ship, on the window grey, SF and SF Mono, AppKit radii. No CRT.
   { key: "graphite", name: "GRAPHITE", feel: "system dark · San Francisco & blue", filter: "none", ops: [], sw: "#0a84ff", bg: "rgba(28,28,30,.55)", pbg: "#1c1c1e", crt: false, swp: false, glw: false, canvas: "#1c1c1e", font: "-apple-system,BlinkMacSystemFont,system-ui,'Segoe UI',sans-serif", prad: "10px", chat: "dossier", pal: { acc: "#0a84ff", "acc-on": "#ffffff", "accent-rgb": "10 132 255", ok: "#30d158", warn: "#ffd60a", err: "#ff453a", "err-hi": "#ff6b63", "err-b": "#ff928c", "err-g": "#8a4a46", info: "#64d2ff", "info-hi": "#8fdfff", "info-b": "#b9ecff", purple: "#bf5af2", "purple-d": "#ad4fe0", "purple-h": "#cf7ef6", "purple-b": "#dfa6f9", "purple-g": "#7a5a8a", txb: "#ffffff", txh: "#f2f2f7", tx: "#e5e5ea", txm: "#c7c7cc", txd: "#aeaeb2", txf: "#9f9fa4", txl: "#8e8e93", txg: "#636366", panel: "#2c2c2e", panel2: "#27272a", panel3: "#212124", canvas: "#1c1c1e", mono: "ui-monospace,SFMono-Regular,Menlo,monospace" } },
+  ...FLINT_DEFS,
 ];
 
 export const THEMES: ThemeKey[] = THEME_DEFS.map((t) => t.key);
@@ -294,6 +329,7 @@ export const FONTS: { key: string; label: string; stack: string }[] = [
   { key: "hud", label: "SHARE TECH", stack: '"Share Tech Mono","JetBrains Mono",ui-monospace,monospace' },
   { key: "jetbrains", label: "JETBRAINS", stack: "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
   { key: "spacemono", label: "SPACE MONO", stack: "'Space Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
+  { key: "geist", label: "GEIST", stack: "'Geist',system-ui,-apple-system,sans-serif" },
   { key: "system", label: "SYSTEM", stack: "system-ui,-apple-system,'Segoe UI',sans-serif" },
   { key: "work", label: "WORK SANS", stack: "'Work Sans',system-ui,-apple-system,sans-serif" },
   { key: "grotesk", label: "GROTESK", stack: "'Space Grotesk',system-ui,-apple-system,sans-serif" },

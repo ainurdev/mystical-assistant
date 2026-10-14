@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BellRing, FolderTree, History, Puzzle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -234,8 +235,8 @@ function SessionRow({
         {metaShow && (
           <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
             {projShown && (
-              <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: tint.color }}>
-                {projectName(s.project)}
+              <span className="sessproj" style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: tint.color }}>
+                <ProjectTile project={s.project} />{projectName(s.project)}
               </span>
             )}
             {branchShown && (
@@ -893,7 +894,7 @@ export function SessionsPanel(props: Props) {
   ];
 
   const laneHead = (it: Extract<LaneItem, { k: "head" }>) => (
-    <div style={{ display: "flex", alignItems: "center", gap: 9, height: 24, padding: "0 6px", marginTop: it.first ? 0 : 16 }}>
+    <div className="lanehead" style={{ display: "flex", alignItems: "center", gap: 9, height: 24, padding: "0 6px", marginTop: it.first ? 0 : 16 }}>
       <span className="sessdot" data-work={it.pulse}
             style={{ flex: "none", width: 6, height: 6, borderRadius: "50%", background: it.tint }} />
       <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: ".22em", color: it.tint }}>{it.label}</span>
@@ -936,7 +937,7 @@ export function SessionsPanel(props: Props) {
             );
           })}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, height: 38, marginTop: 11, position: "relative",
+        <div className="sess-search" style={{ display: "flex", alignItems: "center", gap: 10, height: 38, marginTop: 11, position: "relative",
                       borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)" }}>
           <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flex: "none" }} aria-hidden="true">
             <circle cx="5" cy="5" r="3.6" stroke="var(--txl)" strokeWidth="1.3" />
@@ -1034,7 +1035,7 @@ export function SessionsPanel(props: Props) {
 
         {mode === "projects" ? (
           <button
-            onClick={() => setNpOpen((o) => !o)} title="scaffold a new repo and start its first session"
+            className="newsess" onClick={() => setNpOpen((o) => !o)} title="scaffold a new repo and start its first session"
             onMouseEnter={() => setHov("newproj")} onMouseLeave={() => setHov("")}
             style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", height: 34, marginTop: 11, padding: "0 10px",
                      border: 0, borderRadius: 3,
@@ -1049,7 +1050,7 @@ export function SessionsPanel(props: Props) {
           </button>
         ) : (
           <button
-            onClick={toggleForm} title="start a session — current worktree or a new one"
+            className="newsess" onClick={toggleForm} title="start a session — current worktree or a new one"
             onMouseEnter={() => setHov("new")} onMouseLeave={() => setHov("")}
             style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", height: 34, marginTop: 11, padding: "0 10px",
                      border: 0, borderRadius: 3,
@@ -1133,7 +1134,8 @@ export function SessionsPanel(props: Props) {
                     style={{ display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", userSelect: "none",
                              cursor: order === "custom" && !sq ? "grab" : "pointer" }}
                   >
-                    <span style={{ flex: "none", width: 6, height: 6, background: tint.color }} />
+                    <span className="pdot" style={{ flex: "none", width: 6, height: 6, background: tint.color }} />
+                    <ProjectTile project={g.rel} />
                     {/* A label, not a destination — a tier under the session titles so they read first. */}
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>

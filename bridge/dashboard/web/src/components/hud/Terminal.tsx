@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { ProjectTile } from "../ui/ProjectTile";
 import { type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
@@ -483,13 +484,14 @@ export function Terminal({
           onClick={openMenu}
           onMouseEnter={() => setTitleHov(true)} onMouseLeave={() => setTitleHov(false)}
           style={{ display: "flex", alignItems: "baseline", gap: 7, minWidth: 0, maxWidth: "100%", padding: 0, border: 0, appearance: "none", background: "transparent", fontFamily: "inherit", textAlign: "left", cursor: sessionId ? "pointer" : "default" }}>
-          <span style={{ fontSize: "var(--t13)", lineHeight: "16px", letterSpacing: ".3px", color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+          <span className="np-title" style={{ fontSize: "var(--t13)", lineHeight: "16px", letterSpacing: ".3px", color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
             {selected?.title || "new session"}
           </span>
           {sessionId && <span aria-hidden style={{ flex: "none", fontSize: "var(--t9)", color: titleHov ? "var(--txb)" : "var(--txl)" }}>▾</span>}
         </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
+        <div className="np-meta" style={{ display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
           <button
+            className="np-proj"
             title={sessionProject ? "project — analyze, design system, new session here" : undefined}
             data-ctx-type={sessionProject ? "project" : undefined}
             data-ctx-id={sessionProject ?? undefined}
@@ -499,7 +501,8 @@ export function Terminal({
             onMouseEnter={() => setProjHov(true)} onMouseLeave={() => setProjHov(false)}
             style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t9)", color: projHov ? "var(--txb)" : "var(--txm)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionProject ? "pointer" : "default" }}>
             {/* The per-project tint dot is the only colour identifying the project now. */}
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
+            <span className="pdot" style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
+            {sessionProject && <ProjectTile project={sessionProject} />}
             {projectLabel || "—"}
           </button>
           {branch && (

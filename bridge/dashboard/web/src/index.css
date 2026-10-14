@@ -4018,6 +4018,205 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 [data-theme="void"] .isle-glass { background: rgba(25, 25, 25, 0.94) !important; }
 
+/* === FLINT =================================================================
+   One dark theme in four colourings (lib/theme FLINT_DEFS): neutral graphite,
+   flat, hairline-ruled, rounded, set in Geist. Where AURORA is a HUD, FLINT is
+   an editor: nothing glows, no corner brackets, every surface is a grey step
+   and a 1px line, and colour is spent on exactly two roles —
+     --acc  you          your prompt, the open session, SEND, focus
+     --ask  waits on you a question, a permission
+   SUNSET runs --acc → --acc2 as a gradient where you act; KILN drops every tint
+   and keeps the two hues as bars and frames only.
+
+   The derived tokens are re-pointed first: the HUD's hairlines and hover washes
+   are all accent-at-alpha (--border, --ac-NN), which on FLINT would draw an
+   orange grid over everything. Here they are neutral, and the accent is applied
+   by name where it means something. */
+[data-theme^="flint"] {
+  --line: color-mix(in oklab, var(--txl) 26%, var(--canvas));
+  --line2: color-mix(in oklab, var(--txl) 40%, var(--canvas));
+  --border: var(--line); --border-bright: var(--line2); --input: var(--line2);
+  --ac-03: rgba(255,255,255,.025); --ac-06: rgba(255,255,255,.045); --ac-08: rgba(255,255,255,.06);
+  --ac-12: rgba(255,255,255,.085); --ac-16: rgba(255,255,255,.11); --ac-20: rgba(255,255,255,.13); --ac-22: rgba(255,255,255,.15);
+  --card: var(--panel2); --popover: var(--panel); --code-bg: var(--panel3);
+  --shadow-pop: rgba(0,0,0,.55); --shadow-modal: rgba(0,0,0,.7);
+  --f-rad: 10px; --f-rad-s: 7px; --f-rad-l: 14px;
+  --f-you: color-mix(in oklab, var(--acc) 10%, var(--panel));
+  --f-grad: var(--acc);
+  --ui-font: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+[data-theme="flint-sunset"] { --f-grad: linear-gradient(100deg, var(--acc), var(--acc2)); }
+[data-theme="flint-kiln"] { --f-you: var(--panel); }
+
+/* no HUD furniture: brackets, glow, scanline-era square corners */
+[data-theme^="flint"] .panel::before,
+[data-theme^="flint"] .panel::after { display: none; }
+[data-theme^="flint"] .glow { text-shadow: none; }
+[data-theme^="flint"] .panel { border-radius: var(--f-rad-l); }
+[data-theme^="flint"] :is(button, input, textarea, select) { border-radius: var(--f-rad-s); }
+/* every inline JetBrains pin (139 of them, across the shell) reads FLINT's
+   mono instead. ponytail: an attribute match on the inline style rather than a
+   class on each site — it costs nothing until a component stops writing the
+   literal, and then that one site simply keeps JetBrains. */
+[data-theme^="flint"] [style*="JetBrains Mono"] { font-family: var(--mono) !important; }
+
+/* ── project monogram (components/ui/ProjectTile) ── */
+.ptile { display: none; }
+[data-theme^="flint"] .ptile {
+  display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; margin-right: 6px;
+  border-radius: 5px; vertical-align: middle;
+  font: 600 9px/1 var(--ui-font); letter-spacing: .02em; font-style: normal;
+  color: color-mix(in oklab, var(--pc) 30%, white);
+  background: color-mix(in oklab, var(--pc) 26%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 45%, transparent);
+}
+[data-theme^="flint"] .pdot { display: none; }
+[data-theme^="flint"] .sessproj { display: inline-flex; align-items: center; font-weight: 500; font-family: var(--ui-font); }
+
+/* ── the shells: left column, right column, rail ── */
+[data-theme^="flint"] .shellcol { background: var(--canvas); }
+[data-theme^="flint"] .sess-search {
+  margin: 12px 2px 4px; height: 34px !important; padding: 0 10px; border: 1px solid var(--line) !important;
+  border-radius: var(--f-rad-s); background: var(--panel2);
+}
+[data-theme^="flint"] .sess-search input { font-family: var(--ui-font) !important; font-size: var(--t12) !important; }
+[data-theme^="flint"] .sessrow { border-radius: var(--f-rad-s); margin: 1px 0; border-left: 0 !important; }
+[data-theme^="flint"] .sessrow::before { left: 0; top: 7px; bottom: 7px; width: 2px; border-radius: 2px; background: var(--acc); }
+[data-theme^="flint"] .sessrow[data-on="true"] { background: var(--panel) !important; box-shadow: inset 0 0 0 1px var(--line); }
+[data-theme^="flint"] .sessrow:hover { background: var(--ac-06) !important; }
+[data-theme^="flint"] .sessrow > div > span:first-child { font-family: var(--ui-font); letter-spacing: -.005em; }
+/* PROJECTS: a project heads its sessions, which hang off a rail centred under
+   its tile (18px tile, 6px row padding → rail centre at 15px) */
+[data-theme^="flint"] .projhead { height: 30px !important; padding: 0 6px !important; gap: 0 !important; border-radius: var(--f-rad-s); }
+[data-theme^="flint"] .projhead .ptile { width: 18px; height: 18px; margin-right: 9px; }
+[data-theme^="flint"] .projhead > span:nth-of-type(2) {
+  font-family: var(--ui-font) !important; font-size: var(--t12) !important; font-weight: 600; letter-spacing: 0 !important;
+  color: color-mix(in oklab, var(--pc, var(--txb)) 0%, var(--txb)) !important;
+}
+[data-theme^="flint"] .projgrp .sessrow { margin-left: 14.5px; border-left: 1px solid var(--line2) !important; border-radius: 0 var(--f-rad-s) var(--f-rad-s) 0; }
+[data-theme^="flint"] .projgrp .sessrow[data-on="true"] { border-left-color: var(--acc) !important; }
+[data-theme^="flint"] .projgrp .sessrow::before { display: none; }
+
+/* ── the chat header island ── */
+[data-theme^="flint"] .isle {
+  border: 1px solid var(--line) !important; border-radius: var(--f-rad-l) !important;
+  box-shadow: none !important;
+}
+[data-theme^="flint"] .isle-pill { border-radius: 999px !important; }
+[data-theme^="flint"] .isle-glass { background: color-mix(in oklab, var(--panel) 94%, transparent) !important; }
+[data-theme^="flint"] .isle button:first-child > span { font-family: var(--ui-font); }
+[data-theme^="flint"] .np-meta { height: 20px !important; }
+[data-theme^="flint"] .np-proj { font-family: var(--ui-font) !important; font-size: var(--t11) !important; font-weight: 500; color: var(--txh) !important; }
+[data-theme^="flint"] .np-proj .ptile { width: 16px; height: 16px; font-size: 8px; margin-right: 2px; }
+
+/* ── composer ── */
+[data-theme^="flint"] .composer {
+  border-top: 1px solid var(--line) !important; background: var(--canvas) !important; padding: 12px 18px 16px !important;
+}
+[data-theme^="flint"] .cmdbox {
+  border: 1px solid var(--line2) !important; border-radius: var(--f-rad-l); background: var(--panel) !important;
+  padding: 12px 14px !important; font-family: var(--ui-font) !important;
+}
+[data-theme^="flint"] .cmdbox:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--line2)) !important;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
+[data-theme^="flint"] .cmdbox[data-drag] { border-color: var(--acc) !important; }
+[data-theme^="flint"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--ui-font) !important; }
+[data-theme^="flint"] .cmdbox > span:first-child { display: none; }
+[data-theme^="flint"] .drop-btn, [data-theme^="flint"] .run-trigger {
+  border: 1px solid var(--line) !important; background: var(--panel2) !important; border-radius: var(--f-rad-s) !important;
+  font-family: var(--ui-font) !important; font-size: var(--t11) !important; letter-spacing: 0 !important; color: var(--txh) !important;
+  padding-block: 5px !important;
+}
+[data-theme^="flint"] .drop-btn:hover, [data-theme^="flint"] .run-trigger:hover { border-color: var(--line2) !important; background: var(--panel) !important; }
+[data-theme^="flint"] .ctrl-fld { color: var(--acc); }
+[data-theme^="flint"] .ctrl-verb, [data-theme^="flint"] .ctrl-more { font-family: var(--ui-font); letter-spacing: .02em; text-transform: none; }
+[data-theme^="flint"] .ctrl-ctx .seg i { border-radius: 2px; }
+[data-theme^="flint"] .act-glyph { border-color: var(--line); border-radius: var(--f-rad-s); }
+[data-theme^="flint"] .act-fence { background: var(--line); }
+[data-theme^="flint"] :is(.act-alt, .act-pri) { font-family: var(--ui-font); letter-spacing: .02em; border-radius: var(--f-rad-s); font-size: var(--t11); font-weight: 600; }
+[data-theme^="flint"] .act-alt.neutral { border-color: var(--line2); }
+[data-theme^="flint"] .act-pri { box-shadow: none; background: var(--f-grad); border-color: transparent; color: var(--acc-on); }
+[data-theme="flint-sunset"] .act-pri { color: #fff; }
+[data-theme^="flint"] .act-pri.queue { background: var(--ask); color: var(--acc-on); }
+[data-theme^="flint"] .act-pri:disabled { background: transparent; border-color: var(--line); color: var(--txl); }
+[data-theme^="flint"] .effort-slider { accent-color: var(--acc); }
+
+/* ── every floating surface: menus, popovers, the run popover, the context
+   menu, tips, the bell. ponytail: these are hand-rolled inline (no shared
+   Popover exists), and all of them name --shadow-pop in their inline style —
+   so that string is the selector. A new popover that follows the recipe is
+   themed for free; one that doesn't is themed by nothing, and shows it. ── */
+[data-theme^="flint"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]):not(.isle):not(.sessrow) {
+  border: 1px solid var(--line2) !important; border-radius: var(--f-rad) !important;
+  background: var(--panel) !important; box-shadow: 0 18px 44px -14px rgba(0,0,0,.75), 0 0 0 1px rgba(0,0,0,.4) !important;
+  overflow: hidden; font-family: var(--ui-font);
+}
+[data-theme^="flint"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri) {
+  border-bottom-color: transparent !important; font-family: var(--ui-font) !important; letter-spacing: 0 !important;
+}
+[data-theme^="flint"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri):hover {
+  background: var(--ac-08) !important;
+}
+[data-theme^="flint"] :is([style*="--shadow-pop"], [role="dialog"]) [style*="acc) 10%"] { background: var(--f-you) !important; }
+/* dialogs and modals: one step bigger, a scrim behind them */
+[data-theme^="flint"] [style*="--shadow-modal"] {
+  border: 1px solid var(--line2) !important; border-radius: 16px !important; background: var(--panel) !important;
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,.85) !important; overflow: hidden;
+}
+
+/* ── the transcript: DOSSIER's roles re-pointed at FLINT's two hues ── */
+[data-theme^="flint"] [data-style="dossier"] {
+  --d-you: var(--acc); --d-ask: var(--ask); --d-tool: var(--tool); --d-think: var(--think);
+  --d-face: var(--ui-font); --d-rad: 12px;
+}
+[data-theme^="flint"] .mscroll[data-style] { font-family: var(--mono) !important; }
+[data-theme="flint-kiln"] [data-style="dossier"] { --d-tint: 0%; }
+[data-theme="flint-sunset"] [data-style="dossier"] .dprompt {
+  background: linear-gradient(100deg, color-mix(in oklab, var(--acc) 12%, var(--panel)), color-mix(in oklab, var(--acc2) 8%, var(--panel)) 60%, var(--panel));
+  border-image: linear-gradient(var(--acc), var(--acc2)) 1 0 1 1 / 0 0 0 4px;
+}
+[data-theme="flint-sunset"] .pnum { background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
+
+/* the context menu's rows: Geist, no tracking, a rounded hover */
+[data-theme^="flint"] [data-ctxmenu] { width: 232px !important; padding: 2px; }
+[data-theme^="flint"] [data-ctxmenu] > div:first-child { border-bottom-color: var(--line) !important; }
+[data-theme^="flint"] [data-ctxmenu] button { border-radius: var(--f-rad-s) !important; margin: 1px 4px; width: calc(100% - 8px) !important; font-size: var(--t115) !important; }
+[data-theme^="flint"] [data-ctxmenu] button span { letter-spacing: 0 !important; font-family: var(--ui-font); }
+[data-theme^="flint"] [data-ctxmenu] [style*="acc) 12%"] { background: var(--line) !important; }
+
+/* The HUD tracks every uppercase label 1.5–2.6px wide, inline. FLINT keeps the
+   capitals but sets them the way an editor does — Geist, a hair of tracking.
+   ponytail: matched on the inline style's text, like the font pins above. */
+[data-theme^="flint"] [style*="letter-spacing"] { letter-spacing: .04em !important; }
+[data-theme^="flint"] .np-title { font-family: var(--ui-font) !important; font-weight: 600; letter-spacing: -.005em !important; font-size: var(--t13) !important; }
+/* dialogs read in Geist throughout; code-ish fields keep a mono via their own classes */
+[data-theme^="flint"] [style*="--shadow-modal"] { font-family: var(--ui-font) !important; }
+[data-theme^="flint"] [style*="--shadow-modal"] [style*="JetBrains Mono"]:not(input):not(textarea):not(pre) { font-family: var(--ui-font) !important; }
+[data-theme^="flint"] .setrail, [data-theme^="flint"] .setrail button { font-family: var(--ui-font); letter-spacing: .03em; }
+[data-theme^="flint"] .setrail button { border-radius: var(--f-rad-s); }
+[data-theme^="flint"] .setrail button.on { background: var(--f-you); box-shadow: inset 2px 0 0 var(--acc); }
+
+/* ── words FLINT says in its own voice: the wordmark in lower case, the
+   lane and tier labels in Geist rather than the HUD's tracked mono ── */
+[data-theme^="flint"] .wordmark { font-family: var(--ui-font) !important; font-size: var(--t14, 15px) !important; letter-spacing: -.01em !important; text-transform: lowercase; }
+[data-theme^="flint"] .wordmark .bw-a { font-weight: 600; }
+[data-theme^="flint"] .wordmark .bw-sep { display: none; }
+[data-theme^="flint"] .wordmark .bw-b { margin-left: .3em; }
+[data-theme^="flint"] .newsess {
+  justify-content: center; border: 1px solid var(--line2) !important; border-radius: var(--f-rad-s) !important;
+  background: transparent !important; color: var(--txb) !important;
+  font-family: var(--ui-font) !important; font-size: var(--t12) !important; font-weight: 500; letter-spacing: 0 !important; text-transform: none !important;
+}
+[data-theme^="flint"] .newsess:hover { background: var(--ac-06) !important; }
+[data-theme^="flint"] .newsess svg { color: var(--acc); }
+[data-theme^="flint"] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
+[data-theme^="flint"] .lanehead > span:nth-child(3) { background: transparent !important; }
+[data-theme^="flint"] :is(.pnum, .res-head, .dwork-lab, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
+[data-theme^="flint"] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
+
+/* ── the settings modal's own furniture ── */
+[data-theme^="flint"] .setrail { font-family: var(--ui-font); }
+
 /* MOVE dock (components/hud/MoveDock.tsx): the SWEEP bar's running sheen. */
 .movesweep { animation: movesweep 2.2s linear infinite; }
 @keyframes movesweep { from { background-position: 100% 0; } to { background-position: -50% 0; } }
