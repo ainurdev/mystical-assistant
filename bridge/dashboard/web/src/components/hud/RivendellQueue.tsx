@@ -22,7 +22,10 @@ const rid = (it: RivendellQueueItem) => `${it.instance_id}|${it.key}`;
  *  tab is showing — requests arrive over the worker's websocket, with no
  *  dashboard event to announce them. Accept claims and starts an autonomous run
  *  (concurrently: each run isolates itself in its own worktree). Reject confirms,
- *  then fails the request back so a later catch-up does not resurrect it. */
+ *  then fails the request back so a later catch-up does not resurrect it. An
+ *  `offered` row is a teammate's job: the worker never starts it by itself, so
+ *  ACCEPT confirms too (it runs here with your accounts), and REJECT only drops
+ *  it from this queue. */
 export function RivendellQueue({ active }: { active: boolean }) {
   const [items, setItems] = useState<RivendellQueueItem[] | null>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
@@ -39,11 +42,15 @@ export function RivendellQueue({ active }: { active: boolean }) {
   }, [active]);
 
   const decide = async (it: RivendellQueueItem, accept: boolean) => {
-    if (!accept) {
-      const ok = await askConfirm(
-        `Reject this ${labelOf(it)} request${it.label ? ` — ${it.label}` : ""}? Rivendell asks its requester what to do next.`);
-      if (!ok) return;
-    }
+    const what = `${labelOf(it)} request${it.label ? ` — ${it.label}` : ""}`;
+    const ask = accept
+      ? (it.offered
+          ? `Run a teammate's ${what} on this machine? It uses your accounts (git, Claude, Rivendell), so whatever it creates carries your name.`
+          : null)
+      : it.offered
+        ? `Dismiss this offered ${what}? It stays available to the other bridges.`
+        : `Reject this ${what}? Rivendell asks its requester what to do next.`;
+    if (ask && !(await askConfirm(ask))) return;
     const id = rid(it);
     setBusy((b) => new Set(b).add(id));
     try {
@@ -91,6 +98,10 @@ export function RivendellQueue({ active }: { active: boolean }) {
                 <span style={{ display: "flex", gap: 7, fontSize: "var(--t9)", color: "var(--txl)" }}>
                   <span style={{ color: "var(--purple-g)" }}>{it.instance}</span>
                   <span>{ago(it.created_at)}</span>
+                  {it.offered && (
+                    <span title="A teammate's job, opened to every bridge — it only runs here if you accept it"
+                          style={{ color: "var(--warn)", letterSpacing: 1, whiteSpace: "nowrap" }}>OFFERED</span>
+                  )}
                 </span>
               </div>
               {/* Buttons ride in on hover — quiet until you reach for them, but

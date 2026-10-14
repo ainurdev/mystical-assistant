@@ -521,6 +521,9 @@ export interface RivendellQueueItem {
   label: string | null;        // the batch's name, else the slug
   link: string | null;         // the batch's Rivendell page
   mode?: "queue" | "subagents" | null;
+  /** A teammate's job Rivendell opened to every bridge: the worker never runs
+   *  it on its own — it waits here for ACCEPT, and runs with this machine's accounts. */
+  offered?: boolean;
   session_id?: string | null;  // running rows: the session here that runs it
 }
 /** One open task on the RIVENDELL tab (bridge/rivendell.py tasks()): in a

@@ -93,6 +93,15 @@ ones this bridge refused while the requester is deciding. A claim refused with
 409 (another bridge's, or waiting for its requester's) is simply not ours:
 nothing runs and nothing is posted.
 
+A request Rivendell opened to every bridge — a Sentry critical, or one its
+requester sent on after a hand-off — arrives flagged ``offered`` (on the frame
+and on catch-up rows). It is a teammate's job that would run here with this
+machine's accounts, so it is never auto-accepted or drained: it waits for an
+explicit ACCEPT/Approve, the Telegram ping says whose it is, and dismissing it
+only drops it here (a non-requester's refuse is a no-op there, and the
+claim+FAIL fallback would steal it). A Rivendell that sends no flag changes
+nothing.
+
 Accepted runs are concurrent: the request prompts instruct each run to work in
 its own git worktree, so runs no longer race a shared checkout the way the old
 single serial consumer had to guard against. Each accept spawns its own run
@@ -789,7 +798,7 @@ class Worker:
             before = len(self._pending)
         try:
             for item in self._api("/plugin/review-requests"):
-                self._apply_policy(self._enqueue("review", item["id"], item.get("repositoryFullName")))
+                self._apply_policy(self._enqueue("review", item["id"], item.get("repositoryFullName"), offered=bool(item.get("offered"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: review catch-up failed: {e}")
         try:
@@ -797,46 +806,47 @@ class Worker:
                 if self._reattach(item):
                     continue
                 self._apply_policy(self._enqueue("impl", item["id"], item.get("repositoryFullName"),
-                                                 batch=_batch_of(item.get("batch"))))
+                                                 batch=_batch_of(item.get("batch")), offered=bool(item.get("offered"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: implementation catch-up failed: {e}")
         try:
             for item in self._api("/plugin/todolist-requests"):
                 self._apply_policy(self._enqueue(
                     "todolist", item["id"], item.get("projectName"),
-                    step=_todolist_step(item.get("kind"))))
+                    step=_todolist_step(item.get("kind")), offered=bool(item.get("offered"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: todolist catch-up failed: {e}")
         try:
             for item in self._api("/plugin/task-description-requests"):
-                self._apply_policy(self._enqueue("taskdesc", item["id"], item.get("taskName")))
+                self._apply_policy(self._enqueue("taskdesc", item["id"], item.get("taskName"), offered=bool(item.get("offered"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: task-description catch-up failed: {e}")
         try:
             for item in self._api("/plugin/changelog-requests"):
-                self._apply_policy(self._enqueue("changelog", item["id"], item.get("projectName")))
+                self._apply_policy(self._enqueue("changelog", item["id"], item.get("projectName"), offered=bool(item.get("offered"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: changelog catch-up failed: {e}")
         try:
             for item in self._api("/plugin/news-requests"):
-                self._apply_policy(self._enqueue("news", item["id"], item.get("userName")))
+                self._apply_policy(self._enqueue("news", item["id"], item.get("userName"), offered=bool(item.get("offered"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: news catch-up failed: {e}")
         try:
             for item in self._api("/plugin/deck-requests"):
-                self._apply_policy(self._enqueue("deck", item["id"], item.get("siteTitle")))
+                self._apply_policy(self._enqueue("deck", item["id"], item.get("siteTitle"), offered=bool(item.get("offered"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: deck catch-up failed: {e}")
         try:
             for item in self._api("/plugin/video-requests"):
-                self._apply_policy(self._enqueue("video", item["id"], item.get("fileName")))
+                self._apply_policy(self._enqueue("video", item["id"], item.get("fileName"), offered=bool(item.get("offered"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: video catch-up failed: {e}")
         with self._q_lock:
             return len(self._pending) - before
 
     def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None,
-                 step: "str | None" = None, batch: "dict | None" = None) -> "str | None":
+                 step: "str | None" = None, batch: "dict | None" = None,
+                 offered: bool = False) -> "str | None":
         """Hold a request PENDING for the operator, deduped per _seen. It adds
         the row and nothing more — running (or auto-accepting, or pinging
         Telegram, or acking) is _apply_policy's job, kept separate so the
@@ -846,7 +856,8 @@ class Worker:
         `step` tells a todolist's two steps apart ("recommendations" /
         "todolist"); None when the sender did not say (an older rivendell-api).
         `batch` is the start-work batch this request belongs to (_batch_of),
-        None for a task on its own."""
+        None for a task on its own. `offered` marks a teammate's job Rivendell
+        opened to every bridge: such a row only ever runs on an explicit accept."""
         key = f"{kind}:{request_id}"
         with self._seen_lock:
             dup = key in self._seen
@@ -866,6 +877,7 @@ class Worker:
             self._pending[key] = {
                 "key": key, "kind": kind, "request_id": request_id,
                 "slug": slug, "step": step, "batch": batch, "created_at": now,
+                "offered": offered,
             }
         return key
 
@@ -881,7 +893,11 @@ class Worker:
         and refused ("no-checkout"): rivendell-api then asks the requester
         whether another bridge may run it, rather than it being claimed here
         only to FAIL. The refusal forgets the key, so the re-send after a "keep
-        waiting" goes through this policy again (and finds a repo cloned since)."""
+        waiting" goes through this policy again (and finds a repo cloned since).
+
+        An offered request (a teammate's) is never auto-accepted and never counts
+        as work in flight: it is held for a tap, and the owner's own lone request
+        still auto-accepts past it."""
         if key is None:
             return
         with self._q_lock:
@@ -892,6 +908,10 @@ class Worker:
             rid = item["request_id"]
             print(f"rivendell[{self.name}]: implementation {rid} refused: no "
                   f"local checkout for {item['slug']!r} under {config.BASE_PATH}")
+            if item.get("offered"):
+                # A teammate's job: refusing is a server no-op for a non-requester,
+                # and forgetting the key would re-ping it on every reconnect.
+                return
             if not self._refuse("impl", rid, "no-checkout"):
                 # An older rivendell-api (no refuse): pass it on the old way.
                 # ponytail: the key stays in _seen on this path, so a repo
@@ -904,8 +924,10 @@ class Worker:
                     print(f"rivendell[{self.name}]: pass failed for {rid}: {e}")
             return
         with self._q_lock:
-            idle = len(self._pending) == 1 and self._active_runs == 0
-        if idle:
+            others = [k for k, it in self._pending.items()
+                      if k != key and not it.get("offered")]
+            idle = not others and self._active_runs == 0
+        if idle and not item.get("offered"):
             self._ack(key, "received")
             self.accept(key)            # auto-accept: run it now, no Telegram ping
         else:
@@ -970,11 +992,12 @@ class Worker:
             threading.Thread(target=self._post_pong, args=(obj["requestId"],),
                              name=f"rivendell-pong-{self.id}", daemon=True).start()
             return None
+        offered = bool(obj.get("offered"))   # a teammate's job, opened to every bridge
         if obj.get("type") == "pr-review-request" and obj.get("requestId"):
             pr = obj.get("pullRequest") or {}
             print(f"rivendell[{self.name}]: review requested for "
                   f"{pr.get('repositoryFullName', '?')}#{pr.get('number', '?')}")
-            return self._enqueue("review", obj["requestId"], pr.get("repositoryFullName"))
+            return self._enqueue("review", obj["requestId"], pr.get("repositoryFullName"), offered=offered)
         if (obj.get("type") == "task-implementation-request"
                 and obj.get("requestId")):
             task = obj.get("task") or {}
@@ -982,7 +1005,7 @@ class Worker:
             print(f"rivendell[{self.name}]: implementation requested in "
                   f"{repo.get('fullName', '?')}: {task.get('name', '?')}")
             return self._enqueue("impl", obj["requestId"], repo.get("fullName"),
-                                 batch=_batch_of(obj.get("batch")))
+                                 batch=_batch_of(obj.get("batch")), offered=offered)
         if (obj.get("type") == "project-todolist-request"
                 and obj.get("requestId")):
             project = obj.get("project") or {}
@@ -991,33 +1014,33 @@ class Worker:
                   f"{'task recommendations' if step == 'recommendations' else 'todolist'} "
                   f"requested for project {project.get('name', '?')}")
             return self._enqueue("todolist", obj["requestId"], project.get("name"),
-                                 step=step)
+                                 step=step, offered=offered)
         if (obj.get("type") == "task-description-request"
                 and obj.get("requestId")):
             task = obj.get("task") or {}
             print(f"rivendell[{self.name}]: task description requested for "
                   f"{task.get('name', '?')}")
-            return self._enqueue("taskdesc", obj["requestId"], task.get("name"))
+            return self._enqueue("taskdesc", obj["requestId"], task.get("name"), offered=offered)
         if obj.get("type") == "changelog-request" and obj.get("requestId"):
             project = obj.get("project") or {}
             print(f"rivendell[{self.name}]: changelog requested for project "
                   f"{project.get('name', '?')}")
-            return self._enqueue("changelog", obj["requestId"], project.get("name"))
+            return self._enqueue("changelog", obj["requestId"], project.get("name"), offered=offered)
         if obj.get("type") == "news-request" and obj.get("requestId"):
             user = obj.get("user") or {}
             print(f"rivendell[{self.name}]: newspaper of {obj.get('editionDate', '?')} "
                   f"requested for {user.get('name', '?')}")
-            return self._enqueue("news", obj["requestId"], user.get("name"))
+            return self._enqueue("news", obj["requestId"], user.get("name"), offered=offered)
         if obj.get("type") == "deck-request" and obj.get("requestId"):
             site = obj.get("site") or {}
             print(f"rivendell[{self.name}]: deck draft requested for "
                   f"{site.get('title', '?')}")
-            return self._enqueue("deck", obj["requestId"], site.get("title"))
+            return self._enqueue("deck", obj["requestId"], site.get("title"), offered=offered)
         if obj.get("type") == "video-request" and obj.get("requestId"):
             file = obj.get("file") or {}
             print(f"rivendell[{self.name}]: video {str(obj.get('kind') or '').lower() or 'job'} "
                   f"requested for {file.get('name', '?')}")
-            return self._enqueue("video", obj["requestId"], file.get("name"))
+            return self._enqueue("video", obj["requestId"], file.get("name"), offered=offered)
         return None
 
     def _block_on_token(self, detail: str) -> None:
@@ -1660,9 +1683,15 @@ class Worker:
         worker + key."""
         what = "batch" if item.get("batch") else self._label(item)
         target = (item.get("batch") or {}).get("name") or item.get("slug") or "?"
-        text = (f"🧩 Rivendell {what} queued — {target}\n"
-                f"Instance: {self.name}\n"
-                "Something is already running. Approve to run it too, or dismiss.")
+        if item.get("offered"):
+            text = (f"🧩 Rivendell {what} offered by a teammate — {target}\n"
+                    f"Instance: {self.name}\n"
+                    "It would run on this machine with your accounts. "
+                    "Approve to run it here, or dismiss.")
+        else:
+            text = (f"🧩 Rivendell {what} queued — {target}\n"
+                    f"Instance: {self.name}\n"
+                    "Something is already running. Approve to run it too, or dismiss.")
         kb = {"inline_keyboard": [[
             {"text": "✅ Approve", "callback_data": f"rv:a:{token}"},
             {"text": "🚫 Dismiss", "callback_data": f"rv:d:{token}"},
@@ -1806,17 +1835,27 @@ class Worker:
 
     def _drain(self) -> None:
         """A run just finished: with nothing else running, start the oldest held
-        request. A stale one (another bridge's by now) is refused at claim and
-        simply drains on to the next."""
+        request — never an offered one, which waits for the tap. A stale one
+        (another bridge's by now) is refused at claim and simply drains on to
+        the next."""
         with self._q_lock:
-            if self._active_runs or not self._pending:
+            if self._active_runs:
                 return
-            key = next(iter(self._pending))
-        self.accept(key)
+            key = next((k for k, it in self._pending.items() if not it.get("offered")), None)
+        if key is not None:
+            self.accept(key)
 
     def _do_reject(self, item: dict) -> None:
         kind_path = self._KIND_PATH.get(item["kind"], "review-requests")
         request_id = item["request_id"]
+        if item.get("offered"):
+            # A teammate's job: a non-requester's refuse is a server no-op, and the
+            # claim+FAIL fallback would steal it from the bridges that may run it.
+            # It just leaves this queue; the key stays in _seen so catch-up does
+            # not ping it again.
+            print(f"rivendell[{self.name}]: {item['kind']} {request_id} "
+                  "(offered by a teammate) dismissed here")
+            return
         # Refuse, don't fail: the requester decides whether another bridge runs
         # it. Nothing is claimed, so it stays PENDING server-side meanwhile.
         if self._refuse(item["kind"], request_id, "dismissed"):
