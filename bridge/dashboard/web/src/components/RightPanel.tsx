@@ -51,6 +51,7 @@ export function RightPanel({
   onTab,
   project,
   branch,
+  railFoot,
 }: {
   tabs: PanelTab[];
   activeId: string;
@@ -59,6 +60,8 @@ export function RightPanel({
   /** The open session's project and branch — what a scoped tab's data belongs to. */
   project?: string | null;
   branch?: string | null;
+  /** Pinned to the rail's foot, under the tabs — the platform's UPDATE and ⌘K. */
+  railFoot?: ReactNode;
 }) {
   const current = tabs.find((t) => t.id === activeId) ?? tabs[0];
   // Two different events land on the same element and must not look alike. A
@@ -127,6 +130,7 @@ export function RightPanel({
             </button>
           );
         })}
+        {railFoot && <div className="mt-auto flex flex-col items-stretch">{railFoot}</div>}
       </div>
     </div>
   );

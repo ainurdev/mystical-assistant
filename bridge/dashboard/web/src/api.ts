@@ -1222,7 +1222,7 @@ async function req<T>(
 }
 
 /** Fired on window after a successful push from any dashboard button (the GIT
- *  tab, the footer chain, FILES, OPEN PR). The PR chip re-reads on it rather
+ *  tab, the git popover, FILES, OPEN PR). The PR chip re-reads on it rather
  *  than waiting for its next minute. */
 export const PUSHED_EVENT = "hud:pushed";
 const pushed = (project: string, branch?: string) => <T extends { ok: boolean }>(r: T): T => {

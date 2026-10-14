@@ -1,7 +1,5 @@
-// The shell grid's column tracks. The status bar used to be a second grid on
-// the same tracks; its cells now sit in the hudgrid's own bottom track under
-// the side columns (StatusBar.tsx), and the strip caps the side columns from
-// inside them (Strip.tsx). The tracks are defined once here; never re-type
+// The shell grid's column tracks — one row, every column to the bottom edge.
+// The strip caps the side columns from inside them (Strip.tsx). The tracks are defined once here; never re-type
 // the numbers.
 import type { CSSProperties } from "react";
 

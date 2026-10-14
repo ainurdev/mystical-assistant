@@ -32,7 +32,7 @@ function textOf(n: unknown): string {
 
 /** Mirrors the dashboard's CopyBtn — 14px here, and index.css pads it out to a
  *  thumb-sized target. The one control a rendered reply grows: a glyph that puts the thing it sits
- *  on — a link's URL, a quote's text, a fence's code — on the clipboard as it
+ *  on — a link's URL, a quote's text, a fence's or a span's code — on the clipboard as it
  *  reads, not as markdown. Selecting and copying still yields the markdown
  *  (selmd); this is the way out when the markdown is the problem: a message
  *  drafted in a quote pastes without its `> `, a URL without its `[label]()`.
@@ -153,6 +153,19 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
                 <div className="md-admonition-label">{spec.label}</div>
                 {stripMarker(children) as ReactNode}
               </div>
+            );
+          },
+          // An inline span carries the fence's glyph too: a command or a name
+          // named mid-sentence is the thing you came to copy, and a long-press
+          // selection on glass rarely lands on the span's exact edges. Fenced
+          // blocks never reach here — `pre` below draws its own <code>.
+          code: ({ node, className: cls, children: kids, ...props }) => {
+            const raw = textOf(kids);
+            return (
+              <>
+                <code className={cls} {...props}>{kids}</code>
+                {!cls && raw && <CopyBtn title="Copy code" text={raw} />}
+              </>
             );
           },
           pre: ({ children }) => {

@@ -195,8 +195,8 @@ function Drop<T extends string>({
 }
 
 // A fuel gauge in the MODEL menu: how much of a usage window is still unspent
-// (fill = left, so a full bar is a full tank), in the same track/fill idiom as
-// the footer's USED meter. A PROFILE row has one per window, tagged 5H / WK.
+// (fill = left, so a full bar is a full tank). A PROFILE row has one per
+// window, tagged 5H / WK.
 function LeftMeter({ left, severity, tag, title }: { left: number; severity?: string; tag?: string; title?: string }) {
   const c = severity === "critical" || severity === "exceeded" ? "var(--err)"
     : severity && severity !== "normal" ? "var(--warn)" : "var(--acc)";

@@ -30,7 +30,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
-import { ago, fmtReset, projectName, setProjectNames, useProjectTints } from "./lib/surfaces";
+import { ago, projectName, setProjectNames, useProjectTints } from "./lib/surfaces";
 import {
   autoBaseFont,
   fontStack,
@@ -66,7 +66,9 @@ import { Composer } from "./components/Composer";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, RightCap, Strip } from "./components/hud/Strip";
-import { StatusBar } from "./components/hud/StatusBar";
+import { PaletteButton } from "./components/hud/PaletteButton";
+import { GitPopover } from "./components/hud/GitPopover";
+import { UpdateButton } from "./components/hud/UpdateButton";
 import { QueuePanel } from "./components/hud/QueuePanel";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
@@ -239,7 +241,7 @@ export function App() {
   // The open session's own working tree (its worktree when it has one), which
   // gitBadges can't answer — those are keyed by project, one badge per repo.
   const [sessionGit, setSessionGit] = useState<GitStatus | null>(null);
-  // Bumped by the footer's PUBLISH — a 10s poll is too slow to watch a chip you
+  // Bumped by GitPopover's PUSH/PULL — a 10s poll is too slow to watch a row you
   // just acted on, so the push re-runs the fetch below instead of waiting.
   const [gitNonce, setGitNonce] = useState(0);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
@@ -1710,7 +1712,7 @@ export function App() {
   const composerFiles = useRef<((files: FileList) => void) | null>(null);
 
   // Footer git state for that tree. Same 10s cadence as the project badges;
-  // clears on switch so the footer never shows the last session's branch.
+  // clears on switch so the git popover never shows the last session's branch.
   // Clearing is its own effect: a push bumps gitNonce to re-read now, and that
   // must not blank the chain back to its loading stand-ins on the way.
   useEffect(() => { setSessionGit(null); }, [sessionProject, sessionBranch]);
@@ -1722,8 +1724,8 @@ export function App() {
         const g = await api.git(sessionProject, sessionBranch || undefined);
         if (live) setSessionGit(g);
       } catch {
-        // Not a repo / fetch failed — resolve to "no git" so the footer's
-        // loading stand-ins clear instead of holding their slots forever.
+        // Not a repo / fetch failed — resolve to "no git" so GitPopover's
+        // READING… clears instead of holding forever.
         if (live) setSessionGit((prev) => prev ?? { is_repo: false, branch: "", ahead: 0, behind: 0, dirty: 0, files: [] });
       }
     };
@@ -1840,22 +1842,13 @@ export function App() {
 
   const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
   // The login the open session spends: its turn in flight's, else the one its
-  // next turn takes. The footer meter and the MODEL menu's show that login, so
+  // next turn takes. The MODEL menu shows that login, so
   // a profile pick or a fallback handover moves them at once: every login's
   // meter is already in `accounts`. The default login still reads /local/usage,
   // which carries its per-model caps on an older bridge too.
   const spendSlot = spendingSlot(selected);
   const spender = accounts.find((a) => a.slot === spendSlot) ?? null;
   const spentUsage = spendSlot === DEFAULT_SLOT ? usage : spender ? loginUsage(spender) : null;
-  // No usage payload (no token / upstream down long enough that the bridge's
-  // last-good copy went stale) reads as unknown — not as a real 0%.
-  const fiveHour = spentUsage?.available ? spentUsage.five_hour : null;
-  const usedPct = fiveHour ? Math.round(fiveHour.percent) : null;
-  const resetLabel = fiveHour ? fmtReset(fiveHour.resets_at) : null;
-  // Which login the meter is, once there's more than one to tell apart.
-  const spendTag = spendSlot !== null && accounts.filter((a) => !a.disabled).length > 1
-    ? { tag: `A${spendSlot}`, who: spender?.email ?? `Account ${spendSlot}` }
-    : null;
   // Model picker options — the live list served from /local/state (Models API).
   const modelOpts = useMemo(() => modelOptions(state?.models), [state?.models]);
   // The composer lists one model per family unless settings says otherwise;
@@ -2249,7 +2242,17 @@ export function App() {
       onSetUnit={setUnit}
       openSettings={wxSettings}
       openReport={weekNonce}
-      onFeed={feed}
+      git={
+        <GitPopover
+          // The session you have open, not the bridge's active project —
+          // those differ while you read another session.
+          repo={sessionProject ?? "—"} git={sessionGit}
+          changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
+          branch={sessionBranch}
+          onSynced={() => setGitNonce((n) => n + 1)}
+          onPushFailed={(output) => pushFailedSession(sessionProject, sessionBranch, output)}
+        />
+      }
     />
   );
 
@@ -2282,11 +2285,11 @@ export function App() {
                 the transcript on a narrow window instead of holding a fixed
                 px and squeezing it. No strip above them: the side columns cap
                 themselves (Brand, RightCap), so the transcript runs to the top.
-                No footer row below either: StatusBar's cells sit in a second
-                track under the side columns, and the chat spans it. */}
+                No footer row below either: every column runs to the bottom
+                edge, and ⌘K sits at the foot of the rail. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
-              style={{ gridTemplateColumns: shellCols(settings.rightOpen), gridTemplateRows: "minmax(0,1fr) 34px", minWidth: 0 }}
+              style={{ gridTemplateColumns: shellCols(settings.rightOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
@@ -2349,10 +2352,6 @@ export function App() {
                 // Folded to the rail, the right column can't carry the cluster —
                 // the chat header takes it.
                 chrome={settings.rightOpen ? undefined : strip}
-                // Down through the footer track to the bottom edge — except
-                // with the panel folded, when the git chain keeps its strip
-                // under the chat.
-                gridRow={settings.rightOpen ? "1 / 3" : "1"}
                 composer={
                   <>
                     {ai.relevance && checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -2420,21 +2419,13 @@ export function App() {
                   tabs={rightTabs} activeId={settings.rightTab}
                   open={settings.rightOpen} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
+                  railFoot={<>
+                    <UpdateButton onFeed={feed} variant="rail" />
+                    <PaletteButton onPalette={() => setPaletteOpen(true)} />
+                  </>}
                 />
               </div>
 
-              <StatusBar
-                usedPct={usedPct} resetLabel={resetLabel}
-                login={spendTag} agentLabel={agentPick?.label} rightOpen={settings.rightOpen}
-                // The footer reports the session you have open, not the bridge's
-                // active project — those differ while you read another session.
-                repo={sessionProject ?? "—"} git={sessionGit}
-                changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
-                branch={sessionBranch}
-                onSynced={() => setGitNonce((n) => n + 1)}
-                onPushFailed={(output) => pushFailedSession(sessionProject, sessionBranch, output)}
-                onPalette={() => setPaletteOpen(true)}
-              />
             </div>
 
             {analyzeProject && (

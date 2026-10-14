@@ -202,7 +202,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenProject, run, onOpenRun, onDropFiles, chrome, gridRow, onSendText, onArchive, onStartHere,
+  onOpenProject, run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -258,9 +258,6 @@ export function Terminal({
    *  weather, the bell — while the right panel is collapsed to its rail and
    *  its column has no room for them. */
   chrome?: ReactNode;
-  /** The shell grid rows the chat spans — the footer track too, when nothing
-   *  sits under it. */
-  gridRow?: string;
   /** The PR chip's SEND buttons: a message to this session, queued if it's mid-turn. */
   onSendText?: (text: string) => void;
   /** PrChip's RESOLVE IN A NEW SESSION: a fresh session in this session's checkout. */
@@ -650,7 +647,7 @@ export function Terminal({
       // auto-placed side columns, and would take the first track from SESSIONS.
       data-bg={hud?.chatBg ?? "none"}
       data-layout={compact ? "compact" : "default"}
-      style={{ position: "relative", gridColumn: 2, gridRow, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {island}
 

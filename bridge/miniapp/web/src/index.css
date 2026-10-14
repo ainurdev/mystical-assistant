@@ -313,8 +313,9 @@ input {
   border-left: 3px solid var(--border);
   color: var(--muted-foreground);
 }
-/* The copy glyph a link, a quote and a fence carry (CopyBtn in Markdown.tsx):
-   the URL, the quote as it reads, the code without its fence. Always shown —
+/* The copy glyph a link, a quote, a fence and an inline code span carry
+   (CopyBtn in Markdown.tsx): the URL, the quote as it reads, the code without
+   its fence or backticks. Always shown —
    there is no hover on glass — and padded out to a thumb-sized target, the
    padding pulled back with negative margins so a line of prose does not grow
    around it. Floats at the head of a quote so the first line wraps around it;
@@ -326,6 +327,7 @@ input {
 }
 .md-copy:active { color: var(--acc); }
 .md a + .md-copy { display: inline-block; vertical-align: middle; margin: -4px 0 -4px 1px; }
+.md code + .md-copy { display: inline-block; vertical-align: middle; margin: -4px 0 -4px 1px; }
 .md blockquote > .md-copy { float: right; margin: 0 -2px 2px 6px; }
 .md-code > .md-copy { position: absolute; top: 2px; right: 3px; }
 .md hr { margin: 1em 0; border: none; border-top: 1px dashed var(--ac-22); }
