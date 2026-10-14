@@ -199,8 +199,9 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
     // MARK: NSWindowDelegate
 
     /// Full screen, the pre-Lion kind: the window fills the screen (HUDWindow lets
-    /// it cover the menu bar's strip), the menu bar and Dock auto-hide and come
-    /// back at the edges, and the window keeps its Space. AppKit's own full screen
+    /// it cover the menu bar's strip), the menu bar auto-hides and comes back at
+    /// the top edge, the Dock stays away (auto-hidden, it lingers under the cursor
+    /// after a click on the Dock icon), and the window keeps its Space. AppKit's own full screen
     /// is not used: its menu-bar reveal slides a detached, empty title strip down
     /// with it (NSToolbarFullScreenWindow), and nothing public hides that.
     private var unzoomedFrame: NSRect?
@@ -214,7 +215,7 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
             window.setFrame(frame, display: true, animate: true)
         } else if let screen = window.screen ?? NSScreen.main {
             unzoomedFrame = window.frame
-            NSApp.presentationOptions = [.autoHideMenuBar, .autoHideDock]
+            NSApp.presentationOptions = [.autoHideMenuBar, .hideDock]
             // Without a Dock icon the app owns no menu bar to hide: cover it instead.
             if NSApp.activationPolicy() != .regular { window.level = .popUpMenu }
             window.coversScreen = true
