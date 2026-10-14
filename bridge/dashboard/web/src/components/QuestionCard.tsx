@@ -48,7 +48,7 @@ export function QuestionCard({
     // Resolved / historical: still show the prepared answers as buttons, with the
     // chosen one(s) highlighted (matches Claude Code's answered-question look).
     return (
-      <Card className="chatcard space-y-3 border border-[var(--tg-button)]/30">
+      <Card className="chatcard qcard space-y-3 border border-[var(--tg-button)]/30">
         {questions.map((q) => {
           const given = answered?.find((x) => x.header === q.header);
           const chosen = given?.labels ?? [];
@@ -61,7 +61,7 @@ export function QuestionCard({
                   return (
                     <div
                       key={o.label}
-                      className={`rounded-lg px-3 py-2 text-left text-sm ${
+                      className={`qopt${picked ? " qopt-on" : ""} rounded-lg px-3 py-2 text-left text-sm ${
                         picked
                           ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
                           : "bg-[var(--tg-bg)] opacity-60"
@@ -129,7 +129,7 @@ export function QuestionCard({
   }
 
   return (
-    <Card className="chatcard space-y-3 border border-[var(--tg-button)]/30">
+    <Card className="chatcard qcard qcard-live space-y-3 border border-[var(--tg-button)]/30">
       {questions.map((q) => {
         const open = openNotes[q.header] ?? (restored.notes[q.header] ?? "") !== "";
         // Typed text counts as the answer (see `ready`), so the frame says so.
@@ -147,7 +147,7 @@ export function QuestionCard({
                   key={o.label}
                   onClick={() => toggle(q, o.label)}
                   disabled={sending}
-                  className={`rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
+                  className={`qopt${picked ? " qopt-on" : ""} rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
                     picked
                       ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
                       : "bg-[var(--tg-bg)]"

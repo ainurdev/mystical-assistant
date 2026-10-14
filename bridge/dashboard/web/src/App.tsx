@@ -42,6 +42,7 @@ import {
   themeDef,
   themeFilter,
   themeVars,
+  themePrad,
   THEME_TOKEN_KEYS,
   type HudSettings,
   type RightTab,
@@ -2277,6 +2278,8 @@ export function App() {
             background: themeCanvas(settings.theme),
             fontFamily: fontStack(settings.font, settings.theme) || undefined,
             ...themeVars(settings.theme),
+            // The theme's corner, for the transcript's DOSSIER cards to read.
+            "--prad": themePrad(settings.theme) || "0px",
           } as CSSProperties}
         >
             {/* Three flush columns, each divided from the next by one hairline —

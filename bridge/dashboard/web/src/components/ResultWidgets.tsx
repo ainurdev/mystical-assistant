@@ -829,6 +829,10 @@ function IntakeGrid({ rows, send }: { rows: Question[]; send?: (t: string) => vo
   );
 }
 
+/** DOSSIER has no material of its own: a widget is work, and work there is
+ *  drawn quietly — so it borrows WIRE's, the one with no box at all. */
+const material = (style: ToolStyle): ToolStyle => (style === "dossier" ? "wire" : style);
+
 /** The frame a result wears — chosen by its payload's idiom, not by the tool.
  *
  *  This used to be one frame for every widget, "what changes between them is
@@ -866,7 +870,7 @@ export function ToolWidget({ spec, accent, style, children }: {
   const idiom = idiomFor(spec.type);
   const head = idiom === "plate" || idiom === "field" || idiom === "ledger";
   return (
-    <div className="tw" data-tw={style} data-idiom={idiom}
+    <div className="tw" data-tw={material(style)} data-idiom={idiom}
          style={{ "--h": accent } as CSSProperties}>
       {idiom === "plate" && <span className="tw-rail" aria-hidden />}
       {head && (
@@ -898,7 +902,7 @@ export function BlockWidget({ type, value, style = "stamp" }: {
   const idiom = idiomFor(type);
   const head = idiom === "plate" || idiom === "field" || idiom === "ledger";
   return (
-    <div className="tw" data-tw={style} data-idiom={idiom} data-said="">
+    <div className="tw" data-tw={material(style)} data-idiom={idiom} data-said="">
       {idiom === "plate" && <span className="tw-rail" aria-hidden />}
       {head && (
         <div className="tw-head">

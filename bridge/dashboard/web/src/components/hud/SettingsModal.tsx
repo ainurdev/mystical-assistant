@@ -13,7 +13,7 @@ import {
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, LayoutPanelTop,
   ListChecks, Package, PackageOpen, PanelBottom, Timer, Truck, AppWindowMac, Pin,
 } from "lucide-react";
-import { CHAT_BGS, TOOL_STYLES, type ChatBg, type ToolStyle } from "../../lib/toolwidget";
+import { CHAT_BGS, TOOL_STYLES, TRANSCRIPT_SCHEMES, type ChatBg, type ToolStyle, type TranscriptScheme } from "../../lib/toolwidget";
 import { AgentRail, PromptBubble } from "../Transcript";
 import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
@@ -1317,15 +1317,17 @@ const STYLE_PREVIEW_TURN: TimedEvent[] = [
 /** One tile's well: the same turn, drawn in one language on one ground. Shared
  *  by both pickers below, because "what does this pick look like" has exactly
  *  one honest answer and it should not be written twice. */
-function TranscriptWell({ style, bg, children }: {
+function TranscriptWell({ style, bg, scheme = "phosphor", children }: {
   style: ToolStyle;
   bg: ChatBg;
+  scheme?: TranscriptScheme;
   children?: ReactNode;
 }) {
   return (
     <div
       inert
       data-style={style}
+      data-scheme={scheme}
       data-bg={bg}
       style={{
         borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
@@ -1348,9 +1350,11 @@ function TranscriptWell({ style, bg, children }: {
       }}
     >
       {children ?? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <PromptBubble text="the fifth idiom isn't in the table" />
-          <div className="relative space-y-1.5">
+        // The turn's own wrappers (Transcript TurnBlock), so DOSSIER's tile is a
+        // card like the real thing; every other language ignores them.
+        <div className="dturn" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="dprompt"><PromptBubble text="the fifth idiom isn't in the table" n={7} /></div>
+          <div className="dreply relative space-y-1.5">
             <AgentRail />
             <RunStream
               events={STYLE_PREVIEW_TURN}
@@ -1372,17 +1376,38 @@ function TranscriptWell({ style, bg, children }: {
 function OutputStylePicker({
   value,
   bg,
+  scheme,
   onPick,
 }: {
   value: ToolStyle;
   bg: ChatBg;
+  scheme: TranscriptScheme;
   onPick: (s: ToolStyle) => void;
 }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
       {TOOL_STYLES.map((o) => (
         <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
-          <TranscriptWell style={o.key} bg={bg} />
+          <TranscriptWell style={o.key} bg={bg} scheme={scheme} />
+        </PickTile>
+      ))}
+    </div>
+  );
+}
+
+/** DOSSIER's palette. Same tile, same turn, drawn in DOSSIER whatever the
+ *  OUTPUT STYLE is — the scheme only exists there, so a tile in another
+ *  language would show two identical pictures. */
+function SchemePicker({ value, bg, onPick }: {
+  value: TranscriptScheme;
+  bg: ChatBg;
+  onPick: (s: TranscriptScheme) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
+      {TRANSCRIPT_SCHEMES.map((o) => (
+        <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
+          <TranscriptWell style="dossier" bg={bg} scheme={o.key} />
         </PickTile>
       ))}
     </div>
@@ -5308,12 +5333,25 @@ export function SettingsModal(props: SettingsModalProps) {
                 <Section
                   title="OUTPUT STYLE"
                   top
-                  info="How the whole session draws — your prompt, the ledger of what it did, a delegated run, and the reply itself with its tables and its code. Five languages, one per column of the Chat Elements sheet: each is a whole grammar rather than a border swap. Each tile is the real thing under the real stylesheet, so what you see is what the transcript does."
+                  info="How the whole session draws — your prompt, the ledger of what it did, a delegated run, and the reply itself with its tables and its code. Six languages. DOSSIER, the default, ranks by tier: your prompt and the answer loudest, cards that wait on you next, the work a small log between. The other five are the columns of the Chat Elements sheet, each a whole grammar rather than a border swap. Each tile is the real thing under the real stylesheet, so what you see is what the transcript does."
                 >
                   <OutputStylePicker
                     value={settings.toolStyle}
                     bg={settings.chatBg}
+                    scheme={settings.chatScheme}
                     onPick={(toolStyle) => onPatch({ toolStyle })}
+                  />
+                </Section>
+
+                <Section
+                  title="COLOUR SCHEME"
+                  top
+                  info="DOSSIER's palette. Both read the theme's own colours, so either works on every theme, light or dark. PHOSPHOR draws every role in the theme's accent at a different strength, and CONTRAST gives each role its own hue at heavier weight. In both, errors and warnings keep their own colour."
+                >
+                  <SchemePicker
+                    value={settings.chatScheme}
+                    bg={settings.chatBg}
+                    onPick={(chatScheme) => onPatch({ chatScheme })}
                   />
                 </Section>
 

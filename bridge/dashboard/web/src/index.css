@@ -3141,6 +3141,257 @@ input {
 }
 [data-style="halo"] .md img { border-radius: 14px; }
 
+/* ══ DOSSIER ══ a card per turn, ranked by tier ═════════════════════════════
+   The five columns above each decide what carries rank between ROWS. This one
+   ranks TIERS, because on a phone the two things you came for — what you asked
+   and what came back — were found by reading everything between them:
+
+     1  your prompt and the answer    biggest type, full ink, a 4px bar
+     2  a card waiting on you         framed in the accent, a NEEDS YOU strip
+     3  the work between them         one WORK zone (RunStream WorkZone,
+                                      lib/dossier): small, one line per thing,
+                                      a glyph + kind word so it scans
+
+   Colour is a ROLE, never a tool kind. The old ledger hued rows by kind, and
+   the kinds borrowed the status hues — an edit was ok-green, a search was
+   warn-amber, a read was the thinking violet — so no colour meant anything.
+   Here a role's tint and edge are mixed INTO --panel rather than washed over
+   transparent, which is why the same 10% reads on paper as on glass, and the
+   scheme (data-scheme, lib/toolwidget TRANSCRIPT_SCHEMES) only re-points roles.
+   err / warn / ok keep their own hue in every scheme: trouble is the one thing
+   that must never be on-brand. */
+[data-style="dossier"] {
+  --d-you: var(--acc);
+  --d-ask: var(--acc);
+  --d-think: color-mix(in oklab, var(--acc) 55%, var(--txd));
+  --d-tool: color-mix(in oklab, var(--acc) 78%, var(--txb));
+  --d-note: var(--txh);
+  --d-tint: 10%;
+  --d-edge: 45%;
+  --d-bw: 1px;
+  --d-ink: var(--tx);
+  --d-rad: min(var(--prad, 0px), 10px);
+  --d-hair: color-mix(in oklab, var(--txl) 55%, var(--panel));
+  --d-big: calc(var(--t13) + 2.5px);
+}
+[data-style="dossier"][data-scheme="contrast"] {
+  --d-think: color-mix(in oklab, var(--purple) 80%, var(--txb));
+  --d-tool: color-mix(in oklab, var(--info) 80%, var(--txb));
+  --d-tint: 18%;
+  --d-edge: 85%;
+  --d-bw: 2px;
+  --d-ink: var(--txb);
+  --d-hair: color-mix(in oklab, var(--txl) 85%, var(--panel));
+}
+[data-style="dossier"] .dturn {
+  gap: 0; overflow: hidden; background: var(--panel);
+  border: var(--d-bw) solid var(--d-hair); border-radius: var(--d-rad);
+}
+
+/* ── tier 1: you ── */
+[data-style="dossier"] .dprompt {
+  display: block; position: relative; padding: 11px 16px 13px;
+  background: color-mix(in oklab, var(--d-you) var(--d-tint), var(--panel));
+  border-left: 4px solid var(--d-you);
+  border-bottom: 1px solid color-mix(in oklab, var(--d-you) var(--d-edge), var(--panel));
+}
+[data-style="dossier"] .pbub-row { display: block; }
+[data-style="dossier"] .pbub {
+  max-width: 100%; padding: 0; border: 0; background: none;
+}
+[data-style="dossier"] .pbub .md {
+  font-size: var(--d-big); font-weight: 500; line-height: 1.55; color: var(--txb);
+}
+[data-style="dossier"] .pnum {
+  display: flex; gap: 6px; margin-bottom: 4px;
+  font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--d-you);
+}
+[data-style="dossier"] .pnum > i { font-style: normal; color: var(--txd); }
+[data-style="dossier"] .pstamp { position: absolute; top: 11px; right: 16px; margin: 0; }
+[data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
+
+/* ── tier 3: the work ── */
+[data-style="dossier"] .dreply { padding-bottom: 2px; }
+/* The turn's reply is the card's lower half: zones and the answer run edge to
+   edge, anything else (a card, an error, a stop, the working line) sits inset. */
+[data-style="dossier"] .dreply > * + *,
+[data-style="dossier"] .rstream > * + * { margin-top: 0; }
+[data-style="dossier"] .dreply > :not(.rstream, .agent-rail),
+[data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 10px 16px; }
+[data-style="dossier"] .dwork {
+  background: var(--panel2); padding: 6px 16px 8px;
+  border-bottom: 1px solid var(--d-hair);
+}
+[data-style="dossier"] .dwork + .dwork { margin-top: 0; }
+[data-style="dossier"] .dwork-head {
+  display: flex; width: 100%; align-items: center; gap: 10px; min-width: 0;
+  white-space: nowrap; text-align: left;
+  font-size: var(--t105); letter-spacing: .5px; color: var(--txd);
+}
+[data-style="dossier"] .dwork-lab {
+  display: flex; flex: none; align-items: center; gap: 4px;
+  font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm);
+}
+[data-style="dossier"] .dwork-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+[data-style="dossier"] .dwork-strip { display: flex; flex: 1 1 0; min-width: 0; gap: 2px; overflow: hidden; }
+[data-style="dossier"] .dwork-strip > i {
+  --m: var(--d-tool);
+  flex: none; width: 15px; height: 15px; display: grid; place-items: center;
+  font-style: normal; font-size: var(--t85); line-height: 1; color: var(--m);
+  background: color-mix(in oklab, var(--m) var(--d-tint), var(--panel2));
+  border-radius: calc(var(--d-rad) * .4);
+}
+[data-style="dossier"] .dwork-strip > i[data-m="think"] { --m: var(--d-think); }
+[data-style="dossier"] .dwork-strip > i[data-m="note"] { --m: var(--d-note); }
+[data-style="dossier"] .dwork-strip > i[data-m="steer"] { --m: var(--d-you); }
+[data-style="dossier"] .dwork-strip > i:is([data-m="hook"], [data-m="log"]) { --m: var(--txl); }
+[data-style="dossier"] .dwork-strip > i[data-m="fail"] { --m: var(--err); }
+[data-style="dossier"] .dwork-strip > b { font-weight: 400; color: var(--txf); padding-left: 3px; }
+[data-style="dossier"] .dwork-fail { flex: none; color: var(--err); }
+[data-style="dossier"] .dwork-ms { flex: none; margin-left: auto; color: var(--txf); letter-spacing: 1px; font-size: var(--t95); }
+[data-style="dossier"] .dwork[data-run] .dwork-ms { color: var(--d-tool); animation: blink 1.1s steps(1) infinite; }
+[data-style="dossier"] .dwork-body { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+[data-style="dossier"] .dwork-body > * { margin: 0 !important; }
+/* every hue inside the work is the tool role: the component writes each row's
+   kind hue inline as --h, and the kind hue is exactly the collision this
+   language exists to undo. A failure still swaps to --err (data-err rules). */
+[data-style="dossier"] .dwork-body [style*="--h"] { --h: var(--d-tool) !important; }
+
+/* a thought: the agent to itself — italic, one tier down, its own hue */
+[data-style="dossier"] .dwork .thought {
+  max-width: none; gap: 8px; padding: 1px 0;
+  font-size: var(--t12);
+}
+[data-style="dossier"] .dwork .thk-lab {
+  min-width: 52px; font-size: var(--t85); font-weight: 600; letter-spacing: 1.6px; color: var(--d-think);
+}
+[data-style="dossier"] .dwork .thought-text { font-style: italic; color: var(--txd); }
+[data-style="dossier"] .dwork .thought-text p { margin: 0; }
+/* an interim note: the agent to you, mid-work — upright, a step brighter, a
+   NOTE word where the thought has THOUGHT */
+[data-style="dossier"] .dwork .group\/msg { gap: 8px; }
+[data-style="dossier"] .dwork .group\/msg::before {
+  content: "◆ NOTE"; flex: none; min-width: 52px; padding-top: 3px;
+  font-size: var(--t85); font-weight: 600; letter-spacing: 1.6px; color: var(--d-note);
+}
+[data-style="dossier"] .dwork .abub {
+  max-width: none; padding: 1px 0; border: 0; background: none;
+  font-size: var(--t12); color: var(--txh);
+}
+[data-style="dossier"] .dwork .abub .md p { margin: 0; }
+/* tools: one quiet row each, no plates */
+[data-style="dossier"] .actrow { background: none; min-height: 22px; border-radius: calc(var(--d-rad) * .5); }
+[data-style="dossier"] .actrow + .actrow { border-top: 0; }
+[data-style="dossier"] .actrow:hover { background: color-mix(in oklab, var(--d-tool) 6%, var(--panel2)); }
+[data-style="dossier"] .actrow > .ax-bar { width: 2px; background: color-mix(in oklab, var(--d-tool) 35%, transparent); }
+[data-style="dossier"] .actrow[data-tier="mark"] { background: none; }
+[data-style="dossier"] .actrow[data-err] { background: color-mix(in oklab, var(--err) var(--d-tint), var(--panel2)); }
+[data-style="dossier"] .actrow[data-err] > .ax-bar { background: var(--err); }
+[data-style="dossier"] .ax-tag { font-weight: 600; }
+[data-style="dossier"] .ax-tag[data-shape] { border: 0; background: none; padding: 0; color: var(--h); }
+[data-style="dossier"] .actrow[data-err] .ax-tag { color: var(--err); }
+[data-style="dossier"] .ax-obj { font-size: var(--t115); color: var(--d-ink); }
+[data-style="dossier"] .actrow[data-tier="glance"] .ax-obj { color: var(--txd); }
+[data-style="dossier"] .ax-drawer {
+  border-top: 0; background: var(--panel3); border-left: 2px solid var(--d-hair);
+  border-radius: 0 0 calc(var(--d-rad) * .5) calc(var(--d-rad) * .5);
+}
+[data-style="dossier"] .ax-window { border: 0; background: none; }
+[data-style="dossier"] .ax-window[data-err] { border: 0; }
+[data-style="dossier"] .ax-winhead { background: none; border-bottom: 0; padding: 1px 0 1px 3px; }
+[data-style="dossier"] .ax-wintag { font-weight: 600; letter-spacing: 1.6px; }
+[data-style="dossier"] .agb {
+  border: 1px solid color-mix(in oklab, var(--d-tool) var(--d-edge), var(--panel2));
+  background: var(--panel); border-radius: calc(var(--d-rad) * .6);
+}
+[data-style="dossier"] .agb::before,
+[data-style="dossier"] .agb::after { display: none; }
+[data-style="dossier"] .thk-log { font-size: var(--t11); color: var(--txl); }
+/* your steer, inside the work but still you: the accent, as a highlighted row */
+[data-style="dossier"] .dwork .steer-bub {
+  max-width: none; width: 100%; padding: 3px 8px; border: 0;
+  border-left: 2px solid var(--d-you); border-radius: 0;
+  background: color-mix(in oklab, var(--d-you) var(--d-tint), var(--panel2));
+}
+[data-style="dossier"] .dwork .steer-bub .steer-lab { justify-content: flex-start; color: var(--d-you); }
+[data-style="dossier"] .dwork .my-2 { margin: 0; }
+
+/* ── tier 1: the answer ── */
+[data-style="dossier"] .resblk { margin: 0; }
+[data-style="dossier"] .res {
+  border: 0; border-left: 4px solid var(--txb); border-radius: 0;
+  background: var(--panel); max-width: none;
+}
+[data-style="dossier"] .resblk[data-bad] .res { border-left-color: var(--err); }
+[data-style="dossier"] .res-head {
+  border-bottom: 0; padding: 11px 16px 0;
+}
+/* a result with no words (they were the prose a card already showed) is a
+   receipt, not an answer: it keeps the clock and drops to the ghost tier */
+[data-style="dossier"] .res:not(:has(.res-body)) { border-left-width: 2px; border-left-color: var(--d-hair); }
+[data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 7px 16px; color: var(--txf); }
+[data-style="dossier"] .res-head {
+  font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm);
+}
+[data-style="dossier"] .resblk[data-bad] .res-head { color: var(--err); }
+[data-style="dossier"] .resblk:not([data-bad]) .res-meta::before { content: "✓ done"; color: var(--ok); letter-spacing: .5px; }
+[data-style="dossier"] .res-body { padding: 4px 16px 14px; font-size: var(--d-big); line-height: 1.65; }
+[data-style="dossier"] .res-body .md { color: var(--txb); }
+[data-style="dossier"] .res-fade { background: linear-gradient(to bottom, transparent, var(--panel)); }
+[data-style="dossier"] .res-fold { border-top: 1px solid var(--d-hair); }
+[data-layout="compact"] [data-style="dossier"] .pbub,
+[data-layout="compact"] [data-style="dossier"] .res { max-width: none; }
+
+/* ── tier 2: waiting on you ── */
+[data-style="dossier"] .chatcard { margin: 10px 0; border-radius: var(--d-rad); background: var(--panel); }
+[data-style="dossier"] .chatcard:is(.qcard-live, .pcard-live) {
+  border: calc(var(--d-bw) + .5px) solid var(--d-ask);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--d-ask) 14%, transparent), 0 14px 28px -18px var(--shadow-pop, rgba(0,0,0,.5));
+}
+[data-style="dossier"] .chatcard:is(.qcard-live, .pcard-live)::before {
+  display: block; margin: -12px -12px 10px; padding: 6px 12px;
+  font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--d-ask);
+  background: color-mix(in oklab, var(--d-ask) var(--d-tint), var(--panel));
+  border-bottom: 1px solid color-mix(in oklab, var(--d-ask) var(--d-edge), var(--panel));
+  border-radius: var(--d-rad) var(--d-rad) 0 0;
+}
+[data-style="dossier"] .qcard-live::before { content: "● NEEDS YOUR ANSWER"; }
+[data-style="dossier"] .pcard-live::before { content: "● NEEDS YOUR OK · PERMISSION"; }
+[data-style="dossier"] .chatcard:not(.qcard-live, .pcard-live) { border: 1px solid var(--d-hair); }
+[data-style="dossier"] .qopt {
+  border-radius: calc(var(--d-rad) * .6); background: var(--panel2); color: var(--txb);
+  box-shadow: inset 0 0 0 1px transparent;
+}
+[data-style="dossier"] .qopt-on {
+  background: color-mix(in oklab, var(--d-ask) var(--d-tint), var(--panel)); color: var(--txb);
+  box-shadow: inset 0 0 0 var(--d-bw) color-mix(in oklab, var(--d-ask) var(--d-edge), var(--panel));
+}
+
+/* ── what ends a turn ── */
+[data-style="dossier"] .resblk + .ev-stop { border-top: 1px solid var(--d-hair); margin: 0; padding: 8px 16px 10px; }
+[data-style="dossier"] .doutcome { padding: 8px 16px 10px; margin: 0; border-top: 1px solid var(--d-hair); }
+
+/* Hooks DOSSIER reads that every other language must not see. */
+.pnum { display: none; }
+.dprompt { display: contents; }
+/* An error and a stop, in every language: off --err and the ink ladder, mixed
+   into the panel so they hold on a light ground (they were Tailwind red-300 on
+   a 15% red wash, and the stop a legacy Telegram hint colour). */
+.ev-err {
+  color: var(--err);
+  background: color-mix(in oklab, var(--err) 10%, var(--panel));
+  border: 1px solid color-mix(in oklab, var(--err) 35%, var(--panel));
+}
+.ev-stop { color: var(--txd); }
+.ev-stop > svg { color: var(--txl); }
+/* A steer was inline violet at 7% over transparent — gone on paper. */
+.steer-bub {
+  border-color: color-mix(in oklab, var(--purple) 30%, var(--panel));
+  border-right-color: var(--purple);
+  background: color-mix(in oklab, var(--purple) 9%, var(--panel));
+}
+.steer-lab { color: var(--purple); }
+
 /* ── FLOW CARD ─────────────────────────────────────────────────────────────
    A typed stage's settled result, framed like the agent block: both are a
    turn's own structure surfacing in the stream, and the stream keeps one idiom

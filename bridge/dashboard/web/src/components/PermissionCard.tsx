@@ -35,7 +35,7 @@ export function PermissionCard({
     if ((await fn()) === false) setSending(null);
   }
   return (
-    <Card className="chatcard space-y-2 border border-[var(--tg-button)]/30">
+    <Card className={`chatcard pcard${active ? " pcard-live" : ""} space-y-2 border border-[var(--tg-button)]/30`}>
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <Wrench
           size={15}
@@ -67,11 +67,11 @@ export function PermissionCard({
         <div className="flex items-center gap-1 text-xs text-[var(--tg-hint)]">
           {resolved === "allow" ? (
             <>
-              <Check size={13} className="text-green-400" aria-hidden /> Allowed
+              <Check size={13} className="text-[var(--ok)]" aria-hidden /> Allowed
             </>
           ) : resolved === "deny" ? (
             <>
-              <X size={13} className="text-red-400" aria-hidden /> Denied
+              <X size={13} className="text-[var(--err)]" aria-hidden /> Denied
             </>
           ) : stale ? (
             <>
