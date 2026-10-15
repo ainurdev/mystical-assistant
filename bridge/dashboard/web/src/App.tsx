@@ -119,13 +119,13 @@ const railCount = (n: number) => (n > 99 ? "99+" : String(n));
 // browsers; the localStorage copy is only a cache for the pre-first-poll paint.
 // ponytail: remove/import stay per-browser — no bridge endpoint for them yet.
 const MANAGE_KEY = "hud-project-manage";
-type ManagePrefs = { hidden: Record<string, boolean>; removed: Record<string, boolean>; imported: string[] };
+type ManagePrefs = { hidden: Record<string, boolean>; removed: Record<string, boolean> };
 
 function loadManage(): ManagePrefs {
   try {
     const r = JSON.parse(localStorage.getItem(MANAGE_KEY) || "{}") as Partial<ManagePrefs>;
-    return { hidden: r.hidden ?? {}, removed: r.removed ?? {}, imported: r.imported ?? [] };
-  } catch { return { hidden: {}, removed: {}, imported: [] }; }
+    return { hidden: r.hidden ?? {}, removed: r.removed ?? {} };
+  } catch { return { hidden: {}, removed: {} }; }
 }
 
 // Sessions that finished a turn while you were looking elsewhere — flagged DONE
@@ -288,7 +288,6 @@ export function App() {
   // remove/import endpoints, so those two persist client-side.
   const [hiddenProjects, setHiddenProjects] = useState<Record<string, boolean>>(() => loadManage().hidden);
   const [removedProjects, setRemovedProjects] = useState<Record<string, boolean>>(() => loadManage().removed);
-  const [importedProjects, setImportedProjects] = useState<string[]>(() => loadManage().imported);
   // Git repos discovered on disk (org-folder nesting included) — so sessionless
   // projects still show up in the PROJECTS panel.
   const [discovered, setDiscovered] = useState<string[]>([]);
@@ -660,9 +659,9 @@ export function App() {
   }, [markBoot]);
 
   useEffect(() => {
-    try { localStorage.setItem(MANAGE_KEY, JSON.stringify({ hidden: hiddenProjects, removed: removedProjects, imported: importedProjects })); }
+    try { localStorage.setItem(MANAGE_KEY, JSON.stringify({ hidden: hiddenProjects, removed: removedProjects })); }
     catch { /* ignore */ }
-  }, [hiddenProjects, removedProjects, importedProjects]);
+  }, [hiddenProjects, removedProjects]);
 
   // Disk discovery polls like the session list, so a repo cloned or created
   // after load appears on its own — no rescan button, no reload.
@@ -1642,14 +1641,6 @@ export function App() {
   }
 
   // TODO(phase2-data): local-only import — no bridge endpoint to attach a repo yet.
-  function importProject(path: string) {
-    const rel = path.trim().replace(/\/+$/, "");
-    if (!rel) return;
-    setImportedProjects((prev) => (prev.includes(rel) ? prev : [...prev, rel]));
-    setRemovedProjects((p) => ({ ...p, [rel]: false }));
-    setHidden([rel], false);
-  }
-
   // --- derived ---
   const projectGroups = useMemo<ProjectGroup[]>(() => {
     const byProj = new Map<string, SessionBrief[]>();
@@ -1903,6 +1894,7 @@ export function App() {
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && openAnalyze(activeProject) },
     { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", run: toggleRight },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
+    { id: "replay-boot", label: "Replay boot intro", group: "Display", icon: "↻", run: replayBoot },
     { id: "inspector", label: "HTTP inspector…", group: "Session", icon: "◫", run: () => setInspectorOpen(true) },
     ...modelOpts.map((m) => ({
       id: `model-${m.id}`, label: `Use ${m.label}`, group: "Model",
@@ -2480,17 +2472,14 @@ export function App() {
                 project={sessionProject}
                 projects={{
                   groups: projectGroups.filter((g) => !removedProjects[g.rel]),
-                  imported: importedProjects.filter((rel) => !removedProjects[rel]),
                   hidden: hiddenProjects,
                   remotes: projectRemotes,
                   onSetHidden: setHidden,
                   onRemove: (rel) => setRemovedProjects((p) => ({ ...p, [rel]: true })),
                   onRename: renameProject,
-                  onImport: importProject,
                   profiles: profilesAvailable ? profiles ?? undefined : undefined,
                   onSetProfile: setProjectProfile,
                 }}
-                onReplayBoot={replayBoot}
                 onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}

@@ -3,7 +3,7 @@ import { ChevronRight, Pencil } from "lucide-react";
 import type { AccountInfo } from "../../api";
 import type { ProfilesInfo } from "../../lib/profiles";
 import { agentLabel } from "../../lib/agents";
-import { projectGivenName, projectName } from "../../lib/surfaces";
+import { projectGivenName } from "../../lib/surfaces";
 import { ProjectTile } from "../ui/ProjectTile";
 import { parentOf, type ProjectGroup } from "./ProjectsPanel";
 
@@ -19,13 +19,11 @@ import { parentOf, type ProjectGroup } from "./ProjectsPanel";
 
 export interface ProjectsSettingsProps {
   groups: ProjectGroup[]; // manageable projects (removed ones filtered out; hidden included)
-  imported: string[];     // locally imported repo paths — TODO(phase2-data): no bridge endpoint yet
   hidden: Record<string, boolean>;
   remotes: Record<string, string>; // rel -> owner/repo of origin (GitHub only)
   onSetHidden: (rels: string[], hidden: boolean) => void; // one row, or a whole org
   onRemove: (rel: string) => void;
   onRename: (rel: string, name: string) => void; // blank restores the directory name
-  onImport: (path: string) => void;
   // The bridge's profiles and each project's default — the one its new sessions
   // are bound to. Undefined: a bridge older than profiles, so no picker.
   profiles?: ProfilesInfo;
@@ -120,8 +118,7 @@ export function ProfilePick({ value, profiles, logins, onPick, lg, emptyLabel, d
 }
 
 export function ProjectsSettings(props: ProjectsSettingsProps) {
-  const { groups, imported, hidden, remotes, onSetHidden, onRemove, onRename, onImport, profiles, onSetProfile, logins = [] } = props;
-  const [importPath, setImportPath] = useState("");
+  const { groups, hidden, remotes, onSetHidden, onRemove, onRename, profiles, onSetProfile, logins = [] } = props;
   const [shut, setShut] = useState<Record<string, boolean>>(readShut);
   // Rename in place: the name becomes an input. Esc has to blur (not just
   // unmount) or the blur that follows would save what you were escaping from.
@@ -133,9 +130,6 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
       const dirty = g.badge?.dirty ?? 0;
       return { rel: g.rel, name: g.name, dot: g.running ? "var(--ok)" : dirty > 0 ? "var(--warn)" : null, sessionCount: g.sessionCount };
     }),
-    // Imported-but-sessionless repos still show here so they can be managed.
-    ...imported.filter((rel) => !groups.some((g) => g.rel === rel))
-      .map((rel) => ({ rel, name: projectName(rel), dot: null, sessionCount: 0 })),
   ].sort((a, b) => a.rel.localeCompare(b.rel));
 
   // One section per owning folder — "ainurhq", then "ainurhq/efas" — so a whole
@@ -155,13 +149,6 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
     try { localStorage.setItem(SHUT_KEY, JSON.stringify(next)); } catch { /* ignore */ }
   };
   const allShut = sections.every((s) => shut[s.parent || "~"]);
-
-  const doImport = () => {
-    const raw = importPath.trim();
-    if (!raw) return;
-    onImport(raw);
-    setImportPath("");
-  };
 
   return (
     <div className="ps">
@@ -257,12 +244,6 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
           </div>
         );
       })}
-      <div className="ps-import">
-        <span className="ps-lbl">Import a repo</span>
-        <input value={importPath} onChange={(e) => setImportPath(e.target.value)} placeholder="/home/you/dev/my-repo"
-          onKeyDown={(e) => e.key === "Enter" && doImport()} />
-        <button type="button" className="ps-btn ps-pri" onClick={doImport}>Import</button>
-      </div>
     </div>
   );
 }

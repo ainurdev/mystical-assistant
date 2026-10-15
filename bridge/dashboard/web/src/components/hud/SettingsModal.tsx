@@ -7,7 +7,7 @@ import {
   FolderTree, Gauge, GitBranch, 
   Globe,
   Handshake, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
-  Monitor, MonitorPlay, Moon, Network, Palette, Play, Plug,
+  Monitor, Moon, Network, Palette, Play, Plug,
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, Sun, TriangleAlert, Type,
   Upload, Volume2, Waypoints, type LucideIcon,
@@ -95,7 +95,6 @@ export interface SettingsModalProps {
   onPatch: (patch: Partial<HudSettings>) => void;
   models: { id: string; label: string }[];
   onFeed: (texts: string[], project?: string, fresh?: boolean) => void; // a failed self-update hands git's error to Claude
-  onReplayBoot: () => void;
   onClose: () => void;
   // A profile can carry the open session's tool switches, so the panel reads them.
   sessionTools: string[];
@@ -189,7 +188,6 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "THEME · LIGHT", terms: "colour color palette scheme day bright" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
-  { tab: "appearance", sec: "BOOT SEQUENCE", terms: "intro splash replay animation" },
   { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
@@ -341,7 +339,6 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "THEME · LIGHT": Sun,
   "CRT EFFECTS": ScanLine,
   TYPE: Type,
-  "BOOT SEQUENCE": MonitorPlay,
   "WORKING INDICATOR": AudioLines,
   "OUTPUT STYLE": ScrollText,
   RESULTS: ListTree,
@@ -383,7 +380,6 @@ const SEC_DESC: Record<string, string> = {
   "THEME · LIGHT": "Palettes on a paper or daylight ground.",
   "CRT EFFECTS": "The tube laid over the screen: raster lines, a roaming glow, bloom on headings.",
   TYPE: "The typeface the HUD is set in, and the base size every other size scales from.",
-  "BOOT SEQUENCE": "The intro the dashboard plays when it opens.",
   "OUTPUT STYLE": "How every message in a session is drawn. Each tile is a live preview.",
   "THE GROUND": "The texture the transcript sits on.",
   RESULTS: "Whether command output and diffs start open or folded.",
@@ -3025,14 +3021,12 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   }, []);
   useEffect(() => { if (acc.rows === null) return; setLoginsErr(null); }, [acc.rows]);
   // The browser-only profiles this replaced move onto the bridge once, after
-  // the list is in (a clash with one already there gets " (old)"), and so does
-  // the retired AGENT pick: cleared once moved, so it's never asked about again.
+  // the list is in (a clash with one already there gets " (old)").
   useEffect(() => {
     if (!profiles) return;
-    void importLegacy(profiles.profiles, api.profileWrite, settings.agent).then((r) => {
+    void importLegacy(profiles.profiles, api.profileWrite).then((r) => {
       if (!r) return;
       if (r.landed) onProfilesChanged();
-      if (settings.agent) onPatch({ agent: "" });
       if (r.picked) notify("info", `Your AGENT pick is now profile '${r.picked}' — pick it in PROFILE`);
     });
   }, [profiles]);
@@ -3107,7 +3101,6 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
       <div className="aim-toolbar">
         <span className="aim-lead">The Claude logins runs can use, and the profiles bound to each. A new login comes with a profile of its own.</span>
         <span style={{ flex: 1 }} />
-        <MiniBtn disabled={acc.busy || !!acc.login} onClick={() => void acc.act("add")} title="Snapshot whoever is logged in at ~/.claude right now">COPY CURRENT LOGIN</MiniBtn>
         <MiniBtn disabled={acc.busy || !!acc.login} onClick={() => void acc.startLogin()} primary>+ ADD ACCOUNT</MiniBtn>
       </div>
       {acc.rows === null && <div className="aim-card"><div className="aim-login"><span className="aim-hint">Loading…</span></div></div>}
@@ -3802,7 +3795,6 @@ export function SettingsModal(props: SettingsModalProps) {
     onPatch,
     models,
     onFeed,
-    onReplayBoot,
     onClose,
     sessionTools,
     profiles,
@@ -3877,7 +3869,6 @@ export function SettingsModal(props: SettingsModalProps) {
   useLayoutEffect(() => { pane.current?.scrollTo(0, 0); }, [shown]);
   const autoBase = autoBaseFont(window.innerWidth, window.innerHeight);
   const [escHover, setEscHover] = useState(false);
-  const [replayHover, setReplayHover] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const flint = isFlint(settings.theme);
   const [ground, setGround] = useState<"dark" | "light">(isLight(settings.theme) ? "light" : "dark");
@@ -4172,31 +4163,6 @@ export function SettingsModal(props: SettingsModalProps) {
                   </div>
                 </Section>
 
-                <Section title="BOOT SEQUENCE" top>
-                  <div style={CARD}>
-                    <Row first label="INTRO" desc="Replay the intro this dashboard boots with.">
-                      <button
-                        onClick={onReplayBoot}
-                        onMouseEnter={() => setReplayHover(true)}
-                        onMouseLeave={() => setReplayHover(false)}
-                        style={{
-                          appearance: "none",
-                          cursor: "pointer",
-                          border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
-                          background: replayHover ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
-                          color: "var(--tx)",
-                          fontFamily: "inherit",
-                          fontSize: "var(--t10)",
-                          letterSpacing: 1.5,
-                          padding: "6px 12px",
-                          flex: "none",
-                        }}
-                      >
-                        ▸ REPLAY
-                      </button>
-                    </Row>
-                  </div>
-                </Section>
               </>
             )}
 

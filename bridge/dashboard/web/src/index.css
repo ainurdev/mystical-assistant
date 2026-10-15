@@ -4510,7 +4510,4 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ps-chk { width: 14px; color: var(--acc); flex: none; }
 .ps-optname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ps-k { margin-left: auto; font: 11px var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
-.ps-import { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 10px 12px 10px 14px; border-radius: 12px; background: var(--panel); border: 1px dashed var(--l2); }
 .ps-lbl { font-size: 12.5px; color: var(--txd); white-space: nowrap; }
-.ps-import input { flex: 1; min-width: 0; font: 13px var(--mono); color: var(--txb); background: var(--panel2); border: 1px solid var(--l); border-radius: 7px; padding: 6px 10px; outline: none; }
-.ps-import input:focus { border-color: var(--acc); }
