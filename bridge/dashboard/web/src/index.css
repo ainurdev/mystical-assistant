@@ -4582,3 +4582,225 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] [data-pb="console"] .pb-cmd[data-running], [data-theme^="flint"] [data-pb="console"] .pb-cmd[data-running]:focus-within {
   border-color: transparent !important; border-left-color: var(--ask) !important; box-shadow: none !important;
   background: linear-gradient(90deg, color-mix(in srgb, var(--ask) 8%, transparent), transparent 45%) !important; }
+
+/* === AI MANAGEMENT ===========================================================
+   SETTINGS ▸ AI MANAGEMENT (SettingsModal AiManagementPanel, ProjectsSettings):
+   five folds on one page. Authored in FLINT's idiom — a card is a step of grey
+   and a hairline, a login is a tile on a hue — with fallbacks to the HUD's
+   tokens, so the page stands on every theme while FLINT becomes the one. */
+.aim, .ps { --l: var(--line, var(--border)); --l2: var(--line2, var(--border-bright)); --f: var(--ui-font, inherit); font-family: var(--f); }
+.aim-fold { border: 1px solid var(--l); border-radius: 12px; background: var(--panel); margin-top: 10px; overflow: hidden; }
+.aim-fold:first-child { margin-top: 0; }
+.aim-foldhead { display: flex; align-items: center; gap: 10px; padding: 0 12px 0 0; min-height: 46px; }
+.aim-foldbtn { appearance: none; cursor: pointer; border: 0; background: none; color: inherit; font: inherit; text-align: left;
+  display: flex; align-items: center; gap: 10px; padding: 12px 14px; flex: 1; min-width: 0; }
+.aim-foldbtn b { font: 600 14px var(--f); color: var(--txb); white-space: nowrap; }
+.aim-chev { color: var(--txd); transition: transform .18s ease; flex: none; }
+.aim-fold[data-open] .aim-chev, .ps-grp2[data-open] .ps-chev { transform: rotate(90deg); }
+.aim-count { font: 11.5px var(--mono); color: var(--txd); white-space: nowrap; }
+.aim-hint { font-size: 12.5px; color: var(--txd); min-width: 0; }
+.aim-foldbtn .aim-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aim-foldright { display: flex; align-items: center; gap: 8px; flex: none; }
+.aim-foldbody { padding: 4px 14px 16px; border-top: 1px solid var(--l); background: var(--panel2); }
+.aim-segwrap { display: flex; align-items: center; gap: 10px; }
+.aim-segwrap .aim-hint { white-space: nowrap; }
+.aim-toolbar { display: flex; align-items: center; gap: 8px; padding: 10px 0 12px; }
+.aim-lead { font-size: 12.5px; color: var(--txd); max-width: 60%; }
+.aim-sub { display: flex; align-items: baseline; gap: 10px; margin: 20px 0 10px; }
+.aim-sub b { font: 600 13.5px var(--f); color: var(--txh); white-space: nowrap; }
+/* a login (or an agent) is a card; its profiles hang under it */
+.aim-card { border: 1px solid var(--l); border-radius: 12px; background: var(--panel); overflow: hidden; }
+.aim-card + .aim-card { margin-top: 10px; }
+.aim-card[data-disabled] .aim-login { opacity: .55; }
+.aim-login { display: flex; align-items: center; gap: 12px; padding: 12px 14px; flex-wrap: wrap; }
+.aim-av { display: inline-grid; place-items: center; flex: none; font: 600 12px var(--f); color: var(--acc-on, #fff); letter-spacing: .02em; }
+.aim-who { min-width: 0; flex: 1 1 200px; }
+.aim-who b { display: block; font: 600 14px var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aim-who span { display: block; font-size: 12px; color: var(--txd); margin-top: 1px; }
+.aim-chip { font: 600 10.5px var(--f); padding: 2px 8px; border-radius: 999px; background: color-mix(in oklab, var(--acc) 18%, var(--panel)); color: var(--acc); white-space: nowrap; flex: none; }
+.aim-chip.ok { background: color-mix(in oklab, var(--ok) 16%, var(--panel)); color: var(--ok); }
+.aim-meters { display: flex; gap: 14px; flex: none; }
+.aim-meter { display: grid; grid-template-columns: auto 60px auto; gap: 7px; align-items: center; font: 11px var(--mono); color: var(--txd); }
+.aim-meter i { height: 5px; border-radius: 3px; background: linear-gradient(90deg, var(--c) var(--v), var(--l2) 0); }
+.aim-meter b { font-weight: 500; }
+.aim-usage { font: 11px var(--mono); white-space: nowrap; }
+.aim-acts { display: flex; gap: 6px; flex: none; align-items: center; }
+.aim-profs { border-top: 1px solid var(--l); background: var(--panel2); padding: 6px 10px 8px; }
+.aim-prof { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 6px 6px; border-radius: 8px; }
+.aim-prof:hover, .aim-prof[data-editing] { background: var(--ac-06); }
+.aim-tree { color: var(--txl); font: 12px var(--mono); text-align: center; }
+.aim-profname { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aim-profname b { font: 500 13px var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aim-pills { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.aim-pills em { font: 11px var(--mono); font-style: normal; color: var(--txd); padding: 2px 7px; border-radius: 6px; background: var(--panel3); border: 1px solid var(--l); white-space: nowrap; }
+.aim-addrow { appearance: none; cursor: pointer; border: 0; background: none; color: var(--txl); font: 12.5px var(--f);
+  display: flex; align-items: center; gap: 12px; padding: 6px 6px; border-radius: 8px; width: 100%; text-align: left; }
+.aim-addrow u { text-decoration: none; color: var(--acc); font-weight: 500; }
+.aim-addrow:hover { background: var(--ac-06); }
+.aim-addrow:disabled { opacity: .5; cursor: default; }
+.aim-agent { padding: 12px 14px; }
+/* the editor: a framed form under the row it edits */
+.aim-editor { margin: 4px 0 8px 28px; padding: 12px 14px; border-radius: 10px; background: var(--panel); border: 1px solid color-mix(in oklab, var(--acc) 45%, var(--l2));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 12%, transparent); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 12px; }
+.aim-f label { display: block; font: 500 10.5px var(--f); letter-spacing: .06em; text-transform: uppercase; color: var(--txl); margin-bottom: 5px; }
+.aim-f input, .aim-f select, .aim-sel { width: 100%; height: 32px; padding: 0 10px; border-radius: 7px; background: var(--panel2); border: 1px solid var(--l2); font: 13px var(--f); color: var(--txh); outline: none; }
+.aim-f input:focus, .aim-f select:focus, .aim-sel:focus { border-color: var(--acc); }
+.aim-f.wide { grid-column: 1 / -1; }
+.aim-foot { display: flex; align-items: center; gap: 10px; font-size: 12.5px; color: var(--txm); }
+.aim-foot em { font-style: normal; color: var(--txl); }
+/* the PROFILES fold's field cards */
+.aim-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding-top: 10px; }
+.aim-field { border-radius: 12px; background: var(--panel); border: 1px solid var(--l); padding: 12px 14px; display: flex; align-items: center; gap: 14px; }
+.aim-field > div { min-width: 0; flex: 1; }
+.aim-field b { display: block; font: 500 13.5px var(--f); color: var(--txb); }
+.aim-field span { display: block; font-size: 12px; color: var(--txd); }
+.aim-field .aim-sel { width: auto; max-width: 46%; flex: none; }
+/* the HUD's MiniBtn, in this page's voice: Geist, no tracking, rounded */
+.aim .set-mini, .ps .set-mini, [data-theme^="flint"] .set-mini { font-family: var(--f, var(--ui-font)) !important; font-size: 12px !important; letter-spacing: 0 !important; border-radius: 7px !important; padding: 5px 10px !important; }
+.aim .set-mini:not([data-primary]):not([data-danger]), [data-theme^="flint"] .set-mini:not([data-primary]):not([data-danger]) { border-color: var(--l2) !important; color: var(--txm) !important; }
+.aim .set-mini[data-danger], [data-theme^="flint"] .set-mini[data-danger] { border-color: var(--l2) !important; color: var(--txd) !important; }
+.aim .set-mini[data-danger]:hover, [data-theme^="flint"] .set-mini[data-danger]:hover { border-color: var(--err) !important; color: var(--err) !important; background: color-mix(in oklab, var(--err) 10%, transparent) !important; }
+.aim .set-mini[data-primary] { font-weight: 600; }
+/* a Segmented inside the fold header */
+.aim-segwrap > div { display: inline-flex !important; grid-template-columns: none !important; gap: 2px !important; padding: 3px; border: 1px solid var(--l) !important; border-radius: 9px; background: var(--panel3); }
+.aim-segwrap > div button { border-radius: 6px !important; font: 12px var(--f) !important; letter-spacing: 0 !important; color: var(--txd) !important; background: transparent !important; padding: 4px 10px !important; }
+.aim-segwrap > div button[data-on] { background: var(--panel) !important; color: var(--txb) !important; box-shadow: inset 0 0 0 1px var(--l2); }
+/* the HUD sections nested inside a fold (MCP, the agents' forms) drop their
+   rules and sit on the fold's own ground */
+.aim-foldbody > .set-sec:first-child, .aim-foldbody [data-sec]:first-child { margin-top: 10px !important; }
+/* the MCP fold's first section repeats the fold's own title — drop it */
+.aim-foldbody > [data-sec="MCP SERVERS"] > .set-sechead { display: none; }
+
+/* the toggle and the segmented control, on themes without FLINT's own */
+.aim .set-toggle { appearance: none; cursor: pointer; flex: none; width: 34px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: var(--l2); position: relative; transition: background .18s ease; }
+.aim .set-toggle i { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--txd); transition: left .18s ease, background .18s ease; }
+.aim .set-toggle[data-on] { background: var(--acc); }
+.aim .set-toggle[data-on] i { left: 17px; background: #fff; }
+.aim .set-toggle:disabled { opacity: .5; cursor: default; }
+.aim .set-seg2 { font-family: var(--f); border-color: var(--l); }
+.aim .set-seg2 button { font-family: var(--f); white-space: nowrap; }
+.aim-xrepo { font: 11px var(--mono); color: var(--txl); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; flex: 0 1 auto; }
+.aim-xrepo:hover { color: var(--acc); }
+.aim-sub[data-bar] { align-items: center; }
+.aim-sub .aim-hint { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the SKILLS fold's cards: an extra with its switch, a skill with its scope,
+   a catalog entry with its install buttons — one grammar */
+.aim-xgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 10px; align-items: stretch; }
+.aim-xgrid[data-open] { align-items: start; }
+.aim-x { display: flex; flex-direction: column; gap: 7px; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--l); min-width: 0; transition: border-color .15s, background .15s, opacity .15s; }
+.aim-x[data-on] { border-color: color-mix(in oklab, var(--acc) 40%, var(--l)); background: color-mix(in oklab, var(--acc) 6%, var(--panel)); }
+.aim-x[data-busy] { opacity: .55; }
+.aim-xhd { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aim-xhd b { font: 600 13px var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.aim-xic { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--panel3); color: var(--txd); flex: none; }
+.aim-x[data-on] .aim-xic { background: color-mix(in oklab, var(--acc) 18%, var(--panel)); color: var(--acc); }
+.aim-xinfo { appearance: none; cursor: pointer; flex: none; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 1px solid var(--l2); background: transparent; color: var(--txl); font: 10px var(--mono); line-height: 14px; position: relative; }
+.aim-xinfo::after { content: ""; position: absolute; inset: -8px; }
+.aim-xinfo[aria-expanded="true"] { border-color: var(--acc); color: var(--acc); background: color-mix(in oklab, var(--acc) 14%, transparent); }
+.aim-xhint { font-size: 12px; color: var(--txd); line-height: 1.5; }
+.aim-xhint.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.aim-xaside { font-size: 12px; color: var(--txm); line-height: 1.55; padding: 8px 10px; border-radius: 8px; background: var(--panel2); border: 1px solid var(--l); }
+.aim-xerr { font-size: 12px; color: var(--err); }
+.aim-xfoot { display: flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--l); font-size: 11.5px; color: var(--txl); min-width: 0; }
+.aim-xfoot em { font-style: normal; font: 11px var(--mono); color: var(--txd); margin-left: auto; white-space: nowrap; }
+.aim-xfoot a { font: 11px var(--mono); color: var(--txl); text-decoration: none; margin-left: auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.aim-xfoot a:hover { color: var(--acc); }
+.aim-xbtn { appearance: none; cursor: pointer; flex: none; font: 500 11.5px var(--f); padding: 3px 8px; border-radius: 6px; border: 1px solid var(--l2); background: transparent; color: var(--txm); white-space: nowrap; }
+.aim-xbtn:hover { color: var(--txb); background: var(--ac-06); }
+.aim-xbtn:disabled { opacity: .45; cursor: default; }
+.aim-xbtn[data-on] { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 45%, var(--l2)); background: color-mix(in oklab, var(--ok) 10%, transparent); }
+.aim-xbtn.warn { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 50%, var(--l2)); }
+.aim-xbtn.danger:hover { color: var(--err); border-color: var(--err); background: color-mix(in oklab, var(--err) 10%, transparent); }
+.aim-chip.dim { background: var(--panel3); color: var(--txd); font-weight: 500; text-transform: capitalize; }
+.aim-glabel { display: flex; align-items: center; gap: 8px; margin: 16px 0 8px; font: 500 10.5px var(--f); letter-spacing: .08em; text-transform: uppercase; color: var(--txl); white-space: nowrap; }
+.aim-glabel::after { content: ""; flex: 1; height: 1px; background: var(--l); }
+.aim-note { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; margin-top: 12px; font-size: 12.5px; }
+.aim-note.warn { color: var(--warn); background: color-mix(in oklab, var(--warn) 9%, var(--panel)); border: 1px solid color-mix(in oklab, var(--warn) 35%, var(--l)); }
+.aim-search { width: 100%; height: 34px; padding: 0 12px; border-radius: 9px; background: var(--panel); border: 1px solid var(--l); font: 13px var(--f); color: var(--txb); outline: none; margin-top: 12px; }
+.aim-search:focus { border-color: var(--acc); }
+.aim-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 12px; }
+.aim-chipbtn { appearance: none; cursor: pointer; font: 500 11.5px var(--f); padding: 4px 10px; border-radius: 999px; border: 1px solid var(--l2); background: transparent; color: var(--txd); --c: var(--acc); }
+.aim-chipbtn:hover { color: var(--txb); }
+.aim-chipbtn[data-on] { color: var(--txb); border-color: color-mix(in oklab, var(--c) 50%, var(--l2)); background: color-mix(in oklab, var(--c) 14%, transparent); }
+.aim-chipbtn i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--c); margin-right: 6px; vertical-align: 1px; }
+.aim-catalog { max-height: 520px; overflow-y: auto; padding: 2px; margin: -2px; }
+.aim-plugins { margin-top: 12px; }
+/* DEFAULT PROFILE: a hero card for the pick, then the run defaults as field cards */
+.aim-hero { margin-top: 12px; padding: 16px 18px; border-radius: 12px; background: var(--panel); border: 1px solid var(--l); display: flex; align-items: center; gap: 24px; }
+.aim-hero > div { min-width: 0; flex: 1; }
+.aim-hero-l { font: 500 10.5px var(--f); letter-spacing: .08em; text-transform: uppercase; color: var(--txl); margin-bottom: 5px; }
+.aim-hero .aim-hint { line-height: 1.5; }
+.ps-pick.ps-pick-lg { width: 300px; height: 40px; padding: 0 12px 0 8px; font-size: 13.5px; border-radius: 10px; gap: 10px; flex: none; }
+.ps-pick.ps-pick-lg:disabled { opacity: .55; cursor: default; }
+.ps-pick-lg .ps-av { width: 24px; height: 24px; font-size: 10px; border-radius: 6px; }
+.ps-pick-lg + .ps-menu { top: 45px; width: 300px; }
+.aim-vfields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.aim-vfields.two { grid-template-columns: 1fr 1fr; }
+.aim-vfield { padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--l); display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.aim-vfield b { font: 500 13px var(--f); color: var(--txb); }
+.aim-vfield span { font-size: 12px; color: var(--txd); line-height: 1.45; }
+.aim-vfield .aim-sel { height: 34px; border-radius: 8px; }
+.aim-vfield.row { flex-direction: row; align-items: center; gap: 14px; }
+.aim-vfield.row > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.aim-vfield.row .aim-sel { width: auto; min-width: 120px; flex: none; }
+
+/* ── PROJECTS ── */
+.ps-toolbar { display: flex; align-items: center; gap: 10px; padding: 10px 0 4px; }
+.ps-toolbar .aim-hint { max-width: 70%; }
+.ps-toolbar .ps-btn, .ps-head .ps-btn { white-space: nowrap; flex: none; }
+.ps-btn { appearance: none; cursor: pointer; font: 500 12px var(--f); padding: 5px 10px; border-radius: 7px; border: 1px solid var(--l2); color: var(--txm); background: transparent; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.ps-btn:hover { background: var(--ac-06); color: var(--txb); }
+.ps-btn.ps-sm { font-size: 11.5px; padding: 4px 9px; color: var(--txd); }
+.ps-btn.ps-sm[data-on] { color: var(--acc); border-color: color-mix(in oklab, var(--acc) 40%, var(--l2)); }
+.ps-btn.ps-i { width: 28px; height: 28px; padding: 0; color: var(--txd); }
+.ps-btn.ps-danger:hover { color: var(--err); border-color: var(--err); background: color-mix(in oklab, var(--err) 10%, transparent); }
+.ps-btn.ps-pri { background: var(--acc); border-color: var(--acc); color: var(--acc-on, #fff); font-weight: 600; }
+.ps-grp2 { margin-top: 10px; }
+.ps-head { display: flex; align-items: center; gap: 10px; padding: 4px 4px 6px; }
+.ps-fold { appearance: none; cursor: pointer; border: 0; background: none; color: inherit; font: inherit; display: flex; align-items: center; gap: 10px; padding: 4px 4px; min-width: 0; text-align: left; }
+.ps-chev { color: var(--txd); transition: transform .18s ease; flex: none; }
+.ps-fold b { font: 600 13.5px var(--f); color: var(--txh); white-space: nowrap; }
+.ps-fold b i { font-style: normal; color: var(--txl); font-weight: 400; }
+.ps-n { font-size: 12px; color: var(--txd); white-space: nowrap; }
+.ps-rows { border-radius: 12px; background: var(--panel); border: 1px solid var(--l); overflow: visible; }
+.ps-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto auto; gap: 10px; align-items: center; padding: 9px 14px; border-top: 1px solid var(--l); }
+.ps-row:first-child { border-top: 0; }
+.ps-row[data-hidden] > :not(.ps-acts) { opacity: .5; }
+.ps-row .ptile { display: inline-grid; place-items: center; width: 22px; height: 22px; margin: 0; border-radius: 6px; font: 600 9.5px var(--f); color: color-mix(in oklab, var(--pc) 30%, white); background: color-mix(in oklab, var(--pc) 26%, var(--panel)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 45%, transparent); }
+.ps-dot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+.ps-name { display: flex; align-items: center; gap: 8px; min-width: 0; overflow: hidden; }
+.ps-rename { appearance: none; cursor: text; border: 0; background: none; padding: 0; color: inherit; font: inherit; display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: none; max-width: 100%; }
+.ps-rename b { font: 500 13.5px var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ps-rename svg { color: var(--txl); opacity: .6; flex: none; }
+.ps-rename:hover svg { color: var(--acc); opacity: 1; }
+.ps-name input { font: 500 13.5px var(--f); color: var(--txb); background: var(--panel2); border: 1px solid var(--acc); border-radius: 6px; padding: 2px 8px; flex: 1 1 120px; min-width: 80px; width: auto; outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 16%, transparent); }
+.ps-keys { font: 11.5px var(--mono); color: var(--txl); white-space: nowrap; }
+.ps-chip { font: 600 10.5px var(--f); padding: 2px 8px; border-radius: 999px; background: var(--panel3); color: var(--txd); white-space: nowrap; }
+.ps-remote { font: 11.5px var(--mono); color: var(--txl); text-decoration: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.ps-remote:hover { color: var(--acc); }
+.ps-sess { font: 11.5px var(--mono); color: var(--txl); min-width: 46px; text-align: right; white-space: nowrap; }
+.ps-acts { display: flex; gap: 4px; }
+/* the profile picker: a chip with the login's tile, and a menu grouped by login */
+.ps-pickwrap { position: relative; }
+.ps-pick { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 9px 0 5px; border-radius: 7px; background: var(--panel2); border: 1px solid var(--l); font: 12.5px var(--f); color: var(--txh); width: 230px; }
+.ps-pick:hover { border-color: var(--l2); }
+.ps-av { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 5px; font: 600 8.5px var(--f); color: var(--acc-on, #fff); flex: none; }
+.ps-av-agent { background: var(--panel3); color: var(--txm); box-shadow: inset 0 0 0 1px var(--l2); }
+.ps-pickname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 48px; }
+.ps-pickdim { color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 0; text-align: left; }
+.ps-pickchev { color: var(--txl); font-size: 10px; margin-left: auto; flex: none; }
+.ps-menu { position: absolute; top: 33px; right: 0; width: 300px; max-height: 360px; overflow: auto; padding: 6px; border-radius: 10px; background: var(--panel); border: 1px solid var(--l2);
+  box-shadow: 0 18px 44px -14px rgba(0,0,0,.75), 0 0 0 1px rgba(0,0,0,.4); z-index: 30; }
+.ps-grp { display: flex; align-items: center; gap: 8px; font: 600 10px var(--f); letter-spacing: .12em; text-transform: uppercase; color: var(--txl); padding: 8px 10px 4px; }
+.ps-grp .ps-av { width: 16px; height: 16px; border-radius: 4px; font-size: 8px; }
+.ps-opt { appearance: none; cursor: pointer; border: 0; background: none; color: var(--txh); font: 13px var(--f); text-align: left;
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 7px; }
+.ps-opt:hover { background: var(--ac-06); }
+.ps-opt[data-on] { background: color-mix(in oklab, var(--acc) 12%, var(--panel)); color: var(--txb); }
+.ps-chk { width: 14px; color: var(--acc); flex: none; }
+.ps-optname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ps-k { margin-left: auto; font: 11px var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
+.ps-import { display: flex; align-items: center; gap: 10px; margin-top: 14px; padding: 10px 12px 10px 14px; border-radius: 12px; background: var(--panel); border: 1px dashed var(--l2); }
+.ps-lbl { font-size: 12.5px; color: var(--txd); white-space: nowrap; }
+.ps-import input { flex: 1; min-width: 0; font: 13px var(--mono); color: var(--txb); background: var(--panel2); border: 1px solid var(--l); border-radius: 7px; padding: 6px 10px; outline: none; }
+.ps-import input:focus { border-color: var(--acc); }

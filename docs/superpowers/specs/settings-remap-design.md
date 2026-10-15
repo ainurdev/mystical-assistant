@@ -1,8 +1,10 @@
-# Settings remap: 17 tabs to 11, every tab one question, integrations as installable plugins
+# Settings remap: fewer tabs, every tab one question, integrations as installable plugins
 
-2026-10-15 · approved in chat (variant A, the rail) · audit in `.mystical/docs/reports/settings-audit.md` ·
-mockups in `.mystical/design-drafts/settings-remap/` (`SPEC.md`, `00`–`07` HTML, `shots/`; the Claude Design
-push waits on a one-time `/design-login` on this Mac) · plan: `docs/superpowers/plans/settings-remap.md` (next).
+2026-10-15 · approved in chat (variant A) · **v2, same evening: reconciled with the AI MANAGEMENT page
+(bf3c71f, 5e3653c, e92c1ac) that landed and shipped meanwhile — kept as is, the remap now builds on it** ·
+audit in `.mystical/docs/reports/settings-audit.md` · mockups in `.mystical/design-drafts/settings-remap/`
+(`SPEC.md`, `00`–`07` HTML, `shots/`, `after/aimgmt.png` is the live page; the Claude Design push waits on a
+one-time `/design-login` on this Mac) · plan: `docs/superpowers/plans/settings-remap-cuts.md` (slice 1; slices 2 and 3 get their own).
 
 ## Problem
 
@@ -10,8 +12,9 @@ The dashboard's Settings modal grew a tab per feature: 17 tabs in two groups, 5,
 Measured on this machine (bridge.db, the state files, the Mac app's saved `hud-settings`, re-read
 2026-10-15):
 
-- "Who runs a session" is split over ACCOUNTS, SESSION and CONFIG, and SESSION ▸ RUN DEFAULTS duplicates
-  the composer's own dropdowns (the session-run-settings design made model and mode the session's).
+- "Who runs a session" was split over ACCOUNTS, SESSION and CONFIG. **Solved since by AI MANAGEMENT:**
+  logins with their profiles beneath them, other agents, skills + the model-spending extras, MCP, the
+  default profile and projects, as five folds of one page.
 - Integrations are scattered: PLUGINS (Rivendell) is a tab, TRACKERS hides inside SYSTEM, HOOKS is a tab,
   the Claude Design link is an AI card. All of them show for every install, including one that will never
   use any of them, which blocks publishing.
@@ -25,89 +28,83 @@ Measured on this machine (bridge.db, the state files, the Mac app's saved `hud-s
 
 ## Goals
 
-1. Eleven tabs in four groups; each answers one question, named in its first line.
-2. The rail reads its state: a live second line per tab, so most answers need no click.
-3. Integrations ship with Mystical but stay off and invisible until installed from Settings ▸ Integrations.
+1. Fewer tabs, each answering one question named in its first line. The AI MANAGEMENT page is the model:
+   one question per page, folds inside it, counts in the fold heads.
+2. Integrations ship with Mystical but stay off and invisible until installed from Settings ▸ Integrations.
    Someone who installs Mystical for the session list never meets Rivendell, Teamwork, Jira or Claude Design.
-4. Settings holds what you change after install. What a setup script writes once stays in `.env`.
-5. Delete what nobody uses rather than regroup it.
+3. Settings holds what you change after install. What a setup script writes once stays in `.env`.
+4. Delete what nobody uses rather than regroup it.
 
-Non-goals: out-of-tree plugins (a folder dropped into the state dir) — the registry is shaped for it,
-nothing loads from outside the repo in this round; the Mini App's own SYSTEM page beyond what the cuts
-force; themes and typefaces (untouched).
+Non-goals: out-of-tree plugins (the registry is shaped for it; nothing loads from outside the repo in
+this round); the Mini App's SYSTEM page beyond what the cuts force; themes and typefaces; re-opening the
+AI MANAGEMENT layout (its run-defaults block duplicates the composer, noted below, left alone).
 
-## The rail
+## The rail — 13 today, 8 after (7 off the Mac)
 
-| Group | Tab | Live readout (source) | Holds |
-|---|---|---|---|
-| THE HUD | Appearance | `Flint · Geist · auto size` (settings) | theme dark/light · CRT effects (CRT themes only) · type |
-| | Transcript | `Dossier · matrix · compact · status` (settings) | layout · composer (send key, show every model) · reading (scheme, ground, auto-open results, collapse steps) · working indicator |
-| | Notify | `Banner · blip · Telegram on` (settings + env `NOTIFY_ENABLE`) | desktop banners · sound (tone, volume) · a note pointing at Telegram ▸ Push |
-| | Mac app | `Session in title · in Dock` (lib/mac) | unchanged; Mac only |
-| THE RUNS | Accounts | `2 logins · 2 profiles · auto` (accounts, profiles) | Claude logins · other agents · profiles · on usage limit |
-| | AI | `7 of 10 spending` (aifeatures) | the AI switches, each priced; ponytail's default level on its card |
-| CONNECTIONS | MCP | `17 servers · 2 need auth` + warn pip (mcp) | servers · add a server · AI browser |
-| | Integrations | `Rivendell · 3 available` (integrations) | installed plugins with their settings · available plugins with INSTALL |
-| | Telegram | `Bot · Mini App · named tunnel` (env, tunnel) | bot token · allowed chat ids · Mini App on/off · tunnel status · ping on finish |
-| THE BRIDGE | Projects | `23 repos · 2 hidden` (projects) | repo rows · defaults (base path read-only, default run command) |
-| | System | `Up to date · at login` (update, startup) | start at login · open the window · platform (branch, update, restart, open inspector) · runs (new-session mode, run timeout, auto-resume) |
-| | Move | `Imported Oct 9` (move jobs) | export · import |
+| Group | Tab | Holds |
+|---|---|---|
+| THE HUD | Appearance | theme dark/light · CRT effects (CRT themes only) · type |
+| | Transcript | layout · composer (send key) · reading (scheme, ground, auto-open results, collapse steps) · working indicator (Equalizer / Status) |
+| | Notify | desktop banners · sound (tone, volume) · a note pointing at System ▸ Telegram ▸ push |
+| | Mac app | unchanged; Mac only |
+| THE WORK | AI management | **as shipped:** Accounts (logins + their profiles, other agents, limit policy) · Skills (installed, catalog, plugins, the model-spending extras) · MCP (+ the AI browser rows) · Default profile · Projects |
+| | Integrations | installed plugins with their settings · available plugins with INSTALL |
+| | System | folds, in the AI MANAGEMENT grammar: Startup · Platform · Runs · Telegram |
+| | Move | export · import |
 
-Rules the pages share:
+Gone from the rail: Indicator (folds into Transcript), Ambient (weather stays in the clock popover; the
+radio goes), Config, Hooks, Report, Plugins (becomes Integrations).
 
-- **Readouts** are built from data the modal already fetches when it opens (one round of GETs, no new
-  polling). Until a readout's data lands, the row shows its static hint.
-- **Scope pill** on every section head: `This browser` · `This bridge` · `This machine` · `Next start`.
-  Replaces the header's "where these are stored" ⓘ and the per-row "· next start" suffix.
-- **FLINT styling is the house style for this modal** on FLINT themes (sentence case, Geist, pills,
-  12px-radius cards), the HUD styling elsewhere — both exist today; the remap changes content, not skins.
-- **Deep links keep working:** `openSettings("plugins")` lands on Integrations, `("session","new")` on
-  Accounts with the profile form open, `("accounts", slot)`, `("mcp")`, `("move")` as today. The `Tab`
-  union becomes the eleven keys; `"plugins"` and `"session"` stay accepted as aliases.
-- **Search** indexes the eleven tabs' sections; the env registry's remaining rows fold in as before.
-- **Phone layout** (`max-width: 600px`): the rail collapses into the grid of variant B (mockup 02) —
-  icon, name, readout per card — instead of today's scrolling strip.
+Rules:
+
+- **Deep links keep working.** `normalizeTab` already maps `projects` / `session` / `accounts` / `mcp` /
+  `ai` onto AI MANAGEMENT folds; `plugins` maps onto Integrations, `indicator` onto Transcript, and
+  `system` + a fold name onto its fold. `openSettings("plugins", instanceId)` opens the Rivendell card.
+- **Scope on a section** where it is not obvious: `This browser` on Appearance / Transcript / Notify
+  sections, `Next start` on the System rows that wait for a restart. The header's "where these are
+  stored" ⓘ goes.
+- **Search** indexes the eight tabs' sections; the env registry's remaining rows fold in as before.
+- **Live rail readouts** (mockup 01) are a later polish: FLINT's rail hides the hint line by design today,
+  so a readout needs that line back first. The fold heads already carry the counts on the one page that
+  has folds.
 
 ## Pages
 
 **Appearance.** Today's page minus BOOT SEQUENCE; "Replay the boot intro" becomes a ⌘K palette command.
 
-**Transcript.** LAYOUT (default / compact) · COMPOSER (send key; *show every model*, from SESSION) ·
-READING: one card — colour scheme (phosphor / contrast), the ground (none + four), auto-open results,
-collapse steps · WHILE IT WORKS: working indicator, a two-way segmented control, *Equalizer* / *Status*.
-The output-style picker goes: DOSSIER is the one language.
+**Transcript.** LAYOUT (default / compact) · COMPOSER (send key) · READING: one card — colour scheme
+(phosphor / contrast), the ground (none + four), auto-open results, collapse steps · WHILE IT WORKS: working
+indicator, a two-way segmented control, *Equalizer* / *Status*. The output-style picker goes: DOSSIER is
+the one language. (*Show every model* stays where AI MANAGEMENT put it, in Default profile.)
 
 **Notify.** DESKTOP and SOUND as today (switch, tone, volume, a chime on change). PER EVENT and the pack
-board go. A note under SOUND: "A Telegram ping for the same moments is under Telegram ▸ Push."
+board go. A note under SOUND: "A Telegram ping for the same moments is under System ▸ Telegram."
 
-**Accounts.** CLAUDE LOGINS (rows as today; `+ ADD ANOTHER ACCOUNT`; `COPY CURRENT LOGIN` goes) · OTHER
-AGENTS (today's AGENTS section) · PROFILES (today's panel, moved from SESSION; `+ NEW PROFILE`) · ON USAGE
-LIMIT (today's segmented control, last because it is the rarest). The composer's `+ NEW PROFILE` opens
-this tab with the form open and scrolled into view.
+**AI management.** Kept as shipped. Changes inside its folds, each in the fold's own idiom:
+- Accounts: `COPY CURRENT LOGIN` goes (`+ ADD ACCOUNT` signs in right here).
+- Skills ▸ extras: `tasks` and `design` leave for their plugins; **Ponytail** renders only when the
+  ponytail Claude Code plugin is installed (`~/.claude/plugins/installed_plugins.json`); **Project map**
+  shows "Needs graphify on PATH — not found" with the install line when `graphmap.graphify_bin()` is
+  None, switch disabled; the fold's `on of total` counts only cards shown.
+- MCP: an AI BROWSER card holding the three browser rows (hidden, binary, profile folder) that configure
+  the Playwright and chrome-devtools servers.
+- Projects: the IMPORT row goes (browser-local stub). A DEFAULT COMMAND row (`START_CMD`) at the foot.
+- Default profile: unchanged. (Its model / mode / effort block repeats the composer; the page's own note
+  says the session owns them. Left alone; a candidate for a later trim.)
 
-**AI.** Today's cards minus `tasks` and `design` (they move into their plugins). No tuning rows; the eight
-`RELEVANCE_*` / `NEXTUP_*` knobs stay in `.env`. Two cards become dependency-aware: **Ponytail** renders
-only when the ponytail Claude Code plugin is installed (`~/.claude/plugins/installed_plugins.json`) and
-carries the default-level control (from SESSION); **Project map** shows "Needs graphify on PATH — not
-found" with the install line when `graphmap.graphify_bin()` is None, switch disabled. The AI tab's
-`on of total` counts only cards shown.
+**Integrations.** INSTALLED: one card per installed plugin with its settings inside (Rivendell: instances
+with today's form minus `ws url`, TEST LINK / SEND TEST JOB, a VIDEO JOBS line showing whether ffmpeg,
+whisper-cli and the model file are found; Trackers: today's TRACKERS panel plus the Task digest switch;
+Claude Design: the card says what it adds) · AVAILABLE: a card per plugin not installed — Teamwork, Jira
+(both install `trackers`), Claude Design, Rivendell — with what it adds, what it needs, INSTALL. Mockup 07.
 
-**MCP.** Today's MCP SERVERS and ADD A SERVER, plus an AI BROWSER card holding the three browser rows
-(hidden, binary, profile folder) that configure the Playwright and chrome-devtools servers.
-
-**Integrations.** See below.
-
-**Telegram.** BOT (`Next start`): bot token (masked), allowed chat ids · MINI APP (`Next start`): the
-switch; a read-only tunnel line — `Named · connected` / `Quick tunnel` / `Off`, hostname, port, "set up
-by `mystical setup`" · PUSH (`This bridge`): ping on finish (`NOTIFY_ENABLE`).
-
-**Projects.** Today's rows (rename, hide/show, remove, default profile; IMPORT goes) plus a DEFAULTS
-card: base path (read-only, with "change it in .env and restart"), default run command (`START_CMD`).
-
-**System.** STARTUP: start at login, open the window too, the browser-profile picker where it applies;
-*install as app* only where a browser can install (hidden inside Mystical.app) · PLATFORM: one line with
-branch, commit, host:port and the store path, RESTART BRIDGE; UPDATE; API TRAFFIC → open inspector · RUNS:
-new sessions start in (`NEW_SESSION_PERMISSION_MODE`), run timeout, auto-resume.
+**System.** Four folds. STARTUP: start at login, open the window too, the browser-profile picker where it
+applies, *install as app* only where a browser can install · PLATFORM: one line with branch, commit,
+host:port and the store path, RESTART BRIDGE; UPDATE; API TRAFFIC → open inspector · RUNS: new sessions
+start in (`NEW_SESSION_PERMISSION_MODE`), run timeout, auto-resume · TELEGRAM (`Next start` where it
+applies): bot token (masked), allowed chat ids, the Mini App switch, a read-only tunnel line (`Named ·
+connected` / `Quick tunnel` / `Off`, hostname, port, "set up by `mystical setup`"), ping on finish
+(`NOTIFY_ENABLE`). Mockups 04 and 05 are these folds' contents.
 
 **Move.** EXPORT and IMPORT as today. PROGRESS goes; `MoveDock` keeps today's defaults as constants
 (line bar, regular, accent/violet, bottom-right, pill, all four card parts, hide after success, motion on).
@@ -143,8 +140,8 @@ upgrade without a click.
   `POST /local/integrations {id, action: install|remove}`. `lib/integrations.ts` exposes
   `useIntegrations()` the way `lib/ai.ts` exposes `useAiFeatures()`; `App.tsx`'s `rivendellOn`, the
   SessionsPanel plugins mode, AnalyzeModal's TASKS/LINK TASKS and DESIGN tab, the composer's DESIGN
-  button, MoveDock's Rivendell actions and the Mini App's WORK route all read it. The Mini App gets the
-  flags on `/state`.
+  button, MoveDock's Rivendell actions, the SKILLS fold's extras and the Mini App's WORK route all read
+  it. The Mini App gets the flags on `/state`.
 - Tests: one parametrised test per plugin asserts that with it not installed its routes 404, its origins
   are not plugin origins, and its env keys are absent from the registry; one test covers first-boot
   adoption; the existing Rivendell and tracker suites run with the plugin installed in `conftest`.
@@ -153,19 +150,17 @@ upgrade without a click.
 
 | Plugin | Code it owns | Settings inside its card |
 |---|---|---|
-| **Rivendell** | `rivendell.py`, `rivendell_instances.py`, `rivendell_video.py`, origins `rivendell:*`, env `FFMPEG_BIN` `WHISPER_BIN` `WHISPER_MODEL`, the RIVENDELL right-rail tab, the queue cards, Telegram approvals, the video kind | instances (today's form minus `ws url`), TEST LINK / SEND TEST JOB, a VIDEO JOBS line showing whether ffmpeg, whisper-cli and the model file are found |
+| **Rivendell** | `rivendell.py`, `rivendell_instances.py`, `rivendell_video.py`, origins `rivendell:*`, env `FFMPEG_BIN` `WHISPER_BIN` `WHISPER_MODEL`, the RIVENDELL right-rail tab, the queue cards, Telegram approvals, the video kind | instances (today's form minus `ws url`), TEST LINK / SEND TEST JOB, a VIDEO JOBS line |
 | **Trackers** (Teamwork, Jira) | `trackers.py`, the TASKS tab, LINK TASKS, the Task digest switch, the tracker MCP entries, Mini App WORK | connections (today's TRACKERS panel), the Task digest switch |
 | **Claude Design** | `designsync.py`, `design_project` in project config, DesignTab, the composer DESIGN button, `/design-first` and `/design-implement`, the design pull in `skills.py` | nothing beyond the per-repo link in ANALYZE; the card says what it adds |
-
-Integrations shows two cards per tracker kind (Teamwork, Jira) over one `trackers` plugin; both install it.
 
 ## What goes
 
 **Tabs:** Hooks (feature and code: `hooks.py`, both server routes, the Mini App endpoint, `HooksPanel`,
 `test_hooks.py`, `test_hooks_endpoint.py`; the two DB tables stay, empty) · Config (`agentconfig.py`, its
 route, `AgentConfigPanel`, `test_agentconfig.py`) · Report (the tab only; `WeekPanel` keeps its two homes)
-· Ambient (weather stays in the clock popover; the radio goes) · Session (run defaults are the composer's;
-profiles move) · Indicator (folds into Transcript) · Plugins (renamed Integrations).
+· Ambient (weather stays in the clock popover; the radio goes) · Indicator (folds into Transcript) ·
+Plugins (becomes Integrations).
 
 **Features:** nyan / piano / tiles (`lib/nyan.ts`, `lib/songs.ts`, `lib/piano.ts`, `usePianoEngine.ts`,
 `PianoKeyboard.tsx`, `PianoIndicator.tsx`, `TilesIndicator.tsx`, their branches in `WorkingIndicator.tsx`)
@@ -174,7 +169,7 @@ profiles move) · Indicator (folds into Transcript) · Plugins (renamed Integrat
 goes on both; the Mini App's `/output` route becomes scheme + collapse steps) · per-event sound packs
 (`lib/sounds.ts`, `SoundBoard`, `PUSH_EVENTS` keep only the tone path) · Move ▸ Progress (`MovePrefs`, the
 page, the bar/thickness/corner/mini variants in `MoveDock`) · the Projects import stub · the Boot sequence
-section.
+section · `COPY CURRENT LOGIN`.
 
 **Browser settings (`HudSettings`), 37 → 22.** Delete `agent`, `nyan`, `nyanSound`, `nyanVolume`,
 `nyanExtra`, `pianoVoice`, `pianoVolume`, `tilesSong`, `tilesSpeed`, `radioVolume`, `pushSounds`, `move`,
@@ -198,9 +193,8 @@ table are the documentation for the env-only keys.
 
 **AI switches, 12 → 10:** `tasks` → Trackers plugin card, `design` → Claude Design plugin card.
 
-**Rows and buttons:** Accounts `COPY CURRENT LOGIN`; Rivendell form `ws url`; Projects `IMPORT`;
-Appearance `BOOT SEQUENCE` (palette command instead); System's HOST / PORT card (folds into the Platform
-line); Startup `AS PROFILE` only where it applies (as today), `INSTALL AS APP` hidden inside Mystical.app.
+**Rows and buttons:** Rivendell form `ws url`; System's HOST / PORT card (folds into the Platform line);
+Startup `AS PROFILE` only where it applies (as today), `INSTALL AS APP` hidden inside Mystical.app.
 
 ## Cross-surface
 
@@ -218,14 +212,28 @@ line); Startup `AS PROFILE` only where it applies (as today), `INSTALL AS APP` h
 - Browser `hud-settings` blobs with removed keys load clean; nothing is rewritten until the next save.
 - Hooks tables stay in the schema; no migration touches data.
 
+## Delivery order
+
+Three slices, each shippable alone, oldest risk first. Every cut is its own commit so a regret is one
+revert.
+
+1. **Cuts that touch nothing of AI MANAGEMENT** — Hooks, Config, Report tab, Ambient + radio, Indicator
+   fold-in + games, sound packs, Move progress, Boot replay → palette, import stub, `COPY CURRENT LOGIN`,
+   the `HudSettings` fields. Then the transcript languages as the last and largest cut (both surfaces).
+2. **Integrations as plugins** — registry, adoption, gating, the Integrations page replacing PLUGINS,
+   Trackers out of SYSTEM, `tasks` / `design` into their cards, Mini App gating, the parametrised test.
+3. **System as folds** — Telegram fold, env registry 46 → 10, AI TUNING rows out of the UI, browser rows
+   into the MCP fold, HOST/PORT into the Platform line. Then the polish: dependency-aware extras cards,
+   live rail readouts when FLINT's rail shows a second line.
+
 ## Testing
 
 Backend: `tests/test_integrations.py` (registry, install/remove, first-boot adoption, route gating per
 plugin), `test_envsettings.py` updated for the ten-row registry and plugin-owned keys, `test_aifeatures.py`
 for the two moved switches, hooks and agentconfig tests deleted, the Rivendell and tracker suites install
 their plugin in `conftest`. Frontend: `tsc -p tsconfig.app.json` and the `.check.ts` files; `toolwidget`
-checks shrink with the languages. Visual: the bridge-eyes capture of each of the eleven tabs in FLINT and
-AURORA, compared against the mockups.
+checks shrink with the languages. Visual: the bridge-eyes capture of each of the eight tabs in FLINT and
+AURORA, compared against the mockups and the live `after/aimgmt.png`.
 
 ## Risks
 
@@ -233,4 +241,6 @@ AURORA, compared against the mockups.
   component that branched on `toolStyle`; the chat-language-coverage harness goes with it.
 - Gating is many small edits across twelve backend files and eighteen frontend files; the parametrised
   not-installed test is what catches a missed one.
+- AI MANAGEMENT is a day old and a collaborator's; edits inside its folds stay small and in its idiom
+  (`aim-*` classes, `SkillsFold` card grammar) so two people are not reshaping one file at once.
 - The Claude Design draft push is pending until `/design-login` runs once interactively on this Mac.
