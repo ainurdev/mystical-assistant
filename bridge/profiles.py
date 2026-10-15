@@ -5,7 +5,9 @@ mode, effort, tool switches) that a session is *bound* to (sessions.profile_id)
 rather than stamped from. Per knob, a value set by hand in that session wins,
 then the profile's, then today's default (effective()). So editing a profile
 reaches every session that uses it, from its next turn, except where that
-session was set by hand.
+session was set by hand. A turn the bridge runs on another login (the fallback
+ladder's handover) moves the session to that login's profile, knobs kept
+(follow_account), so the pickers never show a login it no longer runs on.
 
 save_pick() is the one writer of those hand-set values. It stores NULL for a
 pick equal to the profile's. That way a client echoing the picker on every send
@@ -330,6 +332,30 @@ def bind(session: dict, pid: "str | None") -> "tuple[dict, int]":
             and eff["disabled_tools"] is not None:
         store.set_disabled_tools(session["id"], eff["disabled_tools"])
     return {"ok": True, "profile_id": pid}, 200
+
+
+def follow_account(session: dict, slot: int) -> None:
+    """A Claude turn is starting on another login than the bound profile's (the
+    fallback ladder's handover, a resume, a routed run): bind the session to
+    that login's profile, so both composers' PROFILE chip and its next turn go
+    with it instead of back to the old login. Only the account changes: what
+    the old profile gave is pinned on the session unless the new one gives the
+    same. No Claude profile on that login (deleted): left as it is."""
+    def login(p):
+        return p.get("account") or str(accounts.DEFAULT_SLOT)   # "" = the ambient one
+    eff = effective(session)
+    if eff["agent"] != CLAUDE or login(eff) == str(slot):
+        return
+    new = next((p for p in all_profiles()
+                if (p.get("agent") or CLAUDE) == CLAUDE and login(p) == str(slot)), None)
+    if new is None:
+        return
+    sid = session["id"]
+    store.set_session_field(sid, "profile_id", new["id"])
+    for col, field in KNOBS.items():
+        store.set_session_field(sid, col, None if eff[col] == (new.get(field) or None) else eff[col])
+    if session.get("disabled_tools") is None and eff["disabled_tools"] != new.get("tools"):
+        store.set_disabled_tools(sid, tools_for(session))
 
 
 DEFAULT_KEY = "default_profile"

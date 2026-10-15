@@ -2615,7 +2615,9 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     instead of silently running on another login.
 
     account_slot picks which Claude login runs the turn (None = the ambient one,
-    or the bound profile's); runtime is set instead when a fallback-ladder free
+    or the bound profile's); another login than the profile's moves the session
+    to that login's profile (profiles.follow_account), so the next turn stays
+    there. runtime is set instead when a fallback-ladder free
     agent takes over. Both are recorded on the turn so the transcript shows what
     produced it. A profile on another agent makes it runtime 'acp:<agent>': an
     AcpJob with that profile's account in job.acp_account, and no claude
@@ -2658,6 +2660,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
             if account_slot is not None or runtime not in (None, f"acp:{eff['agent']}"):
                 refusal = profiles.claude_account_refusal(eff["agent"])
             account_slot, runtime = None, f"acp:{eff['agent']}"
+        if account_slot is not None:
+            profiles.follow_account(session, account_slot)
         is_acp = (runtime or "").startswith("acp:")
         job = (AcpJob if is_acp else Job)(job_id or uuid.uuid4().hex, chat_id, session["id"])
         job.model = model

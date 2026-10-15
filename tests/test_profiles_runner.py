@@ -174,3 +174,47 @@ def test_a_refused_turn_is_not_auto_resumed(monkeypatch):
     job = runner.Job("j-refused", CHAT, s["id"])
     job.status, job.refusal = "error", "Profile 'P' runs on Claude account 2, which is gone"
     assert runner._maybe_auto_resume(job, config.BASE_PATH, None, None) is False
+
+
+# A turn that runs on another login than the bound profile's (the fallback
+# ladder's handover, a resume, a routed run) moves the session to that login's
+# profile, so the PROFILE chip and the next turn stay with it.
+
+def test_a_turn_on_another_login_moves_the_session_to_that_logins_profile(monkeypatch):
+    a = _profile(account="1", model="", mode="", effort="")
+    b = _profile(name="Q", account="2", model="", mode="", effort="")
+    s = store.create_session(CHAT, "/pr-follow", cwd=config.BASE_PATH, profile_id=a["id"])
+    store.set_session_field(s["id"], "model", "claude-opus-5-5")
+    job, _ = _start(monkeypatch, session_id=s["id"], account_slot=2)
+    row = store.get_session(s["id"])
+    assert job.runtime == "claude:2"
+    assert row["profile_id"] == b["id"] and row["model"] == "claude-opus-5-5"
+
+
+def test_the_move_changes_only_the_account(monkeypatch):
+    a = _profile(account="1", tools=["Bash"])          # fable / plan / high
+    b = _profile(name="Q", account="2", model="", mode="", effort="high")
+    s = store.create_session(CHAT, "/pr-keep", cwd=config.BASE_PATH, profile_id=a["id"])
+    keep = (*profiles.KNOBS, "disabled_tools")
+    before = profiles.effective(store.get_session(s["id"]))
+    _start(monkeypatch, session_id=s["id"], account_slot=2)
+    row = store.get_session(s["id"])
+    after = profiles.effective(row)
+    assert row["profile_id"] == b["id"] and after["account"] == "2"
+    assert {k: after[k] for k in keep} == {k: before[k] for k in keep}
+    assert row["effort"] is None        # the new profile's own value: followed, not pinned
+
+
+def test_no_profile_on_that_login_leaves_the_binding(monkeypatch):
+    p = _profile()                                      # account 2
+    s = store.create_session(CHAT, "/pr-stay", cwd=config.BASE_PATH, profile_id=p["id"])
+    _start(monkeypatch, session_id=s["id"], account_slot=1)
+    assert store.get_session(s["id"])["profile_id"] == p["id"]
+
+
+def test_a_profile_with_no_account_is_the_ambient_login(monkeypatch):
+    p = _profile()                                      # account 2
+    ambient = _profile(name="Q", account="")
+    s = store.create_session(CHAT, "/pr-ambient", cwd=config.BASE_PATH, profile_id=p["id"])
+    _start(monkeypatch, session_id=s["id"], account_slot=accounts.DEFAULT_SLOT)
+    assert store.get_session(s["id"])["profile_id"] == ambient["id"]
