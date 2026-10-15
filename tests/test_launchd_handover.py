@@ -35,6 +35,12 @@ def mac(tmp_path):
     loaded = tmp_path / "loaded"     # exists = agent loaded; content = its pid
     _exe(fakebin / "uname", 'echo Darwin\n')
     _exe(fakebin / "curl", 'exit 0\n')
+    # There is no systemd on a Mac. Without this stand-in the script found the
+    # REAL /usr/bin/systemctl on PATH, asked the real user bus whether
+    # mystical-assistant.service was active — on the Linux box the suite runs on,
+    # it is — and `stop` / `restart` then ran `systemctl --user stop` on the live
+    # bridge, killing it and every session inside it, this test run included.
+    _exe(fakebin / "systemctl", 'exit 1\n')
     _exe(fakebin / "launchctl", f'''echo "$*" >> "{log}"
 case "$1" in
   print) [ -f "{loaded}" ] || exit 113
@@ -50,6 +56,9 @@ exit 0
                "PATH": f"{fakebin}:/usr/bin:/bin:/usr/sbin:/sbin",
                "BRIDGE_STATE_DIR": str(tmp_path / "state")}
         env.pop("BRIDGE_DB", None)
+        # ...and no way to reach the real user bus even if a systemctl slipped in.
+        env.pop("DBUS_SESSION_BUS_ADDRESS", None)
+        env.pop("XDG_RUNTIME_DIR", None)
         p = subprocess.run([str(repo / "bin" / "mystical"), *args],
                            capture_output=True, text=True, env=env, timeout=60)
         calls = log.read_text().splitlines() if log.exists() else []

@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
-import { UpdateButton } from "./UpdateButton";
 import { WeekPanel } from "./WeekPanel";
 import { setClock12 } from "../../lib/surfaces";
 import { isMacApp, macWindow } from "../../lib/mac";
@@ -41,7 +40,7 @@ export interface StripProps {
   onSetUnit: (unit: string) => Promise<string | null>;
   openSettings?: number; // nonce — bump to open the clock & weather popover (from the menu)
   openReport?: number; // nonce — bump to open the week report (from the menu)
-  onFeed: (texts: string[], project?: string, fresh?: boolean) => void; // a failed update hands git's error to Claude
+  git?: ReactNode; // the open session's GitPopover — App owns its git poll
 }
 
 // Segmented-control button style for the popover's 24H/12H and °C/°F pickers.
@@ -115,8 +114,8 @@ export function Brand() {
           style={{ transformOrigin: "50px 50px", transform: "rotate(45deg)" }}
         />
       </svg>
-      <span style={{ fontSize: "var(--t12)", letterSpacing: "2.6px", color: "var(--txb)", whiteSpace: "nowrap" }}>
-        MYSTICAL<span style={{ color: "var(--acc)" }}>//</span><span style={{ color: "var(--txd)" }}>ASSISTANT</span>
+      <span className="wordmark" style={{ fontSize: "var(--t12)", letterSpacing: "2.6px", color: "var(--txb)", whiteSpace: "nowrap" }}>
+        <span className="bw-a">MYSTICAL</span><span className="bw-sep" style={{ color: "var(--acc)" }}>//</span><span className="bw-b" style={{ color: "var(--txd)" }}>ASSISTANT</span>
       </span>
       </div>
       <span style={{ flex: 1, minWidth: 6 }} />
@@ -236,7 +235,7 @@ export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => v
  *  right, as one row that sits wherever App puts it (RightCap, or the chat
  *  header while the right panel is collapsed). */
 export function Strip(props: StripProps) {
-  const { radio, onToggleRadio, clock, weather, onSetCity, onSetUnit, openSettings, openReport, onFeed } = props;
+  const { radio, onToggleRadio, clock, weather, onSetCity, onSetUnit, openSettings, openReport, git } = props;
   const [fmHover, setFmHover] = useState(false);
   const [clockHover, setClockHover] = useState(false);
   const [clockOpen, setClockOpen] = useState(false);
@@ -431,9 +430,10 @@ export function Strip(props: StripProps) {
         {weekOpen && <WeekPanel />}
       </span>
 
-      {/* The actions, by the gear: SHIP and the bell. */}
+      {/* The actions, by the gear: the open session's git and the bell. The
+          platform's own UPDATE lives on the rail, above ⌘K. */}
       <span style={{ display: "flex", alignItems: "center", gap: 12, flex: "none" }}>
-        <UpdateButton onFeed={onFeed} />
+        {git}
         <NotificationCenter />
       </span>
     </div>

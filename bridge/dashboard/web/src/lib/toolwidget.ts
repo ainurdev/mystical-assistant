@@ -31,9 +31,17 @@ export type WebSource = { url: string; title?: string; code?: number };
  *  authors — the rest of index.css IS a control plate, so the other four are
  *  overrides off it. It is keyed `stamp` rather than `plate` because `plate` is
  *  already an Idiom below, and a material must never be readable as a weight. */
-export type ToolStyle = "stamp" | "wire" | "signal" | "press" | "halo";
+export type ToolStyle = "dossier" | "stamp" | "wire" | "signal" | "press" | "halo";
 
+/** DOSSIER is the sixth and leads, because it is the only one that answers a
+ *  different question. The five above it each pick what carries RANK between
+ *  rows; DOSSIER picks what carries rank between TIERS — your prompt and the
+ *  turn's answer are the loudest things on screen, a card waiting on you is
+ *  next, and everything in between (thoughts, interim notes, tools, output,
+ *  notices) is a small log under one WORK header. Its colours are role tokens
+ *  (index.css, DOSSIER), re-pointed by a TranscriptScheme below. */
 export const TOOL_STYLES: { key: ToolStyle; label: string; hint: string }[] = [
+  { key: "dossier", label: "DOSSIER", hint: "a card per turn — your prompt and the answer loudest, the work a small log between" },
   { key: "stamp", label: "CONTROL PLATE", hint: "stamped plates — no radius, one hue for consequence, rank is fill weight" },
   { key: "wire", label: "WIRE", hint: "a schematic — nothing is a card, every element is a node on one spine" },
   { key: "signal", label: "SIGNAL LOG", hint: "a log viewer — elapsed time in the gutter, a level chip, one row per event" },
@@ -60,6 +68,21 @@ export const CHAT_BGS: { key: ChatBg; label: string; hint: string }[] = [
   { key: "tooth", label: "TOOTH", hint: "a fine diagonal weave — paper grain rather than a grid" },
 ];
 
+/** Which palette DOSSIER's roles read. Both are re-pointings of one role layer
+ *  at the theme's own palette, so either works on every theme, light or dark:
+ *  a role's tint is mixed INTO the panel rather than washed over transparent,
+ *  which is the whole reason it survives a white ground. */
+export type TranscriptScheme = "phosphor" | "contrast";
+
+export const TRANSCRIPT_SCHEMES: { key: TranscriptScheme; label: string; hint: string }[] = [
+  { key: "phosphor", label: "PHOSPHOR", hint: "the theme's accent at different strengths; only trouble keeps its own hue" },
+  { key: "contrast", label: "CONTRAST", hint: "one hue per role, heavier tints, 2px edges, brightest ink" },
+];
+
+export function toTranscriptScheme(v: unknown): TranscriptScheme {
+  return TRANSCRIPT_SCHEMES.some((s) => s.key === v) ? (v as TranscriptScheme) : "phosphor";
+}
+
 export function toChatBg(v: unknown): ChatBg {
   return CHAT_BGS.some((b) => b.key === v) ? (v as ChatBg) : "none";
 }
@@ -80,7 +103,7 @@ export function isToolStyle(v: unknown): v is ToolStyle {
 /** A stored value → a style that exists. Anything unrecognised is the default. */
 export function toToolStyle(v: unknown): ToolStyle {
   if (isToolStyle(v)) return v;
-  return (typeof v === "string" && LEGACY[v]) || "stamp";
+  return (typeof v === "string" && LEGACY[v]) || "dossier";
 }
 
 /** How much chrome a result wears, and at what x it hangs off the turn.

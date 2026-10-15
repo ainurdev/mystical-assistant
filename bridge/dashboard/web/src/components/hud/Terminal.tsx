@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { ProjectTile } from "../ui/ProjectTile";
 import { type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
@@ -202,7 +203,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
-  onOpenProject, run, onOpenRun, onDropFiles, chrome, gridRow, onSendText, onArchive, onStartHere,
+  onOpenProject, run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -258,9 +259,6 @@ export function Terminal({
    *  weather, the bell — while the right panel is collapsed to its rail and
    *  its column has no room for them. */
   chrome?: ReactNode;
-  /** The shell grid rows the chat spans — the footer track too, when nothing
-   *  sits under it. */
-  gridRow?: string;
   /** The PR chip's SEND buttons: a message to this session, queued if it's mid-turn. */
   onSendText?: (text: string) => void;
   /** PrChip's RESOLVE IN A NEW SESSION: a fresh session in this session's checkout. */
@@ -399,7 +397,7 @@ export function Terminal({
       {/* OUTPUT STYLE is the whole session's idiom, not just its widgets: one
           attribute here and the ledger, the agent block, your prompt and the
           reply's own tables all answer to it (index.css, THE SESSION'S IDIOM). */}
-      <div ref={scrollRef} data-style={hud?.toolStyle ?? "stamp"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
+      <div ref={scrollRef} data-style={hud?.toolStyle ?? "dossier"} data-scheme={hud?.chatScheme ?? "phosphor"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
         onDragOver={(e) => { if (!fileDrag(e)) return; e.preventDefault(); if (!dropping) setDropping(true); }}
         // relatedTarget is where the drag went: still inside, it only crossed a child
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }}
@@ -486,13 +484,14 @@ export function Terminal({
           onClick={openMenu}
           onMouseEnter={() => setTitleHov(true)} onMouseLeave={() => setTitleHov(false)}
           style={{ display: "flex", alignItems: "baseline", gap: 7, minWidth: 0, maxWidth: "100%", padding: 0, border: 0, appearance: "none", background: "transparent", fontFamily: "inherit", textAlign: "left", cursor: sessionId ? "pointer" : "default" }}>
-          <span style={{ fontSize: "var(--t13)", lineHeight: "16px", letterSpacing: ".3px", color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
+          <span className="np-title" style={{ fontSize: "var(--t13)", lineHeight: "16px", letterSpacing: ".3px", color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
             {selected?.title || "new session"}
           </span>
           {sessionId && <span aria-hidden style={{ flex: "none", fontSize: "var(--t9)", color: titleHov ? "var(--txb)" : "var(--txl)" }}>▾</span>}
         </button>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
+        <div className="np-meta" style={{ display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
           <button
+            className="np-proj"
             title={sessionProject ? "project — analyze, design system, new session here" : undefined}
             data-ctx-type={sessionProject ? "project" : undefined}
             data-ctx-id={sessionProject ?? undefined}
@@ -502,7 +501,8 @@ export function Terminal({
             onMouseEnter={() => setProjHov(true)} onMouseLeave={() => setProjHov(false)}
             style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t9)", color: projHov ? "var(--txb)" : "var(--txm)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionProject ? "pointer" : "default" }}>
             {/* The per-project tint dot is the only colour identifying the project now. */}
-            <span style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
+            <span className="pdot" style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
+            {sessionProject && <ProjectTile project={sessionProject} />}
             {projectLabel || "—"}
           </button>
           {branch && (
@@ -538,8 +538,11 @@ export function Terminal({
         </div>
       </div>
   );
+  // `isle-reads` / `isle-keep`: FLINT's TUCK header folds the readouts down to
+  // the one marked keep (the clock row when it's here, else the spend) until
+  // the island is hovered.
   const readouts = (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+      <div className="isle-reads" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
         {/* The row's one link. The project modal — files, git, worktrees, the
             terminal — is worth a click of its own; its neighbours (design
             system, tasks, issues) stay in the menu on the project's name. */}
@@ -561,13 +564,15 @@ export function Terminal({
           </>
         )}
         {isChat && (
-          <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
+          <span className={chrome ? undefined : "isle-keep"} style={{ display: "contents" }}>
+            <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
+          </span>
         )}
         <ViewTabs view={view} onView={onView} />
         {chrome && (
           <>
             <span style={hairline(11)} />
-            {chrome}
+            <span className="isle-keep" style={{ display: "contents" }}>{chrome}</span>
           </>
         )}
       </div>
@@ -650,7 +655,7 @@ export function Terminal({
       // auto-placed side columns, and would take the first track from SESSIONS.
       data-bg={hud?.chatBg ?? "none"}
       data-layout={compact ? "compact" : "default"}
-      style={{ position: "relative", gridColumn: 2, gridRow, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
+      style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
       {island}
 

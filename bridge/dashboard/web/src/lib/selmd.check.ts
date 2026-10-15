@@ -43,3 +43,5 @@ eq(md(h("blockquote", {}, h("button", { class: "md-copy" }, h("svg", {})), h("p"
   "> quoted", "copy glyph adds nothing to a quote");
 eq(md(h("p", {}, h("a", { href: "https://x.y" }, "x"), h("button", { class: "md-copy" }, h("svg", {})), " end")),
   "[x](https://x.y) end", "copy glyph adds nothing after a link");
+eq(md(h("p", {}, "run ", h("code", {}, "make"), h("button", { class: "md-copy" }, h("svg", {})), " now")),
+  "run `make` now", "copy glyph adds nothing after inline code");

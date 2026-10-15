@@ -339,14 +339,6 @@ body {
 [data-swap] .swapin {
   animation: mfadeup 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
-/* The footer's branch chain: branch, remote standing, working-tree changes and
-   the button that fixes them, in one bordered group. The hairline between links
-   lives here because inline styles can't say :first-child.
-   See components/hud/StatusBar.tsx. */
-.chain > * + * {
-  border-left: 1px solid color-mix(in srgb, var(--acc) 16%, transparent);
-}
-
 /* Collapsing the right panel re-widths the transcript. Animating the column
    (not a transform) is what lets the chat reflow into the space instead of
    jumping a panel-width in one frame; RightPanel clips its own body at a fixed
@@ -354,18 +346,6 @@ body {
 .hudgrid {
   transition: grid-template-columns 0.26s var(--ease-hud);
 }
-/* The right column's cap: the clock instrument on the left, SHIP and the bell
-   on the right, one row as wide as the panel. Below a 326px cap (a ~1390px
-   window, just above where AUTO type drops to 11px) SHIP loses its verb —
-   arrow and count stay, the title says the rest — and with that the whole
-   cluster fits down to the narrowest panel in every theme, FOUNDRY's Space Mono
-   in 12H being the widest (2px to spare at the threshold), so the weather and
-   the radio never have to go. The width is the whole cap, rail included;
-   re-measure if the cluster grows. */
-/* ponytail: px, measured at AUTO type — a manual BASE FONT SIZE of 16 on a
-   small window can still spill; em-based thresholds if anyone runs that. */
-.rcap { container-type: inline-size; }
-@container (max-width: 326px) { .rcap .shipword { display: none; } }
 /* Centre the glyphs, not the font's line box. Flex centres a text's line box,
    and where the glyphs sit inside it is each font's own metric: JetBrains Mono
    lands centred, Consolas and Courier New ride 2-3px high. Trimmed to cap
@@ -953,8 +933,9 @@ input {
   background: var(--ac-03);
   color: var(--muted-foreground);
 }
-/* The copy glyph a link, a quote and a fence carry (CopyBtn in Markdown.tsx):
-   the URL, the quote as it reads, the code without its fence. Revealed by
+/* The copy glyph a link, a quote, a fence and an inline code span carry
+   (CopyBtn in Markdown.tsx): the URL, the quote as it reads, the code without
+   its fence or backticks. Revealed by
    hovering the thing it copies — the same reveal as a message's own COPY — or
    by keyboard focus; a touch screen has no hover, so there it just shows. It
    floats at the head of a quote so the first line wraps around it instead of
@@ -969,6 +950,8 @@ input {
 .md-copy:hover, .md-copy:focus-visible { color: var(--acc); opacity: 1; }
 .md a + .md-copy { display: inline-block; vertical-align: middle; margin-left: 1px; }
 .md a:hover + .md-copy { opacity: 1; }
+.md code + .md-copy { display: inline-block; vertical-align: middle; margin-left: 1px; }
+.md code:hover + .md-copy { opacity: 1; }
 .md blockquote > .md-copy { float: right; margin: 0.15em 0 0.2em 0.5em; }
 .md blockquote:hover > .md-copy { opacity: 1; }
 .md-code > .md-copy { position: absolute; top: 0.3em; right: 0.45em; }
@@ -3158,6 +3141,272 @@ input {
 }
 [data-style="halo"] .md img { border-radius: 14px; }
 
+/* ══ DOSSIER ══ a card per turn, ranked by tier ═════════════════════════════
+   The five columns above each decide what carries rank between ROWS. This one
+   ranks TIERS, because on a phone the two things you came for — what you asked
+   and what came back — were found by reading everything between them:
+
+     1  your prompt and the answer    biggest type, full ink, a 4px bar
+     2  a card waiting on you         framed in the accent, a NEEDS YOU strip
+     3  the work between them         one WORK zone (RunStream WorkZone,
+                                      lib/dossier): small, one line per thing,
+                                      a glyph + kind word so it scans
+
+   Colour is a ROLE, never a tool kind. The old ledger hued rows by kind, and
+   the kinds borrowed the status hues — an edit was ok-green, a search was
+   warn-amber, a read was the thinking violet — so no colour meant anything.
+   Here a role's tint and edge are mixed INTO --panel rather than washed over
+   transparent, which is why the same 10% reads on paper as on glass, and the
+   scheme (data-scheme, lib/toolwidget TRANSCRIPT_SCHEMES) only re-points roles.
+   err / warn / ok keep their own hue in every scheme: trouble is the one thing
+   that must never be on-brand. */
+[data-style="dossier"] {
+  --d-you: var(--acc);
+  --d-ask: var(--acc);
+  --d-think: color-mix(in oklab, var(--acc) 55%, var(--txd));
+  --d-tool: color-mix(in oklab, var(--acc) 78%, var(--txb));
+  --d-note: var(--txh);
+  --d-tint: 10%;
+  --d-edge: 45%;
+  --d-bw: 1px;
+  --d-ink: var(--tx);
+  /* DOSSIER's own corner, not the theme's: a card per turn is the language's
+     shape the way HALO's radius is HALO's, and on a 0-radius ground (VOID,
+     AURORA) square cards stacked edge to edge read as one long table. */
+  --d-rad: 10px;
+  --d-hair: color-mix(in oklab, var(--txl) 55%, var(--panel));
+  --d-big: calc(var(--t13) + 1px);
+  --d-face: var(--ui-font, var(--mono));
+}
+[data-style="dossier"][data-scheme="contrast"] {
+  --d-think: color-mix(in oklab, var(--purple) 80%, var(--txb));
+  --d-tool: color-mix(in oklab, var(--info) 80%, var(--txb));
+  --d-tint: 18%;
+  --d-edge: 85%;
+  --d-bw: 2px;
+  --d-ink: var(--txb);
+  --d-hair: color-mix(in oklab, var(--txl) 85%, var(--panel));
+}
+[data-style="dossier"] .dturn {
+  gap: 0; overflow: hidden; background: var(--panel);
+  border: var(--d-bw) solid var(--d-hair); border-radius: var(--d-rad);
+}
+/* Turns are separate documents: a real gap between cards. It is a margin
+   INSIDE the row wrapper (whose own pb-3 stops it collapsing out), so the
+   virtualizer's measurement of the row includes it — spacing set on the
+   wrapper from here raced that measurement and landed anywhere from 8 to 22px. */
+[data-style="dossier"] .dturn { margin-bottom: 10px; }
+/* Prose in the theme's reading face — the scroller pins a mono for the HUD,
+   and a paragraph of answer set in it reads a size larger than it is. Code,
+   paths and tool rows stay mono. */
+[data-style="dossier"] :is(.dprompt .md, .res-body .md, .dwork .abub .md, .dwork .thought-text) { font-family: var(--d-face); }
+[data-style="dossier"] .chatcard { font-family: var(--d-face); }
+[data-style="dossier"] :is(.dprompt, .res-body, .dwork, .chatcard) :is(code, pre, .font-mono) { font-family: var(--mono); }
+
+/* ── tier 1: you ── */
+[data-style="dossier"] .dprompt {
+  display: block; position: relative; padding: 13px 18px 15px;
+  background: color-mix(in oklab, var(--d-you) var(--d-tint), var(--panel));
+  border-left: 4px solid var(--d-you);
+  border-bottom: 1px solid color-mix(in oklab, var(--d-you) var(--d-edge), var(--panel));
+}
+[data-style="dossier"] .pbub-row { display: block; }
+[data-style="dossier"] .pbub {
+  max-width: 100%; padding: 0; border: 0; background: none;
+}
+[data-style="dossier"] .pbub .md {
+  font-size: var(--d-big); font-weight: 500; line-height: 1.6; color: var(--txb);
+}
+[data-style="dossier"] .pnum {
+  display: flex; gap: 6px; margin-bottom: 4px;
+  font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--d-you);
+}
+[data-style="dossier"] .pnum > i { font-style: normal; color: var(--txd); }
+[data-style="dossier"] .pstamp { position: absolute; top: 13px; right: 18px; margin: 0; }
+[data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
+
+/* ── tier 3: the work ── */
+[data-style="dossier"] .dreply { padding-bottom: 2px; }
+/* The turn's reply is the card's lower half: zones and the answer run edge to
+   edge, anything else (a card, an error, a stop, the working line) sits inset. */
+[data-style="dossier"] .dreply > * + *,
+[data-style="dossier"] .rstream > * + * { margin-top: 0; }
+[data-style="dossier"] .dreply > :not(.rstream, .agent-rail),
+[data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 12px 18px; }
+[data-style="dossier"] .dwork {
+  background: var(--panel2); padding: 9px 18px 10px;
+  border-bottom: 1px solid var(--d-hair);
+}
+[data-style="dossier"] .dwork + .dwork { margin-top: 0; }
+[data-style="dossier"] .dwork-head {
+  display: flex; width: 100%; align-items: center; gap: 10px; min-width: 0;
+  white-space: nowrap; text-align: left;
+  font-size: var(--t105); letter-spacing: .5px; color: var(--txd);
+}
+[data-style="dossier"] .dwork-lab {
+  display: flex; flex: none; align-items: center; gap: 4px;
+  font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm);
+}
+[data-style="dossier"] .dwork-title { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+[data-style="dossier"] .dwork-strip { display: flex; flex: 1 1 0; min-width: 0; gap: 2px; overflow: hidden; }
+[data-style="dossier"] .dwork-strip > i {
+  --m: var(--d-tool);
+  flex: none; width: 15px; height: 15px; display: grid; place-items: center;
+  font-style: normal; font-size: var(--t85); line-height: 1; color: var(--m);
+  background: color-mix(in oklab, var(--m) var(--d-tint), var(--panel2));
+  border-radius: calc(var(--d-rad) * .4);
+}
+[data-style="dossier"] .dwork-strip > i[data-m="think"] { --m: var(--d-think); }
+[data-style="dossier"] .dwork-strip > i[data-m="note"] { --m: var(--d-note); }
+[data-style="dossier"] .dwork-strip > i[data-m="steer"] { --m: var(--d-you); }
+[data-style="dossier"] .dwork-strip > i:is([data-m="hook"], [data-m="log"]) { --m: var(--txl); }
+[data-style="dossier"] .dwork-strip > i[data-m="fail"] { --m: var(--err); }
+[data-style="dossier"] .dwork-strip > b { font-weight: 400; color: var(--txf); padding-left: 3px; }
+[data-style="dossier"] .dwork-fail { flex: none; color: var(--err); }
+[data-style="dossier"] .dwork-ms { flex: none; margin-left: auto; color: var(--txf); letter-spacing: 1px; font-size: var(--t95); }
+[data-style="dossier"] .dwork[data-run] .dwork-ms { color: var(--d-tool); animation: blink 1.1s steps(1) infinite; }
+[data-style="dossier"] .dwork-body { margin-top: 6px; display: flex; flex-direction: column; gap: 3px; }
+[data-style="dossier"] .dwork-body > * { margin: 0 !important; }
+/* every hue inside the work is the tool role: the component writes each row's
+   kind hue inline as --h, and the kind hue is exactly the collision this
+   language exists to undo. A failure still swaps to --err (data-err rules). */
+[data-style="dossier"] .dwork-body [style*="--h"] { --h: var(--d-tool) !important; }
+
+/* a thought: the agent to itself — italic, one tier down, its own hue */
+[data-style="dossier"] .dwork .thought {
+  max-width: none; gap: 8px; padding: 1px 0;
+  font-size: var(--t12);
+}
+[data-style="dossier"] .dwork .thk-lab {
+  min-width: 52px; font-size: var(--t85); font-weight: 600; letter-spacing: 1.6px; color: var(--d-think);
+}
+[data-style="dossier"] .dwork .thought-text { font-style: italic; color: var(--txd); }
+[data-style="dossier"] .dwork .thought-text p { margin: 0; }
+/* an interim note: the agent to you, mid-work — upright, a step brighter, a
+   NOTE word where the thought has THOUGHT */
+[data-style="dossier"] .dwork .group\/msg { gap: 8px; }
+[data-style="dossier"] .dwork .group\/msg::before {
+  content: "◆ NOTE"; flex: none; min-width: 52px; padding-top: 3px;
+  font-size: var(--t85); font-weight: 600; letter-spacing: 1.6px; color: var(--d-note);
+}
+[data-style="dossier"] .dwork .abub {
+  max-width: none; padding: 1px 0; border: 0; background: none;
+  font-size: var(--t12); color: var(--txh);
+}
+[data-style="dossier"] .dwork .abub .md p { margin: 0; }
+/* tools: one quiet row each, no plates */
+[data-style="dossier"] .actrow { background: none; min-height: 22px; border-radius: calc(var(--d-rad) * .5); }
+[data-style="dossier"] .actrow + .actrow { border-top: 0; }
+[data-style="dossier"] .actrow:hover { background: color-mix(in oklab, var(--d-tool) 6%, var(--panel2)); }
+[data-style="dossier"] .actrow > .ax-bar { width: 2px; background: color-mix(in oklab, var(--d-tool) 35%, transparent); }
+[data-style="dossier"] .actrow[data-tier="mark"] { background: none; }
+[data-style="dossier"] .actrow[data-err] { background: color-mix(in oklab, var(--err) var(--d-tint), var(--panel2)); }
+[data-style="dossier"] .actrow[data-err] > .ax-bar { background: var(--err); }
+[data-style="dossier"] .ax-tag { font-weight: 600; }
+[data-style="dossier"] .ax-tag[data-shape] { border: 0; background: none; padding: 0; color: var(--h); }
+[data-style="dossier"] .actrow[data-err] .ax-tag { color: var(--err); }
+[data-style="dossier"] .ax-obj { font-size: var(--t115); color: var(--d-ink); }
+[data-style="dossier"] .actrow[data-tier="glance"] .ax-obj { color: var(--txd); }
+[data-style="dossier"] .ax-drawer {
+  border-top: 0; background: var(--panel3); border-left: 2px solid var(--d-hair);
+  border-radius: 0 0 calc(var(--d-rad) * .5) calc(var(--d-rad) * .5);
+}
+[data-style="dossier"] .ax-window { border: 0; background: none; }
+[data-style="dossier"] .ax-window[data-err] { border: 0; }
+[data-style="dossier"] .ax-winhead { background: none; border-bottom: 0; padding: 1px 0 1px 3px; }
+[data-style="dossier"] .ax-wintag { font-weight: 600; letter-spacing: 1.6px; }
+[data-style="dossier"] .agb {
+  border: 1px solid color-mix(in oklab, var(--d-tool) var(--d-edge), var(--panel2));
+  background: var(--panel); border-radius: calc(var(--d-rad) * .6);
+}
+[data-style="dossier"] .agb::before,
+[data-style="dossier"] .agb::after { display: none; }
+[data-style="dossier"] .thk-log { font-size: var(--t11); color: var(--txl); }
+/* your steer, inside the work but still you: the accent, as a highlighted row */
+[data-style="dossier"] .dwork .steer-bub {
+  max-width: none; width: 100%; padding: 3px 8px; border: 0;
+  border-left: 2px solid var(--d-you); border-radius: 0;
+  background: color-mix(in oklab, var(--d-you) var(--d-tint), var(--panel2));
+}
+[data-style="dossier"] .dwork .steer-bub .steer-lab { justify-content: flex-start; color: var(--d-you); }
+[data-style="dossier"] .dwork .my-2 { margin: 0; }
+
+/* ── tier 1: the answer ── */
+[data-style="dossier"] .resblk { margin: 0; }
+[data-style="dossier"] .res {
+  border: 0; border-left: 4px solid var(--txb); border-radius: 0;
+  background: var(--panel); max-width: none;
+}
+[data-style="dossier"] .resblk[data-bad] .res { border-left-color: var(--err); }
+[data-style="dossier"] .res-head {
+  border-bottom: 0; padding: 14px 18px 0;
+}
+/* a result with no words (they were the prose a card already showed) is a
+   receipt, not an answer: it keeps the clock and drops to the ghost tier */
+[data-style="dossier"] .res:not(:has(.res-body)) { border-left-width: 2px; border-left-color: var(--d-hair); }
+[data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 8px 18px; color: var(--txf); }
+[data-style="dossier"] .res-head {
+  font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm);
+}
+[data-style="dossier"] .resblk[data-bad] .res-head { color: var(--err); }
+[data-style="dossier"] .resblk:not([data-bad]) .res-meta::before { content: "✓ done"; color: var(--ok); letter-spacing: .5px; }
+[data-style="dossier"] .res-body { padding: 6px 18px 16px; font-size: var(--d-big); line-height: 1.65; }
+[data-style="dossier"] .res-body .md { color: var(--txb); }
+[data-style="dossier"] .res-fade { background: linear-gradient(to bottom, transparent, var(--panel)); }
+[data-style="dossier"] .res-fold { border-top: 1px solid var(--d-hair); }
+[data-layout="compact"] [data-style="dossier"] .pbub,
+[data-layout="compact"] [data-style="dossier"] .res { max-width: none; }
+
+/* ── tier 2: waiting on you ── */
+[data-style="dossier"] .chatcard { margin: 10px 0; border-radius: calc(var(--d-rad) - 2px); background: var(--panel); }
+[data-style="dossier"] .chatcard:is(.qcard-live, .pcard-live) {
+  border: calc(var(--d-bw) + .5px) solid var(--d-ask);
+  box-shadow: 0 0 0 4px color-mix(in oklab, var(--d-ask) 14%, transparent), 0 14px 28px -18px var(--shadow-pop, rgba(0,0,0,.5));
+}
+[data-style="dossier"] .chatcard:is(.qcard-live, .pcard-live)::before {
+  display: block; margin: -12px -12px 10px; padding: 6px 12px;
+  font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--d-ask);
+  background: color-mix(in oklab, var(--d-ask) var(--d-tint), var(--panel));
+  border-bottom: 1px solid color-mix(in oklab, var(--d-ask) var(--d-edge), var(--panel));
+  border-radius: var(--d-rad) var(--d-rad) 0 0;
+}
+[data-style="dossier"] .qcard-live::before { content: "● NEEDS YOUR ANSWER"; }
+[data-style="dossier"] .pcard-live::before { content: "● NEEDS YOUR OK · PERMISSION"; }
+[data-style="dossier"] .chatcard:not(.qcard-live, .pcard-live) { border: 1px solid var(--d-hair); }
+[data-style="dossier"] .qopt {
+  border-radius: calc(var(--d-rad) * .6); background: var(--panel2); color: var(--txb);
+  box-shadow: inset 0 0 0 1px transparent;
+}
+[data-style="dossier"] .qopt-on {
+  background: color-mix(in oklab, var(--d-ask) var(--d-tint), var(--panel)); color: var(--txb);
+  box-shadow: inset 0 0 0 var(--d-bw) color-mix(in oklab, var(--d-ask) var(--d-edge), var(--panel));
+}
+
+/* ── what ends a turn ── */
+[data-style="dossier"] .resblk + .ev-stop { border-top: 1px solid var(--d-hair); margin: 0; padding: 9px 18px 11px; }
+[data-style="dossier"] .doutcome { padding: 9px 18px 11px; margin: 0; border-top: 1px solid var(--d-hair); }
+
+/* Hooks DOSSIER reads that every other language must not see. */
+.pnum { display: none; }
+.dprompt { display: contents; }
+/* An error and a stop, in every language: off --err and the ink ladder, mixed
+   into the panel so they hold on a light ground (they were Tailwind red-300 on
+   a 15% red wash, and the stop a legacy Telegram hint colour). */
+.ev-err {
+  color: var(--err);
+  background: color-mix(in oklab, var(--err) 10%, var(--panel));
+  border: 1px solid color-mix(in oklab, var(--err) 35%, var(--panel));
+}
+.ev-stop { color: var(--txd); }
+.ev-stop > svg { color: var(--txl); }
+/* A steer was inline violet at 7% over transparent — gone on paper. */
+.steer-bub {
+  border-color: color-mix(in oklab, var(--purple) 30%, var(--panel));
+  border-right-color: var(--purple);
+  background: color-mix(in oklab, var(--purple) 9%, var(--panel));
+}
+.steer-lab { color: var(--purple); }
+
 /* ── FLOW CARD ─────────────────────────────────────────────────────────────
    A typed stage's settled result, framed like the agent block: both are a
    turn's own structure surfacing in the stream, and the stream keeps one idiom
@@ -3768,6 +4017,366 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   --purple-d: #d2b4ff; --purple-h: #e6d3ff; --purple-g: #a48fcc;
 }
 [data-theme="void"] .isle-glass { background: rgba(25, 25, 25, 0.94) !important; }
+
+/* === FLINT =================================================================
+   One dark theme in four colourings (lib/theme FLINT_DEFS): neutral graphite,
+   flat, hairline-ruled, rounded, set in Geist. Where AURORA is a HUD, FLINT is
+   an editor: nothing glows, no corner brackets, every surface is a grey step
+   and a 1px line, and colour is spent on exactly two roles —
+     --acc  you          your prompt, the open session, SEND, focus
+     --ask  waits on you a question, a permission
+   SUNSET runs --acc → --acc2 as a gradient where you act; KILN drops every tint
+   and keeps the two hues as bars and frames only.
+
+   The derived tokens are re-pointed first: the HUD's hairlines and hover washes
+   are all accent-at-alpha (--border, --ac-NN), which on FLINT would draw an
+   orange grid over everything. Here they are neutral, and the accent is applied
+   by name where it means something. */
+[data-theme^="flint"] {
+  --line: color-mix(in oklab, var(--txl) 26%, var(--canvas));
+  --line2: color-mix(in oklab, var(--txl) 40%, var(--canvas));
+  --border: var(--line); --border-bright: var(--line2); --input: var(--line2);
+  --ac-03: rgba(255,255,255,.025); --ac-06: rgba(255,255,255,.045); --ac-08: rgba(255,255,255,.06);
+  --ac-12: rgba(255,255,255,.085); --ac-16: rgba(255,255,255,.11); --ac-20: rgba(255,255,255,.13); --ac-22: rgba(255,255,255,.15);
+  --card: var(--panel2); --popover: var(--panel); --code-bg: var(--panel3);
+  --shadow-pop: rgba(0,0,0,.55); --shadow-modal: rgba(0,0,0,.7);
+  --f-rad: 10px; --f-rad-s: 7px; --f-rad-l: 14px;
+  --f-you: color-mix(in oklab, var(--acc) 10%, var(--panel));
+  --f-grad: var(--acc);
+  --ui-font: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+[data-theme="flint-sunset"] { --f-grad: linear-gradient(100deg, var(--acc), var(--acc2)); }
+[data-theme="flint-kiln"] { --f-you: var(--panel); }
+
+/* no HUD furniture: brackets, glow, scanline-era square corners */
+[data-theme^="flint"] .panel::before,
+[data-theme^="flint"] .panel::after { display: none; }
+[data-theme^="flint"] .glow { text-shadow: none; }
+[data-theme^="flint"] .panel { border-radius: var(--f-rad-l); }
+/* the shell columns are the page, not cards on it: square, so their edges
+   meet the cap rule and the column hairlines cleanly */
+[data-theme^="flint"] .shellcol > .panel { border-radius: 0; }
+[data-theme^="flint"] :is(button, input, textarea, select) { border-radius: var(--f-rad-s); }
+/* every inline JetBrains pin (139 of them, across the shell) reads FLINT's
+   mono instead. ponytail: an attribute match on the inline style rather than a
+   class on each site — it costs nothing until a component stops writing the
+   literal, and then that one site simply keeps JetBrains. */
+[data-theme^="flint"] [style*="JetBrains Mono"] { font-family: var(--mono) !important; }
+
+/* ── project monogram (components/ui/ProjectTile) ── */
+.ptile { display: none; }
+[data-theme^="flint"] .ptile {
+  display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; margin-right: 6px;
+  border-radius: 5px; vertical-align: middle;
+  font: 600 9px/1 var(--ui-font); letter-spacing: .02em; font-style: normal;
+  color: color-mix(in oklab, var(--pc) 30%, white);
+  background: color-mix(in oklab, var(--pc) 26%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 45%, transparent);
+}
+[data-theme^="flint"] .pdot { display: none; }
+[data-theme^="flint"] .sessproj { display: inline-flex; align-items: center; font-weight: 500; font-family: var(--ui-font); }
+
+/* ── the shells: left column, right column, rail ── */
+[data-theme^="flint"] .shellcol { background: var(--canvas); }
+[data-theme^="flint"] .sess-search {
+  margin: 12px 2px 4px; height: 34px !important; padding: 0 10px; border: 1px solid var(--line) !important;
+  border-radius: var(--f-rad-s); background: var(--panel2);
+}
+[data-theme^="flint"] .sess-search input { font-family: var(--ui-font) !important; font-size: var(--t12) !important; }
+[data-theme^="flint"] .sessrow { border-radius: var(--f-rad-s); margin: 1px 0; border-left: 0 !important; }
+[data-theme^="flint"] .sessrow::before { left: 0; top: 7px; bottom: 7px; width: 2px; border-radius: 2px; background: var(--acc); }
+[data-theme^="flint"] .sessrow[data-on="true"] { background: var(--panel) !important; box-shadow: inset 0 0 0 1px var(--line); }
+[data-theme^="flint"] .sessrow:hover { background: var(--ac-06) !important; }
+[data-theme^="flint"] .sessrow > div > span:first-child { font-family: var(--ui-font); letter-spacing: -.005em; }
+/* PROJECTS: a project heads its sessions, which hang off a rail centred under
+   its tile (18px tile, 6px row padding → rail centre at 15px) */
+[data-theme^="flint"] .projhead { height: 30px !important; padding: 0 6px !important; gap: 0 !important; border-radius: var(--f-rad-s); }
+[data-theme^="flint"] .projhead .ptile { width: 18px; height: 18px; margin-right: 9px; }
+[data-theme^="flint"] .projhead > span:nth-of-type(2) {
+  font-family: var(--ui-font) !important; font-size: var(--t12) !important; font-weight: 600; letter-spacing: 0 !important;
+  color: color-mix(in oklab, var(--pc, var(--txb)) 0%, var(--txb)) !important;
+}
+/* one rail per project: the group's own (.projrail), moved under the tile's
+   centre and re-inked neutral — the rows add none of their own */
+[data-theme^="flint"] .projrail { margin: 1px 0 0 14.5px !important; border-left-color: var(--line2) !important; }
+[data-theme^="flint"] .projgrp .sessrow { margin-left: 0; border-radius: 0 var(--f-rad-s) var(--f-rad-s) 0; }
+[data-theme^="flint"] .projgrp .sessrow::before { left: -1px; top: 6px; bottom: 6px; }
+
+/* ── FLINT · HEADER — the island over the transcript, in the style picked on
+   FLINT's theme card (data-hdr on the themed container, lib/theme
+   HEADER_STYLES). All three drop the HUD's accent border and drop shadow:
+   the island was a sticker on whatever scrolled under it. ── */
+[data-theme^="flint"] .isle { box-shadow: none !important; border-radius: var(--f-rad-l) !important; transition: border-color .2s ease; }
+[data-theme^="flint"] .isle-pill { border-radius: 999px !important; }
+[data-theme^="flint"] .isle > div:last-child > * { transition: opacity .2s ease; }
+[data-theme^="flint"] .isle-glass { transition: background-color .2s ease; }
+[data-theme^="flint"] .isle button:first-child > span { font-family: var(--ui-font); }
+/* FROST: glass the transcript blurs through; half ink until reached for */
+[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle { border: 1px solid rgba(255,255,255,.06) !important; }
+[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle-glass {
+  background: color-mix(in srgb, var(--panel) 42%, transparent) !important;
+  backdrop-filter: blur(14px) saturate(1.2) !important;
+}
+[data-theme^="flint"][data-hdr="frost"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .55; }
+[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) { border-color: var(--line2) !important; }
+[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) .isle-glass { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; }
+/* VEIL: no object — the column's top fades the transcript out under it, and
+   the readouts sit in the fade like a status line */
+[data-theme^="flint"][data-hdr="veil"] .isle { border-color: transparent !important; }
+[data-theme^="flint"][data-hdr="veil"] .isle-glass { background: none !important; backdrop-filter: none !important; }
+[data-theme^="flint"][data-hdr="veil"] [data-layout]::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 74px; z-index: 11; pointer-events: none;
+  background: linear-gradient(var(--canvas) 30%, color-mix(in oklab, var(--canvas) 70%, transparent) 62%, transparent);
+  transition: height .2s ease;
+}
+[data-theme^="flint"][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
+[data-theme^="flint"][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
+/* TUCK: frost folded to its last readout (.isle-keep); the rest unfolds on hover */
+[data-theme^="flint"][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
+[data-theme^="flint"][data-hdr="tuck"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .7; }
+[data-theme^="flint"] .np-meta { height: 20px !important; }
+[data-theme^="flint"] .np-proj { font-family: var(--ui-font) !important; font-size: var(--t11) !important; font-weight: 500; color: var(--txh) !important; }
+[data-theme^="flint"] .np-proj .ptile { width: 16px; height: 16px; font-size: 8px; margin-right: 2px; }
+
+/* ── composer ── */
+/* the composer sits on the transcript's own ground — no band of a different
+   grey under it — and its controls line up with the turn cards' edges */
+[data-theme^="flint"] .composer {
+  border-top: 0 !important; background: transparent !important; padding: 10px 18px 16px !important;
+}
+[data-theme^="flint"] .cmdbox {
+  border: 1px solid var(--line2) !important; border-radius: var(--f-rad-l); background: var(--panel) !important;
+  padding: 12px 14px !important; font-family: var(--ui-font) !important;
+}
+[data-theme^="flint"] .cmdbox:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--line2)) !important;
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
+[data-theme^="flint"] .cmdbox[data-drag] { border-color: var(--acc) !important; }
+[data-theme^="flint"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--ui-font) !important; }
+[data-theme^="flint"] .cmdbox > span:first-child { display: none; }
+/* the run popover's trigger is a chip like its neighbours, with room: model
+   first, then mode and effort as quieter words */
+[data-theme^="flint"] .run-trigger { padding: 6px 11px !important; gap: 9px !important; align-items: center !important; }
+[data-theme^="flint"] .run-trigger > span { font-size: var(--t11) !important; }
+[data-theme^="flint"] .drop-btn, [data-theme^="flint"] .run-trigger {
+  border: 1px solid var(--line) !important; background: var(--panel2) !important; border-radius: var(--f-rad-s) !important;
+  font-family: var(--ui-font) !important; font-size: var(--t11) !important; letter-spacing: 0 !important; color: var(--txh) !important;
+  padding-block: 5px !important;
+}
+[data-theme^="flint"] .drop-btn:hover, [data-theme^="flint"] .run-trigger:hover { border-color: var(--line2) !important; background: var(--panel) !important; }
+[data-theme^="flint"] .ctrl-fld { color: var(--acc); }
+[data-theme^="flint"] .ctrl-verb, [data-theme^="flint"] .ctrl-more { font-family: var(--ui-font); letter-spacing: .02em; text-transform: none; }
+[data-theme^="flint"] .ctrl-ctx .seg i { border-radius: 2px; }
+[data-theme^="flint"] .act-glyph { border-color: var(--line); border-radius: var(--f-rad-s); }
+[data-theme^="flint"] .act-fence { background: var(--line); }
+[data-theme^="flint"] :is(.act-alt, .act-pri) { font-family: var(--ui-font); letter-spacing: .02em; border-radius: var(--f-rad-s); font-size: var(--t11); font-weight: 600; }
+[data-theme^="flint"] .act-alt.neutral { border-color: var(--line2); }
+[data-theme^="flint"] .act-pri { box-shadow: none; background: var(--f-grad); border-color: transparent; color: var(--acc-on); }
+[data-theme="flint-sunset"] .act-pri { color: #fff; }
+[data-theme^="flint"] .act-pri.queue { background: var(--ask); color: var(--acc-on); }
+[data-theme^="flint"] .act-pri:disabled { background: transparent; border-color: var(--line); color: var(--txl); }
+[data-theme^="flint"] .effort-slider { accent-color: var(--acc); }
+
+/* ── every floating surface: menus, popovers, the run popover, the context
+   menu, tips, the bell. ponytail: these are hand-rolled inline (no shared
+   Popover exists), and all of them name --shadow-pop in their inline style —
+   so that string is the selector. A new popover that follows the recipe is
+   themed for free; one that doesn't is themed by nothing, and shows it. ── */
+[data-theme^="flint"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]):not(.isle):not(.sessrow) {
+  border: 1px solid var(--line2) !important; border-radius: var(--f-rad) !important;
+  background: var(--panel) !important; box-shadow: 0 18px 44px -14px rgba(0,0,0,.75), 0 0 0 1px rgba(0,0,0,.4) !important;
+  overflow: hidden; font-family: var(--ui-font);
+}
+[data-theme^="flint"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri) {
+  border-bottom-color: transparent !important; font-family: var(--ui-font) !important; letter-spacing: 0 !important;
+}
+[data-theme^="flint"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri):hover {
+  background: var(--ac-08) !important;
+}
+[data-theme^="flint"] :is([style*="--shadow-pop"], [role="dialog"]) [style*="acc) 10%"] { background: var(--f-you) !important; }
+/* dialogs and modals: one step bigger, a scrim behind them */
+[data-theme^="flint"] [style*="--shadow-modal"] {
+  border: 1px solid var(--line2) !important; border-radius: 16px !important; background: var(--panel) !important;
+  box-shadow: 0 30px 80px -20px rgba(0,0,0,.85) !important; overflow: hidden;
+}
+
+/* ── the transcript: DOSSIER's roles re-pointed at FLINT's two hues ── */
+[data-theme^="flint"] [data-style="dossier"] {
+  --d-you: var(--acc); --d-ask: var(--ask); --d-tool: var(--tool); --d-think: var(--think);
+  --d-face: var(--ui-font); --d-rad: 12px;
+}
+[data-theme^="flint"] .mscroll[data-style] { font-family: var(--mono) !important; }
+/* FLINT draws DOSSIER the way its approved mock did: no turn card. A turn is a
+   section ended by a hairline; your prompt is the one raised block in it, the
+   work a bordered strip, and the answer sits flush on the ground — no bar. */
+[data-theme^="flint"] [data-style="dossier"] .dturn {
+  background: none; border: 0; border-radius: 0; overflow: visible;
+  border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 6px;
+}
+[data-theme^="flint"] [data-style="dossier"] .dprompt {
+  background: var(--f-you); border: 1px solid var(--line2); border-radius: 12px; overflow: hidden;
+  box-shadow: inset 3px 0 0 var(--acc);
+}
+[data-theme^="flint"] [data-style="dossier"] .dwork {
+  margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2);
+}
+[data-theme^="flint"] [data-style="dossier"] .res,
+[data-theme^="flint"] [data-style="dossier"] .resblk[data-bad] .res { border-left: 0; background: none; }
+[data-theme^="flint"] [data-style="dossier"] .res-head { padding: 16px 2px 0; }
+[data-theme^="flint"] [data-style="dossier"] .res-body { padding: 6px 2px 4px; }
+[data-theme^="flint"] [data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 12px 2px 0; }
+[data-theme^="flint"] [data-style="dossier"] .resblk + .ev-stop { border-top: 0; padding: 8px 2px 0; }
+[data-theme^="flint"] [data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 12px 0; }
+[data-theme^="flint"] [data-style="dossier"] .dreply > :not(.rstream, .agent-rail) { margin: 12px 0; }
+[data-theme^="flint"] [data-style="dossier"] .doutcome { border-top: 0; padding: 10px 2px 0; }
+[data-theme="flint-kiln"] [data-style="dossier"] { --d-tint: 0%; }
+[data-theme="flint-sunset"] [data-style="dossier"] .dprompt {
+  background: linear-gradient(100deg, color-mix(in oklab, var(--acc) 12%, var(--panel)), color-mix(in oklab, var(--acc2) 8%, var(--panel)) 60%, var(--panel));
+  box-shadow: none;
+}
+[data-theme="flint-sunset"] [data-style="dossier"] .dprompt::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(var(--acc), var(--acc2));
+}
+[data-theme="flint-sunset"] .pnum { background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
+
+/* the context menu's rows: Geist, no tracking, a rounded hover */
+[data-theme^="flint"] [data-ctxmenu] { width: 232px !important; padding: 2px; }
+[data-theme^="flint"] [data-ctxmenu] > div:first-child { border-bottom-color: var(--line) !important; }
+[data-theme^="flint"] [data-ctxmenu] button { border-radius: var(--f-rad-s) !important; margin: 1px 4px; width: calc(100% - 8px) !important; font-size: var(--t115) !important; }
+[data-theme^="flint"] [data-ctxmenu] button span { letter-spacing: 0 !important; font-family: var(--ui-font); }
+[data-theme^="flint"] [data-ctxmenu] [style*="acc) 12%"] { background: var(--line) !important; }
+
+/* The HUD tracks every uppercase label 1.5–2.6px wide, inline. FLINT keeps the
+   capitals but sets them the way an editor does — Geist, a hair of tracking.
+   ponytail: matched on the inline style's text, like the font pins above. */
+[data-theme^="flint"] [style*="letter-spacing"] { letter-spacing: .04em !important; }
+[data-theme^="flint"] .np-title { font-family: var(--ui-font) !important; font-weight: 600; letter-spacing: -.005em !important; font-size: var(--t13) !important; }
+/* dialogs read in Geist throughout; code-ish fields keep a mono via their own classes */
+[data-theme^="flint"] [style*="--shadow-modal"] { font-family: var(--ui-font) !important; }
+[data-theme^="flint"] [style*="--shadow-modal"] [style*="JetBrains Mono"]:not(input):not(textarea):not(pre) { font-family: var(--ui-font) !important; }
+/* ── FLINT · SETTINGS — the dialog as an app's settings page (SettingsModal
+   FlintCtx swaps the markup that has to change; this restyles the rest) ── */
+[data-theme^="flint"] .setscrim { background: radial-gradient(1200px 700px at 50% 40%, rgba(12,12,14,.55), rgba(5,5,6,.82)) !important; }
+[data-theme^="flint"] .setdlg {
+  border: 1px solid var(--line2) !important; border-radius: 16px !important; background: var(--panel2) !important;
+  box-shadow: 0 40px 100px -30px #000, 0 0 0 1px rgba(0,0,0,.5) !important; overflow: hidden; font-family: var(--ui-font) !important;
+}
+[data-theme^="flint"] .setdlg > div:first-child { background: var(--panel); border-bottom: 1px solid var(--line); }
+[data-theme^="flint"] .setdlg > div:first-child > div:first-child { padding: 13px 16px 13px 22px !important; }
+[data-theme^="flint"] .setdlg > div:first-child svg:first-child { display: none; }
+[data-theme^="flint"] .set-crumb { font: 600 16px var(--ui-font); color: var(--txb); letter-spacing: -.01em; white-space: nowrap; }
+[data-theme^="flint"] .set-crumb i { font-style: normal; font-weight: 500; font-size: 13.5px; color: var(--txh); margin-left: 4px; }
+[data-theme^="flint"] .set-drawline { display: none; }
+[data-theme^="flint"] .set-search {
+  height: 34px; padding: 0 12px !important; border: 1px solid var(--line) !important; border-radius: 8px !important;
+  background: var(--panel2) !important; font: 13px var(--ui-font) !important; letter-spacing: 0 !important; flex-basis: 280px !important;
+}
+[data-theme^="flint"] .set-close {
+  width: 34px; height: 34px; padding: 0 !important; border: 1px solid var(--line) !important; border-radius: 8px !important;
+  font-size: 14px !important; letter-spacing: 0 !important; color: var(--txd) !important;
+}
+[data-theme^="flint"] .setrail { width: 236px; padding: 14px 10px; background: var(--panel2); border-right: 1px solid var(--line); gap: 1px; }
+[data-theme^="flint"] .setgroup { border-top: 0; margin-top: 8px; padding: 12px 10px 6px; font: 600 10.5px var(--ui-font); letter-spacing: .12em !important; text-transform: uppercase; color: var(--txl); }
+[data-theme^="flint"] .setgroup:first-child { margin-top: 0; padding-top: 2px; }
+[data-theme^="flint"] .setrail button { border: 0; border-radius: 8px; padding: 8px 10px; gap: 11px !important; color: var(--txm); font-family: var(--ui-font); }
+[data-theme^="flint"] .setrail button:hover:not(.on) { background: var(--ac-06); }
+[data-theme^="flint"] .setrail button.on { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line), inset 2px 0 0 var(--acc); }
+[data-theme^="flint"] .setrail button svg { color: var(--txl); }
+[data-theme^="flint"] .setrail button.on svg { color: var(--acc); }
+[data-theme^="flint"] .set-raillbl { font-size: 13.5px !important; letter-spacing: 0 !important; }
+[data-theme^="flint"] .setrail .hint { display: none; }
+[data-theme^="flint"] .setpane { padding: 26px 32px 40px; }
+[data-theme^="flint"] .set-head svg { display: none; }
+[data-theme^="flint"] .set-head h2 { font: 600 20px var(--ui-font) !important; letter-spacing: -.015em !important; text-shadow: none; }
+[data-theme^="flint"] .set-head p { margin-top: 4px !important; font-size: 13.5px !important; color: var(--txd) !important; line-height: 1.5 !important; }
+[data-theme^="flint"] .set-head { margin-bottom: 8px !important; }
+[data-theme^="flint"] .set-sec { margin-top: 26px !important; }
+[data-theme^="flint"] .set-sechead > div:first-child > svg { display: none; }
+[data-theme^="flint"] .set-sectitle { font: 600 14px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txh) !important; }
+[data-theme^="flint"] .set-secrule { background: transparent !important; }
+[data-theme^="flint"] .set-secdesc { padding-left: 0 !important; font-size: 12.5px !important; }
+/* a CARD of rows. ponytail: matched on CARD's inline padding — it is a style
+   object, not a component, so it has no class to hang this on */
+[data-theme^="flint"] .setpane [style*="padding: 14px 16px"] { border: 1px solid var(--line) !important; border-radius: 12px; background: var(--panel) !important; }
+[data-theme^="flint"] .set-row { border-top-color: var(--line) !important; }
+[data-theme^="flint"] .set-key { font: 500 13.5px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txb) !important; }
+[data-theme^="flint"] .set-desc { font-size: 12px !important; }
+[data-theme^="flint"] .set-toggle { appearance: none; cursor: pointer; flex: none; width: 34px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: var(--line2); position: relative; transition: background .18s ease; }
+[data-theme^="flint"] .set-toggle i { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--txd); transition: left .18s ease, background .18s ease; }
+[data-theme^="flint"] .set-toggle[data-on] { background: var(--acc); }
+[data-theme^="flint"] .set-toggle[data-on] i { left: 17px; background: #fff; }
+[data-theme^="flint"] .set-seg { gap: 2px !important; padding: 3px; border: 1px solid var(--line) !important; border-radius: 9px; background: var(--panel3); }
+[data-theme^="flint"] .set-seg button { border-radius: 6px !important; font: 12.5px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txd) !important; background: transparent !important; }
+[data-theme^="flint"] .set-seg button:hover { color: var(--txh) !important; }
+[data-theme^="flint"] .set-seg button[data-on] { background: var(--panel) !important; color: var(--txb) !important; box-shadow: inset 0 0 0 1px var(--line2); }
+[data-theme^="flint"] .setpane select { border: 1px solid var(--line2) !important; border-radius: 8px !important; background: var(--panel2) !important; font: 13px var(--ui-font) !important; letter-spacing: 0 !important; }
+/* the theme section */
+.set-themehead { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.set-themehead b { font: 600 14px var(--ui-font); color: var(--txh); }
+.set-seg2 { display: inline-flex; margin-left: auto; padding: 3px; border-radius: 9px; background: var(--panel3); border: 1px solid var(--line); }
+.set-seg2 button { appearance: none; cursor: pointer; border: 0; background: none; padding: 4px 13px; border-radius: 6px; font: 12.5px var(--ui-font); color: var(--txd); }
+.set-seg2 button[data-on] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line2); }
+.ftgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ftcard { cursor: pointer; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; transition: border-color .15s ease; }
+.ftcard:hover { border-color: var(--line2); }
+.ftcard[data-on] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
+.ftprev { height: 64px; padding: 10px 12px; display: grid; grid-template-columns: 30% 1fr; gap: 8px; background: var(--g); }
+.ftprev .sb { border-radius: 5px; background: var(--g2); padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.ftprev .sb i { height: 4px; border-radius: 2px; background: var(--g3); }
+.ftprev .sb i:first-child { background: var(--a); width: 70%; }
+.ftprev .ch { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.ftprev .ch .p { height: 13px; border-radius: 4px; background: color-mix(in oklab, var(--a) 18%, var(--g2)); box-shadow: inset 2px 0 0 var(--a); }
+.ftprev .ch i { height: 4px; border-radius: 2px; background: var(--g3); }
+.ftprev .ch i:last-child { width: 60%; }
+.ftmeta { display: flex; align-items: center; gap: 9px; padding: 10px 12px 11px; border-top: 1px solid var(--line); }
+.ftmeta .d { width: 10px; height: 10px; border-radius: 50%; background: var(--a); flex: none; }
+.ftmeta b { display: block; font: 600 13.5px var(--ui-font); color: var(--txb); }
+.ftmeta div > span { display: block; font-size: 12px; color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ftmeta em { margin-left: auto; flex: none; font: 600 10.5px var(--ui-font); font-style: normal; padding: 2px 8px; border-radius: 999px; background: color-mix(in oklab, var(--acc) 18%, var(--panel)); color: var(--acc); }
+/* colourings: unlabelled squircles filled with what they paint */
+.ftsq { display: flex; gap: 8px; padding: 0 12px 12px; }
+.ftsq button { appearance: none; cursor: pointer; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 9px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); transition: transform .12s ease; }
+.ftsq button:hover { transform: translateY(-1px); }
+.ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--txb); }
+/* header styles: each a tiny header showing the time the way it would */
+.fthdr { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px 12px; }
+.fthdr button { appearance: none; cursor: pointer; position: relative; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden;
+  background: repeating-linear-gradient(var(--panel2) 0 6px, color-mix(in oklab, var(--txl) 35%, var(--panel2)) 6px 8px); }
+.fthdr button span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font: 500 10.5px var(--mono); color: var(--txb); white-space: nowrap; padding: 3px 9px; border-radius: 999px; }
+.fthdr [data-h="frost"] span { background: color-mix(in srgb, var(--panel) 45%, transparent); backdrop-filter: blur(3px); border: 1px solid rgba(255,255,255,.08); opacity: .8; }
+.fthdr [data-h="veil"]::before { content: ""; position: absolute; inset: 0 0 35% 0; background: linear-gradient(var(--panel2) 30%, transparent); }
+.fthdr [data-h="veil"] span { color: var(--txm); top: 38%; }
+.fthdr [data-h="tuck"] span { background: color-mix(in srgb, var(--panel) 70%, transparent); backdrop-filter: blur(3px); border: 1px solid rgba(255,255,255,.08); font-size: 9.5px; padding: 2px 7px; color: var(--txm); }
+.fthdr button[data-on] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc) 18%, transparent); }
+
+/* bold is bold: no highlighter wash, and a "Label:" lead-in is the same weight
+   in the same face, not the HUD's tracked accent capitals */
+[data-theme^="flint"] .md strong { background: none; padding: 0; font-weight: 600; color: var(--txb); }
+[data-theme^="flint"] .md strong.md-lead {
+  font-family: inherit; font-size: inherit; font-weight: 600; letter-spacing: 0 !important;
+  text-transform: none; color: var(--txb); margin-right: .1em;
+}
+
+/* ── words FLINT says in its own voice: the wordmark in lower case, the
+   lane and tier labels in Geist rather than the HUD's tracked mono ── */
+[data-theme^="flint"] .wordmark { font-family: var(--ui-font) !important; font-size: var(--t14, 15px) !important; letter-spacing: -.01em !important; text-transform: lowercase; }
+[data-theme^="flint"] .wordmark .bw-a { font-weight: 600; }
+[data-theme^="flint"] .wordmark .bw-sep { display: none; }
+[data-theme^="flint"] .wordmark .bw-b { margin-left: .3em; }
+[data-theme^="flint"] .newsess {
+  justify-content: center; border: 1px solid var(--line2) !important; border-radius: var(--f-rad-s) !important;
+  background: transparent !important; color: var(--txb) !important;
+  font-family: var(--ui-font) !important; font-size: var(--t12) !important; font-weight: 500; letter-spacing: 0 !important; text-transform: none !important;
+}
+[data-theme^="flint"] .newsess:hover { background: var(--ac-06) !important; }
+[data-theme^="flint"] .newsess svg { color: var(--acc); }
+[data-theme^="flint"] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
+[data-theme^="flint"] .lanehead > span:nth-child(3) { background: transparent !important; }
+[data-theme^="flint"] :is(.pnum, .res-head, .dwork-lab, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
+[data-theme^="flint"] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
+
+/* ── the settings modal's own furniture ── */
+[data-theme^="flint"] .setrail { font-family: var(--ui-font); }
 
 /* MOVE dock (components/hud/MoveDock.tsx): the SWEEP bar's running sheen. */
 .movesweep { animation: movesweep 2.2s linear infinite; }

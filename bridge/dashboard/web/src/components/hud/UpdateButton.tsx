@@ -1,18 +1,25 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { ArrowDownToLine } from "lucide-react";
 import { api, type UpdateInfo } from "../../api";
 import { notify } from "./Notifications";
 import { watchRestart } from "../../lib/restart";
 
-// Header sync button for the platform's own checkout, both directions: pull the
-// commits waiting upstream (then rebuild + restart the bridge), or ship the work
-// sitting here — commit it with a message Claude writes from the diff, then push.
-// Always present: with nothing to do it sits there quietly as an in-sync badge.
+// The platform's own checkout, both directions: pull the commits waiting
+// upstream (then rebuild + restart the bridge), or ship the work sitting here —
+// commit it with a message Claude writes from the diff, then push. Two looks:
+// `rail` is the right rail's UPDATE icon above ⌘K, always present — quiet when
+// there is nothing to do, a count of incoming commits when there is (an amber
+// dot for unshipped local work alone); `badge` is the labelled chip SETTINGS
+// shows when an update is waiting.
 // ponytail: self-contained (polls + owns its modal) like NotificationCenter, so
 // the Strip stays a dumb header.
 const POLL_MS = 300_000; // 5 min — new commits are not a live-tail concern
 
-export function UpdateButton({ onFeed }: { onFeed: (texts: string[], project?: string, fresh?: boolean) => void }) {
+export function UpdateButton({ onFeed, variant = "badge" }: {
+  onFeed: (texts: string[], project?: string, fresh?: boolean) => void;
+  variant?: "badge" | "rail";
+}) {
   const [info, setInfo] = useState<UpdateInfo | null>(null);
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<"" | "updating" | "restarting" | "shipping" | "checking">("");
@@ -138,10 +145,38 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[], project?: s
     : `${info.branch} is in sync with its upstream — click to check again`;
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
+  const onClick = () => (incoming || local ? setOpen(true) : void recheck());
+  // Sized and lit like the rail's tab buttons, so it reads as one more of them;
+  // the count is the same filled pill a tab's badge is, in the update's green.
+  const railBtn = (
+    <button
+      onClick={onClick}
+      title={phase === "checking" ? "Checking for updates…" : `Update — ${title}`}
+      aria-label="Update the platform"
+      {...hp("btn")}
+      className="relative flex h-[38px] items-center justify-center border-l-2 border-transparent hover:bg-accent"
+      style={{
+        appearance: "none", cursor: "pointer",
+        color: incoming ? "var(--ok)" : local ? "var(--warn)" : hov === "btn" ? "var(--acc)" : "var(--muted-2)",
+        opacity: phase === "checking" ? 0.5 : 1,
+      }}
+    >
+      <ArrowDownToLine size={18} strokeWidth={1.8} aria-hidden />
+      {incoming > 0 ? (
+        <span
+          className="absolute right-[3px] top-[1px] h-[15px] min-w-[15px] rounded-full px-[3px] text-center text-[length:var(--t7)] leading-[15px]"
+          style={{ background: "var(--ok)", color: "var(--acc-on)" }}
+        >{incoming > 99 ? "99+" : incoming}</span>
+      ) : local > 0 ? (
+        <span className="absolute right-[5px] top-[4px] h-[8px] w-[8px] rounded-full" style={{ background: "var(--warn)" }} />
+      ) : null}
+    </button>
+  );
+
   return (
     <>
-      <button
-        onClick={() => (incoming || local ? setOpen(true) : void recheck())}
+      {variant === "rail" ? railBtn : <button
+        onClick={onClick}
         title={title}
         {...hp("btn")}
         style={{
@@ -168,7 +203,7 @@ export function UpdateButton({ onFeed }: { onFeed: (texts: string[], project?: s
             : phase !== "checking" && local && !incoming ? <><span className="shipword">SHIP </span><span style={{ color: "var(--txm)", letterSpacing: ".4px" }}>{local}</span></>
             : label}
         </span>
-      </button>
+      </button>}
 
       {/* Portalled into the themed container: the Strip's own animation makes it a
           containing block for position:fixed, which pinned the modal to the header. */}

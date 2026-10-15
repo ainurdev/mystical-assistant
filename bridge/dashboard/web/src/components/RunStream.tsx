@@ -19,6 +19,7 @@ import { hhmm, useClock12 } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
+import { MARK_GLYPH, stripOf, workTitle, zonesOf, type Mark } from "../lib/dossier";
 import { ToolWidget } from "./ResultWidgets";
 import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
@@ -664,6 +665,60 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
         </button>
       </div>
       {open ? <div className="fold-body space-y-2">{children}</div> : null}
+    </div>
+  );
+}
+
+/** DOSSIER's tier 3: everything a turn did between what you asked and what it
+ *  answered, under one header (lib/dossier). The header carries the zone's
+ *  shape as a strip of glyphs, so a shut zone still says "three commands, a
+ *  note, a failure" — which is what makes a shut zone safe to be the default.
+ *  Open while the turn runs (you are watching it); afterwards it follows the
+ *  COLLAPSE STEPS switch like a STEPS fold does. */
+function WorkZone({ marks, title, failed, running, live, span, defaultOpen, animate, children }: {
+  marks: Mark[];
+  title: string;
+  failed: number;
+  running: boolean;
+  /** What is out right now, named in the header while it runs. */
+  live: string;
+  /** Wall time the zone covered, already formatted; "" when unknown. */
+  span: string;
+  defaultOpen: boolean;
+  animate: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
+  const { shown, more } = stripOf(marks);
+  return (
+    <div
+      className="dwork"
+      data-open={open ? "" : undefined}
+      data-run={running ? "" : undefined}
+      data-err={failed ? "" : undefined}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        title={open ? "hide the work" : "show the work"}
+        className="dwork-head"
+      >
+        <span className="dwork-lab">
+          <ChevronDown size={11} aria-hidden className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
+          WORK
+        </span>
+        <span className="dwork-title">{running && live ? `${title} \u2014 ${live}` : title}</span>
+        <span className="dwork-strip" aria-hidden>
+          {shown.map((m, k) => <i key={k} data-m={m}>{MARK_GLYPH[m]}</i>)}
+          {more ? <b>+{more}</b> : null}
+        </span>
+        {failed ? <span className="dwork-fail">{"\u2715"} {failed} failed</span> : null}
+        <span className="dwork-ms">{running ? "RUNNING" : span}</span>
+      </button>
+      {open ? <div className="dwork-body">{children}</div> : null}
     </div>
   );
 }
@@ -1653,6 +1708,20 @@ export const RunStream = memo(function RunStream({
   // in the RESULT box. Only the box is drawn. A native session emits no result
   // event, so its final text keeps rendering as text.
   const resultText = (events.find((e) => e.type === "result")?.result ?? "").trim();
+  const dossier = toolStyle === "dossier";
+  // A native session emits no result event, so its closing words are a plain
+  // `text`. DOSSIER still has to draw them as the answer — the answer is half of
+  // tier 1 — so in a finished turn with no result, the last text that nothing
+  // but bookkeeping follows is it.
+  const finalText = (() => {
+    if (!dossier || !ended || resultText) return -1;
+    for (let j = events.length - 1; j >= 0; j--) {
+      const t = events[j].type;
+      if (t === "text") return (events[j] as { text?: string }).text ? j : -1;
+      if (t === "tool" || t === "question" || t === "permission") return -1;
+    }
+    return -1;
+  })();
 
   // A turn that ends on an AskUserQuestion emits no result event, so the prose
   // explaining the card used to render as bare text while every other answer got
@@ -1676,12 +1745,12 @@ export const RunStream = memo(function RunStream({
         const text = event.text;
         if (!text) return null;
         if (resultText && text.trim() === resultText) return null;
-        if (asksNext(i))
+        if (asksNext(i) || (dossier && i === finalText))
           return (
             <FinalResult
               key={i}
               result={text}
-              label="RESULT // ASK"
+              label={i === finalText ? "ANSWER" : dossier ? "ANSWER // ASK" : "RESULT // ASK"}
               animate={animate}
               idKey={`${turnId}:${i}`}
             />
@@ -1869,15 +1938,10 @@ export const RunStream = memo(function RunStream({
         // STEER tag keep it distinct from the turn-opening prompt.
         return (
           <div key={i} id={ckId(turnId, steerKey(i))} className="my-2 flex scroll-mt-[94px] justify-end">
-            <div
-              className="max-w-[78%] border border-r-[3px] px-3 py-1.5"
-              style={{
-                borderColor: "color-mix(in srgb, var(--violet) 26%, transparent)",
-                borderRightColor: "var(--violet)",
-                background: "color-mix(in srgb, var(--violet) 7%, transparent)",
-              }}
-            >
-              <div className="mb-0.5 flex items-center justify-end gap-1.5 text-[length:var(--t10)] tracking-[1.6px] text-[var(--violet)]">
+            {/* Colours live in .steer-bub (index.css): mixed into the panel, not
+                washed over transparent, so the tint survives a light ground. */}
+            <div className="steer-bub max-w-[78%] border border-r-[3px] px-3 py-1.5">
+              <div className="steer-lab mb-0.5 flex items-center justify-end gap-1.5 text-[length:var(--t10)] tracking-[1.6px]">
                 STEER <SteerIcon size={11} />
               </div>
               <span className="block whitespace-pre-wrap break-words text-[length:var(--t12)] leading-relaxed text-foreground-bright">
@@ -1902,6 +1966,7 @@ export const RunStream = memo(function RunStream({
             isError={event.is_error}
             animate={animate}
             idKey={`${turnId}:${i}`}
+            dossier={dossier}
             onAnswer={onAnswer}
             onQuote={onQuote}
           />
@@ -1910,7 +1975,9 @@ export const RunStream = memo(function RunStream({
         return (
           <div
             key={i}
-            className="ml-[var(--rail)] flex items-start gap-1.5 rounded-lg bg-red-500/15 px-2 py-1 text-sm text-red-300"
+            // Coloured by .ev-err off --err, not a Tailwind red: a fixed red-300
+            // is unreadable on every light ground and gets hue-rotated on AURORA.
+            className="ev-err ml-[var(--rail)] flex items-start gap-1.5 px-2 py-1 text-sm"
             style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
           >
             <TriangleAlert size={14} className="mt-0.5 shrink-0" aria-hidden />
@@ -1951,13 +2018,9 @@ export const RunStream = memo(function RunStream({
         return (
           <div
             key={i}
-            className="ml-[var(--rail)] flex items-center gap-1.5 text-xs text-[var(--tg-hint)]"
+            className="ev-stop ml-[var(--rail)] flex items-center gap-1.5 text-xs"
           >
-            <CircleStop
-              size={14}
-              className="shrink-0 text-[var(--brand-soft)]"
-              aria-hidden
-            />
+            <CircleStop size={14} className="shrink-0" aria-hidden />
             <span>Stopped — send a message to continue.</span>
           </div>
         );
@@ -1996,6 +2059,9 @@ export const RunStream = memo(function RunStream({
       else { ms += d.ms ?? 0; if (d.is_error) failed++; }
     }
     const title = stepsTitle(cats);
+    // Inside a WORK zone a STEPS row would be a fold inside a fold: the zone
+    // already is the one line the work sits under.
+    if (dossier) return <div key={`f${seg.idx[0]}`} className="dsteps space-y-1.5">{seg.idx.map(renderEvent)}</div>;
     return (
       <Fold
         key={`f${seg.idx[0]}`}
@@ -2013,10 +2079,59 @@ export const RunStream = memo(function RunStream({
     );
   };
 
+  const segs = segmentsOf(events, from, inFlow, waiting);
+  // Tier 1 and 2 (lib/dossier): the answer, the prose that introduces a card,
+  // the cards, and what ends a turn. Everything else is work.
+  const isTop = (seg: Seg): boolean => {
+    if (seg.kind !== "prose") return false;
+    const i = seg.idx[0], e = events[i];
+    if (e.type === "text") return i === finalText || asksNext(i);
+    return e.type === "result" || e.type === "question" || e.type === "permission"
+      || e.type === "error" || e.type === "stopped";
+  };
+  const workZone = (zsegs: Seg[]) => {
+    const marks: Mark[] = [];
+    const cats: StepCat[] = [];
+    let notes = 0, failed = 0, running = false, live = "", first: number | undefined, last: number | undefined;
+    for (const seg of zsegs) for (const i of seg.idx) {
+      const e = events[i];
+      if (e.at != null) { first ??= e.at; last = e.at; }
+      if (e.type === "thinking" && e.text) { marks.push("think"); notes++; }
+      else if (e.type === "text" && e.text) { marks.push("note"); notes++; }
+      else if (e.type === "steer") marks.push("steer");
+      else if (e.type === "log") { marks.push(e.error ? "fail" : "hook"); cats.push("log"); if (e.error) failed++; }
+      else if (e.type === "tool") {
+        const d = doneOf(e), c = catOf(e, d);
+        cats.push(c);
+        if (!d) { running = true; live = e.summary; }
+        else if (d.is_error) failed++;
+        marks.push(d?.is_error ? "fail" : c);
+        if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
+      }
+    }
+    const secs = first != null && last != null ? last - first : 0;
+    const span = secs >= 1 ? dur(secs * 1000) : "";
+    return (
+      <WorkZone
+        key={`z${zsegs[0].idx[0]}`}
+        marks={marks}
+        title={workTitle(stepsTitle(cats), notes)}
+        failed={failed}
+        running={running}
+        live={live}
+        span={span}
+        defaultOpen={!ended || foldsOpen}
+        animate={animate}
+      >
+        {zsegs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)))}
+      </WorkZone>
+    );
+  };
+
   return (
     // vskip-card: a turn runs to hundreds of events, so each card skips layout
     // and paint while it's off-screen (see .vskip-card in index.css).
-    <div className="space-y-2 vskip-card">
+    <div className="rstream space-y-2 vskip-card">
       {boot ? <BootRow text={boot} /> : null}
       {from > 0 && (
         <button
@@ -2028,9 +2143,12 @@ export const RunStream = memo(function RunStream({
           {from} EARLIER STEP{from === 1 ? "" : "S"}
         </button>
       )}
-      {/* The words in the flow, the work under a row each (lib/segments). */}
-      {segmentsOf(events, from, inFlow, waiting).map((seg) =>
-        seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg))}
+      {/* The words in the flow, the work under a row each (lib/segments) —
+          or, in DOSSIER, under one WORK zone per stretch (lib/dossier). */}
+      {dossier
+        ? zonesOf(segs, isTop).map((z) =>
+            z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs))
+        : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)))}
     </div>
   );
 });
@@ -2123,6 +2241,7 @@ function FinalResult({
   animate,
   idKey,
   label,
+  dossier = false,
   onAnswer,
   onQuote,
 }: {
@@ -2136,6 +2255,8 @@ function FinalResult({
   idKey: string;
   /** Overrides "RESULT // OK" — the accent-toned box drawn above a question card. */
   label?: string;
+  /** DOSSIER calls the box what it is to the reader: the turn's answer. */
+  dossier?: boolean;
   onAnswer?: (text: string) => void;
   onQuote?: (text: string) => void;
 }) {
@@ -2159,14 +2280,14 @@ function FinalResult({
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
     // of rules, a level bar, a margin note, a floating surface) — and nothing
     // overrides an inline rule. See `.res` in index.css and THE SESSION'S IDIOM.
-    <div className="resblk relative my-2 pl-[var(--rail)]" style={{ "--tone": tone } as React.CSSProperties}>
+    <div className="resblk relative my-2 pl-[var(--rail)]" data-bad={bad ? "" : undefined} style={{ "--tone": tone } as React.CSSProperties}>
       <RailNode />
       <div
         className="res group/res"
         style={flash ? { animation: "resultflash 1.2s ease both" } : undefined}
       >
         <div className="res-head">
-          <span className="res-lab">{label ?? `RESULT // ${bad ? "ERROR" : "OK"}`}</span>
+          <span className="res-lab">{label ?? (dossier ? (bad ? "ANSWER // ERROR" : "ANSWER") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
           <span className="res-meta">
             {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
             {typeof elapsed === "number" && elapsed > 0 && (

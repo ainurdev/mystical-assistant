@@ -27,7 +27,7 @@ function textOf(n: unknown): string {
 }
 
 /** The one control a rendered reply grows: a glyph that puts the thing it sits
- *  on — a link's URL, a quote's text, a fence's code — on the clipboard as it
+ *  on — a link's URL, a quote's text, a fence's or a span's code — on the clipboard as it
  *  reads, not as markdown. Selecting and copying still yields the markdown
  *  (selmd); this is the way out when the markdown is the problem: a message
  *  drafted in a quote pastes without its `> `, a URL without its `[label]()`.
@@ -271,7 +271,15 @@ export const Markdown = memo(function Markdown({
             const raw = textOf(kids);
             const ref = onOpenFile && !cls ? parseFileRef(raw) : null;
             if (ref && onOpenFile) return <FileRefSpan {...ref} label={raw} onOpen={onOpenFile} />;
-            return <code className={cls} {...props}>{kids}</code>;
+            // An inline span carries the fence's glyph too: a command or a name
+            // named mid-sentence is the thing you came to copy, and a drag
+            // across a backticked span picks up the backticks with it.
+            return (
+              <>
+                <code className={cls} {...props}>{kids}</code>
+                {!cls && raw && <CopyBtn title="Copy code" text={raw} />}
+              </>
+            );
           },
           pre: ({ children }) => {
             const el = (Array.isArray(children) ? children[0] : children) as

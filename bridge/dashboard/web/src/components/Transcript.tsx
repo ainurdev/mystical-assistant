@@ -81,7 +81,7 @@ function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
   const good = outcome.code === "delivered" || outcome.code === "interrupted";
   const tone = good ? "var(--warn)" : "var(--err)";
   return (
-    <div className="ml-[var(--rail)] flex flex-col gap-0.5">
+    <div className="doutcome ml-[var(--rail)] flex flex-col gap-0.5">
       <span
         className="self-start border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
         style={{ color: tone, borderColor: "color-mix(in srgb, currentColor 40%, transparent)" }}
@@ -124,13 +124,17 @@ function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
  *  reads it as the right-hand half of a two-sided conversation. So the row and
  *  the width live in `.pbub-row` / `.pbub` (index.css), and nothing here decides
  *  either. Colours are there too — see `.abub` for why not inline. */
-export function PromptBubble({ text, at }: { text: string; at?: number }) {
+export function PromptBubble({ text, at, n }: { text: string; at?: number; n?: number }) {
   const h12 = useClock12();
   return (
     <div className="pbub-row">
       <div
         className="pbub border border-r-[3px] px-3 py-1.5"
       >
+        {/* The turn's number. Only DOSSIER shows it (`.pnum`, index.css), as
+            the head of the turn's card — the other languages say who spoke
+            with geometry instead, and a number there would be a second label. */}
+        {n != null && <span className="pnum">TURN {String(n).padStart(2, "0")} <i>· YOU</i></span>}
         {/* Rendered as the same markdown the composer let you write it in. */}
         <Markdown breaks className="break-words leading-relaxed text-foreground-bright">{text}</Markdown>
         {at != null && <span className="pstamp">{hhmm(at, h12)}</span>}
@@ -193,20 +197,24 @@ function TurnBlock({
     // data-ctx-*: the dashboard's right-click menu reads the nearest one of
     // these off the target chain, so a click anywhere inside a turn resolves to
     // that turn rather than the terminal pane wrapping it.
-    <div id={ckId(turn.id)} className="flex flex-col gap-2 scroll-mt-[86px]"
+    // `dturn` / `dprompt` / `dreply` are inert outside DOSSIER (display:contents
+    // on the wrapper), where they make a turn one card: prompt, work, answer.
+    <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id}
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
-      {turn.prompt && (
-        <div data-prompt-idx={promptIdx}>
-          <PromptBubble text={turn.prompt} at={turn.started} />
-        </div>
-      )}
-      {turn.attachments && turn.attachments.length > 0 && (
-        <Attachments items={turn.attachments} />
-      )}
+      <div className="dprompt">
+        {turn.prompt && (
+          <div data-prompt-idx={promptIdx}>
+            <PromptBubble text={turn.prompt} at={turn.started} n={promptIdx + 1} />
+          </div>
+        )}
+        {turn.attachments && turn.attachments.length > 0 && (
+          <Attachments items={turn.attachments} />
+        )}
+      </div>
       {/* position:relative is safe here — the ImageLightbox portals to body. */}
       {replied && (
-        <div className="relative space-y-1.5">
+        <div className="dreply relative space-y-1.5">
           <AgentRail />
           {turn.runtime && <RuntimeBadge runtime={turn.runtime} />}
           {(turn.events.length > 0 || turn.status === "running") && (
@@ -220,7 +228,7 @@ function TurnBlock({
               tokens={turn.tokens ?? null}
               openResults={hud?.openResults ?? false}
               foldsOpen={hud?.foldsOpen ?? false}
-              toolStyle={hud?.toolStyle ?? "stamp"}
+              toolStyle={hud?.toolStyle ?? "dossier"}
               compact={hud?.layout === "compact"}
               turnStarted={turn.started}
               onRunCommand={onRunCommand}
@@ -364,8 +372,13 @@ export function Transcript({
     // padding (62px). This lowers it to 86px, clear of the header island with
     // its LAST row open: the line scroll-mt-[86px] draws for scrollIntoView.
     scrollPaddingStart: 24,
-    measureElement: (el) => {
-      const h = el.getBoundingClientRect().height;
+    measureElement: (el, entry) => {
+      // LAYOUT size, never getBoundingClientRect: that one is post-transform,
+      // and rows mount while the panel's entrance animation (enterZoom / mpop)
+      // still has the column at scale(.9-.98). Every turn then cached ~3% short,
+      // a transform settling fires no ResizeObserver to correct it, and each
+      // turn slid up over the gap under it — 22px of spacing landing as 6-17.
+      const h = entry?.borderBoxSize?.[0]?.blockSize ?? (el as HTMLElement).offsetHeight;
       const k = el.getAttribute("data-key");
       if (k) sizesRef.current.set(k, h);
       return h;

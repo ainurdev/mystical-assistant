@@ -1,5 +1,5 @@
 import {
-  Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore,
+  createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore,
   type CSSProperties, type ReactNode,
 } from "react";
 import {
@@ -13,12 +13,12 @@ import {
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, LayoutPanelTop,
   ListChecks, Package, PackageOpen, PanelBottom, Timer, Truck, AppWindowMac, Pin,
 } from "lucide-react";
-import { CHAT_BGS, TOOL_STYLES, type ChatBg, type ToolStyle } from "../../lib/toolwidget";
+import { CHAT_BGS, TOOL_STYLES, TRANSCRIPT_SCHEMES, type ChatBg, type ToolStyle, type TranscriptScheme } from "../../lib/toolwidget";
 import { AgentRail, PromptBubble } from "../Transcript";
 import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
 
-import { ago, windowLabels } from "../../lib/surfaces";
+import { ago, hhmm, useClock12, windowLabels } from "../../lib/surfaces";
 import { ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WeekPanel } from "./WeekPanel";
 import {
@@ -58,7 +58,11 @@ import {
   AURORA_KEYS,
   BASE_FONTS,
   CLAUDE_KEYS,
+  FLINT_KEYS,
   FONTS,
+  HEADER_STYLES,
+  isFlint,
+  type HeaderStyle,
   fontStack,
   isLight,
   THEME_DEFS,
@@ -360,6 +364,24 @@ const CRT_TOGGLES: { key: "scanlines" | "sweep" | "glow"; label: string; desc: s
   { key: "glow", label: "TEXT GLOW", desc: "phosphor bloom on headings" },
 ];
 
+/** True while FLINT is worn. FLINT draws this dialog as an app's settings page
+ *  rather than a HUD's (index.css, FLINT · SETTINGS): sentence-case labels,
+ *  a toggle for a switch, one theme grid behind a Dark/Light switch. Read by
+ *  the few pieces whose markup — not just their colours — changes. */
+const FlintCtx = createContext(false);
+const ACRONYMS = new Set(["AI", "MCP", "CRT", "HUD", "CLI", "API", "URL", "TG", "SSH", "PR", "ID", "UI", "OS",
+  "GPU", "CPU", "RAM", "JSON", "ENV", "IDE", "MA", "VS", "FM", "PWA", "SOS", "ESC", "TTS", "STT", "LLM", "GH"]);
+/** "THEME · DARK" → "Theme · dark"; acronyms stay capitals. */
+function sentence(s: string): string {
+  const w = s.toLowerCase().replace(/[a-z]+/g, (m) => (ACRONYMS.has(m.toUpperCase()) ? m.toUpperCase() : m));
+  return w.charAt(0).toUpperCase() + w.slice(1);
+}
+/** A label in the dialog's current voice. */
+function useVoice(): (s: ReactNode) => ReactNode {
+  const flint = useContext(FlintCtx);
+  return (s) => (flint && typeof s === "string" ? sentence(s) : s);
+}
+
 const field = {
   background: "var(--panel3)",
   border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)",
@@ -523,26 +545,27 @@ function Section({ title, icon, desc, info, top, children }: {
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const voice = useVoice();
   const Icon = icon ?? (typeof title === "string" ? SEC_ICONS[title] : undefined);
   const sub = desc ?? (typeof title === "string" ? SEC_DESC[title] : undefined);
   return (
-    <div data-sec={typeof title === "string" ? title : undefined} style={{ marginTop: top ? 34 : 0 }}>
-      <div style={{ marginBottom: 14 }}>
+    <div className="set-sec" data-sec={typeof title === "string" ? title : undefined} style={{ marginTop: top ? 34 : 0 }}>
+      <div className="set-sechead" style={{ marginBottom: 14 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {Icon && (
             <Icon size={13} strokeWidth={1.7} aria-hidden
               style={{ flex: "none", color: "var(--acc)", opacity: .8 }} />
           )}
-          <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txd)", flex: "none" }}>
-            {title}
+          <span className="set-sectitle" style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txd)", flex: "none" }}>
+            {voice(title)}
           </span>
           {info && <InfoDot on={open} about={typeof title === "string" ? title : undefined} onClick={() => setOpen(!open)} />}
-          <span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 12%, transparent)" }} />
+          <span className="set-secrule" style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 12%, transparent)" }} />
         </div>
         {/* Indented past the icon to the title, so it reads as the title's own
             caption rather than as the first line of the card below. */}
         {sub && (
-          <div style={{ fontSize: "var(--t95)", color: "var(--txd)", lineHeight: 1.6, marginTop: 6, paddingLeft: Icon ? 21 : 0 }}>
+          <div className="set-secdesc" style={{ fontSize: "var(--t95)", color: "var(--txd)", lineHeight: 1.6, marginTop: 6, paddingLeft: Icon ? 21 : 0 }}>
             {sub}
           </div>
         )}
@@ -565,18 +588,20 @@ function Row({ label, desc, info, first, children }: {
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const voice = useVoice();
   return (
     <div
+      className="set-row"
       data-row={typeof label === "string" ? label : undefined}
       style={{ marginTop: first ? 0 : 13, paddingTop: first ? 0 : 13, borderTop: first ? undefined : RULE }}
     >
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span style={KEY_TX}>{label}</span>
+        <span className="set-key" style={KEY_TX}>{voice(label)}</span>
         {info && <InfoDot on={open} about={typeof label === "string" ? label : undefined} onClick={() => setOpen(!open)} />}
         <span style={{ flex: 1, minWidth: 8 }} />
         {children}
       </div>
-      {desc && <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 5, lineHeight: 1.6 }}>{desc}</div>}
+      {desc && <div className="set-desc" style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 5, lineHeight: 1.6 }}>{desc}</div>}
       {info && open && <div style={ASIDE}>{info}</div>}
     </div>
   );
@@ -585,19 +610,20 @@ function Row({ label, desc, info, first, children }: {
 /** The top of every category page: its name, and in one sentence what it is
  *  for. The rail already said the first; nothing said the second. */
 function PageHead({ tab }: { tab: (typeof TABS)[number] }) {
+  const voice = useVoice();
   return (
-    <div style={{ marginBottom: 30 }}>
+    <div className="set-head" style={{ marginBottom: 30 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <tab.icon size={17} strokeWidth={1.6} aria-hidden style={{ flex: "none", color: "var(--acc)" }} />
         <h2 className="glow" style={{ margin: 0, fontSize: "var(--t15)", fontWeight: 400, letterSpacing: 2, color: "var(--txb)" }}>
-          {tab.label}
+          {voice(tab.label)}
         </h2>
       </div>
       <p style={{ margin: "9px 0 0", maxWidth: 600, fontSize: "var(--t10)", lineHeight: 1.7, color: "var(--txm)" }}>
         {tab.about}
       </p>
       {/* The panel's drawline: teal under the title, gone by the far edge. */}
-      <div style={{
+      <div className="set-drawline" style={{
         height: 1, marginTop: 16,
         background: "linear-gradient(90deg, color-mix(in srgb, var(--acc) 45%, transparent), color-mix(in srgb, var(--acc) 8%, transparent) 60%, transparent)",
       }} />
@@ -632,6 +658,9 @@ function Placeholder({ icon: Icon, spin, children }: {
 
 /** An ON/OFF pill, matching the CRT rows. */
 function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
+  // FLINT: a toggle, the way an app's settings page says on/off.
+  if (useContext(FlintCtx))
+    return <button className="set-toggle" role="switch" aria-checked={on} data-on={on || undefined} onClick={onClick}><i /></button>;
   return (
     <button
       onClick={onClick}
@@ -695,12 +724,13 @@ function Segmented<T extends string>({
 }) {
   const [hover, setHover] = useState<T | null>(null);
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(72px,1fr))", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
+    <div className="set-seg" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(72px,1fr))", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
       {options.map((o) => {
         const active = value === o.value;
         return (
           <button
             key={o.value}
+            data-on={active || undefined}
             onClick={() => onPick(o.value)}
             onMouseEnter={() => setHover(o.value)}
             onMouseLeave={() => setHover(null)}
@@ -1106,8 +1136,9 @@ type ThemeCard = { key: ThemeKey; variants?: ThemeKey[] };
 const CARDS: ThemeCard[] = [
   { key: "aqua", variants: AURORA_KEYS },
   { key: "claude", variants: CLAUDE_KEYS },
+  { key: "flint-ember", variants: FLINT_KEYS },
   ...THEME_DEFS
-    .filter((t) => !AURORA_KEYS.includes(t.key) && !CLAUDE_KEYS.includes(t.key))
+    .filter((t) => !AURORA_KEYS.includes(t.key) && !CLAUDE_KEYS.includes(t.key) && !FLINT_KEYS.includes(t.key))
     .map((t) => ({ key: t.key })),
 ];
 
@@ -1249,6 +1280,13 @@ function ThemeCardGrid({
                 {card.variants.map((k) => {
                   const c = themeDef(k);
                   const live = settings.theme === k;
+                  // A two-role variant (FLINT) shows both of its hues — you and
+                  // what waits on you — and its name, since four orange/magenta
+                  // splits are told apart by which side is which.
+                  const ask = c.pal?.ask;
+                  const fill = c.pal?.acc2
+                    ? `linear-gradient(90deg, ${comp(c.sw)}, ${comp(c.pal.acc2)})`
+                    : ask ? `linear-gradient(90deg, ${comp(c.sw)} 50%, ${comp(ask)} 50%)` : comp(c.sw);
                   return (
                     <button
                       key={k}
@@ -1258,15 +1296,98 @@ function ThemeCardGrid({
                         appearance: "none",
                         cursor: "pointer",
                         flex: 1,
-                        height: 12,
+                        height: ask ? 16 : 12,
                         padding: 0,
-                        background: comp(c.sw),
+                        background: fill,
                         border: `1px solid ${live ? comp("#f2fbf9") : "rgba(0,0,0,.45)"}`,
                         borderRadius: t.prad || "0",
+                        fontSize: "var(--t7)",
+                        letterSpacing: 0.8,
+                        fontWeight: 600,
+                        color: "#140a06",
                       }}
-                    />
+                    >
+                      {ask ? k.split("-")[1].toUpperCase() : null}
+                    </button>
                   );
                 })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** FLINT's theme grid. Each card previews the UI in the theme's own colours —
+ *  a sidebar and a prompt bar — rather than a bar chart of its swatch. A
+ *  family's colourings are unlabelled squircles filled with what they paint
+ *  (FLINT's two roles as one gradient); FLINT's own card also carries its three
+ *  header styles, each a tiny header showing the time the way that style would.
+ *  No filter compensation: FLINT draws no CSS filter, so a colour is itself. */
+function FlintThemeGrid({ cards, settings, onTheme, onHeader }: {
+  cards: ThemeCard[];
+  settings: HudSettings;
+  onTheme: (t: ThemeKey) => void;
+  onHeader: (h: HeaderStyle) => void;
+}) {
+  const h12 = useClock12();
+  const now = hhmm(Date.now() / 1000, h12);
+  const liveOf = (variants: ThemeKey[]): ThemeKey =>
+    variants.includes(settings.theme) ? settings.theme : variants[0];
+  const fill = (k: ThemeKey): string => {
+    const d = themeDef(k);
+    if (k === "flint-kiln") return `linear-gradient(135deg, ${d.sw} 0 22%, #141415 22% 78%, ${d.pal!.ask} 78%)`;
+    if (d.pal?.acc2) return `linear-gradient(135deg, ${d.sw}, ${d.pal.acc2})`;
+    if (d.pal?.ask) return `linear-gradient(135deg, ${d.sw}, ${d.pal.ask})`;
+    return `linear-gradient(135deg, ${d.sw}, color-mix(in oklab, ${d.sw} 55%, #000))`;
+  };
+  return (
+    <div className="ftgrid">
+      {cards.map((card) => {
+        const t = themeDef(card.variants ? liveOf(card.variants) : card.key);
+        const on = card.variants ? card.variants.includes(settings.theme) : settings.theme === card.key;
+        const name = sentence(card.variants ? themeDef(card.variants[0]).name : t.name);
+        const p = t.pal;
+        const vars = {
+          "--a": t.sw,
+          "--g": t.pbg,
+          "--g2": p?.panel ?? `color-mix(in oklab, ${t.sw} 7%, ${t.pbg})`,
+          "--g3": p?.txg ?? `color-mix(in oklab, ${t.sw} 28%, ${t.pbg})`,
+        } as CSSProperties;
+        return (
+          <div key={card.key} className="ftcard" data-on={on || undefined} style={vars} onClick={() => onTheme(t.key)}>
+            <div className="ftprev">
+              <div className="sb"><i /><i /><i /><i /></div>
+              <div className="ch"><div className="p" /><i /><i /></div>
+            </div>
+            <div className="ftmeta">
+              <span className="d" />
+              <div style={{ minWidth: 0 }}>
+                <b>{name}</b>
+                <span>{t.feel}</span>
+              </div>
+              {on && <em>Active</em>}
+            </div>
+            {card.variants && (
+              <div className="ftsq">
+                {card.variants.map((k) => (
+                  <button key={k} title={sentence(themeDef(k).name)} data-on={settings.theme === k || undefined}
+                    style={{ background: fill(k) }}
+                    onClick={(e) => { e.stopPropagation(); onTheme(k); }} />
+                ))}
+              </div>
+            )}
+            {card.variants === FLINT_KEYS && (
+              <div className="fthdr">
+                {HEADER_STYLES.map((h) => (
+                  <button key={h} data-h={h} title={`header: ${h}`}
+                    data-on={(on && settings.headerStyle === h) || undefined}
+                    onClick={(e) => { e.stopPropagation(); if (!on) onTheme(t.key); onHeader(h); }}>
+                    <span>{now}</span>
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -1317,15 +1438,17 @@ const STYLE_PREVIEW_TURN: TimedEvent[] = [
 /** One tile's well: the same turn, drawn in one language on one ground. Shared
  *  by both pickers below, because "what does this pick look like" has exactly
  *  one honest answer and it should not be written twice. */
-function TranscriptWell({ style, bg, children }: {
+function TranscriptWell({ style, bg, scheme = "phosphor", children }: {
   style: ToolStyle;
   bg: ChatBg;
+  scheme?: TranscriptScheme;
   children?: ReactNode;
 }) {
   return (
     <div
       inert
       data-style={style}
+      data-scheme={scheme}
       data-bg={bg}
       style={{
         borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
@@ -1348,9 +1471,11 @@ function TranscriptWell({ style, bg, children }: {
       }}
     >
       {children ?? (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <PromptBubble text="the fifth idiom isn't in the table" />
-          <div className="relative space-y-1.5">
+        // The turn's own wrappers (Transcript TurnBlock), so DOSSIER's tile is a
+        // card like the real thing; every other language ignores them.
+        <div className="dturn" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="dprompt"><PromptBubble text="the fifth idiom isn't in the table" n={7} /></div>
+          <div className="dreply relative space-y-1.5">
             <AgentRail />
             <RunStream
               events={STYLE_PREVIEW_TURN}
@@ -1372,17 +1497,38 @@ function TranscriptWell({ style, bg, children }: {
 function OutputStylePicker({
   value,
   bg,
+  scheme,
   onPick,
 }: {
   value: ToolStyle;
   bg: ChatBg;
+  scheme: TranscriptScheme;
   onPick: (s: ToolStyle) => void;
 }) {
   return (
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
       {TOOL_STYLES.map((o) => (
         <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
-          <TranscriptWell style={o.key} bg={bg} />
+          <TranscriptWell style={o.key} bg={bg} scheme={scheme} />
+        </PickTile>
+      ))}
+    </div>
+  );
+}
+
+/** DOSSIER's palette. Same tile, same turn, drawn in DOSSIER whatever the
+ *  OUTPUT STYLE is — the scheme only exists there, so a tile in another
+ *  language would show two identical pictures. */
+function SchemePicker({ value, bg, onPick }: {
+  value: TranscriptScheme;
+  bg: ChatBg;
+  onPick: (s: TranscriptScheme) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
+      {TRANSCRIPT_SCHEMES.map((o) => (
+        <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
+          <TranscriptWell style="dossier" bg={bg} scheme={o.key} />
         </PickTile>
       ))}
     </div>
@@ -4966,9 +5112,14 @@ export function SettingsModal(props: SettingsModalProps) {
   const [escHover, setEscHover] = useState(false);
   const [replayHover, setReplayHover] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
+  const flint = isFlint(settings.theme);
+  const [ground, setGround] = useState<"dark" | "light">(isLight(settings.theme) ? "light" : "dark");
+  const crumbTab = TABS.find((t) => t.key === shown);
 
   return (
+    <FlintCtx.Provider value={flint}>
     <div
+      className="setscrim"
       onClick={onClose}
       style={{
         position: "fixed",
@@ -4984,7 +5135,7 @@ export function SettingsModal(props: SettingsModalProps) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="panel"
+        className="panel setdlg"
         style={{
           // Content is capped at 760px by .mcol and the rail is 180 — a modal at
           // the shared --modal-w (75vw) therefore spent ~130px a side on empty
@@ -5032,15 +5183,21 @@ export function SettingsModal(props: SettingsModalProps) {
             <circle cx="12" cy="12" r="3.2" />
             <path d="M12 3.3v2.4M12 18.3v2.4M20.7 12h-2.4M5.7 12H3.3M18.16 5.84l-1.7 1.7M7.54 16.46l-1.7 1.7M18.16 18.16l-1.7-1.7M7.54 7.54l-1.7-1.7" />
           </svg>
-          <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>
-            CONFIGURE
-          </span>
-          <span
-            style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px", whiteSpace: "nowrap" }}
-            className="glow"
-          >
-            DASHBOARD SETTINGS
-          </span>
+          {flint ? (
+            <span className="set-crumb">Settings{crumbTab && <i> / {sentence(crumbTab.label)}</i>}</span>
+          ) : (
+            <>
+              <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>
+                CONFIGURE
+              </span>
+              <span
+                style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px", whiteSpace: "nowrap" }}
+                className="glow"
+              >
+                DASHBOARD SETTINGS
+              </span>
+            </>
+          )}
           <InfoDot on={scopeOpen} about="where these are stored" onClick={() => setScopeOpen(!scopeOpen)} />
           <span style={{ flex: 1 }}></span>
           <input
@@ -5052,10 +5209,13 @@ export function SettingsModal(props: SettingsModalProps) {
               // Otherwise Escape would close the whole modal from inside the box.
               if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
             }}
-            placeholder="search settings…"
+            placeholder={flint ? "Search settings" : "search settings…"}
+            className="set-search"
             style={{ ...field, flex: "0 1 220px", minWidth: 140 }}
           />
           <button
+            className="set-close"
+            title="close (Esc)"
             onClick={onClose}
             onMouseEnter={() => setEscHover(true)}
             onMouseLeave={() => setEscHover(false)}
@@ -5071,7 +5231,7 @@ export function SettingsModal(props: SettingsModalProps) {
               padding: "4px 10px",
             }}
           >
-            ESC ✕
+            {flint ? "✕" : "ESC ✕"}
           </button>
         </div>
         {scopeOpen && (
@@ -5082,7 +5242,7 @@ export function SettingsModal(props: SettingsModalProps) {
         )}
         {/* The panel's drawline, not a flat rule: teal at the title, gone by the
             far edge, wiped in on open. */}
-        <div style={{
+        <div className="set-drawline" style={{
           height: 1,
           background: "linear-gradient(90deg, color-mix(in srgb, var(--acc) 55%, transparent), color-mix(in srgb, var(--acc) 10%, transparent) 62%, transparent)",
           transformOrigin: "left",
@@ -5097,7 +5257,7 @@ export function SettingsModal(props: SettingsModalProps) {
           <div className="setrail" ref={rail}>
             {RAIL.map((t, i) => (
               <Fragment key={t.key}>
-                {t.group !== RAIL[i - 1]?.group && <div className="setgroup">{t.group}</div>}
+                {t.group !== RAIL[i - 1]?.group && <div className="setgroup">{flint ? sentence(t.group) : t.group}</div>}
                 <button
                   className={tab === t.key ? "on" : undefined}
                   aria-current={tab === t.key ? "page" : undefined}
@@ -5106,7 +5266,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 >
                   <t.icon size={14} strokeWidth={1.7} aria-hidden style={{ flex: "none" }} />
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: "var(--t10)", letterSpacing: 1.5 }}>{t.label}</div>
+                    <div className="set-raillbl" style={{ fontSize: "var(--t10)", letterSpacing: 1.5 }}>{flint ? sentence(t.label) : t.label}</div>
                     <div className="hint"
                       style={{ fontSize: "var(--t85)", letterSpacing: 0.3, color: "var(--txl)", marginTop: 2 }}>
                       {t.hint}
@@ -5153,12 +5313,32 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "appearance" && (
               <>
-                <Section title="THEME · DARK">
-                  <ThemeCardGrid cards={DARK_CARDS} settings={settings} onTheme={onTheme} />
-                </Section>
-                <Section title="THEME · LIGHT" top>
-                  <ThemeCardGrid cards={LIGHT_CARDS} settings={settings} onTheme={onTheme} />
-                </Section>
+                {flint ? (
+                  // FLINT: one theme grid behind a Dark/Light switch, cards that
+                  // preview the UI, and FLINT's colourings and header styles
+                  // as unlabelled buttons on its own card.
+                  <div className="set-sec" data-sec="THEME · DARK">
+                    <div className="set-themehead">
+                      <b>Theme</b>
+                      <div className="set-seg2">
+                        {(["dark", "light"] as const).map((g) => (
+                          <button key={g} data-on={ground === g || undefined} onClick={() => setGround(g)}>{g === "dark" ? "Dark" : "Light"}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <FlintThemeGrid cards={ground === "dark" ? DARK_CARDS : LIGHT_CARDS} settings={settings}
+                      onTheme={onTheme} onHeader={(headerStyle) => onPatch({ headerStyle })} />
+                  </div>
+                ) : (
+                  <>
+                    <Section title="THEME · DARK">
+                      <ThemeCardGrid cards={DARK_CARDS} settings={settings} onTheme={onTheme} />
+                    </Section>
+                    <Section title="THEME · LIGHT" top>
+                      <ThemeCardGrid cards={LIGHT_CARDS} settings={settings} onTheme={onTheme} />
+                    </Section>
+                  </>
+                )}
 
                 {themeHasCrt(settings.theme) && (
                   <Section
@@ -5308,12 +5488,25 @@ export function SettingsModal(props: SettingsModalProps) {
                 <Section
                   title="OUTPUT STYLE"
                   top
-                  info="How the whole session draws — your prompt, the ledger of what it did, a delegated run, and the reply itself with its tables and its code. Five languages, one per column of the Chat Elements sheet: each is a whole grammar rather than a border swap. Each tile is the real thing under the real stylesheet, so what you see is what the transcript does."
+                  info="How the whole session draws — your prompt, the ledger of what it did, a delegated run, and the reply itself with its tables and its code. Six languages. DOSSIER, the default, ranks by tier: your prompt and the answer loudest, cards that wait on you next, the work a small log between. The other five are the columns of the Chat Elements sheet, each a whole grammar rather than a border swap. Each tile is the real thing under the real stylesheet, so what you see is what the transcript does."
                 >
                   <OutputStylePicker
                     value={settings.toolStyle}
                     bg={settings.chatBg}
+                    scheme={settings.chatScheme}
                     onPick={(toolStyle) => onPatch({ toolStyle })}
+                  />
+                </Section>
+
+                <Section
+                  title="COLOUR SCHEME"
+                  top
+                  info="DOSSIER's palette. Both read the theme's own colours, so either works on every theme, light or dark. PHOSPHOR draws every role in the theme's accent at a different strength, and CONTRAST gives each role its own hue at heavier weight. In both, errors and warnings keep their own colour."
+                >
+                  <SchemePicker
+                    value={settings.chatScheme}
+                    bg={settings.chatBg}
+                    onPick={(chatScheme) => onPatch({ chatScheme })}
                   />
                 </Section>
 
@@ -5626,5 +5819,6 @@ export function SettingsModal(props: SettingsModalProps) {
 
       </div>
     </div>
+    </FlintCtx.Provider>
   );
 }
