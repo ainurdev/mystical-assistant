@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
-import { deadLogin, loginSlot, loginWindows, modelRows } from "../models";
+import { deadLogin, loginSlot, loginWindows, modelRows, tightest } from "../models";
 import { describe, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
-import { ago } from "../lib/surfaces";
+import { ago, fmtReset } from "../lib/surfaces";
 import { openSettings } from "../lib/opensettings";
 import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
@@ -123,7 +123,7 @@ function OverrideDot() {
 }
 
 function Drop<T extends string>({
-  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone,
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter,
 }: {
   label: string;
   // A field glyph printed inside the chip. The identity of the field then
@@ -156,6 +156,8 @@ function Drop<T extends string>({
   // The chip's text and border colour, when the value is in trouble (a
   // profile whose login has expired).
   tone?: string;
+  // A reading printed after the value (PROFILE: what its login has left).
+  meter?: ReactNode;
 }) {
   const cur = options.find((o) => o.id === value) ?? fallback ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
@@ -175,6 +177,7 @@ function Drop<T extends string>({
         {code && <span className="ctrl-fld">{code}</span>}
         <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
         {dot && <OverrideDot />}
+        {meter}
         <span style={{ color: code ? "var(--txl)" : "var(--txd)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
       </button>
       {open && (
@@ -194,12 +197,18 @@ function Drop<T extends string>({
   );
 }
 
+// What a usage window's severity wears: red once critical or spent, amber
+// past normal, else the accent.
+function sevColor(severity?: string): string {
+  return severity === "critical" || severity === "exceeded" ? "var(--err)"
+    : severity && severity !== "normal" ? "var(--warn)" : "var(--acc)";
+}
+
 // A fuel gauge in the MODEL menu: how much of a usage window is still unspent
 // (fill = left, so a full bar is a full tank). A PROFILE row has one per
 // window, tagged 5H / WK.
 function LeftMeter({ left, severity, tag, title }: { left: number; severity?: string; tag?: string; title?: string }) {
-  const c = severity === "critical" || severity === "exceeded" ? "var(--err)"
-    : severity && severity !== "normal" ? "var(--warn)" : "var(--acc)";
+  const c = sevColor(severity);
   return (
     <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
       {tag && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)" }}>{tag}</span>}
@@ -773,11 +782,34 @@ export function Composer({
   // current one is no change: a bind would also drop the knobs set by hand.
   // One on an expired login opens SETTINGS ▸ ACCOUNTS on that login instead:
   // a session bound to it could only fail.
+  // The chip's own reading: what the login this session spends has left in
+  // its tightest window and when that window refills — the two numbers that
+  // decide whether to send now; both windows with exact times on hover. No
+  // profile: the default login. An agent profile spends no Claude quota, and a
+  // profile the list lacks has no known login, so neither reads. A meter the
+  // usage endpoint won't serve (an idle login's access token lapsed; the CLI
+  // renews it on that login's next turn) reads UNKNOWN rather than nothing.
+  const chipSlot = agentPick || (profile && !bound) ? null : loginSlot(bound?.agent, bound?.account);
+  const chipAcct = chipSlot === null ? undefined : accounts?.find((a) => a.slot === chipSlot);
+  const chipWins = loginWindows(chipAcct);
+  const chipTight = tightest(chipWins);
+  const chipMeter = chipTight
+    ? <span className="ctrl-meter" style={{ fontSize: "var(--t9)", letterSpacing: .5, flex: "none" }}>
+        <span style={{ color: sevColor(chipTight.severity) }}>{chipTight.left}%</span>
+        <span style={{ color: "var(--txd)" }}>{fmtReset(chipTight.resets_at)}</span>
+      </span>
+    : chipAcct && chipAcct.left === null && !chipAcct.disabled
+      ? <span className="ctrl-meter" style={{ fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)", flex: "none" }}>UNKNOWN</span>
+      : undefined;
+  const chipName = `PROFILE — ${bound?.name ?? (profile || "NO PROFILE")}`;
+  const chipTitle = chipWins.length
+    ? `${chipName} · ${chipWins.map((w) => `${w.name}: ${w.left}% left${w.resets}`).join(" · ")}`
+    : chipMeter ? `${chipName} · usage unknown: this login's access token has lapsed; its meter reads again once it runs a turn` : undefined;
   const profileDrop = (right: boolean) => profiles && (
     <Drop label="PROFILE" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileRows}
       fallback={{ id: profile, label: profile || "NO PROFILE" }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
-      tone={boundDead !== null ? "var(--err)" : undefined}
-      title={boundDead !== null ? `PROFILE — ${bound?.name}: account ${boundDead}'s Claude login has expired; pick it in this menu to sign in again.` : undefined}
+      tone={boundDead !== null ? "var(--err)" : undefined} meter={boundDead !== null ? undefined : chipMeter}
+      title={boundDead !== null ? `PROFILE — ${bound?.name}: account ${boundDead}'s Claude login has expired; pick it in this menu to sign in again.` : chipTitle}
       onToggle={() => setOpenDrop((d) => (d === "profile" ? "" : "profile"))}
       onPick={(id) => {
         const p = profiles.find((x) => x.id === id);

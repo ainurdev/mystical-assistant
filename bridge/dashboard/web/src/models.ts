@@ -140,10 +140,16 @@ function resetAt(iso: string | null | undefined): string {
     : "";
 }
 
-interface Window { tag: string; name: string; left: number; severity: string; resets: string }
+export interface Window { tag: string; name: string; left: number; severity: string; resets: string; resets_at: string | null }
 
 const win = (tag: string, name: string, b: { percent: number; severity: string; resets_at: string | null }): Window =>
-  ({ tag, name, left: Math.max(0, 100 - Math.round(b.percent)), severity: b.severity, resets: resetAt(b.resets_at) });
+  ({ tag, name, left: Math.max(0, 100 - Math.round(b.percent)), severity: b.severity, resets: resetAt(b.resets_at), resets_at: b.resets_at });
+
+/** The window with the least left — the "headroom" the account fallback
+ *  reads, and what the PROFILE chip prints. null for no windows. */
+export function tightest(ws: Window[]): Window | null {
+  return ws.reduce<Window | null>((a, w) => (a === null || w.left < a.left ? w : a), null);
+}
 
 /** The windows every model draws from: the 5-hour session and the all-models week. */
 function sharedWindows(usage: UsageInfo): Window[] {
@@ -176,7 +182,7 @@ export function modelRows(models: ModelOption[], usage?: UsageInfo | null): Mode
     // ponytail: every scoped limit seen so far is weekly ("WK"); split on kind if a session-scoped one ever appears
     const ownWins = own.map((l) => win("WK", `week, ${l.scope!.model!.display_name ?? "this model"} only`, l));
     const wins = [...shared, ...ownWins];
-    const tight = wins.reduce<Window | null>((a, w) => (a === null || w.left < a.left ? w : a), null);
+    const tight = tightest(wins);
     return {
       ...m,
       group: own.length ? heading(`${(own[0].scope!.model!.display_name ?? family(models[i].label)).toUpperCase()} ONLY`, ownWins) : ALL,

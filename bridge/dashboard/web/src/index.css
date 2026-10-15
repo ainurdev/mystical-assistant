@@ -1031,6 +1031,7 @@ input {
 .ctrl-verbs { display: flex; align-items: center; flex-wrap: nowrap; gap: 14px; position: relative;
               padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); }
 .drop-btn { min-width: var(--dw, 78px); }
+.ctrl-meter { display: inline-flex; gap: 6px; }
 
 /* The field glyph, printed inside the chip. This is what the old .ctrl-label
    eyebrow and .ctrl-tag cluster heading both did, except it cannot be shed:
@@ -1071,8 +1072,9 @@ input {
 /* 820px: the word CTX goes. The lamps and the percentage still read. */
 @container (max-width: 820px) { .ctrl-ctx .lbl { display: none; } }
 /* Below that the settings give up their uniform width and ellipsise the value
-   rather than push the row onto a second line. The field code stays. */
-@container (max-width: 700px) { .drop-btn { min-width: 0; } }
+   rather than push the row onto a second line. The field code stays; the
+   PROFILE chip's usage reading goes (its menu still has it). */
+@container (max-width: 700px) { .drop-btn { min-width: 0; } .ctrl-meter { display: none; } }
 
 /* COMPACT layout's control row: the session's nameplate on the left, the tools
    packed right. The nameplate is the one thing allowed to shrink. The verbs
