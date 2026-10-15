@@ -448,7 +448,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "plus" | "queued">("");
   const { compact, lead, composer, sendKey } = useChatChrome();
-  // TABS / STUB / CONSOLE: COMPACT's new composers. CLASSIC is the old markup.
+  // TABS / CONSOLE: COMPACT's new composers. CLASSIC is the old markup.
   const shelled = compact && composer !== "classic";
   // MODEL rows grouped by usage pool, each with what it has left on the login
   // the session is spending, whichever account that is.
@@ -957,7 +957,7 @@ export function Composer({
   const actionCluster = (<>{fileInput}{paperclip}{actions(true)}</>);
 
   // Pieces the compact shells arrange (.mystical/design-drafts/prompt-box):
-  // every row the composer can show, as one node each, placed by TABS / STUB /
+  // every row the composer can show, as one node each, placed by TABS and
   // CONSOLE below. DEFAULT keeps its own markup further down.
   const pausedPill = paused && (
     <span className="pb-paused" title={running ? "this turn finishes; nothing starts after it" : "nothing starts on its own"}>
@@ -986,11 +986,10 @@ export function Composer({
       )}
     </div>
   );
-  // withPills: TABS and CONSOLE carry the goal and agents pills here; STUB has
-  // them on the stub. CSS hides an empty ledger and, past one live item, every
-  // pill's description (.pill-desc) — busy means terse.
-  const ledger = (withPills: boolean, className: string) => (
-    <div className={`pb-ledger ${className}`}>{withPills && pills}{pausedPill}{queuedChip}</div>
+  // CSS hides an empty ledger and, past one live item, every pill's
+  // description (.pill-desc) — busy means terse.
+  const ledger = (className: string) => (
+    <div className={`pb-ledger ${className}`}>{pills}{pausedPill}{queuedChip}</div>
   );
   const attachRow = images.length > 0 && (
     <div className="pb-attach" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1003,20 +1002,6 @@ export function Composer({
             style={{ position: "absolute", right: -6, top: -6, width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "var(--panel3)", color: "var(--txd)", fontSize: "var(--t11)", lineHeight: 1, cursor: "pointer" }}>×</button>
         </div>
       ))}
-    </div>
-  );
-  // STUB's context readout is a gauge along the stub's foot, not the lamps.
-  const ctxGauge = (
-    <div className="pb-gauge" title={`Context — ${ctxPct}% of ${fmtTokens(ctxMax)}${ctx > 0 ? ` (${ctx.toLocaleString()} tokens on the last request)` : ", not measured yet"}`}>
-      <span className="bar"><i style={{ width: `${ctxPct}%`, background: ctxColor }} /></span>
-      <u style={{ color: suggest ? ctxColor : undefined }}>CTX {ctxPct}%</u>
-      {onCompact && suggest && (
-        <button onClick={() => { onCompact(text.trim()); setText(""); }} disabled={disabled || running}
-          title={text.trim() ? "Compact the context, keeping what you've typed in mind" : "Compact context (/compact) — type first to steer what the summary keeps"}
-          style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer", opacity: disabled || running ? 0.4 : 1, border: `1px solid ${ctxColor}`, color: ctxColor }}>
-          COMPACT
-        </button>
-      )}
     </div>
   );
   const settingsChips = (right: boolean) => (<>{profileDrop(right)}{agentPick && agentChip}{ponyDrop(right)}</>);
@@ -1145,7 +1130,7 @@ export function Composer({
     </span>
   );
 
-  // The three new COMPACT composers (CLASSIC is the old markup further down).
+  // The two new COMPACT composers (CLASSIC is the old markup further down).
   // The lead (tile, title, project, branch, PR, running app) arrives flattened
   // from Terminal; .pb-lead lays it out per shell in index.css.
   const shell =
@@ -1160,7 +1145,7 @@ export function Composer({
           <div className="pb-acts">{actions(true)}</div>
         </div>
         <div className="pb-place pb-lead">{lead}</div>
-        {ledger(true, "pb-activity")}
+        {ledger("pb-activity")}
         <div className="pb-set">
           {ctxBlock}
           {runTrigger}
@@ -1169,25 +1154,11 @@ export function Composer({
           {plusBtn}
         </div>
       </>
-    ) : composer === "stub" ? (
-      <div {...boxProps} className="cmdbox pb-card pb-ticket">
-        <div className="pb-stub pb-lead">
-          <div className="pb-stub-head">{lead}{pills}</div>
-          <div className="pb-bind">{settingsChips(false)}</div>
-          {ctxGauge}
-        </div>
-        <div className="pb-body">
-          {ledger(false, "")}
-          {attachRow}
-          <div className="pb-line">{pfx}{popovers}{editor}</div>
-          <div className="pb-foot"><div className="pb-l">{plusBtn}</div><div className="pb-r">{runTrigger}{actions(true)}</div></div>
-        </div>
-      </div>
     ) : (
       <>
         <div className="pb-tabs pb-lead">{lead}{ctxBlock}</div>
         <div {...boxProps} className="cmdbox pb-card">
-          {ledger(true, "")}
+          {ledger("")}
           {attachRow}
           <div className="pb-line">{pfx}{popovers}{editor}</div>
           {/* DESIGN steps out while a turn runs (it could only queue): that is

@@ -3142,7 +3142,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    name them by class, never with `>`. Their own layout is inline (Terminal,
    PrChip), which is why the geometry below is !important. ── */
 .composer[data-pb] { container-type: inline-size; --pb-ground: var(--panel2); }
-.pb-lead .np-sep, .pb-lead .np-proj .pdot { display: none; }
+.pb-lead .np-sep { display: none; }
 [data-theme^="flint"] .pb-lead .np-tile .pdot { display: none; }
 .pb-lead :is(.np-tile, .np-title-btn, .np-proj, .np-branch, .np-pr, .np-run) { box-sizing: border-box; white-space: nowrap; }
 .pb-lead .np-title-btn { flex: 0 1 auto !important; min-width: 110px !important; align-items: center !important; }
@@ -3151,13 +3151,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-lead .np-branch .np-name { max-width: 220px; }
 [data-pb] .sp { flex: 1; }
 /* over the open-menu backdrop (z 25), so a second trigger toggles directly */
-:is(.pb-foot, .pb-set, .pb-ledger, .pb-tabs, .pb-stub, .pb-place) { position: relative; z-index: 26; }
+:is(.pb-foot, .pb-set, .pb-ledger, .pb-tabs, .pb-place) { position: relative; z-index: 26; }
 .pb-plus { width: 28px; height: 28px; flex: none; appearance: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
            border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); background: transparent; color: var(--txd);
            font-family: inherit; font-size: 18px; font-weight: 300; line-height: 1; padding: 0; }
 .pb-plus:hover { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
 
-/* the card (TABS, STUB's body): ledger, attachments, the line, the footer */
+/* the card (TABS): ledger, attachments, the line, the footer */
 .pb-card { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
 .pb-line { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
 /* two groups that wrap as units: the right one (run picker, SEND or the running
@@ -3203,43 +3203,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-tabs > .ctrl-ctx > button { height: 17px; padding: 0 6px !important; line-height: 15px; font-size: var(--t85) !important; }
 /* past the compact threshold the CTX tab is COMPACT's: the word and the token count go */
 .pb-tabs > .ctrl-ctx:has(> button) .lbl, .pb-tabs > .ctrl-ctx:has(> button) > span:nth-of-type(4) { display: none; }
-
-/* ── STUB: a ticket stub down the card's left, the message beside it ── */
-.pb-ticket { flex-direction: row !important; align-items: stretch !important; gap: 0 !important; padding: 0 !important; }
-.pb-stub { width: 200px; flex: none; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 11px 12px;
-           background: var(--pb-ground); border-right: 1px dashed color-mix(in srgb, var(--acc) 28%, transparent); }
-.pb-stub-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 7px; min-width: 0; }
-.pb-stub .np-tile { order: 0; }
-.pb-stub .np-proj { order: 1; flex: 1 1 0 !important; min-width: 0 !important; font-size: var(--t10) !important; }
-.pb-stub .np-title-btn { order: 2; flex: 0 0 100% !important; min-width: 0 !important; align-items: flex-start !important; }
-.pb-stub .np-title { white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3 !important; }
-.pb-stub .np-branch { order: 3; flex: 0 0 100% !important; }
-.pb-stub .np-branch .np-name { max-width: none; }
-.pb-stub .np-pr { order: 4; height: 20px !important; padding: 0 7px !important; }
-.pb-stub .np-run { order: 5; }
-.pb-stub .pillstrip { display: contents; }
-.pb-stub .pillstrip > * { order: 6; flex: 0 0 100%; border: 0 !important; background: none !important; padding: 0 !important; border-radius: 0 !important;
-                          font-size: var(--t10) !important; gap: 6px !important; }
-.pb-stub .pill-desc { display: none; }
-.pb-bind { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
-/* a binding never crosses the perforation: the chip shrinks, its name ellipsises */
-.pb-bind > * { min-width: 0; max-width: 100%; }
-.pb-bind .drop-btn { max-width: 100%; }
-.pb-bind .drop-btn { min-width: 0 !important; padding: 2px 6px 2px 4px !important; font-size: var(--t9) !important; gap: 5px !important; }
-.pb-bind .ctrl-fld { padding: 1px !important; }
-.pb-bind .drop-btn > span:not(.ctrl-fld) { max-width: 120px; }
-.pb-gauge { margin-top: auto; display: flex; align-items: center; gap: 8px; padding-top: 4px; font-size: var(--t85); letter-spacing: 1.2px; color: var(--txl); }
-.pb-gauge .bar { flex: 1; height: 3px; background: color-mix(in srgb, var(--acc) 12%, transparent); position: relative; }
-.pb-gauge .bar i { position: absolute; left: 0; top: 0; bottom: 0; transition: width .3s ease; }
-.pb-gauge u { text-decoration: none; white-space: nowrap; }
-.pb-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; }
-.pb-body .pb-line { flex: 1; }
-/* the perforation's notches: half discs of the ground over the card's edge,
-   not a clip of the card (the slash menu rises out of it) */
-.pb-ticket::before, .pb-ticket::after { content: ""; position: absolute; left: 191px; width: 18px; height: 9px; z-index: 27; pointer-events: none;
-                                         box-sizing: border-box; background: var(--canvas); border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); }
-.pb-ticket::before { top: -1px; border-top: 0; border-radius: 0 0 9px 9px; }
-.pb-ticket::after { bottom: -1px; border-bottom: 0; border-radius: 9px 9px 0 0; }
 
 /* ── CONSOLE: a command line, a place line, an activity line when live, a settings line ── */
 .pb-cmd { align-items: center !important; gap: 10px !important; padding: 8px 8px 8px 14px !important; border: 0 !important;
@@ -3287,12 +3250,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   .pb-hint { display: none; }
 }
 @container (max-width: 560px) { .pb-tabs > .ctrl-ctx .seg { display: none; } }
-/* STUB's body is 200px narrower than the composer, so its footer folds sooner:
-   DESIGN keeps its glyph, the run picker its model */
-@container (max-width: 740px) {
-  [data-pb="stub"] .pb-r .act-alt { font-size: 0 !important; padding: 0 9px !important; gap: 0 !important; }
-  [data-pb="stub"] .pb-r .run-trigger > span:not(:first-child) { display: none; }
-}
 
 /* FLINT: the same shells in its skin — radius, hairlines, Geist */
 [data-theme^="flint"] .composer[data-pb] { --pb-ground: var(--panel); }
@@ -3306,11 +3263,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] .pb-plus { border-color: var(--line); border-radius: var(--f-rad-s); }
 [data-theme^="flint"] :is(.pb-queued, .pb-paused, .pb-activity) { font-family: var(--ui-font); letter-spacing: 0; }
 [data-theme^="flint"] .pb-paused > button { border-radius: 5px; font-family: var(--ui-font); }
-[data-theme^="flint"] .pb-ticket { padding: 0 !important; }
-[data-theme^="flint"] .pb-stub { background: var(--panel2); border-right-color: var(--line2); border-radius: calc(var(--f-rad-l) - 1px) 0 0 calc(var(--f-rad-l) - 1px); }
-[data-theme^="flint"] .pb-stub .np-title { font-size: var(--t12) !important; }
-[data-theme^="flint"] .pb-ticket::before, [data-theme^="flint"] .pb-ticket::after { border-color: var(--line2); }
-[data-theme^="flint"] .pb-gauge .bar, [data-theme^="flint"] .pb-gauge .bar i { border-radius: 2px; }
 [data-theme^="flint"] .pb-cmd, [data-theme^="flint"] .pb-cmd:focus-within {
   border: 0 !important; border-left: 3px solid var(--acc) !important; border-radius: 0 8px 8px 0 !important; padding: 8px 8px 8px 14px !important;
   box-shadow: none !important; background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 8%, transparent), transparent 45%) !important; }

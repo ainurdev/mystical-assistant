@@ -280,7 +280,7 @@ export function Terminal({
   // COMPACT: the nameplate leaves the header for the composer's control row,
   // and the header shrinks to a pill of readouts on the right.
   const compact = hud?.layout === "compact";
-  // COMPACT's TABS / STUB / CONSOLE composers lay the nameplate's pieces out
+  // COMPACT's TABS and CONSOLE composers lay the nameplate's pieces out
   // themselves; CLASSIC keeps it whole, as the row it always was.
   const flat = compact && (hud?.composer ?? "tabs") !== "classic";
   // A fresh session's whole screen is a drop target: a file dragged anywhere on
@@ -470,7 +470,7 @@ export function Terminal({
     e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
       { bubbles: true, clientX: r.left, clientY: r.bottom }));
   };
-  // COMPACT hands this to the composer. Under TABS, STUB and CONSOLE (`flat`)
+  // COMPACT hands this to the composer. Under TABS and CONSOLE (`flat`)
   // the root and the caption row become display:contents, so each piece is its
   // own flex item of the composer's layout, and the project tile gets a button
   // of its own to lead the title with.

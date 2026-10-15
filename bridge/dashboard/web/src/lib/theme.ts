@@ -460,18 +460,19 @@ export const CHAT_LAYOUTS: ChatLayout[] = ["default", "compact"];
 
 /** How COMPACT's composer carries the session (.mystical/design-drafts/
  *  prompt-box/SPEC.md). TABS: the title, branch, PR, running app and context
- *  meter as folder tabs on the box's top edge. STUB: a perforated ticket stub
- *  down the box's left, the whole session on it, the message beside it.
- *  CONSOLE: a bare command line, a place line and a settings line under it.
- *  CLASSIC: the composer as it was, the nameplate sharing one row with the
- *  tools. TABS is the default: it is the shape every chat box already has, so
- *  it costs no learning, keeps the text full width and SEND labelled, and is
- *  the shortest of the three. DEFAULT keeps its nameplate header and never
- *  reads this. */
-export const COMPOSER_STYLES = ["tabs", "stub", "console", "classic"] as const;
+ *  meter as folder tabs on the box's top edge. CONSOLE: a bare command line,
+ *  a place line and a settings line under it. CLASSIC: the composer as it
+ *  was, the nameplate sharing one row with the tools. TABS is the default: it
+ *  is the shape every chat box already has, so it costs no learning, keeps the
+ *  text full width and SEND labelled, and holds its height from session to
+ *  session. A STUB layout (the session as a ticket stub down the box's left)
+ *  was tried and dropped: its height followed each session's content, so the
+ *  box jumped on every switch. A stored "stub" falls back to TABS. DEFAULT
+ *  keeps its nameplate header and never reads this. */
+export const COMPOSER_STYLES = ["tabs", "console", "classic"] as const;
 export type ComposerStyle = (typeof COMPOSER_STYLES)[number];
 
-/** `?composer=stub` on the URL, like `?layout=`. */
+/** `?composer=console` on the URL, like `?layout=`. */
 function urlComposer(): ComposerStyle | null {
   try {
     const v = new URLSearchParams(window.location.search).get("composer");
