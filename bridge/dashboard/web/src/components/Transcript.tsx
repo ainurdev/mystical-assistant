@@ -285,6 +285,7 @@ export function Transcript({
   sessionKey,
   navRef,
   restoringRef,
+  correctingRef,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -310,6 +311,9 @@ export function Transcript({
   navRef?: MutableRefObject<TranscriptNav | null>;
   /** Non-null while the caller is scrolling back to a remembered place. */
   restoringRef?: RefObject<Anchor | null>;
+  /** Set true for the frame after a scroll correction of ours — the scroll
+   *  event it fires is not the reader's. */
+  correctingRef?: MutableRefObject<boolean>;
 }) {
   // Tail loading: turns always ship whole but only the last few carry events.
   // Turns before the cut would render as prompt bubbles with missing bodies —
@@ -400,9 +404,39 @@ export function Transcript({
   // report the growth as "content above you got taller" — which walked a jump to
   // turn 5 down to turn 12. scrollToIndex re-aims itself as rows measure, so
   // it, not this, owns the scroll while a jump is settling.
-  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) =>
-    !restoringRef?.current && Date.now() > jumpT.current
-    && item.start < (instance.scrollOffset ?? 0);
+  //
+  // Only rows ENTIRELY above the top edge count as "above you". The live turn,
+  // once taller than the viewport, starts above the edge and ends below it: its
+  // streamed chunks land below you (nothing above moved, yet this pushed you
+  // down by each one), and a fold shutting above the edge is already compensated
+  // by the browser's own scroll anchoring — in-flow content inside a row is its
+  // job, and doing it again here threw the view up by twice the fold, to the
+  // very top of a short session. Measured on the live dashboard: a 200px shrink
+  // above the edge moved the view 400px. Rows moved by transform don't trigger
+  // the browser's anchoring, so the fully-above case is ours alone.
+  //
+  // And only against a scroll offset the virtualizer actually has: it learns
+  // the position from scroll events, which land a frame after App sets
+  // scrollTop on a landing or a jump. A correction computed against the
+  // previous session's offset scrolled to (stale + delta), which clamped to the
+  // top of the session just opened.
+  //
+  // Each correction is flagged for App's follow policy (correctingRef): the
+  // scroll event it fires is ours, not a gesture to stop following on.
+  virtualizer.shouldAdjustScrollPositionOnItemSizeChange = (item, _delta, instance) => {
+    const el = scrollRef?.current;
+    const offset = instance.scrollOffset;
+    if (restoringRef?.current || Date.now() <= jumpT.current || !el || offset == null) return false;
+    if (Math.abs(offset - el.scrollTop) > 1) return false;
+    if (item.end > offset) return false;
+    if (correctingRef) {
+      correctingRef.current = true;
+      // The scroll event lands in the next frame; a correction clamped to no
+      // movement fires none, so the flag must not wait for one.
+      requestAnimationFrame(() => requestAnimationFrame(() => { correctingRef.current = false; }));
+    }
+    return true;
+  };
 
   // Checkpoint navigation. In full-mount mode everything is in the DOM, so the
   // plain scrollIntoView path is both available and exact; windowed, the row is
