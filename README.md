@@ -152,7 +152,7 @@ embedding bill.
 | See the subagents | A live feed per agent, read-only |
 | Watch the context fill | Per cent, tokens, `/compact` one tap away |
 | Per-message controls | Model, effort, permission posture |
-| Something to watch | Equaliser, nyan cat, a playable piano |
+| Something to watch | Equaliser bars, or one quiet status line |
 
 **The queue**
 
