@@ -673,8 +673,8 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
  *  answered, under one header (lib/dossier). The header carries the zone's
  *  shape as a strip of glyphs, so a shut zone still says "three commands, a
  *  note, a failure" — which is what makes a shut zone safe to be the default.
- *  Open while the turn runs (you are watching it); afterwards it follows the
- *  COLLAPSE STEPS switch like a STEPS fold does. */
+ *  It follows the COLLAPSE STEPS switch like a STEPS fold does, live turn
+ *  included: while one runs, the header names what is out right now. */
 function WorkZone({ marks, title, failed, running, live, span, defaultOpen, animate, children }: {
   marks: Mark[];
   title: string;
@@ -2120,7 +2120,7 @@ export const RunStream = memo(function RunStream({
         running={running}
         live={live}
         span={span}
-        defaultOpen={!ended || foldsOpen}
+        defaultOpen={foldsOpen}
         animate={animate}
       >
         {zsegs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)))}
