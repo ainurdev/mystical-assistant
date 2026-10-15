@@ -11,8 +11,8 @@ import {
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, Sun, TriangleAlert, Type,
   Upload, Volume2, Waypoints, type LucideIcon,
-  ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, LayoutPanelTop,
-  ListChecks, Package, PackageOpen, PanelBottom, Timer, Truck, AppWindowMac, Pin,
+  ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, 
+  ListChecks, Package, PackageOpen, Truck, AppWindowMac, Pin,
 } from "lucide-react";
 import { CHAT_BGS, TOOL_STYLES, TRANSCRIPT_SCHEMES, type ChatBg, type ToolStyle, type TranscriptScheme } from "../../lib/toolwidget";
 import { AgentRail, PromptBubble } from "../Transcript";
@@ -47,7 +47,7 @@ import {
   type MoveSection,
   type MoveSectionKey,
 } from "../../api";
-import { Bar, Frame, JobCard, MOVE_COLORS, Pill, THICK, fmtBytes, fmtDur, nextAction, nextLabel } from "./MoveDock";
+import { fmtBytes, fmtDur, nextAction, nextLabel } from "./MoveDock";
 import {
   canInstall as canInstallNow, install, isInstalled, subscribe,
 } from "../../lib/installprompt";
@@ -68,10 +68,6 @@ import {
   themeDef,
   themeHasCrt,
   type HudSettings,
-  type MoveBar,
-  type MoveColor,
-  type MovePrefs,
-  type MoveThick,
   type ThemeKey,
 } from "../../lib/theme";
 import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWrite } from "../../lib/profiles";
@@ -217,7 +213,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "aimgmt", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label default profile" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
-  { tab: "move", sec: "WHAT GOES", terms: "move export import migrate new machine laptop transfer backup restore tar file progress bar dock minimize" },
+  { tab: "move", sec: "WHAT GOES", terms: "move export import migrate new machine laptop transfer backup restore tar file" },
 ];
 
 type Hit = { tab: Tab; sec: string; row?: string; hint?: string };
@@ -3270,11 +3266,10 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
 // progress. Three pages under one strip, like INDICATOR's picker: what goes,
 // what comes in, and how the bar looks.
 
-type MoveSub = "export" | "import" | "progress";
+type MoveSub = "export" | "import";
 const MOVE_SUBS: { key: MoveSub; label: string; icon: LucideIcon }[] = [
   { key: "export", label: "EXPORT", icon: HardDriveUpload },
   { key: "import", label: "IMPORT", icon: HardDriveDownload },
-  { key: "progress", label: "PROGRESS", icon: Gauge },
 ];
 const MOVE_GROUP: Record<MoveSectionKey, string> = {
   repos: "REPOS", mcp: "MCP SERVERS", plugins: "PLUGINS", claude: "CLAUDE CODE", history: "HISTORY", bridge: "BRIDGE",
@@ -3752,152 +3747,11 @@ function MoveImport({ jobs, busy }: { jobs: MoveJob[]; busy: boolean }) {
   );
 }
 
-const SWATCH_NAME: Record<MoveColor, string> = { acc: "ACCENT", ok: "GREEN", purple: "VIOLET", info: "BLUE", warn: "AMBER" };
-function Swatches({ value, onPick }: { value: MoveColor; onPick: (c: MoveColor) => void }) {
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-      {(Object.keys(MOVE_COLORS) as MoveColor[]).map((k) => (
-        <button key={k} title={SWATCH_NAME[k]} aria-label={SWATCH_NAME[k]} aria-pressed={k === value} onClick={() => onPick(k)}
-          style={{
-            appearance: "none", cursor: "pointer", width: 18, height: 18, padding: 0, border: 0, background: MOVE_COLORS[k],
-            outline: `1px solid ${k === value ? MOVE_COLORS[k] : "transparent"}`, outlineOffset: 2,
-            opacity: k === value ? 1 : 0.55, boxShadow: k === value ? `0 0 8px ${MOVE_COLORS[k]}` : "none",
-          }} />
-      ))}
-      <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txm)", width: 52, marginLeft: 6 }}>{SWATCH_NAME[value]}</span>
-    </div>
-  );
-}
-
-const DEMO: MoveJob = {
-  id: "demo", kind: "export", title: "a pretend run", status: "running", pct: 62, elapsed: 112, eta: 68,
-  bytes: 412 * 1024 * 1024, total: null, rate: 38 * 1024 * 1024, error: null, started: 0, ended: null,
-  steps: [{ key: "repos", done: 20, total: 20, state: "done" }, { key: "history", done: 412, total: 741, state: "running" },
-    { key: "bridge", done: 0, total: 0, state: "queued" }],
-  now: ["ainurhq/rivendell"], log: ["history: mystical-assistant · 212 transcripts", "history: ainurhq/rivendell · 88 MB"],
-};
-const DEMO_IMPORT: MoveJob = { ...DEMO, id: "demo-i", kind: "import", pct: 38, eta: 190 };
-
-function MoveProgress({ settings, onPatch }: { settings: HudSettings; onPatch: (p: Partial<HudSettings>) => void }) {
-  const m = settings.move;
-  const set = (p: Partial<MovePrefs>) => onPatch({ move: { ...m, ...p } });
-  const sample = (style: MoveBar) => (
-    <div style={{ padding: "4px 11px 12px", display: "flex" }}>
-      <Bar style={style} pct={62} color={MOVE_COLORS[m.exportColor]} h={THICK[m.thick]} cells={16} chars={18} motion={m.motion} />
-    </div>
-  );
-  const corner = (k: MovePrefs["corner"]) => {
-    const pos: CSSProperties = { top: k[0] === "t" ? 4 : undefined, bottom: k[0] === "b" ? 4 : undefined, left: k[1] === "l" ? 4 : undefined, right: k[1] === "r" ? 4 : undefined };
-    const on = m.corner === k;
-    return <button key={k} aria-label={`dock ${k}`} aria-pressed={on} onClick={() => set({ corner: k })}
-      style={{ position: "absolute", ...pos, width: 18, height: 10, padding: 0, appearance: "none", cursor: "pointer", background: on ? "var(--acc)" : "transparent", border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 25%, transparent)"}`, boxShadow: on ? "0 0 6px var(--acc)" : "none" }} />;
-  };
-  const CORNER_NAME = { tl: "TOP LEFT", tr: "TOP RIGHT", bl: "BOTTOM LEFT", br: "BOTTOM RIGHT" } as const;
-  const shows: [keyof MovePrefs, string][] = [["steps", "STEPS"], ["log", "LOG"], ["eta", "TIME LEFT"], ["speed", "SPEED"]];
-  return (
-    <>
-      <Section title="PREVIEW" icon={PanelBottom} desc="The dock as your picks draw it, on a pretend export. Every change below shows here first.">
-        <div style={{ ...CARD, display: "flex", gap: 26, alignItems: "flex-start", justifyContent: "center", padding: "18px 16px" }}>
-          <JobCard job={DEMO} prefs={m} preview />
-          <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 4 }}>
-            <div style={{ ...CAPTION, width: "auto" }}>MINIMIZED</div>
-            {m.mini === "frame" ? (
-              <div style={{ display: "flex", gap: 10 }}><Frame job={DEMO} prefs={m} /><Frame job={DEMO_IMPORT} prefs={m} /></div>
-            ) : m.mini === "edge" ? (
-              <div style={{ width: 200, height: 40, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", position: "relative", background: "var(--panel3)" }}>
-                <div style={{ position: "absolute", left: 0, top: 0, height: 2, width: "62%", background: MOVE_COLORS[m.exportColor], boxShadow: `0 0 8px ${MOVE_COLORS[m.exportColor]}` }} />
-                <span style={{ position: "absolute", right: 6, top: 2, fontSize: "var(--t8)", letterSpacing: 1.5, color: MOVE_COLORS[m.exportColor], border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", borderTop: 0, padding: "1px 5px" }}>EXPORT 62%</span>
-              </div>
-            ) : (
-              <><Pill job={DEMO} prefs={m} /><Pill job={DEMO_IMPORT} prefs={m} /></>
-            )}
-          </div>
-        </div>
-      </Section>
-      <Section title="THE BAR" icon={Gauge} top desc="How every bar in the dock is drawn.">
-        <div style={CARD}>
-          <div style={{ ...CAPTION, width: "auto", marginBottom: 8 }}>STYLE</div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-            <PickTile label="LINE" hint="one solid fill" on={m.bar === "line"} onPick={() => set({ bar: "line" })}>{sample("line")}</PickTile>
-            <PickTile label="BLOCKS" hint="cells, like the context meter" on={m.bar === "blocks"} onPick={() => set({ bar: "blocks" })}>{sample("blocks")}</PickTile>
-            <PickTile label="ASCII" hint="a terminal redraw" on={m.bar === "ascii"} onPick={() => set({ bar: "ascii" })}>{sample("ascii")}</PickTile>
-            <PickTile label="SWEEP" hint="a running sheen" on={m.bar === "sweep"} onPick={() => set({ bar: "sweep" })}>{sample("sweep")}</PickTile>
-          </div>
-          <Row label="THICKNESS" desc="ASCII draws in text, so it keeps one size.">
-            <div style={{ width: 250 }}>
-              <Segmented options={[{ label: "THIN", value: "thin" }, { label: "REGULAR", value: "regular" }, { label: "THICK", value: "thick" }]}
-                value={m.thick} onPick={(thick) => set({ thick: thick as MoveThick })} />
-            </div>
-          </Row>
-          <Row label="EXPORT COLOUR"><Swatches value={m.exportColor} onPick={(exportColor) => set({ exportColor })} /></Row>
-          <Row label="IMPORT COLOUR" desc="Theme colours, so a bar follows when you switch palettes. READ uses the import colour.">
-            <Swatches value={m.importColor} onPick={(importColor) => set({ importColor })} />
-          </Row>
-        </div>
-      </Section>
-      <Section title="THE DOCK" icon={LayoutPanelTop} top desc="Where the cards sit, what a minimized card becomes, and what a card shows.">
-        <div style={CARD}>
-          <Row first label="CORNER">
-            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <div style={{ width: 72, height: 46, border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", position: "relative", background: "var(--panel3)" }}>
-                {(["tl", "tr", "bl", "br"] as const).map(corner)}
-              </div>
-              <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txm)", width: 92 }}>{CORNER_NAME[m.corner]}</span>
-            </div>
-          </Row>
-          <div style={{ marginTop: 13, paddingTop: 13, borderTop: RULE }}>
-            <div style={{ ...KEY_TX, marginBottom: 8 }}>MINIMIZED AS</div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
-              <PickTile label="PILL" hint="a chip in the corner" on={m.mini === "pill"} onPick={() => set({ mini: "pill" })}>
-                <div style={{ padding: "4px 11px 12px" }}><Pill job={DEMO} prefs={{ ...m, eta: false }} /></div>
-              </PickTile>
-              <PickTile label="EDGE" hint="a line along the window's top" on={m.mini === "edge"} onPick={() => set({ mini: "edge" })}>
-                <div style={{ padding: "10px 11px 18px" }}><div style={{ height: 2, width: "62%", background: MOVE_COLORS[m.exportColor], boxShadow: `0 0 6px ${MOVE_COLORS[m.exportColor]}` }} /></div>
-              </PickTile>
-              <PickTile label="FRAME" hint="a square whose edge fills" on={m.mini === "frame"} onPick={() => set({ mini: "frame" })}>
-                <div style={{ padding: "4px 11px 10px" }}><Frame job={DEMO} prefs={m} size={26} /></div>
-              </PickTile>
-            </div>
-          </div>
-          <div style={{ marginTop: 13, paddingTop: 13, borderTop: RULE }}>
-            <div style={{ ...KEY_TX, marginBottom: 8 }}>THE CARD SHOWS</div>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {shows.map(([k, label]) => (
-                <button key={k} onClick={() => set({ [k]: !m[k] })} aria-pressed={!!m[k]}
-                  style={{ appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "5px 10px", background: "transparent", color: m[k] ? "var(--txb)" : "var(--txd)", border: `1px solid color-mix(in srgb, var(--acc) ${m[k] ? 40 : 16}%, transparent)` }}>
-                  <span style={{ width: 12, height: 12, border: "1px solid color-mix(in srgb, var(--acc) 50%, transparent)", position: "relative", flex: "none" }}>
-                    {m[k] && <i style={{ position: "absolute", inset: 2, background: "var(--acc)" }} />}
-                  </span>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Section>
-      <Section title="BEHAVIOUR" icon={Timer} top>
-        <div style={CARD}>
-          <Row first label="START MINIMIZED" desc="A new job opens folded, as its minimized form.">
-            <Switch on={m.startMin} onClick={() => set({ startMin: !m.startMin })} />
-          </Row>
-          <Row label="HIDE AFTER SUCCESS" desc="A job that succeeds folds away 10 s after it ends, unless it left you something to do. A failed or cancelled one stays until you dismiss it.">
-            <Switch on={m.autoHide} onClick={() => set({ autoHide: !m.autoHide })} />
-          </Row>
-          <Row label="MOTION" desc="The sweep, the filling cells and the caret. Off whenever your system asks for reduced motion.">
-            <Switch on={m.motion} onClick={() => set({ motion: !m.motion })} />
-          </Row>
-        </div>
-        <div style={NOTE}>A finished job plays your NOTIFY sound and shows a desktop banner, if those are on.</div>
-      </Section>
-    </>
-  );
-}
-
-function MovePanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p: Partial<HudSettings>) => void }) {
+function MovePanel() {
   // The dock's SETTINGS ▸ and REVIEW ▸ name the page to land on.
   const [sub, setSub] = useState<MoveSub>(() => {
     const f = takeSettingsFocus();
-    return f === "import" || f === "progress" ? f : "export";
+    return f === "import" ? "import" : "export";
   });
   const [jobs, setJobs] = useState<MoveJob[]>([]);
   useEffect(() => {
@@ -3934,7 +3788,6 @@ function MovePanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p: 
       </div>
       {sub === "export" && <MoveExport busy={!!running} />}
       {sub === "import" && <MoveImport jobs={jobs} busy={!!running} />}
-      {sub === "progress" && <MoveProgress settings={settings} onPatch={onPatch} />}
     </>
   );
 }
@@ -4553,7 +4406,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 projects={projects} project={project} openSec={jump?.sec ?? startSec} />
             )}
             {shown === "plugins" && <RivendellPanel />}
-            {shown === "move" && <MovePanel settings={settings} onPatch={onPatch} />}
+            {shown === "move" && <MovePanel />}
             {shown === "mac" && <MacPanel />}
 
             {shown === "system" && (

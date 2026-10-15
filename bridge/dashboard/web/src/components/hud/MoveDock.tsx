@@ -17,12 +17,29 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { api, MOVE_EVENT, type MoveJob, type MoveNext } from "../../api";
-import type { HudSettings, MoveBar, MoveColor, MovePrefs, MoveThick } from "../../lib/theme";
+import type { HudSettings } from "../../lib/theme";
 import { notify } from "./Notifications";
 import { chime, push } from "../../lib/push";
 import { openSettings } from "../../lib/opensettings";
 import { restartBridge } from "../../lib/restart";
 import { askConfirm } from "../ui/Ask";
+
+// How the dock draws. These were thirteen Settings rows (MOVE ▸ PROGRESS) that
+// nobody moved off their defaults; the defaults are the dock now.
+export type MoveBar = "line" | "blocks" | "ascii" | "sweep";
+export type MoveThick = "thin" | "regular" | "thick";
+export type MoveColor = "acc" | "ok" | "purple" | "info" | "warn";
+export interface MovePrefs {
+  bar: MoveBar; thick: MoveThick; exportColor: MoveColor; importColor: MoveColor;
+  corner: "tl" | "tr" | "bl" | "br"; mini: "pill" | "edge" | "frame";
+  steps: boolean; log: boolean; eta: boolean; speed: boolean;
+  startMin: boolean; autoHide: boolean; motion: boolean;
+}
+const PREFS: MovePrefs = {
+  bar: "line", thick: "regular", exportColor: "acc", importColor: "purple", corner: "br",
+  mini: "pill", steps: true, log: true, eta: true, speed: true,
+  startMin: false, autoHide: true, motion: true,
+};
 
 export const MOVE_COLORS: Record<MoveColor, string> = {
   acc: "var(--acc)", ok: "var(--ok)", purple: "var(--purple)", info: "var(--info)", warn: "var(--warn)",
@@ -261,7 +278,6 @@ export function JobCard({ job, prefs, onMin, onClose, preview }: {
                 <Btn danger onClick={() => void api.moveCancel()}>CANCEL</Btn>
                 <span style={{ fontSize: "var(--t9)", color: "var(--txl)" }}>{HINT[job.kind]}</span>
                 <span style={{ flex: 1 }} />
-                <Btn onClick={() => openSettings("move")}>SETTINGS ▸</Btn>
               </div>
             ) : job.kind === "import" && job.status === "done" && left.length > 0 ? (
               <div>
@@ -351,7 +367,7 @@ const CORNER: Record<MovePrefs["corner"], CSSProperties> = {
 
 /** Mounted once by App. */
 export function MoveDock({ settings }: { settings: HudSettings }) {
-  const prefs = settings.move;
+  const prefs = PREFS;
   const [jobs, setJobs] = useState<MoveJob[]>([]);
   const [mini, setMini] = useState<Record<string, boolean>>(loadMini);
   const seen = useRef<Map<string, string>>(new Map());
