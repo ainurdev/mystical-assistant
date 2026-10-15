@@ -3769,10 +3769,11 @@ function MiniBtn({
 
 // ---- AI MANAGEMENT ----------------------------------------------------------
 // One page for who runs a session and where: ACCOUNTS (the logins, each with
-// the profiles bound to it, and the other agents), PROFILES (the default one,
-// and what a session gets without one), SKILLS, MCP and PROJECTS — five folds,
-// ACCOUNTS open by default. It replaced four tabs that each held a piece of
-// the same question, and the sidebar's SKILLS panel.
+// the profiles bound to it, and the other agents), SKILLS (with the extras
+// that spend model calls), MCP, DEFAULT PROFILE (and what a session gets
+// without one) and PROJECTS — five folds, all shut until you open one, each
+// remembered per browser. It replaced five tabs that each held a piece of the
+// same question, and the sidebar's SKILLS panel.
 
 /** The login list and its actions, shared by the ACCOUNTS fold and the
  *  profile editor's LOGIN picker. */
@@ -4287,7 +4288,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
 
   return (
     <div className="aim">
-      <AimFold id="accounts" title="Accounts" secs={["ACCOUNTS", "ON USAGE LIMIT", "CLAUDE LOGINS", "AGENTS"]} defaultOpen openSec={openSec}
+      <AimFold id="accounts" title="Accounts" secs={["ACCOUNTS", "ON USAGE LIMIT", "CLAUDE LOGINS", "AGENTS"]} openSec={openSec}
         count={acc.rows ? `${acc.rows.length} login${acc.rows.length === 1 ? "" : "s"} · ${list.length} profile${list.length === 1 ? "" : "s"}` : null}
         right={policyPick}>
         {accountsBody}
