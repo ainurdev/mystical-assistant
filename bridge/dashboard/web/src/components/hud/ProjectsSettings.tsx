@@ -1,13 +1,21 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { ChevronRight, Pencil } from "lucide-react";
+import type { AccountInfo } from "../../api";
 import type { ProfilesInfo } from "../../lib/profiles";
-import { projectGivenName, projectName, projectTint } from "../../lib/surfaces";
+import { agentLabel } from "../../lib/agents";
+import { projectGivenName, projectName } from "../../lib/surfaces";
+import { ProjectTile } from "../ui/ProjectTile";
 import { parentOf, type ProjectGroup } from "./ProjectsPanel";
 
-/* The PROJECTS tab of SETTINGS — project rows (dot, name, HIDDEN badge, sess
-   count, HIDE/SHOW + REMOVE) and the import-existing-repository row, from the
-   HUD design mock (hud.dc.html lines 1283–1318). It was a modal of its own,
-   reached from SYSTEM ▸ MANAGE ▸ OPEN: a settings screen two clicks and one
-   dialog deep from settings, which is where nobody found it. */
+/* The PROJECTS fold of SETTINGS ▸ AI MANAGEMENT: every repo the bridge can run
+   in, grouped by the folder that owns it, with the profile its new sessions
+   start on. It was its own tab, and before that a modal behind SYSTEM ▸
+   MANAGE ▸ OPEN, which nobody found.
+
+   Two things the old row hid: that the name is editable (a tinted chip with
+   no affordance — now a pencil beside it), and that HIDE ALL hides an org
+   from the sidebar rather than folding the group here (now a chevron folds,
+   and HIDE ALL says what it does). */
 
 export interface ProjectsSettingsProps {
   groups: ProjectGroup[]; // manageable projects (removed ones filtered out; hidden included)
@@ -22,6 +30,8 @@ export interface ProjectsSettingsProps {
   // are bound to. Undefined: a bridge older than profiles, so no picker.
   profiles?: ProfilesInfo;
   onSetProfile?: (rel: string, profileId: string) => void; // "" = no default
+  // The Claude logins, so a profile's picker can show whose it is.
+  logins?: AccountInfo[];
 }
 
 function basename(rel: string): string {
@@ -29,29 +39,99 @@ function basename(rel: string): string {
   return clean.split("/").pop() || clean;
 }
 
+const SLOT_HUES = ["var(--acc)", "var(--ask, var(--purple))", "var(--info)", "var(--ok)", "var(--warn)", "var(--purple)"];
+function slotHue(slot: string): string {
+  const n = Number(slot) || 0;
+  return n ? SLOT_HUES[(n - 1) % SLOT_HUES.length] : "var(--panel3)";
+}
+
+/** Which folds are shut, kept in this browser. */
+const SHUT_KEY = "hud-projects-shut";
+function readShut(): Record<string, boolean> {
+  try { return JSON.parse(localStorage.getItem(SHUT_KEY) || "{}") as Record<string, boolean>; } catch { return {}; }
+}
+
+/** A project's default profile, as a menu grouped by login — the picker the
+ *  row shows is a chip with the login's tile, so whose it is reads before
+ *  what it is called. */
+function ProfilePick({ value, profiles, logins, onPick }: {
+  value: string;
+  profiles: ProfilesInfo;
+  logins: AccountInfo[];
+  onPick: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [open]);
+  const byId = new Map(profiles.profiles.map((p) => [p.id, p]));
+  const cur = byId.get(value);
+  const bridgeDefault = profiles.default ? byId.get(profiles.default) : undefined;
+  const tile = (p: { agent: string; account: string } | undefined) => p
+    ? p.agent === "claude"
+      ? <span className="ps-av" style={{ background: slotHue(p.account), color: p.account ? "var(--acc-on)" : "var(--txm)" }}>{p.account ? `A${p.account}` : "A"}</span>
+      : <span className="ps-av ps-av-agent">◇</span>
+    : <span className="ps-av ps-av-agent">A</span>;
+  const email = (slot: string) => logins.find((a) => String(a.slot) === slot)?.email ?? (slot ? `A${slot}` : "default login");
+  // Groups: each login (by slot, default login first), then each agent.
+  const groups: { key: string; head: React.ReactNode; rows: typeof profiles.profiles }[] = [];
+  const claude = profiles.profiles.filter((p) => p.agent === "claude");
+  const slots = Array.from(new Set(claude.map((p) => p.account))).sort((a, b) => Number(a) - Number(b));
+  for (const slot of slots) groups.push({ key: `c${slot}`, head: <>{tile({ agent: "claude", account: slot })}{email(slot)}</>, rows: claude.filter((p) => p.account === slot) });
+  for (const agent of Array.from(new Set(profiles.profiles.filter((p) => p.agent !== "claude").map((p) => p.agent))))
+    groups.push({ key: agent, head: <>{tile({ agent, account: "" })}{agentLabel(agent)}</>, rows: profiles.profiles.filter((p) => p.agent === agent) });
+  return (
+    <div ref={ref} className="ps-pickwrap">
+      <button type="button" className="ps-pick" onClick={() => setOpen((o) => !o)} title="Default profile — what a new session in this project is bound to">
+        {tile(cur ?? bridgeDefault)}
+        <span className="ps-pickname">{cur ? cur.name : "Default"}</span>
+        {!cur && bridgeDefault && <span className="ps-pickdim">· {bridgeDefault.name}</span>}
+        <span className="ps-pickchev">{open ? "▴" : "▾"}</span>
+      </button>
+      {open && (
+        <div className="ps-menu">
+          <button type="button" className="ps-opt" data-on={!value || undefined} onClick={() => { onPick(""); setOpen(false); }}>
+            <span className="ps-chk">{!value ? "✓" : ""}</span><span className="ps-optname">Bridge default</span>
+            <span className="ps-k">{bridgeDefault ? bridgeDefault.name : "none"}</span>
+          </button>
+          {groups.map((g) => (
+            <div key={g.key}>
+              <div className="ps-grp">{g.head}</div>
+              {g.rows.map((p) => (
+                <button key={p.id} type="button" className="ps-opt" data-on={p.id === value || undefined} onClick={() => { onPick(p.id); setOpen(false); }}>
+                  <span className="ps-chk">{p.id === value ? "✓" : ""}</span><span className="ps-optname">{p.name}</span>
+                  <span className="ps-k">{[p.model.replace(/^claude-/, ""), p.mode.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase()].filter(Boolean).join(" · ") || "defaults"}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ProjectsSettings(props: ProjectsSettingsProps) {
-  const { groups, imported, hidden, remotes, onSetHidden, onRemove, onRename, onImport, profiles, onSetProfile } = props;
+  const { groups, imported, hidden, remotes, onSetHidden, onRemove, onRename, onImport, profiles, onSetProfile, logins = [] } = props;
   const [importPath, setImportPath] = useState("");
-  const [hov, setHov] = useState("");
-  // Rename in place: the name chip becomes an input. Esc has to blur (not just
+  const [shut, setShut] = useState<Record<string, boolean>>(readShut);
+  // Rename in place: the name becomes an input. Esc has to blur (not just
   // unmount) or the blur that follows would save what you were escaping from.
   const [editing, setEditing] = useState<{ rel: string; value: string } | null>(null);
   const cancelled = useRef(false);
-  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   const rows = [
     ...groups.map((g) => {
       const dirty = g.badge?.dirty ?? 0;
-      return {
-        rel: g.rel, name: g.name,
-        dot: g.running ? "var(--ok)" : dirty > 0 ? "var(--warn)" : "var(--txl)",
-        sessionCount: g.sessionCount,
-      };
+      return { rel: g.rel, name: g.name, dot: g.running ? "var(--ok)" : dirty > 0 ? "var(--warn)" : null, sessionCount: g.sessionCount };
     }),
     // Imported-but-sessionless repos still show here so they can be managed.
-    ...imported
-      .filter((rel) => !groups.some((g) => g.rel === rel))
-      .map((rel) => ({ rel, name: projectName(rel), dot: "var(--txl)", sessionCount: 0 })),
+    ...imported.filter((rel) => !groups.some((g) => g.rel === rel))
+      .map((rel) => ({ rel, name: projectName(rel), dot: null, sessionCount: 0 })),
   ].sort((a, b) => a.rel.localeCompare(b.rel));
 
   // One section per owning folder — "ainurhq", then "ainurhq/efas" — so a whole
@@ -66,6 +146,11 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
     if (i == null) { at.set(parent, sections.length); sections.push({ parent, rows: [r] }); }
     else sections[i].rows.push(r);
   }
+  const setFold = (next: Record<string, boolean>) => {
+    setShut(next);
+    try { localStorage.setItem(SHUT_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+  };
+  const allShut = sections.every((s) => shut[s.parent || "~"]);
 
   const doImport = () => {
     const raw = importPath.trim();
@@ -75,99 +160,105 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
   };
 
   return (
-    <>
-      <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 9 }}>CLICK A NAME TO RENAME · THE SLUG IS WHERE ITS origin PUSHES · HIDE keeps a project out of the sidebar · REMOVE detaches it</div>
-          {sections.map(({ parent, rows: srows }) => {
-            const segs = parent ? parent.split("/") : [];
-            const allHidden = srows.every((r) => hidden[r.rel]);
-            const hiddenCount = srows.filter((r) => hidden[r.rel]).length;
-            return (
-          <div key={parent || "~"} style={{ marginBottom: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px 6px" }}>
-              <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txd)" }}>
-                {segs.length === 0 ? "~ /" : (
-                  <>
-                    {segs.slice(0, -1).map((s) => <span key={s} style={{ opacity: 0.45 }}>{s.toUpperCase()} / </span>)}
-                    <span style={{ color: segs.length > 1 ? "var(--acc)" : "var(--txd)" }}>{segs[segs.length - 1].toUpperCase()} /</span>
-                  </>
-                )}
-              </span>
-              <span style={{ fontSize: "var(--t85)", color: "var(--txd)", opacity: 0.7 }}>
-                {srows.length} repo{srows.length === 1 ? "" : "s"}{hiddenCount ? ` · ${hiddenCount} hidden` : ""}
-              </span>
-              <span style={{ flex: 1 }} />
-              <button onClick={() => onSetHidden(srows.map((r) => r.rel), !allHidden)}
-                title={allHidden ? "show every repo in this org" : "hide every repo in this org"} {...hp(`org:${parent}`)}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === `org:${parent}` ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t8)", letterSpacing: 1, padding: "3px 8px", flex: "none" }}>
-                {allHidden ? "SHOW ALL" : "HIDE ALL"}</button>
-            </div>
-          <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)" }}>
-            {srows.map((r) => {
-              const tint = projectTint(r.rel);
-              const isHidden = !!hidden[r.rel];
-              return (
-                <div key={r.rel}
-                  style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 13px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 7%, transparent)", opacity: isHidden ? 0.5 : 1 }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: r.dot, flex: "none" }} />
-                  {editing?.rel === r.rel ? (
-                    <input autoFocus value={editing.value} placeholder={basename(r.rel)}
-                      onChange={(e) => setEditing({ rel: r.rel, value: e.target.value })}
-                      onBlur={() => {
-                        if (!cancelled.current) onRename(r.rel, editing.value);
-                        cancelled.current = false;
-                        setEditing(null);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") e.currentTarget.blur();
-                        if (e.key === "Escape") { cancelled.current = true; e.currentTarget.blur(); }
-                      }}
-                      style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: tint.color, border: `1px solid ${tint.border}`, padding: "0 5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", outline: "none", fontFamily: "inherit", width: 160, flex: "none" }} />
-                  ) : (
-                    <span onClick={() => setEditing({ rel: r.rel, value: projectGivenName(r.rel) || basename(r.rel) })}
-                      title={`${r.rel} — click to rename (display only)`}
-                      style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: tint.color, border: `1px solid ${tint.border}`, padding: "0 5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "text" }}>{r.name}</span>
-                  )}
-                  {isHidden && (
-                    <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", padding: "1px 5px", flex: "none" }}>HIDDEN</span>
-                  )}
-                  <span style={{ flex: 1 }} />
-                  {remotes[r.rel] && (
-                    <a href={`https://github.com/${remotes[r.rel]}`} target="_blank" rel="noreferrer"
-                      title={`origin — github.com/${remotes[r.rel]}`} {...hp(`gh:${r.rel}`)}
-                      style={{ fontSize: "var(--t85)", letterSpacing: ".5px", color: hov === `gh:${r.rel}` ? "var(--acc)" : "var(--txd)", textDecoration: "none", flex: "none", whiteSpace: "nowrap" }}>
-                      {remotes[r.rel]}</a>
-                  )}
-                  {profiles && (
-                    <select value={profiles.project_defaults[r.rel] ?? ""} onChange={(e) => onSetProfile?.(r.rel, e.target.value)}
-                      title="Default profile — what a new session in this project is bound to"
-                      style={{ background: "var(--panel3)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t85)", letterSpacing: ".5px", padding: "4px 6px", maxWidth: 150, flex: "none" }}>
-                      <option value="">{profiles.default === undefined ? "No default"
-                        : `Default (${profiles.profiles.find((p) => p.id === profiles.default)?.name ?? "none"})`}</option>
-                      {profiles.profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  )}
-                  <span style={{ fontSize: "var(--t9)", color: "var(--txd)", flex: "none" }}>{r.sessionCount} sess</span>
-                  <button onClick={() => onSetHidden([r.rel], !isHidden)} title="hide / show in sidebar" {...hp(`hide:${r.rel}`)}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === `hide:${r.rel}` ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t85)", letterSpacing: 1, padding: "5px 10px", flex: "none" }}>{isHidden ? "SHOW" : "HIDE"}</button>
-                  <button onClick={() => onRemove(r.rel)} title="remove project" {...hp(`rm:${r.rel}`)}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 28%, transparent)", background: hov === `rm:${r.rel}` ? "color-mix(in srgb, var(--err) 12%, transparent)" : "transparent", color: hov === `rm:${r.rel}` ? "var(--err)" : "var(--err-g)", fontFamily: "inherit", fontSize: "var(--t85)", letterSpacing: 1, padding: "5px 9px", flex: "none" }}>REMOVE</button>
-                </div>
-              );
-            })}
-          </div>
-          </div>
-            );
-          })}
-          <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginTop: 18, marginBottom: 9 }}>IMPORT EXISTING REPOSITORY</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, border: "1px solid color-mix(in srgb, var(--info) 30%, transparent)", background: "color-mix(in srgb, var(--info) 5%, transparent)", padding: "9px 11px" }}>
-            <span style={{ fontSize: "var(--t12)", color: "var(--info)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>⌂</span>
-            <input value={importPath} onChange={(e) => setImportPath(e.target.value)}
-              placeholder="/home/squared/dev/my-repo"
-              style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--info) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "7px 9px" }} />
-            <button onClick={doImport} {...hp("import")}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--info)", background: hov === "import" ? "color-mix(in srgb, var(--info) 24%, transparent)" : "color-mix(in srgb, var(--info) 14%, transparent)", color: "var(--info-b)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "8px 13px", flex: "none", display: "flex", alignItems: "center", gap: 6 }}>
-              <span style={{ color: "var(--info)" }}>▸</span>IMPORT</button>
+    <div className="ps">
+      <div className="ps-toolbar">
+        <span className="aim-hint">Click a name or its pencil to rename it (a label only — the path stays the key). HIDE keeps a project out of the sidebar; ✕ detaches it.</span>
+        <span style={{ flex: 1 }} />
+        <button type="button" className="ps-btn" onClick={() => setFold(Object.fromEntries(sections.map((s) => [s.parent || "~", !allShut])))}>
+          {allShut ? "Expand all" : "Collapse all"}
+        </button>
       </div>
-    </>
+      {sections.map(({ parent, rows: srows }) => {
+        const key = parent || "~";
+        const segs = parent ? parent.split("/") : [];
+        const allHidden = srows.every((r) => hidden[r.rel]);
+        const hiddenCount = srows.filter((r) => hidden[r.rel]).length;
+        const open = !shut[key];
+        return (
+          <div key={key} className="ps-grp2" data-open={open || undefined}>
+            <div className="ps-head">
+              <button type="button" className="ps-fold" onClick={() => setFold({ ...shut, [key]: open })} aria-expanded={open}>
+                <ChevronRight size={14} aria-hidden className="ps-chev" />
+                <b>
+                  {segs.length === 0 ? <>~ <i>/</i></> : (
+                    <>
+                      {segs.slice(0, -1).map((s) => <i key={s}>{s} / </i>)}
+                      {segs[segs.length - 1]} <i>/</i>
+                    </>
+                  )}
+                </b>
+                <span className="ps-n">{srows.length} repo{srows.length === 1 ? "" : "s"}{hiddenCount ? ` · ${hiddenCount} hidden` : ""}</span>
+              </button>
+              <span style={{ flex: 1 }} />
+              <button type="button" className="ps-btn ps-sm" onClick={() => onSetHidden(srows.map((r) => r.rel), !allHidden)}
+                title={allHidden ? "show every repo in this org in the sidebar" : "hide every repo in this org from the sidebar"}>
+                {allHidden ? "Show all" : "Hide all"}
+              </button>
+            </div>
+            {open && (
+              <div className="ps-rows">
+                {srows.map((r) => {
+                  const isHidden = !!hidden[r.rel];
+                  return (
+                    <div key={r.rel} className="ps-row" data-hidden={isHidden || undefined}>
+                      <ProjectTile project={r.rel} />
+                      <span className="ps-name">
+                        {r.dot && <span className="ps-dot" style={{ background: r.dot }} title={r.dot === "var(--ok)" ? "running" : "uncommitted changes"} />}
+                        {editing?.rel === r.rel ? (
+                          <>
+                            <input autoFocus value={editing.value} placeholder={basename(r.rel) || r.name}
+                              onChange={(e) => setEditing({ rel: r.rel, value: e.target.value })}
+                              onBlur={() => {
+                                if (!cancelled.current) onRename(r.rel, editing.value);
+                                cancelled.current = false;
+                                setEditing(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") e.currentTarget.blur();
+                                if (e.key === "Escape") { cancelled.current = true; e.currentTarget.blur(); }
+                              }} />
+                            <span className="ps-keys">↵ save · esc cancel</span>
+                          </>
+                        ) : (
+                          <>
+                            <button type="button" className="ps-rename" title={`${r.rel} — click to rename (display only)`}
+                              onClick={() => setEditing({ rel: r.rel, value: projectGivenName(r.rel) || basename(r.rel) || r.name })}>
+                              <b>{r.name}</b>
+                              <Pencil size={11} aria-hidden />
+                            </button>
+                            {isHidden && <span className="ps-chip">Hidden</span>}
+                            {remotes[r.rel] && (
+                              <a href={`https://github.com/${remotes[r.rel]}`} target="_blank" rel="noreferrer" className="ps-remote"
+                                title={`origin — github.com/${remotes[r.rel]}`}>{remotes[r.rel]}</a>
+                            )}
+                          </>
+                        )}
+                      </span>
+                      {profiles && onSetProfile && (
+                        <ProfilePick value={profiles.project_defaults[r.rel] ?? ""} profiles={profiles} logins={logins}
+                          onPick={(id) => onSetProfile(r.rel, id)} />
+                      )}
+                      <span className="ps-sess">{r.sessionCount} sess</span>
+                      <span className="ps-acts">
+                        <button type="button" className="ps-btn ps-sm" data-on={isHidden || undefined} onClick={() => onSetHidden([r.rel], !isHidden)} title={isHidden ? "show in the sidebar" : "hide from the sidebar"}>
+                          {isHidden ? "Show" : "Hide"}
+                        </button>
+                        <button type="button" className="ps-btn ps-i ps-danger" onClick={() => onRemove(r.rel)} title="remove project">✕</button>
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div className="ps-import">
+        <span className="ps-lbl">Import a repo</span>
+        <input value={importPath} onChange={(e) => setImportPath(e.target.value)} placeholder="/home/you/dev/my-repo"
+          onKeyDown={(e) => e.key === "Enter" && doImport()} />
+        <button type="button" className="ps-btn ps-pri" onClick={doImport}>Import</button>
+      </div>
+    </div>
   );
 }

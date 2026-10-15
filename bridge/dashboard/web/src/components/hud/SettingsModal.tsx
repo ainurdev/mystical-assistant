@@ -18,7 +18,8 @@ import { AgentRail, PromptBubble } from "../Transcript";
 import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
 
-import { ago, hhmm, useClock12, windowLabels } from "../../lib/surfaces";
+import { ago, hhmm, projectName, useClock12, windowLabels } from "../../lib/surfaces";
+import { SkillsView } from "./SkillsTab";
 import { ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WeekPanel } from "./WeekPanel";
 import {
@@ -144,6 +145,8 @@ export interface SettingsModalProps {
   onAccountsChanged: () => void;
   onOpenInspector: () => void;
   projects: ProjectsSettingsProps;
+  /** The open session's project — what the SKILLS fold installs to. */
+  project: string | null;
 }
 
 // ---- CATEGORIES -------------------------------------------------------------
@@ -158,9 +161,18 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 export type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
-  | "projects" | "session" | "ai" | "agentconfig" | "mcp" | "hooks" | "accounts"
+  | "aimgmt" | "ai" | "agentconfig" | "hooks"
   | "plugins" | "system" | "move"
   | "report" | "mac";
+
+/** The four tabs AI MANAGEMENT replaced, and the fold each lands on. A caller
+ *  that still names one (a bookmark, an older bridge's bot button) opens the
+ *  page on that fold rather than on nothing. */
+const LEGACY_TAB: Record<string, string> = { projects: "PROJECTS", session: "PROFILES", accounts: "ACCOUNTS", mcp: "MCP SERVERS" };
+export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec: string | null } {
+  if (t && t in LEGACY_TAB) return { tab: "aimgmt", sec: LEGACY_TAB[t] };
+  return { tab: t as Tab | undefined, sec: null };
+}
 
 // The rail carries the same three-way split the comment above describes, but
 // as two headings rather than ten peers: what the HUD is like, and what the
@@ -189,22 +201,17 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   // switches that are the app's, not the page's (lib/mac).
   { key: "mac", label: "MAC APP", hint: "window · dock · panel", icon: AppWindowMac, group: "THE HUD",
     about: "What only the Mac app can do: the window's title, the Dock icon, the floating WAITING ON YOU panel, and rebuilding the app after an update." },
-  // First under THE WORK: the repo is the biggest unit of it, and this was a
-  // modal behind SYSTEM ▸ MANAGE ▸ OPEN, which nobody found.
-  { key: "projects", label: "PROJECTS", hint: "name · hide · import", icon: FolderTree, group: "THE WORK",
-    about: "Every repo the bridge can run in. Rename one, hide it from the sidebar, or import a new one." },
-  { key: "session", label: "SESSION", hint: "model · mode · effort", icon: SlidersHorizontal, group: "THE WORK",
-    about: "What each new run starts with (model, mode, effort), and the profiles that say who runs a session." },
+  // First under THE WORK: who runs a session and where. One page, five folds —
+  // it was four tabs (PROJECTS, SESSION, MCP, ACCOUNTS) that each held a
+  // piece of the same question, and the sidebar's SKILLS panel besides.
+  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · profiles · skills · mcp · projects", icon: KeyRound, group: "THE WORK",
+    about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills and MCP servers they can reach, and which profile each project starts with." },
   { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK",
     about: "Extras that call a model on your behalf, like titles, summaries and guards. Each spends tokens, so each has its own switch." },
   { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK",
     about: "The global files each AI tool reads on every run, such as Claude Code's CLAUDE.md and settings.json, edited in place." },
-  { key: "mcp", label: "MCP", hint: "servers · auth", icon: Plug, group: "THE WORK",
-    about: "The MCP servers Claude can call tools from. Add one, re-authorize an expired login, or remove one." },
   { key: "hooks", label: "HOOKS", hint: "inbound events", icon: Radio, group: "THE WORK",
     about: "URLs that GitHub, a CI job or your own script can POST to. Whatever arrives is pushed to you on Telegram." },
-  { key: "accounts", label: "ACCOUNTS", hint: "logins · fallback", icon: KeyRound, group: "THE WORK",
-    about: "The Claude logins runs use and what each has left, what a chat does when one runs out, and who takes over then." },
   { key: "plugins", label: "PLUGINS", hint: "rivendell instances", icon: Waypoints, group: "THE WORK",
     about: "External dashboards the bridge runs work for. Rivendell's \"Request review\" and \"Implement using AI\" buttons become autonomous Claude runs here — one connection per Rivendell (production, local, staging)." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
@@ -245,24 +252,22 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "mac", sec: "WINDOW", terms: "mac app title bar session name dock icon keep cmd-tab space" },
   { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space" },
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission" },
-  { tab: "session", sec: "RUN DEFAULTS", terms: "model mode effort ponytail permission plan bypass opus sonnet" },
-  { tab: "session", sec: "PROFILES", terms: "preset saved knobs tools agent account login bind default" },
+  { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
   { tab: "ai", sec: "MODEL-SPENDING EXTRAS", terms: "features titles guard next-up scout summaries cost tokens" },
   { tab: "agentconfig", sec: "CLAUDE CODE", terms: "claude.md memory global instructions settings.json permissions hooks env user config" },
   { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
-  { tab: "mcp", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
-  { tab: "mcp", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
+  { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
+  { tab: "aimgmt", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
   { tab: "hooks", sec: "INBOUND HOOKS", terms: "webhook hook inbound event github sentry ci deploy trigger notify token revoke url" },
   { tab: "hooks", sec: "ADD A HOOK", terms: "webhook hook new mint token secret signature source github sentry ci generic" },
   { tab: "hooks", sec: "RECENT EVENTS", terms: "webhook feed received events history inbound log" },
-  { tab: "accounts", sec: "ON USAGE LIMIT", terms: "policy wait switch fallback reset quota" },
-  { tab: "accounts", sec: "CLAUDE LOGINS", terms: "account add sign in oauth profile" },
-  { tab: "accounts", sec: "AGENTS", terms: "agent acp codex opencode gemini api key login install test other agent" },
+  { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini api key install test other agent" },
   { tab: "plugins", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout" },
   { tab: "plugins", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
-  { tab: "projects", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label default profile" },
+  { tab: "aimgmt", sec: "SKILLS", terms: "skills skill catalog install plugin marketplace SKILL.md system project" },
+  { tab: "aimgmt", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label default profile" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
   { tab: "report", sec: "WEEK", terms: "report weekly today turns time tokens usage spend per project rhythm" },
@@ -3118,7 +3123,7 @@ function McpPanel() {
             health-checked. NEEDS AUTH means the server is configured but its token expired or was
             never granted — AUTH opens its authorization page, and the sign-in usually completes
             the moment the browser lands back on this machine. A plugin&apos;s servers arrive with
-            the plugin, so they&apos;re removed in the SKILLS tab, not here. Every server on costs
+            the plugin, so they&apos;re removed under SKILLS above, not here. Every server on costs
             context in each session that has it switched on; that switch lives in TOOLS.
           </>
         }
@@ -3555,230 +3560,6 @@ function HooksPanel() {
   );
 }
 
-function AccountsPanel({ onChanged }: { onChanged: () => void }) {
-  const [rows, setRows] = useState<AccountInfo[] | null>(null);
-  // Opened on one login (the composer's PROFILE menu, on a profile whose login
-  // has expired): its row comes into view once the list lands, RE-LOGIN lit.
-  const [focus] = useState(() => Number(takeSettingsFocus()) || null);
-  const focusRow = useRef<HTMLDivElement>(null);
-  useEffect(() => { focusRow.current?.scrollIntoView({ block: "center" }); }, [rows === null]);
-  const [policy, setPolicy] = useState("ask");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  // A sign-in in flight: the CLI is parked on its "paste the code" prompt in a
-  // fresh profile, waiting for what the browser hands back.
-  const [login, setLogin] = useState<{ slot: number; url: string } | null>(null);
-
-  const load = () =>
-    api
-      .accounts()
-      .then((r) => {
-        setRows(r.accounts);
-        setPolicy(r.default_policy);
-        if (r.pending_login?.url)
-          setLogin({ slot: r.pending_login.slot, url: r.pending_login.url });
-      })
-      .catch(() => setRows([]));
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function act(action: "add" | "remove" | "disable" | "enable", slot?: number) {
-    setBusy(true);
-    setErr(null);
-    try {
-      await api.accountAction(action, slot);
-      onChanged();
-      await load();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "failed");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // No slot adds an account; a slot signs that one back in where it lives —
-  // what an expired OAuth session needs, and what the bot's dead-login button does.
-  async function startLogin(slot?: number) {
-    setBusy(true);
-    setErr(null);
-    try {
-      const r = await api.loginBegin(slot);
-      setLogin({ slot: r.slot, url: r.url });
-      window.open(r.url, "_blank", "noopener");
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "could not start the sign-in");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <>
-      <Section
-        title="ON USAGE LIMIT"
-        info="The default for new chats. Any one chat can override it — right-click it in the sessions list."
-      >
-        <div style={CARD}>
-          <Segmented
-            options={POLICY_OPTS}
-            value={policy}
-            onPick={(v) => {
-              setPolicy(v);
-              void api.setDefaultPolicy(v).catch(() => void load());
-            }}
-          />
-          {/* Stays visible: it changes with the choice, so it's feedback on what
-              you just picked rather than prose about the panel. */}
-          <div style={{ ...NOTE, marginTop: 9 }}>{POLICY_BLURB[policy]}</div>
-        </div>
-      </Section>
-
-      <Section
-        title="CLAUDE LOGINS"
-        top
-        info={
-          <>
-            ADD ANOTHER ACCOUNT signs in right here: a link opens, you log in as the other account,
-            and you paste the code back. Your current login is never touched — the new one gets its
-            own profile. COPY CURRENT LOGIN is the old way in: it snapshots whoever is logged in at{" "}
-            <span style={{ color: "var(--txd)" }}>~/.claude</span> right now, which only helps if you
-            already switched accounts in a terminal. RE-LOGIN signs an account that is already here
-            back in — the fix when a turn dies on{" "}
-            <span style={{ color: "var(--txd)" }}>OAuth session expired</span>, where adding a new
-            account would just be the same login again. Accounts share transcripts and skills; only
-            the credentials differ.
-          </>
-        }
-      >
-      <div style={CARD}>
-        {rows === null && <div style={{ ...KEY_TX }}>LOADING…</div>}
-        {rows?.length === 0 && (
-          <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
-            No login found. Run <span style={{ color: "var(--tx)" }}>claude /login</span> in a
-            terminal.
-          </div>
-        )}
-        {rows?.map((a) => (
-          // Wraps: on a phone the usage and the three buttons can't share one
-          // line with the email, plan and DEFAULT — neither side could shrink,
-          // so they printed over each other. Now the controls take a line.
-          <div key={a.slot} ref={a.slot === focus ? focusRow : undefined}
-            style={{ ...KV, flexWrap: "wrap", gap: "8px 12px", marginTop: a.slot === rows[0].slot ? 0 : 10 }}>
-            <span style={{ flex: "1 1 220px", minWidth: 0, display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ ...KEY_TX, color: "var(--acc)", flex: "none" }}>A{a.slot}</span>
-              <span
-                style={{
-                  fontSize: "var(--t11)",
-                  color: a.disabled ? "var(--txd)" : "var(--tx)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {a.email ?? "unknown"}
-              </span>
-              {a.plan && <span style={{ ...CAPTION, width: "auto" }}>{a.plan}</span>}
-              {a.default && <span style={{ ...CAPTION, width: "auto" }}>DEFAULT</span>}
-            </span>
-            <span style={{
-              display: "flex", alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end",
-              gap: 10, flex: "0 1 auto", minWidth: 0, marginLeft: "auto",
-            }}>
-              {windowLabels(a).map((w) => (
-                <span
-                  key={w}
-                  style={{
-                    fontSize: "var(--t105)",
-                    color: a.left === null ? "var(--txd)" : a.left <= 1 ? "var(--warn)" : "var(--ok)",
-                  }}
-                >
-                  {w}
-                </span>
-              ))}
-              {!windowLabels(a).length && (
-                <span style={{ fontSize: "var(--t105)", color: a.logged_in === false ? "var(--err)" : "var(--txd)" }}>
-                  {a.logged_in === false ? "LOGIN EXPIRED" : "USAGE UNKNOWN"}
-                </span>
-              )}
-              <MiniBtn disabled={busy || !!login} hot={a.slot === focus} onClick={() => void startLogin(a.slot)}>
-                RE-LOGIN
-              </MiniBtn>
-              {!a.default && (
-                <>
-                  <MiniBtn disabled={busy} onClick={() => void act(a.disabled ? "enable" : "disable", a.slot)}>
-                    {a.disabled ? "ENABLE" : "DISABLE"}
-                  </MiniBtn>
-                  <MiniBtn disabled={busy} danger onClick={() => void act("remove", a.slot)}>
-                    REMOVE
-                  </MiniBtn>
-                </>
-              )}
-            </span>
-          </div>
-        ))}
-        {login ? (
-          <LoginFlow
-            url={login.url}
-            onDone={async () => {
-              setLogin(null);
-              onChanged();
-              await load();
-            }}
-            onSubmit={async (code) => {
-              try {
-                await api.loginSubmit(login.slot, code);
-              } catch (e) {
-                // The bridge keeps a sign-in going only through a paste worth
-                // retrying (half a code). Any other failure ended it, and this
-                // box could only fail again: back to the buttons, with the reason.
-                const r = await api.accounts().catch(() => null);
-                if (r && !r.pending_login) {
-                  setLogin(null);
-                  setRows(r.accounts);
-                  setErr(e instanceof Error ? e.message : "sign-in failed");
-                }
-                throw e;
-              }
-            }}
-            onCancel={async () => {
-              await api.loginCancel(login.slot).catch(() => {});
-              setLogin(null);
-              await load();
-            }}
-          />
-        ) : (
-          <div style={{ marginTop: 12, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-            <MiniBtn disabled={busy} onClick={() => void startLogin()}>
-              + ADD ANOTHER ACCOUNT
-            </MiniBtn>
-            <MiniBtn disabled={busy} onClick={() => void act("add")}>
-              COPY CURRENT LOGIN
-            </MiniBtn>
-            {err && <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{err}</span>}
-          </div>
-        )}
-      </div>
-      </Section>
-
-      <Section
-        title="AGENTS"
-        top
-        info={
-          <>
-            A profile can run its sessions on one of these instead of Claude, over the Agent Client
-            Protocol. Each runs under the machine&apos;s own login for that CLI, a pasted API key, or a
-            separate login kept in its own folder. TEST starts the agent once and remembers the models
-            and modes it offers — that is what the profile editor and the composer list.
-          </>
-        }
-      >
-        <AgentsSection />
-      </Section>
-    </>
-  );
-}
 
 const CODE: CSSProperties = {
   fontFamily: "'JetBrains Mono',monospace",
@@ -3880,7 +3661,7 @@ function copyText(text: string) {
  *  not, the accounts each runs under, and a TEST per account. A pasted key goes
  *  to the bridge in a POST body and is dropped here once saved: the list only
  *  ever holds the masked form the bridge sends back. */
-function AgentsSection() {
+function AgentsSection({ profileRows }: { profileRows?: (agentId: string) => ReactNode }) {
   const [info, setInfo] = useState<AcpAgentsInfo | null>(null);
   const [gone, setGone] = useState(false); // a bridge older than agents (404)
   const [err, setErr] = useState<string | null>(null);
@@ -3905,12 +3686,14 @@ function AgentsSection() {
   }
   return (
     <>
-      <div style={CARD}>
-        {info.presets.map((p, i) => (
-          <AgentRow key={p.id} p={p} first={i === 0} accounts={info.accounts.filter((a) => a.agent === p.id)}
-            onChanged={() => void load()} />
-        ))}
-      </div>
+      {info.presets.map((p) => (
+        <div key={p.id} className="aim-card">
+          <div className="aim-agent">
+            <AgentRow p={p} first accounts={info.accounts.filter((a) => a.agent === p.id)} onChanged={() => void load()} />
+          </div>
+          {profileRows?.(p.id)}
+        </div>
+      ))}
       {note}
     </>
   );
@@ -4073,19 +3856,26 @@ function MiniBtn({
   danger,
   hot,
   title,
+  primary,
 }: {
   children: ReactNode;
   onClick: () => void;
   disabled?: boolean;
   danger?: boolean;
+  /** The one action the row is for — filled in the accent. */
+  primary?: boolean;
   /** The one button the panel was opened for: lit, and it flashes on arrival. */
   hot?: boolean;
   /** An icon-only button has to say what it is somewhere. */
   title?: string;
 }) {
   const [hov, setHov] = useState(false);
+  const voice = useVoice();
   return (
     <button
+      className="set-mini"
+      data-danger={danger || undefined}
+      data-primary={primary || undefined}
       onClick={onClick}
       disabled={disabled}
       title={title}
@@ -4095,9 +3885,9 @@ function MiniBtn({
       style={{
         appearance: "none",
         cursor: disabled ? "default" : "pointer",
-        border: `1px solid color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} ${hot ? 100 : 24}%, transparent)`,
-        background: (hov || hot) && !disabled ? `color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} ${hot ? 16 : 10}%, transparent)` : "transparent",
-        color: disabled ? "var(--txd)" : danger ? "var(--warn)" : hot ? "var(--acc)" : "var(--tx)",
+        border: `1px solid color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} ${hot || primary ? 100 : 24}%, transparent)`,
+        background: primary && !disabled ? "var(--acc)" : (hov || hot) && !disabled ? `color-mix(in srgb, ${danger ? "var(--warn)" : "var(--acc)"} ${hot ? 16 : 10}%, transparent)` : "transparent",
+        color: disabled ? "var(--txd)" : primary ? "var(--acc-on)" : danger ? "var(--warn)" : hot ? "var(--acc)" : "var(--tx)",
         animation: hot ? "resultflash 1.2s ease 3" : undefined,
         fontFamily: "inherit",
         fontSize: "var(--t95)",
@@ -4108,240 +3898,544 @@ function MiniBtn({
         display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
       }}
     >
-      {children}
+      {typeof children === "string" ? voice(children) : children}
     </button>
   );
 }
 
-/** The bridge's profiles (lib/profiles): rows with what each sets, EDIT and ✕,
- *  and one form for a new profile or the one being edited. The list is App's,
- *  reloaded through onChanged after every write. */
-function ProfilesPanel({
-  info,
-  available,
-  error,
-  models,
-  settings,
-  sessionTools,
-  onChanged,
-  onPatch,
-}: {
-  info: ProfilesInfo | null; // null = still loading, or the load failed (error)
-  available: boolean; // false = a bridge older than profiles
-  error: string | null; // why App's last load of them failed
-  models: { id: string; label: string }[];
-  settings: HudSettings; // the open session's picks seed a new profile
-  sessionTools: string[];
-  onChanged: () => void;
-  onPatch: (patch: Partial<HudSettings>) => void; // retires the old AGENT pick
-}) {
-  // A new profile starts from the open session's picks.
-  const blank = (): Profile => ({ id: "", name: "", agent: "claude", account: "", model: settings.model,
-                                  mode: settings.perm, effort: settings.effort, tools: null });
-  // The profile in the form: id "" = a new one. null = no form open. The
-  // composer's + NEW PROFILE opens this tab on a blank one (lib/opensettings).
-  const [form, setForm] = useState<Profile | null>(() => takeSettingsFocus() === "new" ? blank() : null);
-  // That form sits below RUN DEFAULTS, so bring it up once the tab's
-  // scroll-to-top (a layout effect) has run. Its NAME box already has focus.
-  const formRef = useRef<HTMLDivElement>(null);
-  useEffect(() => { formRef.current?.scrollIntoView({ block: "nearest" }); }, []);
-  const [err, setErr] = useState<string | null>(null);
+
+// ---- AI MANAGEMENT ----------------------------------------------------------
+// One page for who runs a session and where: ACCOUNTS (the logins, each with
+// the profiles bound to it, and the other agents), PROFILES (the default one,
+// and what a session gets without one), SKILLS, MCP and PROJECTS — five folds,
+// ACCOUNTS open by default. It replaced four tabs that each held a piece of
+// the same question, and the sidebar's SKILLS panel.
+
+/** The login list and its actions, shared by the ACCOUNTS fold and the
+ *  profile editor's LOGIN picker. */
+function useAccounts(onChanged: () => void) {
+  const [rows, setRows] = useState<AccountInfo[] | null>(null);
+  const [policy, setPolicy] = useState("ask");
   const [busy, setBusy] = useState(false);
-  const [logins, setLogins] = useState<AccountInfo[]>([]);
-  const [loginsErr, setLoginsErr] = useState<string | null>(null);
-  // Other agents, their accounts and cached options. null = not loaded or a
-  // bridge older than them (404): the AGENT select then offers Claude alone.
-  const [acp, setAcp] = useState<AcpAgentsInfo | null>(null);
-  const [testing, setTesting] = useState(false);
-  const loadAcp = () => api.acpAgents().then(setAcp).catch(() => {});
-
-  useEffect(() => {
-    void api.accounts().then((r) => setLogins(r.accounts.filter((a) => !a.disabled)))
-      .catch((e) => setLoginsErr((e as Error).message));
-    void loadAcp();
-    // Opening the panel re-reads the list: a failed load, or a bridge that has
-    // been restarted since it 404'd, gets another go without a page reload.
-    onChanged();
-  }, []);
-  // The browser-only profiles this replaced move onto the bridge once, after
-  // the list is in (a clash with one already there gets " (old)"), and so does
-  // the retired AGENT pick: cleared once moved, so it's never asked about again.
-  useEffect(() => {
-    if (!info) return;
-    void importLegacy(info.profiles, api.profileWrite, settings.agent).then((r) => {
-      if (!r) return;
-      if (r.landed) onChanged();
-      if (settings.agent) onPatch({ agent: "" });
-      if (r.picked) notify("info", `Your AGENT pick is now profile '${r.picked}' — pick it in PROFILE`);
-    });
-  }, [info]);
-
-  const set = (patch: Partial<Profile>) => setForm((f) => f && { ...f, ...patch });
-  const edit = (p: Profile) => { setErr(null); setForm(p); };
-  const warn = (text: string) => <div style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{text}</div>;
-  async function write(body: ProfileWrite, done?: () => void) {
-    setBusy(true);
-    setErr(null);
-    try {
-      await api.profileWrite(body);
-      done?.();
-      onChanged();
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+  const [err, setErr] = useState<string | null>(null);
+  // A sign-in in flight: the CLI is parked on its "paste the code" prompt in a
+  // fresh profile, waiting for what the browser hands back.
+  const [login, setLogin] = useState<{ slot: number; url: string } | null>(null);
+  const load = () => api.accounts()
+    .then((r) => {
+      setRows(r.accounts);
+      setPolicy(r.default_policy);
+      if (r.pending_login?.url) setLogin({ slot: r.pending_login.slot, url: r.pending_login.url });
+    })
+    .catch(() => setRows([]));
+  useEffect(() => { void load(); }, []);
+  async function act(action: "add" | "remove" | "disable" | "enable", slot?: number) {
+    setBusy(true); setErr(null);
+    try { await api.accountAction(action, slot); onChanged(); await load(); }
+    catch (e) { setErr(e instanceof Error ? e.message : "failed"); }
+    finally { setBusy(false); }
   }
+  // No slot adds an account; a slot signs that one back in where it lives —
+  // what an expired OAuth session needs, and what the bot's dead-login button does.
+  async function startLogin(slot?: number) {
+    setBusy(true); setErr(null);
+    try {
+      const r = await api.loginBegin(slot);
+      setLogin({ slot: r.slot, url: r.url });
+      window.open(r.url, "_blank", "noopener");
+    } catch (e) { setErr(e instanceof Error ? e.message : "could not start the sign-in"); }
+    finally { setBusy(false); }
+  }
+  return { rows, setRows, policy, setPolicy, busy, err, setErr, login, setLogin, load, act, startLogin };
+}
 
-  const btn = (accent: string): CSSProperties => ({
-    appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t85)",
-    letterSpacing: 1, padding: "5px 10px", flex: "none",
-    border: `1px solid color-mix(in srgb, ${accent} 30%, transparent)`,
-    background: "transparent", color: accent,
-  });
+/** A login's tile: its slot on a hue of its own. The six hues are the theme's
+ *  named roles, so a login reads the same in its card, in a profile row and in
+ *  a project's picker. */
+const SLOT_HUES = ["var(--acc)", "var(--ask, var(--purple))", "var(--info)", "var(--ok)", "var(--warn)", "var(--purple)"];
+function LoginTile({ slot, size = 34 }: { slot: number | string; size?: number }) {
+  const n = Number(slot) || 1;
+  return (
+    <span className="aim-av" style={{ width: size, height: size, borderRadius: Math.round(size * .27), fontSize: Math.round(size * .36), background: SLOT_HUES[(n - 1) % SLOT_HUES.length] }}>
+      A{n}
+    </span>
+  );
+}
+
+/** The 5h / wk fuel gauges of a login, from its usage windows. */
+function LoginMeters({ a }: { a: AccountInfo }) {
+  const tone = a.left === null ? "var(--txd)" : a.left <= 1 ? "var(--warn)" : "var(--ok)";
+  const labels = windowLabels(a);
+  if (!labels.length) {
+    return (
+      <span className="aim-usage" style={{ color: a.logged_in === false ? "var(--err)" : "var(--txd)" }}>
+        {a.logged_in === false ? "Login expired" : "Usage unknown"}
+      </span>
+    );
+  }
+  return (
+    <span className="aim-meters">
+      {labels.map((w) => {
+        // "5H 95% 0H31M" → tag, percent left, time to reset
+        const m = /^(\S+)\s+(\d+)%\s*(.*)$/.exec(w);
+        if (!m) return <span key={w} className="aim-usage" style={{ color: tone }}>{w}</span>;
+        return (
+          <span key={w} className="aim-meter" title={w}>
+            <em>{m[1].toLowerCase()}</em>
+            <i style={{ ["--v" as string]: `${m[2]}%`, ["--c" as string]: tone }} />
+            <b style={{ color: tone }}>{m[2]}%</b>
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+/** What a profile sets, as pills: model · mode · effort · tools off. */
+function ProfilePills({ p }: { p: Profile }) {
+  const bits = [p.agent !== "claude" ? `◇ ${agentLabel(p.agent)}` : null, p.model.replace(/^claude-/, ""),
+    p.mode.replace(/([a-z])([A-Z])/g, "$1 $2").toLowerCase(), p.effort, p.tools && `${p.tools.length} off`].filter(Boolean) as string[];
+  return <span className="aim-pills">{bits.length ? bits.map((b) => <em key={b}>{b}</em>) : <em>defaults</em>}</span>;
+}
+
+/** The profile form — a new one or the one being edited — inline under its
+ *  row. Writes go through `write` (POST /local/profiles). */
+function ProfileEditor({ form, setForm, models, settings, sessionTools, logins, loginsErr, acp, loadAcp, busy, err, onSave, onCancel }: {
+  form: Profile;
+  setForm: (patch: Partial<Profile>) => void;
+  models: { id: string; label: string }[];
+  settings: HudSettings;
+  sessionTools: string[];
+  logins: AccountInfo[];
+  loginsErr: string | null;
+  acp: AcpAgentsInfo | null;
+  loadAcp: () => Promise<void>;
+  busy: boolean;
+  err: string | null;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  const [testErr, setTestErr] = useState<string | null>(null);
+  const set = setForm;
   // A value the lists no longer offer (a login since removed, a model gone
   // from the Models API) stays shown as itself, not as another row.
   const keep = (opts: { id: string; label: string }[], v: string, label = v.toUpperCase()) =>
     opts.some((o) => o.id === v) ? opts : [...opts, { id: v, label }];
   const NOT_SET = { id: "", label: "NOT SET" };
-  const isAgent = !!form && form.agent !== "claude";
+  const isAgent = form.agent !== "claude";
   // An agent's pickers: what it advertised for this account (a TEST or a turn
   // cached it), AGENT DEFAULT first. Nothing cached yet → a TEST right here.
-  const cached = form && isAgent ? acp?.options[`${form.agent}|${form.account}`] : undefined;
+  const cached = isAgent ? acp?.options[`${form.agent}|${form.account}`] : undefined;
   const agentRows = (list: { value: string; name: string }[] | undefined, v: string) =>
     keep(optionRows(list) ?? [AGENT_DEFAULT], v);
   async function testHere() {
-    if (!form) return;
-    setTesting(true);
-    setErr(null);
+    setTesting(true); setTestErr(null);
     try {
       const r = await api.acpTest(form.agent, form.account);
-      if (r.ok) await loadAcp();
-      else setErr(r.error ?? "the agent didn't start");
-    } catch (e) {
-      setErr((e as Error).message);
-    } finally {
-      setTesting(false);
-    }
+      if (r.ok) await loadAcp(); else setTestErr(r.error ?? "the agent didn't start");
+    } catch (e) { setTestErr((e as Error).message); }
+    finally { setTesting(false); }
   }
-
-  if (!available) {
-    return <div style={CARD}><div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>Restart the bridge to use profiles.</div></div>;
-  }
-  if (!info) {
-    return <div style={CARD}>{error ? warn(`Couldn't load profiles — ${error}`) : <div style={KEY_TX}>LOADING…</div>}</div>;
-  }
+  const warn = (text: string) => <div style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{text}</div>;
   return (
-    <div style={CARD}>
-      {error && <div style={{ marginBottom: 8 }}>{warn(`Couldn't reload profiles, so this list may be stale — ${error}`)}</div>}
-      {info.profiles.length === 0 && !form && (
-        <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
-          No profiles yet — name an account and the settings to run it with, then bind sessions to it.
-        </div>
+    <div className="aim-editor">
+      <div className="aim-f">
+        <label>Name</label>
+        <input value={form.name} maxLength={32} autoFocus placeholder="name this profile"
+          onChange={(e) => set({ name: e.target.value })} />
+      </div>
+      {/* A profile keeps its agent (the bridge refuses a change): an agent
+          can't read another's history, and sessions are bound to it. */}
+      <div className="aim-f">
+        <label>Agent</label>
+        <select value={form.agent} disabled={!!form.id} title={form.id ? "A profile keeps its agent — make a new profile for another" : undefined}
+          onChange={(e) => { const agent = e.target.value; set(agent === "claude"
+            ? { agent, account: "", model: settings.model, mode: settings.perm, effort: settings.effort }
+            : { agent, account: "", model: "", mode: "", effort: "" }); }}>
+          {keep([{ id: "claude", label: "Claude" },
+            ...(acp?.presets ?? []).filter((p) => p.installed).map((p) => ({ id: p.id, label: p.label }))], form.agent, agentLabel(form.agent))
+            .map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      </div>
+      <div className="aim-f">
+        <label>{isAgent ? "Account" : "Login"}</label>
+        {isAgent ? (
+          <select value={form.account} onChange={(e) => set({ account: e.target.value, model: "", mode: "", effort: "" })}>
+            {keep([{ id: "", label: "Machine login" },
+              ...(acp?.accounts ?? []).filter((a) => a.agent === form.agent)
+                .map((a) => ({ id: a.id, label: `${a.label} · ${a.kind === "key" ? "API key" : "own login"}` }))], form.account)
+              .map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        ) : (
+          <select value={form.account} onChange={(e) => set({ account: e.target.value })}>
+            {keep([{ id: "", label: "Default login" },
+              ...logins.map((a) => ({ id: String(a.slot), label: `A${a.slot} · ${a.email ?? "unknown"}` }))], form.account, `A${form.account}`)
+              .map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        )}
+      </div>
+      {loginsErr && !isAgent && <div className="aim-f wide">{warn(`Couldn't list the Claude logins — ${loginsErr}`)}</div>}
+      {isAgent ? (
+        <>
+          <div className="aim-f"><label>Model</label>
+            <select value={form.model} onChange={(e) => set({ model: e.target.value })}>{agentRows(cached?.model, form.model).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+          <div className="aim-f"><label>Mode</label>
+            <select value={form.mode} onChange={(e) => set({ mode: e.target.value })}>{agentRows(cached?.mode, form.mode).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+          <div className="aim-f"><label>Effort</label>
+            <select value={form.effort} onChange={(e) => set({ effort: e.target.value })}>{agentRows(cached?.effort, form.effort).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+          {!cached?.model.length && !cached?.mode.length && !cached?.effort.length && (
+            <div className="aim-f wide">
+              <MiniBtn disabled={testing} onClick={() => void testHere()} title="Start the agent once and list its models and modes (up to two minutes)">
+                {testing ? "TESTING…" : "TEST"}
+              </MiniBtn>
+              {testErr && warn(testErr)}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="aim-f"><label>Model</label>
+            <select value={form.model} onChange={(e) => set({ model: e.target.value })}>
+              {keep([NOT_SET, ...models.map((m) => ({ id: m.id, label: m.label }))], form.model).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select></div>
+          <div className="aim-f"><label>Permission mode</label>
+            <select value={form.mode} onChange={(e) => set({ mode: e.target.value })}>
+              {[NOT_SET, ...PERMS].map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select></div>
+          <div className="aim-f"><label>Effort</label>
+            <select value={form.effort} onChange={(e) => set({ effort: e.target.value })}>
+              {[NOT_SET, ...EFFORTS.filter((e) => e.id)].map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select></div>
+        </>
       )}
-      {info.profiles.map((p, i) => (
-        <div key={p.id}
-          style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: i ? RULE : undefined }}>
-          <span style={{ fontSize: "var(--t12)", color: "var(--txb)", flex: "none" }}>{p.name}</span>
-          <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txd)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            {describe(p)}
-          </span>
-          <span style={{ flex: 1 }} />
-          {info.default !== undefined && (p.id === info.default
-            ? <span style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--acc)", flex: "none" }}
-                title="new sessions get this profile unless their project names another">DEFAULT</span>
-            : <button onClick={() => void write({ action: "default", id: p.id })} disabled={busy}
-                style={btn("var(--txd)")} title="new sessions get this profile unless their project names another">MAKE DEFAULT</button>)}
-          <button onClick={() => edit(p)} disabled={busy} style={btn("var(--acc)")}>EDIT</button>
-          <button onClick={() => void write({ action: "delete", id: p.id }, () => form?.id === p.id && setForm(null))}
-            disabled={busy} style={btn("var(--err)")} title="delete profile — its sessions keep what it gave them">✕</button>
+      <div className="aim-f wide aim-foot">
+        {/* Tool switches are Claude's --disallowedTools; another agent asks its own way.
+            ON = the profile carries tool switches: its own while you edit it, the
+            open session's once switched on here. OFF = null, the bridge's defaults. */}
+        {!isAgent && (
+          <>
+            <Switch on={form.tools !== null} onClick={() => set({ tools: form.tools ? null : sessionTools })} />
+            <span>Use this session's tool switches{form.tools && <em> · {form.tools.length} off</em>}</span>
+          </>
+        )}
+        <span style={{ flex: 1 }} />
+        {err && <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{err}</span>}
+        <MiniBtn disabled={busy} onClick={onCancel}>CANCEL</MiniBtn>
+        <MiniBtn disabled={busy || !form.name.trim()} onClick={onSave} primary>SAVE PROFILE</MiniBtn>
+      </div>
+    </div>
+  );
+}
+
+/** One fold of the page: a header that opens and closes it (a rotating
+ *  chevron, the count, and whatever the fold puts at its right edge), kept per
+ *  fold in this browser. `secs` are the search index titles that live inside,
+ *  so a hit opens the fold it scrolls to. */
+const FOLDS_KEY = "hud-aim-folds";
+function readFolds(): Record<string, boolean> {
+  try { return JSON.parse(localStorage.getItem(FOLDS_KEY) || "{}") as Record<string, boolean>; } catch { return {}; }
+}
+function AimFold({ id, title, hint, count, right, secs, defaultOpen = false, openSec, children }: {
+  id: string;
+  title: string;
+  hint?: ReactNode;
+  count?: ReactNode;
+  right?: ReactNode;
+  secs: string[];
+  defaultOpen?: boolean;
+  openSec: string | null;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState<boolean>(() => readFolds()[id] ?? defaultOpen);
+  // Opened from outside — a search hit, or a caller that named one of the
+  // tabs this page replaced — the fold opens and stays open.
+  useEffect(() => { if (openSec && secs.includes(openSec)) setOpen(true); }, [openSec]);
+  const toggle = () => {
+    setOpen((o) => { const n = !o; try { localStorage.setItem(FOLDS_KEY, JSON.stringify({ ...readFolds(), [id]: n })); } catch { /* ignore */ } return n; });
+  };
+  return (
+    <section className="aim-fold" data-open={open || undefined} data-sec={secs[0]}>
+      <div className="aim-foldhead">
+        <button type="button" className="aim-foldbtn" onClick={toggle} aria-expanded={open}>
+          <ChevronRight size={14} aria-hidden className="aim-chev" />
+          <b>{title}</b>
+          {count != null && <span className="aim-count">{count}</span>}
+          {hint && <span className="aim-hint">{hint}</span>}
+        </button>
+        {right && <div className="aim-foldright">{right}</div>}
+      </div>
+      {open && <div className="aim-foldbody">{children}</div>}
+    </section>
+  );
+}
+
+function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, profilesAvailable, profilesError,
+  onProfilesChanged, onAccountsChanged, projects, project, openSec }: {
+  settings: HudSettings;
+  onPatch: (patch: Partial<HudSettings>) => void;
+  models: { id: string; label: string }[];
+  sessionTools: string[];
+  profiles: ProfilesInfo | null;
+  profilesAvailable: boolean;
+  profilesError: string | null;
+  onProfilesChanged: () => void;
+  onAccountsChanged: () => void;
+  projects: ProjectsSettingsProps;
+  project: string | null;
+  openSec: string | null;
+}) {
+  const aiFeatures = useAiFeatures();
+  const acc = useAccounts(onAccountsChanged);
+  // Opened on one login (the composer's PROFILE menu, on a profile whose login
+  // has expired) or on a blank profile (its + NEW PROFILE): read once.
+  const [focus] = useState(() => takeSettingsFocus());
+  const focusSlot = Number(focus) || null;
+  const focusRow = useRef<HTMLDivElement>(null);
+  useEffect(() => { focusRow.current?.scrollIntoView({ block: "center" }); }, [acc.rows === null]);
+
+  // ---- profiles: the editor's environment and its writes
+  const blank = (account = ""): Profile => ({ id: "", name: "", agent: "claude", account, model: settings.model,
+                                               mode: settings.perm, effort: settings.effort, tools: null });
+  // The profile in the form: id "" = a new one, `under` = which login's list
+  // it sits beneath ("" = the general one at the foot). null = no form open.
+  const [form, setForm] = useState<{ p: Profile; under: string } | null>(() => focus === "new" ? { p: blank(), under: "" } : null);
+  const [pBusy, setPBusy] = useState(false);
+  const [pErr, setPErr] = useState<string | null>(null);
+  const [loginsErr, setLoginsErr] = useState<string | null>(null);
+  const [acp, setAcp] = useState<AcpAgentsInfo | null>(null);
+  const loadAcp = () => api.acpAgents().then(setAcp).catch(() => {});
+  useEffect(() => {
+    void loadAcp();
+    // Opening the page re-reads the list: a failed load, or a bridge that has
+    // been restarted since it 404'd, gets another go without a page reload.
+    onProfilesChanged();
+  }, []);
+  useEffect(() => { if (acc.rows === null) return; setLoginsErr(null); }, [acc.rows]);
+  // The browser-only profiles this replaced move onto the bridge once, after
+  // the list is in (a clash with one already there gets " (old)"), and so does
+  // the retired AGENT pick: cleared once moved, so it's never asked about again.
+  useEffect(() => {
+    if (!profiles) return;
+    void importLegacy(profiles.profiles, api.profileWrite, settings.agent).then((r) => {
+      if (!r) return;
+      if (r.landed) onProfilesChanged();
+      if (settings.agent) onPatch({ agent: "" });
+      if (r.picked) notify("info", `Your AGENT pick is now profile '${r.picked}' — pick it in PROFILE`);
+    });
+  }, [profiles]);
+  async function write(body: ProfileWrite, done?: () => void) {
+    setPBusy(true); setPErr(null);
+    try { await api.profileWrite(body); done?.(); onProfilesChanged(); }
+    catch (e) { setPErr((e as Error).message); }
+    finally { setPBusy(false); }
+  }
+  const saveForm = () => {
+    if (!form) return;
+    const { id, ...fields } = { ...form.p, tools: form.p.agent !== "claude" ? null : form.p.tools };
+    void write(id ? { action: "update", id, ...fields } : { action: "create", ...fields }, () => setForm(null));
+  };
+  const editor = form && (
+    <ProfileEditor form={form.p} setForm={(patch) => setForm((f) => f && { ...f, p: { ...f.p, ...patch } })}
+      models={models} settings={settings} sessionTools={sessionTools}
+      logins={(acc.rows ?? []).filter((a) => !a.disabled)} loginsErr={loginsErr} acp={acp} loadAcp={loadAcp}
+      busy={pBusy} err={pErr} onSave={saveForm} onCancel={() => { setForm(null); setPErr(null); }} />
+  );
+  const list = profiles?.profiles ?? [];
+  const defaultId = profiles?.default;
+  const defaultName = list.find((p) => p.id === defaultId)?.name;
+  /** The rows of one owner — a Claude login (its slot) or another agent (its id). */
+  const profileRows = (owner: { agent: string; account?: string }, under: string, newLabel: string) => {
+    const mine = list.filter((p) => owner.agent === "claude"
+      ? p.agent === "claude" && (p.account === owner.account || (owner.account === "" && p.account === ""))
+      : p.agent === owner.agent);
+    return (
+      <div className="aim-profs">
+        {mine.map((p, i) => (
+          <Fragment key={p.id}>
+            <div className="aim-prof" data-editing={form?.p.id === p.id || undefined}>
+              <span className="aim-tree">{i === mine.length - 1 ? "└" : "├"}</span>
+              <span className="aim-profname">
+                <b>{p.name}</b>
+                {defaultId !== undefined && p.id === defaultId && <span className="aim-chip ok" title="new sessions get this profile unless their project names another">Default profile</span>}
+              </span>
+              <ProfilePills p={p} />
+              <span className="aim-acts">
+                {defaultId !== undefined && p.id !== defaultId && (
+                  <MiniBtn disabled={pBusy} onClick={() => void write({ action: "default", id: p.id })} title="new sessions get this profile unless their project names another">MAKE DEFAULT</MiniBtn>
+                )}
+                <MiniBtn disabled={pBusy} onClick={() => { setPErr(null); setForm({ p, under }); }} title="Edit">✎</MiniBtn>
+                <MiniBtn disabled={pBusy} danger onClick={() => void write({ action: "delete", id: p.id }, () => form?.p.id === p.id && setForm(null))}
+                  title="delete profile — its sessions keep what it gave them">✕</MiniBtn>
+              </span>
+            </div>
+            {form?.p.id === p.id && editor}
+          </Fragment>
+        ))}
+        {form && !form.p.id && form.under === under ? editor : (
+          <button type="button" className="aim-addrow" disabled={pBusy || !profilesAvailable}
+            onClick={() => { setPErr(null); setForm({ p: { ...blank(owner.account ?? ""), agent: owner.agent }, under }); }}>
+            <span className="aim-tree">+</span><u>New profile</u> {newLabel}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  // ---- the folds
+  const policyPick = (
+    <div className="aim-segwrap" title={POLICY_BLURB[acc.policy]}>
+      <span className="aim-hint">when a login runs out</span>
+      <Segmented options={POLICY_OPTS} value={acc.policy}
+        onPick={(v) => { acc.setPolicy(v); void api.setDefaultPolicy(v).catch(() => void acc.load()); }} />
+    </div>
+  );
+  const accountsBody = (
+    <>
+      <div className="aim-toolbar">
+        <span className="aim-lead">The Claude logins runs can use, and the profiles bound to each. A new login comes with a profile of its own.</span>
+        <span style={{ flex: 1 }} />
+        <MiniBtn disabled={acc.busy || !!acc.login} onClick={() => void acc.act("add")} title="Snapshot whoever is logged in at ~/.claude right now">COPY CURRENT LOGIN</MiniBtn>
+        <MiniBtn disabled={acc.busy || !!acc.login} onClick={() => void acc.startLogin()} primary>+ ADD ACCOUNT</MiniBtn>
+      </div>
+      {acc.rows === null && <div className="aim-card"><div className="aim-login"><span className="aim-hint">Loading…</span></div></div>}
+      {acc.rows?.length === 0 && (
+        <div className="aim-card"><div className="aim-login"><span className="aim-hint">No login found. Run <code>claude /login</code> in a terminal.</span></div></div>
+      )}
+      {acc.rows?.map((a) => (
+        <div key={a.slot} className="aim-card" data-disabled={a.disabled || undefined} ref={a.slot === focusSlot ? focusRow : undefined}>
+          <div className="aim-login">
+            <LoginTile slot={a.slot} />
+            <span className="aim-who">
+              <b>{a.email ?? "unknown"}</b>
+              <span>{[a.plan, a.default ? "default login" : null, a.disabled ? "disabled" : null].filter(Boolean).join(" · ") || "Claude login"}</span>
+            </span>
+            {a.default && <span className="aim-chip">Default</span>}
+            <LoginMeters a={a} />
+            <span className="aim-acts">
+              <MiniBtn disabled={acc.busy || !!acc.login} hot={a.slot === focusSlot} onClick={() => void acc.startLogin(a.slot)}>RE-LOGIN</MiniBtn>
+              {!a.default && (
+                <>
+                  <MiniBtn disabled={acc.busy} onClick={() => void acc.act(a.disabled ? "enable" : "disable", a.slot)} title={a.disabled ? "Enable" : "Disable"}>
+                    {a.disabled ? "ENABLE" : "DISABLE"}
+                  </MiniBtn>
+                  <MiniBtn disabled={acc.busy} danger onClick={() => void acc.act("remove", a.slot)} title="Remove this login">✕</MiniBtn>
+                </>
+              )}
+            </span>
+          </div>
+          {profilesAvailable && profileRows({ agent: "claude", account: String(a.slot) }, String(a.slot), "on this login")}
         </div>
       ))}
-      {form ? (
-        <div ref={formRef} style={{ marginTop: info.profiles.length ? 8 : 0, paddingTop: info.profiles.length ? 12 : 0, borderTop: info.profiles.length ? RULE : undefined }}>
-          <div style={{ ...ROW, marginTop: 0 }}>
-            <span style={CAPTION}>NAME</span>
-            <input value={form.name} maxLength={32} autoFocus placeholder="name this profile"
-              onChange={(e) => set({ name: e.target.value })}
-              style={{ flex: "1 1 auto", minWidth: 0, maxWidth: 340, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 9px" }} />
-          </div>
-          <div style={LINE}>
-            {/* A profile keeps its agent (the bridge refuses a change): an
-                agent can't read another's history, and sessions are bound to it. */}
-            <PickCell label="AGENT" value={form.agent} disabled={!!form.id}
-              title={form.id ? "A profile keeps its agent — make a new profile for another" : undefined}
-              options={keep([{ id: "claude", label: "CLAUDE" },
-                ...(acp?.presets ?? []).filter((p) => p.installed).map((p) => ({ id: p.id, label: p.label.toUpperCase() }))],
-                form.agent, agentLabel(form.agent))}
-              // Claude's ids mean nothing to another agent, and back: switching starts the knobs over.
-              onPick={(agent) => set(agent === "claude"
-                ? { agent, account: "", model: settings.model, mode: settings.perm, effort: settings.effort }
-                : { agent, account: "", model: "", mode: "", effort: "" })} />
-            {isAgent ? (
-              <PickCell label="ACCOUNT" value={form.account}
-                options={keep([{ id: "", label: "MACHINE LOGIN" },
-                  ...(acp?.accounts ?? []).filter((a) => a.agent === form.agent)
-                    .map((a) => ({ id: a.id, label: `${a.label.toUpperCase()} · ${a.kind === "key" ? "API KEY" : "OWN LOGIN"}` }))],
-                  form.account)}
-                onPick={(account) => set({ account, model: "", mode: "", effort: "" })} />
-            ) : (
-              <PickCell label="ACCOUNT" value={form.account}
-                options={keep([{ id: "", label: "DEFAULT LOGIN" },
-                  ...logins.map((a) => ({ id: String(a.slot), label: `A${a.slot} · ${a.email ?? "unknown"}` }))],
-                  form.account, `A${form.account}`)}
-                onPick={(account) => set({ account })} />
-            )}
-          </div>
-          {loginsErr && !isAgent && <div style={{ marginTop: 6 }}>{warn(`Couldn't list the Claude logins — ${loginsErr}`)}</div>}
-          {isAgent ? (
-            <div style={{ ...LINE, alignItems: "flex-end" }}>
-              <PickCell label="MODEL" value={form.model} options={agentRows(cached?.model, form.model)} onPick={(model) => set({ model })} />
-              <PickCell label="MODE" value={form.mode} options={agentRows(cached?.mode, form.mode)} onPick={(mode) => set({ mode })} />
-              <PickCell label="EFFORT" value={form.effort} options={agentRows(cached?.effort, form.effort)} onPick={(effort) => set({ effort })} />
-              {!cached?.model.length && !cached?.mode.length && !cached?.effort.length && (
-                <button disabled={testing} onClick={() => void testHere()} style={btn("var(--acc)")}
-                  title="Start the agent once and list its models and modes (up to two minutes)">
-                  {testing ? "TESTING…" : "TEST"}
-                </button>
-              )}
-            </div>
-          ) : (
-            <div style={LINE}>
-              <PickCell label="MODEL" value={form.model}
-                options={keep([NOT_SET, ...models.map((m) => ({ id: m.id, label: m.label.toUpperCase() }))], form.model)}
-                onPick={(model) => set({ model })} />
-              <PickCell label="MODE" value={form.mode} options={[NOT_SET, ...PERMS]} onPick={(mode) => set({ mode })} />
-              <PickCell label="EFFORT" value={form.effort} options={[NOT_SET, ...EFFORTS.filter((e) => e.id)]}
-                onPick={(effort) => set({ effort })} />
-            </div>
-          )}
-          {/* Tool switches are Claude's --disallowedTools; another agent asks its own way. */}
-          {!isAgent && (
-            <div style={ROW}>
-              <span style={KEY_TX}>USE THIS SESSION&apos;S TOOL SWITCHES</span>
-              {form.tools && <span style={{ ...CAPTION, width: "auto" }}>{form.tools.length} OFF</span>}
-              <span style={{ flex: 1 }} />
-              {/* ON = the profile carries tool switches: its own while you edit it, the
-                  open session's once switched on here. OFF = null, the bridge's defaults. */}
-              <Switch on={form.tools !== null} onClick={() => set({ tools: form.tools ? null : sessionTools })} />
-            </div>
-          )}
-          <div style={{ ...ROW, flexWrap: "wrap" }}>
-            <button disabled={busy || !form.name.trim()} style={btn("var(--ok)")}
-              onClick={() => {
-                const { id, ...fields } = { ...form, tools: isAgent ? null : form.tools };
-                void write(id ? { action: "update", id, ...fields } : { action: "create", ...fields }, () => setForm(null));
-              }}>SAVE</button>
-            <button onClick={() => { setForm(null); setErr(null); }} style={btn("var(--txm)")}>CANCEL</button>
-            {err && <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{err}</span>}
-          </div>
-        </div>
-      ) : (
-        <div style={{ ...ROW, marginTop: info.profiles.length ? 12 : 11 }}>
-          <button style={btn("var(--acc)")} disabled={busy} onClick={() => edit(blank())}>+ NEW PROFILE</button>
-          {err && <span style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{err}</span>}
+      {acc.login ? (
+        <div className="aim-card"><div style={{ padding: "0 14px 12px" }}>
+          <LoginFlow url={acc.login.url}
+            onDone={async () => { acc.setLogin(null); onAccountsChanged(); await acc.load(); }}
+            onSubmit={async (code) => {
+              try { await api.loginSubmit(acc.login!.slot, code); }
+              catch (e) {
+                // The bridge keeps a sign-in going only through a paste worth
+                // retrying (half a code). Any other failure ended it, and this
+                // box could only fail again: back to the buttons, with the reason.
+                const r = await api.accounts().catch(() => null);
+                if (r && !r.pending_login) { acc.setLogin(null); acc.setRows(r.accounts); acc.setErr(e instanceof Error ? e.message : "sign-in failed"); }
+                throw e;
+              }
+            }}
+            onCancel={async () => { await api.loginCancel(acc.login!.slot).catch(() => {}); acc.setLogin(null); await acc.load(); }} />
+        </div></div>
+      ) : null}
+      {acc.err && <div style={{ fontSize: "var(--t10)", color: "var(--warn)", marginTop: 8 }}>{acc.err}</div>}
+      {/* Profiles on the default login (account ""), and a blank form from the
+          composer's + NEW PROFILE, sit after the logins: they belong to
+          whichever login is default rather than to a slot. */}
+      {profilesAvailable && (list.some((p) => p.agent === "claude" && p.account === "") || (form && !form.p.id && form.under === "")) && (
+        <div className="aim-card">
+          <div className="aim-login"><span className="aim-av" style={{ background: "var(--panel3)", color: "var(--txm)", boxShadow: "inset 0 0 0 1px var(--line, var(--border))" }}>A</span>
+            <span className="aim-who"><b>Default login</b><span>profiles that follow whichever login is default</span></span></div>
+          {profileRows({ agent: "claude", account: "" }, "", "on the default login")}
         </div>
       )}
+      {!profilesAvailable && <div className="aim-hint" style={{ marginTop: 8 }}>Restart the bridge to use profiles.</div>}
+      {profilesError && <div style={{ fontSize: "var(--t10)", color: "var(--warn)", marginTop: 8 }}>Couldn't reload profiles, so this list may be stale — {profilesError}</div>}
+      <div className="aim-sub">
+        <b>Other agents</b>
+        <span className="aim-hint">Codex, OpenCode — over the Agent Client Protocol — and the profiles that run on them. TEST starts one once and remembers the models and modes it offers.</span>
+      </div>
+      <AgentsSection profileRows={profilesAvailable ? (id) => profileRows({ agent: id }, id, `on ${agentLabel(id)}`) : undefined} />
+    </>
+  );
+
+  const profilesBody = (
+    <>
+      <div className="aim-fields">
+        <div className="aim-field">
+          <div><b>Default profile</b><span>what a new session gets unless its project names another</span></div>
+          <select className="aim-sel" value={defaultId ?? ""} disabled={!profilesAvailable || pBusy}
+            onChange={(e) => void write({ action: "default", id: e.target.value })}>
+            <option value="">{profilesAvailable ? "The first login's" : "—"}</option>
+            {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+        <div className="aim-field">
+          <div><b>Model</b><span>the composer's default, for a session with no profile</span></div>
+          <select className="aim-sel" value={settings.model} onChange={(e) => onPatch({ model: e.target.value })}>
+            {(settings.allModels ? models : latestPerFamily(models, settings.model)).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+        </div>
+        <div className="aim-field">
+          <div><b>Permission mode</b><span>what it may do unasked</span></div>
+          <select className="aim-sel" value={settings.perm} onChange={(e) => onPatch({ perm: e.target.value })}>
+            {PERMS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </div>
+        <div className="aim-field">
+          <div><b>Effort</b><span>how hard it thinks</span></div>
+          <select className="aim-sel" value={settings.effort} onChange={(e) => onPatch({ effort: e.target.value })}>
+            {EFFORTS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+        </div>
+        {aiFeatures.ponytail && (
+          <div className="aim-field">
+            <div><b>Ponytail</b><span>how much it trims — this browser's</span></div>
+            <select className="aim-sel" value={settings.ponytail} onChange={(e) => onPatch({ ponytail: e.target.value })}>
+              {PONYTAILS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            </select>
+          </div>
+        )}
+        <div className="aim-field">
+          <div><b>All models</b><span>list every model, not just the latest of each family</span></div>
+          <Switch on={settings.allModels} onClick={() => onPatch({ allModels: !settings.allModels })} />
+        </div>
+      </div>
+      <div className="aim-hint" style={{ marginTop: 10 }}>
+        Model, mode and effort belong to the open session — a pick is saved to it and follows it to every surface. The profiles themselves live under each login in ACCOUNTS.
+      </div>
+    </>
+  );
+
+  return (
+    <div className="aim">
+      <AimFold id="accounts" title="Accounts" secs={["ACCOUNTS", "ON USAGE LIMIT", "CLAUDE LOGINS", "AGENTS"]} defaultOpen openSec={openSec}
+        count={acc.rows ? `${acc.rows.length} login${acc.rows.length === 1 ? "" : "s"} · ${list.length} profile${list.length === 1 ? "" : "s"}` : null}
+        right={policyPick}>
+        {accountsBody}
+      </AimFold>
+      <AimFold id="profiles" title="Profiles" secs={["PROFILES", "RUN DEFAULTS"]} openSec={openSec}
+        count={defaultName ? `default · ${defaultName}` : null} hint="the default, and what a session gets without one">
+        {profilesBody}
+      </AimFold>
+      <AimFold id="skills" title="Skills" secs={["SKILLS"]} openSec={openSec}
+        count={project ? projectName(project) : "no project"} hint="installed here and on this machine, and the catalog">
+        <SkillsView project={project} system />
+      </AimFold>
+      <AimFold id="mcp" title="MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec} hint="servers and their logins">
+        <McpPanel />
+      </AimFold>
+      <AimFold id="projects" title="Projects" secs={["PROJECTS"]} openSec={openSec}
+        count={`${projects.groups.length} repo${projects.groups.length === 1 ? "" : "s"}`} hint="which profile each starts with · rename, hide, import">
+        <ProjectsSettings {...projects} logins={acc.rows ?? []} />
+      </AimFold>
     </div>
   );
 }
@@ -5046,10 +5140,15 @@ export function SettingsModal(props: SettingsModalProps) {
     onAccountsChanged,
     onOpenInspector,
     projects,
+    project,
     startTab,
   } = props;
 
-  const [tab, setTab] = useState<Tab>(startTab ?? "appearance");
+  // A caller may still name one of the tabs AI MANAGEMENT replaced; it lands
+  // on that page, on the fold the tab became.
+  const [start] = useState(() => normalizeTab(startTab));
+  const startSec = start.sec;
+  const [tab, setTab] = useState<Tab>(start.tab ?? "appearance");
   const aiFeatures = useAiFeatures();   // the PONYTAIL level hides with its switch
   // Search. A query replaces the panel with its results; picking one puts the
   // tab back and scrolls to the setting, so `q` is also "which view is this".
@@ -5433,16 +5532,6 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
-            {shown === "projects" && (
-              <Section
-                title="PROJECTS"
-                desc="Every git repo the bridge found under your workspace."
-                info="A name here is a label only — the path stays the key, so renaming moves nothing on disk and orphans no session."
-              >
-                <ProjectsSettings {...projects} />
-              </Section>
-            )}
-
             {shown === "transcript" && (
               <>
                 {/* Its own tab, again. It was folded into APPEARANCE when it
@@ -5591,61 +5680,6 @@ export function SettingsModal(props: SettingsModalProps) {
               </>
             )}
 
-            {shown === "session" && (
-              <>
-                <Section
-                  title="RUN DEFAULTS"
-                  info={
-                    <>
-                      The composer&apos;s dropdowns are these same knobs. MODEL, MODE and EFFORT
-                      belong to the open session — a pick is saved to it and follows it to every
-                      surface, and fills in for a session that has none yet; PONYTAIL stays with
-                      this browser. Which account runs it is its profile&apos;s, below.
-                    </>
-                  }
-                >
-                  <div style={CARD}>
-                    <div style={{ ...ROW, marginTop: 0, marginBottom: 6 }}>
-                      <span style={KEY_TX}>MODEL</span>
-                      <span style={{ flex: 1 }} />
-                      <span style={{ ...CAPTION, flex: "none" }}>SHOW ALL</span>
-                      <Switch on={settings.allModels} onClick={() => onPatch({ allModels: !settings.allModels })} />
-                    </div>
-                    <Segmented
-                      options={(settings.allModels ? models : latestPerFamily(models, settings.model))
-                        .map((m) => ({ label: m.label.toUpperCase(), value: m.id }))}
-                      value={settings.model}
-                      onPick={(model) => onPatch({ model })}
-                    />
-                    <div style={LINE}>
-                      <PickCell label="MODE" value={settings.perm} options={PERMS} onPick={(perm) => onPatch({ perm })} />
-                      <PickCell label="EFFORT" value={settings.effort} options={EFFORTS} onPick={(effort) => onPatch({ effort })} />
-                      {aiFeatures.ponytail && (
-                        <PickCell label="PONYTAIL" value={settings.ponytail} options={PONYTAILS} onPick={(ponytail) => onPatch({ ponytail })} />
-                      )}
-                    </div>
-                  </div>
-                </Section>
-
-                <Section
-                  title="PROFILES"
-                  top
-                  info="A profile names who runs a session — the agent and its account — and can set its model, mode, effort and tool switches. Sessions are bound to it, from the composer's PROFILE picker or as a project's default (PROJECTS), on every surface. An edit reaches every session using it from its next turn, except a knob set by hand in that session (marked • in the composer)."
-                >
-                  <ProfilesPanel
-                    info={profiles}
-                    available={profilesAvailable}
-                    error={profilesError}
-                    models={models}
-                    settings={settings}
-                    sessionTools={sessionTools}
-                    onChanged={onProfilesChanged}
-                    onPatch={onPatch}
-                  />
-                </Section>
-              </>
-            )}
-
             {shown === "notifications" && (
               <>
                 <Section title="DESKTOP">
@@ -5751,9 +5785,13 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "agentconfig" && <AgentConfigPanel />}
 
-            {shown === "mcp" && <McpPanel />}
             {shown === "hooks" && <HooksPanel />}
-            {shown === "accounts" && <AccountsPanel onChanged={onAccountsChanged} />}
+            {shown === "aimgmt" && (
+              <AiManagementPanel settings={settings} onPatch={onPatch} models={models} sessionTools={sessionTools}
+                profiles={profiles} profilesAvailable={profilesAvailable} profilesError={profilesError}
+                onProfilesChanged={onProfilesChanged} onAccountsChanged={onAccountsChanged}
+                projects={projects} project={project} openSec={jump?.sec ?? startSec} />
+            )}
             {shown === "plugins" && <RivendellPanel />}
             {shown === "move" && <MovePanel settings={settings} onPatch={onPatch} />}
             {shown === "mac" && <MacPanel />}

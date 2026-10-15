@@ -97,7 +97,7 @@ function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
       {outcome.code === "auth" && (
         <button
           type="button"
-          onClick={() => openSettings("accounts")}
+          onClick={() => openSettings("aimgmt")}
           className="mt-0.5 self-start border px-1.5 py-px text-[length:var(--t95)] tracking-[1px] hover:bg-accent"
           style={{ color: "var(--acc)", borderColor: "color-mix(in srgb, currentColor 40%, transparent)" }}
         >
