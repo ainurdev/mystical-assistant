@@ -3284,6 +3284,20 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] .composer[data-pb="tabs"]:has(.pb-card[data-running]) { --pb-edge: color-mix(in oklab, var(--ask) 60%, var(--line2)); }
 [data-theme^="flint"] .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
 [data-theme] .composer[data-pb="tabs"] .pb-card.cmdbox { border-color: var(--pb-edge) !important; }
+/* TABS: the transcript runs on under the tab row, as it runs under the island
+   at the top. Only when the box sits right under the transcript (a "checking…"
+   banner or a new-session card between them keeps the old stack): the scroller
+   reaches the row's 25px down to the card, its end and LATEST rise by the same
+   25px so nothing parks under a tab, and only the tabs and the card take the
+   pointer, so the transcript between and beside them still scrolls and selects.
+   13 keeps the box's menus over the island (12), as when they stacked alone. */
+.swapwrap:has(+ .composer[data-pb="tabs"]) { margin-bottom: -25px; }
+.swapwrap:has(+ .composer[data-pb="tabs"]) > .mscroll > div { padding-bottom: 51px !important; }
+.swapwrap:has(+ .composer[data-pb="tabs"]) > .jump-latest { bottom: 49px !important; }
+.swapwrap + .composer[data-pb="tabs"] { position: relative; z-index: 13; pointer-events: none; padding-top: 0 !important; border-top: 0 !important;
+  background: linear-gradient(transparent 25px, color-mix(in srgb, var(--panel) 88%, transparent) 0) !important; }
+.swapwrap + .composer[data-pb="tabs"] > :not(.pb-tabs), .swapwrap + .composer[data-pb="tabs"] .pb-tabs > * { pointer-events: auto; }
+[data-theme^="flint"] .swapwrap + .composer[data-pb="tabs"] { background: transparent !important; }
 
 /* === AI MANAGEMENT ===========================================================
    SETTINGS ▸ AI MANAGEMENT (SettingsModal AiManagementPanel, ProjectsSettings):

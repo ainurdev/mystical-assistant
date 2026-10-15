@@ -431,7 +431,7 @@ export function Terminal({
           hit-testing while hidden. */}
       {!empty && (
         <button
-          type="button" onClick={onJumpBottom} title="jump to latest"
+          type="button" className="jump-latest" onClick={onJumpBottom} title="jump to latest"
           style={{
             position: "absolute", right: 20, bottom: 14, zIndex: 6,
             display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
