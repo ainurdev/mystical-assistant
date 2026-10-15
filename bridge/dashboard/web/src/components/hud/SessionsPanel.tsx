@@ -1177,7 +1177,7 @@ export function SessionsPanel(props: Props) {
                       <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{f.length}</span>
                     </div>
                   )}
-                  <div style={{ margin: "1px 0 0 3px", borderLeft: `1px solid color-mix(in srgb, ${tint.color} ${isShut ? 7 : 20}%, transparent)` }}>
+                  <div className="projrail" style={{ margin: "1px 0 0 3px", borderLeft: `1px solid color-mix(in srgb, ${tint.color} ${isShut ? 7 : 20}%, transparent)` }}>
                     {/* A search drops the per-project cap, so this can be every
                         session in the store — skip off-screen rows. */}
                     {vis.length > 0 && <div className="vskip-card">{vis.map((s, i) => rowFor(s, true, false, i))}</div>}

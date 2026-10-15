@@ -4053,6 +4053,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] .panel::after { display: none; }
 [data-theme^="flint"] .glow { text-shadow: none; }
 [data-theme^="flint"] .panel { border-radius: var(--f-rad-l); }
+/* the shell columns are the page, not cards on it: square, so their edges
+   meet the cap rule and the column hairlines cleanly */
+[data-theme^="flint"] .shellcol > .panel { border-radius: 0; }
 [data-theme^="flint"] :is(button, input, textarea, select) { border-radius: var(--f-rad-s); }
 /* every inline JetBrains pin (139 of them, across the shell) reads FLINT's
    mono instead. ponytail: an attribute match on the inline style rather than a
@@ -4093,9 +4096,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   font-family: var(--ui-font) !important; font-size: var(--t12) !important; font-weight: 600; letter-spacing: 0 !important;
   color: color-mix(in oklab, var(--pc, var(--txb)) 0%, var(--txb)) !important;
 }
-[data-theme^="flint"] .projgrp .sessrow { margin-left: 14.5px; border-left: 1px solid var(--line2) !important; border-radius: 0 var(--f-rad-s) var(--f-rad-s) 0; }
-[data-theme^="flint"] .projgrp .sessrow[data-on="true"] { border-left-color: var(--acc) !important; }
-[data-theme^="flint"] .projgrp .sessrow::before { display: none; }
+/* one rail per project: the group's own (.projrail), moved under the tile's
+   centre and re-inked neutral — the rows add none of their own */
+[data-theme^="flint"] .projrail { margin: 1px 0 0 14.5px !important; border-left-color: var(--line2) !important; }
+[data-theme^="flint"] .projgrp .sessrow { margin-left: 0; border-radius: 0 var(--f-rad-s) var(--f-rad-s) 0; }
+[data-theme^="flint"] .projgrp .sessrow::before { left: -1px; top: 6px; bottom: 6px; }
 
 /* ── the chat header island ── */
 [data-theme^="flint"] .isle {
@@ -4110,8 +4115,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] .np-proj .ptile { width: 16px; height: 16px; font-size: 8px; margin-right: 2px; }
 
 /* ── composer ── */
+/* the composer sits on the transcript's own ground — no band of a different
+   grey under it — and its controls line up with the turn cards' edges */
 [data-theme^="flint"] .composer {
-  border-top: 1px solid var(--line) !important; background: var(--canvas) !important; padding: 12px 18px 16px !important;
+  border-top: 0 !important; background: transparent !important; padding: 10px 18px 16px !important;
 }
 [data-theme^="flint"] .cmdbox {
   border: 1px solid var(--line2) !important; border-radius: var(--f-rad-l); background: var(--panel) !important;
@@ -4122,6 +4129,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] .cmdbox[data-drag] { border-color: var(--acc) !important; }
 [data-theme^="flint"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--ui-font) !important; }
 [data-theme^="flint"] .cmdbox > span:first-child { display: none; }
+/* the run popover's trigger is a chip like its neighbours, with room: model
+   first, then mode and effort as quieter words */
+[data-theme^="flint"] .run-trigger { padding: 6px 11px !important; gap: 9px !important; align-items: center !important; }
+[data-theme^="flint"] .run-trigger > span { font-size: var(--t11) !important; }
 [data-theme^="flint"] .drop-btn, [data-theme^="flint"] .run-trigger {
   border: 1px solid var(--line) !important; background: var(--panel2) !important; border-radius: var(--f-rad-s) !important;
   font-family: var(--ui-font) !important; font-size: var(--t11) !important; letter-spacing: 0 !important; color: var(--txh) !important;
@@ -4170,10 +4181,36 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   --d-face: var(--ui-font); --d-rad: 12px;
 }
 [data-theme^="flint"] .mscroll[data-style] { font-family: var(--mono) !important; }
+/* FLINT draws DOSSIER the way its approved mock did: no turn card. A turn is a
+   section ended by a hairline; your prompt is the one raised block in it, the
+   work a bordered strip, and the answer sits flush on the ground — no bar. */
+[data-theme^="flint"] [data-style="dossier"] .dturn {
+  background: none; border: 0; border-radius: 0; overflow: visible;
+  border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 6px;
+}
+[data-theme^="flint"] [data-style="dossier"] .dprompt {
+  background: var(--f-you); border: 1px solid var(--line2); border-radius: 12px; overflow: hidden;
+  box-shadow: inset 3px 0 0 var(--acc);
+}
+[data-theme^="flint"] [data-style="dossier"] .dwork {
+  margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2);
+}
+[data-theme^="flint"] [data-style="dossier"] .res,
+[data-theme^="flint"] [data-style="dossier"] .resblk[data-bad] .res { border-left: 0; background: none; }
+[data-theme^="flint"] [data-style="dossier"] .res-head { padding: 16px 2px 0; }
+[data-theme^="flint"] [data-style="dossier"] .res-body { padding: 6px 2px 4px; }
+[data-theme^="flint"] [data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 12px 2px 0; }
+[data-theme^="flint"] [data-style="dossier"] .resblk + .ev-stop { border-top: 0; padding: 8px 2px 0; }
+[data-theme^="flint"] [data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 12px 0; }
+[data-theme^="flint"] [data-style="dossier"] .dreply > :not(.rstream, .agent-rail) { margin: 12px 0; }
+[data-theme^="flint"] [data-style="dossier"] .doutcome { border-top: 0; padding: 10px 2px 0; }
 [data-theme="flint-kiln"] [data-style="dossier"] { --d-tint: 0%; }
 [data-theme="flint-sunset"] [data-style="dossier"] .dprompt {
   background: linear-gradient(100deg, color-mix(in oklab, var(--acc) 12%, var(--panel)), color-mix(in oklab, var(--acc2) 8%, var(--panel)) 60%, var(--panel));
-  border-image: linear-gradient(var(--acc), var(--acc2)) 1 0 1 1 / 0 0 0 4px;
+  box-shadow: none;
+}
+[data-theme="flint-sunset"] [data-style="dossier"] .dprompt::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(var(--acc), var(--acc2));
 }
 [data-theme="flint-sunset"] .pnum { background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
 
@@ -4195,6 +4232,14 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] .setrail, [data-theme^="flint"] .setrail button { font-family: var(--ui-font); letter-spacing: .03em; }
 [data-theme^="flint"] .setrail button { border-radius: var(--f-rad-s); }
 [data-theme^="flint"] .setrail button.on { background: var(--f-you); box-shadow: inset 2px 0 0 var(--acc); }
+
+/* bold is bold: no highlighter wash, and a "Label:" lead-in is the same weight
+   in the same face, not the HUD's tracked accent capitals */
+[data-theme^="flint"] .md strong { background: none; padding: 0; font-weight: 600; color: var(--txb); }
+[data-theme^="flint"] .md strong.md-lead {
+  font-family: inherit; font-size: inherit; font-weight: 600; letter-spacing: 0 !important;
+  text-transform: none; color: var(--txb); margin-right: .1em;
+}
 
 /* ── words FLINT says in its own voice: the wordmark in lower case, the
    lane and tier labels in Geist rather than the HUD's tracked mono ── */
