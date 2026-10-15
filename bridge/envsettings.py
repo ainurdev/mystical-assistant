@@ -164,6 +164,27 @@ SETTINGS = (
               "The bot's own plain-text turns are never notified — they already reply "
               "in the chat."},
 
+    # --- browser ------------------------------------------------------------
+    {"key": "AI_BROWSER_HEADLESS", "type": "bool", "live": True,
+     "group": "BROWSER", "label": "HIDDEN", "hint": "the AI's browser runs headless — no window ever opens",
+     "about": "The Playwright and chrome-devtools MCP servers launch a visible Chrome "
+              "by default, on top of whatever you are doing. On, they run headless and "
+              "the run is told so. Switch off only for something you must click "
+              "through yourself, like a login."},
+    {"key": "AI_BROWSER_EXECUTABLE", "type": "path", "live": True, "allow_empty": True,
+     "group": "BROWSER", "label": "BROWSER BINARY", "hint": "which browser the AI drives; empty = Chrome",
+     "placeholder": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+     "about": "Any Chromium-based binary both MCPs can launch. Empty is their own "
+              "default, stable Chrome. Arc does not work: its shell never starts the "
+              "engine under automation flags while Arc is open (tested 2026-10-15)."},
+    {"key": "AI_BROWSER_PROFILE", "type": "path", "live": True, "allow_empty": True,
+     "group": "BROWSER", "label": "PROFILE FOLDER", "hint": "the profile the AI's browser keeps; empty = each MCP's own",
+     "placeholder": "~/.bridge_state/ai-browser",
+     "about": "The AI's own profile, never yours: Chromium refuses to open a profile a "
+              "running browser holds, so pointing this at your Chrome or Arc data fails. "
+              "Logins the AI makes persist here between sessions. One folder serves one "
+              "browser at a time — two sessions browsing at once need it empty."},
+
     # --- dev server ---------------------------------------------------------
     {"key": "START_CMD", "type": "str", "live": True,
      "group": "DEV SERVER", "label": "START COMMAND", "hint": "default command for /server",

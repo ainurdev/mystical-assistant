@@ -158,6 +158,15 @@ def _graph_refresh_after_turn(chat_id: int, cwd: "str | None") -> None:
         pass
 
 
+# Told to every run while the AI BROWSER is hidden: the MCPs are headless by
+# flag, but a run can still `open` a URL or launch its own headed Chrome from
+# Bash, and that window lands in front of the user.
+_HIDDEN_BROWSER_NOTE = (
+    "Browser work is hidden here: the Playwright and chrome-devtools MCP servers run "
+    "headless (SETTINGS → SYSTEM → BROWSER). Never open a visible browser on this "
+    "machine — no `open <url>`, no headed launches; the user is working in front of it.")
+
+
 def _compose_system_prompt(graph: str = "") -> str:
     """ASK prompt + the dev-log and push notes, then the graph pack.
 
@@ -166,6 +175,7 @@ def _compose_system_prompt(graph: str = "") -> str:
     change re-writes all of it. What protects the cache is only sending the
     volatile packs once per session — see _base_cmd."""
     parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE,
+                         _HIDDEN_BROWSER_NOTE if config.AI_BROWSER_HEADLESS else "",
                          graph.strip()) if p]
     return "\n\n".join(parts)
 
@@ -299,6 +309,34 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
     return path
 
 
+# The flag each browser MCP takes for the three AI BROWSER settings (hidden,
+# binary, profile folder), keyed by the package in its args rather than by its
+# `claude mcp list` name, so a server someone renamed is still caught.
+_BROWSER_MCP_FLAGS = {
+    "@playwright/mcp": ("--headless", "--executable-path", "--user-data-dir"),
+    "chrome-devtools-mcp": ("--headless", "--executablePath", "--userDataDir"),
+}
+
+
+def _with_browser(defn: dict) -> dict:
+    """A server definition with the AI BROWSER settings appended as flags, when it
+    is one of the two browser MCPs; anything else unchanged. A flag the user's own
+    definition already carries is left to them — yargs would turn a repeated
+    --userDataDir into a list."""
+    args = list(defn.get("args") or [])
+    flags = next((f for pkg, f in _BROWSER_MCP_FLAGS.items() if any(pkg in a for a in args)), None)
+    if not flags:
+        return defn
+    own = {a.split("=", 1)[0] for a in args}
+    headless, binary, profile = flags
+    extra = [headless] if config.AI_BROWSER_HEADLESS and headless not in own else []
+    if config.AI_BROWSER_EXECUTABLE and binary not in own:
+        extra += [binary, config.AI_BROWSER_EXECUTABLE]
+    if config.AI_BROWSER_PROFILE and profile not in own:
+        extra += [profile, config.AI_BROWSER_PROFILE]
+    return {**defn, "args": args + extra} if extra else defn
+
+
 def _configured_mcp_servers(cwd: "str | None") -> dict:
     """Every MCP server definition we can read back out of config, by name —
     user and local scope from ~/.claude.json, project scope from .mcp.json.
@@ -354,7 +392,7 @@ def _external_mcp(disabled_tools: "list[str] | None",
         if s["rule"] in denied:
             continue
         if s["name"] in defs:
-            extra[s["name"]] = defs[s["name"]]
+            extra[s["name"]] = _with_browser(defs[s["name"]])
         elif s.get("dir"):
             # Local to a different project: this cwd's claude couldn't load it
             # even without strict mode, so skipping it hides nothing.

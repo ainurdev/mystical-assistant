@@ -204,3 +204,57 @@ def test_a_run_only_ever_removes_a_dir_mcp_config_made(monkeypatch, tmp_path):
     job.resume_id, job.new_session = SID, True
     runner._run_streaming(job, "hi", [], config.BASE_PATH)
     assert (keep / "mcp.json").exists()
+
+
+# --- the AI BROWSER settings ride into the browser MCPs as flags ----------------
+
+_BROWSER_DEFS = {
+    "playwright": {"type": "stdio", "command": "npx", "args": ["-y", "@playwright/mcp@latest"]},
+    "chrome-devtools": {"type": "stdio", "command": "npx", "args": ["-y", "chrome-devtools-mcp@latest"]},
+    "teamwork": {"type": "http", "url": "https://mcp.ai.teamwork.com"},
+}
+
+
+def _servers_with(monkeypatch, defs=_BROWSER_DEFS, **settings):
+    """The --mcp-config servers a configured session gets, with `defs` as what
+    ~/.claude.json holds and `settings` written onto config."""
+    monkeypatch.setattr(toolsets, "servers", lambda: [{"name": n, "rule": f"mcp__{n}"} for n in defs])
+    monkeypatch.setattr(runner, "_configured_mcp_servers", lambda cwd: defs)
+    for k, v in settings.items():
+        monkeypatch.setattr(config, k, v)
+    cmd = _cmd(disabled_tools=[])
+    with open(cmd[cmd.index("--mcp-config") + 1], encoding="utf-8") as f:
+        return json.load(f)["mcpServers"]
+
+
+def test_browser_mcps_run_hidden_by_default(monkeypatch):
+    srv = _servers_with(monkeypatch, AI_BROWSER_HEADLESS=True,
+                        AI_BROWSER_EXECUTABLE="", AI_BROWSER_PROFILE="")
+    assert srv["playwright"]["args"] == ["-y", "@playwright/mcp@latest", "--headless"]
+    assert srv["chrome-devtools"]["args"] == ["-y", "chrome-devtools-mcp@latest", "--headless"]
+    assert srv["teamwork"] == _BROWSER_DEFS["teamwork"]                 # not a browser: untouched
+    assert _BROWSER_DEFS["playwright"]["args"] == ["-y", "@playwright/mcp@latest"]   # never mutated
+
+
+def test_binary_and_profile_reach_each_mcp_in_its_own_spelling(monkeypatch):
+    srv = _servers_with(monkeypatch, AI_BROWSER_HEADLESS=False,
+                        AI_BROWSER_EXECUTABLE="/opt/chromium", AI_BROWSER_PROFILE="/tmp/ai-profile")
+    assert srv["playwright"]["args"][2:] == [
+        "--executable-path", "/opt/chromium", "--user-data-dir", "/tmp/ai-profile"]
+    assert srv["chrome-devtools"]["args"][2:] == [
+        "--executablePath", "/opt/chromium", "--userDataDir", "/tmp/ai-profile"]
+
+
+def test_a_flag_the_user_set_themselves_is_left_alone(monkeypatch):
+    defs = {"playwright": {"type": "stdio", "command": "npx",
+                           "args": ["-y", "@playwright/mcp@latest", "--user-data-dir=/mine"]}}
+    srv = _servers_with(monkeypatch, defs, AI_BROWSER_HEADLESS=False,
+                        AI_BROWSER_EXECUTABLE="", AI_BROWSER_PROFILE="/tmp/ai-profile")
+    assert srv["playwright"]["args"] == ["-y", "@playwright/mcp@latest", "--user-data-dir=/mine"]
+
+
+def test_a_hidden_browser_is_told_to_the_run(monkeypatch):
+    monkeypatch.setattr(config, "AI_BROWSER_HEADLESS", True)
+    assert runner._HIDDEN_BROWSER_NOTE in runner._compose_system_prompt()
+    monkeypatch.setattr(config, "AI_BROWSER_HEADLESS", False)
+    assert runner._HIDDEN_BROWSER_NOTE not in runner._compose_system_prompt()

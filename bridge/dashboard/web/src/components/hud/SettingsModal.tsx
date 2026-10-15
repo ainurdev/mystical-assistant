@@ -5,6 +5,7 @@ import {
 import {
   Activity, AudioLines, BarChart3, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
   FileCog, FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
+  Globe,
   Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
   MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, PenLine, Play, Plug,
   Power, Radio, ScanLine, Scissors, ScrollText, Search, Server, Shapes,
@@ -481,6 +482,7 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   UPLOADS: Upload,
   "AI TUNING": Sparkles,
   "DEV SERVER": SquareTerminal,
+  BROWSER: Globe,
 };
 
 // …and one visible line per block saying what it is FOR, looked up the same way
@@ -527,6 +529,7 @@ const SEC_DESC: Record<string, string> = {
   UPLOADS: "Limits on attachments, and how long they're kept.",
   "AI TUNING": "Models and limits for the new-session guard and the next-up scout.",
   "DEV SERVER": "Defaults for /server: its start command, port and tunnel client.",
+  BROWSER: "The browser the AI drives when it tests: hidden or visible, which binary, whose profile.",
 };
 
 /** A titled block. The explanation that used to stand under every block as a

@@ -89,6 +89,16 @@ CONTEXT_WINDOW = int(os.environ.get("CONTEXT_WINDOW", "1000000"))
 # overrides. Empty = every server denied by default.
 MCP_SERVERS = os.environ.get("MCP_SERVERS", "")
 
+# The browser a session's Playwright / chrome-devtools MCP server drives. Hidden
+# (headless) by default: a headed Chrome lands on top of whatever the user is
+# doing on this machine. Empty executable = the MCP's own default (stable
+# Chrome); empty profile = the MCP's own persistent profile folder. Only bridge
+# sessions see these — they ride in as flags on the re-declared server
+# definitions (runner._with_browser), never into ~/.claude.json.
+AI_BROWSER_HEADLESS = os.environ.get("AI_BROWSER_HEADLESS", "1").lower() not in ("0", "false", "no", "")
+AI_BROWSER_EXECUTABLE = os.path.expanduser(os.environ.get("AI_BROWSER_EXECUTABLE", ""))
+AI_BROWSER_PROFILE = os.path.expanduser(os.environ.get("AI_BROWSER_PROFILE", ""))
+
 # Auto-resume: only the user may stop a turn. A restart leaves the in-flight turn
 # 'running' and the next boot resumes it (bridge/recovery.py); a Claude crash — or a
 # hang kill (RUN_TIMEOUT of silence) — while the bridge stays up is resumed immediately
