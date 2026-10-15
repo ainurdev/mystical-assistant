@@ -189,7 +189,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
   { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars" },
-  { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions" },
+  { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs stub console classic" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
   { tab: "transcript", sec: "COLOUR SCHEME", terms: "colour color scheme phosphor contrast dossier output style" },
   { tab: "transcript", sec: "RESULTS", terms: "auto-open results bash output edit diffs collapse steps fold" },
@@ -4156,6 +4156,19 @@ export function SettingsModal(props: SettingsModalProps) {
                           options={[{ label: "DEFAULT", value: "default" }, { label: "COMPACT", value: "compact" }]}
                           value={settings.layout}
                           onPick={(layout) => onPatch({ layout })}
+                        />
+                      </div>
+                    </Row>
+                    {/* COMPACT's composer (lib/theme COMPOSER_STYLES): the session as tabs on
+                        the box, as a ticket stub beside it, as status lines under a bare
+                        command line, or the CLASSIC one row. DEFAULT never reads it. */}
+                    <Row label="PROMPT BOX" desc="how the COMPACT layout's prompt box carries the session"
+                      info="TABS (the default): the title, branch, PR, running app and context meter as folder tabs on the box's top edge, the tools in the box's footer. STUB: a perforated ticket stub down the box's left carries the whole session (title, branch, PR, goal, agents, profile, ponytail, a context gauge) and the message sits beside it. CONSOLE: no box; a command line with an accent bar, then a place line and a quiet settings line. CLASSIC: the prompt box as it was, the session's nameplate sharing one row with the tools above the box. The DEFAULT layout keeps its own row whichever you pick.">
+                      <div style={{ width: 340 }}>
+                        <Segmented
+                          options={[{ label: "TABS", value: "tabs" }, { label: "STUB", value: "stub" }, { label: "CONSOLE", value: "console" }, { label: "CLASSIC", value: "classic" }]}
+                          value={settings.composer}
+                          onPick={(composer) => onPatch({ composer })}
                         />
                       </div>
                     </Row>

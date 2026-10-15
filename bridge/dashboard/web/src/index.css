@@ -3128,6 +3128,204 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 @keyframes movesweep { from { background-position: 100% 0; } to { background-position: -50% 0; } }
 @media (prefers-reduced-motion: reduce) { .movesweep { animation: none; } }
 
+/* CLASSIC: under a full row the nameplate can be narrower than the PR chip. The
+   names give way first; then the chip shrinks inside its own border, so it is
+   cut by its box, never by the row's edge. */
+.ctrl-lead .np-pr { flex: 0 0.1 auto !important; min-width: 48px; overflow: hidden; white-space: nowrap; }
+
+/* ── COMPACT composer shells — THE HUD ▸ LAYOUT ▸ PROMPT BOX (lib/theme
+   COMPOSER_STYLES; .mystical/design-drafts/prompt-box/SPEC.md). The composer
+   carries data-pb in COMPACT unless PROMPT BOX is CLASSIC. Terminal hands the
+   nameplate down flattened (display:contents on its root and caption row), so
+   the tile, title, project, branch, PR chip and running app are flex items of
+   .pb-lead, but in the DOM they stay the nameplate's grandchildren: rules here
+   name them by class, never with `>`. Their own layout is inline (Terminal,
+   PrChip), which is why the geometry below is !important. ── */
+.composer[data-pb] { container-type: inline-size; --pb-ground: var(--panel2); }
+.pb-lead .np-sep, .pb-lead .np-proj .pdot { display: none; }
+[data-theme^="flint"] .pb-lead .np-tile .pdot { display: none; }
+.pb-lead :is(.np-tile, .np-title-btn, .np-proj, .np-branch, .np-pr, .np-run) { box-sizing: border-box; white-space: nowrap; }
+.pb-lead .np-title-btn { flex: 0 1 auto !important; min-width: 110px !important; align-items: center !important; }
+.pb-lead :is(.np-branch, .np-pr, .np-run) { font-size: var(--t10) !important; }
+.pb-lead .np-pr { letter-spacing: 0 !important; }
+.pb-lead .np-branch .np-name { max-width: 220px; }
+[data-pb] .sp { flex: 1; }
+/* over the open-menu backdrop (z 25), so a second trigger toggles directly */
+:is(.pb-foot, .pb-set, .pb-ledger, .pb-tabs, .pb-stub, .pb-place) { position: relative; z-index: 26; }
+.pb-plus { width: 28px; height: 28px; flex: none; appearance: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+           border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); background: transparent; color: var(--txd);
+           font-family: inherit; font-size: 18px; font-weight: 300; line-height: 1; padding: 0; }
+.pb-plus:hover { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
+
+/* the card (TABS, STUB's body): ledger, attachments, the line, the footer */
+.pb-card { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
+.pb-line { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+/* two groups that wrap as units: the right one (run picker, SEND or the running
+   cluster) moves down whole rather than leaving QUEUE alone on a line */
+.pb-foot { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.pb-l, .pb-r { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pb-r { margin-left: auto; }
+/* a turn runs: profile and ponytail keep their glyph (and the profile its usage), the names go */
+.pb-card[data-running] .pb-foot .drop-val { display: none; }
+.pb-card[data-running] .pb-foot .drop-btn { min-width: 0 !important; }
+
+/* the ledger: goal, agents, paused, queued on one wrapping line, absent when
+   nothing is live (the pill strip always renders; its pills do not). Busy
+   means terse: past one live item every description goes, and the words stay
+   in each chip's title and popover. */
+.pb-ledger { display: none; align-items: center; flex-wrap: wrap; gap: 6px 8px; min-width: 0; }
+.pb-ledger:has(> :not(.pillstrip), > .pillstrip > *) { display: flex; }
+.pb-ledger > .pillstrip { display: contents; }
+.pb-ledger:has(> :nth-child(2), > .pillstrip > :nth-child(2)) .pill-desc { display: none; }
+.pb-paused, .pb-queued { display: inline-flex; align-items: center; gap: 7px; height: 22px; box-sizing: border-box; padding: 0 10px; border: 1px solid; border-radius: 999px;
+                         font-family: inherit; font-size: var(--t105); letter-spacing: .5px; white-space: nowrap; }
+.pb-paused { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
+.pb-paused > button { appearance: none; cursor: pointer; font-family: inherit; font-size: var(--t85); letter-spacing: 1.2px; padding: 1px 6px;
+                      border: 1px solid var(--warn); background: transparent; color: var(--warn); }
+.pb-queued { appearance: none; cursor: pointer; color: var(--purple-h); border-color: color-mix(in srgb, var(--purple) 30%, transparent); background: color-mix(in srgb, var(--purple) 8%, transparent); }
+.pb-queued:hover { border-color: var(--purple); }
+
+/* ── TABS: the lead as folder tabs on the card's top edge, CTX the last tab ── */
+.pb-tabs { display: flex; align-items: flex-end; gap: 4px; padding: 0 12px; min-width: 0; }
+.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run), .pb-tabs > .ctrl-ctx {
+  display: inline-flex !important; align-items: center !important; gap: 7px; flex: none; min-width: 0; height: 26px !important;
+  margin-bottom: -1px; padding: 0 10px !important; border-bottom: 0 !important; }
+.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run), .pb-tabs > .ctrl-ctx {
+  border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent) !important; border-bottom: 0 !important; background: var(--pb-ground) !important; }
+/* the PR tab keeps its state's ink: tone border, tone tint over the ground (PrChip's --tone-bg) */
+.pb-tabs .np-pr { background: linear-gradient(var(--tone-bg, transparent), var(--tone-bg, transparent)), var(--pb-ground) !important; }
+.pb-tabs .np-proj { display: none !important; }   /* the tile (or the HUD's dot) stands for it */
+.pb-tabs .np-tile { padding: 0 2px 0 7px !important; border-right: 0 !important; }
+.pb-tabs .np-tile + .np-title-btn { margin-left: -4px; padding-left: 6px !important; border-left: 0 !important; }
+/* the branch gives way only once the title has: a sliver of the shrink */
+.pb-tabs .np-branch { flex: 0 0.12 auto !important; }
+.pb-tabs > .ctrl-ctx { margin-left: auto; height: 22px !important; padding: 0 9px !important; }
+.pb-tabs > .ctrl-ctx > button { height: 17px; padding: 0 6px !important; line-height: 15px; font-size: var(--t85) !important; }
+/* past the compact threshold the CTX tab is COMPACT's: the word and the token count go */
+.pb-tabs > .ctrl-ctx:has(> button) .lbl, .pb-tabs > .ctrl-ctx:has(> button) > span:nth-of-type(4) { display: none; }
+
+/* ── STUB: a ticket stub down the card's left, the message beside it ── */
+.pb-ticket { flex-direction: row !important; align-items: stretch !important; gap: 0 !important; padding: 0 !important; }
+.pb-stub { width: 200px; flex: none; min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; padding: 11px 12px;
+           background: var(--pb-ground); border-right: 1px dashed color-mix(in srgb, var(--acc) 28%, transparent); }
+.pb-stub-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 7px; min-width: 0; }
+.pb-stub .np-tile { order: 0; }
+.pb-stub .np-proj { order: 1; flex: 1 1 0 !important; min-width: 0 !important; font-size: var(--t10) !important; }
+.pb-stub .np-title-btn { order: 2; flex: 0 0 100% !important; min-width: 0 !important; align-items: flex-start !important; }
+.pb-stub .np-title { white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3 !important; }
+.pb-stub .np-branch { order: 3; flex: 0 0 100% !important; }
+.pb-stub .np-branch .np-name { max-width: none; }
+.pb-stub .np-pr { order: 4; height: 20px !important; padding: 0 7px !important; }
+.pb-stub .np-run { order: 5; }
+.pb-stub .pillstrip { display: contents; }
+.pb-stub .pillstrip > * { order: 6; flex: 0 0 100%; border: 0 !important; background: none !important; padding: 0 !important; border-radius: 0 !important;
+                          font-size: var(--t10) !important; gap: 6px !important; }
+.pb-stub .pill-desc { display: none; }
+.pb-bind { display: flex; flex-wrap: wrap; gap: 4px; min-width: 0; }
+/* a binding never crosses the perforation: the chip shrinks, its name ellipsises */
+.pb-bind > * { min-width: 0; max-width: 100%; }
+.pb-bind .drop-btn { max-width: 100%; }
+.pb-bind .drop-btn { min-width: 0 !important; padding: 2px 6px 2px 4px !important; font-size: var(--t9) !important; gap: 5px !important; }
+.pb-bind .ctrl-fld { padding: 1px !important; }
+.pb-bind .drop-btn > span:not(.ctrl-fld) { max-width: 120px; }
+.pb-gauge { margin-top: auto; display: flex; align-items: center; gap: 8px; padding-top: 4px; font-size: var(--t85); letter-spacing: 1.2px; color: var(--txl); }
+.pb-gauge .bar { flex: 1; height: 3px; background: color-mix(in srgb, var(--acc) 12%, transparent); position: relative; }
+.pb-gauge .bar i { position: absolute; left: 0; top: 0; bottom: 0; transition: width .3s ease; }
+.pb-gauge u { text-decoration: none; white-space: nowrap; }
+.pb-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; }
+.pb-body .pb-line { flex: 1; }
+/* the perforation's notches: half discs of the ground over the card's edge,
+   not a clip of the card (the slash menu rises out of it) */
+.pb-ticket::before, .pb-ticket::after { content: ""; position: absolute; left: 191px; width: 18px; height: 9px; z-index: 27; pointer-events: none;
+                                         box-sizing: border-box; background: var(--canvas); border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent); }
+.pb-ticket::before { top: -1px; border-top: 0; border-radius: 0 0 9px 9px; }
+.pb-ticket::after { bottom: -1px; border-bottom: 0; border-radius: 9px 9px 0 0; }
+
+/* ── CONSOLE: a command line, a place line, an activity line when live, a settings line ── */
+.pb-cmd { align-items: center !important; gap: 10px !important; padding: 8px 8px 8px 14px !important; border: 0 !important;
+          border-left: 3px solid var(--acc) !important; background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 8%, transparent), transparent 45%) !important; }
+.pb-cmd > .pb-pfx { color: var(--acc) !important; margin-top: 0 !important; }
+.pb-hint { font-size: var(--t9); color: var(--txg); white-space: nowrap; flex: none; letter-spacing: .3px; }
+.pb-acts { display: flex; align-items: center; gap: 8px; flex: none; }
+[data-pb="console"] .pb-acts :is(.act-pri, .act-alt, .act-glyph) { width: 30px; height: 30px; padding: 0; border-radius: 50% !important; font-size: 0 !important;
+                                                                   letter-spacing: 0; justify-content: center; }
+[data-pb="console"] .pb-acts .act-fence { display: none; }
+[data-pb="console"] .pb-attach { margin: 0 0 8px 4px; }
+.pb-place { display: flex; align-items: stretch; height: 24px; margin-top: 7px; min-width: 0; overflow: hidden;
+            border: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); background: var(--pb-ground); }
+.pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run) {
+  display: inline-flex !important; align-items: center !important; gap: 6px; flex: none; min-width: 0; height: auto !important; padding: 0 10px !important;
+  border: 0 !important; border-right: 1px solid color-mix(in srgb, var(--acc) 14%, transparent) !important; border-radius: 0 !important; background: transparent !important; }
+.pb-place .np-proj { display: none !important; }
+.pb-place .np-tile { padding: 0 0 0 7px !important; border-right: 0 !important; }
+.pb-place :is(.np-tile, .np-title-btn) { background: color-mix(in srgb, var(--acc) 12%, transparent) !important; }
+.pb-place .np-title-btn { flex: 0 1 auto !important; min-width: 140px !important; padding-left: 7px !important; }
+.pb-place .np-branch { flex: 0 0.12 auto !important; }
+.pb-place .np-meta > :last-child { border-right: 0 !important; }
+.pb-activity { margin-top: 5px; }
+.pb-set { display: flex; align-items: center; gap: 12px; height: 26px; margin-top: 3px; padding: 0 2px; min-width: 0; }
+.pb-set .ctrl-ctx { margin-left: 0; }
+.pb-set :is(.drop-btn, .run-trigger) { border: 0 !important; background: none !important; padding: 0 !important; min-width: 0 !important; }
+/* the run popover opens rightwards from the row's left half; the ··· menu leftwards from its end */
+.pb-set [role="dialog"] { right: auto !important; left: 0 !important; }
+.pb-set .pb-plus { width: 30px; height: 24px; font-size: 0; }
+.pb-set .pb-plus::before { content: "···"; font-size: var(--t11); letter-spacing: 2px; }
+.pb-set .pb-plus + div { left: auto !important; right: 0 !important; }
+
+/* a turn runs: the frame takes ASK, the colour of "waits on the turn" */
+[data-pb] .cmdbox[data-running] { border-color: color-mix(in srgb, var(--ask, var(--purple)) 55%, transparent) !important; }
+[data-pb="console"] .pb-cmd[data-running] { border-color: transparent !important; border-left-color: var(--ask, var(--purple)) !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ask, var(--purple)) 8%, transparent), transparent 45%) !important; }
+[data-pb="console"] .pb-cmd[data-running] > .pb-pfx { color: var(--ask, var(--purple)) !important; }
+
+/* narrow: names give way first, then the words around the numbers */
+@container (max-width: 640px) {
+  .pb-lead .np-branch .np-name { max-width: 110px; }
+  .pb-lead .np-title-btn { min-width: 92px !important; }
+  :is(.pb-foot, .pb-set) .drop-btn { min-width: 0 !important; }
+  :is(.pb-foot, .pb-set) .drop-btn > span:not(.ctrl-fld) { max-width: 60px; }
+  .pb-hint { display: none; }
+}
+@container (max-width: 560px) { .pb-tabs > .ctrl-ctx .seg { display: none; } }
+/* STUB's body is 200px narrower than the composer, so its footer folds sooner:
+   DESIGN keeps its glyph, the run picker its model */
+@container (max-width: 740px) {
+  [data-pb="stub"] .pb-r .act-alt { font-size: 0 !important; padding: 0 9px !important; gap: 0 !important; }
+  [data-pb="stub"] .pb-r .run-trigger > span:not(:first-child) { display: none; }
+}
+
+/* FLINT: the same shells in its skin — radius, hairlines, Geist */
+[data-theme^="flint"] .composer[data-pb] { --pb-ground: var(--panel); }
+[data-theme^="flint"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run), [data-theme^="flint"] .pb-tabs > .ctrl-ctx { border-color: var(--line2) !important; font-family: var(--ui-font); }
+[data-theme^="flint"] .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run), [data-theme^="flint"] .pb-tabs > .ctrl-ctx { border-radius: 8px 8px 0 0 !important; }
+[data-theme^="flint"] .pb-tabs .np-tile { border-radius: 8px 0 0 0 !important; }
+[data-theme^="flint"] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 8px 0 0 !important; }
+[data-theme^="flint"] .pb-tabs > .ctrl-ctx { border-color: var(--line) !important; background: var(--panel2) !important; }
+[data-theme^="flint"] .pb-tabs :is(.np-branch, .np-pr, .np-run) { font-family: var(--mono) !important; }
+[data-theme^="flint"] :is(.pb-tabs, .pb-place) .np-title { font-size: var(--t12) !important; }
+[data-theme^="flint"] .pb-plus { border-color: var(--line); border-radius: var(--f-rad-s); }
+[data-theme^="flint"] :is(.pb-queued, .pb-paused, .pb-activity) { font-family: var(--ui-font); letter-spacing: 0; }
+[data-theme^="flint"] .pb-paused > button { border-radius: 5px; font-family: var(--ui-font); }
+[data-theme^="flint"] .pb-ticket { padding: 0 !important; }
+[data-theme^="flint"] .pb-stub { background: var(--panel2); border-right-color: var(--line2); border-radius: calc(var(--f-rad-l) - 1px) 0 0 calc(var(--f-rad-l) - 1px); }
+[data-theme^="flint"] .pb-stub .np-title { font-size: var(--t12) !important; }
+[data-theme^="flint"] .pb-ticket::before, [data-theme^="flint"] .pb-ticket::after { border-color: var(--line2); }
+[data-theme^="flint"] .pb-gauge .bar, [data-theme^="flint"] .pb-gauge .bar i { border-radius: 2px; }
+[data-theme^="flint"] .pb-cmd, [data-theme^="flint"] .pb-cmd:focus-within {
+  border: 0 !important; border-left: 3px solid var(--acc) !important; border-radius: 0 8px 8px 0 !important; padding: 8px 8px 8px 14px !important;
+  box-shadow: none !important; background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 8%, transparent), transparent 45%) !important; }
+/* FLINT hides the HUD's ~ ❯ (.cmdbox > span:first-child); the console keeps it, as its one mark */
+[data-theme^="flint"] [data-pb="console"] .pb-cmd > .pb-pfx { display: inline; font-family: var(--mono) !important; }
+[data-theme^="flint"] [data-pb]:not([data-pb="console"]) .pb-pfx { display: none; }
+[data-theme^="flint"] [data-pb="console"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--mono) !important; }
+[data-theme^="flint"] .pb-place { border-radius: 7px; border-color: var(--line); }
+[data-theme^="flint"] .pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run) { border-right-color: var(--line) !important; }
+[data-theme^="flint"] [data-pb] .cmdbox[data-running], [data-theme^="flint"] [data-pb] .cmdbox[data-running]:focus-within {
+  border-color: color-mix(in oklab, var(--ask) 60%, var(--line2)) !important; box-shadow: 0 0 0 3px color-mix(in oklab, var(--ask) 14%, transparent) !important; }
+[data-theme^="flint"] [data-pb="console"] .pb-cmd[data-running], [data-theme^="flint"] [data-pb="console"] .pb-cmd[data-running]:focus-within {
+  border-color: transparent !important; border-left-color: var(--ask) !important; box-shadow: none !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ask) 8%, transparent), transparent 45%) !important; }
+
 /* === AI MANAGEMENT ===========================================================
    SETTINGS ▸ AI MANAGEMENT (SettingsModal AiManagementPanel, ProjectsSettings):
    five folds on one page. Authored in FLINT's idiom — a card is a step of grey
