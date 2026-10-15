@@ -429,11 +429,12 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
             # the opt-out), so the flag would fail every turn — a root
             # install just can't switch a running turn to Bypass.
             cmd.append("--allow-dangerously-skip-permissions")
-        if claude_session_id:
+        if claude_session_id and not skip_pack:
             # Goal + verify tools, on interactive runs only, alongside whichever
             # external servers this session left switched on — re-declared here
             # so --strict-mcp-config can drop everything else. Internal one-shots
-            # below still take MCP off entirely.
+            # below (an interactive one too: start_streaming_job's skip_pack)
+            # still take MCP off entirely.
             extra, strict = _external_mcp(disabled_tools, cwd)
             cmd += ["--mcp-config", _mcp_config(claude_session_id, extra)]
             if strict:
@@ -746,6 +747,9 @@ class Job:
         # (the --settings ask rule) that make every call on it show a card.
         self.mcp_on: str | None = None
         self.extra_args: list[str] = []
+        # A run whose prompt carries untrusted text (start_streaming_job's skip_pack):
+        # no tools, no MCP servers, and never resumed (_maybe_auto_resume).
+        self.skip_pack = False
         self.work_cwd: str | None = None  # worktree the shell moved into, if any
         # tool_use id -> (name, start time), for output/diff + duration on tool_done
         self.open_tools: dict[str, tuple[str, float]] = {}
@@ -1538,6 +1542,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         return False
     if job.status != "error" or job.interrupted or job.refusal:
         return False                              # a refused turn is refused again
+    if job.skip_pack:
+        return False                              # tools-off: a resume would run with tools
     if not config.AUTO_RESUME or state.shutting_down:
         return False                              # shutdown → boot recovery's job
     if limits.is_limit_error(job.result or job.error_msg):
@@ -2298,7 +2304,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         claude_session_id=job.resume_id, cwd=cwd,
                         new_session=job.new_session, disabled_tools=denied,
                         autocompact=store.get_autocompact(job.store_session_id)
-                        if job.store_session_id else None, project=job.project)
+                        if job.store_session_id else None, project=job.project,
+                        skip_pack=job.skip_pack)
         if "--mcp-config" in cmd:
             # Its file holds tokens (see _mcp_config); it goes with the child.
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
@@ -2563,7 +2570,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         runtime: str | None = None,
                         mcp_on: str | None = None,
                         extra_args: list[str] | None = None,
-                        hang_timeout: float | None = None) -> Job | None:
+                        hang_timeout: float | None = None,
+                        skip_pack: bool = False) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -2585,6 +2593,11 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     even one the caller names: that refuses the run.
 
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
+
+    skip_pack runs it as _base_cmd's internal one-shot: no context pack, no tools and
+    no MCP servers at all, for a prompt that carries untrusted text and needs no tools
+    (a Rivendell meeting's notes). Such a turn that dies is not resumed: the resume
+    would run with tools, and its caller has already taken the failure.
 
     Claims only THIS session's run slot, so a run in another project/session keeps
     going; returns None only if this very session already has an in-flight turn,
@@ -2636,6 +2649,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.account_slot = account_slot
         job.project = session.get("project")
         job.mcp_on, job.extra_args = mcp_on, list(extra_args or [])
+        job.skip_pack = skip_pack
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
             runtime = f"claude:{account_slot}"
         job.runtime = runtime

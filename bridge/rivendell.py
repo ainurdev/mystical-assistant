@@ -71,7 +71,9 @@ Runs go through the normal runner (not a bare subprocess) on purpose: each run
 gets its own store session (origin "rivendell:<instance>"), so it shows up in
 the dashboard with a full transcript — and tagged with which Rivendell it came
 from — inherits the watchdog, journaling and auto-resume machinery, and never
-contends with other sessions' run slots.
+contends with other sessions' run slots. A meeting's notes are the exception
+to the tools: their prompt carries what anyone pasted or said in the meeting
+and needs no tools, so that run gets none (and no auto-resume, which would).
 
 Each request names its repository (owner/repo); _find_checkout maps that to a
 local checkout under BASE_PATH by matching git origin remotes (the scan is
@@ -1258,7 +1260,7 @@ class Worker:
 
     def _start_run(self, prompt: str, workdir: str, hang_timeout: "float | None" = None,
                    mcp_on: "str | None" = None, image_paths: "list[str] | None" = None,
-                   title: "str | None" = None):
+                   title: "str | None" = None, tools_off: bool = False):
         """One autonomous Claude run in `workdir` through the normal runner.
         `hang_timeout` is the silence the watchdog allows it (the kind's own
         timeout for a review or an implementation). `mcp_on` names an MCP
@@ -1266,13 +1268,16 @@ class Worker:
         (a newspaper is nothing without `rivendell`). `image_paths` are files
         the run must open first (a video's frames). `title` names the session
         (a video's kind and file) where the prompt's first line would not.
+        `tools_off` gives the run no tools and no MCP servers at all (the
+        runner's internal one-shot mode, skip_pack): for a prompt that carries
+        untrusted text and needs no tools.
         Returns the job, or None if a run could not be started."""
         from bridge import runner                # local import: heavy module
         return runner.start_streaming_job(
             config.DASH_CHAT_ID, prompt, image_paths or [], project=workdir,
             model=self.model, permission_mode="bypassPermissions",
             session_id=self._new_session(workdir, title), origin=self.origin,
-            mcp_on=mcp_on, hang_timeout=hang_timeout)
+            mcp_on=mcp_on, hang_timeout=hang_timeout, skip_pack=tools_off)
 
     def _run_review(self, request_id: str, slug: "str | None") -> None:
         resp = self._claim("review-requests", request_id)
@@ -1609,10 +1614,12 @@ class Worker:
         first does what Claude cannot, with the video kind's tools (rivendell_video:
         download, ffmpeg, whisper.cpp in the language the claim asks for), each
         step reported as a phase; the transcript fills the prompt's
-        {{TRANSCRIPT}} and Claude, given no images, writes the notes. A tool
-        failure lands FAILED with its message; a Claude run that fails once the
-        transcript exists still delivers it (COMPLETED, no notes, the failure as
-        `error`), since the transcript is the expensive part."""
+        {{TRANSCRIPT}} and Claude, given no images and no tools, writes the notes. A
+        tool failure lands FAILED with its message; a recording with no speech
+        posts its empty transcript without a Claude run; a Claude run that fails
+        (or cannot start) once the transcript exists still delivers it
+        (COMPLETED, no notes, the failure as `error`), since the transcript is
+        the expensive part."""
         from bridge import rivendell_video as rv     # local import: keeps the tests' monkeypatching simple
         path = "meeting-notes-requests"
         resp = self._claim(path, request_id)
@@ -1647,18 +1654,25 @@ class Worker:
         except Exception as e:  # noqa: BLE001 — anything else is still this run's failure
             self._post_result(path, request_id, False, f"bridge error: {e}")
             return
+        if recording and not segments:
+            # No speech: nothing for Claude to read, and Rivendell fails such a draft anyway.
+            self._post_result(path, request_id, True, json.dumps(
+                {"language": language, "transcriber": rv.TRANSCRIBER, "segments": [], "answer": ""}))
+            return
 
         self._post_phase(path, request_id, "notes")
         print(f"rivendell[{self.name}]: meeting notes {request_id} ({name or '?'}) running in {workdir}")
-        job = self._start_run(prompt, workdir, hang_timeout=timeout, title=f"Meeting notes · {name or request_id}")
-        if job is None:  # can't happen for a fresh session; never hang the queue
-            self._post_result(path, request_id, False, "could not start a Claude run (session busy)")
-            return
-        self._track(request_id, "meeting-notes", name, job.store_session_id, label=None, link=None)
-        try:
-            ok, text = self._wait_job(job, timeout)
-        finally:
-            self._untrack(request_id)
+        # No tools: the prompt carries what anyone pasted or said in the meeting, and the notes need none.
+        job = self._start_run(prompt, workdir, hang_timeout=timeout, title=f"Meeting notes · {name or request_id}",
+                              tools_off=True)
+        if job is None:  # the bridge is going down; a transcript still lands below
+            ok, text = False, "could not start a Claude run"
+        else:
+            self._track(request_id, "meeting-notes", name, job.store_session_id, label=None, link=None)
+            try:
+                ok, text = self._wait_job(job, timeout)
+            finally:
+                self._untrack(request_id)
         if recording and (ok or segments):
             result = {"language": language, "transcriber": rv.TRANSCRIBER, "segments": segments,
                       "answer": text if ok else ""}
