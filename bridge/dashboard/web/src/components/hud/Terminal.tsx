@@ -203,7 +203,7 @@ export function Terminal({
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
-  hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, onJumpMark,
+  hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef, onJumpMark,
   onOpenProject, run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere,
 }: {
   view: View;
@@ -239,6 +239,7 @@ export function Terminal({
   /** Checkpoint navigation surface, filled by the Transcript while mounted. */
   navRef?: MutableRefObject<TranscriptNav | null>;
   restoringRef?: RefObject<Anchor | null>;
+  correctingRef?: MutableRefObject<boolean>;
   /** Jump to a checkpoint, auto-loading older pages when it isn't loaded. */
   onJumpMark?: (m: Mark) => void;
   /** Re-run a transcript command in this project's TERMINAL tab. */
@@ -419,7 +420,7 @@ export function Terminal({
           ) : empty && loading ? null : empty ? (
             <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} onStartNext={onStartNext} />
           ) : (
-            <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} />
+            <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef} />
           )}
         </div>
       </div>

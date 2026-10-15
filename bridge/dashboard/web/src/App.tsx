@@ -426,6 +426,12 @@ export function App() {
   // downward travel as a gesture (mid-glide we're still far from the bottom,
   // which would drop stick and flash the jump button).
   const glideRef = useRef(false);
+  // The virtualizer just corrected scrollTop for a row above the viewport
+  // re-measuring (Transcript's shouldAdjustScrollPositionOnItemSizeChange). The
+  // scroll event that follows is its, not yours: read as a gesture, a backward
+  // correction dropped follow and left the view wherever the clamp put it — the
+  // top, in a short session.
+  const correctingRef = useRef(false);
   // Mirror of stickRef for rendering — the ref drives the auto-scroll (no
   // re-render), the state drives the "jump to latest" button.
   const [atBottom, setAtBottom] = useState(true);
@@ -875,6 +881,7 @@ export function App() {
       // staleTurns: what's on screen belongs to the session being left — a
       // move there must not flip stick or be remembered under the new id.
       if (glideRef.current || restoreTo.current || staleTurns.current) { prev = el.scrollTop; return; }
+      if (correctingRef.current) { correctingRef.current = false; prev = el.scrollTop; return; }
       const stick = stickToBottom(el, prev, stickRef.current);
       prev = el.scrollTop;
       stickRef.current = stick;
@@ -2315,7 +2322,7 @@ export function App() {
                 boot={boot}
                 hasOlder={older.has} olderLoading={older.loading} onLoadOlder={() => void loadOlder()}
                 renderFrom={older.from}
-                navRef={transcriptNav} restoringRef={restoreTo} onJumpMark={(m) => void jumpToMark(m)}
+                navRef={transcriptNav} restoringRef={restoreTo} correctingRef={correctingRef} onJumpMark={(m) => void jumpToMark(m)}
                 onRunCommand={runCommand}
                 onQuote={quote}
                 // Tapping a suggested reply to a question the model asked in prose
