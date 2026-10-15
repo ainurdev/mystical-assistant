@@ -3210,8 +3210,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-cmd > .pb-pfx { color: var(--acc) !important; margin-top: 0 !important; }
 .pb-hint { font-size: var(--t9); color: var(--txg); white-space: nowrap; flex: none; letter-spacing: .3px; }
 .pb-acts { display: flex; align-items: center; gap: 8px; flex: none; }
+/* gap: 0 — the hidden label is still a zero-width flex item, and its gap pushed the icon off centre */
 [data-pb="console"] .pb-acts :is(.act-pri, .act-alt, .act-glyph) { width: 30px; height: 30px; padding: 0; border-radius: 50% !important; font-size: 0 !important;
-                                                                   letter-spacing: 0; justify-content: center; }
+                                                                   letter-spacing: 0; gap: 0; justify-content: center; }
 [data-pb="console"] .pb-acts .act-fence { display: none; }
 [data-pb="console"] .pb-attach { margin: 0 0 8px 4px; }
 .pb-place { display: flex; align-items: stretch; height: 24px; margin-top: 7px; min-width: 0; overflow: hidden;
@@ -3234,12 +3235,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-set .pb-plus { width: 30px; height: 24px; font-size: 0; }
 .pb-set .pb-plus::before { content: "···"; font-size: var(--t11); letter-spacing: 2px; }
 .pb-set .pb-plus + div { left: auto !important; right: 0 !important; }
-
-/* a turn runs: the frame takes ASK, the colour of "waits on the turn" */
-[data-pb] .cmdbox[data-running] { border-color: color-mix(in srgb, var(--ask, var(--purple)) 55%, transparent) !important; }
-[data-pb="console"] .pb-cmd[data-running] { border-color: transparent !important; border-left-color: var(--ask, var(--purple)) !important;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--ask, var(--purple)) 8%, transparent), transparent 45%) !important; }
-[data-pb="console"] .pb-cmd[data-running] > .pb-pfx { color: var(--ask, var(--purple)) !important; }
 
 /* narrow: names give way first, then the words around the numbers */
 @container (max-width: 640px) {
@@ -3272,11 +3267,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] [data-pb="console"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--mono) !important; }
 [data-theme^="flint"] .pb-place { border-radius: 7px; border-color: var(--line); }
 [data-theme^="flint"] .pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run) { border-right-color: var(--line) !important; }
-[data-theme^="flint"] [data-pb] .cmdbox[data-running], [data-theme^="flint"] [data-pb] .cmdbox[data-running]:focus-within {
+[data-theme^="flint"] [data-pb="tabs"] .cmdbox[data-running], [data-theme^="flint"] [data-pb="tabs"] .cmdbox[data-running]:focus-within {
   border-color: color-mix(in oklab, var(--ask) 60%, var(--line2)) !important; box-shadow: 0 0 0 3px color-mix(in oklab, var(--ask) 14%, transparent) !important; }
-[data-theme^="flint"] [data-pb="console"] .pb-cmd[data-running], [data-theme^="flint"] [data-pb="console"] .pb-cmd[data-running]:focus-within {
-  border-color: transparent !important; border-left-color: var(--ask) !important; box-shadow: none !important;
-  background: linear-gradient(90deg, color-mix(in srgb, var(--ask) 8%, transparent), transparent 45%) !important; }
+/* CONSOLE's line is yours in every state, so a running turn never recolours it
+   (■ ❚❚ » and the queue placeholder say it runs). Here ASK is the "waits on you"
+   magenta, so CONSOLE's QUEUE fills like SEND instead. */
+[data-theme^="flint"] [data-pb="console"] .act-pri.queue:not(:disabled) { background: var(--f-grad); }
 /* TABS: the tabs and the card share one edge, in every state the card has: the
    theme's hairline at rest, its accent on focus and on a file drag, ASK while a
    turn runs. The card reads the same variable, so the two can never drift. */
