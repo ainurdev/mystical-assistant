@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
   Search, Globe, Quote,
@@ -2315,7 +2316,17 @@ function FinalResult({
         {body && lines > RESULT_FOLD_LINES && (
           <button
             type="button"
-            onClick={() => setOpen((o) => !o)}
+            onClick={(e) => {
+              // FOLD sits under the box it shrinks, so folding pulled it out of
+              // view and the page landed on whatever was below — the session's
+              // end, near the end. Scroll anchoring doesn't catch it (WebKit and
+              // Chrome both anchor on the clipped text, which never moves), so
+              // the transcript is scrolled back under the button.
+              const b = e.currentTarget, y = b.getBoundingClientRect().top;
+              flushSync(() => setOpen((o) => !o));
+              const sc = b.closest(".mscroll");
+              if (open && sc) sc.scrollTop += b.getBoundingClientRect().top - y;
+            }}
             className="res-fold"
           >
             <ChevronDown size={11} aria-hidden className={`transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
