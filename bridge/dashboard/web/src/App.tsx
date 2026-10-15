@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Castle, FileDiff, FolderTree, GitBranch, GraduationCap, ListOrdered, Sparkles,
+  Castle, FileDiff, FolderTree, GitBranch, GraduationCap, ListOrdered,
 } from "lucide-react";
 import {
   api,
@@ -74,7 +74,6 @@ import { QueuePanel } from "./components/hud/QueuePanel";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
-import { SkillsPanel } from "./components/hud/SkillsTab";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitTab } from "./components/GitTab";
@@ -1217,6 +1216,8 @@ export function App() {
   // "Open SETTINGS on this tab", from anywhere (lib/opensettings.ts).
   useEffect(() => {
     const open = (e: Event) => {
+      // One of the tabs AI MANAGEMENT replaced may still be named (lib/opensettings
+      // callers, an older bridge's bot button); the modal maps it to its fold.
       setSettingsTab((e as CustomEvent<SettingsTab>).detail);
       setSettingsOpen(true);
     };
@@ -1817,10 +1818,6 @@ export function App() {
     {
       id: "git", label: "Source Control", icon: <GitBranch {...RAIL} />, scope: "project",
       render: () => <GitTab project={sessionProject} />,
-    },
-    {
-      id: "skills", label: "Skills", icon: <Sparkles {...RAIL} />,
-      render: () => <SkillsPanel project={sessionProject} />,
     },
     // Hidden while LESSONS is off, like ANALYZE's copy — nothing is being written.
     ...(ai.learn ? [{
@@ -2489,6 +2486,7 @@ export function App() {
                 onProfilesChanged={() => void loadProfiles()}
                 onAccountsChanged={onAccountsChanged}
                 onOpenInspector={() => { setSettingsOpen(false); setInspectorOpen(true); }}
+                project={sessionProject}
                 projects={{
                   groups: projectGroups.filter((g) => !removedProjects[g.rel]),
                   imported: importedProjects.filter((rel) => !removedProjects[rel]),

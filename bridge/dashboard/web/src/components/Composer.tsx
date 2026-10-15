@@ -814,8 +814,8 @@ export function Composer({
       onPick={(id) => {
         const p = profiles.find((x) => x.id === id);
         const dead = p ? deadLogin(accounts, p.agent, p.account) : null;
-        if (id === NEW_PROFILE) openSettings("session", "new");
-        else if (dead !== null) openSettings("accounts", String(dead));
+        if (id === NEW_PROFILE) openSettings("aimgmt", "new");
+        else if (dead !== null) openSettings("aimgmt", String(dead));
         else if (id !== profile) onProfile(id);
         setOpenDrop("");
       }} />

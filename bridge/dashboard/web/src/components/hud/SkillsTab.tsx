@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { projectName } from "../../lib/surfaces";
 import { api, type AvailablePlugin, type CatalogSkill, type InstalledSkill, type PluginAction, type PluginsInfo, type SkillCategory, type SkillScope, type SkillsInfo } from "../../api";
 
 /* SKILLS — what's installed as a Claude Code skill (a SKILL.md under
    .claude/skills/) plus the built-in catalog you can install from.
 
-   Two surfaces share this body:
-     · the right sidebar (SkillsPanel) — project AND system, installs to either;
-     · the ANALYZE modal (SkillsTab)   — project only, installs to the project.  */
+   The ANALYZE modal (SkillsTab) shows this body, project scope only. The
+   settings page has its own FLINT-styled view (SkillsFold.tsx), which
+   borrows PluginsView from here.  */
 
 const CATS: { k: SkillCategory | "all"; l: string }[] = [
   { k: "all", l: "ALL" },
@@ -89,7 +88,7 @@ function ScopeBtn({ label, on, disabled, onClick }: {
    single-file skills. A plugin is the whole bundle (multi-file skills, agents,
    MCP servers) installed and versioned by Claude Code itself, so everything
    here is a relay to `claude plugin`. Machine-wide, hence no project scope. */
-function PluginsView() {
+export function PluginsView() {
   const [info, setInfo] = useState<PluginsInfo | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
@@ -400,24 +399,6 @@ export function SkillsTab({ project, name }: { project: string; name: string }) 
         <span style={{ fontSize: "var(--t9)", color: "var(--txd)" }}>.claude/skills</span>
       </div>
       <SkillsView project={project} system={false} />
-    </div>
-  );
-}
-
-/** Right-sidebar panel — project AND system, installs to either. */
-export function SkillsPanel({ project }: { project: string | null }) {
-  return (
-    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 50%, transparent)", flex: "none" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
-        <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>SKILLS</span>
-        <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--acc)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-          {project ? projectName(project) : "NO PROJECT"}
-        </span>
-      </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),color-mix(in srgb, var(--acc) 5%, transparent))", transformOrigin: "left", animation: "drawline .7s ease both .16s" }} />
-      <div style={{ padding: 11 }}>
-        <SkillsView project={project} system />
-      </div>
     </div>
   );
 }
