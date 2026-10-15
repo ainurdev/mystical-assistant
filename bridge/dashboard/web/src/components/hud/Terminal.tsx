@@ -397,7 +397,7 @@ export function Terminal({
       {/* OUTPUT STYLE is the whole session's idiom, not just its widgets: one
           attribute here and the ledger, the agent block, your prompt and the
           reply's own tables all answer to it (index.css, THE SESSION'S IDIOM). */}
-      <div ref={scrollRef} data-style={hud?.toolStyle ?? "dossier"} data-scheme={hud?.chatScheme ?? "phosphor"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
+      <div ref={scrollRef} data-style="dossier" data-scheme={hud?.chatScheme ?? "phosphor"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
         onDragOver={(e) => { if (!fileDrag(e)) return; e.preventDefault(); if (!dropping) setDropping(true); }}
         // relatedTarget is where the drag went: still inside, it only crossed a child
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }}
@@ -406,13 +406,6 @@ export function Terminal({
             below it: parked at the top nothing has slid under it, so the
             LAST row stays folded and the transcript opens on its first
             message, not on a header repeating it. */}
-        {/* SIGNAL LOG's schema line. A log names its columns once at the top,
-            not once per turn, so it lives here and sticks; every other output
-            style leaves it `display: none` (index.css, 2B · SIGNAL LOG). */}
-        <div className="siglog-head" aria-hidden>
-          <span>T+</span><span style={{ textAlign: "center" }}>LEVEL</span>
-          <span>EVENT</span><span>RESULT</span><span />
-        </div>
         <div ref={contentRef} style={{ padding: `${ISLE_EDGE + 12}px 0 16px` }}>
           {/* A switch that lands inside the delay renders neither: no
               scanline for a load that's already over, and no FreshState

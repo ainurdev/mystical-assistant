@@ -228,7 +228,6 @@ function TurnBlock({
               tokens={turn.tokens ?? null}
               openResults={hud?.openResults ?? false}
               foldsOpen={hud?.foldsOpen ?? false}
-              toolStyle={hud?.toolStyle ?? "dossier"}
               compact={hud?.layout === "compact"}
               turnStarted={turn.started}
               onRunCommand={onRunCommand}

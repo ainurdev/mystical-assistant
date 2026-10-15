@@ -1,12 +1,10 @@
-import { createRoute, Link } from "@tanstack/react-router";
-import { ChevronRight } from "lucide-react";
+import { createRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { rootRoute } from "./root";
 import { api } from "../lib/api";
 import { useSpentUsage } from "../lib/accounts";
 import { useChat } from "../lib/chat";
 import { ThemeCards } from "../components/ThemePicker";
-import { TOOL_STYLES, useToolStyle } from "../lib/toolwidget";
 import { useFoldsOpen } from "../lib/folds";
 
 /* SYSTEM — the controls that belong to the app rather than to one chat: the
@@ -65,7 +63,7 @@ function SystemPage() {
     <div className="space-y-4 pb-6">
       <div className="flex items-baseline gap-2.5">
         <span className="text-[13px] tracking-[3px] text-foreground-bright">SYSTEM</span>
-        <span className="text-[10px] tracking-wider text-[var(--tg-hint)]">OUTPUT · THEME · LIMITS</span>
+        <span className="text-[10px] tracking-wider text-[var(--tg-hint)]">THEME · LIMITS</span>
       </div>
 
       <div className="space-y-2">
@@ -90,8 +88,7 @@ function SystemPage() {
       </div>
 
       <div className="space-y-2">
-        <div className="text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">OUTPUT STYLE</div>
-        <OutputStyleRow />
+        <div className="text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">TRANSCRIPT</div>
         <FoldsRow />
       </div>
 
@@ -113,27 +110,6 @@ export const systemRoute = createRoute({
   path: "/system",
   component: SystemPage,
 });
-
-/** The pick itself lives on its own page: four rendered previews do not fit in
- *  a section between LIMITS and THEME, and a list of four words was exactly the
- *  thing that made the styles unreadable. This is the current one, and the way
- *  in. */
-function OutputStyleRow() {
-  const [style] = useToolStyle();
-  const cur = TOOL_STYLES.find((o) => o.key === style) ?? TOOL_STYLES[0];
-  return (
-    <Link
-      to="/output"
-      className="flex w-full items-center gap-2.5 bg-[var(--tg-secondary-bg)] px-3 py-2.5 active:opacity-70"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] tracking-[1.5px]">{cur.label}</div>
-        <div className="truncate text-[10px] text-[var(--tg-hint)]">{cur.hint}</div>
-      </div>
-      <ChevronRight size={14} className="shrink-0 text-[var(--tg-hint)]" aria-hidden />
-    </Link>
-  );
-}
 
 /** Between two things the agent says or thinks, its steps sit under one row.
  *  On (the default) that row mounts shut, so the words are what you see; off,

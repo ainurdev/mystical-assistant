@@ -5,7 +5,7 @@
 // this checks — not how the widgets look.
 
 import { readFileSync } from "node:fs";
-import { CHAT_BGS, isToolStyle, shotName, toChatBg, toToolStyle, widgetForRun, TOOL_STYLES } from "./toolwidget.ts";
+import { CHAT_BGS, shotName, toChatBg, widgetForRun } from "./toolwidget.ts";
 
 // --- the table --------------------------------------------------------------
 const src = widgetForRun([{ done: { sources: [{ url: "https://a.dev", title: "A" }] } }]);
@@ -56,22 +56,8 @@ console.assert(webchain?.meta === "2", `a run of fetches is one source list, got
 console.assert(widgetForRun([{}, { done: {} }]) === null, "a run that carried nothing keeps its rows plain");
 
 // --- the style setting ------------------------------------------------------
-console.assert(TOOL_STYLES.length === 5, `five styles, got ${TOOL_STYLES.length}`);
-console.assert(TOOL_STYLES[0].key === "stamp", "CONTROL PLATE is the default, and leads");
-for (const s of TOOL_STYLES) console.assert(isToolStyle(s.key), `${s.key} is a style`);
-console.assert(!isToolStyle("fancy"), "an unknown style is rejected (a stale localStorage value)");
-console.assert(!isToolStyle(undefined), "a missing style is rejected");
 // The sheet replaced all four; a pick made before it lands on its nearest new
 // language rather than snapping back to the default.
-console.assert(toToolStyle("instrument") === "stamp", "INSTRUMENT was redrawn as CONTROL PLATE");
-console.assert(toToolStyle("terminal") === "wire", "TERMINAL was redrawn as WIRE");
-console.assert(toToolStyle("note") === "press", "NOTE was redrawn as LEDGER PRESS");
-console.assert(toToolStyle("plain") === "wire", "PLAIN had no column; it lands on the quietest");
-console.assert(toToolStyle("bare") === "wire", "BARE, two renames ago, still resolves");
-console.assert(toToolStyle("card") === "press", "CARD, two renames ago, still resolves");
-console.assert(toToolStyle("halo") === "halo", "a current style passes through");
-console.assert(toToolStyle("fancy") === "stamp", "an unknown style falls back");
-console.assert(toToolStyle(undefined) === "stamp", "a missing style falls back");
 
 // --- the ground -------------------------------------------------------------
 // A key with no CSS rule behind it is a tile that draws nothing and reads

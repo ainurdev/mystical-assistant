@@ -32,7 +32,7 @@ import {
   Container,
 } from "lucide-react";
 import { ToolWidget } from "./ResultWidgets";
-import { useToolStyle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
+import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
@@ -1054,7 +1054,7 @@ export const RunStream = memo(function RunStream({
   );
   // Read here rather than threaded down: the Mini App has no settings blob
   // to ride along with (the dashboard passes it as a prop from HudSettings).
-  const [toolStyle] = useToolStyle();
+  const toolStyle: ToolStyle = "stamp";
   const [foldsPref] = useFoldsOpen();
   const foldsOpen = foldsOpenProp ?? foldsPref;
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());

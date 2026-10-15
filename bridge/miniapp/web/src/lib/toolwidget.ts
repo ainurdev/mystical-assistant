@@ -1,7 +1,6 @@
-// Mirrors bridge/dashboard/web/src/lib/toolwidget.ts. Keep them in sync — the
-// ONE difference is useToolStyle: the dashboard threads the setting down as a
-// prop from its HudSettings object, the Mini App has no such object and reads
-// it here.
+// Mirrors bridge/dashboard/web/src/lib/toolwidget.ts. Keep them in sync; the
+// phone has no HudSettings object, so its one browser-side pick (the ground)
+// is read here through usePersistentState.
 import { usePersistentState } from "./persistentState.ts";
 
 // What a finished tool hands the widget layer, and the frame that layer draws.
@@ -21,30 +20,9 @@ import { usePersistentState } from "./persistentState.ts";
 /** The wire shape `transcript_jsonl.web_sources` emits. */
 export type WebSource = { url: string; title?: string; code?: number };
 
-/** How a tool result's structure is drawn, and how the whole session reads.
- *  Five languages, one per column of the Chat Elements sheet. Each is a whole
- *  grammar rather than a border swap: they differ in what carries rank (a fill,
- *  a stroke, a chip's saturation, a rule's weight, how far a surface floats),
- *  in whether anything is a box at all, and in reading rhythm. If two of them
- *  are ever telling apart by their corner radius, the redraw has failed.
- *
- *  The pick governs the WHOLE transcript (index.css, THE SESSION'S IDIOM), not
- *  just the widgets: the bubbles, the action ledger, the run window, the agent
- *  block, and the reply's tables and code all answer to it.
- *
- *  `stamp` leads and is the default because it is the one the HUD already
- *  authors — the rest of index.css IS a control plate, so the other four are
- *  overrides off it. It is keyed `stamp` rather than `plate` because `plate` is
- *  already an Idiom below, and a material must never be readable as a weight. */
-export type ToolStyle = "stamp" | "wire" | "signal" | "press" | "halo";
-
-export const TOOL_STYLES: { key: ToolStyle; label: string; hint: string }[] = [
-  { key: "stamp", label: "CONTROL PLATE", hint: "stamped plates — no radius, one hue for consequence, rank is fill weight" },
-  { key: "wire", label: "WIRE", hint: "a schematic — nothing is a card, every element is a node on one spine" },
-  { key: "signal", label: "SIGNAL LOG", hint: "a log viewer — elapsed time in the gutter, a level chip, one row per event" },
-  { key: "press", label: "LEDGER PRESS", hint: "print — not one box, rank is a rule's weight and whether a label is ink or italic" },
-  { key: "halo", label: "HALO", hint: "surfaces, not rules — one radius, quiet by default, loud only when something changed" },
-];
+/** How the whole session reads on the phone. One language since the settings
+ *  remap (2026-10-15): CONTROL PLATE, the one the rest of index.css authors. */
+export type ToolStyle = "stamp";
 
 /** The texture the transcript is read ON. A language decides how a turn is
  *  drawn; this decides what it is drawn on — and the two are independent, so
@@ -67,25 +45,6 @@ export const CHAT_BGS: { key: ChatBg; label: string; hint: string }[] = [
 
 export function toChatBg(v: unknown): ChatBg {
   return CHAT_BGS.some((b) => b.key === v) ? (v as ChatBg) : "none";
-}
-
-/** What the styles were called before the sheet replaced them. A stored pick
- *  lands on its nearest new language instead of silently snapping to default.
- *  PLAIN was the widget opt-out and has no column, so it maps to the quietest
- *  one there is. */
-const LEGACY: Record<string, ToolStyle> = {
-  instrument: "stamp", terminal: "wire", note: "press", plain: "wire",
-  bare: "wire", card: "press",
-};
-
-export function isToolStyle(v: unknown): v is ToolStyle {
-  return TOOL_STYLES.some((s) => s.key === v);
-}
-
-/** A stored value → a style that exists. Anything unrecognised is the default. */
-export function toToolStyle(v: unknown): ToolStyle {
-  if (isToolStyle(v)) return v;
-  return (typeof v === "string" && LEGACY[v]) || "stamp";
 }
 
 /** How much chrome a result wears, and at what x it hangs off the turn.
@@ -145,17 +104,6 @@ export type ToolWidgetSpec = { label: string; type: string; value: unknown; meta
 export function shotName(summary: string): string {
   const s = (summary || "").trim().split(/[?#]/)[0].replace(/\/+$/, "");
   return (s.split("/").pop() || s).slice(0, 40);
-}
-
-// Where the Mini App keeps the choice. The dashboard's lives in HudSettings
-// (one blob, one write); a phone has no settings blob, so this is its own key.
-const STYLE_KEY = "ma-tool-style";
-
-/** The chosen style, and a setter. Persisted per browser like every other
- *  Mini App preference (lib/persistentState). */
-export function useToolStyle(): readonly [ToolStyle, (s: ToolStyle) => void] {
-  const [v, set] = usePersistentState<ToolStyle>(STYLE_KEY, "stamp");
-  return [toToolStyle(v), set] as const;
 }
 
 const BG_KEY = "ma-chat-bg";

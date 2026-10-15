@@ -531,7 +531,7 @@ export function App() {
     setSettings((s) =>
       sameFamily(s.theme, t)
         ? { ...s, theme: t }
-        : { ...s, theme: t, scanlines: d.crt, sweep: d.swp, glow: d.glw, toolStyle: d.chat });
+        : { ...s, theme: t, scanlines: d.crt, sweep: d.swp, glow: d.glw });
   }
   function toggleCrt(key: "scanlines" | "sweep" | "glow") {
     setSettings((s) => ({ ...s, [key]: !s[key] }));

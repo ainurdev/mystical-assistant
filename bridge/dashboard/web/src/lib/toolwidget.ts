@@ -16,38 +16,11 @@
 /** The wire shape `transcript_jsonl.web_sources` emits. */
 export type WebSource = { url: string; title?: string; code?: number };
 
-/** How a tool result's structure is drawn, and how the whole session reads.
- *  Five languages, one per column of the Chat Elements sheet. Each is a whole
- *  grammar rather than a border swap: they differ in what carries rank (a fill,
- *  a stroke, a chip's saturation, a rule's weight, how far a surface floats),
- *  in whether anything is a box at all, and in reading rhythm. If two of them
- *  are ever telling apart by their corner radius, the redraw has failed.
- *
- *  The pick governs the WHOLE transcript (index.css, THE SESSION'S IDIOM), not
- *  just the widgets: the bubbles, the action ledger, the run window, the agent
- *  block, and the reply's tables and code all answer to it.
- *
- *  `stamp` leads and is the default because it is the one the HUD already
- *  authors — the rest of index.css IS a control plate, so the other four are
- *  overrides off it. It is keyed `stamp` rather than `plate` because `plate` is
- *  already an Idiom below, and a material must never be readable as a weight. */
-export type ToolStyle = "dossier" | "stamp" | "wire" | "signal" | "press" | "halo";
-
-/** DOSSIER is the sixth and leads, because it is the only one that answers a
- *  different question. The five above it each pick what carries RANK between
- *  rows; DOSSIER picks what carries rank between TIERS — your prompt and the
- *  turn's answer are the loudest things on screen, a card waiting on you is
- *  next, and everything in between (thoughts, interim notes, tools, output,
- *  notices) is a small log under one WORK header. Its colours are role tokens
- *  (index.css, DOSSIER), re-pointed by a TranscriptScheme below. */
-export const TOOL_STYLES: { key: ToolStyle; label: string; hint: string }[] = [
-  { key: "dossier", label: "DOSSIER", hint: "a card per turn — your prompt and the answer loudest, the work a small log between" },
-  { key: "stamp", label: "CONTROL PLATE", hint: "stamped plates — no radius, one hue for consequence, rank is fill weight" },
-  { key: "wire", label: "WIRE", hint: "a schematic — nothing is a card, every element is a node on one spine" },
-  { key: "signal", label: "SIGNAL LOG", hint: "a log viewer — elapsed time in the gutter, a level chip, one row per event" },
-  { key: "press", label: "LEDGER PRESS", hint: "print — not one box, rank is a rule's weight and whether a label is ink or italic" },
-  { key: "halo", label: "HALO", hint: "surfaces, not rules — one radius, quiet by default, loud only when something changed" },
-];
+/** How the whole session reads. One language since the settings remap
+ *  (2026-10-15): DOSSIER, a card per turn ranked by tier (index.css, DOSSIER).
+ *  `wire` is not a language any more — it is the material DOSSIER draws its
+ *  widgets in (ResultWidgets.material), and only that. */
+export type ToolStyle = "dossier" | "wire";
 
 /** The texture the transcript is read ON. A language decides how a turn is
  *  drawn; this decides what it is drawn on — and the two are independent, so
@@ -85,25 +58,6 @@ export function toTranscriptScheme(v: unknown): TranscriptScheme {
 
 export function toChatBg(v: unknown): ChatBg {
   return CHAT_BGS.some((b) => b.key === v) ? (v as ChatBg) : "none";
-}
-
-/** What the styles were called before the sheet replaced them. A stored pick
- *  lands on its nearest new language instead of silently snapping to default.
- *  PLAIN was the widget opt-out and has no column, so it maps to the quietest
- *  one there is. */
-const LEGACY: Record<string, ToolStyle> = {
-  instrument: "stamp", terminal: "wire", note: "press", plain: "wire",
-  bare: "wire", card: "press",
-};
-
-export function isToolStyle(v: unknown): v is ToolStyle {
-  return TOOL_STYLES.some((s) => s.key === v);
-}
-
-/** A stored value → a style that exists. Anything unrecognised is the default. */
-export function toToolStyle(v: unknown): ToolStyle {
-  if (isToolStyle(v)) return v;
-  return (typeof v === "string" && LEGACY[v]) || "dossier";
 }
 
 /** How much chrome a result wears, and at what x it hangs off the turn.

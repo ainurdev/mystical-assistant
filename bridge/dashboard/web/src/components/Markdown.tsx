@@ -191,7 +191,7 @@ function FileRefSpan({
 }
 
 export const Markdown = memo(function Markdown({
-  children, className = "", onOpenFile, toolStyle = "stamp", breaks = false,
+  children, className = "", onOpenFile, toolStyle = "dossier", breaks = false,
 }: {
   children: string;
   className?: string;

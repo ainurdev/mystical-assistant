@@ -894,7 +894,7 @@ export function ToolWidget({ spec, accent, style, children }: {
  *  the caller's cue to draw the code block it would have drawn. That fallback
  *  is the whole safety property: a malformed block costs a nicer rendering,
  *  never the text. */
-export function BlockWidget({ type, value, style = "stamp" }: {
+export function BlockWidget({ type, value, style = "dossier" }: {
   type: string; value: unknown; style?: ToolStyle;
 }) {
   const body = drawWidget(type, value);

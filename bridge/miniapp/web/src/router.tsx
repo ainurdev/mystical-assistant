@@ -5,13 +5,10 @@ import { chatsRoute } from "./routes/chats";
 import { workRoute } from "./routes/work";
 import { filesRoute } from "./routes/files";
 import { systemRoute } from "./routes/system";
-import { outputRoute } from "./routes/output";
 
-// One route per bottom tab: CHAT · CHATS · WORK · REPO · SYSTEM — plus
-// /output, the one page that hangs off a tab rather than being one, because a
-// style you pick by looking at it needs more room than SYSTEM has.
+// One route per bottom tab: CHAT · CHATS · WORK · REPO · SYSTEM.
 const routeTree = rootRoute.addChildren([
-  runRoute, chatsRoute, workRoute, filesRoute, systemRoute, outputRoute,
+  runRoute, chatsRoute, workRoute, filesRoute, systemRoute,
 ]);
 
 // Telegram launches the webview at "#tgWebAppData=…" and telegram-web-app.js only

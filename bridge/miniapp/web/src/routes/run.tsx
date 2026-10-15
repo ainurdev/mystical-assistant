@@ -16,7 +16,7 @@ import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 import { ImageLightbox, MediaThumb, isVideo, type Shown } from "../components/ImageLightbox";
 import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
-import { useChatBg, useToolStyle } from "../lib/toolwidget";
+import { useChatBg } from "../lib/toolwidget";
 import { hhmm } from "../lib/utils";
 
 // Shared empty list — a fresh `[]` per render would defeat RunStream's memo.
@@ -70,7 +70,6 @@ function RunPage() {
   const slowLoad = useLoadingPhase(loadingSession);
   const bottomRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const [style] = useToolStyle();
   const [chatBg] = useChatBg();
   const listRef = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
@@ -280,7 +279,7 @@ function RunPage() {
     // OUTPUT STYLE is the whole session's idiom, not just its widgets — one
     // attribute here and the bubbles, the agent block and the reply's own
     // tables all answer to it (index.css, THE SESSION'S IDIOM).
-    <div ref={contentRef} data-style={style} data-bg={chatBg} className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
+    <div ref={contentRef} data-style="stamp" data-bg={chatBg} className="space-y-3 pb-[calc(var(--composer-h,13rem)+0.75rem)]">
       {zoom && <ImageLightbox src={zoom.src} alt={zoom.alt} video={zoom.video} all={zoom.all} onClose={() => setZoom(null)} />}
 
       {/* What this session is for, and what a usage limit does to it. */}

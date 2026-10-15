@@ -14,7 +14,7 @@ import {
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindowMac, Pin,
 } from "lucide-react";
-import { CHAT_BGS, TOOL_STYLES, TRANSCRIPT_SCHEMES, type ChatBg, type ToolStyle, type TranscriptScheme } from "../../lib/toolwidget";
+import { CHAT_BGS, TRANSCRIPT_SCHEMES, type ChatBg, type TranscriptScheme } from "../../lib/toolwidget";
 import { AgentRail, PromptBubble } from "../Transcript";
 import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
@@ -191,7 +191,8 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
-  { tab: "transcript", sec: "OUTPUT STYLE", terms: "auto-open results bash output edit diffs tool widget output style control plate stamp wire signal log ledger press halo instrument terminal note plain sources screens preview" },
+  { tab: "transcript", sec: "COLOUR SCHEME", terms: "colour color scheme phosphor contrast dossier output style" },
+  { tab: "transcript", sec: "RESULTS", terms: "auto-open results bash output edit diffs collapse steps fold" },
   { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
   { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
   { tab: "notifications", sec: "SOUND", terms: "tone chime volume packs peonping mute" },
@@ -340,7 +341,6 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "CRT EFFECTS": ScanLine,
   TYPE: Type,
   "WORKING INDICATOR": AudioLines,
-  "OUTPUT STYLE": ScrollText,
   RESULTS: ListTree,
   DESKTOP: Monitor,
   SOUND: Volume2,
@@ -380,7 +380,6 @@ const SEC_DESC: Record<string, string> = {
   "THEME · LIGHT": "Palettes on a paper or daylight ground.",
   "CRT EFFECTS": "The tube laid over the screen: raster lines, a roaming glow, bloom on headings.",
   TYPE: "The typeface the HUD is set in, and the base size every other size scales from.",
-  "OUTPUT STYLE": "How every message in a session is drawn. Each tile is a live preview.",
   "THE GROUND": "The texture the transcript sits on.",
   RESULTS: "Whether command output and diffs start open or folded.",
   "WORKING INDICATOR": "The tab you pick is the one the dashboard shows while it works.",
@@ -992,8 +991,7 @@ const STYLE_PREVIEW_TURN: TimedEvent[] = [
 /** One tile's well: the same turn, drawn in one language on one ground. Shared
  *  by both pickers below, because "what does this pick look like" has exactly
  *  one honest answer and it should not be written twice. */
-function TranscriptWell({ style, bg, scheme = "phosphor", children }: {
-  style: ToolStyle;
+function TranscriptWell({ bg, scheme = "phosphor", children }: {
   bg: ChatBg;
   scheme?: TranscriptScheme;
   children?: ReactNode;
@@ -1001,7 +999,7 @@ function TranscriptWell({ style, bg, scheme = "phosphor", children }: {
   return (
     <div
       inert
-      data-style={style}
+      data-style="dossier"
       data-scheme={scheme}
       data-bg={bg}
       style={{
@@ -1033,39 +1031,16 @@ function TranscriptWell({ style, bg, scheme = "phosphor", children }: {
             <AgentRail />
             <RunStream
               events={STYLE_PREVIEW_TURN}
-              toolStyle={style}
               turnStarted={0}
               openResults
               // The tile exists to show how the ledger draws, so its one fold
               // is open whatever the reader's own setting says.
               foldsOpen
-              turnId={`prev:${style}:${bg}`}
+              turnId={`prev:${bg}`}
             />
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function OutputStylePicker({
-  value,
-  bg,
-  scheme,
-  onPick,
-}: {
-  value: ToolStyle;
-  bg: ChatBg;
-  scheme: TranscriptScheme;
-  onPick: (s: ToolStyle) => void;
-}) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
-      {TOOL_STYLES.map((o) => (
-        <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
-          <TranscriptWell style={o.key} bg={bg} scheme={scheme} />
-        </PickTile>
-      ))}
     </div>
   );
 }
@@ -1082,7 +1057,7 @@ function SchemePicker({ value, bg, onPick }: {
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
       {TRANSCRIPT_SCHEMES.map((o) => (
         <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
-          <TranscriptWell style="dossier" bg={bg} scheme={o.key} />
+          <TranscriptWell bg={bg} scheme={o.key} />
         </PickTile>
       ))}
     </div>
@@ -1095,11 +1070,9 @@ function SchemePicker({ value, bg, onPick }: {
  *  nothing about the thing you actually do with them. */
 function ChatBgPicker({
   value,
-  style,
   onPick,
 }: {
   value: ChatBg;
-  style: ToolStyle;
   onPick: (b: ChatBg) => void;
 }) {
   return (
@@ -1109,14 +1082,13 @@ function ChatBgPicker({
           {/* Two lines of prose and one row, not the whole turn: a ground is
               judged on the gaps between cards, and this is the shortest slice
               that has any. */}
-          <TranscriptWell style={style} bg={o.key}>
+          <TranscriptWell bg={o.key}>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               <PromptBubble text="does this still read?" />
               <div className="relative space-y-1.5">
                 <AgentRail />
                 <RunStream
                   events={STYLE_PREVIEW_TURN.slice(0, 3).concat(STYLE_PREVIEW_TURN.slice(5))}
-                  toolStyle={style}
                   turnStarted={0}
                   foldsOpen
                   turnId={`bg:${o.key}`}
@@ -4208,18 +4180,6 @@ export function SettingsModal(props: SettingsModalProps) {
                   </div>
                 </Section>
 
-                <Section
-                  title="OUTPUT STYLE"
-                  top
-                  info="How the whole session draws — your prompt, the ledger of what it did, a delegated run, and the reply itself with its tables and its code. Six languages. DOSSIER, the default, ranks by tier: your prompt and the answer loudest, cards that wait on you next, the work a small log between. The other five are the columns of the Chat Elements sheet, each a whole grammar rather than a border swap. Each tile is the real thing under the real stylesheet, so what you see is what the transcript does."
-                >
-                  <OutputStylePicker
-                    value={settings.toolStyle}
-                    bg={settings.chatBg}
-                    scheme={settings.chatScheme}
-                    onPick={(toolStyle) => onPatch({ toolStyle })}
-                  />
-                </Section>
 
                 <Section
                   title="COLOUR SCHEME"
@@ -4240,7 +4200,6 @@ export function SettingsModal(props: SettingsModalProps) {
                 >
                   <ChatBgPicker
                     value={settings.chatBg}
-                    style={settings.toolStyle}
                     onPick={(chatBg) => onPatch({ chatBg })}
                   />
                 </Section>

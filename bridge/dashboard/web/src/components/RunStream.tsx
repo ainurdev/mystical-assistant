@@ -1570,7 +1570,7 @@ export const RunStream = memo(function RunStream({
   turnId = "",
   tokens = null,
   openResults = false,
-  toolStyle = "stamp",
+  toolStyle = "dossier",
   turnStarted,
   onRunCommand,
   onQuote,
