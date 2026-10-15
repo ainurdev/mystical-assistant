@@ -155,7 +155,7 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   { key: "appearance", label: "APPEARANCE", hint: "theme · type · CRT", icon: Palette, group: "THE HUD",
     about: "How the dashboard looks: the palette it wears, its typeface and size, and the CRT effects laid over it." },
   { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD",
-    about: "How a session reads: the style every message is drawn in, the texture behind it, and whether results start open." },
+    about: "How a session reads: the chat layout, the composer's send key, the ground and colour scheme every turn is drawn on, whether results start open, and what shows while it works." },
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD",
     about: "How the dashboard tells you a session finished, failed, or is waiting on you: a desktop banner, a sound, or both." },
   // Only inside Mystical.app (RAIL and the search both skip it elsewhere): the

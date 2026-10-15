@@ -118,7 +118,7 @@ const REST: { group: string; items: [string, string][] }[] = [
       ["See the subagents", "A live feed per agent"],
       ["Watch the context fill", "Per cent, tokens, /compact one tap away"],
       ["Per-message controls", "Model, effort, permission posture"],
-      ["Something to watch", "Equaliser, nyan cat, a playable piano"],
+      ["Something to watch", "Equaliser bars, or one quiet status line"],
     ],
   },
   {

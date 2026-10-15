@@ -6,6 +6,7 @@ import { useSpentUsage } from "../lib/accounts";
 import { useChat } from "../lib/chat";
 import { ThemeCards } from "../components/ThemePicker";
 import { useFoldsOpen } from "../lib/folds";
+import { CHAT_BGS, useChatBg } from "../lib/toolwidget";
 
 /* SYSTEM — the controls that belong to the app rather than to one chat: the
    palette, and what's left of the Claude limits this phone is spending — the
@@ -90,6 +91,7 @@ function SystemPage() {
       <div className="space-y-2">
         <div className="text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">TRANSCRIPT</div>
         <FoldsRow />
+        <GroundRow />
       </div>
 
       <div className="space-y-2">
@@ -140,5 +142,33 @@ function FoldsRow() {
         <span className="px-2 py-[3px]" style={{ background: on ? "transparent" : "var(--ac-12)", color: on ? "var(--muted-2)" : "var(--foreground-bright)" }}>OFF</span>
       </span>
     </button>
+  );
+}
+
+/** THE GROUND — the texture under the words. Its tiles shared the /output page
+ *  with the retired output styles; this row keeps a phone able to pick one or
+ *  clear it, since the stored pick keeps applying either way. */
+function GroundRow() {
+  const [bg, setBg] = useChatBg();
+  const cur = CHAT_BGS.find((b) => b.key === bg) ?? CHAT_BGS[0];
+  return (
+    <div className="flex w-full items-center gap-2.5 bg-[var(--tg-secondary-bg)] px-3 py-2.5">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-[11px] tracking-[1.5px]">THE GROUND</div>
+        <div className="text-[10px] leading-snug text-[var(--tg-hint)]">{cur.hint}</div>
+      </div>
+      <span
+        className="flex flex-none border p-[2px] text-[9px] tracking-[1px]"
+        style={{ borderColor: "color-mix(in srgb, var(--acc) 25%, transparent)" }}
+      >
+        {CHAT_BGS.map((b) => (
+          <button key={b.key} type="button" onClick={() => setBg(b.key)} aria-pressed={bg === b.key}
+            className="px-1.5 py-[3px] active:opacity-70"
+            style={{ background: bg === b.key ? "var(--acc)" : "transparent", color: bg === b.key ? "var(--acc-on)" : "var(--muted-2)" }}>
+            {b.label}
+          </button>
+        ))}
+      </span>
+    </div>
   );
 }
