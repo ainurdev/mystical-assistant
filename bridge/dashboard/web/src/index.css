@@ -4102,14 +4102,38 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] .projgrp .sessrow { margin-left: 0; border-radius: 0 var(--f-rad-s) var(--f-rad-s) 0; }
 [data-theme^="flint"] .projgrp .sessrow::before { left: -1px; top: 6px; bottom: 6px; }
 
-/* ── the chat header island ── */
-[data-theme^="flint"] .isle {
-  border: 1px solid var(--line) !important; border-radius: var(--f-rad-l) !important;
-  box-shadow: none !important;
-}
+/* ── FLINT · HEADER — the island over the transcript, in the style picked on
+   FLINT's theme card (data-hdr on the themed container, lib/theme
+   HEADER_STYLES). All three drop the HUD's accent border and drop shadow:
+   the island was a sticker on whatever scrolled under it. ── */
+[data-theme^="flint"] .isle { box-shadow: none !important; border-radius: var(--f-rad-l) !important; transition: border-color .2s ease; }
 [data-theme^="flint"] .isle-pill { border-radius: 999px !important; }
-[data-theme^="flint"] .isle-glass { background: color-mix(in oklab, var(--panel) 94%, transparent) !important; }
+[data-theme^="flint"] .isle > div:last-child > * { transition: opacity .2s ease; }
+[data-theme^="flint"] .isle-glass { transition: background-color .2s ease; }
 [data-theme^="flint"] .isle button:first-child > span { font-family: var(--ui-font); }
+/* FROST: glass the transcript blurs through; half ink until reached for */
+[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle { border: 1px solid rgba(255,255,255,.06) !important; }
+[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle-glass {
+  background: color-mix(in srgb, var(--panel) 42%, transparent) !important;
+  backdrop-filter: blur(14px) saturate(1.2) !important;
+}
+[data-theme^="flint"][data-hdr="frost"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .55; }
+[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) { border-color: var(--line2) !important; }
+[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) .isle-glass { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; }
+/* VEIL: no object — the column's top fades the transcript out under it, and
+   the readouts sit in the fade like a status line */
+[data-theme^="flint"][data-hdr="veil"] .isle { border-color: transparent !important; }
+[data-theme^="flint"][data-hdr="veil"] .isle-glass { background: none !important; backdrop-filter: none !important; }
+[data-theme^="flint"][data-hdr="veil"] [data-layout]::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 74px; z-index: 11; pointer-events: none;
+  background: linear-gradient(var(--canvas) 30%, color-mix(in oklab, var(--canvas) 70%, transparent) 62%, transparent);
+  transition: height .2s ease;
+}
+[data-theme^="flint"][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
+[data-theme^="flint"][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
+/* TUCK: frost folded to its last readout (.isle-keep); the rest unfolds on hover */
+[data-theme^="flint"][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
+[data-theme^="flint"][data-hdr="tuck"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .7; }
 [data-theme^="flint"] .np-meta { height: 20px !important; }
 [data-theme^="flint"] .np-proj { font-family: var(--ui-font) !important; font-size: var(--t11) !important; font-weight: 500; color: var(--txh) !important; }
 [data-theme^="flint"] .np-proj .ptile { width: 16px; height: 16px; font-size: 8px; margin-right: 2px; }
@@ -4229,9 +4253,101 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* dialogs read in Geist throughout; code-ish fields keep a mono via their own classes */
 [data-theme^="flint"] [style*="--shadow-modal"] { font-family: var(--ui-font) !important; }
 [data-theme^="flint"] [style*="--shadow-modal"] [style*="JetBrains Mono"]:not(input):not(textarea):not(pre) { font-family: var(--ui-font) !important; }
-[data-theme^="flint"] .setrail, [data-theme^="flint"] .setrail button { font-family: var(--ui-font); letter-spacing: .03em; }
-[data-theme^="flint"] .setrail button { border-radius: var(--f-rad-s); }
-[data-theme^="flint"] .setrail button.on { background: var(--f-you); box-shadow: inset 2px 0 0 var(--acc); }
+/* ── FLINT · SETTINGS — the dialog as an app's settings page (SettingsModal
+   FlintCtx swaps the markup that has to change; this restyles the rest) ── */
+[data-theme^="flint"] .setscrim { background: radial-gradient(1200px 700px at 50% 40%, rgba(12,12,14,.55), rgba(5,5,6,.82)) !important; }
+[data-theme^="flint"] .setdlg {
+  border: 1px solid var(--line2) !important; border-radius: 16px !important; background: var(--panel2) !important;
+  box-shadow: 0 40px 100px -30px #000, 0 0 0 1px rgba(0,0,0,.5) !important; overflow: hidden; font-family: var(--ui-font) !important;
+}
+[data-theme^="flint"] .setdlg > div:first-child { background: var(--panel); border-bottom: 1px solid var(--line); }
+[data-theme^="flint"] .setdlg > div:first-child > div:first-child { padding: 13px 16px 13px 22px !important; }
+[data-theme^="flint"] .setdlg > div:first-child svg:first-child { display: none; }
+[data-theme^="flint"] .set-crumb { font: 600 16px var(--ui-font); color: var(--txb); letter-spacing: -.01em; white-space: nowrap; }
+[data-theme^="flint"] .set-crumb i { font-style: normal; font-weight: 500; font-size: 13.5px; color: var(--txh); margin-left: 4px; }
+[data-theme^="flint"] .set-drawline { display: none; }
+[data-theme^="flint"] .set-search {
+  height: 34px; padding: 0 12px !important; border: 1px solid var(--line) !important; border-radius: 8px !important;
+  background: var(--panel2) !important; font: 13px var(--ui-font) !important; letter-spacing: 0 !important; flex-basis: 280px !important;
+}
+[data-theme^="flint"] .set-close {
+  width: 34px; height: 34px; padding: 0 !important; border: 1px solid var(--line) !important; border-radius: 8px !important;
+  font-size: 14px !important; letter-spacing: 0 !important; color: var(--txd) !important;
+}
+[data-theme^="flint"] .setrail { width: 236px; padding: 14px 10px; background: var(--panel2); border-right: 1px solid var(--line); gap: 1px; }
+[data-theme^="flint"] .setgroup { border-top: 0; margin-top: 8px; padding: 12px 10px 6px; font: 600 10.5px var(--ui-font); letter-spacing: .12em !important; text-transform: uppercase; color: var(--txl); }
+[data-theme^="flint"] .setgroup:first-child { margin-top: 0; padding-top: 2px; }
+[data-theme^="flint"] .setrail button { border: 0; border-radius: 8px; padding: 8px 10px; gap: 11px !important; color: var(--txm); font-family: var(--ui-font); }
+[data-theme^="flint"] .setrail button:hover:not(.on) { background: var(--ac-06); }
+[data-theme^="flint"] .setrail button.on { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line), inset 2px 0 0 var(--acc); }
+[data-theme^="flint"] .setrail button svg { color: var(--txl); }
+[data-theme^="flint"] .setrail button.on svg { color: var(--acc); }
+[data-theme^="flint"] .set-raillbl { font-size: 13.5px !important; letter-spacing: 0 !important; }
+[data-theme^="flint"] .setrail .hint { display: none; }
+[data-theme^="flint"] .setpane { padding: 26px 32px 40px; }
+[data-theme^="flint"] .set-head svg { display: none; }
+[data-theme^="flint"] .set-head h2 { font: 600 20px var(--ui-font) !important; letter-spacing: -.015em !important; text-shadow: none; }
+[data-theme^="flint"] .set-head p { margin-top: 4px !important; font-size: 13.5px !important; color: var(--txd) !important; line-height: 1.5 !important; }
+[data-theme^="flint"] .set-head { margin-bottom: 8px !important; }
+[data-theme^="flint"] .set-sec { margin-top: 26px !important; }
+[data-theme^="flint"] .set-sechead > div:first-child > svg { display: none; }
+[data-theme^="flint"] .set-sectitle { font: 600 14px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txh) !important; }
+[data-theme^="flint"] .set-secrule { background: transparent !important; }
+[data-theme^="flint"] .set-secdesc { padding-left: 0 !important; font-size: 12.5px !important; }
+/* a CARD of rows. ponytail: matched on CARD's inline padding — it is a style
+   object, not a component, so it has no class to hang this on */
+[data-theme^="flint"] .setpane [style*="padding: 14px 16px"] { border: 1px solid var(--line) !important; border-radius: 12px; background: var(--panel) !important; }
+[data-theme^="flint"] .set-row { border-top-color: var(--line) !important; }
+[data-theme^="flint"] .set-key { font: 500 13.5px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txb) !important; }
+[data-theme^="flint"] .set-desc { font-size: 12px !important; }
+[data-theme^="flint"] .set-toggle { appearance: none; cursor: pointer; flex: none; width: 34px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: var(--line2); position: relative; transition: background .18s ease; }
+[data-theme^="flint"] .set-toggle i { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--txd); transition: left .18s ease, background .18s ease; }
+[data-theme^="flint"] .set-toggle[data-on] { background: var(--acc); }
+[data-theme^="flint"] .set-toggle[data-on] i { left: 17px; background: #fff; }
+[data-theme^="flint"] .set-seg { gap: 2px !important; padding: 3px; border: 1px solid var(--line) !important; border-radius: 9px; background: var(--panel3); }
+[data-theme^="flint"] .set-seg button { border-radius: 6px !important; font: 12.5px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txd) !important; background: transparent !important; }
+[data-theme^="flint"] .set-seg button:hover { color: var(--txh) !important; }
+[data-theme^="flint"] .set-seg button[data-on] { background: var(--panel) !important; color: var(--txb) !important; box-shadow: inset 0 0 0 1px var(--line2); }
+[data-theme^="flint"] .setpane select { border: 1px solid var(--line2) !important; border-radius: 8px !important; background: var(--panel2) !important; font: 13px var(--ui-font) !important; letter-spacing: 0 !important; }
+/* the theme section */
+.set-themehead { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.set-themehead b { font: 600 14px var(--ui-font); color: var(--txh); }
+.set-seg2 { display: inline-flex; margin-left: auto; padding: 3px; border-radius: 9px; background: var(--panel3); border: 1px solid var(--line); }
+.set-seg2 button { appearance: none; cursor: pointer; border: 0; background: none; padding: 4px 13px; border-radius: 6px; font: 12.5px var(--ui-font); color: var(--txd); }
+.set-seg2 button[data-on] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line2); }
+.ftgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ftcard { cursor: pointer; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; transition: border-color .15s ease; }
+.ftcard:hover { border-color: var(--line2); }
+.ftcard[data-on] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
+.ftprev { height: 64px; padding: 10px 12px; display: grid; grid-template-columns: 30% 1fr; gap: 8px; background: var(--g); }
+.ftprev .sb { border-radius: 5px; background: var(--g2); padding: 6px; display: flex; flex-direction: column; gap: 4px; }
+.ftprev .sb i { height: 4px; border-radius: 2px; background: var(--g3); }
+.ftprev .sb i:first-child { background: var(--a); width: 70%; }
+.ftprev .ch { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
+.ftprev .ch .p { height: 13px; border-radius: 4px; background: color-mix(in oklab, var(--a) 18%, var(--g2)); box-shadow: inset 2px 0 0 var(--a); }
+.ftprev .ch i { height: 4px; border-radius: 2px; background: var(--g3); }
+.ftprev .ch i:last-child { width: 60%; }
+.ftmeta { display: flex; align-items: center; gap: 9px; padding: 10px 12px 11px; border-top: 1px solid var(--line); }
+.ftmeta .d { width: 10px; height: 10px; border-radius: 50%; background: var(--a); flex: none; }
+.ftmeta b { display: block; font: 600 13.5px var(--ui-font); color: var(--txb); }
+.ftmeta div > span { display: block; font-size: 12px; color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ftmeta em { margin-left: auto; flex: none; font: 600 10.5px var(--ui-font); font-style: normal; padding: 2px 8px; border-radius: 999px; background: color-mix(in oklab, var(--acc) 18%, var(--panel)); color: var(--acc); }
+/* colourings: unlabelled squircles filled with what they paint */
+.ftsq { display: flex; gap: 8px; padding: 0 12px 12px; }
+.ftsq button { appearance: none; cursor: pointer; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 9px;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); transition: transform .12s ease; }
+.ftsq button:hover { transform: translateY(-1px); }
+.ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--txb); }
+/* header styles: each a tiny header showing the time the way it would */
+.fthdr { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px 12px; }
+.fthdr button { appearance: none; cursor: pointer; position: relative; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden;
+  background: repeating-linear-gradient(var(--panel2) 0 6px, color-mix(in oklab, var(--txl) 35%, var(--panel2)) 6px 8px); }
+.fthdr button span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font: 500 10.5px var(--mono); color: var(--txb); white-space: nowrap; padding: 3px 9px; border-radius: 999px; }
+.fthdr [data-h="frost"] span { background: color-mix(in srgb, var(--panel) 45%, transparent); backdrop-filter: blur(3px); border: 1px solid rgba(255,255,255,.08); opacity: .8; }
+.fthdr [data-h="veil"]::before { content: ""; position: absolute; inset: 0 0 35% 0; background: linear-gradient(var(--panel2) 30%, transparent); }
+.fthdr [data-h="veil"] span { color: var(--txm); top: 38%; }
+.fthdr [data-h="tuck"] span { background: color-mix(in srgb, var(--panel) 70%, transparent); backdrop-filter: blur(3px); border: 1px solid rgba(255,255,255,.08); font-size: 9.5px; padding: 2px 7px; color: var(--txm); }
+.fthdr button[data-on] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc) 18%, transparent); }
 
 /* bold is bold: no highlighter wash, and a "Label:" lead-in is the same weight
    in the same face, not the HUD's tracked accent capitals */

@@ -538,8 +538,11 @@ export function Terminal({
         </div>
       </div>
   );
+  // `isle-reads` / `isle-keep`: FLINT's TUCK header folds the readouts down to
+  // the one marked keep (the clock row when it's here, else the spend) until
+  // the island is hovered.
   const readouts = (
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+      <div className="isle-reads" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
         {/* The row's one link. The project modal — files, git, worktrees, the
             terminal — is worth a click of its own; its neighbours (design
             system, tasks, issues) stay in the menu on the project's name. */}
@@ -561,13 +564,15 @@ export function Terminal({
           </>
         )}
         {isChat && (
-          <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
+          <span className={chrome ? undefined : "isle-keep"} style={{ display: "contents" }}>
+            <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
+          </span>
         )}
         <ViewTabs view={view} onView={onView} />
         {chrome && (
           <>
             <span style={hairline(11)} />
-            {chrome}
+            <span className="isle-keep" style={{ display: "contents" }}>{chrome}</span>
           </>
         )}
       </div>

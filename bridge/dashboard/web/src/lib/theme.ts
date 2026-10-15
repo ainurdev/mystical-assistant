@@ -72,6 +72,18 @@ export const CLAUDE_KEYS: ThemeKey[] = ["claude", "claude-ocean", "claude-fern",
  */
 export const LIGHT_KEYS: ThemeKey[] = ["normal", "newsprint", "candy", "apex", "gloam", "riso", "foundry", "cupertino"];
 
+/** How FLINT's header island sits over the transcript. FROST is glass the
+ *  transcript blurs through, its readouts at half ink until reached for; VEIL
+ *  is no object at all, the column's top fading the transcript out with the
+ *  readouts set in the fade; TUCK is frost folded to its last readout, the rest
+ *  unfolding on hover. Read only under FLINT (index.css, FLINT · HEADER). */
+export const HEADER_STYLES = ["frost", "veil", "tuck"] as const;
+export type HeaderStyle = (typeof HEADER_STYLES)[number];
+
+export function isFlint(t: ThemeKey): boolean {
+  return FLINT_KEYS.includes(t);
+}
+
 export function isLight(t: ThemeKey): boolean {
   return LIGHT_KEYS.includes(t);
 }
@@ -455,6 +467,8 @@ export interface HudSettings {
   chatBg: ChatBg;
   // Which palette DOSSIER's roles read (see lib/toolwidget TRANSCRIPT_SCHEMES).
   chatScheme: TranscriptScheme;
+  // FLINT's header island (see HEADER_STYLES).
+  headerStyle: HeaderStyle;
   // How the chat column is laid out. DEFAULT is the nameplate header over a
   // four-dropdown control row. COMPACT reads as a chat: your prompt on the
   // right, replies capped short of the far edge, the header shrunk to a pill of
@@ -527,7 +541,7 @@ const DEFAULTS: HudSettings = {
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
-  pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "dossier", chatBg: "none", chatScheme: "phosphor",
+  pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "dossier", chatBg: "none", chatScheme: "phosphor", headerStyle: "frost",
   layout: "default", sendKey: "enter", move: MOVE_DEFAULTS,
 };
 
@@ -644,6 +658,7 @@ export function loadSettings(): HudSettings {
         toolStyle: p.chatScheme === undefined ? "dossier" : toToolStyle(p.toolStyle),
         chatBg: toChatBg(p.chatBg),
         chatScheme: toTranscriptScheme(p.chatScheme),
+        headerStyle: HEADER_STYLES.includes(p.headerStyle as HeaderStyle) ? (p.headerStyle as HeaderStyle) : "frost",
         sendKey: p.sendKey === "ctrl-enter" ? "ctrl-enter" : "enter",
         layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
         move: toMove(p.move),

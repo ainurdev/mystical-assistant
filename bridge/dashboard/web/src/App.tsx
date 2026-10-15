@@ -2273,6 +2273,7 @@ export function App() {
         // and all modals below — inherits all three.
         <div
           data-theme={settings.theme}
+          data-hdr={settings.headerStyle}
           style={{
             flex: 1,
             display: "flex",
