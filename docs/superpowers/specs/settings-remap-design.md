@@ -4,7 +4,7 @@
 (bf3c71f, 5e3653c, e92c1ac) that landed and shipped meanwhile — kept as is, the remap now builds on it** ·
 audit in `.mystical/docs/reports/settings-audit.md` · mockups in `.mystical/design-drafts/settings-remap/`
 (`SPEC.md`, `00`–`07` HTML, `shots/`, `after/aimgmt.png` is the live page; the Claude Design push waits on a
-one-time `/design-login` on this Mac) · plan: `docs/superpowers/plans/settings-remap.md` (next).
+one-time `/design-login` on this Mac) · plan: `docs/superpowers/plans/settings-remap-cuts.md` (slice 1; slices 2 and 3 get their own).
 
 ## Problem
 
