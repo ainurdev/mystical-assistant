@@ -3191,7 +3191,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   display: inline-flex !important; align-items: center !important; gap: 7px; flex: none; min-width: 0; height: 26px !important;
   margin-bottom: -1px; padding: 0 10px !important; border-bottom: 0 !important; }
 .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run), .pb-tabs > .ctrl-ctx {
-  border: 1px solid color-mix(in srgb, var(--acc) 18%, transparent) !important; border-bottom: 0 !important; background: var(--pb-ground) !important; }
+  border: 1px solid var(--pb-edge) !important; border-bottom: 0 !important; background: var(--pb-ground) !important; }
 /* the PR tab keeps its state's ink: tone border, tone tint over the ground (PrChip's --tone-bg) */
 .pb-tabs .np-pr { background: linear-gradient(var(--tone-bg, transparent), var(--tone-bg, transparent)), var(--pb-ground) !important; }
 .pb-tabs .np-proj { display: none !important; }   /* the tile (or the HUD's dot) stands for it */
@@ -3296,11 +3296,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* FLINT: the same shells in its skin — radius, hairlines, Geist */
 [data-theme^="flint"] .composer[data-pb] { --pb-ground: var(--panel); }
-[data-theme^="flint"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run), [data-theme^="flint"] .pb-tabs > .ctrl-ctx { border-color: var(--line2) !important; font-family: var(--ui-font); }
+[data-theme^="flint"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run), [data-theme^="flint"] .pb-tabs > .ctrl-ctx { font-family: var(--ui-font); }
 [data-theme^="flint"] .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run), [data-theme^="flint"] .pb-tabs > .ctrl-ctx { border-radius: 8px 8px 0 0 !important; }
 [data-theme^="flint"] .pb-tabs .np-tile { border-radius: 8px 0 0 0 !important; }
 [data-theme^="flint"] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 8px 0 0 !important; }
-[data-theme^="flint"] .pb-tabs > .ctrl-ctx { border-color: var(--line) !important; background: var(--panel2) !important; }
+[data-theme^="flint"] .pb-tabs > .ctrl-ctx { background: var(--panel2) !important; }
 [data-theme^="flint"] .pb-tabs :is(.np-branch, .np-pr, .np-run) { font-family: var(--mono) !important; }
 [data-theme^="flint"] :is(.pb-tabs, .pb-place) .np-title { font-size: var(--t12) !important; }
 [data-theme^="flint"] .pb-plus { border-color: var(--line); border-radius: var(--f-rad-s); }
@@ -3325,6 +3325,17 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint"] [data-pb="console"] .pb-cmd[data-running], [data-theme^="flint"] [data-pb="console"] .pb-cmd[data-running]:focus-within {
   border-color: transparent !important; border-left-color: var(--ask) !important; box-shadow: none !important;
   background: linear-gradient(90deg, color-mix(in srgb, var(--ask) 8%, transparent), transparent 45%) !important; }
+/* TABS: the tabs and the card share one edge, in every state the card has: the
+   theme's hairline at rest, its accent on focus and on a file drag, ASK while a
+   turn runs. The card reads the same variable, so the two can never drift. */
+.composer[data-pb="tabs"] { --pb-edge: color-mix(in srgb, var(--acc) 18%, transparent); }
+.composer[data-pb="tabs"]:has(.pb-card[data-running]) { --pb-edge: color-mix(in srgb, var(--ask, var(--purple)) 55%, transparent); }
+.composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
+[data-theme^="flint"] .composer[data-pb="tabs"] { --pb-edge: var(--line2); }
+[data-theme^="flint"] .composer[data-pb="tabs"]:has(.pb-card:focus-within) { --pb-edge: color-mix(in oklab, var(--acc) 40%, var(--line2)); }
+[data-theme^="flint"] .composer[data-pb="tabs"]:has(.pb-card[data-running]) { --pb-edge: color-mix(in oklab, var(--ask) 60%, var(--line2)); }
+[data-theme^="flint"] .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
+[data-theme] .composer[data-pb="tabs"] .pb-card.cmdbox { border-color: var(--pb-edge) !important; }
 
 /* === AI MANAGEMENT ===========================================================
    SETTINGS ▸ AI MANAGEMENT (SettingsModal AiManagementPanel, ProjectsSettings):
