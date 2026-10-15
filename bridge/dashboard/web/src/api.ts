@@ -1022,23 +1022,6 @@ export interface EnvSetting {
   unit?: string;
   placeholder?: string;
 }
-export interface AgentConfigFile {
-  id: string;
-  name: string;
-  lang: "markdown" | "json";
-  hint: string;
-  path: string;   // display path, $HOME collapsed to ~
-  exists: boolean;
-  content: string;
-  error: string | null;   // unreadable/too large → the editor stays read-only
-}
-export interface AgentConfigTool {
-  id: string;
-  label: string;
-  hint: string;
-  installed: boolean;
-  files: AgentConfigFile[];
-}
 export interface NextItem {
   id: string;
   title: string;
@@ -1521,16 +1504,6 @@ export const api = {
     req<{ ok: boolean; settings: EnvSetting[] }>("/local/envsettings", {
       method: "POST",
       body: { key, value },
-    }),
-  /** Each AI tool's own global config files (~/.claude/CLAUDE.md and friends),
-   *  contents included — nothing here is more than a few KB. */
-  agentConfig: () => req<{ tools: AgentConfigTool[] }>("/local/agentconfig"),
-  /** Writes the file verbatim; JSON is parsed first and a parse error comes
-   *  back as the request error rather than landing on disk. */
-  setAgentConfig: (id: string, content: string) =>
-    req<{ ok: boolean; tools: AgentConfigTool[] }>("/local/agentconfig", {
-      method: "POST",
-      body: { id, content },
     }),
   /** Does the bridge come up at login, and the window with it? */
   startup: () => req<StartupState>("/local/startup"),

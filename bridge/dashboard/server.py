@@ -368,9 +368,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/envsettings":
             from bridge import envsettings
             return self._json({"settings": envsettings.state()})
-        if path == "/local/agentconfig":
-            from bridge import agentconfig
-            return self._json(agentconfig.state())
         if path == "/local/startup":
             from bridge import startup
             return self._json(startup.state())
@@ -977,16 +974,6 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "settings": envsettings.state()})
-        if path == "/local/agentconfig":
-            # Each AI tool's own global config file, written verbatim.
-            from bridge import agentconfig
-            try:
-                agentconfig.write(str(body.get("id") or ""), body.get("content"))
-            except ValueError as e:
-                return self._json({"error": str(e)}, 400)
-            except OSError as e:
-                return self._json({"error": f"could not write it — {e}"}, 400)
-            return self._json({"ok": True, **agentconfig.state()})
         if path == "/local/startup":
             from bridge import startup
             try:

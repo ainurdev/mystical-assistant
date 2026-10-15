@@ -4,7 +4,7 @@ import {
 } from "react";
 import {
   Activity, AudioLines, BarChart3, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
-  FileCog, FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
+  FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
   Globe,
   Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
   MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, PenLine, Play, Plug,
@@ -26,7 +26,6 @@ import { WeekPanel } from "./WeekPanel";
 import {
   api,
   type AccountInfo,
-  type AgentConfigTool,
   type AiFeature,
   type EnvSetting,
   type AcpAccount,
@@ -161,7 +160,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 export type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
-  | "aimgmt" | "agentconfig"
+  | "aimgmt"
   | "plugins" | "system" | "move"
   | "report" | "mac";
 
@@ -206,8 +205,6 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   // piece of the same question, and the sidebar's SKILLS panel besides.
   { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · skills · mcp · profile · projects", icon: KeyRound, group: "THE WORK",
     about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills, extras and MCP servers they can reach, the default profile, and which one each project starts with." },
-  { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK",
-    about: "The global files each AI tool reads on every run, such as Claude Code's CLAUDE.md and settings.json, edited in place." },
   { key: "plugins", label: "PLUGINS", hint: "rivendell instances", icon: Waypoints, group: "THE WORK",
     about: "External dashboards the bridge runs work for. Rivendell's \"Request review\" and \"Implement using AI\" buttons become autonomous Claude runs here — one connection per Rivendell (production, local, staging)." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
@@ -250,8 +247,6 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission" },
   { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
   { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
-  { tab: "agentconfig", sec: "CLAUDE CODE", terms: "claude.md memory global instructions settings.json permissions hooks env user config" },
-  { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
   { tab: "aimgmt", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
   { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini api key install test other agent" },
@@ -2229,120 +2224,6 @@ function StartupSection() {
  *  restart to reach. Same precedence as the AI tab: what you set here beats
  *  .env, and RESET puts a row back to whatever .env said rather than to a
  *  hardcoded default — so the file stays the floor under all of this. */
-/** The global config files each AI tool reads for itself — ~/.claude/CLAUDE.md
- *  and settings.json, opencode's pair when it is installed. Unlike EnvPanel
- *  below, nothing here is layered over anything: the file on disk IS the state,
- *  so a save is a write and there is no RESET to fall back to. Hence an
- *  explicit SAVE rather than EnvPanel's save-on-blur — and a refused write
- *  (invalid JSON) needs somewhere to say so. */
-function AgentConfigPanel() {
-  const [tools, setTools] = useState<AgentConfigTool[] | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [busy, setBusy] = useState<string | null>(null);
-  const [err, setErr] = useState<{ id: string; message: string } | null>(null);
-
-  useEffect(() => {
-    void api.agentConfig().then((r) => setTools(r.tools)).catch(() => setTools([]));
-  }, []);
-
-  async function save(id: string, content: string) {
-    setBusy(id);
-    setErr(null);
-    try {
-      setTools((await api.setAgentConfig(id, content)).tools);
-      setDrafts((d) => { const next = { ...d }; delete next[id]; return next; });
-    } catch (e) {
-      setErr({ id, message: e instanceof Error ? e.message : "could not save" });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  if (tools === null) return <Placeholder icon={LoaderCircle} spin>Reading each tool’s config files…</Placeholder>;
-  if (!tools.length)
-    return <Placeholder icon={TriangleAlert}>This bridge is running a build without the agent-config route. Restart it.</Placeholder>;
-
-  return (
-    <>
-      {tools.map((t, ti) => (
-        <Section
-          key={t.id}
-          title={t.label}
-          top={ti > 0}
-          info={
-            ti === 0
-              ? "These are the tools' own files, not bridge settings: written verbatim to the paths each tool reads for itself, and just as editable from a terminal or from Claude Code's own /config. A save lands immediately and the next turn picks it up — nothing restarts. A .json file is parsed before it is written, so a typo comes back as an error instead of quietly voiding every setting in it."
-              : undefined
-          }
-        >
-          <div style={CARD}>
-            {!t.installed ? (
-              <Row first label="NOT INSTALLED" desc={`${t.hint} — nothing to configure until it is`} />
-            ) : t.files.map((f, i) => {
-              const text = drafts[f.id] ?? f.content;
-              const dirty = text !== f.content;
-              return (
-                <div
-                  key={f.id}
-                  style={{ marginTop: i ? 11 : 0, paddingTop: i ? 11 : 0, borderTop: i ? RULE : undefined }}
-                >
-                  <Row
-                    first
-                    label={f.name}
-                    desc={
-                      <>
-                        {f.hint}
-                        <span style={{ color: "var(--txd)" }}> · {f.path}</span>
-                        {!f.exists && <span style={{ color: "var(--txd)" }}> · not created yet</span>}
-                      </>
-                    }
-                  >
-                    <button
-                      onClick={() => void (busy || !dirty ? null : save(f.id, text))}
-                      disabled={!!busy || !dirty || !!f.error}
-                      style={{
-                        appearance: "none", cursor: dirty && !busy ? "pointer" : "default",
-                        border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
-                        background: "transparent", color: dirty ? "var(--acc)" : "var(--txd)",
-                        fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
-                        padding: "6px 12px", flex: "none",
-                      }}
-                    >
-                      {busy === f.id ? "SAVING…" : dirty ? "SAVE" : "SAVED"}
-                    </button>
-                  </Row>
-                  {f.error ? (
-                    <div style={{ ...NOTE, color: "var(--err)" }}>{f.error}</div>
-                  ) : (
-                    <textarea
-                      value={text}
-                      disabled={busy === f.id}
-                      spellCheck={false}
-                      rows={14}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setDrafts((d) => ({ ...d, [f.id]: v }));
-                      }}
-                      style={{
-                        ...field, width: "100%", marginTop: 8, resize: "vertical",
-                        lineHeight: 1.6, letterSpacing: 0,
-                        fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)",
-                      }}
-                    />
-                  )}
-                  {err?.id === f.id && (
-                    <div style={{ ...NOTE, color: "var(--err)", marginTop: 6 }}>{err.message}</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Section>
-      ))}
-    </>
-  );
-}
-
 function EnvPanel() {
   const [rows, setRows] = useState<EnvSetting[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -5407,7 +5288,6 @@ export function SettingsModal(props: SettingsModalProps) {
             )}
 
 
-            {shown === "agentconfig" && <AgentConfigPanel />}
 
             {shown === "aimgmt" && (
               <AiManagementPanel settings={settings} onPatch={onPatch} models={models} sessionTools={sessionTools}
