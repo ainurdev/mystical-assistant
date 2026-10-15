@@ -37,7 +37,8 @@ export function GoalPill({
                      flex: "0 0 auto",
                      animation: active ? "mpulse 2.4s infinite" : "none" }} />
       <span style={{ flex: "0 0 auto" }}>{label}</span>
-      <span style={{ color: "var(--txm)", overflow: "hidden",
+      {/* pill-desc: the busy composer hides this and keeps the words in the title. */}
+      <span className="pill-desc" style={{ color: "var(--txm)", overflow: "hidden",
                      textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {goal.objective}
       </span>

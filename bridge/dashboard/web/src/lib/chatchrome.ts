@@ -1,4 +1,4 @@
-import type { SendKey } from "./theme";
+import type { ComposerStyle, SendKey } from "./theme";
 import { createContext, useContext, type ReactNode } from "react";
 
 /** What the chat column hands down to the composer it hosts. In the COMPACT
@@ -10,8 +10,10 @@ import { createContext, useContext, type ReactNode } from "react";
 export interface ChatChrome {
   compact: boolean;
   lead: ReactNode;
+  /** Which shell COMPACT's composer wears (theme COMPOSER_STYLES). */
+  composer: ComposerStyle;
   sendKey: SendKey;
 }
 
-export const ChatChromeContext = createContext<ChatChrome>({ compact: false, lead: null, sendKey: "enter" });
+export const ChatChromeContext = createContext<ChatChrome>({ compact: false, lead: null, composer: "tabs", sendKey: "enter" });
 export const useChatChrome = () => useContext(ChatChromeContext);

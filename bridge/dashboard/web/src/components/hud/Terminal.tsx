@@ -185,6 +185,7 @@ function RunChip({ run, onClick }: { run: DevServerInfo; onClick?: () => void })
       onClick={onClick} disabled={!onClick}
       title={`${live ? "running" : "exited"}${run.cmd ? ` · ${run.cmd}` : ""} — open the terminal`}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+      className="np-run"
       style={{
         display: "inline-flex", alignItems: "center", gap: 5, flex: "none",
         fontFamily: "var(--mono)", fontSize: "var(--t9)", padding: 0, border: 0,
@@ -279,6 +280,9 @@ export function Terminal({
   // COMPACT: the nameplate leaves the header for the composer's control row,
   // and the header shrinks to a pill of readouts on the right.
   const compact = hud?.layout === "compact";
+  // COMPACT's TABS / STUB / CONSOLE composers lay the nameplate's pieces out
+  // themselves; CLASSIC keeps it whole, as the row it always was.
+  const flat = compact && (hud?.composer ?? "tabs") !== "classic";
   // A fresh session's whole screen is a drop target: a file dragged anywhere on
   // it lands where a drop on the prompt box would. Files only — a row or text
   // drag passes through untouched.
@@ -473,9 +477,23 @@ export function Terminal({
     e.currentTarget.dispatchEvent(new MouseEvent("contextmenu",
       { bubbles: true, clientX: r.left, clientY: r.bottom }));
   };
+  // COMPACT hands this to the composer. Under TABS, STUB and CONSOLE (`flat`)
+  // the root and the caption row become display:contents, so each piece is its
+  // own flex item of the composer's layout, and the project tile gets a button
+  // of its own to lead the title with.
   const nameplate = (
-      <div style={{ display: "flex", flexDirection: "column", justifyContent: "center", gap: 3, flex: "0 1 auto", minWidth: 0 }}>
+      <div className="nameplate" style={flat ? { display: "contents" } : { display: "flex", flexDirection: "column", justifyContent: "center", gap: 3, flex: "0 1 auto", minWidth: 0 }}>
+        {flat && sessionProject && (
+          <button className="np-tile" title="project — analyze, design system, new session here"
+            data-ctx-type="project" data-ctx-id={sessionProject} data-ctx-label={projectLabel ?? undefined} onClick={openMenu}
+            style={{ display: "inline-flex", alignItems: "center", flex: "none", padding: 0, border: 0, appearance: "none", background: "transparent", cursor: "pointer" }}>
+            {/* FLINT draws the tile; the HUD themes hide .ptile and mark a project by its tint dot */}
+            <span className="pdot" style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
+            <ProjectTile project={sessionProject} />
+          </button>
+        )}
         <button
+          className="np-title-btn"
           title={sessionId ? "session — rename, pin, move to a worktree…" : undefined}
           data-ctx-type={sessionId ? "session" : undefined}
           data-ctx-id={sessionId ?? undefined}
@@ -489,7 +507,7 @@ export function Terminal({
           </span>
           {sessionId && <span aria-hidden style={{ flex: "none", fontSize: "var(--t9)", color: titleHov ? "var(--txb)" : "var(--txl)" }}>▾</span>}
         </button>
-        <div className="np-meta" style={{ display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
+        <div className="np-meta" style={flat ? { display: "contents" } : { display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
           <button
             className="np-proj"
             title={sessionProject ? "project — analyze, design system, new session here" : undefined}
@@ -499,18 +517,22 @@ export function Terminal({
             disabled={!sessionProject}
             onClick={openMenu}
             onMouseEnter={() => setProjHov(true)} onMouseLeave={() => setProjHov(false)}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t9)", color: projHov ? "var(--txb)" : "var(--txm)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionProject ? "pointer" : "default" }}>
+            // flex 0 1 auto + the ellipsised name: the project and branch names
+            // give way before the PR chip does, so a long pair never pushes
+            // the chip out of the caption row.
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, flex: "0 1 auto", minWidth: 0, fontFamily: "var(--mono)", fontSize: "var(--t9)", color: projHov ? "var(--txb)" : "var(--txm)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionProject ? "pointer" : "default" }}>
             {/* The per-project tint dot is the only colour identifying the project now. */}
             <span className="pdot" style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
-            {sessionProject && <ProjectTile project={sessionProject} />}
-            {projectLabel || "—"}
+            {!flat && sessionProject && <ProjectTile project={sessionProject} />}
+            <span className="np-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{projectLabel || "—"}</span>
           </button>
           {branch && (
             <>
-              <span style={hairline(9)} />
+              <span className="np-sep" style={hairline(9)} />
               {/* The session menu again: "move to a new worktree" lives there,
                   and the branch you're on is where you notice you want it. */}
               <button
+                className="np-branch"
                 title={sessionId ? "session branch — session actions" : "session branch"}
                 data-ctx-type={sessionId ? "session" : undefined}
                 data-ctx-id={sessionId ?? undefined}
@@ -518,8 +540,8 @@ export function Terminal({
                 disabled={!sessionId}
                 onClick={openMenu}
                 onMouseEnter={() => setBrHov(true)} onMouseLeave={() => setBrHov(false)}
-                style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t9)", color: brHov ? "var(--purple-h)" : "var(--purple-d)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionId ? "pointer" : "default" }}>
-                <span style={{ color: "var(--purple-g)" }}>⎇</span>{branch}
+                style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "0 1 auto", minWidth: 0, fontFamily: "var(--mono)", fontSize: "var(--t9)", color: brHov ? "var(--purple-h)" : "var(--purple-d)", border: 0, padding: 0, appearance: "none", background: "transparent", cursor: sessionId ? "pointer" : "default" }}>
+                <span style={{ color: "var(--purple-g)" }}>⎇</span><span className="np-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{branch}</span>
               </button>
             </>
           )}
@@ -531,7 +553,7 @@ export function Terminal({
           )}
           {run && (
             <>
-              <span style={hairline(9)} />
+              <span className="np-sep" style={hairline(9)} />
               <RunChip run={run} onClick={onOpenRun} />
             </>
           )}
@@ -670,7 +692,7 @@ export function Terminal({
       ) : (
         <>
           {body}
-          <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, sendKey: hud?.sendKey ?? "enter" }}>
+          <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, composer: hud?.composer ?? "tabs", sendKey: hud?.sendKey ?? "enter" }}>
             {composer}
           </ChatChromeContext.Provider>
         </>

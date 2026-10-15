@@ -5467,6 +5467,19 @@ export function SettingsModal(props: SettingsModalProps) {
                         />
                       </div>
                     </Row>
+                    {/* COMPACT's composer (lib/theme COMPOSER_STYLES): the session as tabs on
+                        the box, as a ticket stub beside it, as status lines under a bare
+                        command line, or the CLASSIC one row. DEFAULT never reads it. */}
+                    <Row label="PROMPT BOX" desc="how the COMPACT layout's prompt box carries the session"
+                      info="TABS (the default): the title, branch, PR, running app and context meter as folder tabs on the box's top edge, the tools in the box's footer. STUB: a perforated ticket stub down the box's left carries the whole session (title, branch, PR, goal, agents, profile, ponytail, a context gauge) and the message sits beside it. CONSOLE: no box; a command line with an accent bar, then a place line and a quiet settings line. CLASSIC: the prompt box as it was, the session's nameplate sharing one row with the tools above the box. The DEFAULT layout keeps its own row whichever you pick.">
+                      <div style={{ width: 340 }}>
+                        <Segmented
+                          options={[{ label: "TABS", value: "tabs" }, { label: "STUB", value: "stub" }, { label: "CONSOLE", value: "console" }, { label: "CLASSIC", value: "classic" }]}
+                          value={settings.composer}
+                          onPick={(composer) => onPatch({ composer })}
+                        />
+                      </div>
+                    </Row>
                   </div>
                 </Section>
 

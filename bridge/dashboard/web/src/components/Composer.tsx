@@ -175,7 +175,7 @@ function Drop<T extends string>({
     <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
       <button className="drop-btn" onClick={onToggle} title={title ?? `${label} — ${cur.label}`} style={btn}>
         {code && <span className="ctrl-fld">{code}</span>}
-        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
+        <span className="drop-val" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
         {dot && <OverrideDot />}
         {meter}
         <span style={{ color: code ? "var(--txl)" : "var(--txd)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
@@ -446,8 +446,10 @@ export function Composer({
   const [images, setImages] = useState<string[]>([]);
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run">("");
-  const { compact, lead, sendKey } = useChatChrome();
+  const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "plus" | "queued">("");
+  const { compact, lead, composer, sendKey } = useChatChrome();
+  // TABS / STUB / CONSOLE: COMPACT's new composers. CLASSIC is the old markup.
+  const shelled = compact && composer !== "classic";
   // MODEL rows grouped by usage pool, each with what it has left on the login
   // the session is spending, whichever account that is.
   const modelOpts = useMemo(
@@ -835,14 +837,17 @@ export function Composer({
       onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
       onPick={(id) => { onPonytail(id); setOpenDrop(""); }} />
   );
-  const verbMenu = openDrop === "verbs" && (
+  // One menu box for the verbs and for +: the same rows, the same look. + is
+  // the compact shells' one left-hand control (Claude Code desktop's +): attach
+  // first, then the verbs with their names.
+  const menuOf = (rows: typeof verbs) => (
     <div style={{
       position: "absolute", bottom: "calc(100% + 6px)", left: 0, minWidth: 158, width: "max-content", zIndex: 30,
       border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
       background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
       boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
     }}>
-      {verbs.map((v) => (
+      {rows.map((v) => (
         <button key={v.key} onClick={() => { setOpenDrop(""); v.onClick(); }} disabled={v.disabled} title={v.tip}
           style={{
             width: "100%", appearance: "none", cursor: v.disabled ? "not-allowed" : "pointer", border: 0,
@@ -857,6 +862,14 @@ export function Composer({
       ))}
     </div>
   );
+  const verbMenu = openDrop === "verbs" && menuOf(verbs);
+  const plusBtn = (
+    <div style={{ position: "relative", flex: "none" }}>
+      <button className="pb-plus" onClick={() => setOpenDrop((d) => (d === "plus" ? "" : "plus"))}
+        title={["Attach a file", ...verbs.map((v) => v.label)].join(" · ")} aria-label="Attach or run a verb">+</button>
+      {openDrop === "plus" && menuOf([{ key: "attach", label: "ATTACH A FILE", tip: "Attach a file", onClick: () => fileRef.current?.click() }, ...verbs])}
+    </div>
+  );
   const ctxBlock = (
     <div className="ctrl-ctx" title={`Context — ${ctxPct}% of ${fmtTokens(ctxMax)}${ctx > 0 ? ` (${ctx.toLocaleString()} tokens on the last request)` : ", not measured yet"}`}>
       <span className="lbl">CTX</span>
@@ -867,7 +880,7 @@ export function Composer({
       </span>
       <span style={{ color: suggest ? ctxColor : "var(--txd)", fontSize: "var(--t10)", letterSpacing: .5, flex: "none" }}>{ctxPct}%</span>
       {suggest && ctx > 0 && <span style={{ flex: "none" }}>~{fmtTokens(ctx)}</span>}
-      {onCompact && (
+      {onCompact && (!shelled || suggest) && (
         // Whatever is in the box rides along as compaction instructions ("keep
         // the auth work, drop the log spelunking") — Piebald opens a dialog for
         // this; we already have a text box right there.
@@ -884,68 +897,320 @@ export function Composer({
     </div>
   );
 
-  const actionCluster = (
-    <>
-    {/* No accept=: the model reads whatever lands in the upload dir, so a
-        .csv or a PDF is as good an attachment as a screenshot — and a
-        filter that hides them is what made it look image-only. */}
+  // No accept=: the model reads whatever lands in the upload dir, so a .csv
+  // or a PDF is as good an attachment as a screenshot — and a filter that
+  // hides them is what made it look image-only.
+  const fileInput = (
     <input ref={fileRef} type="file" multiple style={{ display: "none" }}
       onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+  );
+  const paperclip = (
     <button onClick={() => fileRef.current?.click()} title="Attach a file"
       style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", display: "flex", flex: "none", marginTop: 3 }}>
       <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
-    {/* Exactly one primary. STOP and PAUSE are rare and modal and one of
-        them is destructive, so they sit as recessive glyphs and only take
-        their colour when you reach for them — their labels live in the
-        tooltip. STEER is the alternate target for the same text, so it
-        stays an outline. QUEUE/SEND is what Enter does, so it is the only
-        filled control on the line. */}
-    {running ? (
-      <>
-        <button className="act-glyph stop" onClick={onStop} aria-label="Stop"
-          title="STOP — interrupt this turn now">
-          <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
-        {/* The graceful counterpart to STOP: no interrupt, no half-written
-            file — the turn lands, then the loop holds. It keeps its armed
-            state here so the banner is confirmation, not the only tell. */}
-        {onTogglePause && (
-          <button className={`act-glyph hold${paused ? " armed" : ""}`} onClick={onTogglePause}
-            aria-label={paused ? "Resume" : "Pause"}
-            title={paused
-              ? "PAUSED — nothing starts after this turn. Click to resume."
-              : "PAUSE — let this turn finish, then hold; no queued prompt or goal nudge starts after it"}>
-            <Pause size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
-        )}
-        <span className="act-fence" aria-hidden />
-        <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
-          title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
-          DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
-        {onSteer && (
-          <button className="act-alt" onClick={steer} disabled={!text.trim()}
-            title="STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)">
-            STEER <SteerIcon /></button>
-        )}
-        <button className="act-pri queue" onClick={submit} disabled={disabled || !text.trim()}
-          title="QUEUE — run this prompt after the current turn (Enter)">
-          QUEUE <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
-      </>
-    ) : (
-      <>
-        <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
-          title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
-          DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
-        <button className="act-pri" onClick={submit} disabled={disabled || !text.trim()}>
-          SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
-      </>
-    )}
+  );
+  const designBtn = (
+    <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
+      title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
+      DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
+  );
+  /* Exactly one primary. STOP and PAUSE are rare and modal and one of
+     them is destructive, so they sit as recessive glyphs and only take
+     their colour when you reach for them — their labels live in the
+     tooltip. STEER is the alternate target for the same text, so it
+     stays an outline. QUEUE/SEND is what Enter does, so it is the only
+     filled control on the line. */
+  const actions = (withDesign: boolean) => running ? (
+    <>
+      <button className="act-glyph stop" onClick={onStop} aria-label="Stop"
+        title="STOP — interrupt this turn now">
+        <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+      {/* The graceful counterpart to STOP: no interrupt, no half-written
+          file — the turn lands, then the loop holds. It keeps its armed
+          state here so the banner is confirmation, not the only tell. */}
+      {onTogglePause && (
+        <button className={`act-glyph hold${paused ? " armed" : ""}`} onClick={onTogglePause}
+          aria-label={paused ? "Resume" : "Pause"}
+          title={paused
+            ? "PAUSED — nothing starts after this turn. Click to resume."
+            : "PAUSE — let this turn finish, then hold; no queued prompt or goal nudge starts after it"}>
+          <Pause size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+      )}
+      <span className="act-fence" aria-hidden />
+      {withDesign && designBtn}
+      {onSteer && (
+        <button className="act-alt" onClick={steer} disabled={!text.trim()}
+          title="STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)">
+          STEER <SteerIcon /></button>
+      )}
+      <button className="act-pri queue" onClick={submit} disabled={disabled || !text.trim()}
+        title="QUEUE — run this prompt after the current turn (Enter)">
+        QUEUE <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
+    </>
+  ) : (
+    <>
+      {withDesign && designBtn}
+      <button className="act-pri" onClick={submit} disabled={disabled || !text.trim()} title="SEND (Enter)">
+        SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
     </>
   );
+  const actionCluster = (<>{fileInput}{paperclip}{actions(true)}</>);
+
+  // Pieces the compact shells arrange (.mystical/design-drafts/prompt-box):
+  // every row the composer can show, as one node each, placed by TABS / STUB /
+  // CONSOLE below. DEFAULT keeps its own markup further down.
+  const pausedPill = paused && (
+    <span className="pb-paused" title={running ? "this turn finishes; nothing starts after it" : "nothing starts on its own"}>
+      <Pause size={10} strokeWidth={0} fill="currentColor" aria-hidden />
+      paused{queued && queued.length > 0 ? ` · ${queued.length} held` : ""}
+      {onTogglePause && <button onClick={onTogglePause} title="Let queued prompts and goal nudges run again">RESUME</button>}
+    </span>
+  );
+  // Not positioned itself: the list anchors to .pb-ledger's left edge, so it
+  // never runs off the column when the chip sits late in a wrapped line.
+  const queuedChip = queued && queued.length > 0 && (
+    <div>
+      <button className="pb-queued" onClick={() => setOpenDrop((d) => (d === "queued" ? "" : "queued"))} title={queued.map((q) => q.text).join("\n")}>
+        {queued.length} queued <span aria-hidden style={{ fontSize: "var(--t8)", opacity: .8 }}>▾</span>
+      </button>
+      {openDrop === "queued" && (
+        <div style={{ position: "absolute", bottom: "calc(100% + 6px)", left: 0, zIndex: 30, minWidth: 260, maxWidth: 440, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease" }}>
+          {queued.map((q) => (
+            <div key={q.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)", fontSize: "var(--t105)", color: "var(--txh)" }}>
+              <span title={q.text} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.text}</span>
+              {onEjectQueued && <button onClick={() => onEjectQueued(q.id)} title="Run in a new session" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>↗</button>}
+              {onCancelQueued && <button onClick={() => onCancelQueued(q.id)} title="Remove from queue" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>✕</button>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+  // withPills: TABS and CONSOLE carry the goal and agents pills here; STUB has
+  // them on the stub. CSS hides an empty ledger and, past one live item, every
+  // pill's description (.pill-desc) — busy means terse.
+  const ledger = (withPills: boolean, className: string) => (
+    <div className={`pb-ledger ${className}`}>{withPills && pills}{pausedPill}{queuedChip}</div>
+  );
+  const attachRow = images.length > 0 && (
+    <div className="pb-attach" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+      {images.map((src, i) => (
+        <div key={i} style={{ position: "relative", width: 48, height: 48 }}>
+          <ZoomButton onOpen={() => { if (!isFileUrl(src)) setZoom(src); }}>
+            <MediaThumb src={src} style={{ width: 48, height: 48, border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", objectFit: "cover" }} />
+          </ZoomButton>
+          <button type="button" onClick={() => setImages((p) => p.filter((_, j) => j !== i))} aria-label="Remove attachment"
+            style={{ position: "absolute", right: -6, top: -6, width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "var(--panel3)", color: "var(--txd)", fontSize: "var(--t11)", lineHeight: 1, cursor: "pointer" }}>×</button>
+        </div>
+      ))}
+    </div>
+  );
+  // STUB's context readout is a gauge along the stub's foot, not the lamps.
+  const ctxGauge = (
+    <div className="pb-gauge" title={`Context — ${ctxPct}% of ${fmtTokens(ctxMax)}${ctx > 0 ? ` (${ctx.toLocaleString()} tokens on the last request)` : ", not measured yet"}`}>
+      <span className="bar"><i style={{ width: `${ctxPct}%`, background: ctxColor }} /></span>
+      <u style={{ color: suggest ? ctxColor : undefined }}>CTX {ctxPct}%</u>
+      {onCompact && suggest && (
+        <button onClick={() => { onCompact(text.trim()); setText(""); }} disabled={disabled || running}
+          title={text.trim() ? "Compact the context, keeping what you've typed in mind" : "Compact context (/compact) — type first to steer what the summary keeps"}
+          style={{ ...chip, flex: "none", cursor: disabled || running ? "not-allowed" : "pointer", opacity: disabled || running ? 0.4 : 1, border: `1px solid ${ctxColor}`, color: ctxColor }}>
+          COMPACT
+        </button>
+      )}
+    </div>
+  );
+  const settingsChips = (right: boolean) => (<>{profileDrop(right)}{agentPick && agentChip}{ponyDrop(right)}</>);
+  const runTrigger = (
+    <RunPopover open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
+      model={model} modelOpts={modelOpts} onModel={onModel}
+      perm={perm} permOpts={permOpts} onPerm={onPerm}
+      effort={effort} onEffort={onEffort}
+      agent={agentPick}
+      overrides={overrides} />
+  );
+  const popovers = (
+    <>
+      {rsearch !== null && (
+        <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 31, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
+            <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: "var(--purple)" }}>REVERSE-I-SEARCH</span>
+            <input
+              autoFocus
+              value={rsearch}
+              onChange={(e) => setRsearch(e.target.value)}
+              onKeyDown={rsearchKey}
+              onBlur={() => setRsearch(null)}
+              placeholder="a prompt you wrote before…"
+              style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)" }}
+            />
+            <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txd)" }}>
+              {rhits.length ? `${rpick + 1}/${rhits.length}` : "no match"}
+            </span>
+          </div>
+          <div style={{ maxHeight: 210, overflowY: "auto" }}>
+            {rhits.map((p, i) => (
+              <button
+                key={p}
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); takeHistory(p); }}
+                onMouseEnter={() => setRpick(i)}
+                title={p}
+                style={{ appearance: "none", cursor: "pointer", display: "block", width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === rpick ? "var(--purple)" : "transparent"}`, background: i === rpick ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: i === rpick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              >
+                {p.replace(/\s+/g, " ")}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {slashOpen && (
+        <div ref={slashListRef} style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 240, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
+          {shits.length === 0 ? (
+            <div style={{ padding: "6px 10px", fontSize: "var(--t10)", letterSpacing: .5, color: "var(--txd)" }}>
+              the bridge needs a restart before it can list commands
+            </div>
+          ) : shits.map((c, i) => (
+            <button
+              key={c.name}
+              type="button"
+              data-on={i === slashPick ? 1 : 0}
+              onMouseDown={(e) => { e.preventDefault(); splice(slash!, `/${c.name}`); }}
+              onMouseEnter={() => setSlashPick(i)}
+              title={c.description}
+              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === slashPick ? "var(--acc)" : "transparent"}`, background: i === slashPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === slashPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px" }}
+            >
+              <span style={{ flex: "none", color: "var(--acc)" }}>/{c.name}</span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--txl)" }}>{c.description}</span>
+              <span style={{ flex: "none", fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)" }}>{c.scope === "builtin" ? "CLI" : c.scope.toUpperCase()}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      {mentionOpen && (
+        <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 210, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
+          {hits.map((p, i) => (
+            <button
+              key={p}
+              type="button"
+              onMouseDown={(e) => { e.preventDefault(); takeMention(p); }}
+              onMouseEnter={() => setMentionPick(i)}
+              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === mentionPick ? "var(--acc)" : "transparent"}`, background: i === mentionPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === mentionPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px" }}
+            >
+              <FileIcon name={p} size={14} />
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left" }}>{p}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
+  // Grows with what you type up to min(500px, 50vh), then scrolls — the cap
+  // lives in MarkdownInput's theme.
+  const editor = (
+    <MarkdownInput
+      ref={taRef}
+      value={text}
+      onChange={(t, c) => { setText(t); setCaret(c); }}
+      onCaret={setCaret}
+      onKeyDown={(e) => {
+        if (mentionKey(e) || slashKey(e)) return;
+        // Ctrl+R is the browser's reload; in the command line it's the shell's
+        // history search, which is what the hands in this box expect.
+        if (e.key === "r" && e.ctrlKey) { e.preventDefault(); setRsearch(""); return; }
+        // CTRL+ENTER mode leaves a bare Enter to the editor, which makes it
+        // the markdown-aware newline Shift+Enter is in the default mode.
+        const send = sendKey === "ctrl-enter" ? e.ctrlKey || e.metaKey : !e.shiftKey;
+        if (e.key === "Enter" && send) { e.preventDefault(); submit(); }
+      }}
+      onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
+      placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}
+    />
+  );
+  const pfx = <span className="pb-pfx" style={{ color: "var(--purple)", fontSize: "var(--t13)", flex: "none", marginTop: 2 }}>~ ❯</span>;
+  const boxProps = {
+    "data-drag": dragging ? "" : undefined,
+    "data-running": running ? "" : undefined,
+    style: { position: "relative", display: "flex", alignItems: "flex-start", gap: 11, border: `1px solid ${dragging ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: "color-mix(in srgb, var(--panel2) 70%, transparent)", padding: "10px 13px", fontFamily: "'JetBrains Mono',monospace" } as CSSProperties,
+    onDragOver: (e: React.DragEvent) => { e.preventDefault(); if (!dragging) setDragging(true); },
+    onDragLeave: () => setDragging(false),
+    onDrop: (e: React.DragEvent) => {
+      e.preventDefault();
+      setDragging(false);
+      if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
+    },
+  };
+  const hint = (
+    <span className="pb-hint" aria-hidden>
+      {sendKey === "ctrl-enter" ? `⌘↵ ${running ? "queue" : "send"} · ↵ newline` : `↵ ${running ? "queue" : "send"} · ⇧↵ newline`}
+    </span>
+  );
+
+  // The three new COMPACT composers (CLASSIC is the old markup further down).
+  // The lead (tile, title, project, branch, PR, running app) arrives flattened
+  // from Terminal; .pb-lead lays it out per shell in index.css.
+  const shell =
+    composer === "console" ? (
+      <>
+        {attachRow}
+        <div {...boxProps} className="cmdbox pb-cmd">
+          {pfx}
+          {popovers}
+          {editor}
+          {hint}
+          <div className="pb-acts">{actions(true)}</div>
+        </div>
+        <div className="pb-place pb-lead">{lead}</div>
+        {ledger(true, "pb-activity")}
+        <div className="pb-set">
+          {ctxBlock}
+          {runTrigger}
+          {settingsChips(false)}
+          <span className="sp" />
+          {plusBtn}
+        </div>
+      </>
+    ) : composer === "stub" ? (
+      <div {...boxProps} className="cmdbox pb-card pb-ticket">
+        <div className="pb-stub pb-lead">
+          <div className="pb-stub-head">{lead}{pills}</div>
+          <div className="pb-bind">{settingsChips(false)}</div>
+          {ctxGauge}
+        </div>
+        <div className="pb-body">
+          {ledger(false, "")}
+          {attachRow}
+          <div className="pb-line">{pfx}{popovers}{editor}</div>
+          <div className="pb-foot"><div className="pb-l">{plusBtn}</div><div className="pb-r">{runTrigger}{actions(true)}</div></div>
+        </div>
+      </div>
+    ) : (
+      <>
+        <div className="pb-tabs pb-lead">{lead}{ctxBlock}</div>
+        <div {...boxProps} className="cmdbox pb-card">
+          {ledger(true, "")}
+          {attachRow}
+          <div className="pb-line">{pfx}{popovers}{editor}</div>
+          {/* DESIGN steps out while a turn runs (it could only queue): that is
+              what keeps this footer on one line at 787px with both sidebars open. */}
+          <div className="pb-foot"><div className="pb-l">{plusBtn}{settingsChips(false)}</div><div className="pb-r">{runTrigger}{actions(!running)}</div></div>
+        </div>
+      </>
+    );
 
   return (
     // Its own surface, at the island's strength: header and footer are the two
     // pieces of chrome bracketing the transcript, and a ground running under
     // them makes the chat look like it has no edges.
-    <div className="composer" style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
+    <div className="composer" data-pb={shelled ? composer : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
+      {zoom && <ImageLightbox src={zoom} all={images} onClose={() => setZoom(null)} />}
+      {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
+      {shelled ? (
+        <>
+          {fileInput}
+          {shell}
+        </>
+      ) : (
+      <>
       {pills}
       {/* Paused: shown even when idle, because that's exactly when you can't tell
           from the transcript that the queue and the goal loop are being held. */}
@@ -986,26 +1251,7 @@ export function Composer({
         </div>
       )}
       {/* image attachments */}
-      {zoom && <ImageLightbox src={zoom} all={images} onClose={() => setZoom(null)} />}
-      {images.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 9 }}>
-          {images.map((src, i) => (
-            <div key={i} style={{ position: "relative", width: 48, height: 48 }}>
-              <ZoomButton onOpen={() => { if (!isFileUrl(src)) setZoom(src); }}>
-                <MediaThumb src={src} style={{ width: 48, height: 48, border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", objectFit: "cover" }} />
-              </ZoomButton>
-              <button
-                type="button"
-                onClick={() => setImages((p) => p.filter((_, j) => j !== i))}
-                aria-label="Remove attachment"
-                style={{ position: "absolute", right: -6, top: -6, width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "var(--panel3)", color: "var(--txd)", fontSize: "var(--t11)", lineHeight: 1, cursor: "pointer" }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {attachRow && <div style={{ marginBottom: 9 }}>{attachRow}</div>}
 
       {/* session controls — one line, two tiers. SETTINGS (what the next turn
           *is*) keep a box and carry their own field code, so no width can shed
@@ -1015,9 +1261,8 @@ export function Composer({
           make. The context meter closes the row as an instrument rather than
           spending a whole row of its own on a track that is empty most of the
           time. Layout ladder lives in index.css. */}
-      {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
       {compact ? (
-        // COMPACT: the session's nameplate on the left (moved down from the
+        // CLASSIC: the session's nameplate on the left (moved down from the
         // header), everything left in this row packed to the right.
         <div className="ctrl-cq" style={{ marginBottom: 9, position: "relative", zIndex: 26 }}>
           <div className="ctrl-row ctrl-row-compact">
@@ -1087,126 +1332,23 @@ export function Composer({
       )}
 
       {/* command line */}
-      <div
-        className="cmdbox" data-drag={dragging ? "" : undefined}
-        style={{ position: "relative", display: "flex", alignItems: "flex-start", gap: 11, border: `1px solid ${dragging ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: "color-mix(in srgb, var(--panel2) 70%, transparent)", padding: "10px 13px", fontFamily: "'JetBrains Mono',monospace" }}
-        onDragOver={(e) => { e.preventDefault(); if (!dragging) setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragging(false);
-          if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files);
-        }}
-      >
-        <span style={{ color: "var(--purple)", fontSize: "var(--t13)", flex: "none", marginTop: 2 }}>~ ❯</span>
-        {rsearch !== null && (
-          <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 31, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
-              <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: 1, color: "var(--purple)" }}>REVERSE-I-SEARCH</span>
-              <input
-                autoFocus
-                value={rsearch}
-                onChange={(e) => setRsearch(e.target.value)}
-                onKeyDown={rsearchKey}
-                onBlur={() => setRsearch(null)}
-                placeholder="a prompt you wrote before…"
-                style={{ flex: 1, minWidth: 0, background: "transparent", border: 0, outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)" }}
-              />
-              <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txd)" }}>
-                {rhits.length ? `${rpick + 1}/${rhits.length}` : "no match"}
-              </span>
-            </div>
-            <div style={{ maxHeight: 210, overflowY: "auto" }}>
-              {rhits.map((p, i) => (
-                <button
-                  key={p}
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); takeHistory(p); }}
-                  onMouseEnter={() => setRpick(i)}
-                  title={p}
-                  style={{ appearance: "none", cursor: "pointer", display: "block", width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === rpick ? "var(--purple)" : "transparent"}`, background: i === rpick ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: i === rpick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                >
-                  {p.replace(/\s+/g, " ")}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {slashOpen && (
-          <div ref={slashListRef} style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 240, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
-            {shits.length === 0 ? (
-              <div style={{ padding: "6px 10px", fontSize: "var(--t10)", letterSpacing: .5, color: "var(--txd)" }}>
-                the bridge needs a restart before it can list commands
-              </div>
-            ) : shits.map((c, i) => (
-              <button
-                key={c.name}
-                type="button"
-                data-on={i === slashPick ? 1 : 0}
-                onMouseDown={(e) => { e.preventDefault(); splice(slash!, `/${c.name}`); }}
-                onMouseEnter={() => setSlashPick(i)}
-                title={c.description}
-                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === slashPick ? "var(--acc)" : "transparent"}`, background: i === slashPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === slashPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px" }}
-              >
-                <span style={{ flex: "none", color: "var(--acc)" }}>/{c.name}</span>
-                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--txl)" }}>{c.description}</span>
-                <span style={{ flex: "none", fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)" }}>{c.scope === "builtin" ? "CLI" : c.scope.toUpperCase()}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {mentionOpen && (
-          <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 210, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
-            {hits.map((p, i) => (
-              <button
-                key={p}
-                type="button"
-                onMouseDown={(e) => { e.preventDefault(); takeMention(p); }}
-                onMouseEnter={() => setMentionPick(i)}
-                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, width: "100%", textAlign: "left", border: 0, borderLeft: `2px solid ${i === mentionPick ? "var(--acc)" : "transparent"}`, background: i === mentionPick ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: i === mentionPick ? "var(--txb)" : "var(--txh)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", padding: "5px 10px" }}
-              >
-                <FileIcon name={p} size={14} />
-                <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", direction: "rtl", textAlign: "left" }}>{p}</span>
-              </button>
-            ))}
-          </div>
-        )}
-        {/* Grows with what you type up to min(500px, 50vh), then scrolls —
-            the cap lives in MarkdownInput's theme. */}
-        <MarkdownInput
-          ref={taRef}
-          value={text}
-          onChange={(t, c) => { setText(t); setCaret(c); }}
-          onCaret={setCaret}
-          onKeyDown={(e) => {
-            if (mentionKey(e) || slashKey(e)) return;
-            // Ctrl+R is the browser's reload; in the command line it's the shell's
-            // history search, which is what the hands in this box expect.
-            if (e.key === "r" && e.ctrlKey) { e.preventDefault(); setRsearch(""); return; }
-            // CTRL+ENTER mode leaves a bare Enter to the editor, which makes it
-            // the markdown-aware newline Shift+Enter is in the default mode.
-            const send = sendKey === "ctrl-enter" ? e.ctrlKey || e.metaKey : !e.shiftKey;
-            if (e.key === "Enter" && send) { e.preventDefault(); submit(); }
-          }}
-          onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
-          placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}
-        />
+      <div {...boxProps} className="cmdbox">
+        {pfx}
+        {popovers}
+        {editor}
         {compact ? (
-          // COMPACT: the run popover's trigger sits over the send cluster, on
+          // CLASSIC: the run popover's trigger sits over the send cluster, on
           // its own line, so the box's right edge reads model-then-send.
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 7, flex: "none", maxWidth: "50%", position: "relative", zIndex: 27 }}>
-            <RunPopover open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
-              model={model} modelOpts={modelOpts} onModel={onModel}
-              perm={perm} permOpts={permOpts} onPerm={onPerm}
-              effort={effort} onEffort={onEffort}
-              agent={agentPick}
-              overrides={overrides} />
+            {runTrigger}
             <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
               {actionCluster}
             </div>
           </div>
         ) : actionCluster}
       </div>
+      </>
+      )}
     </div>
   );
 }

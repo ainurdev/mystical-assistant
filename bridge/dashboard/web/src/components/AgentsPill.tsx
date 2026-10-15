@@ -84,7 +84,7 @@ export function AgentsPill({
           {working ? `${data.running} working` : `${data.total} agents ran`}
         </span>
         {working && newest?.description && (
-          <span style={{ color: "var(--txm)", overflow: "hidden", minWidth: 0,
+          <span className="pill-desc" style={{ color: "var(--txm)", overflow: "hidden", minWidth: 0,
                          textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {newest.description}
           </span>
