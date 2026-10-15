@@ -2430,3 +2430,105 @@ def test_run_implementation_without_a_note_runs_rivendells_prompt_as_is(monkeypa
     monkeypatch.setattr(w, "_start_run", lambda prompt, *a, **k: started.append(prompt))
     w._run_implementation("r1", "acme/app")
     assert started == ["Implement T26."]
+
+
+# --- offered jobs: a teammate's request never runs without a tap -------------
+
+def _offered_frame(rid="o1"):
+    return json.dumps({"type": "pr-review-request", "requestId": rid, "offered": True,
+                       "pullRequest": {"repositoryFullName": "acme/app"}}).encode()
+
+
+def test_offered_frame_is_held_even_when_idle(monkeypatch):
+    """A frame Rivendell marks `offered` — a teammate's job opened to every
+    bridge — is never auto-accepted, idle queue or not: it is held and pinged,
+    and the row says so for the PLUGINS queue."""
+    w = _worker()
+    accepted, pinged = [], []
+    monkeypatch.setattr(w, "accept", lambda key: accepted.append(key) or True)
+    monkeypatch.setattr(w, "_notify_queued", lambda key: pinged.append(key))
+    monkeypatch.setattr(w, "_ack", lambda key, state: None)
+    w._apply_policy(w._handle_message(_offered_frame()))
+    assert accepted == [] and pinged == ["review:o1"]
+    assert w.queue_snapshot()[0]["offered"] is True
+
+
+def test_catch_up_keeps_the_offered_flag(monkeypatch):
+    """Catch-up rows carry `offered` too: a reconnecting bridge must not pick a
+    teammate's job up by itself."""
+    w = _worker()
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: (
+        [{"id": "o1", "repositoryFullName": "acme/app", "offered": True}]
+        if path == "/plugin/review-requests" else []))
+    monkeypatch.setattr(w, "_ack", lambda key, state: None)
+    monkeypatch.setattr(w, "accept",
+                        lambda key: (_ for _ in ()).throw(AssertionError("must not auto-run")))
+    held = []
+    monkeypatch.setattr(w, "_notify_queued", lambda key: held.append(key))
+    assert w._catch_up() == 1
+    assert held == ["review:o1"]
+
+
+def test_parked_offered_job_does_not_make_the_queue_busy(monkeypatch):
+    """An offered job waiting for a tap is not work in flight: the owner's own
+    lone request still auto-accepts past it."""
+    w = _worker()
+    accepted = []
+    monkeypatch.setattr(w, "accept", lambda key: accepted.append(key) or True)
+    monkeypatch.setattr(w, "_notify_queued", lambda key: None)
+    monkeypatch.setattr(w, "_ack", lambda key, state: None)
+    w._apply_policy(w._enqueue("review", "o1", "acme/app", offered=True))
+    w._apply_policy(w._enqueue("review", "r2", "acme/app"))
+    assert accepted == ["review:r2"]
+
+
+def test_drain_skips_offered_items(monkeypatch):
+    """A finished run starts the oldest held request, never an offered one."""
+    w = _worker()
+    w._enqueue("review", "o1", "acme/app", offered=True)
+    w._enqueue("review", "r2", "acme/app")
+    accepted = []
+    monkeypatch.setattr(w, "accept", lambda key: accepted.append(key) or True)
+    w._drain()
+    assert accepted == ["review:r2"]
+    w._pending.pop("review:r2")
+    w._drain()
+    assert accepted == ["review:r2"]          # the offered one still waits
+
+
+def test_reject_of_offered_drops_it_locally_only(monkeypatch):
+    """Dismissing a teammate's job neither refuses it (a non-requester's refuse
+    is a server no-op) nor claims+FAILs it (that would steal it from the bridges
+    that may run it). It leaves this queue and stays remembered, so the next
+    catch-up does not ping it again."""
+    w = _worker()
+    w._enqueue("impl", "o1", "acme/app", offered=True)
+    for name in ("_api", "_fetch_prompt", "_post_result", "_refuse"):
+        monkeypatch.setattr(w, name, lambda *a, _n=name, **k: (_ for _ in ()).throw(
+            AssertionError(f"{_n} must not be called")))
+    item = dict(w._pending["impl:o1"])
+    assert w.reject("impl:o1") is True
+    w._do_reject(item)                        # the off-thread body, run inline
+    assert w.queue_snapshot() == [] and "impl:o1" in w._seen
+
+
+def test_offered_impl_without_checkout_is_dropped_quietly(monkeypatch):
+    """An offered implementation for a repo not cloned here is dropped with no
+    refuse and no ping: refusing is a no-op for a non-requester, and forgetting
+    the key would re-ping it on every reconnect."""
+    w = _worker()
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: None)
+    for name in ("_api", "_refuse", "_notify_queued", "accept"):
+        monkeypatch.setattr(w, name, lambda *a, _n=name, **k: (_ for _ in ()).throw(
+            AssertionError(f"{_n} must not be called")))
+    w._apply_policy(w._enqueue("impl", "o1", "acme/app", offered=True))
+    assert w.queue_snapshot() == [] and "impl:o1" in w._seen
+
+
+def test_queued_message_for_offered_names_whose_accounts_it_uses():
+    """The Telegram ping for a teammate's job says what approving means."""
+    w = _worker()
+    text, kb = w._queued_message(
+        {"kind": "impl", "request_id": "o1", "slug": "acme/app", "offered": True}, "tok")
+    assert "teammate" in text and "your accounts" in text and "acme/app" in text
+    assert [b["callback_data"] for b in kb["inline_keyboard"][0]] == ["rv:a:tok", "rv:d:tok"]
