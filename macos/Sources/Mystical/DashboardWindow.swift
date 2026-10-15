@@ -3,11 +3,19 @@ import MysticalCore
 import WebKit
 
 /// The dashboard's window: while it stands in for full screen it may cover the
-/// menu bar's strip, which AppKit otherwise trims every frame to leave free.
+/// menu bar's strip, which AppKit otherwise trims every frame to leave free, and
+/// it has no title bar (square corners, as full screen has) — a style AppKit bars
+/// from key, main and performClose.
 final class HUDWindow: NSWindow {
     var coversScreen = false
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         coversScreen ? frameRect : super.constrainFrameRect(frameRect, to: screen)
+    }
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+    override func performClose(_ sender: Any?) {
+        if styleMask.contains(.titled) { return super.performClose(sender) }
+        if delegate?.windowShouldClose?(self) ?? true { close() }
     }
 }
 
@@ -68,9 +76,7 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         window.styleMask.insert(.fullSizeContentView)
         super.init(window: window)
         window.delegate = self
-        for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
-            window.standardWindowButton(b)?.isHidden = true
-        }
+        hideTrafficLights()
         let bar = window.frame.height - window.contentLayoutRect.height
         webView.configuration.userContentController.addUserScript(WKUserScript(
             source: "document.documentElement.style.setProperty('--mac-titlebar','\(Int(bar > 0 ? bar : 28))px')",
@@ -105,6 +111,13 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
     }
 
     required init?(coder: NSCoder) { fatalError() }
+
+    /// AppKit's traffic lights stay hidden; the page draws its own (Notifier "window").
+    private func hideTrafficLights() {
+        for b in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            window?.standardWindowButton(b)?.isHidden = true
+        }
+    }
 
     // MARK: state
 
@@ -199,11 +212,13 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
     // MARK: NSWindowDelegate
 
     /// Full screen, the pre-Lion kind: the window fills the screen (HUDWindow lets
-    /// it cover the menu bar's strip), the menu bar auto-hides and comes back at
-    /// the top edge, the Dock stays away (auto-hidden, it lingers under the cursor
-    /// after a click on the Dock icon), and the window keeps its Space. AppKit's own full screen
-    /// is not used: its menu-bar reveal slides a detached, empty title strip down
-    /// with it (NSToolbarFullScreenWindow), and nothing public hides that.
+    /// it cover the menu bar's strip) without its title bar — titled, it keeps
+    /// AppKit's rounded corners, and the bottom pair showed the wallpaper — the
+    /// menu bar auto-hides and comes back at the top edge, the Dock stays away
+    /// (auto-hidden, it lingers under the cursor after a click on the Dock icon),
+    /// and the window keeps its Space. AppKit's own full screen is not used: its
+    /// menu-bar reveal slides a detached, empty title strip down with it
+    /// (NSToolbarFullScreenWindow), and nothing public hides that.
     private var unzoomedFrame: NSRect?
     @objc func toggleSimpleFullScreen(_ sender: Any?) {
         guard let window = window as? HUDWindow else { return }
@@ -212,6 +227,8 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
             NSApp.presentationOptions = []
             window.level = .normal
             window.coversScreen = false
+            window.styleMask.insert(.titled)
+            hideTrafficLights()   // the title bar comes back with new buttons
             window.setFrame(frame, display: true, animate: true)
         } else if let screen = window.screen ?? NSScreen.main {
             unzoomedFrame = window.frame
@@ -219,6 +236,7 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
             // Without a Dock icon the app owns no menu bar to hide: cover it instead.
             if NSApp.activationPolicy() != .regular { window.level = .popUpMenu }
             window.coversScreen = true
+            window.styleMask.remove(.titled)
             window.setFrame(screen.frame, display: true, animate: true)
         }
     }
