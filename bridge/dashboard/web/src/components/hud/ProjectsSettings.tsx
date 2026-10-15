@@ -54,11 +54,14 @@ function readShut(): Record<string, boolean> {
 /** A project's default profile, as a menu grouped by login — the picker the
  *  row shows is a chip with the login's tile, so whose it is reads before
  *  what it is called. */
-function ProfilePick({ value, profiles, logins, onPick }: {
+export function ProfilePick({ value, profiles, logins, onPick, lg, emptyLabel, disabled }: {
   value: string;
   profiles: ProfilesInfo;
   logins: AccountInfo[];
   onPick: (id: string) => void;
+  lg?: boolean;          // the page's hero size (the DEFAULT PROFILE fold)
+  emptyLabel?: string;   // what "" means here — "Bridge default" on a project row
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -86,17 +89,18 @@ function ProfilePick({ value, profiles, logins, onPick }: {
     groups.push({ key: agent, head: <>{tile({ agent, account: "" })}{agentLabel(agent)}</>, rows: profiles.profiles.filter((p) => p.agent === agent) });
   return (
     <div ref={ref} className="ps-pickwrap">
-      <button type="button" className="ps-pick" onClick={() => setOpen((o) => !o)} title="Default profile — what a new session in this project is bound to">
-        {tile(cur ?? bridgeDefault)}
-        <span className="ps-pickname">{cur ? cur.name : "Default"}</span>
-        {!cur && bridgeDefault && <span className="ps-pickdim">· {bridgeDefault.name}</span>}
+      <button type="button" className={lg ? "ps-pick ps-pick-lg" : "ps-pick"} disabled={disabled} onClick={() => setOpen((o) => !o)}
+        title={emptyLabel ? "Default profile — what a new session gets unless its project names another" : "Default profile — what a new session in this project is bound to"}>
+        {tile(cur ?? (emptyLabel ? undefined : bridgeDefault))}
+        <span className="ps-pickname">{cur ? cur.name : emptyLabel ?? "Default"}</span>
+        {!cur && !emptyLabel && bridgeDefault && <span className="ps-pickdim">· {bridgeDefault.name}</span>}
         <span className="ps-pickchev">{open ? "▴" : "▾"}</span>
       </button>
       {open && (
         <div className="ps-menu">
           <button type="button" className="ps-opt" data-on={!value || undefined} onClick={() => { onPick(""); setOpen(false); }}>
-            <span className="ps-chk">{!value ? "✓" : ""}</span><span className="ps-optname">Bridge default</span>
-            <span className="ps-k">{bridgeDefault ? bridgeDefault.name : "none"}</span>
+            <span className="ps-chk">{!value ? "✓" : ""}</span><span className="ps-optname">{emptyLabel ?? "Bridge default"}</span>
+            {!emptyLabel && <span className="ps-k">{bridgeDefault ? bridgeDefault.name : "none"}</span>}
           </button>
           {groups.map((g) => (
             <div key={g.key}>

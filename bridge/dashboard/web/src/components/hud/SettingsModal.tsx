@@ -19,8 +19,8 @@ import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
 
 import { ago, hhmm, projectName, useClock12, windowLabels } from "../../lib/surfaces";
-import { SkillsView } from "./SkillsTab";
-import { ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
+import { SkillsFold } from "./SkillsFold";
+import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WeekPanel } from "./WeekPanel";
 import {
   api,
@@ -161,14 +161,14 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 export type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
-  | "aimgmt" | "ai" | "agentconfig" | "hooks"
+  | "aimgmt" | "agentconfig" | "hooks"
   | "plugins" | "system" | "move"
   | "report" | "mac";
 
 /** The four tabs AI MANAGEMENT replaced, and the fold each lands on. A caller
  *  that still names one (a bookmark, an older bridge's bot button) opens the
  *  page on that fold rather than on nothing. */
-const LEGACY_TAB: Record<string, string> = { projects: "PROJECTS", session: "PROFILES", accounts: "ACCOUNTS", mcp: "MCP SERVERS" };
+const LEGACY_TAB: Record<string, string> = { projects: "PROJECTS", session: "PROFILES", accounts: "ACCOUNTS", mcp: "MCP SERVERS", ai: "MODEL-SPENDING EXTRAS" };
 export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec: string | null } {
   if (t && t in LEGACY_TAB) return { tab: "aimgmt", sec: LEGACY_TAB[t] };
   return { tab: t as Tab | undefined, sec: null };
@@ -202,12 +202,10 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   { key: "mac", label: "MAC APP", hint: "window · dock · panel", icon: AppWindowMac, group: "THE HUD",
     about: "What only the Mac app can do: the window's title, the Dock icon, the floating WAITING ON YOU panel, and rebuilding the app after an update." },
   // First under THE WORK: who runs a session and where. One page, five folds —
-  // it was four tabs (PROJECTS, SESSION, MCP, ACCOUNTS) that each held a
+  // it was five tabs (PROJECTS, SESSION, MCP, ACCOUNTS, AI) that each held a
   // piece of the same question, and the sidebar's SKILLS panel besides.
-  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · profiles · skills · mcp · projects", icon: KeyRound, group: "THE WORK",
-    about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills and MCP servers they can reach, and which profile each project starts with." },
-  { key: "ai", label: "AI", hint: "spends model calls", icon: Sparkles, group: "THE WORK",
-    about: "Extras that call a model on your behalf, like titles, summaries and guards. Each spends tokens, so each has its own switch." },
+  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · skills · mcp · profile · projects", icon: KeyRound, group: "THE WORK",
+    about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills, extras and MCP servers they can reach, the default profile, and which one each project starts with." },
   { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK",
     about: "The global files each AI tool reads on every run, such as Claude Code's CLAUDE.md and settings.json, edited in place." },
   { key: "hooks", label: "HOOKS", hint: "inbound events", icon: Radio, group: "THE WORK",
@@ -253,7 +251,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space" },
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission" },
   { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
-  { tab: "ai", sec: "MODEL-SPENDING EXTRAS", terms: "features titles guard next-up scout summaries cost tokens" },
+  { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
   { tab: "agentconfig", sec: "CLAUDE CODE", terms: "claude.md memory global instructions settings.json permissions hooks env user config" },
   { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
@@ -1957,141 +1955,6 @@ const POLICY_BLURB: Record<string, string> = {
   auto: "Take the best fallback immediately and report which one it landed on.",
   wait: "Only wait for the window to reset — the behaviour before the ladder existed.",
 };
-
-/** Every model call the bridge makes on top of your own turns, and its switch.
- *  Anything that runs on its own ships off: an install should cost exactly the
- *  turns you typed until you decide otherwise. The ones that only fire on a
- *  press ship on, and are listed so the spend is still visible and stoppable.
- *  Takes effect on the next turn — no restart. */
-
-// One icon per extra: a grid of ten cards is scanned by shape long before it is
-// read, and these are otherwise ten identical rectangles.
-const AI_ICONS: Record<string, LucideIcon> = {
-  title: PenLine,
-  relevance: ShieldQuestion,
-  nextup: ListTodo,
-  preview: Play,
-  learn: GraduationCap,
-  tailstate: MessageCircleQuestion,
-  ponytail: Scissors,
-  graph: Waypoints,
-  commitmsg: GitCommitVertical,
-  design: Shapes,
-};
-
-/** One extra as its own card: icon, name, what it does, what it costs, its
- *  switch. As ruled rows in a single card these read as a list you go down
- *  line by line; as cards, which ones are spending is visible from across the
- *  grid — the question this tab exists to answer. The cost line sits on the
- *  card's floor (marginTop:auto) so it lines up across a row whatever the
- *  hints do — until an ⓘ opens; see openKey in AiPanel. */
-function AiCard({ f, busy, err, open, onToggle, onInfo }: {
-  f: AiFeature; busy: boolean; err?: string; open: boolean; onToggle: () => void; onInfo: () => void;
-}) {
-  const Icon = AI_ICONS[f.key] ?? Sparkles;
-  return (
-    <div style={{
-      ...CARD,
-      display: "flex",
-      flexDirection: "column",
-      gap: 7,
-      border: `1px solid color-mix(in srgb, var(--acc) ${f.enabled ? 34 : 12}%, transparent)`,
-      background: f.enabled ? "color-mix(in srgb, var(--acc) 7%, var(--panel))" : CARD.background,
-      opacity: busy ? 0.55 : 1,
-      transition: "border-color .15s, background .15s, opacity .15s",
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <Icon size={13} strokeWidth={1.7} aria-hidden
-          style={{ flex: "none", color: f.enabled ? "var(--acc)" : "var(--txd)" }} />
-        <span style={{ ...KEY_TX, color: f.enabled ? "var(--txb)" : "var(--txd)" }}>{f.label}</span>
-        {f.about && <InfoDot on={open} about={f.label} onClick={onInfo} />}
-        <span style={{ flex: 1, minWidth: 8 }} />
-        <Switch on={f.enabled} onClick={() => (busy ? null : onToggle())} />
-      </div>
-      <div style={{ fontSize: "var(--t95)", color: "var(--txl)", lineHeight: 1.6 }}>{f.hint}</div>
-      {open && f.about && <div style={{ ...ASIDE, marginTop: 0 }}>{f.about}</div>}
-      {err && <div style={{ fontSize: "var(--t95)", color: "var(--err)" }}>{err}</div>}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 6, marginTop: "auto", paddingTop: 8,
-        borderTop: RULE, fontSize: "var(--t9)", letterSpacing: 1, color: "var(--txd)",
-      }}>
-        <span>{f.cost}</span>
-        {f.tokens && <>
-          <span style={{ opacity: 0.5 }}>·</span>
-          <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txm)" }}>{f.tokens}</span>
-        </>}
-      </div>
-    </div>
-  );
-}
-
-function AiPanel() {
-  const [rows, setRows] = useState<AiFeature[] | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  // Keyed by feature: a failure belongs on the card whose switch just refused
-  // to move, not in a line under ten of them.
-  const [err, setErr] = useState<{ key: string; msg: string } | null>(null);
-  // Which card's ⓘ is unfolded. Held here, not per card, because the grid has
-  // to know: its rows stretch so the cost lines align across a row, and one
-  // open aside would stretch its neighbour into a card that is mostly gap.
-  const [openKey, setOpenKey] = useState<string | null>(null);
-
-  useEffect(() => {
-    void api
-      .aiFeatures()
-      .then((r) => {
-        setRows(r.features);
-        setAiFeatures(r.features);
-      })
-      .catch(() => setRows([]));
-  }, []);
-
-  async function toggle(f: AiFeature) {
-    setBusy(f.key);
-    setErr(null);
-    try {
-      const fresh = (await api.setAiFeature(f.key, !f.enabled)).features;
-      setRows(fresh);
-      // The switch owns visible UI elsewhere (tabs, boards, cards) — hand the
-      // fresh answer to the shared store so it appears/disappears right now.
-      setAiFeatures(fresh);
-    } catch (e) {
-      setErr({ key: f.key, msg: e instanceof Error ? e.message : "could not save" });
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  if (rows === null) return <Placeholder icon={LoaderCircle} spin>Reading the feature switches…</Placeholder>;
-  if (!rows.length)
-    return <Placeholder icon={TriangleAlert}>This bridge is running a build without the AI tab. Restart it.</Placeholder>;
-
-  const on = rows.filter((f) => f.enabled).length;
-  return (
-    <Section
-      title="MODEL-SPENDING EXTRAS"
-      info="Anything that runs without you pressing something is off by default. A switch here beats the matching environment setting and applies to the next turn — nothing to restart. Everything a feature adds to the dashboard is hidden again the moment you switch it off. The token figure is what one unit burns, in and out together, as a median of real runs. Even the smallest one-shot costs tens of thousands: every headless run carries the CLI's own system prompt and tool schemas before it reads a word of yours. Most of that is read from cache, so it is cheaper than the number looks — but it is not free, and the ones that fire on their own are the ones that add up."
-    >
-      <div style={{ fontSize: "var(--t95)", letterSpacing: 1, color: "var(--txd)", marginBottom: 11 }}>
-        {on} OF {rows.length} SPENDING
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(258px,1fr))", gap: 9,
-                    alignItems: openKey ? "start" : "stretch" }}>
-        {rows.map((f) => (
-          <AiCard
-            key={f.key}
-            f={f}
-            busy={busy === f.key}
-            err={err?.key === f.key ? err.msg : undefined}
-            open={openKey === f.key}
-            onToggle={() => void toggle(f)}
-            onInfo={() => setOpenKey(openKey === f.key ? null : f.key)}
-          />
-        ))}
-      </div>
-    </Section>
-  );
-}
 
 /** One setting's control, picked by its type. Text fields commit on blur or
  *  Enter rather than per keystroke, so a half-typed port never reaches the
@@ -4368,48 +4231,56 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
 
   const profilesBody = (
     <>
-      <div className="aim-fields">
-        <div className="aim-field">
-          <div><b>Default profile</b><span>what a new session gets unless its project names another</span></div>
-          <select className="aim-sel" value={defaultId ?? ""} disabled={!profilesAvailable || pBusy}
-            onChange={(e) => void write({ action: "default", id: e.target.value })}>
-            <option value="">{profilesAvailable ? "The first login's" : "—"}</option>
-            {list.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+      <div className="aim-hero">
+        <div>
+          <div className="aim-hero-l">Default profile</div>
+          <span className="aim-hint">What a new session gets unless its project names another. The profiles themselves live under each login in ACCOUNTS.</span>
         </div>
-        <div className="aim-field">
-          <div><b>Model</b><span>the composer's default, for a session with no profile</span></div>
+        {profiles ? (
+          <ProfilePick lg value={defaultId ?? ""} emptyLabel="The first login's" profiles={profiles} logins={acc.rows ?? []}
+            disabled={!profilesAvailable || pBusy} onPick={(id) => void write({ action: "default", id })} />
+        ) : <span className="aim-hint">{profilesError ?? "—"}</span>}
+      </div>
+      <div className="aim-glabel" data-sec="RUN DEFAULTS">When no profile applies — this browser's run defaults</div>
+      <div className="aim-vfields">
+        <div className="aim-vfield">
+          <b>Model</b>
           <select className="aim-sel" value={settings.model} onChange={(e) => onPatch({ model: e.target.value })}>
             {(settings.allModels ? models : latestPerFamily(models, settings.model)).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
           </select>
+          <span>the composer's default, for a session with no profile</span>
         </div>
-        <div className="aim-field">
-          <div><b>Permission mode</b><span>what it may do unasked</span></div>
+        <div className="aim-vfield">
+          <b>Permission mode</b>
           <select className="aim-sel" value={settings.perm} onChange={(e) => onPatch({ perm: e.target.value })}>
             {PERMS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
+          <span>what it may do unasked</span>
         </div>
-        <div className="aim-field">
-          <div><b>Effort</b><span>how hard it thinks</span></div>
+        <div className="aim-vfield">
+          <b>Effort</b>
           <select className="aim-sel" value={settings.effort} onChange={(e) => onPatch({ effort: e.target.value })}>
             {EFFORTS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
           </select>
+          <span>how hard it thinks</span>
         </div>
+      </div>
+      <div className="aim-vfields two">
         {aiFeatures.ponytail && (
-          <div className="aim-field">
+          <div className="aim-vfield row">
             <div><b>Ponytail</b><span>how much it trims — this browser's</span></div>
             <select className="aim-sel" value={settings.ponytail} onChange={(e) => onPatch({ ponytail: e.target.value })}>
               {PONYTAILS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
             </select>
           </div>
         )}
-        <div className="aim-field">
+        <div className="aim-vfield row">
           <div><b>All models</b><span>list every model, not just the latest of each family</span></div>
           <Switch on={settings.allModels} onClick={() => onPatch({ allModels: !settings.allModels })} />
         </div>
       </div>
-      <div className="aim-hint" style={{ marginTop: 10 }}>
-        Model, mode and effort belong to the open session — a pick is saved to it and follows it to every surface. The profiles themselves live under each login in ACCOUNTS.
+      <div className="aim-hint" style={{ marginTop: 12 }}>
+        Model, mode and effort belong to the open session — a pick is saved to it and follows it to every surface.
       </div>
     </>
   );
@@ -4421,16 +4292,16 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         right={policyPick}>
         {accountsBody}
       </AimFold>
-      <AimFold id="profiles" title="Profiles" secs={["PROFILES", "RUN DEFAULTS"]} openSec={openSec}
-        count={defaultName ? `default · ${defaultName}` : null} hint="the default, and what a session gets without one">
-        {profilesBody}
-      </AimFold>
-      <AimFold id="skills" title="Skills" secs={["SKILLS"]} openSec={openSec}
-        count={project ? projectName(project) : "no project"} hint="installed here and on this machine, and the catalog">
-        <SkillsView project={project} system />
+      <AimFold id="skills" title="Skills" secs={["SKILLS", "MODEL-SPENDING EXTRAS"]} openSec={openSec}
+        hint="installed here and on this machine, the catalog, and the extras that spend model calls">
+        <SkillsFold project={project} />
       </AimFold>
       <AimFold id="mcp" title="MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec} hint="servers and their logins">
         <McpPanel />
+      </AimFold>
+      <AimFold id="defprofile" title="Default profile" secs={["PROFILES", "RUN DEFAULTS"]} openSec={openSec}
+        count={defaultName ?? (profilesAvailable ? "the first login's" : null)} hint="what a session gets unless its project names one">
+        {profilesBody}
       </AimFold>
       <AimFold id="projects" title="Projects" secs={["PROJECTS"]} openSec={openSec}
         count={`${projects.groups.length} repo${projects.groups.length === 1 ? "" : "s"}`} hint="which profile each starts with · rename, hide, import">
@@ -5781,7 +5652,6 @@ export function SettingsModal(props: SettingsModalProps) {
               </Section>
             )}
 
-            {shown === "ai" && <AiPanel />}
 
             {shown === "agentconfig" && <AgentConfigPanel />}
 
