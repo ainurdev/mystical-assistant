@@ -1,5 +1,5 @@
 // Ambient widgets for the WORKSPACE panel + strip: host vitals (psutil), weather
-// (open-meteo), a locally-persisted focus timer, and a real lo-fi radio player.
+// (open-meteo) and a locally-persisted focus timer.
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type HostStats, type Weather } from "../api";
 
@@ -165,96 +165,4 @@ export function useFocus(sessionsToday: number): { focus: Focus; bumpCommit: () 
     streak: streakFrom(s.history, s.seconds > 60),
   };
   return { focus, bumpCommit };
-}
-
-// --- Claude·FM: real lo-fi internet radio (SomaFM, free/public streams) ---
-const STATIONS = [
-  { title: "Groove Salad", artist: "SomaFM · downtempo", url: "https://ice1.somafm.com/groovesalad-128-mp3" },
-  { title: "Beat Blender", artist: "SomaFM · deep house", url: "https://ice1.somafm.com/beatblender-128-mp3" },
-  { title: "Lush", artist: "SomaFM · dreamy vocals", url: "https://ice1.somafm.com/lush-128-mp3" },
-  { title: "Space Station", artist: "SomaFM · space ambient", url: "https://ice1.somafm.com/spacestation-128-mp3" },
-  { title: "Synphaera", artist: "SomaFM · synth", url: "https://ice1.somafm.com/synphaera-256-mp3" },
-  { title: "Drone Zone", artist: "SomaFM · ambient", url: "https://ice1.somafm.com/dronezone-128-mp3" },
-  { title: "DEF CON", artist: "SomaFM · darksynth", url: "https://ice1.somafm.com/defcon-256-mp3" },
-];
-
-export interface RadioState {
-  playing: boolean;
-  title: string;
-  artist: string;
-  elapsed: string; // "M:SS"
-}
-
-function fmtElapsed(s: number): string {
-  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
-}
-
-export interface Station {
-  title: string;
-  artist: string;
-}
-
-export const RADIO_STATIONS: Station[] = STATIONS.map(({ title, artist }) => ({ title, artist }));
-
-export function useRadio(volume: number): {
-  radio: RadioState;
-  toggle: () => void;
-  next: () => void;
-  station: number;
-  setStation: (i: number) => void;
-} {
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [track, setTrack] = useState(0);
-  const [playing, setPlaying] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
-
-  useEffect(() => {
-    const a = new Audio();
-    a.preload = "none";
-    a.crossOrigin = "anonymous";
-    audioRef.current = a;
-    return () => { a.pause(); a.src = ""; };
-  }, []);
-
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = volume;
-  }, [volume]);
-
-  useEffect(() => {
-    if (!playing) return;
-    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(id);
-  }, [playing]);
-
-  const play = useCallback((idx: number) => {
-    const a = audioRef.current;
-    if (!a) return;
-    a.src = STATIONS[idx % STATIONS.length].url;
-    void a.play().then(() => { setPlaying(true); setElapsed(0); }).catch(() => setPlaying(false));
-  }, []);
-
-  const toggle = useCallback(() => {
-    const a = audioRef.current;
-    if (!a) return;
-    if (playing) { a.pause(); setPlaying(false); }
-    else play(track);
-  }, [playing, play, track]);
-
-  const next = useCallback(() => {
-    const n = (track + 1) % STATIONS.length;
-    setTrack(n);
-    play(n);
-  }, [track, play]);
-
-  // Picking a station tunes to it; it only starts playing if the radio is on.
-  const setStation = useCallback((i: number) => {
-    setTrack(i);
-    if (playing) play(i);
-  }, [playing, play]);
-
-  const st = STATIONS[track % STATIONS.length];
-  return {
-    radio: { playing, title: st.title, artist: st.artist, elapsed: fmtElapsed(elapsed) },
-    toggle, next, station: track, setStation,
-  };
 }

@@ -3,12 +3,12 @@ import {
   type CSSProperties, type ReactNode,
 } from "react";
 import {
-  Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
+  Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, 
   FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
   Globe,
   Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
   MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, PenLine, Play, Plug,
-  Power, Radio, ScanLine, Scissors, ScrollText, Search, Server, Shapes,
+  Power, ScanLine, Scissors, ScrollText, Search, Server, Shapes,
   ShieldQuestion, SlidersHorizontal, Sparkles, Square, SquareTerminal, Sun, TriangleAlert, Type,
   Upload, Volume2, Waypoints, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, LayoutPanelTop,
@@ -38,7 +38,6 @@ import {
   type TimedEvent,
   type TrackerConnection,
   type UpdateInfo,
-  type Weather,
   MOVE_EVENT,
   type MoveFile,
   type MoveItem,
@@ -83,7 +82,6 @@ import { notify } from "./Notifications";
 import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { VOICES, VOICE_GROUPS } from "../../lib/piano";
 import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
-import { RADIO_STATIONS } from "../../lib/ambient";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isMacApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
@@ -121,11 +119,6 @@ export interface SettingsModalProps {
   onToggle: (key: "scanlines" | "sweep" | "glow") => void;
   onPatch: (patch: Partial<HudSettings>) => void;
   models: { id: string; label: string }[];
-  weather: Weather;
-  onSetCity: (city: string) => Promise<string | null>;
-  onSetUnit: (unit: string) => Promise<string | null>;
-  station: number;
-  onStation: (i: number) => void;
   onFeed: (texts: string[], project?: string, fresh?: boolean) => void; // a failed self-update hands git's error to Claude
   onReplayBoot: () => void;
   onClose: () => void;
@@ -158,7 +151,7 @@ export interface SettingsModalProps {
 // is there; likewise the prompt-box and transcript switches sat under SESSION
 // among the model/mode/effort knobs they have nothing to do with.
 
-export type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
+export type Tab = "appearance" | "transcript" | "indicator" | "notifications"
   | "aimgmt"
   | "plugins" | "system" | "move"
   | "mac";
@@ -191,8 +184,6 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "How a session reads: the style every message is drawn in, the texture behind it, and whether results start open." },
   { key: "indicator", label: "INDICATOR", hint: "while it works", icon: AudioLines, group: "THE HUD",
     about: "What the dashboard shows while a session is working: an equalizer, a nyan cat, or a piano to play while you wait." },
-  { key: "ambient", label: "AMBIENT", hint: "weather · Claude·FM", icon: CloudSun, group: "THE HUD",
-    about: "What surrounds the work: the weather beside the header clock, and the Claude·FM radio." },
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD",
     about: "How the dashboard tells you a session finished, failed, or is waiting on you: a desktop banner, a sound, or both." },
   // Only inside Mystical.app (RAIL and the search both skip it elsewhere): the
@@ -231,8 +222,6 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
   { tab: "transcript", sec: "OUTPUT STYLE", terms: "auto-open results bash output edit diffs tool widget output style control plate stamp wire signal log ledger press halo instrument terminal note plain sources screens preview" },
   { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
-  { tab: "ambient", sec: "WEATHER · header clock", terms: "city unit celsius fahrenheit temperature clock" },
-  { tab: "ambient", sec: "CLAUDE·FM", terms: "radio station music volume ambient" },
   { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
   { tab: "notifications", sec: "SOUND", terms: "tone chime volume packs peonping mute" },
   { tab: "notifications", sec: "PER EVENT", terms: "sound per event pack finished needs you error" },
@@ -439,8 +428,6 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "WORKING INDICATOR": AudioLines,
   "OUTPUT STYLE": ScrollText,
   RESULTS: ListTree,
-  "WEATHER · header clock": CloudSun,
-  "CLAUDE·FM": Radio,
   DESKTOP: Monitor,
   SOUND: Volume2,
   "PER EVENT": ListMusic,
@@ -483,8 +470,6 @@ const SEC_DESC: Record<string, string> = {
   "THE GROUND": "The texture the transcript sits on.",
   RESULTS: "Whether command output and diffs start open or folded.",
   "WORKING INDICATOR": "The tab you pick is the one the dashboard shows while it works.",
-  "WEATHER · header clock": "The city and unit for the weather beside the header clock.",
-  "CLAUDE·FM": "The header radio: which station, and how loud.",
   DESKTOP: "A system banner when a session you aren't watching finishes or needs you.",
   SOUND: "A sound when that happens: the default tone, and the volume for every sound.",
   "PER EVENT": "A different sound for each kind of news: a tone, a voice line from a pack, or nothing.",
@@ -1794,88 +1779,6 @@ function IndicatorPicker({
           </>
         )}
       </div>
-    </div>
-  );
-}
-
-/** City + unit for the header clock's weather — the same bridge-side setting the
- *  clock popover writes. */
-function WeatherCard({
-  weather,
-  onSetCity,
-  onSetUnit,
-}: {
-  weather: Weather;
-  onSetCity: (city: string) => Promise<string | null>;
-  onSetUnit: (unit: string) => Promise<string | null>;
-}) {
-  const [city, setCity] = useState(weather.loc);
-  const [err, setErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  async function save() {
-    if (!city.trim() || saving) return;
-    setSaving(true);
-    setErr(null);
-    const e = await onSetCity(city.trim());
-    setSaving(false);
-    setErr(e);
-  }
-
-  return (
-    <div style={CARD}>
-      <div style={{ ...LINE, marginTop: 0 }}>
-        <Cell label="CITY" grow="1 1 200px">
-          <div style={{ display: "flex", gap: 9 }}>
-            <input
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void save()}
-              placeholder="city — e.g. Tehran"
-              style={{
-                flex: 1,
-                minWidth: 0,
-                background: "var(--panel3)",
-                border: `1px solid ${err ? "var(--err)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`,
-                outline: "none",
-                color: "var(--txb)",
-                fontFamily: "inherit",
-                fontSize: "var(--t115)",
-                padding: "7px 9px",
-              }}
-            />
-            <button
-              onClick={() => void save()}
-              disabled={saving}
-              style={{
-                appearance: "none",
-                cursor: saving ? "wait" : "pointer",
-                border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
-                background: "color-mix(in srgb, var(--acc) 8%, transparent)",
-                color: "var(--tx)",
-                fontFamily: "inherit",
-                fontSize: "var(--t10)",
-                letterSpacing: 1.5,
-                padding: "7px 13px",
-                flex: "none",
-              }}
-            >
-              {saving ? "…" : "SAVE"}
-            </button>
-          </div>
-        </Cell>
-        <Cell label="UNIT" grow="none">
-          <Segmented
-            options={[
-              { label: "°C", value: "celsius" },
-              { label: "°F", value: "fahrenheit" },
-            ]}
-            value={weather.unit === "F" ? "fahrenheit" : "celsius"}
-            onPick={(u) => void onSetUnit(u)}
-          />
-        </Cell>
-      </div>
-      {err && <div style={{ fontSize: "var(--t9)", color: "var(--err)", marginTop: 5 }}>{err}</div>}
     </div>
   );
 }
@@ -4623,11 +4526,6 @@ export function SettingsModal(props: SettingsModalProps) {
     onToggle,
     onPatch,
     models,
-    weather,
-    onSetCity,
-    onSetUnit,
-    station,
-    onStation,
     onFeed,
     onReplayBoot,
     onClose,
@@ -5142,42 +5040,6 @@ export function SettingsModal(props: SettingsModalProps) {
               </Section>
             )}
 
-            {shown === "ambient" && (
-              <>
-                <Section title="WEATHER · header clock">
-                  <WeatherCard weather={weather} onSetCity={onSetCity} onSetUnit={onSetUnit} />
-                </Section>
-
-                <Section
-                  title="CLAUDE·FM"
-                  top
-                  info="Play/pause and skip live on the header pill. Station resets to the first one on reload; volume is remembered."
-                >
-                  <div style={CARD}>
-                    <div style={{ ...LINE, marginTop: 0 }}>
-                      <Cell label="STATION" grow="1 1 220px">
-                        <select
-                          value={station}
-                          onChange={(e) => onStation(Number(e.target.value))}
-                          style={{ ...field, width: "100%" }}
-                        >
-                          {RADIO_STATIONS.map((s, i) => (
-                            <option key={s.title} value={i}>
-                              {s.title} — {s.artist}
-                            </option>
-                          ))}
-                        </select>
-                      </Cell>
-                      <Cell label="VOLUME" grow="none">
-                        <div style={{ display: "flex", alignItems: "center", gap: 10, minHeight: 26 }}>
-                          <Volume value={settings.radioVolume} onChange={(radioVolume) => onPatch({ radioVolume })} />
-                        </div>
-                      </Cell>
-                    </div>
-                  </div>
-                </Section>
-              </>
-            )}
 
             {shown === "notifications" && (
               <>

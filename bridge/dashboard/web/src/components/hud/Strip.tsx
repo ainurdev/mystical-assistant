@@ -32,8 +32,6 @@ const CAP_LINE = "1px solid color-mix(in srgb, var(--acc) 14%, transparent)";
 const CAP_IN = "enterDown .55s cubic-bezier(.2,.8,.2,1) both";
 
 export interface StripProps {
-  radio: { playing: boolean; title: string; artist: string; elapsed: string };
-  onToggleRadio: () => void;
   clock: string; // "HH:MM:SS" 24h, from telemetry
   weather: Weather;
   onSetCity: (city: string) => Promise<string | null>;
@@ -231,12 +229,11 @@ export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => v
   );
 }
 
-/** SHIP, the radio, clock & weather, the bell — the old strip's middle and
+/** SHIP, clock & weather, the bell — the old strip's middle and
  *  right, as one row that sits wherever App puts it (RightCap, or the chat
  *  header while the right panel is collapsed). */
 export function Strip(props: StripProps) {
-  const { radio, onToggleRadio, clock, weather, onSetCity, onSetUnit, openSettings, openReport, git } = props;
-  const [fmHover, setFmHover] = useState(false);
+  const { clock, weather, onSetCity, onSetUnit, openSettings, openReport, git } = props;
   const [clockHover, setClockHover] = useState(false);
   const [clockOpen, setClockOpen] = useState(false);
   const [weekOpen, setWeekOpen] = useState(false);
@@ -345,40 +342,6 @@ export function Strip(props: StripProps) {
               <path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" />
             </svg>
             <span className="trim" style={{ fontFamily: "var(--mono)", fontSize: "var(--t95)", color: clockHover ? "var(--txh)" : "var(--txm)" }}>{wxTemp}</span>
-          </button>
-          <button
-            className="fm"
-            onClick={onToggleRadio}
-            title={`Claude·FM — ${radio.title} · ${radio.artist}${radio.playing ? ` · ${radio.elapsed}` : ""} — click to ${radio.playing ? "pause" : "play"}`}
-            aria-label={radio.playing ? "Pause Claude·FM" : "Play Claude·FM"}
-            aria-pressed={radio.playing}
-            onMouseEnter={() => setFmHover(true)}
-            onMouseLeave={() => setFmHover(false)}
-            style={{
-              ...bare, gap: 5, height: 13,
-              color: radio.playing ? "var(--acc)" : fmHover ? "var(--txm)" : "var(--txl)",
-              // Glow, not shadow: the phosphor bleeds while it plays.
-              filter: radio.playing ? "drop-shadow(0 0 3px color-mix(in srgb, var(--acc) 60%, transparent))" : "none",
-              transition: "color .15s ease",
-            }}
-          >
-            {/* At rest a note, not a still spectrum — four stepped bars read as
-                phone signal strength. The bars are for playing; the fixed slot
-                keeps FM from shifting when they swap. */}
-            <span style={{ width: 12, height: 10, flex: "none", display: "flex", alignItems: "flex-end", justifyContent: "center", gap: 1.5 }}>
-              {radio.playing
-                ? [0, 0.3, 0.12, 0.42].map((d, i) => (
-                    <span key={i} style={{ width: 2, height: 10, background: "currentColor", transformOrigin: "bottom", animation: `eqbar ${0.72 + i * 0.13}s ease-in-out ${d}s infinite` }} />
-                  ))
-                : (
-                  <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M9 18V5l12-2v13" />
-                    <circle cx="6" cy="18" r="3" />
-                    <circle cx="18" cy="16" r="3" />
-                  </svg>
-                )}
-            </span>
-            <span className="trim" style={{ fontFamily: "var(--mono)", fontSize: "var(--t8)", letterSpacing: "1.5px" }}>FM</span>
           </button>
         </span>
         {clockOpen && (

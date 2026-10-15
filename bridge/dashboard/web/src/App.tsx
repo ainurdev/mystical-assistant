@@ -48,7 +48,7 @@ import {
   type RightTab,
   type ThemeKey,
 } from "./lib/theme";
-import { useHostVitals, useRadio, useWeather } from "./lib/ambient";
+import { useHostVitals, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
 import { useSessionPins, useStickySet } from "./lib/prefs";
@@ -468,7 +468,6 @@ export function App() {
   const { weather, setCity, setUnit } = useWeather();
   const [wxSettings, setWxSettings] = useState(0); // nonce — opens the weather settings editor from the context menu
   const [weekNonce, setWeekNonce] = useState(0); // nonce — opens the week report, from the same menu
-  const radio = useRadio(settings.radioVolume);
   // Server-side per-session prompt queue: lets a new prompt be queued while a
   // turn is in flight (runs after it) instead of forcing a STOP first.
   const queue = useSessionQueue(sessionId);
@@ -1908,7 +1907,6 @@ export function App() {
     { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", run: toggleRight },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
     { id: "inspector", label: "HTTP inspector…", group: "Session", icon: "◫", run: () => setInspectorOpen(true) },
-    { id: "radio", label: radio.radio.playing ? "Pause Claude·FM" : "Play Claude·FM", group: "Audio", icon: "♪", run: () => radio.toggle() },
     ...modelOpts.map((m) => ({
       id: `model-${m.id}`, label: `Use ${m.label}`, group: "Model",
       icon: "⌥", run: () => setModel(m.id),
@@ -2071,12 +2069,11 @@ export function App() {
     } else if (ctxMenu.type === "weather") {
       // The clock's menu — a plain click on the clock opens it too — so it
       // carries what used to sit around the clock in the strip: the week
-      // report, the clock & weather settings, the radio's skip.
+      // report, the clock & weather settings.
       const other = weather.unit === "F" ? "C" : "F";
       items.push({ icon: "▤", label: "Weekly report", onClick: () => setWeekNonce((n) => n + 1) });
       items.push({ icon: "✎", label: "Clock & weather…", onClick: () => setWxSettings((n) => n + 1) });
       items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
-      items.push({ icon: "»", label: "Next station", onClick: () => radio.next() });
       items.push({ divider: true });
     }
     // Dashboard-wide rows. When you right-clicked *something* — a card, a turn,
@@ -2086,7 +2083,6 @@ export function App() {
     // whose menu is the dashboard's own.
     const globals: CtxItem[] = [
       { icon: "⊕", label: "Command palette", hint: "⌘K", onClick: () => setPaletteOpen(true) },
-      { icon: "♪", label: "Toggle Claude·FM", onClick: () => radio.toggle() },
       { icon: "⚙", label: "Dashboard settings", onClick: () => setSettingsOpen(true) },
       { icon: "↻", label: "Replay boot", onClick: () => replayBoot() },
       { icon: "⏻", label: "Restart bridge",
@@ -2101,7 +2097,7 @@ export function App() {
       items.push({ divider: true }, { icon: "⌾", label: "Browser", children: nativeCtx.page });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, radio, weather, setUnit, relocTargets, ai]);
+  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai]);
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
@@ -2236,8 +2232,6 @@ export function App() {
   // the chat header's end while it's folded to the rail (see Strip.tsx).
   const strip = (
     <Strip
-      radio={radio.radio}
-      onToggleRadio={radio.toggle}
       clock={tele.clock}
       weather={weather}
       onSetCity={setCity}
@@ -2479,8 +2473,8 @@ export function App() {
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
                 settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}
-                models={modelOpts} weather={weather} onSetCity={setCity} onSetUnit={setUnit}
-                station={radio.station} onStation={radio.setStation} onFeed={feed}
+                models={modelOpts}
+                onFeed={feed}
                 sessionTools={selected?.disabled_tools ?? []}
                 profiles={profiles} profilesAvailable={profilesAvailable} profilesError={profilesError}
                 onProfilesChanged={() => void loadProfiles()}

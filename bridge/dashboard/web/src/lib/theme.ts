@@ -431,7 +431,6 @@ export interface HudSettings {
   pianoVolume: number; // 0..1
   tilesSong: string; // which melody the tiles game drops
   tilesSpeed: TileSpeed; // how long a tile takes to fall
-  radioVolume: number; // 0..1, Claude·FM
   font: string; // FONTS key; "" = the theme's own voice
   baseFont: number; // BASE FONT SIZE in px — the whole type scale is derived
                     // from it (index.css --fs); 0 = AUTO (from the viewport)
@@ -537,7 +536,7 @@ const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "files",
   indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
-  tilesSong: "fur-elise", tilesSpeed: "normal", radioVolume: 0.6,
+  tilesSong: "fur-elise", tilesSpeed: "normal",
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
@@ -625,7 +624,6 @@ export function loadSettings(): HudSettings {
         tilesSpeed: TILE_SPEEDS.includes(p.tilesSpeed as TileSpeed)
           ? (p.tilesSpeed as TileSpeed)
           : "normal",
-        radioVolume: clamp01(p.radioVolume, 0.6),
         font: FONTS.some((f) => f.key === p.font) ? (p.font as string) : "",
         // `textScale` was the old whole-HUD zoom factor; a stored one carries
         // over as the base font size it was effectively rendering at.
