@@ -32,7 +32,6 @@ import {
   type AcpAccount,
   type AcpAgentsInfo,
   type AcpPreset,
-  type HooksInfo,
   type McpInfo,
   type RivendellInstance,
   type RivendellInput,
@@ -162,7 +161,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 export type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
-  | "aimgmt" | "agentconfig" | "hooks"
+  | "aimgmt" | "agentconfig"
   | "plugins" | "system" | "move"
   | "report" | "mac";
 
@@ -209,8 +208,6 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills, extras and MCP servers they can reach, the default profile, and which one each project starts with." },
   { key: "agentconfig", label: "CONFIG", hint: "each AI's own files", icon: FileCog, group: "THE WORK",
     about: "The global files each AI tool reads on every run, such as Claude Code's CLAUDE.md and settings.json, edited in place." },
-  { key: "hooks", label: "HOOKS", hint: "inbound events", icon: Radio, group: "THE WORK",
-    about: "URLs that GitHub, a CI job or your own script can POST to. Whatever arrives is pushed to you on Telegram." },
   { key: "plugins", label: "PLUGINS", hint: "rivendell instances", icon: Waypoints, group: "THE WORK",
     about: "External dashboards the bridge runs work for. Rivendell's \"Request review\" and \"Implement using AI\" buttons become autonomous Claude runs here — one connection per Rivendell (production, local, staging)." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
@@ -257,9 +254,6 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "agentconfig", sec: "OPENCODE", terms: "agents.md opencode.json provider free agent config" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
   { tab: "aimgmt", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
-  { tab: "hooks", sec: "INBOUND HOOKS", terms: "webhook hook inbound event github sentry ci deploy trigger notify token revoke url" },
-  { tab: "hooks", sec: "ADD A HOOK", terms: "webhook hook new mint token secret signature source github sentry ci generic" },
-  { tab: "hooks", sec: "RECENT EVENTS", terms: "webhook feed received events history inbound log" },
   { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini api key install test other agent" },
   { tab: "plugins", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout" },
   { tab: "plugins", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
@@ -3183,250 +3177,6 @@ function McpPanel() {
   );
 }
 
-/* HOOKS — the one door into this machine that isn't a person typing. Each row is
-   a URL you paste into GitHub, a CI job, an error monitor or your own script;
-   anything that POSTs to it lands in Telegram and in the feed below.
-
-   Every hook here only notifies. Nothing on this panel can make an inbound POST
-   start a run, because a POST that spawns Claude on this machine is remote code
-   execution and the default has to be the harmless one. See bridge/hooks.py. */
-function HooksPanel() {
-  const [info, setInfo] = useState<HooksInfo | null>(null);
-  // Same client-newer-than-bridge case McpPanel handles: a dashboard built from
-  // this commit against a process that started before it gets a 404, not a panel.
-  const [stale, setStale] = useState(false);
-  const [busy, setBusy] = useState("");
-  const [err, setErr] = useState<string | null>(null);
-  const [copied, setCopied] = useState("");
-  const [label, setLabel] = useState("");
-  const [source, setSource] = useState("github");
-  const [secret, setSecret] = useState("");
-
-  const load = () =>
-    api
-      .hooks()
-      .then((r) => {
-        setInfo(r);
-        setStale(false);
-      })
-      .catch((e) => setStale(e instanceof Error && e.message.includes("404")));
-
-  useEffect(() => {
-    void load();
-  }, []);
-
-  async function add() {
-    if (busy) return;
-    setBusy("+");
-    setErr(null);
-    try {
-      const r = await api.hookAction("create", {
-        label: label.trim() || source,
-        source,
-        secret: secret.trim(),
-      });
-      if (r.error) setErr(r.error);
-      else {
-        setLabel("");
-        setSecret("");
-        await load();
-      }
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy("");
-    }
-  }
-
-  async function drop(token: string) {
-    setBusy(token);
-    setErr(null);
-    try {
-      await api.hookAction("delete", { token });
-      await load();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy("");
-    }
-  }
-
-  function copy(h: { token: string; url: string }) {
-    void navigator.clipboard.writeText(h.url).then(() => {
-      setCopied(h.token);
-      setTimeout(() => setCopied(""), 1500);
-    });
-  }
-
-  const rows = info?.hooks ?? [];
-  const events = info?.events ?? [];
-
-  return (
-    <>
-      <Section
-        title="INBOUND HOOKS"
-        info={
-          <>
-            A URL that anything on the internet can POST to, which pushes what it receives to
-            Telegram. Paste one into a GitHub repo&apos;s webhook settings, a CI job&apos;s
-            notification step, or your own script. The token in the URL is the whole credential, so
-            treat it like a password and REVOKE any you have pasted somewhere you regret. Setting a
-            secret when you mint one adds a signature check on top — GitHub and Sentry both sign,
-            and a hook with a secret refuses anything unsigned.
-          </>
-        }
-      >
-        <div style={CARD}>
-          <div style={{ ...KV, marginBottom: rows.length ? 12 : 0 }}>
-            <span style={KEY_TX}>
-              {stale ? "NEEDS A RESTART" : info === null ? "READING…" : `${rows.length} HOOK${rows.length === 1 ? "" : "S"}`}
-            </span>
-          </div>
-
-          {stale && (
-            <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
-              the bridge needs a restart before it can answer this
-            </div>
-          )}
-          {!stale && info !== null && rows.length === 0 && (
-            <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
-              Nothing can reach this machine yet. Mint one below.
-            </div>
-          )}
-          {!stale && info !== null && !info.public && rows.length > 0 && (
-            <div style={{ fontSize: "var(--t105)", color: "var(--txl)", marginBottom: 10 }}>
-              No tunnel configured (PREVIEW_HOSTNAME), so these are paths, not addresses — nothing
-              outside can reach them until the Mini App has a public host.
-            </div>
-          )}
-
-          {rows.map((h) => (
-            <div
-              key={h.token}
-              style={{
-                display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap",
-                padding: "8px 0", borderTop: "1px solid var(--line)",
-              }}
-            >
-              <span style={{ fontWeight: 600 }}>{h.label}</span>
-              <span style={{ color: "var(--txd)", fontSize: "var(--t95)" }}>{h.source}</span>
-              {h.signed && (
-                <span style={{ color: "var(--txd)", fontSize: "var(--t95)" }}>· signed</span>
-              )}
-              <span style={{ color: "var(--txl)", fontSize: "var(--t95)" }}>
-                · {h.hits} hit{h.hits === 1 ? "" : "s"}
-                {!h.last_seen ? " · never fired" : ago(h.last_seen) === "now" ? " · just now" : ` · ${ago(h.last_seen)} ago`}
-              </span>
-              <span style={{ flex: 1 }} />
-              <MiniBtn onClick={() => copy(h)}>{copied === h.token ? "COPIED" : "COPY URL"}</MiniBtn>
-              <MiniBtn disabled={busy === h.token} onClick={() => void drop(h.token)}>
-                {busy === h.token ? "…" : "REVOKE"}
-              </MiniBtn>
-            </div>
-          ))}
-          {err && (
-            <div style={{ marginTop: 10, fontSize: "var(--t105)", color: "var(--bad)" }}>{err}</div>
-          )}
-        </div>
-      </Section>
-
-      <Section
-        title="ADD A HOOK"
-        top
-        info={
-          <>
-            SOURCE only labels the row and picks which signature header is checked; any sender can
-            post to any hook. Leave SECRET empty and the token alone authorises the caller — fine
-            for a script you control, worth filling in for anything public. GitHub calls it the
-            webhook secret, Sentry calls it the client secret.
-          </>
-        }
-      >
-        <div style={CARD}>
-          <div style={{ ...LINE, marginTop: 0 }}>
-            <Cell label="SOURCE" grow="1 1 260px">
-              <Segmented
-                options={(info?.sources ?? ["github", "sentry", "ci", "generic"]).map((sc) => ({
-                  label: sc.toUpperCase(),
-                  value: sc,
-                }))}
-                value={source}
-                onPick={setSource}
-              />
-            </Cell>
-          </div>
-          <div style={{ ...ROW, gap: 8 }}>
-            <input
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="label"
-              style={{ ...FIELD, flex: "none", width: 130 }}
-            />
-            <input
-              value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && void add()}
-              placeholder="signing secret (optional)"
-              style={FIELD}
-            />
-            <MiniBtn disabled={!!busy || stale} onClick={() => void add()}>
-              {busy === "+" ? "…" : "MINT"}
-            </MiniBtn>
-          </div>
-        </div>
-      </Section>
-
-      <Section
-        title="RECENT EVENTS"
-        top
-        info={
-          <>
-            The last few hundred events any hook received, newest first. The line is a best-effort
-            summary — the bridge stores the whole payload but does not try to understand each
-            sender&apos;s shape, so a source it cannot read still shows up, just without a title.
-          </>
-        }
-      >
-        <div style={CARD}>
-          {events.length === 0 ? (
-            <div style={{ fontSize: "var(--t105)", color: "var(--txl)" }}>
-              Nothing received yet.
-            </div>
-          ) : (
-            events.map((e, i) => (
-              <div
-                key={e.id}
-                style={{
-                  display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap",
-                  padding: "6px 0",
-                  borderTop: i ? "1px solid var(--line)" : "none",
-                }}
-              >
-                <span style={{ color: "var(--txd)", fontSize: "var(--t95)", minWidth: 34 }}>
-                  {ago(e.received)}
-                </span>
-                <span style={{ fontWeight: 600 }}>{e.label ?? e.source}</span>
-                <span style={{ color: "var(--txl)" }}>{e.title ?? "(no summary)"}</span>
-                {e.url && (
-                  <a
-                    href={e.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ color: "var(--txd)", fontSize: "var(--t95)" }}
-                  >
-                    open
-                  </a>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </Section>
-    </>
-  );
-}
-
-
 const CODE: CSSProperties = {
   fontFamily: "'JetBrains Mono',monospace",
   fontSize: "var(--t95)",
@@ -5659,7 +5409,6 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "agentconfig" && <AgentConfigPanel />}
 
-            {shown === "hooks" && <HooksPanel />}
             {shown === "aimgmt" && (
               <AiManagementPanel settings={settings} onPatch={onPatch} models={models} sessionTools={sessionTools}
                 profiles={profiles} profilesAvailable={profilesAvailable} profilesError={profilesError}
