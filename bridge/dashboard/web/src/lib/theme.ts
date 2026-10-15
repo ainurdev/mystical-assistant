@@ -6,11 +6,9 @@
 // `canvas`/`font` restyle the page ground + type voice. CRT effects
 // (scanlines / sweep / glow) have per-theme defaults applied on pick.
 
-import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
+import { toIndicator, type Indicator } from "./indicator";
 import { TONES, type ToneKey } from "./push";
 import { PUSH_EVENT_KEYS, type PushEvent, type SoundChoice } from "./sounds";
-import { VOICE_KEYS, type VoiceKey } from "./piano";
-import { SONGS, TILE_SPEEDS, type TileSpeed } from "./songs";
 import { toChatBg, toToolStyle, toTranscriptScheme, type ChatBg, type ToolStyle, type TranscriptScheme } from "./toolwidget";
 
 export type ThemeKey =
@@ -363,8 +361,8 @@ export function themePrad(t: ThemeKey): string {
 
 /**
  * The CSS filter that UNDOES the active theme's filter — apply it to media that
- * must keep its true colours inside the themed container (the nyan cat GIF; a
- * hue-rotated nyan cat is not a nyan cat). Each op is inverted and the chain
+ * must keep its true colours inside the themed container (an image or a
+ * swatch; a hue-rotated picture is not the picture). Each op is inverted and the chain
  * reversed. "none" for the palette themes, which don't filter at all. Only the
  * cleanly invertible ops are undone — `gray`/`invert` are lossy, and no theme
  * uses them today.
@@ -411,9 +409,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
 export const RIGHT_TABS = ["files", "changes", "git", "learn", "queue", "rivendell"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
-/** What the transcript shows while the agent works. */
-export const INDICATORS = ["bar", "nyan", "piano", "tiles", "status"] as const;
-export type Indicator = (typeof INDICATORS)[number];
+export { INDICATORS, type Indicator } from "./indicator";
 
 export interface HudSettings {
   theme: ThemeKey;
@@ -423,14 +419,6 @@ export interface HudSettings {
   rightOpen: boolean; // right sidebar expanded
   rightTab: RightTab; // which sidebar tab it opens on
   indicator: Indicator; // which working-indicator form is live
-  nyan: NyanMode; // which cat, when indicator === "nyan"
-  nyanSound: NyanSound; // "match" = the picked cat's own track
-  nyanVolume: number; // 0..1
-  nyanExtra: boolean; // fly the cat + draw nyan.cat's CSS rainbow and pixel stars
-  pianoVoice: VoiceKey; // instrument voice (see VOICES)
-  pianoVolume: number; // 0..1
-  tilesSong: string; // which melody the tiles game drops
-  tilesSpeed: TileSpeed; // how long a tile takes to fall
   font: string; // FONTS key; "" = the theme's own voice
   baseFont: number; // BASE FONT SIZE in px — the whole type scale is derived
                     // from it (index.css --fs); 0 = AUTO (from the viewport)
@@ -534,9 +522,7 @@ function urlLayout(): ChatLayout | null {
 const KEY = "hud-settings";
 const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "files",
-  indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
-  pianoVoice: "gm:acoustic_grand_piano", pianoVolume: 0.3,
-  tilesSong: "fur-elise", tilesSpeed: "normal",
+  indicator: "bar",
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
@@ -563,9 +549,6 @@ export function autoBaseFont(width: number, height: number): number {
 }
 
 const str = (v: unknown, fallback: string): string => (typeof v === "string" ? v : fallback);
-
-const legacyVoice = (p: Partial<HudSettings> & { pianoWave?: string }): unknown =>
-  p.pianoVoice ?? p.pianoWave;
 
 const clamp01 = (v: unknown, fallback: number): number =>
   typeof v === "number" ? Math.min(1, Math.max(0, v)) : fallback;
@@ -602,28 +585,7 @@ export function loadSettings(): HudSettings {
         glow: p.glow ?? true,
         rightOpen: p.rightOpen ?? true,
         rightTab: RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
-        // `nyan` used to carry "off" to mean the stock bar; that role moved to
-        // `indicator`, so a stored "off" migrates to indicator:"bar".
-        indicator: INDICATORS.includes(p.indicator as Indicator)
-          ? (p.indicator as Indicator)
-          : NYAN_KEYS.includes(p.nyan as string)
-            ? "nyan"
-            : "bar",
-        nyan: NYAN_KEYS.includes(p.nyan as string) ? (p.nyan as NyanMode) : "original",
-        nyanSound:
-          p.nyanSound === "off" || p.nyanSound === "match" || NYAN_KEYS.includes(p.nyanSound as string)
-            ? (p.nyanSound as NyanSound)
-            : "match",
-        nyanVolume: clamp01(p.nyanVolume, 0.4),
-        nyanExtra: p.nyanExtra ?? true,
-        // `pianoWave` held a raw oscillator name before the instrument list;
-        // those names survive as SYNTH voice keys, so it carries straight over.
-        pianoVoice: VOICE_KEYS.includes(legacyVoice(p) as string) ? (legacyVoice(p) as VoiceKey) : "grand",
-        pianoVolume: clamp01(p.pianoVolume, 0.3),
-        tilesSong: SONGS.some((x) => x.key === p.tilesSong) ? (p.tilesSong as string) : "fur-elise",
-        tilesSpeed: TILE_SPEEDS.includes(p.tilesSpeed as TileSpeed)
-          ? (p.tilesSpeed as TileSpeed)
-          : "normal",
+        indicator: toIndicator(p.indicator),
         font: FONTS.some((f) => f.key === p.font) ? (p.font as string) : "",
         // `textScale` was the old whole-HUD zoom factor; a stored one carries
         // over as the base font size it was effectively rendering at.

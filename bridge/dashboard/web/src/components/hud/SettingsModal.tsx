@@ -4,11 +4,11 @@ import {
 } from "react";
 import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, 
-  FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
+  FolderTree, Gauge, GitBranch, 
   Globe,
   Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
-  MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, PenLine, Play, Plug,
-  Power, ScanLine, Scissors, ScrollText, Search, Server, Shapes,
+  MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, Play, Plug,
+  Power, ScanLine, ScrollText, Search, Server, 
   ShieldQuestion, SlidersHorizontal, Sparkles, Square, SquareTerminal, Sun, TriangleAlert, Type,
   Upload, Volume2, Waypoints, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, LayoutPanelTop,
@@ -67,9 +67,7 @@ import {
   themeCompensator,
   themeDef,
   themeHasCrt,
-  themeUnfilter,
   type HudSettings,
-  type Indicator,
   type MoveBar,
   type MoveColor,
   type MovePrefs,
@@ -79,9 +77,6 @@ import {
 import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWrite } from "../../lib/profiles";
 import { AGENT_DEFAULT, agentLabel, optionRows, setAgentLabels } from "../../lib/agents";
 import { notify } from "./Notifications";
-import { NYAN_MODES, nyanThumb, type NyanSound } from "../../lib/nyan";
-import { VOICES, VOICE_GROUPS } from "../../lib/piano";
-import { SONGS, TILE_SPEEDS, type TileSpeed } from "../../lib/songs";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isMacApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
@@ -151,7 +146,7 @@ export interface SettingsModalProps {
 // is there; likewise the prompt-box and transcript switches sat under SESSION
 // among the model/mode/effort knobs they have nothing to do with.
 
-export type Tab = "appearance" | "transcript" | "indicator" | "notifications"
+export type Tab = "appearance" | "transcript" | "notifications"
   | "aimgmt"
   | "plugins" | "system" | "move"
   | "mac";
@@ -182,8 +177,6 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "How the dashboard looks: the palette it wears, its typeface and size, and the CRT effects laid over it." },
   { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD",
     about: "How a session reads: the style every message is drawn in, the texture behind it, and whether results start open." },
-  { key: "indicator", label: "INDICATOR", hint: "while it works", icon: AudioLines, group: "THE HUD",
-    about: "What the dashboard shows while a session is working: an equalizer, a nyan cat, or a piano to play while you wait." },
   { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD",
     about: "How the dashboard tells you a session finished, failed, or is waiting on you: a desktop banner, a sound, or both." },
   // Only inside Mystical.app (RAIL and the search both skip it elsewhere): the
@@ -217,7 +210,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
   { tab: "appearance", sec: "BOOT SEQUENCE", terms: "intro splash replay animation" },
-  { tab: "indicator", sec: "WORKING INDICATOR", terms: "equalizer spinner nyan cat piano keyboard tiles song voice samples synth" },
+  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
   { tab: "transcript", sec: "OUTPUT STYLE", terms: "auto-open results bash output edit diffs tool widget output style control plate stamp wire signal log ledger press halo instrument terminal note plain sources screens preview" },
@@ -270,62 +263,6 @@ function search(q: string, env: EnvSetting[], hidden: Set<string>): Hit[] {
   return all.filter((e) => words.every((w) => e.hay.includes(w))).slice(0, 40);
 }
 
-// ---- WORKING INDICATOR ------------------------------------------------------
-// Four forms share one tabbed panel so the modal stays one screen: the stock
-// equalizer, a nyan.cat ride, a playable piano, and piano tiles. Picking a tab
-// IS picking the form — `settings.indicator` is the tab state.
-
-// `help` is the long "how to play it" — folded behind the ⓘ beside the blurb,
-// since it's a paragraph you read once and then never again.
-const INDICATOR_TABS: { key: Indicator; label: string; blurb: string; help?: ReactNode }[] = [
-  { key: "bar", label: "EQUALIZER", blurb: "the stock braille spinner, phrase ticker and level bars" },
-  { key: "nyan", label: "NYAN CAT", blurb: "a nyan.cat ride — 36 cats, their trails, their music" },
-  {
-    key: "piano",
-    label: "PIANO",
-    blurb: "two octaves to play with mouse or keyboard while you wait",
-    help: (
-      <>
-        Click the board to arm the computer keys — unfocused, they stay yours for typing.
-        <br />
-        <span style={{ color: "var(--txd)" }}>SAMPLES</span> are real recordings, one MP3 per note,
-        fetched on first use (~600&nbsp;KB a voice, then browser-cached); the synth covers until they
-        land. <span style={{ color: "var(--txd)" }}>SYNTH</span> voices are generated locally and
-        need no network.
-        <br />
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
-          Z S X D C V G B H N J M
-        </span>{" "}
-        plays C3–B3 ·{" "}
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
-          Q 2 W 3 E R 5 T 6 Y 7 U I
-        </span>{" "}
-        plays C4–C5.
-      </>
-    ),
-  },
-  {
-    key: "tiles",
-    label: "TILES",
-    blurb: "piano tiles — clear each falling note on the key that plays it",
-    help: (
-      <>
-        Notes fall down the lane of the key that plays them — hit that key as the tile lands. Mouse
-        or computer keys, same as the piano, and it uses the VOICE picked on the PIANO tab.
-        <br />
-        Every melody is public domain; a modern chart hit&apos;s tune is a copyrighted composition,
-        so the directory sticks to the canon. Add your own in{" "}
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", color: "var(--txd)" }}>
-          src/lib/songs.ts
-        </span>
-        .
-      </>
-    ),
-  },
-  { key: "status", label: "STATUS", blurb: "one quiet line — what's running right now, and for how long" },
-];
-
-// 0 = AUTO (viewport-derived); the rest are the base the type scale hangs off.
 const BASE_FONT_OPTS = BASE_FONTS.map((n) => ({
   label: n === 0 ? "AUTO" : `${n}PX`,
   value: String(n),
@@ -420,6 +357,7 @@ function InfoDot({ on, about, onClick }: { on: boolean; about?: string; onClick:
 // the groups under SYSTEM and the tools under CONFIG are named by the bridge,
 // so they get theirs from the same table instead of a second mechanism.
 const SEC_ICONS: Record<string, LucideIcon> = {
+  "WHILE IT WORKS": AudioLines,
   "THEME · DARK": Moon,
   "THEME · LIGHT": Sun,
   "CRT EFFECTS": ScanLine,
@@ -461,6 +399,7 @@ const SEC_ICONS: Record<string, LucideIcon> = {
 // for the same reason. The long "why" stays behind the ⓘ; this is the line that
 // tells you, before you read any of that, whether you're in the right place.
 const SEC_DESC: Record<string, string> = {
+  "WHILE IT WORKS": "What the transcript shows while a session is working.",
   "THEME · DARK": "Palettes on a dark ground. Click one to wear it.",
   "THEME · LIGHT": "Palettes on a paper or daylight ground.",
   "CRT EFFECTS": "The tube laid over the screen: raster lines, a roaming glow, bloom on headings.",
@@ -1612,173 +1551,6 @@ function CrtToggles({
           <Switch on={settings[g.key]} onClick={() => onToggle(g.key)} />
         </Row>
       ))}
-    </div>
-  );
-}
-
-function IndicatorPicker({
-  settings,
-  onPatch,
-}: {
-  settings: HudSettings;
-  onPatch: (patch: Partial<HudSettings>) => void;
-}) {
-  const unfilter = themeUnfilter(settings.theme);
-  const active = INDICATOR_TABS.find((t) => t.key === settings.indicator) ?? INDICATOR_TABS[0];
-  const [help, setHelp] = useState(false);
-
-  return (
-    <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel) 92%, transparent)" }}>
-      <div style={{ display: "flex", gap: 2, borderBottom: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)" }}>
-        {INDICATOR_TABS.map((t) => {
-          const on = settings.indicator === t.key;
-          return (
-            <button
-              key={t.key}
-              onClick={() => onPatch({ indicator: t.key })}
-              style={{
-                flex: 1,
-                appearance: "none",
-                cursor: "pointer",
-                border: 0,
-                borderBottom: `2px solid ${on ? "var(--acc)" : "transparent"}`,
-                background: on ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent",
-                color: on ? "var(--txb)" : "var(--txd)",
-                fontFamily: "inherit",
-                fontSize: "var(--t95)",
-                letterSpacing: 1.5,
-                padding: "8px 4px",
-              }}
-            >
-              {t.label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div style={{ padding: "12px 13px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontSize: "var(--t95)", color: "var(--txl)" }}>{active.blurb}</div>
-          {active.help && <InfoDot on={help} about={active.label} onClick={() => setHelp(!help)} />}
-        </div>
-        {active.help && help && <div style={ASIDE}>{active.help}</div>}
-
-        {settings.indicator === "nyan" && (
-          <>
-            <div
-              className="mscroll"
-              style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(52px,1fr))", gap: 5, maxHeight: 172, overflowY: "auto", marginTop: 11 }}
-            >
-              {NYAN_MODES.map((m) => {
-                const on = settings.nyan === m.key;
-                return (
-                  <button
-                    key={m.key}
-                    onClick={() => onPatch({ nyan: m.key })}
-                    title={m.label}
-                    style={{
-                      appearance: "none",
-                      cursor: "pointer",
-                      padding: 3,
-                      lineHeight: 0,
-                      background: on ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "var(--panel3)",
-                      border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 14%, transparent)"}`,
-                    }}
-                  >
-                    <img src={nyanThumb(m.thumb)} alt={m.label} loading="lazy" style={{ width: "100%", display: "block", filter: unfilter }} />
-                  </button>
-                );
-              })}
-            </div>
-
-            <div style={ROW}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: "var(--t11)", color: "var(--txh)", letterSpacing: 0.5 }}>EXTRA ANIMATIONS</div>
-                <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 2 }}>
-                  fly the cat, draw nyan.cat's rainbow trail + pixel stars
-                </div>
-              </div>
-              <Switch on={settings.nyanExtra} onClick={() => onPatch({ nyanExtra: !settings.nyanExtra })} />
-            </div>
-
-            <div style={ROW}>
-              <span style={CAPTION}>SOUND</span>
-              <select
-                value={settings.nyanSound}
-                onChange={(e) => onPatch({ nyanSound: e.target.value as NyanSound })}
-                style={{ ...field, flex: 1, minWidth: 0 }}
-              >
-                <option value="match">MATCH THE CAT</option>
-                <option value="off">MUTE</option>
-                {NYAN_MODES.map((m) => (
-                  <option key={m.key} value={m.key}>
-                    {m.label}
-                  </option>
-                ))}
-              </select>
-              <Volume
-                value={settings.nyanVolume}
-                disabled={settings.nyanSound === "off"}
-                onChange={(nyanVolume) => onPatch({ nyanVolume })}
-              />
-            </div>
-          </>
-        )}
-
-        {settings.indicator === "tiles" && (
-          <>
-            <div style={ROW}>
-              <span style={CAPTION}>SONG</span>
-              <select
-                value={settings.tilesSong}
-                onChange={(e) => onPatch({ tilesSong: e.target.value })}
-                style={{ ...field, flex: 1, minWidth: 0 }}
-              >
-                {SONGS.map((song) => (
-                  <option key={song.key} value={song.key}>
-                    {song.title} — {song.composer}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={settings.tilesSpeed}
-                onChange={(e) => onPatch({ tilesSpeed: e.target.value as TileSpeed })}
-                style={{ ...field, flex: "none" }}
-              >
-                {TILE_SPEEDS.map((sp) => (
-                  <option key={sp} value={sp}>
-                    {sp.toUpperCase()}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </>
-        )}
-
-        {settings.indicator === "piano" && (
-          <>
-            <div style={ROW}>
-              <span style={CAPTION}>VOICE</span>
-              <select
-                value={settings.pianoVoice}
-                onChange={(e) => onPatch({ pianoVoice: e.target.value })}
-                style={{ ...field, flex: 1, minWidth: 0 }}
-              >
-                {VOICE_GROUPS.map((g) => (
-                  <optgroup key={g} label={g}>
-                    {VOICES.filter((v) => v.group === g).map((v) => (
-                      <option key={v.key} value={v.key}>
-                        {v.label}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-              <Volume value={settings.pianoVolume} onChange={(pianoVolume) => onPatch({ pianoVolume })} />
-            </div>
-          </>
-        )}
-      </div>
     </div>
   );
 }
@@ -5031,14 +4803,22 @@ export function SettingsModal(props: SettingsModalProps) {
                     </Row>
                   </div>
                 </Section>
+                <Section title="WHILE IT WORKS" top>
+                  <div style={CARD}>
+                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. EQUALIZER is the braille spinner with level bars.">
+                      <div style={{ width: 220 }}>
+                        <Segmented
+                          options={[{ label: "EQUALIZER", value: "bar" }, { label: "STATUS", value: "status" }]}
+                          value={settings.indicator}
+                          onPick={(indicator) => onPatch({ indicator })}
+                        />
+                      </div>
+                    </Row>
+                  </div>
+                </Section>
               </>
             )}
 
-            {shown === "indicator" && (
-              <Section title="WORKING INDICATOR">
-                <IndicatorPicker settings={settings} onPatch={onPatch} />
-              </Section>
-            )}
 
 
             {shown === "notifications" && (
