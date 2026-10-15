@@ -6,10 +6,10 @@ import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, 
   FolderTree, Gauge, GitBranch, 
   Globe,
-  Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
-  MessageCircleQuestion, Monitor, MonitorPlay, Moon, Network, Palette, Play, Plug,
+  Handshake, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
+  Monitor, MonitorPlay, Moon, Network, Palette, Play, Plug,
   Power, ScanLine, ScrollText, Search, Server, 
-  ShieldQuestion, SlidersHorizontal, Sparkles, Square, SquareTerminal, Sun, TriangleAlert, Type,
+  SlidersHorizontal, Sparkles, SquareTerminal, Sun, TriangleAlert, Type,
   Upload, Volume2, Waypoints, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, LayoutPanelTop,
   ListChecks, Package, PackageOpen, PanelBottom, Timer, Truck, AppWindowMac, Pin,
@@ -80,22 +80,6 @@ import { notify } from "./Notifications";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isMacApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
-import {
-  audition,
-  catLabel,
-  loadPackSounds,
-  loadPacks,
-  OFF,
-  packBase,
-  packChoice,
-  PUSH_EVENT_KEYS,
-  PUSH_EVENTS,
-  soundsFor,
-  type Pack,
-  type PackSound,
-  type PushEvent,
-  type SoundChoice,
-} from "../../lib/sounds";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
@@ -217,7 +201,6 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
   { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
   { tab: "notifications", sec: "SOUND", terms: "tone chime volume packs peonping mute" },
-  { tab: "notifications", sec: "PER EVENT", terms: "sound per event pack finished needs you error" },
   { tab: "mac", sec: "WINDOW", terms: "mac app title bar session name dock icon keep cmd-tab space" },
   { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space" },
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission" },
@@ -710,339 +693,6 @@ function PickCell({
   );
 }
 
-// ---- NOTIFICATION SOUNDS ----------------------------------------------------
-
-/** One scrolling list, used for both halves of the browser. Tall enough to
- *  compare lines in: at 168px a pack showed three at a time, and choosing one
- *  was mostly scrolling. */
-const LIST: CSSProperties = {
-  maxHeight: "min(340px, 46vh)", overflowY: "auto", marginTop: 8,
-  border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)",
-};
-// No background of its own: the .sndrow hover lives in index.css, and an
-// inline background would beat it.
-const LIST_ROW: CSSProperties = {
-  display: "flex", alignItems: "center", gap: 9, width: "100%", textAlign: "left",
-  appearance: "none", cursor: "pointer", border: 0, color: "var(--tx)",
-  fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: .5, lineHeight: 1.45,
-  padding: "8px 10px",
-};
-const SOFT_RULE = "1px solid color-mix(in srgb, var(--acc) 8%, transparent)";
-const TAG: CSSProperties = { flex: "none", fontSize: "var(--t85)", letterSpacing: 1.2, color: "var(--acc)" };
-
-/** Browse peonping.com: search the catalog, open a pack, tap a line to hear it,
- *  USE to give it to the event. Hearing and choosing are two taps on purpose —
- *  auditioning is clicking down thirty lines, and when every click also
- *  assigned, browsing overwrote the sound you already had. Every line in the
- *  pack is offered, not just the ones written for this event: a victory line on
- *  FAILURE is a valid taste. */
-function PackBrowser({ cat, ev, volume, cur, onPick }: {
-  cat: string;
-  ev: string;   // the event's label, as in "MADE FOR DONE"
-  volume: number;
-  cur: SoundChoice | undefined;
-  onPick: (c: SoundChoice) => void;
-}) {
-  const [packs, setPacks] = useState<Pack[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);          // the catalog itself
-  const [q, setQ] = useState("");
-  const [pack, setPack] = useState<Pack | null>(null);
-  const [byCat, setByCat] = useState<Record<string, PackSound[]> | null>(null);
-  const [packErr, setPackErr] = useState<string | null>(null);  // one pack's manifest
-  const [playing, setPlaying] = useState<string | null>(null);
-  const [heard, setHeard] = useState<string | null>(null);      // the last line tapped gets USE
-  const [broken, setBroken] = useState<ReadonlySet<string>>(new Set());
-
-  useEffect(() => {
-    let live = true;
-    loadPacks().then((p) => { if (live) setPacks(p); },
-      (e: Error) => { if (live) setErr(e.message); });
-    return () => { live = false; };
-  }, []);
-  // Closing the picker mid-line shouldn't leave the line talking.
-  useEffect(() => () => audition(null, 0), []);
-
-  // Re-fetching a manifest is free (module-cached), so this just re-renders.
-  // A pack that fails is that pack's problem: its error used to be the
-  // catalog's, which replaced the whole browser — back button and all.
-  useEffect(() => {
-    setByCat(null);
-    setPackErr(null);
-    setHeard(null);
-    if (!pack) return;
-    let live = true;
-    loadPackSounds(pack).then((m) => { if (live) setByCat(m); },
-      (e: Error) => { if (live) setPackErr(e.message); });
-    return () => { live = false; };
-  }, [pack]);
-
-  function hear(c: SoundChoice) {
-    setHeard(c.src);
-    if (playing === c.src) { audition(null, volume); return; }
-    setBroken((b) => {
-      if (!b.has(c.src)) return b;
-      const next = new Set(b);
-      next.delete(c.src);
-      return next;
-    });
-    setPlaying(c.src);
-    audition(c.src, volume, (fine) => {
-      setPlaying((p) => (p === c.src ? null : p));
-      if (!fine) setBroken((b) => new Set(b).add(c.src));
-    });
-  }
-
-  if (err) {
-    return (
-      <div style={{ ...NOTE, marginTop: 8, color: "var(--err)" }}>
-        Couldn&apos;t load the PeonPing catalog ({err}). The built-in sounds above still work.
-      </div>
-    );
-  }
-  if (!packs) return <div style={{ ...NOTE, marginTop: 8 }}>Loading the pack catalog…</div>;
-
-  if (pack) {
-    const groups = byCat ? soundsFor(byCat, cat) : [];
-    const lines = groups.reduce((n, g) => n + g.sounds.length, 0);
-    return (
-      <>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginTop: 8 }}>
-          <MiniBtn onClick={() => { audition(null, volume); setPack(null); }}>← ALL PACKS</MiniBtn>
-          <span style={{ fontSize: "var(--t10)", letterSpacing: .5, color: "var(--txb)" }}>{pack.display_name}</span>
-          {byCat && <span style={{ fontSize: "var(--t9)", color: "var(--txd)" }}>{lines} lines</span>}
-        </div>
-        {pack.description && <div style={{ ...NOTE, marginTop: 8 }}>{pack.description}</div>}
-        {packErr ? (
-          <div style={{ ...NOTE, color: "var(--err)" }}>
-            This pack&apos;s sound list is missing from its repo ({packErr}), so there is nothing
-            in it to play. Pick another pack.
-          </div>
-        ) : !byCat ? (
-          <div style={NOTE}>Loading {pack.display_name}…</div>
-        ) : (
-          <>
-            <div style={{ ...NOTE, marginTop: 8 }}>Tap a line to hear it, then USE to give it to {ev}.</div>
-            <div style={LIST}>
-              {groups.map((g) => {
-                const c = catLabel(g.cat);
-                return (
-                  <div key={g.cat}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "10px 10px 5px", fontSize: "var(--t85)" }}>
-                      <span style={{ letterSpacing: 1.5, color: "var(--txm)" }}>{c.label}</span>
-                      {c.hint && <span style={{ color: "var(--txd)" }}>{c.hint}</span>}
-                      {g.cat === cat && <span style={{ ...TAG, marginLeft: "auto" }}>MADE FOR {ev}</span>}
-                    </div>
-                    {g.sounds.map((s) => {
-                      const choice = packChoice(pack, s);
-                      const name = choice.label.slice(pack.display_name.length + 3);
-                      const inUse = choice.src === cur?.src;
-                      const on = playing === choice.src;
-                      return (
-                        <div key={choice.src} className="sndrow" style={{
-                          display: "flex", alignItems: "center", borderTop: SOFT_RULE,
-                          background: inUse ? "color-mix(in srgb, var(--acc) 14%, transparent)"
-                            : on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : undefined,
-                        }}>
-                          <button
-                            onClick={() => hear(choice)}
-                            aria-pressed={on}
-                            aria-label={`${on ? "stop" : "play"} ${name}`}
-                            style={{ ...LIST_ROW, flex: 1, minWidth: 0, color: inUse || on ? "var(--txb)" : "var(--tx)" }}
-                          >
-                            {on
-                              ? <Square size={10} strokeWidth={2.4} aria-hidden style={{ flex: "none", color: "var(--acc)" }} />
-                              : <Play size={10} strokeWidth={2.2} aria-hidden style={{ flex: "none", color: "var(--acc)", opacity: .7 }} />}
-                            <span style={{ minWidth: 0 }}>{name}</span>
-                          </button>
-                          <span style={{ flex: "none", paddingRight: 10 }}>
-                            {inUse ? <span style={TAG}>✓ IN USE</span>
-                              : broken.has(choice.src) ? <span style={{ ...TAG, color: "var(--err)" }}>WON&apos;T PLAY</span>
-                              : heard === choice.src && <MiniBtn onClick={() => onPick(choice)}>USE</MiniBtn>}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
-              {!groups.length && <div style={{ ...NOTE, padding: "0 10px 10px" }}>This pack ships no sounds.</div>}
-            </div>
-          </>
-        )}
-      </>
-    );
-  }
-
-  const needle = q.trim().toLowerCase();
-  const matches = packs
-    // A pack without this event's category still has lines you can assign, so
-    // it stays in the list — it just sorts below the ones written for it.
-    .filter((p) => !needle || `${p.display_name} ${p.name} ${(p.tags ?? []).join(" ")}`.toLowerCase().includes(needle))
-    .sort((a, b) => Number(b.categories.includes(cat)) - Number(a.categories.includes(cat)));
-  const hits = matches.slice(0, 120);
-  const curSrc = cur?.src ?? "";
-  return (
-    <>
-      <input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        onKeyDown={(e) => {
-          // Otherwise Escape would close the whole modal from inside the box.
-          if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
-        }}
-        placeholder={`search ${packs.length} packs — glados, peon, rick…`}
-        style={{ ...field, width: "100%", boxSizing: "border-box", marginTop: 8 }}
-      />
-      <div style={LIST}>
-        {hits.map((p, i) => (
-          <button key={p.name} className="sndrow" onClick={() => setPack(p)}
-            style={{ ...LIST_ROW, borderTop: i ? SOFT_RULE : 0 }}>
-            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {p.display_name}
-            </span>
-            {curSrc.startsWith(`${packBase(p)}/`) && <span style={TAG}>✓ IN USE</span>}
-            <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txd)" }}>
-              {p.sound_count ?? "?"} lines{p.categories.includes(cat) ? "" : ` · none for ${ev}`}
-            </span>
-          </button>
-        ))}
-        {!hits.length && <div style={{ ...NOTE, padding: "0 10px 10px" }}>No pack matches “{q}”.</div>}
-      </div>
-      {matches.length > hits.length && (
-        <div style={{ ...NOTE, marginTop: 6 }}>
-          Showing {hits.length} of {matches.length}. Search to narrow it down.
-        </div>
-      )}
-    </>
-  );
-}
-
-/** The per-event table: one assignable sound per thing the dashboard notifies
- *  about. An unassigned event falls back to the single TONE above, which is
- *  what every install sounded like before this panel existed. */
-// Six rows that differ only in wording otherwise — the icon is what makes
-// "the one that fires when something breaks" findable without reading all six.
-const EVENT_ICONS: Record<PushEvent, LucideIcon> = {
-  done: CircleCheck,
-  question: MessageCircleQuestion,
-  permission: ShieldQuestion,
-  failure: TriangleAlert,
-  start: Play,
-  limit: Hourglass,
-};
-
-function SoundBoard({ settings, onPatch }: {
-  settings: HudSettings;
-  onPatch: (patch: Partial<HudSettings>) => void;
-}) {
-  const [open, setOpen] = useState<PushEvent | null>(null);
-  const [playing, setPlaying] = useState<PushEvent | null>(null);
-  // The picker is a tall thing that unfolds under whichever row you tapped, so
-  // opening one on LIMIT — the last row — otherwise puts the search box and the
-  // whole pack list below the fold, with no hint that anything happened. The
-  // ROW goes to the top, not the picker "nearest": nearest stopped as soon as
-  // the picker's first line showed, which still left the list under the fold.
-  const picker = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (open) picker.current?.parentElement?.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [open]);
-  // Leaving the tab mid-line shouldn't leave the line talking.
-  useEffect(() => () => audition(null, 0), []);
-  const vol = settings.pushVolume;
-  const set = (ev: PushEvent, c: SoundChoice | undefined) => {
-    const next = { ...settings.pushSounds };
-    if (c) next[ev] = c; else delete next[ev];
-    onPatch({ pushSounds: next });
-  };
-  // A row's ▶ is play/stop for whatever that event rings now. It shares the one
-  // audition slot with the pack list, so a row and a line never talk at once.
-  function play(ev: PushEvent) {
-    if (playing === ev) { audition(null, vol); return; }
-    setPlaying(ev);
-    audition(settings.pushSounds[ev]?.src ?? `tone:${settings.pushTone}`, vol,
-      () => setPlaying((p) => (p === ev ? null : p)));
-  }
-  return (
-    <div>
-      {PUSH_EVENT_KEYS.map((ev, i) => {
-        const meta = PUSH_EVENTS[ev];
-        const cur = settings.pushSounds[ev];
-        const on = open === ev;
-        const Icon = EVENT_ICONS[ev];
-        return (
-          <div key={ev} style={{
-            // A rule between rows, not above the first one — the card already
-            // draws that edge.
-            borderTop: i ? RULE : 0,
-            padding: i ? "12px 0" : "0 0 12px",
-            scrollMarginTop: 14,
-          }}>
-            {/* Wraps rather than crushes: on a phone panel the assigned sound
-                drops onto its own line under the event name instead of
-                squeezing the name down to two characters. */}
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <Icon size={15} strokeWidth={1.6} aria-hidden
-                style={{ flex: "none", color: "var(--acc)", opacity: cur?.src === "off" ? .3 : .8 }} />
-              <div style={{ flex: "1 1 150px", minWidth: 0 }}>
-                <div style={KEY_TX}>{meta.label}</div>
-                <div style={{ fontSize: "var(--t95)", color: "var(--txd)", marginTop: 4 }}>{meta.hint}</div>
-              </div>
-              <div style={{ flex: "0 1 auto", display: "flex", alignItems: "center", gap: 6, minWidth: 0, marginLeft: "auto" }}>
-                <span title={cur?.label} style={{
-                  fontSize: "var(--t9)", letterSpacing: .5, minWidth: 0, maxWidth: 260, overflow: "hidden",
-                  textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  color: cur ? "var(--acc)" : "var(--txd)",
-                }}>
-                  {cur ? cur.label : `${TONES[settings.pushTone].label} (default)`}
-                </span>
-                <MiniBtn title={playing === ev ? "stop" : "play it"} disabled={cur?.src === "off"} onClick={() => play(ev)}>
-                  {playing === ev
-                    ? <Square size={11} strokeWidth={2.2} aria-hidden />
-                    : <Play size={11} strokeWidth={2} aria-hidden />}
-                </MiniBtn>
-                <MiniBtn onClick={() => setOpen(on ? null : ev)}>{on ? "CLOSE" : "CHANGE"}</MiniBtn>
-              </div>
-            </div>
-            {on && (
-              <div ref={picker} style={{
-                marginTop: 12, padding: "14px 14px 16px",
-                border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
-                background: "color-mix(in srgb, var(--panel3) 60%, transparent)",
-              }}>
-                <div style={{ ...CAPTION, width: "auto", marginBottom: 7 }}>BUILT-IN</div>
-                <Segmented
-                  size="var(--t9)"
-                  options={[
-                    { label: "DEFAULT", value: "" },
-                    { label: "OFF", value: "off" },
-                    ...TONE_OPTS.map((t) => ({ label: t.label, value: `tone:${t.value}` })),
-                  ]}
-                  value={cur?.src ?? ""}
-                  onPick={(v) => {
-                    const c = !v ? undefined : v === "off" ? OFF
-                      : { src: v, label: TONES[v.slice(5) as ToneKey].label };
-                    set(ev, c);
-                    // Every pick plays itself; OFF plays nothing, and stops what was.
-                    audition(v === "off" ? null : v || `tone:${settings.pushTone}`, vol);
-                  }}
-                />
-                <div style={{ ...CAPTION, width: "auto", marginTop: 18 }}>VOICE PACKS · PEONPING.COM</div>
-                <PackBrowser cat={meta.cat} ev={meta.label} volume={vol} cur={cur} onPick={(c) => set(ev, c)} />
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// The "DISPLAY PROFILE" grid. Because the whole app is run through the active
-// theme's CSS filter, every swatch/preview colour is pre-corrected by the
-// INVERSE of that filter's color matrix so the cards render TRUE colours.
-// AURORA's four hues and CLAUDE's four accents each collapse into one card with
-// a variant row; every other theme is its own card. The cards split by ground —
-// six dark cards, six light — and each set gets its own labelled row.
 type ThemeCard = { key: ThemeKey; variants?: ThemeKey[] };
 
 const CARDS: ThemeCard[] = [
@@ -4331,11 +3981,7 @@ export function SettingsModal(props: SettingsModalProps) {
     asked.current = true;   // one attempt: a failed fetch must not retry per keystroke
     void api.envSettings().then((r) => setEnv(r.settings)).catch(() => {});
   }, [q]);
-  // Two sections only exist while their own switch is on, and a hit that
-  // scrolls to nothing is worse than no hit.
-  const hidden = new Set([
-    ...(settings.pushSound ? [] : ["PER EVENT"]),
-  ]);
+  const hidden = new Set<string>();   // sections that only exist while a switch is on; none left
   const hits = search(q, env.filter((s) => !tunesOff(s.key, aiFeatures)), hidden);
   const shown: Tab | "search" = q.trim() ? "search" : tab;
   function go(h: Hit) {
@@ -4893,25 +4539,6 @@ export function SettingsModal(props: SettingsModalProps) {
                   </div>
                 </Section>
 
-                {settings.pushSound && (
-                  <Section
-                    title="PER EVENT"
-                    top
-                    info={
-                      <>
-                        Pack sounds come from{" "}
-                        <a href="https://www.peonping.com/" target="_blank" rel="noreferrer"
-                          style={{ color: "var(--acc)" }}>peonping.com</a>
-                        {" "}and stream from the pack&apos;s own repo — nothing is installed here.
-                        An event left on DEFAULT rings the tone above.
-                      </>
-                    }
-                  >
-                    <div style={CARD}>
-                      <SoundBoard settings={settings} onPatch={onPatch} />
-                    </div>
-                  </Section>
-                )}
               </>
             )}
 

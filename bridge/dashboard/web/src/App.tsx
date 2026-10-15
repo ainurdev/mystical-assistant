@@ -57,10 +57,9 @@ import { recall, remember, type Anchor } from "./lib/scrollmem";
 import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
-import { push, pushGranted, shouldPush } from "./lib/push";
+import { chime, push, pushGranted, shouldPush } from "./lib/push";
 import { isMacApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
 import { bannerActions, bannerAnswer, bannerBody } from "./lib/banner";
-import { playSound, preloadSound, type PushEvent } from "./lib/sounds";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
@@ -100,6 +99,10 @@ import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { Spinner } from "./components/ui";
+
+// The moments a session can ring for. The per-event pack sounds that used to
+// hang off these went with the settings remap; every event rings the one tone.
+type PushEvent = "done" | "question" | "permission" | "failure" | "start" | "limit";
 
 
 // One size for every right-rail icon — the rail's buttons are 38px. At 15px
@@ -1014,7 +1017,7 @@ export function App() {
       if (banner && settings.push) push(title, body, id, reveal(id));
       if (settings.pushSound && !rang.has(ev)) {
         rang.add(ev);
-        playSound(settings.pushSounds[ev], settings.pushVolume, settings.pushTone);
+        chime(settings.pushTone, settings.pushVolume);
       }
     };
     for (const id of finished)
@@ -1054,22 +1057,16 @@ export function App() {
         ping("start", `▸ ${name(id)}`, st.label || "working…", id);
     }
   }, [statusMap, sessionId, sessions, settings.push, settings.pushSound,
-      settings.pushTone, settings.pushVolume, settings.pushSounds]);
+      settings.pushTone, settings.pushVolume]);
 
   // The error toast is the dashboard's own failure channel — a request that
   // came back 500, a worktree that wouldn't create. It never had a sound.
   useEffect(() => {
     setNoticeSound((kind) => {
       if (kind !== "error" || !settings.pushSound) return;
-      playSound(settings.pushSounds.failure, settings.pushVolume, settings.pushTone);
+      chime(settings.pushTone, settings.pushVolume);
     });
-  }, [settings.pushSound, settings.pushSounds, settings.pushVolume, settings.pushTone]);
-
-  // Fetch each assigned pack sound once, up front — the first notification
-  // shouldn't be the one that waits on GitHub.
-  useEffect(() => {
-    for (const c of Object.values(settings.pushSounds)) preloadSound(c?.src);
-  }, [settings.pushSounds]);
+  }, [settings.pushSound, settings.pushVolume, settings.pushTone]);
 
   // Closing the tab costs the server nothing — runs are local processes, not
   // browser ones, and a working session keeps working. Only a live card is

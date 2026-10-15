@@ -19,8 +19,7 @@ import {
 import { api, MOVE_EVENT, type MoveJob, type MoveNext } from "../../api";
 import type { HudSettings, MoveBar, MoveColor, MovePrefs, MoveThick } from "../../lib/theme";
 import { notify } from "./Notifications";
-import { push } from "../../lib/push";
-import { playSound } from "../../lib/sounds";
+import { chime, push } from "../../lib/push";
 import { openSettings } from "../../lib/opensettings";
 import { restartBridge } from "../../lib/restart";
 import { askConfirm } from "../ui/Ask";
@@ -400,7 +399,7 @@ export function MoveDock({ settings }: { settings: HudSettings }) {
       const body = j.status === "failed" ? j.error ?? "" : j.title;
       notify(j.status === "failed" ? "error" : "info", `${what} — ${body}`, () => openSettings("move"));
       if (settings.push) push(`${j.status === "done" ? "✓" : "✘"} ${what}`, body, `move-${j.id}`, () => openSettings("move"));
-      if (j.status === "done" && settings.pushSound) playSound(settings.pushSounds.done, settings.pushVolume, settings.pushTone);
+      if (j.status === "done" && settings.pushSound) chime(settings.pushTone, settings.pushVolume);
     }
     first.current = false;
     // Hide-after-success: only a clean finish with nothing left for you to do.
@@ -413,7 +412,7 @@ export function MoveDock({ settings }: { settings: HudSettings }) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `mini` is read, not watched: folding is not news
-  }, [jobs, prefs.autoHide, prefs.startMin, settings.push, settings.pushSound, settings.pushSounds, settings.pushVolume, settings.pushTone, dismiss, setFold]);
+  }, [jobs, prefs.autoHide, prefs.startMin, settings.push, settings.pushSound, settings.pushVolume, settings.pushTone, dismiss, setFold]);
 
   if (!jobs.length) return null;
   const folded = (j: MoveJob) => mini[j.id] ?? false;

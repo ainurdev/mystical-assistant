@@ -1060,10 +1060,6 @@ input {
   from { opacity: 0; transform: translateY(8px); }
 }
 
-/* A pack sound row: hover is CSS so it can't fight the row's own "playing" /
-   "in use" fill, which is inline and wins. */
-.sndrow { transition: background-color 0.15s ease; }
-.sndrow:hover { background: color-mix(in srgb, var(--acc) 7%, transparent); }
 
 /* A modal that is a column of rows — a setting and its switch, a repo and its
    buttons — gains nothing from the width the dialogs took on a wide screen: the
@@ -1169,8 +1165,7 @@ input {
 }
 @media (prefers-reduced-motion: reduce) {
   .setpage { animation: none; }
-  .setrail button,
-  .sndrow { transition: none; }
+  .setrail button { transition: none; }
 }
 
 /* Session swap, slow case: the transcript you are leaving holds its place and

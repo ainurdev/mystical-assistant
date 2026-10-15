@@ -8,7 +8,6 @@
 
 import { toIndicator, type Indicator } from "./indicator";
 import { TONES, type ToneKey } from "./push";
-import { PUSH_EVENT_KEYS, type PushEvent, type SoundChoice } from "./sounds";
 import { toChatBg, toToolStyle, toTranscriptScheme, type ChatBg, type ToolStyle, type TranscriptScheme } from "./toolwidget";
 
 export type ThemeKey =
@@ -443,10 +442,6 @@ export interface HudSettings {
   pushSound: boolean; // blip alongside that notification
   pushTone: ToneKey; // the blip an event with no sound of its own falls back to
   pushVolume: number; // 0..1
-  // One sound per event (see PUSH_EVENTS) — a synth tone, a PeonPing pack
-  // sound, or "off". An event missing here has never been assigned and rings
-  // pushTone, so an install that never opens this panel sounds unchanged.
-  pushSounds: Partial<Record<PushEvent, SoundChoice>>;
   // Which of the five languages the whole transcript reads in — not just the
   // widgets, but the bubbles, the ledger and the reply (see lib/toolwidget).
   toolStyle: ToolStyle;
@@ -526,7 +521,7 @@ const DEFAULTS: HudSettings = {
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   agent: "", push: false, pushSound: true,
-  pushTone: "blip", pushVolume: 0.6, pushSounds: {}, toolStyle: "dossier", chatBg: "none", chatScheme: "phosphor", headerStyle: "frost",
+  pushTone: "blip", pushVolume: 0.6, toolStyle: "dossier", chatBg: "none", chatScheme: "phosphor", headerStyle: "frost",
   layout: "default", sendKey: "enter", move: MOVE_DEFAULTS,
 };
 
@@ -552,21 +547,6 @@ const str = (v: unknown, fallback: string): string => (typeof v === "string" ? v
 
 const clamp01 = (v: unknown, fallback: number): number =>
   typeof v === "number" ? Math.min(1, Math.max(0, v)) : fallback;
-
-/** Keep only the events we still ship and the entries that still look like a
- *  choice — a stored sound is a URL someone else's repo owns, so a hand-edited
- *  or half-written value shouldn't take the whole settings blob down with it. */
-const soundChoices = (v: unknown): Partial<Record<PushEvent, SoundChoice>> => {
-  const out: Partial<Record<PushEvent, SoundChoice>> = {};
-  if (!v || typeof v !== "object") return out;
-  for (const k of PUSH_EVENT_KEYS) {
-    const c = (v as Record<string, unknown>)[k] as SoundChoice | undefined;
-    if (c && typeof c.src === "string" && c.src) {
-      out[k] = { src: c.src, label: typeof c.label === "string" && c.label ? c.label : c.src };
-    }
-  }
-  return out;
-};
 
 export function loadSettings(): HudSettings {
   try {
@@ -610,7 +590,6 @@ export function loadSettings(): HudSettings {
         pushSound: p.pushSound ?? true,
         pushTone: p.pushTone && p.pushTone in TONES ? p.pushTone : "blip",
         pushVolume: clamp01(p.pushVolume, 0.6),
-        pushSounds: soundChoices(p.pushSounds),
         // A save from before DOSSIER existed has no chatScheme. Its toolStyle
         // was picked from five looks that were all retired as the default
         // together, so it moves to the new one once; any pick made after that
