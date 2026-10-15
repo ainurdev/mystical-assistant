@@ -3,7 +3,7 @@ import {
   type CSSProperties, type ReactNode,
 } from "react";
 import {
-  Activity, AudioLines, BarChart3, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
+  Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, CloudSun,
   FolderTree, Gauge, GitBranch, GitCommitVertical, GraduationCap,
   Globe,
   Handshake, Hourglass, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
@@ -22,7 +22,6 @@ import { toolAccent } from "../../lib/tools";
 import { ago, hhmm, projectName, useClock12, windowLabels } from "../../lib/surfaces";
 import { SkillsFold } from "./SkillsFold";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
-import { WeekPanel } from "./WeekPanel";
 import {
   api,
   type AccountInfo,
@@ -162,7 +161,7 @@ export interface SettingsModalProps {
 export type Tab = "appearance" | "transcript" | "indicator" | "ambient" | "notifications"
   | "aimgmt"
   | "plugins" | "system" | "move"
-  | "report" | "mac";
+  | "mac";
 
 /** The four tabs AI MANAGEMENT replaced, and the fold each lands on. A caller
  *  that still names one (a bookmark, an older bridge's bot button) opens the
@@ -211,11 +210,6 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "The bridge itself: its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
   { key: "move", label: "MOVE", hint: "export · import", icon: Truck, group: "THE WORK",
     about: "Carry this bridge to another machine. EXPORT packs your repos' unpushed work, MCP servers, plugins, Claude Code settings and chat history into one file; IMPORT replays a file from another machine here." },
-  // Not a setting — a readout. It lives here because the chrome that used to
-  // carry it (the strip's TODAY chip) is gone, and a page is a better home for
-  // it than the popover it also still is, on the brand cap and the clock's menu.
-  { key: "report", label: "REPORT", hint: "turns · time · tokens", icon: BarChart3, group: "THE WORK",
-    about: "Where the week went: turns, time and tokens per project, the rhythm day by day, and how it compares with the week before." },
 ];
 const RAIL = TABS.filter((t) => t.key !== "mac" || isMacApp());
 
@@ -258,7 +252,6 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "aimgmt", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label default profile" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
-  { tab: "report", sec: "WEEK", terms: "report weekly today turns time tokens usage spend per project rhythm" },
   { tab: "move", sec: "WHAT GOES", terms: "move export import migrate new machine laptop transfer backup restore tar file progress bar dock minimize" },
 ];
 
@@ -5281,11 +5274,6 @@ export function SettingsModal(props: SettingsModalProps) {
             )}
 
 
-            {shown === "report" && (
-              <Section title="WEEK" icon={BarChart3}>
-                <WeekPanel inline />
-              </Section>
-            )}
 
 
 
