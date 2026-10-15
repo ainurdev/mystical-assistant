@@ -173,6 +173,7 @@ import json
 import os
 import socket
 import ssl
+import tempfile
 import threading
 import time
 import urllib.error
@@ -638,11 +639,13 @@ class Worker:
             return (isinstance(e, urllib.error.HTTPError) and 400 <= e.code < 500
                     and e.code not in (408, 429))
 
-    def _post_phase(self, request_id: str, phase: str) -> None:
-        """Where a video run is (download, audio, transcript, screens, summary,
-        answer); shown in the viewer. Best-effort: a lost beat changes nothing."""
+    def _post_phase(self, kind_path: str, request_id: str, phase: str) -> None:
+        """Where a video or meeting-notes run is (a video: download, audio,
+        transcript, screens, summary, answer; a meeting: download, audio,
+        transcript, notes); shown in the viewer. Best-effort: a lost beat
+        changes nothing."""
         try:
-            self._api(f"/plugin/video-requests/{request_id}/phase", {"phase": phase})
+            self._api(f"/plugin/{kind_path}/{request_id}/phase", {"phase": phase})
         except Exception as e:  # noqa: BLE001
             print(f"rivendell[{self.name}]: phase post failed for {request_id}: {e}")
 
@@ -832,6 +835,11 @@ class Worker:
                 self._apply_policy(self._enqueue("video", item["id"], item.get("fileName")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: video catch-up failed: {e}")
+        try:
+            for item in self._api("/plugin/meeting-notes-requests"):
+                self._apply_policy(self._enqueue("meeting-notes", item["id"], item.get("meetingName")))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: meeting-notes catch-up failed: {e}")
         with self._q_lock:
             return len(self._pending) - before
 
@@ -1018,6 +1026,11 @@ class Worker:
             print(f"rivendell[{self.name}]: video {str(obj.get('kind') or '').lower() or 'job'} "
                   f"requested for {file.get('name', '?')}")
             return self._enqueue("video", obj["requestId"], file.get("name"))
+        if obj.get("type") == "meeting-notes-request" and obj.get("requestId"):
+            meeting = obj.get("meeting") or {}
+            print(f"rivendell[{self.name}]: meeting notes ({str(obj.get('source') or '?').lower()}) "
+                  f"requested for {meeting.get('name', '?')}")
+            return self._enqueue("meeting-notes", obj["requestId"], meeting.get("name"))
         return None
 
     def _block_on_token(self, detail: str) -> None:
@@ -1529,21 +1542,21 @@ class Worker:
             if kind == "TRANSCRIBE":
                 file = resp.get("file") or {}
                 src = os.path.join(files, "source")
-                self._post_phase(request_id, "download")
+                self._post_phase("video-requests", request_id, "download")
                 rv.download(resp["downloadUrl"], src)
-                self._post_phase(request_id, "audio")
+                self._post_phase("video-requests", request_id, "audio")
                 wav = os.path.join(files, "audio.wav")
                 rv.extract_audio(src, wav)
-                self._post_phase(request_id, "transcript")
+                self._post_phase("video-requests", request_id, "transcript")
                 segments = rv.transcribe(wav, resp.get("language") or "en")
                 if file.get("kind") == "video":
-                    self._post_phase(request_id, "screens")
+                    self._post_phase("video-requests", request_id, "screens")
                     frames = rv.pick_frames(src, screens_dir)
                     for f in frames:
                         with open(f["path"], "rb") as fh:
                             self._api_put_bytes(f"/plugin/video-requests/{request_id}/screens/{f['index']}?timeMs={f['timeMs']}",
                                                 fh.read(), "application/octet-stream")
-                self._post_phase(request_id, "summary")
+                self._post_phase("video-requests", request_id, "summary")
                 prompt = rv.fill_prompt(resp["prompt"], rv.render_transcript(segments), rv.render_screens(frames))
                 images = [f["path"] for f in frames]
             else:
@@ -1552,7 +1565,7 @@ class Worker:
                     dest = os.path.join(screens_dir, f"{s['index']}.jpg")
                     rv.download(s["url"], dest)
                     images.append(dest)
-                self._post_phase(request_id, "answer")
+                self._post_phase("video-requests", request_id, "answer")
                 prompt = resp["prompt"]
         except rv.VideoToolError as e:
             self._post_result("video-requests", request_id, False, str(e))
@@ -1589,6 +1602,71 @@ class Worker:
                 os.remove(os.path.join(files, name))
             except OSError:
                 pass
+
+    def _run_meeting_notes(self, request_id: str, name: "str | None") -> None:
+        """A meeting's notes and action items. A TEXT job has nothing to fetch:
+        its prompt is complete, and one Claude run answers it. A RECORDING job
+        first does what Claude cannot, with the video kind's tools (rivendell_video:
+        download, ffmpeg, whisper.cpp in the language the claim asks for), each
+        step reported as a phase; the transcript fills the prompt's
+        {{TRANSCRIPT}} and Claude, given no images, writes the notes. A tool
+        failure lands FAILED with its message; a Claude run that fails once the
+        transcript exists still delivers it (COMPLETED, no notes, the failure as
+        `error`), since the transcript is the expensive part."""
+        from bridge import rivendell_video as rv     # local import: keeps the tests' monkeypatching simple
+        path = "meeting-notes-requests"
+        resp = self._claim(path, request_id)
+        if resp is None:
+            return
+        recording = resp["source"] == "RECORDING"
+        language = resp.get("language") or "en"
+        prompt, segments = resp["prompt"], []
+        # Every meeting run shares one project (the dashboard groups sessions by it).
+        workdir = os.path.join(config.UPLOAD_DIR, "meetings")
+        os.makedirs(workdir, exist_ok=True)
+        timeout = self.inst.get("review_timeout", 3600)
+        try:
+            if recording:
+                # The recording and its audio do not stay on this Mac: this folder goes
+                # once the transcript is made, or a step fails. It is not named by the
+                # request id, so nothing the server sends decides what gets deleted.
+                # shortcut: a bridge killed mid-run leaves it to _prune_uploads, which
+                # ages `meetings` as one folder; sweep stale children on boot if that grows.
+                with tempfile.TemporaryDirectory(dir=workdir) as files:
+                    src, wav = os.path.join(files, "source"), os.path.join(files, "audio.wav")
+                    self._post_phase(path, request_id, "download")
+                    rv.download(resp["recording"]["downloadUrl"], src)
+                    self._post_phase(path, request_id, "audio")
+                    rv.extract_audio(src, wav)
+                    self._post_phase(path, request_id, "transcript")
+                    segments = rv.transcribe(wav, language)
+                prompt = prompt.replace("{{TRANSCRIPT}}", rv.render_transcript(segments))
+        except rv.VideoToolError as e:
+            self._post_result(path, request_id, False, str(e))
+            return
+        except Exception as e:  # noqa: BLE001 — anything else is still this run's failure
+            self._post_result(path, request_id, False, f"bridge error: {e}")
+            return
+
+        self._post_phase(path, request_id, "notes")
+        print(f"rivendell[{self.name}]: meeting notes {request_id} ({name or '?'}) running in {workdir}")
+        job = self._start_run(prompt, workdir, hang_timeout=timeout, title=f"Meeting notes · {name or request_id}")
+        if job is None:  # can't happen for a fresh session; never hang the queue
+            self._post_result(path, request_id, False, "could not start a Claude run (session busy)")
+            return
+        self._track(request_id, "meeting-notes", name, job.store_session_id, label=None, link=None)
+        try:
+            ok, text = self._wait_job(job, timeout)
+        finally:
+            self._untrack(request_id)
+        if recording and (ok or segments):
+            result = {"language": language, "transcriber": rv.TRANSCRIBER, "segments": segments,
+                      "answer": text if ok else ""}
+            self._post_result(path, request_id, True, json.dumps(result), error=None if ok else text)
+        elif ok:
+            self._post_result(path, request_id, True, json.dumps({"answer": text}))
+        else:
+            self._post_result(path, request_id, False, text)
 
     def _run_in_workdir(self, what: str, kind: str, request_id: str,
                         name: "str | None", mcp_on: "str | None" = None) -> None:
@@ -1631,6 +1709,7 @@ class Worker:
         "news": "news-requests",
         "deck": "deck-requests",
         "video": "video-requests",
+        "meeting-notes": "meeting-notes-requests",
     }
 
     # -- Telegram ping for queued (non-auto-accepted) requests --
@@ -1643,6 +1722,7 @@ class Worker:
         "news": "newspaper",
         "deck": "deck draft",
         "video": "video transcript",
+        "meeting-notes": "meeting notes",
     }
 
     def _label(self, item: dict) -> str:
@@ -1791,6 +1871,8 @@ class Worker:
                 self._run_deck(request_id, slug)
             elif kind == "video":
                 self._run_video(request_id, slug)
+            elif kind == "meeting-notes":
+                self._run_meeting_notes(request_id, slug)
             else:
                 self._run_review(request_id, slug)
         except Exception as e:  # noqa: BLE001 — worker must outlive any run

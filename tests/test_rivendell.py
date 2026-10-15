@@ -442,7 +442,7 @@ def test_run_video_transcribe_makes_media_then_asks_claude_and_posts_json(monkey
         p = os.path.join(out_dir, "0001.jpg"); open(p, "wb").write(b"\xff\xd8\xff")
         return [{"index": 1, "timeMs": 0, "path": p}]
     monkeypatch.setattr(rv, "pick_frames", frames)
-    monkeypatch.setattr(w, "_post_phase", lambda rid, phase: phases.append(phase))
+    monkeypatch.setattr(w, "_post_phase", lambda kp, rid, phase: phases.append(phase))
     monkeypatch.setattr(w, "_api_put_bytes", lambda path, data, ct: puts.append((path, data, ct)))
     monkeypatch.setattr(w, "_start_run",
                         lambda prompt, workdir, hang_timeout=None, image_paths=None, title=None:
@@ -473,7 +473,7 @@ def test_run_video_keeps_the_runs_failure_beside_the_transcript_and_cleans_the_w
     monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {
         "prompt": "p {{TRANSCRIPT}} {{SCREENS}}", "kind": "TRANSCRIBE", "language": "en",
         "file": {"id": "f1", "name": "S.mov", "kind": "video", "durationMs": 1}, "downloadUrl": "u", "screens": []})
-    monkeypatch.setattr(w, "_post_phase", lambda rid, phase: None)
+    monkeypatch.setattr(w, "_post_phase", lambda kp, rid, phase: None)
     monkeypatch.setattr(rv, "download", lambda url, dest, timeout=900: open(dest, "wb").write(b"v"))
     monkeypatch.setattr(rv, "extract_audio", lambda src, wav: open(wav, "wb").write(b"a"))
     monkeypatch.setattr(rv, "transcribe", lambda wav, lang: [{"startMs": 0, "endMs": 1, "text": "hi"}])
@@ -515,7 +515,7 @@ def test_run_video_tool_failure_posts_failed(monkeypatch, tmp_path):
     monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {
         "prompt": "p", "kind": "TRANSCRIBE", "language": "en",
         "file": {"id": "f1", "name": "S.mov", "kind": "video", "durationMs": 1}, "downloadUrl": "u", "screens": []})
-    monkeypatch.setattr(w, "_post_phase", lambda rid, phase: None)
+    monkeypatch.setattr(w, "_post_phase", lambda kp, rid, phase: None)
     monkeypatch.setattr(rv, "download", lambda url, dest, timeout=900: open(dest, "wb").write(b"v"))
     monkeypatch.setattr(rv, "extract_audio", lambda src, wav: (_ for _ in ()).throw(rv.VideoToolError("ffmpeg: command not found")))
     monkeypatch.setattr(w, "_start_run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("no Claude run without media")))
@@ -534,7 +534,7 @@ def test_run_video_ask_fetches_screens_and_posts_the_answer(monkeypatch, tmp_pat
         "file": {"id": "f1", "name": "S.mov", "kind": "video", "durationMs": 1}, "downloadUrl": None,
         "screens": [{"index": 2, "timeMs": 5000, "caption": None, "url": "https://bucket/2.jpg"}]})
     monkeypatch.setattr(rv, "download", lambda url, dest, timeout=900: fetched.append((url, dest)) or open(dest, "wb").write(b"j"))
-    monkeypatch.setattr(w, "_post_phase", lambda rid, phase: None)
+    monkeypatch.setattr(w, "_post_phase", lambda kp, rid, phase: None)
     monkeypatch.setattr(w, "_start_run",
                         lambda prompt, workdir, hang_timeout=None, image_paths=None, title=None:
                         ran.append((prompt, image_paths, title)) or _StubJob("done", result="Three things."))
@@ -543,6 +543,200 @@ def test_run_video_ask_fetches_screens_and_posts_the_answer(monkeypatch, tmp_pat
     assert fetched[0][0] == "https://bucket/2.jpg" and fetched[0][1].endswith(os.path.join("screens", "2.jpg"))
     assert ran == [("answer this", [fetched[0][1]], "Ask · S.mov")]
     assert posted == [("video-requests", "a1", True, "Three things.")]
+
+
+def test_post_phase_goes_to_the_kinds_own_endpoint(monkeypatch):
+    """A phase belongs to the kind that reports it: video's still /plugin/video-requests."""
+    w = _worker()
+    sent = []
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: sent.append((path, payload)))
+    w._post_phase("meeting-notes-requests", "m1", "notes")
+    w._post_phase("video-requests", "v1", "audio")
+    assert sent == [("/plugin/meeting-notes-requests/m1/phase", {"phase": "notes"}),
+                    ("/plugin/video-requests/v1/phase", {"phase": "audio"})]
+
+
+def test_handle_message_meeting_notes_requests():
+    """meeting-notes-request events queue as "meeting-notes" with the meeting's name."""
+    w = _worker()
+    ev = json.dumps({"type": "meeting-notes-request", "requestId": "m7", "source": "RECORDING",
+                     "meeting": {"id": "g1", "name": "Weekly sync"}}).encode()
+    w._handle_message(ev)
+    w._handle_message(ev)                          # duplicate: dropped
+    assert _drain(w) == [("meeting-notes", "m7", "Weekly sync")]
+
+
+def test_catch_up_queues_meeting_notes_requests(monkeypatch):
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+
+    def api(path, payload=None):
+        if path == "/plugin/meeting-notes-requests":
+            return [{"id": "m1", "source": "TEXT", "meetingId": "g1", "meetingName": "Weekly sync",
+                     "language": "en", "createdAt": "2026-10-15T09:00:00.000Z", "offered": False}]
+        return []
+    monkeypatch.setattr(w, "_api", api)
+    w._catch_up()
+    assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [("meeting-notes:m1", "Weekly sync")]
+
+
+def test_meeting_notes_are_routed_by_their_own_path_never_the_review_fallback(monkeypatch):
+    """A kind missing from _KIND_PATH or _run_accepted silently lands on the review path:
+    its ack, its dispatch, and a crash's FAILED must each go to meeting-notes-requests."""
+    w = _worker()
+    calls, posted, acked = [], [], threading.Event()
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: calls.append((path, payload)) or acked.set())
+    _real_ack(w, "meeting-notes:m1", "queued")
+    assert acked.wait(2), "ack must be posted"
+    assert calls == [("/plugin/meeting-notes-requests/m1/ack", {"state": "queued"})]
+
+    ran = []
+    monkeypatch.setattr(w, "_run_review", lambda rid, slug: ran.append("review"))
+    monkeypatch.setattr(w, "_run_meeting_notes", lambda rid, slug: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(w, "_post_result", lambda kp, rid, ok, text: posted.append((kp, rid, ok, text)))
+    w._run_accepted({"kind": "meeting-notes", "request_id": "m1", "slug": "Weekly sync"})
+    assert ran == [] and posted == [("meeting-notes-requests", "m1", False, "bridge error: boom")]
+
+
+def test_queued_message_names_meeting_notes():
+    item = {"key": "meeting-notes:m1", "kind": "meeting-notes", "request_id": "m1",
+            "slug": "Weekly sync", "created_at": 0.0}
+    text, _kb = _worker()._queued_message(item, "tok")
+    assert "Rivendell meeting notes queued — Weekly sync" in text
+
+
+def _meeting_claim(**over):
+    """What GET /plugin/meeting-notes-requests/<id>/prompt answers for a recording."""
+    return {"requestId": "m1", "status": "IN_PROGRESS", "source": "RECORDING", "language": "nl",
+            "prompt": "Write the notes.\n{{TRANSCRIPT}}\nEnd.", "meeting": {"id": "g1", "name": "Weekly sync"},
+            "recording": {"name": "sync.m4a", "kind": "audio", "downloadUrl": "https://bucket/sync.m4a"},
+            **over}
+
+
+def _meeting_worker(monkeypatch, tmp_path, claim, segments=(), run=(True, "## Notes")):
+    """A worker that runs one meeting-notes job against fakes: `claim` answers the
+    prompt endpoint; each media tool notes its call and writes the file the real one
+    does; whisper hears `segments`; the Claude run ends as `run`, an (ok, text) as
+    _wait_job returns it. Returns (worker, seen): seen["post"] is what went to
+    Rivendell, as (kind_path, request_id, ok, text, error)."""
+    from bridge import rivendell_video as rv
+    w = _worker(workdir=str(tmp_path))
+    monkeypatch.setattr(rivendell.config, "UPLOAD_DIR", str(tmp_path))
+    seen = {"tools": [], "phases": [], "runs": [], "running": [], "post": []}
+
+    def download(url, dest, timeout=900):
+        seen["tools"].append(("download", url))
+        open(dest, "wb").close()
+
+    def extract_audio(src, wav):
+        seen["tools"].append(("extract_audio", os.path.basename(src)))
+        open(wav, "wb").close()
+
+    def transcribe(wav, language):
+        seen["tools"].append(("transcribe", language))
+        open(wav + ".json", "wb").close()          # whisper-cli leaves its JSON beside the wav
+        return list(segments)
+
+    def start_run(prompt, workdir, hang_timeout=None, image_paths=None, title=None):
+        seen["runs"].append((prompt, workdir, image_paths, title))
+        return _StubJob("done")
+
+    def wait_job(job, timeout):
+        seen["running"].append(w.running_snapshot())
+        return run
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: claim)
+    monkeypatch.setattr(rv, "download", download)
+    monkeypatch.setattr(rv, "extract_audio", extract_audio)
+    monkeypatch.setattr(rv, "transcribe", transcribe)
+    monkeypatch.setattr(w, "_post_phase", lambda kp, rid, phase: seen["phases"].append((kp, phase)))
+    monkeypatch.setattr(w, "_start_run", start_run)
+    monkeypatch.setattr(w, "_wait_job", wait_job)
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kp, rid, ok, text, error=None: seen["post"].append((kp, rid, ok, text, error)))
+    return w, seen
+
+
+def _files_under(path):
+    return [f for _dir, _dirs, files in os.walk(path) for f in files]
+
+
+def test_run_meeting_notes_recording_transcribes_then_asks_claude_and_posts_json(monkeypatch, tmp_path):
+    """A RECORDING run: download, audio, whisper in the claim's language (each a phase), then
+    one Claude run with no images on the prompt with {{TRANSCRIPT}} filled, then the transcript
+    and the notes as one JSON result. The recording and its audio do not stay on this Mac."""
+    from bridge import rivendell_video as rv
+    segs = [{"startMs": 0, "endMs": 1000, "text": "hi"}, {"startMs": 65000, "endMs": 66000, "text": "bye"}]
+    w, seen = _meeting_worker(monkeypatch, tmp_path, _meeting_claim(), segments=segs, run=(True, "## Notes\n- a"))
+    w._run_meeting_notes("m1", "Weekly sync")
+    assert seen["tools"] == [("download", "https://bucket/sync.m4a"), ("extract_audio", "source"), ("transcribe", "nl")]
+    assert seen["phases"] == [("meeting-notes-requests", p) for p in ("download", "audio", "transcript", "notes")]
+    [(prompt, workdir, images, title)] = seen["runs"]
+    # One project for every meeting run; the title names the meeting, not the prompt's first line.
+    assert workdir == os.path.join(str(tmp_path), "meetings") and title == "Meeting notes · Weekly sync"
+    assert prompt == "Write the notes.\n0:00  hi\n1:05  bye\nEnd." and not images
+    [(kp, rid, ok, text, error)] = seen["post"]
+    assert (kp, rid, ok, error) == ("meeting-notes-requests", "m1", True, None)
+    assert json.loads(text) == {"language": "nl", "transcriber": rv.TRANSCRIBER, "segments": segs,
+                                "answer": "## Notes\n- a"}
+    assert _files_under(workdir) == []
+    assert [(r["kind"], r["request_id"], r["label"]) for r in seen["running"][0]] == [
+        ("meeting-notes", "m1", "Weekly sync")]
+    assert w.running_snapshot() == []
+
+
+def test_run_meeting_notes_text_job_has_no_media_steps_and_posts_the_answer(monkeypatch, tmp_path):
+    from bridge import rivendell_video as rv
+    claim = _meeting_claim(source="TEXT", recording=None, prompt="Notes from:\nWe agreed on X.")
+    w, seen = _meeting_worker(monkeypatch, tmp_path, claim, run=(True, "## Notes"))
+    for tool in ("download", "extract_audio", "transcribe"):
+        monkeypatch.setattr(rv, tool, lambda *a, **k: (_ for _ in ()).throw(AssertionError("a text job has no media")))
+    w._run_meeting_notes("m1", "Weekly sync")
+    assert seen["phases"] == [("meeting-notes-requests", "notes")]
+    assert [r[0] for r in seen["runs"]] == ["Notes from:\nWe agreed on X."]
+    [(kp, rid, ok, text, error)] = seen["post"]
+    assert (kp, rid, ok, error) == ("meeting-notes-requests", "m1", True, None)
+    assert json.loads(text) == {"answer": "## Notes"}
+
+
+def test_run_meeting_notes_failed_text_job_posts_failed(monkeypatch, tmp_path):
+    claim = _meeting_claim(source="TEXT", recording=None, prompt="Notes from:\nWe agreed on X.")
+    w, seen = _meeting_worker(monkeypatch, tmp_path, claim, run=(False, "run timed out after 3600s"))
+    w._run_meeting_notes("m1", "Weekly sync")
+    assert seen["post"] == [("meeting-notes-requests", "m1", False, "run timed out after 3600s", None)]
+
+
+def test_run_meeting_notes_whisper_failure_posts_failed_with_its_message(monkeypatch, tmp_path):
+    """No transcript, no Claude run; the recording that was already downloaded still leaves the Mac."""
+    from bridge import rivendell_video as rv
+    w, seen = _meeting_worker(monkeypatch, tmp_path, _meeting_claim())
+    monkeypatch.setattr(rv, "transcribe", lambda wav, lang: (_ for _ in ()).throw(
+        rv.VideoToolError("whisper-cli: command not found")))
+    monkeypatch.setattr(w, "_start_run", lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("no Claude run without a transcript")))
+    w._run_meeting_notes("m1", "Weekly sync")
+    assert seen["post"] == [("meeting-notes-requests", "m1", False, "whisper-cli: command not found", None)]
+    assert _files_under(os.path.join(str(tmp_path), "meetings")) == []
+
+
+def test_run_meeting_notes_failed_claude_run_still_delivers_the_transcript(monkeypatch, tmp_path):
+    """The transcript is the expensive part: COMPLETED with it and the notes empty, and the
+    run's failure as `error` so the viewer can say why there are no notes."""
+    from bridge import rivendell_video as rv
+    segs = [{"startMs": 0, "endMs": 1000, "text": "hi"}]
+    w, seen = _meeting_worker(monkeypatch, tmp_path, _meeting_claim(), segments=segs,
+                              run=(False, "run timed out after 3600s"))
+    w._run_meeting_notes("m1", "Weekly sync")
+    [(kp, rid, ok, text, error)] = seen["post"]
+    assert (kp, rid, ok, error) == ("meeting-notes-requests", "m1", True, "run timed out after 3600s")
+    assert json.loads(text) == {"language": "nl", "transcriber": rv.TRANSCRIBER, "segments": segs, "answer": ""}
+    assert _files_under(os.path.join(str(tmp_path), "meetings")) == []
+
+
+def test_run_meeting_notes_failed_claude_run_with_no_transcript_posts_failed(monkeypatch, tmp_path):
+    """Whisper heard nothing and Claude failed: there is nothing to keep."""
+    w, seen = _meeting_worker(monkeypatch, tmp_path, _meeting_claim(), segments=[], run=(False, "run errored"))
+    w._run_meeting_notes("m1", "Weekly sync")
+    assert seen["post"] == [("meeting-notes-requests", "m1", False, "run errored", None)]
 
 
 def test_catch_up_queues_deck_requests(monkeypatch):
@@ -571,10 +765,12 @@ def test_dedup_is_separate_across_all_kinds():
                        ("changelog-request", {"project": {}}),
                        ("news-request", {"user": {}}),
                        ("deck-request", {"site": {}}),
-                       ("video-request", {"kind": "TRANSCRIBE", "file": {"id": "f", "name": "n"}})):
+                       ("video-request", {"kind": "TRANSCRIBE", "file": {"id": "f", "name": "n"}}),
+                       ("meeting-notes-request", {"source": "TEXT", "meeting": {"id": "g", "name": "n"}})):
         w._handle_message(json.dumps({"type": typ, "requestId": "same", **extra}).encode())
     kinds = [k for (k, _rid, _s) in _drain(w)]
-    assert kinds == ["review", "impl", "todolist", "taskdesc", "changelog", "news", "deck", "video"]
+    assert kinds == ["review", "impl", "todolist", "taskdesc", "changelog", "news", "deck", "video",
+                     "meeting-notes"]
 
 
 def test_run_todolist_runs_in_workdir_without_checkout(monkeypatch):
@@ -724,16 +920,18 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     monkeypatch.setattr(w, "_run_news", lambda rid, slug: calls.append(("news", rid, slug)))
     monkeypatch.setattr(w, "_run_deck", lambda rid, slug: calls.append(("deck", rid, slug)))
     monkeypatch.setattr(w, "_run_video", lambda rid, slug: calls.append(("video", rid, slug)))
+    monkeypatch.setattr(w, "_run_meeting_notes", lambda rid, slug: calls.append(("meeting-notes", rid, slug)))
     w._run_accepted({"kind": "impl", "request_id": "i1", "slug": "acme/app"})
     w._run_accepted({"kind": "todolist", "request_id": "t1", "slug": "Proj"})
     w._run_accepted({"kind": "changelog", "request_id": "c1", "slug": "Proj"})
     w._run_accepted({"kind": "news", "request_id": "n1", "slug": "Mahdi"})
     w._run_accepted({"kind": "deck", "request_id": "k1", "slug": "Deck"})
     w._run_accepted({"kind": "video", "request_id": "v1", "slug": "S.mov"})
+    w._run_accepted({"kind": "meeting-notes", "request_id": "m1", "slug": "Weekly sync"})
     w._run_accepted({"kind": "review", "request_id": "r1", "slug": None})
     assert calls == [("impl", "i1", "acme/app"), ("todolist", "t1", "Proj"),
                      ("changelog", "c1", "Proj"), ("news", "n1", "Mahdi"), ("deck", "k1", "Deck"),
-                     ("video", "v1", "S.mov"), ("review", "r1", None)]
+                     ("video", "v1", "S.mov"), ("meeting-notes", "m1", "Weekly sync"), ("review", "r1", None)]
 
 
 def test_reject_refuses_as_dismissed_without_claiming(monkeypatch):
