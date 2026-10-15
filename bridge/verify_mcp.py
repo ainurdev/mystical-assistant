@@ -34,6 +34,7 @@ import base64
 import json
 import mimetypes
 import os
+import struct
 import sys
 import urllib.error
 import urllib.request
@@ -137,7 +138,9 @@ _TOOLS = [
             "Writing \"the clip is at /tmp/x.mp4\" attaches nothing and the "
             "human sees nothing -- this is what actually delivers it. Images "
             "and video only; Read the file yourself if you also need to look "
-            "at it."),
+            "at it. Capture at 2x and crop to the part under review: a whole "
+            "page reaches a phone at a fifth of life size, unreadable until "
+            "zoomed, and a 1x capture blurs the moment it is zoomed."),
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -256,8 +259,62 @@ def _attach(args: dict) -> str:
     if not kind.startswith(("image/", "video/")):
         return (f"Not an image or video: {path} ({kind or 'unknown type'}). The "
                 f"chat only shows those.")
-    return (f"{path}\nAttached to the chat -- the human can see it now. You "
-            f"cannot; Read the file if you need to check it yourself.")
+    msg = (f"{path}\nAttached to the chat -- the human can see it now. You "
+           f"cannot; Read the file if you need to check it yourself.")
+    size = image_size(path) if kind.startswith("image/") else None
+    return msg + ("\n" + size_note(*size) if size else "")
+
+
+# What the human's screen does to an attached picture: a phone lays it out
+# ~400px wide and a laptop ~1300px, then zooms by pinch or wheel. So a shot is
+# only as readable as the pixels it brings, and only as findable as the crop it
+# comes in -- three design sheets at 2240px once reached a phone unreadable.
+POSTER_W = 1600   # wider is a whole page or screen, not the region under review
+THIN_SIDE = 1000  # a long side under this was captured at 1x, or is tiny
+
+
+def image_size(path: str) -> "tuple[int, int] | None":
+    """(w, h) of a PNG or JPEG read off its header, stdlib only. None for any
+    other format or a file that doesn't parse: the note is advice, not a gate."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(24)
+            if head[:8] == b"\x89PNG\r\n\x1a\n" and head[12:16] == b"IHDR":
+                w, h = struct.unpack(">II", head[16:24])
+                return w, h
+            if head[:2] != b"\xff\xd8":
+                return None
+            f.seek(2)
+            while True:                       # walk the segments to the first SOF
+                marker = f.read(2)
+                if len(marker) < 2 or marker[0] != 0xFF:
+                    return None
+                if marker[1] == 0xFF or marker[1] in (0x01, 0xD8) or 0xD0 <= marker[1] <= 0xD7:
+                    f.seek(-1 if marker[1] == 0xFF else 0, 1)
+                    continue                  # standalone markers carry no length
+                (ln,) = struct.unpack(">H", f.read(2))
+                if marker[1] in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                                 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                    f.read(1)                 # sample precision
+                    h, w = struct.unpack(">HH", f.read(4))
+                    return w, h
+                f.seek(ln - 2, 1)
+    except (OSError, struct.error):
+        return None
+
+
+def size_note(w: int, h: int) -> str:
+    """The line after "Attached": the size, and what to do when it will not
+    read on the human's screen. One note at most -- the worse one."""
+    note = f"{w}x{h} px."
+    if max(w, h) < THIN_SIDE:
+        note += (" That is low-res: it blurs the moment the human zooms. Capture "
+                 "at 2x (device scale factor 2) and attach that instead.")
+    elif w > POSTER_W:
+        note += (f" That is a whole page or screen: on a phone it opens at a fifth "
+                 f"of life size, unreadable until zoomed. Also attach a crop of the "
+                 f"part under review (<= {POSTER_W}px wide), one per state.")
+    return note
 
 
 def _run(args: dict) -> str:
