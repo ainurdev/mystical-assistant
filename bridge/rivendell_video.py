@@ -2,8 +2,10 @@
 
 A bridge Mac does what Claude cannot: it downloads the file, pulls the audio
 out with ffmpeg, transcribes it with whisper.cpp, and keeps one frame per
-screen change. Claude then only reads text and images. Everything here is a
-plain function so the tests can fake subprocess and the network."""
+screen change. Claude then only reads text and images. A meeting's recording
+(rivendell.py: _run_meeting_notes) takes the first three steps from here too.
+Everything here is a plain function so the tests can fake subprocess and the
+network."""
 from __future__ import annotations
 
 import json
