@@ -659,11 +659,16 @@ const FAMILY_NAME: Record<Family, string> = { aurora: "Aurora", claude: "Claude"
 const FAMILY_TAG: Record<Family, string> = { aurora: "the CRT", claude: "the app itself", flint: "the editor" };
 
 /** A colouring's swatch, filled with what it paints: you, then what waits on
- *  you. SUNSET is one gradient; KILN keeps its bars apart. */
+ *  you. A FLINT swatch keeps its ground between the two, because FLINT is
+ *  mostly ground and the ground is what parts NOCTURNE from VIOLET; SUNSET's
+ *  you is its gradient, KILN's corners are bars. */
 function swatchFill(k: ThemeKey): string {
   const p = themeDef(k).pal;
-  if (k.startsWith("flint-kiln")) return `linear-gradient(135deg, ${p.acc} 0 22%, ${p.panel} 22% 78%, ${p.ask} 78%)`;
-  if (p.acc2) return `linear-gradient(135deg, ${p.acc}, ${p.acc2})`;
+  if (family(k) === "flint") {
+    const [a, b] = k.startsWith("flint-kiln") ? [22, 78] : [40, 80];
+    const you = p.acc2 ? `${p.acc}, ${p.acc2} ${a}%` : `${p.acc} 0 ${a}%`;
+    return `linear-gradient(135deg, ${you}, ${p.panel} ${a}% ${b}%, ${p.ask} ${b}%)`;
+  }
   return `linear-gradient(135deg, ${p.acc} 0 58%, ${p.ask} 58%)`;
 }
 

@@ -216,7 +216,7 @@ on any other. The run never leaves your machine, and there's no app to install.
 
 Three themes, each in its own voice: AURORA, a phosphor CRT with its scanlines
 on their own switches; CLAUDE, the app's own warm greys; FLINT, a graphite
-editor. Nineteen colours between them, and daylight grounds for CLAUDE and FLINT.
+editor. Twenty colours between them, and daylight grounds for CLAUDE and FLINT.
 You'll stare at it all day. It may as well look like something you chose.
 
 <br />

@@ -22,7 +22,7 @@ export type ThemeKey =
   | "aqua" | "green" | "amber" | "magenta" | "blueprint" | "void"
   | "claude" | "claude-ocean" | "claude-fern" | "claude-iris" | "claude-library" | "claude-dusk"
   | "claude-light" | "claude-ocean-light" | "claude-fern-light" | "claude-iris-light" | "claude-library-light" | "claude-dusk-light"
-  | "flint-ember" | "flint-fuchsia" | "flint-sunset" | "flint-kiln" | "flint-cobalt" | "flint-nocturne" | "flint-signal"
+  | "flint-ember" | "flint-fuchsia" | "flint-sunset" | "flint-kiln" | "flint-cobalt" | "flint-nocturne" | "flint-violet" | "flint-signal"
   | "flint-ember-light" | "flint-fuchsia-light" | "flint-sunset-light" | "flint-kiln-light" | "flint-cobalt-light"
   | "flint-nocturne-light" | "flint-signal-light";
 
@@ -78,6 +78,8 @@ const rgbTriplet = (hex: string): string =>
 // NOCTURNE is the indigo night (NOCTURNE + STUDIO, before), and the colours are
 // two roles each — COBALT's `info` moves to cyan so a link is not your blue,
 // and NOCTURNE's `purple` to a magenta violet so a branch chip is not your violet.
+// VIOLET is NOCTURNE's roles on the graphite ground, so it moves `purple` too;
+// its daylight is NOCTURNE's, so it has no `-light` twin of its own.
 
 /** [key, NAME, feel, ground, roles] — `roles` carries `acc` and `ask`, plus
  *  anything that one colouring moves off its ground. */
@@ -125,6 +127,7 @@ const FLINT_ROWS: Row[] = [
   ["flint-kiln", "FLINT KILN", "near-black · no tints, accents only as bars", FLINT_KILN, { acc: "#ff8a3d", ask: "#ff4fa3" }],
   ["flint-cobalt", "FLINT COBALT", "graphite · blue is you, orange waits on you", FLINT_INK, { acc: "#4c9dff", ask: "#ff8a3d", info: "#5fd4ec", "info-hi": "#93e2f3", "info-b": "#c6f0f9" }],
   ["flint-nocturne", "FLINT NOCTURNE", "indigo night · violet is you, peach waits on you", FLINT_NIGHT, { acc: "#9d8cff", ask: "#ff9d5c" }],
+  ["flint-violet", "FLINT VIOLET", "graphite · violet is you, peach waits on you", FLINT_INK, { acc: "#9d8cff", ask: "#ff9d5c", purple: "#d49af5", "purple-d": "#c788f0", "purple-h": "#e0b3f8", "purple-b": "#eed6fb", "purple-g": "#7a6690" }],
   ["flint-signal", "FLINT SIGNAL", "graphite · chartreuse is you, magenta waits on you", FLINT_INK, { acc: "#9ade4a", ask: "#ff4fa3" }],
   ["flint-ember-light", "FLINT", "daylight · orange is you, magenta waits on you", FLINT_DAY, { acc: "#aa4604", ask: "#c01573" }],
   ["flint-fuchsia-light", "FLINT FUCHSIA", "daylight · magenta is you, orange waits on you", FLINT_DAY, { acc: "#c01573", ask: "#aa4604" }],

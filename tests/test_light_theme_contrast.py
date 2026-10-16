@@ -52,7 +52,7 @@ MIN_LADDER_STEP = 1.008  # each rung measurably lighter than the one below
 # warning's), VIRIDIAN (green phosphor: go and good are one word, as FERN's),
 # and FLINT SUNSET (warm by design, its orange leans on err's red).
 COLORFUL = ["aqua", "amber", "magenta", "blueprint", "void",
-            "flint-ember", "flint-fuchsia", "flint-kiln", "flint-cobalt", "flint-nocturne", "flint-signal",
+            "flint-ember", "flint-fuchsia", "flint-kiln", "flint-cobalt", "flint-nocturne", "flint-violet", "flint-signal",
             "flint-ember-light", "flint-fuchsia-light", "flint-kiln-light", "flint-cobalt-light",
             "flint-nocturne-light", "flint-signal-light"]
 HUE_KEYS = ["acc", "ok", "warn", "err", "info", "purple"]

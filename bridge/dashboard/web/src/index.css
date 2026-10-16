@@ -3071,7 +3071,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* colourings: unlabelled squircles filled with what they paint */
 .ftsq { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 12px; }
 .ftsq button { appearance: none; cursor: pointer; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 7px;
-  box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); transition: transform .12s ease; }
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--txb) 14%, transparent); transition: transform .12s ease; }
 .ftsq button:hover:not(:disabled) { transform: translateY(-1px); }
 .ftsq button:disabled { cursor: default; }
 .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--txb); }
