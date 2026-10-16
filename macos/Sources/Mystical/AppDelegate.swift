@@ -291,7 +291,7 @@ enum MainMenu {
             item("Zoom In", #selector(AppDelegate.zoomIn), "=", to: target),
             item("Zoom Out", #selector(AppDelegate.zoomOut), "-", to: target),
             .separator(),
-            item("Toggle Full Screen", #selector(DashboardWindow.toggleSimpleFullScreen(_:)), "f", [.command, .control]),
+            item("Enter Full Screen", #selector(NSWindow.toggleFullScreen(_:)), "f", [.command, .control]),
         ])
         let window = [
             item("Dashboard", #selector(AppDelegate.showDashboard), "1", to: target),
