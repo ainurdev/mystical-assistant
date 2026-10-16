@@ -190,15 +190,30 @@ def test_the_user_running_the_helper_counts_as_root_which_outside_tests_it_is():
 
 # --- start and stop, against temp dirs --------------------------------------------------
 
+KILL_ALL = ["/usr/bin/pkill", "-KILL", "-u", "mysticalruns"]
+ANY_LEFT = ["/usr/bin/pgrep", "-u", "mysticalruns"]
+
+
 class Runner:
     """subprocess.Popen, minus the user switch: records each command, then runs it
-    without the `/usr/bin/sudo [-E] -u <user> [-H]` in front, as you."""
+    without the `/usr/bin/sudo [-E] -u <user> [-H]` in front, as you.
 
-    def __init__(self):
-        self.calls, self.procs = [], []
+    pkill and pgrep never run for real: here mysticalruns is you, so a kill by
+    user would take this test run down with it. pgrep answers from `left` (0:
+    some are left) and then 1 (none are). At each kill, `kills` notes what
+    `on_kill()` says at that moment."""
+
+    def __init__(self, left=(), on_kill=lambda: None):
+        self.calls, self.procs, self.kills = [], [], []
+        self.left, self.on_kill = list(left), on_kill
 
     def __call__(self, argv, **kw):
         self.calls.append(list(argv))
+        if argv[0] in ("/usr/bin/pkill", "/usr/bin/pgrep"):
+            if argv[0] == "/usr/bin/pkill":
+                self.kills.append(self.on_kill())
+            rc = 0 if argv[0] == "/usr/bin/pkill" else (self.left.pop(0) if self.left else 1)
+            return types.SimpleNamespace(wait=lambda: rc)
         if argv[0] == "/usr/bin/sudo":
             argv = argv[1:]
             while argv[0].startswith("-"):
@@ -206,6 +221,29 @@ class Runner:
         p = subprocess.Popen(argv, **kw)
         self.procs.append(p)
         return p
+
+
+def _killed_around_the_run(run):
+    """Every mysticalruns process was stopped before the launch, and again after
+    the run, while its folder was still there (so before it was cleaned up)."""
+    kills = [i for i, c in enumerate(run.calls) if c == KILL_ALL]
+    launch = next(i for i, c in enumerate(run.calls) if "-p" in c)
+    assert len(kills) == 2 and kills[0] < launch < kills[1], run.calls
+    assert run.kills == [False, True], "the second kill comes before the run folder is removed"
+
+
+def _watching(b):
+    """A Runner that notes, at each kill by user, whether the run's folder is there."""
+    return Runner(on_kill=lambda: os.path.lexists(b.runs / RUN_ID))
+
+
+def _group_alive(pgid):
+    try:
+        os.killpg(pgid, 0)
+    except (ProcessLookupError, PermissionError):   # macOS: EPERM while only exited members are left
+        return False
+    return True
+    assert all(run.calls[i + 1] == ANY_LEFT for i in kills), "each kill waits until none is left"
 
 
 def _snapshot(files):
@@ -279,8 +317,9 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
   "$cd_ok" "$PWD" "$CLAUDE_CODE_OAUTH_TOKEN" "$CLAUDE_CONFIG_DIR" "$HOME" "$home_ok"
 """)
     st = _stage(box)
-    run = Runner()
+    run = _watching(box)
     assert h.main(["start", RUN_ID], popen=run) == 0
+    _killed_around_the_run(run)
 
     report = json.loads((st / "out" / "claude.json").read_text())
     assert report["result"] == "hello" and report["cwd"].endswith("/runs/" + RUN_ID + "/code")
@@ -296,7 +335,7 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
     assert _left_behind(box, st) == []
     assert (st / "job.json").exists(), "the rest of the stage is the bridge's to remove"
 
-    clear, install, untar, launch, writer, reader = run.calls
+    kill, wait, clear, install, untar, launch, writer, reader, kill_again, wait_again = run.calls
     assert clear[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and clear[-1] == str(box.tmp)
     code = str(box.runs / RUN_ID / "code")
     assert install[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and install[3:6] == ["/usr/bin/install", "-d", "-m"]
@@ -400,38 +439,66 @@ def test_a_config_in_a_folder_others_can_change_is_not_trusted(box, capsys):
 def test_a_run_that_times_out_is_killed_and_still_cleaned_up(box):
     _claude(box, "sleep 30\n")
     st = _stage(box, job={**JOB, "timeoutSeconds": 1})
-    run = Runner()
+    run = _watching(box)
     began = time.monotonic()
     assert h.main(["start", RUN_ID], popen=run) == 0
+    _killed_around_the_run(run)
     assert time.monotonic() - began < h.GRACE + 5, "killed at the timeout, not left to run its 30 s"
     done = json.loads((st / "out" / "exit.json").read_text())
     assert done["timedOut"] is True and done["code"] != 0
     # Nothing of the run's process group is left alive (macOS answers EPERM, not
     # ESRCH, while an exited member waits to be reaped).
+    launch = next(p for p in run.procs if "-p" in p.args)
     with pytest.raises((ProcessLookupError, PermissionError)):
-        os.killpg(run.procs[2].pid, 0)
+        os.killpg(launch.pid, 0)
     assert _left_behind(box, st) == []
 
 
 def test_stop_ends_a_running_run_and_start_still_reports_and_cleans_up(box):
     _claude(box, "sleep 30\n")
     st = _stage(box)
-    run, rc = Runner(), []
+    run, rc = _watching(box), []
     t = threading.Thread(target=lambda: rc.append(h.main(["start", RUN_ID], popen=run)))
     t.start()
     pid = box.runs / RUN_ID / "pid"
     deadline = time.monotonic() + 10
     while not (pid.exists() and pid.read_text().strip()) and time.monotonic() < deadline:
         time.sleep(0.05)
-    assert h.main(["stop", RUN_ID]) == 0
+    pgid = int(pid.read_text())
+    stopper = Runner(on_kill=lambda: _group_alive(pgid))
+    assert h.main(["stop", RUN_ID], popen=stopper) == 0
     t.join(15)
     assert rc == [0]
+    assert stopper.calls == [KILL_ALL, ANY_LEFT], "after the group, whatever setsid() out of it"
+    assert stopper.kills == [False], "the group is stopped first, then everything else of the user's"
+    _killed_around_the_run(run)
     assert json.loads((st / "out" / "exit.json").read_text()) == {"code": -15, "timedOut": False}
     assert _left_behind(box, st) == []
 
 
-def test_stopping_a_run_that_is_not_running_is_no_error(box):
-    assert h.main(["stop", RUN_ID]) == 0
+def test_the_kill_by_user_waits_until_none_is_left(box):
+    run = Runner(left=[0, 0, 0])
+    _stage(box)
+    assert h.main(["start", RUN_ID], popen=run) == 0
+    assert run.calls[:5] == [KILL_ALL] + [ANY_LEFT] * 4 and run.calls[5] != ANY_LEFT, "asked until pgrep said none"
+
+
+def test_the_wait_for_none_left_is_bounded(box, monkeypatch):
+    """A process that won't die (or one launchd keeps restarting) can't hold a run up for ever."""
+    monkeypatch.setattr(h, "GRACE", 0.3)
+    run = Runner(left=[0] * 1000)
+    st = _stage(box)
+    began = time.monotonic()
+    assert h.main(["start", RUN_ID], popen=run) == 0
+    assert time.monotonic() - began < 5
+    assert (st / "out" / "exit.json").exists() and not (st / "token").exists()
+
+
+def test_stopping_a_run_that_is_not_running_is_no_error_and_kills_nothing(box):
+    """A stop that arrives after its run ended must not touch the next requester's run."""
+    run = Runner()
+    assert h.main(["stop", RUN_ID], popen=run) == 0
+    assert run.calls == []
 
 
 @pytest.mark.parametrize("plant", ["symlink", "hard link"])

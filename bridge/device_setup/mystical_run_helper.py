@@ -43,7 +43,9 @@ code, with every tool allowed. So root never follows a link either could plant:
   run says why.
 Cleanup always runs: on success, failure, timeout, stop, and when a bridge
 restart TERMs this helper. It stops the run's process group and deletes its
-folder and the stage's token.
+folder and the stage's token. There is one run at a time, so every mysticalruns
+process is stopped before each run and after it: one that setsid() out of its
+group would otherwise outlive the run, and read the next requester's code and home.
 
 Root runs this with the system /usr/bin/python3, which can be as old as 3.9. So
 the code sticks to 3.9: no `match`, no `X | Y` types, no Popen(process_group=).
@@ -256,6 +258,16 @@ def _kill_group(pgid, leader=None):
         pass  # the group is gone: macOS says EPERM while only exited processes are left in it
 
 
+def _kill_user(popen):
+    """KILL every mysticalruns process, then wait, at most GRACE seconds, until
+    none is left (pgrep exits 0 while one is, 1 when none is)."""
+    quiet = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
+    popen(["/usr/bin/pkill", "-KILL", "-u", RUN_USER], **quiet).wait()
+    deadline = time.monotonic() + GRACE
+    while time.monotonic() < deadline and popen(["/usr/bin/pgrep", "-u", RUN_USER], **quiet).wait() == 0:
+        time.sleep(0.1)
+
+
 def _launch(argv, env, run_dir, run_uid, timeout, popen, out):
     """Claude as mysticalruns, in its own session, for at most `timeout` seconds.
     Returns (exit code, timed out)."""
@@ -329,6 +341,7 @@ def _hand_back(popen, run_dir, stage, owner_uid, claude_out, exit_info):
                         if not m.isreg():
                             continue
                         if m.name == "out/claude.err":
+                            # Read in part: tarfile skips the rest on its way on, so the cap holds wherever it sits.
                             _put(dst, m.name, src.extractfile(m), min(m.size, ERR_CAP))
                         elif _SCREEN.fullmatch(name):
                             _put(dst, "out/screens/" + name, src.extractfile(m), m.size)
@@ -367,6 +380,7 @@ def start(run_id, cfg, popen):
             raise Refused("The stage's job.json or token is incomplete.")
         run_uid = pwd.getpwnam(RUN_USER).pw_uid
         argv = launch_argv(cfg.get("launch"), run_uid, claude_argv(prompt, claude))
+        _kill_user(popen)   # nothing of an earlier run is left to watch this one
         _as(RUN_USER, popen, ["/usr/bin/python3", "-I", "-c", _EMPTY_AGENTS, os.path.dirname(RUNS_HOME)],
             "The hidden user's launch agents couldn't be cleared.")
         code = os.path.join(run_dir, "code")
@@ -380,17 +394,21 @@ def start(run_id, cfg, popen):
             rc, timed_out = _launch(argv, claude_env(job, token, run_dir), run_dir, run_uid, timeout, popen, out)
             _hand_back(popen, run_dir, stage, cfg["uid"], out, {"code": rc, "timedOut": timed_out})
     finally:
-        shutil.rmtree(run_dir, ignore_errors=True)   # never follows a link (rmtree.avoids_symlink_attacks)
         try:
-            os.unlink("token", dir_fd=stage_fd)
-        except FileNotFoundError:
-            pass
-        os.close(stage_fd)
-        os.close(tar_fd)
+            _kill_user(popen)   # nothing of this run outlives it, before its folder goes
+        finally:
+            shutil.rmtree(run_dir, ignore_errors=True)   # never follows a link (rmtree.avoids_symlink_attacks)
+            try:
+                os.unlink("token", dir_fd=stage_fd)
+            except FileNotFoundError:
+                pass
+            os.close(stage_fd)
+            os.close(tar_fd)
 
 
-def stop(run_id):
-    """Stop the run `start` is running. Nothing running is no error."""
+def stop(run_id, popen):
+    """Stop the run `start` is running. Nothing running is no error, and kills
+    nothing: a stop that arrives late must not touch the next requester's run."""
     try:
         fd = os.open(os.path.join(RUNS_HOME, run_id, "pid"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
@@ -403,6 +421,7 @@ def stop(run_id):
         pgid = int(f.read(32) or 0)
     if pgid > 1:
         _kill_group(pgid)
+        _kill_user(popen)   # and whatever setsid() out of the group
 
 
 def main(argv=None, popen=subprocess.Popen):
@@ -419,7 +438,7 @@ def main(argv=None, popen=subprocess.Popen):
         if argv[0] == "start":
             start(argv[1], cfg, popen)
         else:
-            stop(argv[1])
+            stop(argv[1], popen)
         return 0
     except Refused as e:
         print("mystical-run-helper: %s" % e, file=sys.stderr)
