@@ -24,7 +24,7 @@ const TABS: { id: NextKind; label: string; blurb: string }[] = [
 const EFFORT: Record<NextItem["effort"], string> = { small: "·", medium: "··", large: "···" };
 
 /** The panel's own rules, at the weights lib/shell.ts fixes for every theme:
- *  22% accent is the floor a light ground (FOUNDRY) still shows. The separator
+ *  22% accent is the floor a light ground (FLINT's daylight) still shows. The separator
  *  between folded items is half that — present, but subordinate to the rules
  *  that divide the panel's sections, which is the hierarchy it has to read as. */
 const RULE = "color-mix(in srgb, var(--acc) 22%, transparent)";

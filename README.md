@@ -212,11 +212,12 @@ on any other. The run never leaves your machine, and there's no app to install.
 | **Telegram bot** | DM your bot | Quick plain-text prompts when a full panel is more than you need. |
 | **Native Claude Code** | the `claude` you already run | Found on its own, and resumable from the three above. |
 
-![The Appearance tab: ten theme cards split into dark and light, above toggles for CRT scanlines and scan sweep.](site/public/shots/themes.png)
+![The Appearance tab: three theme cards, Aurora, Claude and Flint, each with its row of colours, above the CRT effects and header styles.](site/public/shots/themes.png)
 
-Dark and light, from plain daylight to newsprint to a drafting table, with the
-CRT effects on their own switches. You'll stare at it all day. It may as well
-look like something you chose.
+Three themes, each in its own voice: AURORA, a phosphor CRT with its scanlines
+on their own switches; CLAUDE, the app's own warm greys; FLINT, a graphite
+editor. Nineteen colours between them, and daylight grounds for CLAUDE and FLINT.
+You'll stare at it all day. It may as well look like something you chose.
 
 <br />
 

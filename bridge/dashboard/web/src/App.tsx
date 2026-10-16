@@ -35,12 +35,12 @@ import {
   autoBaseFont,
   fontStack,
   isLight,
+  family,
   loadSettings,
   sameFamily,
   saveSettings,
   themeCanvas,
   themeDef,
-  themeFilter,
   themeVars,
   themePrad,
   THEME_TOKEN_KEYS,
@@ -498,7 +498,7 @@ export function App() {
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
   const tele = useTelemetry({ running, toolCount, eventCount });
 
-  // Apply theme: hue-rotate filter on the dashboard, glow var, ambient bg.
+  // Apply theme: the palette's vars, the family, the glow var, light/dark.
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--glow", settings.glow ? "8px" : "0px");
@@ -513,13 +513,13 @@ export function App() {
     if (isLight(settings.theme)) root.dataset.light = "";
     else delete root.dataset.light;
     // Mirrored on <html> so menus portalled to <body> (ContextMenu, the
-    // lightbox, AgentsModal) sit under the same [data-theme] rules as the
-    // container they were opened from — a FLINT context menu is a FLINT one.
+    // lightbox, AgentsModal) sit under the same [data-theme]/[data-fam] rules
+    // as the container they were opened from — a FLINT context menu is a FLINT one.
     root.dataset.theme = settings.theme;
-    // Palette themes override the design tokens on :root (not just the themed
-    // wrapper) so the DERIVED tokens (--primary/--card/--border/--ac-*, defined
-    // via var() in :root) re-resolve to the palette too. Filter themes clear
-    // these and recolour via the container `filter` instead.
+    root.dataset.fam = family(settings.theme);
+    // Themes override the design tokens on :root (not just the themed wrapper)
+    // so the DERIVED tokens (--primary/--card/--border/--ac-*, defined via
+    // var() in :root) re-resolve to the palette too.
     const vars = themeVars(settings.theme);
     for (const k of THEME_TOKEN_KEYS) {
       const v = vars[k];
@@ -2255,18 +2255,18 @@ export function App() {
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: -1, background: td.bg, transition: "background .5s ease" }} />
 
       {showDashboard && (
-        // ONE themed container: colour comes from the CSS filter, shape from
-        // data-theme, ground/voice from canvas/font. Every surface — panels
-        // and all modals below — inherits all three.
+        // ONE themed container: colour from the palette's vars, structure and
+        // personality from data-fam, ground/voice from canvas/font. Every
+        // surface — panels and all modals below — inherits all three.
         <div
           data-theme={settings.theme}
+          data-fam={family(settings.theme)}
           data-hdr={settings.headerStyle}
           style={{
             flex: 1,
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
-            filter: themeFilter(settings.theme),
             background: themeCanvas(settings.theme),
             fontFamily: fontStack(settings.font, settings.theme) || undefined,
             ...themeVars(settings.theme),

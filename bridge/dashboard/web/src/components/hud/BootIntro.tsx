@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { themeCanvas, themeFilter, type ThemeKey } from "../../lib/theme";
+import { themeCanvas, type ThemeKey } from "../../lib/theme";
 import { BOOT_CONTINUE, bootProgress, bootReady, type BootStep } from "../../lib/bootsteps";
 
 const FADE_MS = 650; // the crtoff wipe, after which the dashboard owns the screen
@@ -94,7 +94,6 @@ export function BootIntro(props: {
         inset: 0,
         zIndex: 95,
         background: themeCanvas(theme),
-        filter: themeFilter(theme),
         display: "flex",
         flexDirection: "column",
         alignItems: "center",

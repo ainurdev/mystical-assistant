@@ -1,24 +1,22 @@
 /* Design fonts (the HUD mono voice), plus the three type voices the vvd-ported
-   themes ask for — EB Garamond (DUSK, THE LIBRARY), Work Sans (APEX), Spectral
-   (GLOAM). One request for all of them; each ThemeDef.font still names a local
-   fallback (Georgia / system-ui) so an offline dashboard stays readable. */
+   TYPEFACE picker offers — EB Garamond, Work Sans, Spectral (CLAUDE's titles
+   too), Space Grotesk, Archivo, Space Mono. One request for all of them; every
+   stack still names a local fallback (Georgia / system-ui) so an offline
+   dashboard stays readable. */
 @import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=EB+Garamond:wght@400;600&family=Work+Sans:wght@400;600&family=Spectral:wght@400;600&family=Space+Grotesk:wght@400;600&family=Archivo:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap");
 @import "tailwindcss";
 
 :root {
   color-scheme: dark;
-  /* === Design palette tokens = the source of truth (aqua base). ===
-     The 4 palette themes (normal/newsprint/candy/blueprint) OVERRIDE
-     these per-theme via inline vars from theme.ts `pal{}` with filter:none; the 4
-     filter themes (aqua/green/amber/magenta) keep these aqua and recolour the whole
-     UI via the container CSS filter. [data-theme] still drives panel/edge SHAPE. */
+  /* === Design palette tokens: AURORA's aqua, the base every theme's pal{}
+     (lib/theme) overrides on :root and on the themed container. === */
   --acc: #7fe9d8;   --acc-on: #06100e;
   --ok: #8fd9a8;    --warn: #e3c279;
   --err: #e0897a;   --err-hi: #f0d0c8;  --err-b: #f4d5cd;  --err-g: #9a6f68;
   --info: #6fb5ff;  --info-hi: #9fc8ff; --info-b: #dbeeff;
   --purple: #b9a6ff; --purple-d: #a78bf0; --purple-h: #cbb8ff; --purple-b: #e7deff; --purple-g: #6f6088;
   --txb: #dff8f2;   --txh: #cfe9e3;  --tx: #bfe6de;   --txm: #9fc7c0;
-  --txd: #6f938d;   --txf: #5a6f6a;  --txl: #3c544f;  --txg: #2e423f;
+  --txd: #7fa39c;   --txf: #6f918b;  --txl: #5f817b;  --txg: #2e423f;
   --panel: #091010; --panel2: #070d0d; --panel3: #040707; --canvas: #060a0a;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
@@ -476,98 +474,6 @@ body {
   border-left: 0;
   border-top: 0;
 }
-
-/* [data-theme] = SHAPE only (colour comes from the themed container's filter).
-   aqua / green / amber / magenta / (unlisted) keep the default hard corners. */
-[data-theme="normal"] .panel::before,
-[data-theme="normal"] .panel::after,
-[data-theme="candy"] .panel::before,
-[data-theme="candy"] .panel::after,
-[data-theme="newsprint"] .panel::before,
-[data-theme="newsprint"] .panel::after,
-[data-theme="blueprint"] .panel::before,
-[data-theme="blueprint"] .panel::after,
-[data-theme="dusk"] .panel::before,
-[data-theme="dusk"] .panel::after,
-[data-theme="library"] .panel::before,
-[data-theme="library"] .panel::after,
-[data-theme="apex"] .panel::before,
-[data-theme="apex"] .panel::after,
-[data-theme="gloam"] .panel::before,
-[data-theme="gloam"] .panel::after,
-[data-theme="riso"] .panel::before,
-[data-theme="riso"] .panel::after,
-[data-theme="void"] .panel::before,
-[data-theme="void"] .panel::after,
-[data-theme="nocturne"] .panel::before,
-[data-theme="nocturne"] .panel::after { display: none; }
-/* Card elevation, daylight rules: two hairline layers at low alpha tinted with
-   the ground's own hue — a 30%-black drop shadow reads as grime on paper. */
-[data-theme="normal"] .panel { border-radius: 12px; box-shadow: 0 1px 2px rgba(15, 30, 50, 0.07), 0 2px 6px rgba(15, 30, 50, 0.06); }
-[data-theme="normal"] button,
-[data-theme="normal"] input,
-[data-theme="normal"] textarea { border-radius: 7px; }
-[data-theme="candy"] .panel { border-radius: 18px; box-shadow: 0 1px 2px rgba(90, 20, 60, 0.07), 0 2px 8px rgba(90, 20, 60, 0.06); }
-[data-theme="candy"] button { border-radius: 999px; }
-[data-theme="candy"] input,
-[data-theme="candy"] textarea { border-radius: 12px; }
-[data-theme="newsprint"] .panel { border-radius: 0; box-shadow: none; }
-[data-theme="newsprint"] .glow { text-shadow: none; }
-[data-theme="blueprint"] .panel { border-style: dashed !important; border-radius: 0; }
-[data-theme="blueprint"] .glow { text-shadow: none; }
-/* The vvd-ported themes: soft cards, no corner ticks, no phosphor bloom — these
-   are reading surfaces, so the only depth cue is the hairline + a low shadow
-   tinted with the ground's own hue. */
-[data-theme="dusk"] .panel { border-radius: 6px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22); }
-[data-theme="library"] .panel { border-radius: 3px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.26); }
-[data-theme="apex"] .panel { border-radius: 10px; box-shadow: 0 1px 2px rgba(20, 35, 50, 0.07), 0 2px 6px rgba(20, 35, 50, 0.06); }
-[data-theme="gloam"] .panel { border-radius: 4px; box-shadow: 0 1px 2px rgba(30, 38, 24, 0.07), 0 2px 6px rgba(30, 38, 24, 0.05); }
-[data-theme="dusk"] button,
-[data-theme="dusk"] input,
-[data-theme="dusk"] textarea { border-radius: 6px; }
-[data-theme="library"] button,
-[data-theme="library"] input,
-[data-theme="library"] textarea { border-radius: 3px; }
-[data-theme="apex"] button,
-[data-theme="apex"] input,
-[data-theme="apex"] textarea { border-radius: 8px; }
-[data-theme="gloam"] button,
-[data-theme="gloam"] input,
-[data-theme="gloam"] textarea { border-radius: 4px; }
-/* NOCTURNE is a reading surface too — soft cards, a shadow tinted with its own
-   indigo rather than neutral black, and no phosphor bloom (see .glow below). */
-[data-theme="nocturne"] .panel { border-radius: 6px; box-shadow: 0 1px 2px rgba(8, 8, 18, 0.5); }
-[data-theme="nocturne"] button,
-[data-theme="nocturne"] input,
-[data-theme="nocturne"] textarea { border-radius: 6px; }
-[data-theme="dusk"] .glow,
-[data-theme="library"] .glow,
-[data-theme="apex"] .glow,
-[data-theme="gloam"] .glow,
-[data-theme="riso"] .glow,
-[data-theme="nocturne"] .glow,
-/* VOID: a white bloom on true black is the one thing that would soften it. */
-[data-theme="void"] .glow { text-shadow: none; }
-/* RISO: a press with no blending gets depth from a MISREGISTERED plate, not a
-   shadow — the pink pass lands low-right of the blue one, so a card looks
-   printed rather than lifted. Both edges are the palette's own inks. */
-[data-theme="riso"] .panel {
-  border-radius: 2px;
-  box-shadow:
-    1.5px 1.5px 0 rgb(var(--accent-rgb) / 0.16),
-    -1.5px -1.5px 0 color-mix(in srgb, var(--info) 13%, transparent);
-}
-[data-theme="riso"] button,
-[data-theme="riso"] input,
-[data-theme="riso"] textarea { border-radius: 2px; }
-/* claude = the app's own surfaces: soft cards, no corner ticks, no bloom. */
-[data-theme^="claude"] .panel::before,
-[data-theme^="claude"] .panel::after { display: none; }
-[data-theme^="claude"] .panel { border-radius: 12px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05); }
-[data-theme^="claude"] button,
-[data-theme^="claude"] input,
-[data-theme^="claude"] textarea { border-radius: 8px; }
-[data-theme^="claude"] .glow { text-shadow: none; }
 
 /* A one-sided rule — a tab underline, a rail marker, a row divider — must stay
    square: a radius on a single border edge renders a stray floating arc. The
@@ -1856,9 +1762,9 @@ input {
 [data-bg] { --gnd: color-mix(in srgb, var(--txg) 70%, transparent); }
 /* Light grounds need less of it. `--txg` is a ghost against a near-black
    canvas and a mid-grey against a cream one — the same 70% is a whisper on
-   AURORA and a printed grid on FOUNDRY. Halved rather than re-authored per
-   theme: one number, and all six light palettes land in the same register as
-   the sixteen dark ones. */
+   AURORA and a printed grid on CLAUDE's paper. Halved rather than re-authored
+   per theme: one number, and every light colouring lands in the same register
+   as the dark ones. */
 :root[data-light] [data-bg] { --gnd: color-mix(in srgb, var(--txg) 34%, transparent); }
 
 /* GRAPH — the drafting sheet. 26px, both axes, quieter for the crossing. */
@@ -2734,50 +2640,23 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    rows behind them wore */
 .abub { background: var(--ac-08); }
 
-/* === VOID · THE SHELLS =====================================================
-   The side columns and the session's header were black on black. A #121212
-   panel at 86% over a #000 canvas is a 1.07:1 step; the quiet inks (txl
-   #828282, txg #565656) were set for a grey ground; and every `--ac-NN`
-   hairline is white at 6–12%, which on true black is nothing. So the two
-   side columns and the header island stand on their own grey, with the quiet
-   tiers and the hairlines lifted INSIDE them — only inside them, so the
-   transcript keeps the black the theme is named for. Inline rules read the
-   nearest custom property, which is why re-declaring the tokens here reaches
-   the rows' own `style={{ color: "var(--txl)" }}`. */
-[data-theme="void"] .shellcol {
-  background: #0d0d0d;
-  --panel: #171717; --panel2: #111111; --panel3: #0b0b0b;
-  --border: #2e2e2e;
-  --txg: #6c6c6c; --txl: #9e9e9e; --txf: #ababab; --txd: #bababa; --txm: #d4d4d4;
-  --ac-03: rgba(255, 255, 255, 0.06); --ac-06: rgba(255, 255, 255, 0.10);
-  --ac-08: rgba(255, 255, 255, 0.13); --ac-12: rgba(255, 255, 255, 0.19);
-  --ac-16: rgba(255, 255, 255, 0.25); --ac-22: rgba(255, 255, 255, 0.32);
-}
-/* the island's border and glass are inline (hud/Terminal.tsx), so these
-   outrank them by name */
-[data-theme="void"] .isle {
-  border-color: #3c3c3c !important;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.9), 0 0 0 1px #121212 !important;
-  --txl: #9e9e9e; --txd: #bababa; --txm: #d4d4d4;
-  --purple-d: #d2b4ff; --purple-h: #e6d3ff; --purple-g: #a48fcc;
-}
-[data-theme="void"] .isle-glass { background: rgba(25, 25, 25, 0.94) !important; }
-
-/* === FLINT =================================================================
-   One dark theme in four colourings (lib/theme FLINT_DEFS): neutral graphite,
-   flat, hairline-ruled, rounded, set in Geist. Where AURORA is a HUD, FLINT is
-   an editor: nothing glows, no corner brackets, every surface is a grey step
-   and a 1px line, and colour is spent on exactly two roles —
+/* === THE FAMILIES ===========================================================
+   Three themes, one structure (lib/theme FAMILIES). FLINT drew it: an editor,
+   not a HUD — nothing glows by default, every surface is a grey step and a 1px
+   line, and colour is spent on exactly two roles —
      --acc  you          your prompt, the open session, SEND, focus
      --ask  waits on you a question, a permission
-   SUNSET runs --acc → --acc2 as a gradient where you act; KILN drops every tint
-   and keeps the two hues as bars and frames only.
+   CLAUDE and AURORA wear the same structure in their own voice: the tokens
+   below set the type, corners and line ink, and the personality blocks after
+   the shared rules add what is theirs (CLAUDE's serif titles and soft rows,
+   AURORA's tracked capitals, brackets, glow and hard edges).
 
    The derived tokens are re-pointed first: the HUD's hairlines and hover washes
-   are all accent-at-alpha (--border, --ac-NN), which on FLINT would draw an
-   orange grid over everything. Here they are neutral, and the accent is applied
-   by name where it means something. */
-[data-theme^="flint"] {
+   are all accent-at-alpha (--border, --ac-NN), which would draw an orange grid
+   over FLINT. Here they are neutral, and the accent is applied by name where it
+   means something. AURORA is the exception on purpose: a mono tube can only
+   draw in its phosphor, so its lines are phosphor at low intensity. */
+[data-fam] {
   --line: color-mix(in oklab, var(--txl) 26%, var(--canvas));
   --line2: color-mix(in oklab, var(--txl) 40%, var(--canvas));
   --border: var(--line); --border-bright: var(--line2); --input: var(--line2);
@@ -2785,32 +2664,71 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   --ac-12: rgba(255,255,255,.085); --ac-16: rgba(255,255,255,.11); --ac-20: rgba(255,255,255,.13); --ac-22: rgba(255,255,255,.15);
   --card: var(--panel2); --popover: var(--panel); --code-bg: var(--panel3);
   --shadow-pop: rgba(0,0,0,.55); --shadow-modal: rgba(0,0,0,.7);
-  --f-rad: 10px; --f-rad-s: 7px; --f-rad-l: 14px;
+  --f-pop-shadow: 0 18px 44px -14px rgba(0,0,0,.75), 0 0 0 1px rgba(0,0,0,.4);
+  --f-modal-shadow: 0 40px 100px -30px #000, 0 0 0 1px rgba(0,0,0,.5);
+  --f-scrim: radial-gradient(1200px 700px at 50% 40%, rgba(12,12,14,.55), rgba(5,5,6,.82));
+  --f-glass-edge: rgba(255,255,255,.06);
+  --f-rad: 10px; --f-rad-s: 7px; --f-rad-l: 14px; --f-d-rad: 12px;
   --f-you: color-mix(in oklab, var(--acc) 10%, var(--panel));
   --f-grad: var(--acc);
   --ui-font: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-disp: var(--ui-font);
 }
-[data-theme="flint-sunset"] { --f-grad: linear-gradient(100deg, var(--acc), var(--acc2)); }
-[data-theme="flint-kiln"] { --f-you: var(--panel); }
+[data-fam="claude"] {
+  --line: color-mix(in oklab, var(--txl) 22%, var(--canvas));
+  --line2: color-mix(in oklab, var(--txl) 34%, var(--canvas));
+  --f-rad: 12px; --f-rad-s: 8px; --f-rad-l: 16px; --f-d-rad: 16px;
+  --f-you: color-mix(in oklab, var(--acc) 7%, var(--panel));
+  --ui-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --f-disp: 'Spectral', Georgia, serif;
+}
+[data-fam="aurora"] {
+  --line: color-mix(in oklab, var(--acc) 15%, var(--canvas));
+  --line2: color-mix(in oklab, var(--acc) 30%, var(--canvas));
+  --ac-03: color-mix(in srgb, var(--acc) 3%, transparent); --ac-06: color-mix(in srgb, var(--acc) 6%, transparent);
+  --ac-08: color-mix(in srgb, var(--acc) 8%, transparent); --ac-12: color-mix(in srgb, var(--acc) 12%, transparent);
+  --ac-16: color-mix(in srgb, var(--acc) 16%, transparent); --ac-20: color-mix(in srgb, var(--acc) 20%, transparent);
+  --ac-22: color-mix(in srgb, var(--acc) 22%, transparent);
+  --f-pop-shadow: 0 0 30px rgba(0,0,0,.8), 0 0 18px color-mix(in srgb, var(--acc) 8%, transparent);
+  --f-modal-shadow: 0 0 70px rgba(0,0,0,.8), 0 0 30px color-mix(in srgb, var(--acc) 8%, transparent);
+  --f-glass-edge: color-mix(in srgb, var(--acc) 22%, transparent);
+  --f-rad: 0px; --f-rad-s: 0px; --f-rad-l: 0px; --f-d-rad: 0px;
+  --f-you: color-mix(in oklab, var(--acc) 7%, var(--panel));
+  --ui-font: 'Share Tech Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --f-glow: 0 0 10px color-mix(in srgb, var(--acc) 55%, transparent);
+}
+/* Daylight: washes darken instead of lighten, and elevation is a soft tinted
+   lift, never a black bloom (see :root[data-light]). */
+:root[data-light][data-fam], :root[data-light] [data-fam] {
+  --ac-03: rgba(20,18,12,.025); --ac-06: rgba(20,18,12,.045); --ac-08: rgba(20,18,12,.06);
+  --ac-12: rgba(20,18,12,.08); --ac-16: rgba(20,18,12,.1); --ac-20: rgba(20,18,12,.12); --ac-22: rgba(20,18,12,.14);
+  --shadow-pop: color-mix(in srgb, var(--txb) 14%, transparent); --shadow-modal: color-mix(in srgb, var(--txb) 20%, transparent);
+  --f-pop-shadow: 0 16px 40px -14px color-mix(in srgb, var(--txb) 28%, transparent), 0 0 0 1px color-mix(in srgb, var(--txb) 6%, transparent);
+  --f-modal-shadow: 0 34px 90px -30px color-mix(in srgb, var(--txb) 38%, transparent), 0 0 0 1px color-mix(in srgb, var(--txb) 6%, transparent);
+  --f-scrim: color-mix(in srgb, var(--txb) 22%, transparent);
+  --f-glass-edge: var(--line);
+}
+[data-theme^="flint-sunset"] { --f-grad: linear-gradient(100deg, var(--acc), var(--acc2)); }
+[data-theme^="flint-kiln"] { --f-you: var(--panel); }
 
-/* no HUD furniture: brackets, glow, scanline-era square corners */
-[data-theme^="flint"] .panel::before,
-[data-theme^="flint"] .panel::after { display: none; }
-[data-theme^="flint"] .glow { text-shadow: none; }
-[data-theme^="flint"] .panel { border-radius: var(--f-rad-l); }
+/* no HUD furniture: brackets, glow (AURORA keeps both — they are its voice) */
+[data-fam]:not([data-fam="aurora"]) .panel::before,
+[data-fam]:not([data-fam="aurora"]) .panel::after { display: none; }
+[data-fam]:not([data-fam="aurora"]) .glow { text-shadow: none; }
+[data-fam] .panel { border-radius: var(--f-rad-l); }
 /* the shell columns are the page, not cards on it: square, so their edges
    meet the cap rule and the column hairlines cleanly */
-[data-theme^="flint"] .shellcol > .panel { border-radius: 0; }
-[data-theme^="flint"] :is(button, input, textarea, select) { border-radius: var(--f-rad-s); }
+[data-fam] .shellcol > .panel { border-radius: 0; }
+[data-fam] :is(button, input, textarea, select) { border-radius: var(--f-rad-s); }
 /* every inline JetBrains pin (139 of them, across the shell) reads FLINT's
    mono instead. ponytail: an attribute match on the inline style rather than a
    class on each site — it costs nothing until a component stops writing the
    literal, and then that one site simply keeps JetBrains. */
-[data-theme^="flint"] [style*="JetBrains Mono"] { font-family: var(--mono) !important; }
+[data-fam] [style*="JetBrains Mono"] { font-family: var(--mono) !important; }
 
 /* ── project monogram (components/ui/ProjectTile) ── */
 .ptile { display: none; }
-[data-theme^="flint"] .ptile {
+[data-fam] .ptile {
   display: inline-grid; place-items: center; flex: none; width: 18px; height: 18px; margin-right: 6px;
   border-radius: 5px; vertical-align: middle;
   font: 600 9px/1 var(--ui-font); letter-spacing: .02em; font-style: normal;
@@ -2818,242 +2736,244 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: color-mix(in oklab, var(--pc) 26%, var(--panel));
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 45%, transparent);
 }
-[data-theme^="flint"] .pdot { display: none; }
-[data-theme^="flint"] .sessproj { display: inline-flex; align-items: center; font-weight: 500; font-family: var(--ui-font); }
+[data-fam] .pdot { display: none; }
+[data-fam] .sessproj { display: inline-flex; align-items: center; font-weight: 500; font-family: var(--ui-font); }
 
 /* ── the shells: left column, right column, rail ── */
-[data-theme^="flint"] .shellcol { background: var(--canvas); }
-[data-theme^="flint"] .sess-search {
+[data-fam] .shellcol { background: var(--canvas); }
+[data-fam] .sess-search {
   margin: 12px 2px 4px; height: 34px !important; padding: 0 10px; border: 1px solid var(--line) !important;
   border-radius: var(--f-rad-s); background: var(--panel2);
 }
-[data-theme^="flint"] .sess-search input { font-family: var(--ui-font) !important; font-size: var(--t12) !important; }
-[data-theme^="flint"] .sessrow { border-radius: var(--f-rad-s); margin: 1px 0; border-left: 0 !important; }
-[data-theme^="flint"] .sessrow::before { left: 0; top: 7px; bottom: 7px; width: 2px; border-radius: 2px; background: var(--acc); }
-[data-theme^="flint"] .sessrow[data-on="true"] { background: var(--panel) !important; box-shadow: inset 0 0 0 1px var(--line); }
-[data-theme^="flint"] .sessrow:hover { background: var(--ac-06) !important; }
-[data-theme^="flint"] .sessrow > div > span:first-child { font-family: var(--ui-font); letter-spacing: -.005em; }
+[data-fam] .sess-search input { font-family: var(--ui-font) !important; font-size: var(--t12) !important; }
+[data-fam] .sessrow { border-radius: var(--f-rad-s); margin: 1px 0; border-left: 0 !important; }
+[data-fam] .sessrow::before { left: 0; top: 7px; bottom: 7px; width: 2px; border-radius: 2px; background: var(--acc); }
+[data-fam] .sessrow[data-on="true"] { background: var(--panel) !important; box-shadow: inset 0 0 0 1px var(--line); }
+[data-fam] .sessrow:hover { background: var(--ac-06) !important; }
+[data-fam] .sessrow > div > span:first-child { font-family: var(--ui-font); letter-spacing: -.005em; }
 /* PROJECTS: a project heads its sessions, which hang off a rail centred under
    its tile (18px tile, 6px row padding → rail centre at 15px) */
-[data-theme^="flint"] .projhead { height: 30px !important; padding: 0 6px !important; gap: 0 !important; border-radius: var(--f-rad-s); }
-[data-theme^="flint"] .projhead .ptile { width: 18px; height: 18px; margin-right: 9px; }
-[data-theme^="flint"] .projhead > span:nth-of-type(2) {
+[data-fam] .projhead { height: 30px !important; padding: 0 6px !important; gap: 0 !important; border-radius: var(--f-rad-s); }
+[data-fam] .projhead .ptile { width: 18px; height: 18px; margin-right: 9px; }
+[data-fam] .projhead > span:nth-of-type(2) {
   font-family: var(--ui-font) !important; font-size: var(--t12) !important; font-weight: 600; letter-spacing: 0 !important;
   color: color-mix(in oklab, var(--pc, var(--txb)) 0%, var(--txb)) !important;
 }
 /* one rail per project: the group's own (.projrail), moved under the tile's
    centre and re-inked neutral — the rows add none of their own */
-[data-theme^="flint"] .projrail { margin: 1px 0 0 14.5px !important; border-left-color: var(--line2) !important; }
-[data-theme^="flint"] .projgrp .sessrow { margin-left: 0; border-radius: 0 var(--f-rad-s) var(--f-rad-s) 0; }
-[data-theme^="flint"] .projgrp .sessrow::before { left: -1px; top: 6px; bottom: 6px; }
+[data-fam] .projrail { margin: 1px 0 0 14.5px !important; border-left-color: var(--line2) !important; }
+[data-fam] .projgrp .sessrow { margin-left: 0; border-radius: 0 var(--f-rad-s) var(--f-rad-s) 0; }
+[data-fam] .projgrp .sessrow::before { left: -1px; top: 6px; bottom: 6px; }
 
-/* ── FLINT · HEADER — the island over the transcript, in the style picked on
-   FLINT's theme card (data-hdr on the themed container, lib/theme
+/* ── THE FAMILIES · HEADER — the island over the transcript, in the style
+   picked under Appearance (data-hdr on the themed container, lib/theme
    HEADER_STYLES). All three drop the HUD's accent border and drop shadow:
    the island was a sticker on whatever scrolled under it. ── */
-[data-theme^="flint"] .isle { box-shadow: none !important; border-radius: var(--f-rad-l) !important; transition: border-color .2s ease; }
-[data-theme^="flint"] .isle-pill { border-radius: 999px !important; }
-[data-theme^="flint"] .isle > div:last-child > * { transition: opacity .2s ease; }
-[data-theme^="flint"] .isle-glass { transition: background-color .2s ease; }
-[data-theme^="flint"] .isle button:first-child > span { font-family: var(--ui-font); }
+[data-fam] .isle { box-shadow: none !important; border-radius: var(--f-rad-l) !important; transition: border-color .2s ease; }
+[data-fam] .isle-pill { border-radius: 999px !important; }
+[data-fam] .isle > div:last-child > * { transition: opacity .2s ease; }
+[data-fam] .isle-glass { transition: background-color .2s ease; }
+[data-fam] .isle button:first-child > span { font-family: var(--ui-font); }
 /* FROST: glass the transcript blurs through; half ink until reached for */
-[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle { border: 1px solid rgba(255,255,255,.06) !important; }
-[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle-glass {
+[data-fam]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle { border: 1px solid var(--f-glass-edge) !important; }
+[data-fam]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle-glass {
   background: color-mix(in srgb, var(--panel) 42%, transparent) !important;
   backdrop-filter: blur(14px) saturate(1.2) !important;
 }
-[data-theme^="flint"][data-hdr="frost"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .55; }
-[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) { border-color: var(--line2) !important; }
-[data-theme^="flint"]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) .isle-glass { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; }
+[data-fam][data-hdr="frost"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .55; }
+[data-fam]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) { border-color: var(--line2) !important; }
+[data-fam]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) .isle-glass { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; }
 /* VEIL: no object — the column's top fades the transcript out under it, and
    the readouts sit in the fade like a status line */
-[data-theme^="flint"][data-hdr="veil"] .isle { border-color: transparent !important; }
-[data-theme^="flint"][data-hdr="veil"] .isle-glass { background: none !important; backdrop-filter: none !important; }
-[data-theme^="flint"][data-hdr="veil"] [data-layout]::before {
+[data-fam][data-hdr="veil"] .isle { border-color: transparent !important; }
+[data-fam][data-hdr="veil"] .isle-glass { background: none !important; backdrop-filter: none !important; }
+[data-fam][data-hdr="veil"] [data-layout]::before {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 74px; z-index: 11; pointer-events: none;
   background: linear-gradient(var(--canvas) 30%, color-mix(in oklab, var(--canvas) 70%, transparent) 62%, transparent);
   transition: height .2s ease;
 }
-[data-theme^="flint"][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
-[data-theme^="flint"][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
+[data-fam][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
+[data-fam][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
 /* TUCK: frost folded to its last readout (.isle-keep); the rest unfolds on hover */
-[data-theme^="flint"][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
-[data-theme^="flint"][data-hdr="tuck"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .7; }
-[data-theme^="flint"] .np-meta { height: 20px !important; }
-[data-theme^="flint"] .np-proj { font-family: var(--ui-font) !important; font-size: var(--t11) !important; font-weight: 500; color: var(--txh) !important; }
-[data-theme^="flint"] .np-proj .ptile { width: 16px; height: 16px; font-size: 8px; margin-right: 2px; }
+[data-fam][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
+[data-fam][data-hdr="tuck"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .7; }
+[data-fam] .np-meta { height: 20px !important; }
+[data-fam] .np-proj { font-family: var(--ui-font) !important; font-size: var(--t11) !important; font-weight: 500; color: var(--txh) !important; }
+[data-fam] .np-proj .ptile { width: 16px; height: 16px; font-size: 8px; margin-right: 2px; }
 
 /* ── composer ── */
 /* the composer sits on the transcript's own ground — no band of a different
    grey under it — and its controls line up with the turn cards' edges */
-[data-theme^="flint"] .composer {
+[data-fam] .composer {
   border-top: 0 !important; background: transparent !important; padding: 10px 18px 16px !important;
 }
-[data-theme^="flint"] .cmdbox {
+[data-fam] .cmdbox {
   border: 1px solid var(--line2) !important; border-radius: var(--f-rad-l); background: var(--panel) !important;
   padding: 12px 14px !important; font-family: var(--ui-font) !important;
 }
-[data-theme^="flint"] .cmdbox:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--line2)) !important;
+[data-fam] .cmdbox:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--line2)) !important;
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
-[data-theme^="flint"] .cmdbox[data-drag] { border-color: var(--acc) !important; }
-[data-theme^="flint"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--ui-font) !important; }
-[data-theme^="flint"] .cmdbox > span:first-child { display: none; }
+[data-fam] .cmdbox[data-drag] { border-color: var(--acc) !important; }
+[data-fam] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--ui-font) !important; }
+[data-fam]:not([data-fam="aurora"]) .cmdbox > span:first-child { display: none; }
 /* the run popover's trigger is a chip like its neighbours, with room: model
    first, then mode and effort as quieter words */
-[data-theme^="flint"] .run-trigger { padding: 6px 11px !important; gap: 9px !important; align-items: center !important; }
-[data-theme^="flint"] .run-trigger > span { font-size: var(--t11) !important; }
-[data-theme^="flint"] .drop-btn, [data-theme^="flint"] .run-trigger {
+[data-fam] .run-trigger { padding: 6px 11px !important; gap: 9px !important; align-items: center !important; }
+[data-fam] .run-trigger > span { font-size: var(--t11) !important; }
+[data-fam] .drop-btn, [data-fam] .run-trigger {
   border: 1px solid var(--line) !important; background: var(--panel2) !important; border-radius: var(--f-rad-s) !important;
   font-family: var(--ui-font) !important; font-size: var(--t11) !important; letter-spacing: 0 !important; color: var(--txh) !important;
   padding-block: 5px !important;
 }
-[data-theme^="flint"] .drop-btn:hover, [data-theme^="flint"] .run-trigger:hover { border-color: var(--line2) !important; background: var(--panel) !important; }
-[data-theme^="flint"] .ctrl-fld { color: var(--acc); }
-[data-theme^="flint"] .ctrl-verb, [data-theme^="flint"] .ctrl-more { font-family: var(--ui-font); letter-spacing: .02em; text-transform: none; }
-[data-theme^="flint"] .ctrl-ctx .seg i { border-radius: 2px; }
-[data-theme^="flint"] .act-glyph { border-color: var(--line); border-radius: var(--f-rad-s); }
-[data-theme^="flint"] .act-fence { background: var(--line); }
-[data-theme^="flint"] :is(.act-alt, .act-pri) { font-family: var(--ui-font); letter-spacing: .02em; border-radius: var(--f-rad-s); font-size: var(--t11); font-weight: 600; }
-[data-theme^="flint"] .act-alt.neutral { border-color: var(--line2); }
-[data-theme^="flint"] .act-pri { box-shadow: none; background: var(--f-grad); border-color: transparent; color: var(--acc-on); }
-[data-theme="flint-sunset"] .act-pri { color: #fff; }
-[data-theme^="flint"] .act-pri.queue { background: var(--ask); color: var(--acc-on); }
-[data-theme^="flint"] .act-pri:disabled { background: transparent; border-color: var(--line); color: var(--txl); }
-[data-theme^="flint"] .effort-slider { accent-color: var(--acc); }
+[data-fam] .drop-btn:hover, [data-fam] .run-trigger:hover { border-color: var(--line2) !important; background: var(--panel) !important; }
+[data-fam] .ctrl-fld { color: var(--acc); }
+[data-fam] .ctrl-verb, [data-fam] .ctrl-more { font-family: var(--ui-font); letter-spacing: .02em; text-transform: none; }
+[data-fam] .ctrl-ctx .seg i { border-radius: 2px; }
+[data-fam] .act-glyph { border-color: var(--line); border-radius: var(--f-rad-s); }
+[data-fam] .act-fence { background: var(--line); }
+[data-fam] :is(.act-alt, .act-pri) { font-family: var(--ui-font); letter-spacing: .02em; border-radius: var(--f-rad-s); font-size: var(--t11); font-weight: 600; }
+[data-fam] .act-alt.neutral { border-color: var(--line2); }
+[data-fam] .act-pri { box-shadow: none; background: var(--f-grad); border-color: transparent; color: var(--acc-on); }
+[data-theme^="flint-sunset"] .act-pri { color: #fff; }
+[data-fam] .act-pri.queue { background: var(--ask); color: var(--acc-on); }
+[data-fam] .act-pri:disabled { background: transparent; border-color: var(--line); color: var(--txl); }
+[data-fam] .effort-slider { accent-color: var(--acc); }
 
 /* ── every floating surface: menus, popovers, the run popover, the context
    menu, tips, the bell. ponytail: these are hand-rolled inline (no shared
    Popover exists), and all of them name --shadow-pop in their inline style —
    so that string is the selector. A new popover that follows the recipe is
    themed for free; one that doesn't is themed by nothing, and shows it. ── */
-[data-theme^="flint"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]):not(.isle):not(.sessrow) {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]):not(.isle):not(.sessrow) {
   border: 1px solid var(--line2) !important; border-radius: var(--f-rad) !important;
-  background: var(--panel) !important; box-shadow: 0 18px 44px -14px rgba(0,0,0,.75), 0 0 0 1px rgba(0,0,0,.4) !important;
+  background: var(--panel) !important; box-shadow: var(--f-pop-shadow) !important;
   overflow: hidden; font-family: var(--ui-font);
 }
-[data-theme^="flint"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri) {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri) {
   border-bottom-color: transparent !important; font-family: var(--ui-font) !important; letter-spacing: 0 !important;
 }
-[data-theme^="flint"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri):hover {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri):hover {
   background: var(--ac-08) !important;
 }
-[data-theme^="flint"] :is([style*="--shadow-pop"], [role="dialog"]) [style*="acc) 10%"] { background: var(--f-you) !important; }
+[data-fam] :is([style*="--shadow-pop"], [role="dialog"]) [style*="acc) 10%"] { background: var(--f-you) !important; }
 /* dialogs and modals: one step bigger, a scrim behind them */
-[data-theme^="flint"] [style*="--shadow-modal"] {
-  border: 1px solid var(--line2) !important; border-radius: 16px !important; background: var(--panel) !important;
-  box-shadow: 0 30px 80px -20px rgba(0,0,0,.85) !important; overflow: hidden;
+[data-fam] [style*="--shadow-modal"] {
+  border: 1px solid var(--line2) !important; border-radius: calc(var(--f-rad-l) + 2px) !important; background: var(--panel) !important;
+  box-shadow: var(--f-modal-shadow) !important; overflow: hidden;
 }
 
-/* ── the transcript: DOSSIER's roles re-pointed at FLINT's two hues ── */
-[data-theme^="flint"] [data-style="dossier"] {
+/* ── the transcript: DOSSIER's roles re-pointed at the two hues ── */
+[data-fam] [data-style="dossier"] {
   --d-you: var(--acc); --d-ask: var(--ask); --d-tool: var(--tool); --d-think: var(--think);
-  --d-face: var(--ui-font); --d-rad: 12px;
+  --d-face: var(--ui-font); --d-rad: var(--f-d-rad);
 }
-[data-theme^="flint"] .mscroll[data-style] { font-family: var(--mono) !important; }
-/* FLINT draws DOSSIER the way its approved mock did: no turn card. A turn is a
+[data-fam] .mscroll[data-style] { font-family: var(--mono) !important; }
+/* The families draw DOSSIER the way FLINT's approved mock did: no turn card. A turn is a
    section ended by a hairline; your prompt is the one raised block in it, the
    work a bordered strip, and the answer sits flush on the ground — no bar. */
-[data-theme^="flint"] [data-style="dossier"] .dturn {
+[data-fam] [data-style="dossier"] .dturn {
   background: none; border: 0; border-radius: 0; overflow: visible;
   border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 6px;
 }
-[data-theme^="flint"] [data-style="dossier"] .dprompt {
-  background: var(--f-you); border: 1px solid var(--line2); border-radius: 12px; overflow: hidden;
+[data-fam] [data-style="dossier"] .dprompt {
+  background: var(--f-you); border: 1px solid var(--line2); border-radius: var(--f-d-rad); overflow: hidden;
   box-shadow: inset 3px 0 0 var(--acc);
 }
-[data-theme^="flint"] [data-style="dossier"] .dwork {
-  margin-top: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel2);
+[data-fam] [data-style="dossier"] .dwork {
+  margin-top: 10px; border: 1px solid var(--line); border-radius: var(--f-rad); background: var(--panel2);
 }
-[data-theme^="flint"] [data-style="dossier"] .res,
-[data-theme^="flint"] [data-style="dossier"] .resblk[data-bad] .res { border-left: 0; background: none; }
-[data-theme^="flint"] [data-style="dossier"] .res-head { padding: 16px 2px 0; }
-[data-theme^="flint"] [data-style="dossier"] .res-body { padding: 6px 2px 4px; }
-[data-theme^="flint"] [data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 12px 2px 0; }
-[data-theme^="flint"] [data-style="dossier"] .resblk + .ev-stop { border-top: 0; padding: 8px 2px 0; }
-[data-theme^="flint"] [data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 12px 0; }
-[data-theme^="flint"] [data-style="dossier"] .dreply > :not(.rstream, .agent-rail) { margin: 12px 0; }
-[data-theme^="flint"] [data-style="dossier"] .doutcome { border-top: 0; padding: 10px 2px 0; }
-[data-theme="flint-kiln"] [data-style="dossier"] { --d-tint: 0%; }
-[data-theme="flint-sunset"] [data-style="dossier"] .dprompt {
+[data-fam] [data-style="dossier"] .res,
+[data-fam] [data-style="dossier"] .resblk[data-bad] .res { border-left: 0; background: none; }
+[data-fam] [data-style="dossier"] .res-head { padding: 16px 2px 0; }
+[data-fam] [data-style="dossier"] .res-body { padding: 6px 2px 4px; }
+[data-fam] [data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 12px 2px 0; }
+[data-fam] [data-style="dossier"] .resblk + .ev-stop { border-top: 0; padding: 8px 2px 0; }
+[data-fam] [data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 12px 0; }
+[data-fam] [data-style="dossier"] .dreply > :not(.rstream, .agent-rail) { margin: 12px 0; }
+[data-fam] [data-style="dossier"] .doutcome { border-top: 0; padding: 10px 2px 0; }
+[data-theme^="flint-kiln"] [data-style="dossier"] { --d-tint: 0%; }
+[data-theme^="flint-sunset"] [data-style="dossier"] .dprompt {
   background: linear-gradient(100deg, color-mix(in oklab, var(--acc) 12%, var(--panel)), color-mix(in oklab, var(--acc2) 8%, var(--panel)) 60%, var(--panel));
   box-shadow: none;
 }
-[data-theme="flint-sunset"] [data-style="dossier"] .dprompt::before {
+[data-theme^="flint-sunset"] [data-style="dossier"] .dprompt::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(var(--acc), var(--acc2));
 }
-[data-theme="flint-sunset"] .pnum { background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
+[data-theme^="flint-sunset"] .pnum { background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
 
 /* the context menu's rows: Geist, no tracking, a rounded hover */
-[data-theme^="flint"] [data-ctxmenu] { width: 232px !important; padding: 2px; }
-[data-theme^="flint"] [data-ctxmenu] > div:first-child { border-bottom-color: var(--line) !important; }
-[data-theme^="flint"] [data-ctxmenu] button { border-radius: var(--f-rad-s) !important; margin: 1px 4px; width: calc(100% - 8px) !important; font-size: var(--t115) !important; }
-[data-theme^="flint"] [data-ctxmenu] button span { letter-spacing: 0 !important; font-family: var(--ui-font); }
-[data-theme^="flint"] [data-ctxmenu] [style*="acc) 12%"] { background: var(--line) !important; }
+[data-fam] [data-ctxmenu] { width: 232px !important; padding: 2px; }
+[data-fam] [data-ctxmenu] > div:first-child { border-bottom-color: var(--line) !important; }
+[data-fam] [data-ctxmenu] button { border-radius: var(--f-rad-s) !important; margin: 1px 4px; width: calc(100% - 8px) !important; font-size: var(--t115) !important; }
+[data-fam] [data-ctxmenu] button span { letter-spacing: 0 !important; font-family: var(--ui-font); }
+[data-fam] [data-ctxmenu] [style*="acc) 12%"] { background: var(--line) !important; }
 
-/* The HUD tracks every uppercase label 1.5–2.6px wide, inline. FLINT keeps the
+/* The HUD tracks every uppercase label 1.5–2.6px wide, inline. FLINT and CLAUDE keep the
    capitals but sets them the way an editor does — Geist, a hair of tracking.
    ponytail: matched on the inline style's text, like the font pins above. */
-[data-theme^="flint"] [style*="letter-spacing"] { letter-spacing: .04em !important; }
-[data-theme^="flint"] .np-title { font-family: var(--ui-font) !important; font-weight: 600; letter-spacing: -.005em !important; font-size: var(--t13) !important; }
+[data-fam]:not([data-fam="aurora"]) [style*="letter-spacing"] { letter-spacing: .04em !important; }
+[data-fam] .np-title { font-family: var(--ui-font) !important; font-weight: 600; letter-spacing: -.005em !important; font-size: var(--t13) !important; }
 /* dialogs read in Geist throughout; code-ish fields keep a mono via their own classes */
-[data-theme^="flint"] [style*="--shadow-modal"] { font-family: var(--ui-font) !important; }
-[data-theme^="flint"] [style*="--shadow-modal"] [style*="JetBrains Mono"]:not(input):not(textarea):not(pre) { font-family: var(--ui-font) !important; }
-/* ── FLINT · SETTINGS — the dialog as an app's settings page (SettingsModal
-   FlintCtx swaps the markup that has to change; this restyles the rest) ── */
-[data-theme^="flint"] .setscrim { background: radial-gradient(1200px 700px at 50% 40%, rgba(12,12,14,.55), rgba(5,5,6,.82)) !important; }
-[data-theme^="flint"] .setdlg {
-  border: 1px solid var(--line2) !important; border-radius: 16px !important; background: var(--panel2) !important;
-  box-shadow: 0 40px 100px -30px #000, 0 0 0 1px rgba(0,0,0,.5) !important; overflow: hidden; font-family: var(--ui-font) !important;
+[data-fam] [style*="--shadow-modal"] { font-family: var(--ui-font) !important; }
+[data-fam] [style*="--shadow-modal"] [style*="JetBrains Mono"]:not(input):not(textarea):not(pre) { font-family: var(--ui-font) !important; }
+/* ── THE FAMILIES · SETTINGS — the dialog as an app's settings page
+   (SettingsModal's markup is the same for all three; this restyles the HUD
+   inline styles it still carries) ── */
+[data-fam] .setscrim { background: var(--f-scrim) !important; }
+[data-fam] .setdlg {
+  border: 1px solid var(--line2) !important; border-radius: calc(var(--f-rad-l) + 2px) !important; background: var(--panel2) !important;
+  box-shadow: var(--f-modal-shadow) !important; overflow: hidden; font-family: var(--ui-font) !important;
 }
-[data-theme^="flint"] .setdlg > div:first-child { background: var(--panel); border-bottom: 1px solid var(--line); }
-[data-theme^="flint"] .setdlg > div:first-child > div:first-child { padding: 13px 16px 13px 22px !important; }
-[data-theme^="flint"] .setdlg > div:first-child svg:first-child { display: none; }
-[data-theme^="flint"] .set-crumb { font: 600 16px var(--ui-font); color: var(--txb); letter-spacing: -.01em; white-space: nowrap; }
-[data-theme^="flint"] .set-crumb i { font-style: normal; font-weight: 500; font-size: 13.5px; color: var(--txh); margin-left: 4px; }
-[data-theme^="flint"] .set-drawline { display: none; }
-[data-theme^="flint"] .set-search {
+[data-fam] .setdlg > div:first-child { background: var(--panel); border-bottom: 1px solid var(--line); }
+[data-fam] .setdlg > div:first-child > div:first-child { padding: 13px 16px 13px 22px !important; }
+[data-fam] .setdlg > div:first-child svg:first-child { display: none; }
+[data-fam] .set-crumb { font: 600 16px var(--f-disp); color: var(--txb); letter-spacing: -.01em; white-space: nowrap; }
+[data-fam] .set-crumb u { text-decoration: none; }
+[data-fam] .set-crumb i { font-family: var(--ui-font); font-style: normal; font-weight: 500; font-size: 13.5px; color: var(--txh); margin-left: 4px; }
+[data-fam] .set-drawline { display: none; }
+[data-fam] .set-search {
   height: 34px; padding: 0 12px !important; border: 1px solid var(--line) !important; border-radius: 8px !important;
   background: var(--panel2) !important; font: 13px var(--ui-font) !important; letter-spacing: 0 !important; flex-basis: 280px !important;
 }
-[data-theme^="flint"] .set-close {
+[data-fam] .set-close {
   width: 34px; height: 34px; padding: 0 !important; border: 1px solid var(--line) !important; border-radius: 8px !important;
   font-size: 14px !important; letter-spacing: 0 !important; color: var(--txd) !important;
 }
-[data-theme^="flint"] .setrail { width: 236px; padding: 14px 10px; background: var(--panel2); border-right: 1px solid var(--line); gap: 1px; }
-[data-theme^="flint"] .setgroup { border-top: 0; margin-top: 8px; padding: 12px 10px 6px; font: 600 10.5px var(--ui-font); letter-spacing: .12em !important; text-transform: uppercase; color: var(--txl); }
-[data-theme^="flint"] .setgroup:first-child { margin-top: 0; padding-top: 2px; }
-[data-theme^="flint"] .setrail button { border: 0; border-radius: 8px; padding: 8px 10px; gap: 11px !important; color: var(--txm); font-family: var(--ui-font); }
-[data-theme^="flint"] .setrail button:hover:not(.on) { background: var(--ac-06); }
-[data-theme^="flint"] .setrail button.on { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line), inset 2px 0 0 var(--acc); }
-[data-theme^="flint"] .setrail button svg { color: var(--txl); }
-[data-theme^="flint"] .setrail button.on svg { color: var(--acc); }
-[data-theme^="flint"] .set-raillbl { font-size: 13.5px !important; letter-spacing: 0 !important; }
-[data-theme^="flint"] .setrail .hint { display: none; }
-[data-theme^="flint"] .setpane { padding: 26px 32px 40px; }
-[data-theme^="flint"] .set-head svg { display: none; }
-[data-theme^="flint"] .set-head h2 { font: 600 20px var(--ui-font) !important; letter-spacing: -.015em !important; text-shadow: none; }
-[data-theme^="flint"] .set-head p { margin-top: 4px !important; font-size: 13.5px !important; color: var(--txd) !important; line-height: 1.5 !important; }
-[data-theme^="flint"] .set-head { margin-bottom: 8px !important; }
-[data-theme^="flint"] .set-sec { margin-top: 26px !important; }
-[data-theme^="flint"] .set-sechead > div:first-child > svg { display: none; }
-[data-theme^="flint"] .set-sectitle { font: 600 14px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txh) !important; }
-[data-theme^="flint"] .set-secrule { background: transparent !important; }
-[data-theme^="flint"] .set-secdesc { padding-left: 0 !important; font-size: 12.5px !important; }
+[data-fam] .setrail { width: 236px; padding: 14px 10px; background: var(--panel2); border-right: 1px solid var(--line); gap: 1px; }
+[data-fam] .setgroup { border-top: 0; margin-top: 8px; padding: 12px 10px 6px; font: 600 10.5px var(--ui-font); letter-spacing: .12em !important; text-transform: uppercase; color: var(--txl); }
+[data-fam] .setgroup:first-child { margin-top: 0; padding-top: 2px; }
+[data-fam] .setrail button { border: 0; border-radius: 8px; padding: 8px 10px; gap: 11px !important; color: var(--txm); font-family: var(--ui-font); }
+[data-fam] .setrail button:hover:not(.on) { background: var(--ac-06); }
+[data-fam] .setrail button.on { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line), inset 2px 0 0 var(--acc); }
+[data-fam] .setrail button svg { color: var(--txl); }
+[data-fam] .setrail button.on svg { color: var(--acc); }
+[data-fam] .set-raillbl { font-size: 13.5px !important; letter-spacing: 0 !important; }
+[data-fam] .setrail .hint { display: none; }
+[data-fam] .setpane { padding: 26px 32px 40px; }
+[data-fam] .set-head svg { display: none; }
+[data-fam] .set-head h2 { font: 600 20px var(--f-disp) !important; letter-spacing: -.015em !important; text-shadow: none; }
+[data-fam] .set-head p { margin-top: 4px !important; font-size: 13.5px !important; color: var(--txd) !important; line-height: 1.5 !important; }
+[data-fam] .set-head { margin-bottom: 8px !important; }
+[data-fam] .set-sec { margin-top: 26px !important; }
+[data-fam] .set-sechead > div:first-child > svg { display: none; }
+[data-fam] .set-sectitle { font: 600 14px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txh) !important; }
+[data-fam] .set-secrule { background: transparent !important; }
+[data-fam] .set-secdesc { padding-left: 0 !important; font-size: 12.5px !important; }
 /* a CARD of rows. ponytail: matched on CARD's inline padding — it is a style
    object, not a component, so it has no class to hang this on */
-[data-theme^="flint"] .setpane [style*="padding: 14px 16px"] { border: 1px solid var(--line) !important; border-radius: 12px; background: var(--panel) !important; }
-[data-theme^="flint"] .set-row { border-top-color: var(--line) !important; }
-[data-theme^="flint"] .set-key { font: 500 13.5px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txb) !important; }
-[data-theme^="flint"] .set-desc { font-size: 12px !important; }
-[data-theme^="flint"] .set-toggle { appearance: none; cursor: pointer; flex: none; width: 34px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: var(--line2); position: relative; transition: background .18s ease; }
-[data-theme^="flint"] .set-toggle i { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--txd); transition: left .18s ease, background .18s ease; }
-[data-theme^="flint"] .set-toggle[data-on] { background: var(--acc); }
-[data-theme^="flint"] .set-toggle[data-on] i { left: 17px; background: #fff; }
-[data-theme^="flint"] .set-seg { gap: 2px !important; padding: 3px; border: 1px solid var(--line) !important; border-radius: 9px; background: var(--panel3); }
-[data-theme^="flint"] .set-seg button { border-radius: 6px !important; font: 12.5px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txd) !important; background: transparent !important; }
-[data-theme^="flint"] .set-seg button:hover { color: var(--txh) !important; }
-[data-theme^="flint"] .set-seg button[data-on] { background: var(--panel) !important; color: var(--txb) !important; box-shadow: inset 0 0 0 1px var(--line2); }
-[data-theme^="flint"] .setpane select { border: 1px solid var(--line2) !important; border-radius: 8px !important; background: var(--panel2) !important; font: 13px var(--ui-font) !important; letter-spacing: 0 !important; }
+[data-fam] .setpane [style*="padding: 14px 16px"] { border: 1px solid var(--line) !important; border-radius: 12px; background: var(--panel) !important; }
+[data-fam] .set-row { border-top-color: var(--line) !important; }
+[data-fam] .set-key { font: 500 13.5px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txb) !important; }
+[data-fam] .set-desc { font-size: 12px !important; }
+[data-fam] .set-toggle { appearance: none; cursor: pointer; flex: none; width: 34px; height: 20px; padding: 0; border: 0; border-radius: 999px; background: var(--line2); position: relative; transition: background .18s ease; }
+[data-fam] .set-toggle i { position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--txd); transition: left .18s ease, background .18s ease; }
+[data-fam] .set-toggle[data-on] { background: var(--acc); }
+[data-fam] .set-toggle[data-on] i { left: 17px; background: #fff; }
+[data-fam] .set-seg { gap: 2px !important; padding: 3px; border: 1px solid var(--line) !important; border-radius: 9px; background: var(--panel3); }
+[data-fam] .set-seg button { border-radius: 6px !important; font: 12.5px var(--ui-font) !important; letter-spacing: 0 !important; color: var(--txd) !important; background: transparent !important; }
+[data-fam] .set-seg button:hover { color: var(--txh) !important; }
+[data-fam] .set-seg button[data-on] { background: var(--panel) !important; color: var(--txb) !important; box-shadow: inset 0 0 0 1px var(--line2); }
+[data-fam] .setpane select { border: 1px solid var(--line2) !important; border-radius: 8px !important; background: var(--panel2) !important; font: 13px var(--ui-font) !important; letter-spacing: 0 !important; }
 /* the theme section */
 .set-themehead { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
 .set-themehead b { font: 600 14px var(--ui-font); color: var(--txh); }
@@ -3064,64 +2984,193 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ftcard { cursor: pointer; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; transition: border-color .15s ease; }
 .ftcard:hover { border-color: var(--line2); }
 .ftcard[data-on] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
-.ftprev { height: 64px; padding: 10px 12px; display: grid; grid-template-columns: 30% 1fr; gap: 8px; background: var(--g); }
+.ftcard[data-off] { opacity: .45; cursor: default; }
+.ftcard[data-off]:hover { border-color: var(--line); }
+.ftprev { height: 72px; padding: 10px 12px; display: grid; grid-template-columns: 30% 1fr; gap: 8px; background: var(--g); position: relative; }
 .ftprev .sb { border-radius: 5px; background: var(--g2); padding: 6px; display: flex; flex-direction: column; gap: 4px; }
 .ftprev .sb i { height: 4px; border-radius: 2px; background: var(--g3); }
 .ftprev .sb i:first-child { background: var(--a); width: 70%; }
 .ftprev .ch { display: flex; flex-direction: column; gap: 5px; justify-content: center; }
 .ftprev .ch .p { height: 13px; border-radius: 4px; background: color-mix(in oklab, var(--a) 18%, var(--g2)); box-shadow: inset 2px 0 0 var(--a); }
 .ftprev .ch i { height: 4px; border-radius: 2px; background: var(--g3); }
-.ftprev .ch i:last-child { width: 60%; }
+.ftprev .ch > i:nth-of-type(2) { width: 60%; }
+.ftprev .bx { height: 12px; margin-top: 2px; position: relative; border: 1px solid var(--g3); border-radius: 4px; }
+.ftprev .bx u { position: absolute; right: 2px; top: 2px; width: 8px; height: 6px; border-radius: 2px; background: var(--a); }
+/* CLAUDE's card: Claude's own app — a darker sidebar, a round mark, a bubble, a soft composer */
+.ftcard[data-pv="claude"] .ftprev { grid-template-columns: 26% 1fr; padding: 0 12px 0 0; }
+.ftcard[data-pv="claude"] .ftprev .sb { border-radius: 0; background: color-mix(in oklab, var(--g) 80%, #000); padding: 10px 8px; gap: 6px; }
+.ftcard[data-pv="claude"] .ftprev .sb i:first-child { width: 12px; height: 12px; border-radius: 50%; }
+.ftcard[data-pv="claude"] .ftprev .ch { padding-left: 4px; }
+.ftcard[data-pv="claude"] .ftprev .ch .p { width: 70%; border-radius: 7px; background: var(--g2); box-shadow: none; }
+.ftcard[data-pv="claude"] .ftprev .bx { height: 15px; border-radius: 8px; background: var(--g2); }
+.ftcard[data-pv="claude"] .ftprev .bx u { width: 9px; height: 9px; top: 2px; border-radius: 3px; }
+/* AURORA's card: the tube — a bracketed sidebar, phosphor lines and glow, scanlines */
+.ftcard[data-pv="aurora"] .ftprev :is(.sb, .sb i, .ch .p, .ch > i, .bx, .bx u) { border-radius: 0; }
+.ftcard[data-pv="aurora"] .ftprev .sb { background: none; border: 1px solid color-mix(in oklab, var(--a) 28%, var(--g)); }
+.ftcard[data-pv="aurora"] .ftprev .sb i { background: color-mix(in oklab, var(--a) 30%, var(--g)); }
+.ftcard[data-pv="aurora"] .ftprev .sb i:first-child { background: var(--a); box-shadow: 0 0 6px color-mix(in oklab, var(--a) 70%, transparent); }
+.ftcard[data-pv="aurora"] .ftprev .ch .p { background: color-mix(in oklab, var(--a) 10%, var(--g)); }
+.ftcard[data-pv="aurora"] .ftprev .ch > i { background: color-mix(in oklab, var(--a) 26%, var(--g)); }
+.ftcard[data-pv="aurora"] .ftprev .bx { border-color: color-mix(in oklab, var(--a) 34%, var(--g)); }
+.ftcard[data-pv="aurora"] .ftprev::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,.32) 2px 3px); }
 .ftmeta { display: flex; align-items: center; gap: 9px; padding: 10px 12px 11px; border-top: 1px solid var(--line); }
 .ftmeta .d { width: 10px; height: 10px; border-radius: 50%; background: var(--a); flex: none; }
 .ftmeta b { display: block; font: 600 13.5px var(--ui-font); color: var(--txb); }
 .ftmeta div > span { display: block; font-size: 12px; color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ftmeta em { margin-left: auto; flex: none; font: 600 10.5px var(--ui-font); font-style: normal; padding: 2px 8px; border-radius: 999px; background: color-mix(in oklab, var(--acc) 18%, var(--panel)); color: var(--acc); }
 /* colourings: unlabelled squircles filled with what they paint */
-.ftsq { display: flex; gap: 8px; padding: 0 12px 12px; }
-.ftsq button { appearance: none; cursor: pointer; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 9px;
+.ftsq { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 12px; }
+.ftsq button { appearance: none; cursor: pointer; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 7px;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,.12); transition: transform .12s ease; }
-.ftsq button:hover { transform: translateY(-1px); }
+.ftsq button:hover:not(:disabled) { transform: translateY(-1px); }
+.ftsq button:disabled { cursor: default; }
 .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--txb); }
 /* header styles: each a tiny header showing the time the way it would */
-.fthdr { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 12px 12px; }
-.fthdr button { appearance: none; cursor: pointer; position: relative; height: 34px; padding: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden;
+.fthdr { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.fthdr label { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.fthdr button { appearance: none; cursor: pointer; position: relative; width: 100%; height: 38px; padding: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden;
   background: repeating-linear-gradient(var(--panel2) 0 6px, color-mix(in oklab, var(--txl) 35%, var(--panel2)) 6px 8px); }
 .fthdr button span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font: 500 10.5px var(--mono); color: var(--txb); white-space: nowrap; padding: 3px 9px; border-radius: 999px; }
-.fthdr [data-h="frost"] span { background: color-mix(in srgb, var(--panel) 45%, transparent); backdrop-filter: blur(3px); border: 1px solid rgba(255,255,255,.08); opacity: .8; }
-.fthdr [data-h="veil"]::before { content: ""; position: absolute; inset: 0 0 35% 0; background: linear-gradient(var(--panel2) 30%, transparent); }
+.fthdr [data-h="frost"] span { background: color-mix(in srgb, var(--panel) 45%, transparent); backdrop-filter: blur(3px); border: 1px solid var(--f-glass-edge, rgba(255,255,255,.08)); opacity: .8; }
+.fthdr [data-h="veil"] button::before { content: ""; position: absolute; inset: 0 0 35% 0; background: linear-gradient(var(--panel2) 30%, transparent); }
 .fthdr [data-h="veil"] span { color: var(--txm); top: 38%; }
-.fthdr [data-h="tuck"] span { background: color-mix(in srgb, var(--panel) 70%, transparent); backdrop-filter: blur(3px); border: 1px solid rgba(255,255,255,.08); font-size: 9.5px; padding: 2px 7px; color: var(--txm); }
-.fthdr button[data-on] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc) 18%, transparent); }
+.fthdr [data-h="tuck"] span { background: color-mix(in srgb, var(--panel) 70%, transparent); backdrop-filter: blur(3px); border: 1px solid var(--f-glass-edge, rgba(255,255,255,.08)); font-size: 9.5px; padding: 2px 7px; color: var(--txm); }
+.fthdr label[data-on] button { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc) 18%, transparent); }
+.fthdr small { font: 12px var(--ui-font, inherit); color: var(--txd); }
+.fthdr label[data-on] small { color: var(--txh); }
 
 /* bold is bold: no highlighter wash, and a "Label:" lead-in is the same weight
    in the same face, not the HUD's tracked accent capitals */
-[data-theme^="flint"] .md strong { background: none; padding: 0; font-weight: 600; color: var(--txb); }
-[data-theme^="flint"] .md strong.md-lead {
+[data-fam]:not([data-fam="aurora"]) .md strong { background: none; padding: 0; font-weight: 600; color: var(--txb); }
+[data-fam]:not([data-fam="aurora"]) .md strong.md-lead {
   font-family: inherit; font-size: inherit; font-weight: 600; letter-spacing: 0 !important;
   text-transform: none; color: var(--txb); margin-right: .1em;
 }
 
-/* ── words FLINT says in its own voice: the wordmark in lower case, the
+/* ── words the families say in their own voice: the wordmark in lower case, the
    lane and tier labels in Geist rather than the HUD's tracked mono ── */
-[data-theme^="flint"] .wordmark { font-family: var(--ui-font) !important; font-size: var(--t14, 15px) !important; letter-spacing: -.01em !important; text-transform: lowercase; }
-[data-theme^="flint"] .wordmark .bw-a { font-weight: 600; }
-[data-theme^="flint"] .wordmark .bw-sep { display: none; }
-[data-theme^="flint"] .wordmark .bw-b { margin-left: .3em; }
-[data-theme^="flint"] .newsess {
+[data-fam]:not([data-fam="aurora"]) .wordmark { font-family: var(--ui-font) !important; font-size: var(--t14, 15px) !important; letter-spacing: -.01em !important; text-transform: lowercase; }
+[data-fam]:not([data-fam="aurora"]) .wordmark .bw-a { font-weight: 600; }
+[data-fam]:not([data-fam="aurora"]) .wordmark .bw-sep { display: none; }
+[data-fam]:not([data-fam="aurora"]) .wordmark .bw-b { margin-left: .3em; }
+[data-fam] .newsess {
   justify-content: center; border: 1px solid var(--line2) !important; border-radius: var(--f-rad-s) !important;
   background: transparent !important; color: var(--txb) !important;
   font-family: var(--ui-font) !important; font-size: var(--t12) !important; font-weight: 500; letter-spacing: 0 !important; text-transform: none !important;
 }
-[data-theme^="flint"] .newsess:hover { background: var(--ac-06) !important; }
-[data-theme^="flint"] .newsess svg { color: var(--acc); }
-[data-theme^="flint"] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
-[data-theme^="flint"] .lanehead > span:nth-child(3) { background: transparent !important; }
-[data-theme^="flint"] :is(.pnum, .res-head, .dwork-lab, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
-[data-theme^="flint"] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
+[data-fam] .newsess:hover { background: var(--ac-06) !important; }
+[data-fam] .newsess svg { color: var(--acc); }
+[data-fam] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
+[data-fam] .lanehead > span:nth-child(3) { background: transparent !important; }
+[data-fam] :is(.pnum, .res-head, .dwork-lab, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
+[data-fam] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
 
 /* ── the settings modal's own furniture ── */
-[data-theme^="flint"] .setrail { font-family: var(--ui-font); }
+[data-fam] .setrail { font-family: var(--ui-font); }
+
+/* ── CLAUDE · the app itself: Claude says its titles in a serif, its rows are
+   soft cards with no bar, and New session is the clay dot ── */
+/* matched as specifically as the FLINT/CLAUDE wordmark rule it follows */
+[data-fam="claude"]:not([data-fam="aurora"]) .wordmark { font-family: var(--f-disp) !important; font-size: var(--t15, 16px) !important; letter-spacing: 0 !important; }
+[data-fam="claude"] .wordmark .bw-b { font-weight: 400; }
+[data-fam="claude"] .np-title { font-family: var(--f-disp) !important; font-weight: 500; font-size: var(--t14, 14px) !important; letter-spacing: 0 !important; }
+[data-fam="claude"] .set-crumb { font: 600 18px var(--f-disp); letter-spacing: 0; }
+[data-fam="claude"] .set-head h2 { font: 500 26px/1.15 var(--f-disp) !important; letter-spacing: -.01em !important; }
+[data-fam="claude"] .set-head p { font-size: 14px !important; margin-top: 7px !important; }
+[data-fam="claude"] .setrail { background: var(--panel3); }
+[data-fam="claude"] .setgroup { font: 500 12px var(--ui-font); letter-spacing: 0 !important; text-transform: none; }
+[data-fam="claude"] .setrail button.on { background: var(--panel); box-shadow: none; }
+[data-fam="claude"] .set-raillbl { font-size: 14px !important; }
+[data-fam="claude"] .ftsq button { border-radius: 50%; }
+[data-fam="claude"] .shellcol:first-child { background: var(--panel3); }
+[data-fam="claude"] .sessrow::before { display: none; }
+[data-fam="claude"] .sessrow[data-on="true"] { box-shadow: none; }
+[data-fam="claude"] .projrail { border-left-color: transparent !important; }
+[data-fam="claude"] .newsess { justify-content: flex-start; border-color: transparent !important; font-size: var(--t13) !important; }
+[data-fam="claude"] .newsess svg { box-sizing: content-box; padding: 3px; border-radius: 50%; background: var(--acc); color: var(--acc-on); }
+[data-fam="claude"] [data-style="dossier"] .dprompt { box-shadow: none; border-color: var(--line); }
+[data-fam="claude"] .cmdbox { box-shadow: 0 4px 18px color-mix(in srgb, var(--txb) 8%, transparent); }
+[data-fam="claude"] .fresh-quote { font-family: var(--f-disp) !important; font-style: normal !important; font-size: var(--t17) !important; letter-spacing: 0 !important; }
+
+/* ── AURORA · the tube: FLINT's structure, drawn in phosphor — tracked
+   capitals, glow on what is yours, corner brackets, hard edges. Meaning is
+   intensity: the structure is dim phosphor, you are full phosphor and glow. ── */
+[data-fam="aurora"] :is(.ptile, .isle-pill, [data-style="dossier"] .dprompt, [data-style="dossier"] .dwork, [style*="--shadow-modal"],
+  .setdlg, .set-search, .set-close, .setrail button, .setpane [style*="padding: 14px 16px"], .set-toggle, .set-toggle i,
+  .set-seg, .set-seg button, .setpane select, .set-seg2, .set-seg2 button, .ftcard, .ftmeta em, .ftsq button, .fthdr button, .fthdr button span,
+  .pb-tabs .np-tile, .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run), .pb-tabs > .ctrl-ctx, .pb-paused > button, .pb-place, .ctrl-ctx .seg i,
+  .aim-fold, .aim-card, .aim-editor, .aim-f input, .aim-f select, .aim-sel, .aim-field, .aim-x, .aim-xic, .aim-xbtn, .aim-xaside, .aim-chip,
+  .aim-chipbtn, .aim-note, .aim-search, .aim-hero, .aim-vfield, .aim-pills em, .aim-prof, .aim-addrow, .aim-segwrap > div, .aim-segwrap > div button,
+  .set-mini, .ps-rows, .ps-btn, .ps-pick, .ps-menu, .ps-opt, .ps-chip, .ps-av, .ps-name input) { border-radius: 0 !important; }
+[data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::before,
+[data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::after {
+  content: ""; position: absolute; z-index: 1; width: 9px; height: 9px; pointer-events: none;
+  border: 1px solid color-mix(in oklab, var(--acc) 70%, transparent);
+}
+[data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::before { left: 0; top: 0; border-right: 0; border-bottom: 0; }
+[data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::after { right: 0; bottom: 0; border-left: 0; border-top: 0; }
+[data-fam="aurora"] .setpane [style*="padding: 14px 16px"] { position: relative; }
+/* the settings page in the HUD's voice */
+[data-fam="aurora"] .set-crumb { font: 400 15px var(--ui-font); letter-spacing: .22em; text-transform: uppercase; text-shadow: var(--f-glow); }
+[data-fam="aurora"] .set-crumb i { font-size: 15px; font-weight: 400; color: var(--txh); text-shadow: none; margin-left: .5em; }
+[data-fam="aurora"] .set-crumb u { text-decoration: none; color: var(--acc); }
+[data-fam="aurora"] .set-crumb u::after { content: "/"; }
+[data-fam="aurora"] .set-close { width: auto; padding: 0 10px !important; font-size: var(--t95) !important; letter-spacing: .14em !important; }
+[data-fam="aurora"] .set-close::before { content: "ESC "; }
+[data-fam="aurora"] .set-search { font-family: var(--mono) !important; font-size: 12px !important; }
+[data-fam="aurora"] .set-search::placeholder { text-transform: lowercase; }
+[data-fam="aurora"] .setrail { background: var(--panel3); }
+[data-fam="aurora"] .setgroup { font-weight: 400; letter-spacing: .24em !important; }
+[data-fam="aurora"] .set-raillbl { font-size: 12.5px !important; letter-spacing: .14em !important; text-transform: uppercase; }
+[data-fam="aurora"] .setrail button.on { background: color-mix(in oklab, var(--acc) 9%, var(--panel3)); box-shadow: inset 2px 0 0 var(--acc); text-shadow: var(--f-glow); }
+[data-fam="aurora"] .setrail button.on svg { filter: drop-shadow(0 0 4px color-mix(in srgb, var(--acc) 70%, transparent)); }
+[data-fam="aurora"] .set-head h2 { font-weight: 400 !important; font-size: 18px !important; letter-spacing: .24em !important; text-transform: uppercase; text-shadow: var(--f-glow) !important; }
+[data-fam="aurora"] .set-head p, [data-fam="aurora"] :is(.set-secdesc, .set-desc) { font-family: var(--mono); }
+[data-fam="aurora"] .set-head p { font-size: 12px !important; line-height: 1.65 !important; }
+[data-fam="aurora"] :is(.set-sectitle, .set-themehead b) { font-weight: 400 !important; font-size: 12px !important; letter-spacing: .22em !important; text-transform: uppercase; }
+[data-fam="aurora"] .set-secrule { background: linear-gradient(90deg, color-mix(in oklab, var(--acc) 45%, transparent), transparent) !important; }
+[data-fam="aurora"] .set-key { font-weight: 400 !important; font-size: 12px !important; letter-spacing: .14em !important; text-transform: uppercase; }
+[data-fam="aurora"] .set-toggle { width: 38px; height: 18px; border: 1px solid var(--line2); background: var(--panel3); }
+[data-fam="aurora"] .set-toggle i { top: 2px; left: 2px; width: 12px; height: 12px; background: var(--txl); }
+[data-fam="aurora"] .set-toggle[data-on] { background: color-mix(in oklab, var(--acc) 85%, transparent); border-color: var(--acc); box-shadow: 0 0 10px color-mix(in oklab, var(--acc) 45%, transparent); }
+[data-fam="aurora"] .set-toggle[data-on] i { left: 22px; background: var(--acc-on); }
+[data-fam="aurora"] :is(.set-seg button, .set-seg2 button) { font-size: 11px !important; letter-spacing: .14em !important; text-transform: uppercase; }
+[data-fam="aurora"] :is(.set-seg button[data-on], .set-seg2 button[data-on]) { background: color-mix(in oklab, var(--acc) 12%, var(--panel3)) !important;
+  color: var(--acc) !important; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 45%, transparent); text-shadow: var(--f-glow); }
+[data-fam="aurora"] .setpane select { font-family: var(--mono) !important; font-size: 12px !important; }
+[data-fam="aurora"] .ftmeta b { font-weight: 400; font-size: 12.5px; letter-spacing: .16em; text-transform: uppercase; }
+[data-fam="aurora"] .ftmeta div > span { font-family: var(--mono); font-size: 11px; }
+[data-fam="aurora"] .ftmeta em { font-weight: 400; letter-spacing: .16em; text-transform: uppercase; background: var(--acc); color: var(--acc-on); }
+[data-fam="aurora"] .ftcard[data-on] { box-shadow: 0 0 18px color-mix(in oklab, var(--acc) 14%, transparent); }
+[data-fam="aurora"] .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--acc), 0 0 10px color-mix(in oklab, var(--acc) 60%, transparent); }
+[data-fam="aurora"] .fthdr small { letter-spacing: .16em; text-transform: uppercase; }
+[data-fam="aurora"] .set-mini { letter-spacing: .12em !important; text-transform: uppercase; }
+/* the shell */
+[data-fam="aurora"] .ptile { background: transparent; color: var(--pc); font-family: var(--ui-font); font-weight: 400;
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 70%, transparent); }
+[data-fam="aurora"] .projhead > span:nth-of-type(2) { font-weight: 400; letter-spacing: .16em !important; text-transform: uppercase; }
+[data-fam="aurora"] .sessrow[data-on="true"] { background: color-mix(in oklab, var(--acc) 8%, var(--canvas)) !important; box-shadow: none; text-shadow: var(--f-glow); }
+[data-fam="aurora"] .sessrow::before { border-radius: 0; box-shadow: 0 0 8px var(--acc); }
+[data-fam="aurora"] .newsess { font-weight: 400; font-size: var(--t11) !important; letter-spacing: .2em !important; text-transform: uppercase !important;
+  color: var(--acc) !important; border-color: color-mix(in oklab, var(--acc) 30%, var(--canvas)) !important; background: color-mix(in oklab, var(--acc) 5%, transparent) !important; }
+/* a title is yours, not chrome: lit, not capitalised */
+[data-fam="aurora"] .np-title { font-weight: 400; letter-spacing: .02em !important; text-shadow: var(--f-glow); }
+[data-fam="aurora"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--mono) !important; }
+/* the prompt glyph is yours: phosphor, where violet now means waiting on you */
+[data-fam="aurora"] :is(.pb-pfx, .fresh-pfx) { color: var(--acc) !important; text-shadow: var(--f-glow); }
+[data-fam="aurora"] [data-style="dossier"] { --d-face: var(--mono); }
+[data-fam="aurora"] :is(.act-alt, .act-pri) { font-weight: 400; letter-spacing: .16em; text-transform: uppercase; }
+[data-fam="aurora"] .act-pri:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--acc) 40%, transparent); }
+[data-fam="aurora"] .act-pri.queue:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--ask) 40%, transparent); }
+[data-fam="aurora"] :is(.ctrl-verb, .ctrl-more) { letter-spacing: .14em; text-transform: uppercase; }
+[data-fam="aurora"] :is(.drop-btn, .run-trigger) { letter-spacing: .06em !important; }
+[data-fam="aurora"] .lanehead > span:nth-child(2) { font-weight: 400; letter-spacing: .2em !important; }
+[data-fam="aurora"] [data-ctxmenu] button span { letter-spacing: .1em !important; }
+
+/* a project tile on paper: dark ink on a light tint, not white on white */
+:root[data-light] .ptile { color: color-mix(in oklab, var(--pc) 72%, black); background: color-mix(in oklab, var(--pc) 16%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 40%, transparent); }
 
 /* MOVE dock (components/hud/MoveDock.tsx): the SWEEP bar's running sheen. */
 .movesweep { animation: movesweep 2.2s linear infinite; }
@@ -3143,7 +3192,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    PrChip), which is why the geometry below is !important. ── */
 .composer[data-pb] { container-type: inline-size; --pb-ground: var(--panel2); }
 .pb-lead .np-sep { display: none; }
-[data-theme^="flint"] .pb-lead .np-tile .pdot { display: none; }
+[data-fam] .pb-lead .np-tile .pdot { display: none; }
 .pb-lead :is(.np-tile, .np-title-btn, .np-proj, .np-branch, .np-pr, .np-run) { box-sizing: border-box; white-space: nowrap; }
 .pb-lead .np-title-btn { flex: 0 1 auto !important; min-width: 110px !important; align-items: center !important; }
 .pb-lead :is(.np-branch, .np-pr, .np-run) { font-size: var(--t10) !important; }
@@ -3247,42 +3296,43 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 @container (max-width: 560px) { .pb-tabs > .ctrl-ctx .seg { display: none; } }
 
 /* FLINT: the same shells in its skin — radius, hairlines, Geist */
-[data-theme^="flint"] .composer[data-pb] { --pb-ground: var(--panel); }
-[data-theme^="flint"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run), [data-theme^="flint"] .pb-tabs > .ctrl-ctx { font-family: var(--ui-font); }
-[data-theme^="flint"] .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run), [data-theme^="flint"] .pb-tabs > .ctrl-ctx { border-radius: 8px 8px 0 0 !important; }
-[data-theme^="flint"] .pb-tabs .np-tile { border-radius: 8px 0 0 0 !important; }
-[data-theme^="flint"] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 8px 0 0 !important; }
-[data-theme^="flint"] .pb-tabs > .ctrl-ctx { background: var(--panel2) !important; }
-[data-theme^="flint"] .pb-tabs :is(.np-branch, .np-pr, .np-run) { font-family: var(--mono) !important; }
-[data-theme^="flint"] :is(.pb-tabs, .pb-place) .np-title { font-size: var(--t12) !important; }
-[data-theme^="flint"] .pb-plus { border-color: var(--line); border-radius: var(--f-rad-s); }
-[data-theme^="flint"] :is(.pb-queued, .pb-paused, .pb-activity) { font-family: var(--ui-font); letter-spacing: 0; }
-[data-theme^="flint"] .pb-paused > button { border-radius: 5px; font-family: var(--ui-font); }
-[data-theme^="flint"] .pb-cmd, [data-theme^="flint"] .pb-cmd:focus-within {
+[data-fam] .composer[data-pb] { --pb-ground: var(--panel); }
+[data-fam] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run), [data-fam] .pb-tabs > .ctrl-ctx { font-family: var(--ui-font); }
+[data-fam] .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run), [data-fam] .pb-tabs > .ctrl-ctx { border-radius: 8px 8px 0 0 !important; }
+[data-fam] .pb-tabs .np-tile { border-radius: 8px 0 0 0 !important; }
+[data-fam] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 8px 0 0 !important; }
+[data-fam] .pb-tabs > .ctrl-ctx { background: var(--panel2) !important; }
+[data-fam] .pb-tabs :is(.np-branch, .np-pr, .np-run) { font-family: var(--mono) !important; }
+[data-fam] :is(.pb-tabs, .pb-place) .np-title { font-size: var(--t12) !important; }
+[data-fam] .pb-plus { border-color: var(--line); border-radius: var(--f-rad-s); }
+[data-fam] :is(.pb-queued, .pb-paused, .pb-activity) { font-family: var(--ui-font); letter-spacing: 0; }
+[data-fam] .pb-paused > button { border-radius: 5px; font-family: var(--ui-font); }
+[data-fam] .pb-cmd, [data-fam] .pb-cmd:focus-within {
   border: 0 !important; border-left: 3px solid var(--acc) !important; border-radius: 0 8px 8px 0 !important; padding: 8px 8px 8px 14px !important;
   box-shadow: none !important; background: linear-gradient(90deg, color-mix(in srgb, var(--acc) 8%, transparent), transparent 45%) !important; }
-/* FLINT hides the HUD's ~ ❯ (.cmdbox > span:first-child); the console keeps it, as its one mark */
-[data-theme^="flint"] [data-pb="console"] .pb-cmd > .pb-pfx { display: inline; font-family: var(--mono) !important; }
-[data-theme^="flint"] [data-pb]:not([data-pb="console"]) .pb-pfx { display: none; }
-[data-theme^="flint"] [data-pb="console"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--mono) !important; }
-[data-theme^="flint"] .pb-place { border-radius: 7px; border-color: var(--line); }
-[data-theme^="flint"] .pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run) { border-right-color: var(--line) !important; }
-[data-theme^="flint"] [data-pb="tabs"] .cmdbox[data-running], [data-theme^="flint"] [data-pb="tabs"] .cmdbox[data-running]:focus-within {
+/* FLINT and CLAUDE hide the HUD's ~ ❯ (.cmdbox > span:first-child); the console keeps it, as its one mark,
+   and AURORA keeps it everywhere */
+[data-fam] [data-pb="console"] .pb-cmd > .pb-pfx { display: inline; font-family: var(--mono) !important; }
+[data-fam]:not([data-fam="aurora"]) [data-pb]:not([data-pb="console"]) .pb-pfx { display: none; }
+[data-fam] [data-pb="console"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--mono) !important; }
+[data-fam] .pb-place { border-radius: 7px; border-color: var(--line); }
+[data-fam] .pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run) { border-right-color: var(--line) !important; }
+[data-fam] [data-pb="tabs"] .cmdbox[data-running], [data-fam] [data-pb="tabs"] .cmdbox[data-running]:focus-within {
   border-color: color-mix(in oklab, var(--ask) 60%, var(--line2)) !important; box-shadow: 0 0 0 3px color-mix(in oklab, var(--ask) 14%, transparent) !important; }
 /* CONSOLE's line is yours in every state, so a running turn never recolours it
    (■ ❚❚ » and the queue placeholder say it runs). Here ASK is the "waits on you"
    magenta, so CONSOLE's QUEUE fills like SEND instead. */
-[data-theme^="flint"] [data-pb="console"] .act-pri.queue:not(:disabled) { background: var(--f-grad); }
+[data-fam] [data-pb="console"] .act-pri.queue:not(:disabled) { background: var(--f-grad); }
 /* TABS: the tabs and the card share one edge, in every state the card has: the
    theme's hairline at rest, its accent on focus and on a file drag, ASK while a
    turn runs. The card reads the same variable, so the two can never drift. */
 .composer[data-pb="tabs"] { --pb-edge: color-mix(in srgb, var(--acc) 18%, transparent); }
 .composer[data-pb="tabs"]:has(.pb-card[data-running]) { --pb-edge: color-mix(in srgb, var(--ask, var(--purple)) 55%, transparent); }
 .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
-[data-theme^="flint"] .composer[data-pb="tabs"] { --pb-edge: var(--line2); }
-[data-theme^="flint"] .composer[data-pb="tabs"]:has(.pb-card:focus-within) { --pb-edge: color-mix(in oklab, var(--acc) 40%, var(--line2)); }
-[data-theme^="flint"] .composer[data-pb="tabs"]:has(.pb-card[data-running]) { --pb-edge: color-mix(in oklab, var(--ask) 60%, var(--line2)); }
-[data-theme^="flint"] .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
+[data-fam] .composer[data-pb="tabs"] { --pb-edge: var(--line2); }
+[data-fam] .composer[data-pb="tabs"]:has(.pb-card:focus-within) { --pb-edge: color-mix(in oklab, var(--acc) 40%, var(--line2)); }
+[data-fam] .composer[data-pb="tabs"]:has(.pb-card[data-running]) { --pb-edge: color-mix(in oklab, var(--ask) 60%, var(--line2)); }
+[data-fam] .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
 [data-theme] .composer[data-pb="tabs"] .pb-card.cmdbox { border-color: var(--pb-edge) !important; }
 /* TABS: the transcript runs on under the tab row, as it runs under the island
    at the top. Only when the box sits right under the transcript (a "checking…"
@@ -3297,13 +3347,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .swapwrap + .composer[data-pb="tabs"] { position: relative; z-index: 13; pointer-events: none; padding-top: 0 !important; border-top: 0 !important;
   background: linear-gradient(transparent 25px, color-mix(in srgb, var(--panel) 88%, transparent) 0) !important; }
 .swapwrap + .composer[data-pb="tabs"] > :not(.pb-tabs), .swapwrap + .composer[data-pb="tabs"] .pb-tabs > * { pointer-events: auto; }
-[data-theme^="flint"] .swapwrap + .composer[data-pb="tabs"] { background: transparent !important; }
+[data-fam] .swapwrap + .composer[data-pb="tabs"] { background: transparent !important; }
 
 /* === AI MANAGEMENT ===========================================================
    SETTINGS ▸ AI MANAGEMENT (SettingsModal AiManagementPanel, ProjectsSettings):
    five folds on one page. Authored in FLINT's idiom — a card is a step of grey
    and a hairline, a login is a tile on a hue — with fallbacks to the HUD's
-   tokens, so the page stands on every theme while FLINT becomes the one. */
+   tokens, so the page stands on every family.
 .aim, .ps { --l: var(--line, var(--border)); --l2: var(--line2, var(--border-bright)); --f: var(--ui-font, inherit); font-family: var(--f); }
 .aim-fold { border: 1px solid var(--l); border-radius: 12px; background: var(--panel); margin-top: 10px; overflow: hidden; }
 .aim-fold:first-child { margin-top: 0; }
@@ -3372,10 +3422,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-field span { display: block; font-size: 12px; color: var(--txd); }
 .aim-field .aim-sel { width: auto; max-width: 46%; flex: none; }
 /* the HUD's MiniBtn, in this page's voice: Geist, no tracking, rounded */
-.aim .set-mini, .ps .set-mini, [data-theme^="flint"] .set-mini { font-family: var(--f, var(--ui-font)) !important; font-size: 12px !important; letter-spacing: 0 !important; border-radius: 7px !important; padding: 5px 10px !important; }
-.aim .set-mini:not([data-primary]):not([data-danger]), [data-theme^="flint"] .set-mini:not([data-primary]):not([data-danger]) { border-color: var(--l2) !important; color: var(--txm) !important; }
-.aim .set-mini[data-danger], [data-theme^="flint"] .set-mini[data-danger] { border-color: var(--l2) !important; color: var(--txd) !important; }
-.aim .set-mini[data-danger]:hover, [data-theme^="flint"] .set-mini[data-danger]:hover { border-color: var(--err) !important; color: var(--err) !important; background: color-mix(in oklab, var(--err) 10%, transparent) !important; }
+.aim .set-mini, .ps .set-mini, [data-fam] .set-mini { font-family: var(--f, var(--ui-font)) !important; font-size: 12px !important; letter-spacing: 0 !important; border-radius: 7px !important; padding: 5px 10px !important; }
+.aim .set-mini:not([data-primary]):not([data-danger]), [data-fam] .set-mini:not([data-primary]):not([data-danger]) { border-color: var(--l2) !important; color: var(--txm) !important; }
+.aim .set-mini[data-danger], [data-fam] .set-mini[data-danger] { border-color: var(--l2) !important; color: var(--txd) !important; }
+.aim .set-mini[data-danger]:hover, [data-fam] .set-mini[data-danger]:hover { border-color: var(--err) !important; color: var(--err) !important; background: color-mix(in oklab, var(--err) 10%, transparent) !important; }
 .aim .set-mini[data-primary] { font-weight: 600; }
 /* a Segmented inside the fold header */
 .aim-segwrap > div { display: inline-flex !important; grid-template-columns: none !important; gap: 2px !important; padding: 3px; border: 1px solid var(--l) !important; border-radius: 9px; background: var(--panel3); }
