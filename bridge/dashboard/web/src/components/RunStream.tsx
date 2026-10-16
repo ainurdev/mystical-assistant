@@ -2062,10 +2062,12 @@ export const RunStream = memo(function RunStream({
     const title = stepsTitle(cats);
     // Inside a WORK zone a STEPS row would be a fold inside a fold: the zone
     // already is the one line the work sits under.
-    if (dossier) return <div key={`f${seg.idx[0]}`} className="dsteps space-y-1.5">{seg.idx.map(renderEvent)}</div>;
+    // Keyed by where the stretch starts (lib/segments), not by its first row on
+    // screen, which the tail window moves: a new key remounts what you opened.
+    if (dossier) return <div key={`f${seg.start}`} className="dsteps space-y-1.5">{seg.idx.map(renderEvent)}</div>;
     return (
       <Fold
-        key={`f${seg.idx[0]}`}
+        key={`f${seg.start}`}
         label="STEPS"
         icon={<Layers size={11} aria-hidden />}
         // While one is out, the row names it: on a phone this line is the
@@ -2083,13 +2085,13 @@ export const RunStream = memo(function RunStream({
   const segs = segmentsOf(events, from, inFlow, waiting);
   // Tier 1 and 2 (lib/dossier): the answer, the prose that introduces a card,
   // the cards, and what ends a turn. Everything else is work.
-  const isTop = (seg: Seg): boolean => {
-    if (seg.kind !== "prose") return false;
-    const i = seg.idx[0], e = events[i];
+  const topAt = (i: number): boolean => {
+    const e = events[i];
     if (e.type === "text") return i === finalText || asksNext(i);
     return e.type === "result" || e.type === "question" || e.type === "permission"
       || e.type === "error" || e.type === "stopped";
   };
+  const isTop = (seg: Seg): boolean => seg.kind === "prose" && topAt(seg.idx[0]);
   const workZone = (zsegs: Seg[]) => {
     const marks: Mark[] = [];
     const cats: StepCat[] = [];
@@ -2112,9 +2114,13 @@ export const RunStream = memo(function RunStream({
     }
     const secs = first != null && last != null ? last - first : 0;
     const span = secs >= 1 ? dur(secs * 1000) : "";
+    // Named like a STEPS fold (lib/segments): back past the window's cut to the
+    // tier-1/2 row before it, so the zone you opened stays the same zone.
+    let start = zsegs[0].start;
+    while (start > 0 && (waiting(start - 1) || !topAt(start - 1))) start--;
     return (
       <WorkZone
-        key={`z${zsegs[0].idx[0]}`}
+        key={`z${start}`}
         marks={marks}
         title={workTitle(stepsTitle(cats), notes)}
         failed={failed}

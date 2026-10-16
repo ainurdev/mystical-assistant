@@ -1398,7 +1398,9 @@ export const RunStream = memo(function RunStream({
     const title = stepsTitle(cats);
     return (
       <Fold
-        key={`f${seg.idx[0]}`}
+        // Keyed by where the stretch starts (lib/segments), not by its first row
+        // on screen, which the tail window moves: a new key remounts it shut.
+        key={`f${seg.start}`}
         label="STEPS"
         icon={<Layers size={11} aria-hidden />}
         // While one is out, the row names it: on a phone this line is the

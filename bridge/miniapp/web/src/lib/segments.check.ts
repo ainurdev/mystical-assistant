@@ -76,6 +76,17 @@ const kinds = (evs: { type: string; text?: string }[], from = 0) =>
   ok(kinds([]) === "", "empty turn, no segments");
 }
 
+// A fold the cut slices is still named by where its stretch starts, past a card
+// lifted to the foot: the tail window slides with every event of a long running
+// turn, and RunStream keys the fold by `start` so it stays the fold you opened.
+{
+  const evs = [t("text", "a"), t("tool"), t("tool_done"), t("question"), t("tool"), t("tool_done"), t("text", "b"), t("tool")];
+  const starts = (from: number) =>
+    segmentsOf(evs, from, undefined, (i) => i === 3).filter((s) => s.kind === "steps").map((s) => s.start).join(",");
+  ok(starts(0) === "1,7" && starts(2) === "1,7" && starts(4) === "1,7",
+     `start survives the cut: ${starts(0)} / ${starts(2)} / ${starts(4)}`);
+}
+
 // The title counts, pluralises and orders: what changed the machine first.
 {
   ok(stepsTitle(["read", "command", "read", "edit", "command", "command"]) === "3 commands · 1 edit · 2 files read",
