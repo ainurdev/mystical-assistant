@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { api, PUSHED_EVENT, type PrStatus } from "../../api";
-import { TONE, chipLabel, commentsMessage, conflictsMessage, duration, failureMessage, freshPings, pingText, popPlace, reviewItems, stateLine } from "../../lib/prchip";
+import { TONE, chipLabel, commentsMessage, conflictsMessage, duration, failureMessage, popPlace, reviewItems, stateLine } from "../../lib/prchip";
 import { initials } from "../../lib/rivendelltasks";
 import { hairline } from "../../lib/shell";
 import { ago } from "../../lib/surfaces";
@@ -15,21 +15,12 @@ import { notify } from "./Notifications";
  *  on focus, and a few seconds after any dashboard push (api.ts fires
  *  PUSHED_EVENT). Every failure is silent. A bridge still on pre-restart code
  *  404s the route, and gh may be missing or signed out. Neither draws a chip
- *  or raises a toast. The bell rings for the alerts the bridge pinged
- *  Telegram about (`pinged`), once per browser: the last set seen is kept in
- *  localStorage. */
+ *  or raises a toast. A red check or a review asking for changes is the
+ *  bridge's news: it writes the bell's row where it pings Telegram
+ *  (bridge/prstatus.py, bridge/notices.py). */
 
 const POLL_MS = 60_000;
 const AFTER_PUSH_MS = 8_000;   // GitHub needs a moment to see the new head and queue its checks
-const SEEN = (project: string, branch: string) => `pr-pinged:${project}@${branch}`;
-
-function ringBell(project: string, branch: string, s: PrStatus) {
-  let seen: string[] = [];
-  try { seen = JSON.parse(localStorage.getItem(SEEN(project, branch)) ?? "[]"); } catch { /* first look */ }
-  if (s.pr) for (const k of freshPings(seen, s.pinged)) notify(k.startsWith("failing:") ? "error" : "info", pingText(s.pr, k));
-  try { localStorage.setItem(SEEN(project, branch), JSON.stringify(s.pinged)); } catch { /* full: may ring again */ }
-}
-
 /** "just now", "3m ago": `ago` speaks epoch seconds, gh speaks ISO. */
 const since = (sec: number) => { const a = ago(sec); return !a || a === "now" ? "just now" : `${a} ago`; };
 const sinceIso = (iso: string) => since(Date.parse(iso) / 1000);
@@ -63,7 +54,7 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
     const load = (force = false) => {
       if (document.visibilityState !== "visible") return;
       api.prStatus(project, branch, sessionId, force)
-        .then((s) => { if (!live) return; setSnap(s); ringBell(project, branch, s); })
+        .then((s) => { if (live) setSnap(s); })
         .catch(() => { /* no chip: a pre-restart bridge (404) or offline. Never a toast. */ });
     };
     const onVisible = () => { if (document.visibilityState === "visible") load(true); };

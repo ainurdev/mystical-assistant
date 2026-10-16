@@ -279,23 +279,24 @@ def needs(status: dict) -> list:
             continue
         kind = _STATUS_KIND.get(st.get("kind"), "asking")
         r = of_kind.get((sid, kind))
-        sess = store.get_session(sid)
-        out.append(_need(kind, sid, sid, (sess or {}).get("title") or "",
+        sess = store.get_session(sid) or {}
+        out.append(_need(kind, sid, sid, sess.get("title") or "",
                          (r or {}).get("body") or st.get("label") or "",
-                         (r or {}).get("at"), dict((r or {}).get("meta") or {})))
+                         (r or {}).get("at"), {"project": sess.get("project"), **((r or {}).get("meta") or {})}))
     for sid, r in newest.items():
         if r["kind"] not in ("login", "limit_choice") or sid in (status or {}) and (
                 status[sid].get("state") in ("awaiting", "working")):
             continue
-        sess = store.get_session(sid)
-        out.append(_need(r["kind"], sid, sid, (sess or {}).get("title") or r["title"],
-                         r["body"], r["at"], dict(r["meta"])))
+        sess = store.get_session(sid) or {}
+        out.append(_need(r["kind"], sid, sid, sess.get("title") or r["title"],
+                         r["body"], r["at"], {"project": sess.get("project"), **r["meta"]}))
     try:
-        from bridge import rivendell              # local import: rivendell is heavy
+        from bridge import rivendell, rivendell_instances   # local import: rivendell is heavy
         held = rivendell.queue()
         what = rivendell.Worker._KIND_LABEL
+        names = {i["id"]: i.get("name") or i["id"] for i in rivendell_instances.instances()} if held else {}
     except Exception:  # noqa: BLE001 — no Rivendell, or a worker mid-restart
-        held, what = {}, {}
+        held, what, names = {}, {}, {}
     for wid, items in held.items():
         for it in items:
             if not it.get("offered"):
@@ -306,7 +307,7 @@ def needs(status: dict) -> list:
                 f"A teammate's {what.get(it['kind'], it['kind'])} job. If you accept, it runs "
                 "on this machine with your accounts.",
                 it.get("created_at"),
-                {"instance_id": wid, "key": it["key"], "link": it.get("link"),
-                 "job_kind": it["kind"]}))
+                {"instance_id": wid, "instance": names.get(wid, wid), "key": it["key"],
+                 "link": it.get("link"), "job_kind": it["kind"]}))
     out.sort(key=lambda n: -(n["at"] or 0))
     return out

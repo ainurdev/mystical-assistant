@@ -176,7 +176,8 @@ def test_needs_from_status_offers_and_login(monkeypatch):
     assert got["s3"]["kind"] == "login" and got["s3"]["verb"] == "SIGN IN"
     rv = got["rv:prod:r1"]
     assert rv["kind"] == "rv_offer" and rv["session_id"] is None
-    assert rv["meta"] == {"instance_id": "prod", "key": "impl:r1", "link": "https://rv/x", "job_kind": "impl"}
+    assert rv["meta"] == {"instance_id": "prod", "instance": "prod", "key": "impl:r1",
+                          "link": "https://rv/x", "job_kind": "impl"}
 
 
 def test_needs_survives_rivendell_failure(monkeypatch):
@@ -397,3 +398,15 @@ def test_pr_fresh_ping_emits(monkeypatch):
     assert [(r["kind"], r["subject"], r["title"], r["body"]) for r in rows] == [
         ("pr_failing", "pr:o/r:feat/x", "#208 · Device runs", "2 of 3 failed: e2e, lint")]
     assert rows[0]["meta"] == {"url": "https://gh/pr/208", "number": 208}
+
+
+def test_needs_carry_project_and_instance_name(monkeypatch):
+    from bridge import rivendell, rivendell_instances
+    sid = _sess()
+    monkeypatch.setattr(rivendell, "queue", lambda: {"prod": [
+        {"key": "impl:r1", "request_id": "r1", "kind": "impl", "offered": True, "label": "x",
+         "slug": "o/r", "created_at": 1.0, "link": None}]})
+    monkeypatch.setattr(rivendell_instances, "instances", lambda: [{"id": "prod", "name": "production"}])
+    got = {n["kind"]: n for n in notices.needs({sid: {"state": "awaiting", "kind": "permission", "label": "Bash"}})}
+    assert got["approve"]["title"] == "Invoices" and got["approve"]["meta"]["project"] == "/repo"
+    assert got["rv_offer"]["meta"]["instance"] == "production"
