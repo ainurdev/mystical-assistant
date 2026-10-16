@@ -1,4 +1,4 @@
-import { Fragment, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   logStream,
@@ -36,8 +36,7 @@ import { SkillsTab } from "./SkillsTab";
 import { DesignTab } from "./DesignTab";
 import { WorktreesTab } from "./WorktreesTab";
 import { XtermPane } from "./XtermPane";
-
-const MarkEditor = lazy(() => import("./MarkEditor"));
+import MarkEditor from "./MarkEditor";
 
 /* PROJECT ANALYSIS modal — matches the HUD design mock (hud.dc.html lines
    530–1258): header with the project's mark (its tile opens MarkEditor), tab bar (EDITOR / GIT /
@@ -227,9 +226,7 @@ export function AnalyzeModal(props: Props) {
               <ProjectTile project={project} />
             </button>
             {markOpen && (
-              <Suspense fallback={null}>
-                <MarkEditor project={project} name={name(project)} anchor={markTile.current} onClose={() => setMarkOpen(false)} />
-              </Suspense>
+              <MarkEditor project={project} name={name(project)} anchor={markTile.current} onClose={() => setMarkOpen(false)} />
             )}
           </span>
           <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}>{name(project)}</span>

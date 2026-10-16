@@ -16,9 +16,9 @@ import { synced } from "./RivendellMarks";
    A mark that follows Rivendell says so. Any change here makes it yours, and a
    project Rivendell has a client logo for offers USE RIVENDELL'S. A dropped logo
    travels with SAVE in one request (bridge/projectmarks.set_mark), so a
-   cancelled edit never leaves a file behind. Lazy-loaded by its callers: the
-   icon catalogue (lucide-react/dynamic's 1,986 names) only loads when you open
-   one. It floats in a portal, fixed beside the tile that opened it and flipped
+   cancelled edit never leaves a file behind. It ships in the main bundle,
+   not as a lazy chunk: a chunk that a rebuild had replaced under an open page
+   failed to load and blanked the dashboard (2026-10-16). It floats in a portal, fixed beside the tile that opened it and flipped
    above it when there's no room below: inside SETTINGS or ANALYZE it would be
    clipped by the modal. */
 

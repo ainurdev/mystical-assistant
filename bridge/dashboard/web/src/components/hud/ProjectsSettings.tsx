@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronRight, Pencil } from "lucide-react";
 import type { AccountInfo } from "../../api";
 import type { ProfilesInfo } from "../../lib/profiles";
@@ -6,9 +6,8 @@ import { agentLabel } from "../../lib/agents";
 import { projectGivenName, projectMark } from "../../lib/surfaces";
 import { ProjectTile } from "../ui/ProjectTile";
 import { parentOf, type ProjectGroup } from "./ProjectsPanel";
+import MarkEditor from "./MarkEditor";
 import { RivendellStrip } from "./RivendellMarks";
-
-const MarkEditor = lazy(() => import("./MarkEditor"));
 
 /* The PROJECTS fold of SETTINGS ▸ AI MANAGEMENT: every repo the bridge can run
    in, grouped by the folder that owns it, with the profile its new sessions
@@ -205,9 +204,7 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                           <ProjectTile project={r.rel} />
                         </button>
                         {markFor?.rel === r.rel && (
-                          <Suspense fallback={null}>
-                            <MarkEditor project={r.rel} name={r.name} anchor={markFor.tile} onClose={() => setMarkFor(null)} />
-                          </Suspense>
+                          <MarkEditor project={r.rel} name={r.name} anchor={markFor.tile} onClose={() => setMarkFor(null)} />
                         )}
                       </span>
                       <span className="ps-name">

@@ -1,11 +1,14 @@
-import { lazy, Suspense, useState } from "react";
+import { useState } from "react";
+import { DynamicIcon } from "lucide-react/dynamic";
 import { projectLogoUrl } from "../../api";
 import { useLogoInfo } from "../../lib/logoinfo";
 import { projectInitials, projectMark, projectTint } from "../../lib/surfaces";
 
-// The icon set loads on first use, one chunk per icon, so a sidebar of three
-// icon tiles costs three tiny files, not all of lucide.
-const DynamicIcon = lazy(() => import("lucide-react/dynamic").then((m) => ({ default: m.DynamicIcon })));
+// Each icon's drawing loads on first use, one tiny file per icon. A file a
+// rebuild has since replaced fails inside DynamicIcon, which keeps the
+// initials. The component itself is not lazy: a lazy chunk that went stale
+// under an open page threw, and with no boundary that blanked the whole
+// dashboard (2026-10-16).
 
 /** A project's tile: its mark (bridge/projectmarks.py) on a square of its own
  *  tint. That is its logo, its icon, or its initials (the default). The tint
@@ -20,9 +23,7 @@ export function ProjectTile({ project }: { project: string | null | undefined })
     <b className="ptile" aria-hidden data-kind={mark?.kind === "icon" ? "icon" : undefined}
       style={{ ["--pc" as string]: pc }}>
       {mark?.kind === "icon" && mark.icon ? (
-        <Suspense fallback={letters}>
-          <DynamicIcon name={mark.icon as never} fallback={() => <>{letters}</>} />
-        </Suspense>
+        <DynamicIcon name={mark.icon as never} fallback={() => <>{letters}</>} />
       ) : letters}
     </b>
   );
