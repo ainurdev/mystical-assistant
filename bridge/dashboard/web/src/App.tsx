@@ -51,6 +51,7 @@ import {
 import { useHostVitals, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
+import { useIntegrations } from "./lib/integrations";
 import { useSessionPins, useStickySet } from "./lib/prefs";
 import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
 import { recall, remember, type Anchor } from "./lib/scrollmem";
@@ -230,6 +231,9 @@ export function App() {
   // Which model-spending extras are on: each one owns a tab and a palette entry
   // that don't exist while it's off.
   const ai = useAiFeatures();
+  // Which bundled integrations are installed. A plugin that isn't has its routes
+  // 404 and its UI gone, so nothing below polls or draws it.
+  const plugins = useIntegrations();
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
   // The live jobs behind the status map: a session's job id is what a banner's
   // buttons answer to (Mystical.app, lib/banner).
@@ -1752,23 +1756,27 @@ export function App() {
   // not only re-read when SETTINGS closes (where one is added or removed): a
   // link breaks with no dashboard event to say so, and the castle's dot and the
   // bell follow each connection's break (bridge/rivendell.py, alert_at — set
-  // once per break, cleared when the link proves itself).
+  // once per break, cleared when the link proves itself). Not polled at all
+  // while Rivendell isn't installed: its route answers 404.
   const [rivendell, setRivendell] = useState<RivendellInstance[]>([]);
   useEffect(() => {
-    if (settingsOpen) return;
+    if (settingsOpen || !plugins.rivendell) return;
     const tick = () => api.rivendell().then((r) => setRivendell(r.instances)).catch(() => { /* ignore */ });
     void tick();
     const id = setInterval(tick, 10000);
     return () => clearInterval(id);
-  }, [settingsOpen]);
-  const rivendellOn = rivendell.length > 0;
-  const rivendellDown = rivendell.some((i) => i.enable && !!i.status?.alert_at);
+  }, [settingsOpen, plugins.rivendell]);
+  // What the tab, the castle's dot and the bell read, so REMOVE clears all three
+  // at once instead of leaving the last poll's connections on screen.
+  const links = useMemo(() => (plugins.rivendell ? rivendell : []), [plugins.rivendell, rivendell]);
+  const rivendellOn = links.length > 0;
+  const rivendellDown = links.some((i) => i.enable && !!i.status?.alert_at);
   // One bell entry per break, gone when the link is back. Telegram's one
   // message per break is the bridge's to send (Worker._alert_broken).
   const linkNotices = useRef<Record<string, { at: number; id: number }>>({});
   useEffect(() => {
     const shown = linkNotices.current;
-    for (const i of rivendell) {
+    for (const i of links) {
       const at = i.status?.alert_at ?? null;
       const cur = shown[i.id];
       if (at && cur?.at !== at) {
@@ -1779,7 +1787,14 @@ export function App() {
         delete shown[i.id];
       }
     }
-  }, [rivendell]);
+    // A connection that left the list (the plugin was removed) takes its notice along.
+    for (const id of Object.keys(shown)) {
+      if (!links.some((i) => i.id === id)) {
+        dismiss(shown[id].id);
+        delete shown[id];
+      }
+    }
+  }, [links]);
   // Uncommitted files in the open session's WORKING TREE — what CHANGES lists
   // and what its rail badge counts. sessionGit is per-worktree, so two branches
   // of the same repo get their own number; gitBadges is only keyed by project,
@@ -2022,11 +2037,12 @@ export function App() {
       items.push({ icon: "⊞", label: "Analyze project", onClick: () => openAnalyze(ctxMenu.id) });
       // The chat header's project name opens this menu; its DESIGN SYSTEM and
       // TASKS links folded in here.
-      if (ai.design)
+      if (plugins.design)
         items.push({ icon: "◇", label: "Design system", hint: "link · pull · sync",
           onClick: () => openAnalyze(ctxMenu.id, undefined, "design") });
-      items.push({ icon: "⌁", label: "Tasks", hint: "Teamwork · Jira",
-        onClick: () => openAnalyze(ctxMenu.id, undefined, "tasks") });
+      if (plugins.trackers)
+        items.push({ icon: "⌁", label: "Tasks", hint: "Teamwork · Jira",
+          onClick: () => openAnalyze(ctxMenu.id, undefined, "tasks") });
       items.push({ icon: "◉", label: "Select as active", onClick: () => void selectProject(ctxMenu.id) });
       items.push({ icon: "+", label: "New session here", onClick: () => void newSession(ctxMenu.id) });
       items.push({ icon: "◎", label: "Open issues", onClick: () => openAnalyze(ctxMenu.id) });
@@ -2093,7 +2109,7 @@ export function App() {
       items.push({ divider: true }, { icon: "⌾", label: "Browser", children: nativeCtx.page });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai]);
+  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai, plugins]);
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {

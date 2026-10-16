@@ -154,7 +154,7 @@ export function nextAction(n: MoveNext): [string, () => void, boolean?] {
   return {
     restart: ["RESTART", () => void restartBridge()] as [string, () => void],
     mcp: ["OPEN MCP ▸", () => openSettings("mcp")] as [string, () => void],
-    rivendell: ["OPEN PLUGINS ▸", () => openSettings("plugins")] as [string, () => void],
+    rivendell: ["OPEN INTEGRATIONS ▸", () => openSettings("plugins")] as [string, () => void],
     delete: ["DELETE", () => {
       void askConfirm(`Delete ${n.path}? It holds your .env files and tokens; this can't be undone.`)
         .then((ok) => ok && api.moveDelete(n.path ?? "").then(() => window.dispatchEvent(new Event(MOVE_EVENT)),
