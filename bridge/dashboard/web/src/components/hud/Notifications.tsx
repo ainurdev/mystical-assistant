@@ -65,7 +65,7 @@ function Actions({ n }: { n: Notice }) {
   return (
     <div className="nt-acts">
       {n.actions.map((a) => (
-        <button key={a.label} type="button" data-pri={a.primary || undefined}
+        <button key={a.label} type="button" className="nt-act" data-pri={a.primary || undefined}
           onClick={(e) => { e.stopPropagation(); dismiss(n.id); a.run(); }}>{a.label}</button>
       ))}
     </div>

@@ -2898,10 +2898,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: var(--panel) !important; box-shadow: var(--f-pop-shadow) !important;
   overflow: hidden; font-family: var(--ui-font);
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri) {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri):not(.nt-act) {
   border-bottom-color: transparent !important; font-family: var(--ui-font) !important; letter-spacing: 0 !important;
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri):hover {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri):not(.nt-act):hover {
   background: var(--ac-08) !important;
 }
 [data-fam] :is([style*="--shadow-pop"], [role="dialog"]) [style*="acc) 10%"] { background: var(--f-you) !important; }
@@ -3744,6 +3744,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .nt-logos span { width: 26px; height: 26px; display: grid; place-items: center; overflow: hidden; border-radius: 7px; background: #eef0f6; }
 .nt-logos img { width: 80%; height: 80%; object-fit: contain; }
 .nt-acts { display: flex; gap: 8px; margin-top: 11px; }
-.nt-acts button { padding: 6px 12px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 30%, transparent)); border-radius: var(--f-rad-s, 0);
+.nt-act { padding: 6px 12px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 30%, transparent)); border-radius: var(--f-rad-s, 0);
   background: transparent; font: 600 10.5px var(--ui-font, inherit); letter-spacing: .06em; color: var(--txm); cursor: pointer; }
-.nt-acts button[data-pri] { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
+.nt-act[data-pri] { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
+.nt-act:hover { background: var(--ac-08, color-mix(in srgb, var(--acc) 8%, transparent)); color: var(--txb); }
+.nt-act[data-pri]:hover { background: color-mix(in oklab, var(--acc) 88%, white); color: var(--acc-on); }
