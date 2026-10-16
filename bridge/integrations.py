@@ -146,7 +146,7 @@ def set_installed(pid: str, on: bool) -> None:
     global _cache
     if pid == "rivendell":
         from bridge import rivendell    # local: rivendell.py imports this module
-        if not on and rivendell.running():
+        if not on and rivendell.busy():
             raise IntegrationError(
                 "A Rivendell run is in flight — let it finish, then remove Rivendell.")
     with _lock:

@@ -5,6 +5,7 @@ Run: python -m pytest tests/test_integrations.py -v"""
 import json
 import os
 import stat
+import threading
 from urllib.parse import parse_qs, urlparse
 
 import pytest
@@ -27,7 +28,7 @@ def fresh(monkeypatch, tmp_path):
     monkeypatch.setattr(trackers, "connections", lambda: [])
     monkeypatch.setattr(project_config, "design_link_count", lambda: 0)
     monkeypatch.setattr(rivendell, "reconfigure", lambda: None)
-    monkeypatch.setattr(rivendell, "running", lambda: [])
+    monkeypatch.setattr(rivendell, "busy", lambda: False)
     return path
 
 
@@ -109,7 +110,7 @@ def test_rivendell_reconciles_with_the_new_answer_in_place_and_the_lock_free(fre
 
 def test_removing_rivendell_mid_run_is_refused(fresh, monkeypatch):
     integrations.set_installed("rivendell", True)
-    monkeypatch.setattr(rivendell, "running", lambda: [{"request_id": "r1"}])
+    monkeypatch.setattr(rivendell, "busy", lambda: True)
     with pytest.raises(integrations.IntegrationError, match="in flight"):
         integrations.set_installed("rivendell", False)
     assert integrations.installed("rivendell")
@@ -243,11 +244,30 @@ def test_the_integrations_route_refuses_what_it_does_not_know(fresh):
     assert call("POST", "/local/integrations", {"id": "design", "action": "explode"})["code"] == 400
 
 
-def test_removing_rivendell_mid_run_answers_409(fresh, monkeypatch):
-    integrations.set_installed("rivendell", True)
-    monkeypatch.setattr(rivendell, "running", lambda: [{"request_id": "r1"}])
-    box = call("POST", "/local/integrations", {"id": "rivendell", "action": "remove"})
-    assert box["code"] == 409 and "in flight" in box["obj"]["error"]
+def test_removing_rivendell_while_a_run_still_claims_answers_409(monkeypatch):
+    """Installed by conftest. running() lists a run only once it has claimed and
+    prepared (a video's download and whisper take minutes), but accept() counts it
+    at once: a REMOVE in between would stop the worker, and the run dies when it starts."""
+    w = rivendell.Worker({"id": "t1", "name": "test", "enable": True,
+                          "api_url": "http://r", "token": "t"})
+    monkeypatch.setitem(rivendell._workers, w.id, w)
+    claiming, release = threading.Event(), threading.Event()
+
+    def held(kind_path, request_id):    # the claim's HTTP call, still out
+        claiming.set()
+        release.wait(10)
+        return None                     # refused: the run ends, posting nothing
+
+    monkeypatch.setattr(w, "_claim", held)
+    try:
+        assert w.accept(w._enqueue("review", "r1", "acme/app")) and claiming.wait(5)
+        assert rivendell.running() == [] and w._active_runs == 1
+        box = call("POST", "/local/integrations", {"id": "rivendell", "action": "remove"})
+        assert box["code"] == 409 and "in flight" in box["obj"]["error"]
+        assert integrations.installed("rivendell") and not w._stop.is_set()
+    finally:
+        release.set()
+        w.stop()
 
 
 def test_the_miniapp_state_carries_the_flags(fresh, monkeypatch):

@@ -2081,6 +2081,19 @@ def running() -> list:
     return [row for w in workers for row in w.running_snapshot()]
 
 
+def busy() -> bool:
+    """Is any accepted run not over yet? running() lists a run only once it has
+    claimed and prepared (a video's download and whisper take minutes); this
+    counts it from accept() on, as _active_runs does, so REMOVE refuses then too."""
+    with _manager_lock:
+        workers = list(_workers.values())
+    for w in workers:
+        with w._q_lock:
+            if w._active_runs:
+                return True
+    return False
+
+
 def test_link(instance_id: str, job: bool = False) -> "dict | None":
     """TEST LINK (Worker.test_link), or with `job` SEND TEST JOB (Worker.test_job)
     — only on a live link whose Rivendell said "ping"; anything else gets TEST
