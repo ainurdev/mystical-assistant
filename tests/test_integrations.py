@@ -172,6 +172,20 @@ def test_summaries_count_what_each_plugin_holds(fresh, monkeypatch):
         "rivendell": "2 instances · 1 on", "trackers": "0 connections", "design": "3 repos linked"}
 
 
+def test_a_store_that_raises_blanks_only_its_own_summary(fresh, monkeypatch):
+    """The Integrations page is the one place to install or remove: one bad store
+    must not take it down, nor turn a REMOVE that worked into a 500."""
+    integrations.set_installed("trackers", True)
+
+    def boom():
+        raise OSError("disk gone")
+
+    monkeypatch.setattr(trackers, "connections", boom)
+    rows = integrations.state()
+    assert [r["id"] for r in rows] == IDS
+    assert {r["id"]: r["summary"] for r in rows}["trackers"] == ""
+
+
 def test_design_link_count_counts_linked_entries(monkeypatch, tmp_path):
     monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "project_config.json"))
     project_config.set_design_project("/app", "aaaa-1")

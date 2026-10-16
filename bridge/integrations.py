@@ -83,7 +83,10 @@ def _path() -> str:
 def _adopt() -> dict:
     """The install set for a machine with no plugins.json: whatever it already
     uses. Imported here so rivendell.py and runner.py can import this module
-    without a cycle; a source that cannot be read counts as unused."""
+    without a cycle; a source that cannot be read counts as unused. This runs
+    under _lock, which is not reentrant: a source must never ask this module
+    anything (installed(), flags(), state(), all of which take it), or the first
+    boot hangs."""
     from bridge import project_config, rivendell_instances, trackers
     uses = {
         "rivendell": lambda: rivendell_instances.raw_instances(),
@@ -163,14 +166,19 @@ def _count(n: int, noun: str) -> str:
 
 
 def _summary(pid: str) -> str:
-    """One line of what an installed plugin is holding, for its card."""
+    """One line of what an installed plugin is holding, for its card. A store
+    that raises reads "": this is the page that installs and removes, so one bad
+    store must not fail it (nor a POST that worked, which answers state())."""
     from bridge import project_config, rivendell_instances, trackers
-    if pid == "rivendell":
-        rows = rivendell_instances.instances()
-        return f"{_count(len(rows), 'instance')} · {sum(1 for r in rows if r['enable'])} on"
-    if pid == "trackers":
-        return _count(len(trackers.connections()), "connection")
-    return _count(project_config.design_link_count(), "repo") + " linked"
+    try:
+        if pid == "rivendell":
+            rows = rivendell_instances.instances()
+            return f"{_count(len(rows), 'instance')} · {sum(1 for r in rows if r['enable'])} on"
+        if pid == "trackers":
+            return _count(len(trackers.connections()), "connection")
+        return _count(project_config.design_link_count(), "repo") + " linked"
+    except Exception:  # noqa: BLE001 - one bad store blanks its own row only
+        return ""
 
 
 def state() -> list[dict]:
