@@ -258,3 +258,17 @@ def test_download_takes_only_https_or_a_local_rivendell(monkeypatch):
     assert projectmarks._download("file:///etc/passwd") is None
     assert projectmarks._download("https://s3.example/html") is None
     assert seen == ["https://s3.example/logo.png", "http://localhost:3099/logo.png", "https://s3.example/html"]
+
+
+def test_an_edit_made_while_logos_download_is_never_overwritten(riv, monkeypatch):
+    riv["projects"] = [{"id": "p1", "repositories": ["acme/a"], "client": client("c", logo="https://s3/c.png")}]
+    riv["local"] = {"/a": {"acme/a"}}
+    riv["logos"] = {"https://s3/c.png": PNG}
+    real = projectmarks._fetch_logos
+
+    def slow(matches, known):            # the user saves an icon mid-download
+        projectmarks.set_mark("/a", {"kind": "icon", "icon": "car"})
+        return real(matches, known)
+    monkeypatch.setattr(projectmarks, "_fetch_logos", slow)
+    assert projectmarks.import_all()["kept"] == ["/a"]
+    assert project_config.mark("/a") == {"kind": "icon", "icon": "car"}

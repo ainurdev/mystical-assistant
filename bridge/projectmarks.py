@@ -314,6 +314,7 @@ def import_all(only: "str | None" = None) -> dict:
         rv = d.setdefault("rivendell", {})
         undo = {} if only is None else dict(rv.get("undo") or {})
         kept = []
+        marks = project_config.marks()   # again: an edit may have landed during the downloads
         for rel, p in sorted(matches.items()):
             cur = marks.get(rel)
             if only is None and _yours(cur):
@@ -346,7 +347,10 @@ def refresh() -> dict:
         d = _load()
         rv = d.setdefault("rivendell", {})
         undo = rv.get("undo") if isinstance(rv.get("undo"), dict) else {}
+        marks = project_config.marks()   # again: an edit may have landed during the downloads
         for rel, p in todo.items():
+            if _yours(marks.get(rel)):
+                continue
             undo.setdefault(rel, marks.get(rel))
             _follow(rel, p, d, known, fetched)
         rv.update(undo=undo, synced_at=time.time())
