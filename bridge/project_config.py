@@ -170,6 +170,36 @@ def names() -> dict:
                 if isinstance(v, dict) and v.get("name")}
 
 
+def mark(project: str) -> "dict | None":
+    """A project's mark (bridge/projectmarks.py validates its shape), or None
+    for the default letters. Project-wide, like the name."""
+    m = get(project).get("mark")
+    return m if isinstance(m, dict) else None
+
+
+def set_mark(project: str, value: "dict | None") -> None:
+    """Store a project's mark, or drop it (None) back to letters."""
+    with _lock:
+        data = _load()
+        entry = data.get(project, {})
+        if value:
+            entry["mark"] = value
+        else:
+            entry.pop("mark", None)
+        if entry:
+            data[project] = entry
+        else:
+            data.pop(project, None)
+        _save(data)
+
+
+def marks() -> dict:
+    """Every project rel that carries a mark."""
+    with _lock:
+        return {k: v["mark"] for k, v in _load().items()
+                if isinstance(v, dict) and isinstance(v.get("mark"), dict)}
+
+
 def set_hidden(project: str, on: bool) -> bool:
     """Keep a project out of the sidebar (projects + session list). Project-wide;
     returns the effective value."""

@@ -33,7 +33,7 @@ import re
 
 from bridge import (acp_agents, agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
-                    models, native, preview_detect, profiles, project_config, prstatus,
+                    models, native, preview_detect, profiles, project_config, projectmarks, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, runner, selfupdate,
                     share,
@@ -318,7 +318,27 @@ class Handler(BaseHTTPRequestHandler):
                                            if (slug := github.origin_slug(
                                                os.path.join(config.BASE_PATH, r.lstrip("/"))))},
                                "hidden": project_config.hidden_projects(),
-                               "names": project_config.names()})
+                               "names": project_config.names(),
+                               "marks": project_config.marks()})
+        if path.startswith("/local/project-mark/logo/"):
+            got = projectmarks.logo(path[len("/local/project-mark/logo/"):])
+            if got is None:
+                return self._json({"error": "no such logo"}, 404)
+            data, ctype = got
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            # The name is the bytes' hash, so a logo never changes under it.
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            # An SVG opened on its own must not run as this origin's page.
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return None
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
@@ -537,6 +557,10 @@ class Handler(BaseHTTPRequestHandler):
             insts = [{**i, "status": live.get(i["id"], {"state": "off"})}
                      for i in rivendell_instances.instances()]
             return self._json({"instances": insts})
+        if path == "/local/rivendell/marks":
+            # Client logos and colours Rivendell could lend the repos here, and
+            # whether they follow it (bridge/projectmarks.py).
+            return self._json(projectmarks.state(force=qs.get("force", ["0"])[0] == "1"))
         if path == "/local/rivendell/queue":
             # One flat, oldest-first stream across every instance — the rows
             # held for a decision and the runs in flight, each with its
@@ -1282,6 +1306,11 @@ class Handler(BaseHTTPRequestHandler):
                 out["name"] = project_config.set_name(rel, (body.get("name") or "")[:60])
             if "hidden" in body:
                 out["hidden"] = project_config.set_hidden(rel, bool(body.get("hidden")))
+            if "mark" in body:
+                try:
+                    out["mark"] = projectmarks.set_mark(rel, body.get("mark"), body.get("logo_data"))
+                except ValueError as e:
+                    return self._json({"error": str(e)}, 400)
             if "tracker" in body:
                 out["tracker"] = project_config.set_tracker(
                     rel, (body.get("tracker") or "")[:120], (body.get("tracker_label") or "")[:120])
@@ -1333,6 +1362,22 @@ class Handler(BaseHTTPRequestHandler):
             # store and starts/stops/rewires to match.
             rivendell.reconfigure()
             return self._json({"ok": True, "instance": inst})
+        if path == "/local/rivendell/marks":
+            act = body.get("action")
+            if act == "import":
+                return self._json(projectmarks.import_all())
+            if act == "follow":
+                abs_p = _abs_project(body.get("project"))
+                if abs_p is None:
+                    return self._json({"error": "invalid project"}, 400)
+                return self._json(projectmarks.import_all(only=browser.rel(abs_p)))
+            if act == "dismiss":
+                return self._json(projectmarks.dismiss())
+            if act == "undo":
+                return self._json(projectmarks.undo())
+            if act == "sync":
+                return self._json(projectmarks.set_sync(bool(body.get("on"))))
+            return self._json({"error": "action must be import, follow, dismiss, undo or sync"}, 400)
         if path == "/local/rivendell/queue":
             # Accept/reject one pending request. A stale click (already
             # accepted/rejected, or the worker gone) simply returns ok:false.

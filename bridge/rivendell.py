@@ -2381,6 +2381,32 @@ def tasks(slug: str) -> dict:
     return out
 
 
+def projects() -> tuple:
+    """Every project each running instance lists on /plugin/projects (its client's
+    logo and brand colour, and the fullName of every repo linked to it or
+    mirroring one), tagged with its instance. Also returns one error entry for
+    each instance that couldn't answer. For bridge/projectmarks.py, which puts a
+    client's mark on the local repos of its projects. Workers parked on a
+    rejected token or a dead link are skipped, the same way tasks() skips them."""
+    with _manager_lock:
+        running = list(_workers.values())
+    rows: list = []
+    errors: list = []
+    for w in running:
+        try:
+            if w.status == "auth_error":
+                raise TasksError("token_rejected", w.status_detail or "token rejected")
+            if w.status == "error":
+                raise TasksError("unreachable", f"unreachable: {w.status_detail or 'link down'}")
+            got = _ask(w, "/plugin/projects")
+        except TasksError as e:
+            errors.append({"instance_id": w.id, "instance": w.name, "error": e.code, "detail": str(e)})
+            continue
+        rows += [{**p, "instance_id": w.id} for p in (got if isinstance(got, list) else [])
+                 if isinstance(p, dict)]
+    return rows, errors
+
+
 def _worker(instance_id: str) -> Worker:
     with _manager_lock:
         w = _workers.get(instance_id)

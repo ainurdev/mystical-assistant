@@ -42,7 +42,7 @@ import sys
 
 from bridge import (config, devserver, dream, envsettings, landing, limits,
                     native_activity, onboard, profiles, pubsub, recovery,
-                    report, rivendell, runner, selfupdate, state, store,
+                    projectmarks, report, rivendell, runner, selfupdate, state, store,
                     toolsets, tunnel)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
@@ -191,6 +191,7 @@ def main():
         # no-op when nothing is enabled, and dials every enabled instance the
         # moment the bridge is up, without waiting for a settings save.
         rivendell.start()              # rivendell-api agent websocket client(s)
+        projectmarks.boot()            # client logos/colours keep following Rivendell (every 6h)
         # Telegram LAST: the login launcher blocks on the dashboard port above,
         # and a cold boot's not-yet-ready network must not gate the window. A
         # failed getMe is a warning, not an exit — get_updates already retries
