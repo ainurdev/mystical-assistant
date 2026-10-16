@@ -3,8 +3,8 @@
 ## Device runs
 
 A teammate can test an iOS app on a shared device: a device whose owner turned
-on **Share this device**. Everything is in **Settings › Plugins**, under each
-Rivendell connection.
+on **Share this device**. Everything is in
+**Settings › Integrations › Rivendell**, under each Rivendell connection.
 
 ### Share this device
 

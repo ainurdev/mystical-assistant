@@ -48,7 +48,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from bridge import config, device_side, github, queue_manager, rivendell_instances, store, telegram
+from bridge import config, device_side, github, integrations, queue_manager, rivendell_instances, store, telegram
 
 _SNAPSHOT_MAX = 9 * 1024 * 1024     # gzipped, as the device side takes it
 _RAW_MAX = 128 * 1024 * 1024        # before packing: past this it can't come under 9 MB, so it isn't read
@@ -68,9 +68,9 @@ _busy: set = set()            # run ids being handed back now: a frame and a cat
 # This bridge's own checkout: its working folder, and the .env with its tokens. Tests point it elsewhere.
 _BRIDGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-NO_RIVENDELL = "Connect a Rivendell in Settings › Plugins first."
+NO_RIVENDELL = "Connect a Rivendell in Settings › Integrations first."
 MYSTICAL = "That's this Mystical's own checkout, and its .env holds this bridge's tokens, so it never goes to a device."
-NO_TOKEN = "Save your Claude token for device runs in Settings › Plugins first."
+NO_TOKEN = "Save your Claude token for device runs in Settings › Integrations › Rivendell first."
 NOT_A_CHECKOUT = "This folder isn't a git checkout."
 NOT_GITHUB = "Its origin isn't a GitHub repository."
 UNSEEN = "Rivendell refused: you can't see that task or pull request, or it doesn't exist."
@@ -197,7 +197,10 @@ def _with_files(tar: bytes, root: str, names: list) -> bytes:
 
 def _instance(iid: "str | None" = None) -> "dict | None":
     """The instance named, or else the one device runs go through: the first
-    enabled one with a token."""
+    enabled one with a token. None while Rivendell isn't installed: its
+    connections stay on disk, but nothing of it runs (bridge/integrations.py)."""
+    if not integrations.installed("rivendell"):
+        return None
     for inst in rivendell_instances.raw_instances():
         if (inst.get("id") == iid) if iid else (inst.get("enable") and inst.get("api_url") and inst.get("token")):
             return inst
@@ -218,7 +221,7 @@ def _refusal(e: Exception, forbidden: str) -> str:
     if e.code == 403:
         return forbidden
     if e.code == 401:
-        return "Rivendell refused this Mystical's token; check it in Settings › Plugins."
+        return "Rivendell refused this Mystical's token; check it in Settings › Integrations › Rivendell."
     try:
         msg = json.loads(e.read().decode() or "{}").get("message")
     except (ValueError, OSError, AttributeError):

@@ -29,8 +29,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from bridge import (config, device_ask as da, device_side, github, queue_manager, rivendell,
-                    rivendell_instances, store, telegram)
+from bridge import (config, device_ask as da, device_side, github, integrations, queue_manager,
+                    rivendell, rivendell_instances, store, telegram)
 from bridge.dashboard import server as dash
 
 RID = "0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19"
@@ -454,8 +454,19 @@ def test_start_without_a_device_token_says_where_to_save_one(riv, snap, chat, mo
     monkeypatch.setattr(rivendell_instances, "raw_instances", lambda: [{**INST, "device_token": ""}])
     got = da.start(chat.csid, "Test it", "NR-31", None, None, None)
     assert got == {"id": None, "device": None,
-                   "sentence": "Save your Claude token for device runs in Settings › Plugins first."}
+                   "sentence": "Save your Claude token for device runs in Settings › Integrations › Rivendell first."}
     assert riv.calls == [] and snap == []
+
+
+def test_with_rivendell_removed_no_device_run_goes(riv, snap, chat, monkeypatch):
+    """Removed under Settings › Integrations, Rivendell keeps its connections on
+    disk, but nothing of it runs: no code goes, and nothing is listed or stopped."""
+    monkeypatch.setitem(integrations._cache, "rivendell", False)
+    assert da.start(chat.csid, "Test it", "NR-31", None, None, None)["sentence"] == da.NO_RIVENDELL
+    assert da.list_text() == da.NO_RIVENDELL
+    da._save_run(RID, _record(chat.id))
+    assert da.cancel(RID, chat.csid)["sentence"] == "The Rivendell it went through isn't connected here any more."
+    assert riv.calls == [] and riv.puts == [] and snap == []
 
 
 @pytest.mark.parametrize("task, pr", [(None, None), ("not a key", None), (None, "57 please")])
