@@ -1,8 +1,6 @@
 /* What a project's logo looks like, read off its pixels in a canvas:
-   - whether it fills its square (opaque edges, an app icon), so the tile shows
-     it edge to edge;
-   - whether its ink is dark or light, which decides the plate behind a
-     see-through logo;
+   - whether it fills its square (opaque edges, an app icon), which AURORA's
+     phosphor silhouette reads by lightness instead of by outline;
    - its strongest colours, the editor's FROM LOGO swatches.
 
    This runs here because the bridge can't decode images (stdlib only, and no
@@ -13,14 +11,13 @@ import { useSyncExternalStore } from "react";
 import { rgbToOklch, oklchToHex } from "./ink.ts";
 
 export interface LogoInfo {
-  fill: boolean;     // opaque to its edges: draw it full-bleed, no plate
-  dark: boolean;     // dark ink on see-through: needs a light plate on a dark ground
+  fill: boolean;     // opaque to its edges: an app icon, not a see-through mark
   colors: string[];  // up to 3 hex, strongest first
 }
 
 /** The reading itself, on raw RGBA pixels. Pure, for the check. */
 export function analyse(px: ArrayLike<number>, w: number, h: number): LogoInfo {
-  let edge = 0, edgeSolid = 0, lsum = 0, wsum = 0;
+  let edge = 0, edgeSolid = 0;
   const bins = new Map<number, { n: number; r: number; g: number; b: number }>();
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
@@ -29,8 +26,6 @@ export function analyse(px: ArrayLike<number>, w: number, h: number): LogoInfo {
       if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { edge++; if (a > 240) edgeSolid++; }
       if (a < 128) continue;
       const [r, g, b] = [px[i], px[i + 1], px[i + 2]];
-      lsum += rgbToOklch(r, g, b)[0] * a;
-      wsum += a;
       const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
       const e = bins.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
       e.n++; e.r += r; e.g += g; e.b += b;
@@ -59,7 +54,6 @@ export function analyse(px: ArrayLike<number>, w: number, h: number): LogoInfo {
   }
   return {
     fill: edge > 0 && edgeSolid / edge > 0.9,
-    dark: wsum > 0 && lsum / wsum < 0.55,
     colors: picked.map((c) => oklchToHex(c.L, c.C, c.H)),
   };
 }
@@ -88,8 +82,7 @@ const pending = new Set<string>();
 const subs = new Set<() => void>();
 let version = 0;
 
-/** A stored logo's reading, or null until it has been read (the tile shows
- *  the tinted plate meanwhile). */
+/** A stored logo's reading, or null until it has been read. */
 export function useLogoInfo(name: string | null | undefined, src: string): LogoInfo | null {
   useSyncExternalStore((fn) => { subs.add(fn); return () => { subs.delete(fn); }; }, () => version);
   if (!name) return null;
@@ -100,7 +93,7 @@ export function useLogoInfo(name: string | null | undefined, src: string): LogoI
       try { localStorage.setItem(KEY, JSON.stringify(cache)); } catch { /* ignore */ }
       version++;
       subs.forEach((fn) => fn());
-    }).catch(() => { /* unreadable: it keeps the default plate */ });
+    }).catch(() => { /* unreadable: AURORA reads it by outline */ });
   }
   return cache[name] ?? null;
 }

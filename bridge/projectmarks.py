@@ -30,7 +30,7 @@ logos and colours and takes new matches.
 
 What it doesn't do:
 - Decode images. The stdlib can't render SVG, and a PNG or JPEG decoder isn't
-  worth carrying here. Choosing a plate and sampling colours happen in the
+  worth carrying here. Sampling colours and reading a logo's shape happen in the
   browser (lib/logoinfo.ts), which already has a canvas.
 - Rename projects after Rivendell. Names stay yours.
 
@@ -62,7 +62,6 @@ _ICON_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 _COLOR_RE = re.compile(r"^(#[0-9a-fA-F]{6}|var\(--[a-z0-9-]{1,24}\))$")
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 KINDS = ("letters", "icon", "logo")
-PLATES = ("auto", "light", "dark")
 REFRESH_S = 6 * 3600
 _CACHE_S = 600          # how long one look at Rivendell answers for the dashboard
 
@@ -150,11 +149,6 @@ def clean(m, logos: dict) -> "dict | None":
         if m.get("logo") not in logos:
             raise ValueError("that logo isn't stored here")
         out["logo"] = m["logo"]
-        plate = m.get("plate") or "auto"
-        if plate not in PLATES:
-            raise ValueError("a plate is auto, light or dark")
-        if plate != "auto":
-            out["plate"] = plate
     if out == {"kind": "letters"}:
         return None
     return out

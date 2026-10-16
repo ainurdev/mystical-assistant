@@ -18,10 +18,9 @@ composer tab, and SETTINGS ▸ Projects rows. In the ANALYZE header it replaces 
 (`MarkEditor`) opens from a Settings row's tile and from the ANALYZE tile.
 
 ## Rules
-- **Plate.** A logo with see-through edges sits on a plate picked from its own pixels (`lib/logoinfo`). A
-  dark logo gets a light plate on a dark ground. A light logo keeps the tinted plate, and paper reverses both.
-  An opaque square logo fills the tile. The editor can force LIGHT or DARK. AURORA has no plates: there a
-  logo becomes a phosphor silhouette in the project's colour (a CSS mask, luminance for a square logo).
+- **No background.** A logo is drawn as it is, edge to edge, with no plate, tint or ring behind it. The
+  user asked for this after the first build, which put a plate behind see-through logos. AURORA turns a logo
+  into a phosphor silhouette in the project's colour (a CSS mask, by luminance for a square logo).
 - **Readable colour.** The tile keeps the brand colour. Names and branches print in the same hue, with OKLCH
   lightness clamped to `--ink-lo..--ink-hi`: 0.65–1 on dark grounds, 0–0.55 on paper. CSS does this with
   relative colour, `lib/ink.inkCss`, so a theme switch re-inks every name without a re-render.

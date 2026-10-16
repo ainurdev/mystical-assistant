@@ -78,19 +78,19 @@ def test_an_icon_mark_round_trips_and_bad_fields_are_refused():
 
 
 def test_a_logo_is_stored_with_its_mark_and_served_by_its_hash():
-    m = projectmarks.set_mark("/r", {"kind": "logo", "plate": "light", "color": "#ff5b1f"},
+    m = projectmarks.set_mark("/r", {"kind": "logo", "plate": "light", "color": "#ff5b1f"},   # a plate is no longer kept
                               logo_data=base64.b64encode(PNG).decode())
-    assert m["kind"] == "logo" and m["plate"] == "light" and m["logo"].endswith(".png")
+    assert m["kind"] == "logo" and "plate" not in m and m["logo"].endswith(".png")
     data, ctype = projectmarks.logo(m["logo"])
     assert data == PNG and ctype == "image/png"
     assert projectmarks.logo("../project_config.json") is None
 
 
-def test_a_replaced_logo_is_dropped_and_an_auto_plate_is_not_stored():
+def test_a_replaced_logo_is_dropped():
     first = projectmarks.set_mark("/r", {"kind": "logo"}, logo_data=base64.b64encode(PNG).decode())
-    second = projectmarks.set_mark("/r", {"kind": "logo", "plate": "auto"},
+    second = projectmarks.set_mark("/r", {"kind": "logo"},
                                    logo_data=base64.b64encode(SVG).decode())
-    assert "plate" not in second and second["logo"].endswith(".svg")
+    assert second["logo"].endswith(".svg")
     assert projectmarks.logo(first["logo"]) is None and projectmarks.logo(second["logo"]) is not None
 
 

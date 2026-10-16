@@ -3614,34 +3614,23 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ps-lbl { font-size: 12.5px; color: var(--txd); white-space: nowrap; }
 
 /* ── project marks (components/ui/ProjectTile, bridge/projectmarks.py) ──
-   An icon draws in the tile's own ink. A logo is an image on a plate picked by
-   what its pixels are like (lib/logoinfo, data-logo): a square one fills the
-   tile, a dark see-through one gets a light plate on a dark ground, a light one
-   keeps the tinted plate — and the reverse on paper. A plate the editor fixed
-   (data-plate) wins. Last in the file on purpose: these must outrank every
-   per-surface .ptile rule above (.ps-row .ptile, :root[data-light] .ptile). */
+   An icon draws in the tile's own ink. A logo is drawn as it is, edge to edge,
+   with nothing behind it: no plate, tint or ring (the user's call, 2026-10-16).
+   Last in the file, and !important, to beat every per-surface .ptile rule
+   above (.ps-row .ptile, :root[data-light] .ptile, the families). */
 :root { --ink-lo: .65; --ink-hi: 1; }
 :root[data-light] { --ink-lo: 0; --ink-hi: .55; }
 .ptile svg { width: 72%; height: 72%; stroke-width: 2.1; flex: none; }
-.ptile[data-kind="logo"] { overflow: hidden; background: color-mix(in oklab, var(--pc) 14%, var(--panel));
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .07); }
-.ptile[data-kind="logo"] img { width: 80%; height: 80%; object-fit: contain; display: block; }
-.ptile[data-kind="logo"][data-logo="fill"]:not([data-plate]) { box-shadow: none; }
-.ptile[data-kind="logo"][data-logo="fill"]:not([data-plate]) img { width: 100%; height: 100%; object-fit: cover; }
-.ptile[data-kind="logo"]:is([data-plate="light"], [data-logo="dark"]:not([data-plate])) { background: #eef0f6; }
-.ptile[data-kind="logo"][data-plate="dark"] { background: #1c1c22; }
-:root[data-light] .ptile[data-kind="logo"] { background: #fff; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .1); }
-:root[data-light] .ptile[data-kind="logo"]:is([data-plate="dark"], [data-logo="light"]:not([data-plate])) { background: #22222a; box-shadow: none; }
-:root[data-light] .ptile[data-kind="logo"][data-logo="fill"]:not([data-plate]) { box-shadow: none; }
-/* AURORA has no plates (!important: the plate rules above out-rank a family
-   rule): a logo turns to phosphor, a silhouette in the project's colour; a
+.ptile[data-kind="logo"] { overflow: hidden; background: none !important; box-shadow: none !important; }
+.ptile[data-kind="logo"] img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* AURORA: a logo turns to phosphor, a silhouette in the project's colour; a
    square one keeps its lettering by its own lightness */
-[data-fam="aurora"] .ptile[data-kind="logo"] { position: relative; background: transparent !important; box-shadow: none !important;
+[data-fam="aurora"] .ptile[data-kind="logo"] { position: relative;
   filter: drop-shadow(0 0 3px color-mix(in srgb, var(--pc) 55%, transparent)); }
 [data-fam="aurora"] .ptile[data-kind="logo"] img { visibility: hidden; }
-[data-fam="aurora"] .ptile[data-kind="logo"]::after { content: ""; position: absolute; inset: 1px; background: var(--pc);
+[data-fam="aurora"] .ptile[data-kind="logo"]::after { content: ""; position: absolute; inset: 0; background: var(--pc);
   -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
-[data-fam="aurora"] .ptile[data-kind="logo"][data-logo="fill"]::after { inset: 0; -webkit-mask-mode: luminance; mask-mode: luminance; }
+[data-fam="aurora"] .ptile[data-kind="logo"][data-logo="fill"]::after { mask-mode: luminance; }
 
 /* ── the mark editor (components/hud/MarkEditor) and its two homes: a tile in
    SETTINGS ▸ Projects and the ANALYZE header (.mkwrap holds the popover) ── */
@@ -3741,8 +3730,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* the Rivendell notice's client logos (Notifications.tsx) */
 .nt-logos { display: flex; gap: 6px; margin-top: 10px; }
-.nt-logos span { width: 26px; height: 26px; display: grid; place-items: center; overflow: hidden; border-radius: 7px; background: #eef0f6; }
-.nt-logos img { width: 80%; height: 80%; object-fit: contain; }
+.nt-logos span { width: 26px; height: 26px; display: grid; place-items: center; overflow: hidden; border-radius: 7px; }
+.nt-logos img { width: 100%; height: 100%; object-fit: contain; }
 .nt-acts { display: flex; gap: 8px; margin-top: 11px; }
 .nt-act { padding: 6px 12px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 30%, transparent)); border-radius: var(--f-rad-s, 0);
   background: transparent; font: 600 10.5px var(--ui-font, inherit); letter-spacing: .06em; color: var(--txm); cursor: pointer; }

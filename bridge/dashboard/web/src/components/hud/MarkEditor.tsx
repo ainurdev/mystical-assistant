@@ -57,7 +57,6 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const [icon, setIcon] = useState<string | null>(cur?.icon ?? null);
   const [color, setColor] = useState<string | null>(cur?.color ?? null);
   const [hex, setHex] = useState(cur?.color && HEX.test(cur.color) ? cur.color : "");
-  const [plate, setPlate] = useState<"auto" | "light" | "dark">(cur?.plate ?? "auto");
   const [logo, setLogo] = useState<Logo | null>(cur?.logo
     ? { name: cur.logo, url: projectLogoUrl(cur.logo), label: following ? `${poss(cur.rv?.name ?? "The client")} logo` : "Your logo" }
     : null);
@@ -148,8 +147,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
 
   const next: ProjectMark | null =
     kind === "icon" ? (icon ? { kind, icon, ...(color ? { color } : {}) } : null)
-    : kind === "logo" ? (logo ? { kind, ...(logo.name ? { logo: logo.name } : {}), ...(plate !== "auto" ? { plate } : {}),
-                                    ...(color ? { color } : {}) } : null)
+    : kind === "logo" ? (logo ? { kind, ...(logo.name ? { logo: logo.name } : {}), ...(color ? { color } : {}) } : null)
     : color ? { kind: "letters", color } : null;
   const incomplete = (kind === "icon" && !icon) || (kind === "logo" && !logo);
   // A dropped logo only counts while LOGO is the chosen tab; a bare letters
@@ -194,8 +192,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const swatches = kind === "logo" ? (info?.colors ?? []) : [];
   const preview = (
     <b className="ptile mk-tile" data-kind={kind === "letters" ? undefined : kind} style={{ ["--pc" as string]: tint }}
-      data-logo={kind === "logo" && info ? (info.fill ? "fill" : info.dark ? "dark" : "light") : undefined}
-      data-plate={kind === "logo" && plate !== "auto" ? plate : undefined}>
+      data-logo={kind === "logo" && info?.fill ? "fill" : undefined}>
       {kind === "logo" && logo ? <img src={logo.url} alt="" />
         : kind === "icon" && icon ? <DynamicIcon name={icon as never} />
         : projectInitials(project)}
@@ -267,19 +264,6 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
             <span>Rivendell has <b>{poss(match.client ?? "its client")}</b> {match.logo ? "logo" : "colour"}</span>
             <button type="button" className="mk-btn mk-ghostbtn" disabled={busy} onClick={() => void follow()}>USE IT</button>
           </div>
-        )}
-
-        {kind === "logo" && logo && info && !info.fill && (
-          <>
-            <div className="mk-lbl">Plate<span>behind a see-through logo</span></div>
-            <div className="mk-mini">
-              {(["auto", "light", "dark"] as const).map((p) => (
-                <button key={p} type="button" data-on={plate === p || undefined} onClick={() => setPlate(p)}>
-                  {p === "auto" ? `AUTO · ${light ? (info.dark ? "white" : "dark") : (info.dark ? "light" : "tint")}` : p.toUpperCase()}
-                </button>
-              ))}
-            </div>
-          </>
         )}
 
         <div className="mk-lbl">Colour<span>{following && color === cur?.color ? `${poss(cur?.rv?.name ?? "the client")} brand colour`

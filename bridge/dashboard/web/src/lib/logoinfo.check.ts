@@ -20,7 +20,6 @@ console.assert(!square.colors.includes("#ffffff"), "white lettering is not a bra
 const navy = analyse(img(S, S, (x, y) => (x < 2 || y < 2 || x > 13 || y > 13 ? [0, 0, 0, 0]
   : x < 4 && y < 4 ? [233, 72, 59, 255] : [29, 43, 100, 255])), S, S);
 console.assert(!navy.fill, "transparent edges: not a fill");
-console.assert(navy.dark, "navy ink is dark: it gets a light plate");
 console.assert(navy.colors[0] === "#1d2b64" && navy.colors.includes("#e9483b"), "navy, then the red dot", navy.colors);
 
 // A dark square with a teal mark and a coral dot (an app icon on a near-black
@@ -31,7 +30,7 @@ console.assert(site.fill && site.colors[0] === "#2ec4b6", "a bright mark beats i
 
 // Yellow bars on transparency: light ink.
 const yellow = analyse(img(S, S, (_x, y) => (y % 4 === 0 ? [0, 0, 0, 0] : [247, 197, 49, 255])), S, S);
-console.assert(!yellow.dark && !yellow.fill, "yellow on see-through is light ink");
+console.assert(!yellow.fill && yellow.colors[0] === "#f7c531", "yellow bars on see-through: no fill, yellow");
 
 // Black and white only: nothing has colour, so the plainest still comes back.
 const mono = analyse(img(S, S, (x) => (x < 8 ? [0, 0, 0, 255] : [255, 255, 255, 255])), S, S);
@@ -39,5 +38,5 @@ console.assert(mono.colors.length > 0, "a black-and-white logo still offers a co
 
 // Fully transparent: no colours, not dark, not a fill.
 const empty = analyse(img(S, S, () => [0, 0, 0, 0]), S, S);
-console.assert(!empty.fill && !empty.dark && empty.colors.length === 0, "an empty image reads as nothing");
+console.assert(!empty.fill && empty.colors.length === 0, "an empty image reads as nothing");
 console.log("logoinfo.check ok");

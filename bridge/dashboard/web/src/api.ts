@@ -267,7 +267,6 @@ export interface ProjectMark {
   color?: string;             // "#rrggbb", or a theme ink like "var(--acc)"
   icon?: string;              // a lucide icon name
   logo?: string;              // "<sha256>.<ext>", served at projectLogoUrl()
-  plate?: "light" | "dark";   // absent = picked from the logo itself
   source?: "rivendell";       // absent = yours: set here, never changes on its own
   rv?: { instance?: string; client?: string; name?: string; logo_id?: string | null };
 }
