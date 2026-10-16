@@ -112,6 +112,19 @@ CREATE TABLE IF NOT EXISTS events (
   PRIMARY KEY (session_id, seq)
 );
 
+CREATE TABLE IF NOT EXISTS notices (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  at       REAL NOT NULL,
+  kind     TEXT NOT NULL,
+  subject  TEXT NOT NULL,
+  title    TEXT NOT NULL DEFAULT '',
+  body     TEXT NOT NULL DEFAULT '',
+  meta     TEXT NOT NULL DEFAULT '{}',
+  read_at  REAL
+);
+CREATE INDEX IF NOT EXISTS ix_notices_at ON notices(at);
+CREATE INDEX IF NOT EXISTS ix_notices_subject ON notices(subject, id);
+
 """
 
 
@@ -631,6 +644,50 @@ def parse_disabled_tools(raw: "str | None") -> list[str]:
     A stored "[]" is a real choice (everything on) and is honoured — including
     by the run itself, which no longer re-denies on top."""
     return default_disabled_tools() if raw is None else parse_str_list(raw)
+
+
+# --- notices (bridge/notices.py owns what they mean) -----------------------------
+
+def add_notice(kind: str, subject: str, title: str, body: str, meta: dict) -> int:
+    with closing(_connect()) as c:
+        return c.execute(
+            "INSERT INTO notices(at,kind,subject,title,body,meta) VALUES(?,?,?,?,?,?)",
+            (time.time(), kind, subject, title, body, json.dumps(meta))).lastrowid
+
+
+def list_notices(since_ts: float, limit: int) -> list[dict]:
+    """Newest first, `meta` decoded (a row that won't decode reads as {})."""
+    with closing(_connect()) as c:
+        rows = c.execute("SELECT * FROM notices WHERE at>=? ORDER BY id DESC LIMIT ?",
+                         (since_ts, limit)).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            meta = json.loads(d["meta"] or "{}")
+        except ValueError:
+            meta = {}
+        d["meta"] = meta if isinstance(meta, dict) else {}
+        out.append(d)
+    return out
+
+
+def mark_notices_read(ids: "list[int] | None") -> int:
+    """Mark these unread notices read (None: every unread one). How many changed."""
+    with closing(_connect()) as c:
+        if ids is None:
+            return c.execute("UPDATE notices SET read_at=? WHERE read_at IS NULL",
+                             (time.time(),)).rowcount
+        if not ids:
+            return 0
+        q = ",".join("?" * len(ids))
+        return c.execute(f"UPDATE notices SET read_at=? WHERE read_at IS NULL AND id IN ({q})",
+                         (time.time(), *ids)).rowcount
+
+
+def prune_notices(before_ts: float) -> None:
+    with closing(_connect()) as c:
+        c.execute("DELETE FROM notices WHERE at<?", (before_ts,))
 
 
 def get_setting(key: str) -> "str | None":
