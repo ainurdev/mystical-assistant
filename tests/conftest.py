@@ -102,6 +102,18 @@ def _no_profiles(monkeypatch, tmp_path):
     except Exception:  # noqa: BLE001 - a test that never ran store.init()
         pass
 
+
+from bridge import integrations  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _plugins_installed(monkeypatch, tmp_path):
+    """Every bundled plugin installed, so the Rivendell, tracker and design
+    suites keep testing their features; test_integrations.py starts from none."""
+    monkeypatch.setattr(integrations, "_path", lambda: str(tmp_path / "conftest-plugins.json"))
+    monkeypatch.setattr(integrations, "_cache", dict.fromkeys(("rivendell", "trackers", "design"), True))
+
+
 # An empty selection is not a failure. pytest counts session.testscollected AFTER
 # -k/-m deselection (_pytest/main.py:870), so a filter that matches nothing lands
 # on the same `testscollected == 0` branch as a bad path or a file with no tests
