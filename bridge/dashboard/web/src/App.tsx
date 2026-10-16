@@ -30,7 +30,9 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
-import { ago, projectName, setProjectNames, useProjectTints } from "./lib/surfaces";
+import { ago, forgetLegacyTints, legacyTints, projectName, putProjectMark, setProjectMarks, setProjectNames,
+         useProjectTints } from "./lib/surfaces";
+import { offerRivendellMarks } from "./components/hud/RivendellMarks";
 import {
   autoBaseFont,
   fontStack,
@@ -671,6 +673,7 @@ export function App() {
 
   // Disk discovery polls like the session list, so a repo cloned or created
   // after load appears on its own — no rescan button, no reload.
+  const marksMoved = useRef(false);
   const refreshProjects = useCallback(async () => {
     try {
       const p = await api.projects();
@@ -679,6 +682,21 @@ export function App() {
       // field, in which case the cached localStorage set stands.
       if (p.hidden) setHiddenProjects(Object.fromEntries(p.hidden.map((rel) => [rel, true])));
       setProjectNames(p.names ?? {}, p.projects ?? []);
+      setProjectMarks(p.marks);
+      // First listing from a bridge with marks: the colours this browser
+      // picked before marks existed move onto the bridge, once; then the
+      // Rivendell offer, after the boot screen has had its moment.
+      if (p.marks && !marksMoved.current) {
+        marksMoved.current = true;
+        const legacy = legacyTints(p.projects ?? []);
+        void Promise.all(Object.entries(legacy).map(([rel, color]) =>
+          api.setProjectSettings({ project: rel }, { mark: { kind: "letters", color } })
+            .then((r) => { if (r.mark !== undefined) putProjectMark(rel, r.mark); })))
+          .then(forgetLegacyTints)
+          .catch(() => { /* they stand as overrides; the next load tries again */ });
+        window.setTimeout(() => void offerRivendellMarks(
+          () => void api.projects().then((q) => setProjectMarks(q.marks)).catch(() => { /* the poll catches up */ })), 4000);
+      }
       setProjectRemotes(p.remotes ?? {});
       markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
     } catch { markBoot("projects", "fail", "NO SCAN"); /* old backend without discovery — panel stays session-derived */ }

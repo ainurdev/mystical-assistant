@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   logStream,
@@ -24,7 +24,8 @@ import {
   countByPath, loadNotes, noteRange, notesKey, notesMessage, reanchor, saveNotes,
   type Note, type NoteDraft, type SendTo,
 } from "../../lib/reviewnotes";
-import { ago, projectName, projectTint, setProjectTint } from "../../lib/surfaces";
+import { ago, projectName, projectTint } from "../../lib/surfaces";
+import { ProjectTile } from "../ui/ProjectTile";
 import { CommitGraph } from "../CommitGraph";
 import { askConfirm } from "../ui/Ask";
 import { NoteEditor, NoteThread, SendBar } from "./DiffNotes";
@@ -36,8 +37,10 @@ import { DesignTab } from "./DesignTab";
 import { WorktreesTab } from "./WorktreesTab";
 import { XtermPane } from "./XtermPane";
 
+const MarkEditor = lazy(() => import("./MarkEditor"));
+
 /* PROJECT ANALYSIS modal — matches the HUD design mock (hud.dc.html lines
-   530–1258): header with an editable project colour, tab bar (EDITOR / GIT /
+   530–1258): header with the project's mark (its tile opens MarkEditor), tab bar (EDITOR / GIT /
    WORKTREES / TERMINAL / ISSUES), and per-tab bodies. */
 
 export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "design" | "issues" | "tasks" | "map" | "learn";
@@ -76,11 +79,6 @@ interface Props {
 
 const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
 
-/* project-colour swatches (design TAG_COLORS + extended range) */
-const TAG_COLORS = [
-  "var(--acc)", "var(--purple)", "var(--ok)", "var(--warn)", "var(--info)", "var(--err)",
-  "#ff7ad9", "#ffab6b", "#c8ef6a", "#7fd8ff", "#ff8ba7", "#b8c9d4",
-];
 
 function name(rel: string): string {
   return projectName(rel);
@@ -97,7 +95,6 @@ function hexRgba(hex: string, a: number): string {
 
 export function AnalyzeModal(props: Props) {
   const { project, badge } = props;
-  const tint = projectTint(project);
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
@@ -123,12 +120,8 @@ export function AnalyzeModal(props: Props) {
   // modal-wide branch focus for the GIT + EDITOR tabs (which worktree we view)
   const [selectedBranch, setSelectedBranch] = useState(props.initialBranch ?? "");
 
-  // editable project colour — persisted per project via setProjectTint, so the
-  // strip, panels and future opens all reflect it.
-  const [colorEditOpen, setColorEditOpen] = useState(false);
-  const [colorDraft, setColorDraft] = useState("");
-  const tintColor = tint.color;
-  const tintBd = tint.border;
+  const [markOpen, setMarkOpen] = useState(false);   // the tile's mark editor
+  const markTile = useRef<HTMLButtonElement>(null);
 
   const refreshGit = () => { void api.git(project).then(setGit).catch(() => {}); };
   const refreshWt = () => {
@@ -168,7 +161,7 @@ export function AnalyzeModal(props: Props) {
 
   useEffect(() => {
     setSelectedBranch(props.initialBranch ?? "");
-    setColorEditOpen(false);
+    setMarkOpen(false);
     refreshGit();
     void api.issues(project).then(setIssues).catch(() => {});
     refreshTracker();
@@ -186,14 +179,6 @@ export function AnalyzeModal(props: Props) {
     setTimeout(props.onClose, 260);
   }
 
-  function openColorEdit() {
-    setColorDraft(tintColor);
-    setColorEditOpen((o) => !o);
-  }
-  function saveColorEdit() {
-    setProjectTint(project, { color: colorDraft || tintColor });
-    setColorEditOpen(false);
-  }
 
   const cur = git?.branch || badge?.branch || "";
   const live = props.sessions.some((s) => {
@@ -235,28 +220,16 @@ export function AnalyzeModal(props: Props) {
         {/* header */}
         <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none", flexWrap: "wrap" }}>
           <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>
-          {/* No short tag to edit any more — the dot itself is the colour picker. */}
-          <span style={{ position: "relative", flex: "none", display: "flex", alignItems: "center" }}>
-            <button onClick={openColorEdit} title="project colour" {...hp("tag")}
-              style={{ appearance: "none", cursor: "pointer", display: "grid", placeItems: "center", width: 18, height: 18, borderRadius: "50%", border: `1px solid ${hov === "tag" || colorEditOpen ? tintBd : "transparent"}`, background: "transparent", padding: 0 }}>
-              <span style={{ width: 8, height: 8, borderRadius: "50%", background: tintColor }} />
+          {/* The project's tile is its mark editor: a logo, an icon or its initials, and its colour. */}
+          <span className="mkwrap an-mark">
+            <button ref={markTile} type="button" className="mktile" data-on={markOpen || undefined} onClick={() => setMarkOpen((o) => !o)}
+              title="this project's mark: a logo, an icon or its initials">
+              <ProjectTile project={project} />
             </button>
-            {colorEditOpen && (
-              <div style={{ position: "absolute", top: "calc(100% + 7px)", left: 0, zIndex: 40, width: 224, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", padding: 12, animation: "mslide .16s ease both" }}>
-                <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 7 }}>COLOR</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {TAG_COLORS.map((c) => (
-                    <button key={c} onClick={() => setColorDraft(c)}
-                      style={{ width: 20, height: 20, borderRadius: "50%", border: 0, cursor: "pointer", background: c, boxShadow: colorDraft === c ? `0 0 0 2px #060a0a, 0 0 0 3px ${c}` : "0 0 0 0 transparent", padding: 0, flex: "none" }} />
-                  ))}
-                </div>
-                <div style={{ display: "flex", gap: 7, marginTop: 13 }}>
-                  <button onClick={saveColorEdit} {...hp("tagsave")}
-                    style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "tagsave" ? "color-mix(in srgb, var(--acc) 24%, transparent)" : "color-mix(in srgb, var(--acc) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: 7 }}>SAVE</button>
-                  <button onClick={() => setColorEditOpen(false)} {...hp("tagcancel")}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "tagcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "7px 11px" }}>CANCEL</button>
-                </div>
-              </div>
+            {markOpen && (
+              <Suspense fallback={null}>
+                <MarkEditor project={project} name={name(project)} anchor={markTile.current} onClose={() => setMarkOpen(false)} />
+              </Suspense>
             )}
           </span>
           <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}>{name(project)}</span>

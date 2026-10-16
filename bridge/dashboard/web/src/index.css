@@ -3612,3 +3612,138 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ps-optname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ps-k { margin-left: auto; font: 11px var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
 .ps-lbl { font-size: 12.5px; color: var(--txd); white-space: nowrap; }
+
+/* ── project marks (components/ui/ProjectTile, bridge/projectmarks.py) ──
+   An icon draws in the tile's own ink. A logo is an image on a plate picked by
+   what its pixels are like (lib/logoinfo, data-logo): a square one fills the
+   tile, a dark see-through one gets a light plate on a dark ground, a light one
+   keeps the tinted plate — and the reverse on paper. A plate the editor fixed
+   (data-plate) wins. Last in the file on purpose: these must outrank every
+   per-surface .ptile rule above (.ps-row .ptile, :root[data-light] .ptile). */
+:root { --ink-lo: .65; --ink-hi: 1; }
+:root[data-light] { --ink-lo: 0; --ink-hi: .55; }
+.ptile svg { width: 72%; height: 72%; stroke-width: 2.1; flex: none; }
+.ptile[data-kind="logo"] { overflow: hidden; background: color-mix(in oklab, var(--pc) 14%, var(--panel));
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .07); }
+.ptile[data-kind="logo"] img { width: 80%; height: 80%; object-fit: contain; display: block; }
+.ptile[data-kind="logo"][data-logo="fill"]:not([data-plate]) { box-shadow: none; }
+.ptile[data-kind="logo"][data-logo="fill"]:not([data-plate]) img { width: 100%; height: 100%; object-fit: cover; }
+.ptile[data-kind="logo"]:is([data-plate="light"], [data-logo="dark"]:not([data-plate])) { background: #eef0f6; }
+.ptile[data-kind="logo"][data-plate="dark"] { background: #1c1c22; }
+:root[data-light] .ptile[data-kind="logo"] { background: #fff; box-shadow: inset 0 0 0 1px rgb(0 0 0 / .1); }
+:root[data-light] .ptile[data-kind="logo"]:is([data-plate="dark"], [data-logo="light"]:not([data-plate])) { background: #22222a; box-shadow: none; }
+:root[data-light] .ptile[data-kind="logo"][data-logo="fill"]:not([data-plate]) { box-shadow: none; }
+/* AURORA has no plates (!important: the plate rules above out-rank a family
+   rule): a logo turns to phosphor, a silhouette in the project's colour; a
+   square one keeps its lettering by its own lightness */
+[data-fam="aurora"] .ptile[data-kind="logo"] { position: relative; background: transparent !important; box-shadow: none !important;
+  filter: drop-shadow(0 0 3px color-mix(in srgb, var(--pc) 55%, transparent)); }
+[data-fam="aurora"] .ptile[data-kind="logo"] img { visibility: hidden; }
+[data-fam="aurora"] .ptile[data-kind="logo"]::after { content: ""; position: absolute; inset: 1px; background: var(--pc);
+  -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
+[data-fam="aurora"] .ptile[data-kind="logo"][data-logo="fill"]::after { inset: 0; -webkit-mask-mode: luminance; mask-mode: luminance; }
+
+/* ── the mark editor (components/hud/MarkEditor) and its two homes: a tile in
+   SETTINGS ▸ Projects and the ANALYZE header (.mkwrap holds the popover) ── */
+.mkwrap { position: relative; display: inline-flex; flex: none; }
+.mktile { appearance: none; border: 0; padding: 2px; margin: -2px; background: transparent; border-radius: 8px; cursor: pointer; display: inline-grid; }
+.mktile .ptile { margin: 0; }
+.mktile:hover, .mktile[data-on] { box-shadow: 0 0 0 1.5px var(--acc); }
+.an-mark .ptile { width: 22px; height: 22px; border-radius: 6px; font-size: 9.5px; }
+.mk { position: fixed; z-index: 200; width: 356px; max-height: calc(100vh - 16px); overflow-y: auto; text-align: left; font-family: var(--ui-font, inherit); cursor: default;
+  border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 40%, transparent)); border-radius: var(--f-rad, 0);
+  background: var(--panel2); box-shadow: 0 18px 50px -12px var(--shadow-pop); animation: mslide .16s ease both; }
+.mk-hd { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.mk-hd small { display: block; font: 500 10px var(--ui-font); letter-spacing: .1em; text-transform: uppercase; color: var(--txl); margin-bottom: 2px; }
+.mk-hd b { font: 600 13px var(--ui-font); color: var(--txb); }
+.mk-x { margin-left: auto; appearance: none; border: 0; background: transparent; color: var(--txl); display: grid; place-items: center; width: 24px; height: 24px; cursor: pointer; }
+.mk-x:hover { color: var(--txb); }
+.mk-bd { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 13px; }
+.mk-seg { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: var(--f-rad-s, 0); background: var(--panel3); }
+.mk-seg button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px 0; border: 0; border-radius: calc(var(--f-rad-s, 0px) - 2px);
+  background: transparent; font: 500 11px var(--ui-font); letter-spacing: .06em; color: var(--txd); cursor: pointer; }
+.mk-seg button svg { color: var(--txl); }
+.mk-seg button[data-on] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line2); }
+.mk-seg button[data-on] svg { color: var(--acc); }
+.mk-drop { display: flex; gap: 13px; align-items: center; width: 100%; padding: 12px; border: 1px dashed var(--line2); border-radius: var(--f-rad, 0);
+  background: var(--panel3); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.mk-drop.mk-still { cursor: default; border-style: solid; }
+.mk-drop b { display: block; font: 500 12.5px var(--ui-font); color: var(--txb); }
+.mk-drop small { display: block; font-size: 11px; color: var(--txl); margin-top: 3px; line-height: 1.45; }
+.mk-drop .ptile.mk-tile { width: 64px; height: 64px; border-radius: var(--f-rad-l, 0); font-size: 22px; margin: 0; }
+.mk-drop .ptile.mk-tile svg { stroke-width: 1.6; }
+.mk-ph { width: 64px; height: 64px; flex: none; display: grid; place-items: center; border: 1px dashed var(--line2); border-radius: var(--f-rad-l, 0); color: var(--txl); }
+.mk-search { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0); background: var(--panel3); color: var(--txl); }
+.mk-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--txb); font: 12.5px var(--ui-font); }
+.mk-search span { font: 500 10px var(--mono); }
+.mk-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; max-height: 204px; overflow-y: auto; }
+.mk-grid button { aspect-ratio: 1; display: grid; place-items: center; border: 0; border-radius: var(--f-rad-s, 0); background: transparent; color: var(--txm); cursor: pointer; }
+.mk-grid button:hover { background: color-mix(in oklab, var(--acc) 8%, transparent); color: var(--txb); }
+.mk-grid button[data-on] { background: color-mix(in oklab, var(--pc) 22%, var(--panel)); color: color-mix(in oklab, var(--pc) 30%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 60%, transparent); }
+.mk-grid svg { width: 16px; height: 16px; stroke-width: 1.8; }
+.mk-none { grid-column: 1 / -1; font-size: 11.5px; color: var(--txl); padding: 8px 2px; }
+.mk-from { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid color-mix(in oklab, var(--purple) 30%, var(--line));
+  border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--purple) 6%, var(--panel2)); font-size: 11.5px; color: var(--txm); }
+.mk-from b { color: var(--txb); font-weight: 500; }
+.mk-from .mk-btn { margin-left: auto; }
+.mk-gem { width: 7px; height: 7px; flex: none; margin: 0 2px; transform: rotate(45deg); background: var(--purple); border-radius: 1px; }
+.mk-lbl { display: flex; align-items: center; gap: 8px; margin-bottom: -5px; font: 600 10px var(--ui-font); letter-spacing: .12em; text-transform: uppercase; color: var(--txl); }
+.mk-lbl span { margin-left: auto; font: 500 10.5px var(--ui-font); letter-spacing: .02em; text-transform: none; color: var(--txd); }
+.mk-mini { display: flex; gap: 2px; padding: 2px; align-self: flex-start; border: 1px solid var(--line); border-radius: var(--f-rad-s, 0); background: var(--panel3); }
+.mk-mini button { padding: 3px 10px; border: 0; border-radius: calc(var(--f-rad-s, 0px) - 2px); background: transparent; font: 500 10.5px var(--ui-font); letter-spacing: .04em; color: var(--txd); cursor: pointer; }
+.mk-mini button[data-on] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line2); }
+.mk-sws { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mk-sw { width: 18px; height: 18px; flex: none; padding: 0; border: 0; border-radius: 50%; cursor: pointer; }
+.mk-sw.mk-big { width: 22px; height: 22px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .14); }
+.mk-sw[data-on] { box-shadow: 0 0 0 2px var(--panel2), 0 0 0 3.5px var(--txb); }
+.mk-auto { background: transparent; border: 1.5px dashed var(--c); }
+.mk-sep { width: 1px; height: 18px; margin: 0 3px; background: var(--line2); }
+.mk-hexrow { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+.mk-hex { display: inline-flex; align-items: center; gap: 7px; padding: 3px 8px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0); background: var(--panel3); }
+.mk-hex i { width: 11px; height: 11px; display: block; border-radius: 3px; box-shadow: inset 0 0 0 1px var(--line2); }
+.mk-hex input { width: 64px; border: 0; outline: 0; background: transparent; font: 500 11px var(--mono); color: var(--txh); }
+.mk-ink { display: inline-flex; align-items: center; gap: 5px; flex-wrap: wrap; font-size: 11px; color: var(--txd); }
+.mk-ink i { width: 10px; height: 10px; display: inline-block; border-radius: 3px; }
+.mk-pv { display: flex; align-items: center; gap: 7px; padding: 9px 10px; border: 1px solid var(--line); border-radius: var(--f-rad-s, 0); background: var(--canvas); }
+.mk-pv .ptile.mk-tile { margin: 0; }
+.mk-pvname { font: 500 11px var(--ui-font); color: var(--pc); }
+.mk-pvlb { margin-left: auto; font: 600 9.5px var(--ui-font); letter-spacing: .12em; color: var(--txg); }
+.mk-err { font-size: 11.5px; color: var(--err); line-height: 1.45; }
+.mk-ft { display: flex; gap: 8px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--line); background: var(--panel); }
+.mk-btn { padding: 7px 13px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0); background: transparent; font: 600 11px var(--ui-font);
+  letter-spacing: .06em; color: var(--txm); white-space: nowrap; cursor: pointer; }
+.mk-btn:disabled { opacity: .4; cursor: default; }
+.mk-pri { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
+.mk-ghostbtn { border-color: transparent; color: var(--txd); padding-left: 6px; padding-right: 6px; }
+.mk-from .mk-ghostbtn { border-color: var(--line2); color: var(--txm); padding: 3px 9px; }
+.mk-note { font-size: 11px; color: var(--txd); }
+
+/* SETTINGS ▸ Projects: where each mark comes from, and the Rivendell strip */
+.ps-via { display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border: 1px solid color-mix(in oklab, var(--purple) 35%, transparent);
+  border-radius: 999px; font: 500 9.5px var(--f); letter-spacing: .08em; color: var(--purple); white-space: nowrap; }
+.ps-via i { width: 5px; height: 5px; transform: rotate(45deg); background: var(--purple); border-radius: 1px; }
+.ps-via.ps-mine { color: var(--txd); border-color: var(--l2); }
+.ps-riv { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; padding: 11px 13px; border-radius: 12px;
+  border: 1px solid color-mix(in oklab, var(--purple) 30%, var(--l)); background: color-mix(in oklab, var(--purple) 5%, var(--panel)); }
+.ps-riv > i { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 8px; background: color-mix(in oklab, var(--purple) 14%, var(--panel2)); }
+.ps-riv > i::after { content: ""; width: 9px; height: 9px; transform: rotate(45deg); border: 1.5px solid var(--purple); border-radius: 1px; }
+.ps-riv > div { flex: 1; min-width: 0; }
+.ps-riv b { display: block; font: 500 13px var(--f); color: var(--txb); }
+.ps-riv small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--txd); }
+.ps-riv.ps-riv-dim { border-color: var(--l); background: transparent; }
+.ps-riv.ps-riv-dim > i { display: none; }
+.ps-pri { background: var(--acc) !important; border-color: var(--acc) !important; color: var(--acc-on) !important; }
+.ps-tog { position: relative; width: 30px; height: 18px; flex: none; border: 0; padding: 0; border-radius: 999px; background: var(--l2); cursor: pointer; }
+.ps-tog::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--txd); transition: left .15s ease; }
+.ps-tog[data-on] { background: var(--acc); }
+.ps-tog[data-on]::after { left: 15px; background: #fff; }
+
+/* the Rivendell notice's client logos (Notifications.tsx) */
+.nt-logos { display: flex; gap: 6px; margin-top: 10px; }
+.nt-logos span { width: 26px; height: 26px; display: grid; place-items: center; overflow: hidden; border-radius: 7px; background: #eef0f6; }
+.nt-logos img { width: 80%; height: 80%; object-fit: contain; }
+.nt-acts { display: flex; gap: 8px; margin-top: 11px; }
+.nt-acts button { padding: 6px 12px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 30%, transparent)); border-radius: var(--f-rad-s, 0);
+  background: transparent; font: 600 10.5px var(--ui-font, inherit); letter-spacing: .06em; color: var(--txm); cursor: pointer; }
+.nt-acts button[data-pri] { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }

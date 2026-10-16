@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
-export type NoticeKind = "error" | "info";
+export type NoticeKind = "error" | "info" | "rivendell";
+/** A button on a notice. Pressing one answers it, so the notice goes. */
+export interface NoticeAction { label: string; primary?: boolean; run: () => void }
 export interface Notice {
   id: number;
   kind: NoticeKind;
@@ -9,6 +11,9 @@ export interface Notice {
   read: boolean;
   // Somewhere to go: the toast and the bell row both open it on click.
   onClick?: () => void;
+  sub?: string;                                   // a quieter second line (toast only)
+  logos?: { url: string | null; color: string | null }[];   // a row of logos (toast only)
+  actions?: NoticeAction[];
 }
 
 // ponytail: module-level store (one array + subscribers) — a single global feed
@@ -29,9 +34,10 @@ export function setNoticeSound(fn: ((kind: NoticeKind) => void) | null) { onNoti
 /** Push a notification: shows a toast popup and lands in the bell dropdown.
  *  `onClick` makes it a link — clicking the toast or the row runs it. Returns
  *  its id, so a caller whose news goes stale can dismiss it. */
-export function notify(kind: NoticeKind, text: string, onClick?: () => void): number {
+export function notify(kind: NoticeKind, text: string, onClick?: () => void,
+                       extra?: Pick<Notice, "sub" | "logos" | "actions">): number {
   const id = nextId++;
-  notices = [{ id, kind, text: text || "unknown error", time: Date.now(), read: false, onClick }, ...notices].slice(0, 50);
+  notices = [{ id, kind, text: text || "unknown error", time: Date.now(), read: false, onClick, ...extra }, ...notices].slice(0, 50);
   emit();
   onNotice?.(kind);
   return id;
@@ -50,7 +56,21 @@ function markAllRead() {
 const KIND: Record<NoticeKind, { color: string; label: string }> = {
   error: { color: "var(--err)", label: "ERR" },
   info: { color: "var(--acc)", label: "INFO" },
+  rivendell: { color: "var(--purple)", label: "◆ RIVENDELL" },
 };
+
+/** A notice's buttons: each runs, then the notice is answered and goes. */
+function Actions({ n }: { n: Notice }) {
+  if (!n.actions?.length) return null;
+  return (
+    <div className="nt-acts">
+      {n.actions.map((a) => (
+        <button key={a.label} type="button" data-pri={a.primary || undefined}
+          onClick={(e) => { e.stopPropagation(); dismiss(n.id); a.run(); }}>{a.label}</button>
+      ))}
+    </div>
+  );
+}
 const fmtTime = (t: number) => new Date(t).toTimeString().slice(0, 8);
 const TOAST_MS = 8000;
 
@@ -76,6 +96,7 @@ function Row({ n, onDismiss, onOpen }: { n: Notice; onDismiss: () => void; onOpe
         style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--tx)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace", cursor: onOpen ? "pointer" : undefined }}>
         {n.text}
       </div>
+      <Actions n={n} />
     </div>
   );
 }
@@ -224,6 +245,17 @@ export function NotificationCenter() {
                   style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--txb)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden", cursor: n.onClick ? "pointer" : undefined }}>
                   {n.text}
                 </div>
+                {n.sub && <div style={{ marginTop: 4, fontSize: "var(--t105)", lineHeight: 1.5, color: "var(--txd)" }}>{n.sub}</div>}
+                {!!n.logos?.length && (
+                  <div className="nt-logos">
+                    {n.logos.map((l, i) => (
+                      <span key={i} style={l.url ? undefined : { background: l.color ?? "var(--acc)" }}>
+                        {l.url && <img src={l.url} alt="" />}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <Actions n={n} />
               </div>
             );
           })}

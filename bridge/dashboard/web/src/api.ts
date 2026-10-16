@@ -257,6 +257,36 @@ export interface ProjectsListing {
   hidden?: string[]; // rels the bridge remembers as HIDDEN (project_config.json)
   names?: Record<string, string>; // rel -> the display name you gave it
   remotes?: Record<string, string>; // rel -> owner/repo of origin, absent if not GitHub
+  marks?: Record<string, ProjectMark>; // rel -> its mark; absent on a bridge older than marks
+}
+
+/** What a project's tile shows and the colour it wears (bridge/projectmarks.py).
+ *  No mark at all means the default: its initials on a hashed colour. */
+export interface ProjectMark {
+  kind: "letters" | "icon" | "logo";
+  color?: string;             // "#rrggbb", or a theme ink like "var(--acc)"
+  icon?: string;              // a lucide icon name
+  logo?: string;              // "<sha256>.<ext>", served at projectLogoUrl()
+  plate?: "light" | "dark";   // absent = picked from the logo itself
+  source?: "rivendell";       // absent = yours: set here, never changes on its own
+  rv?: { instance?: string; client?: string; name?: string; logo_id?: string | null };
+}
+
+/** Where a stored logo is served. Its name is the bytes' hash, so it caches forever. */
+export const projectLogoUrl = (name: string) => `/local/project-mark/logo/${encodeURIComponent(name)}`;
+
+/** What Rivendell could lend the repos here, and whether they follow it. */
+export interface RivendellMarks {
+  available: boolean;          // a Rivendell answered /plugin/projects
+  asked: boolean;              // a Rivendell is connected at all
+  sync: boolean;               // FOLLOW is on
+  synced_at: number | null;
+  following: number;           // repos whose mark follows Rivendell
+  unmatched: number;           // listed repos with no client mark in Rivendell
+  can_undo: boolean;
+  offer: { count: number; clients: string[]; logos: { url: string | null; color: string | null }[] } | null;
+  matches: Record<string, { client: string | null; logo: boolean; color: string | null }>;
+  errors: { instance_id: string; instance: string; error: string; detail: string }[];
 }
 
 export interface GitFile {
@@ -1697,10 +1727,11 @@ export const api = {
   setProjectSettings: (
     ctx: RunCtx,
     patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean; name?: string;
-             tracker?: string; tracker_label?: string },
+             tracker?: string; tracker_label?: string; mark?: ProjectMark | null; logo_data?: string },
   ) =>
     req<{
       ok: boolean;
+      mark?: ProjectMark | null; // absent: a bridge older than marks ignored it
       run_cmd?: string | null;
       prod_url?: string | null;
       design_project?: string | null;
@@ -1712,6 +1743,12 @@ export const api = {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
+  rivendellMarks: (force = false) =>
+    req<RivendellMarks>(`/local/rivendell/marks${force ? "?force=1" : ""}`),
+  rivendellMarksAction: (action: "import" | "follow" | "dismiss" | "undo" | "sync",
+                         extra: { project?: string; on?: boolean } = {}) =>
+    req<{ following?: number; kept?: string[]; clients?: number; undone?: number; dismissed?: number }>(
+      "/local/rivendell/marks", { method: "POST", body: { action, ...extra } }),
   designPrompt: (ctx: RunCtx, kind: "link" | "pull" | "push", name?: string) =>
     req<{ prompt?: string; error?: string }>(
       `/local/design/prompt?kind=${kind}&${ctxQuery(ctx)}${name ? `&name=${encodeURIComponent(name)}` : ""}`),
