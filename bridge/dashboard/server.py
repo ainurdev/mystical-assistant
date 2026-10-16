@@ -212,24 +212,30 @@ def _shared_on_now(inst: dict) -> "dict | None":
 
 
 def _device_rows() -> list:
-    """The panel's blocks, one per instance: Share this device, where this
-    device stands, the Claude token for device runs (whether it is saved and
-    its last 4, never the token), the shared devices on now, and whether a
-    teammate's run is running here now or which one ran last."""
+    """The panel's blocks, one per enabled instance (a switched-off one isn't
+    drawn, so it isn't looked at either): Share this device, where this device
+    stands, the Claude token for device runs (whether it is saved and its last
+    4, never the token), the shared devices on now (asked of Rivendell only off
+    macOS, the one view that shows them), whether a teammate's run is running
+    here now or which one ran last, and whether a Set up or Remove is going."""
     live = rivendell.status()
     last = device_share.last_run()
     running = rivendell._device_run is not None      # one at a time on the device, whichever instance sent it
+    setting = _setup_lock.locked()
     rows = []
     for inst in rivendell_instances.raw_instances():
+        if not inst.get("enable"):
+            continue
         tok = inst.get("device_token") or ""
+        share = device_share.share_state(inst)
         rows.append({
             "id": inst["id"], "name": inst.get("name", ""), "api_url": inst.get("api_url", ""),
-            "enable": bool(inst.get("enable")), "status": live.get(inst["id"], {"state": "off"}),
+            "enable": True, "status": live.get(inst["id"], {"state": "off"}),
             "share_device": bool(inst.get("share_device", True)),
             "token_saved": bool(tok), "token_last4": tok[-4:] if len(tok) > 4 else "",
-            "share": device_share.share_state(inst),
-            "shared_on": _shared_on_now(inst) if inst.get("enable") else None,
-            "running": running, "last_run": last,
+            "share": share,
+            "shared_on": _shared_on_now(inst) if share["state"] == "NOT_MAC" else None,
+            "running": running, "last_run": last, "setup_running": setting,
         })
     return sorted(rows, key=lambda r: r["name"].lower())
 
@@ -1355,6 +1361,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "op must be add or remove"}, 400)
         if path == "/local/rivendell":
             op = body.get("op")
+            if body.get("share_device") is not None and not isinstance(body.get("share_device"), bool):
+                return self._json({"error": "share_device must be true or false"}, 400)   # bool("false") is True
             fields = {
                 "name": (body.get("name") or "")[:60],
                 "enable": body.get("enable", True),
@@ -1437,19 +1445,23 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/rivendell/devices/setup":
             # SET UP / REMOVE: one macOS password prompt, then setup.sh or remove.sh
             # as root (bridge/device_setup.py, up to 15 minutes), one at a time.
-            # Then the device is probed afresh and each link whose offer changed
-            # redials: reconfigure() would see no instance change.
+            # Then, whatever came of it, the device is probed afresh and each link
+            # whose offer changed redials: reconfigure() would see no instance change.
             action = body.get("action")
             if action not in ("setup", "remove"):
                 return self._json({"error": "action must be setup or remove"}, 400)
+            if device_share.device_facts() is None:
+                return self._json({"error": "Set up and Remove are for macOS only."}, 400)
             if not _setup_lock.acquire(blocking=False):
                 return self._json({"error": "Set up or Remove is already running."}, 409)
             try:
                 r = device_setup.run(action, getpass.getuser())
             finally:
-                _setup_lock.release()
-            device_share.refresh()
-            rivendell.redial()
+                try:
+                    device_share.refresh()
+                    rivendell.redial()
+                finally:
+                    _setup_lock.release()      # the panel's WAITING… lasts until the device was looked at again
             return self._json({"ok": bool(r.get("ok")), "error": r.get("error"), "instances": _device_rows()})
         if path in ("/local/device-runs/list", "/local/device-runs/start", "/local/device-runs/cancel"):
             # The verify MCP's ListDevices, RunOnDevice and CancelDeviceRun: the

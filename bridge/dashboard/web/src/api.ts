@@ -522,9 +522,11 @@ export interface RivendellDevice {
   share: {
     state: "NOT_MAC" | "OFF" | "XCODE_MISSING" | "NEEDS_SETUP" | "READY";
     checks: { key: string; label: string; ok: boolean }[];
+    installed: boolean;   // anything of Set up's is here, whatever the state: what REMOVE is offered on
   };
   shared_on: { on: number; free: number } | null;   // Rivendell's shared devices, kept 30 s; null when it can't say
   running: boolean;   // a teammate's run is running on this device now
+  setup_running: boolean;   // a Set up or Remove is going (from any tab), up to 15 minutes
   last_run: { at: number; by: string; task: string | null } | null;   // the newest run this device ran
 }
 /** Leave a field out to keep it. A blank token keeps the saved one; clear_token forgets it. */

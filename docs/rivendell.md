@@ -60,13 +60,13 @@ device.
 
 ### Remove
 
-**REMOVE** is there whenever the device is set up, with Share this device on or
-off. It asks for your Mac password again, stops anything the hidden user is
-running, then deletes the user, its home and everything runs left behind, the
-helper, its config, the sudoers rule and the Claude copy. Last, it takes the wall
-down: the packet-filter rule, its reference and the boot job. STATE then says
-NEEDS SETUP, or XCODE MISSING if Xcode or its iOS Simulator runtime is gone, or
-OFF if Share this device is off.
+**REMOVE** is there whenever anything of Set up's is on the device, a setup cut
+short included, with Share this device on or off. It asks for your Mac password
+again, stops anything the hidden user is running, then deletes the user, its home
+and everything runs left behind, the helper, its config, the sudoers rule and the
+Claude copy. Last, it takes the wall down: the packet-filter rule, its reference
+and the boot job. STATE then says NEEDS SETUP, or XCODE MISSING if Xcode or its
+iOS Simulator runtime is gone, or OFF if Share this device is off.
 
 ### Your Claude token for device runs
 

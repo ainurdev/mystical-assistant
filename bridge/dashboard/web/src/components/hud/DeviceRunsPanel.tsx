@@ -11,10 +11,10 @@
    Drafts H, I and J: rivendell/.mystical/design-drafts/device-runs/
    05-mystical-share-this-device.html. */
 
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Key, LaptopMinimal } from "lucide-react";
 import { api, type RivendellDevice } from "../../api";
-import { setupAction, stateText } from "../../lib/deviceruns";
+import { setupActions, stateText } from "../../lib/deviceruns";
 import { CARD, Row, Section, Switch, riStatusView, useVoice } from "./SettingsModal";
 
 const MONO = "'JetBrains Mono',monospace";
@@ -137,22 +137,30 @@ function TokenRow({ d, first, busy, onSave }: {
 
 export function DeviceRunsPanel() {
   const [rows, setRows] = useState<RivendellDevice[] | null>(null);
-  // "setup" | "remove" while the password prompt and its script run (up to 15
-  // minutes); an instance id while one of its saves is in flight.
+  // An instance id while one of its saves is in flight, or "setup" | "remove"
+  // while this tab's Set up or Remove runs (up to 15 minutes).
   const [busy, setBusy] = useState("");
   const [err, setErr] = useState({ at: "", text: "" });
+  const answered = useRef(0);   // bumped by each change's answer: a read sent before it is dropped
   const say = useSay();
+  const saving = busy !== "" && busy !== "setup" && busy !== "remove";
 
-  // Read now, then every 4 s while open, as RivendellPanel does. Not while a
-  // change is in flight: a read that lands after it would put the old state back.
+  // Read now, then every 4 s while open, as RivendellPanel does. A save holds
+  // the reads off, being quick; a Set up doesn't, so every tab, a reload too,
+  // shows its WAITING… from setup_running. A read sent before a change's answer
+  // would put the old state back, so it is dropped.
   useEffect(() => {
-    if (busy) return;
+    if (saving) return;
     let live = true;
-    const read = () => void api.rivendellDevices().then((r) => { if (live) setRows(r.instances); }).catch(() => {});
+    const read = () => {
+      const sent = answered.current;
+      void api.rivendellDevices()
+        .then((r) => { if (live && sent === answered.current) setRows(r.instances); }).catch(() => {});
+    };
     read();
     const t = setInterval(read, 4000);
     return () => { live = false; clearInterval(t); };
-  }, [busy]);
+  }, [saving]);
 
   /** One change: its answer is the panel's new state, and a refusal shows at `at`. */
   async function act(what: string, at: string,
@@ -162,6 +170,7 @@ export function DeviceRunsPanel() {
     setErr({ at: "", text: "" });
     try {
       const r = await call();
+      answered.current++;
       setRows(r.instances);
       if (r.error) setErr({ at, text: r.error });
       return !r.error;
@@ -205,7 +214,8 @@ export function DeviceRunsPanel() {
             </div>
           );
         }
-        const action = setupAction(d);
+        const actions = setupActions(d);
+        const waiting = d.setup_running || busy === "setup" || busy === "remove";
         const [chip, color] = STATE_CHIP[d.share.state];
         return (
           <div key={d.id} style={{ marginTop: 34 }}>
@@ -229,12 +239,18 @@ export function DeviceRunsPanel() {
                   }>
                   <span style={NOW}>{stateText(d)}</span>
                 </Row>
-                {action && (
-                  <Row label="SETUP" desc={action === "remove" ? REMOVE_DESC : SETUP_DESC}>
-                    <Btn tone={action === "remove" ? "bad" : "pri"} disabled={!!busy}
-                      onClick={() => void act(action, `${d.id}:device`, () => api.rivendellDeviceSetup(action))}>
-                      {busy === "setup" || busy === "remove" ? "WAITING FOR YOUR PASSWORD…" : action === "remove" ? "REMOVE" : "SET UP"}
-                    </Btn>
+                {(actions.length > 0 || waiting) && (
+                  <Row label="SETUP" desc={actions.map((a) => (a === "remove" ? REMOVE_DESC : SETUP_DESC)).join(" ") || undefined}>
+                    <span style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
+                      {waiting
+                        ? <Btn tone="pri" disabled onClick={() => {}}>WAITING FOR YOUR PASSWORD…</Btn>
+                        : actions.map((a) => (
+                          <Btn key={a} tone={a === "remove" ? "bad" : "pri"} disabled={!!busy}
+                            onClick={() => void act(a, `${d.id}:device`, () => api.rivendellDeviceSetup(a))}>
+                            {a === "remove" ? "REMOVE" : "SET UP"}
+                          </Btn>
+                        ))}
+                    </span>
                   </Row>
                 )}
               </div>

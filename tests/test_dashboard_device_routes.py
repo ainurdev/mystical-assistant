@@ -23,7 +23,6 @@ import io
 import json
 import os
 import subprocess
-import tempfile
 import types
 import urllib.error
 
@@ -38,11 +37,11 @@ LAST = {"at": 1760607600.0, "by": "Mahdi", "task": "NR-29"}
 
 
 @pytest.fixture(autouse=True)
-def refusing(monkeypatch):
+def refusing(monkeypatch, tmp_path):
     """Nothing may run. device_setup.run, any command device_setup or
     device_share could start, and any call to Rivendell refuse, and one reached
     fails the test even if something swallowed the error. No worker starts, and
-    each test gets an empty instance store."""
+    each test gets an empty instance store and an empty SHARED DEVICES ON NOW cache."""
     reached = []
 
     def refuse(what):
@@ -65,8 +64,8 @@ def refusing(monkeypatch):
     monkeypatch.setattr(rivendell, "_workers", {})
     monkeypatch.setattr(rivendell, "reconfigure", lambda: None)
     monkeypatch.setattr(rivendell, "_device_run", None)         # no teammate's run going here
-    d = tempfile.mkdtemp()
-    monkeypatch.setattr(config, "BRIDGE_DB", os.path.join(d, "bridge.db"))
+    monkeypatch.setattr(config, "BRIDGE_DB", str(tmp_path / "bridge.db"))
+    monkeypatch.setattr(dash, "_shared_on", {})
     monkeypatch.setattr(config, "RIVENDELL_API_URL", "")
     monkeypatch.setattr(config, "RIVENDELL_TOKEN", "")
     yield
@@ -76,13 +75,19 @@ def refusing(monkeypatch):
 @pytest.fixture
 def device(monkeypatch):
     """This device as the test says: `share` is its state for a sharing
-    instance (OFF for one that isn't), Rivendell has 3 on and 2 free, and the
-    last run here was Mahdi's NR-29."""
-    box = {"share": "READY", "asked": []}
+    instance (OFF for one that isn't; NOT_MAC off macOS), Rivendell has 3 on and
+    2 free, and the last run here was Mahdi's NR-29."""
+    box = {"share": "READY", "asked": [], "looked": []}
 
     def share_state(inst):
-        return {"state": box["share"] if inst.get("share_device", True) else "OFF", "checks": CHECKS, "facts": None}
+        box["looked"].append(inst["id"])
+        if box["share"] == "NOT_MAC":
+            return {"state": "NOT_MAC", "checks": [], "facts": None, "installed": False}
+        return {"state": box["share"] if inst.get("share_device", True) else "OFF", "checks": CHECKS, "facts": None,
+                "installed": True}
     monkeypatch.setattr(device_share, "share_state", share_state)
+    monkeypatch.setattr(device_share, "device_facts",
+                        lambda *a, **k: None if box["share"] == "NOT_MAC" else {"id": "7c50be1739dfacbb"})
     monkeypatch.setattr(device_share, "last_run", lambda: LAST)
     monkeypatch.setattr(device_ask, "list_devices",
                         lambda inst: box["asked"].append(inst["id"]) or {"devices": [], "on": 3, "free": 2})
@@ -119,24 +124,49 @@ def _stored():
 
 # --- GET ------------------------------------------------------------------------------------------
 
-def test_get_draws_each_instance_and_never_its_tokens(device):
+def test_get_draws_each_enabled_instance_and_never_its_tokens(device):
     a = _inst(device_token=TOKEN)
-    _inst(name="staging", enable=False, share_device=False)
+    b = _inst(name="staging", share_device=False)
+    off = _inst(name="old", enable=False)
     r = dget()
     assert r["code"] == 200
     rows = {row["name"]: row for row in r["obj"]["instances"]}
+    assert sorted(rows) == ["production", "staging"], "a switched-off instance isn't drawn"
+    assert off["id"] not in device["looked"], "nor looked at: no dscl for it on every poll"
     p, s = rows["production"], rows["staging"]
     assert {k: p[k] for k in ("id", "api_url", "enable", "share_device", "token_saved", "token_last4")} == {
         "id": a["id"], "api_url": "https://api.rivendell.ainurhq.cloud", "enable": True,
         "share_device": True, "token_saved": True, "token_last4": "4f2c"}
     assert p["status"]["state"] == "off", "no worker runs it here"
-    assert p["share"] == {"state": "READY", "checks": CHECKS, "facts": None}
-    assert p["shared_on"] == {"on": 3, "free": 2} and p["last_run"] == LAST and p["running"] is False
-    assert (s["enable"], s["share_device"], s["token_saved"], s["token_last4"]) == (False, False, False, "")
+    assert p["share"] == {"state": "READY", "checks": CHECKS, "facts": None, "installed": True}
+    assert p["last_run"] == LAST and p["running"] is False and p["setup_running"] is False
+    assert (s["id"], s["share_device"], s["token_saved"], s["token_last4"]) == (b["id"], False, False, "")
     assert s["share"]["state"] == "OFF"
-    assert s["shared_on"] is None and device["asked"] == [a["id"]], "a switched-off instance never asks Rivendell"
+    assert p["shared_on"] is None and s["shared_on"] is None and device["asked"] == [], \
+        "on a Mac SHARED DEVICES ON NOW isn't drawn, so Rivendell isn't asked: a save never waits on it"
     text = json.dumps(r["obj"])
     assert TOKEN not in text and "rvd_owner" not in text
+
+
+def test_off_macos_the_shared_devices_on_now_come_from_rivendell(device):
+    a = _inst()
+    device["share"] = "NOT_MAC"
+    row, = dget()["obj"]["instances"]
+    assert row["share"]["state"] == "NOT_MAC" and row["shared_on"] == {"on": 3, "free": 2}
+    assert device["asked"] == [a["id"]]
+
+
+def test_while_a_set_up_runs_every_block_says_so_in_any_tab(device):
+    """WAITING FOR YOUR PASSWORD… comes from here, so a reload or another tab
+    shows it too, for the up to 15 minutes the script can take."""
+    _inst()
+    _inst(name="staging")
+    assert dash._setup_lock.acquire(blocking=False)
+    try:
+        assert [row["setup_running"] for row in dget()["obj"]["instances"]] == [True, True]
+    finally:
+        dash._setup_lock.release()
+    assert [row["setup_running"] for row in dget()["obj"]["instances"]] == [False, False]
 
 
 def test_a_run_going_on_this_device_says_so_in_every_block(monkeypatch, device):
@@ -150,6 +180,7 @@ def test_a_run_going_on_this_device_says_so_in_every_block(monkeypatch, device):
 
 def test_shared_devices_on_now_is_cached_30_s_and_null_when_rivendell_cant_say(monkeypatch, device):
     a = _inst()
+    device["share"] = "NOT_MAC"
     answers = [{"devices": [], "on": 3, "free": 2}, urllib.error.URLError("connection refused")]
 
     def list_devices(inst):
@@ -219,6 +250,9 @@ def _record_setup(monkeypatch, answer):
 
     def run(action, owner, **kw):
         done.append((action, owner, kw))
+        order.append("run")
+        if isinstance(answer, BaseException):
+            raise answer
         return answer
     monkeypatch.setattr(device_setup, "run", run)
     monkeypatch.setattr(device_share, "refresh", lambda: order.append("refresh"))
@@ -234,7 +268,7 @@ def test_setup_runs_for_this_account_then_looks_again_and_redials(monkeypatch, d
                         lambda inst: {"state": "READY" if done else "NEEDS_SETUP", "checks": CHECKS, "facts": None})
     r = dpost("/local/rivendell/devices/setup", {"action": "setup"})
     assert done == [("setup", getpass.getuser(), {})]
-    assert order == ["refresh", "redial"], "the device is looked at afresh before the links redial"
+    assert order == ["run", "refresh", "redial"], "the device is looked at afresh, then the links redial"
     assert r["code"] == 200 and (r["obj"]["ok"], r["obj"]["error"]) == (True, None)
     assert r["obj"]["instances"][0]["share"]["state"] == "READY"
 
@@ -243,7 +277,7 @@ def test_a_cancelled_remove_says_so(monkeypatch, device):
     _inst()
     done, order = _record_setup(monkeypatch, {"ok": False, "error": "Cancelled."})
     r = dpost("/local/rivendell/devices/setup", {"action": "remove"})
-    assert [d[0] for d in done] == ["remove"] and order == ["refresh", "redial"]
+    assert [d[0] for d in done] == ["remove"] and order == ["run", "refresh", "redial"]
     assert r["code"] == 200 and (r["obj"]["ok"], r["obj"]["error"]) == (False, "Cancelled.")
     assert r["obj"]["instances"][0]["share"]["state"] == "READY"
 
@@ -253,13 +287,36 @@ def test_setup_takes_only_setup_or_remove(action):
     assert dpost("/local/rivendell/devices/setup", {"action": action})["code"] == 400
 
 
-def test_one_setup_at_a_time():
+def test_off_macos_set_up_is_a_400_and_nothing_runs(device):
+    device["share"] = "NOT_MAC"
+    r = dpost("/local/rivendell/devices/setup", {"action": "setup"})
+    assert r["code"] == 400 and r["obj"]["error"]      # the refusing device_setup.run was never reached
+
+
+def test_a_set_up_that_crashes_still_looks_again_redials_and_lets_go_of_the_lock(monkeypatch, device):
+    _inst()
+    done, order = _record_setup(monkeypatch, OSError("osascript went away"))
+    with pytest.raises(OSError):
+        dpost("/local/rivendell/devices/setup", {"action": "setup"})
+    assert order == ["run", "refresh", "redial"] and not dash._setup_lock.locked()
+
+
+def test_one_setup_at_a_time(device):
     assert dash._setup_lock.acquire(blocking=False)
     try:
         r = dpost("/local/rivendell/devices/setup", {"action": "setup"})
     finally:
         dash._setup_lock.release()
     assert r["code"] == 409
+
+
+@pytest.mark.parametrize("share, code", [("false", 400), (0, 400), ("", 400), (False, 200), (None, 200)])
+def test_the_instance_form_takes_only_a_real_boolean_for_share_device_too(share, code):
+    a = _inst()
+    r = dpost("/local/rivendell", {"op": "update", "id": a["id"], "name": "production",
+                                   "api_url": "https://api.rivendell.ainurhq.cloud", "share_device": share})
+    assert r["code"] == code, r["obj"]
+    assert _stored()["share_device"] is (share is not False), "None keeps it; a refused one changes nothing"
 
 
 # --- the token gate -----------------------------------------------------------------------------
