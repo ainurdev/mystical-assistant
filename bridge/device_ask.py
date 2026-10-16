@@ -482,7 +482,7 @@ def _on_update(worker, frame):
             _busy.add(rid)
     if status == "RUNNING":
         what = device_side._dig(frame, "task", "key") or rec.get("task") or rec.get("pr")
-        telegram.send(config.DASH_CHAT_ID, f"Started on {device or 'a shared device'}: {what}.")
+        telegram.send(config.DASH_CHAT_ID, f"Started on {_label(device) if device else 'a shared device'}: {what}.")
         return
     try:
         _hand_back(worker, rid, rec, frame)
@@ -552,9 +552,11 @@ def _fenced(report: str) -> str:
 
 def _label(name) -> str:
     """A device's name, which its owner sets, as the bridge's own lines say it:
-    folded onto one line, at most 60 characters, in quotes it can't close."""
-    name = " ".join(str(name).split()).replace('"', "'")
-    return '"%s"' % (name if len(name) <= 60 else name[:59] + "…")
+    folded onto one line, token-shaped text redacted, at most 60 characters, in
+    a code span it can't close, so neither GitHub nor telegram._md_to_html reads
+    a link, a mention, an issue or HTML in it."""
+    name = device_side.redact(" ".join(str(name).split())).replace("`", "'")
+    return "`%s`" % (name if len(name) <= 60 else name[:59] + "…")
 
 
 def _screen_ok(s) -> bool:
@@ -639,7 +641,7 @@ def _section(device: "str | None", report: str, screens: list) -> str:
     closes nothing, and a report cut off inside a block can't run on past it),
     then the run's own screens, the only pictures."""
     pics = "\n".join(f"![{_alt(s.get('caption') or 'Screen %d' % s['index'])}]({s['url']})" for s in screens)
-    head = f"### Device run on {_alt(_label(device)) if device else 'a shared device'}"
+    head = f"### Device run on {_label(device) if device else 'a shared device'}"
     return "\n\n".join(p for p in (head, report and _fenced(device_side.redact(report)), pics) if p)
 
 
