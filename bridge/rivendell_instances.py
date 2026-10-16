@@ -129,7 +129,9 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
     """Validate a create/edit payload into a stored instance dict. On edit
     (``existing`` given), a blank token keeps the stored one — the panel shows
     the token masked and only resends it when it is deliberately changed — and
-    so does a ws_url that is absent (None); an empty one still clears it."""
+    so does a ws_url that is absent (None), while the API URL is unchanged: after
+    an API URL edit it is derived from the new one again, since the form has no
+    field to clear one pointing at the old host. An empty one still clears it."""
     name = (fields.get("name") or "").strip()
     if not name:
         raise RivendellError("name is required")
@@ -144,7 +146,8 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
             raise RivendellError("token is required")
     ws_url = fields.get("ws_url")
     if ws_url is None:
-        ws_url = (existing or {}).get("ws_url", "")
+        same_api = existing and _norm_url(existing.get("api_url")) == api_url
+        ws_url = existing.get("ws_url", "") if same_api else ""
     workdir = (fields.get("workdir") or "").strip()
     if workdir:
         workdir = os.path.realpath(os.path.expanduser(workdir))

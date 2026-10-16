@@ -104,6 +104,15 @@ def test_update_without_a_ws_url_keeps_the_stored_one(monkeypatch):
     assert ri.raw_instances()[0]["ws_url"] == "", "an explicit empty value still clears it"
 
 
+def test_an_api_url_edit_without_a_ws_url_drops_the_stored_one(monkeypatch):
+    """The stored ws_url pointed at the old host: kept, the worker would keep dialing
+    it, and the form has no field to clear it. It is derived from the new URL instead."""
+    _fresh_db(monkeypatch)
+    a = ri.add_instance(name="p", api_url="http://old:3001", token="t", ws_url="ws://old:3001/agent")
+    ri.update_instance(a["id"], name="p", api_url="https://new.example", token="")
+    assert ri.raw_instances()[0]["ws_url"] == ""
+
+
 def test_update_unknown_raises(monkeypatch):
     _fresh_db(monkeypatch)
     try:
