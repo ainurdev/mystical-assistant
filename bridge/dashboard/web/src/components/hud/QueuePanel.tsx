@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { QueueGroup, QueueItem, RivendellQueueItem } from "../../api";
 import { api } from "../../api";
+import { useIntegrations } from "../../lib/integrations";
 import { ago } from "../../lib/surfaces";
 import { askConfirm } from "../ui/Ask";
 
@@ -38,22 +39,26 @@ function Link({ href }: { href: string | null }) {
  *  every session of the open project that still holds queued prompts, with the
  *  queue ops that exist (pause/resume, clear done, bump, remove). Polls while mounted:
  *  Rivendell rows change with no dashboard event, and the per-session SSE
- *  streams are one session each. */
+ *  streams are one session each. The Rivendell half exists only while Rivendell
+ *  is installed: its route answers 404 otherwise, so it is not asked. */
 export function QueuePanel({ project, onOpenSession }: {
   project: string | null;
   onOpenSession: (id: string) => void;
 }) {
-  const [jobs, setJobs] = useState<RivendellQueueItem[]>([]);
+  const plugins = useIntegrations();
+  const [queue, setQueue] = useState<RivendellQueueItem[]>([]);
+  // Derived, so REMOVE clears the RIVENDELL rows at once instead of leaving the last answer up.
+  const jobs = plugins.rivendell ? queue : [];
   const [groups, setGroups] = useState<QueueGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<Set<string>>(new Set());
 
   const load = useCallback(() => {
-    void api.rivendellQueue().then((r) => setJobs(r.queue)).catch(() => {});
+    if (plugins.rivendell) void api.rivendellQueue().then((r) => setQueue(r.queue)).catch(() => {});
     void api.queueAll(project)
       .then((r) => { setGroups(r.sessions); setError(null); })
       .catch(() => { setGroups([]); setError("Queue unavailable"); });
-  }, [project]);
+  }, [project, plugins.rivendell]);
   useEffect(() => {
     load();
     const t = setInterval(load, 5000);

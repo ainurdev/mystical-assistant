@@ -6,7 +6,7 @@ import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, 
   FolderTree, Gauge, GitBranch, 
   Globe,
-  Handshake, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
+  Handshake, KeyRound, ListMusic, ListTree, LoaderCircle, Lock,
   Monitor, Network, Palette, Play, Plug,
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
@@ -27,6 +27,7 @@ import {
   type AccountInfo,
   type AiFeature,
   type EnvSetting,
+  type Integration,
   type AcpAccount,
   type AcpAgentsInfo,
   type AcpPreset,
@@ -38,6 +39,7 @@ import {
   type TimedEvent,
   type TrackerConnection,
   type UpdateInfo,
+  type VideoTools,
   MOVE_EVENT,
   type MoveFile,
   type MoveItem,
@@ -74,6 +76,8 @@ import { AGENT_DEFAULT, agentLabel, optionRows, setAgentLabels } from "../../lib
 import { notify } from "./Notifications";
 import { NYAN_MODES, nyanLabel, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
+import { setIntegrations, useIntegrations } from "../../lib/integrations";
+import { askConfirm } from "../ui/Ask";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isMacApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
@@ -127,14 +131,16 @@ export interface SettingsModalProps {
 
 export type Tab = "appearance" | "transcript" | "notifications"
   | "aimgmt"
-  | "plugins" | "system" | "move"
+  | "integrations" | "system" | "move"
   | "mac";
 
 /** The four tabs AI MANAGEMENT replaced, and the fold each lands on. A caller
  *  that still names one (a bookmark, an older bridge's bot button) opens the
- *  page on that fold rather than on nothing. */
+ *  page on that fold rather than on nothing. PLUGINS became INTEGRATIONS:
+ *  openSettings("plugins", id) still opens the Rivendell card on that instance. */
 const LEGACY_TAB: Record<string, string> = { projects: "PROJECTS", session: "PROFILES", accounts: "ACCOUNTS", mcp: "MCP SERVERS", ai: "MODEL-SPENDING EXTRAS" };
 export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec: string | null } {
+  if (t === "plugins") return { tab: "integrations", sec: "RIVENDELL" };
   if (t && t in LEGACY_TAB) return { tab: "aimgmt", sec: LEGACY_TAB[t] };
   return { tab: t as Tab | undefined, sec: null };
 }
@@ -167,8 +173,8 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   // piece of the same question, and the sidebar's SKILLS panel besides.
   { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · skills · mcp · profile · projects", icon: KeyRound, group: "THE WORK",
     about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills, extras and MCP servers they can reach, the default profile, and which one each project starts with." },
-  { key: "plugins", label: "PLUGINS", hint: "rivendell instances", icon: Waypoints, group: "THE WORK",
-    about: "External dashboards the bridge runs work for. Rivendell's \"Request review\" and \"Implement using AI\" buttons become autonomous Claude runs here — one connection per Rivendell (production, local, staging)." },
+  { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", icon: Waypoints, group: "THE WORK",
+    about: "Other systems the bridge does work for. Each one ships with Mystical but stays silent until you install it: no tab, no card, no rows, no worker." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
     about: "The bridge itself: its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
   { key: "move", label: "MOVE", hint: "export · import", icon: Truck, group: "THE WORK",
@@ -204,8 +210,11 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
   { tab: "aimgmt", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
   { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini api key install test other agent" },
-  { tab: "plugins", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout" },
-  { tab: "plugins", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
+  { tab: "integrations", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout video ffmpeg whisper" },
+  { tab: "integrations", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
+  { tab: "integrations", sec: "TRACKERS", terms: "teamwork jira tracker tasks link token connection digest" },
+  { tab: "integrations", sec: "CLAUDE DESIGN", terms: "claude design system link pull sync skill tokens components" },
+  { tab: "integrations", sec: "AVAILABLE", terms: "install integration plugin add rivendell teamwork jira claude design" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "aimgmt", sec: "SKILLS", terms: "skills skill catalog install plugin marketplace SKILL.md system project" },
@@ -539,8 +548,8 @@ function Placeholder({ icon: Icon, spin, children }: {
 
 /** On/off, the way an app's settings page says it: a toggle (each family
  *  draws its own — index.css, THE FAMILIES · SETTINGS). */
-function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
-  return <button className="set-toggle" role="switch" aria-checked={on} data-on={on || undefined} onClick={onClick}><i /></button>;
+function Switch({ on, onClick, label }: { on: boolean; onClick: () => void; label?: string }) {
+  return <button className="set-toggle" role="switch" aria-checked={on} aria-label={label} data-on={on || undefined} onClick={onClick}><i /></button>;
 }
 
 function Volume({ value, disabled, onChange }: { value: number; disabled?: boolean; onChange: (v: number) => void }) {
@@ -1415,7 +1424,7 @@ function EnvPanel() {
    on the machine; which repo uses which lives in ANALYZE, beside the repo. */
 const KIND_LABEL = { teamwork: "TEAMWORK", jira: "JIRA" } as const;
 
-function TrackersPanel() {
+function TrackersPanel({ onChange }: { onChange?: () => void }) {   // onChange: a connection was added or removed
   const [rows, setRows] = useState<TrackerConnection[] | null>(null);
   const [gone, setGone] = useState(false);     // an old bridge: the route 404s
   const [kind, setKind] = useState<"teamwork" | "jira">("teamwork");
@@ -1439,6 +1448,7 @@ function TrackersPanel() {
       const r = await api.addTracker({ kind, name, site, email: kind === "jira" ? email : undefined, token });
       setRows((p) => [...(p ?? []), r.connection].sort((a, b) => a.name.localeCompare(b.name)));
       setName(""); setSite(""); setEmail(""); setToken("");
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not connect");
     } finally {
@@ -1450,6 +1460,7 @@ function TrackersPanel() {
     try {
       await api.removeTracker(id);
       setRows((p) => (p ?? []).filter((c) => c.id !== id));
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not remove");
     }
@@ -1532,7 +1543,7 @@ function TrackersPanel() {
   );
 }
 
-/* PLUGINS ▸ RIVENDELL — the rivendell-api connections the PR-review plugin runs
+/* INTEGRATIONS ▸ RIVENDELL — the rivendell-api connections the PR-review plugin runs
    (bridge/rivendell_instances.py). One bridge, several Rivendells: a production
    dashboard, a local one, staging later. Each is an independent websocket
    worker with its own URL, token, model and workdir; a run it makes is tagged
@@ -1569,7 +1580,6 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
   const [name, setName] = useState(initial?.name ?? "");
   const [apiUrl, setApiUrl] = useState(initial?.api_url ?? "");
   const [token, setToken] = useState("");     // blank when editing = keep stored
-  const [wsUrl, setWsUrl] = useState(initial?.ws_url ?? "");
   const [model, setModel] = useState(initial?.model ?? "opus");
   const [workdir, setWorkdir] = useState(initial?.workdir ?? "");
   const [review, setReview] = useState(String(initial?.review_timeout ?? 3600));
@@ -1581,7 +1591,7 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
   const canSave = !!name.trim() && !!apiUrl.trim() && (editing || !!token.trim());
   const submit = () => onSubmit({
     name: name.trim(), enable, api_url: apiUrl.trim(), token: token.trim(),
-    ws_url: wsUrl.trim(), model: model.trim() || "opus", workdir: workdir.trim(),
+    model: model.trim() || "opus", workdir: workdir.trim(),
     review_timeout: Number(review) || 3600, impl_timeout: Number(impl) || 10800,
   });
   const mono = { ...field, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0 } as CSSProperties;
@@ -1611,8 +1621,6 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
         <input value={token} onChange={(e) => setToken(e.target.value)} type="password"
           placeholder={editing ? `token ${initial!.token || "set"} — blank keeps it` : "rvd_… bearer token"}
           style={{ ...mono, flex: "2 1 220px" }} />
-        <input value={wsUrl} onChange={(e) => setWsUrl(e.target.value)} placeholder="ws url (optional; derived from api url)" spellCheck={false}
-          style={{ ...mono, flex: "2 1 220px" }} />
       </div>
       <div style={LINE}>
         <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="model (opus)" spellCheck={false}
@@ -1636,8 +1644,9 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
   );
 }
 
-function RivendellPanel() {
+function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange: an instance was saved, switched or removed
   const [rows, setRows] = useState<RivendellInstance[] | null>(null);
+  const [video, setVideo] = useState<VideoTools>();   // absent on a bridge older than the VIDEO JOBS row
   const [gone, setGone] = useState(false);     // an old bridge: the route 404s
   const [editing, setEditing] = useState<string | null>(() => takeSettingsFocus());   // instance id, "new", or null
   const [busy, setBusy] = useState(false);
@@ -1660,7 +1669,7 @@ function RivendellPanel() {
   }
 
   useEffect(() => {
-    void api.rivendell().then((r) => setRows(r.instances)).catch(() => { setRows([]); setGone(true); });
+    void api.rivendell().then((r) => { setRows(r.instances); setVideo(r.video); }).catch(() => { setRows([]); setGone(true); });
   }, []);
 
   // The socket goes up and down on its own (reconnect-forever with backoff), so
@@ -1669,7 +1678,7 @@ function RivendellPanel() {
   useEffect(() => {
     const t = setInterval(() => {
       if (busy) return;
-      void api.rivendell().then((r) => setRows(r.instances)).catch(() => {});
+      void api.rivendell().then((r) => { setRows(r.instances); setVideo(r.video); }).catch(() => {});
     }, 4000);
     return () => clearInterval(t);
   }, [busy]);
@@ -1689,6 +1698,7 @@ function RivendellPanel() {
         : await api.addRivendell(input);
       upsert(r.instance);
       setEditing(null);
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not save");
     } finally {
@@ -1701,6 +1711,7 @@ function RivendellPanel() {
     try {
       const r = await api.updateRivendell(inst.id, { ...riToInput(inst), enable: !inst.enable });
       upsert(r.instance);
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not save");
     }
@@ -1711,6 +1722,7 @@ function RivendellPanel() {
       await api.removeRivendell(id);
       setRows((p) => (p ?? []).filter((c) => c.id !== id));
       if (editing === id) setEditing(null);
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not remove");
     }
@@ -1721,15 +1733,12 @@ function RivendellPanel() {
 
   const dim = { color: "var(--txd)" };
   const mono = { fontFamily: "'JetBrains Mono',monospace" };
+  const missing = video ? [!video.ffmpeg && "ffmpeg", !video.whisper && "whisper-cli", !video.model && "model file"].filter(Boolean) : [];
 
+  // Its heading — title, blurb, ⓘ — is the Rivendell card's on the INTEGRATIONS page.
   return (
-    <Section
-      title="RIVENDELL"
-      icon={Waypoints}
-      desc="Rivendell's Request review and Implement using AI buttons, turned into autonomous Claude runs. One connection per Rivendell — production, local, staging."
-      info="Each instance holds a websocket open to a rivendell-api /agent endpoint and runs every request it sends with full autonomy (bypassPermissions) in its own workdir, so only connect an API you own. The token is minted in that Rivendell (Profile ▸ Tokens, LLM capability), kept beside the session store (mode 0600) and never shown again in full; revoke it there if it leaks. Runs appear in the session list tagged with the instance name. The first instance is seeded from your .env RIVENDELL_* values; edit or add more here — a save reconnects without a restart."
-    >
-      {rows.length > 0 && (
+    <>
+      {(rows.length > 0 || video) && (
         <div style={CARD}>
           {rows.map((c, i) => {
             const sv = riStatusView(c.status);
@@ -1803,6 +1812,12 @@ function RivendellPanel() {
             </Fragment>
             );
           })}
+          {video && (
+            <Row first={!rows.length} label="VIDEO JOBS"
+              desc="A client's recording, transcribed and framed on this machine: ffmpeg · whisper-cli · the model file">
+              <MoveChip c={missing.length ? [`MISSING: ${missing.join(" · ")}`, "var(--err)"] : ["FOUND", "var(--ok)"]} />
+            </Row>
+          )}
         </div>
       )}
       {editing === "new" ? (
@@ -1816,7 +1831,144 @@ function RivendellPanel() {
         </button>
       )}
       {err && editing === null && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 8 }}>{err}</div>}
-    </Section>
+    </>
+  );
+}
+
+/* INTEGRATIONS — the bundled plugins (bridge/integrations.py). One that isn't
+   installed has no tab, card, row or worker anywhere else, so this page is the
+   one place it shows: a card per installed plugin with its settings inside and
+   REMOVE at its head, then the rest, each with INSTALL. Titled by search's
+   INDEX names, so a hit lands on the card. */
+const PLUGIN_SEC: Record<string, string> = { rivendell: "RIVENDELL", trackers: "TRACKERS", design: "CLAUDE DESIGN" };
+const PLUGIN_INFO: Record<string, string> = {
+  rivendell: "Each instance holds a websocket open to a rivendell-api /agent endpoint and runs every request it sends with full autonomy (bypassPermissions) in its own workdir, so only connect an API you own. The token is minted in that Rivendell (Profile ▸ Tokens, LLM capability), kept beside the session store (mode 0600) and never shown again in full; revoke it there if it leaks. Runs appear in the session list tagged with the instance name. The first instance is seeded from your .env RIVENDELL_* values; edit or add more here — a save reconnects without a restart.",
+  trackers: "The token is kept beside the session store (mode 0600), sent only to the tracker's own API, and never shown again in full. Reading — the TASKS tab, the first-turn digest, NEXT UP — is the bridge's own HTTP and spends no model call. Writing goes through the session: its claude turn gets the tracker's MCP server for that turn only, in manual mode, with an ask rule on the whole server, so every comment and status change shows an Allow card with the full text before it posts. Teamwork's MCP entry is shared; each Jira site needs its own (Atlassian's login is per site) — the row says how to add it.",
+};
+// AVAILABLE's cards. Trackers is two, Teamwork and Jira, both installing it;
+// the other two say what the registry says.
+const OFFERS: { id: string; chip: string; color: string; name?: string; hint?: string; needs?: string }[] = [
+  { id: "rivendell", chip: "RV", color: "var(--ok)" },
+  { id: "trackers", chip: "TW", color: "var(--purple)", name: "Teamwork", needs: "API key",
+    hint: "A repo linked to a Teamwork project opens every session with what is open and overdue; TASKS tab, LINK TASKS, updates posted through the run." },
+  { id: "trackers", chip: "JR", color: "var(--info)", name: "Jira", needs: "API token",
+    hint: "The same, against an Atlassian site: one connection per site, an API token and the account it belongs to." },
+  { id: "design", chip: "CD", color: "var(--warn)" },
+];
+
+function IntegrationsPanel() {
+  const [list, setList] = useState<Integration[] | null>(null);
+  const [down, setDown] = useState("");   // why the list can't be read; "not found" is a bridge from before integrations
+  const [busy, setBusy] = useState("");   // the plugin being installed or removed
+  const [err, setErr] = useState<{ id: string; msg: string } | null>(null);   // shown on the card it belongs to
+  const [digest, setDigest] = useState<AiFeature>();   // TASK DIGEST: the aifeatures switch `tasks`
+
+  // Every answer also goes to the shared store, so the tabs and buttons a
+  // plugin brings appear or leave in the same frame.
+  const take = (plugins: Integration[]) => { setList(plugins); setIntegrations(plugins); };
+  // A card's panel changed what its summary counts (instances, connections).
+  const recount = () => void api.integrations().then((r) => take(r.plugins)).catch(() => {});
+
+  useEffect(() => {
+    void api.integrations().then((r) => take(r.plugins))
+      .catch((e) => setDown(e instanceof Error ? e.message : "could not read the integrations"));
+    void api.aiFeatures().then((r) => { setDigest(r.features.find((f) => f.key === "tasks")); setAiFeatures(r.features); })
+      .catch(() => {});
+  }, []);
+
+  async function set(id: string, action: "install" | "remove") {
+    setBusy(id); setErr(null);
+    try {
+      take((await api.setIntegration(id, action)).plugins);
+    } catch (e) {
+      // A refused REMOVE (a Rivendell run in flight) is a 409 that says why.
+      setErr({ id, msg: e instanceof Error ? e.message : `could not ${action}` });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function remove(p: Integration) {
+    if (await askConfirm(`Remove ${p.label}? Its tabs, buttons and worker go; its connections stay on disk, so installing it again restores them.`))
+      await set(p.id, "remove");
+  }
+
+  async function toggleDigest(f: AiFeature) {
+    setErr(null);
+    try {
+      const fresh = (await api.setAiFeature("tasks", !f.enabled)).features;
+      setDigest(fresh.find((x) => x.key === "tasks"));
+      setAiFeatures(fresh);
+    } catch (e) {
+      setErr({ id: "tasks", msg: e instanceof Error ? e.message : "could not save" });
+    }
+  }
+
+  if (down === "not found")
+    return <Placeholder icon={TriangleAlert}>This bridge is running code from before integrations. Restart it to install or remove one.</Placeholder>;
+  if (down) return <Placeholder icon={TriangleAlert}>{down}</Placeholder>;
+  if (!list) return <Placeholder icon={LoaderCircle} spin>Reading the integrations…</Placeholder>;
+
+  const installed = list.filter((p) => p.installed);
+  const offers = OFFERS.filter((o) => list.some((p) => p.id === o.id && !p.installed));
+  const errLine = (id: string) => (err?.id === id ? <div style={{ color: "var(--err)", marginTop: 4 }}>{err.msg}</div> : undefined);
+
+  return (
+    <>
+      {installed.map((p, i) => (
+        <Section key={p.id} title={PLUGIN_SEC[p.id] ?? p.label} desc={p.blurb} info={PLUGIN_INFO[p.id]} top={i > 0}>
+          <div style={CARD}>
+            <Row first label={p.summary}
+              desc={p.id === "design"
+                ? <>Adds ANALYZE ▸ DESIGN (link · pull · sync), the composer's DESIGN button and the project menu's Design system. A repo is linked from ANALYZE ▸ DESIGN.{errLine(p.id)}</>
+                : errLine(p.id)}>
+              <MiniBtn danger disabled={!!busy} onClick={() => void remove(p)} title={`Remove ${p.label}`}>REMOVE</MiniBtn>
+            </Row>
+            {p.id === "trackers" && digest && (
+              <Row label="TASK DIGEST" desc={<>{digest.hint}{errLine("tasks")}</>} info={digest.about}>
+                <Switch on={digest.enabled} onClick={() => void toggleDigest(digest)} label="Task digest" />
+              </Row>
+            )}
+          </div>
+          {p.id === "rivendell" && <div style={{ marginTop: 11 }}><RivendellPanel onChange={recount} /></div>}
+          {p.id === "trackers" && <div style={{ marginTop: 11 }}><TrackersPanel onChange={recount} /></div>}
+        </Section>
+      ))}
+      <Section title="AVAILABLE" top={installed.length > 0}
+        desc={offers.length ? "Install one to connect it. Nothing is downloaded; the code is already here, switched off." : "Everything that ships with Mystical is installed."}>
+        {offers.length > 0 && (
+          // .aim scopes the card tokens (--l, --l2, --f) the aim-* classes read.
+          <div className="aim aim-xgrid">
+            {offers.map((o) => {
+              const p = list.find((x) => x.id === o.id)!;
+              const name = o.name ?? p.label;
+              return (
+                <div key={o.chip} className="aim-x" data-busy={busy === o.id || undefined}
+                  style={{ border: "1px dashed var(--line2)", background: "transparent" }}>
+                  <div className="aim-xhd">
+                    <span className="aim-xic" aria-hidden
+                      style={{ color: o.color, background: `color-mix(in oklab, ${o.color} 16%, var(--panel))`, fontSize: 10, fontWeight: 600 }}>
+                      {o.chip}
+                    </span>
+                    <b>{name}</b>
+                  </div>
+                  <div className="aim-xhint">{o.hint ?? p.blurb}</div>
+                  {err?.id === o.id && <div className="aim-xerr">{err.msg}</div>}
+                  <div className="aim-xfoot">
+                    <span>{o.needs ?? p.needs}</span>
+                    <span style={{ flex: 1 }} />
+                    <button type="button" className="aim-xbtn" disabled={!!busy} aria-label={`Install ${name}`}
+                      onClick={() => void set(o.id, "install")} style={{ border: "1px solid var(--acc)", color: "var(--txb)" }}>
+                      Install
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+    </>
   );
 }
 
@@ -3593,7 +3745,11 @@ export function SettingsModal(props: SettingsModalProps) {
     asked.current = true;   // one attempt: a failed fetch must not retry per keystroke
     void api.envSettings().then((r) => setEnv(r.settings)).catch(() => {});
   }, [q]);
-  const hidden = new Set<string>();   // sections that only exist while a switch is on; none left
+  // Sections that exist only while their plugin is installed; AVAILABLE answers
+  // for one that isn't, so a search never offers a card the page doesn't draw.
+  const plugins = useIntegrations();
+  const hidden = new Set(Object.entries(PLUGIN_SEC).filter(([id]) => !plugins[id]).map(([, sec]) => sec));
+  if (!plugins.rivendell) hidden.add("ADD AN INSTANCE");
   const hits = search(q, env.filter((s) => !tunesOff(s.key, aiFeatures)), hidden);
   const shown: Tab | "search" = q.trim() ? "search" : tab;
   function go(h: Hit) {
@@ -4170,7 +4326,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 onProfilesChanged={onProfilesChanged} onAccountsChanged={onAccountsChanged}
                 projects={projects} project={project} openSec={jump?.sec ?? startSec} />
             )}
-            {shown === "plugins" && <RivendellPanel />}
+            {shown === "integrations" && <IntegrationsPanel />}
             {shown === "move" && <MovePanel />}
             {shown === "mac" && <MacPanel />}
 
@@ -4212,16 +4368,6 @@ export function SettingsModal(props: SettingsModalProps) {
                   info="Updating pulls the bridge's own checkout, rebuilds this dashboard and restarts the bridge; running turns resume on their own."
                 >
                   <UpdatePanel onFeed={onFeed} />
-                </Section>
-
-                <Section
-                  title="TRACKERS"
-                  icon={ListTodo}
-                  top
-                  desc="Teamwork and Jira, by API token. A repo is linked to one of their projects from ANALYZE ▸ LINK TASKS; posting an update runs in the session with the tracker's MCP entry on for that one turn."
-                  info="The token is kept beside the session store (mode 0600), sent only to the tracker's own API, and never shown again in full. Reading — the TASKS tab, the first-turn digest, NEXT UP — is the bridge's own HTTP and spends no model call. Writing goes through the session: its claude turn gets the tracker's MCP server for that turn only, in manual mode, with an ask rule on the whole server, so every comment and status change shows an Allow card with the full text before it posts. Teamwork's MCP entry is shared; each Jira site needs its own (Atlassian's login is per site) — the row says how to add it."
-                >
-                  <TrackersPanel />
                 </Section>
 
                 {/* Everything config.py reads from the environment, which until

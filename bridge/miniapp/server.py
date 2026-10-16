@@ -20,8 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (accounts, agents, browser, config, devserver, git, github,
-                    httpgz, models, native, profiles, project_config, relevance,
-                    runner, state, store, trackers, transcript_jsonl,
+                    httpgz, integrations, models, native, profiles, project_config,
+                    relevance, runner, state, store, trackers, transcript_jsonl,
                     transcript_page, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -365,6 +365,8 @@ class Handler(BaseHTTPRequestHandler):
                 chat_id = self._auth()
                 if chat_id is None:
                     return self._json({"error": "unauthorized"}, 401)
+                if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+                    return self._json({"error": "not installed"}, 404)
                 if path == "/api/state":
                     return self._api_state(chat_id)
                 if path == "/api/projects":
@@ -436,6 +438,8 @@ class Handler(BaseHTTPRequestHandler):
             chat_id = self._auth()
             if chat_id is None:
                 return self._json({"error": "unauthorized"}, 401)
+            if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+                return self._json({"error": "not installed"}, 404)
             body = self._read_json()
             if body is None:
                 return self._json({"error": "bad json"}, 400)
@@ -507,6 +511,7 @@ class Handler(BaseHTTPRequestHandler):
             "server": devserver.server_state(pd),
             "permission_mode": config.MINIAPP_PERMISSION_MODE,
             "models": models.get_models(),
+            "plugins": integrations.flags(),
         })
 
     def _api_projects(self, qs):
@@ -651,7 +656,7 @@ class Handler(BaseHTTPRequestHandler):
         # stay out of the lists; their transcripts remain viewable by id.
         # Plugin-worker sessions are exempt (their workdir may be BASE_PATH
         # itself, whose rel "/" is never a project) — see dashboard/server.py.
-        rows = [r for r in rows if config.is_plugin_origin(r.get("origin"))
+        rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
                 or browser.project_exists(r["project"])]
         self._json({"sessions": [_session_brief(s) for s in rows]})
 

@@ -128,7 +128,10 @@ def _timeout(raw, default: int, label: str) -> int:
 def _clean(fields: dict, existing: "dict | None" = None) -> dict:
     """Validate a create/edit payload into a stored instance dict. On edit
     (``existing`` given), a blank token keeps the stored one — the panel shows
-    the token masked and only resends it when it is deliberately changed."""
+    the token masked and only resends it when it is deliberately changed — and
+    so does a ws_url that is absent (None), while the API URL is unchanged: after
+    an API URL edit it is derived from the new one again, since the form has no
+    field to clear one pointing at the old host. An empty one still clears it."""
     name = (fields.get("name") or "").strip()
     if not name:
         raise RivendellError("name is required")
@@ -141,6 +144,10 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
             token = existing["token"]
         else:
             raise RivendellError("token is required")
+    ws_url = fields.get("ws_url")
+    if ws_url is None:
+        same_api = existing and _norm_url(existing.get("api_url")) == api_url
+        ws_url = existing.get("ws_url", "") if same_api else ""
     workdir = (fields.get("workdir") or "").strip()
     if workdir:
         workdir = os.path.realpath(os.path.expanduser(workdir))
@@ -150,7 +157,7 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
         "enable": bool(fields.get("enable", True)),
         "api_url": api_url,
         "token": token,
-        "ws_url": _norm_url(fields.get("ws_url")),
+        "ws_url": _norm_url(ws_url),
         "model": (fields.get("model") or "").strip() or _MODEL_DEFAULT,
         "workdir": workdir,
         "review_timeout": _timeout(fields.get("review_timeout"), _REVIEW_DEFAULT, "review timeout"),
@@ -174,7 +181,7 @@ def _masked(inst: dict) -> dict:
 def origin_for(inst: dict) -> str:
     """The session origin runs from this instance carry, e.g.
     ``rivendell:production``. The ``rivendell`` prefix keeps every instance's
-    runs visible under config.is_plugin_origin; the suffix tells them apart."""
+    runs visible under integrations.is_plugin_origin; the suffix tells them apart."""
     return "rivendell:" + (_slug(inst.get("name", "")) or inst.get("id", ""))
 
 

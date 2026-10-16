@@ -32,10 +32,10 @@ from urllib.parse import parse_qs, quote, urlparse
 import re
 
 from bridge import (acp_agents, agents, attribution, browser, config, devserver, fmt, git,
-                    github, graphmap, httpgz,
+                    github, graphmap, httpgz, integrations,
                     models, native, preview_detect, profiles, project_config, projectmarks, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
-                    rivendell_instances, runner, selfupdate,
+                    rivendell_instances, rivendell_video, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, trackers,
                     usage, weather, wsutil)
@@ -289,6 +289,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- GET reads (Host-gated; SOP protects responses) ---
     def _get_api(self, path, qs):
+        if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+            return self._json({"error": "not installed"}, 404)
         chat = _chat()
         if path == "/local/state":
             pd = state.project_dir(chat)
@@ -385,6 +387,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/aifeatures":
             from bridge import aifeatures
             return self._json({"features": aifeatures.state()})
+        if path == "/local/integrations":
+            return self._json({"plugins": integrations.state()})
         if path == "/local/envsettings":
             from bridge import envsettings
             return self._json({"settings": envsettings.state()})
@@ -407,7 +411,7 @@ class Handler(BaseHTTPRequestHandler):
             # Plugin-worker sessions are exempt: their default workdir is
             # BASE_PATH itself ("/", never a project), and a run the PLUGINS
             # tab exists to show must not be filtered into invisibility.
-            rows = [r for r in rows if config.is_plugin_origin(r.get("origin"))
+            rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
                     or browser.project_exists(r["project"])]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
         # Before the transcript route below, which would otherwise swallow this
@@ -556,7 +560,7 @@ class Handler(BaseHTTPRequestHandler):
             live = rivendell.status()
             insts = [{**i, "status": live.get(i["id"], {"state": "off"})}
                      for i in rivendell_instances.instances()]
-            return self._json({"instances": insts})
+            return self._json({"instances": insts, "video": rivendell_video.tools()})
         if path == "/local/rivendell/marks":
             # Client logos and colours Rivendell could lend the repos here, and
             # whether they follow it (bridge/projectmarks.py).
@@ -638,9 +642,7 @@ class Handler(BaseHTTPRequestHandler):
                 "log_path": devserver.DEV_LOG_REL,
             })
         if path == "/local/design/prompt":
-            from bridge import aifeatures, designsync
-            if not aifeatures.enabled("design"):
-                return self._json({"error": "design system switch is off"}, 400)
+            from bridge import designsync
             abs_p = (_abs_within((qs.get("cwd", [""])[0] or "").strip())
                      or _abs_project(qs.get("cwd_rel", [None])[0]
                                      or qs.get("project", [None])[0])
@@ -829,6 +831,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- POST control (Host + Origin + token gated) ---
     def _post_api(self, path, body):
+        if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+            return self._json({"error": "not installed"}, 404)
         chat = _chat()
         if path == "/local/run":
             return self._run(chat, body)
@@ -990,6 +994,17 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "features": aifeatures.state()})
+        if path == "/local/integrations":
+            action = body.get("action")
+            if action not in ("install", "remove"):
+                return self._json({"error": "action must be install or remove"}, 400)
+            try:
+                integrations.set_installed(str(body.get("id") or ""), action == "install")
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            except integrations.IntegrationError as e:
+                return self._json({"error": str(e)}, 409)
+            return self._json({"ok": True, "plugins": integrations.state()})
         if path == "/local/envsettings":
             from bridge import envsettings
             try:
@@ -1338,7 +1353,7 @@ class Handler(BaseHTTPRequestHandler):
                 "enable": body.get("enable", True),
                 "api_url": (body.get("api_url") or "")[:400],
                 "token": (body.get("token") or "")[:2000],
-                "ws_url": (body.get("ws_url") or "")[:400],
+                "ws_url": body["ws_url"][:400] if isinstance(body.get("ws_url"), str) else None,
                 "model": (body.get("model") or "")[:60],
                 "workdir": (body.get("workdir") or "")[:1000],
                 "review_timeout": body.get("review_timeout"),

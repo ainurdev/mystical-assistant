@@ -127,6 +127,14 @@ def set_design_project(project: str, project_id: str,
     return _set_field(project, branch, "design_project", project_id)
 
 
+def design_link_count() -> int:
+    """How many entries (a repo, or repo@branch) are linked to a Claude Design
+    project. bridge/integrations.py adopts the design plugin on a machine that
+    already has one."""
+    with _lock:
+        return sum(1 for v in _load().values() if isinstance(v, dict) and v.get("design_project"))
+
+
 def tracker(project: str) -> "str | None":
     """The task tracker a repo is linked to, as "<connection id>:<project id or
     key>" (bridge/trackers.py resolves it). Project-wide: a repo's task list is

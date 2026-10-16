@@ -17,6 +17,7 @@ import {
   type Worktree,
 } from "../../api";
 import { useAiFeatures } from "../../lib/ai";
+import { useIntegrations } from "../../lib/integrations";
 import { parseDiff, type DiffRow } from "../../lib/diff";
 import { branchForIssue, branchForTask, keyFromBranch } from "../../lib/issuebranch";
 import { useStickyFlag } from "../../lib/prefs";
@@ -98,6 +99,7 @@ export function AnalyzeModal(props: Props) {
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   const aiFeatures = useAiFeatures();   // MAP and LEARN hide with their switches
+  const plugins = useIntegrations();    // LINK TASKS / TASKS and DESIGN show while their plugin is installed
   const [tab, setTab] = useState<Tab>(props.initialTab ?? "editor");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [issues, setIssues] = useState<IssuesInfo | null>(null);
@@ -134,7 +136,7 @@ export function AnalyzeModal(props: Props) {
   const refreshTracker = () => { void api.trackerTasks(project).then(setTracker).catch(() => {}); };
 
   // LINK TASKS: connection → its projects → one of them, written as the repo's
-  // tracker link. Connections themselves are made in SETTINGS ▸ SYSTEM ▸ TRACKERS.
+  // tracker link. Connections themselves are made in SETTINGS ▸ INTEGRATIONS ▸ TRACKERS.
   function openLink() {
     setLinkOpen(true); setLinkErr(""); setLinkConn(""); setLinkProjects(null);
     void api.trackers().then((r) => setConns(r.connections)).catch((e) => { setConns([]); setLinkErr((e as Error).message); });
@@ -163,12 +165,18 @@ export function AnalyzeModal(props: Props) {
     setMarkOpen(false);
     refreshGit();
     void api.issues(project).then(setIssues).catch(() => {});
-    refreshTracker();
     refreshBranches();
     refreshWt();
     void api.terminals(project).then((d) => setTermCount(d.terminals.length)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
+
+  // The tracker link is read only while Trackers is installed (its route 404s
+  // otherwise), and again when that answer lands after the modal opened.
+  useEffect(() => {
+    if (plugins.trackers) refreshTracker();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project, plugins.trackers]);
 
   // default viewed branch → the checked-out branch
   useEffect(() => { const c = git?.branch || badge?.branch; if (c) setSelectedBranch((p) => p || c); }, [git, badge]);
@@ -198,11 +206,11 @@ export function AnalyzeModal(props: Props) {
     { k: "worktrees", l: "WORKTREES", badge: linkedWt || undefined },
     { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
     { k: "issues", l: "ISSUES", badge: issueCount || undefined },
-    // only a linked repo has a task list; the header's LINK TASKS makes one
-    ...(tracker?.linked ? [{ k: "tasks" as Tab, l: "TASKS", badge: tracker.overdue || undefined }] : []),
+    // only a linked repo has a task list (the header's LINK TASKS makes one), and only while Trackers is installed
+    ...(plugins.trackers && tracker?.linked ? [{ k: "tasks" as Tab, l: "TASKS", badge: tracker.overdue || undefined }] : []),
     { k: "skills", l: "SKILLS" },
-    // all hidden while their AI switch is off — nothing is being built or written
-    ...(aiFeatures.design ? [{ k: "design" as Tab, l: "DESIGN" }] : []),
+    ...(plugins.design ? [{ k: "design" as Tab, l: "DESIGN" }] : []),
+    // hidden while their AI switch is off — nothing is being built or written
     ...(aiFeatures.graph ? [{ k: "map" as Tab, l: "MAP" }] : []),
     ...(aiFeatures.learn ? [{ k: "learn" as Tab, l: "LEARN" }] : []),
   ];
@@ -235,56 +243,59 @@ export function AnalyzeModal(props: Props) {
             <span>↓{git?.behind ?? badge?.behind ?? 0}</span>
           </span>
           {live && <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 6px" }}>LIVE</span>}
-          {/* the tracker link: a chip when linked (✕ unlinks), LINK TASKS when not */}
-          <span style={{ position: "relative", flex: "none", display: "flex", alignItems: "center" }}>
-            {tracker?.linked ? (
-              <span title={`${tracker.name} · ${tracker.kind}${tracker.url ? ` · ${tracker.url}` : ""}`}
-                style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--t9)", letterSpacing: 1, color: "var(--purple-h)", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", padding: "1px 4px 1px 7px" }}>
-                ⌁ {tracker.label.toUpperCase()}
-                <button onClick={() => void unlink()} title="unlink this repo from its tracker project" {...hp("unlink")}
-                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: hov === "unlink" ? "var(--err)" : "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", padding: "0 3px", lineHeight: 1 }}>✕</button>
-              </span>
-            ) : (
-              <button onClick={openLink} title="link this repo to a Teamwork or Jira project" {...hp("link")}
-                style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: hov === "link" || linkOpen ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "transparent", color: "var(--purple-h)" }}>
-                ⌁ LINK TASKS
-              </button>
-            )}
-            {linkOpen && (
-              <div style={{ position: "absolute", top: "calc(100% + 7px)", left: 0, zIndex: 40, width: 300, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", padding: 12, animation: "mslide .16s ease both" }}>
-                <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-                  <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)" }}>{linkConn ? "PROJECT" : "TRACKER"}</span>
-                  <span style={{ flex: 1 }} />
-                  <button onClick={() => setLinkOpen(false)} style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", padding: 0 }}>✕</button>
-                </div>
-                {conns === null && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>reading connections…</div>}
-                {conns !== null && !linkConn && conns.length === 0 && (
-                  <div style={{ fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.6 }}>No tracker connected yet. Add Teamwork or Jira in SETTINGS ▸ SYSTEM ▸ TRACKERS, then come back.</div>
-                )}
-                {!linkConn && conns?.map((c) => (
-                  <button key={c.id} onClick={() => pickConn(c.id)} {...hp(`conn:${c.id}`)}
-                    style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, appearance: "none", cursor: "pointer", border: 0, background: hov === `conn:${c.id}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 4px", textAlign: "left" }}>
-                    <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txl)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "0 5px" }}>{c.kind === "jira" ? "JIRA" : "TEAMWORK"}</span>
-                    {c.name}
-                  </button>
-                ))}
-                {linkConn && linkProjects === null && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>reading projects…</div>}
-                {linkConn && linkProjects && (
-                  <div className="mscroll" style={{ maxHeight: 260, overflowY: "auto" }}>
-                    {linkProjects.length === 0 && !linkErr && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>No projects visible to this token.</div>}
-                    {linkProjects.map((p) => (
-                      <button key={p.id} onClick={() => void pickProject(p)} {...hp(`proj:${p.id}`)}
-                        style={{ display: "block", width: "100%", appearance: "none", cursor: "pointer", border: 0, background: hov === `proj:${p.id}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 4px", textAlign: "left" }}>
-                        {p.name} <span style={{ color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)" }}>{p.id}</span>
-                      </button>
-                    ))}
-                    <button onClick={() => { setLinkConn(""); setLinkProjects(null); }} style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "8px 4px 2px" }}>‹ TRACKERS</button>
+          {/* the tracker link: a chip when linked (✕ unlinks), LINK TASKS when not —
+              none of it while Trackers isn't installed */}
+          {plugins.trackers && (
+            <span style={{ position: "relative", flex: "none", display: "flex", alignItems: "center" }}>
+              {tracker?.linked ? (
+                <span title={`${tracker.name} · ${tracker.kind}${tracker.url ? ` · ${tracker.url}` : ""}`}
+                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--t9)", letterSpacing: 1, color: "var(--purple-h)", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", padding: "1px 4px 1px 7px" }}>
+                  ⌁ {tracker.label.toUpperCase()}
+                  <button onClick={() => void unlink()} title="unlink this repo from its tracker project" {...hp("unlink")}
+                    style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: hov === "unlink" ? "var(--err)" : "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", padding: "0 3px", lineHeight: 1 }}>✕</button>
+                </span>
+              ) : (
+                <button onClick={openLink} title="link this repo to a Teamwork or Jira project" {...hp("link")}
+                  style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: hov === "link" || linkOpen ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "transparent", color: "var(--purple-h)" }}>
+                  ⌁ LINK TASKS
+                </button>
+              )}
+              {linkOpen && (
+                <div style={{ position: "absolute", top: "calc(100% + 7px)", left: 0, zIndex: 40, width: 300, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", padding: 12, animation: "mslide .16s ease both" }}>
+                  <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                    <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)" }}>{linkConn ? "PROJECT" : "TRACKER"}</span>
+                    <span style={{ flex: 1 }} />
+                    <button onClick={() => setLinkOpen(false)} style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", padding: 0 }}>✕</button>
                   </div>
-                )}
-                {linkErr && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 6 }}>{linkErr}</div>}
-              </div>
-            )}
-          </span>
+                  {conns === null && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>reading connections…</div>}
+                  {conns !== null && !linkConn && conns.length === 0 && (
+                    <div style={{ fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.6 }}>No tracker connected yet. Add Teamwork or Jira in SETTINGS ▸ INTEGRATIONS ▸ TRACKERS, then come back.</div>
+                  )}
+                  {!linkConn && conns?.map((c) => (
+                    <button key={c.id} onClick={() => pickConn(c.id)} {...hp(`conn:${c.id}`)}
+                      style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, appearance: "none", cursor: "pointer", border: 0, background: hov === `conn:${c.id}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 4px", textAlign: "left" }}>
+                      <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txl)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "0 5px" }}>{c.kind === "jira" ? "JIRA" : "TEAMWORK"}</span>
+                      {c.name}
+                    </button>
+                  ))}
+                  {linkConn && linkProjects === null && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>reading projects…</div>}
+                  {linkConn && linkProjects && (
+                    <div className="mscroll" style={{ maxHeight: 260, overflowY: "auto" }}>
+                      {linkProjects.length === 0 && !linkErr && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>No projects visible to this token.</div>}
+                      {linkProjects.map((p) => (
+                        <button key={p.id} onClick={() => void pickProject(p)} {...hp(`proj:${p.id}`)}
+                          style={{ display: "block", width: "100%", appearance: "none", cursor: "pointer", border: 0, background: hov === `proj:${p.id}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 4px", textAlign: "left" }}>
+                          {p.name} <span style={{ color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)" }}>{p.id}</span>
+                        </button>
+                      ))}
+                      <button onClick={() => { setLinkConn(""); setLinkProjects(null); }} style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "8px 4px 2px" }}>‹ TRACKERS</button>
+                    </div>
+                  )}
+                  {linkErr && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 6 }}>{linkErr}</div>}
+                </div>
+              )}
+            </span>
+          )}
           <span style={{ flex: 1 }} />
           <button onClick={() => setFull((v) => !v)} title={full ? "restore size" : "expand"} {...hp("full")}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "full" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "3px 9px", lineHeight: 1.4 }}>{full ? "⤡" : "⤢"}</button>

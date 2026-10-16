@@ -520,13 +520,14 @@ export interface RivendellInstance {
   token: string;       // masked: "…" + last 4, or "set"/"" ; never sent back to keep
   status: RivendellStatus;  // live; merged in by the GET route, not stored
 }
-/** A create/edit payload. token blank on edit keeps the stored one. */
+/** A create/edit payload. token blank on edit keeps the stored one, and so does
+ *  an absent ws_url (the form has no field for it; the switch resends it). */
 export interface RivendellInput {
   name: string;
   enable: boolean;
   api_url: string;
   token: string;
-  ws_url: string;
+  ws_url?: string;
   model: string;
   workdir: string;
   review_timeout: number;
@@ -1018,6 +1019,23 @@ export interface AiFeature {
   tokens?: string; // what one unit burns, in + out — absent on a bridge older than the figure
   about: string; // the paragraph under the switch — what it does, what it adds
   enabled: boolean;
+}
+/** One bundled integration (bridge/integrations.py) and whether it is installed. A
+ *  plugin that isn't installed has its routes answer 404, so the UI hides it
+ *  instead of calling them. `summary` is "" while not installed. */
+export interface Integration {
+  id: string;
+  label: string;
+  blurb: string;
+  needs: string;
+  installed: boolean;
+  summary: string;
+}
+/** Which of Rivendell's video tools the bridge finds. */
+export interface VideoTools {
+  ffmpeg: boolean;
+  whisper: boolean;
+  model: boolean;
 }
 /** Whether the bridge starts itself at login, from the two host-side files that
  *  arrange it (a systemd user unit and a .cmd in the Windows Startup folder).
@@ -1529,6 +1547,15 @@ export const api = {
       method: "POST",
       body: { key, enabled },
     }),
+  /** The bundled integrations and whether each is installed. A bridge older than
+   *  this answers 404 "not found" (see lib/integrations.ts). */
+  integrations: () => req<{ plugins: Integration[] }>("/local/integrations"),
+  /** Removing Rivendell mid-run is a 409 whose message says so. */
+  setIntegration: (id: string, action: "install" | "remove") =>
+    req<{ ok: boolean; plugins: Integration[] }>("/local/integrations", {
+      method: "POST",
+      body: { id, action },
+    }),
   /** Everything else that used to be reachable only by editing .env. */
   envSettings: () => req<{ settings: EnvSetting[] }>("/local/envsettings"),
   /** `value: null` clears the override, falling back to what .env said. */
@@ -1773,7 +1800,7 @@ export const api = {
   removeTracker: (id: string) =>
     req<{ ok: boolean }>("/local/trackers", { method: "POST", body: { op: "remove", id } }),
   // --- rivendell instances (PR-review plugin — bridge/rivendell_instances.py) ---
-  rivendell: () => req<{ instances: RivendellInstance[] }>("/local/rivendell"),
+  rivendell: () => req<{ instances: RivendellInstance[]; video?: VideoTools }>("/local/rivendell"),
   addRivendell: (body: RivendellInput) =>
     req<{ ok: boolean; instance: RivendellInstance }>("/local/rivendell", {
       method: "POST", body: { op: "add", ...body },

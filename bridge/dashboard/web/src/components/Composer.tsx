@@ -6,6 +6,7 @@ import { describe, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago, fmtReset } from "../lib/surfaces";
 import { openSettings } from "../lib/opensettings";
+import { useIntegrations } from "../lib/integrations";
 import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
 import { ICON_BODY } from "../lib/fileicons.gen";
@@ -448,6 +449,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "plus" | "queued">("");
   const { compact, lead, composer, sendKey } = useChatChrome();
+  const plugins = useIntegrations();   // the DESIGN button exists while Claude Design is installed
   // TABS / CONSOLE: COMPACT's new composers. CLASSIC is the old markup.
   const shelled = compact && composer !== "classic";
   // MODEL rows grouped by usage pool, each with what it has left on the login
@@ -910,7 +912,7 @@ export function Composer({
       style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", display: "flex", flex: "none", marginTop: 3 }}>
       <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
   );
-  const designBtn = (
+  const designBtn = plugins.design && (
     <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
       title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
       DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>

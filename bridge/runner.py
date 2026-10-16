@@ -30,7 +30,7 @@ import time
 import uuid
 
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver, git,
-                    inspector, ladder, limits, machine, native_activity,
+                    inspector, integrations, ladder, limits, machine, native_activity,
                     profiles, pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send, typing
@@ -130,7 +130,7 @@ def _tasks_digest_for(project: "str | None", cwd: "str | None") -> str:
     2 s the digest itself allows. `project` is the session's rel — a worktree's
     cwd is not the project the link hangs off."""
     try:
-        if not aifeatures.enabled("tasks"):
+        if not (integrations.installed("trackers") and aifeatures.enabled("tasks")):
             return ""
         from bridge import trackers
         return trackers.digest(project or rel(cwd or state.project_dir(0)))
@@ -1458,7 +1458,7 @@ def _plugin_session(session_id: str | None) -> bool:
     ponytail: by origin, so a turn you later send by hand in such a session
     pings nothing either; tell them apart if that ever matters."""
     sess = store.get_session(session_id) if session_id else None
-    return bool(sess) and config.is_plugin_origin(sess.get("origin"))
+    return bool(sess) and integrations.is_plugin_origin(sess.get("origin"))
 
 
 def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> None:

@@ -192,7 +192,7 @@ import urllib.request
 import uuid
 from urllib.parse import quote, urlsplit
 
-from bridge import config, wsutil
+from bridge import config, integrations, wsutil
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -481,7 +481,7 @@ class Worker:
                     f"Rivendell refused this bridge's token at {at} ({self.status_detail}). "
                     "Jobs are paused until you replace it: mint a new LLM token in "
                     "Rivendell ▸ Profile ▸ API tokens, then paste it in the dashboard "
-                    "under Settings ▸ PLUGINS.")
+                    "under Settings ▸ Integrations ▸ Rivendell.")
         else:
             text = (f"✕ Rivendell link broken — {self.name}\n"
                     f"Can't reach Rivendell since {at} ({self.status_detail}). "
@@ -2015,9 +2015,12 @@ _manager_lock = threading.Lock()
 
 
 def _desired() -> dict:
-    """The enabled instances, id -> config dict. Missing store degrades to none
-    so a plugin hiccup never crashes the manager."""
+    """The enabled instances, id -> config dict. Empty while Rivendell is not
+    installed, so reconfigure() stops every worker. Missing store degrades to
+    none so a plugin hiccup never crashes the manager."""
     try:
+        if not integrations.installed("rivendell"):
+            return {}
         from bridge import rivendell_instances
         return {i["id"]: i for i in rivendell_instances.raw_instances()
                 if i.get("enable") and i.get("api_url") and i.get("token")}
@@ -2033,9 +2036,10 @@ def reconfigure() -> None:
     onto the live worker and drop its connection so the new URL/token is used on
     the next reconnect (an in-flight review finishes under the config it started
     with, matching the old singleton's behaviour). Called at boot and after any
-    save from the dashboard's PLUGINS panel."""
-    desired = _desired()
+    save from the dashboard's PLUGINS panel. The desired set is read under the
+    lock, so a save racing REMOVE can't apply an older one after REMOVE's stop."""
     with _manager_lock:
+        desired = _desired()
         for wid in list(_workers):
             if wid not in desired:
                 w = _workers.pop(wid)
@@ -2076,6 +2080,19 @@ def running() -> list:
     with _manager_lock:
         workers = list(_workers.values())
     return [row for w in workers for row in w.running_snapshot()]
+
+
+def busy() -> bool:
+    """Is any accepted run not over yet? running() lists a run only once it has
+    claimed and prepared (a video's download and whisper take minutes); this
+    counts it from accept() on, as _active_runs does, so REMOVE refuses then too."""
+    with _manager_lock:
+        workers = list(_workers.values())
+    for w in workers:
+        with w._q_lock:
+            if w._active_runs:
+                return True
+    return False
 
 
 def test_link(instance_id: str, job: bool = False) -> "dict | None":
@@ -2518,7 +2535,7 @@ def ping_question(job, request_id: str, questions: list) -> bool:
     try:
         from bridge import store                 # local import: heavy module
         sess = store.get_session(job.store_session_id) if job.store_session_id else None
-        if not sess or not config.is_plugin_origin(sess.get("origin")):
+        if not sess or not integrations.is_plugin_origin(sess.get("origin")):
             return False
         threading.Thread(target=_send_question, args=(job, request_id, questions, sess),
                          name="rivendell-ask", daemon=True).start()

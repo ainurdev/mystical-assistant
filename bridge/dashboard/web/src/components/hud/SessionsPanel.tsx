@@ -7,6 +7,7 @@ import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
 import { orderBranches } from "../../lib/branchorder";
+import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
 import type { ProjectGroup } from "./ProjectsPanel";
 import { RivendellQueue } from "./RivendellQueue";
@@ -81,10 +82,9 @@ const DETAIL_DEFAULT: Record<Mode, Detail> = {
 
 /** Session origins that belong to plugin workers — the PLUGINS tab's rows. One
  *  entry per worker the bridge can run, so a second plugin lands as a new lane
- *  here, not a redesign. The tab itself appears once a plugin is configured
- *  (its ENABLE setting) or has left sessions behind. */
-const PLUGINS: { origin: string; label: string; flag: string }[] = [
-  { origin: "rivendell", label: "RIVENDELL", flag: "RIVENDELL_ENABLE" },
+ *  here, not a redesign. The tab itself exists while Rivendell is installed. */
+const PLUGINS: { origin: string; label: string }[] = [
+  { origin: "rivendell", label: "RIVENDELL" },
 ];
 
 /** A session belongs to a plugin worker when its origin is that worker's — but a
@@ -319,17 +319,11 @@ export function SessionsPanel(props: Props) {
   const [parentMenu, setParentMenu] = useState(false);
 
   // Browser state — mode + project order remembered across reloads.
-  const [mode, setMode] = useState<Mode>(() => loadPrefs().mode);
-  // Whether any plugin worker is configured (its ENABLE flag in the settings
-  // registry) — decides the PLUGINS tab. Read once per load: the flag changes
-  // through the SETTINGS modal, and the next reload is soon enough for a tab.
-  const [pluginsConfigured, setPluginsConfigured] = useState(false);
-  useEffect(() => {
-    void api.envSettings().then((r) =>
-      setPluginsConfigured(PLUGINS.some((p) =>
-        r.settings.some((s) => s.key === p.flag && s.value === true))),
-    ).catch(() => {});
-  }, []);
+  const plugins = useIntegrations();
+  const [picked, setPicked] = useState<Mode>(() => loadPrefs().mode);
+  // A saved PLUGINS pick renders as ATTENTION while Rivendell isn't installed,
+  // and stays saved: installing it again puts you back on the tab you chose.
+  const mode: Mode = picked === "plugins" && !plugins.rivendell ? "attention" : picked;
   const [order, setOrder] = useState<OrderMode>(() => loadPrefs().order);
   const [customOrder, setCustomOrder] = useState<string[]>(() => loadPrefs().custom);
   const [orderMenu, setOrderMenu] = useState(false);
@@ -373,9 +367,9 @@ export function SessionsPanel(props: Props) {
   }, [mode]);
 
   useEffect(() => {
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ mode, order, custom: customOrder, shut: [...shut] })); }
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify({ mode: picked, order, custom: customOrder, shut: [...shut] })); }
     catch { /* ignore */ }
-  }, [mode, order, customOrder, shut]);
+  }, [picked, order, customOrder, shut]);
 
   // "/" jumps to the search box — the hint badge in it promises this.
   const searchRef = useRef<HTMLInputElement>(null);
@@ -879,17 +873,15 @@ export function SessionsPanel(props: Props) {
     </div>
   );
 
-  // The PLUGINS tab earns its slot three ways: a worker is configured, plugin
-  // sessions exist from before, or you are already standing on it (a stale
-  // pref must not strand the pill on a tab that isn't rendered).
+  // The PLUGINS tab exists while Rivendell is installed, and `mode` can't be
+  // "plugins" otherwise, so the pill never stands on a tab that isn't rendered.
   const pluginRows = sorted.filter((s) => isPluginOrigin(s.origin));
-  const showPlugins = pluginsConfigured || pluginRows.length > 0 || mode === "plugins";
   // Tabs are icons only — the label survives as the tooltip and the
   // accessible name, so the bar stays narrow and never wraps.
   const modeTabs: { id: Mode; label: string; Icon: LucideIcon; count: number; tip: string }[] = [
     { id: "attention", label: "Attention", Icon: BellRing, count: sorted.filter((s) => laneOf(s) !== "idle").length, tip: "Attention — grouped by what each session wants from you" },
     { id: "projects", label: "Projects", Icon: FolderTree, count: groups.length, tip: "Projects — grouped by project" },
-    ...(showPlugins ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
+    ...(plugins.rivendell ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
     { id: "recent", label: "Recent", Icon: History, count: sorted.length, tip: "Recent — one flat stream, newest first" },
   ];
 
@@ -922,7 +914,7 @@ export function SessionsPanel(props: Props) {
             const on = mode === m.id;
             return (
               <button
-                key={m.id} onClick={() => setMode(m.id)} title={m.tip} aria-label={m.label} aria-pressed={on}
+                key={m.id} onClick={() => setPicked(m.id)} title={m.tip} aria-label={m.label} aria-pressed={on}
                 style={{ position: "relative", flex: "1 1 0", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                          height: 27, border: 0, borderRadius: 3, padding: 0, margin: 0, background: "transparent",
                          cursor: "pointer", fontFamily: "inherit", color: on ? "var(--txb)" : "var(--txf)", transition: "color .15s ease" }}
@@ -1070,7 +1062,7 @@ export function SessionsPanel(props: Props) {
         {nsOpen && !nsScoped && nsForm}
         {npOpen && mode === "projects" && npForm}
         {/* Pending plugin requests sit above the sessions they become on accept. */}
-        <RivendellQueue active={mode === "plugins"} />
+        {plugins.rivendell && <RivendellQueue active={mode === "plugins"} />}
 
         {mode !== "projects" ? (
           <div ref={listRef} style={{ position: "relative", height: rowV.getTotalSize() }}>

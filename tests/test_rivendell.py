@@ -28,7 +28,7 @@ os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
 import pytest  # noqa: E402
 
-from bridge import rivendell, wsutil  # noqa: E402
+from bridge import integrations, rivendell, wsutil  # noqa: E402
 
 _real_ack = rivendell.Worker._ack
 
@@ -1606,12 +1606,12 @@ def test_ws_url_override_wins():
 
 def test_origin_is_namespaced_per_instance():
     """A run's session origin names its instance, under the rivendell prefix so
-    it stays visible in the dashboards (config.is_plugin_origin)."""
+    it stays visible in the dashboards (integrations.is_plugin_origin)."""
     assert _worker(name="production").origin == "rivendell:production"
     assert _worker(name="Local Dev").origin == "rivendell:local-dev"
-    assert rivendell.config.is_plugin_origin("rivendell:production")
-    assert rivendell.config.is_plugin_origin("rivendell")
-    assert not rivendell.config.is_plugin_origin("dashboard")
+    assert integrations.is_plugin_origin("rivendell:production")
+    assert integrations.is_plugin_origin("rivendell")
+    assert not integrations.is_plugin_origin("dashboard")
 
 
 # --- manager (reconfigure) ---------------------------------------------------
