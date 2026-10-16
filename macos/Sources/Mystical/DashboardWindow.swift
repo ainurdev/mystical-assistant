@@ -136,10 +136,11 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
 
     /// Open one session: the page showing switches to it in place (App.tsx
     /// `__mysticalOpenSession`); without one, a full load of `?s=<id>` — the
-    /// dashboard's own deep link.
+    /// dashboard's own deep link. An empty id (a Rivendell offer has no session)
+    /// just brings the window forward.
     func open(session id: String) {
         show()
-        guard let base = bridge.status?.dashboardURL else { return }
+        guard !id.isEmpty, let base = bridge.status?.dashboardURL else { return }
         Task {
             if showingPage, (try? await webView.callAsyncJavaScript(
                 "return window.__mysticalOpenSession?.(id) === true",
@@ -155,8 +156,9 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         let arg = String(data: try! JSONSerialization.data(withJSONObject: [id]), encoding: .utf8)!
         webView.evaluateJavaScript("window.__mysticalNotificationClick?.(...\(arg)) === true") {
             [weak self] result, _ in
-            guard (result as? Bool) != true, id.hasPrefix("tag:") else { return }
-            Task { @MainActor in self?.open(session: String(id.dropFirst(4))) }
+            guard (result as? Bool) != true else { return }
+            // Not a session's banner (a Rivendell offer, a PR): the window is enough.
+            Task { @MainActor in self?.open(session: NotificationShim.session(fromIdentifier: id) ?? "") }
         }
     }
 
@@ -166,8 +168,8 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         let arg = String(data: try! JSONSerialization.data(withJSONObject: [id, action]), encoding: .utf8)!
         webView.evaluateJavaScript("window.__mysticalNotificationAction?.(...\(arg)) === true") {
             [weak self] result, _ in
-            guard (result as? Bool) != true, id.hasPrefix("tag:") else { return }
-            Task { @MainActor in self?.open(session: String(id.dropFirst(4))) }
+            guard (result as? Bool) != true else { return }
+            Task { @MainActor in self?.open(session: NotificationShim.session(fromIdentifier: id) ?? "") }
         }
     }
 
