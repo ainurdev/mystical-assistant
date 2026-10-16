@@ -197,10 +197,15 @@ def _push_due() -> None:
     if due is None:
         return
     # Lazy imports: the report itself is pure DB; only the push needs a bot.
-    from bridge import config
+    from bridge import config, notices
     from bridge.telegram import send
-    for chat in config.ALLOWED_CHAT_IDS:
-        send(chat, render(weekly(chat, back=1)))
+    to_tg = notices.telegram_ok("weekly")
+    notices.emit("weekly", f"weekly:{int(due)}", title="Weekly report",
+                 body="Last week's sessions, turns and spend, sent to Telegram." if to_tg else
+                      "Last week's sessions, turns and spend are ready.")
+    if to_tg:
+        for chat in config.ALLOWED_CHAT_IDS:
+            send(chat, render(weekly(chat, back=1)))
     store.set_setting(_SENT_KEY, str(due))
     log.info("weekly report pushed for week starting %s", due)
 

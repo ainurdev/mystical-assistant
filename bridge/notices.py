@@ -268,8 +268,11 @@ def needs(status: dict) -> list:
         rows = []
     newest, of_kind = {}, {}
     for r in rows:
-        newest.setdefault(r["subject"], r)
         of_kind.setdefault((r["subject"], r["kind"]), r)
+        # A dead login also ends its turn ("failed") and a limit card parks it;
+        # neither answers the ask, so neither can stand in for the newest word.
+        if r["kind"] not in ("failed", "parked"):
+            newest.setdefault(r["subject"], r)
     out = []
     for sid, st in (status or {}).items():
         if st.get("state") != "awaiting":

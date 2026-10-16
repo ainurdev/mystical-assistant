@@ -187,3 +187,112 @@ def test_needs_survives_rivendell_failure(monkeypatch):
     monkeypatch.setattr(rivendell, "queue", boom)
     status = {"s1": {"state": "awaiting", "kind": "question", "label": "Which one?"}}
     assert [n["kind"] for n in notices.needs(status)] == ["question"]
+
+
+# --- emitters: sessions, limits, logins, MOVE -----------------------------------
+
+@pytest.fixture
+def sent(monkeypatch):
+    from bridge import runner
+    box = []
+    monkeypatch.setattr(runner, "send", lambda chat, text, kb=None, **k: box.append(text))
+    notices.set_prefs({"events": {g: {"tg": "always"} for g in notices.DEFAULTS}})
+    return box
+
+
+def _sess(origin="dashboard"):
+    s = store.create_session(555, "/repo", origin=origin)
+    with closing(store._connect()) as c:
+        c.execute("UPDATE sessions SET title=? WHERE id=?", ("Invoices", s["id"]))
+    return s["id"]
+
+
+def test_turn_error_emits_failed_with_outcome(monkeypatch, sent):
+    from bridge import runner
+    sid = _sess()
+    monkeypatch.setattr(store, "last_turn", lambda s: {"status": "error", "elapsed": 760, "outcome": {
+        "code": "context", "label": "OUT OF CONTEXT",
+        "detail": "The conversation outgrew the window. Start a fresh session."}})
+    runner.notify_turn_done(555, sid, True)
+    row = notices.feed()[0]
+    assert (row["kind"], row["subject"], row["title"]) == ("failed", sid, "Invoices")
+    assert row["body"] == "Out of context: The conversation outgrew the window. Start a fresh session."
+    assert row["meta"]["elapsed"] == 760
+    assert sent and "hit an error" in sent[0]
+
+
+def test_turn_done_emits_done_with_closing_line(monkeypatch, sent):
+    from bridge import runner
+    sid = _sess()
+    monkeypatch.setattr(store, "last_turn", lambda s: {"status": "done", "elapsed": 252, "outcome": None})
+    runner.notify_turn_done(555, sid, False, body="\n  All green — both shots attached.\nMore detail")
+    row = notices.feed()[0]
+    assert (row["kind"], row["body"], row["meta"]["elapsed"]) == ("done", "All green — both shots attached.", 252)
+
+
+def test_plugin_session_turn_emits_nothing(monkeypatch, sent):
+    from bridge import runner
+    sid = _sess(origin="rivendell:prod")
+    monkeypatch.setattr(store, "last_turn", lambda s: {"status": "done", "elapsed": 1, "outcome": None})
+    runner.notify_turn_done(555, sid, False, body="step 3 done")
+    runner.notify_needs_you(555, sid, "which branch?")
+    assert notices.feed() == [] and sent == []
+
+
+def test_awaiting_emits_approve_with_summary(sent):
+    from bridge import runner
+    sid = _sess()
+    runner.notify_awaiting(555, sid, "permission", body="Bash: rm -rf old", job_id="j1")
+    runner.notify_awaiting(555, sid, "question", body="Keep 344px?", job_id="j1")
+    q, a = notices.feed()
+    assert (a["kind"], a["body"], a["meta"]["job_id"]) == ("approve", "Bash: rm -rf old", "j1")
+    assert (q["kind"], q["body"]) == ("question", "Keep 344px?")
+
+
+def test_needs_you_emits_asking(sent):
+    from bridge import runner
+    sid = _sess()
+    runner.notify_needs_you(555, sid, "Pick a name for the branch?")
+    assert notices.feed()[0]["kind"] == "asking"
+    assert notices.feed()[0]["body"] == "Pick a name for the branch?"
+
+
+def test_tg_off_suppresses_send(monkeypatch, sent):
+    from bridge import runner
+    sid = _sess()
+    monkeypatch.setattr(store, "last_turn", lambda s: {"status": "done", "elapsed": 1, "outcome": None})
+    notices.set_prefs({"events": {"done": {"tg": "off"}}})
+    runner.notify_turn_done(555, sid, False, body="ok")
+    assert sent == [] and notices.feed()[0]["kind"] == "done"
+
+
+def test_auth_stop_needs_you_and_sign_in_resumes(monkeypatch, sent):
+    from bridge import runner
+    sid = _sess()
+    runner._auth_stop(555, sid, 2)
+    assert [n["kind"] for n in notices.needs({})] == ["login"]
+    notices.emit("resumed", sid, body="Signed in")
+    assert notices.needs({}) == []
+
+
+def test_move_finish_emits():
+    from bridge import movejob
+    j = movejob.Job("export", "→ ~/out.move")
+    j.finish("done")
+    k = movejob.Job("import", "← ~/in.move")
+    k.finish("failed", "bad archive")
+    c = movejob.Job("export", "→ ~/x.move")
+    c.finish("cancelled")
+    rows = notices.feed()
+    assert [(r["kind"], r["title"], r["body"]) for r in rows] == [
+        ("move_failed", "← ~/in.move", "bad archive"), ("move_done", "→ ~/out.move", "")]
+
+
+def test_account_needs_outlive_their_own_failed_and_parked():
+    notices.emit("login", "s1", body="Account 2")
+    notices.emit("failed", "s1", body="Could not start")        # the same dead turn ending
+    notices.emit("limit_choice", "s2", body="Switch or wait")
+    notices.emit("parked", "s2", body="resumes 19:00")           # the park behind the card
+    assert sorted(n["kind"] for n in notices.needs({})) == ["limit_choice", "login"]
+    # Running again (a prompt sent by hand) answers it too.
+    assert [n["kind"] for n in notices.needs({"s1": {"state": "working"}})] == ["limit_choice"]

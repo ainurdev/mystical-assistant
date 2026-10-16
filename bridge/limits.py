@@ -317,8 +317,11 @@ def _fire(run=None, notify=None) -> None:
             # Server-error retries announced their wait at defer time, and
             # re-probes resume silently; the normal turn-done ping lands when
             # one finally completes.
+            from bridge import notices      # lazy, like runner above
+            notices.emit("resumed", sid, body="The usage limit reset. Resuming.")
             try:
-                notify(e["chat_id"], "🔄 Usage limit reset — resuming your session.")
+                if notices.telegram_ok("resumed"):
+                    notify(e["chat_id"], "🔄 Usage limit reset — resuming your session.")
             except Exception:  # noqa: BLE001
                 pass
 

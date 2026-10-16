@@ -738,7 +738,7 @@ def test_a_job_that_never_ran_here_pings_nothing(quiet):
 
 def test_a_rivendell_session_skips_the_generic_turn_pings(monkeypatch):
     notes = []
-    monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None: notes.append(text))
+    monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None, **kw: notes.append(text))
     runner.notify_turn_done(config.DASH_CHAT_ID, _session(), False)
     runner.notify_needs_you(config.DASH_CHAT_ID, _session(), "pick one")
     assert notes == []
