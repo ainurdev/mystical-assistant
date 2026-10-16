@@ -524,6 +524,7 @@ export interface RivendellDevice {
     checks: { key: string; label: string; ok: boolean }[];
   };
   shared_on: { on: number; free: number } | null;   // Rivendell's shared devices, kept 30 s; null when it can't say
+  running: boolean;   // a teammate's run is running on this device now
   last_run: { at: number; by: string; task: string | null } | null;   // the newest run this device ran
 }
 /** Leave a field out to keep it. A blank token keeps the saved one; clear_token forgets it. */

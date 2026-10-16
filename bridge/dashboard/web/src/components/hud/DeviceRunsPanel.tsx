@@ -14,7 +14,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { Key, LaptopMinimal } from "lucide-react";
 import { api, type RivendellDevice } from "../../api";
-import { hhmm } from "../../lib/surfaces";
+import { setupAction, stateText } from "../../lib/deviceruns";
 import { CARD, Row, Section, Switch, riStatusView, useVoice } from "./SettingsModal";
 
 const MONO = "'JetBrains Mono',monospace";
@@ -90,14 +90,6 @@ function Head({ d }: { d: RivendellDevice }) {
       <span style={{ color: sv.color }} title={d.status?.detail || sv.label}>{say(sv.label)}</span>
     </div>
   );
-}
-
-/** STATE's right-hand text. */
-function now(d: RivendellDevice): string {
-  if (d.share.state === "NEEDS_SETUP") return "not shared until it is set up";
-  if (d.share.state !== "READY") return "";
-  const r = d.last_run;
-  return r ? `idle · last run ${[hhmm(r.at), r.by, r.task].filter(Boolean).join(", ")}` : "idle";
 }
 
 function TokenRow({ d, first, busy, onSave }: {
@@ -213,8 +205,7 @@ export function DeviceRunsPanel() {
             </div>
           );
         }
-        const ready = d.share.state === "READY";
-        const action = ready ? "remove" : "setup";
+        const action = setupAction(d);
         const [chip, color] = STATE_CHIP[d.share.state];
         return (
           <div key={d.id} style={{ marginTop: 34 }}>
@@ -236,13 +227,13 @@ export function DeviceRunsPanel() {
                       ))}
                     </span>
                   }>
-                  <span style={NOW}>{now(d)}</span>
+                  <span style={NOW}>{stateText(d)}</span>
                 </Row>
-                {(ready || d.share.state === "NEEDS_SETUP") && (
-                  <Row label="SETUP" desc={ready ? REMOVE_DESC : SETUP_DESC}>
-                    <Btn tone={ready ? "bad" : "pri"} disabled={!!busy}
+                {action && (
+                  <Row label="SETUP" desc={action === "remove" ? REMOVE_DESC : SETUP_DESC}>
+                    <Btn tone={action === "remove" ? "bad" : "pri"} disabled={!!busy}
                       onClick={() => void act(action, `${d.id}:device`, () => api.rivendellDeviceSetup(action))}>
-                      {busy === "setup" || busy === "remove" ? "WAITING FOR YOUR PASSWORD…" : ready ? "REMOVE" : "SET UP"}
+                      {busy === "setup" || busy === "remove" ? "WAITING FOR YOUR PASSWORD…" : action === "remove" ? "REMOVE" : "SET UP"}
                     </Btn>
                   </Row>
                 )}

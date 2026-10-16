@@ -43,10 +43,11 @@ their Mystical, and the report and screenshots go back to them and onto the task
 
 ### Remove
 
-**REMOVE** asks for your Mac password again. It stops anything the hidden user is
+**REMOVE** is there whenever the device is set up, with Share this device on or
+off. It asks for your Mac password again, stops anything the hidden user is
 running, then deletes the user, its home and everything runs left behind, the
 helper, its config, the sudoers rule and the Claude copy. STATE then says NEEDS
-SETUP.
+SETUP, or OFF if Share this device is off.
 
 ### Your Claude token for device runs
 

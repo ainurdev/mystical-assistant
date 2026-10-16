@@ -64,6 +64,7 @@ def refusing(monkeypatch):
     monkeypatch.setattr(device_ask, "list_devices", refuse("Rivendell"))
     monkeypatch.setattr(rivendell, "_workers", {})
     monkeypatch.setattr(rivendell, "reconfigure", lambda: None)
+    monkeypatch.setattr(rivendell, "_device_run", None)         # no teammate's run going here
     d = tempfile.mkdtemp()
     monkeypatch.setattr(config, "BRIDGE_DB", os.path.join(d, "bridge.db"))
     monkeypatch.setattr(config, "RIVENDELL_API_URL", "")
@@ -130,12 +131,21 @@ def test_get_draws_each_instance_and_never_its_tokens(device):
         "share_device": True, "token_saved": True, "token_last4": "4f2c"}
     assert p["status"]["state"] == "off", "no worker runs it here"
     assert p["share"] == {"state": "READY", "checks": CHECKS, "facts": None}
-    assert p["shared_on"] == {"on": 3, "free": 2} and p["last_run"] == LAST
+    assert p["shared_on"] == {"on": 3, "free": 2} and p["last_run"] == LAST and p["running"] is False
     assert (s["enable"], s["share_device"], s["token_saved"], s["token_last4"]) == (False, False, False, "")
     assert s["share"]["state"] == "OFF"
     assert s["shared_on"] is None and device["asked"] == [a["id"]], "a switched-off instance never asks Rivendell"
     text = json.dumps(r["obj"])
     assert TOKEN not in text and "rvd_owner" not in text
+
+
+def test_a_run_going_on_this_device_says_so_in_every_block(monkeypatch, device):
+    """STATE reads `running now` while a teammate's run runs here, from whichever
+    instance it came (rivendell._device_run: one at a time on the device)."""
+    _inst()
+    _inst(name="staging")
+    monkeypatch.setattr(rivendell, "_device_run", "5b1d2c3e-0000-4000-8000-000000000001")
+    assert [row["running"] for row in dget()["obj"]["instances"]] == [True, True]
 
 
 def test_shared_devices_on_now_is_cached_30_s_and_null_when_rivendell_cant_say(monkeypatch, device):

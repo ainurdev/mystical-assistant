@@ -328,6 +328,21 @@ def test_switched_off_the_state_is_off_but_the_checks_still_show(monkeypatch):
     assert s["state"] == "OFF" and s["facts"] == FACTS and len(s["checks"]) == 6
 
 
+@pytest.mark.parametrize("inst, facts", [
+    ({"share_device": False}, FACTS),          # OFF
+    ({}, FACTS),                               # READY or NEEDS_SETUP
+    ({}, {**FACTS, "xcode": None}),            # XCODE_MISSING
+])
+@pytest.mark.parametrize("setup, set_up", [
+    (SET_UP, True), ({**SET_UP, "user": False}, False), ({**SET_UP, "claude": False}, False),
+])
+def test_the_user_check_says_whether_it_is_set_up_whatever_the_state(monkeypatch, inst, facts, setup, set_up):
+    """The settings panel offers REMOVE on this check (lib/deviceruns.ts), with
+    sharing on or off, so it must not depend on the state."""
+    s = _state(monkeypatch, inst, facts=facts, setup=setup)
+    assert [c["ok"] for c in s["checks"] if c["key"] == "user"] == [set_up]
+
+
 def test_off_beats_everything_but_not_a_mac(monkeypatch):
     bare = dict(FACTS, xcode=None, iosRuntimes=[])
     assert _state(monkeypatch, {"share_device": False}, facts=bare,

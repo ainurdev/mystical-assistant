@@ -214,10 +214,11 @@ def _shared_on_now(inst: dict) -> "dict | None":
 def _device_rows() -> list:
     """The panel's blocks, one per instance: Share this device, where this
     device stands, the Claude token for device runs (whether it is saved and
-    its last 4, never the token), the shared devices on now and the last run
-    this device ran."""
+    its last 4, never the token), the shared devices on now, and whether a
+    teammate's run is running here now or which one ran last."""
     live = rivendell.status()
     last = device_share.last_run()
+    running = rivendell._device_run is not None      # one at a time on the device, whichever instance sent it
     rows = []
     for inst in rivendell_instances.raw_instances():
         tok = inst.get("device_token") or ""
@@ -228,7 +229,7 @@ def _device_rows() -> list:
             "token_saved": bool(tok), "token_last4": tok[-4:] if len(tok) > 4 else "",
             "share": device_share.share_state(inst),
             "shared_on": _shared_on_now(inst) if inst.get("enable") else None,
-            "last_run": last,
+            "running": running, "last_run": last,
         })
     return sorted(rows, key=lambda r: r["name"].lower())
 
