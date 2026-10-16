@@ -2324,7 +2324,11 @@ def running() -> list:
 def busy() -> bool:
     """Is any accepted run not over yet? running() lists a run only once it has
     claimed and prepared (a video's download and whisper take minutes); this
-    counts it from accept() on, as _active_runs does, so REMOVE refuses then too."""
+    counts it from accept() on, as _active_runs does, so REMOVE refuses then too.
+    A teammate's device run counts as well, though it is no part of _active_runs
+    (M11): REMOVE would stop its worker, and the run's result would be lost."""
+    if _device_run is not None:
+        return True
     with _manager_lock:
         workers = list(_workers.values())
     for w in workers:

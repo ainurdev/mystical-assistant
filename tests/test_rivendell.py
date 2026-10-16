@@ -2741,6 +2741,33 @@ def test_a_device_run_ending_frees_no_slot_of_the_owners(monkeypatch):
     assert w._active_runs == 1
 
 
+def test_a_device_run_in_flight_keeps_rivendell_from_being_removed(monkeypatch):
+    """busy() counts a teammate's device run, which _active_runs never does
+    (M11): REMOVE mid-run would stop its worker, and its result would be lost."""
+    w = _worker()
+    monkeypatch.setitem(rivendell._workers, w.id, w)
+    monkeypatch.setattr(w, "_run_accepted", lambda item: None)       # accepted, never run
+    w._enqueue("device-run", DRID, "ainurhq/app")
+    assert not rivendell.busy()
+    assert w.accept(f"device-run:{DRID}") and w._active_runs == 0
+    assert rivendell.busy()
+    with pytest.raises(integrations.IntegrationError, match="in flight"):
+        integrations.set_installed("rivendell", False)
+    assert integrations.installed("rivendell")
+
+
+def test_only_the_owners_own_jobs_note_rv_started(monkeypatch):
+    """The bell's "started" is the owner's own job; a teammate's device run
+    already pinged the owner on Telegram (device_side.run)."""
+    w = _worker()
+    monkeypatch.setattr(w, "_run_accepted", lambda item: None)
+    noted = []
+    monkeypatch.setattr(w, "_note", lambda kind, rid, title, body="", **meta: noted.append((kind, rid)))
+    assert w.accept(w._enqueue("device-run", DRID, "ainurhq/app"))
+    assert w.accept(w._enqueue("review", "r1", "acme/app"))
+    assert noted == [("rv_started", "r1")]
+
+
 def test_catch_up_reports_the_runs_a_restart_cut_short_once_ready(monkeypatch):
     """M12: Rivendell takes a device's result only once its socket is open, so a
     run the last restart cut short is reported on a READY catch-up, to its own
