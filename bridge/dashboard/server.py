@@ -1314,6 +1314,8 @@ class Handler(BaseHTTPRequestHandler):
                 "workdir": (body.get("workdir") or "")[:1000],
                 "review_timeout": body.get("review_timeout"),
                 "impl_timeout": body.get("impl_timeout"),
+                "share_device": body.get("share_device"),
+                "device_token": (body.get("device_token") or "")[:2000],
             }
             try:
                 if op == "add":

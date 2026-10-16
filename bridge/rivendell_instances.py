@@ -128,7 +128,10 @@ def _timeout(raw, default: int, label: str) -> int:
 def _clean(fields: dict, existing: "dict | None" = None) -> dict:
     """Validate a create/edit payload into a stored instance dict. On edit
     (``existing`` given), a blank token keeps the stored one — the panel shows
-    the token masked and only resends it when it is deliberately changed."""
+    the token masked and only resends it when it is deliberately changed. The
+    device-run token (the Claude token a device run of yours uses) works the
+    same way, and ``share_device`` left out keeps the stored choice (on for a
+    new instance), so a form that does not know the field cannot reset it."""
     name = (fields.get("name") or "").strip()
     if not name:
         raise RivendellError("name is required")
@@ -141,6 +144,12 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
             token = existing["token"]
         else:
             raise RivendellError("token is required")
+    device_token = (fields.get("device_token") or "").strip()
+    if not device_token and existing:
+        device_token = existing.get("device_token") or ""
+    share = fields.get("share_device")
+    if share is None:
+        share = (existing or {}).get("share_device", True)
     workdir = (fields.get("workdir") or "").strip()
     if workdir:
         workdir = os.path.realpath(os.path.expanduser(workdir))
@@ -155,19 +164,27 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
         "workdir": workdir,
         "review_timeout": _timeout(fields.get("review_timeout"), _REVIEW_DEFAULT, "review timeout"),
         "impl_timeout": _timeout(fields.get("impl_timeout"), _IMPL_DEFAULT, "implementation timeout"),
+        "share_device": bool(share),
+        "device_token": device_token,
     }
 
 
+def _mask(secret) -> str:
+    secret = secret or ""
+    return ("…" + secret[-4:]) if len(secret) > 4 else ("set" if secret else "")
+
+
 def _masked(inst: dict) -> dict:
-    """What the panel may see. The token is never returned in full."""
-    tok = inst.get("token") or ""
+    """What the panel may see. The tokens are never returned in full."""
     out = {k: inst.get(k, "") for k in
            ("id", "name", "api_url", "ws_url", "model", "workdir")}
     out["enable"] = bool(inst.get("enable"))
     out["review_timeout"] = inst.get("review_timeout", _REVIEW_DEFAULT)
     out["impl_timeout"] = inst.get("impl_timeout", _IMPL_DEFAULT)
     out["origin"] = origin_for(inst)
-    out["token"] = ("…" + tok[-4:]) if len(tok) > 4 else ("set" if tok else "")
+    out["token"] = _mask(inst.get("token"))
+    out["share_device"] = bool(inst.get("share_device", True))
+    out["device_token"] = _mask(inst.get("device_token"))
     return out
 
 

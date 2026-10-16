@@ -489,6 +489,8 @@ export interface RivendellInstance {
   impl_timeout: number;
   origin: string;      // "rivendell:<name>" — its runs' session origin
   token: string;       // masked: "…" + last 4, or "set"/"" ; never sent back to keep
+  share_device: boolean;    // Share this device: this Rivendell may send it device runs, once it is ready
+  device_token: string;     // masked like token: the Claude token your device runs use; "" when none is saved
   status: RivendellStatus;  // live; merged in by the GET route, not stored
 }
 /** A create/edit payload. token blank on edit keeps the stored one. */
@@ -502,6 +504,8 @@ export interface RivendellInput {
   workdir: string;
   review_timeout: number;
   impl_timeout: number;
+  share_device?: boolean;   // left out keeps the stored choice (on for a new instance)
+  device_token?: string;    // blank on edit keeps the stored one
 }
 /** One request held PENDING in a worker's queue, awaiting accept/reject. The
  *  kinds match bridge/rivendell.py: a PR review, a task implementation, a project

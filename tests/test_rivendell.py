@@ -28,7 +28,7 @@ os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
 import pytest  # noqa: E402
 
-from bridge import rivendell, wsutil  # noqa: E402
+from bridge import device_share, rivendell, wsutil  # noqa: E402
 
 _real_ack = rivendell.Worker._ack
 
@@ -48,6 +48,14 @@ def no_link_alerts(monkeypatch):
     """A rejected token (or a long outage) pings Telegram once per break
     (Worker._alert_broken); no test here may reach the network for it."""
     monkeypatch.setattr(rivendell.Worker, "_alert_broken", lambda self: None)
+
+
+@pytest.fixture(autouse=True)
+def no_device_probe(monkeypatch):
+    """_connect asks device_share what this device is, which on a Mac runs xcrun
+    and friends; no test here may probe the developer's machine. The handshake
+    headers themselves are tested in test_rivendell_channel.py."""
+    monkeypatch.setattr(device_share, "handshake_headers", lambda inst: [])
 
 
 def _http_error(code, path="/x"):

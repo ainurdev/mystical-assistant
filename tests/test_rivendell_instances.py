@@ -11,6 +11,7 @@ import os
 import tempfile
 
 from bridge import rivendell_instances as ri
+from bridge.dashboard import server as dash
 
 
 def _fresh_db(monkeypatch):
@@ -120,6 +121,81 @@ def test_two_instances_are_independent(monkeypatch):
     assert set(got) == {"production", "local"}
     assert got["production"]["origin"] == "rivendell:production"
     assert got["local"]["origin"] == "rivendell:local"
+
+
+# --- device runs: Share this device and the device-run token ------------------
+
+def test_share_device_defaults_on_and_an_edit_can_switch_it_off(monkeypatch):
+    _fresh_db(monkeypatch)
+    a = ri.add_instance(name="p", api_url="http://x", token="t")
+    assert a["share_device"] is True and ri.raw_instances()[0]["share_device"] is True
+    ri.update_instance(a["id"], name="p", api_url="http://x", token="", share_device=False)
+    assert ri.raw_instances()[0]["share_device"] is False
+    assert ri.instances()[0]["share_device"] is False
+
+
+def test_an_edit_that_does_not_mention_share_device_leaves_it_alone(monkeypatch):
+    """The instance form never sends it; saving the form must not switch sharing back on."""
+    _fresh_db(monkeypatch)
+    a = ri.add_instance(name="p", api_url="http://x", token="t", share_device=False)
+    ri.update_instance(a["id"], name="renamed", api_url="http://x", token="")
+    assert ri.raw_instances()[0]["share_device"] is False
+    ri.update_instance(a["id"], name="renamed", api_url="http://x", token="", share_device=None)
+    assert ri.raw_instances()[0]["share_device"] is False, "null is not an answer either"
+
+
+def test_an_instance_stored_before_device_runs_shares_by_default_with_no_token(monkeypatch):
+    d = _fresh_db(monkeypatch)
+    with open(os.path.join(d, "rivendell_instances.json"), "w") as f:
+        json.dump({"instances": {"old": {"id": "old", "name": "old", "enable": True,
+                                         "api_url": "http://x", "token": "rvd_old"}}}, f)
+    got = ri.instances()[0]
+    assert got["share_device"] is True and got["device_token"] == ""
+
+
+def test_device_token_is_masked_and_kept_on_a_blank_edit(monkeypatch):
+    _fresh_db(monkeypatch)
+    a = ri.add_instance(name="p", api_url="http://x", token="rvd_t", device_token="sk-ant-oat01-supersecret")
+    assert a["device_token"] == "…cret", "the panel only ever sees the last 4"
+    assert "supersecret" not in json.dumps(ri.instances()), "the full token never leaves"
+    assert ri.raw_instances()[0]["device_token"] == "sk-ant-oat01-supersecret"
+
+    ri.update_instance(a["id"], name="p", api_url="http://x", token="", device_token="")
+    assert ri.raw_instances()[0]["device_token"] == "sk-ant-oat01-supersecret", "a blank edit keeps it"
+    ri.update_instance(a["id"], name="p", api_url="http://x", token="", device_token="sk-ant-oat01-another")
+    assert ri.raw_instances()[0]["device_token"] == "sk-ant-oat01-another"
+
+
+def test_no_device_token_is_a_blank_not_an_error(monkeypatch):
+    _fresh_db(monkeypatch)
+    a = ri.add_instance(name="p", api_url="http://x", token="t")
+    assert a["device_token"] == "" and ri.raw_instances()[0]["device_token"] == ""
+
+
+def _post(path, body):
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    h._post_api(path, body)
+    return box
+
+
+def test_the_dashboard_route_takes_both_fields_and_a_form_save_keeps_them(monkeypatch):
+    _fresh_db(monkeypatch)
+    monkeypatch.setattr(dash.rivendell, "reconfigure", lambda: None)   # no worker dials anywhere
+    r = _post("/local/rivendell", {"op": "add", "name": "p", "api_url": "http://x", "token": "rvd_t",
+                                   "share_device": False, "device_token": "sk-ant-oat01-supersecret"})
+    assert r["code"] == 200
+    assert r["obj"]["instance"]["share_device"] is False and r["obj"]["instance"]["device_token"] == "…cret"
+    assert "supersecret" not in json.dumps(r["obj"])
+    iid = ri.raw_instances()[0]["id"]
+    assert ri.raw_instances()[0]["device_token"] == "sk-ant-oat01-supersecret"
+
+    # What the instance form sends: no share_device, no device_token.
+    r = _post("/local/rivendell", {"op": "update", "id": iid, "name": "p2", "api_url": "http://x", "token": ""})
+    assert r["code"] == 200
+    raw = ri.raw_instances()[0]
+    assert raw["name"] == "p2" and raw["share_device"] is False and raw["device_token"] == "sk-ant-oat01-supersecret"
 
 
 # --- migration ---------------------------------------------------------------

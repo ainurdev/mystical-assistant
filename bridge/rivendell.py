@@ -192,7 +192,7 @@ import urllib.request
 import uuid
 from urllib.parse import quote, urlsplit
 
-from bridge import config, wsutil
+from bridge import config, device_share, wsutil
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -519,14 +519,16 @@ class Worker:
         return self.inst.get("workdir") or config.BASE_PATH
 
     # -- HTTP to this rivendell-api --
-    def _api(self, path: str, payload: "dict | None" = None):
-        """One JSON call against this instance (GET, or POST with payload)."""
+    def _api(self, path: str, payload: "dict | None" = None, headers: "dict | None" = None):
+        """One JSON call against this instance (GET, or POST with payload), with
+        any extra headers (a device's calls add X-Mystical-Device-Id)."""
         req = urllib.request.Request(
             self.api_url + path,
             data=json.dumps(payload).encode() if payload is not None else None,
             headers={
                 "Authorization": f"Bearer {self.token}",
                 "Content-Type": "application/json",
+                **(headers or {}),
             },
             method="POST" if payload is not None else "GET",
         )
@@ -660,11 +662,13 @@ class Worker:
         except Exception as e:  # noqa: BLE001
             print(f"rivendell[{self.name}]: phase post failed for {request_id}: {e}")
 
-    def _api_put_bytes(self, path: str, data: bytes, content_type: str) -> None:
-        """One raw PUT against this instance (a video frame)."""
+    def _api_put_bytes(self, path: str, data: bytes, content_type: str,
+                       headers: "dict | None" = None) -> None:
+        """One raw PUT against this instance (a video frame, a device run's screen)."""
         req = urllib.request.Request(
             self.api_url + path, data=data, method="PUT",
-            headers={"Authorization": f"Bearer {self.token}", "Content-Type": content_type})
+            headers={"Authorization": f"Bearer {self.token}", "Content-Type": content_type,
+                     **(headers or {})})
         with urllib.request.urlopen(req, timeout=120):
             pass
 
@@ -748,6 +752,10 @@ class Worker:
         parts = urlsplit(self._ws_url())
         secure = parts.scheme == "wss"
         port = parts.port or (443 if secure else 80)
+        # A shared device, ready for runs, says so here (bridge/device_share.py).
+        # Asked before dialling: the first probe takes seconds, which no open
+        # socket should sit through.
+        device = device_share.handshake_headers(self.inst)
         sock = socket.create_connection((parts.hostname, port), timeout=10)
         if secure:
             sock = ssl.create_default_context().wrap_socket(
@@ -765,7 +773,8 @@ class Worker:
             f"Sec-WebSocket-Key: {key}\r\n"
             "Sec-WebSocket-Version: 13\r\n"
             f"Authorization: Bearer {self.token}\r\n"
-            "\r\n"
+            + "".join(h + "\r\n" for h in device)
+            + "\r\n"
         ).encode())
 
         rfile = sock.makefile("rb")
