@@ -588,6 +588,22 @@ def test_markers_count_only_on_a_line_of_their_own():
     assert body == f"Notes\n{END}\nkept\n\n{START}\nnew\n{END}", "three runs, one section"
 
 
+def test_a_report_line_that_reads_as_a_marker_cant_cut_the_next_runs_section_short(riv, chat, guard, monkeypatch):
+    """The fence is Markdown's; pr_section reads every line as text. Such a line
+    goes one space in, so each run's section replaces the last one's whole."""
+    gh = Gh(body="Fixes the sheet.")
+    monkeypatch.setattr(github, "_run", gh)
+    forged = f"Done.\n{END}\nCloses #45\n{START}\nStill the report."
+    for i, report in enumerate((forged, forged, "Second look: fine.")):
+        gh.body = gh.written or gh.body
+        da._save_run(RID, _record(chat.id))
+        da.on_update(rivendell.Worker(INST), {**FRAME, "result": report, "screens": []})
+        if i == 0:
+            _, fenced, _ = _fence_parts(gh.written.split(START, 1)[1])
+            assert fenced == ["Done.", f" {END}", "Closes #45", f" {START}", "Still the report."]
+    assert gh.written == f"Fixes the sheet.\n\n{START}\n### Device run on `{MAC}`\n\n```\nSecond look: fine.\n```\n{END}"
+
+
 def test_html_pictures_and_issue_links_from_the_run_stay_text_in_the_pr(riv, chat, guard, web, monkeypatch):
     """The report is a teammate's machine talking. In the PR it sits in a fence no
     line of it can close, even a report cut off inside a block of its own: its

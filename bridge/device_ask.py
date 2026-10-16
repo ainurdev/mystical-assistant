@@ -642,13 +642,17 @@ def _section(device: "str | None", report: str, screens: list) -> str:
     then the run's own screens, the only pictures."""
     pics = "\n".join(f"![{_alt(s.get('caption') or 'Screen %d' % s['index'])}]({s['url']})" for s in screens)
     head = f"### Device run on {_label(device) if device else 'a shared device'}"
-    return "\n\n".join(p for p in (head, report and _fenced(device_side.redact(report)), pics) if p)
+    report = report and _AS_MARKER.sub(r" \g<0>", device_side.redact(report))
+    return "\n\n".join(p for p in (head, report and _fenced(report), pics) if p)
 
 
 # A marker counts only on a line of its own, and a section never spans another start marker.
 _MARK = r"^%s(?=[ \t\r]*$)"
 _BLOCK = re.compile(_MARK % re.escape(_START) + r"(?:(?!" + _MARK % re.escape(_START) + r").)*?"
                     + _MARK % re.escape(_END), re.M | re.S)
+# pr_section reads a fenced line as text too: a report line that reads as a marker would end or
+# start the section there at the next run's edit, so it goes one space in.
+_AS_MARKER = re.compile(_MARK % f"(?:{re.escape(_START)}|{re.escape(_END)})", re.M)
 
 
 def pr_section(body: str, section: str) -> str:
