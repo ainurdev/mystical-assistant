@@ -130,7 +130,7 @@ def _tasks_digest_for(project: "str | None", cwd: "str | None") -> str:
     2 s the digest itself allows. `project` is the session's rel — a worktree's
     cwd is not the project the link hangs off."""
     try:
-        if not aifeatures.enabled("tasks"):
+        if not (integrations.installed("trackers") and aifeatures.enabled("tasks")):
             return ""
         from bridge import trackers
         return trackers.digest(project or rel(cwd or state.project_dir(0)))

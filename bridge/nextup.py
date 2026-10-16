@@ -36,7 +36,7 @@ import sys
 import threading
 import time
 
-from bridge import aifeatures, config, git, github, machine, runner, store
+from bridge import aifeatures, config, git, github, integrations, machine, runner, store
 from bridge.browser import rel
 
 _lock = threading.Lock()
@@ -164,7 +164,7 @@ def facts(chat_id: int, cwd: str) -> dict:
 
     try:
         from bridge import trackers
-        tk = trackers.tasks(rel(cwd), wait=2.0)
+        tk = trackers.tasks(rel(cwd), wait=2.0) if integrations.installed("trackers") else {}
     except Exception:  # noqa: BLE001 — no link, no token, tracker down
         tk = {}
     today = datetime.date.today().isoformat()

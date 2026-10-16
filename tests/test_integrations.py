@@ -124,6 +124,24 @@ def test_plugin_origins_follow_the_install(fresh):
     assert not integrations.is_plugin_origin(None)
 
 
+def test_the_rivendell_worker_dials_nothing_while_not_installed(fresh, monkeypatch):
+    inst = {"id": "p", "enable": True, "api_url": "http://r", "token": "t"}
+    monkeypatch.setattr(rivendell_instances, "raw_instances", lambda: [inst])
+    integrations.set_installed("rivendell", False)
+    assert rivendell._desired() == {}
+    integrations.set_installed("rivendell", True)
+    assert rivendell._desired() == {"p": inst}
+
+
+def test_the_task_digest_is_silent_while_trackers_are_not_installed(fresh, monkeypatch):
+    from bridge import aifeatures, runner
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: True)
+    monkeypatch.setattr(trackers, "digest", lambda rel: "3 open")
+    assert runner._tasks_digest_for("/app", None) == ""
+    integrations.set_installed("trackers", True)
+    assert runner._tasks_digest_for("/app", None) == "3 open"
+
+
 def test_every_plugin_route_has_an_owner():
     owner = integrations.route_owner
     assert owner("/local/rivendell") == owner("/local/rivendell/queue") == "rivendell"

@@ -4,8 +4,8 @@ import os
 import sys
 import threading
 
-from bridge import (accounts, config, graphmap, ladder, limits, profiles, report,
-                    state, store, tgfiles, usage)
+from bridge import (accounts, config, graphmap, integrations, ladder, limits, profiles,
+                    report, state, store, tgfiles, usage)
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
 from bridge.runner import handle_task
@@ -142,6 +142,9 @@ def _rivendell_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     The button token resolves (one-shot) to the instance + request; a stale or
     already-handled click just says so. Runs in a thread — accept/reject dispatch
     or claim off the HTTP-less path but still touch the network."""
+    if not integrations.installed("rivendell"):      # the ping outlives the plugin
+        answer_cb(cb["id"], "Rivendell isn't installed.")
+        return
     from bridge import rivendell
     _, op, token = data.split(":", 2)
     resolved = rivendell.resolve_token(token)
@@ -175,6 +178,9 @@ def _question_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     the answer. A stale tap (answered elsewhere, or the run ended) just loses
     the buttons; one that isn't the owner's, or isn't data we made, answers
     nothing and only stops the button spinning."""
+    if not integrations.installed("rivendell"):      # the ping outlives the plugin
+        answer_cb(cb["id"], "Rivendell isn't installed.")
+        return
     from bridge import rivendell
     parts = data.split(":")
     if (len(parts) != 3 or not parts[2].isdecimal()
@@ -214,10 +220,11 @@ def on_message(msg: dict):
         return
     # A text reply to a Rivendell NEEDS YOU ping answers its question (free text,
     # for when none of the options fit). It is not a prompt. Only the owner's
-    # (_owner): anyone else's reply stays what any message here is.
+    # (_owner), and only while Rivendell is installed: anyone else's reply, and
+    # any reply once it is removed, stays what any message here is.
     replied = msg.get("reply_to_message") or {}
     if (_owner(chat_id, (msg.get("from") or {}).get("id")) and replied.get("message_id")
-            and not text.startswith("/")):
+            and not text.startswith("/") and integrations.installed("rivendell")):
         from bridge import rivendell
         said = rivendell.answer_reply(replied["message_id"], text)
         if said is False:

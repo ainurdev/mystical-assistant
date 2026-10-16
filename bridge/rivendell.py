@@ -2015,9 +2015,12 @@ _manager_lock = threading.Lock()
 
 
 def _desired() -> dict:
-    """The enabled instances, id -> config dict. Missing store degrades to none
-    so a plugin hiccup never crashes the manager."""
+    """The enabled instances, id -> config dict. Empty while Rivendell is not
+    installed, so reconfigure() stops every worker. Missing store degrades to
+    none so a plugin hiccup never crashes the manager."""
     try:
+        if not integrations.installed("rivendell"):
+            return {}
         from bridge import rivendell_instances
         return {i["id"]: i for i in rivendell_instances.raw_instances()
                 if i.get("enable") and i.get("api_url") and i.get("token")}
