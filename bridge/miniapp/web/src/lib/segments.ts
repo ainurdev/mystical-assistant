@@ -28,8 +28,10 @@ type Ev = { type: string; text?: string };
 export type SegKind = "prose" | "steps";
 
 /** A contiguous-in-meaning slice of a turn: `idx` are indices into the events
- *  array, ascending. A prose segment is always exactly one event. */
-export type Seg = { kind: SegKind; idx: number[] };
+ *  array, ascending. A prose segment is always exactly one event. `start` is
+ *  where the segment's stretch begins in the whole turn, even when `from` cut
+ *  it — the name a renderer keys a fold by. */
+export type Seg = { kind: SegKind; idx: number[]; start: number };
 
 /** The conversation itself — the agent's words, the answer, your steers, and
  *  anything that asks you something. Each of these breaks the work around it,
@@ -63,27 +65,37 @@ export function segmentsOf(
   atFoot: (i: number) => boolean = () => false,
 ): Seg[] {
   const out: Seg[] = [];
+  const cuts = (i: number) => {
+    const e = events[i];
+    return PROSE.has(e.type) || (e.type === "thinking" && !!e.text) || inFlow(i);
+  };
+  // The stretch `from` lands in starts back at the prose before it. The tail
+  // window moves `from` on every event of a long running turn, and a fold named
+  // by its first row on screen was a new fold each time: one you'd opened
+  // mounted shut again.
+  let start = from;
+  while (start > 0 && (atFoot(start - 1) || !cuts(start - 1))) start--;
   let steps: number[] = [];
   let stepsSeen = false;
 
   const flush = () => {
-    if (steps.length && stepsSeen) out.push({ kind: "steps", idx: steps });
+    if (steps.length && stepsSeen) out.push({ kind: "steps", idx: steps, start });
     steps = [];
     stepsSeen = false;
   };
 
   const foot: Seg[] = [];
-  for (let i = 0; i < events.length; i++) if (atFoot(i)) foot.push({ kind: "prose", idx: [i] });
+  for (let i = 0; i < events.length; i++) if (atFoot(i)) foot.push({ kind: "prose", idx: [i], start: i });
 
   for (let i = from; i < events.length; i++) {
     if (atFoot(i)) continue;
-    const e = events[i];
-    if (PROSE.has(e.type) || (e.type === "thinking" && e.text) || inFlow(i)) {
+    if (cuts(i)) {
       flush();
-      out.push({ kind: "prose", idx: [i] });
+      out.push({ kind: "prose", idx: [i], start: i });
+      start = i + 1;
     } else {
       steps.push(i);
-      if (STEP.has(e.type)) stepsSeen = true;
+      if (STEP.has(events[i].type)) stepsSeen = true;
     }
   }
   flush();

@@ -3371,14 +3371,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    magenta, so CONSOLE's QUEUE fills like SEND instead. */
 [data-fam] [data-pb="console"] .act-pri.queue:not(:disabled) { background: var(--f-grad); }
 /* TABS: the tabs and the card share one edge, in every state the card has: the
-   theme's hairline at rest, its accent on focus and on a file drag. A running
-   turn keeps the hairline (the user's call, as CONSOLE's): colour means focus.
-   The card reads the same variable, so the two can never drift. */
+   theme's hairline at rest, on focus and while a turn runs (the user's call:
+   no ASK while running, then no accent on focus either); only a file drag
+   lights it. The card reads the same variable, so the two can never drift. */
 .composer[data-pb="tabs"] { --pb-edge: color-mix(in srgb, var(--acc) 18%, transparent); }
-.composer[data-pb="tabs"]:has(.pb-card:focus-within) { --pb-edge: color-mix(in srgb, var(--acc) 45%, transparent); }
 .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
 [data-fam] .composer[data-pb="tabs"] { --pb-edge: var(--line2); }
-[data-fam] .composer[data-pb="tabs"]:has(.pb-card:focus-within) { --pb-edge: color-mix(in oklab, var(--acc) 40%, var(--line2)); }
 [data-fam] .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
 [data-theme] .composer[data-pb="tabs"] .pb-card.cmdbox { border-color: var(--pb-edge) !important; }
 /* TABS: the transcript runs on under the tab row, as it runs under the island
