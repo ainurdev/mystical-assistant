@@ -1368,6 +1368,21 @@ class Handler(BaseHTTPRequestHandler):
             if res is None:
                 return self._json({"error": "that Rivendell connection is off"}, 409)
             return self._json(res)
+        if path in ("/local/device-runs/list", "/local/device-runs/start", "/local/device-runs/cancel"):
+            # The verify MCP's ListDevices, RunOnDevice and CancelDeviceRun: the
+            # Rivendell token and the session's checkout are the bridge's
+            # (bridge/device_ask.py). Every answer, a refusal too, is text for Claude.
+            from bridge import device_ask
+            csid = str(body.get("claude_session_id") or "")
+            if path.endswith("/list"):
+                text = device_ask.list_text()
+            elif path.endswith("/start"):
+                r = device_ask.start(csid, body.get("request"), body.get("task"), body.get("pullRequest"),
+                                     body.get("device"), body.get("folder"))
+                text = r["sentence"] + (f"\nid: {r['id']}" if r["id"] else "")
+            else:
+                text = device_ask.cancel(body.get("run"), csid)["sentence"]
+            return self._json({"text": text})
         if path == "/local/tracker/update":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:

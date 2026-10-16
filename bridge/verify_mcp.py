@@ -23,6 +23,11 @@ the dashboard's own /local/server with the token the bridge handed us in the
 environment: no second implementation of starting, detecting the port, or
 tailing, and every surface sees the same server.
 
+ListDevices, RunOnDevice and CancelDeviceRun go the same way, to
+/local/device-runs/*: the Rivendell token, this session's checkout and the
+hand-back into this chat are the bridge's (bridge/device_ask.py). The session
+sent is always the one that spawned us, whatever the arguments say.
+
 A DevLog tool would still be redundant -- `.mystical/dev.log` is a file on disk
 and the system prompt already points at it, so Bash reads it for free.
 
@@ -182,11 +187,64 @@ _TOOLS = [
             },
         },
     },
+    {
+        "name": "ListDevices",
+        "description": (
+            "List the shared devices (Macs for now) your team can run a test on, with which are free. "
+            "Before RunOnDevice, call this and ask the user which device with AskUserQuestion: "
+            "\"First free device (Recommended)\" first, then each free device, then the busy ones, with "
+            "the description from this list; devices that are off are not options. With none on, offer "
+            "\"Queue it for the next device (Recommended)\" and \"Don't send it\"."),
+        "inputSchema": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "RunOnDevice",
+        "description": (
+            "Send a test to a shared device: it builds and runs this checkout's app in the iOS Simulator "
+            "as an isolated user, under your own Claude account, and posts the report and screenshots on "
+            "the task, the PR and back in this chat. Needs a task key (like NR-31) or a pull request; ask "
+            "the user when they named neither."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "request": {"type": "string", "description": "What to test, in the user's words."},
+                "task": {"type": "string", "description": "The task to report on, by its key, like NR-31."},
+                "pullRequest": {
+                    "type": "string",
+                    "description": ("The pull request to report on: owner/repo#57, #57 for this "
+                                    "checkout's repository, or its github.com link."),
+                },
+                "device": {
+                    "type": "string",
+                    "description": "A device id from ListDevices; omit for the first free one.",
+                },
+                "folder": {
+                    "type": "string",
+                    "description": "The checkout to send. Default: this session's folder.",
+                },
+            },
+            "required": ["request"],
+        },
+    },
+    {
+        "name": "CancelDeviceRun",
+        "description": "Stop a device run you sent. Without an id, stops the newest one this chat sent.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "run": {"type": "string", "description": "The run's id, as RunOnDevice answered it."},
+            },
+        },
+    },
 ]
 
 # devserver.start blocks up to DETECT_TIMEOUT (8s) waiting for the framework to
 # print its URL, so this outwaits it rather than reporting a false failure.
 RUN_TIMEOUT = 25
+# RunOnDevice answers once git has packed the checkout and up to 9 MB of it is on
+# Rivendell (a 30 s filing call, then a 120 s upload), so this outwaits both.
+DEVICE_TIMEOUT = 300
+_DEVICE_ROUTES = {"ListDevices": "list", "RunOnDevice": "start", "CancelDeviceRun": "cancel"}
 
 
 def _clamp(val, default: int, hi: int) -> int:
@@ -204,6 +262,8 @@ def _call(name: str, args: dict) -> list[dict]:
         return [{"type": "text", "text": _run(args)}]
     if name == "Attach":
         return [{"type": "text", "text": _attach(args)}]
+    if name in _DEVICE_ROUTES:
+        return [{"type": "text", "text": _device(_DEVICE_ROUTES[name], args)}]
     if name not in ("Screenshot", "Record"):
         return [{"type": "text", "text": f"Unknown tool: {name}"}]
     url = (args.get("url") or "").strip()
@@ -341,6 +401,24 @@ def _run(args: dict) -> str:
     if srv.get("url"):
         msg += f"\nThe human can follow it in the dashboard: {srv['url']}"
     return msg or "Done."
+
+
+def _device(route: str, args: dict) -> str:
+    """One device-run tool, done by the bridge; its answer is the text. The
+    session goes last, so an argument can't send the report to another chat."""
+    base = os.environ.get("MYSTICAL_DASH")
+    if not base:
+        return "The dashboard is not running, so device runs are unavailable."
+    body = json.dumps({**args, "claude_session_id": os.environ.get("MYSTICAL_CLAUDE_SESSION_ID")}).encode()
+    req = urllib.request.Request(
+        base.rstrip("/") + "/local/device-runs/" + route, data=body, method="POST",
+        headers={"Content-Type": "application/json",
+                 "X-Dash-Token": os.environ.get("MYSTICAL_DASH_TOKEN", "")})
+    try:
+        with urllib.request.urlopen(req, timeout=DEVICE_TIMEOUT) as r:
+            return json.load(r).get("text") or "Done."
+    except (urllib.error.URLError, OSError, ValueError) as e:  # noqa: BLE001
+        return f"Could not reach the bridge: {e}"
 
 
 def _handle(req: dict) -> dict | None:

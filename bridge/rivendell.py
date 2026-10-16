@@ -109,7 +109,9 @@ A shared device (bridge/device_share.py) also takes teammates' device runs:
 root helper as the hidden user. They need no tap and no Telegram ask (the
 Rivendell permission is the consent), run one at a time, are only taken while
 the device is READY, and every call about one says which device it is
-(X-Mystical-Device-Id). `device-run-cancel` stops one.
+(X-Mystical-Device-Id). `device-run-cancel` stops one. The asking side
+(bridge/device_ask.py) hears how its own runs went: `device-run-update`, off the
+listener, and at each connect the ones that ended while it was away.
 
 Accepted runs are concurrent: the request prompts instruct each run to work in
 its own git worktree, so runs no longer race a shared checkout the way the old
@@ -199,7 +201,7 @@ import urllib.request
 import uuid
 from urllib.parse import quote, urlsplit
 
-from bridge import config, device_share, device_side, wsutil
+from bridge import config, device_ask, device_share, device_side, wsutil
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -1125,6 +1127,11 @@ class Worker:
             threading.Thread(target=device_side.stop, args=(obj["requestId"],),
                              name=f"rivendell-cancel-{self.id}", daemon=True).start()
             return None
+        if obj.get("type") == "device-run-update" and obj.get("requestId"):
+            # A run this Mystical sent: the hand-back downloads screens and runs gh, so off the listener.
+            threading.Thread(target=device_ask.on_update, args=(self, obj),
+                             name=f"rivendell-device-update-{self.id}", daemon=True).start()
+            return None
         return None
 
     def _block_on_token(self, detail: str) -> None:
@@ -1177,6 +1184,9 @@ class Worker:
             self.features = frozenset()     # this connection hasn't said hello yet
             self._set_status("connected", url)
             caught = self._catch_up()
+            if self.inst.get("device_token"):     # only then can this Mystical have sent device runs
+                threading.Thread(target=device_ask.catch_up, args=(self,),
+                                 name=f"rivendell-device-catch-up-{self.id}", daemon=True).start()
             print(f"rivendell[{self.name}]: connected to {url}"
                   + (f" ({caught} pending request(s) caught up)" if caught else ""))
             missed = 0

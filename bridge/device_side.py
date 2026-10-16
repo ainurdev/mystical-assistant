@@ -16,7 +16,7 @@ it to run() here:
      it, runs Claude as the hidden user mysticalruns, and hands back out/
      (exit.json, claude.json, screens/).
   5. Upload the screenshots the report lists, then any other PNGs, at most 20
-     of at most 5 MB each, and post the result.
+     of at most 5 MB each, and post the result, token-shaped text redacted.
   6. Remove the stage, token first, on every path.
 A cancel (`device-run-cancel`) calls stop(): the helper's stop now, and again on
 each beat for as long as that run's start goes on, since a cancel that lands
@@ -57,6 +57,14 @@ _RETRIES = (2, 10, 30)   # the result POST, as rivendell._RESULT_RETRIES: a fini
 _cancelled: set = set()   # run ids a cancel came in for (set operations are atomic under the GIL)
 _interrupted: dict = {}   # instance id -> run ids a restart cut short, still to report (sweep, report_interrupted)
 _RESTARTED = "The device restarted during the run."
+_SECRET = re.compile(r"sk-ant-[A-Za-z0-9_.-]+|CLAUDE_CODE_OAUTH_TOKEN=\S+")
+
+
+def redact(text: str) -> str:
+    """Token-shaped text out. A prompt-injected run can write the Claude token it
+    runs under into its report; this keeps it out of the result posted here, and
+    out of the asking side's chat turn and PR section (bridge/device_ask.py)."""
+    return _SECRET.sub("[redacted]", text)
 
 
 def stage_dir(request_id: str) -> str:
@@ -311,7 +319,14 @@ def _upload(worker, base, head, screens_dir, listed):
 
 def _post(worker, base, head, body):
     """The result, retried through a network or server hiccup. A 4xx is Rivendell
-    refusing this very body, which waiting can't change."""
+    refusing this very body, which waiting can't change. The summary, the error
+    and every caption go redacted, cut to Rivendell's lengths again ("[redacted]"
+    can be longer than what it replaced)."""
+    body = dict(body)
+    for key, cap in (("result", _RESULT_MAX), ("error", _ERROR_MAX)):
+        if isinstance(body.get(key), str):
+            body[key] = redact(body[key])[:cap]
+    body["screens"] = [{**s, "caption": redact(s["caption"])[:_CAPTION_MAX]} for s in body.get("screens") or []]
     for delay in (*_RETRIES, None):
         try:
             worker._api(base + "/result", body, headers=head)

@@ -361,6 +361,24 @@ def test_the_helpers_refusal_is_the_error(device):
     assert w.results()[0]["error"] == "The code snapshot didn't unpack."
 
 
+def test_a_run_cannot_post_the_askers_token(device):
+    """A prompt-injected run can write the token it runs under into its report:
+    the summary and every caption go out with token-shaped text redacted."""
+    leak = f"{TOKEN} and CLAUDE_CODE_OAUTH_TOKEN={TOKEN}"
+    helper = FakeHelper(claude=_claude(f"It works. {leak}", [{"file": "1.png", "caption": f"Home {TOKEN}"}]),
+                        screens={"1.png": PNG})
+    w = Worker()
+    _run(w, helper)
+    assert w.results() == [{"status": "COMPLETED", "result": "It works. [redacted] and [redacted]",
+                            "screens": [{"index": 1, "caption": "Home [redacted]"}]}]
+
+
+def test_a_failed_run_cannot_post_the_askers_token_in_its_error(device):
+    w = Worker()
+    _run(w, FakeHelper(rc=1, stderr=f"mystical-run-helper: CLAUDE_CODE_OAUTH_TOKEN={TOKEN} was refused\n"))
+    assert w.results() == [{"status": "FAILED", "error": "[redacted] was refused", "screens": []}]
+
+
 @pytest.mark.parametrize("claude", ["", json.dumps({"type": "result", "result": ""}), "not json"])
 def test_no_report_is_a_failure(device, claude):
     w = Worker()
