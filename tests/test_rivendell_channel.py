@@ -1290,6 +1290,15 @@ def test_any_other_device_sends_neither_header(monkeypatch, why, inst, facts, se
     assert h["Authorization"] == "Bearer rvd_testtoken"
 
 
+def test_a_device_probe_that_raises_never_keeps_the_link_down(monkeypatch):
+    def broken(inst):
+        raise RuntimeError("the config went away mid-read")
+    monkeypatch.setattr(device_share, "handshake_headers", broken)
+    h = _upgrade_headers(monkeypatch)
+    assert not [k for k in h if k.lower().startswith("x-mystical")]
+    assert h["Authorization"] == "Bearer rvd_testtoken", "the link still comes up, as a plain one"
+
+
 def test_api_calls_can_carry_extra_headers(monkeypatch):
     """Device calls add X-Mystical-Device-Id to the bearer; a plain call is as before."""
     seen = []

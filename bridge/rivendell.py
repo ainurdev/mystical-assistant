@@ -755,7 +755,11 @@ class Worker:
         # A shared device, ready for runs, says so here (bridge/device_share.py).
         # Asked before dialling: the first probe takes seconds, which no open
         # socket should sit through.
-        device = device_share.handshake_headers(self.inst)
+        try:
+            device = device_share.handshake_headers(self.inst)
+        except Exception as e:  # noqa: BLE001 — a device probe never keeps the link down
+            print(f"rivendell[{self.name}]: device check failed, connecting without it: {e}")
+            device = []
         sock = socket.create_connection((parts.hostname, port), timeout=10)
         if secure:
             sock = ssl.create_default_context().wrap_socket(

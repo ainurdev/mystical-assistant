@@ -240,23 +240,51 @@ def test_facts_are_cached_for_five_minutes_and_refresh_drops_them(monkeypatch):
 
 # --- setup_state ------------------------------------------------------------------
 
-def test_setup_state_is_the_hidden_user_the_helper_and_claude():
+# Set up's root-owned config once Claude is installed for the hidden user.
+INSTALLED = json.dumps({"owner": "mahziyar", "uid": 501, "launch": "sudo",
+                        "claude": "/Users/mysticalruns/.local/bin/claude"})
+
+
+def _config(monkeypatch, tmp_path, text):
+    """/usr/local/etc/mystical-runs.json holds `text` (None: Set up never ran)."""
+    path = tmp_path / "mystical-runs.json"
+    if text is not None:
+        path.write_text(text)
+    monkeypatch.setattr(ds, "RUNS_CONFIG", str(path))
+
+
+def test_setup_state_is_the_hidden_user_the_helper_and_claude(monkeypatch, tmp_path):
+    _config(monkeypatch, tmp_path, INSTALLED)
     run = fake_run()
     assert ds.setup_state(exists=lambda p: True, run=run) == SET_UP
     assert run.calls[0][0] == ["dscl", ".", "-read", "/Users/mysticalruns"]
 
 
-def test_each_part_of_the_setup_is_told_apart():
-    helper = "/usr/local/libexec/mystical-run-helper"
-    claude = "/Users/mysticalruns/.local/bin/claude"
+def test_each_part_of_the_setup_is_told_apart(monkeypatch, tmp_path):
+    _config(monkeypatch, tmp_path, INSTALLED)
     assert ds.setup_state(exists=lambda p: True, run=fake_run({"dscl": (56, "")})) == \
         {"user": False, "helper": True, "claude": True}
-    assert ds.setup_state(exists=lambda p: p == claude, run=fake_run()) == \
+    assert ds.setup_state(exists=lambda p: False, run=fake_run()) == \
         {"user": True, "helper": False, "claude": True}
-    assert ds.setup_state(exists=lambda p: p == helper, run=fake_run()) == \
-        {"user": True, "helper": True, "claude": False}
     assert ds.setup_state(exists=lambda p: False, run=fake_run({"dscl": FileNotFoundError("dscl")})) == \
-        {"user": False, "helper": False, "claude": False}
+        {"user": False, "helper": False, "claude": True}
+
+
+@pytest.mark.parametrize("why, text, claude", [
+    ("installed", INSTALLED, True),
+    ("Set up never ran", None, False),
+    ("not JSON", "{not json", False),
+    ("Claude didn't install", json.dumps({"owner": "mahziyar", "uid": 501, "launch": "sudo"}), False),
+    ("an empty path", json.dumps({"claude": ""}), False),
+    ("no path", json.dumps({"claude": None}), False),
+    ("not an object", json.dumps(["claude"]), False),
+])
+def test_claude_is_what_set_up_recorded_not_a_look_inside_the_hidden_home(monkeypatch, tmp_path, why, text, claude):
+    """The hidden home stays closed to the owner, so nothing is looked up in it."""
+    _config(monkeypatch, tmp_path, text)
+    looked = []
+    assert ds.setup_state(exists=lambda p: looked.append(p) or True, run=fake_run())["claude"] is claude, why
+    assert not [p for p in looked if p.startswith("/Users/mysticalruns")]
 
 
 # --- share_state ------------------------------------------------------------------
@@ -372,3 +400,30 @@ def test_the_device_header_is_url_safe_base64_without_padding(monkeypatch):
 def test_a_device_that_is_not_ready_says_nothing(monkeypatch, why, inst, facts, setup):
     _device(monkeypatch, facts, setup)
     assert ds.handshake_headers(inst) == [], why
+
+
+# --- the whole way: what the binaries print, to the header ---------------------------
+
+@pytest.mark.parametrize("why, answers, sends", [
+    ("this Mac, set up", {}, True),
+    ("ioreg failed: no id, so no device", {"ioreg": (1, "")}, False),
+])
+def test_from_the_binaries_to_the_handshake(monkeypatch, tmp_path, why, answers, sends):
+    helper = tmp_path / "mystical-run-helper"
+    helper.write_text("")
+    monkeypatch.setattr(ds, "HELPER", str(helper))
+    _config(monkeypatch, tmp_path, INSTALLED)
+    run = fake_run(answers)
+    headers = ds.handshake_headers({}, run=run)
+    if sends:
+        assert headers[0] == "X-Mystical-Features: device-runs"
+        assert _decode(headers[1].partition(": ")[2]) == FACTS
+    else:
+        assert headers == [], why
+    assert {"ioreg", "dscl"} <= {c[0] for c, _ in run.calls}, "facts and setup are probed through the one seam"
+
+
+def test_an_owner_who_opted_out_is_not_even_probed():
+    run = fake_run()
+    assert ds.handshake_headers({"share_device": False}, run=run) == []
+    assert run.calls == []

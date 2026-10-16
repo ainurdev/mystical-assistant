@@ -22,7 +22,7 @@ import time
 
 RUN_USER = "mysticalruns"
 HELPER = "/usr/local/libexec/mystical-run-helper"
-RUN_CLAUDE = "/Users/mysticalruns/.local/bin/claude"
+RUNS_CONFIG = "/usr/local/etc/mystical-runs.json"
 XCODE_DEV = "/Applications/Xcode.app/Contents/Developer"
 
 _TIMEOUT = 10        # seconds, per binary
@@ -150,11 +150,18 @@ def refresh():
 
 def setup_state(exists=os.path.exists, run=subprocess.run):
     """What Set up leaves behind: the hidden user, the root helper, and Claude
-    Code installed for that user."""
+    Code installed for that user. Claude is the `claude` path Set up records in
+    its root-owned config once the binary is there. The hidden home stays closed
+    to this account, so nothing is looked up inside it."""
+    try:
+        with open(RUNS_CONFIG, encoding="utf-8") as f:
+            claude = json.load(f).get("claude")
+    except (OSError, ValueError, AttributeError):
+        claude = None
     return {
         "user": _out(run, ["dscl", ".", "-read", "/Users/" + RUN_USER]) is not None,
         "helper": exists(HELPER),
-        "claude": exists(RUN_CLAUDE),
+        "claude": isinstance(claude, str) and claude != "",
     }
 
 
@@ -168,17 +175,17 @@ def _check(key, ok, *words):
     return {"key": key, "label": " ".join(w for w in words if w), "ok": bool(ok)}
 
 
-def share_state(inst):
+def share_state(inst, run=subprocess.run):
     """Where this device stands for one instance: {state, checks, facts}.
 
     NOT_MAC (not macOS) > OFF (Share this device is off) > XCODE_MISSING (no
     Xcode, or no iOS runtime) > NEEDS_SETUP (the hidden user, helper or Claude
     is missing) > READY. Node and CocoaPods show in the checks but hold nothing back.
     """
-    facts = device_facts()
+    facts = device_facts(run)
     if facts is None:
         return {"state": "NOT_MAC", "checks": [], "facts": None}
-    setup = setup_state()
+    setup = setup_state(run=run)
     ios = facts["iosRuntimes"]
     checks = [
         _check("macos", facts["osVersion"], "MACOS", facts["osVersion"]),
@@ -199,13 +206,15 @@ def share_state(inst):
     return {"state": state, "checks": checks, "facts": facts}
 
 
-def handshake_headers(inst):
+def handshake_headers(inst, run=subprocess.run):
     """The two header lines a READY device adds to the websocket upgrade; none
     otherwise. The device header is URL-safe base64 without padding, which is
     what Node's Buffer.from(raw, 'base64url') reads."""
-    s = share_state(inst)
-    if s["state"] != "READY":
-        return []
+    if not inst.get("share_device", True):
+        return []   # the owner opted out: no probe at all
+    s = share_state(inst, run)
+    if s["state"] != "READY" or not s["facts"]["id"]:
+        return []   # Rivendell knows a device by its id; without one there is no device to offer
     raw = json.dumps(s["facts"], separators=(",", ":")).encode()
     return ["X-Mystical-Features: device-runs",
             "X-Mystical-Device: " + base64.urlsafe_b64encode(raw).decode().rstrip("=")]
