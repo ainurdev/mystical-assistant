@@ -146,12 +146,13 @@ public sealed class Bridge
             using var p = Process.Start(Wsl(new[] { Launcher }.Concat(args), capture: true))!;
             var stdout = p.StandardOutput.ReadToEndAsync();
             var stderr = p.StandardError.ReadToEndAsync();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var limit = Mystical.Core.Launcher.TimeoutSeconds(args.Length > 0 ? args[0] : "");
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(limit));
             try { await p.WaitForExitAsync(cts.Token); }
             catch (OperationCanceledException)
             {
                 try { p.Kill(true); } catch (Exception) { }
-                return (-1, "", "timed out after 30 s — is the distro booting?");
+                return (-1, "", $"mystical {args.FirstOrDefault()} gave no answer in {limit} s — is the distro booting?");
             }
             return (p.ExitCode, await stdout, await stderr);
         }

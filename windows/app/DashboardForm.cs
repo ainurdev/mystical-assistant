@@ -19,7 +19,7 @@ public sealed class DashboardForm : Form
     readonly Prefs prefs;
     readonly string prefsPath;
     readonly string dataDir;
-    readonly WebView2 web = new() { Dock = DockStyle.Fill };
+    WebView2 web = new() { Dock = DockStyle.Fill };
     readonly Placeholder placeholder = new() { Dock = DockStyle.Fill };
     /// The dashboard URL last loaded, and whether that load is showing.
     Uri? loaded;
@@ -42,9 +42,10 @@ public sealed class DashboardForm : Form
     public bool PageShowing => showingPage;
     /// What the placeholder says, or null when the dashboard is showing (Probe).
     public string? PlaceholderText => placeholder.Visible ? placeholder.Title : null;
-    public string? PageUrl => ready ? web.CoreWebView2.Source : loaded?.ToString();
+    public string? PageUrl => ready && web.CoreWebView2 is { } c ? c.Source : loaded?.ToString();
     public bool FullScreen { get; private set; }
     public CoreWebView2? Core => ready ? web.CoreWebView2 : null;
+    bool webFailed;
 
     public DashboardForm(Bridge bridge, Prefs prefs, string prefsPath)
     {
@@ -95,8 +96,11 @@ public sealed class DashboardForm : Form
         }
         catch (Exception e)
         {
-            placeholder.Show(Placeholder.State.Waiting, bridge.Stamp);
-            placeholder.Detail.Text = "WebView2 couldn't start: " + e.Message;
+            webFailed = true;
+            Cover(Placeholder.State.Waiting);
+            placeholder.Detail.Text = "WebView2 couldn't start: " + e.Message
+                + " — install the WebView2 Evergreen Runtime, then reopen the app.";
+            App.Log("WebView2 couldn't start: " + e.Message);
             return;
         }
         var core = web.CoreWebView2;
@@ -122,16 +126,28 @@ public sealed class DashboardForm : Form
             if (UrlPolicy.Decide(uri, bridge.Status?.Origin, mainFrame: true, newWindow: true) == NavigationTarget.Browser)
                 OpenInBrowser(e.Uri);
         };
-        core.ProcessFailed += (_, _) => core.Reload();
+        core.ProcessFailed += (_, e) =>
+        {
+            App.Log($"webview process failed: {e.ProcessFailedKind} ({e.Reason})");
+            // The browser process itself is gone: the core is closed for good and
+            // has to be made again. A renderer or GPU process comes back on reload.
+            if (e.ProcessFailedKind == CoreWebView2ProcessFailedKind.BrowserProcessExited) { RecreateWeb(); return; }
+            try { core.Reload(); }
+            catch (Exception ex) { App.Log("reload after the failure threw: " + ex.Message); RecreateWeb(); }
+        };
         core.NavigationCompleted += (_, e) =>
         {
-            if (!e.IsSuccess && showingPage)
+            if (e.IsSuccess)
             {
-                // Not WebView2's error page: ours, and the poll brings the page back.
-                Cover(bridge.Status?.Running == true ? Placeholder.State.Waiting : Placeholder.State.Stopped);
+                if (OnPageLoaded is { } loadedHook) _ = loadedHook();
                 return;
             }
-            if (OnPageLoaded is { } loadedHook) _ = loadedHook();
+            // A navigation the app itself cancelled (NavigationStarting: off-origin,
+            // so the browser got it) completes "unsuccessfully" too, and the page
+            // under it is fine — covering it would also reload it on the next poll.
+            if (e.WebErrorStatus == CoreWebView2WebErrorStatus.OperationCanceled) return;
+            // Not WebView2's error page: ours, and the poll brings the page back.
+            if (showingPage) Cover(bridge.Status?.Running == true ? Placeholder.State.Waiting : Placeholder.State.Stopped);
         };
         core.ContainsFullScreenElementChanged += (_, _) => SetFullScreen(core.ContainsFullScreenElement);
         web.ZoomFactor = prefs.Zoom > 0 ? prefs.Zoom : 1;
@@ -159,6 +175,25 @@ public sealed class DashboardForm : Form
         else Sync();
     }
 
+    /// After the browser process died: a fresh control, the placeholder up
+    /// while it starts, and the page loads again from the next Sync.
+    void RecreateWeb()
+    {
+        ready = false;
+        showingPage = false;
+        pendingLoad = null;
+        placeholder.Show(Placeholder.State.Waiting, bridge.Stamp);
+        placeholder.Visible = true;
+        placeholder.BringToFront();
+        var old = web;
+        Controls.Remove(old);
+        try { old.Dispose(); } catch (Exception) { }
+        web = new WebView2 { Dock = DockStyle.Fill };
+        Controls.Add(web);
+        web.SendToBack();
+        _ = InitWeb();
+    }
+
     static void OpenInBrowser(string url)
     {
         try { Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }); }
@@ -171,6 +206,7 @@ public sealed class DashboardForm : Form
     /// it with the native placeholder when it doesn't.
     public void Sync()
     {
+        if (webFailed) return;   // the placeholder says what to install; nothing to load into
         if (bridge.RepoMissing)
         {
             Cover(Placeholder.State.Missing);
@@ -240,7 +276,7 @@ public sealed class DashboardForm : Form
     /// Runs JS in the page; the JSON text of its result, or null without a page.
     public async Task<string?> Eval(string js)
     {
-        if (!ready || !showingPage) return null;
+        if (!ready || !showingPage || web.CoreWebView2 is null) return null;
         try { return await web.CoreWebView2.ExecuteScriptAsync(js); }
         catch (Exception) { return null; }
     }
@@ -334,7 +370,7 @@ public sealed class DashboardForm : Form
     {
         try
         {
-            if (ready && showingPage && Visible)
+            if (ready && showingPage && Visible && web.CoreWebView2 is not null)
             {
                 using var ms = new MemoryStream();
                 await web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);

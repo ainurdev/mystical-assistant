@@ -35,6 +35,11 @@ static class Program
         using var trayMutex = new Mutex(true, @"Local\mystical-tray", out _);
 
         ApplicationConfiguration.Initialize();
+        // An exception in an event handler is a line in app.log, never a dialog
+        // that parks the tray and the pipe behind it.
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, e) => App.Log("unhandled on the UI thread: " + e.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => App.Log("unhandled: " + e.ExceptionObject);
         var stamp = Stamp.Load(AppContext.BaseDirectory);
         var dataDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Mystical");
         Directory.CreateDirectory(dataDir);

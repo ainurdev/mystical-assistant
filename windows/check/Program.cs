@@ -141,6 +141,11 @@ catch (FileNotFoundException)
     Console.WriteLine("skip  shim.js not embedded yet");
 }
 
+// --- launcher timeouts ---------------------------------------------------------
+Check(Launcher.TimeoutSeconds("status") == 30 && Launcher.TimeoutSeconds("start") == 600
+      && Launcher.TimeoutSeconds("stop") == 600 && Launcher.TimeoutSeconds("restart") == 600,
+      "launcher: status is quick, a lifecycle verb may rebuild the web bundles first and gets ten minutes");
+
 // --- stamp -------------------------------------------------------------------
 var stampDir = Directory.CreateTempSubdirectory("mystical-stamp");
 File.WriteAllText(Path.Combine(stampDir.FullName, "mystical.json"),
