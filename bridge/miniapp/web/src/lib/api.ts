@@ -22,6 +22,7 @@ export interface AppState {
   server: ServerInfo;
   permission_mode?: string; // server-side default operating mode
   models?: { id: string; label: string }[]; // live list from GET /v1/models (bridge/models.py)
+  plugins?: Record<string, boolean>; // id -> installed (bridge/integrations.py); a bridge from before them sends none
 }
 
 export interface ProjectsListing {

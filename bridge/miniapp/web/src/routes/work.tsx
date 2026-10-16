@@ -29,7 +29,7 @@ const btnGhost =
   "flex items-center justify-center border border-border-bright/70 px-2.5 py-2 text-[9px] tracking-[1.5px] text-[var(--brand-soft)] active:opacity-70 disabled:opacity-40";
 
 function WorkPage() {
-  const [tab, setTab] = useState<Tab>("queue");
+  const [picked, setPicked] = useState<Tab>("queue");
   const { sessionId } = useChat();
   const queues = useQuery({
     queryKey: ["queues"],
@@ -43,11 +43,18 @@ function WorkPage() {
   });
   // NEXT UP hides with its AI switch — the board's own read says which way it is.
   const nextup = useQuery({ queryKey: ["nextup"], queryFn: () => api.getNextUp() });
+  // TASKS is the Trackers plugin's: hidden until /state answers, and a bridge from
+  // before integrations sends no `plugins` (it has trackers), so absent means on.
+  const { data: state } = useQuery({ queryKey: ["state"], queryFn: () => api.getState() });
+  const trackersOn = state ? (state.plugins?.trackers ?? true) : false;
+  // A TASKS tab left picked when the plugin is removed shows QUEUE.
+  const tab: Tab = picked === "tasks" && !trackersOn ? "queue" : picked;
   // Same key as TasksTab's query — react-query dedupes; this only feeds the label.
   const tracker = useQuery({
     queryKey: ["tracker", sessionId],
     queryFn: () => api.getTrackerTasks(sessionId),
     refetchInterval: 60000,
+    enabled: trackersOn,
   });
   const queued = (queues.data?.queues ?? []).reduce(
     (n, q) => n + q.items.filter((i) => i.status === "queued").length,
@@ -58,7 +65,9 @@ function WorkPage() {
     { id: "queue", label: `QUEUE${queued ? ` · ${queued}` : ""}` },
     ...(nextup.data?.enabled ? [{ id: "next" as Tab, label: "NEXT UP" }] : []),
     { id: "issues", label: `ISSUES${issues.data?.open_count ? ` · ${issues.data.open_count}` : ""}` },
-    { id: "tasks", label: `TASKS${tracker.data?.overdue ? ` · ${tracker.data.overdue}` : ""}` },
+    ...(trackersOn
+      ? [{ id: "tasks" as Tab, label: `TASKS${tracker.data?.overdue ? ` · ${tracker.data.overdue}` : ""}` }]
+      : []),
   ];
 
   return (
@@ -74,7 +83,7 @@ function WorkPage() {
         {TABS.map((t, i) => (
           <button
             key={t.id}
-            onClick={() => setTab(t.id)}
+            onClick={() => setPicked(t.id)}
             className={`flex-1 border py-2.5 text-center text-[10px] tracking-[2px] active:opacity-70 ${
               i > 0 ? "border-l-0" : ""
             } ${
