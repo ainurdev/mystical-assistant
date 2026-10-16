@@ -32,8 +32,10 @@ code, with every tool allowed. So root never follows a link either could plant:
 - Every process started as mysticalruns starts in / or in the run's own code
   folder, never somewhere past the deny rule Set up put on the owner's home.
 - Nothing carries over from one requester's run to the next. Claude runs from
-  the root-owned copy Set up made, and only root's folders come first on PATH.
-  Each run gets a fresh HOME inside its own folder, which goes with the run.
+  the root-owned copy Set up made, never updates itself, and only root's folders
+  come first on PATH. Each run gets a fresh HOME inside its own folder, which
+  goes with the run. Before each run, the hidden user's LaunchAgents is emptied,
+  so nothing a run left there can start later.
 - The config and the Claude copy, and every folder above them, must be root's
   alone (check_root_path; setup.sh checks the same before it writes anything).
   Otherwise the owner's passwordless sudo would run whatever replaced them.
@@ -71,6 +73,30 @@ GRACE = 10                                     # seconds between TERM and KILL
 ERR_CAP = 1 << 20                              # bytes of Claude's stderr handed back
 _RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _SCREEN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}")   # a screenshot's name: no folder, not hidden
+
+# Run as mysticalruns on <home>: Library/LaunchAgents becomes a real folder, made
+# if missing or a link, and loses everything but folders. A link is removed and
+# never followed.
+_EMPTY_AGENTS = """
+import os, sys
+nofollow = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+fd = os.open(sys.argv[1], nofollow)
+for name in ("Library", "LaunchAgents"):
+    try:
+        sub = os.open(name, nofollow, dir_fd=fd)
+    except OSError:
+        try:
+            os.unlink(name, dir_fd=fd)
+        except FileNotFoundError:
+            pass
+        os.mkdir(name, 0o700, dir_fd=fd)
+        sub = os.open(name, nofollow, dir_fd=fd)
+    os.close(fd)
+    fd = sub
+for entry in os.scandir(fd):
+    if not entry.is_dir(follow_symlinks=False):
+        os.unlink(entry.name, dir_fd=fd)
+"""
 
 
 class Refused(Exception):
@@ -141,6 +167,7 @@ def claude_env(job, token, run_dir):
         "GIT_COMMITTER_NAME": name,
         "GIT_COMMITTER_EMAIL": email,
         "LANG": "en_US.UTF-8",
+        "DISABLE_AUTOUPDATER": "1",
     }
     if job.get("developerDir"):
         env["DEVELOPER_DIR"] = job["developerDir"]
@@ -340,6 +367,8 @@ def start(run_id, cfg, popen):
             raise Refused("The stage's job.json or token is incomplete.")
         run_uid = pwd.getpwnam(RUN_USER).pw_uid
         argv = launch_argv(cfg.get("launch"), run_uid, claude_argv(prompt, claude))
+        _as(RUN_USER, popen, ["/usr/bin/python3", "-I", "-c", _EMPTY_AGENTS, os.path.dirname(RUNS_HOME)],
+            "The hidden user's launch agents couldn't be cleared.")
         code = os.path.join(run_dir, "code")
         _as(RUN_USER, popen, ["/usr/bin/install", "-d", "-m", "0700", run_dir, code, os.path.join(run_dir, "out"),
                               os.path.join(run_dir, "out", "screens"), os.path.join(run_dir, "config"),

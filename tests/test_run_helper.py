@@ -119,6 +119,7 @@ def test_claude_gets_exactly_its_own_environment(monkeypatch):
         "GIT_COMMITTER_NAME": "Mahdi",
         "GIT_COMMITTER_EMAIL": "mahdi@example.com",
         "LANG": "en_US.UTF-8",
+        "DISABLE_AUTOUPDATER": "1",   # a run never updates Claude, nor downloads one into its fresh home
     }
 
 
@@ -224,6 +225,8 @@ def box(tmp_path, monkeypatch):
     if h.check_root_path(str(tmp_path), uid=ME):
         pytest.skip("the temp dir has a folder above it that others can change (a world-writable /tmp?), "
                     "so the helper rightly refuses to run from it")
+    if _system_python() is None:
+        pytest.skip("no system python3 for the launch agents clean-up")
     b = types.SimpleNamespace(tmp=tmp_path, runs=tmp_path / "runs", stages=tmp_path / "stages",
                               cfg=tmp_path / "etc" / "mystical-runs.json", claude=tmp_path / "claude")
     b.runs.mkdir(mode=0o700)
@@ -293,7 +296,8 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
     assert _left_behind(box, st) == []
     assert (st / "job.json").exists(), "the rest of the stage is the bridge's to remove"
 
-    install, untar, launch, writer, reader = run.calls
+    clear, install, untar, launch, writer, reader = run.calls
+    assert clear[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and clear[-1] == str(box.tmp)
     code = str(box.runs / RUN_ID / "code")
     assert install[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and install[3:6] == ["/usr/bin/install", "-d", "-m"]
     assert str(box.runs / RUN_ID / "home") in install, "the fresh home is made as mysticalruns, 0700"
@@ -303,6 +307,56 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
     assert reader[-2:] == ["out/screens", "out/claude.err"]
     assert writer[:3] == ["/usr/bin/sudo", "-u", "#%d" % ME], "and written as the owner"
     assert not [a for c in run.calls for a in c if TOKEN in a], "the token is never in a command line (ps shows those)"
+
+
+def test_a_run_starts_with_no_launch_agent_an_earlier_run_left(box):
+    """Before each run the hidden user's LaunchAgents loses everything launchd
+    could start later: plain files, and links, which are removed and never
+    followed. Folders stay; launchd doesn't load from them. ("Home" is the temp
+    folder holding RUNS_HOME, as /Users/mysticalruns holds runs/.)"""
+    agents = box.tmp / "Library" / "LaunchAgents"
+    agents.mkdir(parents=True)
+    (agents / "persist.plist").write_text("<plist/>")
+    elsewhere = box.tmp / "elsewhere.plist"
+    elsewhere.write_text("<plist/>")
+    (agents / "linked.plist").symlink_to(elsewhere)
+    (box.tmp / "a-folder").mkdir()
+    (agents / "linked-folder").symlink_to(box.tmp / "a-folder")
+    (agents / "folder").mkdir()
+    (agents / "folder" / "inside.plist").write_text("<plist/>")
+    _stage(box)
+    run = Runner()
+    assert h.main(["start", RUN_ID], popen=run) == 0
+    assert sorted(os.listdir(agents)) == ["folder"]
+    assert elsewhere.read_text() == "<plist/>" and (box.tmp / "a-folder").is_dir()
+    assert (agents / "folder" / "inside.plist").exists()
+    clear = next(c for c in run.calls if "-c" in c)
+    launch = next(c for c in run.calls if "-p" in c)
+    assert clear[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"], "emptied as the hidden user, not as root"
+    assert run.calls.index(clear) < run.calls.index(launch), "before the run starts"
+
+
+@pytest.mark.parametrize("plant", ["missing", "LaunchAgents is a link", "LaunchAgents is a file", "Library is a link"])
+def test_launch_agents_that_is_missing_or_a_link_becomes_a_real_empty_folder(box, plant):
+    library, planted = box.tmp / "Library", box.tmp / "planted"
+    (planted / "LaunchAgents").mkdir(parents=True)
+    (planted / "persist.plist").write_text("<plist/>")
+    (planted / "LaunchAgents" / "persist.plist").write_text("<plist/>")
+    if plant == "Library is a link":
+        library.symlink_to(planted)
+    elif plant != "missing":
+        library.mkdir()
+        if plant == "LaunchAgents is a link":
+            (library / "LaunchAgents").symlink_to(planted)
+        else:
+            (library / "LaunchAgents").write_text("x")
+    _stage(box)
+    assert h.main(["start", RUN_ID], popen=Runner()) == 0
+    agents = library / "LaunchAgents"
+    assert not library.is_symlink() and not agents.is_symlink() and agents.is_dir()
+    assert os.listdir(agents) == []
+    assert (planted / "persist.plist").exists() and (planted / "LaunchAgents" / "persist.plist").exists(), \
+        "no link was followed"
 
 
 def test_claudes_errors_come_back_capped_at_a_megabyte(box):
@@ -462,7 +516,7 @@ def test_a_snapshot_that_will_not_unpack_fails_in_one_line_and_cleans_up(box, ca
     run = Runner()
     assert h.main(["start", RUN_ID], popen=run) not in (0, None)
     assert len(capsys.readouterr().err.strip().splitlines()) == 1
-    assert len(run.calls) == 2, "Claude never started"
+    assert not [c for c in run.calls if "-p" in c], "Claude never started"
     assert _left_behind(box, st) == []
 
 
