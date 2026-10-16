@@ -481,7 +481,7 @@ class Worker:
                     f"Rivendell refused this bridge's token at {at} ({self.status_detail}). "
                     "Jobs are paused until you replace it: mint a new LLM token in "
                     "Rivendell ▸ Profile ▸ API tokens, then paste it in the dashboard "
-                    "under Settings ▸ PLUGINS.")
+                    "under Settings ▸ Integrations ▸ Rivendell.")
         else:
             text = (f"✕ Rivendell link broken — {self.name}\n"
                     f"Can't reach Rivendell since {at} ({self.status_detail}). "

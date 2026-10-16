@@ -144,7 +144,7 @@ export function AnalyzeModal(props: Props) {
   const refreshTracker = () => { void api.trackerTasks(project).then(setTracker).catch(() => {}); };
 
   // LINK TASKS: connection → its projects → one of them, written as the repo's
-  // tracker link. Connections themselves are made in SETTINGS ▸ SYSTEM ▸ TRACKERS.
+  // tracker link. Connections themselves are made in SETTINGS ▸ INTEGRATIONS ▸ TRACKERS.
   function openLink() {
     setLinkOpen(true); setLinkErr(""); setLinkConn(""); setLinkProjects(null);
     void api.trackers().then((r) => setConns(r.connections)).catch((e) => { setConns([]); setLinkErr((e as Error).message); });
@@ -299,7 +299,7 @@ export function AnalyzeModal(props: Props) {
                   </div>
                   {conns === null && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>reading connections…</div>}
                   {conns !== null && !linkConn && conns.length === 0 && (
-                    <div style={{ fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.6 }}>No tracker connected yet. Add Teamwork or Jira in SETTINGS ▸ SYSTEM ▸ TRACKERS, then come back.</div>
+                    <div style={{ fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.6 }}>No tracker connected yet. Add Teamwork or Jira in SETTINGS ▸ INTEGRATIONS ▸ TRACKERS, then come back.</div>
                   )}
                   {!linkConn && conns?.map((c) => (
                     <button key={c.id} onClick={() => pickConn(c.id)} {...hp(`conn:${c.id}`)}
