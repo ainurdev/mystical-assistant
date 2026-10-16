@@ -57,13 +57,17 @@ class Worker:
         self.claim, self.claim_error = claim, claim_error
         self.api, self.puts, self.telegram = [], [], []
         self.result_errors = []          # raised by the next result POSTs, in order
+        self.claimed = None              # the very dict the claim answered, as run() holds it
 
     def _api(self, path, payload=None, headers=None):
         self.api.append((path, payload, headers))
         if path.endswith("/prompt"):
+            if callable(self.claim_error):
+                self.claim_error = self.claim_error()
             if self.claim_error:
                 raise self.claim_error
-            return dict(self.claim)
+            self.claimed = dict(self.claim)
+            return self.claimed
         if path.endswith("/result") and self.result_errors:
             raise self.result_errors.pop(0)
         return {}
@@ -85,15 +89,17 @@ class FakeHelper:
     which the test also hands run() as its `call`), each wait for it times out,
     as a real one would while it runs."""
 
-    def __init__(self, rc=0, exit=None, claude=None, screens=None, stderr="", hang=0, on_wait=None):
+    def __init__(self, rc=0, exit=None, claude=None, screens=None, stderr="", hang=0, on_wait=None, on_start=None):
         self.rc, self.exit, self.stderr, self.hang, self.on_wait = rc, exit, stderr, hang, on_wait
         self.claude = _claude() if claude is None else claude
-        self.screens = screens or {}
+        self.screens, self.on_start = screens or {}, on_start
         self.argv = self.kw = self.saw = self.returncode = None
         self.stops = []
 
     def __call__(self, argv, **kw):
         self.argv, self.kw = argv, kw
+        if self.on_start:
+            self.on_start()
         self.stage = os.path.join(ds.STAGE_ROOT, argv[-1])
         files = {n: open(os.path.join(self.stage, n), "rb").read() for n in os.listdir(self.stage)}
         self.saw = {"job": json.loads(files["job.json"]), "token": files["token"].decode(),
@@ -145,6 +151,7 @@ def device(tmp_path, monkeypatch):
     """A READY device whose stage root is a temp dir; downloads come from a stub."""
     root = tmp_path / "Mystical Runs"
     root.mkdir()
+    root.chmod(0o755)                  # as Set up makes it, whatever the umask
     monkeypatch.setattr(ds, "STAGE_ROOT", str(root))
     monkeypatch.setattr(ds, "headers", lambda inst: dict(HEAD))
     monkeypatch.setattr(device_share, "developer_dir", lambda *a, **k: DEV)
@@ -161,6 +168,27 @@ def device(tmp_path, monkeypatch):
     yield d
     ds._cancelled.clear()
     ds._interrupted.clear()
+
+
+@pytest.fixture(autouse=True)
+def no_real_helper():
+    """run(), stop() and sweep() reach sudo and the helper through their own
+    defaults, which in production is right. Here every test hands them fakes;
+    their defaults refuse, so nothing slips through to sudo, and a test that
+    reaches one fails."""
+    reached = []
+
+    def refuse(argv, **kw):
+        reached.append(list(argv))
+        raise AssertionError("a command reached sudo without a fake: %r" % (argv,))
+    saved = {f: f.__defaults__ for f in (ds.run, ds.stop, ds.sweep)}
+    ds.run.__defaults__, ds.stop.__defaults__, ds.sweep.__defaults__ = (refuse, refuse), (refuse,), (refuse,)
+    try:
+        yield
+    finally:
+        for f, d in saved.items():
+            f.__defaults__ = d
+    assert not reached, "a command reached sudo without a fake: %r" % reached
 
 
 def _run(w, helper, rid=RID):
@@ -243,6 +271,15 @@ def test_a_run_uploads_its_screens_and_posts_the_report_with_captions_in_index_o
     assert os.listdir(device.root) == [], "the stage goes"
     last = device_share.last_run()
     assert last["by"] == "Mahdi" and last["task"] == "RIV-42" and abs(last["at"] - time.time()) < 60
+
+
+def test_the_claim_lets_go_of_the_token_once_it_is_staged(device):
+    """From then on only the stage holds it, and the helper takes it from there."""
+    w = Worker()
+    held = []
+    helper = FakeHelper(on_start=lambda: held.append("claudeToken" in w.claimed))
+    _run(w, helper)
+    assert held == [False] and helper.saw["token"] == TOKEN
 
 
 def test_unlisted_pngs_follow_the_listed_screens_by_name(device):
@@ -415,6 +452,39 @@ def test_a_cancel_before_the_helper_starts_starts_nothing(device):
     assert helper.argv is None and w.results() == [] and os.listdir(device.root) == []
 
 
+def test_a_run_cancelled_while_it_waited_is_never_claimed(device):
+    ds.stop(RID, run=_no_helper)
+    w = Worker()
+    _run(w, FakeHelper())
+    assert w.api == [] and os.listdir(device.root) == [] and RID not in ds._cancelled
+
+
+@pytest.mark.parametrize("how", ["another device took it (409)", "the claim failed (502)", "no longer ready"])
+def test_a_cancel_is_forgotten_however_the_run_ends(device, monkeypatch, how):
+    """A cancel landing mid-claim, or while the device stops being ready, doesn't
+    stay behind in _cancelled."""
+    cancel = lambda: ds.stop(RID, run=_no_helper)    # noqa: E731
+    w = Worker()
+    if how == "no longer ready":
+        monkeypatch.setattr(ds, "headers", lambda inst: cancel())
+    else:
+        error = _http(409 if "409" in how else 502)
+        w.claim_error = lambda: (cancel(), error)[1]
+    _run(w, FakeHelper())
+    assert RID not in ds._cancelled and os.listdir(device.root) == []
+
+
+def test_a_malformed_claim_fails_like_any_other_failure(device):
+    """requester and task that aren't objects: FAILED, with the device header,
+    and nothing raised out of run()."""
+    w = Worker(claim={**CLAIM, "requester": "Mahdi", "task": "RIV-42"})
+    helper = FakeHelper()
+    _run(w, helper)
+    (path, body, head), = [c for c in w.api if c[0].endswith("/result")]
+    assert body["status"] == "FAILED" and head == HEAD and helper.argv is None
+    assert os.listdir(device.root) == []
+
+
 # --- what a report is -------------------------------------------------------------------------------
 
 def test_the_report_is_the_last_json_object_after_the_prose():
@@ -445,9 +515,11 @@ def test_a_stage_is_its_run_id_under_the_stage_root(device):
 # --- a bridge that stopped mid-run -------------------------------------------------------------------
 
 def test_a_bridge_start_clears_stages_left_mid_run_token_first(device, tmp_path):
-    """The helper outlives a bridge restart (its own session) and takes the token
-    when it ends, so a staged token means its run may still be going: that run
-    is stopped. Then the token goes, then the rest, whatever else can't go."""
+    """The helper outlives a bridge restart (its own session), so a stale stage's
+    run may still be going, with or without a token on disk (the helper takes it
+    as it starts): every one is told to stop, which does nothing unless that run
+    holds the helper's lock. Then the token goes, then the rest, whatever else
+    can't go."""
     def stage(rid, token=True):
         d = device.root / rid
         (d / "out").mkdir(parents=True)
@@ -466,7 +538,8 @@ def test_a_bridge_start_clears_stages_left_mid_run_token_first(device, tmp_path)
     calls = []
     try:
         ds.sweep(run=lambda argv, **kw: calls.append(argv) or subprocess.CompletedProcess(argv, 0, "", ""))
-        assert calls == [["/usr/bin/sudo", "-n", HELPER, "stop", RID]]
+        assert sorted(calls) == sorted([["/usr/bin/sudo", "-n", HELPER, "stop", RID],
+                                        ["/usr/bin/sudo", "-n", HELPER, "stop", OTHER]]), "the one with no token too"
         going.chmod(0o700)
         assert not (going / "token").exists(), "the token went first, by name"
         assert not done.exists() and (device.root / "notes").is_dir()
@@ -507,16 +580,69 @@ def test_a_run_cut_short_by_a_restart_is_reported_failed_to_its_instance_once(de
     assert [p for p, _, _ in theirs.api] == ["/plugin/device-run-requests/" + OTHER + "/result"]
 
 
-def test_a_restart_report_that_fails_is_logged_and_the_stage_is_gone_all_the_same(device, capsys):
+def test_a_restart_report_that_fails_is_tried_again_on_the_next_connect(device, capsys):
+    """A failed post is logged and kept for the next READY connect, until it
+    lands. The stage went at bridge start either way."""
     _stale(device, RID, "t1")
     ds.sweep(run=_no_helper)
+    assert os.listdir(device.root) == []
     w = Worker()
     w.result_errors = [_http(502)]
     ds.report_interrupted(w, HEAD)
-    assert len(w.results()) == 1 and RID in capsys.readouterr().out
-    assert os.listdir(device.root) == [] and ds._interrupted == {}
+    assert len(w.results()) == 1 and RID in capsys.readouterr().out and ds._interrupted == {"t1": [RID]}
+    ds.report_interrupted(w, HEAD)                    # the next connect: it lands
+    ds.report_interrupted(w, HEAD)                    # and is not posted again
+    assert len(w.results()) == 2 and ds._interrupted == {}
+
+
+def test_a_restart_report_rivendell_answers_409_is_settled(device):
+    """409: the run has ended there already, so there is nothing left to report."""
+    _stale(device, RID, "t1")
+    ds.sweep(run=_no_helper)
+    w = Worker()
+    w.result_errors = [_http(409)]
+    ds.report_interrupted(w, HEAD)
+    ds.report_interrupted(w, HEAD)
+    assert len(w.results()) == 1 and ds._interrupted == {}
 
 
 def test_a_device_never_set_up_has_nothing_to_sweep(device, monkeypatch):
     monkeypatch.setattr(ds, "STAGE_ROOT", str(device.root / "missing"))
     ds.sweep(run=lambda argv, **kw: pytest.fail("nothing to stop"))
+
+
+def test_a_stage_root_planted_as_a_link_is_never_followed(device, tmp_path, monkeypatch):
+    """/Users/Shared is anyone's to write: "Mystical Runs" could be a link into
+    this account's home, planted there before Set up made the folder. Nothing is
+    swept or staged through it, and the run is posted FAILED, saying why."""
+    home = tmp_path / "home"
+    (home / OTHER).mkdir(parents=True)                # a folder there that has a run id's name
+    (home / OTHER / "keep").write_text("mine")
+    (home / OTHER / "token").write_text("mine too")
+    planted = tmp_path / "planted"
+    planted.symlink_to(home)
+    monkeypatch.setattr(ds, "STAGE_ROOT", str(planted))
+    calls = []
+    ds.sweep(run=lambda argv, **kw: calls.append(argv))
+    w, helper = Worker(), FakeHelper()
+    _run(w, helper)                                   # RID: no folder of that name there to collide with
+    assert calls == [] and helper.argv is None and sorted(os.listdir(home)) == [OTHER], "nothing written there"
+    assert (home / OTHER / "keep").read_text() == "mine" and (home / OTHER / "token").read_text() == "mine too"
+    assert [(r["status"], h) for (p, r, h) in w.api if p.endswith("/result")] == [("FAILED", HEAD)]
+
+
+@pytest.mark.parametrize("how", ["group-writable", "someone else's"])
+def test_a_stage_root_others_could_change_is_left_alone(device, monkeypatch, how):
+    stale = _stale(device, RID, "t1")
+    if how == "group-writable":
+        device.root.chmod(0o775)
+    else:
+        mine = os.getuid()
+        monkeypatch.setattr(ds.os, "getuid", lambda: mine + 1)
+    calls = []
+    ds.sweep(run=lambda argv, **kw: calls.append(argv))
+    assert calls == [] and (stale / "token").exists() and ds._interrupted == {}
+    w, helper = Worker(), FakeHelper()
+    _run(w, helper, rid=OTHER)                        # a run with no stage there yet
+    assert helper.argv is None and w.results()[0]["status"] == "FAILED"
+    assert sorted(os.listdir(device.root)) == [RID], "nothing staged there, and nothing removed"

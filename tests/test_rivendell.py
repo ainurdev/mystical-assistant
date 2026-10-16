@@ -59,6 +59,12 @@ def no_device_probe(monkeypatch):
     test_rivendell_channel.py."""
     monkeypatch.setattr(device_share, "handshake_headers", lambda inst: [])
     monkeypatch.setattr(device_side, "headers", lambda inst: None)
+    monkeypatch.setattr(rivendell, "_device_run", None)      # no device run in flight on this device
+    # Nothing here may reach sudo or the helper through device_side's own defaults.
+    def refuse(argv, **kw):
+        raise AssertionError("a command reached sudo from a worker test: %r" % (argv,))
+    for f, d in ((device_side.run, (refuse, refuse)), (device_side.stop, (refuse,)), (device_side.sweep, (refuse,))):
+        monkeypatch.setattr(f, "__defaults__", d)
 
 
 def _http_error(code, path="/x"):
@@ -2590,7 +2596,7 @@ def test_a_ready_idle_device_takes_a_device_run_at_once(monkeypatch, acks):
 def test_a_device_run_behind_another_waits_without_asking(monkeypatch, acks):
     _ready(monkeypatch)
     w = _worker()
-    w._device_run = "d0"                                # one is running here
+    rivendell._device_run = "d0"                        # one is running on this device
     monkeypatch.setattr(w, "accept", lambda key: (_ for _ in ()).throw(AssertionError("must wait")))
     monkeypatch.setattr(w, "_notify_queued", lambda key: (_ for _ in ()).throw(AssertionError("no ask")))
     w._apply_policy(w._handle_message(_device_frame()))
@@ -2648,7 +2654,7 @@ def test_a_device_run_cancel_stops_it_off_the_listener(monkeypatch):
 def test_one_device_run_at_a_time_even_from_the_queue_tab(monkeypatch):
     """ACCEPT on a waiting one while another runs leaves it waiting its turn."""
     w = _worker()
-    w._device_run = "d0"
+    rivendell._device_run = "d0"
     w._enqueue("device-run", DRID, "ainurhq/app")
     monkeypatch.setattr(w, "_run_accepted", lambda item: None)
     assert w.accept(f"device-run:{DRID}") is False
@@ -2663,13 +2669,13 @@ def test_the_next_device_run_starts_by_itself_when_one_ends(monkeypatch):
     monkeypatch.setattr(w, "_run_accepted", lambda item: started.append(item["request_id"]))
     monkeypatch.setattr(device_side, "run", lambda worker, rid: None)
     w._active_runs = 1                                    # the owner's own run: no reason to wait
-    w._device_run = "d0"
+    rivendell._device_run = "d0"
     w._enqueue("review", "r1", "acme/app")
     w._enqueue("device-run", "d1", "ainurhq/app")
     w._enqueue("device-run", "d2", "ainurhq/app")
     w._run_device_run({"request_id": "d0", "slug": "ainurhq/app"})
     _wait_until(lambda: started == ["d1"])
-    assert w._device_run == "d1" and [r["key"] for r in w.queue_snapshot()] == ["review:r1", "device-run:d2"]
+    assert rivendell._device_run == "d1" and [r["key"] for r in w.queue_snapshot()] == ["review:r1", "device-run:d2"]
     assert w._active_runs == 1, "a device run takes no slot of the owner's"
 
 
@@ -2685,7 +2691,7 @@ def test_a_device_run_never_holds_up_the_owners_own_jobs(monkeypatch, acks):
     monkeypatch.setattr(w, "_run_accepted", lambda item: None)       # accepted, never run
     w._apply_policy(w._handle_message(_device_frame()))
     w._apply_policy(w._handle_message(_device_frame(DOTHER)))
-    assert w._device_run == DRID and w._active_runs == 0
+    assert rivendell._device_run == DRID and w._active_runs == 0
     pinged = []
     monkeypatch.setattr(w, "_notify_queued", lambda key: pinged.append(key))
     w._apply_policy(w._enqueue("review", "r1", "acme/app"))
@@ -2710,7 +2716,7 @@ def test_drain_starts_the_owners_held_job_past_a_waiting_device_run(monkeypatch)
     """A waiting device run starts after the one before it, never from _drain,
     and is no reason for the owner's held job to stay held."""
     w = _worker()
-    w._device_run = "d0"
+    rivendell._device_run = "d0"
     w._enqueue("device-run", "d1", "ainurhq/app")
     w._enqueue("review", "r1", "acme/app")
     accepted = []
@@ -2753,11 +2759,11 @@ def test_a_device_run_is_listed_in_flight_only_while_it_runs(monkeypatch):
     w = _worker()
     seen = []
     monkeypatch.setattr(device_side, "run", lambda worker, rid: seen.append(w.running_snapshot()))
-    w._device_run = DRID
+    rivendell._device_run = DRID
     w._run_device_run({"request_id": DRID, "slug": "ainurhq/app"})
     assert [(r["kind"], r["request_id"], r["label"], r["session_id"]) for r in seen[0]] == [
         ("device-run", DRID, "ainurhq/app", None)]
-    assert w.running_snapshot() == [] and w._device_run is None
+    assert w.running_snapshot() == [] and rivendell._device_run is None
 
 
 def test_catch_up_takes_device_runs_only_when_ready_and_says_which_device(monkeypatch):
@@ -2815,3 +2821,43 @@ def test_the_bridge_start_sweeps_stale_stages_and_a_settings_save_never_does(mon
     assert calls == ["dial"]
     rivendell.start()
     assert calls == ["dial", "sweep", "dial"]
+
+
+def test_one_device_run_at_a_time_on_this_device_whichever_rivendell_sent_it(monkeypatch, acks, workers):
+    """Two Rivendell instances sharing this device each see it free: the second
+    run waits in its own worker, acked queued, never at the helper's lock, and
+    starts by itself once the first ends."""
+    _ready(monkeypatch)
+    prod, local = _worker(id="prod", name="prod"), _worker(id="local", name="local")
+    workers.update(prod=prod, local=local)
+    started = []
+    for w in (prod, local):
+        monkeypatch.setattr(w, "_run_accepted", lambda item, _w=w: started.append((_w.id, item["request_id"])))
+    prod._apply_policy(prod._handle_message(_device_frame()))
+    local._apply_policy(local._handle_message(_device_frame(DOTHER)))
+    _wait_until(lambda: started == [("prod", DRID)])
+    assert acks == [(f"device-run:{DRID}", "received"), (f"device-run:{DOTHER}", "queued")]
+    assert [r["request_id"] for r in local.queue_snapshot()] == [DOTHER]
+    monkeypatch.setattr(device_side, "run", lambda worker, rid: None)
+    prod._run_device_run({"request_id": DRID, "slug": "ainurhq/app"})     # the first one ends
+    _wait_until(lambda: started == [("prod", DRID), ("local", DOTHER)])
+    assert rivendell._device_run == DOTHER and local.queue_snapshot() == []
+
+
+def test_the_oldest_waiting_device_run_goes_next_whichever_worker_holds_it(monkeypatch, workers):
+    """First come, first served across instances: an older run waiting on one
+    instance goes before a newer one on the instance whose run just ended."""
+    prod, local = _worker(id="prod", name="prod"), _worker(id="local", name="local")
+    workers.update(prod=prod, local=local)
+    started = []
+    for w in (prod, local):
+        monkeypatch.setattr(w, "_run_accepted", lambda item, _w=w: started.append((_w.id, item["request_id"])))
+    monkeypatch.setattr(device_side, "run", lambda worker, rid: None)
+    rivendell._device_run = "d0"
+    prod._enqueue("device-run", "newer", "ainurhq/app")
+    local._enqueue("device-run", "older", "ainurhq/app")
+    prod._pending["device-run:newer"]["created_at"] = 2.0
+    local._pending["device-run:older"]["created_at"] = 1.0
+    prod._run_device_run({"request_id": "d0", "slug": "ainurhq/app"})
+    _wait_until(lambda: started == [("local", "older")])
+    assert rivendell._device_run == "older" and [r["request_id"] for r in prod.queue_snapshot()] == ["newer"]

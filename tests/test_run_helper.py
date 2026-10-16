@@ -33,6 +33,27 @@ _spec = importlib.util.spec_from_file_location("mystical_run_helper", HELPER)
 h = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(h)
 
+@pytest.fixture(autouse=True)
+def no_real_process():
+    """main()'s own popen is subprocess.Popen, which as root is right. Here every
+    command must go through a Runner: one that slipped past it would run for
+    real, as you, and on 2026-10-16 a stop called without one ran launchctl
+    bootout on the developer's own domains and logged them out. So main's
+    default refuses every command, and a test that reaches it fails."""
+    reached = []
+
+    def refuse(argv, **kw):
+        reached.append(list(argv))
+        raise AssertionError("a command reached a real process without a Runner: %r" % (argv,))
+    saved = h.main.__defaults__
+    h.main.__defaults__ = (None, refuse)
+    try:
+        yield
+    finally:
+        h.main.__defaults__ = saved
+    assert not reached, "a command reached a real process without a Runner: %r" % reached
+
+
 RUN_ID = "0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19"
 TOKEN = "sk-ant-oat01-a-teammates-token"
 ME = os.getuid()
@@ -194,6 +215,7 @@ def test_the_user_running_the_helper_counts_as_root_which_outside_tests_it_is():
 KILL_ALL = ["/usr/bin/pkill", "-KILL", "-u", "mysticalruns"]
 ANY_LEFT = ["/usr/bin/pgrep", "-u", "mysticalruns"]
 CRONTAB = ["/usr/bin/crontab", "-r", "-u", "mysticalruns"]
+BOOTOUT = [["/bin/launchctl", "bootout", "user/%d" % ME], ["/bin/launchctl", "bootout", "gui/%d" % ME]]
 OTHER = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"     # another requester's run
 
 
@@ -201,13 +223,14 @@ class Runner:
     """subprocess.Popen, minus the user switch: records each command, then runs it
     without the `/usr/bin/sudo [-E] -u <user> [-H]` in front, as you.
 
-    pkill, pgrep and crontab never run for real: here mysticalruns is you, so a
-    kill by user would take this test run down with it, and a crontab -r would
-    take your crontab. pgrep answers from `left` (0: some are left) and then 1
-    (none are); crontab exits `cron_rc` (1, as when there is none). At each kill,
-    `kills` notes what `on_kill()` says at that moment. `hooks` maps a command
-    (after the sudo) to a function of its argv: a number it returns is the
-    command's exit code instead of running it, None runs it."""
+    pkill, pgrep, crontab and launchctl never run for real: here mysticalruns is
+    you, so a kill by user would take this test run down with it, a crontab -r
+    would take your crontab, and a launchctl bootout of your domains would log
+    you out. pgrep answers from `left` (0: some are left) and then 1 (none are);
+    crontab exits `cron_rc` (1, as when there is none) and launchctl 3 (no such
+    domain). At each kill, `kills` notes what `on_kill()` says at that moment.
+    `hooks` maps a command (after the sudo) to a function of its argv: a number
+    it returns is the command's exit code instead of running it, None runs it."""
 
     def __init__(self, left=(), on_kill=lambda: None, cron_rc=1, hooks=None):
         self.calls, self.procs, self.kills = [], [], []
@@ -215,6 +238,8 @@ class Runner:
 
     def __call__(self, argv, **kw):
         self.calls.append(list(argv))
+        if any(os.path.basename(a) == "launchctl" for a in argv):
+            return types.SimpleNamespace(wait=lambda: 3)
         if any(os.path.basename(a) == "crontab" for a in argv):
             return types.SimpleNamespace(wait=lambda: self.cron_rc)
         if argv[0] in ("/usr/bin/pkill", "/usr/bin/pgrep"):
@@ -242,6 +267,8 @@ def _killed_around_the_run(run):
     assert len(kills) == 2 and kills[0] < launch < kills[1], run.calls
     assert run.kills == [False, True], "the second kill comes before the run folder is removed"
     assert all(run.calls[i + 1] == ANY_LEFT for i in kills), "each kill waits until none is left"
+    assert all(run.calls[i - 2:i] == BOOTOUT for i in kills), \
+        "the hidden user's launchd domains go first: a KeepAlive job would be started again after any kill"
 
 
 def _watching(b):
@@ -368,7 +395,9 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
     assert _left_behind(box, st) == []
     assert (st / "job.json").exists(), "the rest of the stage is the bridge's to remove"
 
-    kill, wait, cron, clear, install, untar, launch, writer, reader, kill_again, wait_again = run.calls
+    (bootout_user, bootout_gui, kill, wait, cron, clear, install, untar, launch, writer, reader,
+     bootout_user_again, bootout_gui_again, kill_again, wait_again) = run.calls
+    assert [bootout_user, bootout_gui] == BOOTOUT == [bootout_user_again, bootout_gui_again], "as root, fixed argv"
     assert cron == CRONTAB, "as root, with its fixed argv"
     assert clear[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and clear[-1] == str(box.tmp)
     code = str(box.runs / RUN_ID / "code")
@@ -503,7 +532,7 @@ def test_stop_ends_a_running_run_and_start_still_reports_and_cleans_up(box):
     assert h.main(["stop", RUN_ID], popen=stopper) == 0
     t.join(15)
     assert rc == [0]
-    assert stopper.calls == [KILL_ALL, ANY_LEFT], "after the group, whatever setsid() out of it"
+    assert stopper.calls == BOOTOUT + [KILL_ALL, ANY_LEFT], "after the group, whatever setsid() out of it"
     assert stopper.kills == [False], "the group is stopped first, then everything else of the user's"
     _killed_around_the_run(run)
     assert json.loads((st / "out" / "exit.json").read_text()) == {"code": -15, "timedOut": False}
@@ -516,19 +545,33 @@ def test_the_kill_by_user_kills_again_on_each_pass_until_none_is_left(box):
     run = Runner(left=[0, 0, 0])
     _stage(box)
     assert h.main(["start", RUN_ID], popen=run) == 0
-    assert run.calls[:8] == [KILL_ALL, ANY_LEFT] * 4, "killed and asked until pgrep said none"
-    assert run.calls[8] not in (KILL_ALL, ANY_LEFT)
+    assert run.calls[:2] == BOOTOUT
+    assert run.calls[2:10] == [KILL_ALL, ANY_LEFT] * 4, "killed and asked until pgrep said none"
+    assert run.calls[10] not in (KILL_ALL, ANY_LEFT)
 
 
-def test_the_wait_for_none_left_is_bounded(box, monkeypatch):
-    """A process that won't die (or one launchd keeps restarting) can't hold a run up for ever."""
+def test_a_process_still_there_at_the_deadline_refuses_the_run(box, monkeypatch, capsys):
+    """One that won't die, or one launchd keeps starting again past the bootout:
+    the run never starts beside it, nothing is handed back in its place, and the
+    wait for it is bounded."""
     monkeypatch.setattr(h, "GRACE", 0.3)
     run = Runner(left=[0] * 1000)
     st = _stage(box)
     began = time.monotonic()
-    assert h.main(["start", RUN_ID], popen=run) == 0
+    assert h.main(["start", RUN_ID], popen=run) == 2
     assert time.monotonic() - began < 5
-    assert (st / "out" / "exit.json").exists() and not (st / "token").exists()
+    assert not [c for c in run.calls if "-p" in c], "Claude never started"
+    assert len(capsys.readouterr().err.strip().splitlines()) == 1
+    assert not (st / "out").exists() and _left_behind(box, st) == []
+
+
+def test_the_token_leaves_the_disk_once_read_before_the_run_starts(box):
+    """Claude gets it in its environment; the stage's copy has no reason to stay."""
+    st = _stage(box)
+    at_launch = []
+    run = Runner(hooks={str(box.claude): lambda argv: at_launch.append(os.path.lexists(st / "token"))})
+    assert h.main(["start", RUN_ID], popen=run) == 0
+    assert at_launch == [False]
 
 
 def test_stopping_a_run_that_is_not_running_is_no_error_and_kills_nothing(box):

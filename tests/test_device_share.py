@@ -446,3 +446,22 @@ def test_a_note_that_cannot_be_written_never_fails_the_run(monkeypatch, tmp_path
     monkeypatch.setattr(ds.config, "BRIDGE_DB", str(tmp_path / "gone" / "bridge.db"))
     ds.record_last_run("Mahdi", "RIV-42")
     assert ds.last_run() is None
+
+
+def test_the_notes_temp_file_is_never_written_through_a_link(monkeypatch, tmp_path):
+    monkeypatch.setattr(ds.config, "BRIDGE_DB", str(tmp_path / "bridge.db"))
+    target = tmp_path / "elsewhere"
+    target.write_text("keep")
+    (tmp_path / "device_last_run.json.tmp").symlink_to(target)
+    ds.record_last_run("Mahdi", "RIV-42")
+    assert target.read_text() == "keep"
+
+
+def test_a_leftover_temp_file_does_not_pass_its_mode_on(monkeypatch, tmp_path):
+    monkeypatch.setattr(ds.config, "BRIDGE_DB", str(tmp_path / "bridge.db"))
+    leftover = tmp_path / "device_last_run.json.tmp"
+    leftover.write_text("half a note")
+    leftover.chmod(0o644)
+    ds.record_last_run("Mahdi", "RIV-42")
+    assert ((tmp_path / "device_last_run.json").stat().st_mode & 0o777) == 0o600
+    assert ds.last_run()["by"] == "Mahdi"

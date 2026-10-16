@@ -242,6 +242,13 @@ _checkout_lock = threading.Lock()
 _checkout_cache: dict = {}           # lowercased "owner/repo" -> abs path
 _checkout_cache_at = 0.0             # monotonic time of the last rescan
 
+# The teammate's device run in flight on this device (its request id), whichever
+# instance's worker took it: one at a time on the device, the next waiting in its
+# worker's _pending (Worker.accept, Worker._run_device_run). Kept apart from every
+# worker's _active_runs, so it never holds up the owner's own jobs.
+_device_run: "str | None" = None
+_device_lock = threading.Lock()      # guards _device_run; taken inside a worker's _q_lock, never around one
+
 
 # --- Repo discovery (shared across workers) -----------------------------------
 
@@ -313,11 +320,7 @@ class Worker:
         # accepted). Guarded by _q_lock alongside _pending: together they answer
         # "is the queue idle?" — the condition for auto-accepting a lone request.
         self._active_runs = 0
-        # The teammate's device run in flight on this device (its request id):
-        # one at a time, the next waiting in _pending (_run_device_run). Kept
-        # apart from _active_runs, so it never holds up the owner's own jobs.
-        self._device_run: "str | None" = None
-        self._q_lock = threading.Lock()      # guards _pending, _active_runs, _running and _device_run
+        self._q_lock = threading.Lock()      # guards _pending, _active_runs and _running
         self._seen_lock = threading.Lock()
         self._seen: set = set()              # "<kind>:<id>" queued or handled
         # Request id -> the note its IMPLEMENT carried (implement() below);
@@ -961,7 +964,7 @@ class Worker:
                     self._seen.discard(key)
                 return
             with self._q_lock:
-                busy = self._device_run is not None or any(
+                busy = _device_run is not None or any(
                     it["kind"] == "device-run" for k, it in self._pending.items() if k != key)
             self._ack(key, "queued" if busy else "received")
             if not busy:
@@ -1774,22 +1777,19 @@ class Worker:
     def _run_device_run(self, item: dict) -> None:
         """A teammate's run on this shared device (bridge/device_side.py), listed
         in flight while it runs. Then the oldest device run waiting here starts
-        by itself, whatever else is running (Ruling 2). It is no part of
-        _active_runs (M11): the owner's own jobs ran past it all along."""
-        # shortcut: one device run at a time per Rivendell instance. Two
-        # instances sharing this device can overlap; the helper's lock then makes
-        # the second wait for the first. Serialize across workers if both share it.
+        by itself, whichever instance's worker holds it, and whatever else is
+        running (Ruling 2). It is no part of _active_runs (M11): the owner's own
+        jobs ran past it all along."""
+        global _device_run
         request_id = item["request_id"]
         self._track(request_id, "device-run", item["slug"], None, label=None, link=None)
         try:
             device_side.run(self, request_id)
         finally:
             self._untrack(request_id)
-            with self._q_lock:
-                self._device_run = None
-                key = next((k for k, it in self._pending.items() if it["kind"] == "device-run"), None)
-            if key is not None:
-                self.accept(key)
+            with _device_lock:
+                _device_run = None
+            _start_next_device_run(self)
 
     def _run_in_workdir(self, what: str, kind: str, request_id: str,
                         name: "str | None", mcp_on: "str | None" = None) -> None:
@@ -1955,20 +1955,25 @@ class Worker:
         """Claim and run one pending request, concurrently with any others (its
         prompt isolates it in its own worktree). Returns False if the key is not
         pending (already accepted/rejected, or a stale click), or is a device
-        run while another one runs here (it starts by itself after it)."""
+        run while another one runs on this device, from any instance (it starts
+        by itself after it)."""
+        global _device_run
         with self._q_lock:
             item = self._pending.get(key)
-            if item is None or (item["kind"] == "device-run" and self._device_run is not None):
+            if item is None:
                 return False
-            del self._pending[key]
             # Count it running before the thread starts, so a request that lands
             # between now and the run finishing sees a busy queue (and pings)
             # rather than racing in as another "lone" auto-accept. A device run
             # counts apart: it holds up only the next device run.
             if item["kind"] == "device-run":
-                self._device_run = item["request_id"]
+                with _device_lock:
+                    if _device_run is not None:
+                        return False
+                    _device_run = item["request_id"]
             else:
                 self._active_runs += 1
+            del self._pending[key]
         threading.Thread(
             target=self._run_accepted, args=(dict(item),),
             name=f"rivendell-run-{self.id}", daemon=True).start()
@@ -2117,6 +2122,21 @@ class Worker:
 
 _workers: "dict[str, Worker]" = {}
 _manager_lock = threading.Lock()
+
+
+def _start_next_device_run(done: Worker) -> None:
+    """A device run just ended on this device: start the oldest one waiting in
+    any instance's worker (`done`'s too, registered or not). No two locks are
+    held at once here; accept() rechecks the device under its own."""
+    with _manager_lock:
+        workers = list({id(w): w for w in (done, *_workers.values())}.values())
+    waiting = []
+    for w in workers:
+        with w._q_lock:
+            waiting += [(it["created_at"], w, k) for k, it in w._pending.items() if it["kind"] == "device-run"]
+    if waiting:
+        _, w, key = min(waiting, key=lambda t: t[0])
+        w.accept(key)
 
 
 def _desired() -> dict:

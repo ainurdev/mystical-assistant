@@ -61,6 +61,19 @@ def stage_dir(request_id: str) -> str:
     return os.path.join(STAGE_ROOT, request_id)
 
 
+def _root_is_ours() -> bool:
+    """Whether STAGE_ROOT is what Set up made: a real folder of this account's
+    that group and others can't write. It sits in world-writable /Users/Shared,
+    where anyone could plant that name first, as a link into this account's home
+    or a folder of their own; once it is ours, the sticky bit there keeps anyone
+    else from swapping it."""
+    try:
+        st = os.lstat(STAGE_ROOT)
+    except OSError:
+        return False
+    return stat.S_ISDIR(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o022
+
+
 def headers(inst: dict) -> "dict | None":
     """What this device's calls carry, X-Mystical-Device-Id, when it is READY for
     teammates' runs; None when it isn't, and then it takes none."""
@@ -121,10 +134,29 @@ def parse_report(claude_json: str) -> "tuple[str, list]":
 
 def run(worker, request_id: str, popen=subprocess.Popen, call=subprocess.run) -> None:
     """One teammate's device run, start to finish (the module docstring has the
-    steps). `popen` starts the helper, `call` stops it: the tests' seams."""
+    steps). `popen` starts the helper, `call` stops it: the tests' seams. A
+    cancel noted for it is forgotten however it ends."""
+    try:
+        _run(worker, request_id, popen, call)
+    finally:
+        _cancelled.discard(request_id)
+
+
+def _dig(d, *keys):
+    """d[k1][k2]…, or None where a level isn't an object: a claim needn't be the
+    shape the Contract says."""
+    for k in keys:
+        d = d.get(k) if isinstance(d, dict) else None
+    return d
+
+
+def _run(worker, request_id, popen, call):
     if not _RUN_ID.fullmatch(request_id or ""):
         print(f"rivendell[{worker.name}]: device run {request_id!r} has no run id; not taking it")
         return     # it names the stage this removes
+    if request_id in _cancelled:
+        print(f"rivendell[{worker.name}]: device run {request_id} was cancelled while it waited")
+        return     # never claimed, never staged
     head = headers(worker.inst)
     if head is None:
         return     # not READY any more: another device can take it
@@ -144,6 +176,8 @@ def run(worker, request_id: str, popen=subprocess.Popen, call=subprocess.run) ->
         try:
             worker._deliver_telegram(f"{claim['requester']['name']} is testing {claim['repository']} on this device.",
                                      None)
+            if not _root_is_ours():
+                raise ValueError("this device's runs folder isn't its owner's own, so nothing was staged")
             _write_stage(stage, claim, timeout, worker.inst["id"])
             if request_id in _cancelled:
                 return
@@ -154,18 +188,20 @@ def run(worker, request_id: str, popen=subprocess.Popen, call=subprocess.run) ->
             body = {"status": "FAILED", "error": f"bridge error: {e}"[:_ERROR_MAX], "screens": []}
         if request_id not in _cancelled:
             _post(worker, base, head, body)
-        device_share.record_last_run((claim.get("requester") or {}).get("name") or "",
-                                     (claim.get("task") or {}).get("key"))
+        device_share.record_last_run(_dig(claim, "requester", "name") or "", _dig(claim, "task", "key"))
     finally:
-        _drop(stage)
-        _cancelled.discard(request_id)
+        if _root_is_ours():    # never remove anything through a root someone else planted
+            _drop(stage)
 
 
 def _write_stage(stage, claim, timeout, instance):
     """The stage the helper checks: the owner's 0700 folder with job.json, the
     code and, last, the token. The code comes from the web only: a file:// URL
     would hand the run one of the owner's own files as its code. job.json also
-    names the Rivendell instance (not a secret), for sweep() after a restart."""
+    names the Rivendell instance (not a secret), for sweep() after a restart.
+    The claim lets go of the token here: from now on only the stage holds it,
+    until the helper reads it and takes it off the disk."""
+    token = claim.pop("claudeToken")
     os.mkdir(stage, 0o700)
     os.chmod(stage, 0o700)    # exactly, whatever the umask
     _write(os.path.join(stage, "job.json"), json.dumps({
@@ -180,7 +216,7 @@ def _write_stage(stage, claim, timeout, instance):
     if len(code) > _SNAPSHOT_MAX:
         raise ValueError("the code is over 9 MB")
     _write(os.path.join(stage, "code.tar.gz"), code)
-    _write(os.path.join(stage, "token"), claim["claudeToken"].encode())
+    _write(os.path.join(stage, "token"), token.encode())
 
 
 def _write(path, data):
@@ -312,16 +348,22 @@ def _drop(stage):
 
 def sweep(run=subprocess.run) -> None:
     """At bridge start: the stages a bridge that stopped mid-run left. The helper
-    runs in a session of its own and takes the token when it ends, so a staged
-    token means that run may still be going: it is stopped, nobody being left
-    to report it. Each run is noted for report_interrupted() under the instance
-    its job.json names, then the stage goes, token first: the token can't wait
-    for a connection. Only this account's folders named by a run id count,
-    never through a link."""
+    runs in a session of its own, so a stale stage's run may still be going, with
+    or without a token on disk (the helper takes it off as it starts): each one
+    is told to stop, which does nothing unless that run holds the helper's lock,
+    nobody being left to report it. Each run is noted for report_interrupted()
+    under the instance its job.json names, then the stage goes, token first.
+    Only a stage root that is this account's own is looked in, and only its
+    folders named by a run id count, never through a link."""
+    if not os.path.lexists(STAGE_ROOT):
+        return     # not set up
+    if not _root_is_ours():
+        print(f"device runs: {STAGE_ROOT} isn't this account's own folder; the boot clean-up leaves it alone")
+        return
     try:
         names = os.listdir(STAGE_ROOT)
     except OSError:
-        return     # not set up
+        return
     for name in names:
         stage = stage_dir(name)
         try:
@@ -330,8 +372,7 @@ def sweep(run=subprocess.run) -> None:
             continue
         if not _RUN_ID.fullmatch(name) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
             continue
-        if os.path.lexists(os.path.join(stage, "token")):
-            _stop(name, run)
+        _stop(name, run)
         instance = _read_json(os.path.join(stage, "job.json")).get("instance")
         if isinstance(instance, str) and instance:
             _interrupted.setdefault(instance, []).append(name)
@@ -341,12 +382,20 @@ def sweep(run=subprocess.run) -> None:
 def report_interrupted(worker, head: dict) -> None:
     """The runs of this worker's instance a restart cut short (sweep), posted
     FAILED once its device is connected again: Rivendell takes a device's result
-    only from a device whose socket is open, so not at bridge start. One try
-    each; a failed POST is logged, and its stage went at bridge start anyway."""
-    for request_id in _interrupted.pop(worker.inst["id"], []):
+    only from a device whose socket is open, so not at bridge start. Each is kept
+    until a post lands, or Rivendell answers 409 (the run has ended there), and
+    is tried again on each READY connect; a failed post is logged. The stages
+    went at bridge start."""
+    ids = _interrupted.get(worker.inst["id"])
+    for request_id in list(ids or ()):
         try:
             worker._api(f"/plugin/device-run-requests/{request_id}/result",
                         {"status": "FAILED", "error": _RESTARTED, "screens": []}, headers=head)
-        except Exception as e:  # noqa: BLE001 — logged; the run was over either way
-            print(f"rivendell[{worker.name}]: device run {request_id} cut short by a restart "
-                  f"couldn't be reported: {e}")
+        except Exception as e:  # noqa: BLE001 — logged, and kept for the next connect
+            if not (isinstance(e, urllib.error.HTTPError) and e.code == 409):
+                print(f"rivendell[{worker.name}]: device run {request_id} cut short by a restart "
+                      f"couldn't be reported yet: {e}")
+                continue
+        ids.remove(request_id)
+    if ids == []:
+        _interrupted.pop(worker.inst["id"], None)

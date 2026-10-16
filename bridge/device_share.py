@@ -218,9 +218,10 @@ def record_last_run(by: str, task: "str | None") -> None:
     DB, 0600. Best-effort: a note that can't be written never fails a run."""
     path = _last_run_path()
     try:
-        with open(path + ".tmp", "w", encoding="utf-8") as f:
+        with os.fdopen(os.open(path + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600),
+                       "w", encoding="utf-8") as f:
+            os.fchmod(f.fileno(), 0o600)    # a leftover temp file keeps its own mode through O_CREAT
             json.dump({"at": time.time(), "by": by, "task": task}, f)
-        os.chmod(path + ".tmp", 0o600)
         os.replace(path + ".tmp", path)
     except OSError as e:
         print(f"device runs: the last run couldn't be noted: {e}")

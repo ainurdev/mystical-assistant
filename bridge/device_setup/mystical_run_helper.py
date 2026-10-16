@@ -41,14 +41,18 @@ code, with every tool allowed. So root never follows a link either could plant:
   Otherwise the owner's passwordless sudo would run whatever replaced them.
 - Claude's stderr is kept as out/claude.err (the first megabyte), so a failed
   run says why.
-Cleanup always runs: on success, failure, timeout, stop, and when a bridge
-restart TERMs this helper. It stops the run's process group and deletes its
-folder and the stage's token. There is one run at a time, held by a root-only
-lock (LOCK), so every mysticalruns process is stopped before each run and after
-it: one that setsid() out of its group would otherwise outlive the run, and read
-the next requester's code and home. Before each run the hidden user's crontab
-goes too, and whatever a run whose helper died left in RUNS_HOME. A stop only
-ever reaches the run holding the lock.
+The stage's token is unlinked as soon as it is read, before anything runs.
+Cleanup always runs: on success, failure, timeout, stop, and on a TERM or HUP. (A
+bridge restart doesn't reach this helper: the bridge starts it in a session of
+its own.) It stops the run's process group and deletes its folder, and the
+stage's token if it was never read. There is one run at a time, held by a
+root-only lock (LOCK), so every mysticalruns process is stopped before each run
+and after it, the user's launchd domains booted out first: one that setsid() out
+of its group, or a KeepAlive job launchd would start again, would otherwise
+outlive the run and read the next requester's code and home. A run doesn't start
+while any is left. Before each run the hidden user's crontab goes too, and
+whatever a run whose helper died left in RUNS_HOME. A stop only ever reaches the
+run holding the lock.
 
 Root runs this with the system /usr/bin/python3, which can be as old as 3.9. So
 the code sticks to 3.9: no `match`, no `X | Y` types, no Popen(process_group=).
@@ -265,14 +269,22 @@ def _kill_group(pgid, leader=None):
 
 
 def _kill_user(popen):
-    """KILL every mysticalruns process, again on each pass, until none is left
-    (pgrep exits 0 while one is, 1 when none is) or GRACE seconds have gone: one
-    that respawns, or a fork that raced a kill, can't outlive the sweep."""
+    """Stop every mysticalruns process. First boot out its launchd domains, where
+    a KeepAlive job would be started again after any kill ("no such domain" is
+    the usual answer, and no error). Then KILL them, again on each pass, until
+    none is left (pgrep exits 0 while one is, 1 when none is) or GRACE seconds
+    have gone: one that respawns, or a fork that raced a kill, can't outlive the
+    sweep. Returns whether none is left."""
+    uid = pwd.getpwnam(RUN_USER).pw_uid
+    for domain in ("user/%d" % uid, "gui/%d" % uid):
+        popen(["/bin/launchctl", "bootout", domain], **_QUIET).wait()
     deadline = time.monotonic() + GRACE
     while True:
         popen(["/usr/bin/pkill", "-KILL", "-u", RUN_USER], **_QUIET).wait()
-        if popen(["/usr/bin/pgrep", "-u", RUN_USER], **_QUIET).wait() != 0 or time.monotonic() >= deadline:
-            return
+        if popen(["/usr/bin/pgrep", "-u", RUN_USER], **_QUIET).wait() != 0:
+            return True
+        if time.monotonic() >= deadline:
+            return False
         time.sleep(0.1)
 
 
@@ -436,12 +448,14 @@ def _start(run_id, cfg, popen):
             job = json.load(f)
         with os.fdopen(token_fd, encoding="utf-8") as f:
             token = f.read().strip()
+        os.unlink("token", dir_fd=stage_fd)   # read: from here it lives only in Claude's environment
         prompt, timeout = job.get("prompt"), job.get("timeoutSeconds")
         if not isinstance(prompt, str) or not prompt or not token or type(timeout) is not int or timeout <= 0:
             raise Refused("The stage's job.json or token is incomplete.")
         run_uid = pwd.getpwnam(RUN_USER).pw_uid
         argv = launch_argv(cfg.get("launch"), run_uid, claude_argv(prompt, claude))
-        _kill_user(popen)   # nothing of an earlier run is left to watch this one
+        if not _kill_user(popen):   # nothing of an earlier run is left to watch this one
+            raise Refused("A process of the hidden user's wouldn't stop, so the run didn't start.")
         popen(["/usr/bin/crontab", "-r", "-u", RUN_USER], **_QUIET).wait()   # nor its crontab (none is no error)
         _sweep(popen)       # nor its folder
         _as(RUN_USER, popen, ["/usr/bin/python3", "-I", "-c", _EMPTY_AGENTS, os.path.dirname(RUNS_HOME)],
@@ -528,8 +542,10 @@ def main(argv=None, popen=subprocess.Popen):
 
 
 if __name__ == "__main__":
-    # A bridge restart TERMs this helper with it: unwinding runs the finally
-    # blocks, which stop the run and take its token and folder with it.
+    # A TERM or HUP (the owner's own kill, a logout) unwinds through the finally
+    # blocks, which stop the run and take its folder (and an unread token) with
+    # it. A bridge restart doesn't reach here: the bridge starts this in a
+    # session of its own.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
     signal.signal(signal.SIGHUP, lambda *_: sys.exit(129))
     sys.exit(main())
