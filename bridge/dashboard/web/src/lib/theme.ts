@@ -14,6 +14,7 @@
 // (scanlines / sweep / glow) belong to AURORA and default on when you pick it.
 
 import { toIndicator, type Indicator } from "./indicator";
+import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
 import { TONES, type ToneKey } from "./push";
 import { toChatBg, toTranscriptScheme, type ChatBg, type TranscriptScheme } from "./toolwidget";
 
@@ -261,6 +262,10 @@ export interface HudSettings {
   rightOpen: boolean; // right sidebar expanded
   rightTab: RightTab; // which sidebar tab it opens on
   indicator: Indicator; // which working-indicator form is live
+  nyan: NyanMode; // which cat, when indicator === "nyan"
+  nyanSound: NyanSound; // "match" = the picked cat's own track
+  nyanVolume: number; // 0..1
+  nyanExtra: boolean; // fly the cat + draw nyan.cat's CSS rainbow and pixel stars
   font: string; // FONTS key; "" = the theme's own voice
   baseFont: number; // BASE FONT SIZE in px — the whole type scale is derived
                     // from it (index.css --fs); 0 = AUTO (from the viewport)
@@ -339,7 +344,7 @@ function urlLayout(): ChatLayout | null {
 const KEY = "hud-settings";
 const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "files",
-  indicator: "bar",
+  indicator: "bar", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   push: false, pushSound: true,
@@ -399,6 +404,13 @@ export function loadSettings(): HudSettings {
         rightOpen: p.rightOpen ?? true,
         rightTab: RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
         indicator: toIndicator(p.indicator),
+        nyan: NYAN_KEYS.includes(p.nyan as string) ? (p.nyan as NyanMode) : "original",
+        nyanSound:
+          p.nyanSound === "off" || p.nyanSound === "match" || NYAN_KEYS.includes(p.nyanSound as string)
+            ? (p.nyanSound as NyanSound)
+            : "match",
+        nyanVolume: clamp01(p.nyanVolume, 0.4),
+        nyanExtra: p.nyanExtra ?? true,
         font: FONTS.some((f) => f.key === p.font) ? (p.font as string) : "",
         // `textScale` was the old whole-HUD zoom factor; a stored one carries
         // over as the base font size it was effectively rendering at.

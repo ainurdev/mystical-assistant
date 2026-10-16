@@ -72,6 +72,7 @@ import {
 import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWrite } from "../../lib/profiles";
 import { AGENT_DEFAULT, agentLabel, optionRows, setAgentLabels } from "../../lib/agents";
 import { notify } from "./Notifications";
+import { NYAN_MODES, nyanLabel, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isMacApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
@@ -187,7 +188,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "HEADER", terms: "header island frost veil tuck glass readouts" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
-  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars" },
+  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars nyan cat" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
   { tab: "transcript", sec: "COLOUR SCHEME", terms: "colour color scheme phosphor contrast dossier output style" },
@@ -4007,15 +4008,71 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
                 <Section title="WHILE IT WORKS" top>
                   <div style={CARD}>
-                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. EQUALIZER is the braille spinner with level bars.">
-                      <div style={{ width: 220 }}>
+                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. EQUALIZER is the braille spinner with level bars. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music.">
+                      <div style={{ width: 280 }}>
                         <Segmented
-                          options={[{ label: "EQUALIZER", value: "bar" }, { label: "STATUS", value: "status" }]}
+                          options={[{ label: "EQUALIZER", value: "bar" }, { label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }]}
                           value={settings.indicator}
                           onPick={(indicator) => onPatch({ indicator })}
                         />
                       </div>
                     </Row>
+                    {settings.indicator === "nyan" && (
+                      <>
+                        <Row label="CAT">
+                          <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{nyanLabel(settings.nyan)}</span>
+                        </Row>
+                        <div
+                          className="mscroll"
+                          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(52px,1fr))", gap: 5, maxHeight: 172, overflowY: "auto", marginTop: 11 }}
+                        >
+                          {NYAN_MODES.map((m) => {
+                            const on = settings.nyan === m.key;
+                            return (
+                              <button
+                                key={m.key}
+                                onClick={() => onPatch({ nyan: m.key })}
+                                title={m.label}
+                                aria-pressed={on}
+                                style={{
+                                  appearance: "none",
+                                  cursor: "pointer",
+                                  padding: 3,
+                                  lineHeight: 0,
+                                  background: on ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "var(--panel3)",
+                                  border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 14%, transparent)"}`,
+                                }}
+                              >
+                                <img src={nyanThumb(m.thumb)} alt={m.label} loading="lazy" style={{ width: "100%", display: "block" }} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <Row label="SOUND" desc="MATCH THE CAT plays the picked cat's own track; MUTE plays none.">
+                          <select
+                            value={settings.nyanSound}
+                            onChange={(e) => onPatch({ nyanSound: e.target.value as NyanSound })}
+                            style={{ ...field, flex: "0 1 200px", minWidth: 0 }}
+                          >
+                            <option value="match">MATCH THE CAT</option>
+                            <option value="off">MUTE</option>
+                            {NYAN_MODES.map((m) => (
+                              <option key={m.key} value={m.key}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </select>
+                          <Volume
+                            value={settings.nyanVolume}
+                            disabled={settings.nyanSound === "off"}
+                            onChange={(nyanVolume) => onPatch({ nyanVolume })}
+                          />
+                        </Row>
+                        <Row label="EXTRA ANIMATIONS" desc="fly the cat, draw nyan.cat's rainbow trail + pixel stars">
+                          <Switch on={settings.nyanExtra} onClick={() => onPatch({ nyanExtra: !settings.nyanExtra })} />
+                        </Row>
+                      </>
+                    )}
                   </div>
                 </Section>
               </>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { TimedEvent } from "../../api";
 import { type HudSettings } from "../../lib/theme";
+import { nyanGif, nyanLook, nyanTrack, type NyanMode } from "../../lib/nyan";
 import { workState, type WorkState } from "../../lib/workstate";
 
 const SPIN = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -15,9 +16,9 @@ const PHRASES = [
 ];
 
 /** The "agent is working" line for the HUD terminal. `hud.indicator` picks the
- *  form: the stock braille spinner + equalizer, or STATUS, which drops the
- *  cycling phrase for what the turn is actually doing (lib/workstate). Both
- *  share the tick and the elapsed count. */
+ *  form: the stock braille spinner + equalizer, a nyan.cat ride, or STATUS,
+ *  which drops the cycling phrase for what the turn is actually doing
+ *  (lib/workstate). All three share the tick and the elapsed count. */
 export function WorkingIndicator({
   hud,
   events,
@@ -43,6 +44,9 @@ export function WorkingIndicator({
 
   if (hud?.indicator === "status") {
     return <StatusLine frame={frame} state={state} elapsed={elapsed} />;
+  }
+  if (hud?.indicator === "nyan") {
+    return <NyanIndicator hud={hud} mode={hud.nyan} phrase={phrase} elapsed={elapsed} />;
   }
 
   return (
@@ -101,3 +105,109 @@ const STARS = [
   { fs: 3, top: "72%", drift: 3.4, delay: -2.6 },
   { fs: 2, top: "26%", drift: 2.1, delay: -1.9 },
 ];
+
+/** The nyan.cat variant: the chosen cat over its proper sky, with its looping
+ *  track. `nyanExtra` upgrades the stock scrolling starfield to the full ride —
+ *  the cat flies the bar trailing nyan.cat's CSS rainbow through its pixel
+ *  stars. Assets are hotlinked from www.nyan.cat. */
+function NyanIndicator({
+  hud,
+  mode,
+  phrase,
+  elapsed,
+}: {
+  hud: HudSettings;
+  mode: NyanMode;
+  phrase: string;
+  elapsed: number;
+}) {
+  const look = nyanLook(mode);
+  const track = nyanTrack(mode, hud.nyanSound);
+  const audio = useRef<HTMLAudioElement | null>(null);
+
+  // Volume is a property, not an attribute — React won't set it from JSX.
+  // play() can reject when the tab hasn't been interacted with; that's fine.
+  useEffect(() => {
+    const el = audio.current;
+    if (!el) return;
+    el.volume = hud.nyanVolume;
+    el.play().catch(() => {});
+  }, [track, hud.nyanVolume]);
+
+  const cat = (h: number) => (
+    <img
+      src={nyanGif(mode)}
+      alt="nyan cat"
+      className="flex-none"
+      style={{ height: h, imageRendering: "pixelated" }}
+    />
+  );
+  // `push` sends the elapsed counter to the far edge; the flying variant instead
+  // keeps the whole readout together on the right, off the rainbow.
+  const readout = (push: boolean) => (
+    <>
+      <span className="text-[length:var(--t11)] tracking-[2.5px] text-white/85 [text-shadow:0_1px_2px_#000]">
+        {phrase}
+      </span>
+      <span
+        className={`flex-none font-mono text-[length:var(--t10)] tracking-[1px] text-white/70 [text-shadow:0_1px_2px_#000] ${push ? "ml-auto" : ""}`}
+      >
+        {elapsed}s
+      </span>
+    </>
+  );
+
+  if (!hud.nyanExtra) {
+    return (
+      <div
+        className="nyan-sky my-2 ml-[18px] flex items-center gap-3 overflow-hidden border border-border px-3 py-2"
+        style={{ backgroundColor: look.sky }}
+      >
+        {cat(34)}
+        {readout(true)}
+      </div>
+    );
+  }
+
+  return (
+    <div className="nyan-stage my-2 ml-[18px] border border-border" style={{ backgroundColor: look.sky }}>
+      {look.star &&
+        STARS.map((s, i) => (
+          <span
+            key={i}
+            className="nyan-star"
+            aria-hidden
+            style={{
+              fontSize: s.fs,
+              top: s.top,
+              color: look.star as string,
+              animationDuration: `0.66s, ${s.drift}s`,
+              animationDelay: `0s, ${s.delay}s`,
+            }}
+          />
+        ))}
+      <div className="nyan-ride">
+        {/* ponytail: the trail is centred on the bar rather than using each
+            cat's own `.nyan-cat` margin offsets — those are tuned for
+            nyan.cat's 200px stage and would throw the cat out of a HUD row. */}
+        {!look.noTrail && (
+          <div className="nyan-trail" aria-hidden>
+            {Array.from({ length: 62 }, (_, i) => (
+              <span key={i}>
+                {look.waves.map((c, j) => (
+                  <i key={j} style={{ background: c }} />
+                ))}
+              </span>
+            ))}
+          </div>
+        )}
+        {cat(40)}
+      </div>
+      {/* Right-aligned: the rainbow owns the left of the bar. */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-end gap-3 px-3">
+        {readout(false)}
+      </div>
+      {track && <audio ref={audio} src={track} loop autoPlay />}
+    </div>
+  );
+}
