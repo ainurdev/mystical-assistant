@@ -155,15 +155,16 @@ def test_quiet_lets_needs_through(monkeypatch):
 # --- NEEDS YOU ----------------------------------------------------------------------
 
 def test_needs_from_status_offers_and_login(monkeypatch):
-    from bridge import rivendell
+    from bridge import rivendell, runner
+    monkeypatch.setattr(runner, "_auth_dead", {2: {"sid": "s3"}})
     monkeypatch.setattr(rivendell, "queue", lambda: {"prod": [
         {"key": "impl:r1", "request_id": "r1", "kind": "impl", "offered": True,
          "label": "Sentry critical", "slug": "o/r", "created_at": 100.0, "link": "https://rv/x"},
         {"key": "review:r2", "request_id": "r2", "kind": "review", "offered": False,
          "label": "PR #9", "slug": "o/r", "created_at": 101.0, "link": None}]})
     notices.emit("approve", "s1", body="Bash: rm -rf old", meta={"job_id": "j1"})
-    notices.emit("login", "s3", body="Account 2")
-    notices.emit("login", "s4", body="Account 2")
+    notices.emit("login", "s3", body="Account 2", meta={"slot": 2})
+    notices.emit("login", "s4", body="Account 2", meta={"slot": 2})
     notices.emit("resumed", "s4", body="Signed in")          # superseded: no longer needs you
     status = {"s1": {"state": "awaiting", "kind": "permission", "label": "Bash"},
               "s2": {"state": "awaiting", "kind": None, "label": "pick a name?"},
@@ -243,10 +244,11 @@ def test_plugin_session_turn_emits_nothing(monkeypatch, sent):
 def test_awaiting_emits_approve_with_summary(sent):
     from bridge import runner
     sid = _sess()
-    runner.notify_awaiting(555, sid, "permission", body="Bash: rm -rf old", job_id="j1")
-    runner.notify_awaiting(555, sid, "question", body="Keep 344px?", job_id="j1")
+    runner.notify_awaiting(555, sid, "permission", body="Bash: rm -rf old", job_id="j1", request_id="r1")
+    runner.notify_awaiting(555, sid, "question", body="Keep 344px?", job_id="j1", request_id="r2")
     q, a = notices.feed()
-    assert (a["kind"], a["body"], a["meta"]["job_id"]) == ("approve", "Bash: rm -rf old", "j1")
+    assert (a["kind"], a["body"], a["meta"]) == ("approve", "Bash: rm -rf old", {"job_id": "j1", "request_id": "r1", "project": "/repo", "session_id": sid})
+    assert q["meta"]["request_id"] == "r2"
     assert (q["kind"], q["body"]) == ("question", "Keep 344px?")
 
 
@@ -272,7 +274,7 @@ def test_auth_stop_needs_you_and_sign_in_resumes(monkeypatch, sent):
     sid = _sess()
     runner._auth_stop(555, sid, 2)
     assert [n["kind"] for n in notices.needs({})] == ["login"]
-    notices.emit("resumed", sid, body="Signed in")
+    runner._auth_dead.pop(2, None)                      # signed in (resume_after_login pops it)
     assert notices.needs({}) == []
 
 
@@ -289,14 +291,17 @@ def test_move_finish_emits():
         ("move_failed", "← ~/in.move", "bad archive"), ("move_done", "→ ~/out.move", "")]
 
 
-def test_account_needs_outlive_their_own_failed_and_parked():
-    notices.emit("login", "s1", body="Account 2")
+def test_account_needs_outlive_their_own_failed_and_parked(monkeypatch):
+    from bridge import runner
+    monkeypatch.setattr(runner, "_auth_dead", {2: {"sid": "s1"}})
+    notices.emit("login", "s1", body="Account 2", meta={"slot": 2})
     notices.emit("failed", "s1", body="Could not start")        # the same dead turn ending
     notices.emit("limit_choice", "s2", body="Switch or wait")
     notices.emit("parked", "s2", body="resumes 19:00")           # the park behind the card
-    assert sorted(n["kind"] for n in notices.needs({})) == ["limit_choice", "login"]
+    parked = {"s2": {"state": "parked", "kind": "limit"}}
+    assert sorted(n["kind"] for n in notices.needs(parked)) == ["limit_choice", "login"]
     # Running again (a prompt sent by hand) answers it too.
-    assert [n["kind"] for n in notices.needs({"s1": {"state": "working"}})] == ["limit_choice"]
+    assert [n["kind"] for n in notices.needs({**parked, "s1": {"state": "working"}})] == ["limit_choice"]
 
 
 # --- emitters: Rivendell and PRs ------------------------------------------------
@@ -380,8 +385,8 @@ def test_rivendell_question_emits_for_its_session(monkeypatch):
         id, store_session_id, started = "j7", s["id"], time.time()
     assert rivendell.ping_question(Job, "req1", [{"question": "Ship it?", "options": []}]) is True
     row = notices.feed()[0]
-    assert (row["kind"], row["subject"], row["body"], row["meta"]["job_id"]) == (
-        "question", s["id"], "Ship it?", "j7")
+    assert (row["kind"], row["subject"], row["body"], row["meta"]["job_id"], row["meta"]["request_id"]) == (
+        "question", s["id"], "Ship it?", "j7", "req1")
 
 
 def test_pr_fresh_ping_emits(monkeypatch):
@@ -410,3 +415,97 @@ def test_needs_carry_project_and_instance_name(monkeypatch):
     got = {n["kind"]: n for n in notices.needs({sid: {"state": "awaiting", "kind": "permission", "label": "Bash"}})}
     assert got["approve"]["title"] == "Invoices" and got["approve"]["meta"]["project"] == "/repo"
     assert got["rv_offer"]["meta"]["instance"] == "production"
+
+
+
+# --- review fixes: needs that answer themselves, the weekly report, limits ------
+
+def test_sign_in_clears_every_login_need_on_that_slot(monkeypatch, sent):
+    from bridge import runner
+    monkeypatch.setattr(runner, "_auth_dead", {})
+    monkeypatch.setattr(runner, "start_streaming_job", lambda *a, **k: object())
+    monkeypatch.setattr(config, "AUTO_RESUME", True)
+    a, b = _sess(), _sess()
+    for sid in (a, b):
+        store.set_claude_session_id(sid, "c-" + sid)
+        runner._auth_stop(555, sid, 2)          # one dead login, two stopped sessions
+    assert sorted(n["subject"] for n in notices.needs({})) == sorted([a, b])
+    assert runner.resume_after_login(2) is True  # resumes b, the one it kept
+    assert notices.needs({}) == []               # a's SIGN IN went with the slot's
+
+
+def test_login_need_from_a_telegram_reply_carries_its_slot(monkeypatch, sent):
+    from bridge import runner
+    monkeypatch.setattr(runner, "_auth_dead", {})
+    sid = _sess()
+    runner._auth_stop(555, sid, 2, reply=True)
+    assert (notices.feed()[0]["kind"], notices.feed()[0]["meta"]["slot"]) == ("login", 2)
+    assert notices.needs({})[0]["meta"]["slot"] == 2
+
+
+def test_wait_answers_the_limit_card():
+    notices.emit("limit_choice", "s1", body="Usage limit reached.", meta={"rungs": [{"slot": 2, "label": "account 2"}]})
+    notices.emit("parked", "s1", body="resumes ~19:00")
+    st = {"s1": {"state": "parked", "kind": "limit", "label": "usage limit"}}
+    assert [n["kind"] for n in notices.needs(st)] == ["limit_choice"]
+    notices.emit("waiting", "s1", body="You chose to wait for the usage limit to reset.")
+    assert notices.needs(st) == []
+    assert notices.feed()[0]["verb"] == "WAITING"
+
+
+def test_limit_need_ends_when_the_session_is_no_longer_parked():
+    notices.emit("limit_choice", "s1", body="Usage limit reached.")
+    assert notices.needs({}) == []
+    assert notices.needs({"s1": {"state": "working"}}) == []
+
+
+def test_telegram_wait_tap_writes_waiting(monkeypatch):
+    from bridge import dispatch
+    sid = _sess()
+    monkeypatch.setattr(dispatch, "answer_cb", lambda *a, **k: None)
+    monkeypatch.setattr(dispatch, "edit", lambda *a, **k: None)
+    dispatch._fallback_callback({"id": "cb1"}, 555, 7, f"fb:w:{sid}")
+    assert (notices.feed()[0]["kind"], notices.feed()[0]["subject"]) == ("waiting", sid)
+
+
+def test_weekly_waits_out_quiet_hours(monkeypatch):
+    from bridge import report
+    import bridge.telegram as tg
+    sent = []
+    monkeypatch.setattr(tg, "send", lambda chat, text, *a, **k: sent.append(text))
+    monkeypatch.setattr(report, "render", lambda w: "the report")
+    monkeypatch.setattr(report, "weekly", lambda chat, back=1: {})
+    monkeypatch.setattr(report, "pending_week", lambda now, last: None if last else 1_700_000_000.0)
+    store.set_setting(report._SENT_KEY, None)
+    monkeypatch.setattr(notices, "quiet", lambda now=None, p=None: True)
+    report._push_due()
+    assert sent == [] and store.get_setting(report._SENT_KEY) is None   # held, not dropped
+    monkeypatch.setattr(notices, "quiet", lambda now=None, p=None: False)
+    report._push_due()
+    assert sent == ["the report"] and store.get_setting(report._SENT_KEY) == str(1_700_000_000.0)
+    assert [r["kind"] for r in notices.feed()] == ["weekly"]
+
+
+def test_weekly_with_its_route_off_is_marked_without_sending(monkeypatch):
+    from bridge import report
+    import bridge.telegram as tg
+    sent = []
+    monkeypatch.setattr(tg, "send", lambda chat, text, *a, **k: sent.append(text))
+    monkeypatch.setattr(report, "pending_week", lambda now, last: None if last else 1_700_000_000.0)
+    store.set_setting(report._SENT_KEY, None)
+    notices.set_prefs({"events": {"weekly": {"tg": "off"}}})
+    report._push_due()
+    assert sent == [] and store.get_setting(report._SENT_KEY) == str(1_700_000_000.0)
+    assert "ready" in notices.feed()[0]["body"]
+
+
+def test_limit_reset_row_is_written_with_telegram_off(monkeypatch):
+    from bridge import limits
+    monkeypatch.setattr(config, "NOTIFY_ENABLE", False)
+    monkeypatch.setattr(limits, "_save_locked", lambda: None)
+    monkeypatch.setattr(limits, "_arm_locked", lambda at: None)
+    monkeypatch.setattr(limits, "_pending", {"s9": {"chat_id": 555, "kind": "limit", "at": 0, "tries": 1}})
+    pinged = []
+    limits._fire(run=lambda *a, **k: object(), notify=lambda *a, **k: pinged.append(a))
+    assert [(r["kind"], r["subject"]) for r in notices.feed()] == [("resumed", "s9")]
+    assert pinged == []

@@ -1,4 +1,4 @@
-import type { Need, Notice, NoticePrefs } from "../api";
+import type { Need, Notice, NoticePrefs, PendingCard } from "../api";
 import type { ToneKey } from "./push";
 
 /** The bell's pure half (components/hud/Notifications.tsx draws it). The feed
@@ -60,10 +60,14 @@ export function freshSince(rows: Notice[], cursor: number): Notice[] {
 
 /** Whether a fresh notice interrupts, and with which tone. Null: it only lands
  *  in the bell — it's about the session you're looking at, its group neither
- *  pops nor sounds, or quiet hours hold it. */
-export function popFor(n: Notice, o: { openSession: string | null; visible: boolean; prefs: NoticePrefs; quiet: boolean }):
-  { pop: boolean; sound: ToneKey | null } | null {
+ *  pops nor sounds, quiet hours hold it, or it is a NEEDS row that no longer
+ *  waits (`live`: the needs list's subjects; a tab reopened after hours would
+ *  otherwise re-raise every card answered meanwhile). */
+export function popFor(n: Notice, o: { openSession: string | null; visible: boolean; prefs: NoticePrefs; quiet: boolean;
+  live?: Set<string>; now?: number }): { pop: boolean; sound: ToneKey | null } | null {
   if (o.visible && n.subject === o.openSession) return null;
+  // 30 s of grace: the needs list rides another poll and may not have it yet.
+  if (n.tier === "needs" && o.live && !o.live.has(n.subject) && (o.now ?? 0) - n.at > 30) return null;
   const route = o.prefs.events[n.group];
   if (!route) return null;
   if (o.quiet && !(n.tier === "needs" && o.prefs.quiet.needs)) return null;
@@ -77,4 +81,15 @@ export function ago(at: number, now: number): string {
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   if (s < 86400) return `${Math.floor(s / 3600)}h`;
   return s < 2 * 86400 ? "yest." : `${Math.floor(s / 86400)}d`;
+}
+
+/** The card a NEEDS row is about: its own request, never just the first one
+ *  pending — a job can hold two, and Allow must answer the one it shows. */
+export function cardFor(pending: PendingCard[] | undefined, requestId: string): PendingCard | undefined {
+  return requestId ? pending?.find((p) => p.request_id === requestId) : undefined;
+}
+
+/** Links in rows come from teammates and GitHub; only http(s) ever reaches window.open. */
+export function safeUrl(u: unknown): string | null {
+  return typeof u === "string" && /^https?:\/\//i.test(u.trim()) ? u.trim() : null;
 }

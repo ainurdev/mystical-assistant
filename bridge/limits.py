@@ -313,10 +313,10 @@ def _fire(run=None, notify=None) -> None:
         if job is None:
             note_ok(sid)     # session already running — the user moved on
             continue
-        if not server and e.get("tries", 1) <= 1 and config.NOTIFY_ENABLE:
+        if not server and e.get("tries", 1) <= 1:
             # Server-error retries announced their wait at defer time, and
             # re-probes resume silently; the normal turn-done ping lands when
-            # one finally completes.
+            # one finally completes. telegram_ok() carries NOTIFY_ENABLE.
             from bridge import notices      # lazy, like runner above
             notices.emit("resumed", sid, body="The usage limit reset. Resuming.")
             try:

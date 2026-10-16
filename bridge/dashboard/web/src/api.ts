@@ -1639,6 +1639,9 @@ export const api = {
   noticesRead: (ids: number[] | "all") =>
     req<{ ok: boolean; n: number }>("/local/notices", {
       method: "POST", body: ids === "all" ? { op: "read", all: true } : { op: "read", ids } }),
+  // The bell's LIMIT row: no slot = wait for the reset; a slot = continue on that login.
+  noticeLimit: (session: string, slot?: number) =>
+    req<{ ok: boolean }>("/local/notices", { method: "POST", body: { op: "limit", session, ...(slot === undefined ? {} : { slot }) } }),
   noticePrefs: (patch: NoticePrefsPatch) =>
     req<{ prefs: NoticePrefs }>("/local/notices", { method: "POST", body: { op: "prefs", patch } }),
   usage: () => req<UsageInfo>("/local/usage"),

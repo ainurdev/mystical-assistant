@@ -2551,7 +2551,7 @@ def ping_question(job, request_id: str, questions: list) -> bool:
         if not sess or not config.is_plugin_origin(sess.get("origin")):
             return False
         notices.emit("question", sess["id"], body=((questions or [{}])[0].get("question") or ""),
-                     meta={"job_id": job.id})
+                     meta={"job_id": job.id, "request_id": request_id})
         threading.Thread(target=_send_question, args=(job, request_id, questions, sess),
                          name="rivendell-ask", daemon=True).start()
         return True

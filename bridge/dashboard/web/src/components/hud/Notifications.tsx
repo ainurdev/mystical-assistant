@@ -5,7 +5,7 @@ import { chime, push, pushGranted, type ToneKey } from "../../lib/push";
 import { bannerActions, bannerAnswer } from "../../lib/banner";
 import { openSettings } from "../../lib/opensettings";
 import {
-  ago, badge, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, sectionOf,
+  ago, badge, cardFor, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf,
   type Filter, type Row,
 } from "../../lib/notices";
 import { ProjectTile } from "../ui/ProjectTile";
@@ -126,9 +126,14 @@ function Source({ kind, source, project }: { kind: string; source: string; proje
 function openRow(n: { kind: string; subject: string; source: string; meta: Record<string, unknown>; session_id?: string | null }) {
   const sid = n.session_id ?? str(n.meta.session_id) ?? "";
   if (n.source === "session" || sid) return env.openSession(sid || n.subject);
-  if (n.source === "pr" && str(n.meta.url)) return void window.open(str(n.meta.url), "_blank", "noopener");
+  if (n.source === "pr") return openUrl(n.meta.url);
   if (n.source === "rivendell") return openSettings("plugins", str(n.meta.instance_id) || undefined);
   if (n.kind.startsWith("move_")) return openSettings("move");
+}
+
+function openUrl(u: unknown) {
+  const url = safeUrl(u);
+  if (url) window.open(url, "_blank", "noopener");
 }
 
 const answerRivendell = (meta: Record<string, unknown>, accept: boolean) => {
@@ -138,32 +143,38 @@ const answerRivendell = (meta: Record<string, unknown>, accept: boolean) => {
     .catch((e: Error) => notify("error", e.message));
 };
 
-/** A card's own buttons (Allow / Deny, or a one-question ask's options), read
- *  from the run the moment the row shows — the same answers a Mac banner sends. */
-function useCard(jobId: string) {
+/** The card's own buttons (Allow / Deny, or a one-question ask's options),
+ *  read from the run the moment the row shows — the same answers a Mac banner
+ *  sends, and only for the card the row is about (cardFor). */
+function useCard(jobId: string, requestId: string) {
   const [card, setCard] = useState<PendingCard | undefined>();
   useEffect(() => {
+    setCard(undefined);
     if (!jobId) return;
     let live = true;
-    api.job(jobId).then((s) => { if (live) setCard(s.pending?.[0]); }).catch(() => { /* Open still works */ });
+    api.job(jobId).then((s) => { if (live) setCard(cardFor(s.pending, requestId)); }).catch(() => { /* Open still works */ });
     return () => { live = false; };
-  }, [jobId]);
+  }, [jobId, requestId]);
   return card;
 }
 
 function NeedActions({ n, done }: { n: Need; done: () => void }) {
   const jobId = str(n.meta.job_id);
-  const card = useCard(n.kind === "approve" || n.kind === "question" ? jobId : "");
+  const card = useCard(n.kind === "approve" || n.kind === "question" ? jobId : "", str(n.meta.request_id));
   const answer = (action: string) => {
     const b = bannerAnswer(card, action);
     if (b) void api.respond(jobId, b).then(done, (e: Error) => notify("error", e.message));
   };
+  // The LIMIT card's two answers, as Telegram's: another login, or the reset.
+  const limit = (slot?: number) => void api.noticeLimit(n.session_id ?? n.subject, slot)
+    .then((r) => { if (!r.ok) notify("error", "Couldn't hand the work over — still parked until the reset."); done(); },
+      (e: Error) => notify("error", e.message));
   if (n.kind === "rv_offer") {
     return (
       <div className="ntf-acts">
         <button className="ntf-btn ask" onClick={() => { answerRivendell(n.meta, true); done(); }}>Accept</button>
         <button className="ntf-btn" onClick={() => { answerRivendell(n.meta, false); done(); }}>Dismiss</button>
-        {str(n.meta.link) && <button className="ntf-btn ghost" onClick={() => window.open(str(n.meta.link), "_blank", "noopener")}>Peek ›</button>}
+        {safeUrl(n.meta.link) && <button className="ntf-btn ghost" onClick={() => openUrl(n.meta.link)}>Peek ›</button>}
       </div>
     );
   }
@@ -173,7 +184,11 @@ function NeedActions({ n, done }: { n: Need; done: () => void }) {
       {buttons.map((b, i) => (
         <button key={b.action} className={`ntf-btn${i === 0 ? " ask" : b.action === "deny" ? " no" : ""}`} onClick={() => answer(b.action)}>{b.title}</button>
       ))}
-      {n.kind === "login" && <button className="ntf-btn ask" onClick={() => openSettings("aimgmt", str(n.meta.slot) || undefined)}>Sign in ›</button>}
+      {n.kind === "login" && <button className="ntf-btn ask" onClick={() => openSettings("aimgmt", String(n.meta.slot ?? "") || undefined)}>Sign in ›</button>}
+      {n.kind === "limit_choice" && (Array.isArray(n.meta.rungs) ? n.meta.rungs as { slot: number; label: string }[] : []).map((r) => (
+        <button key={r.slot} className="ntf-btn ask" onClick={() => limit(r.slot)}>Switch to {r.label}</button>
+      ))}
+      {n.kind === "limit_choice" && <button className="ntf-btn" onClick={() => limit()}>Wait for reset</button>}
       <button className="ntf-btn ghost" onClick={() => openRow({ ...n, source: "session" })}>Open ›</button>
     </div>
   );
@@ -187,7 +202,7 @@ function RowActions({ n }: { n: Row }) {
       <button key="no" className="ntf-btn ghost" onClick={() => answerRivendell(m, false)}>Dismiss</button>);
   }
   if (str(m.pr_url) || (n.source === "pr" && str(m.url))) {
-    b.push(<button key="pr" className="ntf-btn" onClick={() => window.open(str(m.pr_url) || str(m.url), "_blank", "noopener")}>Open PR ↗</button>);
+    b.push(<button key="pr" className="ntf-btn" onClick={() => openUrl(str(m.pr_url) || m.url)}>Open PR ↗</button>);
   }
   if (n.source === "rivendell" && str(m.session_id)) {
     b.push(<button key="s" className="ntf-btn ghost" onClick={() => env.openSession(str(m.session_id))}>Session ›</button>);
@@ -270,7 +285,7 @@ function osBanner(n: Notice) {
   const jobId = str(n.meta.job_id);
   if ((n.kind === "approve" || n.kind === "question") && jobId) {
     return void api.job(jobId).then((s) => {
-      const card = s.pending?.[0];
+      const card = cardFor(s.pending, str(n.meta.request_id));
       const buttons = bannerActions(card);
       fire(buttons, buttons.length ? (a) => {
         const b = bannerAnswer(card, a);
@@ -308,7 +323,8 @@ export function NotificationCenter() {
       const tones = new Set<ToneKey>();
       const fresh: Notice[] = [];
       for (const n of freshSince(r.notices, cursor)) {
-        const d = popFor(n, { openSession: env.openSessionId, visible: document.visibilityState === "visible", prefs: r.prefs, quiet });
+        const d = popFor(n, { openSession: env.openSessionId, visible: document.visibilityState === "visible", prefs: r.prefs, quiet,
+          live: new Set(needs.map((x) => x.subject)), now: Date.now() / 1000 });
         if (!d) continue;
         if (d.sound) tones.add(d.sound);
         if (!d.pop) continue;

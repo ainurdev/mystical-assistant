@@ -171,7 +171,8 @@ def _offer(session: dict, chat_id: int, available: list, notify,
     from bridge import notices
     notices.emit("limit_choice", sid, body="Usage limit reached. Switch to another account, "
                                            "or wait for the reset.",
-                 meta={"accounts": [r["label"] for r in available if r["kind"] == "account"]})
+                 meta={"rungs": [{"slot": r["slot"], "label": r["label"]}
+                                 for r in available if r["kind"] == "account"]})
     if notices.telegram_ok("limit_choice"):
         notify(chat_id, "⛔ Usage limit reached. This chat is parked until the "
                         "window resets — or something else can pick the work up now:",

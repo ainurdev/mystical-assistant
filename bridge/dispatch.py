@@ -4,7 +4,7 @@ import os
 import sys
 import threading
 
-from bridge import (accounts, config, graphmap, ladder, limits, profiles, report,
+from bridge import (accounts, config, graphmap, ladder, limits, notices, profiles, report,
                     state, store, tgfiles, usage)
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
@@ -352,6 +352,8 @@ def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     if kind == "w":
         answer_cb(cb["id"], "Waiting for reset")
         edit(chat_id, msg_id, "⏳ Waiting for the usage limit to reset.")
+        # The card's answer, so the bell stops asking (bridge/notices.py needs()).
+        notices.emit("waiting", sid, body="You chose to wait for the usage limit to reset.")
         return
     if kind == "a" and len(parts) == 4 and parts[3].isdigit():
         slot = int(parts[3])

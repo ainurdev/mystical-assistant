@@ -75,3 +75,15 @@ def test_running_carries_needs_and_seen():
     assert [(n["subject"], n["kind"], n["body"]) for n in obj["needs"]] == [("s1", "question", "Which one?")]
     # A seen that isn't a number is ignored, not a 500.
     assert _call("GET", "/local/running", {"seen": ["soon"]})[0] == 200
+
+
+def test_post_limit_wait_and_switch(monkeypatch):
+    from bridge import ladder
+    sid = store.create_session(555, "/repo", origin="dashboard")["id"]
+    assert _call("POST", "/local/notices", {"op": "limit", "session": sid}) == (200, {"ok": True})
+    assert notices.feed()[0]["kind"] == "waiting"
+    took = []
+    monkeypatch.setattr(ladder, "take", lambda sess, chat, rung, **k: took.append((sess["id"], rung["slot"])) or rung)
+    assert _call("POST", "/local/notices", {"op": "limit", "session": sid, "slot": 2}) == (200, {"ok": True})
+    assert took == [(sid, 2)]
+    assert _call("POST", "/local/notices", {"op": "limit", "session": "nope"})[0] == 404

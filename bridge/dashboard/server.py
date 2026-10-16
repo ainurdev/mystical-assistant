@@ -826,7 +826,21 @@ class Handler(BaseHTTPRequestHandler):
                     None if body.get("all") is True else body["ids"])})
             if body.get("op") == "prefs" and isinstance(body.get("patch"), dict):
                 return self._json({"prefs": notices.set_prefs(body["patch"])})
-            return self._json({"error": "op must be read (ids or all) or prefs (patch)"}, 400)
+            if body.get("op") == "limit" and isinstance(body.get("session"), str):
+                # The bell's LIMIT row: wait for the reset, or hand the work to
+                # another login — the same two answers as Telegram's card.
+                sess = store.get_session(body["session"])
+                if not sess:
+                    return self._json({"error": "no such session"}, 404)
+                slot = body.get("slot")
+                if slot is None:
+                    notices.emit("waiting", sess["id"], body="You chose to wait for the usage limit to reset.")
+                    return self._json({"ok": True})
+                if isinstance(slot, int) and not isinstance(slot, bool):
+                    from bridge import ladder
+                    rung = {"kind": "account", "slot": slot, "label": f"account {slot}"}
+                    return self._json({"ok": bool(ladder.take(sess, sess["chat_id"], rung))})
+            return self._json({"error": "op must be read (ids or all), prefs (patch) or limit (session)"}, 400)
         if path == "/local/run":
             return self._run(chat, body)
         if path.startswith("/local/run/") and path.endswith("/respond"):

@@ -1469,14 +1469,16 @@ def _plugin_session(session_id: str | None) -> bool:
 
 
 def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str,
-                    body: str = "", job_id: "str | None" = None) -> None:
+                    body: str = "", job_id: "str | None" = None,
+                    request_id: "str | None" = None) -> None:
     """Ping when a streaming run blocks on you (a question or an approval).
-    `body` is what it asks — the command, or the question — for the bell."""
+    `body` is what it asks — the command, or the question — for the bell, and
+    `request_id` the card it belongs to, so a button answers that card only."""
     what = "a question" if kind == "question" else "your approval"
     _notify(chat_id, f"❓ Claude needs {what} — {_session_label(session_id)}",
             _session_kb(chat_id, session_id, "❓ Answer in Panel"),
             kind="question" if kind == "question" else "approve", sid=session_id,
-            body=body, meta={"job_id": job_id} if job_id else None)
+            body=body, meta={"job_id": job_id, "request_id": request_id} if job_id else None)
 
 
 def _first_line(text: str) -> str:
@@ -1750,7 +1752,8 @@ def _auth_stop(chat_id: int | None, sid: str | None, slot: int | None,
             "Sign in again and it picks up where it left off.")
     if reply and chat_id:
         notices.emit("login", sid or "", body=f"Claude's login on account {slot} expired. "
-                                              "Sign in again and it picks up where it left off.")
+                                              "Sign in again and it picks up where it left off.",
+                     meta={"slot": slot})
         send(chat_id, text, _auth_kb(chat_id, slot))
     else:
         _notify(chat_id, text, _auth_kb(chat_id, slot), kind="login", sid=sid,
@@ -1902,7 +1905,7 @@ def _handle_control_request(job: Job, obj: dict):
            if tool == "AskUserQuestion" else f"{tool}: {summary}")
     notify_awaiting(job.chat_id, job.store_session_id,
                     "question" if tool == "AskUserQuestion" else "permission",
-                    body=ask, job_id=job.id)
+                    body=ask, job_id=job.id, request_id=rid)
 
 
 def _ctx_of(usage: dict) -> "int | None":

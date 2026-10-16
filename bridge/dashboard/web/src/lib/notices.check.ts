@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/notices.check.ts
 import type { Need, Notice, NoticePrefs } from "../api.ts";
-import { ago, badge, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, sectionOf } from "./notices.ts";
+import { ago, badge, cardFor, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf } from "./notices.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -57,6 +57,21 @@ const ask = n(2, "z", { tier: "needs", kind: "approve", group: "ask" });
 ok(popFor(ask, { ...env, quiet: true })?.sound === "ping", "a NEEDS YOU gets through quiet hours");
 ok(popFor(ask, { ...env, quiet: true, prefs: { ...prefs, quiet: { ...q, needs: false } } }) === null, "unless you said not even that");
 ok(popFor(n(3, "z", { group: "nonsense" }), env) === null, "an unknown group is silent, not a crash");
+
+// A tab reopened after hours: a NEEDS row pops only if it still waits on you,
+// or is a few seconds old (the needs poll may not have landed yet).
+const stale = n(4, "z", { tier: "needs", kind: "approve", group: "ask", at: 1000 });
+ok(popFor(stale, { ...env, live: new Set(), now: 1000 + 3600 }) === null, "an answered card from an hour ago stays in the bell");
+ok(popFor(stale, { ...env, live: new Set(["z"]), now: 1000 + 3600 })?.pop === true, "one that still waits pops");
+ok(popFor(stale, { ...env, live: new Set(), now: 1000 + 5 })?.pop === true, "a brand-new one pops before the needs poll lands");
+ok(popFor(n(5, "y"), { ...env, live: new Set(), now: 99999 })?.pop === true, "news is not a need: liveness doesn't hold it");
+
+ok(safeUrl("https://github.com/o/r/pull/9") === "https://github.com/o/r/pull/9" && safeUrl("http://x.test/a") === "http://x.test/a", "http(s) links open");
+ok(safeUrl("javascript:alert(1)") === null && safeUrl(" JAVASCRIPT:x") === null && safeUrl("") === null && safeUrl(undefined) === null, "anything else never reaches window.open");
+
+const pend = [{ request_id: "r1", kind: "permission" as const }, { request_id: "r2", kind: "permission" as const }];
+ok(cardFor(pend, "r2") === pend[1] && cardFor(pend, "r9") === undefined && cardFor(pend, "") === undefined && cardFor(undefined, "r1") === undefined,
+  "a button answers the card its row shows, or there is no button");
 
 const now = 10_000_000;
 ok(ago(now - 20, now) === "now" && ago(now - 120, now) === "2m" && ago(now - 3 * 3600, now) === "3h", "now / minutes / hours");

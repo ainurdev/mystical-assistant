@@ -94,10 +94,3 @@ export function chime(tone: ToneKey = "blip", volume = 0.6): void {
   }
 }
 
-/** Piebald's rule, and the right one: never notify about what you're already
- *  looking at. Anything else — another session, a hidden tab, another window —
- *  is news. */
-export function shouldPush(sessionId: string, openSessionId: string | null): boolean {
-  if (document.visibilityState !== "visible") return true;
-  return sessionId !== openSessionId;
-}

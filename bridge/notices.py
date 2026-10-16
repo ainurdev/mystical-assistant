@@ -48,6 +48,7 @@ CATALOG = {
     "failed": ("failed", "news", "session"),
     "parked": ("parked", "news", "session"),
     "resumed": ("parked", "news", "session"),
+    "waiting": ("parked", "fyi", "session"),
     "started": ("started", "fyi", "session"),
     "rv_started": ("started", "fyi", "rivendell"),
     "rv_held": ("rv_held", "fyi", "rivendell"),
@@ -68,7 +69,7 @@ CATALOG = {
 VERBS = {
     "approve": "APPROVE", "question": "QUESTION", "asking": "ASKS", "login": "SIGN IN",
     "limit_choice": "LIMIT", "rv_offer": "OFFERED", "done": "DONE", "failed": "FAILED",
-    "parked": "PARKED", "resumed": "RESUMED", "started": "STARTED", "rv_started": "STARTED",
+    "parked": "PARKED", "resumed": "RESUMED", "waiting": "WAITING", "started": "STARTED", "rv_started": "STARTED",
     "rv_held": "HELD", "rv_dismissed": "DISMISSED", "rv_done": "DONE", "rv_failed": "FAILED",
     "rv_refused": "REFUSED", "rv_link": "LINK DOWN", "rv_link_back": "LINK BACK",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
@@ -283,9 +284,19 @@ def needs(status: dict) -> list:
         out.append(_need(kind, sid, sid, sess.get("title") or "",
                          (r or {}).get("body") or st.get("label") or "",
                          (r or {}).get("at"), {"project": sess.get("project"), **((r or {}).get("meta") or {})}))
+    # Both answer themselves off live state too: a sign-in clears every session
+    # its dead login stopped (runner._auth_dead is per slot), and a limit card
+    # is only a question while its session is still parked.
+    from bridge import runner                     # local import: runner imports this
+    dead = set(runner._auth_dead)
     for sid, r in newest.items():
-        if r["kind"] not in ("login", "limit_choice") or sid in (status or {}) and (
-                status[sid].get("state") in ("awaiting", "working")):
+        if (status or {}).get(sid, {}).get("state") in ("awaiting", "working"):
+            continue                              # running again: it was answered
+        if r["kind"] == "login" and r["meta"].get("slot") not in dead:
+            continue
+        if r["kind"] == "limit_choice" and (status or {}).get(sid, {}).get("state") != "parked":
+            continue
+        if r["kind"] not in ("login", "limit_choice"):
             continue
         sess = store.get_session(sid) or {}
         out.append(_need(r["kind"], sid, sid, sess.get("title") or r["title"],
