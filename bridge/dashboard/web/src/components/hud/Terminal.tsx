@@ -137,14 +137,14 @@ function FreshState({ project, branch, run, onOpenRun, onStartNext }: {
         <div style={{ fontSize: "var(--t95)", letterSpacing: 3, color: "var(--txl)", marginBottom: 13 }}>
           {(basename(project) || "WORKSPACE").toUpperCase()} · FRESH SESSION
         </div>
-        <div style={{ fontSize: "var(--t16)", lineHeight: 1.55, color: "var(--txh)", fontStyle: "italic", minHeight: 50 }}>
+        <div className="fresh-quote" style={{ fontSize: "var(--t16)", lineHeight: 1.55, color: "var(--txh)", fontStyle: "italic", minHeight: 50 }}>
           <span key={qi} style={{ display: "inline-block", animation: "quotein .75s cubic-bezier(.2,.85,.25,1) both, quoteglow 7.2s ease-in-out infinite" }}>
             “{FRESH_QUOTES[qi % FRESH_QUOTES.length]}”
           </span>
         </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 9, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)" }}>
-        <span style={{ color: "var(--purple)" }}>~ ❯</span>
+        <span className="fresh-pfx" style={{ color: "var(--purple)" }}>~ ❯</span>
         <span style={{ letterSpacing: 2, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>awaiting your command</span>
         <span style={{ width: 7, height: 14, background: "var(--acc)", display: "inline-block", boxShadow: "0 0 8px color-mix(in srgb, var(--acc) 70%, transparent)", animation: "caretbreath 1.5s ease-in-out infinite" }} />
       </div>

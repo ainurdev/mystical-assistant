@@ -3,7 +3,7 @@
 // a stored claude-fable-5-1 snapped to Opus on every reload because the snap ran
 // against the pre-load alias FALLBACK. And runPicks: which picks a session shows.
 // And whose meter the footer and pickers read (spendingSlot, loginWindows).
-import { DEFAULT_SLOT, deadLogin, familyOf, loginSlot, loginWindows, loginUsage, runPicks, snapModel, spendingSlot, tightest } from "./models.ts";
+import { DEFAULT_SLOT, chipWindow, deadLogin, familyOf, loginSlot, loginWindows, loginUsage, runPicks, snapModel, spendingSlot, tightest } from "./models.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -108,6 +108,15 @@ ok([{ ...A2, left: null }, { ...A2, disabled: true }, undefined].every((a) => lo
   "no meter for an unread, switched-off or missing login");
 ok(tightest(loginWindows(weekBound))?.tag === "WK" && tightest([]) === null,
   "the tightest window is the one with the least left; none without windows");
+// The PROFILE chip: the 5-hour window, even when the week is tighter, until the week refills first.
+const at = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString();
+const chipOf = (h5: string | null, wk: string | null) => chipWindow(loginWindows({ ...weekBound,
+  five_hour: { ...A2.five_hour, resets_at: h5 }, seven_day: { ...weekBound.seven_day, resets_at: wk } }))?.tag;
+ok(chipOf(at(3), at(50)) === "5H", "the chip reads the 5-hour window, not the tighter week");
+ok(chipOf(at(3), at(1)) === "WK", "the week takes the chip once it refills before the 5-hour window");
+ok(chipOf(null, at(1)) === "5H" && chipOf(at(3), null) === "5H", "an unknown reset never takes the chip");
+ok(chipWindow(loginWindows({ ...weekBound, five_hour: null }))?.tag === "WK" && chipWindow([]) === null,
+  "a lone window is the chip's; none without windows");
 ok(loginWindows({ ...A2, five_hour: { percent: 9, resets_at: "2026-10-15T16:10:00+00:00", severity: "normal" } })[0].resets_at
   === "2026-10-15T16:10:00+00:00", "a window keeps its raw reset, for the chip's countdown");
 const dead = [{ ...A2, logged_in: false }];

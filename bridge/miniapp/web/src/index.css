@@ -7,12 +7,12 @@
      dashboard's :root). lib/theme.ts OVERRIDES these per-theme on :root and
      every token below is derived from them with var(), so one palette swap
      recolours the whole app. A theme that leaves a token unset falls back to
-     the aqua value here — which is why AURORA's pal{} can be empty. */
+     the aqua value here. */
   --acc: #7fe9d8;   --acc-on: #06100e;
   --ok: #8fd9a8;    --warn: #e3c279;
   --err: #e0897a;   --info: #6fb5ff;  --purple: #b9a6ff;
   --txb: #dff8f2;   --txh: #cfe9e3;  --tx: #bfe6de;   --txm: #9fc7c0;
-  --txd: #6f938d;   --txf: #5a6f6a;  --txl: #3c544f;  --txg: #2e423f;
+  --txd: #7fa39c;   --txf: #6f918b;  --txl: #5f817b;  --txg: #2e423f;
   --panel: #091010; --panel2: #070d0d; --panel3: #040707; --canvas: #060a0a;
   --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
@@ -140,9 +140,8 @@ body,
 
 body {
   margin: 0;
-  /* --page-bg is the theme's own ground and may be a gradient (BLUEPRINT's grid,
-     THE LIBRARY's cross-hatch, NOCTURNE's sky glow), which is why it is a
-     separate token from the flat --canvas hex the palette carries. */
+  /* --page-bg is the theme's own ground — a separate token from the --canvas
+     hex the palette carries, so a theme can lay a gradient there. */
   background: var(--page-bg, var(--canvas));
   color: var(--foreground);
   font-family: var(--page-font, "Share Tech Mono", "JetBrains Mono", ui-monospace, monospace);

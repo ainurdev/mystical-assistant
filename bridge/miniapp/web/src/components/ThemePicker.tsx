@@ -1,14 +1,11 @@
 import { useState } from "react";
-import { AURORA_KEYS, THEMES, applyTheme, loadTheme, type ThemeKey } from "../lib/theme";
+import { AURORA_KEYS, CLAUDE_KEYS, THEMES, applyTheme, loadTheme, type ThemeKey } from "../lib/theme";
 
-// AURORA is one profile in four colours, so it gets one card with a colour row
-// (the dashboard's picker does the same); everything else is its own card.
-const CARDS = [
-  { key: "aqua" as ThemeKey, variants: AURORA_KEYS },
-  ...THEMES.filter((t) => !AURORA_KEYS.includes(t.key)).map((t) => ({
-    key: t.key,
-    variants: undefined as ThemeKey[] | undefined,
-  })),
+// AURORA and CLAUDE are one profile each in several colours, so each gets one
+// card with a colour row (the dashboard's picker does the same).
+const CARDS: { key: ThemeKey; variants: ThemeKey[] }[] = [
+  { key: "aqua", variants: AURORA_KEYS },
+  { key: "claude", variants: CLAUDE_KEYS },
 ];
 
 /** Pick the palette. applyTheme paints :root directly and persists, so the only
@@ -26,9 +23,9 @@ export function ThemeCards() {
     <div className="space-y-1">
       {CARDS.map((card) => {
         // A family card wears whichever variant is live (the first otherwise).
-        const live = card.variants?.includes(theme) ? theme : card.key;
+        const live = card.variants.includes(theme) ? theme : card.key;
         const def = THEMES.find((t) => t.key === live)!;
-        const on = card.variants ? card.variants.includes(theme) : theme === card.key;
+        const on = card.variants.includes(theme);
         return (
           <div
             key={card.key}
@@ -48,7 +45,7 @@ export function ThemeCards() {
               </span>
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm" style={{ fontFamily: def.font }}>
-                  {card.variants ? THEMES[0].name : def.name}
+                  {THEMES.find((t) => t.key === card.key)!.name}
                 </div>
                 <div className="truncate text-[11px] text-[var(--tg-hint)]">{def.feel}</div>
               </div>
@@ -56,22 +53,20 @@ export function ThemeCards() {
                 <span className="shrink-0 text-[10px] tracking-widest text-[var(--brand-soft)]">ON</span>
               )}
             </button>
-            {card.variants && (
-              <div className="flex gap-1.5 px-3 pb-2.5">
-                {card.variants.map((k) => {
-                  const v = THEMES.find((t) => t.key === k)!;
-                  return (
-                    <button
-                      key={k}
-                      onClick={() => pick(k)}
-                      aria-label={v.name}
-                      className={`h-4 flex-1 border ${theme === k ? "border-white" : "border-black/40"}`}
-                      style={{ background: v.sw }}
-                    />
-                  );
-                })}
-              </div>
-            )}
+            <div className="flex gap-1.5 px-3 pb-2.5">
+              {card.variants.map((k) => {
+                const v = THEMES.find((t) => t.key === k)!;
+                return (
+                  <button
+                    key={k}
+                    onClick={() => pick(k)}
+                    aria-label={v.name}
+                    className={`h-4 flex-1 border ${theme === k ? "border-white" : "border-black/40"}`}
+                    style={{ background: v.sw }}
+                  />
+                );
+              })}
+            </div>
           </div>
         );
       })}
