@@ -821,6 +821,52 @@ export interface RunningInfo {
   jobs: RunningJob[]; // this chat's live bridge runs, with activity detail
   awaiting: AwaitingSession[]; // sessions blocked on your answer/approval
   status: Record<string, SessionStatus>; // unified per-session status (working/awaiting only)
+  needs?: Need[]; // everything waiting on you (bridge/notices.py); absent on an older bridge
+}
+
+/** One row of the bridge's notification feed (bridge/notices.py). `verb` is
+ *  the copy ("FAILED", "REVIEWED"); `group` is its Settings ▸ NOTIFY row. */
+export interface Notice {
+  id: number;
+  at: number; // epoch seconds
+  kind: string;
+  verb: string;
+  group: string;
+  tier: "needs" | "news" | "fyi";
+  source: "session" | "rivendell" | "pr" | "bridge";
+  subject: string; // a session id, rv:<instance>:<request>, rv-link:<instance>, pr:<slug>:<branch>
+  title: string;
+  body: string;
+  meta: Record<string, unknown>;
+  read: boolean;
+}
+
+/** Something waiting on you right now — live state, not a stored row. */
+export interface Need {
+  subject: string;
+  kind: string; // approve | question | asking | login | limit_choice | rv_offer
+  verb: string;
+  title: string;
+  body: string;
+  at: number | null;
+  session_id: string | null;
+  meta: Record<string, unknown>;
+}
+
+export interface NoticeRoute {
+  pop: boolean;
+  sound: "blip" | "chime" | "ping" | "knock" | "none";
+  tg: "off" | "away" | "always";
+}
+export interface NoticePrefs {
+  events: Record<string, NoticeRoute>;
+  quiet: { on: boolean; from: string; to: string; needs: boolean };
+  away_min: number;
+}
+export interface NoticePrefsPatch {
+  events?: Record<string, Partial<NoticeRoute>>;
+  quiet?: Partial<NoticePrefs["quiet"]>;
+  away_min?: number;
 }
 export interface EnrichedSession {
   id: string;
@@ -1586,8 +1632,15 @@ export const api = {
   select: (dir: string) =>
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
   // alerts: this page raises its own OS alerts, so the tray companion stays quiet.
-  running: (alerts = false) =>
-    req<RunningInfo>(alerts ? "/local/running?alerts=1" : "/local/running"),
+  // seen: this page's last click or keypress — Telegram's "away" (bridge/notices.py).
+  running: (alerts = false, seen = 0) =>
+    req<RunningInfo>(`/local/running?${alerts ? "alerts=1&" : ""}${seen ? `seen=${seen}` : ""}`),
+  notices: () => req<{ notices: Notice[]; prefs: NoticePrefs; quiet: boolean }>("/local/notices"),
+  noticesRead: (ids: number[] | "all") =>
+    req<{ ok: boolean; n: number }>("/local/notices", {
+      method: "POST", body: ids === "all" ? { op: "read", all: true } : { op: "read", ids } }),
+  noticePrefs: (patch: NoticePrefsPatch) =>
+    req<{ prefs: NoticePrefs }>("/local/notices", { method: "POST", body: { op: "prefs", patch } }),
   usage: () => req<UsageInfo>("/local/usage"),
   today: () => req<TodayInfo>("/local/today"),
   report: (back = 0) =>

@@ -33,12 +33,14 @@ export async function requestPush(): Promise<boolean> {
  *  chatty session replaces its own notification instead of stacking twenty.
  *  `buttons` + `onAction`: the standard `actions` option, which only Mystical.app
  *  honours (browsers keep it for service workers) — a tap answers without
- *  opening the window (lib/banner). */
+ *  opening the window (lib/banner). `extra`: Mystical.app's own options — a
+ *  subtitle line and the thread Notification Center groups by; browsers ignore both. */
 export function push(title: string, body: string, tag?: string, onClick?: () => void,
-                     buttons?: { action: string; title: string }[], onAction?: (action: string) => void): void {
+                     buttons?: { action: string; title: string }[], onAction?: (action: string) => void,
+                     extra?: { subtitle?: string; thread?: string }): void {
   if (!pushGranted()) return;
   try {
-    const opts = { body, tag, icon: "/favicon.svg", actions: buttons?.length ? buttons : undefined } as NotificationOptions;
+    const opts = { body, tag, icon: "/favicon.svg", actions: buttons?.length ? buttons : undefined, ...extra } as NotificationOptions;
     const n = new Notification(title, opts) as Notification & { onaction?: (action: string) => void };
     // Clicking should land you in the dashboard, on the session that pinged.
     n.onclick = () => { window.focus(); onClick?.(); n.close(); };
