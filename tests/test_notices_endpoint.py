@@ -39,6 +39,13 @@ def test_get_notices_shape():
     assert obj["notices"][0]["verb"] == "CHECKS FAILING"
     assert obj["prefs"]["events"]["pr"]["sound"] == "blip"
     assert obj["quiet"] is False
+    assert obj["telegram"] is True          # NOTIFY_ENABLE on and a bot token set (conftest)
+
+
+def test_get_notices_says_when_telegram_is_off(monkeypatch):
+    from bridge import config
+    monkeypatch.setattr(config, "NOTIFY_ENABLE", False)
+    assert _call("GET", "/local/notices", {})[1]["telegram"] is False
 
 
 def test_post_read_all_and_ids():

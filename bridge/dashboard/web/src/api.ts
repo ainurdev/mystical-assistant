@@ -1635,7 +1635,7 @@ export const api = {
   // seen: this page's last click or keypress — Telegram's "away" (bridge/notices.py).
   running: (alerts = false, seen = 0) =>
     req<RunningInfo>(`/local/running?${alerts ? "alerts=1&" : ""}${seen ? `seen=${seen}` : ""}`),
-  notices: () => req<{ notices: Notice[]; prefs: NoticePrefs; quiet: boolean }>("/local/notices"),
+  notices: () => req<{ notices: Notice[]; prefs: NoticePrefs; quiet: boolean; telegram: boolean }>("/local/notices"),
   noticesRead: (ids: number[] | "all") =>
     req<{ ok: boolean; n: number }>("/local/notices", {
       method: "POST", body: ids === "all" ? { op: "read", all: true } : { op: "read", ids } }),

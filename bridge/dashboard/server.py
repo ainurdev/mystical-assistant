@@ -336,7 +336,9 @@ class Handler(BaseHTTPRequestHandler):
                                "needs": notices.needs(snap.get("status") or {})})
         if path == "/local/notices":
             return self._json({"notices": notices.feed(), "prefs": notices.prefs(),
-                               "quiet": notices.quiet()})
+                               "quiet": notices.quiet(),
+                               # Whether any route to Telegram exists at all (System ▸ Telegram).
+                               "telegram": bool(config.NOTIFY_ENABLE and config.TOKEN)})
         if path == "/local/queue":
             sid = (qs.get("session", [""])[0] or "").strip()
             return self._json(queue_manager.snapshot(sid) if sid else
