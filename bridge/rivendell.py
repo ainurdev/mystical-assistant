@@ -192,7 +192,7 @@ import urllib.request
 import uuid
 from urllib.parse import quote, urlsplit
 
-from bridge import config, wsutil
+from bridge import config, notices, wsutil
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -414,6 +414,11 @@ class Worker:
         over. The gateway closes a bad token AFTER the upgrade, so the 101 alone
         (status "connected") can't clear the alert, or every re-dial of a dead
         token would end one break and open the next."""
+        if self.alert_at is not None:          # a flagged break ends: once, here
+            hm = lambda t: time.strftime("%H:%M", time.localtime(t))  # noqa: E731
+            notices.emit("rv_link_back", f"rv-link:{self.id}", title=self.name,
+                         body=f"Down {hm(self.down_since or self.alert_at)} → back {hm(time.time())}.",
+                         meta={"instance_id": self.id})
         self.down_since = self.alert_at = None
 
     def test_link(self, timeout: float = _TEST_TIMEOUT) -> dict:
@@ -486,8 +491,14 @@ class Worker:
             text = (f"✕ Rivendell link broken — {self.name}\n"
                     f"Can't reach Rivendell since {at} ({self.status_detail}). "
                     "The bridge keeps retrying; jobs wait until it's back.")
-        threading.Thread(target=self._deliver_telegram, args=(text, None),
-                         name=f"rivendell-tg-{self.id}", daemon=True).start()
+        auth = self.status == "auth_error"
+        notices.emit("rv_link", f"rv-link:{self.id}", title=self.name, body=(
+            f"Rivendell refused this bridge's token at {at}. Jobs are paused until you replace it."
+            if auth else f"Can't reach Rivendell since {at}. The bridge keeps retrying."),
+            meta={"instance_id": self.id, "auth": auth})
+        if notices.telegram_ok("rv_link"):
+            threading.Thread(target=self._deliver_telegram, args=(text, None),
+                             name=f"rivendell-tg-{self.id}", daemon=True).start()
 
     # -- config accessors (read live off self.inst) --
     @property
@@ -596,9 +607,12 @@ class Worker:
                 if delay is None:
                     print(f"rivendell[{self.name}]: result POST failed for "
                           f"{request_id}: {e} (transcript still in dashboard)")
+                    self._note("rv_failed", request_id, f"Rivendell job {request_id[:8]}",
+                               "Couldn't report the result to Rivendell; the transcript is in "
+                               "the dashboard.")
                     return
                 time.sleep(delay)
-        self._ping_done(request_id, ok, text)
+        self._ping_done(request_id, ok, text, kind_path=kind_path)
 
     def _progress_loop(self) -> None:
         """Rivendell's live feed for every run in flight here (_progress_tick on
@@ -713,19 +727,34 @@ class Worker:
                 "activeSeconds": round(max(0.0, b["wall"] - b["waiting_s"])),
                 "tokens": res.get("tokens")}
 
-    def _ping_done(self, request_id: str, ok: bool, text: str) -> None:
+    def _ping_done(self, request_id: str, ok: bool, text: str,
+                   kind_path: "str | None" = None) -> None:
         """The job's one Telegram message once its result is posted: done or
-        failed, its PR and time, with OPEN PR and OPEN SESSION. Only for a job
-        that ran here (a session is filed under it); checks are left out — they
-        have only just started. Best-effort: a lost ping never fails a result."""
+        failed, its PR and time, with OPEN PR and OPEN SESSION. The Telegram
+        message is only for a job that ran here (a session is filed under it);
+        the feed hears a job that died before it ran too. Checks are left out —
+        they have only just started. Best-effort: a lost ping never fails a result."""
         try:
             from bridge import store                 # local import: heavy module
             ref = f"{self.id}:{request_id}"
             sid = store.sessions_for_refs([ref]).get(ref)
+            kind = "rv_done" if ok else "rv_failed"
+            job_kind = next((k for k, v in self._KIND_PATH.items() if v == kind_path), None)
+            line = next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")[:200]
             if sid is None:
+                self._note(kind, request_id, f"Rivendell job {request_id[:8]}",
+                           "" if ok else line, job_kind=job_kind)
                 return
             sess = store.get_session(sid) or {"id": sid}
-            msg, kb = _done_message(sess, ok, text, _result_view(sid, checks=False) or {})
+            res = _result_view(sid, checks=False) or {}
+            pr = res.get("pr") or {}
+            why = None if ok else (res.get("outcome") or {}).get("label")
+            self._note(kind, request_id, sess.get("title") or "Rivendell job",
+                       why.capitalize() if why else line, job_kind=job_kind, session_id=sid,
+                       pr_url=pr.get("url"), pr_number=pr.get("number"))
+            if not notices.telegram_ok(kind):
+                return
+            msg, kb = _done_message(sess, ok, text, res)
             self._deliver_telegram(msg, kb)
         except Exception as e:  # noqa: BLE001
             print(f"rivendell[{self.name}]: done ping failed for {request_id}: {e}")
@@ -918,6 +947,10 @@ class Worker:
             rid = item["request_id"]
             print(f"rivendell[{self.name}]: implementation {rid} refused: no "
                   f"local checkout for {item['slug']!r} under {config.BASE_PATH}")
+            if not item.get("offered"):      # a teammate's job you never took is not your news
+                self._note("rv_refused", rid, f"Implementation · {item['slug']}",
+                           f"No checkout of {item['slug']} under {config.BASE_PATH}, so the bridge "
+                           "told Rivendell no. Clone it to take the next one.", job_kind="impl")
             if item.get("offered"):
                 # A teammate's job: refusing is a server no-op for a non-requester,
                 # and forgetting the key would re-ping it on every reconnect.
@@ -1800,10 +1833,30 @@ class Worker:
             item = self._pending.get(key)
         if item is None:                      # decided already (a fast click)
             return
+        what = "batch" if item.get("batch") else self._label(item)
+        kind = "rv_offer" if item.get("offered") else "rv_held"
+        self._note(kind, item["request_id"], self._target(item), (
+            f"A teammate's {what} job. If you accept, it runs on this machine with your accounts."
+            if item.get("offered") else
+            f"{what[:1].upper()}{what[1:]}, held behind running work. It starts on its own "
+            "when that finishes."),
+            key=key, job_kind=item["kind"], link=(item.get("batch") or {}).get("url"))
+        if not notices.telegram_ok(kind):
+            return
         token = _register_token(self.id, key)
         text, kb = self._queued_message(item, token)
         threading.Thread(target=self._deliver_telegram, args=(text, kb),
                          name=f"rivendell-tg-{self.id}", daemon=True).start()
+
+    @staticmethod
+    def _target(item: dict) -> str:
+        return (item.get("batch") or {}).get("name") or item.get("slug") or "Rivendell job"
+
+    def _note(self, kind: str, request_id: str, title: str, body: str = "", **meta) -> None:
+        """One job's event in the feed (bridge/notices.py), keyed by its request
+        so offer, start and result are one row in the bell."""
+        notices.emit(kind, f"rv:{self.id}:{request_id}", title=title, body=body,
+                     meta={"instance_id": self.id, "instance": self.name, **meta})
 
     def _deliver_telegram(self, text: str, kb: dict) -> None:
         """Send one ping (a held request, a broken link, a finished job) to the
@@ -1875,6 +1928,8 @@ class Worker:
             # between now and the run finishing sees a busy queue (and pings)
             # rather than racing in as another "lone" auto-accept.
             self._active_runs += 1
+        self._note("rv_started", item["request_id"], self._target(item),
+                   job_kind=item["kind"], key=key)
         threading.Thread(
             target=self._run_accepted, args=(dict(item),),
             name=f"rivendell-run-{self.id}", daemon=True).start()
@@ -1889,6 +1944,7 @@ class Worker:
             item = self._pending.pop(key, None)
         if item is None:
             return False
+        self._note("rv_dismissed", item["request_id"], self._target(item), job_kind=item["kind"])
         threading.Thread(
             target=self._do_reject, args=(dict(item),),
             name=f"rivendell-reject-{self.id}", daemon=True).start()
@@ -2494,6 +2550,8 @@ def ping_question(job, request_id: str, questions: list) -> bool:
         sess = store.get_session(job.store_session_id) if job.store_session_id else None
         if not sess or not config.is_plugin_origin(sess.get("origin")):
             return False
+        notices.emit("question", sess["id"], body=((questions or [{}])[0].get("question") or ""),
+                     meta={"job_id": job.id})
         threading.Thread(target=_send_question, args=(job, request_id, questions, sess),
                          name="rivendell-ask", daemon=True).start()
         return True
@@ -2504,7 +2562,7 @@ def ping_question(job, request_id: str, questions: list) -> bool:
 
 def _send_question(job, request_id: str, questions: list, sess: dict) -> None:
     """The NEEDS YOU ping, off the run's stdout thread (Telegram is slow)."""
-    if not config.NOTIFY_ENABLE or not config.TOKEN or not config.DASH_CHAT_ID:
+    if not config.TOKEN or not config.DASH_CHAT_ID or not notices.telegram_ok("question"):
         return
     from bridge import telegram                  # local import: telegram pulls state
     q = questions[0] if questions else {}

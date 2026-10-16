@@ -296,3 +296,104 @@ def test_account_needs_outlive_their_own_failed_and_parked():
     assert sorted(n["kind"] for n in notices.needs({})) == ["limit_choice", "login"]
     # Running again (a prompt sent by hand) answers it too.
     assert [n["kind"] for n in notices.needs({"s1": {"state": "working"}})] == ["limit_choice"]
+
+
+# --- emitters: Rivendell and PRs ------------------------------------------------
+
+def _rv(monkeypatch):
+    from bridge import rivendell
+    monkeypatch.setattr(rivendell.Worker, "_ack", lambda self, key, state: None)
+    w = rivendell.Worker({"id": "prod", "name": "production", "enable": True,
+                          "api_url": "http://api.example:3001", "token": "rvd_t", "ws_url": "",
+                          "model": "opus", "workdir": "", "review_timeout": 3600,
+                          "impl_timeout": 10800})
+    monkeypatch.setattr(w, "_deliver_telegram", lambda text, kb: None)
+    return w
+
+
+def test_rivendell_offer_emits_rv_offer(monkeypatch):
+    w = _rv(monkeypatch)
+    w._enqueue("impl", "r1", "acme/app", offered=True)
+    w._notify_queued("impl:r1")
+    row = notices.feed()[0]
+    assert (row["kind"], row["subject"], row["title"]) == ("rv_offer", "rv:prod:r1", "acme/app")
+    assert row["meta"]["key"] == "impl:r1" and row["meta"]["instance_id"] == "prod"
+    assert row["meta"]["job_kind"] == "impl" and "teammate" in row["body"]
+
+
+def test_rivendell_held_accept_and_reject(monkeypatch):
+    w = _rv(monkeypatch)
+    monkeypatch.setattr(w, "_run_accepted", lambda item: None)
+    monkeypatch.setattr(w, "_do_reject", lambda item: None)
+    w._enqueue("review", "r2", "acme/app")
+    w._notify_queued("review:r2")
+    w.accept("review:r2")
+    w._enqueue("review", "r3", "acme/app")
+    w.reject("review:r3")
+    assert [(r["kind"], r["subject"]) for r in notices.feed()] == [
+        ("rv_dismissed", "rv:prod:r3"), ("rv_started", "rv:prod:r2"), ("rv_held", "rv:prod:r2")]
+
+
+def test_rivendell_link_break_and_back(monkeypatch):
+    w = _rv(monkeypatch)
+    w.status, w.status_detail, w.down_since = "auth_error", "4401", time.time() - 60
+    w._alert_broken()
+    w.alert_at = time.time()
+    w._recovered()
+    w._recovered()                           # proving itself again is not a second "back"
+    rows = notices.feed()
+    assert [(r["kind"], r["subject"]) for r in rows] == [
+        ("rv_link_back", "rv-link:prod"), ("rv_link", "rv-link:prod")]
+    assert rows[1]["title"] == "production" and "refused this bridge's token" in rows[1]["body"]
+
+
+def test_rivendell_done_without_session_still_emits(monkeypatch):
+    w = _rv(monkeypatch)
+    w._ping_done("abcdef123456", False, "prompt fetch failed: 500\ntrace", kind_path="implementation-requests")
+    row = notices.feed()[0]
+    assert (row["kind"], row["subject"]) == ("rv_failed", "rv:prod:abcdef123456")
+    assert (row["title"], row["body"]) == ("Rivendell job abcdef12", "prompt fetch failed: 500")
+
+
+def test_rivendell_done_with_session_carries_pr(monkeypatch):
+    from bridge import rivendell
+    w = _rv(monkeypatch)
+    s = store.create_session(555, "/repo", origin="rivendell:prod")
+    with closing(store._connect()) as c:
+        c.execute("UPDATE sessions SET title=?, ref=? WHERE id=?", ("Review PR #212", "prod:r9", s["id"]))
+    monkeypatch.setattr(rivendell, "_result_view", lambda sid, checks=True: {
+        "pr": {"number": 212, "url": "https://gh/pr/212"}, "wall_s": 420})
+    w._ping_done("r9", True, "Approved with 2 comments.\nDetails…", kind_path="review-requests")
+    row = notices.feed()[0]
+    assert (row["kind"], row["verb"], row["title"], row["body"]) == (
+        "rv_done", "REVIEWED", "Review PR #212", "Approved with 2 comments.")
+    assert row["meta"]["pr_url"] == "https://gh/pr/212" and row["meta"]["session_id"] == s["id"]
+
+
+def test_rivendell_question_emits_for_its_session(monkeypatch):
+    from bridge import rivendell
+    s = store.create_session(555, "/repo", origin="rivendell:prod")
+    monkeypatch.setattr(rivendell, "_send_question", lambda *a: None)
+
+    class Job:
+        id, store_session_id, started = "j7", s["id"], time.time()
+    assert rivendell.ping_question(Job, "req1", [{"question": "Ship it?", "options": []}]) is True
+    row = notices.feed()[0]
+    assert (row["kind"], row["subject"], row["body"], row["meta"]["job_id"]) == (
+        "question", s["id"], "Ship it?", "j7")
+
+
+def test_pr_fresh_ping_emits(monkeypatch):
+    from bridge import prstatus
+    monkeypatch.setattr(prstatus, "_spawn", lambda fn, *a: None)
+    store.set_setting("pr_pinged:o/r:feat/x", None)
+    pr = {"state": "OPEN", "sha": "abc", "number": 208, "title": "Device runs", "head": "feat/x",
+          "url": "https://gh/pr/208", "review": None, "failed": 2, "running": 0,
+          "checks": [{"name": "e2e", "state": "fail"}, {"name": "lint", "state": "fail"},
+                     {"name": "unit", "state": "pass"}]}
+    prstatus._pings("/repo", "o/r", "feat/x", pr, "s1")
+    prstatus._pings("/repo", "o/r", "feat/x", pr, "s1")       # the same red commit: once
+    rows = notices.feed()
+    assert [(r["kind"], r["subject"], r["title"], r["body"]) for r in rows] == [
+        ("pr_failing", "pr:o/r:feat/x", "#208 · Device runs", "2 of 3 failed: e2e, lint")]
+    assert rows[0]["meta"] == {"url": "https://gh/pr/208", "number": 208}

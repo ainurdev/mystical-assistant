@@ -501,7 +501,7 @@ def test_post_result_carries_an_error_beside_a_completed_result(monkeypatch):
     w = _worker()
     sent = []
     monkeypatch.setattr(w, "_api", lambda path, payload=None: sent.append((path, payload)))
-    monkeypatch.setattr(w, "_ping_done", lambda *a: None)
+    monkeypatch.setattr(w, "_ping_done", lambda *a, **k: None)
     w._post_result("video-requests", "v1", True, "{}", error="run timed out after 3600s")
     assert sent == [("/plugin/video-requests/v1/result",
                      {"status": "COMPLETED", "result": "{}", "error": "run timed out after 3600s", "model": "opus"})]
