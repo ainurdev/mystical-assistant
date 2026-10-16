@@ -3,7 +3,8 @@ bridge/device_setup/setup.sh or remove.sh as root through osascript.
 
 Nothing here runs a script or osascript: `run=` is a fake that records the
 command and answers the way osascript does, and the scripts only go through
-`bash -n`, which parses without running.
+`bash -n`, which parses without running. setup.sh's root_only, the bash twin of
+the helper's check_root_path, runs on its own with `fail` stubbed; it only reads.
 Run: python -m pytest tests/test_device_setup.py -v
 """
 
@@ -101,9 +102,32 @@ def test_the_scripts_parse(script):
     assert r.returncode == 0, r.stderr
 
 
+def _root_only(path):
+    """What setup.sh's root_only says about `path`: "ok", or the line it fails with."""
+    with open(os.path.join(SCRIPTS, "setup.sh"), encoding="utf-8") as f:
+        text = f.read()
+    start = text.index("root_only() {")
+    fn = text[start:text.index("\n}\n", start) + 3]
+    r = subprocess.run(["/bin/bash", "-c", 'fail() { echo "$1"; exit 1; }\n' + fn + 'root_only "$1"; echo ok', "_", path],
+                       capture_output=True, text=True, timeout=30)
+    return r.stdout.strip()
+
+
+def test_set_up_refuses_a_folder_anyone_but_root_could_change_as_the_helper_does(tmp_path):
+    assert _root_only("/usr/bin") == "ok"
+    # A link on a Mac, world-writable elsewhere: either way /tmp is the one named.
+    assert _root_only("/tmp/helper").startswith("/tmp ")
+    world = os.path.realpath("/tmp")   # root's own, but anyone can write in it
+    assert _root_only(world + "/helper").startswith(world + " can be changed by someone other than root")
+    # The temp dir is yours: the first folder on the way down that isn't root's is named.
+    culprit = _root_only(str(tmp_path)).split(" ")[0]
+    assert culprit != "ok" and str(tmp_path).startswith(culprit) and os.stat(culprit).st_uid != 0
+
+
 @pytest.mark.parametrize("script", ["setup.sh", "remove.sh"])
 def test_the_scripts_and_the_bridge_name_the_same_paths(script):
     with open(os.path.join(SCRIPTS, script), encoding="utf-8") as f:
         text = f.read()
-    for path in (device_share.HELPER, device_share.RUNS_CONFIG, "/etc/sudoers.d/mystical-runs", "/Users/Shared/Mystical Runs"):
+    for path in (device_share.HELPER, device_share.RUNS_CONFIG, "/etc/sudoers.d/mystical-runs",
+                 "/Users/Shared/Mystical Runs", "/usr/local/libexec/mystical-runs"):
         assert path in text, path

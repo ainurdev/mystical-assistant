@@ -31,6 +31,14 @@ code, with every tool allowed. So root never follows a link either could plant:
   list, which any account on the Mac can read with ps.
 - Every process started as mysticalruns starts in / or in the run's own code
   folder, never somewhere past the deny rule Set up put on the owner's home.
+- Nothing carries over from one requester's run to the next. Claude runs from
+  the root-owned copy Set up made, and only root's folders come first on PATH.
+  Each run gets a fresh HOME inside its own folder, which goes with the run.
+- The config and the Claude copy, and every folder above them, must be root's
+  alone (check_root_path; setup.sh checks the same before it writes anything).
+  Otherwise the owner's passwordless sudo would run whatever replaced them.
+- Claude's stderr is kept as out/claude.err (the first megabyte), so a failed
+  run says why.
 Cleanup always runs: on success, failure, timeout, stop, and when a bridge
 restart TERMs this helper. It stops the run's process group and deletes its
 folder and the stage's token.
@@ -58,8 +66,9 @@ CONFIG = "/usr/local/etc/mystical-runs.json"
 RUNS_HOME = "/Users/mysticalruns/runs"        # test seam: tests point it at a temp dir
 STAGE_ROOT = "/Users/Shared/Mystical Runs"    # test seam: tests point it at a temp dir
 STAGE_FILES = ("job.json", "token", "code.tar.gz")
-RUN_PATH = "/Users/mysticalruns/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+RUN_PATH = "/usr/local/libexec/mystical-runs:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 GRACE = 10                                     # seconds between TERM and KILL
+ERR_CAP = 1 << 20                              # bytes of Claude's stderr handed back
 _RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _SCREEN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}")   # a screenshot's name: no folder, not hidden
 
@@ -100,11 +109,29 @@ def check_stage(path, owner_uid, lstat=os.lstat):
     return None
 
 
+def check_root_path(path, lstat=os.lstat, uid=0):
+    """Why `path` can't be trusted as root's, or None. It and every folder above
+    it must be owned by root, writable by no one else, and not a link. `uid`, the
+    user this helper runs as, also counts as root: it is root, except in tests."""
+    parts = [p for p in path.split("/") if p]
+    for i in range(len(parts) + 1):
+        p = "/" + "/".join(parts[:i])
+        try:
+            st = lstat(p)
+        except OSError:
+            return "%s doesn't exist." % p
+        if stat.S_ISLNK(st.st_mode):
+            return "%s is a link." % p
+        if st.st_uid not in (0, uid) or st.st_mode & 0o022:
+            return "%s can be changed by someone other than root." % p
+    return None
+
+
 def claude_env(job, token, run_dir):
     """Claude's whole environment. Nothing of the owner's or root's comes along."""
     name, email = job.get("gitAuthorName") or "", job.get("gitAuthorEmail") or ""
     env = {
-        "HOME": "/Users/mysticalruns",
+        "HOME": os.path.join(run_dir, "home"),
         "PATH": RUN_PATH,
         "CLAUDE_CODE_OAUTH_TOKEN": token,
         "CLAUDE_CONFIG_DIR": os.path.join(run_dir, "config"),
@@ -130,8 +157,9 @@ def launch_argv(launch, uid, inner):
     """`inner` as mysticalruns: through sudo (the default), or inside that user's
     launchd session ("asuser"), the one alternative, for a Simulator that needs
     it. -E hands the command the environment sudo was given, which is claude_env
-    and nothing else."""
-    as_runs = ["/usr/bin/sudo", "-E", "-u", RUN_USER, "-H"]
+    and nothing else. There is no -H, which would reset HOME to the hidden user's
+    own home, shared by every run."""
+    as_runs = ["/usr/bin/sudo", "-E", "-u", RUN_USER]
     if launch == "sudo":
         return as_runs + list(inner)
     if launch == "asuser":
@@ -145,17 +173,15 @@ def launch_argv(launch, uid, inner):
 
 def _config():
     """setup.sh's record of this device: {owner, uid, launch, claude}. Trusted only
-    when it is root's own file and nobody else can change it."""
+    when it and every folder above it are root's alone."""
     # test seam: a test (never root) points MYSTICAL_RUNS_CONFIG at a temp file
     path = os.environ.get("MYSTICAL_RUNS_CONFIG", CONFIG) if os.geteuid() else CONFIG
-    try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    except OSError:
+    if not os.path.lexists(path):
         raise Refused("This device isn't set up for device runs.")
-    with os.fdopen(fd, encoding="utf-8") as f:
-        st = os.fstat(fd)
-        if not stat.S_ISREG(st.st_mode) or st.st_uid != os.geteuid() or st.st_mode & 0o022:
-            raise Refused("The device-runs config isn't root's alone; run Set up again.")
+    err = check_root_path(path, uid=os.geteuid())
+    if err:
+        raise Refused(err)
+    with open(path, encoding="utf-8") as f:   # only root can change it now
         return json.load(f)
 
 
@@ -203,22 +229,30 @@ def _kill_group(pgid, leader=None):
         pass  # the group is gone: macOS says EPERM while only exited processes are left in it
 
 
-def _launch(argv, env, run_dir, timeout, popen, out):
+def _launch(argv, env, run_dir, run_uid, timeout, popen, out):
     """Claude as mysticalruns, in its own session, for at most `timeout` seconds.
     Returns (exit code, timed out)."""
+    new = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
     run_fd = os.open(run_dir, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
     try:
         code_fd = os.open("code", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=run_fd)
         # Made before the run exists, so the run can't plant one first; `stop` reads it.
-        pid_fd = os.open("pid", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=run_fd)
+        pid_fd = os.open("pid", new, 0o600, dir_fd=run_fd)
+        out_fd = os.open("out", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=run_fd)
+        try:
+            err_fd = os.open("claude.err", new, 0o600, dir_fd=out_fd)
+        finally:
+            os.close(out_fd)
+        os.fchown(err_fd, run_uid, -1)   # the run's to write, and mysticalruns's tar's to read back
     finally:
         os.close(run_fd)
     # Without a terminal (a new session) sudo uses no pty, so Claude stays in
     # sudo's process group and _kill_group reaches all of it. Entering code/
     # through its handle means a link swapped in can't start Claude elsewhere.
-    p = popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.DEVNULL,
+    p = popen(argv, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=err_fd,
               start_new_session=True, preexec_fn=lambda: os.fchdir(code_fd))
     os.close(code_fd)
+    os.close(err_fd)
     timed_out = False
     try:
         os.write(pid_fd, b"%d\n" % p.pid)
@@ -244,9 +278,10 @@ def _put(tar, name, f=None, size=0):
 
 def _hand_back(popen, run_dir, stage, owner_uid, claude_out, exit_info):
     """The results, into the stage's out/: exit.json and claude.json from this
-    helper, plus the screenshots the run saved. mysticalruns's own tar reads the
-    screenshots, so a link reaches nothing that user couldn't read. The owner's
-    own tar writes everything, so nothing lands where a link points."""
+    helper, plus Claude's stderr (its first ERR_CAP bytes) and the screenshots
+    the run saved. mysticalruns's own tar reads those two, so a link reaches
+    nothing that user couldn't read. The owner's own tar writes everything, so
+    nothing lands where a link points."""
     exit_json = json.dumps(exit_info).encode()
     writer = popen(["/usr/bin/sudo", "-u", "#%d" % owner_uid, "/usr/bin/tar", "-xf", "-", "-C", stage],
                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd="/")
@@ -257,16 +292,21 @@ def _hand_back(popen, run_dir, stage, owner_uid, claude_out, exit_info):
             size = os.fstat(claude_out.fileno()).st_size
             claude_out.seek(0)
             _put(dst, "out/claude.json", claude_out, size)
-            reader = popen(["/usr/bin/sudo", "-u", RUN_USER, "/usr/bin/tar", "-cf", "-", "-C", run_dir, "out/screens"],
+            reader = popen(["/usr/bin/sudo", "-u", RUN_USER, "/usr/bin/tar", "-cf", "-", "-C", run_dir,
+                            "out/screens", "out/claude.err"],
                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd="/")
             try:
                 with tarfile.open(fileobj=reader.stdout, mode="r|") as src:
                     for m in src:
                         name = m.name[len("out/screens/"):] if m.name.startswith("out/screens/") else ""
-                        if m.isreg() and _SCREEN.fullmatch(name):
+                        if not m.isreg():
+                            continue
+                        if m.name == "out/claude.err":
+                            _put(dst, m.name, src.extractfile(m), min(m.size, ERR_CAP))
+                        elif _SCREEN.fullmatch(name):
                             _put(dst, "out/screens/" + name, src.extractfile(m), m.size)
             except tarfile.TarError:
-                pass  # no screenshots came back; the report still goes
+                pass  # nothing came back to read; the report still goes
             finally:
                 reader.stdout.close()
                 reader.wait()
@@ -280,7 +320,10 @@ def start(run_id, cfg, popen):
     """Run one device run as mysticalruns and hand its results to the stage."""
     claude = cfg.get("claude")
     if not isinstance(claude, str) or not claude:
-        raise Refused("Claude Code isn't installed for mysticalruns yet; run Set up again.")
+        raise Refused("Claude Code isn't installed for device runs yet; run Set up again.")
+    err = check_root_path(claude, uid=os.geteuid())   # the copy Set up made, which no run can change
+    if err:
+        raise Refused(err)
     stage = os.path.join(STAGE_ROOT, run_id)
     err = check_stage(stage, cfg["uid"])
     if err:
@@ -295,15 +338,17 @@ def start(run_id, cfg, popen):
         prompt, timeout = job.get("prompt"), job.get("timeoutSeconds")
         if not isinstance(prompt, str) or not prompt or not token or type(timeout) is not int or timeout <= 0:
             raise Refused("The stage's job.json or token is incomplete.")
-        argv = launch_argv(cfg.get("launch"), pwd.getpwnam(RUN_USER).pw_uid, claude_argv(prompt, claude))
+        run_uid = pwd.getpwnam(RUN_USER).pw_uid
+        argv = launch_argv(cfg.get("launch"), run_uid, claude_argv(prompt, claude))
         code = os.path.join(run_dir, "code")
         _as(RUN_USER, popen, ["/usr/bin/install", "-d", "-m", "0700", run_dir, code, os.path.join(run_dir, "out"),
-                              os.path.join(run_dir, "out", "screens"), os.path.join(run_dir, "config")],
+                              os.path.join(run_dir, "out", "screens"), os.path.join(run_dir, "config"),
+                              os.path.join(run_dir, "home")],
             "The run's folders couldn't be made.")
         _as(RUN_USER, popen, ["/usr/bin/tar", "-xzf", "-", "-C", code, "--no-same-owner"],
             "The code snapshot didn't unpack.", stdin=tar_fd)
         with tempfile.TemporaryFile() as out:   # Claude's stdout stays in root's hands
-            rc, timed_out = _launch(argv, claude_env(job, token, run_dir), run_dir, timeout, popen, out)
+            rc, timed_out = _launch(argv, claude_env(job, token, run_dir), run_dir, run_uid, timeout, popen, out)
             _hand_back(popen, run_dir, stage, cfg["uid"], out, {"code": rc, "timedOut": timed_out})
     finally:
         shutil.rmtree(run_dir, ignore_errors=True)   # never follows a link (rmtree.avoids_symlink_attacks)

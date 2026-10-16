@@ -43,10 +43,10 @@ fi
 if dscl . -read "/Users/$RUN_USER" >/dev/null 2>&1; then fail "macOS didn't delete the hidden user."; fi
 rm -rf "$RUN_HOME"
 
-# 4. The helper, its config, the sudoers rule, and the runs folder.
+# 4. The helper, its config, the sudoers rule, the Claude copy, and the runs folder.
 step="Removing the helper"
 rm -f /usr/local/libexec/mystical-run-helper /usr/local/etc/mystical-runs.json /etc/sudoers.d/mystical-runs
-rm -rf "/Users/Shared/Mystical Runs"
+rm -rf /usr/local/libexec/mystical-runs "/Users/Shared/Mystical Runs"
 
 trap - ERR
 printf '{"ok": true}\n' >&3

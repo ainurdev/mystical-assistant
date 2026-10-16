@@ -102,12 +102,14 @@ def test_a_missing_stage_or_stage_file_is_refused(gone):
 # --- claude_env, claude_argv, launch_argv -----------------------------------------------
 
 def test_claude_gets_exactly_its_own_environment(monkeypatch):
+    """A fresh home for every run, and only root's folders ahead of the tools on
+    PATH: nothing a run leaves in the hidden user's home reaches the next run."""
     monkeypatch.setenv("SSH_AUTH_SOCK", "/private/tmp/the-owners-agent")   # what sudo carries over
     monkeypatch.setenv("ANTHROPIC_API_KEY", "the-owners-key")
     run = "/Users/mysticalruns/runs/" + RUN_ID
     assert h.claude_env(JOB, TOKEN, run) == {
-        "HOME": "/Users/mysticalruns",
-        "PATH": "/Users/mysticalruns/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "HOME": run + "/home",
+        "PATH": "/usr/local/libexec/mystical-runs:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
         "CLAUDE_CODE_OAUTH_TOKEN": TOKEN,
         "CLAUDE_CONFIG_DIR": run + "/config",
         "MYSTICAL_RUN_OUT": run + "/out",
@@ -135,13 +137,54 @@ def test_claude_runs_headless_with_every_tool_and_no_mcp_server():
 def test_a_run_launches_through_sudo_or_launchctl_asuser_and_nothing_else():
     inner = ["/x/claude", "-p", "hi"]
     # -E: sudo hands the command the environment it was given (claude_env), so
-    # the token never has to be spelled out in an argument list.
-    assert h.launch_argv("sudo", 502, inner) == ["/usr/bin/sudo", "-E", "-u", "mysticalruns", "-H", *inner]
+    # the token never has to be spelled out in an argument list. No -H: it would
+    # reset HOME to the hidden user's own home, which every run shares.
+    assert h.launch_argv("sudo", 502, inner) == ["/usr/bin/sudo", "-E", "-u", "mysticalruns", *inner]
     assert h.launch_argv("asuser", 502, inner) == [
-        "/bin/launchctl", "asuser", "502", "/usr/bin/sudo", "-E", "-u", "mysticalruns", "-H", *inner]
+        "/bin/launchctl", "asuser", "502", "/usr/bin/sudo", "-E", "-u", "mysticalruns", *inner]
     for bad in ("root", "", None, "SUDO", "asuser "):
         with pytest.raises(ValueError):
             h.launch_argv(bad, 502, inner)
+
+
+# --- check_root_path, on os.lstat fakes ---------------------------------------------
+
+CLAUDE = "/usr/local/libexec/mystical-runs/claude"
+CONFIG = "/usr/local/etc/mystical-runs.json"
+CHAIN = {**{p: _st(stat.S_IFDIR, 0o755, uid=0) for p in
+            ("/", "/usr", "/usr/local", "/usr/local/libexec", "/usr/local/libexec/mystical-runs", "/usr/local/etc")},
+         CLAUDE: _st(stat.S_IFREG, 0o755, uid=0), CONFIG: _st(stat.S_IFREG, 0o644, uid=0)}
+
+
+@pytest.mark.parametrize("path", [CLAUDE, CONFIG, "/usr/local/etc", "/"])
+def test_a_path_only_root_can_change_passes(path):
+    assert h.check_root_path(path, lstat=_lstat(CHAIN)) is None
+
+
+@pytest.mark.parametrize("why, path, bad, change", [
+    ("the binary is group-writable", CLAUDE, CLAUDE, _st(stat.S_IFREG, 0o775, uid=0)),
+    ("the binary is anyone's to write", CLAUDE, CLAUDE, _st(stat.S_IFREG, 0o757, uid=0)),
+    ("the binary is someone else's", CLAUDE, CLAUDE, _st(stat.S_IFREG, 0o755, uid=501)),
+    ("the binary is a link", CLAUDE, CLAUDE, _st(stat.S_IFLNK, 0o755, uid=0)),
+    ("its folder is group-writable", CLAUDE, "/usr/local/libexec/mystical-runs", _st(stat.S_IFDIR, 0o775, uid=0)),
+    ("an Intel Mac's Homebrew owns /usr/local", CLAUDE, "/usr/local", _st(stat.S_IFDIR, 0o755, uid=501)),
+    ("the config's folder is group-writable", CONFIG, "/usr/local/etc", _st(stat.S_IFDIR, 0o775, uid=0)),
+    ("the config's folder is someone else's", CONFIG, "/usr/local/etc", _st(stat.S_IFDIR, 0o755, uid=501)),
+    ("a folder on the way is a link", CONFIG, "/usr", _st(stat.S_IFLNK, 0o755, uid=0)),
+])
+def test_a_path_anyone_but_root_could_change_is_refused_naming_the_culprit(why, path, bad, change):
+    err = h.check_root_path(path, lstat=_lstat({**CHAIN, bad: change}))
+    assert err and err.startswith(bad + " "), (why, err)
+
+
+def test_a_missing_part_of_the_path_is_refused():
+    assert h.check_root_path(CLAUDE, lstat=_lstat({k: v for k, v in CHAIN.items() if k != CLAUDE}))
+
+
+def test_the_user_running_the_helper_counts_as_root_which_outside_tests_it_is():
+    mine = {**CHAIN, CLAUDE: _st(stat.S_IFREG, 0o755, uid=501)}
+    assert h.check_root_path(CLAUDE, lstat=_lstat(mine), uid=501) is None
+    assert h.check_root_path(CLAUDE, lstat=_lstat(mine), uid=0)
 
 
 # --- start and stop, against temp dirs --------------------------------------------------
@@ -178,10 +221,14 @@ def _snapshot(files):
 def box(tmp_path, monkeypatch):
     """The real paths, in a temp dir: the runs folder, the stage root, the config,
     and mysticalruns, who is you here."""
+    if h.check_root_path(str(tmp_path), uid=ME):
+        pytest.skip("the temp dir has a folder above it that others can change (a world-writable /tmp?), "
+                    "so the helper rightly refuses to run from it")
     b = types.SimpleNamespace(tmp=tmp_path, runs=tmp_path / "runs", stages=tmp_path / "stages",
-                              cfg=tmp_path / "mystical-runs.json", claude=tmp_path / "claude")
+                              cfg=tmp_path / "etc" / "mystical-runs.json", claude=tmp_path / "claude")
     b.runs.mkdir(mode=0o700)
     b.stages.mkdir()
+    b.cfg.parent.mkdir()
     b.cfg.write_text(json.dumps({"owner": "me", "uid": ME, "launch": "sudo", "claude": str(b.claude)}))
     b.cfg.chmod(0o644)
     monkeypatch.setattr(h, "RUNS_HOME", str(b.runs))
@@ -190,6 +237,7 @@ def box(tmp_path, monkeypatch):
     monkeypatch.setenv("SUDO_UID", str(ME))
     real = pwd.getpwnam
     monkeypatch.setattr(pwd, "getpwnam", lambda n: types.SimpleNamespace(pw_uid=ME) if n == "mysticalruns" else real(n))
+    _claude(b, "printf '{}'\n")
     return b
 
 
@@ -217,13 +265,15 @@ def _left_behind(b, st):
 def test_a_run_comes_back_with_its_report_and_screens_and_leaves_no_token(box):
     _claude(box, """
 cd_ok=$(cat README.md)
+touch "$HOME/.npmrc" && home_ok=yes
+printf 'warning: something to diagnose\\n' >&2
 printf 'png' > "$MYSTICAL_RUN_OUT/screens/01-home.png"
 printf 'x' > "$MYSTICAL_RUN_OUT/screens/.hidden.png"
 ln -s /etc/hosts "$MYSTICAL_RUN_OUT/screens/02-link.png"
 mkdir "$MYSTICAL_RUN_OUT/screens/deeper" && printf 'x' > "$MYSTICAL_RUN_OUT/screens/deeper/03.png"
 printf 'mine' > "$MYSTICAL_RUN_OUT/exit.json"
-printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s"}' \\
-  "$cd_ok" "$PWD" "$CLAUDE_CODE_OAUTH_TOKEN" "$CLAUDE_CONFIG_DIR"
+printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s", "home_ok": "%s"}' \\
+  "$cd_ok" "$PWD" "$CLAUDE_CODE_OAUTH_TOKEN" "$CLAUDE_CONFIG_DIR" "$HOME" "$home_ok"
 """)
     st = _stage(box)
     run = Runner()
@@ -232,6 +282,9 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s"}' \\
     report = json.loads((st / "out" / "claude.json").read_text())
     assert report["result"] == "hello" and report["cwd"].endswith("/runs/" + RUN_ID + "/code")
     assert report["token"] == TOKEN and report["config"] == str(box.runs / RUN_ID / "config")
+    assert report["home"] == str(box.runs / RUN_ID / "home") and report["home_ok"] == "yes", \
+        "a fresh home of its own, which goes with the run"
+    assert (st / "out" / "claude.err").read_text() == "warning: something to diagnose\n"
     assert json.loads((st / "out" / "exit.json").read_text()) == {"code": 0, "timedOut": False}, \
         "exit.json is the helper's, whatever the run wrote under that name"
     # Only plain files with plain names come back: no link, no hidden file, no subfolder.
@@ -243,11 +296,51 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s"}' \\
     install, untar, launch, writer, reader = run.calls
     code = str(box.runs / RUN_ID / "code")
     assert install[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and install[3:6] == ["/usr/bin/install", "-d", "-m"]
+    assert str(box.runs / RUN_ID / "home") in install, "the fresh home is made as mysticalruns, 0700"
     assert untar == ["/usr/bin/sudo", "-u", "mysticalruns", "/usr/bin/tar", "-xzf", "-", "-C", code, "--no-same-owner"]
     assert launch == h.launch_argv("sudo", ME, h.claude_argv(JOB["prompt"], str(box.claude)))
     assert reader[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"], "the screens are read as the run's user"
+    assert reader[-2:] == ["out/screens", "out/claude.err"]
     assert writer[:3] == ["/usr/bin/sudo", "-u", "#%d" % ME], "and written as the owner"
     assert not [a for c in run.calls for a in c if TOKEN in a], "the token is never in a command line (ps shows those)"
+
+
+def test_claudes_errors_come_back_capped_at_a_megabyte(box):
+    _claude(box, "head -c 1572864 /dev/zero | tr '\\0' e >&2\nprintf '{}'\n")
+    st = _stage(box)
+    assert h.main(["start", RUN_ID], popen=Runner()) == 0
+    err = (st / "out" / "claude.err").read_bytes()
+    assert len(err) == 1 << 20 and set(err) == {ord("e")}
+
+
+def test_claudes_stderr_file_is_mysticalruns_so_its_own_tar_can_read_it_back(box, monkeypatch):
+    """Root makes out/claude.err before the run exists, then gives it to the run's
+    user. Left root's, the tar that reads results as that user couldn't read it.
+    (Here mysticalruns is you, so the hand-over is checked as a call.)"""
+    given, prev = [], pwd.getpwnam
+    monkeypatch.setattr(pwd, "getpwnam", lambda n: types.SimpleNamespace(pw_uid=4242) if n == "mysticalruns" else prev(n))
+    monkeypatch.setattr(h.os, "fchown", lambda fd, uid, gid: given.append((uid, gid)))
+    _stage(box)
+    assert h.main(["start", RUN_ID], popen=Runner()) == 0
+    assert given == [(4242, -1)]
+
+
+def test_a_claude_binary_others_can_change_is_never_run(box, capsys):
+    _claude(box, "printf '{}'\n")
+    box.claude.chmod(0o775)
+    st = _stage(box)
+    run = Runner()
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    assert run.calls == [] and (st / "token").exists()
+    assert str(box.claude) in capsys.readouterr().err, "the refusal names what is wrong"
+
+
+def test_a_config_in_a_folder_others_can_change_is_not_trusted(box, capsys):
+    box.cfg.parent.chmod(0o775)
+    _stage(box)
+    run = Runner()
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    assert run.calls == [] and str(box.cfg.parent) in capsys.readouterr().err
 
 
 def test_a_run_that_times_out_is_killed_and_still_cleaned_up(box):
@@ -323,12 +416,13 @@ def test_a_run_id_that_is_not_a_uuid_touches_nothing(box, rid):
     assert run.calls == []
 
 
-def test_a_stage_that_is_a_symlink_is_refused(box):
+def test_a_stage_that_is_a_symlink_is_refused(box, capsys):
     real = _stage(box, where=box.tmp / "somewhere-else")
     (box.stages / RUN_ID).symlink_to(real)
     run = Runner()
     assert h.main(["start", RUN_ID], popen=run) == 2
     assert run.calls == [] and (real / "token").exists()
+    assert "symlink" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("swap", ["the folder", "the token"])

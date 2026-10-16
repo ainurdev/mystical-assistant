@@ -240,9 +240,9 @@ def test_facts_are_cached_for_five_minutes_and_refresh_drops_them(monkeypatch):
 
 # --- setup_state ------------------------------------------------------------------
 
-# Set up's root-owned config once Claude is installed for the hidden user.
+# Set up's root-owned config once Claude is installed for device runs.
 INSTALLED = json.dumps({"owner": "mahziyar", "uid": 501, "launch": "sudo",
-                        "claude": "/Users/mysticalruns/.local/bin/claude"})
+                        "claude": "/usr/local/libexec/mystical-runs/claude"})
 
 
 def _config(monkeypatch, tmp_path, text):
