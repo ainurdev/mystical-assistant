@@ -75,7 +75,7 @@ import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWr
 import { AGENT_DEFAULT, agentLabel, optionRows, setAgentLabels } from "../../lib/agents";
 import { notify } from "./Notifications";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
-import { setIntegrations } from "../../lib/integrations";
+import { setIntegrations, useIntegrations } from "../../lib/integrations";
 import { askConfirm } from "../ui/Ask";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isMacApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
@@ -3735,7 +3735,11 @@ export function SettingsModal(props: SettingsModalProps) {
     asked.current = true;   // one attempt: a failed fetch must not retry per keystroke
     void api.envSettings().then((r) => setEnv(r.settings)).catch(() => {});
   }, [q]);
-  const hidden = new Set<string>();   // sections that only exist while a switch is on; none left
+  // Sections that exist only while their plugin is installed; AVAILABLE answers
+  // for one that isn't, so a search never offers a card the page doesn't draw.
+  const plugins = useIntegrations();
+  const hidden = new Set(Object.entries(PLUGIN_SEC).filter(([id]) => !plugins[id]).map(([, sec]) => sec));
+  if (!plugins.rivendell) hidden.add("ADD AN INSTANCE");
   const hits = search(q, env.filter((s) => !tunesOff(s.key, aiFeatures)), hidden);
   const shown: Tab | "search" = q.trim() ? "search" : tab;
   function go(h: Hit) {
