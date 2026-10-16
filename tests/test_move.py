@@ -181,6 +181,8 @@ def world(tmp_path, monkeypatch):
         "production": {"id": "production", "name": "production", "enable": True,
                        "token": "rvd_secret", "workdir": app}}}))
     _write(os.path.join(old.state, "trackers.json"), json.dumps({"connections": {"c1": {"x": 1}}}))
+    _write(os.path.join(old.state, "plugins.json"),
+           json.dumps({"rivendell": True, "trackers": False, "design": False}))
     _write(os.path.join(old.state, "ai_features.json"), json.dumps({"title": False, "ponytail": True}))
     _write(os.path.join(old.state, "nextup.json"), json.dumps({"cache": True}))
     db = sqlite3.connect(old.db)
@@ -372,6 +374,8 @@ def test_bridge_config_merges_and_per_machine_keys_stay_behind(world):
     prod = inst["instances"]["production"]
     assert prod["enable"] is False, "two linked bridges would both run every job"
     assert prod["workdir"] == f"{new.base}/acme/app"
+    assert json.load(open(os.path.join(new.state, "plugins.json"))) == \
+        {"rivendell": True, "trackers": False, "design": False}
     assert json.load(open(os.path.join(new.state, "ai_features.json"))) == \
         {"title": True, "ponytail": True}
     assert json.load(open(os.path.join(new.state, "trackers.json")))["connections"] == \
@@ -661,7 +665,7 @@ def test_plan_lists_every_item_with_what_it_would_carry(world):
     assert "prompts" in history
     bridge = _items(p["sections"], "bridge")
     assert bridge[".env"]["local"] == 3, "BASE_PATH, the bot token and RIVENDELL_ENABLE stay"
-    assert {"rivendell_instances.json", "freeagents.json", "bridge.db"} <= set(bridge)
+    assert {"rivendell_instances.json", "plugins.json", "freeagents.json", "bridge.db"} <= set(bridge)
     assert "nextup.json" not in bridge
 
 

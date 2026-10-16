@@ -94,6 +94,16 @@ def test_update_replaces_token_when_given(monkeypatch):
     assert ri.raw_instances()[0]["token"] == "rvd_new"
 
 
+def test_update_without_a_ws_url_keeps_the_stored_one(monkeypatch):
+    """Review focus 3: the panel's form lost its ws url field; REPLACE TOKEN must not wipe it."""
+    _fresh_db(monkeypatch)
+    a = ri.add_instance(name="p", api_url="http://x", token="rvd_original", ws_url="wss://x/agent")
+    ri.update_instance(a["id"], name="p", api_url="http://x", token="rvd_new")
+    assert ri.raw_instances()[0]["ws_url"] == "wss://x/agent"
+    ri.update_instance(a["id"], name="p", api_url="http://x", token="", ws_url="")
+    assert ri.raw_instances()[0]["ws_url"] == "", "an explicit empty value still clears it"
+
+
 def test_update_unknown_raises(monkeypatch):
     _fresh_db(monkeypatch)
     try:

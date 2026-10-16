@@ -35,7 +35,7 @@ from bridge import (acp_agents, agents, attribution, browser, config, devserver,
                     github, graphmap, httpgz, integrations,
                     models, native, preview_detect, profiles, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
-                    rivendell_instances, runner, selfupdate,
+                    rivendell_instances, rivendell_video, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, trackers,
                     usage, weather, wsutil)
@@ -540,7 +540,7 @@ class Handler(BaseHTTPRequestHandler):
             live = rivendell.status()
             insts = [{**i, "status": live.get(i["id"], {"state": "off"})}
                      for i in rivendell_instances.instances()]
-            return self._json({"instances": insts})
+            return self._json({"instances": insts, "video": rivendell_video.tools()})
         if path == "/local/rivendell/queue":
             # One flat, oldest-first stream across every instance — the rows
             # held for a decision and the runs in flight, each with its
@@ -1324,7 +1324,7 @@ class Handler(BaseHTTPRequestHandler):
                 "enable": body.get("enable", True),
                 "api_url": (body.get("api_url") or "")[:400],
                 "token": (body.get("token") or "")[:2000],
-                "ws_url": (body.get("ws_url") or "")[:400],
+                "ws_url": body["ws_url"][:400] if isinstance(body.get("ws_url"), str) else None,
                 "model": (body.get("model") or "")[:60],
                 "workdir": (body.get("workdir") or "")[:1000],
                 "review_timeout": body.get("review_timeout"),

@@ -83,7 +83,8 @@ _SYNCED = "synced"
 # The bridge state beside the DB that is configuration. The rest are caches or
 # runtime parking lots (cards, nextup, limit_resume, preview_queue, learn-cards).
 _STATE_FILES = ("env_settings.json", "ai_features.json", "fallback_policy.json",
-                "project_config.json", "trackers.json", "rivendell_instances.json")
+                "project_config.json", "trackers.json", "rivendell_instances.json",
+                "plugins.json")
 
 # .env and env_settings.json keys that describe the machine itself, or would make
 # two bridges fight over one bot. Never carried, whatever the old machine had.
@@ -2192,8 +2193,8 @@ def next_steps(rep, park, dry=False) -> "list[dict]":
         out.append({"key": "restart", "text": "Restart the bridge so the new .env and settings load."})
     if b.get("rivendell (OFF)"):
         out.append({"key": "rivendell", "items": b["rivendell (OFF)"],
-                    "text": "Rivendell came over switched OFF. Turn it on (Settings ▸ PLUGINS) only "
-                            "once the old machine's bridge is stopped, or both will run its jobs."})
+                    "text": "Rivendell came over switched OFF. Turn it on under Settings ▸ Integrations ▸ "
+                            "Rivendell only once the old machine's bridge is stopped, or both will run its jobs."})
     if rep.get("mcp", {}).get("may need a login"):
         out.append({"key": "mcp", "items": rep["mcp"]["may need a login"],
                     "text": "MCP servers that sign in with OAuth need it once more here: "

@@ -256,3 +256,27 @@ def test_the_miniapp_state_carries_the_flags(fresh, monkeypatch):
     integrations.set_installed("trackers", True)
     assert call("GET", "/api/state")["obj"]["plugins"] == {
         "rivendell": False, "trackers": True, "design": False}
+
+
+def test_the_rivendell_route_reports_the_video_tools_and_an_edit_keeps_the_ws_url(
+        monkeypatch, tmp_path):
+    """Installed by conftest. REPLACE TOKEN sends no ws_url: the stored one stays; "" clears it."""
+    monkeypatch.setattr(config, "BRIDGE_DB", str(tmp_path / "bridge.db"))
+    monkeypatch.setattr(config, "RIVENDELL_API_URL", "")
+    monkeypatch.setattr(config, "RIVENDELL_TOKEN", "")
+    monkeypatch.setattr(rivendell, "reconfigure", lambda: None)
+    monkeypatch.setattr(rivendell, "status", lambda: {})
+    tools = {"ffmpeg": True, "whisper": False, "model": True}
+    monkeypatch.setattr(dash.rivendell_video, "tools", lambda: tools)
+
+    def post(**more):       # the saved instance; a refused save has none, so a miss fails loudly
+        body = {"name": "p", "api_url": "http://x", "token": "rvd_new", **more}
+        return call("POST", "/local/rivendell", body)["obj"]["instance"]
+
+    iid = post(op="add", ws_url="wss://x/agent")["id"]
+    assert post(op="update", id=iid)["ws_url"] == "wss://x/agent"
+    assert rivendell_instances.raw_instances()[0]["ws_url"] == "wss://x/agent"
+    assert len(post(op="update", id=iid, ws_url="wss://x/" + "a" * 500)["ws_url"]) == 400
+    assert post(op="update", id=iid, ws_url="")["ws_url"] == ""
+    got = call("GET", "/local/rivendell")["obj"]
+    assert got["video"] == tools and [i["id"] for i in got["instances"]] == [iid]

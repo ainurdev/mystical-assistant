@@ -128,7 +128,8 @@ def _timeout(raw, default: int, label: str) -> int:
 def _clean(fields: dict, existing: "dict | None" = None) -> dict:
     """Validate a create/edit payload into a stored instance dict. On edit
     (``existing`` given), a blank token keeps the stored one — the panel shows
-    the token masked and only resends it when it is deliberately changed."""
+    the token masked and only resends it when it is deliberately changed — and
+    so does a ws_url that is absent (None); an empty one still clears it."""
     name = (fields.get("name") or "").strip()
     if not name:
         raise RivendellError("name is required")
@@ -141,6 +142,9 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
             token = existing["token"]
         else:
             raise RivendellError("token is required")
+    ws_url = fields.get("ws_url")
+    if ws_url is None:
+        ws_url = (existing or {}).get("ws_url", "")
     workdir = (fields.get("workdir") or "").strip()
     if workdir:
         workdir = os.path.realpath(os.path.expanduser(workdir))
@@ -150,7 +154,7 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
         "enable": bool(fields.get("enable", True)),
         "api_url": api_url,
         "token": token,
-        "ws_url": _norm_url(fields.get("ws_url")),
+        "ws_url": _norm_url(ws_url),
         "model": (fields.get("model") or "").strip() or _MODEL_DEFAULT,
         "workdir": workdir,
         "review_timeout": _timeout(fields.get("review_timeout"), _REVIEW_DEFAULT, "review timeout"),

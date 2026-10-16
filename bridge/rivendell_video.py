@@ -38,6 +38,14 @@ def _run(cmd: list[str], what: str, timeout: float) -> subprocess.CompletedProce
     return proc
 
 
+def tools() -> dict[str, bool]:
+    """Which of the video kind's tools this machine has, for the Rivendell card.
+    A saved WHISPER_MODEL keeps its ~, so it is expanded here as transcribe expands it."""
+    return {"ffmpeg": bool(shutil.which(config.FFMPEG_BIN)),
+            "whisper": bool(shutil.which(config.WHISPER_BIN)),
+            "model": os.path.isfile(os.path.expanduser(config.WHISPER_MODEL))}
+
+
 def download(url: str, dest: str, timeout: float = 900) -> None:
     """Stream the file to disk; the signed URL is good for an hour."""
     try:
