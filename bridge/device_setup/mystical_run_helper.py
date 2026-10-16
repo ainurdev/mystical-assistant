@@ -41,6 +41,12 @@ code, with every tool allowed. So root never follows a link either could plant:
   Otherwise the owner's passwordless sudo would run whatever replaced them.
 - Claude's stderr is kept as out/claude.err (the first megabyte), so a failed
   run says why.
+- No run reaches the owner's bridge. Set up walled the hidden user off its ports
+  (the dashboard, which hands out its token and an owner's shell with it; the
+  Mini App; the landing page) with a pf rule, and recorded them as the config's
+  `walled`. Before each run, nc tries each one as mysticalruns, from /. One that
+  answers means the wall is down (a VPN or a tool turned pf off, or pf.conf
+  changed), and the run is refused (WALL_DOWN) before its code is unpacked.
 The stage's token is unlinked as soon as it is read, before anything runs.
 Cleanup always runs: on success, failure, timeout, stop, and on a TERM or HUP. (A
 bridge restart doesn't reach this helper: the bridge starts it in a session of
@@ -86,6 +92,7 @@ ERR_CAP = 1 << 20                              # bytes of Claude's stderr handed
 _QUIET = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
 _RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _SCREEN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}")   # a screenshot's name: no folder, not hidden
+WALL_DOWN = "This device's wall is down: its runs could reach your dashboard. Run Set up again."
 
 # Run as mysticalruns on <home>: Library/LaunchAgents becomes a real folder, made
 # if missing or a link, and loses everything but folders. A link is removed and
@@ -223,6 +230,25 @@ def _config():
         raise Refused(err)
     with open(path, encoding="utf-8") as f:   # only root can change it now
         return json.load(f)
+
+
+def _walled(cfg):
+    """The ports Set up walled the hidden user off (the config's `walled`), or
+    None when it recorded none that could be."""
+    ports = cfg.get("walled")
+    if isinstance(ports, list) and ports and all(type(p) is int and 0 < p < 65536 for p in ports):
+        return ports
+    return None
+
+
+def _wall_holds(ports, popen):
+    """Whether none of `ports` answers mysticalruns: nc -z exits 0 only when it
+    connected. Started in /, as every process of that user's is."""
+    for port in ports:
+        nc = ["/usr/bin/sudo", "-u", RUN_USER, "/usr/bin/nc", "-z", "-G", "2", "127.0.0.1", str(port)]
+        if popen(nc, cwd="/", **_QUIET).wait() == 0:
+            return False
+    return True
 
 
 def _as(user, popen, argv, failure, stdin=subprocess.DEVNULL):
@@ -456,6 +482,9 @@ def _start(run_id, cfg, popen):
     err = check_root_path(claude, uid=os.geteuid())   # the copy Set up made, which no run can change
     if err:
         raise Refused(err)
+    walled = _walled(cfg)
+    if walled is None:
+        raise Refused(WALL_DOWN)
     stage = os.path.join(STAGE_ROOT, run_id)
     err = check_stage(stage, cfg["uid"])
     if err:
@@ -479,6 +508,8 @@ def _start(run_id, cfg, popen):
         _sweep(popen)       # nor its folder
         _as(RUN_USER, popen, ["/usr/bin/python3", "-I", "-c", _EMPTY_AGENTS, os.path.dirname(RUNS_HOME)],
             "The hidden user's launch agents couldn't be cleared.")
+        if not _wall_holds(walled, popen):   # nothing of this run is unpacked beside a way into the bridge
+            raise Refused(WALL_DOWN)
         code = os.path.join(run_dir, "code")
         _as(RUN_USER, popen, ["/usr/bin/install", "-d", "-m", "0700", run_dir, code, os.path.join(run_dir, "out"),
                               os.path.join(run_dir, "out", "screens"), os.path.join(run_dir, "config"),

@@ -1,6 +1,7 @@
 #!/bin/bash
 # Remove Share this device, undoing setup.sh:  remove.sh <owner>
 # bridge/device_setup.py runs this as root, behind one macOS admin-password prompt.
+# The wall around the bridge's ports comes down only once the hidden user is gone.
 # Every step can run again. The last line on stdout is the JSON result:
 #   {"ok": true}   or   {"ok": false, "error": "..."}
 set -euo pipefail     # no -E: a failure inside "$(...)" must fail its own line, not print a result
@@ -15,6 +16,11 @@ trap 'fail "$step failed."' ERR
 RUN_USER=mysticalruns
 RUN_HOME=/Users/mysticalruns
 DENY="user:mysticalruns deny list,search,readattr,readextattr,readsecurity,file_inherit,directory_inherit"
+PF_ANCHOR=com.apple/mysticalruns
+PF_LABEL=cloud.ainurhq.mystical-runs.pf
+PF_RULES=/usr/local/etc/mystical-runs.pf
+PF_TOKEN=/usr/local/etc/mystical-runs.pf.token
+PF_DAEMON=/Library/LaunchDaemons/cloud.ainurhq.mystical-runs.pf.plist
 
 # Take RUN_USER's line out of each deny file Set up added it to, writing the same
 # file (its owner and mode stay). A file grep can't read is left as it was:
@@ -26,6 +32,19 @@ allow_cron() { # allow_cron FILE...
     rest=$(grep -vxF "$RUN_USER" "$f") || [ $? -eq 1 ] || continue
     if [ -n "$rest" ]; then printf '%s\n' "$rest" >"$f"; else : >"$f"; fi
   done
+}
+
+# Takes the wall down: the boot job, the rule, pf's reference and the files. Any
+# part may be gone already. (setup.sh and remove.sh have this same function.)
+unwall() {
+  local token=""
+  launchctl bootout "system/$PF_LABEL" >/dev/null 2>&1 || true
+  pfctl -a "$PF_ANCHOR" -F all >/dev/null 2>&1 || true
+  if [ -f "$PF_TOKEN" ]; then
+    read -r token <"$PF_TOKEN" || true
+    [ -z "$token" ] || pfctl -X "$token" >/dev/null 2>&1 || true
+  fi
+  rm -f "$PF_DAEMON" "$PF_RULES" "$PF_TOKEN"
 }
 
 step="Checking your account"
@@ -55,11 +74,15 @@ fi
 if dscl . -read "/Users/$RUN_USER" >/dev/null 2>&1; then fail "macOS didn't delete the hidden user."; fi
 rm -rf "$RUN_HOME"
 
-# 4. Cron and at may take the name again (Set up denied it both).
+# 4. The wall Set up put between the hidden user and this bridge's ports.
+step="Taking down the wall around this bridge"
+unwall
+
+# 5. Cron and at may take the name again (Set up denied it both).
 step="Taking the hidden user out of the cron and at deny lists"
 allow_cron /usr/lib/cron/cron.deny /usr/lib/cron/at.deny
 
-# 5. The helper, its config, its lock, the sudoers rule, the Claude copy, and the
+# 6. The helper, its config, its lock, the sudoers rule, the Claude copy, and the
 #    runs folder. The lock's folders go too when nothing else is in them.
 step="Removing the helper"
 rm -f /usr/local/libexec/mystical-run-helper /usr/local/etc/mystical-runs.json /etc/sudoers.d/mystical-runs \

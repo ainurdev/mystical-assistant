@@ -1,5 +1,6 @@
 """Set up and Remove for Share this device: one macOS admin-password prompt runs
-bridge/device_setup/setup.sh or remove.sh as root.
+bridge/device_setup/setup.sh or remove.sh as root. Set up also gets this bridge's
+ports (device_share.wall_ports), which it walls the hidden user off.
 
 The prompt is osascript's `do shell script … with administrator privileges`,
 the standard one, so nothing here holds or sees the password. The scripts own
@@ -16,6 +17,8 @@ import os
 import shlex
 import subprocess
 
+from bridge import device_share
+
 _DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "device_setup")
 _SCRIPTS = {"setup": "setup.sh", "remove": "remove.sh"}
 
@@ -29,7 +32,8 @@ def run(action, owner=getpass.getuser(), run=subprocess.run):
     """Set up ("setup") or Remove ("remove") this device for `owner`, the account
     that shares it. Returns the script's {"ok", "checks", "error"}, or
     {"ok": False, "error": "Cancelled."} when the password prompt is cancelled."""
-    shell = " ".join(shlex.quote(a) for a in ("/bin/bash", os.path.join(_DIR, _SCRIPTS[action]), owner))
+    ports = [str(p) for p in device_share.wall_ports()] if action == "setup" else []
+    shell = " ".join(shlex.quote(a) for a in ("/bin/bash", os.path.join(_DIR, _SCRIPTS[action]), owner, *ports))
     try:
         r = run(["osascript", "-e", "do shell script %s with administrator privileges" % _applescript(shell)],
                 capture_output=True, encoding="utf-8", errors="replace", timeout=900)

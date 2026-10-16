@@ -18,6 +18,7 @@ import types
 
 import pytest
 
+from bridge import config
 from bridge import device_share as ds
 
 _FIX = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "device")
@@ -52,7 +53,9 @@ MAC = {
 
 FACTS = {"id": ID, "name": "Mahziyar’s MacBook Pro", "os": "macOS", "osVersion": "27.0.1",
          "chip": "M5 Pro", "xcode": "27.0", "iosRuntimes": ["27.0"], "node": "26", "pods": "1.17.0"}
-SET_UP = {"user": True, "helper": True, "claude": True}
+SET_UP = {"user": True, "helper": True, "claude": True, "wall": True}
+# This bridge's own ports, which Set up walls the hidden user off: the dashboard, the Mini App, the landing page.
+WALLED = sorted({config.DASH_PORT, config.MINIAPP_PORT, config.LANDING_PORT})
 
 
 def fake_run(answers=None):
@@ -242,7 +245,7 @@ def test_facts_are_cached_for_five_minutes_and_refresh_drops_them(monkeypatch):
 
 # Set up's root-owned config once Claude is installed for device runs.
 INSTALLED = json.dumps({"owner": "mahziyar", "uid": 501, "launch": "sudo",
-                        "claude": "/usr/local/libexec/mystical-runs/claude"})
+                        "claude": "/usr/local/libexec/mystical-runs/claude", "walled": WALLED})
 
 
 def _config(monkeypatch, tmp_path, text):
@@ -253,7 +256,7 @@ def _config(monkeypatch, tmp_path, text):
     monkeypatch.setattr(ds, "RUNS_CONFIG", str(path))
 
 
-def test_setup_state_is_the_hidden_user_the_helper_and_claude(monkeypatch, tmp_path):
+def test_setup_state_is_the_hidden_user_the_helper_claude_and_the_wall(monkeypatch, tmp_path):
     _config(monkeypatch, tmp_path, INSTALLED)
     run = fake_run()
     assert ds.setup_state(exists=lambda p: True, run=run) == SET_UP
@@ -263,11 +266,33 @@ def test_setup_state_is_the_hidden_user_the_helper_and_claude(monkeypatch, tmp_p
 def test_each_part_of_the_setup_is_told_apart(monkeypatch, tmp_path):
     _config(monkeypatch, tmp_path, INSTALLED)
     assert ds.setup_state(exists=lambda p: True, run=fake_run({"dscl": (56, "")})) == \
-        {"user": False, "helper": True, "claude": True}
+        {"user": False, "helper": True, "claude": True, "wall": True}
     assert ds.setup_state(exists=lambda p: False, run=fake_run()) == \
-        {"user": True, "helper": False, "claude": True}
+        {"user": True, "helper": False, "claude": True, "wall": True}
     assert ds.setup_state(exists=lambda p: False, run=fake_run({"dscl": FileNotFoundError("dscl")})) == \
-        {"user": False, "helper": False, "claude": True}
+        {"user": False, "helper": False, "claude": True, "wall": True}
+
+
+def test_the_wall_is_the_bridges_own_three_ports():
+    assert ds.wall_ports() == WALLED and len(WALLED) == 3
+
+
+@pytest.mark.parametrize("why, walled, holds", [
+    ("the bridge's ports", WALLED, True),
+    ("Set up from before the wall", None, False),
+    ("a port has changed since", WALLED[:-1] + [WALLED[-1] + 1000], False),
+    ("one port missing", WALLED[1:], False),
+    ("not a list", ",".join(map(str, WALLED)), False),
+])
+def test_the_wall_holds_only_for_the_ports_the_bridge_has_now(monkeypatch, tmp_path, why, walled, holds):
+    """A changed port needs Set up again, to wall the new one."""
+    cfg = json.loads(INSTALLED)
+    if walled is None:
+        del cfg["walled"]
+    else:
+        cfg["walled"] = walled
+    _config(monkeypatch, tmp_path, json.dumps(cfg))
+    assert ds.setup_state(exists=lambda p: True, run=fake_run())["wall"] is holds, why
 
 
 @pytest.mark.parametrize("why, text, claude", [
@@ -311,7 +336,9 @@ def test_a_device_that_has_everything_is_ready(monkeypatch):
         {"key": "node", "label": "NODE 26", "ok": True},
         {"key": "pods", "label": "COCOAPODS 1.17.0", "ok": True},
         {"key": "user", "label": "USER MYSTICALRUNS", "ok": True},
+        {"key": "wall", "label": "WALL", "ok": True},
     ]
+    assert s["installed"] is True
 
 
 def test_sharing_defaults_to_on_so_an_old_instance_shares(monkeypatch):
@@ -320,12 +347,12 @@ def test_sharing_defaults_to_on_so_an_old_instance_shares(monkeypatch):
 
 
 def test_off_a_mac_the_state_is_not_mac(monkeypatch):
-    assert _state(monkeypatch, facts=None) == {"state": "NOT_MAC", "checks": [], "facts": None}
+    assert _state(monkeypatch, facts=None) == {"state": "NOT_MAC", "checks": [], "facts": None, "installed": False}
 
 
 def test_switched_off_the_state_is_off_but_the_checks_still_show(monkeypatch):
     s = _state(monkeypatch, {"share_device": False})
-    assert s["state"] == "OFF" and s["facts"] == FACTS and len(s["checks"]) == 6
+    assert s["state"] == "OFF" and s["facts"] == FACTS and len(s["checks"]) == 7
 
 
 @pytest.mark.parametrize("inst, facts", [
@@ -346,7 +373,7 @@ def test_the_user_check_says_whether_it_is_set_up_whatever_the_state(monkeypatch
 def test_off_beats_everything_but_not_a_mac(monkeypatch):
     bare = dict(FACTS, xcode=None, iosRuntimes=[])
     assert _state(monkeypatch, {"share_device": False}, facts=bare,
-                  setup={"user": False, "helper": False, "claude": False})["state"] == "OFF"
+                  setup={"user": False, "helper": False, "claude": False, "wall": False})["state"] == "OFF"
     assert _state(monkeypatch, {"share_device": False}, facts=None)["state"] == "NOT_MAC"
 
 
@@ -358,15 +385,28 @@ def test_no_xcode_or_no_ios_runtime_is_xcode_missing(monkeypatch, gone, label):
 
 
 def test_xcode_missing_is_reported_before_the_setup_is_asked_for(monkeypatch):
-    s = _state(monkeypatch, facts={**FACTS, "xcode": None}, setup={"user": False, "helper": False, "claude": False})
+    s = _state(monkeypatch, facts={**FACTS, "xcode": None},
+               setup={"user": False, "helper": False, "claude": False, "wall": False})
     assert s["state"] == "XCODE_MISSING"
 
 
-@pytest.mark.parametrize("part", ["user", "helper", "claude"])
-def test_any_missing_part_of_the_setup_needs_setup(monkeypatch, part):
+@pytest.mark.parametrize("part, check", [("user", "user"), ("helper", "user"), ("claude", "user"), ("wall", "wall")])
+def test_any_missing_part_of_the_setup_needs_setup(monkeypatch, part, check):
     s = _state(monkeypatch, setup={**SET_UP, part: False})
     assert s["state"] == "NEEDS_SETUP"
-    assert [c["key"] for c in s["checks"] if not c["ok"]] == ["user"]
+    assert [c["key"] for c in s["checks"] if not c["ok"]] == [check], "a changed port is a ✗ WALL of its own"
+
+
+@pytest.mark.parametrize("setup, installed", [
+    ({"user": False, "helper": False, "claude": False, "wall": False}, False),
+    ({"user": True, "helper": False, "claude": False, "wall": False}, True),     # a Set up cut short
+    ({"user": False, "helper": True, "claude": False, "wall": False}, True),
+    (SET_UP, True),
+])
+@pytest.mark.parametrize("inst", [{}, {"share_device": False}])
+def test_installed_says_whether_anything_of_set_up_is_here_sharing_on_or_off(monkeypatch, setup, installed, inst):
+    """What REMOVE is offered on: a partial setup too (the panel, lib/deviceruns.ts)."""
+    assert _state(monkeypatch, inst, setup=setup)["installed"] is installed
 
 
 def test_node_and_cocoapods_are_shown_but_do_not_hold_a_device_back(monkeypatch):
@@ -411,6 +451,7 @@ def test_the_device_header_is_url_safe_base64_without_padding(monkeypatch):
     ("switched off", {"share_device": False}, FACTS, SET_UP),
     ("no xcode", {}, {**FACTS, "xcode": None}, SET_UP),
     ("needs setup", {}, FACTS, {**SET_UP, "helper": False}),
+    ("its wall isn't the bridge's ports", {}, FACTS, {**SET_UP, "wall": False}),
 ])
 def test_a_device_that_is_not_ready_says_nothing(monkeypatch, why, inst, facts, setup):
     _device(monkeypatch, facts, setup)

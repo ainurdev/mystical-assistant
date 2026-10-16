@@ -215,6 +215,9 @@ def test_the_user_running_the_helper_counts_as_root_which_outside_tests_it_is():
 # --- start and stop, against temp dirs --------------------------------------------------
 
 RUN_UID = 4242    # mysticalruns here: never yours, so a fake that is missed targets nobody
+WALLED = [8787, 8790, 8791]     # the bridge's ports Set up walled the hidden user off
+WALL = [["/usr/bin/sudo", "-u", "mysticalruns", "/usr/bin/nc", "-z", "-G", "2", "127.0.0.1", str(p)] for p in WALLED]
+WALL_DOWN = "This device's wall is down: its runs could reach your dashboard. Run Set up again."
 KILL_ALL = ["/usr/bin/pkill", "-KILL", "-u", "mysticalruns"]
 ANY_LEFT = ["/usr/bin/pgrep", "-u", "mysticalruns"]
 CRONTAB = ["/usr/bin/crontab", "-r", "-u", "mysticalruns"]
@@ -248,10 +251,11 @@ class Runner:
     """subprocess.Popen as the helper calls it, failing closed. Every command is
     recorded.
 
-    pkill, pgrep, crontab and launchctl are faked and never run. pgrep answers
+    pkill, pgrep, crontab, launchctl and nc are faked and never run. pgrep answers
     from `left` (0: some are left, 2: an error) and then 1 (none are); crontab
     exits `cron_rc` (1, as when there is none); launchctl exits 3 (no such
-    domain), or with `launchd_hangs` never answers until it is killed. At each
+    domain), or with `launchd_hangs` never answers until it is killed; nc exits 0
+    (it connected) for a port in `open_ports`, else 1, as against the wall. At each
     kill, `kills` notes what `on_kill()` says then. `hooks` maps a command (after
     the sudo) to a function of its argv: a number it returns is that command's
     exit code instead of running it, None lets it run.
@@ -262,18 +266,19 @@ class Runner:
     Anything else is refused (and fails the test, see no_real_process): nothing
     falls through to a real command."""
 
-    FAKED = ("/usr/bin/pkill", "/usr/bin/pgrep", "/usr/bin/crontab", "/bin/launchctl")
+    FAKED = ("/usr/bin/pkill", "/usr/bin/pgrep", "/usr/bin/crontab", "/bin/launchctl", "/usr/bin/nc")
     REAL = ("/usr/bin/tar", "/usr/bin/install", "/usr/bin/python3", "/bin/rm")
     root = claude = None          # the box's temp dir and fake Claude
     refused: list = []            # what no Runner would run, this test (no_real_process checks it)
 
-    def __init__(self, left=(), on_kill=lambda: None, cron_rc=1, hooks=None, launchd_hangs=False):
-        self.calls, self.procs, self.kills, self.faked = [], [], [], []
+    def __init__(self, left=(), on_kill=lambda: None, cron_rc=1, hooks=None, launchd_hangs=False, open_ports=()):
+        self.calls, self.procs, self.kills, self.faked, self.cwds = [], [], [], [], []
         self.left, self.on_kill, self.cron_rc, self.hooks = list(left), on_kill, cron_rc, hooks or {}
-        self.launchd_hangs = launchd_hangs
+        self.launchd_hangs, self.open_ports = launchd_hangs, {str(p) for p in open_ports}
 
     def __call__(self, argv, **kw):
         self.calls.append(list(argv))
+        self.cwds.append(kw.get("cwd"))
         cmd = list(argv)
         if cmd and cmd[0] == "/usr/bin/sudo":
             cmd = cmd[1:]
@@ -286,6 +291,8 @@ class Runner:
             rc = {"/usr/bin/pkill": 0, "/usr/bin/crontab": self.cron_rc, "/bin/launchctl": 3}.get(exe)
             if exe == "/usr/bin/pgrep":
                 rc = self.left.pop(0) if self.left else 1
+            if exe == "/usr/bin/nc":
+                rc = 0 if cmd[-1] in self.open_ports else 1
             done = _Done(rc, hangs=exe == "/bin/launchctl" and self.launchd_hangs)
             self.faked.append((exe, done))
             return done
@@ -374,7 +381,7 @@ def box(tmp_path, monkeypatch):
     b.stages.mkdir()
     b.cfg.parent.mkdir()
     b.lock.parent.mkdir()
-    b.cfg.write_text(json.dumps({"owner": "me", "uid": ME, "launch": "sudo", "claude": str(b.claude)}))
+    b.cfg.write_text(json.dumps({"owner": "me", "uid": ME, "launch": "sudo", "claude": str(b.claude), "walled": WALLED}))
     b.cfg.chmod(0o644)
     monkeypatch.setattr(h, "RUNS_HOME", str(b.runs))
     monkeypatch.setattr(h, "STAGE_ROOT", str(b.stages))
@@ -445,8 +452,9 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
     assert _left_behind(box, st) == []
     assert (st / "job.json").exists(), "the rest of the stage is the bridge's to remove"
 
-    (bootout_user, bootout_gui, kill, wait, cron, clear, install, untar, launch, writer, reader,
+    (bootout_user, bootout_gui, kill, wait, cron, clear, *wall, install, untar, launch, writer, reader,
      bootout_user_again, bootout_gui_again, kill_again, wait_again) = run.calls
+    assert wall == WALL, "the wall is proved as the hidden user, before its code is unpacked"
     assert [bootout_user, bootout_gui] == BOOTOUT == [bootout_user_again, bootout_gui_again], "as root, fixed argv"
     assert cron == CRONTAB, "as root, with its fixed argv"
     assert clear[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and clear[-1] == str(box.tmp)
@@ -757,6 +765,47 @@ def test_a_config_others_can_change_is_not_trusted(box):
     run = Runner()
     assert h.main(["start", RUN_ID], popen=run) == 2
     assert run.calls == []
+
+
+def test_every_run_proves_the_wall_first_as_the_hidden_user_from_the_root_folder(box):
+    """None of the bridge's ports may answer the hidden user: the dashboard
+    hands out its token, and with it comes an owner's shell."""
+    _stage(box)
+    run = Runner()
+    assert h.main(["start", RUN_ID], popen=run) == 0
+    at = [i for i, c in enumerate(run.calls) if c in WALL]
+    assert [run.calls[i] for i in at] == WALL and all(run.cwds[i] == "/" for i in at), \
+        "each walled port, as mysticalruns, started in / (never past the deny rule on your home)"
+    untar = next(i for i, c in enumerate(run.calls) if "-xzf" in c)
+    assert at[-1] < untar, "before the run's code is unpacked, so before it runs"
+
+
+@pytest.mark.parametrize("port", WALLED)
+def test_a_run_never_starts_while_the_wall_is_down(box, capsys, port):
+    """A VPN or a tool that turned pf off, or a pf.conf changed since Set up: the
+    run fails with the reason, and its code is never unpacked."""
+    st = _stage(box)
+    run = Runner(open_ports=[port])
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    assert capsys.readouterr().err == "mystical-run-helper: %s\n" % WALL_DOWN
+    assert not [c for c in run.calls if "-p" in c or "-xzf" in c], "nothing was unpacked or run"
+    assert run.calls.count(KILL_ALL) == 2 and _left_behind(box, st) == []
+
+
+@pytest.mark.parametrize("walled", [None, [], [8790, "8791"], [0], [8790, 70000], [True], "8790"])
+def test_a_device_set_up_without_a_wall_on_record_refuses_its_runs(box, capsys, walled):
+    """Set up from before the wall, or a record that isn't one: Set up again."""
+    cfg = json.loads(box.cfg.read_text())
+    if walled is None:
+        del cfg["walled"]
+    else:
+        cfg["walled"] = walled
+    box.cfg.write_text(json.dumps(cfg))
+    st = _stage(box)
+    run = Runner()
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    assert run.calls == [] and (st / "token").exists(), "refused before anything is touched"
+    assert capsys.readouterr().err == "mystical-run-helper: %s\n" % WALL_DOWN
 
 
 def test_a_config_without_claude_means_set_up_has_not_finished(box, capsys):

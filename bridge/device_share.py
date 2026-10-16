@@ -150,20 +150,30 @@ def refresh():
         _cached["facts"] = None
 
 
+def wall_ports():
+    """This bridge's own ports, which Set up walls the hidden user off: the
+    dashboard, the Mini App and the landing page (setup.sh's pf rule)."""
+    return sorted({config.DASH_PORT, config.MINIAPP_PORT, config.LANDING_PORT})
+
+
 def setup_state(exists=os.path.exists, run=subprocess.run):
-    """What Set up leaves behind: the hidden user, the root helper, and Claude
-    Code installed for that user. Claude is the `claude` path Set up records in
-    its root-owned config once the binary is there. The hidden home stays closed
-    to this account, so nothing is looked up inside it."""
+    """What Set up leaves behind: the hidden user, the root helper, Claude Code
+    installed for that user, and the wall. Claude is the `claude` path Set up
+    records in its root-owned config once the binary is there; the wall holds
+    for the ports it records as `walled`, which must be this bridge's ports now.
+    The hidden home stays closed to this account, so nothing is looked up inside
+    it."""
     try:
         with open(RUNS_CONFIG, encoding="utf-8") as f:
-            claude = json.load(f).get("claude")
+            cfg = json.load(f)
+        claude, walled = cfg.get("claude"), cfg.get("walled")
     except (OSError, ValueError, AttributeError):
-        claude = None
+        claude = walled = None
     return {
         "user": _out(run, ["dscl", ".", "-read", "/Users/" + RUN_USER]) is not None,
         "helper": exists(HELPER),
         "claude": isinstance(claude, str) and claude != "",
+        "wall": walled == wall_ports(),
     }
 
 
@@ -178,16 +188,19 @@ def _check(key, ok, *words):
 
 
 def share_state(inst, run=subprocess.run):
-    """Where this device stands for one instance: {state, checks, facts}.
+    """Where this device stands for one instance: {state, checks, facts, installed}.
 
     NOT_MAC (not macOS) > OFF (Share this device is off) > XCODE_MISSING (no
     Xcode, or no iOS runtime) > NEEDS_SETUP (the hidden user, helper or Claude
-    is missing) > READY. Node and CocoaPods show in the checks but hold nothing back.
+    is missing, or the wall isn't on the bridge's ports now) > READY. Node and
+    CocoaPods show in the checks but hold nothing back. `installed` is whether
+    anything of Set up's is here, whatever the state: what REMOVE is offered on.
     """
     facts = device_facts(run)
     if facts is None:
-        return {"state": "NOT_MAC", "checks": [], "facts": None}
+        return {"state": "NOT_MAC", "checks": [], "facts": None, "installed": False}
     setup = setup_state(run=run)
+    user = setup["user"] and setup["helper"] and setup["claude"]
     ios = facts["iosRuntimes"]
     checks = [
         _check("macos", facts["osVersion"], "MACOS", facts["osVersion"]),
@@ -195,7 +208,8 @@ def share_state(inst, run=subprocess.run):
         _check("ios", ios, "IOS", ios and ios[0], "SIMULATOR"),
         _check("node", facts["node"], "NODE", facts["node"]),
         _check("pods", facts["pods"], "COCOAPODS", facts["pods"]),
-        _check("user", all(setup.values()), "USER MYSTICALRUNS"),
+        _check("user", user, "USER MYSTICALRUNS"),
+        _check("wall", setup["wall"], "WALL"),
     ]
     if not inst.get("share_device", True):
         state = "OFF"
@@ -205,7 +219,7 @@ def share_state(inst, run=subprocess.run):
         state = "NEEDS_SETUP"
     else:
         state = "READY"
-    return {"state": state, "checks": checks, "facts": facts}
+    return {"state": state, "checks": checks, "facts": facts, "installed": any(setup.values())}
 
 
 def _last_run_path():

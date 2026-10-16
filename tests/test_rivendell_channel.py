@@ -29,14 +29,18 @@ _mids = itertools.count(1000)          # Telegram message ids, unique across tes
 @pytest.fixture(autouse=True)
 def no_real_helper(monkeypatch):
     """device_side reaches sudo and the device-run helper through its own
-    defaults. None of these tests may: the defaults refuse, and one reached (on
-    any thread) fails the test."""
+    defaults, and device_share probes this machine (xcrun, dscl and friends)
+    through its own. None of these tests may: the defaults refuse, and one
+    reached (on any thread) fails the test."""
     reached = []
 
     def refuse(argv, **kw):
         reached.append(list(argv))
         raise AssertionError("a command reached sudo from a channel test: %r" % (argv,))
-    for f, d in ((device_side.run, (refuse, refuse)), (device_side.stop, (refuse,)), (device_side.sweep, (refuse,))):
+    for f, d in ((device_side.run, (refuse, refuse)), (device_side.stop, (refuse,)), (device_side.sweep, (refuse,)),
+                 (device_share.developer_dir, (refuse,)), (device_share.device_facts, (refuse,)),
+                 (device_share.share_state, (refuse,)), (device_share.handshake_headers, (refuse,)),
+                 (device_share.setup_state, (device_share.setup_state.__defaults__[0], refuse))):
         monkeypatch.setattr(f, "__defaults__", d)
     yield
     assert not reached, "a command reached sudo from a channel test: %r" % reached
@@ -1249,7 +1253,7 @@ def test_a_group_chat_is_never_the_owner(tmp_path):
 
 _DEVICE = {"id": "7c50be1739dfacbb", "name": "Mahziyar’s MacBook Pro", "os": "macOS", "osVersion": "27.0.1",
            "chip": "M5 Pro", "xcode": "27.0", "iosRuntimes": ["27.0"], "node": "26", "pods": "1.17.0"}
-_SET_UP = {"user": True, "helper": True, "claude": True}
+_SET_UP = {"user": True, "helper": True, "claude": True, "wall": True}
 
 
 def _device(monkeypatch, facts=_DEVICE, setup=_SET_UP):
@@ -1337,6 +1341,7 @@ def test_a_dial_remembers_whether_it_offered_this_device(monkeypatch):
     (False, False, False),
 ])
 def test_a_live_link_redials_when_this_devices_offer_changed(monkeypatch, offered, ready, redials):
+    monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: _SET_UP)
     monkeypatch.setattr(device_share, "handshake_headers",
                         lambda inst: ["X-Mystical-Features: device-runs"] if ready else [])
     w = _worker()
@@ -1355,9 +1360,33 @@ def test_only_a_live_link_is_looked_at_since_any_other_dial_asks_afresh(monkeypa
         w.recheck_device()
 
 
+@pytest.mark.parametrize("offered", [False, True])
+def test_a_device_never_set_up_is_not_probed_on_the_look(monkeypatch, offered):
+    """The 60 s look asks only the cheap setup_state while Set up isn't all
+    there: no device can be READY without it, and the probe holds the facts'
+    lock for up to 10 s a binary. A link that offered the device still redials."""
+    monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: {**_SET_UP, "user": False})
+    monkeypatch.setattr(device_share, "handshake_headers", lambda inst: pytest.fail("no probe before Set up"))
+    w = _worker()
+    w.status, w._offered = "connected", offered
+    dropped = []
+    monkeypatch.setattr(w, "_drop_connection", lambda: dropped.append(1))
+    w.recheck_device()
+    assert bool(dropped) is offered
+
+
+def test_a_device_not_shared_is_not_even_asked_about_its_setup(monkeypatch):
+    monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: pytest.fail("sharing is off: nothing to ask"))
+    monkeypatch.setattr(device_share, "handshake_headers", lambda inst: pytest.fail("sharing is off: no probe"))
+    w = _worker(share_device=False)
+    w.status, w._offered = "connected", False
+    w.recheck_device()
+
+
 def test_a_device_check_that_raises_keeps_the_link(monkeypatch):
     def broken(inst):
         raise RuntimeError("dscl went away")
+    monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: _SET_UP)
     monkeypatch.setattr(device_share, "handshake_headers", broken)
     w = _worker()
     w.status, w._offered = "connected", True

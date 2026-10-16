@@ -2145,11 +2145,14 @@ class Worker:
         """Redial when this device's offer no longer matches the dial's: it
         became READY (Set up, a new Xcode, a probe that failed cold and has
         lapsed) or stopped being (Remove). The offer goes only with the upgrade.
-        Only a live link is looked at: any other one dials afresh anyway."""
+        Only a live link is looked at: any other one dials afresh anyway. Until
+        Set up is all there (the cheap setup_state) no device can be READY, so
+        the probe, which holds the facts' lock for seconds, isn't run."""
         if self.status != "connected":
             return
         try:
-            offer = bool(device_share.handshake_headers(self.inst))
+            offer = bool(self.inst.get("share_device", True) and all(device_share.setup_state().values())
+                         and device_share.handshake_headers(self.inst))
         except Exception as e:  # noqa: BLE001 — a device probe never takes the link down
             print(f"rivendell[{self.name}]: device check failed: {e}")
             return
