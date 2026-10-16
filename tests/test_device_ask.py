@@ -415,6 +415,23 @@ def test_a_relative_folder_is_the_sessions_never_the_bridges(riv, snap, chat, fo
     assert snap == [os.path.join(chat.cwd, sub).rstrip(os.sep)]
 
 
+@pytest.mark.parametrize("folder, sub", [(None, ""), ("Sources", "Sources")])
+def test_a_session_that_moved_into_a_worktree_sends_the_worktree(riv, snap, chat, tmp_path, folder, sub):
+    """claude's own cwd stays the main checkout after a `cd` into a worktree,
+    so it alone would test the wrong branch."""
+    wt = tmp_path / "wt"
+    wt.mkdir()
+    store.set_work_cwd(chat.id, str(wt))
+    da.start(chat.csid, "Test it", "NR-31", None, None, folder)
+    assert snap == [os.path.join(str(wt), sub).rstrip(os.sep)]
+
+
+def test_a_worktree_removed_since_leaves_the_sessions_own_folder(riv, snap, chat, tmp_path):
+    store.set_work_cwd(chat.id, str(tmp_path / "gone"))
+    da.start(chat.csid, "Test it", "NR-31", None, None, None)
+    assert snap == [chat.cwd]
+
+
 def test_a_relative_folder_with_no_session_folder_is_refused_before_git(riv):
     s = store.create_session(555, "ainurhq/app")            # no folder yet: it hasn't run
     csid = str(uuid.uuid4())

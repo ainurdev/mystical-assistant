@@ -315,8 +315,12 @@ def _start(csid, request, task, pull_request, device, folder):
         raise DeviceAskError(f"{pull_request} isn't a pull request (owner/repo#57, #57 or its link).")
     if device and not _DEVICE_ID.fullmatch(device):
         raise DeviceAskError(f"{device} isn't a device id from ListDevices.")
-    # A relative folder is the session's, never the bridge's own working folder.
-    folder = os.path.join(sess.get("cwd") or "", os.path.expanduser(_text(folder) or ""))
+    # The session's folder is the worktree its shell moved into (runner._note_work_cwd),
+    # unless that has been removed since; a relative folder is the session's too,
+    # never the bridge's own working folder.
+    wt = sess.get("work_cwd") or ""
+    base = wt if os.path.isdir(wt) else sess.get("cwd") or ""
+    folder = os.path.join(base, os.path.expanduser(_text(folder) or ""))
     snap = snapshot(os.path.normpath(folder) if folder else "")
     body = {"request": request, "repositoryFullName": snap["repository"], "commitSha": snap["commitSha"],
             "dirty": snap["dirty"], "gitAuthorName": snap["gitAuthorName"],
