@@ -193,6 +193,8 @@ public sealed class App : ApplicationContext
                 return Ok();
             case "probe":
                 return await Probe.Write(Str(req, "dir") ?? "", this);
+            case "capture":
+                return CaptureRequest.Parse(req) is { } capture ? Capture.Run(capture) : Error("dir must be an absolute Windows path");
             case "eval":
                 // A driver for checks: the JSON text of the expression's value.
                 var result = await Dashboard.Eval(Str(req, "js") ?? "");

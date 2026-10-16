@@ -296,6 +296,7 @@ public sealed class DashboardForm : Form
         if (hotkeyOn) { Native.UnregisterHotKey(Handle, HotkeyId); hotkeyOn = false; }
         if (!on) return true;
         hotkeyOn = Native.RegisterHotKey(Handle, HotkeyId, Native.ModWin | Native.ModControl | Native.ModNoRepeat, 0x41);
+        App.Log($"hotkey Win+Ctrl+A registered: {hotkeyOn}");
         return hotkeyOn;
     }
 
