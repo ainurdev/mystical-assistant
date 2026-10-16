@@ -3317,21 +3317,19 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] [data-pb="console"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--mono) !important; }
 [data-fam] .pb-place { border-radius: 7px; border-color: var(--line); }
 [data-fam] .pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run) { border-right-color: var(--line) !important; }
-[data-fam] [data-pb="tabs"] .cmdbox[data-running], [data-fam] [data-pb="tabs"] .cmdbox[data-running]:focus-within {
-  border-color: color-mix(in oklab, var(--ask) 60%, var(--line2)) !important; box-shadow: 0 0 0 3px color-mix(in oklab, var(--ask) 14%, transparent) !important; }
 /* CONSOLE's line is yours in every state, so a running turn never recolours it
    (■ ❚❚ » and the queue placeholder say it runs). Here ASK is the "waits on you"
    magenta, so CONSOLE's QUEUE fills like SEND instead. */
 [data-fam] [data-pb="console"] .act-pri.queue:not(:disabled) { background: var(--f-grad); }
 /* TABS: the tabs and the card share one edge, in every state the card has: the
-   theme's hairline at rest, its accent on focus and on a file drag, ASK while a
-   turn runs. The card reads the same variable, so the two can never drift. */
+   theme's hairline at rest, its accent on focus and on a file drag. A running
+   turn keeps the hairline (the user's call, as CONSOLE's): colour means focus.
+   The card reads the same variable, so the two can never drift. */
 .composer[data-pb="tabs"] { --pb-edge: color-mix(in srgb, var(--acc) 18%, transparent); }
-.composer[data-pb="tabs"]:has(.pb-card[data-running]) { --pb-edge: color-mix(in srgb, var(--ask, var(--purple)) 55%, transparent); }
+.composer[data-pb="tabs"]:has(.pb-card:focus-within) { --pb-edge: color-mix(in srgb, var(--acc) 45%, transparent); }
 .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
 [data-fam] .composer[data-pb="tabs"] { --pb-edge: var(--line2); }
 [data-fam] .composer[data-pb="tabs"]:has(.pb-card:focus-within) { --pb-edge: color-mix(in oklab, var(--acc) 40%, var(--line2)); }
-[data-fam] .composer[data-pb="tabs"]:has(.pb-card[data-running]) { --pb-edge: color-mix(in oklab, var(--ask) 60%, var(--line2)); }
 [data-fam] .composer[data-pb="tabs"]:has(.pb-card[data-drag]) { --pb-edge: var(--acc); }
 [data-theme] .composer[data-pb="tabs"] .pb-card.cmdbox { border-color: var(--pb-edge) !important; }
 /* TABS: the transcript runs on under the tab row, as it runs under the island

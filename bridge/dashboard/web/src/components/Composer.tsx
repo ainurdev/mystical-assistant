@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
-import { deadLogin, loginSlot, loginWindows, modelRows, tightest } from "../models";
+import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows } from "../models";
 import { describe, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago, fmtReset } from "../lib/surfaces";
@@ -785,8 +785,9 @@ export function Composer({
   // One on an expired login opens SETTINGS ▸ ACCOUNTS on that login instead:
   // a session bound to it could only fail.
   // The chip's own reading: what the login this session spends has left in
-  // its tightest window and when that window refills — the two numbers that
-  // decide whether to send now; both windows with exact times on hover. No
+  // its 5-hour window (the week's, once the week refills first) and when that
+  // window refills — the two numbers that decide whether to send now; both
+  // windows with exact times on hover, and in the menu's rows. No
   // profile: the default login. An agent profile spends no Claude quota, and a
   // profile the list lacks has no known login, so neither reads. A meter the
   // usage endpoint won't serve (an idle login's access token lapsed; the CLI
@@ -794,11 +795,11 @@ export function Composer({
   const chipSlot = agentPick || (profile && !bound) ? null : loginSlot(bound?.agent, bound?.account);
   const chipAcct = chipSlot === null ? undefined : accounts?.find((a) => a.slot === chipSlot);
   const chipWins = loginWindows(chipAcct);
-  const chipTight = tightest(chipWins);
-  const chipMeter = chipTight
+  const chipWin = chipWindow(chipWins);
+  const chipMeter = chipWin
     ? <span className="ctrl-meter" style={{ fontSize: "var(--t9)", letterSpacing: .5, flex: "none" }}>
-        <span style={{ color: sevColor(chipTight.severity) }}>{chipTight.left}%</span>
-        <span style={{ color: "var(--txd)" }}>{fmtReset(chipTight.resets_at)}</span>
+        <span style={{ color: sevColor(chipWin.severity) }}>{chipWin.left}%</span>
+        <span style={{ color: "var(--txd)" }}>{fmtReset(chipWin.resets_at)}</span>
       </span>
     : chipAcct && chipAcct.left === null && !chipAcct.disabled
       ? <span className="ctrl-meter" style={{ fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)", flex: "none" }}>UNKNOWN</span>

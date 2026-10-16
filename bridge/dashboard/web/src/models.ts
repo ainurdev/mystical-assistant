@@ -146,9 +146,18 @@ const win = (tag: string, name: string, b: { percent: number; severity: string; 
   ({ tag, name, left: Math.max(0, 100 - Math.round(b.percent)), severity: b.severity, resets: resetAt(b.resets_at), resets_at: b.resets_at });
 
 /** The window with the least left — the "headroom" the account fallback
- *  reads, and what the PROFILE chip prints. null for no windows. */
+ *  reads. null for no windows. */
 export function tightest(ws: Window[]): Window | null {
   return ws.reduce<Window | null>((a, w) => (a === null || w.left < a.left ? w : a), null);
+}
+
+/** What the PROFILE chip prints: the 5-hour window, or the week when it
+ *  refills first (its last hours). An unknown reset never wins. null for no windows. */
+export function chipWindow(ws: Window[]): Window | null {
+  const h5 = ws.find((w) => w.tag === "5H"), wk = ws.find((w) => w.tag === "WK");
+  if (!h5 || !wk) return h5 ?? wk ?? null;
+  const at = (w: Window) => (w.resets_at ? new Date(w.resets_at).getTime() : NaN);
+  return at(wk) < at(h5) ? wk : h5;  // NaN compares false: the 5-hour window stays
 }
 
 /** The windows every model draws from: the 5-hour session and the all-models week. */
