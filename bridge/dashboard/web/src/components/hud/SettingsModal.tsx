@@ -3654,10 +3654,11 @@ export function SettingsModal(props: SettingsModalProps) {
         onClick={(e) => e.stopPropagation()}
         className="panel setdlg"
         style={{
-          // Content is capped at 760px by .mcol and the rail is 180 — a modal at
-          // the shared --modal-w (75vw) therefore spent ~130px a side on empty
-          // gutter. This width IS the content's width.
-          width: "min(976px, 94vw)",
+          // Content is capped at 760px by .mcol; the family layer's rail is 236
+          // and the pane pads 32 a side — so 1062 IS the content's width. Wider
+          // is empty gutter (the shared --modal-w, 75vw, spent ~130px a side on
+          // it); 976, sized for the old 180 rail, squeezed the rows to 674.
+          width: "min(1062px, 94vw)",
           // One height for every category, not one per: sizing to the tab meant
           // the panel jumped ~200px between INTERFACE (one switch) and
           // APPEARANCE, and a dialog that resizes under the pointer costs more
