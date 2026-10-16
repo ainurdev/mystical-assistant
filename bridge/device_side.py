@@ -5,13 +5,16 @@ on; bridge/rivendell.py queues it as kind "device-run", one at a time, and hands
 it to run() here:
   1. Claim it (GET .../prompt, with X-Mystical-Device-Id). A 409 is another
      device's claim: dropped quietly, nothing posted.
-  2. Tell the owner on Telegram who is testing what on this device.
+  2. Check that /Users/Shared/Mystical Runs is the owner's own folder (anyone
+     can plant that name in /Users/Shared), then tell the owner on Telegram who
+     is testing what on this device.
   3. Stage it in /Users/Shared/Mystical Runs/<id>/, the owner's own 0700 folder:
      job.json, the code snapshot, and the asker's Claude token (0600) last.
   4. Start the root helper (bridge/device_setup/mystical_run_helper.py) with
-     sudo -n, in a session of its own, so a bridge restart doesn't take it down
-     with the token still staged. It runs Claude as the hidden user mysticalruns
-     and hands back out/ (exit.json, claude.json, screens/).
+     sudo -n, in a session of its own, so a bridge restart doesn't kill it
+     before its clean-up. It takes the token off the disk as soon as it has read
+     it, runs Claude as the hidden user mysticalruns, and hands back out/
+     (exit.json, claude.json, screens/).
   5. Upload the screenshots the report lists, then any other PNGs, at most 20
      of at most 5 MB each, and post the result.
   6. Remove the stage, token first, on every path.
@@ -174,10 +177,10 @@ def _run(worker, request_id, popen, call):
     timeout = int(worker.inst.get("impl_timeout", 10800))
     try:
         try:
-            worker._deliver_telegram(f"{claim['requester']['name']} is testing {claim['repository']} on this device.",
-                                     None)
             if not _root_is_ours():
                 raise ValueError("this device's runs folder isn't its owner's own, so nothing was staged")
+            worker._deliver_telegram(f"{claim['requester']['name']} is testing {claim['repository']} on this device.",
+                                     None)
             _write_stage(stage, claim, timeout, worker.inst["id"])
             if request_id in _cancelled:
                 return

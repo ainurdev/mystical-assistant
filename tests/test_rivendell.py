@@ -60,11 +60,17 @@ def no_device_probe(monkeypatch):
     monkeypatch.setattr(device_share, "handshake_headers", lambda inst: [])
     monkeypatch.setattr(device_side, "headers", lambda inst: None)
     monkeypatch.setattr(rivendell, "_device_run", None)      # no device run in flight on this device
-    # Nothing here may reach sudo or the helper through device_side's own defaults.
+    # Nothing here may reach sudo or the helper through device_side's own
+    # defaults: they refuse, and one reached (on any thread) fails the test.
+    reached = []
+
     def refuse(argv, **kw):
+        reached.append(list(argv))
         raise AssertionError("a command reached sudo from a worker test: %r" % (argv,))
     for f, d in ((device_side.run, (refuse, refuse)), (device_side.stop, (refuse,)), (device_side.sweep, (refuse,))):
         monkeypatch.setattr(f, "__defaults__", d)
+    yield
+    assert not reached, "a command reached sudo from a worker test: %r" % reached
 
 
 def _http_error(code, path="/x"):

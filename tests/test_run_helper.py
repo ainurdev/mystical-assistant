@@ -47,11 +47,13 @@ def no_real_process():
         raise AssertionError("a command reached a real process without a Runner: %r" % (argv,))
     saved = h.main.__defaults__
     h.main.__defaults__ = (None, refuse)
+    Runner.refused = []
     try:
         yield
     finally:
         h.main.__defaults__ = saved
     assert not reached, "a command reached a real process without a Runner: %r" % reached
+    assert not Runner.refused, "a command no Runner would run for real: %r" % Runner.refused
 
 
 RUN_ID = "0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19"
@@ -212,49 +214,90 @@ def test_the_user_running_the_helper_counts_as_root_which_outside_tests_it_is():
 
 # --- start and stop, against temp dirs --------------------------------------------------
 
+RUN_UID = 4242    # mysticalruns here: never yours, so a fake that is missed targets nobody
 KILL_ALL = ["/usr/bin/pkill", "-KILL", "-u", "mysticalruns"]
 ANY_LEFT = ["/usr/bin/pgrep", "-u", "mysticalruns"]
 CRONTAB = ["/usr/bin/crontab", "-r", "-u", "mysticalruns"]
-BOOTOUT = [["/bin/launchctl", "bootout", "user/%d" % ME], ["/bin/launchctl", "bootout", "gui/%d" % ME]]
+BOOTOUT = [["/bin/launchctl", "bootout", "user/%d" % RUN_UID], ["/bin/launchctl", "bootout", "gui/%d" % RUN_UID]]
 OTHER = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"     # another requester's run
 
 
+class _Done:
+    """A faked command's process: its exit code at once, or, when it `hangs`, a
+    wait that times out until it is killed. The timeouts it was given are kept."""
+
+    def __init__(self, rc, hangs=False):
+        self.rc, self.hangs, self.killed, self.timeouts = rc, hangs, False, []
+
+    def wait(self, timeout=None):
+        self.timeouts.append(timeout)
+        if self.hangs and not self.killed:
+            raise subprocess.TimeoutExpired("launchctl", timeout)
+        return self.rc
+
+    def kill(self):
+        self.killed = True
+
+
+def _inside(path, root):
+    root = os.path.realpath(root)
+    return os.path.commonpath([os.path.realpath(path), root]) == root
+
+
 class Runner:
-    """subprocess.Popen, minus the user switch: records each command, then runs it
-    without the `/usr/bin/sudo [-E] -u <user> [-H]` in front, as you.
+    """subprocess.Popen as the helper calls it, failing closed. Every command is
+    recorded.
 
-    pkill, pgrep, crontab and launchctl never run for real: here mysticalruns is
-    you, so a kill by user would take this test run down with it, a crontab -r
-    would take your crontab, and a launchctl bootout of your domains would log
-    you out. pgrep answers from `left` (0: some are left) and then 1 (none are);
-    crontab exits `cron_rc` (1, as when there is none) and launchctl 3 (no such
-    domain). At each kill, `kills` notes what `on_kill()` says at that moment.
-    `hooks` maps a command (after the sudo) to a function of its argv: a number
-    it returns is the command's exit code instead of running it, None runs it."""
+    pkill, pgrep, crontab and launchctl are faked and never run. pgrep answers
+    from `left` (0: some are left, 2: an error) and then 1 (none are); crontab
+    exits `cron_rc` (1, as when there is none); launchctl exits 3 (no such
+    domain), or with `launchd_hangs` never answers until it is killed. At each
+    kill, `kills` notes what `on_kill()` says then. `hooks` maps a command (after
+    the sudo) to a function of its argv: a number it returns is that command's
+    exit code instead of running it, None lets it run.
 
-    def __init__(self, left=(), on_kill=lambda: None, cron_rc=1, hooks=None):
-        self.calls, self.procs, self.kills = [], [], []
+    Only tar, install, python3, rm and the test's own fake Claude run for real,
+    as you, without the `/usr/bin/sudo [-E] -u <user>` in front, and only on
+    paths inside the test's temp dir (`root`, which the box fixture sets).
+    Anything else is refused (and fails the test, see no_real_process): nothing
+    falls through to a real command."""
+
+    FAKED = ("/usr/bin/pkill", "/usr/bin/pgrep", "/usr/bin/crontab", "/bin/launchctl")
+    REAL = ("/usr/bin/tar", "/usr/bin/install", "/usr/bin/python3", "/bin/rm")
+    root = claude = None          # the box's temp dir and fake Claude
+    refused: list = []            # what no Runner would run, this test (no_real_process checks it)
+
+    def __init__(self, left=(), on_kill=lambda: None, cron_rc=1, hooks=None, launchd_hangs=False):
+        self.calls, self.procs, self.kills, self.faked = [], [], [], []
         self.left, self.on_kill, self.cron_rc, self.hooks = list(left), on_kill, cron_rc, hooks or {}
+        self.launchd_hangs = launchd_hangs
 
     def __call__(self, argv, **kw):
         self.calls.append(list(argv))
-        if any(os.path.basename(a) == "launchctl" for a in argv):
-            return types.SimpleNamespace(wait=lambda: 3)
-        if any(os.path.basename(a) == "crontab" for a in argv):
-            return types.SimpleNamespace(wait=lambda: self.cron_rc)
-        if argv[0] in ("/usr/bin/pkill", "/usr/bin/pgrep"):
-            if argv[0] == "/usr/bin/pkill":
+        cmd = list(argv)
+        if cmd and cmd[0] == "/usr/bin/sudo":
+            cmd = cmd[1:]
+            while cmd and cmd[0].startswith("-"):
+                cmd = cmd[2:] if cmd[0] == "-u" else cmd[1:]
+        exe = cmd[0] if cmd else ""
+        if exe in self.FAKED:
+            if exe == "/usr/bin/pkill":
                 self.kills.append(self.on_kill())
-            rc = 0 if argv[0] == "/usr/bin/pkill" else (self.left.pop(0) if self.left else 1)
-            return types.SimpleNamespace(wait=lambda: rc)
-        if argv[0] == "/usr/bin/sudo":
-            argv = argv[1:]
-            while argv[0].startswith("-"):
-                argv = argv[2:] if argv[0] == "-u" else argv[1:]
-        rc = self.hooks[argv[0]](argv) if argv[0] in self.hooks else None
-        if rc is not None:
-            return types.SimpleNamespace(wait=lambda: rc)
-        p = subprocess.Popen(argv, **kw)
+            rc = {"/usr/bin/pkill": 0, "/usr/bin/crontab": self.cron_rc, "/bin/launchctl": 3}.get(exe)
+            if exe == "/usr/bin/pgrep":
+                rc = self.left.pop(0) if self.left else 1
+            done = _Done(rc, hangs=exe == "/bin/launchctl" and self.launchd_hangs)
+            self.faked.append((exe, done))
+            return done
+        if exe in self.hooks:
+            rc = self.hooks[exe](cmd)
+            if rc is not None:
+                return _Done(rc)
+        outside = [a for a in cmd[1:] if a.startswith("/") and Runner.root and not _inside(a, Runner.root)]
+        if (exe not in self.REAL and exe != Runner.claude) or Runner.root is None or outside:
+            Runner.refused.append(list(argv))
+            raise AssertionError("the Runner won't run %r for real" % (argv,))
+        p = subprocess.Popen(cmd, **kw)
         self.procs.append(p)
         return p
 
@@ -315,8 +358,10 @@ def _snapshot(files):
 
 @pytest.fixture
 def box(tmp_path, monkeypatch):
-    """The real paths, in a temp dir: the runs folder, the stage root, the config,
-    the lock, and mysticalruns, who is you here."""
+    """The real paths, in a temp dir: the runs folder, the stage root, the config
+    and the lock. mysticalruns is RUN_UID, an account that isn't you: the run's
+    commands run as you through the Runner, and chowning to RUN_UID is faked
+    (b.fchowns), so a fake that is missed targets nobody."""
     if h.check_root_path(str(tmp_path), uid=ME):
         pytest.skip("the temp dir has a folder above it that others can change (a world-writable /tmp?), "
                     "so the helper rightly refuses to run from it")
@@ -337,7 +382,12 @@ def box(tmp_path, monkeypatch):
     monkeypatch.setenv("MYSTICAL_RUNS_CONFIG", str(b.cfg))
     monkeypatch.setenv("SUDO_UID", str(ME))
     real = pwd.getpwnam
-    monkeypatch.setattr(pwd, "getpwnam", lambda n: types.SimpleNamespace(pw_uid=ME) if n == "mysticalruns" else real(n))
+    monkeypatch.setattr(pwd, "getpwnam",
+                        lambda n: types.SimpleNamespace(pw_uid=RUN_UID) if n == "mysticalruns" else real(n))
+    b.fchowns = []
+    monkeypatch.setattr(h.os, "fchown", lambda fd, uid, gid: b.fchowns.append((uid, gid)))
+    monkeypatch.setattr(Runner, "root", str(tmp_path))
+    monkeypatch.setattr(Runner, "claude", str(b.claude))
     _claude(b, "printf '{}'\n")
     return b
 
@@ -404,7 +454,7 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
     assert install[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and install[3:6] == ["/usr/bin/install", "-d", "-m"]
     assert str(box.runs / RUN_ID / "home") in install, "the fresh home is made as mysticalruns, 0700"
     assert untar == ["/usr/bin/sudo", "-u", "mysticalruns", "/usr/bin/tar", "-xzf", "-", "-C", code, "--no-same-owner"]
-    assert launch == h.launch_argv("sudo", ME, h.claude_argv(JOB["prompt"], str(box.claude)))
+    assert launch == h.launch_argv("sudo", RUN_UID, h.claude_argv(JOB["prompt"], str(box.claude)))
     assert reader[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"], "the screens are read as the run's user"
     assert reader[-2:] == ["out/screens", "out/claude.err"]
     assert writer[:3] == ["/usr/bin/sudo", "-u", "#%d" % ME], "and written as the owner"
@@ -469,16 +519,13 @@ def test_claudes_errors_come_back_capped_at_a_megabyte(box):
     assert len(err) == 1 << 20 and set(err) == {ord("e")}
 
 
-def test_claudes_stderr_file_is_mysticalruns_so_its_own_tar_can_read_it_back(box, monkeypatch):
+def test_claudes_stderr_file_is_mysticalruns_so_its_own_tar_can_read_it_back(box):
     """Root makes out/claude.err before the run exists, then gives it to the run's
     user. Left root's, the tar that reads results as that user couldn't read it.
-    (Here mysticalruns is you, so the hand-over is checked as a call.)"""
-    given, prev = [], pwd.getpwnam
-    monkeypatch.setattr(pwd, "getpwnam", lambda n: types.SimpleNamespace(pw_uid=4242) if n == "mysticalruns" else prev(n))
-    monkeypatch.setattr(h.os, "fchown", lambda fd, uid, gid: given.append((uid, gid)))
+    (Here that chown is faked, so the hand-over is checked as a call.)"""
     _stage(box)
     assert h.main(["start", RUN_ID], popen=Runner()) == 0
-    assert given == [(4242, -1)]
+    assert box.fchowns == [(RUN_UID, -1)]
 
 
 def test_a_claude_binary_others_can_change_is_never_run(box, capsys):
@@ -563,6 +610,65 @@ def test_a_process_still_there_at_the_deadline_refuses_the_run(box, monkeypatch,
     assert not [c for c in run.calls if "-p" in c], "Claude never started"
     assert len(capsys.readouterr().err.strip().splitlines()) == 1
     assert not (st / "out").exists() and _left_behind(box, st) == []
+
+
+@pytest.mark.parametrize("who", ["the caller", "root"])
+def test_the_helper_acts_on_no_account_but_the_hidden_one(box, monkeypatch, capsys, bystander, who):
+    """A mysticalruns that resolves to root's uid, or to the caller's: a bootout,
+    a kill by user or a chown would land on that account. Refused before any of
+    it, in start and in stop alike."""
+    uid = ME if who == "the caller" else 0
+    real = pwd.getpwnam
+    monkeypatch.setattr(pwd, "getpwnam", lambda n: types.SimpleNamespace(pw_uid=uid) if n == "mysticalruns" else real(n))
+    st = _stage(box)
+    run = Runner()
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    assert run.calls == [] and box.fchowns == [] and _left_behind(box, st) == []
+    (box.runs / RUN_ID).mkdir()
+    (box.runs / RUN_ID / "pid").write_text("%d\n" % bystander.pid)
+    held = _hold(box)                       # a run of that id holds the lock
+    try:
+        assert h.main(["stop", RUN_ID], popen=run) == 2
+    finally:
+        os.close(held)
+    assert run.calls == [] and _group_alive(bystander.pid)
+    assert len(capsys.readouterr().err.strip().splitlines()) == 2, "one line each"
+
+
+def test_a_process_check_that_fails_counts_as_something_left(box, monkeypatch, capsys):
+    """Only pgrep's 1 says nobody is left. Its 2 or 3 is an error that proves
+    nothing, so the run is refused, as one with a process still there would be."""
+    monkeypatch.setattr(h, "GRACE", 0.3)
+    run = Runner(left=[2] * 1000)
+    st = _stage(box)
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    assert not [c for c in run.calls if "-p" in c] and not (st / "out").exists()
+    assert len(capsys.readouterr().err.strip().splitlines()) == 1
+
+
+def test_a_bootout_that_never_answers_is_killed_and_the_run_refused(box, capsys):
+    """Each bootout gets 30 s. One still going then is killed, and whatever
+    launchd keeps alive may still be there, so the run doesn't start."""
+    run = Runner(launchd_hangs=True)
+    st = _stage(box)
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    bootouts = [done for exe, done in run.faked if exe == "/bin/launchctl"]
+    assert bootouts and all(d.killed and d.timeouts[0] == 30 for d in bootouts), "waited 30 s at most, then killed"
+    assert not [c for c in run.calls if "-p" in c] and not (st / "out").exists()
+    assert len(capsys.readouterr().err.strip().splitlines()) == 1
+
+
+def test_the_runner_runs_nothing_it_does_not_know(box):
+    """The harness itself fails closed: a command no Runner fakes or allows, or a
+    path outside the test's temp dir, is refused, never run."""
+    run = Runner()
+    for argv in (["/usr/bin/osascript", "-e", "beep"], ["/bin/rm", "-rf", "--", os.path.expanduser("~")],
+                 ["/usr/bin/sudo", "-u", "mysticalruns", "/usr/bin/tar", "-xf", "-", "-C", "/Users/Shared"],
+                 ["launchctl", "bootout", "gui/%d" % ME]):
+        with pytest.raises(AssertionError):
+            run(argv)
+    assert Runner.refused == [list(a) for a in run.calls]
+    Runner.refused.clear()                  # refused on purpose here; anywhere else it fails the test
 
 
 def test_the_token_leaves_the_disk_once_read_before_the_run_starts(box):

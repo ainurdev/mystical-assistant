@@ -84,8 +84,8 @@ class Worker:
 
 class FakeHelper:
     """`sudo -n mystical-run-helper start <id>` as the stage sees it. Started, it
-    notes what the stage held; done, it writes out/ and takes the token, then
-    exits `rc` with `stderr`. Until `hang` stops have come in (through `stops`,
+    notes what the stage held and takes the token off the disk, as the helper
+    does once it has read it; done, it writes out/ and exits `rc` with `stderr`. Until `hang` stops have come in (through `stops`,
     which the test also hands run() as its `call`), each wait for it times out,
     as a real one would while it runs."""
 
@@ -106,6 +106,7 @@ class FakeHelper:
                     "code": files["code.tar.gz"], "names": sorted(files),
                     "stage_mode": stat.S_IMODE(os.lstat(self.stage).st_mode),
                     "token_mode": stat.S_IMODE(os.lstat(os.path.join(self.stage, "token")).st_mode)}
+        os.unlink(os.path.join(self.stage, "token"))   # read: the helper takes it off the disk at once
         return self
 
     def stop(self, argv, **kw):          # what run() is given as `call`
@@ -127,7 +128,6 @@ class FakeHelper:
         for name, data in self.screens.items():
             with open(os.path.join(out, "screens", name), "wb") as f:
                 f.write(data)
-        os.unlink(os.path.join(self.stage, "token"))
         self.returncode = self.rc
         return None, self.stderr
 
@@ -611,23 +611,27 @@ def test_a_device_never_set_up_has_nothing_to_sweep(device, monkeypatch):
     ds.sweep(run=lambda argv, **kw: pytest.fail("nothing to stop"))
 
 
-def test_a_stage_root_planted_as_a_link_is_never_followed(device, tmp_path, monkeypatch):
+@pytest.mark.parametrize("there", [RID, OTHER], ids=["a folder named like this run", "another run's folder"])
+def test_a_stage_root_planted_as_a_link_is_never_followed(device, tmp_path, monkeypatch, there):
     """/Users/Shared is anyone's to write: "Mystical Runs" could be a link into
     this account's home, planted there before Set up made the folder. Nothing is
-    swept or staged through it, and the run is posted FAILED, saying why."""
+    swept, staged or removed through it, the owner isn't pinged, and the run is
+    posted FAILED, saying why. A folder there named like this run is what the
+    run's own clean-up would take; another run's, what the sweep would."""
     home = tmp_path / "home"
-    (home / OTHER).mkdir(parents=True)                # a folder there that has a run id's name
-    (home / OTHER / "keep").write_text("mine")
-    (home / OTHER / "token").write_text("mine too")
+    (home / there).mkdir(parents=True)
+    (home / there / "keep").write_text("mine")
+    (home / there / "token").write_text("mine too")
     planted = tmp_path / "planted"
     planted.symlink_to(home)
     monkeypatch.setattr(ds, "STAGE_ROOT", str(planted))
     calls = []
     ds.sweep(run=lambda argv, **kw: calls.append(argv))
     w, helper = Worker(), FakeHelper()
-    _run(w, helper)                                   # RID: no folder of that name there to collide with
-    assert calls == [] and helper.argv is None and sorted(os.listdir(home)) == [OTHER], "nothing written there"
-    assert (home / OTHER / "keep").read_text() == "mine" and (home / OTHER / "token").read_text() == "mine too"
+    _run(w, helper)                                   # always RID
+    assert calls == [] and helper.argv is None and w.telegram == []
+    assert sorted(os.listdir(home)) == [there], "nothing written there, nothing removed"
+    assert (home / there / "keep").read_text() == "mine" and (home / there / "token").read_text() == "mine too"
     assert [(r["status"], h) for (p, r, h) in w.api if p.endswith("/result")] == [("FAILED", HEAD)]
 
 
@@ -644,5 +648,5 @@ def test_a_stage_root_others_could_change_is_left_alone(device, monkeypatch, how
     assert calls == [] and (stale / "token").exists() and ds._interrupted == {}
     w, helper = Worker(), FakeHelper()
     _run(w, helper, rid=OTHER)                        # a run with no stage there yet
-    assert helper.argv is None and w.results()[0]["status"] == "FAILED"
+    assert helper.argv is None and w.results()[0]["status"] == "FAILED" and w.telegram == []
     assert sorted(os.listdir(device.root)) == [RID], "nothing staged there, and nothing removed"

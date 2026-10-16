@@ -81,6 +81,7 @@ LOCK = "/usr/local/var/run/mystical-runs.lock"  # test seam: tests point it at a
 STAGE_FILES = ("job.json", "token", "code.tar.gz")
 RUN_PATH = "/usr/local/libexec/mystical-runs:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 GRACE = 10                                     # seconds: a group's TERM to KILL, and the most a kill by user keeps at it
+BOOTOUT_WAIT = 30                              # seconds one launchctl bootout gets before it is killed
 ERR_CAP = 1 << 20                              # bytes of Claude's stderr handed back
 _QUIET = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
 _RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -268,21 +269,39 @@ def _kill_group(pgid, leader=None):
         pass  # the group is gone: macOS says EPERM while only exited processes are left in it
 
 
+def _run_uid():
+    """mysticalruns's uid, which must be neither root's nor the caller's: a
+    bootout, a kill by user or a chown for it would land on that account."""
+    uid = pwd.getpwnam(RUN_USER).pw_uid
+    if uid == 0 or uid == int(os.environ["SUDO_UID"]):
+        raise Refused("The hidden user is root's account or yours, so the helper won't act for it.")
+    return uid
+
+
 def _kill_user(popen):
     """Stop every mysticalruns process. First boot out its launchd domains, where
     a KeepAlive job would be started again after any kill ("no such domain" is
-    the usual answer, and no error). Then KILL them, again on each pass, until
-    none is left (pgrep exits 0 while one is, 1 when none is) or GRACE seconds
-    have gone: one that respawns, or a fork that raced a kill, can't outlive the
-    sweep. Returns whether none is left."""
-    uid = pwd.getpwnam(RUN_USER).pw_uid
+    the usual answer, and no error); a bootout gets BOOTOUT_WAIT seconds, then
+    it is killed. Then KILL them, again on each pass, until none is left or
+    GRACE seconds have gone: one that respawns, or a fork that raced a kill,
+    can't outlive the sweep. Only pgrep's 1 means none is left: 0 is some, and
+    any other answer is an error that proves nothing. Returns whether none is
+    left, and launchd answered."""
+    uid = _run_uid()
+    clean = True
     for domain in ("user/%d" % uid, "gui/%d" % uid):
-        popen(["/bin/launchctl", "bootout", domain], **_QUIET).wait()
+        p = popen(["/bin/launchctl", "bootout", domain], **_QUIET)
+        try:
+            p.wait(timeout=BOOTOUT_WAIT)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+            clean = False   # what launchd keeps alive there may still be running
     deadline = time.monotonic() + GRACE
     while True:
         popen(["/usr/bin/pkill", "-KILL", "-u", RUN_USER], **_QUIET).wait()
-        if popen(["/usr/bin/pgrep", "-u", RUN_USER], **_QUIET).wait() != 0:
-            return True
+        if popen(["/usr/bin/pgrep", "-u", RUN_USER], **_QUIET).wait() == 1:
+            return clean
         if time.monotonic() >= deadline:
             return False
         time.sleep(0.1)
@@ -452,7 +471,7 @@ def _start(run_id, cfg, popen):
         prompt, timeout = job.get("prompt"), job.get("timeoutSeconds")
         if not isinstance(prompt, str) or not prompt or not token or type(timeout) is not int or timeout <= 0:
             raise Refused("The stage's job.json or token is incomplete.")
-        run_uid = pwd.getpwnam(RUN_USER).pw_uid
+        run_uid = _run_uid()
         argv = launch_argv(cfg.get("launch"), run_uid, claude_argv(prompt, claude))
         if not _kill_user(popen):   # nothing of an earlier run is left to watch this one
             raise Refused("A process of the hidden user's wouldn't stop, so the run didn't start.")
@@ -502,6 +521,7 @@ def stop(run_id, popen):
 
 
 def _stop(run_id, popen):
+    _run_uid()   # never stop anything for an account that isn't the hidden one
     try:
         fd = os.open(os.path.join(RUNS_HOME, run_id, "pid"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:

@@ -21,9 +21,25 @@ import uuid
 
 import pytest
 
-from bridge import config, device_share, rivendell, runner, state, store, wsutil
+from bridge import config, device_share, device_side, rivendell, runner, state, store, wsutil
 
 _mids = itertools.count(1000)          # Telegram message ids, unique across tests
+
+
+@pytest.fixture(autouse=True)
+def no_real_helper(monkeypatch):
+    """device_side reaches sudo and the device-run helper through its own
+    defaults. None of these tests may: the defaults refuse, and one reached (on
+    any thread) fails the test."""
+    reached = []
+
+    def refuse(argv, **kw):
+        reached.append(list(argv))
+        raise AssertionError("a command reached sudo from a channel test: %r" % (argv,))
+    for f, d in ((device_side.run, (refuse, refuse)), (device_side.stop, (refuse,)), (device_side.sweep, (refuse,))):
+        monkeypatch.setattr(f, "__defaults__", d)
+    yield
+    assert not reached, "a command reached sudo from a channel test: %r" % reached
 
 
 @pytest.fixture(autouse=True)
