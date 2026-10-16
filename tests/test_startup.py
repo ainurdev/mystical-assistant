@@ -284,6 +284,9 @@ def _fake_systemctl(calls):
 
 
 def _wsl_box(monkeypatch):
+    # No Mystical.exe installed unless a test says so — the real check would
+    # find the one on this machine.
+    monkeypatch.setattr(startup, "_win_app", lambda: None, raising=False)
     monkeypatch.setattr(startup, "_REPO", "/home/u/projects/mystical-assistant")
     monkeypatch.setattr(startup, "_distro", lambda: "Ubuntu")
     monkeypatch.setattr(startup.getpass, "getuser", lambda: "u")
@@ -383,6 +386,90 @@ def test_launch_tray_on_linux_checks_the_bindings_first(monkeypatch):
     startup.launch_tray()
     assert started == [["/usr/bin/python3", "/home/u/m/linux/tray.py",
                         "--port", str(config.DASH_PORT)]]
+
+
+# --- Windows (WSL): Mystical.exe takes over from the tray ----------------------
+_EXE = "/mnt/c/Users/u/AppData/Local/Programs/Mystical/Mystical.exe"
+_EXE_WIN = r"C:\Users\u\AppData\Local\Programs\Mystical\Mystical.exe"
+
+
+def test_script_starts_the_exe_instead_of_the_tray_when_installed(monkeypatch):
+    """Once `mystical app` has built the app, it is the window and the tray:
+    neither the PowerShell tray nor the browser window is started beside it."""
+    _wsl_box(monkeypatch)
+    monkeypatch.setattr(startup, "_win_app", lambda: _EXE)
+    text = startup._script(True)
+    assert f'start "" "{_EXE_WIN}"' in text
+    assert "tray.ps1" not in text and "--app=" not in text
+    # Ahead of the bail-out, like the tray: the app has its own placeholder.
+    assert text.index("Mystical.exe") < text.index('if not "%UP%"=="0"')
+    off = startup._script(False)
+    assert "Mystical.exe" not in off and "tray.ps1" not in off and "--app=" not in off
+
+
+def test_state_reads_the_exe_line_as_the_window_half(tmp_path, monkeypatch):
+    """The window switch must read on for the .cmd the app writes, or every
+    toggle would rewrite it forever."""
+    (tmp_path / startup.CMD_NAME).write_text(f'wsl.exe ...\r\nstart "" "{_EXE_WIN}"\r\n')
+    monkeypatch.setattr(startup, "_wsl", lambda: True)
+    monkeypatch.setattr(startup, "_has_systemd", lambda: True)
+    monkeypatch.setattr(startup, "_startup_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(startup, "_systemctl", _fake_systemctl([]))
+    monkeypatch.setattr(startup, "_browser", lambda: "/mnt/c/x/chrome.exe")
+    monkeypatch.setattr(startup, "_profiles", lambda _b: [])
+    monkeypatch.setattr(startup, "_win_app", lambda: _EXE, raising=False)
+    st = startup.state()
+    assert st["window"] is True
+    assert st["browser"] == "Mystical.exe"
+
+
+def test_launch_tray_opens_the_exe_when_installed(tmp_path, monkeypatch):
+    """`mystical app open`: the exe, through Start-Process — cmd's `start` run
+    from WSL waits for its GUI child."""
+    _wsl_box(monkeypatch)
+    ps = tmp_path / "powershell.exe"
+    ps.write_text("")
+    monkeypatch.setattr(startup, "_wsl", lambda: True)
+    monkeypatch.setattr(startup, "_POWERSHELL", str(ps))
+    monkeypatch.setattr(startup, "_win_app", lambda: _EXE)
+    seen = {}
+    monkeypatch.setattr(startup.subprocess, "Popen",
+                        lambda argv, **kw: seen.update(argv=argv, **kw))
+    startup.launch_tray()
+    assert seen["argv"][0] == str(ps) and "-File" not in seen["argv"]
+    assert "Start-Process" in seen["argv"][-1] and _EXE_WIN in seen["argv"][-1]
+    assert seen["cwd"] == str(tmp_path) and seen["start_new_session"] is True
+
+
+def test_refresh_launcher_rewrites_only_when_login_is_on(tmp_path, monkeypatch):
+    """`mystical app` installs the exe and rewrites the Startup .cmd right away —
+    not at the next switch toggle — and never touches systemd doing it."""
+    _wsl_box(monkeypatch)
+    calls = []
+    monkeypatch.setattr(startup, "_wsl", lambda: True)
+    monkeypatch.setattr(startup, "_has_systemd", lambda: True)
+    monkeypatch.setattr(startup, "_startup_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(startup, "_systemctl", _fake_systemctl(calls))
+    monkeypatch.setattr(startup, "_profiles", lambda _b: [])
+    monkeypatch.setattr(startup, "_win_app", lambda: _EXE)
+    cmd = tmp_path / startup.CMD_NAME
+    cmd.write_text('wsl.exe ...\r\nstart "" powershell.exe -File tray.ps1\r\n'
+                   'start "" "C:\\chrome.exe" --app=http://localhost:8790/\r\n')
+    assert startup.refresh_launcher() is True
+    text = cmd.read_text()
+    assert "Mystical.exe" in text and "tray.ps1" not in text and "--app=" not in text
+    assert not any(c[0] in ("enable", "daemon-reload", "start", "stop") for c in calls), calls
+
+    class Off:
+        returncode = 0
+        stdout = "disabled"
+        stderr = ""
+    monkeypatch.setattr(startup, "_systemctl", lambda *a: Off())
+    cmd.write_text("untouched")
+    assert startup.refresh_launcher() is False
+    assert cmd.read_text() == "untouched"
+    monkeypatch.setattr(startup, "_wsl", lambda: False)
+    assert startup.refresh_launcher() is False
 
 
 # --- macOS: launchd agents ---------------------------------------------------
