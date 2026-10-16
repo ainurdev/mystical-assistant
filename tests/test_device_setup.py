@@ -129,5 +129,61 @@ def test_the_scripts_and_the_bridge_name_the_same_paths(script):
     with open(os.path.join(SCRIPTS, script), encoding="utf-8") as f:
         text = f.read()
     for path in (device_share.HELPER, device_share.RUNS_CONFIG, "/etc/sudoers.d/mystical-runs",
-                 "/Users/Shared/Mystical Runs", "/usr/local/libexec/mystical-runs"):
+                 "/Users/Shared/Mystical Runs", "/usr/local/libexec/mystical-runs",
+                 "/usr/lib/cron/cron.deny", "/usr/lib/cron/at.deny"):
         assert path in text, path
+
+
+def _run_function(script, name, *args):
+    """The bash function `name`, cut out of `script` and run on `args` alone under
+    the script's own `set -euo pipefail` and ERR trap, with its RUN_USER, and
+    `fail` stubbed (it prints and exits 1)."""
+    with open(os.path.join(SCRIPTS, script), encoding="utf-8") as f:
+        text = f.read()
+    start = text.index(name + "() {")
+    fn = text[start:text.index("\n}\n", start) + 3]
+    head = 'set -euo pipefail\nRUN_USER=mysticalruns\nfail() { echo "$1"; exit 1; }\ntrap \'fail trapped\' ERR\n'
+    return subprocess.run(["/bin/bash", "-c", head + fn + name + ' "$@"', "_", *args],
+                          capture_output=True, text=True, timeout=30)
+
+
+def test_set_up_keeps_the_hidden_user_out_of_cron_and_at_once(tmp_path):
+    """Nothing a run schedules starts later. Run twice, it adds the name once; a
+    deny file whose last line has no newline keeps that line as it was."""
+    cron, at, bare = tmp_path / "cron.deny", tmp_path / "at.deny", tmp_path / "bare.deny"
+    cron.write_text("Guest\n")
+    at.write_text("")
+    bare.write_text("Guest")
+    for _ in range(2):
+        r = _run_function("setup.sh", "deny_cron", str(cron), str(at), str(bare))
+        assert r.returncode == 0, r.stdout + r.stderr
+    assert cron.read_text() == "Guest\nmysticalruns\n" and at.read_text() == "mysticalruns\n"
+    assert bare.read_text() == "Guest\nmysticalruns\n", "Guest stays denied: the name isn't glued onto its line"
+
+
+def test_set_up_makes_no_deny_file_that_was_not_there(tmp_path):
+    """With neither at.allow nor at.deny only root may use at: a deny file made
+    here would let every other user in."""
+    r = _run_function("setup.sh", "deny_cron", str(tmp_path / "at.deny"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert not (tmp_path / "at.deny").exists()
+
+
+def test_set_up_wont_write_through_a_deny_file_that_is_a_link(tmp_path):
+    target = tmp_path / "elsewhere"
+    target.write_text("x\n")
+    (tmp_path / "cron.deny").symlink_to(target)
+    r = _run_function("setup.sh", "deny_cron", str(tmp_path / "cron.deny"))
+    assert r.returncode != 0 and target.read_text() == "x\n"
+
+
+def test_remove_takes_only_the_hidden_users_line_out_and_keeps_the_file(tmp_path):
+    cron, at = tmp_path / "cron.deny", tmp_path / "at.deny"
+    cron.write_text("Guest\nmysticalruns\nmysticalrunsx\n")
+    cron.chmod(0o640)
+    at.write_text("mysticalruns\n")
+    r = _run_function("remove.sh", "allow_cron", str(cron), str(at), str(tmp_path / "missing"))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert cron.read_text() == "Guest\nmysticalrunsx\n" and at.read_text() == ""
+    assert (cron.stat().st_mode & 0o777) == 0o640, "the same file, not a new one"
+    assert not (tmp_path / "missing").exists()

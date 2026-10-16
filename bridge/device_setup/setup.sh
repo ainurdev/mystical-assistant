@@ -51,6 +51,22 @@ root_only() { # root_only PATH
   done
 }
 
+# Add RUN_USER to each deny file once, so cron and at never run anything for it.
+# A deny file that isn't there stays so: with neither it nor the allow file only
+# root may use at (and, by site, cron), and making one would let everyone else
+# in. A last line without its newline gets one first: glued on, the name would
+# un-deny that line's user.
+deny_cron() { # deny_cron FILE...
+  local f
+  for f in "$@"; do
+    if [ -L "$f" ]; then fail "$f is a link."; fi
+    [ -f "$f" ] || continue
+    grep -qxF "$RUN_USER" "$f" && continue
+    [ -z "$(tail -c 1 "$f")" ] || printf '\n' >>"$f"
+    printf '%s\n' "$RUN_USER" >>"$f"
+  done
+}
+
 # 1. Root, and an owner that exists.
 step="Checking your account"
 owner=${1:-}
@@ -65,7 +81,7 @@ if [ ! -d "$home" ] || [ -L "$home" ]; then fail "$home isn't a home folder."; f
 #    passwordless sudo would run whatever replaced them.
 step="Checking where the helper goes"
 root_only /usr/local
-for d in /usr/local/libexec /usr/local/etc "$CLAUDE_DIR"; do
+for d in /usr/local/libexec /usr/local/etc "$CLAUDE_DIR" /usr/local/var /usr/local/var/run; do # .../run: the helper's lock
   [ -e "$d" ] || [ -L "$d" ] || install -d -o root -g wheel -m 0755 "$d"
   root_only "$d"
 done
@@ -88,6 +104,9 @@ dscl . -read "/Users/$RUN_USER" >/dev/null 2>&1 || fail "macOS didn't create the
 step="Keeping the hidden user out of your home folder"
 acl=$(ls -led "$home")
 case "$acl" in *"user:$RUN_USER deny"*) ;; *) chmod +a "$DENY" "$home" ;; esac
+#    And out of cron and at, so nothing a run schedules starts after it.
+step="Keeping the hidden user out of cron and at"
+deny_cron /usr/lib/cron/cron.deny /usr/lib/cron/at.deny
 
 # 5. The runs folders and the helper.
 step="Installing the helper"

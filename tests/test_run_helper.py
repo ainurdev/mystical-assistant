@@ -10,6 +10,7 @@ would: saves screenshots and prints its report.
 Run: python -m pytest tests/test_run_helper.py -v
 """
 
+import fcntl
 import importlib.util
 import io
 import json
@@ -192,23 +193,30 @@ def test_the_user_running_the_helper_counts_as_root_which_outside_tests_it_is():
 
 KILL_ALL = ["/usr/bin/pkill", "-KILL", "-u", "mysticalruns"]
 ANY_LEFT = ["/usr/bin/pgrep", "-u", "mysticalruns"]
+CRONTAB = ["/usr/bin/crontab", "-r", "-u", "mysticalruns"]
+OTHER = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"     # another requester's run
 
 
 class Runner:
     """subprocess.Popen, minus the user switch: records each command, then runs it
     without the `/usr/bin/sudo [-E] -u <user> [-H]` in front, as you.
 
-    pkill and pgrep never run for real: here mysticalruns is you, so a kill by
-    user would take this test run down with it. pgrep answers from `left` (0:
-    some are left) and then 1 (none are). At each kill, `kills` notes what
-    `on_kill()` says at that moment."""
+    pkill, pgrep and crontab never run for real: here mysticalruns is you, so a
+    kill by user would take this test run down with it, and a crontab -r would
+    take your crontab. pgrep answers from `left` (0: some are left) and then 1
+    (none are); crontab exits `cron_rc` (1, as when there is none). At each kill,
+    `kills` notes what `on_kill()` says at that moment. `hooks` maps a command
+    (after the sudo) to a function of its argv: a number it returns is the
+    command's exit code instead of running it, None runs it."""
 
-    def __init__(self, left=(), on_kill=lambda: None):
+    def __init__(self, left=(), on_kill=lambda: None, cron_rc=1, hooks=None):
         self.calls, self.procs, self.kills = [], [], []
-        self.left, self.on_kill = list(left), on_kill
+        self.left, self.on_kill, self.cron_rc, self.hooks = list(left), on_kill, cron_rc, hooks or {}
 
     def __call__(self, argv, **kw):
         self.calls.append(list(argv))
+        if any(os.path.basename(a) == "crontab" for a in argv):
+            return types.SimpleNamespace(wait=lambda: self.cron_rc)
         if argv[0] in ("/usr/bin/pkill", "/usr/bin/pgrep"):
             if argv[0] == "/usr/bin/pkill":
                 self.kills.append(self.on_kill())
@@ -218,6 +226,9 @@ class Runner:
             argv = argv[1:]
             while argv[0].startswith("-"):
                 argv = argv[2:] if argv[0] == "-u" else argv[1:]
+        rc = self.hooks[argv[0]](argv) if argv[0] in self.hooks else None
+        if rc is not None:
+            return types.SimpleNamespace(wait=lambda: rc)
         p = subprocess.Popen(argv, **kw)
         self.procs.append(p)
         return p
@@ -230,6 +241,7 @@ def _killed_around_the_run(run):
     launch = next(i for i, c in enumerate(run.calls) if "-p" in c)
     assert len(kills) == 2 and kills[0] < launch < kills[1], run.calls
     assert run.kills == [False, True], "the second kill comes before the run folder is removed"
+    assert all(run.calls[i + 1] == ANY_LEFT for i in kills), "each kill waits until none is left"
 
 
 def _watching(b):
@@ -243,7 +255,25 @@ def _group_alive(pgid):
     except (ProcessLookupError, PermissionError):   # macOS: EPERM while only exited members are left
         return False
     return True
-    assert all(run.calls[i + 1] == ANY_LEFT for i in kills), "each kill waits until none is left"
+
+
+def _hold(b, run_id=RUN_ID):
+    """The lock, held the way a start for `run_id` holds it. A second open of the
+    file is a second lock owner, even in this process (flock is per open file)."""
+    fd = os.open(b.lock, os.O_RDWR | os.O_CREAT, 0o600)
+    fcntl.flock(fd, fcntl.LOCK_EX)
+    os.ftruncate(fd, 0)
+    os.write(fd, run_id.encode())
+    return fd
+
+
+@pytest.fixture
+def bystander():
+    """A live process group that is nobody's run: a stop must never signal it."""
+    p = subprocess.Popen(["/bin/sleep", "30"], start_new_session=True)
+    yield p
+    p.kill()
+    p.wait()
 
 
 def _snapshot(files):
@@ -259,21 +289,24 @@ def _snapshot(files):
 @pytest.fixture
 def box(tmp_path, monkeypatch):
     """The real paths, in a temp dir: the runs folder, the stage root, the config,
-    and mysticalruns, who is you here."""
+    the lock, and mysticalruns, who is you here."""
     if h.check_root_path(str(tmp_path), uid=ME):
         pytest.skip("the temp dir has a folder above it that others can change (a world-writable /tmp?), "
                     "so the helper rightly refuses to run from it")
     if _system_python() is None:
         pytest.skip("no system python3 for the launch agents clean-up")
     b = types.SimpleNamespace(tmp=tmp_path, runs=tmp_path / "runs", stages=tmp_path / "stages",
-                              cfg=tmp_path / "etc" / "mystical-runs.json", claude=tmp_path / "claude")
+                              cfg=tmp_path / "etc" / "mystical-runs.json", claude=tmp_path / "claude",
+                              lock=tmp_path / "run" / "mystical-runs.lock")
     b.runs.mkdir(mode=0o700)
     b.stages.mkdir()
     b.cfg.parent.mkdir()
+    b.lock.parent.mkdir()
     b.cfg.write_text(json.dumps({"owner": "me", "uid": ME, "launch": "sudo", "claude": str(b.claude)}))
     b.cfg.chmod(0o644)
     monkeypatch.setattr(h, "RUNS_HOME", str(b.runs))
     monkeypatch.setattr(h, "STAGE_ROOT", str(b.stages))
+    monkeypatch.setattr(h, "LOCK", str(b.lock))
     monkeypatch.setenv("MYSTICAL_RUNS_CONFIG", str(b.cfg))
     monkeypatch.setenv("SUDO_UID", str(ME))
     real = pwd.getpwnam
@@ -335,7 +368,8 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
     assert _left_behind(box, st) == []
     assert (st / "job.json").exists(), "the rest of the stage is the bridge's to remove"
 
-    kill, wait, clear, install, untar, launch, writer, reader, kill_again, wait_again = run.calls
+    kill, wait, cron, clear, install, untar, launch, writer, reader, kill_again, wait_again = run.calls
+    assert cron == CRONTAB, "as root, with its fixed argv"
     assert clear[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and clear[-1] == str(box.tmp)
     code = str(box.runs / RUN_ID / "code")
     assert install[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and install[3:6] == ["/usr/bin/install", "-d", "-m"]
@@ -476,11 +510,14 @@ def test_stop_ends_a_running_run_and_start_still_reports_and_cleans_up(box):
     assert _left_behind(box, st) == []
 
 
-def test_the_kill_by_user_waits_until_none_is_left(box):
+def test_the_kill_by_user_kills_again_on_each_pass_until_none_is_left(box):
+    """One that respawns, or a fork that raced the first kill, can't outlive a
+    single sweep: every pass kills again before it asks whether any is left."""
     run = Runner(left=[0, 0, 0])
     _stage(box)
     assert h.main(["start", RUN_ID], popen=run) == 0
-    assert run.calls[:5] == [KILL_ALL] + [ANY_LEFT] * 4 and run.calls[5] != ANY_LEFT, "asked until pgrep said none"
+    assert run.calls[:8] == [KILL_ALL, ANY_LEFT] * 4, "killed and asked until pgrep said none"
+    assert run.calls[8] not in (KILL_ALL, ANY_LEFT)
 
 
 def test_the_wait_for_none_left_is_bounded(box, monkeypatch):
@@ -511,7 +548,11 @@ def test_stop_trusts_only_the_pid_file_start_wrote(box, plant, capsys):
         (box.runs / RUN_ID / "pid").symlink_to(planted)
     else:
         os.link(planted, box.runs / RUN_ID / "pid")
-    assert h.main(["stop", RUN_ID]) != 0
+    held = _hold(box)      # as while that run's start goes on: only then is a pid file read at all
+    try:
+        assert h.main(["stop", RUN_ID]) != 0
+    finally:
+        os.close(held)
     assert len(capsys.readouterr().err.strip().splitlines()) == 1
 
 
@@ -584,7 +625,135 @@ def test_a_snapshot_that_will_not_unpack_fails_in_one_line_and_cleans_up(box, ca
     assert h.main(["start", RUN_ID], popen=run) not in (0, None)
     assert len(capsys.readouterr().err.strip().splitlines()) == 1
     assert not [c for c in run.calls if "-p" in c], "Claude never started"
+    assert run.calls.count(KILL_ALL) == 2, "one kill by user before, and one in the clean-up"
     assert _left_behind(box, st) == []
+
+
+# --- one run at a time, and nothing an earlier run left -------------------------------------
+
+def test_one_run_at_a_time_a_second_start_waits_for_the_first(box):
+    """Two runs never overlap, since each one's kill by user would take the other
+    down: a second start touches nothing until the first lets go of the lock."""
+    _stage(box)
+    first = _hold(box, OTHER)
+    run, rc = Runner(), []
+    t = threading.Thread(target=lambda: rc.append(h.main(["start", RUN_ID], popen=run)))
+    t.start()
+    try:
+        time.sleep(0.5)
+        assert run.calls == [] and t.is_alive(), "it waits, and does nothing meanwhile"
+    finally:
+        os.close(first)
+    t.join(15)
+    assert rc == [0] and [c for c in run.calls if "-p" in c], "then it runs"
+
+
+def test_the_lock_is_a_root_only_file(box):
+    """Anyone who could open it could take it, and hold up every run."""
+    _stage(box)
+    assert h.main(["start", RUN_ID], popen=Runner()) == 0
+    st = os.lstat(box.lock)
+    assert stat.S_ISREG(st.st_mode) and st.st_uid == ME and stat.S_IMODE(st.st_mode) == 0o600
+
+
+def test_a_lock_in_a_folder_others_can_change_is_not_trusted(box, capsys):
+    box.lock.parent.chmod(0o775)
+    _stage(box)
+    run = Runner()
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    assert h.main(["stop", RUN_ID], popen=run) == 2
+    assert run.calls == [] and str(box.lock.parent) in capsys.readouterr().err
+
+
+def test_a_stop_while_no_run_holds_the_lock_signals_nothing(box, bystander):
+    """A helper that died leaves its pid file, and the lock still naming its run;
+    that number can come back as somebody else's process group. With the lock
+    free nothing is running, so no pid file is read at all."""
+    (box.runs / RUN_ID).mkdir()
+    (box.runs / RUN_ID / "pid").write_text("%d\n" % bystander.pid)
+    box.lock.write_text(RUN_ID)
+    box.lock.chmod(0o600)
+    run = Runner()
+    assert h.main(["stop", RUN_ID], popen=run) == 0
+    assert _group_alive(bystander.pid) and run.calls == []
+
+
+def test_a_lock_that_is_a_link_is_never_opened_through(box):
+    elsewhere = box.tmp / "elsewhere"
+    elsewhere.write_text("keep\n")
+    box.lock.symlink_to(elsewhere)
+    _stage(box)
+    run = Runner()
+    assert h.main(["start", RUN_ID], popen=run) != 0
+    assert h.main(["stop", RUN_ID], popen=run) != 0
+    assert run.calls == [] and elsewhere.read_text() == "keep\n"
+
+
+def test_a_stop_for_another_run_than_the_one_going_signals_nothing(box, bystander):
+    """Only the run holding the lock can be stopped: a late stop for an earlier
+    run never reaches the requester whose run is going now."""
+    (box.runs / RUN_ID).mkdir()
+    (box.runs / RUN_ID / "pid").write_text("%d\n" % bystander.pid)
+    held = _hold(box, OTHER)
+    try:
+        assert h.main(["stop", RUN_ID], popen=Runner()) == 0
+    finally:
+        os.close(held)
+    assert _group_alive(bystander.pid)
+
+
+def test_start_clears_what_a_run_whose_helper_died_left(box):
+    """A helper killed outright (no finally) leaves its run's folder: one
+    requester's code, .env files and home, and a pid file. The next start takes
+    it all away before its own run: root removes each pid file first, so none can
+    ever name a process group, and mysticalruns removes the rest."""
+    old = box.runs / OTHER
+    (old / "code").mkdir(parents=True)
+    (old / "code" / ".env").write_text("SECRET=1\n")
+    (old / "pid").write_text("99999\n")
+    (box.runs / "stray").write_text("x")
+    at_rm = []
+    run = Runner(hooks={"/bin/rm": lambda argv: at_rm.append(os.path.lexists(old / "pid"))})
+    _stage(box)
+    assert h.main(["start", RUN_ID], popen=run) == 0
+    assert not os.path.lexists(old) and not os.path.lexists(box.runs / "stray")
+    rm = next(c for c in run.calls if "/bin/rm" in c)
+    assert rm[:6] == ["/usr/bin/sudo", "-u", "mysticalruns", "/bin/rm", "-rf", "--"], "as mysticalruns"
+    assert sorted(rm[6:]) == sorted([str(old), str(box.runs / "stray")])
+    assert at_rm == [False], "root took the pid file out before the rest went"
+    first_kill = run.calls.index(KILL_ALL)
+    launch = next(i for i, c in enumerate(run.calls) if "-p" in c)
+    assert first_kill < run.calls.index(rm) < launch, "with nothing of it running, before the new run"
+
+
+def test_a_leftover_that_will_not_go_refuses_the_run(box, capsys):
+    """Fail closed: a run never starts beside an earlier requester's code."""
+    (box.runs / OTHER / "code").mkdir(parents=True)
+    (box.runs / OTHER / "pid").write_text("99999\n")
+    run = Runner(hooks={"/bin/rm": lambda argv: 1})
+    st = _stage(box)
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    assert not [c for c in run.calls if "-p" in c], "Claude never started"
+    assert not os.path.lexists(box.runs / OTHER / "pid"), "the pid file went all the same"
+    assert _left_behind(box, st) == [] and len(capsys.readouterr().err.strip().splitlines()) == 1
+
+
+def test_the_hidden_users_crontab_goes_before_each_run_and_none_is_no_error(box):
+    """Set up keeps mysticalruns out of cron; this takes away any crontab it had
+    all the same. Having none (crontab exits 1) is the usual case, not a failure."""
+    run = Runner(cron_rc=1)
+    _stage(box)
+    assert h.main(["start", RUN_ID], popen=run) == 0
+    launch = next(i for i, c in enumerate(run.calls) if "-p" in c)
+    assert run.calls.count(CRONTAB) == 1 and run.calls.index(CRONTAB) < launch
+
+
+def test_set_up_makes_the_locks_folder_and_remove_takes_the_lock():
+    with open(os.path.join(ROOT, "bridge", "device_setup", "setup.sh"), encoding="utf-8") as f:
+        setup = f.read()
+    with open(os.path.join(ROOT, "bridge", "device_setup", "remove.sh"), encoding="utf-8") as f:
+        remove = f.read()
+    assert os.path.dirname(h.LOCK) in setup and h.LOCK in remove
 
 
 # --- the interpreter root runs it with ------------------------------------------------------

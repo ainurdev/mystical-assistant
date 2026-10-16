@@ -43,14 +43,18 @@ code, with every tool allowed. So root never follows a link either could plant:
   run says why.
 Cleanup always runs: on success, failure, timeout, stop, and when a bridge
 restart TERMs this helper. It stops the run's process group and deletes its
-folder and the stage's token. There is one run at a time, so every mysticalruns
-process is stopped before each run and after it: one that setsid() out of its
-group would otherwise outlive the run, and read the next requester's code and home.
+folder and the stage's token. There is one run at a time, held by a root-only
+lock (LOCK), so every mysticalruns process is stopped before each run and after
+it: one that setsid() out of its group would otherwise outlive the run, and read
+the next requester's code and home. Before each run the hidden user's crontab
+goes too, and whatever a run whose helper died left in RUNS_HOME. A stop only
+ever reaches the run holding the lock.
 
 Root runs this with the system /usr/bin/python3, which can be as old as 3.9. So
 the code sticks to 3.9: no `match`, no `X | Y` types, no Popen(process_group=).
 """
 
+import fcntl
 import io
 import json
 import os
@@ -69,10 +73,12 @@ RUN_USER = "mysticalruns"
 CONFIG = "/usr/local/etc/mystical-runs.json"
 RUNS_HOME = "/Users/mysticalruns/runs"        # test seam: tests point it at a temp dir
 STAGE_ROOT = "/Users/Shared/Mystical Runs"    # test seam: tests point it at a temp dir
+LOCK = "/usr/local/var/run/mystical-runs.lock"  # test seam: tests point it at a temp file
 STAGE_FILES = ("job.json", "token", "code.tar.gz")
 RUN_PATH = "/usr/local/libexec/mystical-runs:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-GRACE = 10                                     # seconds between TERM and KILL
+GRACE = 10                                     # seconds: a group's TERM to KILL, and the most a kill by user keeps at it
 ERR_CAP = 1 << 20                              # bytes of Claude's stderr handed back
+_QUIET = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
 _RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _SCREEN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}")   # a screenshot's name: no folder, not hidden
 
@@ -259,13 +265,55 @@ def _kill_group(pgid, leader=None):
 
 
 def _kill_user(popen):
-    """KILL every mysticalruns process, then wait, at most GRACE seconds, until
-    none is left (pgrep exits 0 while one is, 1 when none is)."""
-    quiet = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
-    popen(["/usr/bin/pkill", "-KILL", "-u", RUN_USER], **quiet).wait()
+    """KILL every mysticalruns process, again on each pass, until none is left
+    (pgrep exits 0 while one is, 1 when none is) or GRACE seconds have gone: one
+    that respawns, or a fork that raced a kill, can't outlive the sweep."""
     deadline = time.monotonic() + GRACE
-    while time.monotonic() < deadline and popen(["/usr/bin/pgrep", "-u", RUN_USER], **quiet).wait() == 0:
+    while True:
+        popen(["/usr/bin/pkill", "-KILL", "-u", RUN_USER], **_QUIET).wait()
+        if popen(["/usr/bin/pgrep", "-u", RUN_USER], **_QUIET).wait() != 0 or time.monotonic() >= deadline:
+            return
         time.sleep(0.1)
+
+
+def _open_lock():
+    """The file behind one run at a time: root-only, made on first use, in a
+    folder only root can change (setup.sh makes it). Anyone who could open it
+    could take it."""
+    err = check_root_path(os.path.dirname(LOCK), uid=os.geteuid())
+    if err:
+        raise Refused(err)
+    return os.open(LOCK, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+
+
+def _sweep(popen):
+    """What runs whose helper died before its clean-up left in RUNS_HOME (under
+    the lock, no folder there is a live run's): one requester's code, .env files
+    and home. Root takes each pid file out first, so none can name a process
+    group again; mysticalruns removes the rest, and a run never starts beside
+    what it couldn't."""
+    try:
+        home = os.open(RUNS_HOME, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return   # the run's install -d makes it again, as mysticalruns
+    try:
+        names = os.listdir(home)
+        for name in names:
+            try:
+                run_fd = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=home)
+            except OSError:
+                continue   # not a folder: the rm takes it
+            try:
+                os.unlink("pid", dir_fd=run_fd)
+            except OSError:
+                pass       # none, or not the file start made: the rm takes it
+            finally:
+                os.close(run_fd)
+    finally:
+        os.close(home)
+    if names:
+        _as(RUN_USER, popen, ["/bin/rm", "-rf", "--"] + [os.path.join(RUNS_HOME, n) for n in names],
+            "What an earlier run left couldn't be removed.")
 
 
 def _launch(argv, env, run_dir, run_uid, timeout, popen, out):
@@ -357,7 +405,20 @@ def _hand_back(popen, run_dir, stage, owner_uid, claude_out, exit_info):
 
 
 def start(run_id, cfg, popen):
-    """Run one device run as mysticalruns and hand its results to the stage."""
+    """Run one device run as mysticalruns and hand its results to the stage. One
+    at a time: a second start waits here for the first to end. The lock holds
+    the run's id, which is how stop knows the run that is going."""
+    lock = _open_lock()
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        os.ftruncate(lock, 0)
+        os.write(lock, run_id.encode())
+        _start(run_id, cfg, popen)
+    finally:
+        os.close(lock)
+
+
+def _start(run_id, cfg, popen):
     claude = cfg.get("claude")
     if not isinstance(claude, str) or not claude:
         raise Refused("Claude Code isn't installed for device runs yet; run Set up again.")
@@ -381,6 +442,8 @@ def start(run_id, cfg, popen):
         run_uid = pwd.getpwnam(RUN_USER).pw_uid
         argv = launch_argv(cfg.get("launch"), run_uid, claude_argv(prompt, claude))
         _kill_user(popen)   # nothing of an earlier run is left to watch this one
+        popen(["/usr/bin/crontab", "-r", "-u", RUN_USER], **_QUIET).wait()   # nor its crontab (none is no error)
+        _sweep(popen)       # nor its folder
         _as(RUN_USER, popen, ["/usr/bin/python3", "-I", "-c", _EMPTY_AGENTS, os.path.dirname(RUNS_HOME)],
             "The hidden user's launch agents couldn't be cleared.")
         code = os.path.join(run_dir, "code")
@@ -408,7 +471,23 @@ def start(run_id, cfg, popen):
 
 def stop(run_id, popen):
     """Stop the run `start` is running. Nothing running is no error, and kills
-    nothing: a stop that arrives late must not touch the next requester's run."""
+    nothing: a stop that arrives late must not touch the next requester's run.
+    Only the run holding the lock counts. With the lock free nothing runs, so
+    no pid file is read: one a dead helper left can name somebody else's group."""
+    lock = _open_lock()
+    try:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            pass
+        if os.pread(lock, 64, 0) == run_id.encode():
+            _stop(run_id, popen)
+    finally:
+        os.close(lock)
+
+
+def _stop(run_id, popen):
     try:
         fd = os.open(os.path.join(RUNS_HOME, run_id, "pid"), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
