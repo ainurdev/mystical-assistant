@@ -388,6 +388,19 @@ def test_bridge_config_merges_and_per_machine_keys_stay_behind(world):
     db.close()
 
 
+def test_a_machine_that_booted_takes_the_old_machines_installs(world):
+    """Any bridge that booted once has a plugins.json, and a fresh machine's is
+    adoption's all-false answer, not a choice: mine winning would land the move
+    with every integration uninstalled. A true from the old machine wins."""
+    new = world["new"]
+    _write(os.path.join(new.state, "plugins.json"),
+           json.dumps({"rivendell": False, "trackers": False, "design": False}))
+    rep = _import(world, _export(world))
+    assert json.load(open(os.path.join(new.state, "plugins.json"))) == \
+        {"rivendell": True, "trackers": False, "design": False}
+    assert "plugins.json" in rep["bridge"]["state merged"]
+
+
 def test_a_second_import_changes_nothing(world):
     path = _export(world)
     _import(world, path)

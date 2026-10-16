@@ -27,7 +27,8 @@ Replayed rather than copied, because almost none of it is machine-neutral:
   So the old home and BASE_PATH are swapped for this machine's in every line and
   folder name, and each file keeps its mtime so History orders it as before.
 - Settings merge and never overwrite. Whatever this machine already has wins, and
-  a conflict is reported by key name only, because the values are secrets.
+  a conflict is reported by key name only, because the values are secrets. The
+  exception is plugins.json: what the old machine installed is installed here too.
 
 What never moves: logins (Claude, gh, MCP OAuth tokens; each machine has its own
 keychain), the Telegram bot token and chat allow-list (two bridges polling one
@@ -2078,6 +2079,14 @@ class _Import:
         else:
             added, conflicts = [], []
             _merge(mine, old, added, conflicts)
+            if name == "plugins.json":
+                # Installed wins here: every bridge that booted has this file, and a
+                # fresh one's all-false set is what adoption found, not a choice.
+                # Safe, as Rivendell's instances arrive OFF; a false turns nothing off.
+                for k, v in old.items():
+                    if v and not mine.get(k):
+                        mine[k] = True
+                        added.append(k)
             if added:
                 if not self.dry:
                     _backup(dst, self.stamp)
