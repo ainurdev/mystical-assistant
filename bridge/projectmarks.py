@@ -173,6 +173,10 @@ def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
                 raise ValueError("the logo isn't base64") from None
             mark = {**(mark or {}), "kind": "logo", "logo": _put_logo(d, raw)}
         out = clean(mark, d.get("logos") or {})
+        # Back to plain letters from a mark is still your choice: kept as one,
+        # or following Rivendell would dress the repo again on its next pass.
+        if out is None and project_config.mark(rel) is not None:
+            out = {"kind": "letters"}
         project_config.set_mark(rel, out)
         _gc(d)
         _save(d)
@@ -236,19 +240,29 @@ def _look(force: bool = False) -> dict:
         return _seen
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None                       # a 3xx becomes an HTTPError
+
+
+_opener = urllib.request.build_opener(_NoRedirect)
+
+
 def _download(url) -> "bytes | None":
     """A client logo off its signed URL. Over https, or plain http to a local
-    Rivendell; only an image, and only under the cap."""
-    u = urllib.parse.urlparse(url if isinstance(url, str) else "")
-    if u.scheme != "https" and not (u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1", "::1")):
-        return None
+    Rivendell; never following a redirect (a signed object-store URL doesn't,
+    and one could send the bridge anywhere); only an image, under the cap.
+    Never raises: one client's bad URL must not sink an import or a refresh."""
     try:
+        u = urllib.parse.urlparse(url)
+        if u.scheme != "https" and not (u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1", "::1")):
+            return None
         req = urllib.request.Request(url, headers={"User-Agent": "mystical-bridge"})
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with _opener.open(req, timeout=15) as r:
             data = r.read(LOGO_MAX + 1)
-    except (urllib.error.URLError, OSError, ValueError):
+        return data if len(data) <= LOGO_MAX and sniff(data) else None
+    except Exception:  # noqa: BLE001 — urllib raises a zoo (InvalidURL, IncompleteRead, …)
         return None
-    return data if len(data) <= LOGO_MAX and sniff(data) else None
 
 
 def _known(marks: dict, logos: dict) -> dict:
@@ -346,6 +360,8 @@ def refresh() -> dict:
     with _lock:
         d = _load()
         rv = d.setdefault("rivendell", {})
+        if not rv.get("sync"):           # switched off, or undone, while it downloaded
+            return {"following": 0, "skipped": "off"}
         undo = rv.get("undo") if isinstance(rv.get("undo"), dict) else {}
         marks = project_config.marks()   # again: an edit may have landed during the downloads
         for rel, p in todo.items():
@@ -368,12 +384,16 @@ def undo() -> dict:
         snap = rv.get("undo")
         if not isinstance(snap, dict):
             return {"undone": 0}
+        undone = 0
         for rel, m in snap.items():
+            if _yours(project_config.mark(rel)):
+                continue                  # you changed it since: yours stands
             project_config.set_mark(rel, m if isinstance(m, dict) else None)
+            undone += 1
         rv.update(sync=False, undo=None, dismissed=sorted(snap))
         _gc(d)
         _save(d)
-    return {"undone": len(snap)}
+    return {"undone": undone}
 
 
 def _offer_rels(seen: dict, marks: dict) -> list:

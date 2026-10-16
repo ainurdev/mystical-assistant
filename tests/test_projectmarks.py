@@ -232,7 +232,7 @@ def test_no_rivendell_means_nothing_to_offer(riv):
     assert s["asked"] is True and s["available"] is False and s["errors"][0]["error"] == "not_deployed"
 
 
-def test_download_takes_only_https_or_a_local_rivendell(monkeypatch):
+def test_download_takes_only_https_or_a_local_rivendell_and_never_raises(monkeypatch):
     seen = []
 
     class Resp:
@@ -248,16 +248,32 @@ def test_download_takes_only_https_or_a_local_rivendell(monkeypatch):
         def __exit__(self, *a):
             return False
 
-    def urlopen(req, timeout):
-        seen.append(req.full_url)
-        return Resp(b"<html>not a logo</html>" if "html" in req.full_url else PNG)
-    monkeypatch.setattr(projectmarks.urllib.request, "urlopen", urlopen)
+    class Opener:
+        def open(self, req, timeout):
+            seen.append(req.full_url)
+            if "redirect" in req.full_url:      # what _NoRedirect turns a 3xx into
+                raise projectmarks.urllib.error.HTTPError(req.full_url, 302, "Found", {}, None)
+            if "broken" in req.full_url:
+                raise projectmarks.http_client_error("IncompleteRead")
+            return Resp(b"<html>not a logo</html>" if "html" in req.full_url else PNG)
+    monkeypatch.setattr(projectmarks, "_opener", Opener())
+    monkeypatch.setattr(projectmarks, "http_client_error", RuntimeError, raising=False)
     assert projectmarks._download("https://s3.example/logo.png") == PNG
     assert projectmarks._download("http://localhost:3099/logo.png") == PNG
     assert projectmarks._download("http://evil.example/logo.png") is None
     assert projectmarks._download("file:///etc/passwd") is None
     assert projectmarks._download("https://s3.example/html") is None
-    assert seen == ["https://s3.example/logo.png", "http://localhost:3099/logo.png", "https://s3.example/html"]
+    assert projectmarks._download("https://s3.example/redirect") is None
+    assert projectmarks._download("https://s3.example/broken") is None
+    assert projectmarks._download("https://[::1") is None          # urlparse itself raises
+    assert projectmarks._download(None) is None
+    assert seen == ["https://s3.example/logo.png", "http://localhost:3099/logo.png", "https://s3.example/html",
+                    "https://s3.example/redirect", "https://s3.example/broken"]
+
+
+def test_the_real_opener_follows_no_redirect():
+    handler = projectmarks._NoRedirect()
+    assert handler.redirect_request(None, None, 302, "Found", {}, "http://192.168.1.1/x") is None
 
 
 def test_an_edit_made_while_logos_download_is_never_overwritten(riv, monkeypatch):
@@ -272,3 +288,44 @@ def test_an_edit_made_while_logos_download_is_never_overwritten(riv, monkeypatch
     monkeypatch.setattr(projectmarks, "_fetch_logos", slow)
     assert projectmarks.import_all()["kept"] == ["/a"]
     assert project_config.mark("/a") == {"kind": "icon", "icon": "car"}
+
+
+def test_back_to_letters_on_a_following_repo_stays_letters(riv):
+    riv["projects"] = [{"id": "p1", "repositories": ["acme/a"], "client": client("c", color="#336699")}]
+    riv["local"] = {"/a": {"acme/a"}}
+    projectmarks.import_all()
+    assert project_config.mark("/a")["source"] == "rivendell"
+    assert projectmarks.set_mark("/a", None) == {"kind": "letters"}      # BACK TO LETTERS
+    projectmarks.refresh()
+    assert project_config.mark("/a") == {"kind": "letters"}
+    assert projectmarks.set_mark("/fresh", None) is None                 # nothing to go back from: no mark
+
+
+def test_undo_never_takes_back_a_mark_you_set_after_the_import(riv):
+    riv["projects"] = [{"id": "p1", "repositories": ["acme/a", "acme/b"], "client": client("c", color="#336699")}]
+    riv["local"] = {"/a": {"acme/a"}, "/b": {"acme/b"}}
+    projectmarks.import_all()
+    mine = projectmarks.set_mark("/b", {"kind": "icon", "icon": "rocket"})
+    assert projectmarks.undo() == {"undone": 1}
+    assert project_config.mark("/a") is None and project_config.mark("/b") == mine
+
+
+def test_refresh_stops_if_following_is_switched_off_while_it_downloads(riv, monkeypatch):
+    riv["projects"] = [{"id": "p1", "repositories": ["acme/a"], "client": client("c", logo="https://s3/c.png")}]
+    riv["local"] = {"/a": {"acme/a"}}
+    riv["logos"] = {"https://s3/c.png": PNG}
+    projectmarks.set_sync(True)
+    projectmarks.undo()                       # nothing imported yet: just make sure /a is plain
+    projectmarks.set_mark("/a", None)
+    real = projectmarks._fetch_logos
+
+    def slow(matches, known):
+        projectmarks.set_sync(False)          # the switch goes off mid-download
+        return real(matches, known)
+    with projectmarks._lock:
+        d = projectmarks._load()
+        d.setdefault("rivendell", {})["sync"] = True
+        projectmarks._save(d)
+    monkeypatch.setattr(projectmarks, "_fetch_logos", slow)
+    assert projectmarks.refresh() == {"following": 0, "skipped": "off"}
+    assert project_config.mark("/a") is None

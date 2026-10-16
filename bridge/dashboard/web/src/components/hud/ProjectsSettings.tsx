@@ -235,7 +235,8 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                               <Pencil size={11} aria-hidden />
                             </button>
                             {mark?.source === "rivendell" ? <span className="ps-via" title={`follows ${mark.rv?.name ?? "its client"} in Rivendell`}><i />RIVENDELL</span>
-                              : mark ? <span className="ps-via ps-mine" title="set here: it never changes on its own">YOURS</span> : null}
+                              : mark && !(mark.kind === "letters" && !mark.color)
+                                ? <span className="ps-via ps-mine" title="set here: it never changes on its own">YOURS</span> : null}
                             {isHidden && <span className="ps-chip">Hidden</span>}
                             {remotes[r.rel] && (
                               <a href={`https://github.com/${remotes[r.rel]}`} target="_blank" rel="noreferrer" className="ps-remote"

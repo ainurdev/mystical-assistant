@@ -65,7 +65,8 @@ def test_a_saved_mark_comes_back_in_the_projects_listing(tmp_path):
     listing = dget("/local/projects")["obj"]
     assert listing["marks"][rel]["icon"] == "receipt"
     r = dpost("/local/project/settings", {"project": rel, "mark": None})       # BACK TO LETTERS
-    assert r["obj"]["mark"] is None and rel not in dget("/local/projects")["obj"]["marks"]
+    # kept as your choice, so following Rivendell can't dress it again
+    assert r["obj"]["mark"] == {"kind": "letters"} and dget("/local/projects")["obj"]["marks"][rel] == {"kind": "letters"}
 
 
 def test_a_bad_mark_is_a_400_and_changes_nothing(tmp_path):

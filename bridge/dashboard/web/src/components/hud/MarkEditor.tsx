@@ -84,7 +84,12 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
     const inside = (t: EventTarget | null) => !!t && (root.current?.contains(t as Node) || anchor?.contains(t as Node));
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); onClose(); } };
     const onDown = (e: PointerEvent) => { if (!inside(e.target)) onClose(); };
-    const onScroll = (e: Event) => { if (!inside(e.target)) onClose(); };
+    // Only a scroll that moves the tile: a transcript streaming next door
+    // scrolls all the time and must not shut it.
+    const onScroll = (e: Event) => {
+      const t = e.target as Node | null;
+      if (!inside(t) && anchor && t && (t === document || t.contains?.(anchor))) onClose();
+    };
     window.addEventListener("keydown", onKey, true);
     document.addEventListener("pointerdown", onDown);
     window.addEventListener("scroll", onScroll, true);
@@ -147,8 +152,12 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
                                     ...(color ? { color } : {}) } : null)
     : color ? { kind: "letters", color } : null;
   const incomplete = (kind === "icon" && !icon) || (kind === "logo" && !logo);
-  const unchanged = !logo?.data && JSON.stringify(next) === JSON.stringify(
-    cur ? Object.fromEntries(Object.entries(cur).filter(([k]) => k !== "source" && k !== "rv")) : null);
+  // A dropped logo only counts while LOGO is the chosen tab; a bare letters
+  // mark (you went back to letters on a matched repo) reads as no mark.
+  const dropping = kind === "logo" && !!logo?.data;
+  const shown = (m: ProjectMark | null) => (m && !(m.kind === "letters" && !m.color) ? m : null);
+  const unchanged = !dropping && JSON.stringify(next) === JSON.stringify(
+    shown(cur) ? Object.fromEntries(Object.entries(cur!).filter(([k]) => k !== "source" && k !== "rv")) : null);
 
   async function save(mark: ProjectMark | null, logoData?: string) {
     setBusy(true);
@@ -310,12 +319,12 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
         {err && <div className="mk-err">{err}</div>}
       </div>
       <div className="mk-ft">
-        <button type="button" className="mk-btn mk-pri" disabled={busy || incomplete || (unchanged && !!cur)}
-          onClick={() => (unchanged ? onClose() : void save(next, logo?.data))}>SAVE</button>
+        <button type="button" className="mk-btn mk-pri" disabled={busy || incomplete || unchanged}
+          onClick={() => void save(next, dropping ? logo?.data : undefined)}>SAVE</button>
         <button type="button" className="mk-btn mk-ghostbtn" onClick={onClose}>CANCEL</button>
         <span style={{ flex: 1 }} />
         {following ? <span className="mk-note">a change here stops it following</span>
-          : cur && <button type="button" className="mk-btn mk-ghostbtn" disabled={busy} onClick={() => void save(null)}>BACK TO LETTERS</button>}
+          : shown(cur) && <button type="button" className="mk-btn mk-ghostbtn" disabled={busy} onClick={() => void save(null)}>BACK TO LETTERS</button>}
       </div>
     </div>,
     document.body,
