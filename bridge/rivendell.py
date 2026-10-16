@@ -314,7 +314,8 @@ class Worker:
         # "is the queue idle?" — the condition for auto-accepting a lone request.
         self._active_runs = 0
         # The teammate's device run in flight on this device (its request id):
-        # one at a time, the next waiting in _pending (_run_device_run).
+        # one at a time, the next waiting in _pending (_run_device_run). Kept
+        # apart from _active_runs, so it never holds up the owner's own jobs.
         self._device_run: "str | None" = None
         self._q_lock = threading.Lock()      # guards _pending, _active_runs, _running and _device_run
         self._seen_lock = threading.Lock()
@@ -877,6 +878,7 @@ class Worker:
         try:
             head = device_side.headers(self.inst)    # teammates' device runs: only on a device READY for one
             if head:
+                device_side.report_interrupted(self, head)   # runs a restart cut short, first
                 for item in self._api("/plugin/device-run-requests", headers=head):
                     self._apply_policy(self._enqueue("device-run", item["requestId"], item.get("repository")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
@@ -941,10 +943,12 @@ class Worker:
 
         A teammate's device run needs no tap and no Telegram ask: the Rivendell
         permission is the consent. One runs at a time on this device; one behind
-        it is acked "queued" and starts by itself when it ends (_run_device_run),
-        and the owner's own runs never hold one up, a device run being another
-        macOS user. A device that isn't READY takes none: nothing is acked, and
-        the key is forgotten, so a re-send once it is ready is a new job."""
+        it is acked "queued" and starts by itself when it ends (_run_device_run).
+        A device run is another macOS user, so the owner's own runs never hold
+        one up, and it never holds up theirs: running or waiting, it isn't work
+        in flight for any other kind. A device that isn't READY takes none:
+        nothing is acked, and the key is forgotten, so a re-send once it is
+        ready is a new job."""
         if key is None:
             return
         with self._q_lock:
@@ -986,7 +990,7 @@ class Worker:
             return
         with self._q_lock:
             others = [k for k, it in self._pending.items()
-                      if k != key and not it.get("offered")]
+                      if k != key and not it.get("offered") and it["kind"] != "device-run"]
             idle = not others and self._active_runs == 0
         if idle and not item.get("offered"):
             self._ack(key, "received")
@@ -1770,7 +1774,8 @@ class Worker:
     def _run_device_run(self, item: dict) -> None:
         """A teammate's run on this shared device (bridge/device_side.py), listed
         in flight while it runs. Then the oldest device run waiting here starts
-        by itself, whatever else is running (Ruling 2)."""
+        by itself, whatever else is running (Ruling 2). It is no part of
+        _active_runs (M11): the owner's own jobs ran past it all along."""
         # shortcut: one device run at a time per Rivendell instance. Two
         # instances sharing this device can overlap; the helper's lock then makes
         # the second wait for the first. Serialize across workers if both share it.
@@ -1956,12 +1961,14 @@ class Worker:
             if item is None or (item["kind"] == "device-run" and self._device_run is not None):
                 return False
             del self._pending[key]
-            if item["kind"] == "device-run":
-                self._device_run = item["request_id"]
             # Count it running before the thread starts, so a request that lands
             # between now and the run finishing sees a busy queue (and pings)
-            # rather than racing in as another "lone" auto-accept.
-            self._active_runs += 1
+            # rather than racing in as another "lone" auto-accept. A device run
+            # counts apart: it holds up only the next device run.
+            if item["kind"] == "device-run":
+                self._device_run = item["request_id"]
+            else:
+                self._active_runs += 1
         threading.Thread(
             target=self._run_accepted, args=(dict(item),),
             name=f"rivendell-run-{self.id}", daemon=True).start()
@@ -2013,20 +2020,24 @@ class Worker:
         finally:
             # Release the run slot so the queue reads idle again once nothing is in
             # flight (clamped: a direct _run_accepted with no matching accept()
-            # increment must not drive the count negative).
-            with self._q_lock:
-                self._active_runs = max(0, self._active_runs - 1)
+            # increment must not drive the count negative). A device run took
+            # none; _run_device_run has freed its own.
+            if kind != "device-run":
+                with self._q_lock:
+                    self._active_runs = max(0, self._active_runs - 1)
             self._drain()
 
     def _drain(self) -> None:
         """A run just finished: with nothing else running, start the oldest held
-        request — never an offered one, which waits for the tap. A stale one
+        request — never an offered one, which waits for the tap, nor a device
+        run, which starts after the one before it (_run_device_run). A stale one
         (another bridge's by now) is refused at claim and simply drains on to
         the next."""
         with self._q_lock:
             if self._active_runs:
                 return
-            key = next((k for k, it in self._pending.items() if not it.get("offered")), None)
+            key = next((k for k, it in self._pending.items()
+                        if not it.get("offered") and it["kind"] != "device-run"), None)
         if key is not None:
             self.accept(key)
 

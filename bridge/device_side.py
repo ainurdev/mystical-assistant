@@ -21,7 +21,9 @@ while the code is unpacking finds no run to stop yet. A cancelled run posts
 nothing; Rivendell has closed it.
 
 A bridge that stopped mid-run leaves its stage behind; sweep() clears those at
-the next start (rivendell.start), stopping a helper that may still be running.
+the next start (rivendell.start), stopping a helper that may still be running,
+and report_interrupted() posts each such run FAILED once its instance's device
+is connected again (Rivendell takes a device's result only then).
 """
 
 import json
@@ -50,6 +52,8 @@ _GIVE_UP = 60        # seconds of stops after that before the bridge stops waiti
 _RETRIES = (2, 10, 30)   # the result POST, as rivendell._RESULT_RETRIES: a finished run is expensive
 
 _cancelled: set = set()   # run ids a cancel came in for (set operations are atomic under the GIL)
+_interrupted: dict = {}   # instance id -> run ids a restart cut short, still to report (sweep, report_interrupted)
+_RESTARTED = "The device restarted during the run."
 
 
 def stage_dir(request_id: str) -> str:
@@ -140,7 +144,7 @@ def run(worker, request_id: str, popen=subprocess.Popen, call=subprocess.run) ->
         try:
             worker._deliver_telegram(f"{claim['requester']['name']} is testing {claim['repository']} on this device.",
                                      None)
-            _write_stage(stage, claim, timeout)
+            _write_stage(stage, claim, timeout, worker.inst["id"])
             if request_id in _cancelled:
                 return
             rc, err, late = _start(request_id, timeout, popen, call)
@@ -157,16 +161,17 @@ def run(worker, request_id: str, popen=subprocess.Popen, call=subprocess.run) ->
         _cancelled.discard(request_id)
 
 
-def _write_stage(stage, claim, timeout):
+def _write_stage(stage, claim, timeout, instance):
     """The stage the helper checks: the owner's 0700 folder with job.json, the
     code and, last, the token. The code comes from the web only: a file:// URL
-    would hand the run one of the owner's own files as its code."""
+    would hand the run one of the owner's own files as its code. job.json also
+    names the Rivendell instance (not a secret), for sweep() after a restart."""
     os.mkdir(stage, 0o700)
     os.chmod(stage, 0o700)    # exactly, whatever the umask
     _write(os.path.join(stage, "job.json"), json.dumps({
         "prompt": claim["prompt"], "gitAuthorName": claim.get("gitAuthorName"),
         "gitAuthorEmail": claim.get("gitAuthorEmail"), "developerDir": device_share.developer_dir(),
-        "timeoutSeconds": timeout}).encode())
+        "timeoutSeconds": timeout, "instance": instance}).encode())
     url = claim["snapshotUrl"]
     if urlsplit(url).scheme not in ("http", "https"):
         raise ValueError("the code's address isn't a web address")
@@ -309,8 +314,10 @@ def sweep(run=subprocess.run) -> None:
     """At bridge start: the stages a bridge that stopped mid-run left. The helper
     runs in a session of its own and takes the token when it ends, so a staged
     token means that run may still be going: it is stopped, nobody being left
-    to report it. Then the stage goes, token first. Only this account's folders
-    named by a run id count, never through a link."""
+    to report it. Each run is noted for report_interrupted() under the instance
+    its job.json names, then the stage goes, token first: the token can't wait
+    for a connection. Only this account's folders named by a run id count,
+    never through a link."""
     try:
         names = os.listdir(STAGE_ROOT)
     except OSError:
@@ -325,4 +332,21 @@ def sweep(run=subprocess.run) -> None:
             continue
         if os.path.lexists(os.path.join(stage, "token")):
             _stop(name, run)
+        instance = _read_json(os.path.join(stage, "job.json")).get("instance")
+        if isinstance(instance, str) and instance:
+            _interrupted.setdefault(instance, []).append(name)
         _drop(stage)
+
+
+def report_interrupted(worker, head: dict) -> None:
+    """The runs of this worker's instance a restart cut short (sweep), posted
+    FAILED once its device is connected again: Rivendell takes a device's result
+    only from a device whose socket is open, so not at bridge start. One try
+    each; a failed POST is logged, and its stage went at bridge start anyway."""
+    for request_id in _interrupted.pop(worker.inst["id"], []):
+        try:
+            worker._api(f"/plugin/device-run-requests/{request_id}/result",
+                        {"status": "FAILED", "error": _RESTARTED, "screens": []}, headers=head)
+        except Exception as e:  # noqa: BLE001 — logged; the run was over either way
+            print(f"rivendell[{worker.name}]: device run {request_id} cut short by a restart "
+                  f"couldn't be reported: {e}")

@@ -157,8 +157,10 @@ def device(tmp_path, monkeypatch):
         return Reply(d.code)
     monkeypatch.setattr(ds.urllib.request, "urlopen", urlopen)
     ds._cancelled.clear()
+    ds._interrupted.clear()
     yield d
     ds._cancelled.clear()
+    ds._interrupted.clear()
 
 
 def _run(w, helper, rid=RID):
@@ -228,7 +230,7 @@ def test_a_run_uploads_its_screens_and_posts_the_report_with_captions_in_index_o
     assert helper.kw["start_new_session"] is True, "a bridge restart doesn't take the run down"
     assert helper.saw == {
         "job": {"prompt": CLAIM["prompt"], "gitAuthorName": "Mahdi", "gitAuthorEmail": "mahdi@example.com",
-                "developerDir": DEV, "timeoutSeconds": 600},
+                "developerDir": DEV, "timeoutSeconds": 600, "instance": "t1"},
         "token": TOKEN, "code": CODE, "names": ["code.tar.gz", "job.json", "token"],
         "stage_mode": 0o700, "token_mode": 0o600}
     assert device.fetched == [(CLAIM["snapshotUrl"], 60)]
@@ -471,6 +473,48 @@ def test_a_bridge_start_clears_stages_left_mid_run_token_first(device, tmp_path)
         assert (elsewhere / "token").read_text() == "keep", "a link is not followed"
     finally:
         going.chmod(0o700)
+
+
+def _stale(device, rid, instance, token=True):
+    """A stage as a bridge that stopped mid-run leaves it."""
+    d = device.root / rid
+    (d / "out").mkdir(parents=True)
+    (d / "job.json").write_text(json.dumps({"prompt": "p", "timeoutSeconds": 600, "instance": instance}))
+    if token:
+        (d / "token").write_text(TOKEN)
+    return d
+
+
+def _no_helper(argv, **kw):
+    return subprocess.CompletedProcess(argv, 0, "", "")
+
+
+def test_a_run_cut_short_by_a_restart_is_reported_failed_to_its_instance_once(device):
+    """M12: the stage names its instance. At bridge start the stage goes; once
+    that instance's device is connected again (Rivendell takes a device's result
+    only then), the run is posted FAILED there, once, with the device header."""
+    _stale(device, RID, "t1")
+    _stale(device, OTHER, "t2", token=False)
+    ds.sweep(run=_no_helper)
+    assert os.listdir(device.root) == []
+    mine, theirs = Worker(), Worker()
+    theirs.inst = {**theirs.inst, "id": "t2"}
+    ds.report_interrupted(mine, HEAD)
+    ds.report_interrupted(mine, HEAD)
+    assert mine.api == [(BASE + "/result", {"status": "FAILED", "error": "The device restarted during the run.",
+                                            "screens": []}, HEAD)], "one post, to its own instance"
+    ds.report_interrupted(theirs, HEAD)
+    assert [p for p, _, _ in theirs.api] == ["/plugin/device-run-requests/" + OTHER + "/result"]
+
+
+def test_a_restart_report_that_fails_is_logged_and_the_stage_is_gone_all_the_same(device, capsys):
+    _stale(device, RID, "t1")
+    ds.sweep(run=_no_helper)
+    w = Worker()
+    w.result_errors = [_http(502)]
+    ds.report_interrupted(w, HEAD)
+    assert len(w.results()) == 1 and RID in capsys.readouterr().out
+    assert os.listdir(device.root) == [] and ds._interrupted == {}
 
 
 def test_a_device_never_set_up_has_nothing_to_sweep(device, monkeypatch):

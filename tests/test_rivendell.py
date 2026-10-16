@@ -2662,7 +2662,7 @@ def test_the_next_device_run_starts_by_itself_when_one_ends(monkeypatch):
     started = []
     monkeypatch.setattr(w, "_run_accepted", lambda item: started.append(item["request_id"]))
     monkeypatch.setattr(device_side, "run", lambda worker, rid: None)
-    w._active_runs = 2                                    # the owner's run, and this one
+    w._active_runs = 1                                    # the owner's own run: no reason to wait
     w._device_run = "d0"
     w._enqueue("review", "r1", "acme/app")
     w._enqueue("device-run", "d1", "ainurhq/app")
@@ -2670,6 +2670,83 @@ def test_the_next_device_run_starts_by_itself_when_one_ends(monkeypatch):
     w._run_device_run({"request_id": "d0", "slug": "ainurhq/app"})
     _wait_until(lambda: started == ["d1"])
     assert w._device_run == "d1" and [r["key"] for r in w.queue_snapshot()] == ["review:r1", "device-run:d2"]
+    assert w._active_runs == 1, "a device run takes no slot of the owner's"
+
+
+DOTHER = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
+
+
+def test_a_device_run_never_holds_up_the_owners_own_jobs(monkeypatch, acks):
+    """M11, the mirror of Ruling 2: a teammate's device run is another macOS
+    user, so while one runs, and another waits behind it, the owner's own
+    request starts as if nothing ran: no tap, no Telegram ask."""
+    _ready(monkeypatch)
+    w = _worker()
+    monkeypatch.setattr(w, "_run_accepted", lambda item: None)       # accepted, never run
+    w._apply_policy(w._handle_message(_device_frame()))
+    w._apply_policy(w._handle_message(_device_frame(DOTHER)))
+    assert w._device_run == DRID and w._active_runs == 0
+    pinged = []
+    monkeypatch.setattr(w, "_notify_queued", lambda key: pinged.append(key))
+    w._apply_policy(w._enqueue("review", "r1", "acme/app"))
+    assert acks[-1] == ("review:r1", "received") and pinged == []
+    assert w._active_runs == 1 and [r["key"] for r in w.queue_snapshot()] == [f"device-run:{DOTHER}"]
+
+
+def test_a_second_device_run_is_queued_not_run(monkeypatch, acks):
+    _ready(monkeypatch)
+    w = _worker()
+    ran = []
+    monkeypatch.setattr(w, "_run_accepted", lambda item: ran.append(item["request_id"]))
+    monkeypatch.setattr(w, "_notify_queued", lambda key: pytest.fail("no Telegram ask for a device run"))
+    w._apply_policy(w._handle_message(_device_frame()))
+    w._apply_policy(w._handle_message(_device_frame(DOTHER)))
+    _wait_until(lambda: ran == [DRID])
+    assert acks == [(f"device-run:{DRID}", "received"), (f"device-run:{DOTHER}", "queued")]
+    assert [r["key"] for r in w.queue_snapshot()] == [f"device-run:{DOTHER}"] and ran == [DRID]
+
+
+def test_drain_starts_the_owners_held_job_past_a_waiting_device_run(monkeypatch):
+    """A waiting device run starts after the one before it, never from _drain,
+    and is no reason for the owner's held job to stay held."""
+    w = _worker()
+    w._device_run = "d0"
+    w._enqueue("device-run", "d1", "ainurhq/app")
+    w._enqueue("review", "r1", "acme/app")
+    accepted = []
+    monkeypatch.setattr(w, "accept", lambda key: accepted.append(key) or True)
+    w._drain()
+    assert accepted == ["review:r1"]
+
+
+def test_a_device_run_ending_frees_no_slot_of_the_owners(monkeypatch):
+    """Its end must not count as one of the owner's runs ending: with one of
+    theirs still going, the next request of theirs would start beside it unasked."""
+    w = _worker()
+    w._active_runs = 1
+    monkeypatch.setattr(w, "_run_device_run", lambda item: None)
+    w._run_accepted({"kind": "device-run", "request_id": DRID, "slug": "ainurhq/app"})
+    assert w._active_runs == 1
+
+
+def test_catch_up_reports_the_runs_a_restart_cut_short_once_ready(monkeypatch):
+    """M12: Rivendell takes a device's result only once its socket is open, so a
+    run the last restart cut short is reported on a READY catch-up, to its own
+    instance, before the device's catch-up list."""
+    monkeypatch.setattr(device_side, "_interrupted", {"t1": [DRID], "t2": ["x"]})
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+    asked = []
+    monkeypatch.setattr(w, "_api", lambda path, payload=None, headers=None: asked.append((path, payload, headers)) or [])
+    w._catch_up()
+    assert not [p for p, _, _ in asked if "device-run" in p], "not READY: nothing reported yet"
+    _ready(monkeypatch)
+    w._catch_up()
+    assert [c for c in asked if "device-run" in c[0]] == [
+        (f"/plugin/device-run-requests/{DRID}/result",
+         {"status": "FAILED", "error": "The device restarted during the run.", "screens": []}, DEVICE),
+        ("/plugin/device-run-requests", None, DEVICE)]
+    assert device_side._interrupted == {"t2": ["x"]}
 
 
 def test_a_device_run_is_listed_in_flight_only_while_it_runs(monkeypatch):
