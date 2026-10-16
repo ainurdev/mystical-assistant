@@ -21,6 +21,13 @@ def _not_darwin(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_win_app(monkeypatch):
+    """No Mystical.exe installed unless a test says so — the real check finds
+    the one on a machine that has run `mystical app`, and the .cmd changes."""
+    monkeypatch.setattr(startup, "_win_app", lambda: None, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def _tray_entry_in_tmp(monkeypatch, tmp_path):
     """The tray's autostart entry would otherwise land in the real ~/.config."""
     monkeypatch.setattr(startup, "_TRAY_AUTOSTART",
@@ -284,9 +291,6 @@ def _fake_systemctl(calls):
 
 
 def _wsl_box(monkeypatch):
-    # No Mystical.exe installed unless a test says so — the real check would
-    # find the one on this machine.
-    monkeypatch.setattr(startup, "_win_app", lambda: None, raising=False)
     monkeypatch.setattr(startup, "_REPO", "/home/u/projects/mystical-assistant")
     monkeypatch.setattr(startup, "_distro", lambda: "Ubuntu")
     monkeypatch.setattr(startup.getpass, "getuser", lambda: "u")
