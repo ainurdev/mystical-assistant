@@ -132,7 +132,7 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
                 switch body["action"] as? String {
                 case "close": w.performClose(nil)
                 case "minimize": w.miniaturize(nil)
-                case "zoom": (w.windowController as? DashboardWindow)?.toggleSimpleFullScreen(nil)
+                case "zoom": w.toggleFullScreen(nil)
                 default: break
                 }
             }
