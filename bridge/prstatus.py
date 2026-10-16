@@ -48,7 +48,7 @@ import re
 import threading
 import time
 
-from bridge import browser, config, git, github, store, telegram
+from bridge import browser, config, git, github, notices, store, telegram
 
 TTL = 45           # s: under the dashboard's 60s poll, so each poll reads fresh
 FORCE_FLOOR = 10   # s: focus, visibilitychange and a push can all ask at once
@@ -352,6 +352,17 @@ def _pings(repo_dir: str, slug: str, branch: str, pr: dict, session: str) -> "li
     new, fresh = next_pings(old, pr)
     if new != old:
         store.set_setting(key, json.dumps(sorted(new)) if new else None)
+    for k in fresh:
+        failing = k.startswith("failing:")
+        red = [c["name"] for c in pr["checks"] if c["state"] == "fail" and not c.get("cancelled")]
+        by = (pr.get("review") or {}).get("by")
+        notices.emit("pr_failing" if failing else "pr_changes", f"pr:{slug}:{branch}",
+                     title=f"#{pr['number']} · {pr['title']}",
+                     body=(f"{len(red)} of {len(pr['checks'])} failed: {', '.join(red[:5])}" if failing
+                           else f"Changes requested{f' by {by}' if by else ''}."),
+                     meta={"url": pr["url"], "number": pr["number"]})
+    fresh = [k for k in fresh if notices.telegram_ok("pr_failing" if k.startswith("failing:")
+                                                     else "pr_changes")]
     if fresh:
         _spawn(_telegram, browser.rel(repo_dir), session, pr, fresh)
     return sorted(new)

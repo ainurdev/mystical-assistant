@@ -18,6 +18,10 @@ import Foundation
 /// browsers honour only on service-worker notifications, is honoured here. A tap
 /// reaches the page as `onaction(actionId)`, with the window left where it is —
 /// answering a card from the banner is the point.
+///
+/// Two options are Mystical's own, which browsers ignore: `subtitle` (the
+/// banner's second line — project · branch, or the Rivendell instance) and
+/// `thread` (the subject, so Notification Center stacks one session's banners).
 public enum NotificationShim {
     public static let handlerName = "mysticalNotify"
 
@@ -32,6 +36,15 @@ public enum NotificationShim {
     public static func identifier(tag: String?, fallback: String) -> String {
         guard let tag, !tag.isEmpty else { return fallback }
         return "tag:" + tag
+    }
+
+    /// The session a banner is about, for when the page that made it is gone:
+    /// its tag, if the tag is a session id. The feed tags a banner with its
+    /// subject, and every subject that isn't a session (`rv:…`, `pr:…`) has a colon.
+    public static func session(fromIdentifier id: String) -> String? {
+        guard id.hasPrefix("tag:") else { return nil }
+        let tag = String(id.dropFirst(4))
+        return tag.isEmpty || tag.contains(":") ? nil : tag
     }
 
     /// One button on a banner, as the page sent it.
@@ -93,6 +106,8 @@ public enum NotificationShim {
           this.title = String(title);
           this.body = o.body == null ? "" : String(o.body);
           this.tag = o.tag == null ? "" : String(o.tag);
+          this.subtitle = o.subtitle == null ? "" : String(o.subtitle);
+          this.thread = o.thread == null ? "" : String(o.thread);
           // The standard shape ({action, title}); `id` accepted too.
           this.actions = Array.isArray(o.actions)
             ? o.actions.map((a) => ({ id: String(a.action == null ? a.id : a.action),
@@ -105,7 +120,8 @@ public enum NotificationShim {
           live.set(this._id, this);
           while (live.size > 200) live.delete(live.keys().next().value);
           if (Notification.permission === "granted")
-            post({ op: "show", id: this._id, title: this.title, body: this.body, actions: this.actions });
+            post({ op: "show", id: this._id, title: this.title, body: this.body, actions: this.actions,
+                   subtitle: this.subtitle, thread: this.thread });
         }
         close() {
           if (live.get(this._id) === this) live.delete(this._id);

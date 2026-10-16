@@ -1,17 +1,15 @@
 // Run: node bridge/dashboard/web/src/lib/banner.check.ts
-import { bannerActions, bannerAnswer, bannerBody } from "./banner.ts";
+import { bannerActions, bannerAnswer } from "./banner.ts";
 
 const perm = { request_id: "r1", kind: "permission" as const, tool_name: "Bash", summary: "rm -rf dist" };
 console.assert(bannerActions(perm).map((b) => b.action).join() === "allow,deny", "permission → Allow/Deny");
 console.assert(JSON.stringify(bannerAnswer(perm, "deny")) === JSON.stringify({ request_id: "r1", behavior: "deny" }), "deny body");
 console.assert(bannerAnswer(perm, "opt:0") === null, "a permission takes no option");
-console.assert(bannerBody(perm) === "Bash: rm -rf dist", "permission body");
 
 const q = { request_id: "r2", kind: "question" as const, questions: [{ question: "Which?", header: "Approach", options: [{ label: "A" }, { label: "B" }] }] };
 console.assert(bannerActions(q).map((b) => b.title).join() === "A,B", "one question → its options");
 console.assert(JSON.stringify(bannerAnswer(q, "opt:1")) === JSON.stringify({ request_id: "r2", answers: [{ header: "Approach", labels: ["B"] }] }), "option body");
 console.assert(bannerAnswer(q, "opt:7") === null, "unknown option");
-console.assert(bannerBody(q) === "Which?", "question body");
 
 const multi = { ...q, questions: [{ ...q.questions[0], multiSelect: true }] };
 console.assert(bannerActions(multi).length === 0, "multi-select gets no buttons");

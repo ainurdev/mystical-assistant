@@ -7,10 +7,10 @@ import {
   FolderTree, Gauge, GitBranch, 
   Globe,
   Handshake, KeyRound, ListMusic, ListTree, LoaderCircle, Lock,
-  Monitor, Network, Palette, Play, Plug,
+  Monitor, Moon, Network, Palette, Play, Plug,
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
-  Upload, Volume2, Waypoints, type LucideIcon,
+  Upload, Waypoints, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindowMac, Pin,
 } from "lucide-react";
@@ -32,6 +32,8 @@ import {
   type AcpAgentsInfo,
   type AcpPreset,
   type McpInfo,
+  type NoticePrefs,
+  type NoticePrefsPatch,
   type RivendellInstance,
   type RivendellInput,
   type RivendellStatus,
@@ -162,8 +164,8 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "How the dashboard looks: its theme and colour, the header over the transcript, its typeface and size." },
   { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD",
     about: "How a session reads: the chat layout, the composer's send key, the ground and colour scheme every turn is drawn on, whether results start open, and what shows while it works." },
-  { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD",
-    about: "How the dashboard tells you a session finished, failed, or is waiting on you: a desktop banner, a sound, or both." },
+  { key: "notifications", label: "NOTIFY", hint: "events · quiet · sound", icon: Bell, group: "THE HUD",
+    about: "What interrupts you, and how: for each kind of news — a session, a Rivendell job, a PR — a pop-up, a sound, a Telegram message, or only the bell." },
   // Only inside Mystical.app (RAIL and the search both skip it elsewhere): the
   // switches that are the app's, not the page's (lib/mac).
   { key: "mac", label: "MAC APP", hint: "window · dock · panel", icon: AppWindowMac, group: "THE HUD",
@@ -200,8 +202,9 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "transcript", sec: "COLOUR SCHEME", terms: "colour color scheme phosphor contrast dossier output style" },
   { tab: "transcript", sec: "RESULTS", terms: "auto-open results bash output edit diffs collapse steps fold" },
   { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
-  { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
-  { tab: "notifications", sec: "SOUND", terms: "tone chime volume packs peonping mute" },
+  { tab: "notifications", sec: "WHAT INTERRUPTS YOU", terms: "events pop up toast banner sound tone telegram away rivendell pr finished failed question approval" },
+  { tab: "notifications", sec: "QUIET HOURS", terms: "quiet hours night do not disturb dnd mute schedule" },
+  { tab: "notifications", sec: "THIS BROWSER", terms: "os notifications browser push permission alert sound volume chime mute" },
   { tab: "mac", sec: "WINDOW", terms: "mac app title bar session name dock icon keep cmd-tab space" },
   { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space" },
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission" },
@@ -255,7 +258,6 @@ const BASE_FONT_OPTS = BASE_FONTS.map((n) => ({
   value: String(n),
 }));
 
-const TONE_OPTS = (Object.keys(TONES) as ToneKey[]).map((k) => ({ label: TONES[k].label, value: k }));
 
 const CRT_TOGGLES: { key: "scanlines" | "sweep" | "glow"; label: string; desc: string }[] = [
   { key: "scanlines", label: "SCANLINES", desc: "horizontal CRT raster lines" },
@@ -347,8 +349,9 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   TYPE: Type,
   "WORKING INDICATOR": AudioLines,
   RESULTS: ListTree,
-  DESKTOP: Monitor,
-  SOUND: Volume2,
+  "WHAT INTERRUPTS YOU": Bell,
+  "QUIET HOURS": Moon,
+  "THIS BROWSER": Monitor,
   "PER EVENT": ListMusic,
   "RUN DEFAULTS": SlidersHorizontal,
   PROFILES: Bookmark,
@@ -387,8 +390,9 @@ const SEC_DESC: Record<string, string> = {
   "THE GROUND": "The texture the transcript sits on.",
   RESULTS: "Whether command output and diffs start open or folded.",
   "WORKING INDICATOR": "The tab you pick is the one the dashboard shows while it works.",
-  DESKTOP: "A system banner when a session you aren't watching finishes or needs you.",
-  SOUND: "A sound when that happens: the default tone, and the volume for every sound.",
+  "WHAT INTERRUPTS YOU": "Everything lands in the bell. These choose what interrupts you, per kind of news. Kept on the bridge, so Telegram follows them too.",
+  "QUIET HOURS": "A window when nothing pops up, sounds or reaches Telegram.",
+  "THIS BROWSER": "This browser's own switches: the system banner permission, sounds, and how loud.",
   "PER EVENT": "A different sound for each kind of news: a tone, a voice line from a pack, or nothing.",
   "RUN DEFAULTS": "What each new run starts with. The composer's dropdowns are these same settings.",
   PROFILES: "Who runs a session, and with what — bound to it on every surface.",
@@ -1109,6 +1113,169 @@ const MAC_BTN: CSSProperties = {
   background: "transparent", color: "var(--acc)",
   fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none",
 };
+
+/** NOTIFY: what interrupts you, per kind of news, kept on the bridge
+ *  (bridge/notices.py) because Telegram obeys the same choices; quiet hours;
+ *  and this browser's own banner permission, sounds and volume. Everything
+ *  lands in the bell whatever is picked here. */
+const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?][] }[] = [
+  { head: "NEEDS YOU · always in the bell, pinned", ask: true, rows: [
+    ["ask", "Approval or question", "a session's card, or a Rivendell run that paused for you"],
+    ["asked", "Turn ended on a question"],
+    ["rv_offer", "Rivendell offer", "a teammate's job that would run on your accounts"],
+    ["account", "Login expired · limit choice"]] },
+  { head: "SESSIONS", rows: [
+    ["done", "Finished"],
+    ["failed", "Failed", "with the reason: context full, API error, killed…"],
+    ["parked", "Parked · resumed", "usage limit, API retries, restart recovery"],
+    ["started", "Started elsewhere", "Telegram, Rivendell, a goal's next turn"]] },
+  { head: "RIVENDELL", rows: [
+    ["rv_held", "Job held behind running work", "it starts by itself; RUN IT TOO starts it now"],
+    ["rv_done", "Job done", "PR review, implementation, todolist, changelog…"],
+    ["rv_failed", "Job failed or refused"],
+    ["rv_link", "Link broken · token refused"]] },
+  { head: "PRs", rows: [["pr", "Checks failing · changes requested"]] },
+  { head: "THE BRIDGE", rows: [["bridge", "MOVE finished"], ["weekly", "Weekly report"]] },
+];
+const SOUND_OPTS = ["none", ...Object.keys(TONES)] as ("none" | ToneKey)[];
+const ROUTE_OPTS = ["off", "away", "always"] as const;
+
+function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p: Partial<HudSettings>) => void }) {
+  const plugins = useIntegrations();   // Rivendell's rows only while it's installed
+  const [prefs, setPrefs] = useState<NoticePrefs | null>(null);
+  const [tg, setTg] = useState(true);
+  const [old, setOld] = useState(false);   // a bridge started before the feed: the route 404s
+  useEffect(() => {
+    api.notices().then((r) => { setPrefs(r.prefs); setTg(r.telegram); }, () => setOld(true));
+  }, []);
+  const save = (p: NoticePrefsPatch) =>
+    void api.noticePrefs(p).then((r) => setPrefs(r.prefs), (e: Error) => notify("error", e.message));
+  const q = prefs?.quiet;
+  return (
+    <>
+      <Section title="WHAT INTERRUPTS YOU">
+        {old || !prefs ? (
+          <div style={{ ...CARD, fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.6 }}>
+            {old ? "This bridge started before per-event notifications. Restart it to choose them here." : "Reading…"}
+          </div>
+        ) : (
+          <div className="ntf-mxwrap">
+            <table className="ntf-mx">
+              <thead><tr><th>EVENT</th><th>POP UP</th><th>SOUND</th><th>TELEGRAM</th></tr></thead>
+              <tbody>
+                {NOTIFY_ROWS.filter((g) => g.head !== "RIVENDELL" || plugins.rivendell).map((g) => (
+                  <Fragment key={g.head}>
+                    <tr className="grp"><td colSpan={4} className={g.ask ? "ask" : undefined}>{g.head}</td></tr>
+                    {g.rows.map(([key, label, desc]) => {
+                      const r = prefs.events[key];
+                      if (!r || (key === "rv_offer" && !plugins.rivendell)) return null;
+                      return (
+                        <tr key={key}>
+                          <td><span className="ev">{label}{desc && <small>{desc}</small>}</span></td>
+                          <td><button className={`ntf-ck${r.pop ? " on" : ""}`} role="checkbox" aria-checked={r.pop} aria-label={`${label}: pop up`}
+                            onClick={() => save({ events: { [key]: { pop: !r.pop } } })}>{r.pop ? "✓" : ""}</button></td>
+                          <td><select value={r.sound} aria-label={`${label}: sound`} style={{ ...field, padding: "3px 6px", letterSpacing: 0 }}
+                            onChange={(e) => {
+                              const sound = e.target.value as (typeof SOUND_OPTS)[number];
+                              if (sound !== "none") chime(sound, settings.pushVolume);
+                              save({ events: { [key]: { sound } } });
+                            }}>
+                            {SOUND_OPTS.map((t) => <option key={t} value={t}>{t === "none" ? "none" : TONES[t].label.toLowerCase()}</option>)}
+                          </select></td>
+                          <td><span className={`ntf-tg${tg ? "" : " off"}`}>
+                            {ROUTE_OPTS.map((o) => (
+                              <button key={o} className={r.tg === o ? `on${o === "always" ? " al" : ""}` : undefined} disabled={!tg}
+                                onClick={() => save({ events: { [key]: { tg: o } } })}>{o}</button>
+                            ))}
+                          </span></td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+            <div className="ntf-mxnote">
+              <b>Pop up</b> means a toast while a dashboard window has focus, and the system banner when none does — never both.{" "}
+              <b>Away</b> means no click or keypress in any dashboard window for{" "}
+              <select value={prefs.away_min} aria-label="away after" style={{ ...field, padding: "2px 4px", letterSpacing: 0 }}
+                onChange={(e) => save({ away_min: Number(e.target.value) })}>
+                {[2, 5, 10, 15, 30].map((m) => <option key={m} value={m}>{m} min</option>)}
+              </select>.
+              {!tg && <> Telegram pings are off in System ▸ Telegram, so that column waits.</>}
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {q && (
+        <Section title="QUIET HOURS" top>
+          <div style={CARD}>
+            <Row first label="QUIET HOURS" desc={q.on ? `Nothing pops up, sounds or reaches Telegram from ${q.from} to ${q.to}.` : undefined}>
+              <Switch on={q.on} onClick={() => save({ quiet: { on: !q.on } })} />
+            </Row>
+            {q.on && (
+              <>
+                <Row label="FROM · TO">
+                  <input type="time" value={q.from} aria-label="quiet from" style={{ ...field, letterSpacing: 0 }}
+                    onChange={(e) => e.target.value && save({ quiet: { from: e.target.value } })} />
+                  <input type="time" value={q.to} aria-label="quiet to" style={{ ...field, letterSpacing: 0 }}
+                    onChange={(e) => e.target.value && save({ quiet: { to: e.target.value } })} />
+                </Row>
+                <Row label="LET NEEDS YOU THROUGH" desc="An approval at 23:00 still reaches you.">
+                  <Switch on={q.needs} onClick={() => save({ quiet: { needs: !q.needs } })} />
+                </Row>
+              </>
+            )}
+          </div>
+        </Section>
+      )}
+
+      <Section title="THIS BROWSER" top>
+        <div style={CARD}>
+          <Row
+            first
+            label="OS NOTIFICATIONS"
+            info={pushSupported()
+              ? "The system banner for news that pops up while no dashboard window has focus. Telegram is set per event above."
+              : "This browser has no Notification API — pop-ups stay inside the dashboard."}
+          >
+            <Switch
+              on={settings.push}
+              onClick={() => {
+                if (settings.push) { onPatch({ push: false }); return; }
+                // Ask only on switch-on; a denial can't be re-asked, so the
+                // switch goes back off rather than sitting on and silent.
+                void requestPush().then((ok) => onPatch({ push: ok }));
+              }}
+            />
+          </Row>
+          <Row label="SOUNDS" desc="Each event plays the tone picked above; off mutes them all here.">
+            <Switch
+              on={settings.pushSound}
+              onClick={() => {
+                // Switching it on plays one — otherwise you find out how loud it
+                // is at the wrong moment.
+                if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
+                onPatch({ pushSound: !settings.pushSound });
+              }}
+            />
+          </Row>
+          {settings.pushSound && (
+            <Row label="VOLUME">
+              {/* Preview when the drag ends, not on every step. */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}
+                onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
+                onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
+                <Volume value={settings.pushVolume} onChange={(pushVolume) => onPatch({ pushVolume })} />
+              </div>
+            </Row>
+          )}
+        </div>
+      </Section>
+    </>
+  );
+}
 
 function MacPanel() {
   const mac = useMacSettings();
@@ -4241,84 +4408,7 @@ export function SettingsModal(props: SettingsModalProps) {
 
 
 
-            {shown === "notifications" && (
-              <>
-                <Section title="DESKTOP">
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="OS NOTIFICATIONS"
-                      info={pushSupported()
-                        ? "A banner when a session finishes or needs an answer — only for the ones you're not watching. Telegram still covers you when no dashboard is open."
-                        : "This browser has no Notification API — Telegram remains the only push path."}
-                    >
-                      <Switch
-                        on={settings.push}
-                        onClick={() => {
-                          if (settings.push) { onPatch({ push: false }); return; }
-                          // Ask only on switch-on; a denial can't be re-asked, so the
-                          // switch goes back off rather than sitting on and silent.
-                          void requestPush().then((ok) => onPatch({ push: ok }));
-                        }}
-                      />
-                    </Row>
-                  </div>
-                </Section>
-
-                {/* Sound is its own switch, not a rider on DESKTOP: the failure
-                    sound belongs to an in-app toast, which fires whether or not
-                    the OS is showing banners. */}
-                <Section title="SOUND" top>
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="PLAY A SOUND"
-                      info="For when the news lands on a screen you aren't looking at. One per event per batch, not per session."
-                    >
-                      <Switch
-                        on={settings.pushSound}
-                        onClick={() => {
-                          // Switching it on plays it once — otherwise you find out how
-                          // loud it is at the wrong moment.
-                          if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
-                          onPatch({ pushSound: !settings.pushSound });
-                        }}
-                      />
-                    </Row>
-                    {settings.pushSound && (
-                      // Every change plays itself: picking a notification sound you
-                      // can't hear until the next notification is guesswork.
-                      <div style={{ ...ROW, marginTop: 12, paddingTop: 12, borderTop: RULE, alignItems: "flex-end", flexWrap: "wrap" }}>
-                        <Cell label="DEFAULT TONE" grow="3 1 260px">
-                          <Segmented
-                            options={TONE_OPTS}
-                            value={settings.pushTone}
-                            onPick={(pushTone) => { onPatch({ pushTone }); chime(pushTone, settings.pushVolume); }}
-                          />
-                        </Cell>
-                        <Cell label="VOLUME" grow="1 1 150px">
-                          {/* Preview when the drag ends, not on every step — a chime
-                              per pixel of travel is a swarm, not a sample. */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}
-                            onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
-                            onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
-                            <Volume
-                              value={settings.pushVolume}
-                              onChange={(pushVolume) => onPatch({ pushVolume })}
-                            />
-                          </div>
-                        </Cell>
-                      </div>
-                    )}
-                  </div>
-                </Section>
-
-              </>
-            )}
-
-
-
-
+            {shown === "notifications" && <NotifyPanel settings={settings} onPatch={onPatch} />}
 
             {shown === "aimgmt" && (
               <AiManagementPanel settings={settings} onPatch={onPatch} models={models} sessionTools={sessionTools}

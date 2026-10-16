@@ -114,6 +114,10 @@ class Job(move.Progress):
 
     # -- what the dock reads --------------------------------------------------
     def finish(self, status, error=None):
+        if status in ("done", "failed"):     # a cancel is yours: nothing to tell you
+            from bridge import notices
+            notices.emit("move_done" if status == "done" else "move_failed", f"move:{self.id}",
+                         title=self.title, body=str(error or ""), meta={"move": self.kind})
         with self._mu:
             self.status, self.error, self.ended = status, error, time.time()
             for s in self.steps.values():

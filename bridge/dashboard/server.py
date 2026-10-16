@@ -33,7 +33,8 @@ import re
 
 from bridge import (acp_agents, agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz, integrations,
-                    models, native, preview_detect, profiles, project_config, projectmarks, prstatus,
+                    models, native, notices, preview_detect, profiles, project_config, projectmarks,
+                    prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, rivendell_video, runner, selfupdate,
                     share,
@@ -346,7 +347,21 @@ class Handler(BaseHTTPRequestHandler):
             archived = qs.get("archived", ["0"])[0] == "1"
             return self._json({"sessions": profiles.history(chat, include_archived=archived)})
         if path == "/local/running":
-            return self._json({**runner.running_snapshot(chat), "watched": _watched(qs)})
+            # `seen`: the page's last click or keypress — Telegram's "away" is
+            # nobody clicking in any dashboard (bridge/notices.py). `needs`: the
+            # one NEEDS YOU list the bell and the Mac menu bar both draw.
+            try:
+                notices.seen(float((qs.get("seen") or ["x"])[0]))
+            except ValueError:
+                pass
+            snap = runner.running_snapshot(chat)
+            return self._json({**snap, "watched": _watched(qs),
+                               "needs": notices.needs(snap.get("status") or {})})
+        if path == "/local/notices":
+            return self._json({"notices": notices.feed(), "prefs": notices.prefs(),
+                               "quiet": notices.quiet(),
+                               # Whether any route to Telegram exists at all (System ▸ Telegram).
+                               "telegram": bool(config.NOTIFY_ENABLE and config.TOKEN)})
         if path == "/local/queue":
             sid = (qs.get("session", [""])[0] or "").strip()
             return self._json(queue_manager.snapshot(sid) if sid else
@@ -834,6 +849,27 @@ class Handler(BaseHTTPRequestHandler):
         if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
             return self._json({"error": "not installed"}, 404)
         chat = _chat()
+        if path == "/local/notices":
+            if body.get("op") == "read" and (body.get("all") is True or isinstance(body.get("ids"), list)):
+                return self._json({"ok": True, "n": notices.mark_read(
+                    None if body.get("all") is True else body["ids"])})
+            if body.get("op") == "prefs" and isinstance(body.get("patch"), dict):
+                return self._json({"prefs": notices.set_prefs(body["patch"])})
+            if body.get("op") == "limit" and isinstance(body.get("session"), str):
+                # The bell's LIMIT row: wait for the reset, or hand the work to
+                # another login — the same two answers as Telegram's card.
+                sess = store.get_session(body["session"])
+                if not sess:
+                    return self._json({"error": "no such session"}, 404)
+                slot = body.get("slot")
+                if slot is None:
+                    notices.emit("waiting", sess["id"], body="You chose to wait for the usage limit to reset.")
+                    return self._json({"ok": True})
+                if isinstance(slot, int) and not isinstance(slot, bool):
+                    from bridge import ladder
+                    rung = {"kind": "account", "slot": slot, "label": f"account {slot}"}
+                    return self._json({"ok": bool(ladder.take(sess, sess["chat_id"], rung))})
+            return self._json({"error": "op must be read (ids or all), prefs (patch) or limit (session)"}, 400)
         if path == "/local/run":
             return self._run(chat, body)
         if path.startswith("/local/run/") and path.endswith("/respond"):

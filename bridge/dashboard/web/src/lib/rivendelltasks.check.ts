@@ -4,7 +4,7 @@
 // wrong shape (Teamwork sends 20261002 as often as 2026-10-02) turning a late
 // task into no date at all, and a request state mapped to the wrong action —
 // OPEN SESSION with no session to open, or IMPLEMENT on a task already queued.
-import { cardState, closeCode, dueLabel, groupTasks, initials, linkAlertText, linkChip, nextUp, resultBits, sentryPrompt, splitTitle, testText, workPrompt } from "./rivendelltasks.ts";
+import { cardState, closeCode, dueLabel, groupTasks, initials, linkChip, nextUp, resultBits, sentryPrompt, splitTitle, testText, workPrompt } from "./rivendelltasks.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -123,10 +123,6 @@ ok(workPrompt(task, null).startsWith("Rivendell task: "), "and it still works be
 eq(sentryPrompt("Prisma error", { label: "BACKEND-9", url: "https://s/9" }),
   "Sentry issue BACKEND-9: https://s/9\nOn Rivendell's todolist: Prisma error\n\n", "FIX IT names the issue and why");
 
-ok(linkAlertText({ name: "production", status: st({ state: "auth_error" }) }).includes("refused this bridge's token"),
-  "the bell names a rejected token");
-ok(linkAlertText({ name: "production", status: st({ state: "error" }) }).includes("unreachable"),
-  "and an outage");
 
 eq(testText(null), "never tested", "no test yet");
 eq(testText({ ok: true, rtt_ms: 182, detail: "", at: 1 }), "✓ round trip 182 ms", "a pong");

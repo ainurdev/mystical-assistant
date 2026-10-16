@@ -1,7 +1,7 @@
 // Run: node bridge/dashboard/web/src/lib/prchip.check.ts
 import type { PrInfo } from "../api.ts";
 import {
-  chipLabel, commentsMessage, conflictsMessage, duration, failureMessage, freshPings, pingText, popPlace, reviewItems, stateLine,
+  chipLabel, commentsMessage, conflictsMessage, duration, failureMessage, popPlace, reviewItems, stateLine,
 } from "./prchip.ts";
 
 const ok = (cond: boolean, what: string) => {
@@ -75,10 +75,6 @@ const withBody = pr({ review: { by: "m", at: "", body: "two things", comments: [
 ok(reviewItems(withBody).length === 2 && commentsMessage(withBody).includes("\n  two things\na.ts\n  x"), "the review's own words lead, and an outdated comment cites no line");
 
 // --- bell ---------------------------------------------------------------------
-ok(pingText(red, "failing:abc") === "PR #131 · 1 check failing — backend", "the bell names the red check");
-ok(pingText(changes, "changes:mahdi:t") === "PR #131 · changes requested by mahdi", "and who asked for changes");
-ok(freshPings(["failing:a"], ["failing:a", "changes:m:t"]).join() === "changes:m:t", "only alerts this browser hasn't shown ring the bell");
-ok(freshPings(["failing:a"], []).length === 0, "an alert that cleared rings nothing");
 
 // --- where the popover opens --------------------------------------------------
 const below = popPlace({ top: 32, bottom: 44 }, 700);

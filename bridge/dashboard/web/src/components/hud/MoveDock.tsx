@@ -17,9 +17,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { api, MOVE_EVENT, type MoveJob, type MoveNext } from "../../api";
-import type { HudSettings } from "../../lib/theme";
 import { notify } from "./Notifications";
-import { chime, push } from "../../lib/push";
 import { openSettings } from "../../lib/opensettings";
 import { restartBridge } from "../../lib/restart";
 import { askConfirm } from "../ui/Ask";
@@ -366,7 +364,7 @@ const CORNER: Record<MovePrefs["corner"], CSSProperties> = {
 };
 
 /** Mounted once by App. */
-export function MoveDock({ settings }: { settings: HudSettings }) {
+export function MoveDock() {
   const prefs = PREFS;
   const [jobs, setJobs] = useState<MoveJob[]>([]);
   const [mini, setMini] = useState<Record<string, boolean>>(loadMini);
@@ -401,21 +399,15 @@ export function MoveDock({ settings }: { settings: HudSettings }) {
     return () => { window.removeEventListener(MOVE_EVENT, poll); window.clearTimeout(timer.current); };
   }, [poll]);
 
-  // A job that ends while this tab watches is news: a toast, the OS banner and
-  // the NOTIFY sound, the same channels a finished session uses. Jobs already
-  // finished when the tab opened aren't.
+  // A job that ends is the bridge's news (bridge/movejob.py writes the bell's
+  // row, and NOTIFY decides whether it pops or sounds). Here only the dock's own
+  // folding follows the job.
   useEffect(() => {
     for (const j of jobs) {
       const was = seen.current.get(j.id);
       seen.current.set(j.id, j.status);
       if (first.current) continue;
       if (was === undefined && j.status === "running" && prefs.startMin && mini[j.id] === undefined) setFold(j.id, true);
-      if (was !== "running" || j.status === "running") continue;
-      const what = `${j.kind.toUpperCase()} ${j.status === "done" ? "finished" : j.status}`;
-      const body = j.status === "failed" ? j.error ?? "" : j.title;
-      notify(j.status === "failed" ? "error" : "info", `${what} — ${body}`, () => openSettings("move"));
-      if (settings.push) push(`${j.status === "done" ? "✓" : "✘"} ${what}`, body, `move-${j.id}`, () => openSettings("move"));
-      if (j.status === "done" && settings.pushSound) chime(settings.pushTone, settings.pushVolume);
     }
     first.current = false;
     // Hide-after-success: only a clean finish with nothing left for you to do.
@@ -428,7 +420,7 @@ export function MoveDock({ settings }: { settings: HudSettings }) {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `mini` is read, not watched: folding is not news
-  }, [jobs, prefs.autoHide, prefs.startMin, settings.push, settings.pushSound, settings.pushVolume, settings.pushTone, dismiss, setFold]);
+  }, [jobs, prefs.autoHide, prefs.startMin, dismiss, setFold]);
 
   if (!jobs.length) return null;
   const folded = (j: MoveJob) => mini[j.id] ?? false;

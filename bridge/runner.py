@@ -30,7 +30,7 @@ import time
 import uuid
 
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver, git,
-                    inspector, integrations, ladder, limits, machine, native_activity,
+                    inspector, integrations, ladder, limits, machine, native_activity, notices,
                     profiles, pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send, typing
@@ -655,6 +655,7 @@ def handle_task(chat_id: int, prompt: str, session: dict,
             return
         typing(chat_id)
         send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
+        notices.emit("started", session["id"], body="from Telegram")
         started = time.time()
         job_id = uuid.uuid4().hex
         files = adopt_uploads(job_id, attachments)
@@ -1422,9 +1423,15 @@ def running_snapshot(chat_id: int) -> dict:
             "jobs": jobs, "awaiting": awaiting, "status": status}
 
 
-def _notify(chat_id: int | None, text: str, kb: dict | None = None) -> None:
-    """Best-effort Telegram push (never raises into the run loop)."""
-    if not config.NOTIFY_ENABLE or not chat_id:
+def _notify(chat_id: int | None, text: str, kb: dict | None = None, *,
+            kind: "str | None" = None, sid: "str | None" = None, body: str = "",
+            meta: "dict | None" = None) -> None:
+    """Best-effort push (never raises into the run loop). With a `kind` and a
+    `sid` the event goes in the feed (bridge/notices.py) first; with a `kind`,
+    Telegram gets it only when that event's route allows it."""
+    if kind and sid:
+        notices.emit(kind, sid, body=body, meta=meta)
+    if not config.NOTIFY_ENABLE or not chat_id or (kind and not notices.telegram_ok(kind)):
         return
     try:
         send(chat_id, text, kb)
@@ -1461,20 +1468,42 @@ def _plugin_session(session_id: str | None) -> bool:
     return bool(sess) and integrations.is_plugin_origin(sess.get("origin"))
 
 
-def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str) -> None:
-    """Ping when a streaming run blocks on you (a question or an approval)."""
+def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str,
+                    body: str = "", job_id: "str | None" = None,
+                    request_id: "str | None" = None) -> None:
+    """Ping when a streaming run blocks on you (a question or an approval).
+    `body` is what it asks — the command, or the question — for the bell, and
+    `request_id` the card it belongs to, so a button answers that card only."""
     what = "a question" if kind == "question" else "your approval"
     _notify(chat_id, f"❓ Claude needs {what} — {_session_label(session_id)}",
-            _session_kb(chat_id, session_id, "❓ Answer in Panel"))
+            _session_kb(chat_id, session_id, "❓ Answer in Panel"),
+            kind="question" if kind == "question" else "approve", sid=session_id,
+            body=body, meta={"job_id": job_id, "request_id": request_id} if job_id else None)
 
 
-def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool) -> None:
-    """Ping when a streaming run finishes (or errors), so you can step away."""
+def _first_line(text: str) -> str:
+    return next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")[:200]
+
+
+def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool,
+                     body: str = "") -> None:
+    """Ping when a streaming run finishes (or errors), so you can step away. The
+    feed's line is the closing sentence, or for a failure what outcomes.py
+    calls it, which a red row is useless without."""
     if _plugin_session(session_id):
         return
+    try:
+        turn = (store.last_turn(session_id) if session_id else None) or {}
+    except Exception:  # noqa: BLE001
+        turn = {}
+    out = turn.get("outcome") or {}
+    line = (f"{out['label'].capitalize()}: {out.get('detail') or ''}".strip()[:200]
+            if is_error and out.get("label") else _first_line(body))
     icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
     _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}",
-            _session_kb(chat_id, session_id, "🛠 Open session"))
+            _session_kb(chat_id, session_id, "🛠 Open session"),
+            kind="failed" if is_error else "done", sid=session_id, body=line,
+            meta={"elapsed": turn["elapsed"]} if turn.get("elapsed") else None)
 
 
 def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) -> None:
@@ -1484,7 +1513,8 @@ def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) ->
     if _plugin_session(session_id):
         return
     _notify(chat_id, f"❓ Claude needs you — {_session_label(session_id)}\n{needs}",
-            _session_kb(chat_id, session_id, "❓ Answer in Panel"))
+            _session_kb(chat_id, session_id, "❓ Answer in Panel"),
+            kind="asking", sid=session_id, body=needs)
 
 
 # ---------------------------------------------------------------------------
@@ -1605,7 +1635,8 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
             _notify(job.chat_id,
                     f"⏳ Claude usage limit hit — {_session_label(sid)} is paused and "
                     f"will auto-resume when the limit resets (~{limits.when_str(when)}).",
-                    _session_kb(job.chat_id, sid))
+                    _session_kb(job.chat_id, sid), kind="parked", sid=sid,
+                    body=f"Hit the usage limit. It resumes on its own around {limits.when_str(when)}.")
         return True
     if limits.is_server_error(job.result or job.error_msg):
         # Anthropic's side blew up: retry, but spaced out along the ladder.
@@ -1620,7 +1651,9 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         _notify(job.chat_id,
                 f"⚠️ Claude API error — retrying {_session_label(sid)} "
                 f"{limits.wait_str(when)} "
-                f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).")
+                f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).", kind="parked", sid=sid,
+                body=f"API error. Retrying {limits.wait_str(when)} "
+                     f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).")
         return True
     if limits.is_auth_error(job.result or job.error_msg):
         # The login behind this turn is dead. Resuming would re-send the same
@@ -1636,7 +1669,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                 f"⬆️ {_session_label(sid)}: this model needs a newer Claude Code. "
                 f"Run claude update (or UPDATE CLAUDE on the failed turn in the "
                 f"dashboard), then re-send.",
-                _session_kb(job.chat_id, sid, "🛠 Open session"))
+                _session_kb(job.chat_id, sid, "🛠 Open session"), kind="failed")
         return False
     if limits.is_context_error(job.result or job.error_msg):
         # The transcript no longer fits the window. A resume resends the same
@@ -1645,7 +1678,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         _notify(job.chat_id,
                 f"🧱 {_session_label(sid)} ran out of context window. "
                 f"Run /compact in it, or start a fresh session.",
-                _session_kb(job.chat_id, sid, "🛠 Open session"))
+                _session_kb(job.chat_id, sid, "🛠 Open session"), kind="failed")
         return False
     fails = _resume_fails.get(sid, 0) + 1
     _resume_fails[sid] = fails
@@ -1665,11 +1698,14 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
     if job2 is None:
         return False                              # slot taken (e.g. the queue advanced)
     if job.timed_out:
-        _notify(job.chat_id, f"⏱️ No output for {(job.hang_timeout or config.RUN_TIMEOUT) // 60} min — "
-                             f"killed as hung, resuming {_session_label(sid)}.")
+        mins = (job.hang_timeout or config.RUN_TIMEOUT) // 60
+        _notify(job.chat_id, f"⏱️ No output for {mins} min — "
+                             f"killed as hung, resuming {_session_label(sid)}.",
+                kind="resumed", sid=sid, body=f"No output for {mins} min, so it was killed as hung. Resuming.")
     else:
         _notify(job.chat_id, f"🔄 The turn was interrupted by an error "
-                             f"— resuming {_session_label(sid)}.")
+                             f"— resuming {_session_label(sid)}.",
+                kind="resumed", sid=sid, body="Interrupted by an error. Resuming.")
     return True
 
 
@@ -1715,9 +1751,14 @@ def _auth_stop(chat_id: int | None, sid: str | None, slot: int | None,
     text = (f"🔐 Claude's login has expired — {_session_label(sid)} is stopped. "
             "Sign in again and it picks up where it left off.")
     if reply and chat_id:
+        notices.emit("login", sid or "", body=f"Claude's login on account {slot} expired. "
+                                              "Sign in again and it picks up where it left off.",
+                     meta={"slot": slot})
         send(chat_id, text, _auth_kb(chat_id, slot))
     else:
-        _notify(chat_id, text, _auth_kb(chat_id, slot))
+        _notify(chat_id, text, _auth_kb(chat_id, slot), kind="login", sid=sid,
+                body=f"Claude's login on account {slot} expired. "
+                     "Sign in again and it picks up where it left off.", meta={"slot": slot})
 
 
 def resume_after_login(slot: "int | None") -> bool:
@@ -1738,7 +1779,8 @@ def resume_after_login(slot: "int | None") -> bool:
         return False
     if job is None:
         return False                              # slot taken — the user moved on
-    _notify(e["chat_id"], f"🔄 Signed in — resuming {_session_label(e['sid'])}.")
+    _notify(e["chat_id"], f"🔄 Signed in — resuming {_session_label(e['sid'])}.",
+            kind="resumed", sid=e["sid"], body="Signed in again. Resuming.")
     return True
 
 
@@ -1859,8 +1901,11 @@ def _handle_control_request(job: Job, obj: dict):
             # comment, a status change) is judged on its full text.
             ev["detail"] = _mcp_detail(req.get("input", {}))
         job.add(ev)
+    ask = (((req.get("input") or {}).get("questions") or [{}])[0].get("question") or ""
+           if tool == "AskUserQuestion" else f"{tool}: {summary}")
     notify_awaiting(job.chat_id, job.store_session_id,
-                    "question" if tool == "AskUserQuestion" else "permission")
+                    "question" if tool == "AskUserQuestion" else "permission",
+                    body=ask, job_id=job.id, request_id=rid)
 
 
 def _ctx_of(usage: dict) -> "int | None":

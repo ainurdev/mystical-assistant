@@ -159,4 +159,6 @@ def _run(job, cwd: "str | None") -> None:
             return
     except Exception as e:  # noqa: BLE001 — never raise out of a daemon thread
         print(f"[tailstate] classify failed: {e}", file=sys.stderr)
-    runner.notify_turn_done(job.chat_id, job.store_session_id, job.status == "error")
+    runner.notify_turn_done(job.chat_id, job.store_session_id, job.status == "error",
+                            body=(job.error_msg or "") if job.status == "error" else
+                            (job.result or (job.texts[-1] if job.texts else "")))

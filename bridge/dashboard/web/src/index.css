@@ -3738,3 +3738,146 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .nt-act[data-pri] { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
 .nt-act:hover { background: var(--ac-08, color-mix(in srgb, var(--acc) 8%, transparent)); color: var(--txb); }
 .nt-act[data-pri]:hover { background: color-mix(in oklab, var(--acc) 88%, white); color: var(--acc-on); }
+
+/* ── NOTIFICATIONS (components/hud/Notifications.tsx) ─────────────────────────
+   The bell, its toasts and the pills, in the families' shared tokens: violet
+   (--acc) is news you haven't read, peach (--ask) is what waits on you, and
+   the verbs take the semantic colours. Radii and shadow come from the family,
+   so AURORA keeps its hard edges. */
+.ntf-bell { appearance: none; cursor: pointer; position: relative; border: 0; background: transparent; color: var(--txm);
+  width: 26px; height: 26px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--f-rad-s, 0); }
+.ntf-bell:hover, .ntf-bell.on { color: var(--txb); background: var(--ac-08); }
+.ntf-badge { position: absolute; top: -4px; right: -5px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; box-sizing: border-box;
+  background: var(--ask); color: var(--acc-on, #111); font: 700 var(--t8)/15px var(--mono); text-align: center; box-shadow: 0 0 0 2px var(--canvas, #000); }
+.ntf-dot { position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 2px var(--canvas, #000); }
+.ntf-moon { position: absolute; top: -1px; right: -3px; width: 12px; height: 12px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  background: var(--canvas, #000); color: var(--txd); }
+.ntf-pop { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; width: 440px; max-width: calc(100vw - 24px);
+  border: 1px solid var(--line2, var(--border-bright)); background: var(--panel); border-radius: var(--f-rad, 0);
+  box-shadow: var(--f-pop-shadow, 0 16px 44px var(--shadow-pop)); animation: mslide .16s ease both; overflow: hidden;
+  font-family: var(--ui-font); display: flex; flex-direction: column; max-height: min(640px, calc(100vh - 80px)); }
+.ntf-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; }
+.ntf-head .t { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--acc); }
+.ntf-head .n { font: 500 var(--t10) var(--mono); color: var(--txl); }
+.ntf-lnk { appearance: none; cursor: pointer; border: 0; background: transparent; color: var(--txd); font: 500 var(--t10) var(--ui-font);
+  padding: 3px 6px; border-radius: var(--f-rad-s, 0); }
+.ntf-lnk:hover { color: var(--txb); background: var(--ac-06); }
+.ntf-filters { display: flex; gap: 4px; padding: 0 12px 10px; border-bottom: 1px solid var(--line, var(--border)); flex-wrap: wrap; }
+.ntf-flt { appearance: none; cursor: pointer; height: 24px; padding: 0 9px; display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid transparent; background: transparent; color: var(--txd); font: 500 var(--t10) var(--ui-font); border-radius: var(--f-rad-s, 0); }
+.ntf-flt:hover { color: var(--txh); }
+.ntf-flt.on { background: var(--ac-08); color: var(--txb); border-color: var(--line, var(--border)); }
+.ntf-flt em { font: 500 var(--t9) var(--mono); font-style: normal; color: var(--txl); }
+.ntf-flt .pip { width: 6px; height: 6px; border-radius: 50%; background: var(--ask); }
+.ntf-links { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--line, var(--border)); font: 500 var(--t10) var(--mono); color: var(--txl); }
+.ntf-links i { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 6px; border: 1px solid currentColor; vertical-align: 1px; }
+.ntf-links .l-connected { color: var(--ok); } .ntf-links .l-connected i { background: var(--ok); }
+.ntf-links .l-error, .ntf-links .l-auth_error { color: var(--err); } .ntf-links :is(.l-error, .l-auth_error) i { background: var(--err); }
+.ntf-list { overflow-y: auto; min-height: 0; flex: 1; }
+.ntf-sec { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; font: 600 var(--t85) var(--ui-font); letter-spacing: .16em; color: var(--txl); }
+.ntf-sec.ask { color: var(--ask); }
+.ntf-sec .ln { flex: 1; height: 1px; background: var(--line, var(--border)); }
+.ntf-row { display: grid; grid-template-columns: 24px 1fr auto; gap: 10px; padding: 10px 14px 11px; position: relative; cursor: pointer;
+  border-top: 1px solid var(--line, var(--border)); }
+.ntf-row:hover { background: var(--ac-03); }
+.ntf-row.unread::before, .ntf-row.needs::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 2px; border-radius: 2px; background: var(--acc); }
+.ntf-row.needs { cursor: default; background: color-mix(in oklab, var(--ask) 6%, var(--panel)); }
+.ntf-row.needs::before { background: var(--ask); }
+.ntf-row.compact { padding: 8px 14px; align-items: center; }
+.ntf-row.compact .ntf-src { transform: scale(.84); }
+.ntf-row.compact .ntf-s { color: var(--txd); }
+.ntf-src { width: 24px; height: 24px; border-radius: 6px; display: flex; align-items: center; justify-content: center; position: relative; flex: none;
+  color: var(--txm); background: var(--panel2); box-shadow: inset 0 0 0 1px var(--line2, var(--border)); }
+.ntf-src.s-session { background: none; box-shadow: none; }
+.ntf-src .ptile { display: inline-grid; width: 24px; height: 24px; margin: 0; border-radius: 6px; font-size: 8.5px; }
+.ntf-src.s-rivendell { color: color-mix(in oklab, var(--warn) 70%, white); }
+.ntf-k { position: absolute; right: -4px; bottom: -4px; width: 12px; height: 12px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font: 700 7.5px/1 var(--ui-font); font-style: normal; box-shadow: 0 0 0 2px var(--panel); }
+.ntf-k.k-ok { background: var(--ok); color: #03130a; } .ntf-k.k-err { background: var(--err); color: #200606; }
+.ntf-k.k-ask { background: var(--ask); color: #1f0f04; } .ntf-k.k-acc { background: var(--acc); color: var(--acc-on, #111); }
+.ntf-k.k-warn { background: var(--warn); color: #1d1503; }
+.ntf-pz { display: block; width: 5px; height: 6px; border-left: 1.6px solid currentColor; border-right: 1.6px solid currentColor; }
+.ntf-mid { min-width: 0; }
+.ntf-ttl { display: flex; align-items: baseline; gap: 7px; min-width: 0; font: 500 var(--t12)/1.35 var(--ui-font); color: var(--txb); }
+.ntf-s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ntf-more { font: 500 var(--t9) var(--mono); color: var(--txl); flex: none; }
+.ntf-verb { font: 600 var(--t9) var(--ui-font); letter-spacing: .12em; flex: none; }
+.ntf-v-ok { color: var(--ok); } .ntf-v-err { color: var(--err); } .ntf-v-ask { color: var(--ask); } .ntf-v-warn { color: var(--warn); } .ntf-v-acc { color: var(--acc); } .ntf-v-dim { color: var(--txl); }
+.ntf-body { margin-top: 3px; font: 400 var(--t115)/1.45 var(--ui-font); color: var(--tx); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.ntf-body.mono { font-family: var(--mono); font-size: var(--t10); }
+.ntf-meta { margin-top: 5px; font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ntf-when { font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; padding-top: 2px; }
+.ntf-acts { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }
+.ntf-btn { appearance: none; cursor: pointer; height: 24px; padding: 0 10px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  border: 1px solid var(--line2, var(--border-bright)); background: var(--panel2); color: var(--txh); font: 600 var(--t10) var(--ui-font); border-radius: var(--f-rad-s, 0); }
+.ntf-btn:hover { color: var(--txb); background: var(--ac-08); }
+.ntf-btn.ask { background: var(--ask); border-color: transparent; color: #1f0f04; }
+.ntf-btn.ask:hover { filter: brightness(1.08); background: var(--ask); }
+.ntf-btn.ghost { background: transparent; color: var(--txd); }
+.ntf-btn.no { background: transparent; color: var(--err); border-color: color-mix(in oklab, var(--err) 40%, var(--canvas, #000)); }
+.ntf-empty { padding: 30px 20px 26px; text-align: center; }
+.ntf-empty .o { font: italic 400 var(--t12) var(--ui-font); color: var(--txd); }
+.ntf-stale { padding: 12px 14px; font: 400 var(--t10) var(--ui-font); color: var(--warn); border-bottom: 1px solid var(--line, var(--border)); }
+.ntf-foot { display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 14px; border-top: 1px solid var(--line, var(--border)); background: var(--panel2);
+  font: 500 var(--t10) var(--ui-font); color: var(--txd); }
+.ntf-foot .q { display: inline-flex; align-items: center; gap: 6px; }
+.ntf-toasts { position: fixed; top: 52px; right: 14px; z-index: 70; display: flex; flex-direction: column; gap: 8px; width: 384px; max-width: calc(100vw - 28px); }
+.ntf-toast { position: relative; border: 1px solid var(--line2, var(--border-bright)); background: var(--panel); border-radius: var(--f-rad, 0); overflow: hidden;
+  box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease both; font-family: var(--ui-font); }
+.ntf-toast .ntf-row { border-top: 0; padding-right: 30px; }
+.ntf-toast .ntf-row.unread::before { display: none; }
+.ntf-toast.needs { border-color: color-mix(in oklab, var(--ask) 55%, var(--line2, var(--border))); }
+.ntf-x { position: absolute; top: 7px; right: 8px; appearance: none; cursor: pointer; border: 0; background: transparent; color: var(--txl); font: 400 15px/1 var(--ui-font); padding: 2px 4px; }
+.ntf-x:hover { color: var(--txb); }
+.ntf-bar { position: absolute; left: 0; bottom: 0; height: 2px; background: currentColor; opacity: .55; transition: width .25s linear; }
+.ntf-fold { appearance: none; cursor: pointer; display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; text-align: left;
+  border: 1px solid var(--line2, var(--border-bright)); background: var(--panel2); color: var(--txd); font: 500 var(--t115) var(--ui-font);
+  border-radius: var(--f-rad, 0); box-shadow: var(--f-pop-shadow, none); }
+.ntf-fold b { color: var(--txb); font-weight: 500; }
+.ntf-fold .go { color: var(--acc); }
+.ntf-pillhost { position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 75; pointer-events: none; }
+.ntf-pill { pointer-events: auto; display: inline-flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px 0 10px; white-space: nowrap; max-width: min(640px, calc(100vw - 40px));
+  background: var(--panel); border: 1px solid var(--line2, var(--border-bright)); border-radius: 9px; box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop));
+  font: 500 var(--t115) var(--ui-font); color: var(--txh); animation: ntfrise .18s cubic-bezier(.2, .8, .2, 1) both; }
+.ntf-pill.err { border-color: color-mix(in oklab, var(--err) 45%, var(--line2, var(--border))); }
+.ntf-pill-k { width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex: none;
+  background: color-mix(in oklab, var(--ok) 18%, var(--panel)); color: var(--ok); font: 700 9px var(--ui-font); }
+.ntf-pill.err .ntf-pill-k { background: color-mix(in oklab, var(--err) 18%, var(--panel)); color: var(--err); }
+.ntf-pill-t { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ntf-pill-a { appearance: none; cursor: pointer; border: 0; background: transparent; color: var(--acc); font: 600 var(--t115) var(--ui-font); padding: 0 4px; }
+.ntf-pill-x { appearance: none; cursor: pointer; border: 0; background: transparent; color: var(--txl); font: 400 14px/1 var(--ui-font); padding: 0 4px; }
+@keyframes ntfrise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .ntf-pill, .ntf-pop, .ntf-toast { animation: none; } }
+/* Settings ▸ NOTIFY's table: one row per kind of news, three ways to interrupt. */
+.ntf-mxwrap { border: 1px solid var(--line, var(--border)); background: var(--panel2); border-radius: var(--f-rad, 0); overflow: hidden; }
+.ntf-mx { width: 100%; border-collapse: collapse; font-family: var(--ui-font); }
+.ntf-mx th { font: 600 var(--t8) var(--ui-font); letter-spacing: .14em; color: var(--txl); text-align: center; padding: 10px 6px 8px; white-space: nowrap; }
+.ntf-mx th:first-child, .ntf-mx td:first-child { text-align: left; padding-left: 14px; }
+.ntf-mx td { padding: 7px 6px; border-top: 1px solid var(--line, var(--border)); text-align: center; vertical-align: middle; }
+.ntf-mx tr.grp td { padding: 11px 6px 5px 14px; font: 600 var(--t85) var(--ui-font); letter-spacing: .16em; color: var(--txl);
+  border-top: 1px solid var(--line2, var(--border-bright)); background: var(--panel3); text-align: left; }
+.ntf-mx tr.grp td.ask { color: var(--ask); }
+.ntf-mx .ev { font: 500 var(--t11, var(--t10)) var(--ui-font); color: var(--txh); }
+.ntf-mx .ev small { display: block; font: 400 var(--t95, var(--t9)) var(--ui-font); color: var(--txl); margin-top: 1px; }
+.ntf-ck { appearance: none; cursor: pointer; width: 17px; height: 17px; padding: 0; border-radius: 5px; border: 1px solid var(--line2, var(--border-bright));
+  background: transparent; color: var(--acc-on, #111); font: 700 10px/1 var(--ui-font); display: inline-flex; align-items: center; justify-content: center; }
+.ntf-ck.on { background: var(--acc); border-color: var(--acc); }
+.ntf-tg { display: inline-flex; border: 1px solid var(--line, var(--border)); border-radius: 6px; overflow: hidden; }
+.ntf-tg button { appearance: none; cursor: pointer; border: 0; border-left: 1px solid var(--line, var(--border)); background: transparent; color: var(--txl);
+  font: 500 var(--t9) var(--mono); padding: 3px 7px; }
+.ntf-tg button:first-child { border-left: 0; }
+.ntf-tg button.on { background: var(--ac-12); color: var(--txb); }
+.ntf-tg button.on.al { color: var(--ask); }
+.ntf-tg.off { opacity: .45; } .ntf-tg button:disabled { cursor: not-allowed; }
+.ntf-mxnote { padding: 9px 14px 11px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t95, var(--t9))/1.6 var(--ui-font); color: var(--txl); }
+.ntf-mxnote b { color: var(--txd); font-weight: 500; }
+/* A pill that asks (Rivendell's logo offer, an UNDO): it wraps, carries its
+   sub line, logos and buttons, and waits for an answer. */
+.ntf-pill.rich { height: auto; align-items: flex-start; white-space: normal; max-width: min(480px, calc(100vw - 40px)); padding: 10px 8px 12px 12px; }
+.ntf-pill.rich .ntf-pill-k { margin-top: 1px; }
+.ntf-pill-t small { display: block; margin-top: 3px; font: 400 var(--t105, var(--t10)) / 1.45 var(--ui-font); color: var(--txd); }
+.ntf-pill .nt-logos { margin-top: 8px; }
+.ntf-pill .ntf-acts { margin-top: 10px; }
+.ntf-pill.rv .ntf-pill-k { background: color-mix(in oklab, var(--purple) 20%, var(--panel)); color: var(--purple); }
+.ntf-btn.pri { background: var(--acc); border-color: transparent; color: var(--acc-on, #111); }
+.ntf-btn.pri:hover { background: var(--acc); filter: brightness(1.08); }

@@ -11,7 +11,7 @@ lives in the runner's mid-run auto-resume (runner.AUTO_RESUME_MAX).
 
 import sys
 
-from bridge import config, ladder, queue_manager, runner, store, telegram
+from bridge import config, ladder, notices, queue_manager, runner, store, telegram
 
 NUDGE = (
     "⏮ You were interrupted mid-task by a bridge restart — not by the user. "
@@ -56,9 +56,11 @@ def recover(*, run=None, notify=None) -> int:
         if job is None:
             continue                                  # session busy (shouldn't happen at boot)
         count += 1
+        notices.emit("resumed", sid, body="A restart interrupted it. Resuming where it left off.")
         try:
-            notify(t["chat_id"],
-                   "🔄 A restart interrupted this session — resuming where it left off.")
+            if notices.telegram_ok("resumed"):
+                notify(t["chat_id"],
+                       "🔄 A restart interrupted this session — resuming where it left off.")
         except Exception:  # noqa: BLE001
             pass
     return count
