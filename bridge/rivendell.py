@@ -2036,9 +2036,10 @@ def reconfigure() -> None:
     onto the live worker and drop its connection so the new URL/token is used on
     the next reconnect (an in-flight review finishes under the config it started
     with, matching the old singleton's behaviour). Called at boot and after any
-    save from the dashboard's PLUGINS panel."""
-    desired = _desired()
+    save from the dashboard's PLUGINS panel. The desired set is read under the
+    lock, so a save racing REMOVE can't apply an older one after REMOVE's stop."""
     with _manager_lock:
+        desired = _desired()
         for wid in list(_workers):
             if wid not in desired:
                 w = _workers.pop(wid)
