@@ -287,7 +287,7 @@ public sealed class DashboardForm : Form
     bool hotkeyWanted, hotkeyOn;
     const int HotkeyId = 1;
 
-    /// Win+Alt+M, system-wide, while the switch is on: hidden or behind → in
+    /// Win+Ctrl+A, system-wide, while the switch is on: hidden or behind → in
     /// front, in front → hidden. False when another app holds the chord.
     public bool SetHotkey(bool on)
     {
@@ -295,7 +295,7 @@ public sealed class DashboardForm : Form
         if (!IsHandleCreated) CreateHandle();
         if (hotkeyOn) { Native.UnregisterHotKey(Handle, HotkeyId); hotkeyOn = false; }
         if (!on) return true;
-        hotkeyOn = Native.RegisterHotKey(Handle, HotkeyId, Native.ModWin | Native.ModAlt | Native.ModNoRepeat, 0x4D);
+        hotkeyOn = Native.RegisterHotKey(Handle, HotkeyId, Native.ModWin | Native.ModControl | Native.ModNoRepeat, 0x41);
         return hotkeyOn;
     }
 
@@ -390,7 +390,7 @@ public sealed class DashboardForm : Form
     {
         public const int DwmUseImmersiveDarkMode = 20;
         public const int WmHotkey = 0x0312;
-        public const uint ModAlt = 0x0001, ModWin = 0x0008, ModNoRepeat = 0x4000;
+        public const uint ModControl = 0x0002, ModWin = 0x0008, ModNoRepeat = 0x4000;
         [DllImport("user32.dll")] public static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint vk);
         [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hwnd, int id);
         [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);

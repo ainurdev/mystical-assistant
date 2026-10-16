@@ -177,7 +177,7 @@ rows; a row opens its session; dragged by its body (`WM_NCHITTEST` → `HTCAPTIO
 position remembered. Shown while `floating` is on, the list is non-empty and the
 dashboard form isn't the active window.
 
-**Global hotkey.** `RegisterHotKey(Win+Alt+M, MOD_NOREPEAT)` while the `hotkey`
+**Global hotkey.** `RegisterHotKey(Win+Ctrl+A, MOD_NOREPEAT)` while the `hotkey`
 switch is on (default on — it's what was asked for). `WM_HOTKEY` toggles: hidden or
 behind → show and activate (a hotkey press carries foreground rights); already in
 front → hide. Registration failing (the chord is taken) shows one balloon saying
@@ -315,7 +315,7 @@ The tab: key `mac` stays; label and `about` read "MAC APP" / "WINDOWS APP" by
 platform; icon `AppWindowMac` / `AppWindow`. Rows: SESSION IN THE TITLE (both);
 KEEP IN DOCK (Mac, when the reply carries it); WAITING ON YOU PANEL (both; the
 copy says "every Space" on the Mac, "on top of every window" on Windows);
-SUMMON WITH WIN+ALT+M (Windows); VERSION + REBUILD (both, copy per platform:
+SUMMON WITH WIN+CTRL+A (Windows); VERSION + REBUILD (both, copy per platform:
 `mystical app` rebuilds from the checkout and reopens); SCREEN CAPTURE (both;
 Windows: "through windows/capture.sh; no permission to grant").
 
@@ -360,7 +360,7 @@ need none.
   and opens it; `windows/probe.sh` → `window.png` shows the HUD, `state.json`
   says `up`; `windows/capture.sh -w Mystical` → a PNG of the window;
   `windows/capture.sh` → the primary screen; a real question with no window in
-  front → a toast with the card's buttons, and a tap answers it; Win+Alt+M
+  front → a toast with the card's buttons, and a tap answers it; Win+Ctrl+A
   toggles the window; `cmd.exe /c start mystical://open` raises it; tray Stop →
   placeholder with START, Start → the page is back; REBUILD from the tab swaps
   and reopens; log out and in → the app comes back through the `.cmd`.

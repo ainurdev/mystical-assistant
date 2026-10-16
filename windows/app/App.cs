@@ -77,7 +77,7 @@ public sealed class App : ApplicationContext
     void ApplyHotkey()
     {
         if (!Dashboard.SetHotkey(Prefs.Hotkey))
-            Tray.Balloon("Win+Alt+M is taken", "Another app holds the shortcut; the switch stays on.");
+            Tray.Balloon("Win+Ctrl+A is taken", "Another app holds the shortcut; the switch stays on.");
     }
 
     void BridgeChanged()
