@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Mystical.Core;
@@ -5,9 +6,9 @@ using Mystical.Core;
 namespace Mystical;
 
 /// The app — what AppDelegate is on the Mac. Owns the pieces (bridge, window,
-/// notifier, tray, panel), the pipe's handlers and the link handler. An
-/// ApplicationContext rather than a form, so the process outlives any one
-/// window: the dashboard hides on close, and the tray's Quit ends the run.
+/// notifier, tray, panel), the tray's menu, the pipe's handlers and the link
+/// handler. An ApplicationContext rather than a form, so the process outlives
+/// any one window: the dashboard hides on close, and the tray's Quit ends the run.
 public sealed class App : ApplicationContext
 {
     public Stamp Stamp { get; }
@@ -18,11 +19,15 @@ public sealed class App : ApplicationContext
     public Bridge Bridge { get; }
     public Notifier Notifier { get; }
     public DashboardForm Dashboard { get; }
-    /// The tray's count, for the probe (Task 6 sets it).
-    public string? Badge { get; private set; }
+    public Tray Tray { get; }
+    public FloatingPanel Panel { get; }
+    /// A lifecycle verb in flight; a rebuild in flight.
+    public bool Busy { get; private set; }
+    public bool Rebuilding { get; private set; }
+    /// The tray's count, for the probe.
+    public string? Badge => Tray.Badge;
     /// The web permission the shim is seeded with.
     public string Permission => Notifier.Permission;
-    bool busy;
 
     public App(Stamp stamp, Prefs prefs, string dataDir)
     {
@@ -50,15 +55,125 @@ public sealed class App : ApplicationContext
             var p = Notifier.RefreshPermission();
             await Dashboard.Eval($"window.__mysticalSetPermission?.('{p}')");
         };
+        Panel = new FloatingPanel(Dashboard.Open, prefs, prefsPath);
+        Tray = new Tray(FillMenu, Dashboard.ShowDashboard);
         Notifier.Clicked += Dashboard.NotificationClicked;
         Notifier.ActionTapped += Dashboard.NotificationAction;
         Notifier.AppearanceChanged += Dashboard.ApplyAppearance;
-        Bridge.Changed += Dashboard.Sync;
+        Notifier.PrefsChanged += _ => { ApplyHotkey(); SyncFloating(); };
+        Notifier.RebuildRequested += RebuildApp;
+        Bridge.Changed += BridgeChanged;
         Dashboard.StartRequested += () => Lifecycle("start");
+        // The panel yields to the dashboard: gone while it's in front, back when it isn't.
+        Dashboard.VisibilityChanged += _ => SyncFloating();
+        Dashboard.Activated += (_, _) => SyncFloating();
+        Dashboard.Deactivate += (_, _) => SyncFloating();
         Bridge.Start();
         // Launched at login by the Startup entry, or by hand: either way, show it.
         Dashboard.ShowDashboard();
+        ApplyHotkey();
     }
+
+    void ApplyHotkey()
+    {
+        if (!Dashboard.SetHotkey(Prefs.Hotkey))
+            Tray.Balloon("Ctrl+Alt+M is taken", "Another app holds the shortcut; the switch stays on.");
+    }
+
+    void BridgeChanged()
+    {
+        Dashboard.Sync();
+        Tray.Update(Bridge.Waiting.Count, Bridge.Working, Bridge.Up);
+        SyncFloating();
+    }
+
+    void SyncFloating()
+    {
+        var inFront = Dashboard.Visible && Dashboard.WindowState != FormWindowState.Minimized && Form.ActiveForm == Dashboard;
+        Panel.Sync(Bridge.Waiting, Prefs.Floating, inFront);
+    }
+
+    // MARK: the tray menu — rebuilt each time it opens, from the latest poll
+
+    public string StateLine()
+    {
+        if (Rebuilding) return "● rebuilding the app…";
+        if (Busy) return "● working…";
+        var s = Bridge.Status;
+        if (s is null) return Bridge.RepoMissing ? "● checkout not found — rebuild: mystical app" : "● checking…";
+        if (!s.Running) return "○ bridge stopped";
+        if (!Bridge.Up) return "◌ bridge starting…";
+        var sup = s.Supervised switch { null => "", "hand-launched" => " · not supervised", var name => " · " + name };
+        return "● bridge running" + sup;
+    }
+
+    void FillMenu(ContextMenuStrip menu)
+    {
+        // Supervision can change under us (the SYSTEM tab, a terminal); re-read
+        // it for the next open rather than block this one on wsl.exe.
+        if (!Busy) _ = Bridge.RefreshStatus();
+        menu.Items.Add(Disabled(StateLine()));
+        if (Bridge.Waiting.Count > 0)
+        {
+            menu.Items.Add(new ToolStripSeparator());
+            menu.Items.Add(Disabled("Waiting on you"));
+            foreach (var w in Bridge.Waiting)
+            {
+                var row = new ToolStripMenuItem("    " + w.Title) { ToolTipText = w.Label, Tag = w.Id };
+                row.Click += (s, _) => Dashboard.Open((string)((ToolStripMenuItem)s!).Tag!);
+                menu.Items.Add(row);
+            }
+        }
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(Item("Open Dashboard", Dashboard.ShowDashboard));
+        menu.Items.Add(Item("Open in Browser", OpenInBrowser, Bridge.Up));
+        menu.Items.Add(new ToolStripSeparator());
+        var running = Bridge.Status?.Running == true;
+        menu.Items.Add(Item("Start Bridge", () => Lifecycle("start"), !running && !Busy));
+        menu.Items.Add(Item("Stop Bridge", () => Lifecycle("stop"), running && !Busy));
+        menu.Items.Add(Item("Restart Bridge", () => Lifecycle("restart"), running && !Busy));
+        menu.Items.Add(Item("Show Log", ShowLog, Bridge.Status?.Log is not null));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(Disabled($"Mystical {Stamp.Version}"));
+        menu.Items.Add(Item("Rebuild App", RebuildApp, !Rebuilding && !Bridge.RepoMissing));
+        menu.Items.Add(new ToolStripSeparator());
+        menu.Items.Add(Item("Quit Mystical", Quit));
+    }
+
+    static ToolStripMenuItem Disabled(string text) => new(text) { Enabled = false };
+
+    static ToolStripMenuItem Item(string text, Action action, bool enabled = true)
+    {
+        var i = new ToolStripMenuItem(text) { Enabled = enabled };
+        i.Click += (_, _) => action();
+        return i;
+    }
+
+    void OpenInBrowser()
+    {
+        if (Bridge.Status?.DashboardUrl is not { } url) return;
+        try { Process.Start(new ProcessStartInfo(url.ToString()) { UseShellExecute = true }); }
+        catch (Exception) { }
+    }
+
+    /// A console tailing the bridge's log — `mystical logs`, in a window.
+    void ShowLog()
+    {
+        if (Bridge.Status?.Log is not { } log) return;
+        var psi = new ProcessStartInfo("wsl.exe") { UseShellExecute = true };
+        foreach (var a in new[] { "-d", Stamp.Distro, "-u", Stamp.User, "-e", "tail", "-n", "200", "-f", log }) psi.ArgumentList.Add(a);
+        try { Process.Start(psi); }
+        catch (Exception) { }
+    }
+
+    void Quit()
+    {
+        Tray.Dispose();
+        Panel.Close();
+        ExitThread();
+    }
+
+    // MARK: the pipe, links, lifecycle
 
     /// One pipe request, on the UI thread. The reply node is written back as
     /// one line; `{"ok":false,"error":…}` for anything that can't be done.
@@ -73,6 +188,9 @@ public sealed class App : ApplicationContext
             case "hide":
                 Dashboard.HideDashboard();
                 return Ok();
+            case "open":
+                HandleLink(Str(req, "url") ?? "");
+                return Ok();
             case "probe":
                 return await Probe.Write(Str(req, "dir") ?? "", this);
             case "eval":
@@ -83,7 +201,7 @@ public sealed class App : ApplicationContext
                 // Reply first — the pipe thread writes it once this returns —
                 // and leave a beat later, so the client reads its line.
                 var later = new System.Windows.Forms.Timer { Interval = 150 };
-                later.Tick += (_, _) => { later.Stop(); ExitThread(); };
+                later.Tick += (_, _) => { later.Stop(); Quit(); };
                 later.Start();
                 return Ok();
             default:
@@ -91,16 +209,22 @@ public sealed class App : ApplicationContext
         }
     }
 
-    /// A mystical:// link, from the command line or a second instance.
-    public void HandleLink(string url) { }
+    /// A mystical:// link, from the command line or a second instance: it
+    /// opens things and nothing else (DeepLink).
+    public void HandleLink(string url)
+    {
+        if (DeepLink.Parse(url) is not { } link) return;
+        if (link.SessionId is { } id) Dashboard.Open(id);
+        else Dashboard.ShowDashboard();
+    }
 
     /// start / stop / restart through `bin/mystical`; a failure's output in a box.
     public void Lifecycle(string verb) => _ = LifecycleAsync(verb);
 
     async Task LifecycleAsync(string verb)
     {
-        if (busy) return;
-        busy = true;
+        if (Busy) return;
+        Busy = true;
         try
         {
             var failure = await Bridge.Lifecycle(verb);
@@ -108,13 +232,34 @@ public sealed class App : ApplicationContext
         }
         finally
         {
-            busy = false;
-            Dashboard.Sync();
+            Busy = false;
+            BridgeChanged();
         }
     }
 
-    static void Alert(string title, string text) =>
+    /// `mystical app`. A success quits and reopens us from build.sh, so `done`
+    /// only ever reports a failure (or a build with nothing to swap).
+    public void RebuildApp()
+    {
+        if (Rebuilding) return;
+        Rebuilding = true;
+        var log = Bridge.RebuildApp((code, tail) =>
+        {
+            Rebuilding = false;
+            if (code != 0) Alert("mystical app failed", tail.Length > 0 ? tail : $"exit {code} — see {Bridge.RebuildLog}");
+        });
+        if (log is null)
+        {
+            Rebuilding = false;
+            Alert("mystical app", $"couldn't start the build — is the checkout still at {Stamp.Repo}?");
+        }
+    }
+
+    static void Alert(string title, string text)
+    {
+        Log($"{title}: {text.ReplaceLineEndings(" ")}");
         MessageBox.Show(text, title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+    }
 
     static string? logPath;
     /// One line into %LOCALAPPDATA%\Mystical\app.log — what happened to a toast,

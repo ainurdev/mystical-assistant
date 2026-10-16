@@ -73,6 +73,8 @@ public sealed class DashboardForm : Form
     {
         base.OnHandleCreated(e);
         ApplyAppearance(prefs.Light);
+        // A recreated handle lost the registration.
+        if (hotkeyWanted && !hotkeyOn) SetHotkey(true);
     }
 
     // MARK: WebView2
@@ -282,8 +284,30 @@ public sealed class DashboardForm : Form
         Native.DwmSetWindowAttribute(Handle, Native.DwmUseImmersiveDarkMode, ref dark, sizeof(int));
     }
 
-    /// Registers Ctrl+Alt+M (Task 6); false when the chord is taken.
-    public bool SetHotkey(bool on) => true;
+    bool hotkeyWanted, hotkeyOn;
+    const int HotkeyId = 1;
+
+    /// Ctrl+Alt+M, system-wide, while the switch is on: hidden or behind → in
+    /// front, in front → hidden. False when another app holds the chord.
+    public bool SetHotkey(bool on)
+    {
+        hotkeyWanted = on;
+        if (!IsHandleCreated) CreateHandle();
+        if (hotkeyOn) { Native.UnregisterHotKey(Handle, HotkeyId); hotkeyOn = false; }
+        if (!on) return true;
+        hotkeyOn = Native.RegisterHotKey(Handle, HotkeyId, Native.ModControl | Native.ModAlt | Native.ModNoRepeat, 0x4D);
+        return hotkeyOn;
+    }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == Native.WmHotkey && (int)m.WParam == HotkeyId)
+        {
+            ToggleFromHotkey();
+            return;
+        }
+        base.WndProc(ref m);
+    }
 
     void SetFullScreen(bool on)
     {
@@ -365,6 +389,10 @@ public sealed class DashboardForm : Form
     static class Native
     {
         public const int DwmUseImmersiveDarkMode = 20;
+        public const int WmHotkey = 0x0312;
+        public const uint ModAlt = 0x0001, ModControl = 0x0002, ModNoRepeat = 0x4000;
+        [DllImport("user32.dll")] public static extern bool RegisterHotKey(IntPtr hwnd, int id, uint modifiers, uint vk);
+        [DllImport("user32.dll")] public static extern bool UnregisterHotKey(IntPtr hwnd, int id);
         [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
         [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hwnd);
         [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
