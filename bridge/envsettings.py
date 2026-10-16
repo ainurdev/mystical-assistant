@@ -452,7 +452,8 @@ def _shown(spec: dict, value):
 
 
 def state() -> list[dict]:
-    """Every setting with its current answer and where that answer came from."""
+    """Every setting with its current answer and where that answer came from,
+    except the rows a plugin owns while it isn't installed (hidden_env_keys)."""
     with _lock:
         saved = _load()
     hidden = integrations.hidden_env_keys()

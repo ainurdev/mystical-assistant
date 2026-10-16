@@ -706,6 +706,7 @@ def test_a_tap_on_an_old_ping_after_remove_does_nothing(monkeypatch):
     monkeypatch.setattr(integrations, "_cache", {"rivendell": False, "trackers": True, "design": True})
     acks, touched = [], []
     monkeypatch.setattr(dispatch, "answer_cb", lambda cid, text="": acks.append(text))
+    monkeypatch.setattr(dispatch, "edit", lambda *a, **k: None)
     monkeypatch.setattr(rivendell, "resolve_token", lambda t: touched.append(t))
     monkeypatch.setattr(rivendell, "answer_option", lambda t, i: touched.append(t))
     cb = {"id": "cb1", "from": {"id": config.DASH_CHAT_ID},
