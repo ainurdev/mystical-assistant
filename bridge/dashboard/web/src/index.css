@@ -3398,7 +3398,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    SETTINGS ▸ AI MANAGEMENT (SettingsModal AiManagementPanel, ProjectsSettings):
    five folds on one page. Authored in FLINT's idiom — a card is a step of grey
    and a hairline, a login is a tile on a hue — with fallbacks to the HUD's
-   tokens, so the page stands on every family.
+   tokens, so the page stands on every family. */
 .aim, .ps { --l: var(--line, var(--border)); --l2: var(--line2, var(--border-bright)); --f: var(--ui-font, inherit); font-family: var(--f); }
 .aim-fold { border: 1px solid var(--l); border-radius: 12px; background: var(--panel); margin-top: 10px; overflow: hidden; }
 .aim-fold:first-child { margin-top: 0; }
