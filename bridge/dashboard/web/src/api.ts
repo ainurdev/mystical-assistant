@@ -491,13 +491,14 @@ export interface RivendellInstance {
   token: string;       // masked: "…" + last 4, or "set"/"" ; never sent back to keep
   status: RivendellStatus;  // live; merged in by the GET route, not stored
 }
-/** A create/edit payload. token blank on edit keeps the stored one. */
+/** A create/edit payload. token blank on edit keeps the stored one, and so does
+ *  an absent ws_url (the form has no field for it; the switch resends it). */
 export interface RivendellInput {
   name: string;
   enable: boolean;
   api_url: string;
   token: string;
-  ws_url: string;
+  ws_url?: string;
   model: string;
   workdir: string;
   review_timeout: number;
