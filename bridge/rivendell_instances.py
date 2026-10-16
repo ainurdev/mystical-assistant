@@ -174,7 +174,7 @@ def _masked(inst: dict) -> dict:
 def origin_for(inst: dict) -> str:
     """The session origin runs from this instance carry, e.g.
     ``rivendell:production``. The ``rivendell`` prefix keeps every instance's
-    runs visible under config.is_plugin_origin; the suffix tells them apart."""
+    runs visible under integrations.is_plugin_origin; the suffix tells them apart."""
     return "rivendell:" + (_slug(inst.get("name", "")) or inst.get("id", ""))
 
 

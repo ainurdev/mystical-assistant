@@ -30,7 +30,7 @@ import json
 import os
 import threading
 
-from bridge import config
+from bridge import config, integrations
 
 # key    -- the environment variable name; also the id the API and UI use
 # attr   -- the bridge.config attribute it sets, when the two differ
@@ -455,9 +455,12 @@ def state() -> list[dict]:
     """Every setting with its current answer and where that answer came from."""
     with _lock:
         saved = _load()
+    hidden = integrations.hidden_env_keys()
     out = []
     for spec in SETTINGS:
         key = spec["key"]
+        if key in hidden:
+            continue
         value = get(key)
         out.append({
             "key": key,

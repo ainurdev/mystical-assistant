@@ -75,7 +75,7 @@ def test_the_registry_covers_every_model_call_the_bridge_makes():
     don't delete this line."""
     assert set(KEYS) == {"title", "relevance", "nextup", "preview", "commitmsg",
                          "learn", "dream", "tailstate", "ponytail", "graph",
-                         "design", "tasks"}
+                         "tasks"}
 
 
 def test_shipped_defaults_are_off_for_anything_automatic():
@@ -93,14 +93,7 @@ def test_shipped_defaults_are_off_for_anything_automatic():
                "PREVIEW_DETECT_AI": "0", "COMMIT_MSG_AI": "1", "LEARN_ENABLE": "0",
                "DREAM_ENABLE": "0",
                "TAIL_STATE_AI": "0", "PONYTAIL_ENABLE": "1", "GRAPH_ENABLE": "1",
-               "DESIGN_SYNC_ENABLE": "1", "TASKS_DIGEST": "1"}
+               "TASKS_DIGEST": "1"}
     assert set(shipped) == {f["env"] for f in aifeatures.FEATURES}
     for var, default in shipped.items():
         assert f'os.environ.get("{var}", "{default}")' in src, f"{var} ships wrong"
-
-
-def test_design_switch_reads_its_env_setting(monkeypatch):
-    monkeypatch.setattr(config, "DESIGN_SYNC_ENABLE", False)
-    assert aifeatures.enabled("design") is False
-    monkeypatch.setattr(config, "DESIGN_SYNC_ENABLE", True)
-    assert aifeatures.enabled("design") is True

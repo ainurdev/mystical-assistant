@@ -13,7 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bridge import aifeatures, browser, config, project_config  # noqa: E402
+from bridge import browser, config, integrations, project_config  # noqa: E402
 from bridge.dashboard import server as dash  # noqa: E402
 
 
@@ -78,36 +78,31 @@ def test_project_settings_sets_the_design_link(client, tmp_repo):
     assert project_config.design_project(browser.rel(tmp_repo)) == "bbbb-2"
 
 
-def test_design_prompt_is_refused_while_the_switch_is_off(client, tmp_repo, monkeypatch):
-    monkeypatch.setattr(aifeatures, "enabled", lambda k: k != "design")
-    body = client.get(f"/local/design/prompt?kind=link&cwd={tmp_repo}")
-    assert body["error"] == "design system switch is off"
+def test_design_prompt_is_gone_while_claude_design_is_not_installed(client, tmp_repo, monkeypatch):
+    monkeypatch.setattr(integrations, "_cache", {"rivendell": True, "trackers": True, "design": False})
+    assert client.get(f"/local/design/prompt?kind=link&cwd={tmp_repo}") == {"error": "not installed"}
 
 
-def test_pull_prompt_needs_a_link(client, tmp_repo, monkeypatch):
-    monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
+def test_pull_prompt_needs_a_link(client, tmp_repo):
     body = client.get(f"/local/design/prompt?kind=pull&cwd={tmp_repo}")
     assert body["error"] == "no design project linked"
 
 
-def test_pull_prompt_carries_the_linked_id(client, tmp_repo, monkeypatch):
-    monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
+def test_pull_prompt_carries_the_linked_id(client, tmp_repo):
     project_config.set_design_project(browser.rel(tmp_repo), "aaaa-1")
     body = client.get(f"/local/design/prompt?kind=pull&cwd={tmp_repo}")
     assert "aaaa-1" in body["prompt"]
 
 
-def test_unknown_kind_is_rejected(client, tmp_repo, monkeypatch):
-    monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
+def test_unknown_kind_is_rejected(client, tmp_repo):
     project_config.set_design_project(browser.rel(tmp_repo), "aaaa-1")
     body = client.get(f"/local/design/prompt?kind=teleport&cwd={tmp_repo}")
     assert body["error"] == "unknown kind"
 
 
-def test_push_prompt_carries_the_linked_id(client, tmp_repo, monkeypatch):
+def test_push_prompt_carries_the_linked_id(client, tmp_repo):
     """The push branch is structurally a twin of pull's gate-then-compose, and
     was the one arm of the route nothing exercised."""
-    monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
     project_config.set_design_project(browser.rel(tmp_repo), "aaaa-1")
     body = client.get(f"/local/design/prompt?kind=push&cwd={tmp_repo}")
     assert "aaaa-1" in body["prompt"]

@@ -391,7 +391,7 @@ class Handler(BaseHTTPRequestHandler):
             # Plugin-worker sessions are exempt: their default workdir is
             # BASE_PATH itself ("/", never a project), and a run the PLUGINS
             # tab exists to show must not be filtered into invisibility.
-            rows = [r for r in rows if config.is_plugin_origin(r.get("origin"))
+            rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
                     or browser.project_exists(r["project"])]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
         # Before the transcript route below, which would otherwise swallow this
@@ -618,9 +618,7 @@ class Handler(BaseHTTPRequestHandler):
                 "log_path": devserver.DEV_LOG_REL,
             })
         if path == "/local/design/prompt":
-            from bridge import aifeatures, designsync
-            if not aifeatures.enabled("design"):
-                return self._json({"error": "design system switch is off"}, 400)
+            from bridge import designsync
             abs_p = (_abs_within((qs.get("cwd", [""])[0] or "").strip())
                      or _abs_project(qs.get("cwd_rel", [None])[0]
                                      or qs.get("project", [None])[0])

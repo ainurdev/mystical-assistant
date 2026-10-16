@@ -237,15 +237,6 @@ TASKS_DIGEST = os.environ.get("TASKS_DIGEST", "1").lower() \
 COMMIT_MSG_AI = os.environ.get("COMMIT_MSG_AI", "1").lower() \
     not in ("0", "false", "no", "")
 
-# --- Claude Design link -------------------------------------------------------
-# A repo linked to a Claude Design project can pull that design system down as a
-# project skill and push finished components back up. Nothing here fires on its
-# own — linking, pulling and syncing are all presses — so it defaults ON, like
-# the other press-to-run entries; the switch is there to make an outward-facing
-# integration visible and stoppable.
-DESIGN_SYNC_ENABLE = os.environ.get("DESIGN_SYNC_ENABLE", "1").lower() \
-    not in ("0", "false", "no", "")
-
 # --- Rivendell PR review plugin ----------------------------------------------
 # A websocket client that connects to a rivendell-api instance, listens for
 # pr-review-request events, runs each review as an autonomous Claude session,
@@ -273,23 +264,6 @@ RIVENDELL_REVIEW_TIMEOUT = int(os.environ.get("RIVENDELL_REVIEW_TIMEOUT", "3600"
 # Wall-clock cap for one task implementation. Implementations write code, run
 # tests and push — routinely 2-3x a review's wall clock, hence the 3h default.
 RIVENDELL_IMPL_TIMEOUT = int(os.environ.get("RIVENDELL_IMPL_TIMEOUT", "10800"))
-
-# Session-origin PREFIXES that belong to plugin workers. Their sessions are
-# listed even when their project is a container dir (a plugin's default workdir
-# is BASE_PATH itself, whose rel is "/" — normally never a project), so a plugin
-# run can't be invisible in the dashboards. Prefixes, not exact names: a plugin
-# with several instances tags each run "rivendell:<instance>" (see
-# rivendell_instances.origin_for), and all of them must still match. Not an env
-# var — a code registry that grows with each plugin, mirrored by the dashboard's
-# PLUGINS tab.
-PLUGIN_ORIGINS = ("rivendell",)
-
-
-def is_plugin_origin(origin) -> bool:
-    """Does this session origin belong to a plugin worker? Matches the base
-    origin ("rivendell") and every per-instance one ("rivendell:prod")."""
-    return bool(origin) and any(
-        origin == p or origin.startswith(p + ":") for p in PLUGIN_ORIGINS)
 
 UPLOAD_MAX_MB = int(os.environ.get("UPLOAD_MAX_MB", "10"))   # per screenshot
 UPLOAD_MAX_COUNT = int(os.environ.get("UPLOAD_MAX_COUNT", "8"))

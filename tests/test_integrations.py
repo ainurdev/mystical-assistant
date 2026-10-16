@@ -9,8 +9,8 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from bridge import (config, integrations, project_config, rivendell, rivendell_instances, state,
-                    trackers)
+from bridge import (config, envsettings, integrations, project_config, rivendell,
+                    rivendell_instances, state, trackers)
 from bridge.dashboard import server as dash
 from bridge.miniapp import server as mini
 
@@ -199,6 +199,14 @@ ROUTES = {
 def test_a_plugin_that_is_not_installed_does_not_exist(fresh, pid):
     for method, path in ROUTES[pid]:
         assert call(method, path) == {"obj": {"error": "not installed"}, "code": 404}, (method, path)
+    spec = next(p for p in integrations.PLUGINS if p["id"] == pid)
+    assert not any(integrations.is_plugin_origin(o) for o in spec["origins"])
+    assert not {s["key"] for s in envsettings.state()} & set(spec["env_keys"])
+
+
+def test_an_installed_rivendell_lists_its_env_keys(fresh):
+    integrations.set_installed("rivendell", True)
+    assert {"FFMPEG_BIN", "WHISPER_BIN", "WHISPER_MODEL"} <= {s["key"] for s in envsettings.state()}
 
 
 def test_the_integrations_route_lists_installs_and_removes(fresh):

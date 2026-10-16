@@ -192,7 +192,7 @@ import urllib.request
 import uuid
 from urllib.parse import quote, urlsplit
 
-from bridge import config, wsutil
+from bridge import config, integrations, wsutil
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -2492,7 +2492,7 @@ def ping_question(job, request_id: str, questions: list) -> bool:
     try:
         from bridge import store                 # local import: heavy module
         sess = store.get_session(job.store_session_id) if job.store_session_id else None
-        if not sess or not config.is_plugin_origin(sess.get("origin")):
+        if not sess or not integrations.is_plugin_origin(sess.get("origin")):
             return False
         threading.Thread(target=_send_question, args=(job, request_id, questions, sess),
                          name="rivendell-ask", daemon=True).start()
