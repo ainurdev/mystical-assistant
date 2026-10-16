@@ -257,6 +257,35 @@ export interface ProjectsListing {
   hidden?: string[]; // rels the bridge remembers as HIDDEN (project_config.json)
   names?: Record<string, string>; // rel -> the display name you gave it
   remotes?: Record<string, string>; // rel -> owner/repo of origin, absent if not GitHub
+  marks?: Record<string, ProjectMark>; // rel -> its mark; absent on a bridge older than marks
+}
+
+/** What a project's tile shows and the colour it wears (bridge/projectmarks.py).
+ *  No mark at all means the default: its initials on a hashed colour. */
+export interface ProjectMark {
+  kind: "letters" | "icon" | "logo";
+  color?: string;             // "#rrggbb", or a theme ink like "var(--acc)"
+  icon?: string;              // a lucide icon name
+  logo?: string;              // "<sha256>.<ext>", served at projectLogoUrl()
+  source?: "rivendell";       // absent = yours: set here, never changes on its own
+  rv?: { instance?: string; client?: string; name?: string; logo_id?: string | null };
+}
+
+/** Where a stored logo is served. Its name is the bytes' hash, so it caches forever. */
+export const projectLogoUrl = (name: string) => `/local/project-mark/logo/${encodeURIComponent(name)}`;
+
+/** What Rivendell could lend the repos here, and whether they follow it. */
+export interface RivendellMarks {
+  available: boolean;          // a Rivendell answered /plugin/projects
+  asked: boolean;              // a Rivendell is connected at all
+  sync: boolean;               // FOLLOW is on
+  synced_at: number | null;
+  following: number;           // repos whose mark follows Rivendell
+  unmatched: number;           // listed repos with no client mark in Rivendell
+  can_undo: boolean;
+  offer: { count: number; clients: string[]; logos: { url: string | null; color: string | null }[] } | null;
+  matches: Record<string, { client: string | null; logo: boolean; color: string | null }>;
+  errors: { instance_id: string; instance: string; error: string; detail: string }[];
 }
 
 export interface GitFile {
@@ -493,13 +522,14 @@ export interface RivendellInstance {
   device_token: string;     // masked like token: the Claude token your device runs use; "" when none is saved
   status: RivendellStatus;  // live; merged in by the GET route, not stored
 }
-/** A create/edit payload. token blank on edit keeps the stored one. */
+/** A create/edit payload. token blank on edit keeps the stored one, and so does
+ *  an absent ws_url (the form has no field for it; the switch resends it). */
 export interface RivendellInput {
   name: string;
   enable: boolean;
   api_url: string;
   token: string;
-  ws_url: string;
+  ws_url?: string;
   model: string;
   workdir: string;
   review_timeout: number;
@@ -854,6 +884,52 @@ export interface RunningInfo {
   jobs: RunningJob[]; // this chat's live bridge runs, with activity detail
   awaiting: AwaitingSession[]; // sessions blocked on your answer/approval
   status: Record<string, SessionStatus>; // unified per-session status (working/awaiting only)
+  needs?: Need[]; // everything waiting on you (bridge/notices.py); absent on an older bridge
+}
+
+/** One row of the bridge's notification feed (bridge/notices.py). `verb` is
+ *  the copy ("FAILED", "REVIEWED"); `group` is its Settings ▸ NOTIFY row. */
+export interface Notice {
+  id: number;
+  at: number; // epoch seconds
+  kind: string;
+  verb: string;
+  group: string;
+  tier: "needs" | "news" | "fyi";
+  source: "session" | "rivendell" | "pr" | "bridge";
+  subject: string; // a session id, rv:<instance>:<request>, rv-link:<instance>, pr:<slug>:<branch>
+  title: string;
+  body: string;
+  meta: Record<string, unknown>;
+  read: boolean;
+}
+
+/** Something waiting on you right now — live state, not a stored row. */
+export interface Need {
+  subject: string;
+  kind: string; // approve | question | asking | login | limit_choice | rv_offer
+  verb: string;
+  title: string;
+  body: string;
+  at: number | null;
+  session_id: string | null;
+  meta: Record<string, unknown>;
+}
+
+export interface NoticeRoute {
+  pop: boolean;
+  sound: "blip" | "chime" | "ping" | "knock" | "none";
+  tg: "off" | "away" | "always";
+}
+export interface NoticePrefs {
+  events: Record<string, NoticeRoute>;
+  quiet: { on: boolean; from: string; to: string; needs: boolean };
+  away_min: number;
+}
+export interface NoticePrefsPatch {
+  events?: Record<string, Partial<NoticeRoute>>;
+  quiet?: Partial<NoticePrefs["quiet"]>;
+  away_min?: number;
 }
 export interface EnrichedSession {
   id: string;
@@ -1022,6 +1098,23 @@ export interface AiFeature {
   tokens?: string; // what one unit burns, in + out — absent on a bridge older than the figure
   about: string; // the paragraph under the switch — what it does, what it adds
   enabled: boolean;
+}
+/** One bundled integration (bridge/integrations.py) and whether it is installed. A
+ *  plugin that isn't installed has its routes answer 404, so the UI hides it
+ *  instead of calling them. `summary` is "" while not installed. */
+export interface Integration {
+  id: string;
+  label: string;
+  blurb: string;
+  needs: string;
+  installed: boolean;
+  summary: string;
+}
+/** Which of Rivendell's video tools the bridge finds. */
+export interface VideoTools {
+  ffmpeg: boolean;
+  whisper: boolean;
+  model: boolean;
 }
 /** Whether the bridge starts itself at login, from the two host-side files that
  *  arrange it (a systemd user unit and a .cmd in the Windows Startup folder).
@@ -1533,6 +1626,15 @@ export const api = {
       method: "POST",
       body: { key, enabled },
     }),
+  /** The bundled integrations and whether each is installed. A bridge older than
+   *  this answers 404 "not found" (see lib/integrations.ts). */
+  integrations: () => req<{ plugins: Integration[] }>("/local/integrations"),
+  /** Removing Rivendell mid-run is a 409 whose message says so. */
+  setIntegration: (id: string, action: "install" | "remove") =>
+    req<{ ok: boolean; plugins: Integration[] }>("/local/integrations", {
+      method: "POST",
+      body: { id, action },
+    }),
   /** Everything else that used to be reachable only by editing .env. */
   envSettings: () => req<{ settings: EnvSetting[] }>("/local/envsettings"),
   /** `value: null` clears the override, falling back to what .env said. */
@@ -1619,8 +1721,18 @@ export const api = {
   select: (dir: string) =>
     req<{ project: Project }>("/local/select", { method: "POST", body: { dir } }),
   // alerts: this page raises its own OS alerts, so the tray companion stays quiet.
-  running: (alerts = false) =>
-    req<RunningInfo>(alerts ? "/local/running?alerts=1" : "/local/running"),
+  // seen: this page's last click or keypress — Telegram's "away" (bridge/notices.py).
+  running: (alerts = false, seen = 0) =>
+    req<RunningInfo>(`/local/running?${alerts ? "alerts=1&" : ""}${seen ? `seen=${seen}` : ""}`),
+  notices: () => req<{ notices: Notice[]; prefs: NoticePrefs; quiet: boolean; telegram: boolean }>("/local/notices"),
+  noticesRead: (ids: number[] | "all") =>
+    req<{ ok: boolean; n: number }>("/local/notices", {
+      method: "POST", body: ids === "all" ? { op: "read", all: true } : { op: "read", ids } }),
+  // The bell's LIMIT row: no slot = wait for the reset; a slot = continue on that login.
+  noticeLimit: (session: string, slot?: number) =>
+    req<{ ok: boolean }>("/local/notices", { method: "POST", body: { op: "limit", session, ...(slot === undefined ? {} : { slot }) } }),
+  noticePrefs: (patch: NoticePrefsPatch) =>
+    req<{ prefs: NoticePrefs }>("/local/notices", { method: "POST", body: { op: "prefs", patch } }),
   usage: () => req<UsageInfo>("/local/usage"),
   today: () => req<TodayInfo>("/local/today"),
   report: (back = 0) =>
@@ -1730,10 +1842,11 @@ export const api = {
   setProjectSettings: (
     ctx: RunCtx,
     patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean; name?: string;
-             tracker?: string; tracker_label?: string },
+             tracker?: string; tracker_label?: string; mark?: ProjectMark | null; logo_data?: string },
   ) =>
     req<{
       ok: boolean;
+      mark?: ProjectMark | null; // absent: a bridge older than marks ignored it
       run_cmd?: string | null;
       prod_url?: string | null;
       design_project?: string | null;
@@ -1745,6 +1858,12 @@ export const api = {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
+  rivendellMarks: (force = false) =>
+    req<RivendellMarks>(`/local/rivendell/marks${force ? "?force=1" : ""}`),
+  rivendellMarksAction: (action: "import" | "follow" | "dismiss" | "undo" | "sync",
+                         extra: { project?: string; on?: boolean } = {}) =>
+    req<{ following?: number; kept?: string[]; clients?: number; undone?: number; dismissed?: number }>(
+      "/local/rivendell/marks", { method: "POST", body: { action, ...extra } }),
   designPrompt: (ctx: RunCtx, kind: "link" | "pull" | "push", name?: string) =>
     req<{ prompt?: string; error?: string }>(
       `/local/design/prompt?kind=${kind}&${ctxQuery(ctx)}${name ? `&name=${encodeURIComponent(name)}` : ""}`),
@@ -1770,7 +1889,7 @@ export const api = {
   removeTracker: (id: string) =>
     req<{ ok: boolean }>("/local/trackers", { method: "POST", body: { op: "remove", id } }),
   // --- rivendell instances (PR-review plugin — bridge/rivendell_instances.py) ---
-  rivendell: () => req<{ instances: RivendellInstance[] }>("/local/rivendell"),
+  rivendell: () => req<{ instances: RivendellInstance[]; video?: VideoTools }>("/local/rivendell"),
   addRivendell: (body: RivendellInput) =>
     req<{ ok: boolean; instance: RivendellInstance }>("/local/rivendell", {
       method: "POST", body: { op: "add", ...body },

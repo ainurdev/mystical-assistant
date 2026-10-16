@@ -3,9 +3,11 @@ import { ChevronRight, Pencil } from "lucide-react";
 import type { AccountInfo } from "../../api";
 import type { ProfilesInfo } from "../../lib/profiles";
 import { agentLabel } from "../../lib/agents";
-import { projectGivenName } from "../../lib/surfaces";
+import { projectGivenName, projectMark } from "../../lib/surfaces";
 import { ProjectTile } from "../ui/ProjectTile";
 import { parentOf, type ProjectGroup } from "./ProjectsPanel";
+import MarkEditor from "./MarkEditor";
+import { RivendellStrip } from "./RivendellMarks";
 
 /* The PROJECTS fold of SETTINGS ▸ AI MANAGEMENT: every repo the bridge can run
    in, grouped by the folder that owns it, with the profile its new sessions
@@ -124,6 +126,7 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
   // unmount) or the blur that follows would save what you were escaping from.
   const [editing, setEditing] = useState<{ rel: string; value: string } | null>(null);
   const cancelled = useRef(false);
+  const [markFor, setMarkFor] = useState<{ rel: string; tile: HTMLElement } | null>(null);   // whose mark editor is open
 
   const rows = [
     ...groups.map((g) => {
@@ -153,12 +156,13 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
   return (
     <div className="ps">
       <div className="ps-toolbar">
-        <span className="aim-hint">Click a name or its pencil to rename it (a label only — the path stays the key). HIDE keeps a project out of the sidebar; ✕ detaches it.</span>
+        <span className="aim-hint">Click a tile for its logo, icon or colour; a name or its pencil to rename it (a label only — the path stays the key). HIDE keeps a project out of the sidebar; ✕ detaches it.</span>
         <span style={{ flex: 1 }} />
         <button type="button" className="ps-btn" onClick={() => setFold(Object.fromEntries(sections.map((s) => [s.parent || "~", !allShut])))}>
           {allShut ? "Expand all" : "Collapse all"}
         </button>
       </div>
+      <RivendellStrip />
       {sections.map(({ parent, rows: srows }) => {
         const key = parent || "~";
         const segs = parent ? parent.split("/") : [];
@@ -190,9 +194,19 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
               <div className="ps-rows">
                 {srows.map((r) => {
                   const isHidden = !!hidden[r.rel];
+                  const mark = projectMark(r.rel);
                   return (
                     <div key={r.rel} className="ps-row" data-hidden={isHidden || undefined}>
-                      <ProjectTile project={r.rel} />
+                      <span className="mkwrap">
+                        <button type="button" className="mktile" data-on={markFor?.rel === r.rel || undefined}
+                          title="this project's mark: a logo, an icon or its initials"
+                          onClick={(e) => { const tile = e.currentTarget; setMarkFor((m) => (m?.rel === r.rel ? null : { rel: r.rel, tile })); }}>
+                          <ProjectTile project={r.rel} />
+                        </button>
+                        {markFor?.rel === r.rel && (
+                          <MarkEditor project={r.rel} name={r.name} anchor={markFor.tile} onClose={() => setMarkFor(null)} />
+                        )}
+                      </span>
                       <span className="ps-name">
                         {r.dot && <span className="ps-dot" style={{ background: r.dot }} title={r.dot === "var(--ok)" ? "running" : "uncommitted changes"} />}
                         {editing?.rel === r.rel ? (
@@ -217,6 +231,9 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                               <b>{r.name}</b>
                               <Pencil size={11} aria-hidden />
                             </button>
+                            {mark?.source === "rivendell" ? <span className="ps-via" title={`follows ${mark.rv?.name ?? "its client"} in Rivendell`}><i />RIVENDELL</span>
+                              : mark && !(mark.kind === "letters" && !mark.color)
+                                ? <span className="ps-via ps-mine" title="set here: it never changes on its own">YOURS</span> : null}
                             {isHidden && <span className="ps-chip">Hidden</span>}
                             {remotes[r.rel] && (
                               <a href={`https://github.com/${remotes[r.rel]}`} target="_blank" rel="noreferrer" className="ps-remote"

@@ -17,7 +17,6 @@ import {
   type RunPick,
   type SessionBrief,
   type SessionStatus,
-  type RunningJob,
   type UsageInfo,
   type AccountInfo,
   type AcpAgentsInfo,
@@ -30,17 +29,19 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
-import { ago, projectName, setProjectNames, useProjectTints } from "./lib/surfaces";
+import { ago, forgetLegacyTints, legacyTints, projectName, putProjectMark, setProjectMarks, setProjectNames,
+         useProjectTints } from "./lib/surfaces";
+import { offerRivendellMarks } from "./components/hud/RivendellMarks";
 import {
   autoBaseFont,
   fontStack,
   isLight,
+  family,
   loadSettings,
   sameFamily,
   saveSettings,
   themeCanvas,
   themeDef,
-  themeFilter,
   themeVars,
   themePrad,
   THEME_TOKEN_KEYS,
@@ -51,15 +52,15 @@ import {
 import { useHostVitals, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
 import { useAiFeatures } from "./lib/ai";
+import { useIntegrations } from "./lib/integrations";
 import { useSessionPins, useStickySet } from "./lib/prefs";
 import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
 import { recall, remember, type Anchor } from "./lib/scrollmem";
 import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
-import { chime, push, pushGranted, shouldPush } from "./lib/push";
+import { chime, pushGranted } from "./lib/push";
 import { isMacApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
-import { bannerActions, bannerAnswer, bannerBody } from "./lib/banner";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
@@ -80,10 +81,9 @@ import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
 import { shellCols } from "./lib/shell";
-import { dismiss, notify, setNoticeSound } from "./components/hud/Notifications";
+import { notify, PillHost, setLinks, setNeeds, setNoticeEnv, setNoticeSound } from "./components/hud/Notifications";
 import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
-import { linkAlertText } from "./lib/rivendelltasks";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
 import { SettingsModal, type Tab as SettingsTab } from "./components/hud/SettingsModal";
@@ -99,10 +99,6 @@ import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { Spinner } from "./components/ui";
-
-// The moments a session can ring for. The per-event pack sounds that used to
-// hang off these went with the settings remap; every event rings the one tone.
-type PushEvent = "done" | "question" | "permission" | "failure" | "start" | "limit";
 
 
 // One size for every right-rail icon — the rail's buttons are 38px. At 15px
@@ -230,10 +226,10 @@ export function App() {
   // Which model-spending extras are on: each one owns a tab and a palette entry
   // that don't exist while it's off.
   const ai = useAiFeatures();
+  // Which bundled integrations are installed. A plugin that isn't has its routes
+  // 404 and its UI gone, so nothing below polls or draws it.
+  const plugins = useIntegrations();
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
-  // The live jobs behind the status map: a session's job id is what a banner's
-  // buttons answer to (Mystical.app, lib/banner).
-  const jobsRef = useRef<RunningJob[]>([]);
   const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
   const [pins, togglePin] = useSessionPins();
   // Owned here because the LEARN tab's badge counts what the LEARN panel marks —
@@ -498,7 +494,7 @@ export function App() {
   const eventCount = turns.reduce((n, t) => n + t.events.length, 0);
   const tele = useTelemetry({ running, toolCount, eventCount });
 
-  // Apply theme: hue-rotate filter on the dashboard, glow var, ambient bg.
+  // Apply theme: the palette's vars, the family, the glow var, light/dark.
   useEffect(() => {
     const root = document.documentElement;
     root.style.setProperty("--glow", settings.glow ? "8px" : "0px");
@@ -513,13 +509,13 @@ export function App() {
     if (isLight(settings.theme)) root.dataset.light = "";
     else delete root.dataset.light;
     // Mirrored on <html> so menus portalled to <body> (ContextMenu, the
-    // lightbox, AgentsModal) sit under the same [data-theme] rules as the
-    // container they were opened from — a FLINT context menu is a FLINT one.
+    // lightbox, AgentsModal) sit under the same [data-theme]/[data-fam] rules
+    // as the container they were opened from — a FLINT context menu is a FLINT one.
     root.dataset.theme = settings.theme;
-    // Palette themes override the design tokens on :root (not just the themed
-    // wrapper) so the DERIVED tokens (--primary/--card/--border/--ac-*, defined
-    // via var() in :root) re-resolve to the palette too. Filter themes clear
-    // these and recolour via the container `filter` instead.
+    root.dataset.fam = family(settings.theme);
+    // Themes override the design tokens on :root (not just the themed wrapper)
+    // so the DERIVED tokens (--primary/--card/--border/--ac-*, defined via
+    // var() in :root) re-resolve to the palette too.
     const vars = themeVars(settings.theme);
     for (const k of THEME_TOKEN_KEYS) {
       const v = vars[k];
@@ -671,6 +667,7 @@ export function App() {
 
   // Disk discovery polls like the session list, so a repo cloned or created
   // after load appears on its own — no rescan button, no reload.
+  const marksMoved = useRef(false);
   const refreshProjects = useCallback(async () => {
     try {
       const p = await api.projects();
@@ -679,6 +676,21 @@ export function App() {
       // field, in which case the cached localStorage set stands.
       if (p.hidden) setHiddenProjects(Object.fromEntries(p.hidden.map((rel) => [rel, true])));
       setProjectNames(p.names ?? {}, p.projects ?? []);
+      setProjectMarks(p.marks);
+      // First listing from a bridge with marks: the colours this browser
+      // picked before marks existed move onto the bridge, once; then the
+      // Rivendell offer, after the boot screen has had its moment.
+      if (p.marks && !marksMoved.current) {
+        marksMoved.current = true;
+        const legacy = legacyTints(p.projects ?? []);
+        void Promise.all(Object.entries(legacy).map(([rel, color]) =>
+          api.setProjectSettings({ project: rel }, { mark: { kind: "letters", color } })
+            .then((r) => { if (r.mark !== undefined) putProjectMark(rel, r.mark); })))
+          .then(forgetLegacyTints)
+          .catch(() => { /* they stand as overrides; the next load tries again */ });
+        window.setTimeout(() => void offerRivendellMarks(
+          () => void api.projects().then((q) => setProjectMarks(q.marks)).catch(() => { /* the poll catches up */ })), 4000);
+      }
       setProjectRemotes(p.remotes ?? {});
       markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
     } catch { markBoot("projects", "fail", "NO SCAN"); /* old backend without discovery — panel stays session-derived */ }
@@ -965,14 +977,23 @@ export function App() {
   // below is set up once, and the toggle can change under it.
   const alertsOn = useRef(false);
   useEffect(() => { alertsOn.current = settings.push && pushGranted(); }, [settings.push]);
+  // Your last click or keypress here rides the same poll: Telegram's "away" is
+  // nobody touching any dashboard for a while (bridge/notices.py).
+  const lastInput = useRef(Math.floor(Date.now() / 1000));
+  useEffect(() => {
+    const on = () => { lastInput.current = Math.floor(Date.now() / 1000); };
+    window.addEventListener("pointerdown", on, true);
+    window.addEventListener("keydown", on, true);
+    return () => { window.removeEventListener("pointerdown", on, true); window.removeEventListener("keydown", on, true); };
+  }, []);
   useEffect(() => {
     let live = true;
     const tick = async () => {
       try {
-        const r = await api.running(alertsOn.current);
+        const r = await api.running(alertsOn.current, lastInput.current);
         if (!live) return;
         setStatusMap(new Map(Object.entries(r.status ?? {})));
-        jobsRef.current = r.jobs ?? [];
+        setNeeds(r.needs);
       } catch { /* ignore */ }
     };
     void tick();
@@ -984,86 +1005,30 @@ export function App() {
   // session you don't have open = it finished without you = DONE.
   // ponytail: only transitions this tab actually polls get flagged — a session
   // that finishes while the dashboard is closed won't. Needs a bridge-side
-  // finished_at/seen_at pair to cover that.
-  // States that mean a turn is already under way — see SessionState in api.ts.
-  const IN_FLIGHT = ["working", "awaiting", "checking", "parked"];
+  // finished_at/seen_at pair to cover that. (Only for the ATTENTION lane: the
+  // bell's DONE row is the bridge's own, bridge/notices.py, and covers it.)
   const prevStatus = useRef(statusMap);
-  // The first poll lands against an empty map, so every session already running
-  // would read as one that just started (and every open question as one just
-  // asked). Nothing that predates the tab counts as news.
-  const statusSeen = useRef(false);
   useEffect(() => {
     const prev = prevStatus.current;
     prevStatus.current = statusMap;
-    const first = !statusSeen.current;
-    statusSeen.current = true;
     const finished = [...prev]
       .filter(([id, st]) => st.state === "working" && id !== sessionId
         && !["working", "awaiting", "parked"].includes(statusMap.get(id)?.state ?? ""))
       .map(([id]) => id);
     if (finished.length) setDoneIds((d) => new Set([...d, ...finished]));
-    // Same transitions, sent to the OS. Finished is computed above against the
-    // session you have open; awaiting is not, because a question in the session
-    // you're looking at but a window you've left is still news.
-    if (first) return;
-    const brief = (id: string) => sessions.find((s) => s.id === id);
-    const name = (id: string) => brief(id)?.title || "session";
-    // Clicking the notification opens the session it's about, switching project
-    // if that session lives in another one.
-    const reveal = (id: string) => () => {
-      const s = brief(id);
-      if (s) void selectSession(s); else openSession(id);
-    };
-    // One sound per event per batch, not per session: five sessions finishing
-    // together is one piece of news, and five overlapping samples is an alarm.
-    // Different events still each get their voice — that's the whole point of
-    // assigning them separately.
-    const rang = new Set<PushEvent>();
-    const ping = (ev: PushEvent, title: string, body: string, id: string, banner = true) => {
-      if (banner && settings.push) push(title, body, id, reveal(id));
-      if (settings.pushSound && !rang.has(ev)) {
-        rang.add(ev);
-        chime(settings.pushTone, settings.pushVolume);
-      }
-    };
-    for (const id of finished)
-      if (shouldPush(id, sessionId)) ping("done", `✓ ${name(id)}`, "finished", id);
-    for (const [id, st] of statusMap) {
-      const was = prev.get(id)?.state;
-      if (st.state === "awaiting" && was !== "awaiting" && shouldPush(id, sessionId)) {
-        const ev: PushEvent = st.kind === "permission" ? "permission" : "question";
-        const title = `⏸ ${name(id)}`;
-        const body = st.label || "waiting on you";
-        const job = st.kind ? jobsRef.current.find((j) => j.session_id === id)?.job_id : undefined;
-        if (isMacApp() && job && settings.push) {
-          // In Mystical.app the banner carries the card's buttons (lib/banner):
-          // the sound now, the banner once the card is fetched.
-          ping(ev, title, body, id, false);
-          void api.job(job).then((snap) => {
-            const card = snap.pending?.[0];
-            const buttons = bannerActions(card);
-            const answer = (a: string) => {
-              const b = bannerAnswer(card, a);
-              if (b) void api.respond(job, b).catch(() => { /* the card is still in the transcript */ });
-            };
-            push(title, bannerBody(card) || body, id, reveal(id), buttons, buttons.length ? answer : undefined);
-          }).catch(() => push(title, body, id, reveal(id)));
-        } else ping(ev, title, body, id);
-      }
-      // Parked is the bridge saying "this died but I'll bring it back" — worth
-      // hearing wherever you are, including in the session you're looking at.
-      else if (st.state === "parked" && was !== "parked")
-        ping("limit", `⏳ ${name(id)}`, st.label || "parked", id);
-      // A turn beginning on a session you didn't start yourself (Telegram, a
-      // scheduled run) is the one start worth announcing. Coming back from
-      // awaiting/checking/parked is the same turn resuming, not a new one —
-      // announcing those means a sound every time you answer a question.
-      else if (st.state === "working" && !IN_FLIGHT.includes(was ?? "")
-          && shouldPush(id, sessionId))
-        ping("start", `▸ ${name(id)}`, st.label || "working…", id);
-    }
-  }, [statusMap, sessionId, sessions, settings.push, settings.pushSound,
-      settings.pushTone, settings.pushVolume]);
+  }, [statusMap, sessionId]);
+
+  // What the bell needs from here: how to open a session (switching project if
+  // it lives in another), which one is open (its news never pops), a session's
+  // branch for a row's meta line, and this browser's banner and sound switches.
+  useEffect(() => {
+    setNoticeEnv({
+      openSession: (id) => { const s = sessions.find((x) => x.id === id); if (s) void selectSession(s); else openSession(id); },
+      openSessionId: sessionId,
+      branchOf: (id) => sessions.find((x) => x.id === id)?.branch,
+      push: settings.push, pushSound: settings.pushSound, pushVolume: settings.pushVolume,
+    });
+  });
 
   // The error toast is the dashboard's own failure channel — a request that
   // came back 500, a worktree that wouldn't create. It never had a sound.
@@ -1752,34 +1717,24 @@ export function App() {
   // not only re-read when SETTINGS closes (where one is added or removed): a
   // link breaks with no dashboard event to say so, and the castle's dot and the
   // bell follow each connection's break (bridge/rivendell.py, alert_at — set
-  // once per break, cleared when the link proves itself).
+  // once per break, cleared when the link proves itself). Not polled at all
+  // while Rivendell isn't installed: its route answers 404.
   const [rivendell, setRivendell] = useState<RivendellInstance[]>([]);
   useEffect(() => {
-    if (settingsOpen) return;
+    if (settingsOpen || !plugins.rivendell) return;
     const tick = () => api.rivendell().then((r) => setRivendell(r.instances)).catch(() => { /* ignore */ });
     void tick();
     const id = setInterval(tick, 10000);
     return () => clearInterval(id);
-  }, [settingsOpen]);
-  const rivendellOn = rivendell.length > 0;
-  const rivendellDown = rivendell.some((i) => i.enable && !!i.status?.alert_at);
-  // One bell entry per break, gone when the link is back. Telegram's one
-  // message per break is the bridge's to send (Worker._alert_broken).
-  const linkNotices = useRef<Record<string, { at: number; id: number }>>({});
-  useEffect(() => {
-    const shown = linkNotices.current;
-    for (const i of rivendell) {
-      const at = i.status?.alert_at ?? null;
-      const cur = shown[i.id];
-      if (at && cur?.at !== at) {
-        if (cur) dismiss(cur.id);
-        shown[i.id] = { at, id: notify("error", linkAlertText(i), () => openSettings("plugins", i.id)) };
-      } else if (!at && cur) {
-        dismiss(cur.id);
-        delete shown[i.id];
-      }
-    }
-  }, [rivendell]);
+  }, [settingsOpen, plugins.rivendell]);
+  // What the tab, the castle's dot and the bell read, so REMOVE clears all three
+  // at once instead of leaving the last poll's connections on screen.
+  const links = useMemo(() => (plugins.rivendell ? rivendell : []), [plugins.rivendell, rivendell]);
+  const rivendellOn = links.length > 0;
+  const rivendellDown = links.some((i) => i.enable && !!i.status?.alert_at);
+  // A break and its end are the bridge's news now (bridge/notices.py, rv_link);
+  // the bell only borrows the connections for its RIVENDELL link bar.
+  useEffect(() => { setLinks(links); }, [links]);
   // Uncommitted files in the open session's WORKING TREE — what CHANGES lists
   // and what its rail badge counts. sessionGit is per-worktree, so two branches
   // of the same repo get their own number; gitBadges is only keyed by project,
@@ -2022,11 +1977,12 @@ export function App() {
       items.push({ icon: "⊞", label: "Analyze project", onClick: () => openAnalyze(ctxMenu.id) });
       // The chat header's project name opens this menu; its DESIGN SYSTEM and
       // TASKS links folded in here.
-      if (ai.design)
+      if (plugins.design)
         items.push({ icon: "◇", label: "Design system", hint: "link · pull · sync",
           onClick: () => openAnalyze(ctxMenu.id, undefined, "design") });
-      items.push({ icon: "⌁", label: "Tasks", hint: "Teamwork · Jira",
-        onClick: () => openAnalyze(ctxMenu.id, undefined, "tasks") });
+      if (plugins.trackers)
+        items.push({ icon: "⌁", label: "Tasks", hint: "Teamwork · Jira",
+          onClick: () => openAnalyze(ctxMenu.id, undefined, "tasks") });
       items.push({ icon: "◉", label: "Select as active", onClick: () => void selectProject(ctxMenu.id) });
       items.push({ icon: "+", label: "New session here", onClick: () => void newSession(ctxMenu.id) });
       items.push({ icon: "◎", label: "Open issues", onClick: () => openAnalyze(ctxMenu.id) });
@@ -2093,7 +2049,7 @@ export function App() {
       items.push({ divider: true }, { icon: "⌾", label: "Browser", children: nativeCtx.page });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai]);
+  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai, plugins]);
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
@@ -2255,18 +2211,18 @@ export function App() {
       <div style={{ position: "fixed", inset: 0, pointerEvents: "none", zIndex: -1, background: td.bg, transition: "background .5s ease" }} />
 
       {showDashboard && (
-        // ONE themed container: colour comes from the CSS filter, shape from
-        // data-theme, ground/voice from canvas/font. Every surface — panels
-        // and all modals below — inherits all three.
+        // ONE themed container: colour from the palette's vars, structure and
+        // personality from data-fam, ground/voice from canvas/font. Every
+        // surface — panels and all modals below — inherits all three.
         <div
           data-theme={settings.theme}
+          data-fam={family(settings.theme)}
           data-hdr={settings.headerStyle}
           style={{
             flex: 1,
             display: "flex",
             flexDirection: "column",
             minHeight: 0,
-            filter: themeFilter(settings.theme),
             background: themeCanvas(settings.theme),
             fontFamily: fontStack(settings.font, settings.theme) || undefined,
             ...themeVars(settings.theme),
@@ -2465,7 +2421,8 @@ export function App() {
               />
             )}
             {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
-            <MoveDock settings={settings} />
+            <MoveDock />
+            <PillHost />
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
                 settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}

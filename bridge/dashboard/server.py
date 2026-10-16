@@ -34,10 +34,11 @@ import re
 
 from bridge import (acp_agents, agents, attribution, browser, config,
                     device_ask, device_setup, device_share, devserver, fmt, git,
-                    github, graphmap, httpgz,
-                    models, native, preview_detect, profiles, project_config, prstatus,
+                    github, graphmap, httpgz, integrations,
+                    models, native, notices, preview_detect, profiles, project_config, projectmarks,
+                    prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
-                    rivendell_instances, runner, selfupdate,
+                    rivendell_instances, rivendell_video, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, terminals, titler, trackers,
                     usage, weather, wsutil)
@@ -344,6 +345,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- GET reads (Host-gated; SOP protects responses) ---
     def _get_api(self, path, qs):
+        if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+            return self._json({"error": "not installed"}, 404)
         chat = _chat()
         if path == "/local/state":
             pd = state.project_dir(chat)
@@ -373,13 +376,47 @@ class Handler(BaseHTTPRequestHandler):
                                            if (slug := github.origin_slug(
                                                os.path.join(config.BASE_PATH, r.lstrip("/"))))},
                                "hidden": project_config.hidden_projects(),
-                               "names": project_config.names()})
+                               "names": project_config.names(),
+                               "marks": project_config.marks()})
+        if path.startswith("/local/project-mark/logo/"):
+            got = projectmarks.logo(path[len("/local/project-mark/logo/"):])
+            if got is None:
+                return self._json({"error": "no such logo"}, 404)
+            data, ctype = got
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            # The name is the bytes' hash, so a logo never changes under it.
+            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
+            # An SVG opened on its own must not run as this origin's page.
+            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            try:
+                self.wfile.write(data)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return None
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
             return self._json({"sessions": profiles.history(chat, include_archived=archived)})
         if path == "/local/running":
-            return self._json({**runner.running_snapshot(chat), "watched": _watched(qs)})
+            # `seen`: the page's last click or keypress — Telegram's "away" is
+            # nobody clicking in any dashboard (bridge/notices.py). `needs`: the
+            # one NEEDS YOU list the bell and the Mac menu bar both draw.
+            try:
+                notices.seen(float((qs.get("seen") or ["x"])[0]))
+            except ValueError:
+                pass
+            snap = runner.running_snapshot(chat)
+            return self._json({**snap, "watched": _watched(qs),
+                               "needs": notices.needs(snap.get("status") or {})})
+        if path == "/local/notices":
+            return self._json({"notices": notices.feed(), "prefs": notices.prefs(),
+                               "quiet": notices.quiet(),
+                               # Whether any route to Telegram exists at all (System ▸ Telegram).
+                               "telegram": bool(config.NOTIFY_ENABLE and config.TOKEN)})
         if path == "/local/queue":
             sid = (qs.get("session", [""])[0] or "").strip()
             return self._json(queue_manager.snapshot(sid) if sid else
@@ -420,6 +457,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/aifeatures":
             from bridge import aifeatures
             return self._json({"features": aifeatures.state()})
+        if path == "/local/integrations":
+            return self._json({"plugins": integrations.state()})
         if path == "/local/envsettings":
             from bridge import envsettings
             return self._json({"settings": envsettings.state()})
@@ -442,7 +481,7 @@ class Handler(BaseHTTPRequestHandler):
             # Plugin-worker sessions are exempt: their default workdir is
             # BASE_PATH itself ("/", never a project), and a run the PLUGINS
             # tab exists to show must not be filtered into invisibility.
-            rows = [r for r in rows if config.is_plugin_origin(r.get("origin"))
+            rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
                     or browser.project_exists(r["project"])]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
         # Before the transcript route below, which would otherwise swallow this
@@ -591,9 +630,13 @@ class Handler(BaseHTTPRequestHandler):
             live = rivendell.status()
             insts = [{**i, "status": live.get(i["id"], {"state": "off"})}
                      for i in rivendell_instances.instances()]
-            return self._json({"instances": insts})
+            return self._json({"instances": insts, "video": rivendell_video.tools()})
         if path == "/local/rivendell/devices":
             return self._json({"instances": _device_rows()})
+        if path == "/local/rivendell/marks":
+            # Client logos and colours Rivendell could lend the repos here, and
+            # whether they follow it (bridge/projectmarks.py).
+            return self._json(projectmarks.state(force=qs.get("force", ["0"])[0] == "1"))
         if path == "/local/rivendell/queue":
             # One flat, oldest-first stream across every instance — the rows
             # held for a decision and the runs in flight, each with its
@@ -671,9 +714,7 @@ class Handler(BaseHTTPRequestHandler):
                 "log_path": devserver.DEV_LOG_REL,
             })
         if path == "/local/design/prompt":
-            from bridge import aifeatures, designsync
-            if not aifeatures.enabled("design"):
-                return self._json({"error": "design system switch is off"}, 400)
+            from bridge import designsync
             abs_p = (_abs_within((qs.get("cwd", [""])[0] or "").strip())
                      or _abs_project(qs.get("cwd_rel", [None])[0]
                                      or qs.get("project", [None])[0])
@@ -862,7 +903,30 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- POST control (Host + Origin + token gated) ---
     def _post_api(self, path, body):
+        if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+            return self._json({"error": "not installed"}, 404)
         chat = _chat()
+        if path == "/local/notices":
+            if body.get("op") == "read" and (body.get("all") is True or isinstance(body.get("ids"), list)):
+                return self._json({"ok": True, "n": notices.mark_read(
+                    None if body.get("all") is True else body["ids"])})
+            if body.get("op") == "prefs" and isinstance(body.get("patch"), dict):
+                return self._json({"prefs": notices.set_prefs(body["patch"])})
+            if body.get("op") == "limit" and isinstance(body.get("session"), str):
+                # The bell's LIMIT row: wait for the reset, or hand the work to
+                # another login — the same two answers as Telegram's card.
+                sess = store.get_session(body["session"])
+                if not sess:
+                    return self._json({"error": "no such session"}, 404)
+                slot = body.get("slot")
+                if slot is None:
+                    notices.emit("waiting", sess["id"], body="You chose to wait for the usage limit to reset.")
+                    return self._json({"ok": True})
+                if isinstance(slot, int) and not isinstance(slot, bool):
+                    from bridge import ladder
+                    rung = {"kind": "account", "slot": slot, "label": f"account {slot}"}
+                    return self._json({"ok": bool(ladder.take(sess, sess["chat_id"], rung))})
+            return self._json({"error": "op must be read (ids or all), prefs (patch) or limit (session)"}, 400)
         if path == "/local/run":
             return self._run(chat, body)
         if path.startswith("/local/run/") and path.endswith("/respond"):
@@ -1023,6 +1087,17 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "features": aifeatures.state()})
+        if path == "/local/integrations":
+            action = body.get("action")
+            if action not in ("install", "remove"):
+                return self._json({"error": "action must be install or remove"}, 400)
+            try:
+                integrations.set_installed(str(body.get("id") or ""), action == "install")
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            except integrations.IntegrationError as e:
+                return self._json({"error": str(e)}, 409)
+            return self._json({"ok": True, "plugins": integrations.state()})
         if path == "/local/envsettings":
             from bridge import envsettings
             try:
@@ -1339,6 +1414,11 @@ class Handler(BaseHTTPRequestHandler):
                 out["name"] = project_config.set_name(rel, (body.get("name") or "")[:60])
             if "hidden" in body:
                 out["hidden"] = project_config.set_hidden(rel, bool(body.get("hidden")))
+            if "mark" in body:
+                try:
+                    out["mark"] = projectmarks.set_mark(rel, body.get("mark"), body.get("logo_data"))
+                except ValueError as e:
+                    return self._json({"error": str(e)}, 400)
             if "tracker" in body:
                 out["tracker"] = project_config.set_tracker(
                     rel, (body.get("tracker") or "")[:120], (body.get("tracker_label") or "")[:120])
@@ -1368,7 +1448,7 @@ class Handler(BaseHTTPRequestHandler):
                 "enable": body.get("enable", True),
                 "api_url": (body.get("api_url") or "")[:400],
                 "token": (body.get("token") or "")[:2000],
-                "ws_url": (body.get("ws_url") or "")[:400],
+                "ws_url": body["ws_url"][:400] if isinstance(body.get("ws_url"), str) else None,
                 "model": (body.get("model") or "")[:60],
                 "workdir": (body.get("workdir") or "")[:1000],
                 "review_timeout": body.get("review_timeout"),
@@ -1394,6 +1474,22 @@ class Handler(BaseHTTPRequestHandler):
             # store and starts/stops/rewires to match.
             rivendell.reconfigure()
             return self._json({"ok": True, "instance": inst})
+        if path == "/local/rivendell/marks":
+            act = body.get("action")
+            if act == "import":
+                return self._json(projectmarks.import_all())
+            if act == "follow":
+                abs_p = _abs_project(body.get("project"))
+                if abs_p is None:
+                    return self._json({"error": "invalid project"}, 400)
+                return self._json(projectmarks.import_all(only=browser.rel(abs_p)))
+            if act == "dismiss":
+                return self._json(projectmarks.dismiss())
+            if act == "undo":
+                return self._json(projectmarks.undo())
+            if act == "sync":
+                return self._json(projectmarks.set_sync(bool(body.get("on"))))
+            return self._json({"error": "action must be import, follow, dismiss, undo or sync"}, 400)
         if path == "/local/rivendell/queue":
             # Accept/reject one pending request. A stale click (already
             # accepted/rejected, or the worker gone) simply returns ok:false.

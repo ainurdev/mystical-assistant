@@ -102,17 +102,6 @@ export function conflictsMessage(pr: PrInfo): string {
   ].join("\n");
 }
 
-/** The bell's line for one of the bridge's alert keys. */
-export function pingText(pr: PrInfo, key: string): string {
-  if (key.startsWith("failing:")) {
-    const names = pr.checks.filter((c) => c.state === "fail").map((c) => c.name).join(", ");
-    return `PR #${pr.number} · ${pr.failed} check${pr.failed === 1 ? "" : "s"} failing${names ? ` — ${names}` : ""}`;
-  }
-  return `PR #${pr.number} · changes requested${pr.review?.by ? ` by ${pr.review.by}` : ""}`;
-}
-
-/** Bell pings due now: alerts the bridge holds that this browser hasn't shown yet. */
-export const freshPings = (seen: string[], pinged: string[]) => pinged.filter((k) => !seen.includes(k));
 
 /** The popover's fixed-position offsets: under the chip, 8px off it and off the
  *  window's edge — unless there's more room over it. The COMPACT layout moves

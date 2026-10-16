@@ -212,11 +212,12 @@ on any other. The run never leaves your machine, and there's no app to install.
 | **Telegram bot** | DM your bot | Quick plain-text prompts when a full panel is more than you need. |
 | **Native Claude Code** | the `claude` you already run | Found on its own, and resumable from the three above. |
 
-![The Appearance tab: ten theme cards split into dark and light, above toggles for CRT scanlines and scan sweep.](site/public/shots/themes.png)
+![The Appearance tab: three theme cards, Aurora, Claude and Flint, each with its row of colours, above the CRT effects and header styles.](site/public/shots/themes.png)
 
-Dark and light, from plain daylight to newsprint to a drafting table, with the
-CRT effects on their own switches. You'll stare at it all day. It may as well
-look like something you chose.
+Three themes, each in its own voice: AURORA, a phosphor CRT with its scanlines
+on their own switches; CLAUDE, the app's own warm greys; FLINT, a graphite
+editor. Twenty colours between them, and daylight grounds for CLAUDE and FLINT.
+You'll stare at it all day. It may as well look like something you chose.
 
 <br />
 
@@ -383,9 +384,11 @@ Repos are cloned again from their remotes. Work no remote has (local branches,
 stashes, uncommitted changes, untracked files, `.env`s) rides along and lands
 exactly where it was. History is rewritten to the new paths, so it shows up in
 History and resumes. Settings merge: whatever the new machine already has wins.
-Logins, the bot token and the Rivendell link stay behind, and Rivendell arrives
-switched off. Turn it on once the old bridge is stopped, because two linked
-bridges would both run every job. The file holds secrets, so delete it after.
+Installed integrations are the exception: one installed on the old machine is
+installed on the new one too. Logins, the bot token and the Rivendell link stay
+behind, and Rivendell arrives switched off. Turn it on once the old bridge is
+stopped, because two linked bridges would both run every job. The file holds
+secrets, so delete it after.
 
 The dashboard does the same from **Settings ▸ MOVE**, item by item. EXPORT lists
 every repo, MCP server, plugin, skill and history project, with what each would

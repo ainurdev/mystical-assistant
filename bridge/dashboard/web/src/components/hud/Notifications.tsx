@@ -1,232 +1,532 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Castle, GitPullRequest, Moon, Truck, CalendarDays } from "lucide-react";
+import { api, type Need, type Notice, type NoticePrefs, type PendingCard, type RivendellInstance } from "../../api";
+import { chime, push, pushGranted, type ToneKey } from "../../lib/push";
+import { bannerActions, bannerAnswer } from "../../lib/banner";
+import { openSettings } from "../../lib/opensettings";
+import {
+  ago, badge, cardFor, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf,
+  type Filter, type Row,
+} from "../../lib/notices";
+import { ProjectTile } from "../ui/ProjectTile";
+import { useIntegrations } from "../../lib/integrations";
 
-export type NoticeKind = "error" | "info";
-export interface Notice {
-  id: number;
-  kind: NoticeKind;
-  text: string;
-  time: number;
-  read: boolean;
-  // Somewhere to go: the toast and the bell row both open it on click.
-  onClick?: () => void;
+/* The bell, its toasts and the pills (docs/superpowers/specs/notifications.md).
+ *
+ * Two channels that used to be one: `notify()` is feedback for what you just
+ * did — a pill at the bottom, three seconds, kept nowhere — and the bell is the
+ * bridge's feed of what happened while you looked away (bridge/notices.py), read
+ * every 4 s. What waits on you is not a feed row but live state, handed in by
+ * App from /local/running (`setNeeds`).
+ *
+ * ponytail: module-level stores (pills, needs, links, the env App installs) —
+ * written from async handlers all over the app, read here, no provider needed. */
+
+// ---- pills ------------------------------------------------------------------
+
+export type NoticeKind = "error" | "info" | "rivendell";
+/** A button on a pill. Pressing one answers it, so the pill goes. */
+export interface NoticeAction { label: string; primary?: boolean; run: () => void }
+interface PillExtra {
+  sub?: string;                                              // a quieter second line
+  logos?: { url: string | null; color: string | null }[];   // a row of logos
+  actions?: NoticeAction[];                                  // buttons: the pill waits for one
 }
+interface Pill extends PillExtra { id: number; kind: NoticeKind; text: string; onClick?: () => void }
 
-// ponytail: module-level store (one array + subscribers) — a single global feed
-// written from async handlers doesn't need context/providers.
-let notices: Notice[] = [];
-let nextId = 1;
-const subs = new Set<() => void>();
-function emit() { for (const fn of subs) fn(); }
-function subscribe(fn: () => void) { subs.add(fn); return () => { subs.delete(fn); }; }
-function getNotices() { return notices; }
+let pills: Pill[] = [];
+let nextPill = 1;
+const pillSubs = new Set<() => void>();
+const emitPills = () => { for (const fn of pillSubs) fn(); };
 
-// The feed is written from async handlers all over the app, so it can't read
+// The pill is written from async handlers all over the app, so it can't read
 // settings through a hook. App installs one callback here instead of every
 // notify() site learning what a sound is.
 let onNotice: ((kind: NoticeKind) => void) | null = null;
 export function setNoticeSound(fn: ((kind: NoticeKind) => void) | null) { onNotice = fn; }
 
-/** Push a notification: shows a toast popup and lands in the bell dropdown.
- *  `onClick` makes it a link — clicking the toast or the row runs it. Returns
- *  its id, so a caller whose news goes stale can dismiss it. */
-export function notify(kind: NoticeKind, text: string, onClick?: () => void): number {
-  const id = nextId++;
-  notices = [{ id, kind, text: text || "unknown error", time: Date.now(), read: false, onClick }, ...notices].slice(0, 50);
-  emit();
+/** Feedback for something you just did: a pill, bottom centre, one at a time.
+ *  Never stored — you already know it happened. `onClick` makes it a "Show".
+ *  `extra.actions` make it a question (Rivendell's IMPORT & SYNC, an UNDO): it
+ *  stays until one is pressed or it's closed, with its `sub` line and `logos`. */
+export function notify(kind: NoticeKind, text: string, onClick?: () => void, extra?: PillExtra): number {
+  const id = nextPill++;
+  pills = [...pills.slice(-4), { id, kind, text: text || "unknown error", onClick, ...extra }];
+  emitPills();
   onNotice?.(kind);
   return id;
 }
+const dropPill = (id: number) => { pills = pills.filter((p) => p.id !== id); emitPills(); };
 
-/** Drop one notice: its row's ×, or a caller whose news went stale (a
- *  Rivendell link that came back — App.tsx). */
-export function dismiss(id: number) { notices = notices.filter((n) => n.id !== id); emit(); }
-function clearAll() { notices = []; emit(); }
-function markAllRead() {
-  if (!notices.some((n) => !n.read)) return;
-  notices = notices.map((n) => (n.read ? n : { ...n, read: true }));
-  emit();
-}
-
-const KIND: Record<NoticeKind, { color: string; label: string }> = {
-  error: { color: "var(--err)", label: "ERR" },
-  info: { color: "var(--acc)", label: "INFO" },
-};
-const fmtTime = (t: number) => new Date(t).toTimeString().slice(0, 8);
-const TOAST_MS = 8000;
-
-function Row({ n, onDismiss, onOpen }: { n: Notice; onDismiss: () => void; onOpen?: () => void }) {
-  const k = KIND[n.kind];
+export function PillHost() {
+  const list = useSyncExternalStore((fn) => { pillSubs.add(fn); return () => { pillSubs.delete(fn); }; }, () => pills);
+  const p = list[list.length - 1];
+  useEffect(() => {
+    if (!p || p.actions?.length) return;          // a question waits for its answer
+    const t = window.setTimeout(() => dropPill(p.id), p.kind === "error" ? 6000 : 3000);
+    return () => window.clearTimeout(t);
+  }, [p]);
+  if (!p) return null;
+  const rich = !!(p.sub || p.logos?.length || p.actions?.length);
   return (
-    <div style={{ padding: "9px 11px", borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-        <span style={{ fontSize: "var(--t75)", letterSpacing: 1.5, color: k.color, border: `1px solid color-mix(in srgb, ${k.color} 35%, transparent)`, padding: "1px 5px", flex: "none" }}>
-          {k.label}
+    <div className="ntf-pillhost" role="status" aria-live="polite">
+      <div key={p.id} className={`ntf-pill${p.kind === "error" ? " err" : ""}${p.kind === "rivendell" ? " rv" : ""}${rich ? " rich" : ""}`}>
+        <span className="ntf-pill-k">{p.kind === "error" ? "✕" : p.kind === "rivendell" ? <Castle size={10} strokeWidth={2} /> : "✓"}</span>
+        <span className="ntf-pill-t">{p.text}
+          {p.sub && <small>{p.sub}</small>}
+          {!!p.logos?.length && (
+            <span className="nt-logos">
+              {p.logos.map((l, i) => (
+                <span key={i} style={l.url ? undefined : { background: l.color ?? "var(--acc)" }}>
+                  {l.url && <img src={l.url} alt="" />}
+                </span>
+              ))}
+            </span>
+          )}
+          {!!p.actions?.length && (
+            <span className="ntf-acts">
+              {p.actions.map((a) => (
+                <button key={a.label} className={`ntf-btn${a.primary ? " pri" : ""}`}
+                  onClick={() => { dropPill(p.id); a.run(); }}>{a.label}</button>
+              ))}
+            </span>
+          )}
         </span>
-        <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t85)", color: "var(--txl)" }}>{fmtTime(n.time)}</span>
-        <span style={{ flex: 1 }}></span>
-        <button
-          onClick={onDismiss}
-          title="dismiss"
-          style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t12)", lineHeight: 1, padding: "0 2px" }}
-        >
-          ×
-        </button>
-      </div>
-      <div onClick={onOpen} title={onOpen ? "open" : undefined}
-        style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--tx)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace", cursor: onOpen ? "pointer" : undefined }}>
-        {n.text}
+        {p.onClick && <button className="ntf-pill-a" onClick={() => { dropPill(p.id); p.onClick?.(); }}>Show</button>}
+        <button className="ntf-pill-x" title="dismiss" onClick={() => dropPill(p.id)}>×</button>
       </div>
     </div>
   );
 }
 
-/** Bell icon button (Strip, top right) + dropdown list + transient toast popups. */
-export function NotificationCenter() {
-  const list = useSyncExternalStore(subscribe, getNotices);
-  const [open, setOpen] = useState(false);
-  const [hover, setHover] = useState(false);
-  const [toastIds, setToastIds] = useState<number[]>([]);
-  const lastSeen = useRef(0);
-  const timers = useRef<number[]>([]);
-  const wrapRef = useRef<HTMLSpanElement | null>(null);
-  const unread = list.reduce((a, n) => a + (n.read ? 0 : 1), 0);
+// ---- what App hands in --------------------------------------------------------
 
-  // New notices become toasts that expire on their own.
+interface Env {
+  openSession: (sid: string) => void;
+  openSessionId: string | null;
+  branchOf: (sid: string) => string | undefined;
+  push: boolean;       // OS banners on (this browser)
+  pushSound: boolean;  // sounds on (this browser)
+  pushVolume: number;
+}
+let env: Env = { openSession: () => {}, openSessionId: null, branchOf: () => undefined, push: false, pushSound: false, pushVolume: 0.6 };
+export function setNoticeEnv(e: Env) { env = e; }
+
+let needs: Need[] = [];
+let links: RivendellInstance[] = [];
+const subs = new Set<() => void>();
+const emit = () => { for (const fn of subs) fn(); };
+/** /local/running's NEEDS YOU list, every poll. Undefined (an older bridge) keeps none. */
+export function setNeeds(n: Need[] | undefined) { needs = n ?? []; emit(); }
+/** The Rivendell connections, for the RIVENDELL filter's link bar. */
+export function setLinks(l: RivendellInstance[]) { links = l; emit(); }
+const subscribe = (fn: () => void) => { subs.add(fn); return () => { subs.delete(fn); }; };
+
+// ---- copy and colour ------------------------------------------------------------
+
+const TONE: Record<string, "ok" | "err" | "ask" | "warn" | "acc" | "dim"> = {
+  done: "ok", rv_done: "ok", move_done: "ok", resumed: "ok", rv_link_back: "dim",
+  failed: "err", rv_failed: "err", rv_refused: "err", rv_link: "err", pr_failing: "err", move_failed: "err",
+  approve: "ask", question: "ask", asking: "ask", login: "ask", limit_choice: "ask", rv_offer: "ask",
+  parked: "warn", pr_changes: "warn", started: "acc", rv_started: "acc",
+  rv_held: "dim", rv_dismissed: "dim", weekly: "dim",
+};
+const GLYPH: Record<string, ReactNode> = { ok: "✓", err: "✕", ask: "?", warn: <b className="ntf-pz" />, acc: "▸", dim: null };
+const toneOf = (kind: string) => TONE[kind] ?? "dim";
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+const projName = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
+const mins = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`);
+
+function Source({ kind, source, project }: { kind: string; source: string; project?: string }) {
+  const t = toneOf(kind);
+  const icon = source === "rivendell" ? <Castle size={13} strokeWidth={1.8} />
+    : source === "pr" ? <GitPullRequest size={13} strokeWidth={1.8} />
+    : kind === "weekly" ? <CalendarDays size={13} strokeWidth={1.8} />
+    : source === "bridge" ? <Truck size={13} strokeWidth={1.8} /> : null;
+  return (
+    <span className={`ntf-src s-${source}`}>
+      {icon ?? <ProjectTile project={project ?? null} />}
+      {GLYPH[t] && <i className={`ntf-k k-${t}`}>{GLYPH[t]}</i>}
+    </span>
+  );
+}
+
+// ---- acting on a row ---------------------------------------------------------------
+
+function openRow(n: { kind: string; subject: string; source: string; meta: Record<string, unknown>; session_id?: string | null }) {
+  const sid = n.session_id ?? str(n.meta.session_id) ?? "";
+  if (n.source === "session" || sid) return env.openSession(sid || n.subject);
+  if (n.source === "pr") return openUrl(n.meta.url);
+  if (n.source === "rivendell") return openSettings("plugins", str(n.meta.instance_id) || undefined);
+  if (n.kind.startsWith("move_")) return openSettings("move");
+}
+
+function openUrl(u: unknown) {
+  const url = safeUrl(u);
+  if (url) window.open(url, "_blank", "noopener");
+}
+
+const answerRivendell = (meta: Record<string, unknown>, accept: boolean) => {
+  const iid = str(meta.instance_id), key = str(meta.key);
+  void (accept ? api.acceptRivendell(iid, key) : api.rejectRivendell(iid, key))
+    .then((r) => { if (!r.ok) notify("info", "Already decided — it's no longer waiting."); })
+    .catch((e: Error) => notify("error", e.message));
+};
+
+/** The card's own buttons (Allow / Deny, or a one-question ask's options),
+ *  read from the run the moment the row shows — the same answers a Mac banner
+ *  sends, and only for the card the row is about (cardFor). */
+function useCard(jobId: string, requestId: string) {
+  const [card, setCard] = useState<PendingCard | undefined>();
   useEffect(() => {
-    const fresh = list.filter((n) => n.id > lastSeen.current);
-    if (!fresh.length) return;
-    lastSeen.current = list[0].id;
-    setToastIds((p) => [...fresh.map((n) => n.id), ...p]);
-    for (const n of fresh) {
-      timers.current.push(window.setTimeout(() => setToastIds((p) => p.filter((id) => id !== n.id)), TOAST_MS));
-    }
-  }, [list]);
-  useEffect(() => () => { for (const t of timers.current) window.clearTimeout(t); }, []);
+    setCard(undefined);
+    if (!jobId) return;
+    let live = true;
+    api.job(jobId).then((s) => { if (live) setCard(cardFor(s.pending, requestId)); }).catch(() => { /* Open still works */ });
+    return () => { live = false; };
+  }, [jobId, requestId]);
+  return card;
+}
 
-  // Opening the dropdown marks everything read; click-outside closes it.
+function NeedActions({ n, done }: { n: Need; done: () => void }) {
+  const jobId = str(n.meta.job_id);
+  const card = useCard(n.kind === "approve" || n.kind === "question" ? jobId : "", str(n.meta.request_id));
+  const answer = (action: string) => {
+    const b = bannerAnswer(card, action);
+    if (b) void api.respond(jobId, b).then(done, (e: Error) => notify("error", e.message));
+  };
+  // The LIMIT card's two answers, as Telegram's: another login, or the reset.
+  const limit = (slot?: number) => void api.noticeLimit(n.session_id ?? n.subject, slot)
+    .then((r) => { if (!r.ok) notify("error", "Couldn't hand the work over — still parked until the reset."); done(); },
+      (e: Error) => notify("error", e.message));
+  if (n.kind === "rv_offer") {
+    return (
+      <div className="ntf-acts">
+        <button className="ntf-btn ask" onClick={() => { answerRivendell(n.meta, true); done(); }}>Accept</button>
+        <button className="ntf-btn" onClick={() => { answerRivendell(n.meta, false); done(); }}>Dismiss</button>
+        {safeUrl(n.meta.link) && <button className="ntf-btn ghost" onClick={() => openUrl(n.meta.link)}>Peek ›</button>}
+      </div>
+    );
+  }
+  const buttons = bannerActions(card);
+  return (
+    <div className="ntf-acts">
+      {buttons.map((b, i) => (
+        <button key={b.action} className={`ntf-btn${i === 0 ? " ask" : b.action === "deny" ? " no" : ""}`} onClick={() => answer(b.action)}>{b.title}</button>
+      ))}
+      {n.kind === "login" && <button className="ntf-btn ask" onClick={() => openSettings("aimgmt", String(n.meta.slot ?? "") || undefined)}>Sign in ›</button>}
+      {n.kind === "limit_choice" && (Array.isArray(n.meta.rungs) ? n.meta.rungs as { slot: number; label: string }[] : []).map((r) => (
+        <button key={r.slot} className="ntf-btn ask" onClick={() => limit(r.slot)}>Switch to {r.label}</button>
+      ))}
+      {n.kind === "limit_choice" && <button className="ntf-btn" onClick={() => limit()}>Wait for reset</button>}
+      <button className="ntf-btn ghost" onClick={() => openRow({ ...n, source: "session" })}>Open ›</button>
+    </div>
+  );
+}
+
+function RowActions({ n }: { n: Row }) {
+  const m = n.meta;
+  const b: ReactNode[] = [];
+  if (n.kind === "rv_held") {
+    b.push(<button key="go" className="ntf-btn" onClick={() => answerRivendell(m, true)}>Run it too</button>,
+      <button key="no" className="ntf-btn ghost" onClick={() => answerRivendell(m, false)}>Dismiss</button>);
+  }
+  if (str(m.pr_url) || (n.source === "pr" && str(m.url))) {
+    b.push(<button key="pr" className="ntf-btn" onClick={() => openUrl(str(m.pr_url) || m.url)}>Open PR ↗</button>);
+  }
+  if (n.source === "rivendell" && str(m.session_id)) {
+    b.push(<button key="s" className="ntf-btn ghost" onClick={() => env.openSession(str(m.session_id))}>Session ›</button>);
+  } else if (n.kind === "rv_link" || n.kind === "rv_failed" || n.kind === "rv_refused") {
+    b.push(<button key="d" className="ntf-btn ghost" onClick={() => openSettings("plugins", str(m.instance_id) || undefined)}>Details ›</button>);
+  }
+  if (n.kind === "failed") b.push(<button key="o" className="ntf-btn ghost" onClick={() => openRow(n)}>Open ›</button>);
+  return b.length ? <div className="ntf-acts" onClick={(e) => e.stopPropagation()}>{b}</div> : null;
+}
+
+function metaLine(n: { source: string; subject: string; meta: Record<string, unknown> }): string[] {
+  const m = n.meta;
+  if (n.source === "rivendell") return ["rivendell", str(m.instance) || str(m.instance_id), str(m.job_kind)].filter(Boolean);
+  if (n.source !== "session") return [];
+  const sid = str(m.session_id) || n.subject;
+  const br = env.branchOf(sid);
+  return [projName(str(m.project)), br ? `⎇ ${br}` : "", typeof m.elapsed === "number" ? mins(m.elapsed) : ""].filter(Boolean);
+}
+
+function NoticeRow({ n, now, compact, onOpen }: { n: Row; now: number; compact: boolean; onOpen: () => void }) {
+  const meta = metaLine(n);
+  return (
+    <div className={`ntf-row${compact ? " compact" : ""}${n.read ? "" : " unread"}`} onClick={onOpen}>
+      <Source kind={n.kind} source={n.source} project={str(n.meta.project)} />
+      <div className="ntf-mid">
+        <div className="ntf-ttl"><span className={`ntf-verb ntf-v-${compact ? "dim" : toneOf(n.kind)}`}>{n.verb}</span><span className="ntf-s">{n.title}</span>
+          {n.earlier > 0 && !compact && <span className="ntf-more">+{n.earlier}</span>}</div>
+        {!compact && n.body && <div className="ntf-body">{n.body}</div>}
+        {!compact && meta.length > 0 && <div className="ntf-meta">{meta.join(" · ")}</div>}
+        {!compact && <RowActions n={n} />}
+      </div>
+      <span className="ntf-when">{ago(n.at, now)}</span>
+    </div>
+  );
+}
+
+function NeedRow({ n, now, done }: { n: Need; now: number; done: () => void }) {
+  const meta = n.kind === "rv_offer"
+    ? ["rivendell", str(n.meta.instance) || str(n.meta.instance_id), "offered by a teammate"]
+    : n.session_id ? [projName(str(n.meta.project)), env.branchOf(n.session_id) ? `⎇ ${env.branchOf(n.session_id)}` : ""].filter(Boolean) : [];
+  return (
+    <div className="ntf-row needs">
+      <Source kind={n.kind} source={n.kind === "rv_offer" ? "rivendell" : "session"} project={str(n.meta.project)} />
+      <div className="ntf-mid">
+        <div className="ntf-ttl"><span className="ntf-verb ntf-v-ask">{n.verb}</span><span className="ntf-s">{n.title || "session"}</span></div>
+        {n.body && <div className={`ntf-body${n.kind === "approve" ? " mono" : ""}`}>{n.body}</div>}
+        {meta.length > 0 && <div className="ntf-meta">{meta.join(" · ")}</div>}
+        <NeedActions n={n} done={done} />
+      </div>
+      <span className="ntf-when">{n.at ? ago(n.at, now) : ""}</span>
+    </div>
+  );
+}
+
+// ---- the bell ------------------------------------------------------------------
+
+const CURSOR_KEY = "hud-notice-cursor";
+const NEWS_MS = 8000;
+const NEEDS_MS = 30000;
+interface Toast { n: Notice; until: number; left: number; paused: boolean }
+
+const ICON = (
+  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.7 21a2 2 0 0 1-3.4 0" />
+  </svg>
+);
+
+/** Fire one OS banner for a feed row: the verb and the title, where it ran,
+ *  what happened — and, in Mystical.app, the buttons that answer it. */
+function osBanner(n: Notice) {
+  const where = n.source === "rivendell" ? `Rivendell · ${str(n.meta.instance) || str(n.meta.instance_id)}`
+    : [projName(str(n.meta.project)), env.branchOf(str(n.meta.session_id) || n.subject) ?? ""].filter(Boolean).join(" · ");
+  const fire = (buttons?: { action: string; title: string }[], onAction?: (a: string) => void) =>
+    push(`${n.verb[0]}${n.verb.slice(1).toLowerCase()} · ${n.title}`, n.body, n.subject, () => openRow(n),
+      buttons, onAction, { subtitle: where, thread: n.subject });
+  if (n.kind === "rv_offer") {
+    return fire([{ action: "accept", title: "Accept" }, { action: "dismiss", title: "Dismiss" }],
+      (a) => answerRivendell(n.meta, a === "accept"));
+  }
+  const jobId = str(n.meta.job_id);
+  if ((n.kind === "approve" || n.kind === "question") && jobId) {
+    return void api.job(jobId).then((s) => {
+      const card = cardFor(s.pending, str(n.meta.request_id));
+      const buttons = bannerActions(card);
+      fire(buttons, buttons.length ? (a) => {
+        const b = bannerAnswer(card, a);
+        if (b) void api.respond(jobId, b).catch(() => { /* the card is still in the transcript */ });
+      } : undefined);
+    }).catch(() => fire());
+  }
+  fire();
+}
+
+export function NotificationCenter() {
+  const plugins = useIntegrations();   // no Rivendell installed: no Rivendell filter
+  const liveNeeds = useSyncExternalStore(subscribe, () => needs);
+  const liveLinks = useSyncExternalStore(subscribe, () => links);
+  const [feed, setFeed] = useState<Notice[]>([]);
+  const [prefs, setPrefs] = useState<NoticePrefs | null>(null);
+  const [stale, setStale] = useState(false);
+  const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const [now, setNow] = useState(() => Date.now() / 1000);
+  const wrapRef = useRef<HTMLSpanElement | null>(null);
+  const shown = useRef<Set<number>>(new Set());
+
+  const load = useRef(async () => {
+    try {
+      const r = await api.notices();
+      setFeed(r.notices); setPrefs(r.prefs); setStale(false);
+      const top = r.notices.reduce((a, n) => Math.max(a, n.id), 0);
+      const raw = localStorage.getItem(CURSOR_KEY);
+      // First look ever: the week's backlog is history, not news.
+      const cursor = raw === null ? top : Number(raw) || 0;
+      localStorage.setItem(CURSOR_KEY, String(Math.max(cursor, top)));
+      if (raw === null) return;
+      const quiet = isQuiet(r.prefs.quiet, new Date());
+      const tones = new Set<ToneKey>();
+      const fresh: Notice[] = [];
+      for (const n of freshSince(r.notices, cursor)) {
+        const d = popFor(n, { openSession: env.openSessionId, visible: document.visibilityState === "visible", prefs: r.prefs, quiet,
+          live: new Set(needs.map((x) => x.subject)), now: Date.now() / 1000 });
+        if (!d) continue;
+        if (d.sound) tones.add(d.sound);
+        if (!d.pop) continue;
+        // One place at a time: the toast while you're in this window, else the OS banner.
+        if (!document.hasFocus() && env.push && pushGranted()) osBanner(n);
+        else fresh.push(n);
+      }
+      // One sound per tone per batch: five sessions finishing together is one chime.
+      if (env.pushSound) for (const t of tones) chime(t, env.pushVolume);
+      if (fresh.length) {
+        const t = Date.now();
+        // Newest on top, but what waits on you above any news: three slots, and a
+        // question must never be the one folded into "+n more".
+        const rank = (x: Toast) => (x.n.tier === "needs" ? 0 : 1);
+        setToasts((p) => [...fresh.reverse().map((n) => {
+          const ms = n.tier === "needs" ? NEEDS_MS : NEWS_MS;
+          return { n, until: t + ms, left: ms, paused: false };
+        }), ...p].sort((a, b) => rank(a) - rank(b)));
+      }
+    } catch (e) {
+      if (/404|not found/i.test((e as Error).message)) setStale(true);
+    }
+  });
+  useEffect(() => {
+    void load.current();
+    const id = window.setInterval(() => void load.current(), 4000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  // Toast clock: expire, unless hovered (a hover freezes what's left).
+  useEffect(() => {
+    if (!toasts.length) return;
+    const id = window.setInterval(() => {
+      const t = Date.now();
+      setNow(t / 1000);
+      setToasts((p) => p.filter((x) => x.paused || x.until > t).map((x) => (x.paused ? x : { ...x, left: x.until - t })));
+    }, 250);
+    return () => window.clearInterval(id);
+  }, [toasts.length]);
+  useEffect(() => { if (open) setNow(Date.now() / 1000); }, [open, feed]);
+
+  const rows = useMemo(() => groupBySubject(feed), [feed]);
+  const unread = rows.filter((r) => !r.read).length;
+  const quiet = prefs ? isQuiet(prefs.quiet, new Date(now * 1000)) : false;
+  const b = badge(liveNeeds.length, unread, quiet);
+
+  // Closing the bell marks what it showed read; click-outside closes it.
+  const close = () => {
+    setOpen(false);
+    const ids = [...shown.current];
+    shown.current = new Set();
+    if (ids.length) void api.noticesRead(ids).then(() => load.current(), () => { /* next poll */ });
+  };
   useEffect(() => {
     if (!open) return;
-    markAllRead();
-    const onDown = (e: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
+    const onDown = (e: PointerEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) close(); };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
-  const toasts = open ? [] : list.filter((n) => toastIds.includes(n.id));
+  const go = (n: Row) => { close(); openRow(n); };
+  const markAll = () => { shown.current = new Set(); void api.noticesRead("all").then(() => load.current()); };
+
+  const fNeeds = liveNeeds.filter((n) => needMatches(filter, n));
+  const fRows = rows.filter((r) => matches(filter, r));
+  const nowRows = filter === "rivendell" ? fRows.filter((r) => r.kind === "rv_started" || r.kind === "rv_held") : [];
+  const rest = fRows.filter((r) => !nowRows.includes(r));
+  const count = (f: Filter) => (f === "needs" ? liveNeeds.length
+    : liveNeeds.filter((n) => needMatches(f, n)).length + rows.filter((r) => matches(f, r)).length);
+  if (open) for (const r of fRows) if (!r.read) shown.current.add(r.id);
+
+  const section = (label: string, list: Row[]) => list.length > 0 && (
+    <>
+      <div className="ntf-sec">{label}<span className="ln" /></div>
+      {list.map((r) => <NoticeRow key={r.id} n={r} now={now} compact={r.read} onOpen={() => go(r)} />)}
+    </>
+  );
+  const today = rest.filter((r) => sectionOf(r.at, new Date(now * 1000)) === "TODAY");
+  const earlier = rest.filter((r) => sectionOf(r.at, new Date(now * 1000)) === "EARLIER");
+  const nothing = !fNeeds.length && !fRows.length;
+  const visibleToasts = open ? [] : toasts.slice(0, 3);
+  const folded = open ? [] : toasts.slice(3);
 
   return (
     <span ref={wrapRef} style={{ position: "relative", flex: "none", display: "flex" }}>
-      <button
-        onClick={() => setOpen(!open)}
-        title="notifications"
-        onMouseEnter={() => setHover(true)}
-        onMouseLeave={() => setHover(false)}
-        style={{
-          appearance: "none",
-          cursor: "pointer",
-          position: "relative",
-          border: 0,
-          background: "transparent",
-          color: hover ? "var(--txb)" : "var(--txm)",
-          fontFamily: "inherit",
-          padding: 0,
-          width: 22,
-          height: 22,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.7 21a2 2 0 0 1-3.4 0" />
-        </svg>
-        {unread > 0 && (
-          <span style={{ position: "absolute", top: -5, right: -5, minWidth: 13, height: 13, borderRadius: 7, background: "var(--err)", color: "var(--panel3)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t8)", fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", padding: "0 3px", boxSizing: "border-box" }}>
-            {unread > 9 ? "9+" : unread}
-          </span>
-        )}
+      <button className={`ntf-bell${open ? " on" : ""}`} onClick={() => (open ? close() : setOpen(true))}
+        title={b.kind === "count" ? `${b.n} waiting on you` : "notifications"} aria-label="notifications">
+        {ICON}
+        {b.kind === "count" && <span className="ntf-badge">{b.n > 9 ? "9+" : b.n}</span>}
+        {b.kind === "dot" && <span className="ntf-dot" />}
+        {b.kind === "moon" && <span className="ntf-moon"><Moon size={8} fill="currentColor" strokeWidth={0} /></span>}
       </button>
 
       {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 8px)",
-            right: 0,
-            zIndex: 60,
-            width: "330px",
-            border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
-            background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
-            boxShadow: "0 16px 44px var(--shadow-pop)",
-            animation: "mslide .16s ease both",
-          }}
-        >
-          <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "11px 11px 9px" }}>
-            <span style={{ fontSize: "var(--t9)", letterSpacing: 2, color: "var(--acc)" }}>NOTIFICATIONS</span>
-            <span style={{ flex: 1 }}></span>
-            {list.length > 0 && (
-              <button
-                onClick={clearAll}
-                style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 22%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t75)", letterSpacing: 1.5, padding: "3px 7px" }}
-              >
-                CLEAR ALL
+        <div className="ntf-pop">
+          <div className="ntf-head">
+            <span className="t">NOTIFICATIONS</span>
+            {unread > 0 && <span className="n">{unread} new</span>}
+            <span style={{ flex: 1 }} />
+            {unread > 0 && <button className="ntf-lnk" onClick={markAll}>Mark all read</button>}
+            <button className="ntf-lnk" title="Notify settings" onClick={() => { close(); openSettings("notifications"); }}>⚙</button>
+          </div>
+          <div className="ntf-filters">
+            {(["all", "needs", "sessions", "rivendell", "prs"] as Filter[]).filter((f) => f !== "rivendell" || plugins.rivendell).map((f) => (
+              <button key={f} className={`ntf-flt${filter === f ? " on" : ""}`} onClick={() => setFilter(f)}>
+                {f === "needs" && <i className="pip" />}
+                {{ all: "All", needs: "Needs you", sessions: "Sessions", rivendell: "Rivendell", prs: "PRs" }[f]}
+                {count(f) > 0 && <em>{count(f)}</em>}
               </button>
+            ))}
+          </div>
+          {filter === "rivendell" && liveLinks.length > 0 && (
+            <div className="ntf-links">
+              {liveLinks.map((l) => {
+                const st = l.status?.state ?? "off";
+                return <span key={l.id} className={`l-${st}`}><i />{l.name} · {{ connected: "linked", connecting: "connecting", error: "down", auth_error: "token refused", off: "off" }[st]}</span>;
+              })}
+            </div>
+          )}
+          <div className="ntf-list mscroll">
+            {stale && <div className="ntf-stale">This page is newer than the bridge. Restart it to see the feed.</div>}
+            {fNeeds.length > 0 && (
+              <>
+                <div className="ntf-sec ask">NEEDS YOU<span className="ln" />{fNeeds.length}</div>
+                {fNeeds.map((n) => <NeedRow key={n.subject} n={n} now={now} done={() => void load.current()} />)}
+              </>
+            )}
+            {section("NOW", nowRows)}
+            {section("TODAY", today)}
+            {section("EARLIER", earlier)}
+            {nothing && !stale && (
+              <div className="ntf-empty">
+                <div className="o">silence on every channel — i'll knock when something needs you.</div>
+              </div>
             )}
           </div>
-          <div className="mscroll" style={{ maxHeight: 320, overflowY: "auto" }}>
-            {list.length === 0 ? (
-              <div style={{ padding: "18px 11px", textAlign: "center", fontSize: "var(--t10)", letterSpacing: 1.5, color: "var(--txl)" }}>
-                NO NOTIFICATIONS
-              </div>
-            ) : (
-              list.map((n) => (
-                <Row key={n.id} n={n} onDismiss={() => dismiss(n.id)}
-                  onOpen={n.onClick && (() => { setOpen(false); n.onClick?.(); })} />
-              ))
-            )}
+          <div className="ntf-foot">
+            {prefs?.quiet.on ? <span className="q"><Moon size={11} strokeWidth={1.8} />Quiet {prefs.quiet.from} → {prefs.quiet.to}</span> : <span />}
+            <span style={{ flex: 1 }} />
+            <button className="ntf-lnk" onClick={() => { close(); openSettings("notifications"); }}>Notify settings ›</button>
           </div>
         </div>
       )}
 
-      {toasts.length > 0 && (
-        <div style={{ position: "fixed", top: 46, right: 14, zIndex: 70, display: "flex", flexDirection: "column", gap: 8, width: 330 }}>
-          {toasts.map((n) => {
-            const k = KIND[n.kind];
+      {(visibleToasts.length > 0 || folded.length > 0) && (
+        <div className="ntf-toasts">
+          {visibleToasts.map((t) => {
+            const total = t.n.tier === "needs" ? NEEDS_MS : NEWS_MS;
+            const row: Row = { ...t.n, earlier: 0 };
+            const need: Need = { subject: t.n.subject, kind: t.n.kind, verb: t.n.verb, title: t.n.title, body: t.n.body, at: t.n.at, session_id: str(t.n.meta.session_id) || (t.n.source === "session" ? t.n.subject : null), meta: t.n.meta };
+            const drop = () => setToasts((p) => p.filter((x) => x.n.id !== t.n.id));
+            const hold = (paused: boolean) => setToasts((p) => p.map((x) => (x.n.id !== t.n.id ? x : paused
+              ? { ...x, paused: true } : { ...x, paused: false, until: Date.now() + x.left })));
             return (
-              <div
-                key={n.id}
-                style={{
-                  border: `1px solid color-mix(in srgb, ${k.color} 45%, transparent)`,
-                  background: "color-mix(in srgb, var(--panel2) 97%, transparent)",
-                  boxShadow: "0 12px 34px var(--shadow-pop)",
-                  padding: "9px 11px",
-                  animation: "mslide .16s ease both",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                  <span style={{ fontSize: "var(--t75)", letterSpacing: 1.5, color: k.color, border: `1px solid color-mix(in srgb, ${k.color} 35%, transparent)`, padding: "1px 5px", flex: "none" }}>
-                    {k.label}
-                  </span>
-                  <span style={{ flex: 1 }}></span>
-                  <button
-                    onClick={() => setToastIds((p) => p.filter((id) => id !== n.id))}
-                    title="dismiss"
-                    style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t12)", lineHeight: 1, padding: "0 2px" }}
-                  >
-                    ×
-                  </button>
-                </div>
-                {/* A clicked toast is spent, like an OS notification: it goes, bell entry and all. */}
-                <div onClick={n.onClick && (() => { n.onClick?.(); dismiss(n.id); })} title={n.onClick ? "open" : undefined}
-                  style={{ marginTop: 5, fontSize: "var(--t115)", lineHeight: 1.5, color: "var(--txb)", overflowWrap: "anywhere", fontFamily: "'JetBrains Mono',monospace", display: "-webkit-box", WebkitLineClamp: 4, WebkitBoxOrient: "vertical", overflow: "hidden", cursor: n.onClick ? "pointer" : undefined }}>
-                  {n.text}
-                </div>
+              <div key={t.n.id} className={`ntf-toast${t.n.tier === "needs" ? " needs" : ""}`}
+                onMouseEnter={() => hold(true)} onMouseLeave={() => hold(false)}>
+                {t.n.tier === "needs"
+                  ? <NeedRow n={need} now={now} done={drop} />
+                  : <NoticeRow n={row} now={now} compact={false} onOpen={() => { drop(); openRow(t.n); }} />}
+                <button className="ntf-x" title="dismiss" onClick={drop}>×</button>
+                <span className={`ntf-bar ntf-v-${toneOf(t.n.kind)}`} style={{ width: `${Math.max(0, Math.min(100, (t.left / total) * 100))}%` }} />
               </div>
             );
           })}
+          {folded.length > 0 && (
+            <button className="ntf-fold" onClick={() => { setToasts([]); setOpen(true); }}>
+              <b>+{folded.length} more</b>
+              <span style={{ flex: 1 }} />
+              <span className="go">Open the bell ›</span>
+            </button>
+          )}
         </div>
       )}
     </span>

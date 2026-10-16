@@ -168,9 +168,15 @@ def _offer(session: dict, chat_id: int, available: list, notify,
             rows.append([{"text": f"↪ Switch to {r['label']}",
                           "callback_data": f"fb:a:{sid}:{r['slot']}"}])
     rows.append([{"text": "⏳ Wait for reset", "callback_data": f"fb:w:{sid}"}])
-    notify(chat_id, "⛔ Usage limit reached. This chat is parked until the "
-                    "window resets — or something else can pick the work up now:",
-           {"inline_keyboard": rows})
+    from bridge import notices
+    notices.emit("limit_choice", sid, body="Usage limit reached. Switch to another account, "
+                                           "or wait for the reset.",
+                 meta={"rungs": [{"slot": r["slot"], "label": r["label"]}
+                                 for r in available if r["kind"] == "account"]})
+    if notices.telegram_ok("limit_choice"):
+        notify(chat_id, "⛔ Usage limit reached. This chat is parked until the "
+                        "window resets — or something else can pick the work up now:",
+               {"inline_keyboard": rows})
 
 
 def take(session: dict, chat_id: int, rung: dict, *, run=None, notify=None,
@@ -196,8 +202,11 @@ def take(session: dict, chat_id: int, rung: dict, *, run=None, notify=None,
     if job is None:
         return None          # session already running: the user moved on
     limits.cancel(session["id"])
+    from bridge import notices
+    notices.emit("resumed", session["id"], body=f"Continuing on {rung['label']}.")
     try:
-        notify(chat_id, f"↪ Continuing on {rung['label']}.")
+        if notices.telegram_ok("resumed"):
+            notify(chat_id, f"↪ Continuing on {rung['label']}.")
     except Exception:  # noqa: BLE001
         pass
     return rung

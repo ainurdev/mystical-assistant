@@ -28,10 +28,3 @@ export function bannerAnswer(card: PendingCard | undefined, action: string): Ban
   const label = q?.options?.[i]?.label;
   return q && label !== undefined ? { request_id: card.request_id, answers: [{ header: q.header, labels: [label] }] } : null;
 }
-
-/** The banner's second line: what the card asks. */
-export function bannerBody(card: PendingCard | undefined): string {
-  if (!card) return "";
-  if (card.kind === "permission") return card.summary ? `${card.tool_name ?? "tool"}: ${card.summary}` : card.tool_name ?? "";
-  return card.questions?.[0]?.question ?? "";
-}

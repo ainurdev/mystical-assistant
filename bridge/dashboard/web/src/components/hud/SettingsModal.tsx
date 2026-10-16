@@ -1,16 +1,16 @@
 import {
-  createContext, Fragment, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore,
+  Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore,
   type CSSProperties, type ReactNode,
 } from "react";
 import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, 
   FolderTree, Gauge, GitBranch, 
   Globe,
-  Handshake, KeyRound, ListMusic, ListTodo, ListTree, LoaderCircle, Lock,
+  Handshake, KeyRound, ListMusic, ListTree, LoaderCircle, Lock,
   Monitor, Moon, Network, Palette, Play, Plug,
   Power, ScanLine, ScrollText, Search, Server, 
-  SlidersHorizontal, Sparkles, SquareTerminal, Sun, TriangleAlert, Type,
-  Upload, Volume2, Waypoints, type LucideIcon,
+  SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
+  Upload, Waypoints, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindowMac, Pin,
 } from "lucide-react";
@@ -28,10 +28,13 @@ import {
   type AccountInfo,
   type AiFeature,
   type EnvSetting,
+  type Integration,
   type AcpAccount,
   type AcpAgentsInfo,
   type AcpPreset,
   type McpInfo,
+  type NoticePrefs,
+  type NoticePrefsPatch,
   type RivendellInstance,
   type RivendellInput,
   type RivendellStatus,
@@ -39,6 +42,7 @@ import {
   type TimedEvent,
   type TrackerConnection,
   type UpdateInfo,
+  type VideoTools,
   MOVE_EVENT,
   type MoveFile,
   type MoveItem,
@@ -54,27 +58,29 @@ import {
 } from "../../lib/installprompt";
 import {
   autoBaseFont,
-  AURORA_KEYS,
   BASE_FONTS,
-  CLAUDE_KEYS,
-  FLINT_KEYS,
+  colourings,
+  FAMILIES,
+  family,
   FONTS,
   HEADER_STYLES,
-  isFlint,
   type HeaderStyle,
   fontStack,
   isLight,
-  THEME_DEFS,
-  themeCompensator,
   themeDef,
   themeHasCrt,
+  twin,
+  type Family,
   type HudSettings,
   type ThemeKey,
 } from "../../lib/theme";
 import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWrite } from "../../lib/profiles";
 import { AGENT_DEFAULT, agentLabel, optionRows, setAgentLabels } from "../../lib/agents";
 import { notify } from "./Notifications";
+import { NYAN_MODES, nyanLabel, nyanThumb, type NyanSound } from "../../lib/nyan";
 import { setAiFeatures, useAiFeatures } from "../../lib/ai";
+import { setIntegrations, useIntegrations } from "../../lib/integrations";
+import { askConfirm } from "../ui/Ask";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isMacApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
@@ -128,14 +134,16 @@ export interface SettingsModalProps {
 
 export type Tab = "appearance" | "transcript" | "notifications"
   | "aimgmt"
-  | "plugins" | "system" | "move"
+  | "integrations" | "system" | "move"
   | "mac";
 
 /** The four tabs AI MANAGEMENT replaced, and the fold each lands on. A caller
  *  that still names one (a bookmark, an older bridge's bot button) opens the
- *  page on that fold rather than on nothing. */
+ *  page on that fold rather than on nothing. PLUGINS became INTEGRATIONS:
+ *  openSettings("plugins", id) still opens the Rivendell card on that instance. */
 const LEGACY_TAB: Record<string, string> = { projects: "PROJECTS", session: "PROFILES", accounts: "ACCOUNTS", mcp: "MCP SERVERS", ai: "MODEL-SPENDING EXTRAS" };
 export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec: string | null } {
+  if (t === "plugins") return { tab: "integrations", sec: "RIVENDELL" };
   if (t && t in LEGACY_TAB) return { tab: "aimgmt", sec: LEGACY_TAB[t] };
   return { tab: t as Tab | undefined, sec: null };
 }
@@ -153,12 +161,12 @@ export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec
 // sentence. The rail's hint names what's inside; nothing said why you'd open
 // it, so every page began on its first block and left you to work that out.
 const TABS: { key: Tab; label: string; hint: string; about: string; icon: LucideIcon; group: string }[] = [
-  { key: "appearance", label: "APPEARANCE", hint: "theme · type · CRT", icon: Palette, group: "THE HUD",
-    about: "How the dashboard looks: the palette it wears, its typeface and size, and the CRT effects laid over it." },
+  { key: "appearance", label: "APPEARANCE", hint: "theme · header · type", icon: Palette, group: "THE HUD",
+    about: "How the dashboard looks: its theme and colour, the header over the transcript, its typeface and size." },
   { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD",
     about: "How a session reads: the chat layout, the composer's send key, the ground and colour scheme every turn is drawn on, whether results start open, and what shows while it works." },
-  { key: "notifications", label: "NOTIFY", hint: "desktop · sound", icon: Bell, group: "THE HUD",
-    about: "How the dashboard tells you a session finished, failed, or is waiting on you: a desktop banner, a sound, or both." },
+  { key: "notifications", label: "NOTIFY", hint: "events · quiet · sound", icon: Bell, group: "THE HUD",
+    about: "What interrupts you, and how: for each kind of news — a session, a Rivendell job, a PR — a pop-up, a sound, a Telegram message, or only the bell." },
   // Only inside Mystical.app (RAIL and the search both skip it elsewhere): the
   // switches that are the app's, not the page's (lib/mac).
   { key: "mac", label: "MAC APP", hint: "window · dock · panel", icon: AppWindowMac, group: "THE HUD",
@@ -168,8 +176,8 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   // piece of the same question, and the sidebar's SKILLS panel besides.
   { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · skills · mcp · profile · projects", icon: KeyRound, group: "THE WORK",
     about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills, extras and MCP servers they can reach, the default profile, and which one each project starts with." },
-  { key: "plugins", label: "PLUGINS", hint: "rivendell instances", icon: Waypoints, group: "THE WORK",
-    about: "External dashboards the bridge runs work for. Rivendell's \"Request review\" and \"Implement using AI\" buttons become autonomous Claude runs here — one connection per Rivendell (production, local, staging)." },
+  { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", icon: Waypoints, group: "THE WORK",
+    about: "Other systems the bridge does work for. Each one ships with Mystical but stays silent until you install it: no tab, no card, no rows, no worker." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
     about: "The bridge itself: its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
   { key: "move", label: "MOVE", hint: "export · import", icon: Truck, group: "THE WORK",
@@ -185,18 +193,19 @@ const RAIL = TABS.filter((t) => t.key !== "mac" || isMacApp());
 // the bridge, so search fetches that registry the first time you type and folds
 // it in row by row, which also means nobody has to keep a copy of them here.
 const INDEX: { tab: Tab; sec: string; terms: string }[] = [
-  { tab: "appearance", sec: "THEME · DARK", terms: "colour color palette scheme aurora phosphor" },
-  { tab: "appearance", sec: "THEME · LIGHT", terms: "colour color palette scheme day bright" },
+  { tab: "appearance", sec: "THEME", terms: "colour color palette scheme aurora claude flint phosphor dark light day bright" },
+  { tab: "appearance", sec: "HEADER", terms: "header island frost veil tuck glass readouts" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
-  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars" },
+  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars nyan cat" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
   { tab: "transcript", sec: "COLOUR SCHEME", terms: "colour color scheme phosphor contrast dossier output style" },
   { tab: "transcript", sec: "RESULTS", terms: "auto-open results bash output edit diffs collapse steps fold" },
   { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
-  { tab: "notifications", sec: "DESKTOP", terms: "os notifications browser push permission alert" },
-  { tab: "notifications", sec: "SOUND", terms: "tone chime volume packs peonping mute" },
+  { tab: "notifications", sec: "WHAT INTERRUPTS YOU", terms: "events pop up toast banner sound tone telegram away rivendell pr finished failed question approval" },
+  { tab: "notifications", sec: "QUIET HOURS", terms: "quiet hours night do not disturb dnd mute schedule" },
+  { tab: "notifications", sec: "THIS BROWSER", terms: "os notifications browser push permission alert sound volume chime mute" },
   { tab: "mac", sec: "WINDOW", terms: "mac app title bar session name dock icon keep cmd-tab space" },
   { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space" },
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission" },
@@ -205,8 +214,11 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
   { tab: "aimgmt", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
   { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini api key install test other agent" },
-  { tab: "plugins", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout" },
-  { tab: "plugins", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
+  { tab: "integrations", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout video ffmpeg whisper" },
+  { tab: "integrations", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
+  { tab: "integrations", sec: "TRACKERS", terms: "teamwork jira tracker tasks link token connection digest" },
+  { tab: "integrations", sec: "CLAUDE DESIGN", terms: "claude design system link pull sync skill tokens components" },
+  { tab: "integrations", sec: "AVAILABLE", terms: "install integration plugin add rivendell teamwork jira claude design" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "aimgmt", sec: "SKILLS", terms: "skills skill catalog install plugin marketplace SKILL.md system project" },
@@ -247,7 +259,6 @@ const BASE_FONT_OPTS = BASE_FONTS.map((n) => ({
   value: String(n),
 }));
 
-const TONE_OPTS = (Object.keys(TONES) as ToneKey[]).map((k) => ({ label: TONES[k].label, value: k }));
 
 const CRT_TOGGLES: { key: "scanlines" | "sweep" | "glow"; label: string; desc: string }[] = [
   { key: "scanlines", label: "SCANLINES", desc: "horizontal CRT raster lines" },
@@ -255,11 +266,10 @@ const CRT_TOGGLES: { key: "scanlines" | "sweep" | "glow"; label: string; desc: s
   { key: "glow", label: "TEXT GLOW", desc: "phosphor bloom on headings" },
 ];
 
-/** True while FLINT is worn. FLINT draws this dialog as an app's settings page
- *  rather than a HUD's (index.css, FLINT · SETTINGS): sentence-case labels,
- *  a toggle for a switch, one theme grid behind a Dark/Light switch. Read by
- *  the few pieces whose markup — not just their colours — changes. */
-const FlintCtx = createContext(false);
+/** Every family draws this dialog as an app's settings page (index.css, THE
+ *  FAMILIES · SETTINGS): sentence-case labels, a toggle for a switch, one theme
+ *  grid behind a Dark/Light switch. AURORA sets the same words in its tracked
+ *  capitals, from CSS. */
 const ACRONYMS = new Set(["AI", "MCP", "CRT", "HUD", "CLI", "API", "URL", "TG", "SSH", "PR", "ID", "UI", "OS",
   "GPU", "CPU", "RAM", "JSON", "ENV", "IDE", "MA", "VS", "FM", "PWA", "SOS", "ESC", "TTS", "STT", "LLM", "GH"]);
 /** "THEME · DARK" → "Theme · dark"; acronyms stay capitals. */
@@ -267,10 +277,9 @@ function sentence(s: string): string {
   const w = s.toLowerCase().replace(/[a-z]+/g, (m) => (ACRONYMS.has(m.toUpperCase()) ? m.toUpperCase() : m));
   return w.charAt(0).toUpperCase() + w.slice(1);
 }
-/** A label in the dialog's current voice. */
+/** A label in the dialog's voice. */
 export function useVoice(): (s: ReactNode) => ReactNode {
-  const flint = useContext(FlintCtx);
-  return (s) => (flint && typeof s === "string" ? sentence(s) : s);
+  return (s) => (typeof s === "string" ? sentence(s) : s);
 }
 
 const field = {
@@ -337,14 +346,13 @@ function InfoDot({ on, about, onClick }: { on: boolean; about?: string; onClick:
 // so they get theirs from the same table instead of a second mechanism.
 const SEC_ICONS: Record<string, LucideIcon> = {
   "WHILE IT WORKS": AudioLines,
-  "THEME · DARK": Moon,
-  "THEME · LIGHT": Sun,
   "CRT EFFECTS": ScanLine,
   TYPE: Type,
   "WORKING INDICATOR": AudioLines,
   RESULTS: ListTree,
-  DESKTOP: Monitor,
-  SOUND: Volume2,
+  "WHAT INTERRUPTS YOU": Bell,
+  "QUIET HOURS": Moon,
+  "THIS BROWSER": Monitor,
   "PER EVENT": ListMusic,
   "RUN DEFAULTS": SlidersHorizontal,
   PROFILES: Bookmark,
@@ -377,15 +385,15 @@ const SEC_ICONS: Record<string, LucideIcon> = {
 // tells you, before you read any of that, whether you're in the right place.
 const SEC_DESC: Record<string, string> = {
   "WHILE IT WORKS": "What the transcript shows while a session is working.",
-  "THEME · DARK": "Palettes on a dark ground. Click one to wear it.",
-  "THEME · LIGHT": "Palettes on a paper or daylight ground.",
+  HEADER: "How the session header sits over the transcript.",
   "CRT EFFECTS": "The tube laid over the screen: raster lines, a roaming glow, bloom on headings.",
   TYPE: "The typeface the HUD is set in, and the base size every other size scales from.",
   "THE GROUND": "The texture the transcript sits on.",
   RESULTS: "Whether command output and diffs start open or folded.",
   "WORKING INDICATOR": "The tab you pick is the one the dashboard shows while it works.",
-  DESKTOP: "A system banner when a session you aren't watching finishes or needs you.",
-  SOUND: "A sound when that happens: the default tone, and the volume for every sound.",
+  "WHAT INTERRUPTS YOU": "Everything lands in the bell. These choose what interrupts you, per kind of news. Kept on the bridge, so Telegram follows them too.",
+  "QUIET HOURS": "A window when nothing pops up, sounds or reaches Telegram.",
+  "THIS BROWSER": "This browser's own switches: the system banner permission, sounds, and how loud.",
   "PER EVENT": "A different sound for each kind of news: a tone, a voice line from a pack, or nothing.",
   "RUN DEFAULTS": "What each new run starts with. The composer's dropdowns are these same settings.",
   PROFILES: "Who runs a session, and with what — bound to it on every surface.",
@@ -543,34 +551,10 @@ function Placeholder({ icon: Icon, spin, children }: {
   );
 }
 
-/** An ON/OFF pill, matching the CRT rows. */
-export function Switch({ on, onClick }: { on: boolean; onClick: () => void }) {
-  // FLINT: a toggle, the way an app's settings page says on/off.
-  if (useContext(FlintCtx))
-    return <button className="set-toggle" role="switch" aria-checked={on} data-on={on || undefined} onClick={onClick}><i /></button>;
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        appearance: "none",
-        cursor: "pointer",
-        border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
-        background: "var(--panel3)",
-        padding: 2,
-        display: "flex",
-        gap: 2,
-        flex: "none",
-        fontFamily: "inherit",
-      }}
-    >
-      <span style={{ fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", background: on ? "var(--acc)" : "transparent", color: on ? "var(--acc-on)" : "var(--txl)" }}>
-        ON
-      </span>
-      <span style={{ fontSize: "var(--t9)", letterSpacing: 1, padding: "3px 10px", background: on ? "transparent" : "color-mix(in srgb, var(--acc) 18%, transparent)", color: on ? "var(--txl)" : "var(--txb)" }}>
-        OFF
-      </span>
-    </button>
-  );
+/** On/off, the way an app's settings page says it: a toggle (each family
+ *  draws its own — index.css, THE FAMILIES · SETTINGS). */
+export function Switch({ on, onClick, label }: { on: boolean; onClick: () => void; label?: string }) {
+  return <button className="set-toggle" role="switch" aria-checked={on} aria-label={label} data-on={on || undefined} onClick={onClick}><i /></button>;
 }
 
 function Volume({ value, disabled, onChange }: { value: number; disabled?: boolean; onChange: (v: number) => void }) {
@@ -685,188 +669,73 @@ function PickCell({
   );
 }
 
-type ThemeCard = { key: ThemeKey; variants?: ThemeKey[] };
+const FAMILY_NAME: Record<Family, string> = { aurora: "Aurora", claude: "Claude", flint: "Flint" };
+const FAMILY_TAG: Record<Family, string> = { aurora: "the CRT", claude: "the app itself", flint: "the editor" };
 
-const CARDS: ThemeCard[] = [
-  { key: "aqua", variants: AURORA_KEYS },
-  { key: "claude", variants: CLAUDE_KEYS },
-  { key: "flint-ember", variants: FLINT_KEYS },
-  ...THEME_DEFS
-    .filter((t) => !AURORA_KEYS.includes(t.key) && !CLAUDE_KEYS.includes(t.key) && !FLINT_KEYS.includes(t.key))
-    .map((t) => ({ key: t.key })),
-];
+/** A colouring's swatch, filled with what it paints: you, then what waits on
+ *  you. A FLINT swatch keeps its ground between the two, because FLINT is
+ *  mostly ground and the ground is what parts NOCTURNE from VIOLET; SUNSET's
+ *  you is its gradient, KILN's corners are bars. */
+function swatchFill(k: ThemeKey): string {
+  const p = themeDef(k).pal;
+  if (family(k) === "flint") {
+    const [a, b] = k.startsWith("flint-kiln") ? [22, 78] : [40, 80];
+    const you = p.acc2 ? `${p.acc}, ${p.acc2} ${a}%` : `${p.acc} 0 ${a}%`;
+    return `linear-gradient(135deg, ${you}, ${p.panel} ${a}% ${b}%, ${p.ask} ${b}%)`;
+  }
+  return `linear-gradient(135deg, ${p.acc} 0 58%, ${p.ask} 58%)`;
+}
 
-const DARK_CARDS = CARDS.filter((c) => !isLight(c.key));
-const LIGHT_CARDS = CARDS.filter((c) => isLight(c.key));
-
-function ThemeCardGrid({
-  cards,
-  settings,
-  onTheme,
-}: { cards: ThemeCard[]; settings: HudSettings; onTheme: (t: ThemeKey) => void }) {
-  const [hover, setHover] = useState<ThemeKey | null>(null);
-  const comp = themeCompensator(settings.theme);
-  // A family card wears whichever of its variants is live (the first otherwise).
-  const liveOf = (variants: ThemeKey[]): ThemeKey =>
-    variants.includes(settings.theme) ? settings.theme : variants[0];
+/** The theme picker: one card per family, each previewing the UI in its own
+ *  skin (data-pv), with its colourings on the chosen ground as swatches. A
+ *  family's card wears your colouring if it is yours, or that colouring's twin
+ *  on the other ground, so Ember on dark is one click from Ember on light.
+ *  AURORA has no light ground — a tube has no daylight — so on Light its card
+ *  stays, greyed, to say so. */
+function ThemeGrid({ light, settings, onTheme }: {
+  light: boolean;
+  settings: HudSettings;
+  onTheme: (t: ThemeKey) => void;
+}) {
+  const cur = settings.theme;
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 9 }}>
-      {cards.map((card) => {
-        const t = themeDef(card.variants ? liveOf(card.variants) : card.key);
-        const on = card.variants ? card.variants.includes(settings.theme) : settings.theme === card.key;
-        const name = card.variants ? themeDef(card.variants[0]).name : t.name;
-        const sw = comp(t.sw);
-        const cardBd = on ? comp(t.sw) : comp("#26413d");
-        const cardBg = on ? comp("#132824") : comp("#0d1517");
-        const dim = comp("#20332f");
-        const pbg = comp(t.pbg);
-        // The card ground is a hardcoded dark, so the name is a fixed light —
-        // following the live theme's --txb turned it invisible in light themes.
-        const nameC = comp("#e6f2ee");
-        const descC = comp("#8fa8a2");
-        const chipC = comp("var(--acc-on)");
-        const pfont = t.font || "inherit";
-        const prad = t.prad || "0";
+    <div className="ftgrid">
+      {FAMILIES.map((fam) => {
+        const keys = colourings(fam, light);
+        const shown = keys.length ? keys : colourings(fam, !light);
+        const mine = family(cur) === fam;
+        const live = mine && shown.includes(cur) ? cur
+          : mine && twin(cur) && shown.includes(twin(cur)!) ? twin(cur)!
+          : shown[0];
+        const on = mine && keys.includes(cur);
+        const d = themeDef(live);
+        const colour = d.name.replace(/^(AURORA|CLAUDE|FLINT)\s*/, "");
+        const vars = {
+          "--a": d.pal.acc, "--k": d.pal.ask, "--g": d.pal.canvas, "--g2": d.pal.panel,
+          "--g3": `color-mix(in oklab, ${d.pal.txg} 45%, ${d.pal.panel})`,
+        } as CSSProperties;
         return (
-          <div
-            key={card.key}
-            onClick={() => onTheme(t.key)}
-            onMouseEnter={() => setHover(card.key)}
-            onMouseLeave={() => setHover(null)}
-            style={{
-              textAlign: "left",
-              cursor: "pointer",
-              fontFamily: "inherit",
-              border: `1px solid ${hover === card.key ? "color-mix(in srgb, var(--acc) 45%, transparent)" : cardBd}`,
-              background: cardBg,
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                position: "relative",
-                height: 38,
-                background: pbg,
-                borderBottom: `1px solid ${dim}`,
-                overflow: "hidden",
-                padding: "7px 9px",
-              }}
-            >
-              <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: "100%" }}>
-                <span style={{ flex: 1, height: "55%", background: sw, opacity: 0.8 }}></span>
-                <span style={{ flex: 1, height: "100%", background: sw }}></span>
-                <span style={{ flex: 1, height: "45%", background: sw, opacity: 0.5 }}></span>
-                <span style={{ flex: 1, height: "80%", background: sw, opacity: 0.8 }}></span>
-                <span style={{ flex: 1, height: "30%", background: sw, opacity: 0.35 }}></span>
-                <span style={{ flex: 1, height: "65%", background: sw, opacity: 0.8 }}></span>
-              </div>
-              {t.crt && (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    pointerEvents: "none",
-                    background:
-                      "repeating-linear-gradient(0deg,rgba(0,0,0,0) 0,rgba(0,0,0,0) 2px,rgba(0,0,0,.28) 3px,rgba(0,0,0,0) 4px)",
-                    opacity: 0.55,
-                  }}
-                ></div>
-              )}
+          <div key={fam} className="ftcard" data-pv={fam} data-on={on || undefined} data-off={!keys.length || undefined}
+            style={vars} onClick={keys.length ? () => onTheme(live) : undefined}>
+            <div className="ftprev">
+              <div className="sb"><i /><i /><i /><i /></div>
+              <div className="ch"><div className="p" /><i /><i /><div className="bx"><u /></div></div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 9px" }}>
-              <span
-                style={{
-                  width: 10,
-                  height: 10,
-                  background: sw,
-                  border: "1px solid rgba(0,0,0,.45)",
-                  flex: "none",
-                  borderRadius: prad,
-                }}
-              ></span>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: "var(--t105)",
-                    letterSpacing: 1,
-                    color: nameC,
-                    fontFamily: pfont,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {name}
-                </div>
-                <div
-                  style={{
-                    fontSize: "var(--t8)",
-                    letterSpacing: 0.4,
-                    color: descC,
-                    marginTop: 1,
-                    fontFamily: pfont,
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                  }}
-                >
-                  {t.feel}
-                </div>
+            <div className="ftmeta">
+              <span className="d" />
+              <div style={{ minWidth: 0 }}>
+                <b>{FAMILY_NAME[fam]}</b>
+                <span>{keys.length ? [colour && sentence(colour), FAMILY_TAG[fam]].filter(Boolean).join(" · ") : "a tube has no daylight."}</span>
               </div>
-              {on && (
-                <span
-                  style={{
-                    fontSize: "var(--t7)",
-                    letterSpacing: 1,
-                    color: chipC,
-                    background: sw,
-                    padding: "1px 5px",
-                    flex: "none",
-                  }}
-                >
-                  ON
-                </span>
-              )}
+              {on && <em>Active</em>}
             </div>
-
-            {card.variants && (
-              <div style={{ display: "flex", gap: 5, padding: "0 9px 8px" }}>
-                {card.variants.map((k) => {
-                  const c = themeDef(k);
-                  const live = settings.theme === k;
-                  // A two-role variant (FLINT) shows both of its hues — you and
-                  // what waits on you — and its name, since four orange/magenta
-                  // splits are told apart by which side is which.
-                  const ask = c.pal?.ask;
-                  const fill = c.pal?.acc2
-                    ? `linear-gradient(90deg, ${comp(c.sw)}, ${comp(c.pal.acc2)})`
-                    : ask ? `linear-gradient(90deg, ${comp(c.sw)} 50%, ${comp(ask)} 50%)` : comp(c.sw);
-                  return (
-                    <button
-                      key={k}
-                      title={c.name}
-                      onClick={(e) => { e.stopPropagation(); onTheme(k); }}
-                      style={{
-                        appearance: "none",
-                        cursor: "pointer",
-                        flex: 1,
-                        height: ask ? 16 : 12,
-                        padding: 0,
-                        background: fill,
-                        border: `1px solid ${live ? comp("#f2fbf9") : "rgba(0,0,0,.45)"}`,
-                        borderRadius: t.prad || "0",
-                        fontSize: "var(--t7)",
-                        letterSpacing: 0.8,
-                        fontWeight: 600,
-                        color: "#140a06",
-                      }}
-                    >
-                      {ask ? k.split("-")[1].toUpperCase() : null}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <div className="ftsq">
+              {shown.map((k) => (
+                <button key={k} title={sentence(themeDef(k).name)} data-on={cur === k || undefined} disabled={!keys.length}
+                  style={{ background: swatchFill(k) }}
+                  onClick={(e) => { e.stopPropagation(); onTheme(k); }} />
+              ))}
+            </div>
           </div>
         );
       })}
@@ -874,79 +743,18 @@ function ThemeCardGrid({
   );
 }
 
-/** FLINT's theme grid. Each card previews the UI in the theme's own colours —
- *  a sidebar and a prompt bar — rather than a bar chart of its swatch. A
- *  family's colourings are unlabelled squircles filled with what they paint
- *  (FLINT's two roles as one gradient); FLINT's own card also carries its three
- *  header styles, each a tiny header showing the time the way that style would.
- *  No filter compensation: FLINT draws no CSS filter, so a colour is itself. */
-function FlintThemeGrid({ cards, settings, onTheme, onHeader }: {
-  cards: ThemeCard[];
-  settings: HudSettings;
-  onTheme: (t: ThemeKey) => void;
-  onHeader: (h: HeaderStyle) => void;
-}) {
+/** The header styles, each a tiny header showing the time the way it would. */
+function HeaderStyles({ settings, onHeader }: { settings: HudSettings; onHeader: (h: HeaderStyle) => void }) {
   const h12 = useClock12();
   const now = hhmm(Date.now() / 1000, h12);
-  const liveOf = (variants: ThemeKey[]): ThemeKey =>
-    variants.includes(settings.theme) ? settings.theme : variants[0];
-  const fill = (k: ThemeKey): string => {
-    const d = themeDef(k);
-    if (k === "flint-kiln") return `linear-gradient(135deg, ${d.sw} 0 22%, #141415 22% 78%, ${d.pal!.ask} 78%)`;
-    if (d.pal?.acc2) return `linear-gradient(135deg, ${d.sw}, ${d.pal.acc2})`;
-    if (d.pal?.ask) return `linear-gradient(135deg, ${d.sw}, ${d.pal.ask})`;
-    return `linear-gradient(135deg, ${d.sw}, color-mix(in oklab, ${d.sw} 55%, #000))`;
-  };
   return (
-    <div className="ftgrid">
-      {cards.map((card) => {
-        const t = themeDef(card.variants ? liveOf(card.variants) : card.key);
-        const on = card.variants ? card.variants.includes(settings.theme) : settings.theme === card.key;
-        const name = sentence(card.variants ? themeDef(card.variants[0]).name : t.name);
-        const p = t.pal;
-        const vars = {
-          "--a": t.sw,
-          "--g": t.pbg,
-          "--g2": p?.panel ?? `color-mix(in oklab, ${t.sw} 7%, ${t.pbg})`,
-          "--g3": p?.txg ?? `color-mix(in oklab, ${t.sw} 28%, ${t.pbg})`,
-        } as CSSProperties;
-        return (
-          <div key={card.key} className="ftcard" data-on={on || undefined} style={vars} onClick={() => onTheme(t.key)}>
-            <div className="ftprev">
-              <div className="sb"><i /><i /><i /><i /></div>
-              <div className="ch"><div className="p" /><i /><i /></div>
-            </div>
-            <div className="ftmeta">
-              <span className="d" />
-              <div style={{ minWidth: 0 }}>
-                <b>{name}</b>
-                <span>{t.feel}</span>
-              </div>
-              {on && <em>Active</em>}
-            </div>
-            {card.variants && (
-              <div className="ftsq">
-                {card.variants.map((k) => (
-                  <button key={k} title={sentence(themeDef(k).name)} data-on={settings.theme === k || undefined}
-                    style={{ background: fill(k) }}
-                    onClick={(e) => { e.stopPropagation(); onTheme(k); }} />
-                ))}
-              </div>
-            )}
-            {card.variants === FLINT_KEYS && (
-              <div className="fthdr">
-                {HEADER_STYLES.map((h) => (
-                  <button key={h} data-h={h} title={`header: ${h}`}
-                    data-on={(on && settings.headerStyle === h) || undefined}
-                    onClick={(e) => { e.stopPropagation(); if (!on) onTheme(t.key); onHeader(h); }}>
-                    <span>{now}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
+    <div className="fthdr">
+      {HEADER_STYLES.map((h) => (
+        <label key={h} data-h={h} data-on={settings.headerStyle === h || undefined}>
+          <button title={`header: ${h}`} onClick={() => onHeader(h)}><span>{now}</span></button>
+          <small>{sentence(h)}</small>
+        </label>
+      ))}
     </div>
   );
 }
@@ -1307,6 +1115,169 @@ const MAC_BTN: CSSProperties = {
   fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none",
 };
 
+/** NOTIFY: what interrupts you, per kind of news, kept on the bridge
+ *  (bridge/notices.py) because Telegram obeys the same choices; quiet hours;
+ *  and this browser's own banner permission, sounds and volume. Everything
+ *  lands in the bell whatever is picked here. */
+const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?][] }[] = [
+  { head: "NEEDS YOU · always in the bell, pinned", ask: true, rows: [
+    ["ask", "Approval or question", "a session's card, or a Rivendell run that paused for you"],
+    ["asked", "Turn ended on a question"],
+    ["rv_offer", "Rivendell offer", "a teammate's job that would run on your accounts"],
+    ["account", "Login expired · limit choice"]] },
+  { head: "SESSIONS", rows: [
+    ["done", "Finished"],
+    ["failed", "Failed", "with the reason: context full, API error, killed…"],
+    ["parked", "Parked · resumed", "usage limit, API retries, restart recovery"],
+    ["started", "Started elsewhere", "Telegram, Rivendell, a goal's next turn"]] },
+  { head: "RIVENDELL", rows: [
+    ["rv_held", "Job held behind running work", "it starts by itself; RUN IT TOO starts it now"],
+    ["rv_done", "Job done", "PR review, implementation, todolist, changelog…"],
+    ["rv_failed", "Job failed or refused"],
+    ["rv_link", "Link broken · token refused"]] },
+  { head: "PRs", rows: [["pr", "Checks failing · changes requested"]] },
+  { head: "THE BRIDGE", rows: [["bridge", "MOVE finished"], ["weekly", "Weekly report"]] },
+];
+const SOUND_OPTS = ["none", ...Object.keys(TONES)] as ("none" | ToneKey)[];
+const ROUTE_OPTS = ["off", "away", "always"] as const;
+
+function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p: Partial<HudSettings>) => void }) {
+  const plugins = useIntegrations();   // Rivendell's rows only while it's installed
+  const [prefs, setPrefs] = useState<NoticePrefs | null>(null);
+  const [tg, setTg] = useState(true);
+  const [old, setOld] = useState(false);   // a bridge started before the feed: the route 404s
+  useEffect(() => {
+    api.notices().then((r) => { setPrefs(r.prefs); setTg(r.telegram); }, () => setOld(true));
+  }, []);
+  const save = (p: NoticePrefsPatch) =>
+    void api.noticePrefs(p).then((r) => setPrefs(r.prefs), (e: Error) => notify("error", e.message));
+  const q = prefs?.quiet;
+  return (
+    <>
+      <Section title="WHAT INTERRUPTS YOU">
+        {old || !prefs ? (
+          <div style={{ ...CARD, fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.6 }}>
+            {old ? "This bridge started before per-event notifications. Restart it to choose them here." : "Reading…"}
+          </div>
+        ) : (
+          <div className="ntf-mxwrap">
+            <table className="ntf-mx">
+              <thead><tr><th>EVENT</th><th>POP UP</th><th>SOUND</th><th>TELEGRAM</th></tr></thead>
+              <tbody>
+                {NOTIFY_ROWS.filter((g) => g.head !== "RIVENDELL" || plugins.rivendell).map((g) => (
+                  <Fragment key={g.head}>
+                    <tr className="grp"><td colSpan={4} className={g.ask ? "ask" : undefined}>{g.head}</td></tr>
+                    {g.rows.map(([key, label, desc]) => {
+                      const r = prefs.events[key];
+                      if (!r || (key === "rv_offer" && !plugins.rivendell)) return null;
+                      return (
+                        <tr key={key}>
+                          <td><span className="ev">{label}{desc && <small>{desc}</small>}</span></td>
+                          <td><button className={`ntf-ck${r.pop ? " on" : ""}`} role="checkbox" aria-checked={r.pop} aria-label={`${label}: pop up`}
+                            onClick={() => save({ events: { [key]: { pop: !r.pop } } })}>{r.pop ? "✓" : ""}</button></td>
+                          <td><select value={r.sound} aria-label={`${label}: sound`} style={{ ...field, padding: "3px 6px", letterSpacing: 0 }}
+                            onChange={(e) => {
+                              const sound = e.target.value as (typeof SOUND_OPTS)[number];
+                              if (sound !== "none") chime(sound, settings.pushVolume);
+                              save({ events: { [key]: { sound } } });
+                            }}>
+                            {SOUND_OPTS.map((t) => <option key={t} value={t}>{t === "none" ? "none" : TONES[t].label.toLowerCase()}</option>)}
+                          </select></td>
+                          <td><span className={`ntf-tg${tg ? "" : " off"}`}>
+                            {ROUTE_OPTS.map((o) => (
+                              <button key={o} className={r.tg === o ? `on${o === "always" ? " al" : ""}` : undefined} disabled={!tg}
+                                onClick={() => save({ events: { [key]: { tg: o } } })}>{o}</button>
+                            ))}
+                          </span></td>
+                        </tr>
+                      );
+                    })}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+            <div className="ntf-mxnote">
+              <b>Pop up</b> means a toast while a dashboard window has focus, and the system banner when none does — never both.{" "}
+              <b>Away</b> means no click or keypress in any dashboard window for{" "}
+              <select value={prefs.away_min} aria-label="away after" style={{ ...field, padding: "2px 4px", letterSpacing: 0 }}
+                onChange={(e) => save({ away_min: Number(e.target.value) })}>
+                {[2, 5, 10, 15, 30].map((m) => <option key={m} value={m}>{m} min</option>)}
+              </select>.
+              {!tg && <> Telegram pings are off in System ▸ Telegram, so that column waits.</>}
+            </div>
+          </div>
+        )}
+      </Section>
+
+      {q && (
+        <Section title="QUIET HOURS" top>
+          <div style={CARD}>
+            <Row first label="QUIET HOURS" desc={q.on ? `Nothing pops up, sounds or reaches Telegram from ${q.from} to ${q.to}.` : undefined}>
+              <Switch on={q.on} onClick={() => save({ quiet: { on: !q.on } })} />
+            </Row>
+            {q.on && (
+              <>
+                <Row label="FROM · TO">
+                  <input type="time" value={q.from} aria-label="quiet from" style={{ ...field, letterSpacing: 0 }}
+                    onChange={(e) => e.target.value && save({ quiet: { from: e.target.value } })} />
+                  <input type="time" value={q.to} aria-label="quiet to" style={{ ...field, letterSpacing: 0 }}
+                    onChange={(e) => e.target.value && save({ quiet: { to: e.target.value } })} />
+                </Row>
+                <Row label="LET NEEDS YOU THROUGH" desc="An approval at 23:00 still reaches you.">
+                  <Switch on={q.needs} onClick={() => save({ quiet: { needs: !q.needs } })} />
+                </Row>
+              </>
+            )}
+          </div>
+        </Section>
+      )}
+
+      <Section title="THIS BROWSER" top>
+        <div style={CARD}>
+          <Row
+            first
+            label="OS NOTIFICATIONS"
+            info={pushSupported()
+              ? "The system banner for news that pops up while no dashboard window has focus. Telegram is set per event above."
+              : "This browser has no Notification API — pop-ups stay inside the dashboard."}
+          >
+            <Switch
+              on={settings.push}
+              onClick={() => {
+                if (settings.push) { onPatch({ push: false }); return; }
+                // Ask only on switch-on; a denial can't be re-asked, so the
+                // switch goes back off rather than sitting on and silent.
+                void requestPush().then((ok) => onPatch({ push: ok }));
+              }}
+            />
+          </Row>
+          <Row label="SOUNDS" desc="Each event plays the tone picked above; off mutes them all here.">
+            <Switch
+              on={settings.pushSound}
+              onClick={() => {
+                // Switching it on plays one — otherwise you find out how loud it
+                // is at the wrong moment.
+                if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
+                onPatch({ pushSound: !settings.pushSound });
+              }}
+            />
+          </Row>
+          {settings.pushSound && (
+            <Row label="VOLUME">
+              {/* Preview when the drag ends, not on every step. */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}
+                onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
+                onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
+                <Volume value={settings.pushVolume} onChange={(pushVolume) => onPatch({ pushVolume })} />
+              </div>
+            </Row>
+          )}
+        </div>
+      </Section>
+    </>
+  );
+}
+
 function MacPanel() {
   const mac = useMacSettings();
   const [busy, setBusy] = useState(false);
@@ -1621,7 +1592,7 @@ function EnvPanel() {
    on the machine; which repo uses which lives in ANALYZE, beside the repo. */
 const KIND_LABEL = { teamwork: "TEAMWORK", jira: "JIRA" } as const;
 
-function TrackersPanel() {
+function TrackersPanel({ onChange }: { onChange?: () => void }) {   // onChange: a connection was added or removed
   const [rows, setRows] = useState<TrackerConnection[] | null>(null);
   const [gone, setGone] = useState(false);     // an old bridge: the route 404s
   const [kind, setKind] = useState<"teamwork" | "jira">("teamwork");
@@ -1645,6 +1616,7 @@ function TrackersPanel() {
       const r = await api.addTracker({ kind, name, site, email: kind === "jira" ? email : undefined, token });
       setRows((p) => [...(p ?? []), r.connection].sort((a, b) => a.name.localeCompare(b.name)));
       setName(""); setSite(""); setEmail(""); setToken("");
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not connect");
     } finally {
@@ -1656,6 +1628,7 @@ function TrackersPanel() {
     try {
       await api.removeTracker(id);
       setRows((p) => (p ?? []).filter((c) => c.id !== id));
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not remove");
     }
@@ -1738,7 +1711,7 @@ function TrackersPanel() {
   );
 }
 
-/* PLUGINS ▸ RIVENDELL — the rivendell-api connections the PR-review plugin runs
+/* INTEGRATIONS ▸ RIVENDELL — the rivendell-api connections the PR-review plugin runs
    (bridge/rivendell_instances.py). One bridge, several Rivendells: a production
    dashboard, a local one, staging later. Each is an independent websocket
    worker with its own URL, token, model and workdir; a run it makes is tagged
@@ -1776,7 +1749,6 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
   const [name, setName] = useState(initial?.name ?? "");
   const [apiUrl, setApiUrl] = useState(initial?.api_url ?? "");
   const [token, setToken] = useState("");     // blank when editing = keep stored
-  const [wsUrl, setWsUrl] = useState(initial?.ws_url ?? "");
   const [model, setModel] = useState(initial?.model ?? "opus");
   const [workdir, setWorkdir] = useState(initial?.workdir ?? "");
   const [review, setReview] = useState(String(initial?.review_timeout ?? 3600));
@@ -1788,7 +1760,7 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
   const canSave = !!name.trim() && !!apiUrl.trim() && (editing || !!token.trim());
   const submit = () => onSubmit({
     name: name.trim(), enable, api_url: apiUrl.trim(), token: token.trim(),
-    ws_url: wsUrl.trim(), model: model.trim() || "opus", workdir: workdir.trim(),
+    model: model.trim() || "opus", workdir: workdir.trim(),
     review_timeout: Number(review) || 3600, impl_timeout: Number(impl) || 10800,
   });
   const mono = { ...field, fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0 } as CSSProperties;
@@ -1818,8 +1790,6 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
         <input value={token} onChange={(e) => setToken(e.target.value)} type="password"
           placeholder={editing ? `token ${initial!.token || "set"} — blank keeps it` : "rvd_… bearer token"}
           style={{ ...mono, flex: "2 1 220px" }} />
-        <input value={wsUrl} onChange={(e) => setWsUrl(e.target.value)} placeholder="ws url (optional; derived from api url)" spellCheck={false}
-          style={{ ...mono, flex: "2 1 220px" }} />
       </div>
       <div style={LINE}>
         <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="model (opus)" spellCheck={false}
@@ -1843,8 +1813,9 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
   );
 }
 
-function RivendellPanel() {
+function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange: an instance was saved, switched or removed
   const [rows, setRows] = useState<RivendellInstance[] | null>(null);
+  const [video, setVideo] = useState<VideoTools>();   // absent on a bridge older than the VIDEO JOBS row
   const [gone, setGone] = useState(false);     // an old bridge: the route 404s
   const [editing, setEditing] = useState<string | null>(() => takeSettingsFocus());   // instance id, "new", or null
   const [busy, setBusy] = useState(false);
@@ -1867,7 +1838,7 @@ function RivendellPanel() {
   }
 
   useEffect(() => {
-    void api.rivendell().then((r) => setRows(r.instances)).catch(() => { setRows([]); setGone(true); });
+    void api.rivendell().then((r) => { setRows(r.instances); setVideo(r.video); }).catch(() => { setRows([]); setGone(true); });
   }, []);
 
   // The socket goes up and down on its own (reconnect-forever with backoff), so
@@ -1876,7 +1847,7 @@ function RivendellPanel() {
   useEffect(() => {
     const t = setInterval(() => {
       if (busy) return;
-      void api.rivendell().then((r) => setRows(r.instances)).catch(() => {});
+      void api.rivendell().then((r) => { setRows(r.instances); setVideo(r.video); }).catch(() => {});
     }, 4000);
     return () => clearInterval(t);
   }, [busy]);
@@ -1896,6 +1867,7 @@ function RivendellPanel() {
         : await api.addRivendell(input);
       upsert(r.instance);
       setEditing(null);
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not save");
     } finally {
@@ -1908,6 +1880,7 @@ function RivendellPanel() {
     try {
       const r = await api.updateRivendell(inst.id, { ...riToInput(inst), enable: !inst.enable });
       upsert(r.instance);
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not save");
     }
@@ -1918,6 +1891,7 @@ function RivendellPanel() {
       await api.removeRivendell(id);
       setRows((p) => (p ?? []).filter((c) => c.id !== id));
       if (editing === id) setEditing(null);
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not remove");
     }
@@ -1928,15 +1902,12 @@ function RivendellPanel() {
 
   const dim = { color: "var(--txd)" };
   const mono = { fontFamily: "'JetBrains Mono',monospace" };
+  const missing = video ? [!video.ffmpeg && "ffmpeg", !video.whisper && "whisper-cli", !video.model && "model file"].filter(Boolean) : [];
 
+  // Its heading — title, blurb, ⓘ — is the Rivendell card's on the INTEGRATIONS page.
   return (
-    <Section
-      title="RIVENDELL"
-      icon={Waypoints}
-      desc="Rivendell's Request review and Implement using AI buttons, turned into autonomous Claude runs. One connection per Rivendell — production, local, staging."
-      info="Each instance holds a websocket open to a rivendell-api /agent endpoint and runs every request it sends with full autonomy (bypassPermissions) in its own workdir, so only connect an API you own. The token is minted in that Rivendell (Profile ▸ Tokens, LLM capability), kept beside the session store (mode 0600) and never shown again in full; revoke it there if it leaks. Runs appear in the session list tagged with the instance name. The first instance is seeded from your .env RIVENDELL_* values; edit or add more here — a save reconnects without a restart."
-    >
-      {rows.length > 0 && (
+    <>
+      {(rows.length > 0 || video) && (
         <div style={CARD}>
           {rows.map((c, i) => {
             const sv = riStatusView(c.status);
@@ -2010,6 +1981,12 @@ function RivendellPanel() {
             </Fragment>
             );
           })}
+          {video && (
+            <Row first={!rows.length} label="VIDEO JOBS"
+              desc="A client's recording, transcribed and framed on this machine: ffmpeg · whisper-cli · the model file">
+              <MoveChip c={missing.length ? [`MISSING: ${missing.join(" · ")}`, "var(--err)"] : ["FOUND", "var(--ok)"]} />
+            </Row>
+          )}
         </div>
       )}
       {editing === "new" ? (
@@ -2023,7 +2000,144 @@ function RivendellPanel() {
         </button>
       )}
       {err && editing === null && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 8 }}>{err}</div>}
-    </Section>
+    </>
+  );
+}
+
+/* INTEGRATIONS — the bundled plugins (bridge/integrations.py). One that isn't
+   installed has no tab, card, row or worker anywhere else, so this page is the
+   one place it shows: a card per installed plugin with its settings inside and
+   REMOVE at its head, then the rest, each with INSTALL. Titled by search's
+   INDEX names, so a hit lands on the card. */
+const PLUGIN_SEC: Record<string, string> = { rivendell: "RIVENDELL", trackers: "TRACKERS", design: "CLAUDE DESIGN" };
+const PLUGIN_INFO: Record<string, string> = {
+  rivendell: "Each instance holds a websocket open to a rivendell-api /agent endpoint and runs every request it sends with full autonomy (bypassPermissions) in its own workdir, so only connect an API you own. The token is minted in that Rivendell (Profile ▸ Tokens, LLM capability), kept beside the session store (mode 0600) and never shown again in full; revoke it there if it leaks. Runs appear in the session list tagged with the instance name. The first instance is seeded from your .env RIVENDELL_* values; edit or add more here — a save reconnects without a restart.",
+  trackers: "The token is kept beside the session store (mode 0600), sent only to the tracker's own API, and never shown again in full. Reading — the TASKS tab, the first-turn digest, NEXT UP — is the bridge's own HTTP and spends no model call. Writing goes through the session: its claude turn gets the tracker's MCP server for that turn only, in manual mode, with an ask rule on the whole server, so every comment and status change shows an Allow card with the full text before it posts. Teamwork's MCP entry is shared; each Jira site needs its own (Atlassian's login is per site) — the row says how to add it.",
+};
+// AVAILABLE's cards. Trackers is two, Teamwork and Jira, both installing it;
+// the other two say what the registry says.
+const OFFERS: { id: string; chip: string; color: string; name?: string; hint?: string; needs?: string }[] = [
+  { id: "rivendell", chip: "RV", color: "var(--ok)" },
+  { id: "trackers", chip: "TW", color: "var(--purple)", name: "Teamwork", needs: "API key",
+    hint: "A repo linked to a Teamwork project opens every session with what is open and overdue; TASKS tab, LINK TASKS, updates posted through the run." },
+  { id: "trackers", chip: "JR", color: "var(--info)", name: "Jira", needs: "API token",
+    hint: "The same, against an Atlassian site: one connection per site, an API token and the account it belongs to." },
+  { id: "design", chip: "CD", color: "var(--warn)" },
+];
+
+function IntegrationsPanel() {
+  const [list, setList] = useState<Integration[] | null>(null);
+  const [down, setDown] = useState("");   // why the list can't be read; "not found" is a bridge from before integrations
+  const [busy, setBusy] = useState("");   // the plugin being installed or removed
+  const [err, setErr] = useState<{ id: string; msg: string } | null>(null);   // shown on the card it belongs to
+  const [digest, setDigest] = useState<AiFeature>();   // TASK DIGEST: the aifeatures switch `tasks`
+
+  // Every answer also goes to the shared store, so the tabs and buttons a
+  // plugin brings appear or leave in the same frame.
+  const take = (plugins: Integration[]) => { setList(plugins); setIntegrations(plugins); };
+  // A card's panel changed what its summary counts (instances, connections).
+  const recount = () => void api.integrations().then((r) => take(r.plugins)).catch(() => {});
+
+  useEffect(() => {
+    void api.integrations().then((r) => take(r.plugins))
+      .catch((e) => setDown(e instanceof Error ? e.message : "could not read the integrations"));
+    void api.aiFeatures().then((r) => { setDigest(r.features.find((f) => f.key === "tasks")); setAiFeatures(r.features); })
+      .catch(() => {});
+  }, []);
+
+  async function set(id: string, action: "install" | "remove") {
+    setBusy(id); setErr(null);
+    try {
+      take((await api.setIntegration(id, action)).plugins);
+    } catch (e) {
+      // A refused REMOVE (a Rivendell run in flight) is a 409 that says why.
+      setErr({ id, msg: e instanceof Error ? e.message : `could not ${action}` });
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function remove(p: Integration) {
+    if (await askConfirm(`Remove ${p.label}? Its tabs, buttons and worker go; its connections stay on disk, so installing it again restores them.`))
+      await set(p.id, "remove");
+  }
+
+  async function toggleDigest(f: AiFeature) {
+    setErr(null);
+    try {
+      const fresh = (await api.setAiFeature("tasks", !f.enabled)).features;
+      setDigest(fresh.find((x) => x.key === "tasks"));
+      setAiFeatures(fresh);
+    } catch (e) {
+      setErr({ id: "tasks", msg: e instanceof Error ? e.message : "could not save" });
+    }
+  }
+
+  if (down === "not found")
+    return <Placeholder icon={TriangleAlert}>This bridge is running code from before integrations. Restart it to install or remove one.</Placeholder>;
+  if (down) return <Placeholder icon={TriangleAlert}>{down}</Placeholder>;
+  if (!list) return <Placeholder icon={LoaderCircle} spin>Reading the integrations…</Placeholder>;
+
+  const installed = list.filter((p) => p.installed);
+  const offers = OFFERS.filter((o) => list.some((p) => p.id === o.id && !p.installed));
+  const errLine = (id: string) => (err?.id === id ? <div style={{ color: "var(--err)", marginTop: 4 }}>{err.msg}</div> : undefined);
+
+  return (
+    <>
+      {installed.map((p, i) => (
+        <Section key={p.id} title={PLUGIN_SEC[p.id] ?? p.label} desc={p.blurb} info={PLUGIN_INFO[p.id]} top={i > 0}>
+          <div style={CARD}>
+            <Row first label={p.summary}
+              desc={p.id === "design"
+                ? <>Adds ANALYZE ▸ DESIGN (link · pull · sync), the composer's DESIGN button and the project menu's Design system. A repo is linked from ANALYZE ▸ DESIGN.{errLine(p.id)}</>
+                : errLine(p.id)}>
+              <MiniBtn danger disabled={!!busy} onClick={() => void remove(p)} title={`Remove ${p.label}`}>REMOVE</MiniBtn>
+            </Row>
+            {p.id === "trackers" && digest && (
+              <Row label="TASK DIGEST" desc={<>{digest.hint}{errLine("tasks")}</>} info={digest.about}>
+                <Switch on={digest.enabled} onClick={() => void toggleDigest(digest)} label="Task digest" />
+              </Row>
+            )}
+          </div>
+          {p.id === "rivendell" && <div style={{ marginTop: 11 }}><RivendellPanel onChange={recount} /><DeviceRunsPanel /></div>}
+          {p.id === "trackers" && <div style={{ marginTop: 11 }}><TrackersPanel onChange={recount} /></div>}
+        </Section>
+      ))}
+      <Section title="AVAILABLE" top={installed.length > 0}
+        desc={offers.length ? "Install one to connect it. Nothing is downloaded; the code is already here, switched off." : "Everything that ships with Mystical is installed."}>
+        {offers.length > 0 && (
+          // .aim scopes the card tokens (--l, --l2, --f) the aim-* classes read.
+          <div className="aim aim-xgrid">
+            {offers.map((o) => {
+              const p = list.find((x) => x.id === o.id)!;
+              const name = o.name ?? p.label;
+              return (
+                <div key={o.chip} className="aim-x" data-busy={busy === o.id || undefined}
+                  style={{ border: "1px dashed var(--line2)", background: "transparent" }}>
+                  <div className="aim-xhd">
+                    <span className="aim-xic" aria-hidden
+                      style={{ color: o.color, background: `color-mix(in oklab, ${o.color} 16%, var(--panel))`, fontSize: 10, fontWeight: 600 }}>
+                      {o.chip}
+                    </span>
+                    <b>{name}</b>
+                  </div>
+                  <div className="aim-xhint">{o.hint ?? p.blurb}</div>
+                  {err?.id === o.id && <div className="aim-xerr">{err.msg}</div>}
+                  <div className="aim-xfoot">
+                    <span>{o.needs ?? p.needs}</span>
+                    <span style={{ flex: 1 }} />
+                    <button type="button" className="aim-xbtn" disabled={!!busy} aria-label={`Install ${name}`}
+                      onClick={() => void set(o.id, "install")} style={{ border: "1px solid var(--acc)", color: "var(--txb)" }}>
+                      Install
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </Section>
+    </>
   );
 }
 
@@ -3800,7 +3914,11 @@ export function SettingsModal(props: SettingsModalProps) {
     asked.current = true;   // one attempt: a failed fetch must not retry per keystroke
     void api.envSettings().then((r) => setEnv(r.settings)).catch(() => {});
   }, [q]);
-  const hidden = new Set<string>();   // sections that only exist while a switch is on; none left
+  // Sections that exist only while their plugin is installed; AVAILABLE answers
+  // for one that isn't, so a search never offers a card the page doesn't draw.
+  const plugins = useIntegrations();
+  const hidden = new Set(Object.entries(PLUGIN_SEC).filter(([id]) => !plugins[id]).map(([, sec]) => sec));
+  if (!plugins.rivendell) hidden.add("ADD AN INSTANCE");
   const hits = search(q, env.filter((s) => !tunesOff(s.key, aiFeatures)), hidden);
   const shown: Tab | "search" = q.trim() ? "search" : tab;
   function go(h: Hit) {
@@ -3844,12 +3962,10 @@ export function SettingsModal(props: SettingsModalProps) {
   const autoBase = autoBaseFont(window.innerWidth, window.innerHeight);
   const [escHover, setEscHover] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
-  const flint = isFlint(settings.theme);
   const [ground, setGround] = useState<"dark" | "light">(isLight(settings.theme) ? "light" : "dark");
   const crumbTab = TABS.find((t) => t.key === shown);
 
   return (
-    <FlintCtx.Provider value={flint}>
     <div
       className="setscrim"
       onClick={onClose}
@@ -3869,10 +3985,11 @@ export function SettingsModal(props: SettingsModalProps) {
         onClick={(e) => e.stopPropagation()}
         className="panel setdlg"
         style={{
-          // Content is capped at 760px by .mcol and the rail is 180 — a modal at
-          // the shared --modal-w (75vw) therefore spent ~130px a side on empty
-          // gutter. This width IS the content's width.
-          width: "min(976px, 94vw)",
+          // Content is capped at 760px by .mcol; the family layer's rail is 236
+          // and the pane pads 32 a side — so 1062 IS the content's width. Wider
+          // is empty gutter (the shared --modal-w, 75vw, spent ~130px a side on
+          // it); 976, sized for the old 180 rail, squeezed the rows to 674.
+          width: "min(1062px, 94vw)",
           // One height for every category, not one per: sizing to the tab meant
           // the panel jumped ~200px between INTERFACE (one switch) and
           // APPEARANCE, and a dialog that resizes under the pointer costs more
@@ -3915,21 +4032,7 @@ export function SettingsModal(props: SettingsModalProps) {
             <circle cx="12" cy="12" r="3.2" />
             <path d="M12 3.3v2.4M12 18.3v2.4M20.7 12h-2.4M5.7 12H3.3M18.16 5.84l-1.7 1.7M7.54 16.46l-1.7 1.7M18.16 18.16l-1.7-1.7M7.54 7.54l-1.7-1.7" />
           </svg>
-          {flint ? (
-            <span className="set-crumb">Settings{crumbTab && <i> / {sentence(crumbTab.label)}</i>}</span>
-          ) : (
-            <>
-              <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>
-                CONFIGURE
-              </span>
-              <span
-                style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px", whiteSpace: "nowrap" }}
-                className="glow"
-              >
-                DASHBOARD SETTINGS
-              </span>
-            </>
-          )}
+          <span className="set-crumb">Settings{crumbTab && <i><u>/</u> {sentence(crumbTab.label)}</i>}</span>
           <InfoDot on={scopeOpen} about="where these are stored" onClick={() => setScopeOpen(!scopeOpen)} />
           <span style={{ flex: 1 }}></span>
           <input
@@ -3941,7 +4044,7 @@ export function SettingsModal(props: SettingsModalProps) {
               // Otherwise Escape would close the whole modal from inside the box.
               if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
             }}
-            placeholder={flint ? "Search settings" : "search settings…"}
+            placeholder="Search settings"
             className="set-search"
             style={{ ...field, flex: "0 1 220px", minWidth: 140 }}
           />
@@ -3963,7 +4066,7 @@ export function SettingsModal(props: SettingsModalProps) {
               padding: "4px 10px",
             }}
           >
-            {flint ? "✕" : "ESC ✕"}
+            ✕
           </button>
         </div>
         {scopeOpen && (
@@ -3989,7 +4092,7 @@ export function SettingsModal(props: SettingsModalProps) {
           <div className="setrail" ref={rail}>
             {RAIL.map((t, i) => (
               <Fragment key={t.key}>
-                {t.group !== RAIL[i - 1]?.group && <div className="setgroup">{flint ? sentence(t.group) : t.group}</div>}
+                {t.group !== RAIL[i - 1]?.group && <div className="setgroup">{sentence(t.group)}</div>}
                 <button
                   className={tab === t.key ? "on" : undefined}
                   aria-current={tab === t.key ? "page" : undefined}
@@ -3998,7 +4101,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 >
                   <t.icon size={14} strokeWidth={1.7} aria-hidden style={{ flex: "none" }} />
                   <div style={{ minWidth: 0 }}>
-                    <div className="set-raillbl" style={{ fontSize: "var(--t10)", letterSpacing: 1.5 }}>{flint ? sentence(t.label) : t.label}</div>
+                    <div className="set-raillbl" style={{ fontSize: "var(--t10)", letterSpacing: 1.5 }}>{sentence(t.label)}</div>
                     <div className="hint"
                       style={{ fontSize: "var(--t85)", letterSpacing: 0.3, color: "var(--txl)", marginTop: 2 }}>
                       {t.hint}
@@ -4045,42 +4148,33 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "appearance" && (
               <>
-                {flint ? (
-                  // FLINT: one theme grid behind a Dark/Light switch, cards that
-                  // preview the UI, and FLINT's colourings and header styles
-                  // as unlabelled buttons on its own card.
-                  <div className="set-sec" data-sec="THEME · DARK">
-                    <div className="set-themehead">
-                      <b>Theme</b>
-                      <div className="set-seg2">
-                        {(["dark", "light"] as const).map((g) => (
-                          <button key={g} data-on={ground === g || undefined} onClick={() => setGround(g)}>{g === "dark" ? "Dark" : "Light"}</button>
-                        ))}
-                      </div>
+                {/* One theme grid behind a Dark/Light switch; the switch shows each
+                    family's colourings on that ground, it does not change theme. */}
+                <div className="set-sec" data-sec="THEME">
+                  <div className="set-themehead">
+                    <b>Theme</b>
+                    <div className="set-seg2">
+                      {(["dark", "light"] as const).map((g) => (
+                        <button key={g} data-on={ground === g || undefined} onClick={() => setGround(g)}>{g === "dark" ? "Dark" : "Light"}</button>
+                      ))}
                     </div>
-                    <FlintThemeGrid cards={ground === "dark" ? DARK_CARDS : LIGHT_CARDS} settings={settings}
-                      onTheme={onTheme} onHeader={(headerStyle) => onPatch({ headerStyle })} />
                   </div>
-                ) : (
-                  <>
-                    <Section title="THEME · DARK">
-                      <ThemeCardGrid cards={DARK_CARDS} settings={settings} onTheme={onTheme} />
-                    </Section>
-                    <Section title="THEME · LIGHT" top>
-                      <ThemeCardGrid cards={LIGHT_CARDS} settings={settings} onTheme={onTheme} />
-                    </Section>
-                  </>
-                )}
+                  <ThemeGrid light={ground === "light"} settings={settings} onTheme={onTheme} />
+                </div>
 
                 {themeHasCrt(settings.theme) && (
                   <Section
                     title="CRT EFFECTS"
                     top
-                    info="Kept when you recolour AURORA; reset when you switch profile. The paper and daylight themes have no CRT layer at all."
+                    info="Kept when you change phosphor; reset when you switch family. Claude and Flint have no CRT layer at all."
                   >
                     <CrtToggles settings={settings} onToggle={onToggle} />
                   </Section>
                 )}
+
+                <Section title="HEADER" top>
+                  <HeaderStyles settings={settings} onHeader={(headerStyle) => onPatch({ headerStyle })} />
+                </Section>
 
                 {/* One block, not two: a section heading and a fold-out
                     paragraph each, for one <select> each, spent more of the tab
@@ -4244,100 +4338,79 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
                 <Section title="WHILE IT WORKS" top>
                   <div style={CARD}>
-                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. EQUALIZER is the braille spinner with level bars.">
-                      <div style={{ width: 220 }}>
+                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. EQUALIZER is the braille spinner with level bars. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music.">
+                      <div style={{ width: 280 }}>
                         <Segmented
-                          options={[{ label: "EQUALIZER", value: "bar" }, { label: "STATUS", value: "status" }]}
+                          options={[{ label: "EQUALIZER", value: "bar" }, { label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }]}
                           value={settings.indicator}
                           onPick={(indicator) => onPatch({ indicator })}
                         />
                       </div>
                     </Row>
-                  </div>
-                </Section>
-              </>
-            )}
-
-
-
-            {shown === "notifications" && (
-              <>
-                <Section title="DESKTOP">
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="OS NOTIFICATIONS"
-                      info={pushSupported()
-                        ? "A banner when a session finishes or needs an answer — only for the ones you're not watching. Telegram still covers you when no dashboard is open."
-                        : "This browser has no Notification API — Telegram remains the only push path."}
-                    >
-                      <Switch
-                        on={settings.push}
-                        onClick={() => {
-                          if (settings.push) { onPatch({ push: false }); return; }
-                          // Ask only on switch-on; a denial can't be re-asked, so the
-                          // switch goes back off rather than sitting on and silent.
-                          void requestPush().then((ok) => onPatch({ push: ok }));
-                        }}
-                      />
-                    </Row>
-                  </div>
-                </Section>
-
-                {/* Sound is its own switch, not a rider on DESKTOP: the failure
-                    sound belongs to an in-app toast, which fires whether or not
-                    the OS is showing banners. */}
-                <Section title="SOUND" top>
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="PLAY A SOUND"
-                      info="For when the news lands on a screen you aren't looking at. One per event per batch, not per session."
-                    >
-                      <Switch
-                        on={settings.pushSound}
-                        onClick={() => {
-                          // Switching it on plays it once — otherwise you find out how
-                          // loud it is at the wrong moment.
-                          if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
-                          onPatch({ pushSound: !settings.pushSound });
-                        }}
-                      />
-                    </Row>
-                    {settings.pushSound && (
-                      // Every change plays itself: picking a notification sound you
-                      // can't hear until the next notification is guesswork.
-                      <div style={{ ...ROW, marginTop: 12, paddingTop: 12, borderTop: RULE, alignItems: "flex-end", flexWrap: "wrap" }}>
-                        <Cell label="DEFAULT TONE" grow="3 1 260px">
-                          <Segmented
-                            options={TONE_OPTS}
-                            value={settings.pushTone}
-                            onPick={(pushTone) => { onPatch({ pushTone }); chime(pushTone, settings.pushVolume); }}
+                    {settings.indicator === "nyan" && (
+                      <>
+                        <Row label="CAT">
+                          <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{nyanLabel(settings.nyan)}</span>
+                        </Row>
+                        <div
+                          className="mscroll"
+                          style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(52px,1fr))", gap: 5, maxHeight: 172, overflowY: "auto", marginTop: 11 }}
+                        >
+                          {NYAN_MODES.map((m) => {
+                            const on = settings.nyan === m.key;
+                            return (
+                              <button
+                                key={m.key}
+                                onClick={() => onPatch({ nyan: m.key })}
+                                title={m.label}
+                                aria-pressed={on}
+                                style={{
+                                  appearance: "none",
+                                  cursor: "pointer",
+                                  padding: 3,
+                                  lineHeight: 0,
+                                  background: on ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "var(--panel3)",
+                                  border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 14%, transparent)"}`,
+                                }}
+                              >
+                                <img src={nyanThumb(m.thumb)} alt={m.label} loading="lazy" style={{ width: "100%", display: "block" }} />
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <Row label="SOUND" desc="MATCH THE CAT plays the picked cat's own track; MUTE plays none.">
+                          <select
+                            value={settings.nyanSound}
+                            onChange={(e) => onPatch({ nyanSound: e.target.value as NyanSound })}
+                            style={{ ...field, flex: "0 1 200px", minWidth: 0 }}
+                          >
+                            <option value="match">MATCH THE CAT</option>
+                            <option value="off">MUTE</option>
+                            {NYAN_MODES.map((m) => (
+                              <option key={m.key} value={m.key}>
+                                {m.label}
+                              </option>
+                            ))}
+                          </select>
+                          <Volume
+                            value={settings.nyanVolume}
+                            disabled={settings.nyanSound === "off"}
+                            onChange={(nyanVolume) => onPatch({ nyanVolume })}
                           />
-                        </Cell>
-                        <Cell label="VOLUME" grow="1 1 150px">
-                          {/* Preview when the drag ends, not on every step — a chime
-                              per pixel of travel is a swarm, not a sample. */}
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}
-                            onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
-                            onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
-                            <Volume
-                              value={settings.pushVolume}
-                              onChange={(pushVolume) => onPatch({ pushVolume })}
-                            />
-                          </div>
-                        </Cell>
-                      </div>
+                        </Row>
+                        <Row label="EXTRA ANIMATIONS" desc="fly the cat, draw nyan.cat's rainbow trail + pixel stars">
+                          <Switch on={settings.nyanExtra} onClick={() => onPatch({ nyanExtra: !settings.nyanExtra })} />
+                        </Row>
+                      </>
                     )}
                   </div>
                 </Section>
-
               </>
             )}
 
 
 
-
+            {shown === "notifications" && <NotifyPanel settings={settings} onPatch={onPatch} />}
 
             {shown === "aimgmt" && (
               <AiManagementPanel settings={settings} onPatch={onPatch} models={models} sessionTools={sessionTools}
@@ -4345,8 +4418,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 onProfilesChanged={onProfilesChanged} onAccountsChanged={onAccountsChanged}
                 projects={projects} project={project} openSec={jump?.sec ?? startSec} />
             )}
-            {shown === "plugins" && <RivendellPanel />}
-            {shown === "plugins" && <DeviceRunsPanel />}
+            {shown === "integrations" && <IntegrationsPanel />}
             {shown === "move" && <MovePanel />}
             {shown === "mac" && <MacPanel />}
 
@@ -4390,16 +4462,6 @@ export function SettingsModal(props: SettingsModalProps) {
                   <UpdatePanel onFeed={onFeed} />
                 </Section>
 
-                <Section
-                  title="TRACKERS"
-                  icon={ListTodo}
-                  top
-                  desc="Teamwork and Jira, by API token. A repo is linked to one of their projects from ANALYZE ▸ LINK TASKS; posting an update runs in the session with the tracker's MCP entry on for that one turn."
-                  info="The token is kept beside the session store (mode 0600), sent only to the tracker's own API, and never shown again in full. Reading — the TASKS tab, the first-turn digest, NEXT UP — is the bridge's own HTTP and spends no model call. Writing goes through the session: its claude turn gets the tracker's MCP server for that turn only, in manual mode, with an ask rule on the whole server, so every comment and status change shows an Allow card with the full text before it posts. Teamwork's MCP entry is shared; each Jira site needs its own (Atlassian's login is per site) — the row says how to add it."
-                >
-                  <TrackersPanel />
-                </Section>
-
                 {/* Everything config.py reads from the environment, which until
                     now meant a text editor and a restart to change. */}
                 <EnvPanel />
@@ -4411,6 +4473,5 @@ export function SettingsModal(props: SettingsModalProps) {
 
       </div>
     </div>
-    </FlintCtx.Provider>
   );
 }

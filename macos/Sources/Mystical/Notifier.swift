@@ -79,7 +79,10 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
             let id = body["id"] as? String ?? UUID().uuidString
             let content = UNMutableNotificationContent()
             content.title = body["title"] as? String ?? ""
+            content.subtitle = body["subtitle"] as? String ?? ""
             content.body = body["body"] as? String ?? ""
+            // One subject, one stack in Notification Center; "" (the default) is no thread.
+            content.threadIdentifier = body["thread"] as? String ?? ""
             content.userInfo = ["id": id]
             let actions = NotificationShim.actions(body["actions"])
             if !actions.isEmpty {
@@ -132,7 +135,7 @@ final class Notifier: NSObject, WKScriptMessageHandlerWithReply,
                 switch body["action"] as? String {
                 case "close": w.performClose(nil)
                 case "minimize": w.miniaturize(nil)
-                case "zoom": (w.windowController as? DashboardWindow)?.toggleSimpleFullScreen(nil)
+                case "zoom": w.toggleFullScreen(nil)
                 default: break
                 }
             }

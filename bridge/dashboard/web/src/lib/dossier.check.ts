@@ -6,8 +6,8 @@ const ok = (cond: boolean, what: string) => {
   console.log(`ok - ${what}`);
 };
 
-const p = (i: number) => ({ kind: "prose" as const, idx: [i] });
-const st = (...idx: number[]) => ({ kind: "steps" as const, idx });
+const p = (i: number) => ({ kind: "prose" as const, idx: [i], start: i });
+const st = (...idx: number[]) => ({ kind: "steps" as const, idx, start: idx[0] });
 const shape = (zs: ReturnType<typeof zonesOf>) =>
   zs.map((z) => `${z.kind}:${z.segs.map((s) => s.idx.join(",")).join("|")}`).join(" ");
 

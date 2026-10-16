@@ -80,7 +80,7 @@ class TestWiring(unittest.TestCase):
         sent = []
         orig = runner.notify_needs_you, runner.notify_turn_done
         runner.notify_needs_you = lambda c, s, n: sent.append(("needs", n))
-        runner.notify_turn_done = lambda c, s, e: sent.append(("done", None))
+        runner.notify_turn_done = lambda c, s, e, body="": sent.append(("done", None))
         try:
             tailstate._run(job, None)
         finally:

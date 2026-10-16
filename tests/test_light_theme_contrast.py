@@ -1,10 +1,10 @@
-"""The light themes' ink tiers must stay legible.
+"""The light grounds' ink tiers must stay legible.
 
-The three LIGHT_KEYS palettes in the dashboard's theme.ts are hand-authored hex,
-so a retint can silently drop caption text (`--txl` alone is used 100+ times at
-8-10px) to a washed-out grey. This reads theme.ts and checks every text tier and
-every semantic colour used as text against WCAG contrast floors on that theme's
-own canvas.
+The light palettes in the dashboard's theme.ts (CLAUDE's paper, FLINT's
+daylight, every colouring on them) are hand-authored hex, so a retint can
+silently drop caption text (`--txl` alone is used 100+ times at 8-10px) to a
+washed-out grey. This reads theme.ts and checks every text tier and every colour
+used as text against WCAG contrast floors on that theme's own canvas.
 
 Run: `python tests/test_light_theme_contrast.py`
 """
@@ -12,6 +12,8 @@ Run: `python tests/test_light_theme_contrast.py`
 import os
 import re
 import sys
+
+from theme_ts import is_light, palettes
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 THEME_TS = os.path.join(ROOT, "bridge/dashboard/web/src/lib/theme.ts")
@@ -34,13 +36,9 @@ INK_FLOORS = {
 SEMANTIC_FLOOR = 4.45
 GHOST_FLOOR = 3.25
 
-# The ground each theme's text actually sits on — the DARKEST stop of `canvas`,
-# which is below `panel`, so clearing this clears every surface. `apex` and
-# `gloam` are ported from vvd.world, whose themes carry only an accent over a
-# wallpaper; their ink tiers are derived, so this is the check that they hold.
-CANVAS = {"normal": "#e3e9ef", "newsprint": "#e8e2d3", "candy": "#f6d7e8",
-          "apex": "#e4e9ee", "gloam": "#e6e8e0", "riso": "#f0eee9",
-          "foundry": "#dcdcd6", "cupertino": "#ebedf0"}
+# The grounds the light colourings sit on — each its family's DARKEST light stop,
+# below `panel`, so clearing this clears every surface.
+CANVAS = {"claude": "#efede5", "flint": "#ebebed"}
 
 # The light ground has to stay a GROUND, not a spotlight: `panel` is the raised
 # card and `canvas` sits below it, so the biggest surface is never the brightest.
@@ -48,12 +46,15 @@ CANVAS = {"normal": "#e3e9ef", "newsprint": "#e8e2d3", "candy": "#f6d7e8",
 LADDER = ("canvas", "panel3", "panel2", "panel")
 MIN_LADDER_STEP = 1.008  # each rung measurably lighter than the one below
 
-# Themes whose semantics must be TELLABLE APART, not one hue in six shades.
-# BLUEPRINT was blue-on-blue (acc/info/purple all within ~10 degrees); NEWSPRINT
-# was grey-on-grey. The claude-* set is exempt: its brand clay accent sits ~7
-# degrees off its err salmon on purpose.
-COLORFUL = ["normal", "newsprint", "candy", "blueprint",
-            "dusk", "library", "apex", "gloam", "riso", "void", "nocturne"]
+# Themes whose semantics must be TELLABLE APART, not one hue in six shades:
+# your colour is never a warning's. Exempt on purpose: the claude-* set (its
+# brand clay sits ~7 degrees off its err salmon, and LIBRARY's gold is the
+# warning's), VIRIDIAN (green phosphor: go and good are one word, as FERN's),
+# and FLINT SUNSET (warm by design, its orange leans on err's red).
+COLORFUL = ["aqua", "amber", "magenta", "blueprint", "void",
+            "flint-ember", "flint-fuchsia", "flint-kiln", "flint-cobalt", "flint-nocturne", "flint-violet", "flint-signal",
+            "flint-ember-light", "flint-fuchsia-light", "flint-kiln-light", "flint-cobalt-light",
+            "flint-nocturne-light", "flint-signal-light"]
 HUE_KEYS = ["acc", "ok", "warn", "err", "info", "purple"]
 MIN_HUE_GAP = 20.0   # degrees between any two saturated semantics
 MIN_SAT = 0.16       # below this a colour is neutral ink, so it has no hue to space
@@ -116,23 +117,14 @@ def mix(a, b, pct):
     return "#%02x%02x%02x" % tuple(round(x * t + y * (1 - t)) for x, y in zip(av, bv))
 
 
-def parse_palettes(src):
-    """{theme key: {token: hex}} for every `{ key: "x", ... pal: { ... } }` def."""
-    out = {}
-    for m in re.finditer(r'\{ key: "([\w-]+)".*?pal: \{(.*?)\} \}', src):
-        key, body = m.group(1), m.group(2)
-        out[key] = dict(re.findall(r'"?([\w-]+)"?: "(#[0-9a-fA-F]{6})"', body))
-    return out
-
-
 def main():
     src = open(THEME_TS, encoding="utf-8").read()
 
     assert "adventure" not in src, "the ADVENTURE theme was removed"
 
-    light = re.search(r"LIGHT_KEYS: ThemeKey\[\] = \[(.*?)\]", src).group(1)
-    light_keys = re.findall(r'"([\w-]+)"', light)
-    assert light_keys == list(CANVAS), f"LIGHT_KEYS changed: {light_keys}"
+    pals = palettes(src)
+    light_keys = [k for k in pals if is_light(k)]
+    assert len(light_keys) == 13, f"expected CLAUDE's 6 + FLINT's 7 light colourings: {light_keys}"
 
     css = open(INDEX_CSS, encoding="utf-8").read()
     edges = light_edges(css)
@@ -145,15 +137,15 @@ def main():
     for tok in ("--shadow-pop", "--shadow-modal"):
         assert f"{tok}: color-mix" in light_block, f"light ground must retint {tok}"
 
-    pals = parse_palettes(src)
     fails = []
     grounds = ("acc-on", "panel", "panel2", "panel3", "canvas")
     for key in light_keys:
-        pal = pals.get(key)
-        assert pal, f"no pal{{}} parsed for {key}"
-        bg = CANVAS[key]
+        pal = pals[key]
+        bg = CANVAS[key.split("-")[0]]
         assert pal.get("canvas") == bg, f"{key}: pal canvas {pal.get('canvas')} != {bg}"
         for token, value in pal.items():
+            if not value.startswith("#"):
+                continue  # a font stack or the rgb triplet
             floor = INK_FLOORS.get(
                 token, GHOST_FLOOR if token.endswith("-g") else SEMANTIC_FLOOR)
             if token in grounds:
@@ -200,7 +192,7 @@ def main():
     if fails:
         print("FAIL — theme palette below floor:\n" + "\n".join(fails))
         sys.exit(1)
-    print(f"ok — {len(light_keys)} light themes clear every ink floor and climb "
+    print(f"ok — {len(light_keys)} light colourings clear every ink floor and climb "
           f"their surface ladder; {len(COLORFUL)} themes have distinct semantics")
 
 

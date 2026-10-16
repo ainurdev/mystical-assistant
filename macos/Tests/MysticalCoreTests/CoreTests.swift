@@ -49,6 +49,33 @@ import Testing
     #expect(Running.waiting(Data("<html>".utf8)) == nil)
 }
 
+@Test func waitingPrefersNeeds() throws {
+    // NEEDS YOU, in the bridge's order (not by title); the status map is ignored.
+    let json = #"""
+    {"status":{"s9":{"state":"awaiting","kind":"question","label":"awaiting your answer"}},
+     "needs":[{"subject":"s1","kind":"approve","verb":"APPROVE","title":"Project logos and theme sync",
+               "body":"Bash: rm -rf old-shots","at":1729090000.0,"session_id":"s1","meta":{}},
+              {"subject":"rv:i1:r1","kind":"rv_offer","verb":"OFFERED","title":"Fix the login form",
+               "body":"","at":1729090100.0,"session_id":null,"meta":{}}]}
+    """#
+    let w = try #require(Running.waiting(Data(json.utf8)))
+    #expect(w == [
+        WaitingSession(id: "s1", title: "Project logos and theme sync", label: "APPROVE · Bash: rm -rf old-shots"),
+        WaitingSession(id: "", title: "Fix the login form", label: "OFFERED"),
+    ])
+}
+
+@Test func waitingFallsBackToStatus() {
+    // A bridge from before NEEDS YOU sends no "needs": the status map decides.
+    let old = #"{"status":{"a":{"state":"awaiting","kind":"question","label":"awaiting your answer"}}}"#
+    #expect(Running.waiting(Data(old.utf8)) == [
+        WaitingSession(id: "a", title: "awaiting your answer", label: "awaiting your answer"),
+    ])
+    // An empty "needs" is a newer bridge with nothing waiting, not an older one.
+    let none = #"{"needs":[],"status":{"a":{"state":"awaiting","kind":"question","label":"awaiting your answer"}}}"#
+    #expect(Running.waiting(Data(none.utf8)) == [])
+}
+
 // MARK: URL policy
 
 let origin = URL(string: "http://127.0.0.1:8790")!
@@ -106,6 +133,15 @@ let origin = URL(string: "http://127.0.0.1:8790")!
     #expect(NotificationShim.identifier(tag: "sess-1", fallback: "n1") == "tag:sess-1")
     #expect(NotificationShim.identifier(tag: "", fallback: "n1") == "n1")
     #expect(NotificationShim.identifier(tag: nil, fallback: "n1") == "n1")
+}
+
+@Test func aBannersSessionIsItsTagOnlyWhenTheTagIsASession() {
+    // The page is gone (reloaded): a click deep-links the tag's session — but the
+    // feed's tags are subjects, and only a session id has no colon in it.
+    #expect(NotificationShim.session(fromIdentifier: "tag:3f2a9c") == "3f2a9c")
+    #expect(NotificationShim.session(fromIdentifier: "tag:rv:prod:r1") == nil)
+    #expect(NotificationShim.session(fromIdentifier: "tag:pr:o/r:feat/x") == nil)
+    #expect(NotificationShim.session(fromIdentifier: "n1730000-4") == nil)
 }
 
 @Test func permissionMapping() {
@@ -173,6 +209,17 @@ func shimContext(permission: String, reply: String = "granted") -> (JSContext, (
     ctx.evaluateScript("var first = window.Notification;")
     ctx.evaluateScript(NotificationShim.source(permission: "denied"))
     #expect(ctx.evaluateScript("window.Notification === first && Notification.permission === 'granted'").toBool())
+}
+
+@Test func shimForwardsSubtitleAndThread() {
+    let (ctx, sent) = shimContext(permission: "granted")
+    ctx.evaluateScript(#"new Notification("⏸ fix", { body: "Bash", tag: "s1", subtitle: "mystical · master", thread: "s1" });"#)
+    #expect(sent().first?["subtitle"] as? String == "mystical · master")
+    #expect(sent().first?["thread"] as? String == "s1")
+    // Not asked for: empty strings, never undefined.
+    ctx.evaluateScript(#"new Notification("t", { tag: "s2" });"#)
+    #expect(sent().last?["subtitle"] as? String == "")
+    #expect(sent().last?["thread"] as? String == "")
 }
 
 // MARK: busy count

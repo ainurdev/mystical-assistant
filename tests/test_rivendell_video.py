@@ -43,6 +43,15 @@ def test_missing_tool_is_a_readable_error(tmp_path, monkeypatch):
         rv.extract_audio("in.mov", "out.wav")
 
 
+def test_tools_says_which_video_tools_are_found(monkeypatch, tmp_path):
+    model = tmp_path / "ggml.bin"
+    model.write_bytes(b"x")
+    monkeypatch.setattr(rv.config, "FFMPEG_BIN", "/bin/sh")               # any executable
+    monkeypatch.setattr(rv.config, "WHISPER_BIN", str(tmp_path / "no-whisper"))
+    monkeypatch.setattr(rv.config, "WHISPER_MODEL", str(model))
+    assert rv.tools() == {"ffmpeg": True, "whisper": False, "model": True}
+
+
 def test_pick_frames_reads_showinfo_moments_and_caps_the_count(tmp_path, monkeypatch):
     """ffmpeg's showinfo prints one pts_time per selected frame, in the files' order."""
     out = tmp_path / "frames"

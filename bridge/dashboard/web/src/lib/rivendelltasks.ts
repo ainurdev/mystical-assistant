@@ -174,13 +174,6 @@ export function sentryPrompt(title: string, s: { label: string | null; url: stri
   return `Sentry issue ${s.label ?? ""}: ${s.url}\nOn Rivendell's todolist: ${title}\n\n`;
 }
 
-/** The bell's line for a broken link (App, once per break). */
-export function linkAlertText(i: { name: string; status?: RivendellStatus }): string {
-  const at = i.status?.down_since ? new Date(i.status.down_since * 1000).toTimeString().slice(0, 5) : "";
-  return i.status?.state === "auth_error"
-    ? `Rivendell ${i.name} refused this bridge's token${at ? ` at ${at}` : ""}. Jobs are paused until you replace it.`
-    : `Rivendell ${i.name} unreachable${at ? ` since ${at}` : ""}. The bridge keeps retrying.`;
-}
 
 /** TEST LINK's last outcome in words (Settings ▸ PLUGINS, the tab's banner). */
 export function testText(t: RivendellTest | null | undefined): string {

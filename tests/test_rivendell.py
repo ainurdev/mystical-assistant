@@ -28,7 +28,7 @@ os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
 import pytest  # noqa: E402
 
-from bridge import device_share, device_side, rivendell, wsutil  # noqa: E402
+from bridge import device_share, device_side, integrations, rivendell, wsutil  # noqa: E402
 
 _real_ack = rivendell.Worker._ack
 
@@ -524,7 +524,7 @@ def test_post_result_carries_an_error_beside_a_completed_result(monkeypatch):
     w = _worker()
     sent = []
     monkeypatch.setattr(w, "_api", lambda path, payload=None: sent.append((path, payload)))
-    monkeypatch.setattr(w, "_ping_done", lambda *a: None)
+    monkeypatch.setattr(w, "_ping_done", lambda *a, **k: None)
     w._post_result("video-requests", "v1", True, "{}", error="run timed out after 3600s")
     assert sent == [("/plugin/video-requests/v1/result",
                      {"status": "COMPLETED", "result": "{}", "error": "run timed out after 3600s", "model": "opus"})]
@@ -1636,12 +1636,12 @@ def test_ws_url_override_wins():
 
 def test_origin_is_namespaced_per_instance():
     """A run's session origin names its instance, under the rivendell prefix so
-    it stays visible in the dashboards (config.is_plugin_origin)."""
+    it stays visible in the dashboards (integrations.is_plugin_origin)."""
     assert _worker(name="production").origin == "rivendell:production"
     assert _worker(name="Local Dev").origin == "rivendell:local-dev"
-    assert rivendell.config.is_plugin_origin("rivendell:production")
-    assert rivendell.config.is_plugin_origin("rivendell")
-    assert not rivendell.config.is_plugin_origin("dashboard")
+    assert integrations.is_plugin_origin("rivendell:production")
+    assert integrations.is_plugin_origin("rivendell")
+    assert not integrations.is_plugin_origin("dashboard")
 
 
 # --- manager (reconfigure) ---------------------------------------------------

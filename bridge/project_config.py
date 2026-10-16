@@ -127,6 +127,14 @@ def set_design_project(project: str, project_id: str,
     return _set_field(project, branch, "design_project", project_id)
 
 
+def design_link_count() -> int:
+    """How many entries (a repo, or repo@branch) are linked to a Claude Design
+    project. bridge/integrations.py adopts the design plugin on a machine that
+    already has one."""
+    with _lock:
+        return sum(1 for v in _load().values() if isinstance(v, dict) and v.get("design_project"))
+
+
 def tracker(project: str) -> "str | None":
     """The task tracker a repo is linked to, as "<connection id>:<project id or
     key>" (bridge/trackers.py resolves it). Project-wide: a repo's task list is
@@ -168,6 +176,36 @@ def names() -> dict:
     with _lock:
         return {k: v["name"] for k, v in _load().items()
                 if isinstance(v, dict) and v.get("name")}
+
+
+def mark(project: str) -> "dict | None":
+    """A project's mark (bridge/projectmarks.py validates its shape), or None
+    for the default letters. Project-wide, like the name."""
+    m = get(project).get("mark")
+    return m if isinstance(m, dict) else None
+
+
+def set_mark(project: str, value: "dict | None") -> None:
+    """Store a project's mark, or drop it (None) back to letters."""
+    with _lock:
+        data = _load()
+        entry = data.get(project, {})
+        if value:
+            entry["mark"] = value
+        else:
+            entry.pop("mark", None)
+        if entry:
+            data[project] = entry
+        else:
+            data.pop(project, None)
+        _save(data)
+
+
+def marks() -> dict:
+    """Every project rel that carries a mark."""
+    with _lock:
+        return {k: v["mark"] for k, v in _load().items()
+                if isinstance(v, dict) and isinstance(v.get("mark"), dict)}
 
 
 def set_hidden(project: str, on: bool) -> bool:

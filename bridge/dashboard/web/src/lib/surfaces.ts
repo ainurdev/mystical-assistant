@@ -1,5 +1,7 @@
 // Maps a session/run origin to its surface chip (code + colors) and shared time helpers.
 import { useSyncExternalStore } from "react";
+import type { ProjectMark } from "../api";
+import { inkCss } from "./ink.ts";
 export interface Surface {
   code: string;
   label: string;
@@ -61,11 +63,11 @@ export interface ProjectTint {
   faint: string; // quieter still — a detail that only hints at its project
 }
 
-// User-picked colour overrides (analyze modal's colour picker), keyed by
-// project basename — the same key the hash tints by, so every projectTint()
-// caller (strip, panels, terminal, modals) picks them up.
-// ponytail: localStorage = per-browser like every other HUD pref; move to a
-// bridge endpoint if cross-device sync ever matters.
+// Colours picked in the old analyze-modal picker, per browser in localStorage
+// and keyed by basename. Marks (bridge/projectmarks.py) replaced them: App moves
+// what this browser picked onto the bridge once (legacyTints) and then forgets
+// it. Until that lands, and on a bridge older than marks, an override still
+// colours its project.
 const TINT_KEY = "hud-project-tints";
 type TintOverride = { color?: string };
 let tintOverrides: Record<string, TintOverride> = {};
@@ -154,11 +156,48 @@ export function projectGivenName(name: string | null | undefined): string {
   return projectNames[(name ?? "").replace(/\/+$/, "")] || "";
 }
 
-export function setProjectTint(name: string | null | undefined, ov: TintOverride): void {
-  tintOverrides[dirName(name)] = ov;
-  try { localStorage.setItem(TINT_KEY, JSON.stringify(tintOverrides)); } catch { /* ignore */ }
+// Each project's mark from the projects listing: what its tile shows and the
+// colour it wears. Rides the tint subscription like the names, but only bumps
+// it when a mark changed, not on every 10s poll.
+let projectMarks: Record<string, ProjectMark> = {};
+let marksSig = "";
+
+export function setProjectMarks(map: Record<string, ProjectMark> | undefined): void {
+  if (!map) return;                       // a bridge older than marks sends none
+  const sig = JSON.stringify(map);
+  if (sig === marksSig) return;
+  projectMarks = map;
+  marksSig = sig;
   tintVersion++;
   tintSubs.forEach((fn) => fn());
+}
+
+/** One project's mark, as the editor just saved it, ahead of the next listing. */
+export function putProjectMark(rel: string, mark: ProjectMark | null): void {
+  const next = { ...projectMarks };
+  if (mark) next[rel.replace(/\/+$/, "")] = mark;
+  else delete next[rel.replace(/\/+$/, "")];
+  setProjectMarks(next);
+}
+
+export function projectMark(name: string | null | undefined): ProjectMark | null {
+  return projectMarks[(name ?? "").replace(/\/+$/, "")] ?? null;
+}
+
+/** What this browser picked in the old colour picker, for the listed rels
+ *  that have no mark yet (rel -> colour). App saves these as marks once. */
+export function legacyTints(rels: Iterable<string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const rel of rels) {
+    const c = tintOverrides[dirName(rel)]?.color;
+    if (c && /^(#[0-9a-fA-F]{6}|var\(--[a-z0-9-]{1,24}\))$/.test(c) && !projectMarks[rel]) out[rel] = c;
+  }
+  return out;
+}
+
+export function forgetLegacyTints(): void {
+  tintOverrides = {};
+  try { localStorage.removeItem(TINT_KEY); } catch { /* ignore */ }
 }
 
 /** Subscribe to tint-override changes — call once near the root so a saved
@@ -170,12 +209,19 @@ export function useProjectTints(): number {
   );
 }
 
-export function projectTint(name: string | null | undefined): ProjectTint {
+/** The colour a project's name hashes to: what it wears with no colour of its own. */
+export function hashTint(name: string | null | undefined): string {
   const base = dirName(name);
-  const ov = tintOverrides[base];
   let h = 0;
   for (let i = 0; i < base.length; i++) h = (h * 31 + base.charCodeAt(i)) >>> 0;
-  const color = ov?.color || PROJ_PALETTE[h % PROJ_PALETTE.length];
+  return PROJ_PALETTE[h % PROJ_PALETTE.length];
+}
+
+export function projectTint(name: string | null | undefined): ProjectTint {
+  const ov = tintOverrides[dirName(name)];
+  // A brand hex prints clamped to what the ground can carry (lib/ink); the
+  // theme's own inks already are.
+  const color = inkCss(projectMark(name)?.color || ov?.color || hashTint(name));
   // Translucent border. Most palette entries are CSS var() strings, so hex-slicing
   // them yielded rgba(NaN,NaN,NaN,.45) (dropped by the browser); color-mix works
   // for both var() and literal hex.

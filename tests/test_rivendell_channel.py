@@ -722,6 +722,37 @@ def test_a_reply_to_any_other_message_is_still_a_prompt(monkeypatch):
     assert started[0][1] == "fix the header"
 
 
+def test_a_tap_on_an_old_ping_after_remove_does_nothing(monkeypatch):
+    """Review focus 5: the buttons outlive the plugin; a tap must not reach it."""
+    from bridge import dispatch, integrations
+    monkeypatch.setattr(integrations, "_cache", {"rivendell": False, "trackers": True, "design": True})
+    acks, touched = [], []
+    monkeypatch.setattr(dispatch, "answer_cb", lambda cid, text="": acks.append(text))
+    monkeypatch.setattr(dispatch, "edit", lambda *a, **k: None)
+    monkeypatch.setattr(rivendell, "resolve_token", lambda t: touched.append(t))
+    monkeypatch.setattr(rivendell, "answer_option", lambda t, i: touched.append(t))
+    cb = {"id": "cb1", "from": {"id": config.DASH_CHAT_ID},
+          "message": {"chat": {"id": config.DASH_CHAT_ID}, "message_id": 7, "text": "◆ ping"}}
+    dispatch._rivendell_callback(cb, config.DASH_CHAT_ID, 7, "rv:a:tok")
+    dispatch._question_callback(cb, config.DASH_CHAT_ID, 7, "rq:tok:1")
+    assert acks == ["Rivendell isn't installed."] * 2 and touched == []
+
+
+def test_a_reply_to_an_old_ping_after_remove_is_a_prompt(monkeypatch):
+    from bridge import dispatch, integrations, state
+    monkeypatch.setattr(integrations, "_cache", {"rivendell": False, "trackers": True, "design": True})
+    started, asked = [], []
+    monkeypatch.setattr(dispatch, "handle_task", lambda *a: started.append(a))
+    monkeypatch.setattr(dispatch, "send", lambda *a, **k: None)
+    monkeypatch.setattr(rivendell, "answer_reply", lambda mid, text: asked.append(mid))
+    store.init()
+    dispatch.on_message({"chat": {"id": 555}, "from": {"id": 555}, "text": "only last week",
+                         "reply_to_message": {"message_id": 41, "text": "◆ Rivendell job needs you"}})
+    _wait_until(lambda: started)
+    state.release_run(started[0][2]["id"])
+    assert asked == [] and started[0][1] == "only last week"
+
+
 # --- Task 8: one "job done" ping per job ----------------------------------------
 
 def test_a_finished_job_pings_once_with_its_pr_and_time(quiet, workers):
@@ -760,7 +791,7 @@ def test_a_job_that_never_ran_here_pings_nothing(quiet):
 
 def test_a_rivendell_session_skips_the_generic_turn_pings(monkeypatch):
     notes = []
-    monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None: notes.append(text))
+    monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None, **kw: notes.append(text))
     runner.notify_turn_done(config.DASH_CHAT_ID, _session(), False)
     runner.notify_needs_you(config.DASH_CHAT_ID, _session(), "pick one")
     assert notes == []

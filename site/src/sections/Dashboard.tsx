@@ -141,9 +141,9 @@ export function Dashboard() {
 
       <Band
         src="./shots/themes.png"
-        alt="The Appearance tab: ten theme cards split into dark and light, above toggles for CRT scanlines and scan sweep."
-        kicker="Appearance · ten display profiles"
-        caption="Dark and light, from plain daylight to newsprint to a drafting table, with the CRT effects on their own switches. You'll stare at it all day. It may as well look like something you chose."
+        alt="The Appearance tab: three theme cards, Aurora, Claude and Flint, each with its row of colours, above the CRT effects and header styles."
+        kicker="Appearance · three themes, twenty colours"
+        caption="Three themes, each in its own voice: AURORA, a phosphor CRT with its scanlines on their own switches; CLAUDE, the app's own warm greys; FLINT, a graphite editor. Twenty colours between them, and daylight grounds for CLAUDE and FLINT. You'll stare at it all day. It may as well look like something you chose."
       />
     </>
   );

@@ -1,19 +1,33 @@
 import Foundation
 
-/// One session blocked on you — a row in the menu bar's "Waiting on you".
+/// One thing waiting on you — a row in the menu bar's "Waiting on you". `id` is
+/// the session it opens: empty for a Rivendell offer, which has no session.
 public struct WaitingSession: Equatable {
     public let id: String
     public let title: String
     public let label: String
 }
 
-/// Reads `GET /local/running` — the same status map both web surfaces render
-/// from (bridge/runner.py `_build_status`). Only `state == "awaiting"` counts:
-/// a question or a permission card, or a turn that ended on a question.
+/// Reads `GET /local/running`. Waiting on you is the bridge's NEEDS YOU set
+/// (`needs`: cards, questions, logins, usage-limit choices and Rivendell offers),
+/// so the menu bar, the panel and the dashboard's bell list the same things in
+/// the bridge's order. A bridge from before `needs` gets the old reading: the
+/// status map both web surfaces render from (bridge/runner.py `_build_status`),
+/// where only `state == "awaiting"` counts — a question or a permission card, or
+/// a turn that ended on a question.
 public enum Running {
     public static func waiting(_ data: Data) -> [WaitingSession]? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
         else { return nil }
+        if let needs = root["needs"] as? [[String: Any]] {
+            return needs.map { n in
+                let verb = n["verb"] as? String ?? ""
+                let title = n["title"] as? String ?? "", body = n["body"] as? String ?? ""
+                return WaitingSession(id: n["session_id"] as? String ?? "",
+                                      title: title.isEmpty ? verb : title,
+                                      label: body.isEmpty ? verb : "\(verb) · \(body)")
+            }
+        }
         let status = root["status"] as? [String: [String: Any]] ?? [:]
         var titles: [String: String] = [:]
         for job in root["jobs"] as? [[String: Any]] ?? [] {

@@ -1,11 +1,12 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
-import { deadLogin, loginSlot, loginWindows, modelRows, tightest } from "../models";
+import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows } from "../models";
 import { describe, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago, fmtReset } from "../lib/surfaces";
 import { openSettings } from "../lib/opensettings";
+import { useIntegrations } from "../lib/integrations";
 import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
 import { ICON_BODY } from "../lib/fileicons.gen";
@@ -448,6 +449,7 @@ export function Composer({
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "plus" | "queued">("");
   const { compact, lead, composer, sendKey } = useChatChrome();
+  const plugins = useIntegrations();   // the DESIGN button exists while Claude Design is installed
   // TABS / CONSOLE: COMPACT's new composers. CLASSIC is the old markup.
   const shelled = compact && composer !== "classic";
   // MODEL rows grouped by usage pool, each with what it has left on the login
@@ -785,8 +787,9 @@ export function Composer({
   // One on an expired login opens SETTINGS ▸ ACCOUNTS on that login instead:
   // a session bound to it could only fail.
   // The chip's own reading: what the login this session spends has left in
-  // its tightest window and when that window refills — the two numbers that
-  // decide whether to send now; both windows with exact times on hover. No
+  // its 5-hour window (the week's, once the week refills first) and when that
+  // window refills — the two numbers that decide whether to send now; both
+  // windows with exact times on hover, and in the menu's rows. No
   // profile: the default login. An agent profile spends no Claude quota, and a
   // profile the list lacks has no known login, so neither reads. A meter the
   // usage endpoint won't serve (an idle login's access token lapsed; the CLI
@@ -794,11 +797,11 @@ export function Composer({
   const chipSlot = agentPick || (profile && !bound) ? null : loginSlot(bound?.agent, bound?.account);
   const chipAcct = chipSlot === null ? undefined : accounts?.find((a) => a.slot === chipSlot);
   const chipWins = loginWindows(chipAcct);
-  const chipTight = tightest(chipWins);
-  const chipMeter = chipTight
+  const chipWin = chipWindow(chipWins);
+  const chipMeter = chipWin
     ? <span className="ctrl-meter" style={{ fontSize: "var(--t9)", letterSpacing: .5, flex: "none" }}>
-        <span style={{ color: sevColor(chipTight.severity) }}>{chipTight.left}%</span>
-        <span style={{ color: "var(--txd)" }}>{fmtReset(chipTight.resets_at)}</span>
+        <span style={{ color: sevColor(chipWin.severity) }}>{chipWin.left}%</span>
+        <span style={{ color: "var(--txd)" }}>{fmtReset(chipWin.resets_at)}</span>
       </span>
     : chipAcct && chipAcct.left === null && !chipAcct.disabled
       ? <span className="ctrl-meter" style={{ fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)", flex: "none" }}>UNKNOWN</span>
@@ -909,7 +912,7 @@ export function Composer({
       style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", display: "flex", flex: "none", marginTop: 3 }}>
       <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
   );
-  const designBtn = (
+  const designBtn = plugins.design && (
     <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
       title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
       DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>

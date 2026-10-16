@@ -684,7 +684,7 @@ function Empty({ title, text, icon, settings }: { title: string; text: ReactNode
       <div style={{ fontSize: "var(--t10)", lineHeight: 1.55, color: "var(--txl)", maxWidth: 240 }}>{text}</div>
       {settings && (
         <button onClick={() => openSettings("plugins")} style={{ ...toolBtn, fontSize: "var(--t9)", letterSpacing: 1, padding: "5px 10px" }}>
-          SETTINGS ▸ PLUGINS ›
+          SETTINGS ▸ INTEGRATIONS ›
         </button>
       )}
     </div>
