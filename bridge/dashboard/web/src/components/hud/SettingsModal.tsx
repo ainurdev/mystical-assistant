@@ -1418,7 +1418,7 @@ function EnvPanel() {
    on the machine; which repo uses which lives in ANALYZE, beside the repo. */
 const KIND_LABEL = { teamwork: "TEAMWORK", jira: "JIRA" } as const;
 
-function TrackersPanel() {
+function TrackersPanel({ onChange }: { onChange?: () => void }) {   // onChange: a connection was added or removed
   const [rows, setRows] = useState<TrackerConnection[] | null>(null);
   const [gone, setGone] = useState(false);     // an old bridge: the route 404s
   const [kind, setKind] = useState<"teamwork" | "jira">("teamwork");
@@ -1442,6 +1442,7 @@ function TrackersPanel() {
       const r = await api.addTracker({ kind, name, site, email: kind === "jira" ? email : undefined, token });
       setRows((p) => [...(p ?? []), r.connection].sort((a, b) => a.name.localeCompare(b.name)));
       setName(""); setSite(""); setEmail(""); setToken("");
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not connect");
     } finally {
@@ -1453,6 +1454,7 @@ function TrackersPanel() {
     try {
       await api.removeTracker(id);
       setRows((p) => (p ?? []).filter((c) => c.id !== id));
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not remove");
     }
@@ -1636,7 +1638,7 @@ function InstanceForm({ initial, busy, err, onSubmit, onCancel }: {
   );
 }
 
-function RivendellPanel() {
+function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange: an instance was saved, switched or removed
   const [rows, setRows] = useState<RivendellInstance[] | null>(null);
   const [video, setVideo] = useState<VideoTools>();   // absent on a bridge older than the VIDEO JOBS row
   const [gone, setGone] = useState(false);     // an old bridge: the route 404s
@@ -1690,6 +1692,7 @@ function RivendellPanel() {
         : await api.addRivendell(input);
       upsert(r.instance);
       setEditing(null);
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not save");
     } finally {
@@ -1702,6 +1705,7 @@ function RivendellPanel() {
     try {
       const r = await api.updateRivendell(inst.id, { ...riToInput(inst), enable: !inst.enable });
       upsert(r.instance);
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not save");
     }
@@ -1712,6 +1716,7 @@ function RivendellPanel() {
       await api.removeRivendell(id);
       setRows((p) => (p ?? []).filter((c) => c.id !== id));
       if (editing === id) setEditing(null);
+      onChange?.();
     } catch (e) {
       setErr(e instanceof Error ? e.message : "could not remove");
     }
@@ -1854,10 +1859,9 @@ function IntegrationsPanel() {
 
   // Every answer also goes to the shared store, so the tabs and buttons a
   // plugin brings appear or leave in the same frame.
-  // ponytail: a card's summary is as of the last read (opening the page,
-  // INSTALL, REMOVE); an edit inside the card doesn't recount it. Re-read on
-  // the panels' saves if a stale count ever misleads.
   const take = (plugins: Integration[]) => { setList(plugins); setIntegrations(plugins); };
+  // A card's panel changed what its summary counts (instances, connections).
+  const recount = () => void api.integrations().then((r) => take(r.plugins)).catch(() => {});
 
   useEffect(() => {
     void api.integrations().then((r) => take(r.plugins))
@@ -1920,8 +1924,8 @@ function IntegrationsPanel() {
               </Row>
             )}
           </div>
-          {p.id === "rivendell" && <div style={{ marginTop: 11 }}><RivendellPanel /></div>}
-          {p.id === "trackers" && <div style={{ marginTop: 11 }}><TrackersPanel /></div>}
+          {p.id === "rivendell" && <div style={{ marginTop: 11 }}><RivendellPanel onChange={recount} /></div>}
+          {p.id === "trackers" && <div style={{ marginTop: 11 }}><TrackersPanel onChange={recount} /></div>}
         </Section>
       ))}
       <Section title="AVAILABLE" top={installed.length > 0}
