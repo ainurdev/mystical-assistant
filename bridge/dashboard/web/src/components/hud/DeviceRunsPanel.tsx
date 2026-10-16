@@ -1,4 +1,4 @@
-/* PLUGINS ▸ DEVICE RUNS — Share this device, and the Claude token for device runs
+/* INTEGRATIONS ▸ RIVENDELL ▸ DEVICE RUNS — Share this device, and the Claude token for device runs
    (bridge/device_share.py, bridge/device_setup.py; the routes are
    /local/rivendell/devices and /local/rivendell/devices/setup in
    bridge/dashboard/server.py).
@@ -33,7 +33,7 @@ const STATE_CHIP: Record<string, [string, string]> = {
 const SETUP_DESC = "Creates a hidden macOS user for runs, keeps it out of your home folder and installs Claude Code for it. Asks for your Mac password once.";
 const REMOVE_DESC = "Deletes the hidden user and everything runs left behind. Asks for your Mac password.";
 
-/** A label in the dialog's voice. FLINT's sentence case can't spell these three. */
+/** A label in the dialog's voice, whose sentence case can't spell these three. */
 function useSay(): (s: string) => string {
   const voice = useVoice();
   return (s) => String(voice(s)).replace(/\bMacos\b/g, "macOS").replace(/\bIos\b/g, "iOS").replace(/\bCocoapods\b/g, "CocoaPods");
@@ -42,7 +42,7 @@ function useSay(): (s: string) => string {
 function Chip({ label, color }: { label: string; color: string }) {
   const say = useSay();
   return (
-    <span style={{ fontSize: "var(--t9)", letterSpacing: 1.8, padding: "1px 8px", whiteSpace: "nowrap", color,
+    <span className="set-caps" style={{ fontSize: "var(--t9)", letterSpacing: 1.8, padding: "1px 8px", whiteSpace: "nowrap", color,
       border: `1px solid color-mix(in srgb, ${color} 42%, transparent)` }}>
       {say(label)}
     </span>
@@ -59,7 +59,7 @@ function Btn({ children, onClick, disabled, tone }: {
   const say = useSay();
   const c = tone === "bad" ? "var(--err)" : "var(--acc)";
   return (
-    <button onClick={onClick} disabled={disabled} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
+    <button className="set-caps" onClick={onClick} disabled={disabled} onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       style={{
         appearance: "none", cursor: disabled ? "default" : "pointer", fontFamily: "inherit", fontSize: "var(--t9)",
         letterSpacing: 1.5, padding: "6px 12px", flex: "none", opacity: disabled ? 0.6 : 1,
@@ -83,11 +83,11 @@ function Head({ d }: { d: RivendellDevice }) {
       fontSize: "var(--t10)", letterSpacing: 1.5, color: "var(--txm)" }}>
       <span style={{ width: 7, height: 7, borderRadius: "50%", background: sv.color, flex: "none",
         boxShadow: sv.glow ? `0 0 6px ${sv.color}` : undefined }} />
-      <span className="glow" style={{ color: "var(--txb)", letterSpacing: 2 }}>{say(d.name.toUpperCase())}</span>
+      <span className="glow set-caps" style={{ color: "var(--txb)", letterSpacing: 2 }}>{say(d.name.toUpperCase())}</span>
       <span>·</span>
       <span style={{ fontFamily: MONO, letterSpacing: 0 }}>{host}</span>
       <span>·</span>
-      <span style={{ color: sv.color }} title={d.status?.detail || sv.label}>{say(sv.label)}</span>
+      <span className="set-caps" style={{ color: sv.color }} title={d.status?.detail || sv.label}>{say(sv.label)}</span>
     </div>
   );
 }
@@ -117,7 +117,7 @@ function TokenRow({ d, first, busy, onSave }: {
         {d.token_saved && !replacing ? (
           <>
             <span style={{ ...BOX, padding: "4px 9px", color: "var(--txm)", letterSpacing: 0.5 }}>
-              {say("SAVED")} ····{d.token_last4}
+              <span className="set-caps">{say("SAVED")}</span> ····{d.token_last4}
             </span>
             <Btn onClick={() => setReplacing(true)}>REPLACE</Btn>
           </>
@@ -233,7 +233,7 @@ export function DeviceRunsPanel() {
                   desc={
                     <span style={{ display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 4, fontSize: "var(--t9)", letterSpacing: 1.4 }}>
                       {d.share.checks.map((c) => (
-                        <span key={c.key} style={{ color: c.ok ? "var(--ok)" : "var(--warn)" }}>{c.ok ? "✓" : "✗"} {say(c.label)}</span>
+                        <span key={c.key} className="set-caps" style={{ color: c.ok ? "var(--ok)" : "var(--warn)" }}>{c.ok ? "✓" : "✗"} {say(c.label)}</span>
                       ))}
                     </span>
                   }>
