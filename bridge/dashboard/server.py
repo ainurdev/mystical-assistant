@@ -33,7 +33,7 @@ import re
 
 from bridge import (acp_agents, agents, attribution, browser, config, devserver, fmt, git,
                     github, graphmap, httpgz,
-                    models, native, preview_detect, profiles, project_config, prstatus,
+                    models, native, notices, preview_detect, profiles, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, runner, selfupdate,
                     share,
@@ -324,7 +324,19 @@ class Handler(BaseHTTPRequestHandler):
             archived = qs.get("archived", ["0"])[0] == "1"
             return self._json({"sessions": profiles.history(chat, include_archived=archived)})
         if path == "/local/running":
-            return self._json({**runner.running_snapshot(chat), "watched": _watched(qs)})
+            # `seen`: the page's last click or keypress — Telegram's "away" is
+            # nobody clicking in any dashboard (bridge/notices.py). `needs`: the
+            # one NEEDS YOU list the bell and the Mac menu bar both draw.
+            try:
+                notices.seen(float((qs.get("seen") or ["x"])[0]))
+            except ValueError:
+                pass
+            snap = runner.running_snapshot(chat)
+            return self._json({**snap, "watched": _watched(qs),
+                               "needs": notices.needs(snap.get("status") or {})})
+        if path == "/local/notices":
+            return self._json({"notices": notices.feed(), "prefs": notices.prefs(),
+                               "quiet": notices.quiet()})
         if path == "/local/queue":
             sid = (qs.get("session", [""])[0] or "").strip()
             return self._json(queue_manager.snapshot(sid) if sid else
@@ -806,6 +818,13 @@ class Handler(BaseHTTPRequestHandler):
     # --- POST control (Host + Origin + token gated) ---
     def _post_api(self, path, body):
         chat = _chat()
+        if path == "/local/notices":
+            if body.get("op") == "read" and (body.get("all") is True or isinstance(body.get("ids"), list)):
+                return self._json({"ok": True, "n": notices.mark_read(
+                    None if body.get("all") is True else body["ids"])})
+            if body.get("op") == "prefs" and isinstance(body.get("patch"), dict):
+                return self._json({"prefs": notices.set_prefs(body["patch"])})
+            return self._json({"error": "op must be read (ids or all) or prefs (patch)"}, 400)
         if path == "/local/run":
             return self._run(chat, body)
         if path.startswith("/local/run/") and path.endswith("/respond"):
