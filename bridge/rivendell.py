@@ -104,6 +104,13 @@ only drops it here (a non-requester's refuse is a no-op there, and the
 claim+FAIL fallback would steal it). A Rivendell that sends no flag changes
 nothing.
 
+A shared device (bridge/device_share.py) also takes teammates' device runs:
+`device-run-request`, kind "device-run", run by bridge/device_side.py through the
+root helper as the hidden user. They need no tap and no Telegram ask (the
+Rivendell permission is the consent), run one at a time, are only taken while
+the device is READY, and every call about one says which device it is
+(X-Mystical-Device-Id). `device-run-cancel` stops one.
+
 Accepted runs are concurrent: the request prompts instruct each run to work in
 its own git worktree, so runs no longer race a shared checkout the way the old
 single serial consumer had to guard against. Each accept spawns its own run
@@ -192,7 +199,7 @@ import urllib.request
 import uuid
 from urllib.parse import quote, urlsplit
 
-from bridge import config, device_share, wsutil
+from bridge import config, device_share, device_side, wsutil
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -306,7 +313,10 @@ class Worker:
         # accepted). Guarded by _q_lock alongside _pending: together they answer
         # "is the queue idle?" — the condition for auto-accepting a lone request.
         self._active_runs = 0
-        self._q_lock = threading.Lock()      # guards _pending, _active_runs and _running
+        # The teammate's device run in flight on this device (its request id):
+        # one at a time, the next waiting in _pending (_run_device_run).
+        self._device_run: "str | None" = None
+        self._q_lock = threading.Lock()      # guards _pending, _active_runs, _running and _device_run
         self._seen_lock = threading.Lock()
         self._seen: set = set()              # "<kind>:<id>" queued or handled
         # Request id -> the note its IMPLEMENT carried (implement() below);
@@ -864,6 +874,13 @@ class Worker:
                 self._apply_policy(self._enqueue("meeting-notes", item["id"], item.get("meetingName"), offered=bool(item.get("offered"))))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: meeting-notes catch-up failed: {e}")
+        try:
+            head = device_side.headers(self.inst)    # teammates' device runs: only on a device READY for one
+            if head:
+                for item in self._api("/plugin/device-run-requests", headers=head):
+                    self._apply_policy(self._enqueue("device-run", item["requestId"], item.get("repository")))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: device-run catch-up failed: {e}")
         with self._q_lock:
             return len(self._pending) - before
 
@@ -920,11 +937,32 @@ class Worker:
 
         An offered request (a teammate's) is never auto-accepted and never counts
         as work in flight: it is held for a tap, and the owner's own lone request
-        still auto-accepts past it."""
+        still auto-accepts past it.
+
+        A teammate's device run needs no tap and no Telegram ask: the Rivendell
+        permission is the consent. One runs at a time on this device; one behind
+        it is acked "queued" and starts by itself when it ends (_run_device_run),
+        and the owner's own runs never hold one up, a device run being another
+        macOS user. A device that isn't READY takes none: nothing is acked, and
+        the key is forgotten, so a re-send once it is ready is a new job."""
         if key is None:
             return
         with self._q_lock:
             item = self._pending.get(key, {})
+        if item.get("kind") == "device-run":
+            if device_side.headers(self.inst) is None:
+                with self._q_lock:
+                    self._pending.pop(key, None)
+                with self._seen_lock:
+                    self._seen.discard(key)
+                return
+            with self._q_lock:
+                busy = self._device_run is not None or any(
+                    it["kind"] == "device-run" for k, it in self._pending.items() if k != key)
+            self._ack(key, "queued" if busy else "received")
+            if not busy:
+                self.accept(key)
+            return
         if item.get("kind") == "impl" and self._find_checkout(item["slug"]) is None:
             with self._q_lock:
                 self._pending.pop(key, None)
@@ -964,12 +1002,14 @@ class Worker:
         and an older rivendell-api 404s it (only logged)."""
         kind, _, request_id = key.partition(":")
         path = f"/plugin/{self._KIND_PATH.get(kind, 'review-requests')}/{request_id}/ack"
-        threading.Thread(target=self._post_ack, args=(path, state),
+        # A device's ack counts only when it says which device it is.
+        head = device_side.headers(self.inst) if kind == "device-run" else None
+        threading.Thread(target=self._post_ack, args=(path, state, head),
                          name=f"rivendell-ack-{self.id}", daemon=True).start()
 
-    def _post_ack(self, path: str, state: str) -> None:
+    def _post_ack(self, path: str, state: str, headers: "dict | None" = None) -> None:
         try:
-            self._api(path, {"state": state})
+            self._api(path, {"state": state}, headers=headers)
         except Exception as e:  # noqa: BLE001 — an ack is best-effort
             print(f"rivendell[{self.name}]: ack {state} failed ({path}): {e}")
 
@@ -1069,6 +1109,15 @@ class Worker:
             print(f"rivendell[{self.name}]: meeting notes ({str(obj.get('source') or '?').lower()}) "
                   f"requested for {meeting.get('name', '?')}")
             return self._enqueue("meeting-notes", obj["requestId"], meeting.get("name"), offered=offered)
+        if obj.get("type") == "device-run-request" and obj.get("requestId"):
+            print(f"rivendell[{self.name}]: {(obj.get('requester') or {}).get('name', '?')} asks this "
+                  f"device for a run of {obj.get('repository', '?')}")
+            return self._enqueue("device-run", obj["requestId"], obj.get("repository"))
+        if obj.get("type") == "device-run-cancel" and obj.get("requestId"):
+            # The helper's stop waits on the run's process group: off the listener.
+            threading.Thread(target=device_side.stop, args=(obj["requestId"],),
+                             name=f"rivendell-cancel-{self.id}", daemon=True).start()
+            return None
         return None
 
     def _block_on_token(self, detail: str) -> None:
@@ -1718,6 +1767,25 @@ class Worker:
         else:
             self._post_result(path, request_id, False, text)
 
+    def _run_device_run(self, item: dict) -> None:
+        """A teammate's run on this shared device (bridge/device_side.py), listed
+        in flight while it runs. Then the oldest device run waiting here starts
+        by itself, whatever else is running (Ruling 2)."""
+        # shortcut: one device run at a time per Rivendell instance. Two
+        # instances sharing this device can overlap; the helper's lock then makes
+        # the second wait for the first. Serialize across workers if both share it.
+        request_id = item["request_id"]
+        self._track(request_id, "device-run", item["slug"], None, label=None, link=None)
+        try:
+            device_side.run(self, request_id)
+        finally:
+            self._untrack(request_id)
+            with self._q_lock:
+                self._device_run = None
+                key = next((k for k, it in self._pending.items() if it["kind"] == "device-run"), None)
+            if key is not None:
+                self.accept(key)
+
     def _run_in_workdir(self, what: str, kind: str, request_id: str,
                         name: "str | None", mcp_on: "str | None" = None) -> None:
         """Run a request that needs NO checkout: its whole context is rendered
@@ -1760,6 +1828,7 @@ class Worker:
         "deck": "deck-requests",
         "video": "video-requests",
         "meeting-notes": "meeting-notes-requests",
+        "device-run": "device-run-requests",
     }
 
     # -- Telegram ping for queued (non-auto-accepted) requests --
@@ -1773,6 +1842,7 @@ class Worker:
         "deck": "deck draft",
         "video": "video transcript",
         "meeting-notes": "meeting notes",
+        "device-run": "Device run",
     }
 
     def _label(self, item: dict) -> str:
@@ -1879,11 +1949,15 @@ class Worker:
     def accept(self, key: str) -> bool:
         """Claim and run one pending request, concurrently with any others (its
         prompt isolates it in its own worktree). Returns False if the key is not
-        pending (already accepted/rejected, or a stale click)."""
+        pending (already accepted/rejected, or a stale click), or is a device
+        run while another one runs here (it starts by itself after it)."""
         with self._q_lock:
-            item = self._pending.pop(key, None)
-            if item is None:
+            item = self._pending.get(key)
+            if item is None or (item["kind"] == "device-run" and self._device_run is not None):
                 return False
+            del self._pending[key]
+            if item["kind"] == "device-run":
+                self._device_run = item["request_id"]
             # Count it running before the thread starts, so a request that lands
             # between now and the run finishing sees a busy queue (and pings)
             # rather than racing in as another "lone" auto-accept.
@@ -1929,6 +2003,8 @@ class Worker:
                 self._run_video(request_id, slug)
             elif kind == "meeting-notes":
                 self._run_meeting_notes(request_id, slug)
+            elif kind == "device-run":
+                self._run_device_run(item)
             else:
                 self._run_review(request_id, slug)
         except Exception as e:  # noqa: BLE001 — worker must outlive any run
@@ -1964,6 +2040,11 @@ class Worker:
             # not ping it again.
             print(f"rivendell[{self.name}]: {item['kind']} {request_id} "
                   "(offered by a teammate) dismissed here")
+            return
+        if item["kind"] == "device-run":
+            # A device never refuses: a teammate's run it dismissed waits for
+            # another device, and stays in _seen so a re-send doesn't bring it back.
+            print(f"rivendell[{self.name}]: device run {request_id} dismissed here")
             return
         # Refuse, don't fail: the requester decides whether another bridge runs
         # it. Nothing is claimed, so it stays PENDING server-side meanwhile.
@@ -2609,7 +2690,12 @@ def answer_reply(message_id: int, text: str) -> "str | bool | None":
     return _answer(token, [], notes=text) or False
 
 
-start = reconfigure
+def start() -> None:
+    """Boot: clear what a bridge stopped mid-run left of teammates' device runs,
+    then dial every enabled instance. Only here: a settings save (reconfigure)
+    can come while a run is going."""
+    device_side.sweep()
+    reconfigure()
 
 
 def stop() -> None:

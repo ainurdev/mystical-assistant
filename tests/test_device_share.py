@@ -427,3 +427,22 @@ def test_an_owner_who_opted_out_is_not_even_probed():
     run = fake_run()
     assert ds.handshake_headers({"share_device": False}, run=run) == []
     assert run.calls == []
+
+
+# --- the last run this device ran (Settings' STATE row) -------------------------------------
+
+def test_the_last_run_is_noted_beside_the_db_for_the_owner_only(monkeypatch, tmp_path):
+    monkeypatch.setattr(ds.config, "BRIDGE_DB", str(tmp_path / "bridge.db"))
+    assert ds.last_run() is None, "nothing ran here yet"
+    ds.record_last_run("Mahdi", "RIV-42")
+    ds.record_last_run("Sara", None)
+    note = tmp_path / "device_last_run.json"
+    assert (note.stat().st_mode & 0o777) == 0o600
+    last = ds.last_run()
+    assert (last["by"], last["task"]) == ("Sara", None) and isinstance(last["at"], float)
+
+
+def test_a_note_that_cannot_be_written_never_fails_the_run(monkeypatch, tmp_path):
+    monkeypatch.setattr(ds.config, "BRIDGE_DB", str(tmp_path / "gone" / "bridge.db"))
+    ds.record_last_run("Mahdi", "RIV-42")
+    assert ds.last_run() is None

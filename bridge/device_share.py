@@ -20,6 +20,8 @@ import subprocess
 import threading
 import time
 
+from bridge import config
+
 RUN_USER = "mysticalruns"
 HELPER = "/usr/local/libexec/mystical-run-helper"
 RUNS_CONFIG = "/usr/local/etc/mystical-runs.json"
@@ -204,6 +206,34 @@ def share_state(inst, run=subprocess.run):
     else:
         state = "READY"
     return {"state": state, "checks": checks, "facts": facts}
+
+
+def _last_run_path():
+    return os.path.join(os.path.dirname(config.BRIDGE_DB), "device_last_run.json")
+
+
+def record_last_run(by: str, task: "str | None") -> None:
+    """Note the run this device just ran, {at, by, task}, for the settings'
+    STATE row (device_side.run calls it once the result is posted). Beside the
+    DB, 0600. Best-effort: a note that can't be written never fails a run."""
+    path = _last_run_path()
+    try:
+        with open(path + ".tmp", "w", encoding="utf-8") as f:
+            json.dump({"at": time.time(), "by": by, "task": task}, f)
+        os.chmod(path + ".tmp", 0o600)
+        os.replace(path + ".tmp", path)
+    except OSError as e:
+        print(f"device runs: the last run couldn't be noted: {e}")
+
+
+def last_run() -> "dict | None":
+    """The newest run this device ran, {at, by, task}, or None before the first."""
+    try:
+        with open(_last_run_path(), encoding="utf-8") as f:
+            d = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return d if isinstance(d, dict) else None
 
 
 def handshake_headers(inst, run=subprocess.run):

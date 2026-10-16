@@ -28,7 +28,7 @@ os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
 import pytest  # noqa: E402
 
-from bridge import device_share, rivendell, wsutil  # noqa: E402
+from bridge import device_share, device_side, rivendell, wsutil  # noqa: E402
 
 _real_ack = rivendell.Worker._ack
 
@@ -53,9 +53,12 @@ def no_link_alerts(monkeypatch):
 @pytest.fixture(autouse=True)
 def no_device_probe(monkeypatch):
     """_connect asks device_share what this device is, which on a Mac runs xcrun
-    and friends; no test here may probe the developer's machine. The handshake
-    headers themselves are tested in test_rivendell_channel.py."""
+    and friends, and catch-up, the policy and acks ask device_side whether it is
+    READY for teammates' runs; no test here may probe the developer's machine, so
+    by default it is not. The handshake headers themselves are tested in
+    test_rivendell_channel.py."""
     monkeypatch.setattr(device_share, "handshake_headers", lambda inst: [])
+    monkeypatch.setattr(device_side, "headers", lambda inst: None)
 
 
 def _http_error(code, path="/x"):
@@ -588,22 +591,26 @@ def test_catch_up_queues_meeting_notes_requests(monkeypatch):
     assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [("meeting-notes:m1", "Weekly sync")]
 
 
-def test_meeting_notes_are_routed_by_their_own_path_never_the_review_fallback(monkeypatch):
+@pytest.mark.parametrize("kind, path, runner", [
+    ("meeting-notes", "meeting-notes-requests", "_run_meeting_notes"),
+    ("device-run", "device-run-requests", "_run_device_run"),
+])
+def test_each_kind_is_routed_by_its_own_path_never_the_review_fallback(monkeypatch, kind, path, runner):
     """A kind missing from _KIND_PATH or _run_accepted silently lands on the review path:
-    its ack, its dispatch, and a crash's FAILED must each go to meeting-notes-requests."""
+    its ack, its dispatch, and a crash's FAILED must each go to the kind's own requests."""
     w = _worker()
     calls, posted, acked = [], [], threading.Event()
-    monkeypatch.setattr(w, "_api", lambda path, payload=None: calls.append((path, payload)) or acked.set())
-    _real_ack(w, "meeting-notes:m1", "queued")
+    monkeypatch.setattr(w, "_api", lambda path, payload=None, headers=None: calls.append((path, payload)) or acked.set())
+    _real_ack(w, f"{kind}:m1", "queued")
     assert acked.wait(2), "ack must be posted"
-    assert calls == [("/plugin/meeting-notes-requests/m1/ack", {"state": "queued"})]
+    assert calls == [(f"/plugin/{path}/m1/ack", {"state": "queued"})]
 
     ran = []
     monkeypatch.setattr(w, "_run_review", lambda rid, slug: ran.append("review"))
-    monkeypatch.setattr(w, "_run_meeting_notes", lambda rid, slug: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(w, runner, lambda *a: (_ for _ in ()).throw(RuntimeError("boom")))
     monkeypatch.setattr(w, "_post_result", lambda kp, rid, ok, text: posted.append((kp, rid, ok, text)))
-    w._run_accepted({"kind": "meeting-notes", "request_id": "m1", "slug": "Weekly sync"})
-    assert ran == [] and posted == [("meeting-notes-requests", "m1", False, "bridge error: boom")]
+    w._run_accepted({"kind": kind, "request_id": "m1", "slug": "Weekly sync"})
+    assert ran == [] and posted == [(path, "m1", False, "bridge error: boom")]
 
 
 def test_queued_message_names_meeting_notes():
@@ -986,6 +993,7 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     monkeypatch.setattr(w, "_run_deck", lambda rid, slug: calls.append(("deck", rid, slug)))
     monkeypatch.setattr(w, "_run_video", lambda rid, slug: calls.append(("video", rid, slug)))
     monkeypatch.setattr(w, "_run_meeting_notes", lambda rid, slug: calls.append(("meeting-notes", rid, slug)))
+    monkeypatch.setattr(w, "_run_device_run", lambda item: calls.append(("device-run", item["request_id"], item["slug"])))
     w._run_accepted({"kind": "impl", "request_id": "i1", "slug": "acme/app"})
     w._run_accepted({"kind": "todolist", "request_id": "t1", "slug": "Proj"})
     w._run_accepted({"kind": "changelog", "request_id": "c1", "slug": "Proj"})
@@ -993,10 +1001,12 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     w._run_accepted({"kind": "deck", "request_id": "k1", "slug": "Deck"})
     w._run_accepted({"kind": "video", "request_id": "v1", "slug": "S.mov"})
     w._run_accepted({"kind": "meeting-notes", "request_id": "m1", "slug": "Weekly sync"})
+    w._run_accepted({"kind": "device-run", "request_id": "d1", "slug": "ainurhq/app"})
     w._run_accepted({"kind": "review", "request_id": "r1", "slug": None})
     assert calls == [("impl", "i1", "acme/app"), ("todolist", "t1", "Proj"),
                      ("changelog", "c1", "Proj"), ("news", "n1", "Mahdi"), ("deck", "k1", "Deck"),
-                     ("video", "v1", "S.mov"), ("meeting-notes", "m1", "Weekly sync"), ("review", "r1", None)]
+                     ("video", "v1", "S.mov"), ("meeting-notes", "m1", "Weekly sync"),
+                     ("device-run", "d1", "ainurhq/app"), ("review", "r1", None)]
 
 
 def test_reject_refuses_as_dismissed_without_claiming(monkeypatch):
@@ -1216,7 +1226,7 @@ def test_ack_posts_state_and_swallows_errors(monkeypatch):
     w = _worker()
     calls, ev = [], threading.Event()
 
-    def api(path, payload=None):
+    def api(path, payload=None, headers=None):
         calls.append((path, payload))
         ev.set()
         raise _http_error(404, path)
@@ -2540,3 +2550,191 @@ def test_queued_message_for_offered_names_whose_accounts_it_uses():
         {"kind": "impl", "request_id": "o1", "slug": "acme/app", "offered": True}, "tok")
     assert "teammate" in text and "your accounts" in text and "acme/app" in text
     assert [b["callback_data"] for b in kb["inline_keyboard"][0]] == ["rv:a:tok", "rv:d:tok"]
+
+
+# --- device runs: a teammate's run on this shared device ---------------------
+
+DEVICE = {"X-Mystical-Device-Id": "7c50be1739dfacbb"}
+DRID = "0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19"
+
+
+def _device_frame(rid=DRID):
+    return json.dumps({"type": "device-run-request", "requestId": rid, "repository": "ainurhq/app",
+                       "commitSha": "abc1234", "task": {"key": "RIV-42", "title": "Login"}, "pullRequest": None,
+                       "requester": {"name": "Mahdi"}, "deviceId": None}).encode()
+
+
+def _ready(monkeypatch):
+    monkeypatch.setattr(device_side, "headers", lambda inst: dict(DEVICE))
+
+
+def test_handle_message_device_run_requests():
+    w = _worker()
+    w._handle_message(_device_frame())
+    w._handle_message(_device_frame())                 # duplicate: dropped
+    assert _drain(w) == [("device-run", DRID, "ainurhq/app")]
+
+
+def test_a_ready_idle_device_takes_a_device_run_at_once(monkeypatch, acks):
+    """The Rivendell permission is the consent: no tap and no Telegram ask."""
+    _ready(monkeypatch)
+    w = _worker()
+    accepted, pinged = [], []
+    monkeypatch.setattr(w, "accept", lambda key: accepted.append(key) or True)
+    monkeypatch.setattr(w, "_notify_queued", lambda key: pinged.append(key))
+    w._apply_policy(w._handle_message(_device_frame()))
+    assert acks == [(f"device-run:{DRID}", "received")]
+    assert accepted == [f"device-run:{DRID}"] and pinged == []
+
+
+def test_a_device_run_behind_another_waits_without_asking(monkeypatch, acks):
+    _ready(monkeypatch)
+    w = _worker()
+    w._device_run = "d0"                                # one is running here
+    monkeypatch.setattr(w, "accept", lambda key: (_ for _ in ()).throw(AssertionError("must wait")))
+    monkeypatch.setattr(w, "_notify_queued", lambda key: (_ for _ in ()).throw(AssertionError("no ask")))
+    w._apply_policy(w._handle_message(_device_frame()))
+    w._apply_policy(w._handle_message(_device_frame("1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d")))
+    assert acks == [(f"device-run:{DRID}", "queued"), ("device-run:1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d", "queued")]
+    assert [r["request_id"] for r in w.queue_snapshot()] == [DRID, "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"]
+
+
+def test_a_device_run_never_jumps_one_already_waiting(monkeypatch, acks):
+    """Between one run ending and the next starting, a new one still goes behind."""
+    _ready(monkeypatch)
+    w = _worker()
+    w._enqueue("device-run", "d1", "ainurhq/app")
+    monkeypatch.setattr(w, "accept", lambda key: (_ for _ in ()).throw(AssertionError("must wait its turn")))
+    w._apply_policy(w._handle_message(_device_frame()))
+    assert acks == [(f"device-run:{DRID}", "queued")]
+
+
+def test_the_owners_own_runs_never_hold_a_device_run_up(monkeypatch, acks):
+    """A device run is another macOS user: what the owner runs is no reason to wait."""
+    _ready(monkeypatch)
+    w = _worker()
+    w._active_runs = 2
+    w._enqueue("review", "r1", "acme/app")                # and one of the owner's held
+    accepted = []
+    monkeypatch.setattr(w, "accept", lambda key: accepted.append(key) or True)
+    w._apply_policy(w._handle_message(_device_frame()))
+    assert accepted == [f"device-run:{DRID}"] and acks == [(f"device-run:{DRID}", "received")]
+
+
+def test_a_device_that_is_not_ready_acks_nothing(acks):
+    """Not shared, not set up, or no Xcode any more: it takes no run, and
+    forgets it, so a re-send once it is ready is a new job."""
+    w = _worker()
+    w._apply_policy(w._handle_message(_device_frame()))
+    assert acks == [] and w.queue_snapshot() == [] and f"device-run:{DRID}" not in w._seen
+
+
+def test_a_device_run_cancel_stops_it_off_the_listener(monkeypatch):
+    """The helper's stop waits on the run's process group for seconds: the
+    listener must not."""
+    stopped, release = [], threading.Event()
+    monkeypatch.setattr(device_side, "stop", lambda rid: stopped.append(rid) or release.wait(5))
+    w = _worker()
+    began = time.monotonic()
+    try:
+        assert w._handle_message(json.dumps({"type": "device-run-cancel", "requestId": DRID}).encode()) is None
+        assert time.monotonic() - began < 1, "it returned while the stop was still going"
+        _wait_until(lambda: stopped == [DRID])
+    finally:
+        release.set()
+    assert w.queue_snapshot() == []
+
+
+def test_one_device_run_at_a_time_even_from_the_queue_tab(monkeypatch):
+    """ACCEPT on a waiting one while another runs leaves it waiting its turn."""
+    w = _worker()
+    w._device_run = "d0"
+    w._enqueue("device-run", DRID, "ainurhq/app")
+    monkeypatch.setattr(w, "_run_accepted", lambda item: None)
+    assert w.accept(f"device-run:{DRID}") is False
+    assert [r["request_id"] for r in w.queue_snapshot()] == [DRID]
+
+
+def test_the_next_device_run_starts_by_itself_when_one_ends(monkeypatch):
+    """Ruling 2: whatever else runs here, the oldest waiting device run starts as
+    soon as the one before it ends, and only that one."""
+    w = _worker()
+    started = []
+    monkeypatch.setattr(w, "_run_accepted", lambda item: started.append(item["request_id"]))
+    monkeypatch.setattr(device_side, "run", lambda worker, rid: None)
+    w._active_runs = 2                                    # the owner's run, and this one
+    w._device_run = "d0"
+    w._enqueue("review", "r1", "acme/app")
+    w._enqueue("device-run", "d1", "ainurhq/app")
+    w._enqueue("device-run", "d2", "ainurhq/app")
+    w._run_device_run({"request_id": "d0", "slug": "ainurhq/app"})
+    _wait_until(lambda: started == ["d1"])
+    assert w._device_run == "d1" and [r["key"] for r in w.queue_snapshot()] == ["review:r1", "device-run:d2"]
+
+
+def test_a_device_run_is_listed_in_flight_only_while_it_runs(monkeypatch):
+    w = _worker()
+    seen = []
+    monkeypatch.setattr(device_side, "run", lambda worker, rid: seen.append(w.running_snapshot()))
+    w._device_run = DRID
+    w._run_device_run({"request_id": DRID, "slug": "ainurhq/app"})
+    assert [(r["kind"], r["request_id"], r["label"], r["session_id"]) for r in seen[0]] == [
+        ("device-run", DRID, "ainurhq/app", None)]
+    assert w.running_snapshot() == [] and w._device_run is None
+
+
+def test_catch_up_takes_device_runs_only_when_ready_and_says_which_device(monkeypatch):
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+    asked = []
+
+    def api(path, payload=None, headers=None):
+        asked.append((path, headers))
+        if path == "/plugin/device-run-requests":
+            return [{"requestId": DRID, "repository": "ainurhq/app", "commitSha": "abc1234", "task": None,
+                     "pullRequest": {"repository": "ainurhq/app", "number": 7}, "requester": {"name": "Mahdi"},
+                     "deviceId": None}]
+        return []
+    monkeypatch.setattr(w, "_api", api)
+    w._catch_up()
+    assert "/plugin/device-run-requests" not in [p for p, _ in asked], "not READY: not asked at all"
+    _ready(monkeypatch)
+    w._catch_up()
+    assert ("/plugin/device-run-requests", DEVICE) in asked
+    assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [(f"device-run:{DRID}", "ainurhq/app")]
+
+
+def test_a_device_runs_ack_says_which_device(monkeypatch):
+    _ready(monkeypatch)
+    w = _worker()
+    sent, ev = [], threading.Event()
+    monkeypatch.setattr(w, "_api", lambda path, payload=None, headers=None: sent.append((path, payload, headers)) or ev.set())
+    _real_ack(w, f"device-run:{DRID}", "received")
+    assert ev.wait(2)
+    assert sent == [(f"/plugin/device-run-requests/{DRID}/ack", {"state": "received"}, DEVICE)]
+
+
+def test_dismissing_a_device_run_only_drops_it_here(monkeypatch):
+    """A device never refuses: dismissed, a teammate's run waits for another
+    device, and the next re-send or catch-up doesn't bring it back."""
+    w = _worker()
+    w._enqueue("device-run", DRID, "ainurhq/app")
+    for name in ("_api", "_fetch_prompt", "_post_result", "_refuse"):
+        monkeypatch.setattr(w, name, lambda *a, _n=name, **k: (_ for _ in ()).throw(
+            AssertionError(f"{_n} must not be called")))
+    item = dict(w._pending[f"device-run:{DRID}"])
+    assert w.reject(f"device-run:{DRID}") is True
+    w._do_reject(item)
+    assert w.queue_snapshot() == [] and f"device-run:{DRID}" in w._seen
+
+
+def test_the_bridge_start_sweeps_stale_stages_and_a_settings_save_never_does(monkeypatch):
+    """A save reconnects the workers while a run may be going: only the boot
+    clears what a bridge stopped mid-run left."""
+    calls = []
+    monkeypatch.setattr(device_side, "sweep", lambda: calls.append("sweep"))
+    monkeypatch.setattr(rivendell, "_desired", lambda: calls.append("dial") or {})
+    rivendell.reconfigure()
+    assert calls == ["dial"]
+    rivendell.start()
+    assert calls == ["dial", "sweep", "dial"]
