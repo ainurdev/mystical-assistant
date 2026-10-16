@@ -1,5 +1,6 @@
 using System.IO.Pipes;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -16,6 +17,8 @@ public static class Pipe
 {
     public const string Name = "mystical";
     static readonly UTF8Encoding Utf8 = new(false);
+    // Replies are read by scripts and people, not HTML: quotes stay quotes.
+    public static readonly JsonSerializerOptions Plain = new() { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     /// Serves on a background thread until `ct` is cancelled. `handle` runs on
     /// the UI thread (through `ui`), one request at a time; its node is the reply.
@@ -56,7 +59,7 @@ public static class Pipe
                 {
                     reply = new JsonObject { ["ok"] = false, ["error"] = e.Message };
                 }
-                writer.WriteLine(reply.ToJsonString());
+                writer.WriteLine(reply.ToJsonString(Plain));
                 server.WaitForPipeDrain();
             }
             catch (OperationCanceledException)

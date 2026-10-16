@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -11,7 +12,7 @@ namespace Mystical;
 public static class Probe
 {
     static readonly Regex Rooted = new(@"^([A-Za-z]:\\|\\\\)", RegexOptions.CultureInvariant);
-    static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true };
+    static readonly JsonSerializerOptions Pretty = new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public static async Task<JsonNode> Write(string dir, App app)
     {

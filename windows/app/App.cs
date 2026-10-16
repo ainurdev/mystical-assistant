@@ -16,11 +16,12 @@ public sealed class App : ApplicationContext
     /// The UI thread, for the pipe thread's requests.
     public SynchronizationContext Ui { get; }
     public Bridge Bridge { get; }
+    public Notifier Notifier { get; }
     public DashboardForm Dashboard { get; }
     /// The tray's count, for the probe (Task 6 sets it).
     public string? Badge { get; private set; }
-    /// The web permission the shim is seeded with (Task 5's Notifier owns it).
-    public string Permission { get; private set; } = "default";
+    /// The web permission the shim is seeded with.
+    public string Permission => Notifier.Permission;
     bool busy;
 
     public App(Stamp stamp, Prefs prefs, string dataDir)
@@ -28,10 +29,30 @@ public sealed class App : ApplicationContext
         Stamp = stamp;
         Prefs = prefs;
         DataDir = dataDir;
+        // Who we are to the taskbar and the notification center, before any window.
+        Notifier.EnsureAumid(Path.Combine(AppContext.BaseDirectory, "icon.png"));
+        Notifier.SetProcessAumid();
         Ui = new WindowsFormsSynchronizationContext();
         SynchronizationContext.SetSynchronizationContext(Ui);
+        var prefsPath = Path.Combine(dataDir, "settings.json");
         Bridge = new Bridge(stamp, dataDir);
-        Dashboard = new DashboardForm(Bridge, prefs, Path.Combine(dataDir, "settings.json"));
+        Notifier = new Notifier(prefs, prefsPath, stamp.Version);
+        Dashboard = new DashboardForm(Bridge, prefs, prefsPath);
+        // The shim goes in before the first navigation; the permission it was
+        // seeded with is corrected after each load.
+        Dashboard.OnCoreReady = async core =>
+        {
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(Shim.Source(Notifier.Permission));
+            Notifier.Attach(core);
+        };
+        Dashboard.OnPageLoaded = async () =>
+        {
+            var p = Notifier.RefreshPermission();
+            await Dashboard.Eval($"window.__mysticalSetPermission?.('{p}')");
+        };
+        Notifier.Clicked += Dashboard.NotificationClicked;
+        Notifier.ActionTapped += Dashboard.NotificationAction;
+        Notifier.AppearanceChanged += Dashboard.ApplyAppearance;
         Bridge.Changed += Dashboard.Sync;
         Dashboard.StartRequested += () => Lifecycle("start");
         Bridge.Start();
@@ -54,6 +75,10 @@ public sealed class App : ApplicationContext
                 return Ok();
             case "probe":
                 return await Probe.Write(Str(req, "dir") ?? "", this);
+            case "eval":
+                // A driver for checks: the JSON text of the expression's value.
+                var result = await Dashboard.Eval(Str(req, "js") ?? "");
+                return result is null ? Error("no page") : new JsonObject { ["ok"] = true, ["result"] = result };
             case "quit":
                 // Reply first — the pipe thread writes it once this returns —
                 // and leave a beat later, so the client reads its line.
@@ -90,6 +115,19 @@ public sealed class App : ApplicationContext
 
     static void Alert(string title, string text) =>
         MessageBox.Show(text, title, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+    static string? logPath;
+    /// One line into %LOCALAPPDATA%\Mystical\app.log — what happened to a toast,
+    /// a lifecycle call that failed; the probe's state.json is the rest.
+    public static void Log(string line)
+    {
+        try
+        {
+            logPath ??= Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Mystical", "app.log");
+            File.AppendAllText(logPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {line}\n");
+        }
+        catch (Exception) { }
+    }
 
     static string? Str(JsonElement o, string name) =>
         o.ValueKind == JsonValueKind.Object && o.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String
