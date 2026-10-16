@@ -1258,12 +1258,12 @@ def _device(monkeypatch, facts=_DEVICE, setup=_SET_UP):
     monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: setup)
 
 
-def _upgrade_headers(monkeypatch, **inst):
+def _upgrade_headers(monkeypatch, w=None, **inst):
     """_connect against a fake gateway on a socketpair (the test_rivendell.py
     handshake pattern): the headers of the upgrade request it sent."""
     server, client = socket.socketpair()
     monkeypatch.setattr("socket.create_connection", lambda *a, **k: client)
-    w = _worker(ws_url="ws://api.example:3001/agent", **inst)
+    w = w or _worker(ws_url="ws://api.example:3001/agent", **inst)
     seen = {}
 
     def gateway():
@@ -1313,6 +1313,76 @@ def test_a_device_probe_that_raises_never_keeps_the_link_down(monkeypatch):
     h = _upgrade_headers(monkeypatch)
     assert not [k for k in h if k.lower().startswith("x-mystical")]
     assert h["Authorization"] == "Bearer rvd_testtoken", "the link still comes up, as a plain one"
+
+
+# The offer goes only with the upgrade, so a device whose offer changed since the
+# dial (Set up, Remove, a probe that failed cold and has since lapsed, a new
+# Xcode) redials to say so: at once after Set up or Remove (rivendell.redial,
+# from the dashboard), else within a minute (the progress thread).
+
+def test_a_dial_remembers_whether_it_offered_this_device(monkeypatch):
+    w = _worker(ws_url="ws://api.example:3001/agent")
+    _device(monkeypatch)
+    _upgrade_headers(monkeypatch, w)
+    assert w._offered is True
+    _device(monkeypatch, setup={**_SET_UP, "user": False})
+    _upgrade_headers(monkeypatch, w)
+    assert w._offered is False
+
+
+@pytest.mark.parametrize("offered, ready, redials", [
+    (False, True, True),     # it became READY after the dial
+    (True, False, True),     # Remove, or the hidden user went
+    (True, True, False),
+    (False, False, False),
+])
+def test_a_live_link_redials_when_this_devices_offer_changed(monkeypatch, offered, ready, redials):
+    monkeypatch.setattr(device_share, "handshake_headers",
+                        lambda inst: ["X-Mystical-Features: device-runs"] if ready else [])
+    w = _worker()
+    w.status, w._offered = "connected", offered
+    dropped = []
+    monkeypatch.setattr(w, "_drop_connection", lambda: dropped.append(1))
+    w.recheck_device()
+    assert bool(dropped) is redials
+
+
+def test_only_a_live_link_is_looked_at_since_any_other_dial_asks_afresh(monkeypatch):
+    monkeypatch.setattr(device_share, "handshake_headers", lambda inst: pytest.fail("no probe off a live link"))
+    w = _worker()
+    for state in ("off", "connecting", "error", "auth_error"):
+        w.status = state
+        w.recheck_device()
+
+
+def test_a_device_check_that_raises_keeps_the_link(monkeypatch):
+    def broken(inst):
+        raise RuntimeError("dscl went away")
+    monkeypatch.setattr(device_share, "handshake_headers", broken)
+    w = _worker()
+    w.status, w._offered = "connected", True
+    monkeypatch.setattr(w, "_drop_connection", lambda: pytest.fail("the link stays up"))
+    w.recheck_device()
+
+
+def test_redial_looks_again_on_every_running_link(monkeypatch, workers):
+    seen = []
+    for wid in ("a", "b"):
+        w = workers[wid] = _worker(id=wid)
+        monkeypatch.setattr(w, "recheck_device", lambda wid=wid: seen.append(wid))
+    rivendell.redial()
+    assert sorted(seen) == ["a", "b"]
+
+
+def test_the_progress_thread_looks_at_the_device_now_and_then(monkeypatch):
+    monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.01)
+    monkeypatch.setattr(rivendell, "_DEVICE_RECHECK", 0.0)
+    w = _worker()
+    monkeypatch.setattr(w, "recheck_device", w._stop.set)      # the first look ends the loop
+    t = threading.Thread(target=w._progress_loop, daemon=True)
+    t.start()
+    t.join(5)
+    assert w._stop.is_set() and not t.is_alive()
 
 
 def test_api_calls_can_carry_extra_headers(monkeypatch):

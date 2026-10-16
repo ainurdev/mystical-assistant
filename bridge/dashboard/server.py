@@ -13,6 +13,7 @@ The dashboard operates as config.DASH_CHAT_ID, sharing that user's store session
 and active project with the Telegram bot + Mini App.
 """
 
+import getpass
 import hmac
 import json
 import mimetypes
@@ -31,7 +32,8 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import re
 
-from bridge import (acp_agents, agents, attribution, browser, config, devserver, fmt, git,
+from bridge import (acp_agents, agents, attribution, browser, config,
+                    device_ask, device_setup, device_share, devserver, fmt, git,
                     github, graphmap, httpgz,
                     models, native, preview_detect, profiles, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
@@ -183,6 +185,52 @@ def _plain_commit_message(paths: "list[str]") -> str:
     head = ", ".join(names[:3])
     rest = len(names) - 3
     return f"update {head}{f' and {rest} more' if rest > 0 else ''}" if names else "update"
+
+
+# Settings › Plugins › DEVICE RUNS (DeviceRunsPanel.tsx). SHARED DEVICES ON NOW
+# asks Rivendell, so each instance's answer is kept 30 s; Set up and Remove run
+# one at a time.
+_SHARED_ON_TTL = 30.0
+_shared_on: dict = {}     # instance id -> (monotonic at, {on, free} | None)
+_setup_lock = threading.Lock()
+
+
+def _shared_on_now(inst: dict) -> "dict | None":
+    """How many shared devices Rivendell has on and free: kept 30 s, None when
+    Rivendell can't say."""
+    at, val = _shared_on.get(inst["id"], (float("-inf"), None))
+    if time.monotonic() - at < _SHARED_ON_TTL:
+        return val
+    _shared_on[inst["id"]] = (time.monotonic(), val)     # polls meanwhile keep the last answer
+    try:
+        d = device_ask.list_devices(inst)
+        val = {"on": int(d["on"]), "free": int(d["free"])}
+    except Exception:  # noqa: BLE001 — unreachable, refused or malformed: nothing to show
+        val = None
+    _shared_on[inst["id"]] = (time.monotonic(), val)
+    return val
+
+
+def _device_rows() -> list:
+    """The panel's blocks, one per instance: Share this device, where this
+    device stands, the Claude token for device runs (whether it is saved and
+    its last 4, never the token), the shared devices on now and the last run
+    this device ran."""
+    live = rivendell.status()
+    last = device_share.last_run()
+    rows = []
+    for inst in rivendell_instances.raw_instances():
+        tok = inst.get("device_token") or ""
+        rows.append({
+            "id": inst["id"], "name": inst.get("name", ""), "api_url": inst.get("api_url", ""),
+            "enable": bool(inst.get("enable")), "status": live.get(inst["id"], {"state": "off"}),
+            "share_device": bool(inst.get("share_device", True)),
+            "token_saved": bool(tok), "token_last4": tok[-4:] if len(tok) > 4 else "",
+            "share": device_share.share_state(inst),
+            "shared_on": _shared_on_now(inst) if inst.get("enable") else None,
+            "last_run": last,
+        })
+    return sorted(rows, key=lambda r: r["name"].lower())
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -537,6 +585,8 @@ class Handler(BaseHTTPRequestHandler):
             insts = [{**i, "status": live.get(i["id"], {"state": "off"})}
                      for i in rivendell_instances.instances()]
             return self._json({"instances": insts})
+        if path == "/local/rivendell/devices":
+            return self._json({"instances": _device_rows()})
         if path == "/local/rivendell/queue":
             # One flat, oldest-first stream across every instance — the rows
             # held for a decision and the runs in flight, each with its
@@ -1368,6 +1418,38 @@ class Handler(BaseHTTPRequestHandler):
             if res is None:
                 return self._json({"error": "that Rivendell connection is off"}, 409)
             return self._json(res)
+        if path == "/local/rivendell/devices":
+            # DEVICE RUNS: Share this device, and the Claude token for device runs.
+            # Real booleans only (bool("false") is True); the token never comes back.
+            share, clear, tok = body.get("share_device"), body.get("clear_token"), body.get("device_token")
+            if (not all(v is None or isinstance(v, bool) for v in (share, clear))
+                    or not (tok is None or isinstance(tok, str))):
+                return self._json({"error": "share_device and clear_token must be true or false, "
+                                            "device_token text"}, 400)
+            try:
+                rivendell_instances.update_device(str(body.get("id") or ""), share, (tok or "")[:2000],
+                                                  bool(clear))
+            except rivendell_instances.RivendellError as e:
+                return self._json({"error": str(e)}, 400)
+            rivendell.reconfigure()      # a changed instance redials, as after any save
+            return self._json({"ok": True, "instances": _device_rows()})
+        if path == "/local/rivendell/devices/setup":
+            # SET UP / REMOVE: one macOS password prompt, then setup.sh or remove.sh
+            # as root (bridge/device_setup.py, up to 15 minutes), one at a time.
+            # Then the device is probed afresh and each link whose offer changed
+            # redials: reconfigure() would see no instance change.
+            action = body.get("action")
+            if action not in ("setup", "remove"):
+                return self._json({"error": "action must be setup or remove"}, 400)
+            if not _setup_lock.acquire(blocking=False):
+                return self._json({"error": "Set up or Remove is already running."}, 409)
+            try:
+                r = device_setup.run(action, getpass.getuser())
+            finally:
+                _setup_lock.release()
+            device_share.refresh()
+            rivendell.redial()
+            return self._json({"ok": bool(r.get("ok")), "error": r.get("error"), "instances": _device_rows()})
         if path in ("/local/device-runs/list", "/local/device-runs/start", "/local/device-runs/cancel"):
             # The verify MCP's ListDevices, RunOnDevice and CancelDeviceRun: the
             # Rivendell token and the session's checkout are the bridge's

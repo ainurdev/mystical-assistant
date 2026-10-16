@@ -111,7 +111,10 @@ Rivendell permission is the consent), run one at a time, are only taken while
 the device is READY, and every call about one says which device it is
 (X-Mystical-Device-Id). `device-run-cancel` stops one. The asking side
 (bridge/device_ask.py) hears how its own runs went: `device-run-update`, off the
-listener, and at each connect the ones that ended while it was away.
+listener, and at each connect the ones that ended while it was away. The device
+is offered only in the upgrade's headers, so a link whose offer has changed since
+it dialled redials (recheck_device): at once after Set up or Remove (redial,
+from the dashboard), else within a minute, on the progress thread.
 
 Accepted runs are concurrent: the request prompts instruct each run to work in
 its own git worktree, so runs no longer race a shared checkout the way the old
@@ -217,6 +220,7 @@ _CHECKS_TTL = 120.0       # seconds a PR's checks state is reused across tab pol
 _LINK_GRACE = 300.0       # an outage this long is a break worth one Telegram message
 _TEST_TIMEOUT = 5.0       # seconds TEST LINK waits for its pong
 _PROGRESS_EVERY = 10.0    # at most one progress post per run this often (spec: ~10 s)
+_DEVICE_RECHECK = 60.0    # a live link looks this often at whether its device offer still holds
 _ACTIVITY = {"tool": "action", "thinking": "thought", "text": "response", "error": "error"}
 _checks_cache: "dict[str, tuple[float, str | None]]" = {}
 _checks_busy: "set[str]" = set()          # PR urls whose checks are being refreshed
@@ -376,6 +380,9 @@ class Worker:
         # does; the deployed API sends no hello, so it stays empty and gets
         # exactly today's traffic.
         self.features: frozenset = frozenset()
+        # Whether the last dial offered this device for device runs (_connect);
+        # recheck_device redials when that no longer holds.
+        self._offered = False
 
     def _set_status(self, state: str, detail: str = "") -> None:
         if self._stop.is_set() and state != "off":
@@ -620,13 +627,19 @@ class Worker:
 
     def _progress_loop(self) -> None:
         """Rivendell's live feed for every run in flight here (_progress_tick on
-        each poll beat). Its own thread, so no run path changes shape."""
+        each poll beat), and every _DEVICE_RECHECK s a look at this device's
+        offer (recheck_device). Its own thread, so no run path changes shape and
+        a slow probe never holds up the listener."""
         last: dict = {}
+        looked = time.monotonic()
         while not self._stop.wait(_POLL_INTERVAL):
             try:
                 self._progress_tick(last, time.monotonic())
             except Exception as e:  # noqa: BLE001 — the feed outlives any beat
                 print(f"rivendell[{self.name}]: progress beat failed: {e}")
+            if time.monotonic() - looked >= _DEVICE_RECHECK:
+                looked = time.monotonic()
+                self.recheck_device()
 
     def _progress_tick(self, last: dict, now: float) -> None:
         """One beat: each run in flight posts its progress_body when it changed —
@@ -776,6 +789,7 @@ class Worker:
         except Exception as e:  # noqa: BLE001 — a device probe never keeps the link down
             print(f"rivendell[{self.name}]: device check failed, connecting without it: {e}")
             device = []
+        self._offered = bool(device)
         sock = socket.create_connection((parts.hostname, port), timeout=10)
         if secure:
             sock = ssl.create_default_context().wrap_socket(
@@ -2127,6 +2141,23 @@ class Worker:
             except OSError:
                 pass
 
+    def recheck_device(self) -> None:
+        """Redial when this device's offer no longer matches the dial's: it
+        became READY (Set up, a new Xcode, a probe that failed cold and has
+        lapsed) or stopped being (Remove). The offer goes only with the upgrade.
+        Only a live link is looked at: any other one dials afresh anyway."""
+        if self.status != "connected":
+            return
+        try:
+            offer = bool(device_share.handshake_headers(self.inst))
+        except Exception as e:  # noqa: BLE001 — a device probe never takes the link down
+            print(f"rivendell[{self.name}]: device check failed: {e}")
+            return
+        if offer != self._offered:
+            print(f"rivendell[{self.name}]: this device is {'now' if offer else 'no longer'} "
+                  "ready for device runs; reconnecting to say so")
+            self._drop_connection()
+
 
 # --- Manager: one worker per enabled instance ---------------------------------
 
@@ -2188,6 +2219,17 @@ def reconfigure() -> None:
                 w.start()                  # revive any dead thread
                 w._wake.set()              # release a listener parked on a bad token
                 w._drop_connection()       # reconnect now with the new config
+
+
+def redial() -> None:
+    """After Set up or Remove (the dashboard's setup route, once
+    device_share.refresh() has dropped the old probe): each live link whose
+    device offer changed redials now. reconfigure() can't tell, since no
+    instance changed."""
+    with _manager_lock:
+        workers = list(_workers.values())
+    for w in workers:
+        w.recheck_device()
 
 
 def status() -> dict:

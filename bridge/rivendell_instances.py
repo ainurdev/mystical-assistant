@@ -239,6 +239,25 @@ def update_instance(iid: str, **fields) -> dict:
     return _masked(inst)
 
 
+def update_device(iid: str, share_device: "bool | None" = None, device_token: str = "",
+                  clear_token: bool = False) -> None:
+    """Settings › Plugins' DEVICE RUNS rows, on their own: Share this device
+    (None keeps it) and the Claude token for device runs (clear_token forgets
+    it; a blank one keeps it, a new one replaces it)."""
+    with _lock:
+        d = _load()
+        inst = d["instances"].get(iid or "")
+        if inst is None:
+            raise RivendellError("no such instance")
+        if share_device is not None:
+            inst["share_device"] = share_device
+        if clear_token:
+            inst["device_token"] = ""
+        if device_token.strip():
+            inst["device_token"] = device_token.strip()
+        _save(d)
+
+
 def remove_instance(iid: str) -> bool:
     with _lock:
         d = _load()

@@ -507,6 +507,32 @@ export interface RivendellInput {
   share_device?: boolean;   // left out keeps the stored choice (on for a new instance)
   device_token?: string;    // blank on edit keeps the stored one
 }
+/** Settings › Plugins › DEVICE RUNS, one per instance (GET /local/rivendell/devices).
+ *  The Claude token for device runs never comes back: whether it is saved, and its last 4. */
+export interface RivendellDevice {
+  id: string;
+  name: string;
+  api_url: string;
+  enable: boolean;
+  status: RivendellStatus;
+  share_device: boolean;
+  token_saved: boolean;
+  token_last4: string;
+  /** Where this device stands for this instance (bridge/device_share.py share_state). */
+  share: {
+    state: "NOT_MAC" | "OFF" | "XCODE_MISSING" | "NEEDS_SETUP" | "READY";
+    checks: { key: string; label: string; ok: boolean }[];
+  };
+  shared_on: { on: number; free: number } | null;   // Rivendell's shared devices, kept 30 s; null when it can't say
+  last_run: { at: number; by: string; task: string | null } | null;   // the newest run this device ran
+}
+/** Leave a field out to keep it. A blank token keeps the saved one; clear_token forgets it. */
+export interface RivendellDeviceInput {
+  id: string;
+  share_device?: boolean;
+  device_token?: string;
+  clear_token?: boolean;
+}
 /** One request held PENDING in a worker's queue, awaiting accept/reject. The
  *  kinds match bridge/rivendell.py: a PR review, a task implementation, a project
  *  todolist, an AI task description, a changelog, a reader's daily newspaper, a slide deck draft, a drive video transcript, or a meeting's notes. */
@@ -1775,6 +1801,15 @@ export const api = {
   // parked token (bridge/rivendell.py Worker.test_link). 409 when it's off.
   rivendellTest: (instance_id: string, job = false) =>
     req<RivendellTest>("/local/rivendell/test", { method: "POST", body: { instance_id, job } }),
+  // DEVICE RUNS: Share this device, Set up / Remove (one Mac password prompt, up
+  // to 15 minutes before it answers), and the Claude token for device runs.
+  rivendellDevices: () => req<{ instances: RivendellDevice[] }>("/local/rivendell/devices"),
+  updateRivendellDevice: (body: RivendellDeviceInput) =>
+    req<{ ok: boolean; instances: RivendellDevice[] }>("/local/rivendell/devices", { method: "POST", body }),
+  rivendellDeviceSetup: (action: "setup" | "remove") =>
+    req<{ ok: boolean; error: string | null; instances: RivendellDevice[] }>("/local/rivendell/devices/setup", {
+      method: "POST", body: { action },
+    }),
   trackerProjects: (conn: string) =>
     req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
   trackerTasks: (project: string, sessionId?: string | null) =>
