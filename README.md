@@ -41,7 +41,7 @@ your repos.
 | **12** panes | editor, git, terminal, issues, map, skills. |
 
 **MIT licensed** · **no API key** · **no account** · **no telemetry** ·
-**macOS, Linux, WSL**
+**macOS, Windows (WSL), Linux**
 
 ```bash
 git clone https://github.com/ainurdev/mystical-assistant
@@ -317,8 +317,9 @@ mystical run        run in the foreground (Ctrl-C to quit)
 mystical export     pack this machine up for a new one (one file)
 mystical import F   replay that file on the new machine (--dry-run to preview)
 mystical app        macOS: build + install Mystical.app into ~/Applications
-mystical app open   macOS: open it
-mystical app        Linux/WSL: start the tray icon now (it also comes up at login)
+mystical app        Windows (WSL): build + install Mystical.exe into %LOCALAPPDATA%\Programs\Mystical
+mystical app open   open it (macOS, Windows)
+mystical app        Linux: start the tray icon now (it also comes up at login)
 ```
 
 **On a Mac**
@@ -351,7 +352,26 @@ AT LOGIN switch toggles it): up at login, restarted after a crash, and
 agent pins a PATH where `python3` is 3.10+ and `claude` is found — launchd's
 default has neither. Rebuild the app (`mystical app`) after moving the checkout.
 
-**On Windows (WSL) and Linux**
+**On Windows (WSL)**
+
+`mystical app` builds **Mystical.exe** with the .NET SDK on the Windows side
+(`winget install Microsoft.DotNet.SDK.10`; nothing else to install — WinForms
+ships with the SDK and WebView2 is on every Windows 10/11 with Edge) and installs
+it into `%LOCALAPPDATA%\Programs\Mystical`. It's the dashboard in its own window,
+plus what a browser tab can't do: a tray icon with the sessions waiting on you,
+Start/Stop/Restart without a terminal, Windows toasts that keep coming with the
+window closed and carry a card's Allow/Deny and answer buttons, `mystical://`
+links, a floating WAITING ON YOU panel, Win+Ctrl+A to summon the window from any
+app, and screen or window captures for sessions (`windows/capture.sh`). Closing
+the window keeps it in the tray; Quit in the tray ends the app, never the bridge.
+The app reaches the bridge through `wsl.exe` and `localhost`, in NAT and
+mirrored networking alike. Installing it also points the Startup entry (START AT
+LOGIN in the SYSTEM tab) at it, in place of the browser window and the
+PowerShell tray. Rebuild it — `mystical app`, or REBUILD in the dashboard's
+WINDOWS APP tab — after moving the checkout. Without the SDK, the tray below is
+what you get.
+
+**On Linux, and on Windows without the SDK**
 
 The dashboard's own window comes from your browser: INSTALL AS APP in the
 dashboard's SYSTEM tab, then START AT LOGIN and OPEN THE WINDOW TOO to have it
@@ -360,11 +380,11 @@ menu bar for these systems. It shows how many sessions are waiting on you, with
 a row for each, plus start/stop/restart and alerts while no dashboard window is
 open. A window that's open alerts by itself, so the tray stays quiet then.
 `mystical app` starts it now instead of at the next login. There's nothing to
-build. On Windows it's PowerShell (`windows/tray.ps1`). On Linux it's the system
-python3 with the distro's GTK bindings (`linux/tray.py`), and `mystical doctor`
-names the packages if they're missing. GNOME shows tray icons only with the
-AppIndicator extension, which Ubuntu ships and Fedora doesn't. The alerts work
-without it.
+build. On Windows it's PowerShell (`windows/tray.ps1`), until `mystical app`
+has built Mystical.exe. On Linux it's the system python3 with the distro's GTK
+bindings (`linux/tray.py`), and `mystical doctor` names the packages if they're
+missing. GNOME shows tray icons only with the AppIndicator extension, which
+Ubuntu ships and Fedora doesn't. The alerts work without it.
 
 **Moving to a new machine**
 
@@ -554,7 +574,7 @@ What it costs lands on your quota rather than your wallet, and your live 5-hour 
 <details>
 <summary><b>Which operating systems work?</b></summary>
 
-macOS and Linux, including WSL.
+macOS, Windows (through WSL) and Linux.
 
 </details>
 

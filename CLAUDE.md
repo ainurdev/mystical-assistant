@@ -9,6 +9,11 @@ the backend — no framework, no ORM, no async runtime. On macOS, **Mystical.app
 + menu bar; `macos/probe.sh` snapshots it without Screen Recording permission,
 `macos/capture.sh` captures the real screen through the app (it holds that
 permission; a session's shell never can), and `cd macos && swift test` runs its tests.
+On Windows (the bridge in WSL), **Mystical.exe** (`windows/app`, C#, WinForms +
+WebView2, Microsoft frameworks only) is the same shell, built on the Windows side
+by `windows/build.sh` through `dotnet.exe`; `windows/probe.sh` snapshots it,
+`windows/capture.sh` captures the real screen through it, and
+`windows/build.sh --check` plus `node windows/shim.check.mjs` run its checks.
 
 ## The one thing that bites everyone
 

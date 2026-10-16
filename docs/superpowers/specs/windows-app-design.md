@@ -82,7 +82,9 @@ prints — to learn port, token and running state, then loads
 `http://127.0.0.1:<port>/?token=…` in WebView2. Lifecycle is the same line with
 `start|stop|restart`; the systemd handover inside `bin/mystical` is untouched.
 The tray polls `GET /local/running` every 3 s. Rebuild is `… bin/mystical app`
-detached, output to `%LOCALAPPDATA%\Mystical\app-build.log`.
+detached, its output redirected inside WSL to `~/.bridge_state/app-build.log`
+(beside the bridge's own log, as on the Mac), so the app's exit mid-build can't
+break a pipe under it.
 
 **Why `wsl.exe`, not a shell:** `tray.ps1` uses `bash -lic` for lifecycle so the
 user's PATH is there; the app needs clean stdout for `status --json`, so it pins
@@ -150,14 +152,27 @@ the process (`SetCurrentProcessExplicitAppUserModelID`). A `show` becomes a
 ToastGeneric with title and body, `Tag` = the shim id, `Group` = `mystical`, no
 sound (the dashboard plays the one you picked), and one `<action>` per
 sanitised button (`activationType="foreground"`, `arguments` = the action id).
-`Activated` on the `ToastNotification` (in-process; the app is always running)
-routes a bare click to `__mysticalNotificationClick(id)` and a button to
+A toast with buttons is a card waiting on you, so it uses `scenario="reminder"`
+and stays on screen with its buttons until answered or dismissed — a collapsed
+toast in the notification center taps as a body click. Taps reach the app two
+ways, both landing in one handler: the toast object's own `Activated` event
+(an on-screen banner; the object is kept referenced until it settles, or the
+subscription is collected with it) and a **COM activator**
+(`INotificationActivationCallback`, CLSID registered beside the app id as
+`CustomActivator`, `LocalServer32` = this exe `-ToastActivated`, the class
+object registered at every start), which is how Windows delivers a tap on a
+toast that went to the notification center — Focus Assist, a timed-out banner, a
+tap minutes later — and without which such taps reach nothing (verified). The
+`launch` / `arguments` text is JSON `{id, action?}`, so a fresh instance launched
+by a tap knows the toast too; a tap arriving by both paths within seconds is one
+tap. A bare click → `__mysticalNotificationClick(id)`, a button →
 `__mysticalNotificationAction(id, action)`, falling back to opening the session
 when the page that made it is gone — exactly `DashboardWindow.notificationClicked`
 / `notificationAction`. `close` → `History.Remove(tag, group)`. Permission:
-Windows never prompts; `ToastNotifier.Setting` maps `Enabled` → `granted`,
-anything else → `denied` (Windows Settings › Notifications is where it's turned
-back on). `request` returns that.
+Windows never prompts, and `ToastNotifier.Setting` is null for an unpackaged app
+id, so the two registry toggles Windows Settings writes are read instead
+(`HKCU…\PushNotifications\ToastEnabled`, `…\Notifications\Settings\<AUMID>\Enabled`):
+`granted` unless one is 0. `request` returns that.
 
 **Tray** (`NotifyIcon`, `ContextMenuStrip`, rebuilt on every open from the latest
 poll — the menu bar's twin): state line (● bridge running · systemd / ○ stopped /
@@ -192,7 +207,9 @@ exits; the first instance parses it (`DeepLink`) — `open` shows the window,
 restarts anything.
 
 **Pipe** (`\\.\pipe\mystical`, one JSON line in, one out, clients served one at a
-time): `probe {dir}`, `capture {dir, window?}`, `open {url}`, `show`, `quit`.
+time): `probe {dir}`, `capture {dir, window?}`, `open {url}`, `show`, `hide`,
+`eval {js}` (the JSON of an expression's value in the page — the driver the
+checks use), `quit`.
 `dir` is a Windows path — the wrappers translate with `wslpath -w`, so a WSL
 `/tmp/x` arrives as `\\wsl.localhost\<distro>\tmp\x`. The client is the exe itself
 (`--probe <dir>`, `--capture <dir> [-w <text>]`, `--quit`): it connects, sends,
@@ -220,7 +237,7 @@ DWMWA_USE_IMMERSIVE_DARK_MODE)` on the window and the panel, remembered for the
 next launch. MessageBoxes keep Windows' own look.
 
 **Rebuild App.** The tray item and the tab's REBUILD run `bin/mystical app`
-through `wsl.exe`, detached, logging to `app-build.log`; `build.sh` quits this
+through `wsl.exe`, detached, logging to `~/.bridge_state/app-build.log`; `build.sh` quits this
 instance over the pipe, swaps the files and reopens it. A non-zero exit shows
 the log's tail in a MessageBox; the state line says "● rebuilding the app…" while
 it runs.
@@ -240,9 +257,10 @@ exit 1 on the first failure — the repo's `*.check.ts` shape.
    on the Windows side — `obj/` on a 9P share is slow and UNC-hostile), write
    `app.ico` (PNG-in-ICO from `icon-192.png`, by python, no PIL), then
    `dotnet.exe publish -c Release -r win-x64 --self-contained false
-   -p:TargetFramework=net<major>.0-windows10.0.19041.0 -o …\build\out`. The TFM
-   follows the installed SDK so no second targeting pack is fetched and the
-   runtime always matches; `RollForward=LatestMajor` is the belt. Errors to the
+   -o …\build\out`, the staged csproj's `TargetFramework` rewritten to the
+   installed SDK's major first (a `-p:TargetFramework` override is ignored by
+   `dotnet run`'s implicit restore), so no second targeting pack is fetched and
+   the runtime always matches; `RollForward=LatestMajor` is the belt. Errors to the
    terminal, the full log to a temp file.
 4. `mystical.json` into `out`. `repo` is this checkout unless `MYSTICAL_APP_REPO`
    names another — a worktree build that should drive the live bridge.
@@ -251,7 +269,8 @@ exit 1 on the first failure — the repo's `*.check.ts` shape.
    `%LOCALAPPDATA%\Programs\Mystical` (rename-old, move, delete-old — a failed
    step leaves the installed app alone); `reg.exe add` the `mystical` scheme;
    a Start Menu shortcut (`WScript.Shell` via `powershell.exe`); reopen if the
-   app or the tray was running (`cmd.exe /c start`). Back in `bin/mystical`,
+   app or the tray was running — through PowerShell's `Start-Process`: run from
+   WSL, `cmd.exe /c start` waits for its GUI child and hangs the caller. Back in `bin/mystical`,
    `startup.refresh_launcher()` rewrites the Startup `.cmd` if login is on.
    `MYSTICAL_APP_DEST` (a Windows path) builds a dev copy: no quit, no tray
    stop, no registry, no reopen, no `.cmd` — same as the Mac.
@@ -365,11 +384,10 @@ need none.
   placeholder with START, Start → the page is back; REBUILD from the tab swaps
   and reopens; log out and in → the app comes back through the `.cmd`.
 
-**First implementation task is the remaining risk spike**: toast *activation* —
-a click and a button on an unpackaged exe's toast reaching the running process's
-`Activated` handler (delivery is verified; activation is not). Fallback if it
-doesn't: `NotifyIcon.ShowBalloonTip` for clicks, no buttons, and the page's
-banner path stays browser-style on Windows.
+**The risk spike, resolved (2026-10-16):** toast *activation* on an unpackaged
+exe needed more than the `Activated` event — a tap on a toast that had left the
+screen reached nothing until the COM activator above was added; with it, a body
+tap and an Allow button both reached the page's handlers (the user tapped them).
 
 ## Where it's built
 
