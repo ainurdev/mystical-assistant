@@ -32,7 +32,7 @@ from urllib.parse import parse_qs, quote, urlparse
 import re
 
 from bridge import (acp_agents, agents, attribution, browser, config, devserver, fmt, git,
-                    github, graphmap, httpgz,
+                    github, graphmap, httpgz, integrations,
                     models, native, preview_detect, profiles, project_config, prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, runner, selfupdate,
@@ -289,6 +289,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- GET reads (Host-gated; SOP protects responses) ---
     def _get_api(self, path, qs):
+        if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+            return self._json({"error": "not installed"}, 404)
         chat = _chat()
         if path == "/local/state":
             pd = state.project_dir(chat)
@@ -365,6 +367,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/aifeatures":
             from bridge import aifeatures
             return self._json({"features": aifeatures.state()})
+        if path == "/local/integrations":
+            return self._json({"plugins": integrations.state()})
         if path == "/local/envsettings":
             from bridge import envsettings
             return self._json({"settings": envsettings.state()})
@@ -805,6 +809,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # --- POST control (Host + Origin + token gated) ---
     def _post_api(self, path, body):
+        if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+            return self._json({"error": "not installed"}, 404)
         chat = _chat()
         if path == "/local/run":
             return self._run(chat, body)
@@ -966,6 +972,17 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "features": aifeatures.state()})
+        if path == "/local/integrations":
+            action = body.get("action")
+            if action not in ("install", "remove"):
+                return self._json({"error": "action must be install or remove"}, 400)
+            try:
+                integrations.set_installed(str(body.get("id") or ""), action == "install")
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            except integrations.IntegrationError as e:
+                return self._json({"error": str(e)}, 409)
+            return self._json({"ok": True, "plugins": integrations.state()})
         if path == "/local/envsettings":
             from bridge import envsettings
             try:

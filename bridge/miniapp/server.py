@@ -20,8 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (accounts, agents, browser, config, devserver, git, github,
-                    httpgz, models, native, profiles, project_config, relevance,
-                    runner, state, store, trackers, transcript_jsonl,
+                    httpgz, integrations, models, native, profiles, project_config,
+                    relevance, runner, state, store, trackers, transcript_jsonl,
                     transcript_page, usage)
 
 WEB_DIR = os.path.join(os.path.dirname(__file__), "web", "dist")
@@ -365,6 +365,8 @@ class Handler(BaseHTTPRequestHandler):
                 chat_id = self._auth()
                 if chat_id is None:
                     return self._json({"error": "unauthorized"}, 401)
+                if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+                    return self._json({"error": "not installed"}, 404)
                 if path == "/api/state":
                     return self._api_state(chat_id)
                 if path == "/api/projects":
@@ -436,6 +438,8 @@ class Handler(BaseHTTPRequestHandler):
             chat_id = self._auth()
             if chat_id is None:
                 return self._json({"error": "unauthorized"}, 401)
+            if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
+                return self._json({"error": "not installed"}, 404)
             body = self._read_json()
             if body is None:
                 return self._json({"error": "bad json"}, 400)
@@ -507,6 +511,7 @@ class Handler(BaseHTTPRequestHandler):
             "server": devserver.server_state(pd),
             "permission_mode": config.MINIAPP_PERMISSION_MODE,
             "models": models.get_models(),
+            "plugins": integrations.flags(),
         })
 
     def _api_projects(self, qs):

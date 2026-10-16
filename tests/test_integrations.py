@@ -5,10 +5,14 @@ Run: python -m pytest tests/test_integrations.py -v"""
 import json
 import os
 import stat
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from bridge import integrations, project_config, rivendell, rivendell_instances, trackers
+from bridge import (config, integrations, project_config, rivendell, rivendell_instances, state,
+                    trackers)
+from bridge.dashboard import server as dash
+from bridge.miniapp import server as mini
 
 IDS = ["rivendell", "trackers", "design"]
 
@@ -155,3 +159,74 @@ def test_design_link_count_counts_linked_entries(monkeypatch, tmp_path):
     project_config.set_design_project("/web", "bbbb-2", "main")
     project_config.set_run_cmd("/api", "npm run dev")
     assert project_config.design_link_count() == 2
+
+
+def call(method, path, body=None):
+    """One request through the right server's route table, minus the socket."""
+    mod = mini if path.startswith("/api/") else dash
+    h = mod.Handler.__new__(mod.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    if mod is mini:
+        h._auth = lambda: config.DASH_CHAT_ID
+        h._read_json = lambda: body or {}
+        h.path = path
+        h.do_GET() if method == "GET" else h.do_POST()
+    elif method == "GET":
+        u = urlparse(path)
+        h._get_api(u.path, parse_qs(u.query))
+    else:
+        h._post_api(path, body or {})
+    return box
+
+
+ROUTES = {
+    "rivendell": [("GET", "/local/rivendell"), ("GET", "/local/rivendell/queue"),
+                  ("GET", "/local/rivendell/tasks"), ("GET", "/local/rivendell/task"),
+                  ("GET", "/local/rivendell/todolist"), ("POST", "/local/rivendell"),
+                  ("POST", "/local/rivendell/queue"), ("POST", "/local/rivendell/implement"),
+                  ("POST", "/local/rivendell/test")],
+    "trackers": [("GET", "/local/trackers"), ("GET", "/local/tracker/projects"),
+                 ("GET", "/local/tracker/tasks"), ("GET", "/local/tracker/statuses"),
+                 ("POST", "/local/trackers"), ("POST", "/local/tracker/update"),
+                 ("GET", "/api/tracker/tasks"), ("GET", "/api/tracker/statuses"),
+                 ("POST", "/api/tracker/update")],
+    "design": [("GET", "/local/design/prompt")],
+}
+
+
+@pytest.mark.parametrize("pid", IDS)
+def test_a_plugin_that_is_not_installed_does_not_exist(fresh, pid):
+    for method, path in ROUTES[pid]:
+        assert call(method, path) == {"obj": {"error": "not installed"}, "code": 404}, (method, path)
+
+
+def test_the_integrations_route_lists_installs_and_removes(fresh):
+    box = call("GET", "/local/integrations")
+    assert box["code"] == 200 and [p["id"] for p in box["obj"]["plugins"]] == IDS
+    box = call("POST", "/local/integrations", {"id": "trackers", "action": "install"})
+    assert box["code"] == 200 and box["obj"]["ok"] is True
+    assert {p["id"]: p["installed"] for p in box["obj"]["plugins"]}["trackers"] is True
+    assert call("GET", "/local/trackers")["code"] == 200
+    call("POST", "/local/integrations", {"id": "trackers", "action": "remove"})
+    assert call("GET", "/local/trackers")["code"] == 404
+
+
+def test_the_integrations_route_refuses_what_it_does_not_know(fresh):
+    assert call("POST", "/local/integrations", {"id": "teleport", "action": "install"})["code"] == 400
+    assert call("POST", "/local/integrations", {"id": "design", "action": "explode"})["code"] == 400
+
+
+def test_removing_rivendell_mid_run_answers_409(fresh, monkeypatch):
+    integrations.set_installed("rivendell", True)
+    monkeypatch.setattr(rivendell, "running", lambda: [{"request_id": "r1"}])
+    box = call("POST", "/local/integrations", {"id": "rivendell", "action": "remove"})
+    assert box["code"] == 409 and "in flight" in box["obj"]["error"]
+
+
+def test_the_miniapp_state_carries_the_flags(fresh, monkeypatch):
+    monkeypatch.setattr(mini.models, "get_models", lambda: [])
+    monkeypatch.setattr(state, "project_dir", lambda chat_id: config.BASE_PATH)
+    integrations.set_installed("trackers", True)
+    assert call("GET", "/api/state")["obj"]["plugins"] == {
+        "rivendell": False, "trackers": True, "design": False}
