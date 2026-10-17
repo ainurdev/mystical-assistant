@@ -2,14 +2,10 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
-  Search, Globe, Quote,
-  Terminal, Layers, Brain,
-  GitBranch, FileText, FilePen, Trash2, FolderTree, Play, Package,
-  FlaskConical, Cpu, Database, Container,
+  Quote, Layers,
 } from "lucide-react";
 import { api, type AnswerSelection, type RunEvent, type TimedEvent } from "../api";
 import type { PendingRequest } from "../chat";
-import { SteerIcon } from "./Composer";
 import { Markdown, type OpenFile } from "./Markdown";
 import { selectionMd } from "../lib/selmd";
 import { PermissionCard } from "./PermissionCard";
@@ -24,8 +20,8 @@ import { MARK_GLYPH, stripOf, workTitle, zonesOf, type Mark } from "../lib/dossi
 import { ToolWidget } from "./ResultWidgets";
 import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
-  cmdAbstract, cmdKind, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
-  type CmdKind, type Shape, type Tier,
+  cmdAbstract, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
+  type Shape, type Tier, type ToolKind,
 } from "../lib/tools";
 
 // Result blocks already "printed" this session — guards against re-typing when a
@@ -159,30 +155,31 @@ function CopyBtn({ text, title }: { text: string; title: string }) {
   );
 }
 
-/** The glyph a command wears, so a terminal window reads as a list of actions
- *  rather than a wall of text. */
-const CMD_ICON: Record<CmdKind, typeof Terminal> = {
-  git: GitBranch, search: Search, read: FileText, edit: FilePen, delete: Trash2,
-  fs: FolderTree, run: Play, pkg: Package, test: FlaskConical, net: Globe,
-  proc: Cpu, db: Database, docker: Container, shell: Terminal,
+/** The glyph a tool's row wears on the WORK zone's spine — the same mark the
+ *  zone's header strip shows for it (lib/dossier MARK_GLYPH). */
+const KIND_MARK: Partial<Record<ToolKind, Mark>> = {
+  bash: "command", read: "read", write: "write", search: "search", web: "fetch",
+  mcp: "call", agent: "agent",
 };
+const kindMark = (name: string): Mark => KIND_MARK[toolKind(name)] ?? "step";
 
-/** The window's three lights, the one thing that says "terminal" at a glance.
- *  A lone command draws them itself — a header row for one line is all frame. */
-function Lights({ running }: { running: boolean }) {
-  return (
-    <span className="ax-winlights" data-run={running ? "" : undefined} aria-hidden>
-      <i /><i /><i />
-    </span>
-  );
-}
+/** The tag a row wears in the zone's kind column, which holds seven characters
+ *  (--zk in index.css): a longer name (TOOLSEARCH, MULTIEDIT, BASHOUTPUT) says
+ *  its family's word instead of losing its tail. */
+const KIND_WORD: Record<ToolKind, string> = {
+  bash: "BASH", read: "READ", write: "EDIT", search: "SEARCH", web: "WEB",
+  agent: "AGENT", plan: "PLAN", mcp: "MCP", plain: "TOOL",
+};
+const kindTag = (name: string): string => {
+  const t = toolTag(name);
+  return t.length > 7 ? KIND_WORD[toolKind(name)] : t;
+};
 
 type Cmd = { command: string; done?: Done };
 
-/** One command as a row of the ledger: the phrase it amounts to, its own kind's
- *  glyph in front of it, and its output behind the chevron. Inside a window it
- *  wears no tag — the header already said BASH — and a lone command wears the
- *  three lights itself, because a window around one line is all frame.
+/** One command as a row of the ledger: the phrase it amounts to, and its output
+ *  behind the chevron. Inside a run it wears no tag and no mark — the run's head
+ *  row already said BASH, and the member hangs off it.
  *  With AUTO-OPEN RESULTS on it opens itself while it runs, when it fails, and
  *  for the newest command. */
 function CommandRow({
@@ -207,7 +204,6 @@ function CommandRow({
   const exit = raw.match(EXIT_RE);
   const out = exit ? raw.slice(exit[0].length) : raw;
   const lines = out ? out.split("\n").length : 0;
-  const Icon = CMD_ICON[cmdKind(command)];
   // What the command did, in words. Empty when nothing beats the line itself.
   // A cut, not a cross-fade: two legible strings on one row is worse than any
   // hard swap, and staggering them blanks the row instead.
@@ -219,7 +215,7 @@ function CommandRow({
       shape={tag ? "term" : undefined}
       accent="var(--acc)"
       tag={tag}
-      lead={<Icon size={12} />}
+      mark={tag ? "command" : undefined}
       animate={animate}
       running={running}
       error={failed}
@@ -228,7 +224,7 @@ function CommandRow({
         <>
           {exit && <span style={{ color: "var(--err)" }}>EXIT {exit[1]}</span>}
           {slow(done?.ms) ? <span>{dur(done?.ms)}</span> : null}
-          {lines > 0 && <span>{lines}L</span>}
+          {lines > 0 && <span>{lines} line{lines === 1 ? "" : "s"}</span>}
         </>
       }
       drawer={
@@ -310,17 +306,10 @@ function TerminalGroup({
         ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <div className="ax-winhead">
-        <Lights running={running} />
-        {/* No `>_`: not one of the sheet's five columns draws a glyph here —
-            the word is the label, and the run's state is the pip beside it. */}
-        <span className="ax-wintag">BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}</span>
-        <i className="ax-winrule" aria-hidden />
-        <span className="ax-winmeta">
-          <span>{cmds.length} CMDS</span>
-          {slow(ms) && <span>{dur(ms)}</span>}
-        </span>
-      </div>
+      <ActionRow tier="reach" mark="command" accent={accent} tag="BASH" running={running} animate={false}
+        stat={slow(ms) ? <span>{dur(ms)}</span> : null}>
+        {cmds.length} commands
+      </ActionRow>
       {cmds.map((c, k) => (
         <CommandRow
           key={k}
@@ -384,7 +373,7 @@ function DiffBlock({
       tier="mark"
       shape={bare ? undefined : toolShape(name)}
       accent={toolAccent(name)}
-      tag={bare ? undefined : toolTag(name)}
+      tag={bare ? undefined : kindTag(name)}
       animate={animate}
       error={error}
       startOpen={autoOpen}
@@ -468,21 +457,18 @@ function EditGroup({
         ...(animate ? { animation: "termIn .42s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <div className="ax-winhead">
-        <span className="ax-wintag truncate">EDIT{failed ? " // FAILED" : ""}</span>
-        <i className="ax-winrule" aria-hidden />
-        {/* The last figure is the one the header exists for: what this whole run
-            did to the tree, without opening a single drawer. */}
-        <span className="ax-winmeta">
-          <span>{files.length} FILES</span>
-          {edits.length > files.length && <span>{edits.length} EDITS</span>}
-          {slow(ms) && <span>{dur(ms)}</span>}
-          <span className="ax-winnum">
+      {/* The last figure is the one the head exists for: what this whole run
+          did to the tree, without opening a single drawer. */}
+      <ActionRow tier="mark" mark="edit" accent={accent} tag="EDIT" animate={false}
+        stat={
+          <>
+            {slow(ms) ? <span>{dur(ms)}</span> : null}
             <span style={{ color: "var(--ok)" }}>+{add}</span>
             <span style={{ color: "var(--err)" }}>−{del}</span>
-          </span>
-        </span>
-      </div>
+          </>
+        }>
+        {files.length} files{edits.length > files.length ? ` · ${edits.length} edits` : ""}
+      </ActionRow>
       {files.map((f) => (
         <DiffBlock key={f.path} {...f} bare animate={false} autoOpen={autoOpen} />
       ))}
@@ -490,13 +476,13 @@ function EditGroup({
   );
 }
 
-/** A path in the form a reader uses: the filename, and just enough directory in
- *  front of it to place the file. The head of an absolute path is a mount point
+/** A path in the form a reader uses: the filename, and the one directory it
+ *  sits in. The head of an absolute path is a mount point
  *  nobody reads — and it is exactly what a plain truncation keeps, cutting off
  *  the one part that identifies the file. */
 function shortDir(dir: string): string {
   const parts = dir.split("/").filter(Boolean);
-  return parts.length > 2 ? `\u2026/${parts.slice(-2).join("/")}/` : dir;
+  return parts.length > 1 ? `\u2026/${parts[parts.length - 1]}/` : dir;
 }
 
 /** The directory takes the truncation, the filename never gets cut. A flex row,
@@ -520,15 +506,6 @@ function FilePath({ path }: { path: string }) {
         )}
       </span>
       <span className="n text-foreground-bright">{path.slice(cut + 1)}</span>
-    </span>
-  );
-}
-
-/** The ruled lines of the page a read looked at but never showed you. */
-function PageLines() {
-  return (
-    <span className="ax-page" aria-hidden>
-      {[13, 8, 11].map((w) => <i key={w} style={{ width: w }} />)}
     </span>
   );
 }
@@ -583,15 +560,14 @@ function BootRow({ text }: { text: string }) {
   );
 }
 
-/** A pause with nothing recorded but its length — a hairline seam with the
- *  figure at its right edge, in the same column as the rows' stats. It used to
- *  be a zero-height overlay riding the next card's top edge, which put the
- *  figure on top of that row's own numbers. */
+/** A pause with nothing recorded but its length — a dashed stretch of the
+ *  spine, the figure in the kind column. A full-width hairline read as a
+ *  section break between things that were one stretch of work. */
 function GapMark({ ms }: { ms: number }) {
   return (
-    <div aria-hidden className="ml-[var(--rail)] flex items-center gap-2 pr-[18px] text-[length:var(--t95)] tracking-[1px] text-muted-2">
-      <span className="h-px min-w-0 flex-1 bg-border" />
-      <span className="flex-none">+{dur(ms)}</span>
+    <div aria-hidden className="zrow gap">
+      <i className="ax-bar" />
+      <span className="ax-tagcell">+{dur(ms)}</span>
     </div>
   );
 }
@@ -675,7 +651,9 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
  *  shape as a strip of glyphs, so a shut zone still says "three commands, a
  *  note, a failure" — which is what makes a shut zone safe to be the default.
  *  It follows the COLLAPSE STEPS switch like a STEPS fold does, live turn
- *  included: while one runs, the header names what is out right now. */
+ *  included: while one runs, the header names what is out right now.
+ *  Open, the strip turns on its side into the spine: every row below wears its
+ *  glyph in the column the header's chevron sits in. */
 function WorkZone({ marks, title, failed, running, live, span, defaultOpen, animate, children }: {
   marks: Mark[];
   title: string;
@@ -707,10 +685,10 @@ function WorkZone({ marks, title, failed, running, live, span, defaultOpen, anim
         title={open ? "hide the work" : "show the work"}
         className="dwork-head"
       >
-        <span className="dwork-lab">
-          <ChevronDown size={11} aria-hidden className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
-          WORK
+        <span className="dwork-node" aria-hidden>
+          <ChevronDown size={11} className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
         </span>
+        <span className="dwork-lab">WORK</span>
         <span className="dwork-title">{running && live ? `${title} \u2014 ${live}` : title}</span>
         <span className="dwork-strip" aria-hidden>
           {shown.map((m, k) => <i key={k} data-m={m}>{MARK_GLYPH[m]}</i>)}
@@ -725,9 +703,8 @@ function WorkZone({ marks, title, failed, running, live, span, defaultOpen, anim
 }
 
 /** A thought, in the flow where it was said (lib/segments) — the agent's own
- *  status line, often a message the CLI handed back reworded. It is the `.thk`
- *  row every language already draws a thought as, with the whole text in it:
- *  the reply's size and markdown, one ink tier under the reply. */
+ *  status line, often a message the CLI handed back reworded. A row on the
+ *  zone's grid with the whole text in it, italic, one ink tier under a note. */
 function ThoughtRow({ ms, text, animate, onOpenFile, toolStyle }: {
   ms?: number;
   text: string;
@@ -737,15 +714,13 @@ function ThoughtRow({ ms, text, animate, onOpenFile, toolStyle }: {
 }) {
   return (
     <div
-      className="thk thought ml-[var(--rail)] flex gap-2.5 text-muted-2"
+      className="zrow thought"
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <span className="thk-lab flex flex-none items-center gap-1.5 text-[length:var(--t10)] tracking-[1.5px]">
-        <Brain size={11} aria-hidden />
-        THOUGHT
-      </span>
-      <Markdown className="thought-text min-w-0 flex-1" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
-      {slow(ms) ? <span className="thk-ms flex-none text-[length:var(--t95)] tracking-[1px]">{dur(ms)}</span> : null}
+      <i className="ax-bar" data-g={MARK_GLYPH.think} aria-hidden />
+      <span className="ax-tagcell"><span className="ax-tag">THINK</span></span>
+      <Markdown className="thought-text zo" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
+      <span className="ax-stat">{slow(ms) ? dur(ms) : null}</span>
     </div>
   );
 }
@@ -758,29 +733,26 @@ function LogRow({ src, label, text, error, animate }:
   const [open, setOpen] = useState(false);
   const lines = text.split("\n");
   const more = lines.length - 1;
-  const color = error ? "var(--err)" : undefined;
   return (
-    <div
-      className="thk thk-log ml-[var(--rail)] text-muted-2"
+    <button
+      type="button"
+      onClick={() => more && setOpen((o) => !o)}
+      className="zrow log"
+      data-err={error ? "" : undefined}
+      title={more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <button
-        type="button"
-        onClick={() => more && setOpen((o) => !o)}
-        className="flex w-full items-start gap-2 py-0.5 text-left font-mono text-[length:var(--t11)] leading-relaxed"
-        style={{ color }}
-        title={more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
-      >
-        <Terminal size={11} aria-hidden className="mt-1 flex-none" />
-        <span className="flex-none tracking-[1px] opacity-70">
-          {(label ? `${src}:${label}` : src).toUpperCase()}
-        </span>
-        <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">
-          {open ? text : lines[0]}
-        </span>
-        {more && !open ? <span className="flex-none opacity-70">+{more}</span> : null}
-      </button>
-    </div>
+      <i className="ax-bar" data-g={MARK_GLYPH[error ? "fail" : "hook"]} aria-hidden />
+      <span className="ax-tagcell"><span className="ax-tag">{src.toUpperCase()}</span></span>
+      <span className="zo">
+        {label ? <span className="text-muted-2">{label} · </span> : null}
+        {open ? text : lines[0]}
+      </span>
+      <span className="ax-stat">{more && !open ? `+${more} lines` : null}</span>
+      <span className="ax-chev">
+        {more ? <ChevronDown size={12} aria-hidden className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`} /> : null}
+      </span>
+    </button>
   );
 }
 
@@ -808,7 +780,7 @@ function ActionRow({
   shape,
   accent,
   tag,
-  lead,
+  mark,
   stat,
   drawer,
   animate,
@@ -826,8 +798,9 @@ function ActionRow({
   t?: string;
   /** Omitted inside a terminal window — its header already said BASH. */
   tag?: string;
-  /** A glyph in front of the object, where it says something the tag can't. */
-  lead?: ReactNode;
+  /** The strip glyph this row wears on the WORK zone's spine (lib/dossier
+   *  MARK_GLYPH). Unset for a run's members: they hang off the run's head. */
+  mark?: Mark;
   stat?: ReactNode;
   drawer?: () => ReactNode;
   animate: boolean;
@@ -895,23 +868,15 @@ function ActionRow({
           })
         }
       >
-        <i className="ax-bar" aria-hidden />
+        <i className="ax-bar" data-g={mark ? MARK_GLYPH[mark] : undefined} aria-hidden />
         <span className="ax-tagcell">
           {tag !== undefined && (
             <span className="ax-tag" data-shape={shape}>
-              {shape === "term" && (
-                <span className="ax-lights" aria-hidden>
-                  <i /><i /><i />
-                </span>
-              )}
               <span className="ax-tagtext">{tag}</span>
             </span>
           )}
         </span>
-        <span className="ax-obj">
-          {lead ? <span className="ax-lead" aria-hidden>{lead}</span> : null}
-          {children}
-        </span>
+        <span className="ax-obj">{children}</span>
         <span className="ax-stat">{stat}</span>
         <span className="ax-chev">
           {drawer && (
@@ -985,8 +950,7 @@ function DrawerFoot({ children }: { children: ReactNode }) {
   );
 }
 
-/** A read only looked at a page, so it wears no frame at all and ends in the
- *  ruled lines of what it read. The quietest row there is. */
+/** A read only looked at a page, so it is the quietest row there is. */
 function ReadCard({ path, ms, stat, error, animate, t }:
   { path: string; ms?: number; stat?: string; error?: boolean; animate: boolean; t?: string }) {
   return (
@@ -996,9 +960,10 @@ function ReadCard({ path, ms, stat, error, animate, t }:
       shape={toolShape("Read")}
       accent={toolAccent("Read")}
       tag="READ"
+      mark="read"
       animate={animate}
       error={error}
-      stat={<><PageLines /><Took ms={ms} stat={stat} error={error} /></>}
+      stat={<Took ms={ms} stat={stat} error={error} />}
     >
       <FilePath path={path} />
     </ActionRow>
@@ -1017,7 +982,8 @@ function WriteCard({ name, path, ms, stat, error, animate, t }: {
       tier="mark"
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={toolTag(name)}
+      tag={kindTag(name)}
+      mark={kindMark(name)}
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}
@@ -1039,7 +1005,8 @@ function SearchCard({ name, summary, ms, stat, error, animate, t }: {
       tier="glance"
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={toolTag(name)}
+      tag={kindTag(name)}
+      mark="search"
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}
@@ -1062,7 +1029,8 @@ function WebCard({ name, summary, ms, stat, error, animate, t }: {
       tier="reach"
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={toolTag(name)}
+      tag={kindTag(name)}
+      mark="fetch"
       animate={animate}
       error={error}
       // Round at both ends: the tag and what came back. There is no status code
@@ -1086,9 +1054,10 @@ function WebCard({ name, summary, ms, stat, error, animate, t }: {
   );
 }
 
-/** A call out of this process and into another one, so the server's tag trails a
- *  patch cable across to the tool it reached — "get task" alone never said which
- *  task, so what it was called with follows. */
+/** A call out of this process and into another one: the server, then the tool
+ *  it reached — "get task" alone never said which task, so what it was called
+ *  with follows. The tag says MCP for every server, so the server leads the
+ *  object; as a tag it ran past the cell (PLAYWRIGHT, CLOUDFLARE). */
 function McpCard({ name, summary, ms, stat, error, animate, t }: {
   name: string; summary: string; ms?: number; stat?: string; error?: boolean; animate: boolean;
   t?: string;
@@ -1100,11 +1069,13 @@ function McpCard({ name, summary, ms, stat, error, animate, t }: {
       tier="reach"
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={toolTag(name)}
+      tag="MCP"
+      mark="call"
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}
     >
+      <span className="text-muted-2">{toolTag(name).toLowerCase()} · </span>
       <span className="text-foreground-bright">{tool}</span>
       {summary ? <span className="text-muted-2">{` · ${summary}`}</span> : null}
     </ActionRow>
@@ -1146,22 +1117,6 @@ function LiveClock() {
   return <span className="agb-live">{Math.floor(s / 60)}:{String(s % 60).padStart(2, "0")}</span>;
 }
 
-/** The chrome every delegation block wears: the mark, what kind of delegation
- *  this was, who took it, and the run's own numbers. */
-function AgentHead({ kind, type, running, nums }: {
-  kind: string; type?: string; running?: boolean; nums: ReactNode;
-}) {
-  return (
-    <div className="agb-head">
-      <span className="agb-mark" aria-hidden>{running ? "\u25c8" : "\u25c7"}</span>
-      <span className="agb-kind">{kind}{type ? <span aria-hidden>//</span> : null}</span>
-      {type ? <span className="agb-type" title={type}>{type}</span> : null}
-      <span className="agb-rule" aria-hidden />
-      <span className="agb-nums">{nums}</span>
-    </div>
-  );
-}
-
 /** While a run is out there is nothing true to print but that it is out, and for
  *  how long — the tool count and the token spend do not exist until it returns.
  *  The clock only runs on a turn streaming live; on a reopened one it would be
@@ -1178,105 +1133,73 @@ function agentNums(r: AgentRun, animate: boolean): ReactNode {
   );
 }
 
-/** A delegated run: the one thing in the stream that keeps a frame, because it
- *  is not a step of your turn but a turn nested inside it — its own tool calls,
- *  its own minutes, its own report. The agent that took the work is the tag
- *  ("AGENT" alone was the same word for a one-file lookup and a four-minute
- *  fan-out), and the brief is the body rather than a paragraph clipped into a
- *  one-line cell. */
+/** A delegated run is not a step of your turn but a turn nested inside it —
+ *  its own tool calls, its own minutes, its own report — so its row sits on a
+ *  plate with the brief under it, two lines shut and all of it on a click. The
+ *  agent that took the work leads the object ("AGENT" alone was the same word
+ *  for a one-file lookup and a four-minute fan-out). A skill only loaded a kit,
+ *  so it is a plain row: the kit's name, and no brief to plate. */
 function AgentBlock({ run, animate }: { run: AgentRun; animate: boolean }) {
   const [open, setOpen] = useState(false);
   const { name, summary, meta, stat, error, running } = run;
-  const kind = name === "Skill" ? "SKILL" : "AGENT";
+  const skill = name === "Skill";
   const title = meta?.title ?? "";
+  const brief = skill ? "" : summary;
   return (
     <div
-      className="agb panel"
-      data-run={running ? "" : undefined}
-      data-err={error ? "" : undefined}
+      className="agb"
+      data-plate={brief ? "" : undefined}
       data-open={open ? "" : undefined}
-      style={{
-        ...({ "--h": agentHue(run) } as React.CSSProperties),
-        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
-      }}
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <i className="agb-rail" aria-hidden />
-      {running ? <span className="agb-sweep" aria-hidden><i /></span> : null}
-      <AgentHead kind={kind} type={meta?.type} running={running} nums={agentNums(run, animate)} />
-      {title || summary ? (
-        <div className="agb-brief">
-          {title ? <b>{title}</b> : null}
-          {title && summary ? " \u2014 " : null}
-          {summary}
-        </div>
-      ) : null}
-      {/* The reason lives inside the frame, not under it: it belongs to this run,
-          and a block with a border makes a line floating below it read as loose. */}
-      {error && stat ? <div className="agb-err">{stat}</div> : null}
-      {summary ? (
-        <button
-          type="button"
-          className="agb-foot"
-          onClick={() => setOpen((o) => !o)}
-          title={open ? "clip the brief" : "the whole brief"}
-        >
-          <span>{open ? "\u2303" : "\u2304"} BRIEF</span>
-          <i aria-hidden />
+      <ActionRow tier="reach" mark="agent" accent={agentHue(run)} tag={skill ? "SKILL" : "AGENT"}
+        running={running} error={error} animate={false} stat={agentNums(run, animate)}>
+        <span className="text-foreground-bright">{meta?.type || (skill ? summary : "agent")}</span>
+        {title ? <span className="text-muted-2">{` \u2014 ${title}`}</span> : null}
+      </ActionRow>
+      {brief ? (
+        <button type="button" className="agb-brief" onClick={() => setOpen((o) => !o)}
+          title={open ? "clip the brief" : "the whole brief"}>
+          <span>{brief}</span>
         </button>
       ) : null}
+      {/* The reason belongs to this run, so it sits on its plate, not under it. */}
+      {error && stat ? <div className="agb-err">{stat}</div> : null}
     </div>
   );
 }
 
-/** One delegation inside a fan: its agent, what it was asked for, and where it
- *  got to. No clock of its own — one interval per row to say what the block's
- *  own clock already says. */
-function AgentFanRow({ run }: { run: AgentRun }) {
-  const { name, summary, meta, ms, stat, error, running } = run;
-  const label = meta?.type || (name === "Skill" ? "SKILL" : "AGENT");
-  const said = meta?.title || summary;
-  return (
-    <div
-      className="agb-fan"
-      data-state={running ? "run" : error ? "err" : "done"}
-      style={{ "--h": agentHue(run) } as React.CSSProperties}
-    >
-      <i className="agb-dot" aria-hidden />
-      <span className="t" title={label}>{label}</span>
-      <span className="d" title={said}>{said}</span>
-      <span className="n">{error ? "FAILED" : running ? "" : stat || slow(ms)}</span>
-    </div>
-  );
-}
-
-/** A run of delegations under one frame, drawn as the fan it is: a diamond per
- *  agent, the ones still out lit. It says how many ran, not that they ran at
- *  once — the event stream can't tell a fan-out from four in a row. */
+/** A run of delegations, drawn the way any run is: a head row, and a member per
+ *  agent hanging off it. It says how many ran, not that they ran at once — the
+ *  event stream can't tell a fan-out from four in a row. No clock per member:
+ *  one interval per row to say what the head's own clock already says. */
 function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
   const live = runs.filter((r) => r.running).length;
   const total = runs.reduce((t, r) => t + (r.ms ?? 0), 0);
   return (
     <div
-      className="agb panel"
-      data-run={live ? "" : undefined}
-      style={{
-        ...({ "--h": "var(--acc)" } as React.CSSProperties),
-        ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
-      }}
+      className="ax-window"
+      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <i className="agb-rail" aria-hidden />
-      {live ? <span className="agb-sweep" aria-hidden><i /></span> : null}
-      <AgentHead
-        kind="AGENTS"
-        type={`${runs.length} RUNS`}
-        running={!!live}
-        nums={
-          live ? (
-            <><span style={{ color: "var(--h)" }}>{live} WORKING</span>{animate ? <LiveClock /> : null}</>
-          ) : slow(total) ? <span>{dur(total)}</span> : null
-        }
-      />
-      {runs.map((r, k) => <AgentFanRow key={k} run={r} />)}
+      <ActionRow tier="reach" mark="agent" accent="var(--acc)" tag="AGENTS" running={!!live} animate={false}
+        stat={live
+          ? <><span style={{ color: "var(--h)" }}>{live} WORKING</span>{animate ? <LiveClock /> : null}</>
+          : slow(total) ? <span>{dur(total)}</span> : null}>
+        {runs.length} runs
+      </ActionRow>
+      {runs.map((r, k) => {
+        const said = r.meta?.title || r.summary;
+        const done = r.stat || slow(r.ms);
+        return (
+          <ActionRow key={k} tier="reach" accent={agentHue(r)} running={r.running} error={r.error} animate={false}
+            stat={r.error ? <span style={{ color: "var(--err)" }}>FAILED</span>
+              : r.running ? <span style={{ color: "var(--h)" }}>WORKING</span>
+              : done ? <span>{done}</span> : null}>
+            <span className="text-foreground-bright">{r.meta?.type || (r.name === "Skill" ? "skill" : "agent")}</span>
+            {said ? <span className="text-muted-2">{` \u2014 ${said}`}</span> : null}
+          </ActionRow>
+        );
+      })}
     </div>
   );
 }
@@ -1291,7 +1214,7 @@ function ToolImages({ paths, clip }: { paths: string[]; clip?: Clip }) {
   const live = paths.filter((p) => !gone.has(p));
   if (!live.length) return null;
   return (
-    <div className="mt-2 ml-[var(--rail)] flex flex-wrap gap-2">
+    <div className="zx mt-2 ml-[var(--rail)] flex flex-wrap gap-2">
       {/* The panel belongs to the clip, so it only rides along when the thing
           being opened is the video the metadata was stamped onto — stepping the
           gallery to a screenshot drops it. */}
@@ -1342,7 +1265,7 @@ function CallGroup({
 }) {
   const kind = toolKind(name);
   const accent = toolAccent(name);
-  const tag = kind === "mcp" ? toolTag(name) : kind.toUpperCase();
+  const tag = kind === "mcp" ? "MCP" : kind === "plain" ? "TOOL" : kind.toUpperCase();
   const total = calls.reduce((t, c) => t + (c.ms ?? 0), 0);
   const failed = calls.some((c) => c.error);
 
@@ -1355,14 +1278,11 @@ function CallGroup({
         ...(animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : {}),
       }}
     >
-      <div className="ax-winhead">
-        <span className="ax-wintag truncate">{tag}</span>
-        <i className="ax-winrule" aria-hidden />
-        <span className="ax-winmeta">
-          <span>{calls.length} CALLS</span>
-          {slow(total) && <span>{dur(total)}</span>}
-        </span>
-      </div>
+      <ActionRow tier="reach" mark={kindMark(name)} accent={accent} tag={tag} animate={false}
+        stat={slow(total) ? <span>{dur(total)}</span> : null}>
+        {kind === "mcp" ? toolTag(name).toLowerCase() : kind === "plain" ? name : null}
+        <span className="text-muted-2">{kind === "mcp" || kind === "plain" ? " · " : ""}{calls.length} calls</span>
+      </ActionRow>
       {calls.map((c, k) => (
         <ActionRow
           key={k}
@@ -1410,17 +1330,22 @@ export function ToolCard({
   if (kind === "web") return <WebCard name={name} summary={summary} {...rest} />;
   if (kind === "search") return <SearchCard name={name} summary={summary} {...rest} />;
 
+  // A tool with no family of its own says TOOL and names itself in the object:
+  // its own name as a tag ran past the cell (TOOLSEARCH, TASKUPDATE).
+  const plain = kind === "plain";
   return (
     <ActionRow
           t={t}
       tier={toolTier(name)}
       shape={toolShape(name)}
       accent={toolAccent(name)}
-      tag={toolTag(name)}
+      tag={plain ? "TOOL" : kindTag(name)}
+      mark={kindMark(name)}
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}
     >
+      {plain ? <><span className="text-foreground-bright">{name}</span>{summary ? <span className="text-muted-2"> · </span> : null}</> : null}
       {summary || (kind === "plan" ? "checklist updated" : "")}
     </ActionRow>
   );
@@ -1540,12 +1465,9 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
         }
       }}
     >
-      <i className="ax-bar" aria-hidden />
+      <i className="ax-bar" data-g={MARK_GLYPH.read} aria-hidden />
       <span className="ax-tagcell">
-        <span className="ax-tag" data-shape="bare">
-          <Layers size={11} aria-hidden />
-          LOOKUPS
-        </span>
+        <span className="ax-tag" data-shape="bare">LOOKUPS</span>
       </span>
       <span className="ax-obj">{label}</span>
       <span className="ax-stat">{names.length}</span>
@@ -1801,7 +1723,7 @@ export const RunStream = memo(function RunStream({
         // of them, has no column on the sheet and was replaced by a fifth
         // look (lib/toolwidget TOOL_STYLES).
         const extra = spec ? (
-          <div className="ml-[var(--rail)]">
+          <div className="zx ml-[var(--rail)]">
             <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
           </div>
         ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
@@ -1903,7 +1825,7 @@ export const RunStream = memo(function RunStream({
               t={clockAt(event)}
             />
             {done?.is_error && done.stat ? (
-              <div className="mt-2 ml-[var(--rail)]"><ErrLine text={done.stat} /></div>
+              <div className="zx mt-2 ml-[var(--rail)]"><ErrLine text={done.stat} /></div>
             ) : null}
             {extra}
           </div>
@@ -1933,21 +1855,14 @@ export const RunStream = memo(function RunStream({
       case "tool_done":
         return null;
       case "steer":
-        // Sent into this turn while it was already running — drawn with the
-        // prompt bubble's geometry (right-aligned, bordered, tinted) so it
-        // reads as the user speaking, not another agent row; violet + the
-        // STEER tag keep it distinct from the turn-opening prompt.
+        // Sent into this turn while it was already running — you, inside the
+        // work: a row on the zone's grid, on a plate in your accent.
         return (
-          <div key={i} id={ckId(turnId, steerKey(i))} className="my-2 flex scroll-mt-[94px] justify-end">
-            {/* Colours live in .steer-bub (index.css): mixed into the panel, not
-                washed over transparent, so the tint survives a light ground. */}
-            <div className="steer-bub max-w-[78%] border border-r-[3px] px-3 py-1.5">
-              <div className="steer-lab mb-0.5 flex items-center justify-end gap-1.5 text-[length:var(--t10)] tracking-[1.6px]">
-                STEER <SteerIcon size={11} />
-              </div>
-              <span className="block whitespace-pre-wrap break-words text-[length:var(--t12)] leading-relaxed text-foreground-bright">
-                {event.text}
-              </span>
+          <div key={i} id={ckId(turnId, steerKey(i))} className="zrow steer scroll-mt-[94px]">
+            <i className="ax-bar" data-g={MARK_GLYPH.steer} aria-hidden />
+            <span className="ax-tagcell"><span className="ax-tag">STEER</span></span>
+            <div className="zo">
+              <span className="block whitespace-pre-wrap break-words">{event.text}</span>
               {event.images && event.images.length > 0 && (
                 <ToolImages paths={event.images} />
               )}
@@ -2064,7 +1979,7 @@ export const RunStream = memo(function RunStream({
     // already is the one line the work sits under.
     // Keyed by where the stretch starts (lib/segments), not by its first row on
     // screen, which the tail window moves: a new key remounts what you opened.
-    if (dossier) return <div key={`f${seg.start}`} className="dsteps space-y-1.5">{seg.idx.map(renderEvent)}</div>;
+    if (dossier) return <div key={`f${seg.start}`} className="dsteps">{seg.idx.map(renderEvent)}</div>;
     return (
       <Fold
         key={`f${seg.start}`}
