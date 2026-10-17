@@ -155,7 +155,9 @@ def test_is_outdated_error_matches_the_api_rejecting_an_old_cli():
 def test_runner_outdated_cli_says_update_not_compact():
     """Compacting is the very call the API rejected, so the context advice
     ("run /compact") fails the same way. No resume either: the same CLI would
-    be rejected again."""
+    be rejected again. And no ping of its own: the turn's FAILED carries the
+    advice (outcomes.py), so Telegram doesn't hear it twice."""
+    from bridge import outcomes
     s = store.create_session(CHAT, "old", cwd="/tmp/old")
     store.set_claude_session_id(s["id"], "c-old")
     job = runner.Job("j-old", CHAT, s["id"])
@@ -170,8 +172,12 @@ def test_runner_outdated_cli_says_update_not_compact():
         assert runner._maybe_auto_resume(job, "/tmp/old", "opus", None) is False
     finally:
         runner._notify, config.AUTO_RESUME = saved_notify, saved_auto
-    assert len(notes) == 1 and "claude update" in notes[0]
-    assert "compact" not in notes[0]
+    assert notes == []
+    out = outcomes.outcome({"status": "error", "elapsed": 9}, {
+        "errors": [], "has_text": False, "stopped": False, "has_result": True,
+        "result_empty": False, "result_text": OUTDATED})
+    assert out["code"] == "outdated" and "Update Claude Code" in out["detail"]
+    assert "compact" not in out["detail"]
 
 
 def test_is_auth_error_matches_the_dead_login_shapes():
@@ -334,7 +340,7 @@ def test_fire_resumes_pending_and_clears():
         assert a[0] == CHAT and a[1] == limits.NUDGE and a[2] == []
         assert kw == {"project": "/tmp/rez", "session_id": "s-3",
                       "model": "sonnet", "effort": None, "account_slot": None}
-        assert len(notify.calls) == 1                 # first attempt pings
+        assert notify.calls == []                     # bell only: the resumed turn's DONE is the news
         assert limits._pending == {} and limits._timer is None
         assert limits._last_tries.get("s-3") == 1     # episode memory survives the fire
     finally:
@@ -500,13 +506,14 @@ def test_runner_backs_off_server_error_turn():
     saved_auto = config.AUTO_RESUME
     limits.defer_server = lambda *a, **kw: (deferred.append((a, kw))
                                             or (time.time() + 300, 3))
-    runner._notify = lambda chat, text, kb=None, **kw: notes.append(text)
+    runner._notify = lambda chat, text, kb=None, **kw: notes.append((text, kw.get("kind")))
     config.AUTO_RESUME = True
     try:
         assert runner._maybe_auto_resume(job, "/tmp/srv", "opus", None) is True
         assert deferred == [((s["id"], CHAT, "/tmp/srv", "opus", None),
                              {"slot": None})]
-        assert len(notes) == 1 and "in 5 min" in notes[0] and "attempt 3/6" in notes[0]
+        assert len(notes) == 1 and "in 5 min" in notes[0][0] and "attempt 3/6" in notes[0][0]
+        assert notes[0][1] == "retrying"        # bell only: the bridge retries by itself
         assert runner._resume_fails.get(s["id"]) is None   # crash cap untouched
     finally:
         limits.defer_server, runner._notify = saved_defer, saved_notify

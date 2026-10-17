@@ -129,7 +129,7 @@ const TONE: Record<string, "ok" | "err" | "ask" | "warn" | "acc" | "dim"> = {
   failed: "err", rv_failed: "err", rv_refused: "err", rv_link: "err", pr_failing: "err", move_failed: "err",
   approve: "ask", question: "ask", asking: "ask", login: "ask", limit_choice: "ask", rv_offer: "ask",
   parked: "warn", pr_changes: "warn", started: "acc", rv_started: "acc",
-  rv_held: "dim", rv_dismissed: "dim", weekly: "dim",
+  rv_held: "dim", rv_dismissed: "dim", weekly: "dim", retrying: "dim",
 };
 const GLYPH: Record<string, ReactNode> = { ok: "✓", err: "✕", ask: "?", warn: <b className="ntf-pz" />, acc: "▸", dim: null };
 const toneOf = (kind: string) => TONE[kind] ?? "dim";

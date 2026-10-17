@@ -71,13 +71,14 @@ in `crops/`). Theme in the mockups: FLINT VIOLET.
 | login, limit_choice | account | needs | 🔐 login expired / ⛔ usage limit card |
 | rv_offer | rv_offer | needs | 🧩 offered by a teammate |
 | done | done | news | ✅ finished |
-| failed | failed | news | ⚠️ hit an error, 🧱 context, ⬆️ outdated CLI |
-| parked, resumed | parked | news | ⏳ limit, ⚠️ API retry, ⏱️ hung, 🔄 crash / restart / reset / signed in, ↪ switched account |
+| failed | failed | news | ⚠️ hit an error, with the reason (context, outdated CLI…) |
+| parked | parked | news | ⏳ usage limit |
+| resumed, retrying, waiting, rv_link_back | resumed | fyi | ⏱️ hung, 🔄 crash / restart / reset / signed in, ↪ switched account, ⚠️ API retry (off by default) |
 | started, rv_started | started | fyi | (bot echo only) |
 | rv_held, rv_dismissed | rv_held | fyi | 🧩 queued behind running work |
 | rv_done | rv_done | news | ✓ Rivendell job done |
 | rv_failed, rv_refused | rv_failed | news | ✕ job failed / (refusal: log only) |
-| rv_link, rv_link_back | rv_link | news / fyi | ✕ link broken / (back: nothing) |
+| rv_link | rv_link | news | ✕ link broken |
 | pr_failing, pr_changes | pr | news | ✕ checks failing / ◆ changes requested |
 | move_done, move_failed | bridge | news | (MoveDock only) |
 | weekly | weekly | fyi | the weekly report |
@@ -91,6 +92,7 @@ Defaults (pop · sound · tg):
 | done | ✓ | chime | away |
 | failed | ✓ | knock | away |
 | parked | ✓ | none | away |
+| resumed | — | none | off |
 | started | — | none | off |
 | rv_held | — | none | away |
 | rv_done | ✓ | chime | away |
@@ -99,6 +101,12 @@ Defaults (pop · sound · tg):
 | pr | ✓ | blip | away |
 | bridge | ✓ | none | off |
 | weekly | — | none | always |
+
+What the bridge gets past by itself (the `resumed` row) only lands in the bell: in a week
+of real use that was 65 auto-resumes, and the turn's DONE or FAILED is the news anyway. A
+FAILED or PARKED that lands within a minute behind a SIGN IN or LIMIT ask for the same
+session is that ask's echo (`notices.echo`). It goes in the bell with `meta.quiet`, and
+pops and sends nothing, because the ask already knocked once.
 
 ## Refinements while planning (vs the mockups)
 

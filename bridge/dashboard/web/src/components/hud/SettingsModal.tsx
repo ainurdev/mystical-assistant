@@ -1127,7 +1127,8 @@ const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?
   { head: "SESSIONS", rows: [
     ["done", "Finished"],
     ["failed", "Failed", "with the reason: context full, API error, killed…"],
-    ["parked", "Parked · resumed", "usage limit, API retries, restart recovery"],
+    ["parked", "Paused by the usage limit", "it resumes on its own at the reset"],
+    ["resumed", "Resumed or retrying on its own", "after a restart, a limit reset, an API error or a sign-in; a Rivendell link back"],
     ["started", "Started elsewhere", "Telegram, Rivendell, a goal's next turn"]] },
   { head: "RIVENDELL", rows: [
     ["rv_held", "Job held behind running work", "it starts by itself; RUN IT TOO starts it now"],

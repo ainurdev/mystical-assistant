@@ -220,7 +220,7 @@ def test_turn_error_emits_failed_with_outcome(monkeypatch, sent):
     assert (row["kind"], row["subject"], row["title"]) == ("failed", sid, "Invoices")
     assert row["body"] == "Out of context: The conversation outgrew the window. Start a fresh session."
     assert row["meta"]["elapsed"] == 760
-    assert sent and "hit an error" in sent[0]
+    assert sent and "hit an error" in sent[0] and sent[0].endswith(row["body"])   # Telegram hears why too
 
 
 def test_turn_done_emits_done_with_closing_line(monkeypatch, sent):
@@ -289,6 +289,32 @@ def test_move_finish_emits():
     rows = notices.feed()
     assert [(r["kind"], r["title"], r["body"]) for r in rows] == [
         ("move_failed", "← ~/in.move", "bad archive"), ("move_done", "→ ~/out.move", "")]
+
+
+def test_what_the_bridge_got_past_itself_stays_in_the_bell(monkeypatch):
+    assert notices.prefs()["events"]["resumed"] == {"pop": False, "sound": "none", "tg": "off"}
+    monkeypatch.setattr(notices, "_last_seen", time.time() - 3600)    # away for an hour
+    for kind in ("resumed", "retrying", "waiting", "rv_link_back"):
+        assert notices.CATALOG[kind][0] == "resumed" and notices.telegram_ok(kind) is False
+    assert notices.telegram_ok("parked") is True       # a usage-limit pause still reaches you
+
+
+def test_an_asks_own_failed_and_parked_knock_once(monkeypatch, sent):
+    from bridge import runner
+    monkeypatch.setattr(runner, "_auth_dead", {})
+    monkeypatch.setattr(store, "last_turn", lambda s: {"status": "error", "elapsed": 3, "outcome": {
+        "code": "auth", "label": "COULD NOT START", "detail": "Check ACCOUNTS."}})
+    sid = _sess()
+    runner._auth_stop(555, sid, 2)                     # SIGN IN knocks
+    runner.notify_turn_done(555, sid, True)             # the same dead turn ending
+    assert len(sent) == 1 and "login has expired" in sent[0]
+    assert (notices.feed()[0]["kind"], notices.feed()[0]["meta"]["quiet"]) == ("failed", True)
+    parked = _sess()
+    notices.emit("limit_choice", parked, body="Switch or wait")
+    runner._notify(555, "⏳ paused", kind="parked", sid=parked, body="resumes 19:00")
+    assert len(sent) == 1 and notices.feed()[0]["meta"]["quiet"] is True
+    runner.notify_turn_done(555, _sess(), True)         # another session's failure still knocks
+    assert len(sent) == 2 and "quiet" not in notices.feed()[0]["meta"]
 
 
 def test_account_needs_outlive_their_own_failed_and_parked(monkeypatch):

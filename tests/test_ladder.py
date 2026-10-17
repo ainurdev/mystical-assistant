@@ -213,13 +213,24 @@ def test_auto_policy_takes_the_best_rung_immediately():
 
 
 def test_auto_policy_reports_which_rung_it_landed_on():
+    """A silent switch is untrackable: the bell always has it, and Telegram once
+    its route is on (Settings ▸ NOTIFY ▸ Resumed or retrying on its own)."""
+    from bridge import notices
     restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 3,
                     headroom=lambda slot: 64)
     run, notify = _Rec(), _Rec()
     try:
+        s = _session("auto")
+        ladder.escalate(s, CHAT, run=run, notify=notify)
+        row = notices.feed()[0]
+        assert (row["kind"], row["subject"], row["body"]) == (
+            "resumed", s["id"], "Continuing on Account 3 (64% left).")
+        assert notify.calls == []
+        notices.set_prefs({"events": {"resumed": {"tg": "always"}}})
         ladder.escalate(_session("auto"), CHAT, run=run, notify=notify)
-        assert len(notify.calls) == 1, "a silent switch is untrackable"
+        assert len(notify.calls) == 1
     finally:
+        store.set_setting("notify_prefs", None)
         restore()
 
 

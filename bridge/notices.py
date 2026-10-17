@@ -47,8 +47,9 @@ CATALOG = {
     "done": ("done", "news", "session"),
     "failed": ("failed", "news", "session"),
     "parked": ("parked", "news", "session"),
-    "resumed": ("parked", "news", "session"),
-    "waiting": ("parked", "fyi", "session"),
+    "resumed": ("resumed", "fyi", "session"),
+    "retrying": ("resumed", "fyi", "session"),
+    "waiting": ("resumed", "fyi", "session"),
     "started": ("started", "fyi", "session"),
     "rv_started": ("started", "fyi", "rivendell"),
     "rv_held": ("rv_held", "fyi", "rivendell"),
@@ -57,7 +58,7 @@ CATALOG = {
     "rv_failed": ("rv_failed", "news", "rivendell"),
     "rv_refused": ("rv_failed", "news", "rivendell"),
     "rv_link": ("rv_link", "news", "rivendell"),
-    "rv_link_back": ("rv_link", "fyi", "rivendell"),
+    "rv_link_back": ("resumed", "fyi", "rivendell"),
     "pr_failing": ("pr", "news", "pr"),
     "pr_changes": ("pr", "news", "pr"),
     "move_done": ("bridge", "news", "bridge"),
@@ -69,7 +70,8 @@ CATALOG = {
 VERBS = {
     "approve": "APPROVE", "question": "QUESTION", "asking": "ASKS", "login": "SIGN IN",
     "limit_choice": "LIMIT", "rv_offer": "OFFERED", "done": "DONE", "failed": "FAILED",
-    "parked": "PARKED", "resumed": "RESUMED", "waiting": "WAITING", "started": "STARTED", "rv_started": "STARTED",
+    "parked": "PARKED", "resumed": "RESUMED", "retrying": "RETRYING", "waiting": "WAITING",
+    "started": "STARTED", "rv_started": "STARTED",
     "rv_held": "HELD", "rv_dismissed": "DISMISSED", "rv_done": "DONE", "rv_failed": "FAILED",
     "rv_refused": "REFUSED", "rv_link": "LINK DOWN", "rv_link_back": "LINK BACK",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
@@ -78,7 +80,9 @@ VERBS = {
 _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED"}
 
 # group -> what interrupts you. The spec's defaults: today's behaviour, except
-# that "started elsewhere" stops popping up and Telegram waits until you're away.
+# that "started elsewhere" stops popping up and Telegram waits until you're away,
+# and what the bridge got past by itself (a resume, an API retry, a link back,
+# your own Wait) only lands in the bell: the run's DONE or FAILED is the news.
 DEFAULTS = {
     "ask": {"pop": True, "sound": "ping", "tg": "away"},
     "asked": {"pop": True, "sound": "ping", "tg": "away"},
@@ -87,6 +91,7 @@ DEFAULTS = {
     "done": {"pop": True, "sound": "chime", "tg": "away"},
     "failed": {"pop": True, "sound": "knock", "tg": "away"},
     "parked": {"pop": True, "sound": "none", "tg": "away"},
+    "resumed": {"pop": False, "sound": "none", "tg": "off"},
     "started": {"pop": False, "sound": "none", "tg": "off"},
     "rv_held": {"pop": False, "sound": "none", "tg": "away"},
     "rv_done": {"pop": True, "sound": "chime", "tg": "away"},
@@ -245,6 +250,19 @@ def telegram_ok(kind: str, now: "float | None" = None) -> bool:
     except Exception as e:  # noqa: BLE001
         print(f"[notices] routing read failed, pinging: {e}", file=sys.stderr)
         return True
+
+
+def echo(kind: str, subject: str, within: float = 60) -> bool:
+    """A FAILED or PARKED right behind a sign-in or limit ask for the same session
+    is that ask's own news: a dead login ends its turn, a limit card parks it. The
+    bell keeps the row, but the ask already knocked once."""
+    if kind not in ("failed", "parked"):
+        return False
+    try:
+        rows = store.list_notices(time.time() - within, LIMIT)
+    except Exception:  # noqa: BLE001
+        return False
+    return any(r["subject"] == subject and r["kind"] in ("login", "limit_choice") for r in rows)
 
 
 # --- NEEDS YOU --------------------------------------------------------------------

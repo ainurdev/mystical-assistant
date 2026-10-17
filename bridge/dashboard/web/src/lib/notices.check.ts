@@ -57,6 +57,7 @@ const ask = n(2, "z", { tier: "needs", kind: "approve", group: "ask" });
 ok(popFor(ask, { ...env, quiet: true })?.sound === "ping", "a NEEDS YOU gets through quiet hours");
 ok(popFor(ask, { ...env, quiet: true, prefs: { ...prefs, quiet: { ...q, needs: false } } }) === null, "unless you said not even that");
 ok(popFor(n(3, "z", { group: "nonsense" }), env) === null, "an unknown group is silent, not a crash");
+ok(popFor(n(4, "z", { kind: "failed", group: "done", meta: { quiet: true } }), env) === null, "an ask's own echo stays in the bell");
 
 // A tab reopened after hours: a NEEDS row pops only if it still waits on you,
 // or is a few seconds old (the needs poll may not have landed yet).

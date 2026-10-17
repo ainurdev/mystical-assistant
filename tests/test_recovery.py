@@ -103,7 +103,10 @@ def test_recover_resumes_eligible():
     # included), not the "sonnet" this turn started on.
     assert call["project"] == "/tmp/rez" and call["model"] is None
     assert call["prompt"] == recovery.NUDGE and call["images"] == []
-    assert len(notify.calls) == 1 and notify.calls[0]["chat_id"] == CHAT
+    # Bell only by default: the resumed turn's DONE or FAILED is the news.
+    from bridge import notices
+    assert notify.calls == []
+    assert (notices.feed()[0]["kind"], notices.feed()[0]["subject"]) == ("resumed", sid)
 
 
 def test_recover_skips_turn_without_claude_session_id():

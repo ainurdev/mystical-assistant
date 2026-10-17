@@ -1428,10 +1428,12 @@ def _notify(chat_id: int | None, text: str, kb: dict | None = None, *,
             meta: "dict | None" = None) -> None:
     """Best-effort push (never raises into the run loop). With a `kind` and a
     `sid` the event goes in the feed (bridge/notices.py) first; with a `kind`,
-    Telegram gets it only when that event's route allows it."""
+    Telegram gets it only when that event's route allows it. An ask's own echo
+    (notices.echo) is marked quiet: the bell keeps it, nothing knocks twice."""
+    quiet = bool(kind and sid and notices.echo(kind, sid))
     if kind and sid:
-        notices.emit(kind, sid, body=body, meta=meta)
-    if not config.NOTIFY_ENABLE or not chat_id or (kind and not notices.telegram_ok(kind)):
+        notices.emit(kind, sid, body=body, meta={**(meta or {}), "quiet": True} if quiet else meta)
+    if quiet or not config.NOTIFY_ENABLE or not chat_id or (kind and not notices.telegram_ok(kind)):
         return
     try:
         send(chat_id, text, kb)
@@ -1500,7 +1502,8 @@ def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool
     line = (f"{out['label'].capitalize()}: {out.get('detail') or ''}".strip()[:200]
             if is_error and out.get("label") else _first_line(body))
     icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
-    _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}",
+    why = f"\n{line}" if is_error and line else ""
+    _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}{why}",
             _session_kb(chat_id, session_id, "🛠 Open session"),
             kind="failed" if is_error else "done", sid=session_id, body=line,
             meta={"elapsed": turn["elapsed"]} if turn.get("elapsed") else None)
@@ -1651,7 +1654,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         _notify(job.chat_id,
                 f"⚠️ Claude API error — retrying {_session_label(sid)} "
                 f"{limits.wait_str(when)} "
-                f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).", kind="parked", sid=sid,
+                f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).", kind="retrying", sid=sid,
                 body=f"API error. Retrying {limits.wait_str(when)} "
                      f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).")
         return True
@@ -1665,20 +1668,12 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         # The API refused this CLI for the model. A resume runs the same CLI and
         # is refused again. It can arrive as a failed compaction, so it goes
         # before the context branch, whose "/compact" would fail the same way.
-        _notify(job.chat_id,
-                f"⬆️ {_session_label(sid)}: this model needs a newer Claude Code. "
-                f"Run claude update (or UPDATE CLAUDE on the failed turn in the "
-                f"dashboard), then re-send.",
-                _session_kb(job.chat_id, sid, "🛠 Open session"), kind="failed")
+        # No ping here: the turn's FAILED carries outcomes.py's "update Claude Code".
         return False
     if limits.is_context_error(job.result or job.error_msg):
         # The transcript no longer fits the window. A resume resends the same
         # too-long context, so every retry below fails identically at full turn
-        # price. Stop and hand it back.
-        _notify(job.chat_id,
-                f"🧱 {_session_label(sid)} ran out of context window. "
-                f"Run /compact in it, or start a fresh session.",
-                _session_kb(job.chat_id, sid, "🛠 Open session"), kind="failed")
+        # price. Stop and hand it back (its FAILED says what to do).
         return False
     fails = _resume_fails.get(sid, 0) + 1
     _resume_fails[sid] = fails

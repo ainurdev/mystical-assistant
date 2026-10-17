@@ -66,6 +66,7 @@ export function freshSince(rows: Notice[], cursor: number): Notice[] {
 export function popFor(n: Notice, o: { openSession: string | null; visible: boolean; prefs: NoticePrefs; quiet: boolean;
   live?: Set<string>; now?: number }): { pop: boolean; sound: ToneKey | null } | null {
   if (o.visible && n.subject === o.openSession) return null;
+  if (n.meta.quiet) return null;   // an ask's own echo (notices.echo): the ask already knocked
   // 30 s of grace: the needs list rides another poll and may not have it yet.
   if (n.tier === "needs" && o.live && !o.live.has(n.subject) && (o.now ?? 0) - n.at > 30) return null;
   const route = o.prefs.events[n.group];
