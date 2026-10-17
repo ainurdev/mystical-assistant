@@ -212,7 +212,8 @@ def _run_env(ponytail: "str | None",
     over = accounts.env_for(account_slot)
     # Once a turn's result is out, -p waits for its background agents only 10
     # min, then kills them mid-work and exits -- the report they were running
-    # for never arrives. Hangs are _watchdog's job (silence, not work).
+    # for never arrives. Without the ceiling it also waits forever for a
+    # background shell (a dev server): _watchdog ends those turns.
     over["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
     # Switched off in the AI tab, the level is not just skipped but overridden:
     # an absent PONYTAIL_DEFAULT_MODE means the plugin's own default (full), so
@@ -2295,12 +2296,23 @@ def _prune_uploads():
         pass
 
 
+# After the turn's result the claude child lives on only for background work
+# (_run_env lifts the CLI's wait ceiling). An agent or workflow reports back
+# into the same process and the model carries on (the assistant branch flips
+# the job to running), so a turn waits for those. A background shell or
+# monitor can be a dev server that never ends: once no agent is working and
+# the child has been quiet this long, the turn is over.
+BG_SHELL_GRACE = 15.0
+
+
 def _watchdog(job: Job, proc) -> None:
     """Kill a run that has gone silent: no event from the child for the job's
     hang timeout (config.RUN_TIMEOUT unless the run set its own) while nothing
     waits on the user. A busy turn runs for as long as it takes — this is a
     hang detector, not a work cap (the cost brake is the auto-resume cap, see
-    _maybe_auto_resume).
+    _maybe_auto_resume). And end a finished turn whose child only background
+    shells keep alive (BG_SHELL_GRACE): the CLI takes them down and exits, and
+    the turn closes on the result it already has.
 
     proc is the claude child, or an agent turn's acp.Conn (its poll() never
     reaps; its kill() sweeps the group). It stands down once the turn has
@@ -2312,6 +2324,14 @@ def _watchdog(job: Job, proc) -> None:
         if job.pending or job.interrupted:
             quiet_since = time.time()   # waiting on the user, or stopping: not a hang
             continue
+        if (job.status != "running" and not (job.runtime or "").startswith("acp:")
+                and time.time() - job.last_at >= BG_SHELL_GRACE
+                and not (job.session_id and _running_agents(job.session_id))):
+            proc.terminate()
+            job.exited.wait(INTERRUPT_KILL)
+            if proc.poll() is None:
+                proc.kill()
+            return
         if time.time() - max(job.last_at, quiet_since) >= limit:
             job.timed_out = True
             proc.kill()

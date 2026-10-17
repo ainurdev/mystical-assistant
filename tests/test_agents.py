@@ -242,3 +242,55 @@ def test_agents_are_done_when_the_session_process_is_gone():
         assert act["status"] == "done"
     finally:
         transcript_jsonl.PROJECTS_DIR = orig
+
+
+def test_background_agent_runs_until_its_task_notification():
+    """A background Agent call gets its tool_result at launch ("Async agent
+    launched"), so the tool_result rule read every background agent as done the
+    moment it started. The CLI appends a <task-notification> user message when
+    the agent ends; a SendMessage resume ("resumedAgentId") starts it again."""
+    root, sid = _fixture()
+    proj = os.path.join(root, "-tmp-proj")
+    main = os.path.join(proj, sid + ".jsonl")
+    with open(os.path.join(proj, sid, "subagents", "agent-a3.meta.json"), "w") as f:
+        json.dump({"agentType": "feature-dev:code-reviewer", "description": "review",
+                   "toolUseId": "T3", "spawnDepth": 1, "requestShape": "background"}, f)
+    with open(os.path.join(proj, sid, "subagents", "agent-a3.jsonl"), "w") as f:
+        f.write(json.dumps({"type": "assistant", "isSidechain": True, "message": {
+            "role": "assistant", "content": [{"type": "text", "text": "reviewing"}]}}) + "\n")
+
+    def append(rec):
+        with open(main, "a") as f:
+            f.write(json.dumps(rec) + "\n")
+
+    def status():
+        roster = agents.session_agents({"claude_session_id": sid})
+        by_id = {a["agent_id"]: a["status"] for a in roster["agents"]}
+        act = agents.agent_activity({"claude_session_id": sid}, "agent-a3")
+        assert act["status"] == by_id["agent-a3"]
+        return by_id["agent-a3"], roster["running"]
+
+    orig = transcript_jsonl.PROJECTS_DIR
+    transcript_jsonl.PROJECTS_DIR = root
+    try:
+        append({"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "T3", "name": "Agent",
+             "input": {"description": "review", "run_in_background": True}}]}})
+        append({"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "T3",
+             "content": "Async agent launched successfully.\nagentId: a3 (internal ID)"}]}})
+        assert status() == ("running", 2)              # a2 + a3
+        append({"type": "user", "message": {"role": "user", "content":
+                "<task-notification>\n<task-id>a3</task-id>\n<status>completed</status>\n"
+                "<summary>Agent \"review\" finished</summary>\n</task-notification>"}})
+        assert status() == ("done", 1)
+        append({"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "S1", "content": [{"type": "text",
+             "text": '{"success":true,"message":"Resuming agent a3","resumedAgentId":"a3"}'}]}]}})
+        assert status() == ("running", 2)
+        append({"type": "user", "message": {"role": "user", "content": [{"type": "text",
+                "text": "<task-notification>\n<task-id>a3</task-id>\n<status>stopped</status>\n"
+                        "</task-notification>"}]}})
+        assert status() == ("done", 1)
+    finally:
+        transcript_jsonl.PROJECTS_DIR = orig
