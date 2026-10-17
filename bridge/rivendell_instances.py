@@ -131,7 +131,10 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
     the token masked and only resends it when it is deliberately changed — and
     so does a ws_url that is absent (None), while the API URL is unchanged: after
     an API URL edit it is derived from the new one again, since the form has no
-    field to clear one pointing at the old host. An empty one still clears it."""
+    field to clear one pointing at the old host. An empty one still clears it.
+    The device-run token (the Claude token a device run of yours uses) works as
+    the token does, and ``share_device`` left out keeps the stored choice (on
+    for a new instance), so a form that does not know the field cannot reset it."""
     name = (fields.get("name") or "").strip()
     if not name:
         raise RivendellError("name is required")
@@ -148,6 +151,12 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
     if ws_url is None:
         same_api = existing and _norm_url(existing.get("api_url")) == api_url
         ws_url = existing.get("ws_url", "") if same_api else ""
+    device_token = (fields.get("device_token") or "").strip()
+    if not device_token and existing:
+        device_token = existing.get("device_token") or ""
+    share = fields.get("share_device")
+    if share is None:
+        share = (existing or {}).get("share_device", True)
     workdir = (fields.get("workdir") or "").strip()
     if workdir:
         workdir = os.path.realpath(os.path.expanduser(workdir))
@@ -162,19 +171,27 @@ def _clean(fields: dict, existing: "dict | None" = None) -> dict:
         "workdir": workdir,
         "review_timeout": _timeout(fields.get("review_timeout"), _REVIEW_DEFAULT, "review timeout"),
         "impl_timeout": _timeout(fields.get("impl_timeout"), _IMPL_DEFAULT, "implementation timeout"),
+        "share_device": bool(share),
+        "device_token": device_token,
     }
 
 
+def _mask(secret) -> str:
+    secret = secret or ""
+    return ("…" + secret[-4:]) if len(secret) > 4 else ("set" if secret else "")
+
+
 def _masked(inst: dict) -> dict:
-    """What the panel may see. The token is never returned in full."""
-    tok = inst.get("token") or ""
+    """What the panel may see. The tokens are never returned in full."""
     out = {k: inst.get(k, "") for k in
            ("id", "name", "api_url", "ws_url", "model", "workdir")}
     out["enable"] = bool(inst.get("enable"))
     out["review_timeout"] = inst.get("review_timeout", _REVIEW_DEFAULT)
     out["impl_timeout"] = inst.get("impl_timeout", _IMPL_DEFAULT)
     out["origin"] = origin_for(inst)
-    out["token"] = ("…" + tok[-4:]) if len(tok) > 4 else ("set" if tok else "")
+    out["token"] = _mask(inst.get("token"))
+    out["share_device"] = bool(inst.get("share_device", True))
+    out["device_token"] = _mask(inst.get("device_token"))
     return out
 
 
@@ -227,6 +244,25 @@ def update_instance(iid: str, **fields) -> dict:
         d["instances"][inst["id"]] = inst
         _save(d)
     return _masked(inst)
+
+
+def update_device(iid: str, share_device: "bool | None" = None, device_token: str = "",
+                  clear_token: bool = False) -> None:
+    """Settings › Plugins' DEVICE RUNS rows, on their own: Share this device
+    (None keeps it) and the Claude token for device runs (clear_token forgets
+    it; a blank one keeps it, a new one replaces it)."""
+    with _lock:
+        d = _load()
+        inst = d["instances"].get(iid or "")
+        if inst is None:
+            raise RivendellError("no such instance")
+        if share_device is not None:
+            inst["share_device"] = share_device
+        if clear_token:
+            inst["device_token"] = ""
+        if device_token.strip():
+            inst["device_token"] = device_token.strip()
+        _save(d)
 
 
 def remove_instance(iid: str) -> bool:

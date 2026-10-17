@@ -21,6 +21,7 @@ import { toolAccent } from "../../lib/tools";
 
 import { ago, hhmm, projectName, useClock12, windowLabels } from "../../lib/surfaces";
 import { SkillsFold } from "./SkillsFold";
+import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import {
   api,
@@ -281,7 +282,7 @@ function sentence(s: string): string {
   return w.charAt(0).toUpperCase() + w.slice(1);
 }
 /** A label in the dialog's voice. */
-function useVoice(): (s: ReactNode) => ReactNode {
+export function useVoice(): (s: ReactNode) => ReactNode {
   return (s) => (typeof s === "string" ? sentence(s) : s);
 }
 
@@ -303,7 +304,7 @@ const CAPTION: CSSProperties = { fontSize: "var(--t95)", letterSpacing: 1, color
 const RULE = "1px solid color-mix(in srgb, var(--acc) 10%, transparent)";
 // A card is a raised surface, not just an outline — --panel over the modal's
 // own --panel2 is what separates "a block of settings" from "the panel".
-const CARD: CSSProperties = {
+export const CARD: CSSProperties = {
   border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)",
   background: "color-mix(in srgb, var(--panel) 55%, transparent)",
   padding: "14px 16px",
@@ -434,7 +435,7 @@ const SEC_DESC: Record<string, string> = {
  *  The icon is what you actually navigate by once a tab is longer than a
  *  screen: SYSTEM is twelve of these blocks, and twelve identical dim rules
  *  give the eye nothing to count off against while scrolling. */
-function Section({ title, icon, desc, info, top, children }: {
+export function Section({ title, icon, desc, info, top, children }: {
   title: ReactNode;
   icon?: LucideIcon;
   desc?: ReactNode;   // defaults to SEC_DESC by title
@@ -478,7 +479,7 @@ function Section({ title, icon, desc, info, top, children }: {
  *  `desc` if the name isn't self-evident, and everything longer behind the ⓘ.
  *  Rows are ruled apart rather than spaced apart, so a card of five settings
  *  stays one object. */
-function Row({ label, desc, info, first, children }: {
+export function Row({ label, desc, info, first, children }: {
   label: ReactNode;
   desc?: ReactNode;
   info?: ReactNode;
@@ -556,7 +557,7 @@ function Placeholder({ icon: Icon, spin, children }: {
 
 /** On/off, the way an app's settings page says it: a toggle (each family
  *  draws its own — index.css, THE FAMILIES · SETTINGS). */
-function Switch({ on, onClick, label }: { on: boolean; onClick: () => void; label?: string }) {
+export function Switch({ on, onClick, label }: { on: boolean; onClick: () => void; label?: string }) {
   return <button className="set-toggle" role="switch" aria-checked={on} aria-label={label} data-on={on || undefined} onClick={onClick}><i /></button>;
 }
 
@@ -1744,11 +1745,12 @@ function riToInput(c: RivendellInstance): RivendellInput {
     name: c.name, enable: c.enable, api_url: c.api_url, token: "",
     ws_url: c.ws_url, model: c.model, workdir: c.workdir,
     review_timeout: c.review_timeout, impl_timeout: c.impl_timeout,
+    share_device: c.share_device, device_token: "",
   };
 }
 
 /** The colour + label the status pip shows for one instance's live socket. */
-function riStatusView(s?: RivendellStatus) {
+export function riStatusView(s?: RivendellStatus) {
   switch (s?.state) {
     case "connected": return { color: "var(--ok)", label: "CONNECTED", glow: true };
     case "connecting": return { color: "var(--warn)", label: "CONNECTING…", glow: false };
@@ -2119,7 +2121,7 @@ function IntegrationsPanel() {
               </Row>
             )}
           </div>
-          {p.id === "rivendell" && <div style={{ marginTop: 11 }}><RivendellPanel onChange={recount} /></div>}
+          {p.id === "rivendell" && <div style={{ marginTop: 11 }}><RivendellPanel onChange={recount} /><DeviceRunsPanel /></div>}
           {p.id === "trackers" && <div style={{ marginTop: 11 }}><TrackersPanel onChange={recount} /></div>}
         </Section>
       ))}
