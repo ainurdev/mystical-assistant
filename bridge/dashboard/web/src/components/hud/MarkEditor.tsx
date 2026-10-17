@@ -103,32 +103,28 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
     };
   }, [onClose, anchor]);
 
-  // Below the tile, or above it when the window has no room below, chosen once
-  // as it opens. After that it holds still, moving only to stay inside the
-  // window: re-placed on every height change (a tab switch, a logo landing) it
-  // jumped out from under the pointer. The tabs share one height (.mk-pane).
+  // Below the tile, or above it when the window has no room below, or beside it
+  // when neither fits: the side is chosen once, as it opens, and kept. Chosen
+  // afresh on every height change it flipped sides on a tab switch and jumped
+  // out from under the pointer. The tabs don't change its height anyway: they
+  // share one (.mk-pane), and so does the colour row (every tab shows it whole).
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   useLayoutEffect(() => {
-    let at: { top: number; left: number } | null = null;
+    let side: "below" | "above" | "beside" | null = null;
     const place = () => {
       const a = anchor?.getBoundingClientRect();
       const el = root.current;
       if (!a || !el) return;
       const h = el.offsetHeight, w = el.offsetWidth, vh = window.innerHeight;
-      if (!at) {
-        at = { top: a.bottom + 8, left: a.left - 6 };
-        if (at.top + h > vh - 8) {
-          if (a.top - 8 - h >= 8) at.top = a.top - 8 - h;
-          else at = { top: Math.min(a.top - 60, vh - 8 - h), left: a.right + 12 };   // no room either way: beside it
-        }
-      }
-      setPos({ top: Math.max(8, Math.min(at.top, vh - 8 - h)),
-               left: Math.max(8, Math.min(at.left, window.innerWidth - w - 8)) });
+      side ??= a.bottom + 8 + h <= vh - 8 ? "below" : a.top - 8 - h >= 8 ? "above" : "beside";
+      const top = side === "below" ? a.bottom + 8 : side === "above" ? a.top - 8 - h : Math.min(a.top - 60, vh - 8 - h);
+      const left = side === "beside" ? a.right + 12 : a.left - 6;
+      setPos({ top: Math.max(8, Math.min(top, vh - 8 - h)), left: Math.max(8, Math.min(left, window.innerWidth - w - 8)) });
     };
     place();
     const ro = new ResizeObserver(place);
     if (root.current) ro.observe(root.current);
-    const onResize = () => { at = null; place(); };
+    const onResize = () => { side = null; place(); };
     window.addEventListener("resize", onResize);
     return () => { ro.disconnect(); window.removeEventListener("resize", onResize); };
   }, [anchor]);
@@ -215,7 +211,9 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   // ground, or the hashed default when none is chosen.
   const tint = inkCss(color ?? hashTint(project));
   const lifted = color && HEX.test(color) ? liftInk(color, light) : null;
-  const swatches = kind === "logo" ? (info?.colors ?? []) : [];
+  // The logo's colours on every tab, not just LOGO: they wrap the row onto a
+  // second line, and a tab that changed the editor's height moved it.
+  const swatches = info?.colors ?? [];
   const preview = (
     <b className="ptile mk-tile" data-kind={kind === "letters" ? undefined : kind} style={{ ["--pc" as string]: tint }}
       data-logo={kind === "logo" && info?.fill ? "fill" : undefined}>

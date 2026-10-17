@@ -227,8 +227,10 @@ def test_refresh_does_nothing_while_following_is_off(riv):
 
 
 def test_no_rivendell_means_nothing_to_offer(riv):
+    riv["local"] = {"/r": {"acme/r"}}
     s = projectmarks.state(force=True)
     assert s["asked"] is False and s["available"] is False and s["offer"] is None
+    assert s["unlinked"] == [] and s["projects"] == []                  # and nothing to LINK to
     riv["errors"] = [{"instance_id": "prod", "instance": "prod", "error": "not_deployed", "detail": "x"}]
     s = projectmarks.state(force=True)
     assert s["asked"] is True and s["available"] is False and s["errors"][0]["error"] == "not_deployed"
