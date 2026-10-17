@@ -38,20 +38,20 @@ for logo marks; and a From Rivendell gallery on the mark editor's LOGO tab.
 
 ## Review Focus
 1. A project logo the bridge can't keep (over 4 MB, or a download that fails) must fall back to the client's
-   logo, never to letters while the client has one. The test is in Task M1.
+   logo, never to letters while the client has one. The test is in Task 4.
 2. The gallery with no plugin, no running instance, Rivendell down, or a repo with no client project gives an
-   empty strip and no error, and the editor is otherwise unchanged. The test is in Task M3.
+   empty strip and no error, and the editor is otherwise unchanged. The test is in Task 6.
 3. The gallery image proxy must stream only an image document of that repo's own client. Another client's
    id, a made-up id or a PDF gets a 404/400, never bytes; it always sends the sandbox CSP and `nosniff`. The
-   test is in Task M3.
+   test is in Task 6.
 4. A plate on a following mark must survive a refresh, a new client logo and UNDO's snapshot. The test is in
-   Task M2.
+   Task 5.
 5. Replacing a Rivendell project logo removes the old object only after the row is updated. A failed row update
-   removes the new object and keeps the old logo. The test is in Task R1.
+   removes the new object and keeps the old logo. The test is in Task 1.
 
 ---
 
-### Task R1: Rivendell — store and replace a project logo
+### Task 1: Rivendell — store and replace a project logo
 
 **Files:**
 - Modify: `backend/prisma/schema.prisma` (model Project: `logoKey String?` with a comment)
@@ -97,7 +97,7 @@ for logo marks; and a From Rivendell gallery on the mark editor's LOGO tab.
 - [ ] **Step 6: Run** `pnpm test -- projects` and `pnpm typecheck && pnpm lint:ci`. Expected: PASS, including `route-coverage.spec.ts`.
 - [ ] **Step 7: Commit** in the Rivendell worktree: "projects: a logo of their own …".
 
-### Task R2: Rivendell — serve the project logo (detail page and plugin)
+### Task 2: Rivendell — serve the project logo (detail page and plugin)
 
 **Files:**
 - Modify: `backend/src/projects/dto/project.dto.ts` (ProjectDetailDto `logoUrl`)
@@ -106,7 +106,7 @@ for logo marks; and a From Rivendell gallery on the mark editor's LOGO tab.
 - Test: `backend/src/projects/projects.service.spec.ts`, `backend/src/projects/plugin-projects.controller.spec.ts`
 
 **Interfaces:**
-- Consumes: `Project.logoKey` (R1).
+- Consumes: `Project.logoKey` (Task 1).
 - Produces:
   - `ProjectDetailDto.logoUrl: string | null`.
   - `PluginProjectDto.logoId: string | null` (the key's last segment, the uuid) and `PluginProjectDto.logoUrl: string | null`.
@@ -125,7 +125,7 @@ for logo marks; and a From Rivendell gallery on the mark editor's LOGO tab.
 - [ ] **Step 4: Run** `pnpm test && pnpm typecheck && pnpm lint:ci`. Expected: PASS.
 - [ ] **Step 5: Commit**: "plugin projects: a project's own logo …".
 
-### Task R3: Rivendell web — upload on the project page
+### Task 3: Rivendell web — upload on the project page
 
 **Files:**
 - Modify: `frontend/src/features/projects/types.ts` (`ProjectDetail.logoUrl: string | null`)
@@ -135,7 +135,7 @@ for logo marks; and a From Rivendell gallery on the mark editor's LOGO tab.
 - Test: `frontend/src/features/projects/components/project-details-form.test.tsx`
 
 **Interfaces:**
-- Consumes: `POST`/`DELETE /projects/:id/logo` (R1), `ProjectDetail.logoUrl` (R2).
+- Consumes: `POST`/`DELETE /projects/:id/logo` (Task 1), `ProjectDetail.logoUrl` (Task 2).
 - Produces:
   - `useSetProjectLogo(id: string)`: a mutation of `File`. It calls `api.upload<ProjectDetail>('/projects/${id}/logo', form)`
     and invalidates `projectDetailQueryOptions(id).queryKey` and `projectsQueryOptions.queryKey`.
@@ -153,14 +153,14 @@ for logo marks; and a From Rivendell gallery on the mark editor's LOGO tab.
 - [ ] **Step 4: Run** `pnpm build && pnpm typecheck && pnpm lint && pnpm test`. Expected: PASS.
 - [ ] **Step 5: Commit**: "projects: upload a project's logo on its page …".
 
-### Task M1: Mystical — follow a project's own logo
+### Task 4: Mystical — follow a project's own logo
 
 **Files:**
 - Modify: `bridge/projectmarks.py` (`_lent`, `match`, `_fetch_logos`, `_follow`, `state`)
 - Test: `tests/test_projectmarks.py`
 
 **Interfaces:**
-- Consumes: `/plugin/projects` rows with top-level `logoId`/`logoUrl` (R2). They're absent on an older Rivendell, so treat them as None.
+- Consumes: `/plugin/projects` rows with top-level `logoId`/`logoUrl` (Task 2). They're absent on an older Rivendell, so treat them as None.
 - Produces:
   - `_lent(p: dict) -> list[tuple[str | None, str | None]]`: the (logo_id, url) candidates in order, the project's
     own first, then the client's.
@@ -185,7 +185,7 @@ for logo marks; and a From Rivendell gallery on the mark editor's LOGO tab.
 - [ ] **Step 4: Run** the same command. Expected: PASS.
 - [ ] **Step 5: Commit**: "projectmarks: a Rivendell project's own logo …".
 
-### Task M2: Mystical — a background for a logo
+### Task 5: Mystical — a background for a logo
 
 **Files:**
 - Modify: `bridge/projectmarks.py` (`clean`, `set_mark`, `_follow`)
@@ -228,7 +228,7 @@ for logo marks; and a From Rivendell gallery on the mark editor's LOGO tab.
   still don't move the editor (k6-above.js).
 - [ ] **Step 7: Commit**: "project marks: a LIGHT or DARK background behind a logo …".
 
-### Task M3: Mystical — From Rivendell (the gallery)
+### Task 6: Mystical — From Rivendell (the gallery)
 
 **Files:**
 - Modify: `bridge/rivendell.py` (`client_images`, `client_image_url`)
@@ -271,7 +271,7 @@ for logo marks; and a From Rivendell gallery on the mark editor's LOGO tab.
   shows its images, a click puts that image in the drop zone, SAVE stores it, and the pane is still 251px.
 - [ ] **Step 7: Commit**: "project marks: From Rivendell …".
 
-### Task S: Ship (each step waits on the user where marked)
+### Task 7: Ship (each step waits on the user where marked)
 - [ ] Rivendell full CI commands green. **Ask** before pushing; on OK, push `feat/project-logos` as the user
   directs (main or a PR). Then watch Railway, which may hold at NEEDS_APPROVAL.
 - [ ] Once deployed, upload the logos with MCP `upload_file`: Mystical's `bridge/dashboard/web/public/icon-512.png`
