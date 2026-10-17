@@ -268,7 +268,8 @@ export interface ProjectMark {
   icon?: string;              // a lucide icon name
   logo?: string;              // "<sha256>.<ext>", served at projectLogoUrl()
   source?: "rivendell";       // absent = yours: set here, never changes on its own
-  rv?: { instance?: string; client?: string; name?: string; logo_id?: string | null };
+  // own: the project's own logo, not its client's; name is then the project's.
+  rv?: { instance?: string; client?: string; name?: string; logo_id?: string | null; own?: boolean };
 }
 
 /** Where a stored logo is served. Its name is the bytes' hash, so it caches forever. */
@@ -284,10 +285,11 @@ export interface RivendellMarks {
   unmatched: number;           // listed repos with no client mark in Rivendell
   can_undo: boolean;
   offer: { count: number; clients: string[]; logos: { url: string | null; color: string | null }[] } | null;
-  matches: Record<string, { client: string | null; logo: boolean; color: string | null }>;
+  // client: who lends the mark (the project itself when own).
+  matches: Record<string, { client: string | null; logo: boolean; color: string | null; own?: boolean }>;
   // The mark editor's LINK: the projects whose client lends a mark, and the
   // repos no Rivendell project names. Absent on a bridge older than LINK.
-  projects?: { instance: string; id: string; name: string; client: string; logo: boolean; color: string | null }[];
+  projects?: { instance: string; id: string; name: string; client: string | null; logo: boolean; color: string | null }[];
   unlinked?: string[];
   errors: { instance_id: string; instance: string; error: string; detail: string }[];
 }

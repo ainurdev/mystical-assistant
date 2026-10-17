@@ -19,7 +19,10 @@ next save.
 
 Rivendell keeps a logo and a brand colour per client (Client.logoDocument,
 Client.brandColor), and its projects hang off clients. So a local repo linked to
-a client's project can wear that client's mark. GET /plugin/projects (with the
+a client's project can wear that client's mark. A project can also carry a logo
+of its own (Project.logoKey), which internal projects need because they have no
+client: it wins over the client's (_lent), and the client's is the fallback for
+one the bridge can't keep. GET /plugin/projects (with the
 bridge token) lists each project, with the fullName of every repo linked to it
 or mirroring one (rivendell.projects()). A local repo matches on any of its
 remotes (github.remote_slugs), because a fork of a mirror tracks the upstream
@@ -211,14 +214,28 @@ def _local_slugs() -> dict:
     return out
 
 
+def _lent(p: dict) -> list:
+    """The (logo id, url) a project lends, best first: its own logo, then its
+    client's. An older Rivendell sends no project logo; that is just the client's."""
+    c = p.get("client") or {}
+    return [(lid, url) for lid, url in ((p.get("logoId"), p.get("logoUrl")), (c.get("logoId"), c.get("logoUrl")))
+            if lid and url]
+
+
+def _own(p: dict) -> bool:
+    """Whether a project lends a logo of its own, not its client's."""
+    return bool(p.get("logoId") and p.get("logoUrl"))
+
+
 def match(projects: list, local: dict) -> dict:
-    """rel -> the Rivendell project whose client has a mark for that repo. Pure.
-    The first project to name a repo wins, and a repo found under several of its
-    own remotes takes the alphabetically first."""
+    """rel -> the Rivendell project that has a mark for that repo: a logo of its
+    own, or its client's logo or colour. Pure. The first project to name a repo
+    wins, and a repo found under several of its own remotes takes the
+    alphabetically first."""
     by_slug: dict = {}
     for p in projects:
         c = p.get("client") or {}
-        if not (c.get("logoUrl") or _hex(c.get("brandColor"))):
+        if not (_lent(p) or _hex(c.get("brandColor"))):
             continue
         for full in p.get("repositories") or []:
             if isinstance(full, str):
@@ -285,16 +302,18 @@ def _known(marks: dict, logos: dict) -> dict:
 
 
 def _fetch_logos(matches: dict, known: dict) -> dict:
-    """client logoId -> bytes for every logo the store doesn't hold yet. This is
-    the network part of an import, done before the lock is taken."""
+    """logo id -> bytes for every logo the store doesn't hold yet: per match, the
+    best one it lends (_lent) that can be had, trying the next when a download
+    fails. This is the network part of an import, done before the lock is taken."""
     out: dict = {}
     for p in matches.values():
-        c = p.get("client") or {}
-        lid = c.get("logoId")
-        if lid and lid not in known and lid not in out and c.get("logoUrl"):
-            data = _download(c["logoUrl"])
+        for lid, url in _lent(p):
+            if lid in known or lid in out:
+                break
+            data = _download(url)
             if data is not None:
                 out[lid] = data
+                break
     return out
 
 
@@ -303,15 +322,21 @@ def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
     couldn't be fetched leaves logo_id unset, so the next refresh tries again."""
     c = p.get("client") or {}
     cur = project_config.mark(rel) or {}
-    lid = c.get("logoId")
-    name = None
-    if lid and known.get(lid) in (d.get("logos") or {}):
-        name = known[lid]
-    elif lid and lid in fetched:
-        name = known[lid] = _put_logo(d, fetched[lid], RV_LOGO_MAX)
+    lid = name = None
+    for cand, _url in _lent(p):              # the best logo the store holds or just fetched
+        if known.get(cand) in (d.get("logos") or {}):
+            lid, name = cand, known[cand]
+        elif cand in fetched:
+            lid, name = cand, _put_logo(d, fetched[cand], RV_LOGO_MAX)
+            known[cand] = name
+        if name:
+            break
+    own = bool(name) and lid == p.get("logoId")
     mark: dict = {"kind": "logo" if name else "letters", "source": "rivendell",
                   "rv": {"instance": p.get("instance_id"), "client": c.get("id"),
-                         "name": c.get("name"), "logo_id": lid if name else None}}
+                         "name": p.get("name") if own else c.get("name"), "logo_id": lid}}
+    if own:
+        mark["rv"]["own"] = True
     if name:
         mark["logo"] = name
     if _hex(c.get("brandColor")):
@@ -459,18 +484,22 @@ def state(force: bool = False) -> dict:
     unseen = set(offer_rels) - set(rv.get("dismissed") or [])
     clients: dict = {}
     for rel in offer_rels:
-        c = seen["matches"][rel].get("client") or {}
-        e = clients.setdefault(c.get("id"), {"name": c.get("name") or "?", "repos": 0,
-                                             "logo": c.get("logoUrl"), "color": _hex(c.get("brandColor"))})
+        p = seen["matches"][rel]
+        c = p.get("client") or {}
+        lent = _lent(p)
+        own = _own(p)
+        e = clients.setdefault(p.get("id") if own else c.get("id"),
+                               {"name": (p.get("name") if own else c.get("name")) or "?", "repos": 0,
+                                "logo": lent[0][1] if lent else None, "color": _hex(c.get("brandColor"))})
         e["repos"] += 1
     ranked = sorted(clients.values(), key=lambda e: (-e["repos"], e["name"].lower()))
     # What LINK offers: the projects whose client has a mark to lend.
     lenders = []
     for p in seen["projects"]:
         c = p.get("client") or {}
-        if c.get("logoUrl") or _hex(c.get("brandColor")):
+        if _lent(p) or _hex(c.get("brandColor")):
             lenders.append({"instance": p.get("instance_id"), "id": p.get("id"), "name": p.get("name") or "?",
-                            "client": c.get("name") or "?", "logo": bool(c.get("logoUrl")),
+                            "client": c.get("name"), "logo": bool(_lent(p)),
                             "color": _hex(c.get("brandColor"))})
     return {
         "available": seen["answered"],
@@ -483,11 +512,14 @@ def state(force: bool = False) -> dict:
                    "logos": [{"url": e["logo"], "color": e["color"]} for e in ranked][:6]}
                   if offer_rels and unseen and not sync else None),
         "can_undo": isinstance(rv.get("undo"), dict) and bool(rv.get("undo")),
-        "matches": {r: {"client": (p.get("client") or {}).get("name"),
-                        "logo": bool((p.get("client") or {}).get("logoUrl")),
-                        "color": _hex((p.get("client") or {}).get("brandColor"))}
+        # client: who lends the mark, as the editor names it (the project, for its own logo).
+        "matches": {r: {"client": p.get("name") if _own(p)
+                                  else (p.get("client") or {}).get("name"),
+                        "logo": bool(_lent(p)),
+                        "color": _hex((p.get("client") or {}).get("brandColor")),
+                        "own": _own(p)}
                     for r, p in seen["matches"].items()},
-        "projects": sorted(lenders, key=lambda e: (e["client"].lower(), e["name"].lower())),
+        "projects": sorted(lenders, key=lambda e: ((e["client"] or e["name"]).lower(), e["name"].lower())),
         "unlinked": seen["unlinked"],
         "errors": seen["errors"],
     }

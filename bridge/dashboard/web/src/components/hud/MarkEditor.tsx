@@ -282,7 +282,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
 
         {following && (
           <div className="mk-from"><i className="mk-gem" />
-            <span><b>Follows Rivendell</b> · client {cur?.rv?.name ?? "?"}{riv?.synced_at ? ` · ${synced(riv.synced_at)}` : ""}</span>
+            <span><b>Follows Rivendell</b> · {cur?.rv?.own ? `${poss(cur.rv.name ?? "its")} own logo` : `client ${cur?.rv?.name ?? "?"}`}{riv?.synced_at ? ` · ${synced(riv.synced_at)}` : ""}</span>
           </div>
         )}
         {!following && match && (match.logo || match.color) && (
@@ -296,7 +296,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
             <select value={pick} onChange={(e) => setPick(Number(e.target.value))} aria-label="Rivendell project"
               title="Links this repo to that project in Rivendell itself, so every Mystical on that Rivendell gets its client's logo">
               <option value={-1}>Link to a Rivendell project…</option>
-              {riv.projects.map((p, i) => <option key={`${p.instance}:${p.id}`} value={i}>{p.client} · {p.name}</option>)}
+              {riv.projects.map((p, i) => <option key={`${p.instance}:${p.id}`} value={i}>{p.client ? `${p.client} · ${p.name}` : p.name}</option>)}
             </select>
             <button type="button" className="mk-btn mk-ghostbtn" disabled={busy || !target} onClick={() => void link()}>LINK</button>
           </div>

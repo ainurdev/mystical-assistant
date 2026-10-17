@@ -410,3 +410,51 @@ def test_link_takes_only_a_project_rivendell_listed_and_a_repo_with_a_remote(riv
     for args in (("/r", "prod", "../../source-control/sync"), ("/r", "other", "p1"), ("/none", "prod", "p1")):
         with pytest.raises(ValueError):
             projectmarks.link(*args)
+
+
+# --- a project's own logo (Rivendell's /plugin/projects logoId/logoUrl) --------
+
+def test_a_projects_own_logo_beats_its_clients(riv):
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "name": "NR exam automation", "repositories": ["acme/a"],
+                        "logoId": "u1", "logoUrl": "https://s3/own.png",
+                        "client": client("nr", logo="https://s3/nr.png", color="#ea5b13")}]
+    riv["local"] = {"/a": {"acme/a"}}
+    riv["logos"] = {"https://s3/own.png": PNG2, "https://s3/nr.png": PNG}
+
+    projectmarks.import_all()
+
+    m = project_config.mark("/a")
+    assert projectmarks.logo(m["logo"])[0] == PNG2 and m["color"] == "#ea5b13"
+    assert m["rv"] == {"instance": "prod", "client": "nr", "name": "NR exam automation", "logo_id": "u1", "own": True}
+    assert riv["downloads"] == ["https://s3/own.png"]         # the client's isn't fetched once the project's is kept
+
+
+def test_an_internal_project_with_its_own_logo_matches(riv):
+    riv["projects"] = [{"id": "p-rv", "instance_id": "prod", "name": "Rivendell", "internal": True,
+                        "repositories": ["ainurhq/rivendell"], "logoId": "u2", "logoUrl": "https://s3/rv.png",
+                        "client": None}]
+    riv["local"] = {"/rivendell": {"ainurhq/rivendell"}}
+    riv["logos"] = {"https://s3/rv.png": PNG}
+
+    s = projectmarks.state(force=True)
+    assert s["matches"]["/rivendell"] == {"client": "Rivendell", "logo": True, "color": None, "own": True}
+    assert s["projects"] == [{"instance": "prod", "id": "p-rv", "name": "Rivendell", "client": None,
+                              "logo": True, "color": None}]                        # LINK can offer it
+    projectmarks.import_all()
+    m = project_config.mark("/rivendell")
+    assert m["kind"] == "logo" and "color" not in m and m["rv"]["own"] is True and m["rv"]["name"] == "Rivendell"
+
+
+def test_a_project_logo_that_cant_be_kept_falls_back_to_the_clients(riv):
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "name": "P", "repositories": ["acme/a"],
+                        "logoId": "u1", "logoUrl": "https://s3/too-big.png",
+                        "client": client("c", logo="https://s3/c.png", color="#123456")}]
+    riv["local"] = {"/a": {"acme/a"}}
+    riv["logos"] = {"https://s3/c.png": PNG}                   # the project's own never downloads
+
+    projectmarks.import_all()
+
+    m = project_config.mark("/a")
+    assert m["kind"] == "logo" and projectmarks.logo(m["logo"])[0] == PNG
+    assert m["rv"]["logo_id"] == "doc-c" and "own" not in m["rv"] and m["rv"]["name"] == "C"
+    assert riv["downloads"] == ["https://s3/too-big.png", "https://s3/c.png"]   # its own was tried first
