@@ -379,7 +379,7 @@ function RunPopover<M extends string>({
 export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
-  queued, onCancelQueued, onEjectQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink,
+  queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink,
 }: {
   disabled: boolean;
   running: boolean;
@@ -431,6 +431,7 @@ export function Composer({
   queued?: { id: string; text: string }[];
   onCancelQueued?: (id: string) => void;
   onEjectQueued?: (id: string) => void; // pull it out and run it in a fresh session
+  onSteerQueued?: (id: string) => void; // fold it into the turn running now (offered only while one is)
   // Paused = the turn in flight finishes, but nothing starts on its own after it:
   // no queued prompt, no goal nudge. Your own SEND still runs (and unpauses).
   paused?: boolean;
@@ -981,6 +982,7 @@ export function Composer({
           {queued.map((q) => (
             <div key={q.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)", fontSize: "var(--t105)", color: "var(--txh)" }}>
               <span title={q.text} style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.text}</span>
+              {running && onSteerQueued && <button onClick={() => onSteerQueued(q.id)} title="Steer — fold this into the turn that's running now" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", lineHeight: 1, padding: 0, flex: "none", display: "flex" }}><SteerIcon size={11} /></button>}
               {onEjectQueued && <button onClick={() => onEjectQueued(q.id)} title="Run in a new session" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>↗</button>}
               {onCancelQueued && <button onClick={() => onCancelQueued(q.id)} title="Remove from queue" style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>✕</button>}
             </div>
@@ -1212,6 +1214,10 @@ export function Composer({
             <span key={q.id} title={q.text}
               style={{ display: "inline-flex", alignItems: "center", gap: 6, maxWidth: 240, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontSize: "var(--t10)", letterSpacing: 0.5, padding: "2px 6px" }}>
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{q.text}</span>
+              {running && onSteerQueued && (
+                <button onClick={() => onSteerQueued(q.id)} title="Steer — fold this into the turn that's running now"
+                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", lineHeight: 1, padding: 0, flex: "none", display: "flex" }}><SteerIcon size={11} /></button>
+              )}
               {onEjectQueued && (
                 <button onClick={() => onEjectQueued(q.id)} title="Run in a new session"
                   style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple)", fontSize: "var(--t11)", lineHeight: 1, padding: 0, flex: "none" }}>↗</button>

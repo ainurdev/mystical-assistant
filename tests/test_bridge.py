@@ -180,6 +180,52 @@ def test_steer_writes_user_message_to_the_live_turn():
         runner._jobs.update(saved)
 
 
+def test_steer_the_child_never_took_is_reported():
+    """The turn can end between the lookup and the write (stdin closes at its
+    `result`): that steer was never delivered, so it returns False and leaves no
+    steer row — a queued prompt steered in would otherwise leave the queue and vanish."""
+    class ClosedStdin:
+        closed = True
+        def write(self, s): raise ValueError("I/O operation on closed file")
+        def flush(self): pass
+
+    class FakeProc:
+        stdin = ClosedStdin()
+
+    saved = dict(runner._jobs)
+    runner._jobs.clear()
+    try:
+        job = runner.Job("j-late", 555, "sess-late")
+        job.proc = FakeProc()
+        runner._register(job)
+        assert runner.steer("sess-late", "too late") is False
+        assert not any(e.get("type") == "steer" for e in job.events)
+    finally:
+        runner._jobs.clear()
+        runner._jobs.update(saved)
+
+
+def test_dashboard_steer_sends_a_queued_prompt():
+    """STEER on a queued row names the item, not text: the queue sends it into
+    the running turn. Nothing took it -> 409, and the queue keeps it."""
+    from bridge.dashboard import server as dash
+    from bridge import queue_manager
+    calls, took = [], [True]
+    real = queue_manager.steer
+    queue_manager.steer = lambda sid, item_id: (calls.append((sid, item_id)), took[0])[1]
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    try:
+        h._queue("steer", 555, {"session_id": "s1", "item_id": "q1"})
+        assert box["code"] == 200 and calls == [("s1", "q1")]
+        took[0] = False
+        h._queue("steer", 555, {"session_id": "s1", "item_id": "q1"})
+        assert box["code"] == 409
+    finally:
+        queue_manager.steer = real
+
+
 def test_dashboard_steer_saves_and_forwards_a_screenshot():
     """STEER with an attachment: the data URL lands in the upload dir and its
     path goes into the live turn. Nothing running -> 409, and the files it just
