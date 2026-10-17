@@ -80,7 +80,7 @@ def test_an_icon_mark_round_trips_and_bad_fields_are_refused():
 
 
 def test_a_logo_is_stored_with_its_mark_and_served_by_its_hash():
-    m = projectmarks.set_mark("/r", {"kind": "logo", "plate": "light", "color": "#ff5b1f"},   # a plate is no longer kept
+    m = projectmarks.set_mark("/r", {"kind": "logo", "color": "#ff5b1f"},
                               logo_data=base64.b64encode(PNG).decode())
     assert m["kind"] == "logo" and "plate" not in m and m["logo"].endswith(".png")
     data, ctype = projectmarks.logo(m["logo"])
@@ -458,3 +458,50 @@ def test_a_project_logo_that_cant_be_kept_falls_back_to_the_clients(riv):
     assert m["kind"] == "logo" and projectmarks.logo(m["logo"])[0] == PNG
     assert m["rv"]["logo_id"] == "doc-c" and "own" not in m["rv"] and m["rv"]["name"] == "C"
     assert riv["downloads"] == ["https://s3/too-big.png", "https://s3/c.png"]   # its own was tried first
+
+
+# --- a background (plate) behind a logo ----------------------------------------
+
+def test_a_plate_rides_only_on_a_logo():
+    m = projectmarks.set_mark("/r", {"kind": "logo", "plate": "light"}, logo_data=base64.b64encode(PNG).decode())
+    assert m["plate"] == "light"
+    for bad in ({"kind": "logo", "logo": m["logo"], "plate": "pink"}, {"kind": "icon", "icon": "rocket", "plate": "dark"}):
+        with pytest.raises(ValueError):
+            projectmarks.set_mark("/r", bad)
+    assert project_config.mark("/r") == m                          # a refused edit changes nothing
+
+
+def _ib(riv, logo="https://s3/ib.svg", logo_id=None):
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "repositories": ["acme/a"],
+                        "client": client("ib", logo=logo, color="#000000", logo_id=logo_id)}]
+    riv["local"] = {"/a": {"acme/a"}}
+
+
+def test_a_plate_alone_keeps_a_mark_following(riv):
+    _ib(riv)
+    riv["logos"] = {"https://s3/ib.svg": SVG}
+    projectmarks.import_all()
+    followed = project_config.mark("/a")
+    shown = {k: v for k, v in followed.items() if k not in ("source", "rv")}   # what the editor sends back
+
+    m = projectmarks.set_mark("/a", {**shown, "plate": "dark"})
+    assert m["source"] == "rivendell" and m["rv"] == followed["rv"] and m["plate"] == "dark"
+    assert project_config.mark("/a") == m
+    m = projectmarks.set_mark("/a", shown)                        # back to NONE, still following
+    assert m == followed
+    m = projectmarks.set_mark("/a", {**shown, "plate": "light", "color": "#ffffff"})
+    assert "source" not in m and m["plate"] == "light"             # anything more makes it yours
+
+
+def test_refresh_keeps_the_plate(riv):
+    _ib(riv)
+    riv["logos"] = {"https://s3/ib.svg": SVG, "https://s3/ib-white.png": PNG}
+    projectmarks.import_all()
+    shown = {k: v for k, v in project_config.mark("/a").items() if k not in ("source", "rv")}
+    projectmarks.set_mark("/a", {**shown, "plate": "light"})
+    _ib(riv, logo="https://s3/ib-white.png", logo_id="doc-ib-2")   # the client's logo changes in Rivendell
+
+    projectmarks.refresh()
+
+    m = project_config.mark("/a")
+    assert m["plate"] == "light" and m["source"] == "rivendell" and projectmarks.logo(m["logo"])[0] == PNG

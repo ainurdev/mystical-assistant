@@ -78,6 +78,7 @@ _ICON_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 _COLOR_RE = re.compile(r"^(#[0-9a-fA-F]{6}|var\(--[a-z0-9-]{1,24}\))$")
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 KINDS = ("letters", "icon", "logo")
+PLATES = ("light", "dark")      # a background behind a logo; none is the default
 REFRESH_S = 6 * 3600
 _CACHE_S = 600          # how long one look at Rivendell answers for the dashboard
 
@@ -165,13 +166,22 @@ def clean(m, logos: dict) -> "dict | None":
         if m.get("logo") not in logos:
             raise ValueError("that logo isn't stored here")
         out["logo"] = m["logo"]
+    if m.get("plate"):
+        if out["kind"] != "logo" or m["plate"] not in PLATES:
+            raise ValueError("a background is light or dark, behind a logo")
+        out["plate"] = m["plate"]
     if out == {"kind": "letters"}:
         return None
     return out
 
 
+def _sans(m: dict, *keys) -> dict:
+    return {k: v for k, v in m.items() if k not in keys}
+
+
 def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
-    """Your mark for a project: it never follows Rivendell again until you ask.
+    """Your mark for a project: it never follows Rivendell again until you ask,
+    unless all that changed is the background (plate) behind a followed logo.
     `logo_data` is a new logo's bytes, base64, stored with the mark in one go
     so a logo is never kept for an edit that was cancelled."""
     with _lock:
@@ -183,9 +193,14 @@ def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
                 raise ValueError("the logo isn't base64") from None
             mark = {**(mark or {}), "kind": "logo", "logo": _put_logo(d, raw)}
         out = clean(mark, d.get("logos") or {})
+        cur = project_config.mark(rel)
+        # A background alone is how a logo shows here, not a new mark: one that
+        # follows Rivendell keeps following (IB Groups' black logo on LIGHT).
+        if cur and cur.get("source") == "rivendell" and out and _sans(out, "plate") == _sans(cur, "plate", "source", "rv"):
+            out = {**_sans(cur, "plate"), **({"plate": out["plate"]} if out.get("plate") else {})}
         # Back to plain letters from a mark is still your choice: kept as one,
         # or following Rivendell would dress the repo again on its next pass.
-        if out is None and project_config.mark(rel) is not None:
+        if out is None and cur is not None:
             out = {"kind": "letters"}
         project_config.set_mark(rel, out)
         _gc(d)
@@ -339,6 +354,8 @@ def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
         mark["rv"]["own"] = True
     if name:
         mark["logo"] = name
+        if cur.get("plate"):             # a background you chose rides over every refresh
+            mark["plate"] = cur["plate"]
     if _hex(c.get("brandColor")):
         mark["color"] = c["brandColor"]
     if mark != cur:

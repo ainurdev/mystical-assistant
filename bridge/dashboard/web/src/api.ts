@@ -267,6 +267,7 @@ export interface ProjectMark {
   color?: string;             // "#rrggbb", or a theme ink like "var(--acc)"
   icon?: string;              // a lucide icon name
   logo?: string;              // "<sha256>.<ext>", served at projectLogoUrl()
+  plate?: "light" | "dark";   // a background behind the logo; absent = none
   source?: "rivendell";       // absent = yours: set here, never changes on its own
   // own: the project's own logo, not its client's; name is then the project's.
   rv?: { instance?: string; client?: string; name?: string; logo_id?: string | null; own?: boolean };

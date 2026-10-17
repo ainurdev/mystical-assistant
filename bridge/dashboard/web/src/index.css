@@ -3568,6 +3568,14 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] .ptile[data-kind="logo"]::after { content: ""; position: absolute; inset: 0; background: var(--pc);
   -webkit-mask: var(--logo) center / contain no-repeat; mask: var(--logo) center / contain no-repeat; }
 [data-fam="aurora"] .ptile[data-kind="logo"][data-logo="fill"]::after { mask-mode: luminance; }
+/* A background you chose (the editor's BACKGROUND): a plate behind the logo, which
+   sits at 80% so the plate shows round it, drawn as it is in every family:
+   AURORA's silhouette would print IB Groups' black logo grey on a light plate. */
+.ptile[data-kind="logo"][data-plate="light"] { background: #eef0f6 !important; }
+.ptile[data-kind="logo"][data-plate="dark"] { background: #1c1c22 !important; }
+.ptile[data-kind="logo"][data-plate] img { width: 80%; height: 80%; visibility: visible; }
+[data-fam="aurora"] .ptile[data-kind="logo"][data-plate] { filter: none; }
+[data-fam="aurora"] .ptile[data-kind="logo"][data-plate]::after { content: none; }
 
 /* ── the mark editor (components/hud/MarkEditor) and its two homes: a tile in
    SETTINGS ▸ Projects and the ANALYZE header (.mkwrap holds the popover) ── */
@@ -3602,6 +3610,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    icons: a tab that changed the editor's height moved it (MarkEditor's place). */
 .mk-pane { display: flex; flex-direction: column; gap: 13px; min-height: 251px; }
 .mk-pane > .mk-drop { flex: 1; }
+.mk-bgrow { display: flex; align-items: center; gap: 10px; }
+.mk-bgrow .mk-lbl { margin: 0; }
+.mk-bgrow .mk-mini { margin-left: auto; }
 .mk-ph { width: 64px; height: 64px; flex: none; display: grid; place-items: center; border: 1px dashed var(--line2); border-radius: var(--f-rad-l, 0); color: var(--txl); }
 .mk-search { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0); background: var(--panel3); color: var(--txl); }
 .mk-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--txb); font: 12.5px var(--ui-font); }

@@ -18,7 +18,7 @@ export function ProjectTile({ project }: { project: string | null | undefined })
   const mark = projectMark(project);
   const pc = projectTint(project).color;
   const letters = projectInitials(project);
-  if (mark?.kind === "logo" && mark.logo) return <LogoTile key={mark.logo} name={mark.logo} pc={pc} letters={letters} />;
+  if (mark?.kind === "logo" && mark.logo) return <LogoTile key={mark.logo} name={mark.logo} pc={pc} letters={letters} plate={mark.plate} />;
   return (
     <b className="ptile" aria-hidden data-kind={mark?.kind === "icon" ? "icon" : undefined}
       style={{ ["--pc" as string]: pc }}>
@@ -33,13 +33,13 @@ export function ProjectTile({ project }: { project: string | null | undefined })
  *  and a square one (lib/logoinfo's `fill`) keeps its lettering by its own
  *  lightness. A logo the bridge can't serve (lost in a move, say) falls back
  *  to the initials. */
-function LogoTile({ name, pc, letters }: { name: string; pc: string; letters: string }) {
+function LogoTile({ name, pc, letters, plate }: { name: string; pc: string; letters: string; plate?: string }) {
   const src = projectLogoUrl(name);
   const info = useLogoInfo(name, src);
   const [broken, setBroken] = useState(false);
   if (broken) return <b className="ptile" aria-hidden style={{ ["--pc" as string]: pc }}>{letters}</b>;
   return (
-    <b className="ptile" aria-hidden data-kind="logo" data-logo={info?.fill ? "fill" : undefined}
+    <b className="ptile" aria-hidden data-kind="logo" data-logo={info?.fill ? "fill" : undefined} data-plate={plate}
       style={{ ["--pc" as string]: pc, ["--logo" as string]: `url("${src}")` }}>
       <img src={src} alt="" draggable={false} onError={() => setBroken(true)} />
     </b>

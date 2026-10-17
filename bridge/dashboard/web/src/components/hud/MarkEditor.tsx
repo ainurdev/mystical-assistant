@@ -58,6 +58,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const [kind, setKind] = useState<Kind>(cur?.kind ?? "letters");
   const [icon, setIcon] = useState<string | null>(cur?.icon ?? null);
   const [color, setColor] = useState<string | null>(cur?.color ?? null);
+  const [plate, setPlate] = useState<ProjectMark["plate"] | null>(cur?.plate ?? null);
   const [hex, setHex] = useState(cur?.color && HEX.test(cur.color) ? cur.color : "");
   const [logo, setLogo] = useState<Logo | null>(cur?.logo
     ? { name: cur.logo, url: projectLogoUrl(cur.logo), label: following ? `${poss(cur.rv?.name ?? "The client")} logo` : "Your logo" }
@@ -154,7 +155,8 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
 
   const next: ProjectMark | null =
     kind === "icon" ? (icon ? { kind, icon, ...(color ? { color } : {}) } : null)
-    : kind === "logo" ? (logo ? { kind, ...(logo.name ? { logo: logo.name } : {}), ...(color ? { color } : {}) } : null)
+    : kind === "logo" ? (logo ? { kind, ...(logo.name ? { logo: logo.name } : {}), ...(color ? { color } : {}),
+        ...(plate ? { plate } : {}) } : null)
     : color ? { kind: "letters", color } : null;
   const incomplete = (kind === "icon" && !icon) || (kind === "logo" && !logo);
   // A dropped logo only counts while LOGO is the chosen tab; a bare letters
@@ -163,6 +165,10 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const shown = (m: ProjectMark | null) => (m && !(m.kind === "letters" && !m.color) ? m : null);
   const unchanged = !dropping && JSON.stringify(next) === JSON.stringify(
     shown(cur) ? Object.fromEntries(Object.entries(cur!).filter(([k]) => k !== "source" && k !== "rv")) : null);
+  // Only the background changed: the bridge keeps a followed mark following.
+  const bare = (m: ProjectMark | null) =>
+    JSON.stringify(Object.entries(m ?? {}).filter(([k]) => !["source", "rv", "plate"].includes(k)).sort());
+  const plateOnly = !dropping && (plate ?? null) !== (cur?.plate ?? null) && bare(next) === bare(shown(cur));
 
   async function save(mark: ProjectMark | null, logoData?: string) {
     setBusy(true);
@@ -216,7 +222,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const swatches = info?.colors ?? [];
   const preview = (
     <b className="ptile mk-tile" data-kind={kind === "letters" ? undefined : kind} style={{ ["--pc" as string]: tint }}
-      data-logo={kind === "logo" && info?.fill ? "fill" : undefined}>
+      data-logo={kind === "logo" && info?.fill ? "fill" : undefined} data-plate={kind === "logo" && plate ? plate : undefined}>
       {kind === "logo" && logo ? <img src={logo.url} alt="" />
         : kind === "icon" && icon ? <DynamicIcon name={icon as never} />
         : projectInitials(project)}
@@ -276,6 +282,15 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
               </button>
               <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp,image/svg+xml"
                 onChange={(e) => { void take(e.target.files?.[0]); e.target.value = ""; }} />
+              <div className="mk-bgrow">
+                <div className="mk-lbl">Background</div>
+                <div className="mk-mini" role="radiogroup" aria-label="Background">
+                  {([[null, "NONE"], ["light", "LIGHT"], ["dark", "DARK"]] as const).map(([v, l]) => (
+                    <button key={l} type="button" role="radio" aria-checked={plate === v} data-on={plate === v || undefined}
+                      onClick={() => setPlate(v)}>{l}</button>
+                  ))}
+                </div>
+              </div>
             </>
           )}
         </div>
@@ -343,7 +358,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
           onClick={() => void save(next, dropping ? logo?.data : undefined)}>SAVE</button>
         <button type="button" className="mk-btn mk-ghostbtn" onClick={onClose}>CANCEL</button>
         <span style={{ flex: 1 }} />
-        {following ? <span className="mk-note">a change here stops it following</span>
+        {following ? (!plateOnly && <span className="mk-note">a change here stops it following</span>)
           : shown(cur) && <button type="button" className="mk-btn mk-ghostbtn" disabled={busy} onClick={() => void save(null)}>BACK TO LETTERS</button>}
       </div>
     </div>,
