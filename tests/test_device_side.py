@@ -5,7 +5,7 @@ Nothing here runs the helper, sudo or the network. `popen=` stands in for the
 helper's start: FakeHelper does to the stage what the real one does (it notes
 what the stage held, writes out/, takes the token). `call=` stands in for its
 stop. The worker is a fake with the Worker's _api, _api_put_bytes,
-_deliver_telegram, inst and name. The stage root is a temp dir, and the
+_deliver_telegram, _note, inst and name. The stage root is a temp dir, and the
 snapshot download is a stub.
 Run: python -m pytest tests/test_device_side.py -v
 """
@@ -55,7 +55,7 @@ class Worker:
         self.inst = {"id": "t1", "name": "test", "impl_timeout": impl_timeout}
         self.name = "test"
         self.claim, self.claim_error = claim, claim_error
-        self.api, self.puts, self.telegram = [], [], []
+        self.api, self.puts, self.telegram, self.notes = [], [], [], []
         self.result_errors = []          # raised by the next result POSTs, in order
         self.claimed = None              # the very dict the claim answered, as run() holds it
 
@@ -77,6 +77,9 @@ class Worker:
 
     def _deliver_telegram(self, text, kb):
         self.telegram.append(text)
+
+    def _note(self, kind, request_id, title, body="", **meta):
+        self.notes.append((kind, request_id, title, body, meta))
 
     def results(self):
         return [payload for path, payload, _ in self.api if path.endswith("/result")]
@@ -262,12 +265,24 @@ def test_a_run_uploads_its_screens_and_posts_the_report_with_captions_in_index_o
         "token": TOKEN, "code": CODE, "names": ["code.tar.gz", "job.json", "token"],
         "stage_mode": 0o700, "token_mode": 0o600}
     assert device.fetched == [(CLAIM["snapshotUrl"], 60)]
-    assert w.telegram == ["Mahdi is testing ainurhq/app on this device."]
+    assert w.notes == [("rv_started", RID, "ainurhq/app", "Mahdi is testing ainurhq/app on this device.",
+                        {"job_kind": "device-run"})]
     assert w.puts == [(BASE + "/screens/1", PNG + b"two", "application/octet-stream", HEAD),
                       (BASE + "/screens/2", PNG + b"one", "application/octet-stream", HEAD)]
     assert w.results() == [{"status": "COMPLETED", "result": "It works.",
                             "screens": [{"index": 1, "caption": "The login screen"}, {"index": 2, "caption": "Home"}]}]
     assert all(h == HEAD for _, _, h in w.api), "every call says which device it is"
+
+
+@pytest.mark.parametrize("routed", [False, True])
+def test_who_is_testing_reaches_telegram_only_where_notify_routes_it(device, monkeypatch, routed):
+    """The bell always has it; Telegram follows Settings ▸ NOTIFY ▸ Started elsewhere."""
+    asked = []
+    monkeypatch.setattr(ds.notices, "telegram_ok", lambda kind: asked.append(kind) or routed)
+    w = Worker()
+    _run(w, FakeHelper())
+    assert asked == ["rv_started"] and len(w.notes) == 1
+    assert w.telegram == (["Mahdi is testing ainurhq/app on this device."] if routed else [])
     assert os.listdir(device.root) == [], "the stage goes"
     last = device_share.last_run()
     assert last["by"] == "Mahdi" and last["task"] == "RIV-42" and abs(last["at"] - time.time()) < 60

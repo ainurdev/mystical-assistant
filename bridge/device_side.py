@@ -6,8 +6,9 @@ it to run() here:
   1. Claim it (GET .../prompt, with X-Mystical-Device-Id). A 409 is another
      device's claim: dropped quietly, nothing posted.
   2. Check that /Users/Shared/Mystical Runs is the owner's own folder (anyone
-     can plant that name in /Users/Shared), then tell the owner on Telegram who
-     is testing what on this device.
+     can plant that name in /Users/Shared), then tell the owner who is testing
+     what on this device: a row in the bell, and Telegram only where Settings ▸
+     NOTIFY routes "Started elsewhere" (bridge/notices.py), like every ping.
   3. Stage it in /Users/Shared/Mystical Runs/<id>/, the owner's own 0700 folder:
      job.json, the code snapshot, and the asker's Claude token (0600) last.
   4. Start the root helper (bridge/device_setup/mystical_run_helper.py) with
@@ -40,7 +41,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-from bridge import device_share
+from bridge import device_share, notices
 
 STAGE_ROOT = "/Users/Shared/Mystical Runs"    # test seam: tests point it at a temp dir
 _RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -187,8 +188,10 @@ def _run(worker, request_id, popen, call):
         try:
             if not _root_is_ours():
                 raise ValueError("this device's runs folder isn't its owner's own, so nothing was staged")
-            worker._deliver_telegram(f"{claim['requester']['name']} is testing {claim['repository']} on this device.",
-                                     None)
+            said = f"{claim['requester']['name']} is testing {claim['repository']} on this device."
+            worker._note("rv_started", request_id, claim["repository"], said, job_kind="device-run")
+            if notices.telegram_ok("rv_started"):
+                worker._deliver_telegram(said, None)
             _write_stage(stage, claim, timeout, worker.inst["id"])
             if request_id in _cancelled:
                 return
