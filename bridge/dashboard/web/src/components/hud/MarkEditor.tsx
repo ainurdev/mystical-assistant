@@ -14,7 +14,9 @@ import { synced } from "./RivendellMarks";
    Design: docs/superpowers/specs/project-marks.md (the mockups' 02-editor).
 
    A mark that follows Rivendell says so. Any change here makes it yours, and a
-   project Rivendell has a client logo for offers USE RIVENDELL'S. A dropped logo
+   project Rivendell has a client logo for offers USE RIVENDELL'S. A repo no
+   Rivendell project names offers LINK, which links it to one in Rivendell
+   itself, so every Mystical on that Rivendell gets the logo. A dropped logo
    travels with SAVE in one request (bridge/projectmarks.set_mark), so a
    cancelled edit never leaves a file behind. It ships in the main bundle,
    not as a lazy chunk: a chunk that a rebuild had replaced under an open page
@@ -65,6 +67,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const info = logo?.data ? dropped : stored;
   const [query, setQuery] = useState("");
   const [riv, setRiv] = useState<RivendellMarks | null>(null);
+  const [pick, setPick] = useState(-1);          // LINK's project, an index into riv.projects
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -74,6 +77,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   // follow line. A bridge without the route just leaves both out.
   useEffect(() => { api.rivendellMarks().then(setRiv).catch(() => setRiv(null)); }, []);
   const match = riv?.matches?.[project] ?? null;
+  const target = riv?.projects?.[pick];
 
   // Esc, a click outside, or scrolling what's under it closes it. The tile
   // counts as inside, so its own click can toggle it shut. Esc listens in the
@@ -99,27 +103,34 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
     };
   }, [onClose, anchor]);
 
-  // Below the tile, or above it when the window has no room below; re-placed
-  // whenever its own height changes (a tab switch, a logo landing).
+  // Below the tile, or above it when the window has no room below, chosen once
+  // as it opens. After that it holds still, moving only to stay inside the
+  // window: re-placed on every height change (a tab switch, a logo landing) it
+  // jumped out from under the pointer. The tabs share one height (.mk-pane).
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
   useLayoutEffect(() => {
+    let at: { top: number; left: number } | null = null;
     const place = () => {
       const a = anchor?.getBoundingClientRect();
       const el = root.current;
       if (!a || !el) return;
       const h = el.offsetHeight, w = el.offsetWidth, vh = window.innerHeight;
-      let top = a.bottom + 8, left = a.left - 6;
-      if (top + h > vh - 8) {
-        if (a.top - 8 - h >= 8) top = a.top - 8 - h;
-        else { top = Math.min(a.top - 60, vh - 8 - h); left = a.right + 12; }   // no room either way: beside it
+      if (!at) {
+        at = { top: a.bottom + 8, left: a.left - 6 };
+        if (at.top + h > vh - 8) {
+          if (a.top - 8 - h >= 8) at.top = a.top - 8 - h;
+          else at = { top: Math.min(a.top - 60, vh - 8 - h), left: a.right + 12 };   // no room either way: beside it
+        }
       }
-      setPos({ top: Math.max(8, top), left: Math.max(8, Math.min(left, window.innerWidth - w - 8)) });
+      setPos({ top: Math.max(8, Math.min(at.top, vh - 8 - h)),
+               left: Math.max(8, Math.min(at.left, window.innerWidth - w - 8)) });
     };
     place();
     const ro = new ResizeObserver(place);
     if (root.current) ro.observe(root.current);
-    window.addEventListener("resize", place);
-    return () => { ro.disconnect(); window.removeEventListener("resize", place); };
+    const onResize = () => { at = null; place(); };
+    window.addEventListener("resize", onResize);
+    return () => { ro.disconnect(); window.removeEventListener("resize", onResize); };
   }, [anchor]);
 
   const icons = useMemo(() => {
@@ -185,6 +196,21 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
     }
   }
 
+  async function link() {
+    if (!target) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await api.rivendellMarksAction("link", { project, instance: target.instance, rv_project: target.id });
+      setProjectMarks((await api.projects()).marks);
+      onClose();
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // What the tile and the name print in: the chosen colour, readable on this
   // ground, or the hashed default when none is chosen.
   const tint = inkCss(color ?? hashTint(project));
@@ -216,43 +242,45 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
           ))}
         </div>
 
-        {kind === "letters" && (
-          <div className="mk-drop mk-still">{preview}
-            <div><b>Its initials</b><small>two letters from its name, the default for every project</small></div>
-          </div>
-        )}
-
-        {kind === "icon" && (
-          <>
-            <label className="mk-search"><Search size={14} aria-hidden />
-              <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`search ${iconNames.length.toLocaleString()} icons`} />
-              <span>lucide</span>
-            </label>
-            <div className="mk-grid" style={{ ["--pc" as string]: tint }}>
-              {icons.map((n) => (
-                <button key={n} type="button" title={n} data-on={icon === n || undefined} onClick={() => setIcon(n)}>
-                  <DynamicIcon name={n as never} size={16} />
-                </button>
-              ))}
-              {icons.length === 0 && <span className="mk-none">no icon is called that</span>}
+        <div className="mk-pane">
+          {kind === "letters" && (
+            <div className="mk-drop mk-still">{preview}
+              <div><b>Its initials</b><small>two letters from its name, the default for every project</small></div>
             </div>
-          </>
-        )}
+          )}
 
-        {kind === "logo" && (
-          <>
-            <button type="button" className="mk-drop" onClick={() => fileRef.current?.click()}>
-              {logo ? preview : <span className="mk-ph"><ImageIcon size={20} aria-hidden /></span>}
-              <div>
-                <b>{logo ? logo.label : "Drop a logo here"}</b>
-                <small>{logo ? <>drop, paste or <u>choose a file</u> to {following ? "use your own instead" : "replace it"}</>
-                  : <>or paste one, or <u>choose a file</u> · PNG, SVG, JPG or WEBP up to 512 KB</>}</small>
+          {kind === "icon" && (
+            <>
+              <label className="mk-search"><Search size={14} aria-hidden />
+                <input autoFocus value={query} onChange={(e) => setQuery(e.target.value)} placeholder={`search ${iconNames.length.toLocaleString()} icons`} />
+                <span>lucide</span>
+              </label>
+              <div className="mk-grid" style={{ ["--pc" as string]: tint }}>
+                {icons.map((n) => (
+                  <button key={n} type="button" title={n} data-on={icon === n || undefined} onClick={() => setIcon(n)}>
+                    <DynamicIcon name={n as never} size={16} />
+                  </button>
+                ))}
+                {icons.length === 0 && <span className="mk-none">no icon is called that</span>}
               </div>
-            </button>
-            <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp,image/svg+xml"
-              onChange={(e) => { void take(e.target.files?.[0]); e.target.value = ""; }} />
-          </>
-        )}
+            </>
+          )}
+
+          {kind === "logo" && (
+            <>
+              <button type="button" className="mk-drop" onClick={() => fileRef.current?.click()}>
+                {logo ? preview : <span className="mk-ph"><ImageIcon size={20} aria-hidden /></span>}
+                <div>
+                  <b>{logo ? logo.label : "Drop a logo here"}</b>
+                  <small>{logo ? <>drop, paste or <u>choose a file</u> to {following ? "use your own instead" : "replace it"}</>
+                    : <>or paste one, or <u>choose a file</u> · PNG, SVG, JPG or WEBP up to 512 KB</>}</small>
+                </div>
+              </button>
+              <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                onChange={(e) => { void take(e.target.files?.[0]); e.target.value = ""; }} />
+            </>
+          )}
+        </div>
 
         {following && (
           <div className="mk-from"><i className="mk-gem" />
@@ -263,6 +291,16 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
           <div className="mk-from"><i className="mk-gem" />
             <span>Rivendell has <b>{poss(match.client ?? "its client")}</b> {match.logo ? "logo" : "colour"}</span>
             <button type="button" className="mk-btn mk-ghostbtn" disabled={busy} onClick={() => void follow()}>USE IT</button>
+          </div>
+        )}
+        {!following && riv?.unlinked?.includes(project) && !!riv.projects?.length && (
+          <div className="mk-from"><i className="mk-gem" />
+            <select value={pick} onChange={(e) => setPick(Number(e.target.value))} aria-label="Rivendell project"
+              title="Links this repo to that project in Rivendell itself, so every Mystical on that Rivendell gets its client's logo">
+              <option value={-1}>Link to a Rivendell project…</option>
+              {riv.projects.map((p, i) => <option key={`${p.instance}:${p.id}`} value={i}>{p.client} · {p.name}</option>)}
+            </select>
+            <button type="button" className="mk-btn mk-ghostbtn" disabled={busy || !target} onClick={() => void link()}>LINK</button>
           </div>
         )}
 

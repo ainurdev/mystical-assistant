@@ -3597,6 +3597,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .mk-drop small { display: block; font-size: 11px; color: var(--txl); margin-top: 3px; line-height: 1.45; }
 .mk-drop .ptile.mk-tile { width: 64px; height: 64px; border-radius: var(--f-rad-l, 0); font-size: 22px; margin: 0; }
 .mk-drop .ptile.mk-tile svg { stroke-width: 1.6; }
+/* One height for all three tabs, the ICON tab's search box and five rows of
+   icons: a tab that changed the editor's height moved it (MarkEditor's place). */
+.mk-pane { display: flex; flex-direction: column; gap: 13px; min-height: 251px; }
+.mk-pane > .mk-drop { flex: 1; }
 .mk-ph { width: 64px; height: 64px; flex: none; display: grid; place-items: center; border: 1px dashed var(--line2); border-radius: var(--f-rad-l, 0); color: var(--txl); }
 .mk-search { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0); background: var(--panel3); color: var(--txl); }
 .mk-search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--txb); font: 12.5px var(--ui-font); }
@@ -3612,6 +3616,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--purple) 6%, var(--panel2)); font-size: 11.5px; color: var(--txm); }
 .mk-from b { color: var(--txb); font-weight: 500; }
 .mk-from .mk-btn { margin-left: auto; }
+.mk-from select { flex: 1; min-width: 0; padding: 3px 6px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0);
+  background: var(--panel3); color: var(--txb); font: 11.5px var(--ui-font); }
 .mk-gem { width: 7px; height: 7px; flex: none; margin: 0 2px; transform: rotate(45deg); background: var(--purple); border-radius: 1px; }
 .mk-lbl { display: flex; align-items: center; gap: 8px; margin-bottom: -5px; font: 600 10px var(--ui-font); letter-spacing: .12em; text-transform: uppercase; color: var(--txl); }
 .mk-lbl span { margin-left: auto; font: 500 10.5px var(--ui-font); letter-spacing: .02em; text-transform: none; color: var(--txd); }

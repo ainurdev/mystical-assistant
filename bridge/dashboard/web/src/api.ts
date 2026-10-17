@@ -285,6 +285,10 @@ export interface RivendellMarks {
   can_undo: boolean;
   offer: { count: number; clients: string[]; logos: { url: string | null; color: string | null }[] } | null;
   matches: Record<string, { client: string | null; logo: boolean; color: string | null }>;
+  // The mark editor's LINK: the projects whose client lends a mark, and the
+  // repos no Rivendell project names. Absent on a bridge older than LINK.
+  projects?: { instance: string; id: string; name: string; client: string; logo: boolean; color: string | null }[];
+  unlinked?: string[];
   errors: { instance_id: string; instance: string; error: string; detail: string }[];
 }
 
@@ -1827,9 +1831,9 @@ export const api = {
     }),
   rivendellMarks: (force = false) =>
     req<RivendellMarks>(`/local/rivendell/marks${force ? "?force=1" : ""}`),
-  rivendellMarksAction: (action: "import" | "follow" | "dismiss" | "undo" | "sync",
-                         extra: { project?: string; on?: boolean } = {}) =>
-    req<{ following?: number; kept?: string[]; clients?: number; undone?: number; dismissed?: number }>(
+  rivendellMarksAction: (action: "import" | "follow" | "link" | "dismiss" | "undo" | "sync",
+                         extra: { project?: string; on?: boolean; instance?: string; rv_project?: string } = {}) =>
+    req<{ following?: number; kept?: string[]; clients?: number; undone?: number; dismissed?: number; linked?: string }>(
       "/local/rivendell/marks", { method: "POST", body: { action, ...extra } }),
   designPrompt: (ctx: RunCtx, kind: "link" | "pull" | "push", name?: string) =>
     req<{ prompt?: string; error?: string }>(
