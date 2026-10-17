@@ -3724,7 +3724,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   border-top: 1px solid var(--line, var(--border)); }
 .ntf-row:hover { background: var(--ac-03); }
 .ntf-row.unread::before, .ntf-row.needs::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 2px; border-radius: 2px; background: var(--acc); }
-.ntf-row.needs { cursor: default; background: color-mix(in oklab, var(--ask) 6%, var(--panel)); }
+.ntf-row.needs { background: color-mix(in oklab, var(--ask) 6%, var(--panel)); }
+.ntf-row.needs:hover { background: color-mix(in oklab, var(--ask) 11%, var(--panel)); }
 .ntf-row.needs::before { background: var(--ask); }
 .ntf-row.compact { padding: 8px 14px; align-items: center; }
 .ntf-row.compact .ntf-src { transform: scale(.84); }

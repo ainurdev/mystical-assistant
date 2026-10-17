@@ -161,6 +161,9 @@ function openRow(n: { kind: string; subject: string; source: string; meta: Recor
   if (n.kind.startsWith("move_")) return openSettings("move");
 }
 
+/** A NEEDS row's click: the session that waits, or the offered job's page. */
+const openNeed = (n: Need) => (n.kind === "rv_offer" ? openUrl(n.meta.link) : openRow({ ...n, source: "session" }));
+
 function openUrl(u: unknown) {
   const url = safeUrl(u);
   if (url) window.open(url, "_blank", "noopener");
@@ -201,7 +204,7 @@ function NeedActions({ n, done }: { n: Need; done: () => void }) {
       (e: Error) => notify("error", e.message));
   if (n.kind === "rv_offer") {
     return (
-      <div className="ntf-acts">
+      <div className="ntf-acts" onClick={(e) => e.stopPropagation()}>
         <button className="ntf-btn ask" onClick={() => { answerRivendell(n.meta, true); done(); }}>Accept</button>
         <button className="ntf-btn" onClick={() => { answerRivendell(n.meta, false); done(); }}>Dismiss</button>
         {safeUrl(n.meta.link) && <button className="ntf-btn ghost" onClick={() => openUrl(n.meta.link)}>Peek ›</button>}
@@ -210,16 +213,15 @@ function NeedActions({ n, done }: { n: Need; done: () => void }) {
   }
   const buttons = bannerActions(card);
   return (
-    <div className="ntf-acts">
+    <div className="ntf-acts" onClick={(e) => e.stopPropagation()}>
       {buttons.map((b, i) => (
         <button key={b.action} className={`ntf-btn${i === 0 ? " ask" : b.action === "deny" ? " no" : ""}`} onClick={() => answer(b.action)}>{b.title}</button>
       ))}
-      {n.kind === "login" && <button className="ntf-btn ask" onClick={() => openSettings("aimgmt", String(n.meta.slot ?? "") || undefined)}>Sign in ›</button>}
+      {n.kind === "login" && <button className="ntf-btn ask" onClick={() => { openSettings("aimgmt", String(n.meta.slot ?? "") || undefined); done(); }}>Sign in ›</button>}
       {n.kind === "limit_choice" && (Array.isArray(n.meta.rungs) ? n.meta.rungs as { slot: number; label: string }[] : []).map((r) => (
         <button key={r.slot} className="ntf-btn ask" onClick={() => limit(r.slot)}>Switch to {r.label}</button>
       ))}
       {n.kind === "limit_choice" && <button className="ntf-btn" onClick={() => limit()}>Wait for reset</button>}
-      <button className="ntf-btn ghost" onClick={() => openRow({ ...n, source: "session" })}>Open ›</button>
     </div>
   );
 }
@@ -269,12 +271,12 @@ function NoticeRow({ n, now, compact, onOpen }: { n: Row; now: number; compact: 
   );
 }
 
-function NeedRow({ n, now, done }: { n: Need; now: number; done: () => void }) {
+function NeedRow({ n, now, done, onOpen }: { n: Need; now: number; done: () => void; onOpen: () => void }) {
   const meta = n.kind === "rv_offer"
     ? ["rivendell", str(n.meta.instance) || str(n.meta.instance_id), "offered by a teammate"]
     : n.session_id ? [projName(str(n.meta.project)), env.branchOf(n.session_id) ? `⎇ ${env.branchOf(n.session_id)}` : ""].filter(Boolean) : [];
   return (
-    <div className="ntf-row needs">
+    <div className="ntf-row needs" onClick={onOpen}>
       <Source kind={n.kind} source={n.kind === "rv_offer" ? "rivendell" : "session"} project={str(n.meta.project)} />
       <div className="ntf-mid">
         <div className="ntf-ttl"><span className="ntf-verb ntf-v-ask">{n.verb}</span><span className="ntf-s">{n.title || "session"}</span></div>
@@ -417,6 +419,8 @@ export function NotificationCenter() {
   }, [open]);
 
   const go = (n: Row) => { close(); openRow(n); };
+  // A toast you clicked is news you read: its row needn't keep the bell's dot.
+  const read = (id: number) => void api.noticesRead([id]).then(() => load.current(), () => { /* next poll */ });
   const markAll = () => { shown.current = new Set(); void api.noticesRead("all").then(() => load.current()); };
 
   const fNeeds = liveNeeds.filter((n) => needMatches(filter, n));
@@ -480,7 +484,7 @@ export function NotificationCenter() {
             {fNeeds.length > 0 && (
               <>
                 <div className="ntf-sec ask">NEEDS YOU<span className="ln" />{fNeeds.length}</div>
-                {fNeeds.map((n) => <NeedRow key={n.subject} n={n} now={now} done={() => void load.current()} />)}
+                {fNeeds.map((n) => <NeedRow key={n.subject} n={n} now={now} done={() => void load.current()} onOpen={() => { close(); openNeed(n); }} />)}
               </>
             )}
             {section("NOW", nowRows)}
@@ -513,8 +517,8 @@ export function NotificationCenter() {
               <div key={t.n.id} className={`ntf-toast${t.n.tier === "needs" ? " needs" : ""}`}
                 onMouseEnter={() => hold(true)} onMouseLeave={() => hold(false)}>
                 {t.n.tier === "needs"
-                  ? <NeedRow n={need} now={now} done={drop} />
-                  : <NoticeRow n={row} now={now} compact={false} onOpen={() => { drop(); openRow(t.n); }} />}
+                  ? <NeedRow n={need} now={now} done={drop} onOpen={() => { drop(); openNeed(need); }} />
+                  : <NoticeRow n={row} now={now} compact={false} onOpen={() => { drop(); read(t.n.id); openRow(t.n); }} />}
                 <button className="ntf-x" title="dismiss" onClick={drop}>×</button>
                 <span className={`ntf-bar ntf-v-${toneOf(t.n.kind)}`} style={{ width: `${Math.max(0, Math.min(100, (t.left / total) * 100))}%` }} />
               </div>
