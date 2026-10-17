@@ -110,7 +110,7 @@ interface Env {
   pushVolume: number;
 }
 let env: Env = { openSession: () => {}, openSessionId: null, branchOf: () => undefined, push: false, pushSound: false, pushVolume: 0.6 };
-export function setNoticeEnv(e: Env) { env = e; }
+export function setNoticeEnv(e: Env) { const moved = e.openSessionId !== env.openSessionId; env = e; if (moved) emit(); }
 
 let needs: Need[] = [];
 let links: RivendellInstance[] = [];
@@ -332,6 +332,7 @@ export function NotificationCenter() {
   const plugins = useIntegrations();   // no Rivendell installed: no Rivendell filter
   const liveNeeds = useSyncExternalStore(subscribe, () => needs);
   const liveLinks = useSyncExternalStore(subscribe, () => links);
+  const openSid = useSyncExternalStore(subscribe, () => env.openSessionId);
   const [feed, setFeed] = useState<Notice[]>([]);
   const [prefs, setPrefs] = useState<NoticePrefs | null>(null);
   const [stale, setStale] = useState(false);
@@ -400,6 +401,13 @@ export function NotificationCenter() {
     return () => window.clearInterval(id);
   }, [toasts.length]);
   useEffect(() => { if (open) setNow(Date.now() / 1000); }, [open, feed]);
+  // The session you're looking at: its news is read, however you got there — the
+  // same rule that keeps it from popping (popFor). Every poll brings a new `feed`.
+  useEffect(() => {
+    if (!openSid || document.visibilityState !== "visible") return;
+    const ids = feed.filter((n) => !n.read && (n.subject === openSid || n.meta.session_id === openSid)).map((n) => n.id);
+    if (ids.length) void api.noticesRead(ids).then(() => load.current(), () => { /* next poll */ });
+  }, [openSid, feed]);
 
   const rows = useMemo(() => groupBySubject(feed), [feed]);
   const unread = rows.filter((r) => !r.read).length;
