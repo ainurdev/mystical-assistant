@@ -44,7 +44,8 @@ composer tab, and SETTINGS ▸ Projects rows. In the ANALYZE header it replaces 
 - `project_config.json[rel].mark` holds `{kind, icon?, logo?, color?, plate?, source?, rv?}`, validated by
   `projectmarks.clean`. A colour is `#rrggbb` or `var(--token)`. An icon is `[a-z0-9-]`. A logo must be stored.
 - `project_marks.json` holds `{logos: {"<sha256>.<ext>": base64}, rivendell: {sync, synced_at, dismissed, undo}}`.
-  Logos are capped at 512 KB, and the dashboard shrinks rasters over 256px first. A logo that neither a mark
+  A logo you drop is capped at 512 KB, and the dashboard shrinks rasters over 256px first. A client logo
+  from Rivendell is kept as served, up to 4 MB (the bridge can't shrink one). A logo that neither a mark
   nor UNDO references is garbage-collected on the next save. MOVE carries the file (`move._STATE_FILES`).
   Logos live in one JSON file rather than a folder because MOVE merges JSON state files by key.
 - The old per-browser colours (`hud-project-tints`) move onto the bridge once, on the first listing that

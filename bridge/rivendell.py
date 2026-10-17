@@ -2541,7 +2541,33 @@ def todolist(instance_id: str, project_id: str) -> "dict | None":
                       for i in d.get("items") or [] if not i.get("done")]}
 
 
-_NOTE_HEAD = "\n\n---\nA note from the operator who started this run:\n\n"
+def link_repo(instance_id: str, project_id: str, slugs) -> str:
+    """The mark editor's LINK: link a repo here to a Rivendell project the way
+    the project page's repository link does (POST /projects/:id/links, through
+    the MCP's write_route as the token's owner, so Rivendell checks that owner
+    may change the project). The link is Rivendell's, so every bridge on it
+    matches the repo from then on (/plugin/projects lists it). Takes the first
+    of the repo's remotes Rivendell has synced and returns its fullName; a repo
+    already linked there counts as done. Raises TasksError."""
+    w = _worker(instance_id)
+    synced = {(r.get("fullName") or "").lower(): r
+              for r in _tool(w, "read_route", {"path": "/source-control/repositories"}) or []
+              if isinstance(r, dict)}
+    repo = next((synced[s] for s in sorted(slugs) if s in synced), None)
+    if repo is None:
+        # Rivendell brings new repos in only on a full GitHub sync.
+        raise TasksError("refused", f"Rivendell hasn't synced {' or '.join(sorted(slugs))} from GitHub yet: "
+                                    "SYNC on its Source Control page brings new repos in")
+    try:
+        _tool(w, "write_route", {"method": "POST", "path": f"/projects/{project_id}/links",
+                                 "body": {"type": "REPOSITORY", "refId": repo["id"]}})
+    except TasksError as e:
+        if " answered 409" not in str(e):        # write_route's words for "already linked"
+            raise
+    return repo["fullName"]
+
+
+_NOTE_HEAD ="\n\n---\nA note from the operator who started this run:\n\n"
 
 
 def implement(instance_id: str, task_id: str, note: str = "") -> dict:

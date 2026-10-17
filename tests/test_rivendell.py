@@ -2339,6 +2339,49 @@ def test_task_detail_on_an_unknown_instance_is_an_error(workers):
     assert e.value.code == "no_instance"
 
 
+def _routes(answers, calls):
+    """An _api stand-in for /mcp's read_route and write_route, answering by
+    (tool, path). A str answer is the tool's error, as write_route words it."""
+    def api(path, payload=None):
+        name, args = payload["params"]["name"], payload["params"]["arguments"]
+        calls.append((name, args.get("method", "GET"), args["path"], args.get("body")))
+        a = answers[(name, args["path"])]
+        return _mcp_answer(a, is_error=isinstance(a, str))
+    return api
+
+
+_SYNCED = ("read_route", "/source-control/repositories")
+
+
+def test_link_repo_links_the_first_synced_remote_to_the_project(workers):
+    calls = []
+    w = _worker(id="a")
+    w._api = _routes({_SYNCED: [{"id": "r1", "fullName": "ainurdev/Elvou"}, {"id": "r2", "fullName": "Elvou/elvou"}],
+                      ("write_route", "/projects/p1/links"): {"id": "p1"}}, calls)
+    workers["a"] = w
+    assert rivendell.link_repo("a", "p1", {"ainurdev/elvou", "nobody/elvou"}) == "ainurdev/Elvou"
+    assert calls == [("read_route", "GET", "/source-control/repositories", None),
+                     ("write_route", "POST", "/projects/p1/links", {"type": "REPOSITORY", "refId": "r1"})]
+
+
+def test_link_repo_counts_already_linked_as_done_and_says_what_else_went_wrong(workers):
+    w = _worker(id="a")
+    workers["a"] = w
+    for answer, ok in (("POST /projects/p1/links answered 409: That resource is already linked.", True),
+                       ("POST /projects/p1/links answered 403: Forbidden resource", False)):
+        w._api = _routes({_SYNCED: [{"id": "r1", "fullName": "acme/app"}],
+                          ("write_route", "/projects/p1/links"): answer}, [])
+        if ok:
+            assert rivendell.link_repo("a", "p1", {"acme/app"}) == "acme/app"
+        else:
+            with pytest.raises(rivendell.TasksError) as e:
+                rivendell.link_repo("a", "p1", {"acme/app"})
+            assert "403" in str(e.value)
+    with pytest.raises(rivendell.TasksError) as e:
+        rivendell.link_repo("a", "p1", {"acme/new"})          # newer than Rivendell's last GitHub sync
+    assert "hasn't synced acme/new" in str(e.value)
+
+
 _TODO = {
     "generatedAt": "2026-09-27T20:55:29.611Z", "progress": {"total": 3, "done": 1},
     "items": [

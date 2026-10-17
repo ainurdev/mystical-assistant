@@ -1422,13 +1422,25 @@ class Handler(BaseHTTPRequestHandler):
                 if abs_p is None:
                     return self._json({"error": "invalid project"}, 400)
                 return self._json(projectmarks.import_all(only=browser.rel(abs_p)))
+            if act == "link":
+                abs_p = _abs_project(body.get("project"))
+                if abs_p is None:
+                    return self._json({"error": "invalid project"}, 400)
+                try:
+                    return self._json(projectmarks.link(browser.rel(abs_p), str(body.get("instance") or ""),
+                                                        str(body.get("rv_project") or "")))
+                except ValueError as e:
+                    return self._json({"error": str(e)}, 400)
+                except rivendell.TasksError as e:
+                    return self._json({"error": str(e), "code": e.code},
+                                      502 if e.code == "unreachable" else 400)
             if act == "dismiss":
                 return self._json(projectmarks.dismiss())
             if act == "undo":
                 return self._json(projectmarks.undo())
             if act == "sync":
                 return self._json(projectmarks.set_sync(bool(body.get("on"))))
-            return self._json({"error": "action must be import, follow, dismiss, undo or sync"}, 400)
+            return self._json({"error": "action must be import, follow, link, dismiss, undo or sync"}, 400)
         if path == "/local/rivendell/queue":
             # Accept/reject one pending request. A stale click (already
             # accepted/rejected, or the worker gone) simply returns ok:false.

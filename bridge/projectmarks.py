@@ -11,9 +11,11 @@ Logo bytes live in project_marks.json beside the DB as base64, keyed by
 "<sha256>.<ext>". A logo that changes gets a new name, so each one can be
 served as immutable. It is one JSON file rather than a folder because MOVE
 carries bridge state as JSON files it merges by key (move._STATE_FILES), and a
-folder would need its own export and import path. Logos are small: at most
-512 KB each, and the dashboard shrinks large rasters to 256px before upload. A
-logo that no mark (and no UNDO) points at is dropped on the next save.
+folder would need its own export and import path. Logos are small: one you
+drop is at most 512 KB, and the dashboard shrinks large rasters to 256px before
+upload. A client's logo from Rivendell is kept as it is served, up to 4 MB
+(RV_LOGO_MAX). A logo that no mark (and no UNDO) points at is dropped on the
+next save.
 
 Rivendell keeps a logo and a brand colour per client (Client.logoDocument,
 Client.brandColor), and its projects hang off clients. So a local repo linked to
@@ -22,6 +24,13 @@ bridge token) lists each project, with the fullName of every repo linked to it
 or mirroring one (rivendell.projects()). A local repo matches on any of its
 remotes (github.remote_slugs), because a fork of a mirror tracks the upstream
 under another name.
+
+A repo no Rivendell project names has nothing to match: a copy under another
+owner (ainurdev/elvou beside Elvou/elvou), or one newer than Rivendell's last
+GitHub sync. The editor's LINK links it to a project in Rivendell itself, as
+the project page does (link()), instead of keeping the link here: kept here it
+would reach this bridge only, while Rivendell's reaches every bridge on it,
+through the same offer.
 
 import_all() takes every match except a mark you set yourself (no "source").
 It keeps what it replaced for UNDO and turns following on. While following is
@@ -55,6 +64,10 @@ _lock = threading.RLock()
 _PATH = os.path.join(os.path.dirname(config.BRIDGE_DB), "project_marks.json")
 
 LOGO_MAX = 512 * 1024
+# ponytail: a client logo is kept as Rivendell serves it, because the bridge
+# can't shrink an image (no decoder), so Elvou's 1024px PNG costs its 1.9 MB
+# here. One over 4 MB stays colour-only. Shrink on import if bigger ones turn up.
+RV_LOGO_MAX = 4 * 1024 * 1024
 CTYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "svg": "image/svg+xml"}
 _LOGO_RE = re.compile(r"^[0-9a-f]{64}\.(png|jpg|webp|svg)$")
 _ICON_RE = re.compile(r"^[a-z0-9-]{1,48}$")
@@ -99,9 +112,9 @@ def sniff(data: bytes) -> "str | None":
     return None
 
 
-def _put_logo(d: dict, data: bytes) -> str:
-    if not data or len(data) > LOGO_MAX:
-        raise ValueError(f"a logo must be under {LOGO_MAX // 1024} KB")
+def _put_logo(d: dict, data: bytes, cap: int = LOGO_MAX) -> str:
+    if not data or len(data) > cap:
+        raise ValueError(f"a logo must be under {cap // 1024} KB")
     ext = sniff(data)
     if ext is None:
         raise ValueError("a logo must be a PNG, JPEG, WEBP or SVG image")
@@ -179,7 +192,8 @@ def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
 
 # --- Rivendell ---------------------------------------------------------------
 
-_seen: dict = {"at": 0.0, "matches": {}, "errors": [], "listed": 0, "asked": False, "answered": False}
+_seen: dict = {"at": 0.0, "matches": {}, "errors": [], "listed": 0, "asked": False, "answered": False,
+               "projects": [], "unlinked": []}
 
 
 def _hex(v) -> "str | None":
@@ -226,11 +240,14 @@ def _look(force: bool = False) -> dict:
             return _seen
     projects, errors = rivendell.projects()
     local = _local_slugs() if projects else {}
+    # Every repo some project names, internal ones too: a repo outside them all is LINK's.
+    named = {s.lower() for p in projects for s in p.get("repositories") or [] if isinstance(s, str)}
     with _lock:
         # asked: some Rivendell is connected at all. answered: one listed projects.
         _seen.update(at=time.time(), matches=match(projects, local), errors=errors,
                      listed=len(local), asked=bool(projects) or bool(errors),
-                     answered=bool(projects))
+                     answered=bool(projects), projects=projects,
+                     unlinked=sorted(r for r, slugs in local.items() if not slugs & named))
         return _seen
 
 
@@ -253,8 +270,8 @@ def _download(url) -> "bytes | None":
             return None
         req = urllib.request.Request(url, headers={"User-Agent": "mystical-bridge"})
         with _opener.open(req, timeout=15) as r:
-            data = r.read(LOGO_MAX + 1)
-        return data if len(data) <= LOGO_MAX and sniff(data) else None
+            data = r.read(RV_LOGO_MAX + 1)
+        return data if len(data) <= RV_LOGO_MAX and sniff(data) else None
     except Exception:  # noqa: BLE001 — urllib raises a zoo (InvalidURL, IncompleteRead, …)
         return None
 
@@ -291,7 +308,7 @@ def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
     if lid and known.get(lid) in (d.get("logos") or {}):
         name = known[lid]
     elif lid and lid in fetched:
-        name = known[lid] = _put_logo(d, fetched[lid])
+        name = known[lid] = _put_logo(d, fetched[lid], RV_LOGO_MAX)
     mark: dict = {"kind": "logo" if name else "letters", "source": "rivendell",
                   "rv": {"instance": p.get("instance_id"), "client": c.get("id"),
                          "name": c.get("name"), "logo_id": lid if name else None}}
@@ -369,6 +386,21 @@ def refresh() -> dict:
     return {"following": len(todo)}
 
 
+def link(rel: str, instance: str, project_id: str) -> dict:
+    """LINK in the editor, for a repo no Rivendell project names: link it to one
+    in Rivendell itself (rivendell.link_repo), so the link reaches every bridge
+    on that Rivendell and their offer, then follow that client here at once.
+    Only a project the last look listed: the id lands in a Rivendell path."""
+    from bridge import rivendell
+    if not any(p.get("id") == project_id and p.get("instance_id") == instance for p in _look()["projects"]):
+        raise ValueError("that isn't one of Rivendell's projects")
+    slugs = _local_slugs().get(rel)
+    if not slugs:
+        raise ValueError("this repo has no remote to link")
+    linked = rivendell.link_repo(instance, project_id, slugs)
+    return {**import_all(only=rel), "linked": linked}
+
+
 def undo() -> dict:
     """Put back every mark the last import replaced, and stop following. Those
     repos count as seen, so the offer doesn't come straight back."""
@@ -432,6 +464,14 @@ def state(force: bool = False) -> dict:
                                              "logo": c.get("logoUrl"), "color": _hex(c.get("brandColor"))})
         e["repos"] += 1
     ranked = sorted(clients.values(), key=lambda e: (-e["repos"], e["name"].lower()))
+    # What LINK offers: the projects whose client has a mark to lend.
+    lenders = []
+    for p in seen["projects"]:
+        c = p.get("client") or {}
+        if c.get("logoUrl") or _hex(c.get("brandColor")):
+            lenders.append({"instance": p.get("instance_id"), "id": p.get("id"), "name": p.get("name") or "?",
+                            "client": c.get("name") or "?", "logo": bool(c.get("logoUrl")),
+                            "color": _hex(c.get("brandColor"))})
     return {
         "available": seen["answered"],
         "asked": seen["asked"],
@@ -447,6 +487,8 @@ def state(force: bool = False) -> dict:
                         "logo": bool((p.get("client") or {}).get("logoUrl")),
                         "color": _hex((p.get("client") or {}).get("brandColor"))}
                     for r, p in seen["matches"].items()},
+        "projects": sorted(lenders, key=lambda e: (e["client"].lower(), e["name"].lower())),
+        "unlinked": seen["unlinked"],
         "errors": seen["errors"],
     }
 

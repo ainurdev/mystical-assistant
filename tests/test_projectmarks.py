@@ -7,6 +7,7 @@ is never overwritten.
 Run: python -m pytest tests/test_projectmarks.py -v"""
 
 import base64
+import io
 
 import pytest
 
@@ -22,7 +23,8 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(project_config, "_PATH", str(tmp_path / "project_config.json"))
     monkeypatch.setattr(projectmarks, "_PATH", str(tmp_path / "project_marks.json"))
     monkeypatch.setattr(projectmarks, "_seen", {"at": 0.0, "matches": {}, "errors": [], "listed": 0,
-                                                "asked": False, "answered": False})
+                                                "asked": False, "answered": False,
+                                                "projects": [], "unlinked": []})
 
 
 @pytest.fixture
@@ -271,6 +273,31 @@ def test_download_takes_only_https_or_a_local_rivendell_and_never_raises(monkeyp
                     "https://s3.example/redirect", "https://s3.example/broken"]
 
 
+def test_a_client_logo_may_be_bigger_than_one_you_drop(riv, monkeypatch):
+    big = PNG + b"\x00" * projectmarks.LOGO_MAX                 # Elvou's is a 1024px PNG of 1.9 MB
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "repositories": ["acme/a"],
+                        "client": client("c", logo="https://s3/c.png", color="#123456")}]
+    riv["local"] = {"/a": {"acme/a"}}
+    riv["logos"] = {"https://s3/c.png": big}
+    projectmarks.import_all()
+    m = project_config.mark("/a")
+    assert m["kind"] == "logo" and projectmarks.logo(m["logo"])[0] == big
+    with pytest.raises(ValueError):                                # a drop keeps the small cap
+        projectmarks.set_mark("/b", {"kind": "logo"}, logo_data=base64.b64encode(big).decode())
+
+
+def test_a_download_takes_a_client_logo_up_to_the_bigger_cap(monkeypatch):
+    big = PNG + b"\x00" * projectmarks.LOGO_MAX
+
+    class Opener:
+        def open(self, req, timeout):
+            return io.BytesIO(PNG + b"\x00" * (projectmarks.RV_LOGO_MAX if "huge" in req.full_url
+                                                else projectmarks.LOGO_MAX))
+    monkeypatch.setattr(projectmarks, "_opener", Opener())
+    assert len(projectmarks._download("https://s3.example/big.png")) == len(big)
+    assert projectmarks._download("https://s3.example/huge.png") is None
+
+
 def test_the_real_opener_follows_no_redirect():
     handler = projectmarks._NoRedirect()
     assert handler.redirect_request(None, None, 302, "Found", {}, "http://192.168.1.1/x") is None
@@ -329,3 +356,55 @@ def test_refresh_stops_if_following_is_switched_off_while_it_downloads(riv, monk
     monkeypatch.setattr(projectmarks, "_fetch_logos", slow)
     assert projectmarks.refresh() == {"following": 0, "skipped": "off"}
     assert project_config.mark("/a") is None
+
+
+# --- LINK: a repo no Rivendell project names ----------------------------------
+
+def test_link_is_offered_for_a_repo_no_project_names_with_the_projects_that_lend_a_mark(riv):
+    riv["projects"] = [
+        {"id": "p-elvou", "instance_id": "prod", "name": "Elvou", "repositories": ["Elvou/elvou"],
+         "client": client("elvou", logo="https://s3/elvou.png")},
+        {"id": "p-rv", "instance_id": "prod", "name": "Rivendell", "repositories": ["ainurhq/rivendell"],
+         "client": None},                                                   # internal: named, but lends nothing
+        {"id": "p-plain", "instance_id": "prod", "name": "Plain", "repositories": [], "client": client("plain")},
+    ]
+    riv["local"] = {"/elvou": {"ainurdev/elvou"}, "/rivendell": {"ainurhq/rivendell"}, "/up": {"elvou/elvou"}}
+    s = projectmarks.state(force=True)
+    assert s["unlinked"] == ["/elvou"]
+    assert s["projects"] == [{"instance": "prod", "id": "p-elvou", "name": "Elvou", "client": "ELVOU",
+                              "logo": True, "color": None}]
+
+
+def test_link_saves_the_link_in_rivendell_then_follows_its_client(riv, monkeypatch):
+    elvou = {"id": "p-elvou", "instance_id": "prod", "name": "Elvou", "repositories": ["Elvou/elvou"],
+             "client": client("elvou", logo="https://s3/elvou.png", color="#133c2c")}
+    riv["projects"] = [elvou]
+    riv["local"] = {"/elvou": {"ainurdev/elvou"}}
+    riv["logos"] = {"https://s3/elvou.png": PNG}
+    calls = []
+
+    def link_repo(instance, project_id, slugs):
+        calls.append((instance, project_id, slugs))
+        elvou["repositories"].append("ainurdev/elvou")      # what /plugin/projects lists from then on
+        return "ainurdev/elvou"
+    monkeypatch.setattr(rivendell, "link_repo", link_repo)
+    projectmarks.set_mark("/elvou", {"kind": "icon", "icon": "leaf"})   # LINK is asking for the client's mark
+    assert projectmarks.state(force=True)["unlinked"] == ["/elvou"]
+
+    out = projectmarks.link("/elvou", "prod", "p-elvou")
+
+    assert calls == [("prod", "p-elvou", {"ainurdev/elvou"})]
+    assert out["linked"] == "ainurdev/elvou" and out["following"] == 1
+    m = project_config.mark("/elvou")
+    assert m["kind"] == "logo" and m["source"] == "rivendell" and m["color"] == "#133c2c"
+    assert projectmarks.state()["unlinked"] == []
+
+
+def test_link_takes_only_a_project_rivendell_listed_and_a_repo_with_a_remote(riv, monkeypatch):
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "name": "P", "repositories": [],
+                        "client": client("c", color="#123456")}]
+    riv["local"] = {"/r": {"acme/r"}}
+    monkeypatch.setattr(rivendell, "link_repo", lambda *a: pytest.fail("reached Rivendell"))
+    for args in (("/r", "prod", "../../source-control/sync"), ("/r", "other", "p1"), ("/none", "prod", "p1")):
+        with pytest.raises(ValueError):
+            projectmarks.link(*args)

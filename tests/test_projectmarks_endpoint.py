@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from bridge import config, project_config, projectmarks
+from bridge import config, project_config, projectmarks, rivendell
 from bridge.dashboard import server as dash
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
@@ -97,11 +97,26 @@ def test_the_rivendell_marks_routes_reach_projectmarks(tmp_path, monkeypatch):
     monkeypatch.setattr(projectmarks, "dismiss", lambda: calls.append(("dismiss",)) or {})
     monkeypatch.setattr(projectmarks, "undo", lambda: calls.append(("undo",)) or {})
     monkeypatch.setattr(projectmarks, "set_sync", lambda on: calls.append(("sync", on)) or {})
+    monkeypatch.setattr(projectmarks, "link", lambda r, inst, pid: calls.append(("link", r, inst, pid)) or {})
     assert dget("/local/rivendell/marks?force=1")["obj"] == {"ok": 1}
     for body in ({"action": "import"}, {"action": "follow", "project": rel}, {"action": "dismiss"},
-                 {"action": "undo"}, {"action": "sync", "on": False}):
+                 {"action": "undo"}, {"action": "sync", "on": False},
+                 {"action": "link", "project": rel, "instance": "prod", "rv_project": "p1"}):
         assert dpost("/local/rivendell/marks", body)["code"] == 200
     assert calls == [("state", True), ("import", None), ("import", rel), ("dismiss",), ("undo",),
-                     ("sync", False)]
+                     ("sync", False), ("link", rel, "prod", "p1")]
     assert dpost("/local/rivendell/marks", {"action": "follow", "project": "../../etc"})["code"] == 400
+    assert dpost("/local/rivendell/marks", {"action": "link", "project": "../../etc"})["code"] == 400
     assert dpost("/local/rivendell/marks", {"action": "explode"})["code"] == 400
+
+
+def test_link_says_what_went_wrong(tmp_path, monkeypatch):
+    rel = _repo(tmp_path)
+    for err, code in ((ValueError("that isn't one of Rivendell's projects"), 400),
+                      (rivendell.TasksError("refused", "Rivendell hasn't synced acme/x from GitHub yet"), 400),
+                      (rivendell.TasksError("unreachable", "unreachable: timed out"), 502)):
+        def boom(r, inst, pid, err=err):
+            raise err
+        monkeypatch.setattr(projectmarks, "link", boom)
+        r = dpost("/local/rivendell/marks", {"action": "link", "project": rel, "instance": "prod", "rv_project": "p1"})
+        assert (r["code"], r["obj"]["error"]) == (code, str(err))
