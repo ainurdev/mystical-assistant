@@ -24,7 +24,7 @@ def store(tmp_path, monkeypatch):
     monkeypatch.setattr(projectmarks, "_PATH", str(tmp_path / "project_marks.json"))
     monkeypatch.setattr(projectmarks, "_seen", {"at": 0.0, "matches": {}, "errors": [], "listed": 0,
                                                 "asked": False, "answered": False,
-                                                "projects": [], "unlinked": []})
+                                                "projects": [], "unlinked": [], "named_by": {}})
 
 
 @pytest.fixture
@@ -505,3 +505,47 @@ def test_refresh_keeps_the_plate(riv):
 
     m = project_config.mark("/a")
     assert m["plate"] == "light" and m["source"] == "rivendell" and projectmarks.logo(m["logo"])[0] == PNG
+
+
+# --- From Rivendell (the gallery) -----------------------------------------------
+
+def test_the_gallery_lists_the_images_of_the_client_whose_project_names_the_repo(riv, monkeypatch):
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "name": "P", "repositories": ["acme/a"],
+                        "client": {"id": "c-plain", "name": "Plain", "logoUrl": None, "brandColor": None}}]  # lends nothing
+    riv["local"] = {"/a": {"acme/a"}, "/b": {"acme/b"}}
+    asked = []
+    monkeypatch.setattr(rivendell, "client_images",
+                        lambda inst, cid: asked.append((inst, cid)) or [{"id": "d1", "name": "x.png", "url": "https://s/1"}])
+    assert projectmarks.gallery("/a") == {"client": "Plain", "images": [{"id": "d1", "name": "x.png", "url": "https://s/1"}]}
+    assert asked == [("prod", "c-plain")]
+    assert projectmarks.gallery("/b") == {"client": None, "images": []}           # no project names it
+
+
+def test_the_gallery_is_empty_without_a_rivendell_a_client_or_an_answer(riv, monkeypatch):
+    riv["local"] = {"/a": {"acme/a"}}
+    assert projectmarks.gallery("/a") == {"client": None, "images": []}           # no Rivendell at all
+
+    def down(inst, cid):
+        raise rivendell.TasksError("unreachable", "unreachable: timed out")
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "name": "P", "repositories": ["acme/a"],
+                        "client": client("c", logo="https://s3/c.png")}]
+    monkeypatch.setattr(rivendell, "client_images", down)
+    projectmarks._seen["at"] = 0.0
+    assert projectmarks.gallery("/a") == {"client": None, "images": []}
+
+    riv["projects"] = [{"id": "p2", "instance_id": "prod", "name": "Ours", "internal": True,
+                        "repositories": ["acme/a"], "client": None}]
+    projectmarks._seen["at"] = 0.0
+    assert projectmarks.gallery("/a") == {"client": None, "images": []}           # internal: no client documents
+
+
+def test_a_gallery_image_must_be_one_the_strip_lists(riv, monkeypatch):
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "name": "P", "repositories": ["acme/a"],
+                        "client": client("c", logo="https://s3/c.png")}]
+    riv["local"] = {"/a": {"acme/a"}}
+    riv["logos"] = {"https://s/dl1": SVG}
+    monkeypatch.setattr(rivendell, "client_images", lambda inst, cid: [{"id": "d1", "name": "x.svg", "url": "https://s/1"}])
+    monkeypatch.setattr(rivendell, "client_image_url", lambda inst, cid, doc: f"https://s/dl{doc[1:]}")
+    assert projectmarks.gallery_image("/a", "d1") == (SVG, "image/svg+xml")
+    assert projectmarks.gallery_image("/a", "d9") is None                         # not in the strip
+    assert riv["downloads"] == ["https://s/dl1"]                                    # d9 was never fetched

@@ -3611,6 +3611,15 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .mk-pane { display: flex; flex-direction: column; gap: 13px; min-height: 251px; }
 .mk-pane > .mk-drop { flex: 1; }
 .mk-bgrow { display: flex; align-items: center; gap: 10px; }
+/* From Rivendell: the client's images, on a checkerboard so black and white logos both show */
+.mk-gal { display: flex; flex-direction: column; gap: 8px; }
+.mk-gal .mk-lbl { margin: 0; }
+.mk-gal-row { display: flex; gap: 6px; overflow-x: auto; }
+.mk-gal-row button { flex: none; width: 44px; height: 44px; padding: 5px; display: grid; place-items: center; cursor: pointer;
+  border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0);
+  background: repeating-conic-gradient(#3a3d46 0% 25%, #5b5f6a 0% 50%) 50% / 10px 10px; }
+.mk-gal-row button[data-on] { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); }
+.mk-gal-row img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .mk-bgrow .mk-lbl { margin: 0; }
 .mk-bgrow .mk-mini { margin-left: auto; }
 .mk-ph { width: 64px; height: 64px; flex: none; display: grid; place-items: center; border: 1px dashed var(--line2); border-radius: var(--f-rad-l, 0); color: var(--txl); }

@@ -259,6 +259,22 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError):
             pass
 
+    def _send_image(self, data: bytes, ctype: str, cache: str):
+        """A logo or gallery image: an SVG opened on its own must not run as this
+        origin's page, so it goes sandboxed and never sniffed."""
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", cache)
+        self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        return None
+
     def _json(self, obj, code: int = 200):
         raw, zipped = httpgz.maybe_gzip(
             json.dumps(obj).encode(), self.headers.get("Accept-Encoding", ""))
@@ -382,21 +398,8 @@ class Handler(BaseHTTPRequestHandler):
             got = projectmarks.logo(path[len("/local/project-mark/logo/"):])
             if got is None:
                 return self._json({"error": "no such logo"}, 404)
-            data, ctype = got
-            self.send_response(200)
-            self.send_header("Content-Type", ctype)
-            self.send_header("Content-Length", str(len(data)))
             # The name is the bytes' hash, so a logo never changes under it.
-            self.send_header("Cache-Control", "public, max-age=31536000, immutable")
-            # An SVG opened on its own must not run as this origin's page.
-            self.send_header("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
-            self.send_header("X-Content-Type-Options", "nosniff")
-            self.end_headers()
-            try:
-                self.wfile.write(data)
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-            return None
+            return self._send_image(*got, "public, max-age=31536000, immutable")
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
@@ -633,6 +636,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"instances": insts, "video": rivendell_video.tools()})
         if path == "/local/rivendell/devices":
             return self._json({"instances": _device_rows()})
+        if path in ("/local/rivendell/gallery", "/local/rivendell/gallery/image"):
+            # The mark editor's From Rivendell strip, and one of its images
+            # through the bridge so the editor can take it like a dropped file.
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            if path.endswith("/gallery"):
+                return self._json(projectmarks.gallery(browser.rel(abs_p)))
+            got = projectmarks.gallery_image(browser.rel(abs_p), (qs.get("document", [""])[0] or "").strip())
+            if got is None:
+                return self._json({"error": "no such image"}, 404)
+            return self._send_image(*got, "no-store")
         if path == "/local/rivendell/marks":
             # Client logos and colours Rivendell could lend the repos here, and
             # whether they follow it (bridge/projectmarks.py).

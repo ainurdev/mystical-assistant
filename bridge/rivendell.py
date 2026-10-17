@@ -2754,7 +2754,30 @@ def link_repo(instance_id: str, project_id: str, slugs) -> str:
     return repo["fullName"]
 
 
-_NOTE_HEAD ="\n\n---\nA note from the operator who started this run:\n\n"
+# What the mark editor's drop path takes (projectmarks.sniff's four types).
+_IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/svg+xml")
+
+
+def client_images(instance_id: str, client_id: str) -> list:
+    """The mark editor's From Rivendell strip: the images among a client's
+    documents (its Documents & assets, every category the token's owner may
+    read), each with the signed previewUrl it comes with. Not
+    /public-sites/project-assets: that drops SVGs, and NR's lions are SVG.
+    Raises TasksError."""
+    d = _tool(_worker(instance_id), "read_route", {"path": f"/clients/{client_id}/documents"}) or {}
+    return [{"id": x["id"], "name": x.get("name"), "url": x.get("previewUrl")}
+            for x in d.get("documents") or []
+            if isinstance(x, dict) and x.get("id") and x.get("mimeType") in _IMAGE_TYPES]
+
+
+def client_image_url(instance_id: str, client_id: str, document_id: str) -> str:
+    """A five-minute download URL for one of a client's documents. Raises TasksError."""
+    d = _tool(_worker(instance_id), "read_route",
+              {"path": f"/clients/{client_id}/documents/{document_id}/download"}) or {}
+    return d.get("url") or ""
+
+
+_NOTE_HEAD = "\n\n---\nA note from the operator who started this run:\n\n"
 
 
 def implement(instance_id: str, task_id: str, note: str = "") -> dict:

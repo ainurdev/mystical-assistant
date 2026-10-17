@@ -295,6 +295,13 @@ export interface RivendellMarks {
   errors: { instance_id: string; instance: string; error: string; detail: string }[];
 }
 
+/** The mark editor's From Rivendell strip: the images among the documents of
+ *  the client whose project names a repo (bridge/projectmarks.gallery). */
+export interface RivendellGallery {
+  client: string | null;
+  images: { id: string; name: string; url: string }[];
+}
+
 export interface GitFile {
   path: string;
   status: string;
@@ -1865,6 +1872,11 @@ export const api = {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
+  rivendellGallery: (project: string) =>
+    req<RivendellGallery>(`/local/rivendell/gallery?project=${encodeURIComponent(project)}`),
+  // One gallery image through the bridge, same-origin, so it can become a File.
+  rivendellGalleryImageUrl: (project: string, document: string) =>
+    `/local/rivendell/gallery/image?project=${encodeURIComponent(project)}&document=${encodeURIComponent(document)}`,
   rivendellMarks: (force = false) =>
     req<RivendellMarks>(`/local/rivendell/marks${force ? "?force=1" : ""}`),
   rivendellMarksAction: (action: "import" | "follow" | "link" | "dismiss" | "undo" | "sync",

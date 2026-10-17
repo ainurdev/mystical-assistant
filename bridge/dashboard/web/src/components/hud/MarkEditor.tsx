@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Image as ImageIcon, Search, Shapes, Type, X } from "lucide-react";
 import { DynamicIcon, iconNames } from "lucide-react/dynamic";
-import { api, projectLogoUrl, type ProjectMark, type RivendellMarks } from "../../api";
+import { api, projectLogoUrl, type ProjectMark, type RivendellGallery, type RivendellMarks } from "../../api";
 import { inkCss, liftInk } from "../../lib/ink";
 import { readLogo, shrinkLogo, useLogoInfo, type LogoInfo } from "../../lib/logoinfo";
 import { hashTint, projectInitials, projectMark, putProjectMark, setProjectMarks } from "../../lib/surfaces";
@@ -68,6 +68,8 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const info = logo?.data ? dropped : stored;
   const [query, setQuery] = useState("");
   const [riv, setRiv] = useState<RivendellMarks | null>(null);
+  const [gal, setGal] = useState<RivendellGallery | null>(null);
+  const [picked, setPicked] = useState<string | null>(null);   // the gallery image now in the drop zone
   const [pick, setPick] = useState(-1);          // LINK's project, an index into riv.projects
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -77,6 +79,9 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   // Which client Rivendell has for this repo, for USE RIVENDELL'S and the
   // follow line. A bridge without the route just leaves both out.
   useEffect(() => { api.rivendellMarks().then(setRiv).catch(() => setRiv(null)); }, []);
+  // From Rivendell: the client's images. No plugin, no Rivendell or no client
+  // project all answer empty (or 404), and the strip just isn't there.
+  useEffect(() => { api.rivendellGallery(project).then(setGal).catch(() => setGal(null)); }, [project]);
   const match = riv?.matches?.[project] ?? null;
   const target = riv?.projects?.[pick];
 
@@ -198,6 +203,20 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
     }
   }
 
+  // A gallery image goes the way of a dropped file: fetched through the bridge
+  // (the storage is another origin), shrunk if it's a big raster, kept on SAVE.
+  async function fromGallery(g: RivendellGallery["images"][number]) {
+    try {
+      const r = await fetch(api.rivendellGalleryImageUrl(project, g.id));
+      if (!r.ok) throw new Error(String(r.status));
+      const blob = await r.blob();
+      await take(new File([blob], g.name, { type: blob.type }));
+      setPicked(g.id);
+    } catch {
+      setErr("That image couldn't be fetched from Rivendell.");
+    }
+  }
+
   async function link() {
     if (!target) return;
     setBusy(true);
@@ -282,6 +301,17 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
               </button>
               <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp,image/svg+xml"
                 onChange={(e) => { void take(e.target.files?.[0]); e.target.value = ""; }} />
+              {!!gal?.images.length && (
+                <div className="mk-gal">
+                  <div className="mk-lbl">From Rivendell<span>{gal.client} · {gal.images.length} image{gal.images.length === 1 ? "" : "s"}</span></div>
+                  <div className="mk-gal-row">
+                    {gal.images.map((g) => (
+                      <button key={g.id} type="button" title={g.name} data-on={picked === g.id || undefined} disabled={busy}
+                        onClick={() => void fromGallery(g)}><img src={g.url} alt={g.name} /></button>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div className="mk-bgrow">
                 <div className="mk-lbl">Background</div>
                 <div className="mk-mini" role="radiogroup" aria-label="Background">

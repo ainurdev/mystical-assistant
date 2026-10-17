@@ -120,3 +120,18 @@ def test_link_says_what_went_wrong(tmp_path, monkeypatch):
         monkeypatch.setattr(projectmarks, "link", boom)
         r = dpost("/local/rivendell/marks", {"action": "link", "project": rel, "instance": "prod", "rv_project": "p1"})
         assert (r["code"], r["obj"]["error"]) == (code, str(err))
+
+
+def test_the_gallery_routes_reach_projectmarks_and_send_an_image_safely(tmp_path, monkeypatch):
+    rel = _repo(tmp_path)
+    monkeypatch.setattr(projectmarks, "gallery", lambda r: {"client": "C", "images": [{"id": "d1"}]})
+    assert dget(f"/local/rivendell/gallery?project={rel}")["obj"] == {"client": "C", "images": [{"id": "d1"}]}
+    assert dget("/local/rivendell/gallery?project=../../etc")["code"] == 400
+    monkeypatch.setattr(projectmarks, "gallery_image", lambda r, doc: (PNG, "image/png") if (r, doc) == (rel, "d1") else None)
+    r = dget(f"/local/rivendell/gallery/image?project={rel}&document=d1")
+    assert r["code"] == 200 and r["wfile"].getvalue() == PNG
+    h = r["headers"]
+    assert h["Content-Type"] == "image/png" and h["X-Content-Type-Options"] == "nosniff"
+    assert "sandbox" in h["Content-Security-Policy"]
+    assert dget(f"/local/rivendell/gallery/image?project={rel}&document=d9")["code"] == 404
+    assert dget("/local/rivendell/gallery/image?project=../../etc&document=d1")["code"] == 400

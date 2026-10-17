@@ -211,7 +211,7 @@ def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
 # --- Rivendell ---------------------------------------------------------------
 
 _seen: dict = {"at": 0.0, "matches": {}, "errors": [], "listed": 0, "asked": False, "answered": False,
-               "projects": [], "unlinked": []}
+               "projects": [], "unlinked": [], "named_by": {}}
 
 
 def _hex(v) -> "str | None":
@@ -242,15 +242,15 @@ def _own(p: dict) -> bool:
     return bool(p.get("logoId") and p.get("logoUrl"))
 
 
-def match(projects: list, local: dict) -> dict:
+def match(projects: list, local: dict, lends: bool = True) -> dict:
     """rel -> the Rivendell project that has a mark for that repo: a logo of its
-    own, or its client's logo or colour. Pure. The first project to name a repo
-    wins, and a repo found under several of its own remotes takes the
-    alphabetically first."""
+    own, or its client's logo or colour (with lends=False, any project naming
+    it). Pure. The first project to name a repo wins, and a repo found under
+    several of its own remotes takes the alphabetically first."""
     by_slug: dict = {}
     for p in projects:
         c = p.get("client") or {}
-        if not (_lent(p) or _hex(c.get("brandColor"))):
+        if lends and not (_lent(p) or _hex(c.get("brandColor"))):
             continue
         for full in p.get("repositories") or []:
             if isinstance(full, str):
@@ -279,7 +279,8 @@ def _look(force: bool = False) -> dict:
         _seen.update(at=time.time(), matches=match(projects, local), errors=errors,
                      listed=len(local), asked=bool(projects) or bool(errors),
                      answered=bool(projects), projects=projects,
-                     unlinked=sorted(r for r, slugs in local.items() if not slugs & named))
+                     unlinked=sorted(r for r, slugs in local.items() if not slugs & named),
+                     named_by=match(projects, local, lends=False))
         return _seen
 
 
@@ -441,6 +442,40 @@ def link(rel: str, instance: str, project_id: str) -> dict:
         raise ValueError("this repo has no remote to link")
     linked = rivendell.link_repo(instance, project_id, slugs)
     return {**import_all(only=rel), "linked": linked}
+
+
+def gallery(rel: str) -> dict:
+    """From Rivendell: the images among the documents of the client whose project
+    names this repo, matched or not, for the editor to take like a dropped file.
+    Empty without a Rivendell, for a repo no client project names (an internal
+    one has no client documents), and on any failure: the strip just hides."""
+    from bridge import rivendell
+    try:
+        p = _look()["named_by"].get(rel) or {}
+        c = p.get("client") or {}
+        if c.get("id"):
+            return {"client": c.get("name"), "images": rivendell.client_images(p.get("instance_id"), c["id"])}
+    except Exception:  # noqa: BLE001 — Rivendell down or refusing only hides the strip
+        pass
+    return {"client": None, "images": []}
+
+
+def gallery_image(rel: str, document_id: str) -> "tuple[bytes, str] | None":
+    """One gallery image's bytes and type, through the bridge: the storage's
+    signed URL is another origin, which the editor can't read into a file. Only
+    an image the strip lists for that repo's own client, never any other id."""
+    from bridge import rivendell
+    try:
+        p = _look()["named_by"].get(rel) or {}
+        c = p.get("client") or {}
+        inst = p.get("instance_id")
+        if not c.get("id") or not any(i["id"] == document_id for i in rivendell.client_images(inst, c["id"])):
+            return None
+        data = _download(rivendell.client_image_url(inst, c["id"], document_id))
+    except Exception:  # noqa: BLE001 — best effort, like every Rivendell read here
+        return None
+    ext = sniff(data) if data else None
+    return (data, CTYPES[ext]) if ext else None
 
 
 def undo() -> dict:

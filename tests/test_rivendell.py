@@ -2937,3 +2937,19 @@ def test_the_oldest_waiting_device_run_goes_next_whichever_worker_holds_it(monke
     prod._run_device_run({"request_id": "d0", "slug": "ainurhq/app"})
     _wait_until(lambda: started == [("local", "older")])
     assert rivendell._device_run == "older" and [r["request_id"] for r in prod.queue_snapshot()] == ["newer"]
+
+
+def test_client_images_keeps_the_images_the_editor_takes_with_their_preview_urls(workers):
+    calls = []
+    w = _worker(id="a")
+    w._api = _routes({("read_route", "/clients/c1/documents"): {"documents": [
+        {"id": "d1", "name": "lion.svg", "mimeType": "image/svg+xml", "previewUrl": "https://s/1"},
+        {"id": "d2", "name": "scope.pdf", "mimeType": "application/pdf", "previewUrl": "https://s/2"},
+        {"id": "d3", "name": "icon.png", "mimeType": "image/png", "previewUrl": "https://s/3"},
+        {"id": "d4", "name": "anim.gif", "mimeType": "image/gif", "previewUrl": "https://s/4"}]},
+        ("read_route", "/clients/c1/documents/d1/download"): {"url": "https://s/dl1"}}, calls)
+    workers["a"] = w
+    assert rivendell.client_images("a", "c1") == [{"id": "d1", "name": "lion.svg", "url": "https://s/1"},
+                                                  {"id": "d3", "name": "icon.png", "url": "https://s/3"}]
+    assert rivendell.client_image_url("a", "c1", "d1") == "https://s/dl1"
+    assert calls[-1] == ("read_route", "GET", "/clients/c1/documents/d1/download", None)
