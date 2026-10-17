@@ -12,11 +12,33 @@ from bridge import machine, transcript_jsonl
 _AGENT_ID_RE = re.compile(r"^agent-[A-Za-z0-9_]+$")
 _RUN_ID_RE = re.compile(r"^wf_[A-Za-z0-9_-]+$")
 
-# The main transcript's completed tool_use ids are re-read on every agents poll
+# The main transcript's finish marks are re-read on every agents poll
 # (1s/1.5s) to mark subagents done; memoize by (mtime, size) so a poll of an
 # unchanged transcript is a stat, not a full read.
 _completed_cache: "dict[str, tuple]" = {}   # main_path -> ((mtime, size), set)
 _completed_lock = threading.Lock()
+# The CLI ends a background agent with a <task-notification> user message naming
+# its task id, and a SendMessage resume answers with the id it restarted.
+_TASK_DONE_RE = re.compile(r"<task-id>([A-Za-z0-9_]+)</task-id>")
+_RESUMED_RE = re.compile(r'"resumedAgentId"\s*:\s*"([A-Za-z0-9_]+)"')
+
+
+def _texts(content) -> list[str]:
+    """The text of a message or tool_result content: a string, or its text blocks."""
+    if isinstance(content, str):
+        return [content]
+    return [b.get("text") or "" for b in content or []
+            if isinstance(b, dict) and b.get("type") == "text"]
+
+
+def _finished(meta: dict, agent_id: str, marks: set[str]) -> bool:
+    """A foreground agent is done when its tool_use has its tool_result. A
+    background one gets that at launch ("Async agent launched"), so its mark is
+    the task-notification the CLI appends when it ends (see _finished_marks)."""
+    if meta.get("requestShape") == "background":
+        return agent_id in marks
+    tool_use_id = meta.get("toolUseId") or ""
+    return bool(tool_use_id) and tool_use_id in marks
 
 
 def _session_alive(session: dict) -> bool:
@@ -39,7 +61,10 @@ def _subagents_dir(session: dict) -> str | None:
     return d if os.path.isdir(d) else None
 
 
-def _completed_tool_use_ids(session: dict) -> set[str]:
+def _finished_marks(session: dict) -> set[str]:
+    """What the main transcript says has finished: every tool_use id with a
+    tool_result, plus the `agent-<id>` of every background agent whose last
+    mark is a task-notification rather than a resume."""
     sid = session.get("claude_session_id")
     main = transcript_jsonl.find_transcript(sid) if sid else None
     if not main:
@@ -68,12 +93,19 @@ def _completed_tool_use_ids(session: dict) -> set[str]:
                     continue
                 msg = rec.get("message") if isinstance(rec.get("message"), dict) else {}
                 content = msg.get("content")
+                if rec.get("type") == "user":
+                    for txt in _texts(content):
+                        if "<task-notification>" in txt:
+                            done.update("agent-" + t for t in _TASK_DONE_RE.findall(txt))
                 if isinstance(content, list):
                     for b in content:
                         if isinstance(b, dict) and b.get("type") == "tool_result":
                             tid = b.get("tool_use_id")
                             if tid:
                                 done.add(tid)
+                            for txt in _texts(b.get("content")):
+                                for aid in _RESUMED_RE.findall(txt):
+                                    done.discard("agent-" + aid)
     except OSError:
         pass
     with _completed_lock:
@@ -160,7 +192,7 @@ def session_agents(session: dict) -> dict:
     d = _subagents_dir(session)
     if not d:
         return {"running": 0, "total": 0, "agents": [], "workflows": []}
-    done_ids = _completed_tool_use_ids(session)
+    marks = _finished_marks(session)
     alive = _session_alive(session)
     out: list[dict] = []
     for meta_path in glob.glob(os.path.join(d, "*.meta.json")):
@@ -171,8 +203,7 @@ def session_agents(session: dict) -> dict:
             continue
         agent_id = os.path.basename(meta_path)[:-len(".meta.json")]
         tool_use_id = meta.get("toolUseId") or ""
-        status = ("done" if (tool_use_id and tool_use_id in done_ids) or not alive
-                  else "running")
+        status = "done" if _finished(meta, agent_id, marks) or not alive else "running"
         try:
             st = os.stat(os.path.join(d, agent_id + ".jsonl"))
             started, updated = st.st_ctime, st.st_mtime
@@ -255,9 +286,8 @@ def agent_activity(session: dict, agent_id: str, cursor: int = 0,
     if workflow_id:                                       # status follows the run
         status = _run_status(_workflow_records(d).get(workflow_id, {}), alive)
     else:
-        tool_use_id = meta.get("toolUseId") or ""
-        status = ("done" if (tool_use_id and tool_use_id in _completed_tool_use_ids(session))
-                  or not alive else "running")
+        status = ("done" if _finished(meta, agent_id, _finished_marks(session)) or not alive
+                  else "running")
     return {"events": events, "next_cursor": idx, "status": status,
             "description": meta.get("description") or "",
             "agent_type": meta.get("agentType") or "agent"}

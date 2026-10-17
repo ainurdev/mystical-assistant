@@ -1702,6 +1702,30 @@ def test_watchdog_kills_silence_not_work(monkeypatch):
     assert proc.killed and job.timed_out
 
 
+def test_watchdog_ends_a_done_turn_held_only_by_background_shells(monkeypatch):
+    """claude -p stays alive after the turn's result while a background task
+    runs, without limit (CEILING_MS=0 in _run_env): a background dev server held
+    a finished turn RUNNING for hours. A background agent reports back into the
+    process and the model carries on, so the watchdog waits for it; once no
+    agent is working, it ends the child and the turn finishes as done."""
+    monkeypatch.setattr(config, "RUN_TIMEOUT", 60)
+    monkeypatch.setattr(runner, "BG_SHELL_GRACE", 0.5)
+    monkeypatch.setattr(runner, "INTERRUPT_KILL", 0.2)
+    working = {"agents": 1}
+    monkeypatch.setattr(runner, "_running_agents", lambda sid: working["agents"])
+    job, proc = runner.Job("wd-bg", 555), _FakeProc()
+    job.session_id = "csid"
+    job.add({"type": "result"})
+    job.status = "done"
+    threading.Thread(target=runner._watchdog, args=(job, proc), daemon=True).start()
+    time.sleep(1.5)
+    assert not proc.terminated                 # an agent still works: wait for it
+    working["agents"] = 0
+    time.sleep(1.5)
+    assert proc.terminated and proc.killed     # SIGTERM, then SIGKILL after INTERRUPT_KILL
+    assert not job.timed_out                   # ended, not hung: no error row, no resume
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]
