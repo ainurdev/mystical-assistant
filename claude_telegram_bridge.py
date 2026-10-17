@@ -187,8 +187,9 @@ def main():
         dream.boot()                   # nightly per-repo digest (catches up a night asleep)
         # Always reconcile: the enabled set lives per-instance in the instances
         # store (dashboard PLUGINS tab), not in the RIVENDELL_ENABLE env flag —
-        # which now only seeds the migrated "production" instance. start() is a
-        # no-op when nothing is enabled, and dials every enabled instance the
+        # which now only seeds the migrated "production" instance. start()
+        # first clears what a bridge stopped mid-run left of teammates' device
+        # runs, then dials every enabled instance (none, when nothing is) the
         # moment the bridge is up, without waiting for a settings save.
         rivendell.start()              # rivendell-api agent websocket client(s)
         projectmarks.boot()            # client logos/colours keep following Rivendell (every 6h)

@@ -13,6 +13,7 @@ The dashboard operates as config.DASH_CHAT_ID, sharing that user's store session
 and active project with the Telegram bot + Mini App.
 """
 
+import getpass
 import hmac
 import json
 import mimetypes
@@ -31,7 +32,8 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import re
 
-from bridge import (acp_agents, agents, attribution, browser, config, devserver, fmt, git,
+from bridge import (acp_agents, agents, attribution, browser, config,
+                    device_ask, device_setup, device_share, devserver, fmt, git,
                     github, graphmap, httpgz, integrations,
                     models, native, notices, preview_detect, profiles, project_config, projectmarks,
                     prstatus,
@@ -184,6 +186,59 @@ def _plain_commit_message(paths: "list[str]") -> str:
     head = ", ".join(names[:3])
     rest = len(names) - 3
     return f"update {head}{f' and {rest} more' if rest > 0 else ''}" if names else "update"
+
+
+# Settings › Plugins › DEVICE RUNS (DeviceRunsPanel.tsx). SHARED DEVICES ON NOW
+# asks Rivendell, so each instance's answer is kept 30 s; Set up and Remove run
+# one at a time.
+_SHARED_ON_TTL = 30.0
+_shared_on: dict = {}     # instance id -> (monotonic at, {on, free} | None)
+_setup_lock = threading.Lock()
+
+
+def _shared_on_now(inst: dict) -> "dict | None":
+    """How many shared devices Rivendell has on and free: kept 30 s, None when
+    Rivendell can't say."""
+    at, val = _shared_on.get(inst["id"], (float("-inf"), None))
+    if time.monotonic() - at < _SHARED_ON_TTL:
+        return val
+    _shared_on[inst["id"]] = (time.monotonic(), val)     # polls meanwhile keep the last answer
+    try:
+        d = device_ask.list_devices(inst)
+        val = {"on": int(d["on"]), "free": int(d["free"])}
+    except Exception:  # noqa: BLE001 — unreachable, refused or malformed: nothing to show
+        val = None
+    _shared_on[inst["id"]] = (time.monotonic(), val)
+    return val
+
+
+def _device_rows() -> list:
+    """The panel's blocks, one per enabled instance (a switched-off one isn't
+    drawn, so it isn't looked at either): Share this device, where this device
+    stands, the Claude token for device runs (whether it is saved and its last
+    4, never the token), the shared devices on now (asked of Rivendell only off
+    macOS, the one view that shows them), whether a teammate's run is running
+    here now or which one ran last, and whether a Set up or Remove is going."""
+    live = rivendell.status()
+    last = device_share.last_run()
+    running = rivendell._device_run is not None      # one at a time on the device, whichever instance sent it
+    setting = _setup_lock.locked()
+    rows = []
+    for inst in rivendell_instances.raw_instances():
+        if not inst.get("enable"):
+            continue
+        tok = inst.get("device_token") or ""
+        share = device_share.share_state(inst)
+        rows.append({
+            "id": inst["id"], "name": inst.get("name", ""), "api_url": inst.get("api_url", ""),
+            "enable": True, "status": live.get(inst["id"], {"state": "off"}),
+            "share_device": bool(inst.get("share_device", True)),
+            "token_saved": bool(tok), "token_last4": tok[-4:] if len(tok) > 4 else "",
+            "share": share,
+            "shared_on": _shared_on_now(inst) if share["state"] == "NOT_MAC" else None,
+            "running": running, "last_run": last, "setup_running": setting,
+        })
+    return sorted(rows, key=lambda r: r["name"].lower())
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -576,6 +631,8 @@ class Handler(BaseHTTPRequestHandler):
             insts = [{**i, "status": live.get(i["id"], {"state": "off"})}
                      for i in rivendell_instances.instances()]
             return self._json({"instances": insts, "video": rivendell_video.tools()})
+        if path == "/local/rivendell/devices":
+            return self._json({"instances": _device_rows()})
         if path == "/local/rivendell/marks":
             # Client logos and colours Rivendell could lend the repos here, and
             # whether they follow it (bridge/projectmarks.py).
@@ -1384,6 +1441,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "op must be add or remove"}, 400)
         if path == "/local/rivendell":
             op = body.get("op")
+            if body.get("share_device") is not None and not isinstance(body.get("share_device"), bool):
+                return self._json({"error": "share_device must be true or false"}, 400)   # bool("false") is True
             fields = {
                 "name": (body.get("name") or "")[:60],
                 "enable": body.get("enable", True),
@@ -1394,6 +1453,8 @@ class Handler(BaseHTTPRequestHandler):
                 "workdir": (body.get("workdir") or "")[:1000],
                 "review_timeout": body.get("review_timeout"),
                 "impl_timeout": body.get("impl_timeout"),
+                "share_device": body.get("share_device"),
+                "device_token": (body.get("device_token") or "")[:2000],
             }
             try:
                 if op == "add":
@@ -1474,6 +1535,57 @@ class Handler(BaseHTTPRequestHandler):
             if res is None:
                 return self._json({"error": "that Rivendell connection is off"}, 409)
             return self._json(res)
+        if path == "/local/rivendell/devices":
+            # DEVICE RUNS: Share this device, and the Claude token for device runs.
+            # Real booleans only (bool("false") is True); the token never comes back.
+            share, clear, tok = body.get("share_device"), body.get("clear_token"), body.get("device_token")
+            if (not all(v is None or isinstance(v, bool) for v in (share, clear))
+                    or not (tok is None or isinstance(tok, str))):
+                return self._json({"error": "share_device and clear_token must be true or false, "
+                                            "device_token text"}, 400)
+            try:
+                rivendell_instances.update_device(str(body.get("id") or ""), share, (tok or "")[:2000],
+                                                  bool(clear))
+            except rivendell_instances.RivendellError as e:
+                return self._json({"error": str(e)}, 400)
+            rivendell.reconfigure()      # a changed instance redials, as after any save
+            return self._json({"ok": True, "instances": _device_rows()})
+        if path == "/local/rivendell/devices/setup":
+            # SET UP / REMOVE: one macOS password prompt, then setup.sh or remove.sh
+            # as root (bridge/device_setup.py, up to 15 minutes), one at a time.
+            # Then, whatever came of it, the device is probed afresh and each link
+            # whose offer changed redials: reconfigure() would see no instance change.
+            action = body.get("action")
+            if action not in ("setup", "remove"):
+                return self._json({"error": "action must be setup or remove"}, 400)
+            if device_share.device_facts() is None:
+                return self._json({"error": "Set up and Remove are for macOS only."}, 400)
+            if not _setup_lock.acquire(blocking=False):
+                return self._json({"error": "Set up or Remove is already running."}, 409)
+            try:
+                r = device_setup.run(action, getpass.getuser())
+            finally:
+                try:
+                    device_share.refresh()
+                    rivendell.redial()
+                finally:
+                    _setup_lock.release()      # the panel's WAITING… lasts until the device was looked at again
+            return self._json({"ok": bool(r.get("ok")), "error": r.get("error"), "instances": _device_rows()})
+        if path in ("/local/device-runs/list", "/local/device-runs/start", "/local/device-runs/cancel"):
+            # The verify MCP's ListDevices, RunOnDevice and CancelDeviceRun: the
+            # Rivendell token and the session's checkout are the bridge's
+            # (bridge/device_ask.py). Every answer, a refusal too, is text for Claude.
+            from bridge import device_ask
+            csid = str(body.get("claude_session_id") or "")
+            if path.endswith("/list"):
+                text = device_ask.list_text()
+            elif path.endswith("/start"):
+                r = device_ask.start(csid, body.get("request"), body.get("task"), body.get("pullRequest"),
+                                     body.get("device"), body.get("folder"))
+                text = r["sentence"] + (f"\nid: {r['id']}" if r["id"] else "")
+            else:
+                text = device_ask.cancel(body.get("run"), csid)["sentence"]
+            return self._json({"text": text})
         if path == "/local/tracker/update":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:

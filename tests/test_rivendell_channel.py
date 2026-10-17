@@ -9,19 +9,41 @@ is idempotent, so each helper that needs tables calls it).
 Run: python -m pytest tests/test_rivendell_channel.py -v
 """
 
+import base64
 import itertools
 import json
 import socket
 import threading
 import time
 import urllib.error
+import urllib.request
 import uuid
 
 import pytest
 
-from bridge import config, rivendell, runner, state, store, wsutil
+from bridge import config, device_share, device_side, rivendell, runner, state, store, wsutil
 
 _mids = itertools.count(1000)          # Telegram message ids, unique across tests
+
+
+@pytest.fixture(autouse=True)
+def no_real_helper(monkeypatch):
+    """device_side reaches sudo and the device-run helper through its own
+    defaults, and device_share probes this machine (xcrun, dscl and friends)
+    through its own. None of these tests may: the defaults refuse, and one
+    reached (on any thread) fails the test."""
+    reached = []
+
+    def refuse(argv, **kw):
+        reached.append(list(argv))
+        raise AssertionError("a command reached sudo from a channel test: %r" % (argv,))
+    for f, d in ((device_side.run, (refuse, refuse)), (device_side.stop, (refuse,)), (device_side.sweep, (refuse,)),
+                 (device_share.developer_dir, (refuse,)), (device_share.device_facts, (refuse,)),
+                 (device_share.share_state, (refuse,)), (device_share.handshake_headers, (refuse,)),
+                 (device_share.setup_state, (device_share.setup_state.__defaults__[0], refuse))):
+        monkeypatch.setattr(f, "__defaults__", d)
+    yield
+    assert not reached, "a command reached sudo from a channel test: %r" % reached
 
 
 @pytest.fixture(autouse=True)
@@ -1256,3 +1278,200 @@ def test_a_group_chat_is_never_the_owner(tmp_path):
             env=env, cwd=root, capture_output=True, text=True, timeout=60).stdout.strip()
     assert owner("-1001234,777,555") == "555"
     assert owner("-1001234") == "0"
+
+
+# --- device runs: what the handshake tells Rivendell ----------------------------------
+
+_DEVICE = {"id": "7c50be1739dfacbb", "name": "Mahziyar’s MacBook Pro", "os": "macOS", "osVersion": "27.0.1",
+           "chip": "M5 Pro", "xcode": "27.0", "iosRuntimes": ["27.0"], "node": "26", "pods": "1.17.0"}
+_SET_UP = {"user": True, "helper": True, "claude": True, "wall": True}
+
+
+def _device(monkeypatch, facts=_DEVICE, setup=_SET_UP):
+    """This device is what the arguments say, whatever machine the suite runs on."""
+    monkeypatch.setattr(device_share, "device_facts", lambda *a, **k: facts)
+    monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: setup)
+
+
+def _upgrade_headers(monkeypatch, w=None, **inst):
+    """_connect against a fake gateway on a socketpair (the test_rivendell.py
+    handshake pattern): the headers of the upgrade request it sent."""
+    server, client = socket.socketpair()
+    monkeypatch.setattr("socket.create_connection", lambda *a, **k: client)
+    w = w or _worker(ws_url="ws://api.example:3001/agent", **inst)
+    seen = {}
+
+    def gateway():
+        req = b""
+        while b"\r\n\r\n" not in req:
+            req += server.recv(4096)
+        seen["head"] = req.decode().split("\r\n")
+        key = next(h.split(": ", 1)[1] for h in seen["head"] if h.lower().startswith("sec-websocket-key"))
+        server.sendall(("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                        f"Sec-WebSocket-Accept: {wsutil.accept_key(key)}\r\n\r\n").encode())
+
+    t = threading.Thread(target=gateway, daemon=True)
+    t.start()
+    sock, _rfile = w._connect()
+    t.join(5)
+    sock.close()
+    server.close()
+    return dict(h.split(": ", 1) for h in seen["head"][1:] if ": " in h)
+
+
+def test_a_shared_ready_device_says_so_in_the_handshake(monkeypatch):
+    _device(monkeypatch)
+    h = _upgrade_headers(monkeypatch)
+    assert h["X-Mystical-Features"] == "device-runs"
+    raw = h["X-Mystical-Device"]
+    assert json.loads(base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))) == _DEVICE
+    assert h["Authorization"] == "Bearer rvd_testtoken" and h["Upgrade"] == "websocket", "the upgrade is as it was"
+
+
+@pytest.mark.parametrize("why, inst, facts, setup", [
+    ("switched off for this instance", {"share_device": False}, _DEVICE, _SET_UP),
+    ("not a Mac", {}, None, _SET_UP),
+    ("no Xcode", {}, {**_DEVICE, "xcode": None}, _SET_UP),
+    ("not set up", {}, _DEVICE, {**_SET_UP, "user": False}),
+])
+def test_any_other_device_sends_neither_header(monkeypatch, why, inst, facts, setup):
+    _device(monkeypatch, facts, setup)
+    h = _upgrade_headers(monkeypatch, **inst)
+    assert not [k for k in h if k.lower().startswith("x-mystical")], why
+    assert h["Authorization"] == "Bearer rvd_testtoken"
+
+
+def test_a_device_probe_that_raises_never_keeps_the_link_down(monkeypatch):
+    def broken(inst):
+        raise RuntimeError("the config went away mid-read")
+    monkeypatch.setattr(device_share, "handshake_headers", broken)
+    h = _upgrade_headers(monkeypatch)
+    assert not [k for k in h if k.lower().startswith("x-mystical")]
+    assert h["Authorization"] == "Bearer rvd_testtoken", "the link still comes up, as a plain one"
+
+
+# The offer goes only with the upgrade, so a device whose offer changed since the
+# dial (Set up, Remove, a probe that failed cold and has since lapsed, a new
+# Xcode) redials to say so: at once after Set up or Remove (rivendell.redial,
+# from the dashboard), else within a minute (the progress thread).
+
+def test_a_dial_remembers_whether_it_offered_this_device(monkeypatch):
+    w = _worker(ws_url="ws://api.example:3001/agent")
+    _device(monkeypatch)
+    _upgrade_headers(monkeypatch, w)
+    assert w._offered is True
+    _device(monkeypatch, setup={**_SET_UP, "user": False})
+    _upgrade_headers(monkeypatch, w)
+    assert w._offered is False
+
+
+@pytest.mark.parametrize("offered, ready, redials", [
+    (False, True, True),     # it became READY after the dial
+    (True, False, True),     # Remove, or the hidden user went
+    (True, True, False),
+    (False, False, False),
+])
+def test_a_live_link_redials_when_this_devices_offer_changed(monkeypatch, offered, ready, redials):
+    monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: _SET_UP)
+    monkeypatch.setattr(device_share, "handshake_headers",
+                        lambda inst: ["X-Mystical-Features: device-runs"] if ready else [])
+    w = _worker()
+    w.status, w._offered = "connected", offered
+    dropped = []
+    monkeypatch.setattr(w, "_drop_connection", lambda: dropped.append(1))
+    w.recheck_device()
+    assert bool(dropped) is redials
+
+
+def test_only_a_live_link_is_looked_at_since_any_other_dial_asks_afresh(monkeypatch):
+    monkeypatch.setattr(device_share, "handshake_headers", lambda inst: pytest.fail("no probe off a live link"))
+    w = _worker()
+    for state in ("off", "connecting", "error", "auth_error"):
+        w.status = state
+        w.recheck_device()
+
+
+@pytest.mark.parametrize("offered", [False, True])
+def test_a_device_never_set_up_is_not_probed_on_the_look(monkeypatch, offered):
+    """The 60 s look asks only the cheap setup_state while Set up isn't all
+    there: no device can be READY without it, and the probe holds the facts'
+    lock for up to 10 s a binary. A link that offered the device still redials."""
+    monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: {**_SET_UP, "user": False})
+    monkeypatch.setattr(device_share, "handshake_headers", lambda inst: pytest.fail("no probe before Set up"))
+    w = _worker()
+    w.status, w._offered = "connected", offered
+    dropped = []
+    monkeypatch.setattr(w, "_drop_connection", lambda: dropped.append(1))
+    w.recheck_device()
+    assert bool(dropped) is offered
+
+
+def test_a_device_not_shared_is_not_even_asked_about_its_setup(monkeypatch):
+    monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: pytest.fail("sharing is off: nothing to ask"))
+    monkeypatch.setattr(device_share, "handshake_headers", lambda inst: pytest.fail("sharing is off: no probe"))
+    w = _worker(share_device=False)
+    w.status, w._offered = "connected", False
+    w.recheck_device()
+
+
+def test_a_device_check_that_raises_keeps_the_link(monkeypatch):
+    def broken(inst):
+        raise RuntimeError("dscl went away")
+    monkeypatch.setattr(device_share, "setup_state", lambda *a, **k: _SET_UP)
+    monkeypatch.setattr(device_share, "handshake_headers", broken)
+    w = _worker()
+    w.status, w._offered = "connected", True
+    monkeypatch.setattr(w, "_drop_connection", lambda: pytest.fail("the link stays up"))
+    w.recheck_device()
+
+
+def test_redial_looks_again_on_every_running_link(monkeypatch, workers):
+    seen = []
+    for wid in ("a", "b"):
+        w = workers[wid] = _worker(id=wid)
+        monkeypatch.setattr(w, "recheck_device", lambda wid=wid: seen.append(wid))
+    rivendell.redial()
+    assert sorted(seen) == ["a", "b"]
+
+
+def test_the_progress_thread_looks_at_the_device_now_and_then(monkeypatch):
+    monkeypatch.setattr(rivendell, "_POLL_INTERVAL", 0.01)
+    monkeypatch.setattr(rivendell, "_DEVICE_RECHECK", 0.0)
+    w = _worker()
+    monkeypatch.setattr(w, "recheck_device", w._stop.set)      # the first look ends the loop
+    t = threading.Thread(target=w._progress_loop, daemon=True)
+    t.start()
+    t.join(5)
+    assert w._stop.is_set() and not t.is_alive()
+
+
+def test_api_calls_can_carry_extra_headers(monkeypatch):
+    """Device calls add X-Mystical-Device-Id to the bearer; a plain call is as before."""
+    seen = []
+
+    class Reply:
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda req, timeout=None: seen.append(req) or Reply())
+    w = _worker()
+    dev = {"X-Mystical-Device-Id": "7c50be1739dfacbb"}
+    w._api("/plugin/device-run-requests/r1/result", {"ok": True}, headers=dev)
+    w._api("/plugin/device-run-requests")
+    w._api_put_bytes("/plugin/device-run-requests/r1/screens/1", b"png", "application/octet-stream", headers=dev)
+    w._api_put_bytes("/plugin/meetings/r2/frame", b"jpg", "image/jpeg")
+    with_id, plain_get, put_with_id, plain_put = seen
+    for req in (with_id, put_with_id):
+        assert req.get_header("X-mystical-device-id") == "7c50be1739dfacbb"
+        assert req.get_header("Authorization") == "Bearer rvd_testtoken"
+    assert with_id.get_header("Content-type") == "application/json"
+    assert put_with_id.get_header("Content-type") == "application/octet-stream"
+    for req in (plain_get, plain_put):
+        assert req.get_header("X-mystical-device-id") is None
+        assert req.get_header("Authorization") == "Bearer rvd_testtoken"

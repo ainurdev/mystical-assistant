@@ -1,0 +1,34 @@
++-o J716sAP  <class IOPlatformExpertDevice, id 0x10000037c, registered, matched, active, busy 0 (94260 ms), retain 46>
+    {
+      "IOPolledInterface" = "AppleARMWatchdogTimerHibernateHandler is not serializable"
+      "#address-cells" = <02000000>
+      "AAPL,phandle" = <01000000>
+      "serial-number" = <46344b3353335231344c00000000000000000000000000000000000000000000>
+      "IOBusyInterest" = "IOCommand is not serializable"
+      "target-type" = <"J716s">
+      "country-of-origin" = <"CHN">
+      "platform-name" = <7436303530000000000000000000000000000000000000000000000000000000>
+      "name" = <"device-tree">
+      "secure-root-prefix" = <"md">
+      "manufacturer" = <"Apple Inc.">
+      "region-info" = <4e2f410000000000000000000000000000000000000000000000000000000000>
+      "target-sub-type" = <"J716sAP">
+      "compatible" = <"J716sAP","Mac17,8","AppleARM">
+      "config-number" = <00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000>
+      "IOPlatformSerialNumber" = "F4K3S3R14L"
+      "regulatory-model-number" = <4133343238000000000000000000000000000000000000000000000000000000>
+      "time-stamp" = <"Sat Aug 8 12:49:54 PDT 2026">
+      "clock-frequency" = <00366e01>
+      "model" = <"Mac17,8">
+      "mlb-serial-number" = <46344b334d4c4230303030303030303030000000000000000000000000000000>
+      "model-number" = <4d47454334000000000000000000000000000000000000000000000000000000>
+      "device-tree-tag" = <"EmbeddedDeviceTrees-12661.1.5">
+      "IOConsoleSecurityInterest" = "IOCommand is not serializable"
+      "IONWInterrupts" = "IONWInterrupts"
+      "model-config" = <"ICT;MoPED=0x972F61426A515A39B94997656C68A6E5021313C4">
+      "device_type" = <"bootrom">
+      "#size-cells" = <02000000>
+      "IOPlatformUUID" = "5E6D4C3B-1A2F-4E8D-9B7C-0F1E2D3C4B5A"
+    }
+    
+

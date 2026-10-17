@@ -1,0 +1,35 @@
+{
+  "runtimes" : [
+    {
+      "isAvailable" : true,
+      "version" : "27.0",
+      "isInternal" : false,
+      "buildversion" : "24A434",
+      "supportedArchitectures" : [
+        "arm64"
+      ],
+      "supportedDeviceTypes" : [
+        {
+          "bundlePath" : "/Library/Developer/CoreSimulator/Profiles/DeviceTypes/iPhone 18 Pro.simdevicetype",
+          "name" : "iPhone 18 Pro",
+          "productFamily" : "iPhone",
+          "identifier" : "com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro"
+        },
+        {
+          "bundlePath" : "/Library/Developer/CoreSimulator/Profiles/DeviceTypes/iPad Pro 13-inch (M5) (16GB).simdevicetype",
+          "name" : "iPad Pro 13-inch (M5) (16GB)",
+          "productFamily" : "iPad",
+          "identifier" : "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-16GB"
+        }
+      ],
+      "identifier" : "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+      "platform" : "iOS",
+      "bundlePath" : "/private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.sVoiHT/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime",
+      "runtimeRoot" : "/private/var/run/com.apple.security.cryptexd/mnt/com.apple.iPhoneOS.SimulatorRuntime-v24.1.434.0.sVoiHT/Library/Developer/CoreSimulator/Profiles/Runtimes/iOS 27.0.simruntime/Contents/Resources/RuntimeRoot",
+      "lastUsage" : {
+        "arm64" : "2026-10-13T12:49:21Z"
+      },
+      "name" : "iOS 27.0"
+    }
+  ]
+}
