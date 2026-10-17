@@ -79,6 +79,18 @@ is `launchctl bootout` (what `mystical stop` does). Hand-launched (no
 a checkout (`MysticalRepo` in its Info.plist), so rebuild it with `mystical app`
 from master after merging app changes; `macos/probe.sh` shows you what it shows.
 
+## Windows (WSL): Mystical.exe
+
+`Mystical.exe` is a Windows process outside the bridge's cgroup, so a bridge
+restart never touches it, and `mystical app` from inside a bridge session is
+safe: `windows/build.sh` builds on the Windows side with `dotnet.exe`, quits the
+running exe over its pipe, swaps the files in `%LOCALAPPDATA%\Programs\Mystical`
+and reopens it. It's built from a checkout (`mystical.json` beside the exe names
+it), so rebuild it with `mystical app` from master after merging app changes;
+`windows/probe.sh` shows what it shows and `windows/capture.sh` what the screen
+shows. Launch a Windows GUI exe from WSL with PowerShell's `Start-Process`,
+never `cmd.exe /c start` — that one waits for its child and hangs your turn.
+
 ## Web bundles
 
 `dist/` is git-ignored and nothing is committed, so a surface with no bundle

@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Mystical.exe — the native Windows shell around the dashboard, for a bridge
+       in WSL. Microsoft frameworks only: WinForms ships with the SDK, WinRT toasts
+       come with the windows10.0.19041.0 TFM, and WebView2's SDK is the one package
+       restored. No XAML, no designer files: everything is built in code.
+
+       Built only through windows/build.sh (`mystical app` on WSL): it stages this
+       directory on the Windows side, writes app.ico beside it, and passes the
+       installed SDK's major as the TargetFramework — the one below is the floor.
+       See docs/superpowers/specs/windows-app-design.md. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RollForward>LatestMajor</RollForward>
+    <AssemblyName>Mystical</AssemblyName>
+    <RootNamespace>Mystical</RootNamespace>
+    <ApplicationIcon>app.ico</ApplicationIcon>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- WebView2's package also ships its WPF assembly, which references a newer
+         WindowsBase than the WinForms one; WPF is never loaded here. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);MSB3277</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
+    <EmbeddedResource Include="shim.js" LogicalName="shim.js" Condition="Exists('shim.js')" />
+  </ItemGroup>
+</Project>

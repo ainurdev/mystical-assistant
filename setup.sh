@@ -56,6 +56,10 @@ doctor() {
     if have swift; then ok "swift — builds the Mac app (Mystical.app)"
     else warn "swift — missing: no Mac app. Install: xcode-select --install"; fi
   fi
+  if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null; then
+    if command -v dotnet.exe >/dev/null 2>&1 || [ -x "/mnt/c/Program Files/dotnet/dotnet.exe" ]; then ok "dotnet — builds the Windows app (Mystical.exe)"
+    else warn "dotnet — missing: no Windows app (the PowerShell tray still works). Install: winget install Microsoft.DotNet.SDK.10"; fi
+  fi
   # A Linux desktop (WSL's tray is PowerShell, always there): the tray icon
   # needs the distro's GTK bindings, and linux/tray.py --check names them.
   if [ "$(uname -s)" = Linux ] && [ -n "${XDG_CURRENT_DESKTOP:-}" ] \
@@ -391,6 +395,25 @@ if [ "$(uname -s)" = Darwin ]; then
          else warn "couldn't install the launchd agent — see the error above"; fi ;;
     esac
   fi
+fi
+
+# -- Windows (WSL): the app ----------------------------------------------------
+# Asked only while missing, like the Mac's. START AT LOGIN is the existing
+# systemd unit plus the Startup entry; the install points that entry at the exe.
+if grep -qi microsoft /proc/sys/kernel/osrelease 2>/dev/null \
+   && { command -v dotnet.exe >/dev/null 2>&1 || [ -x "/mnt/c/Program Files/dotnet/dotnet.exe" ]; } \
+   && ! ls /mnt/c/Users/*/AppData/Local/Programs/Mystical/Mystical.exe >/dev/null 2>&1; then
+  step "🪟" "Windows app"
+  echo "Mystical.exe puts the dashboard in its own window and the tray, and"
+  echo "notifies you when a session needs you — even with the window closed."
+  printf 'Build it into %%LOCALAPPDATA%%\\Programs\\Mystical (about a minute)? [Y/n]: '
+  read -r ans || ans=n
+  case "${ans:-y}" in
+    [Nn]*) warn "skipped — build it any time with: mystical app" ;;
+    *) if "$REPO/windows/build.sh"; then
+         PYTHONPATH="$REPO" python3 -c "from bridge import startup; startup.refresh_launcher()" >/dev/null 2>&1 || true
+       else warn "build failed — retry with: mystical app"; fi ;;
+  esac
 fi
 
 # -- recap: on a re-run this is the only output, so it has to stand alone -----

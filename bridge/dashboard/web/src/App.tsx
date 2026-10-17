@@ -60,7 +60,7 @@ import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
 import { chime, pushGranted } from "./lib/push";
-import { isMacApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
+import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
@@ -502,7 +502,7 @@ export function App() {
     // autofill — follows color-scheme, so a light theme has to say so or those
     // render light-text-on-dark inside an otherwise white dashboard.
     root.style.colorScheme = isLight(settings.theme) ? "light" : "dark";
-    // Mystical.app: its alerts, file picker and title bar follow the same ground.
+    // The native app: its title bar (on the Mac, its alerts and file picker too) follows the same ground.
     macAppearance(isLight(settings.theme));
     // `data-light` drives the light-ground token overrides in index.css — the
     // alpha washes and borders authored for a dark ground are invisible on paper.
@@ -609,8 +609,9 @@ export function App() {
     if (s.project !== activeProject) selectProjectBg(s.project);
   }
 
-  // Mystical.app's menu bar opens a session here in place, the way a
-  // notification click does, instead of reloading onto ?s= (DashboardWindow.open).
+  // The native app's menu bar or tray opens a session here in place, the way a
+  // notification click does, instead of reloading onto ?s= (DashboardWindow.open,
+  // DashboardForm.Open).
   useEffect(() => {
     (window as Window & { __mysticalOpenSession?: (id: string) => boolean }).__mysticalOpenSession = (id) => {
       const s = sessions.find((x) => x.id === id);
@@ -619,12 +620,12 @@ export function App() {
     };
   });
 
-  // Mystical.app mirrors the page title into the window's (and so ⌘-Tab and
-  // Mission Control): the open session when SESSION IN THE TITLE is on, else the
-  // app's name. A browser tab keeps index.html's title.
+  // The native app mirrors the page title into the window's (and so ⌘-Tab and
+  // Mission Control, the taskbar and Alt-Tab): the open session when SESSION IN
+  // THE TITLE is on, else the app's name. A browser tab keeps index.html's title.
   const mac = useMacSettings();
   useEffect(() => {
-    if (!isMacApp()) return;
+    if (!isNativeApp()) return;
     const open = mac?.titleFollowsSession ? sessions.find((x) => x.id === sessionId)?.title : "";
     document.title = open || "mystical//assistant";
   }, [mac?.titleFollowsSession, sessionId, sessions]);
