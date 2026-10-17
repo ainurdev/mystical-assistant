@@ -168,12 +168,14 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   // mark (you went back to letters on a matched repo) reads as no mark.
   const dropping = kind === "logo" && !!logo?.data;
   const shown = (m: ProjectMark | null) => (m && !(m.kind === "letters" && !m.color) ? m : null);
-  const unchanged = !dropping && JSON.stringify(next) === JSON.stringify(
-    shown(cur) ? Object.fromEntries(Object.entries(cur!).filter(([k]) => k !== "source" && k !== "rv")) : null);
+  // Marks compared by their entries, whatever order the bridge wrote them in
+  // (a refresh puts plate before color), leaving out what isn't asked.
+  const key = (m: ProjectMark | null, skip: string[]) =>
+    JSON.stringify(Object.entries(m ?? {}).filter(([k]) => !skip.includes(k)).sort());
+  const unchanged = !dropping && key(next, ["source", "rv"]) === key(shown(cur), ["source", "rv"]);
   // Only the background changed: the bridge keeps a followed mark following.
-  const bare = (m: ProjectMark | null) =>
-    JSON.stringify(Object.entries(m ?? {}).filter(([k]) => !["source", "rv", "plate"].includes(k)).sort());
-  const plateOnly = !dropping && (plate ?? null) !== (cur?.plate ?? null) && bare(next) === bare(shown(cur));
+  const plateOnly = !dropping && (plate ?? null) !== (cur?.plate ?? null)
+    && key(next, ["source", "rv", "plate"]) === key(shown(cur), ["source", "rv", "plate"]);
 
   async function save(mark: ProjectMark | null, logoData?: string) {
     setBusy(true);

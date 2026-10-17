@@ -293,7 +293,7 @@ _opener = urllib.request.build_opener(_NoRedirect)
 
 
 def _download(url) -> "bytes | None":
-    """A client logo off its signed URL. Over https, or plain http to a local
+    """A Rivendell logo (a client's, a project's own, or a gallery image) off its signed URL. Over https, or plain http to a local
     Rivendell; never following a redirect (a signed object-store URL doesn't,
     and one could send the bridge anywhere); only an image, under the cap.
     Never raises: one client's bad URL must not sink an import or a refresh."""
@@ -310,8 +310,9 @@ def _download(url) -> "bytes | None":
 
 
 def _known(marks: dict, logos: dict) -> dict:
-    """client logoId -> the stored logo already wearing it: one client's eight
-    repos share one download, and a refresh downloads only what changed."""
+    """logo id (a client's logo document, or a project's own upload) -> the
+    stored logo already wearing it: one client's eight repos share one
+    download, and a refresh downloads only what changed."""
     return {(m.get("rv") or {}).get("logo_id"): m["logo"] for m in marks.values()
             if m.get("source") == "rivendell" and (m.get("rv") or {}).get("logo_id")
             and m.get("logo") in logos}
@@ -322,14 +323,18 @@ def _fetch_logos(matches: dict, known: dict) -> dict:
     best one it lends (_lent) that can be had, trying the next when a download
     fails. This is the network part of an import, done before the lock is taken."""
     out: dict = {}
+    failed: set = set()             # once per pass: a project's eight repos share one dead or oversized logo
     for p in matches.values():
         for lid, url in _lent(p):
             if lid in known or lid in out:
                 break
+            if lid in failed:
+                continue
             data = _download(url)
             if data is not None:
                 out[lid] = data
                 break
+            failed.add(lid)
     return out
 
 
@@ -347,6 +352,11 @@ def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
             known[cand] = name
         if name:
             break
+    if not name and _lent(p) and cur.get("source") == "rivendell" and cur.get("logo") in (d.get("logos") or {}):
+        # Rivendell offers a logo this pass couldn't fetch: keep wearing the last
+        # one (and its background) rather than flash to letters; the next pass
+        # tries the new one again, as its id isn't known yet.
+        return cur
     own = bool(name) and lid == p.get("logoId")
     mark: dict = {"kind": "logo" if name else "letters", "source": "rivendell",
                   "rv": {"instance": p.get("instance_id"), "client": c.get("id"),

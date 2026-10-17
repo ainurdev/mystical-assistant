@@ -549,3 +549,32 @@ def test_a_gallery_image_must_be_one_the_strip_lists(riv, monkeypatch):
     assert projectmarks.gallery_image("/a", "d1") == (SVG, "image/svg+xml")
     assert projectmarks.gallery_image("/a", "d9") is None                         # not in the strip
     assert riv["downloads"] == ["https://s/dl1"]                                    # d9 was never fetched
+
+
+def test_a_new_logo_that_fails_to_fetch_keeps_the_last_one_and_its_plate(riv):
+    _ib(riv)
+    riv["logos"] = {"https://s3/ib.svg": SVG}
+    projectmarks.import_all()
+    shown = {k: v for k, v in project_config.mark("/a").items() if k not in ("source", "rv")}
+    projectmarks.set_mark("/a", {**shown, "plate": "light"})
+    old = project_config.mark("/a")
+    _ib(riv, logo="https://s3/ib-new.png", logo_id="doc-ib-2")     # changed in Rivendell, and its download fails
+
+    projectmarks.refresh()
+    m = project_config.mark("/a")
+    assert m["kind"] == "logo" and m["logo"] == old["logo"] and m["plate"] == "light"   # no flash to letters
+
+    riv["logos"]["https://s3/ib-new.png"] = PNG                      # it comes through on the next pass
+    projectmarks.refresh()
+    m = project_config.mark("/a")
+    assert projectmarks.logo(m["logo"])[0] == PNG and m["plate"] == "light" and m["rv"]["logo_id"] == "doc-ib-2"
+
+
+def test_a_logo_that_cant_be_had_is_tried_once_per_pass_not_once_per_repo(riv):
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "name": "P", "repositories": ["acme/a", "acme/b", "acme/c"],
+                        "logoId": "u1", "logoUrl": "https://s3/too-big.png",
+                        "client": client("c", logo="https://s3/c.png")}]
+    riv["local"] = {"/a": {"acme/a"}, "/b": {"acme/b"}, "/c": {"acme/c"}}
+    riv["logos"] = {"https://s3/c.png": PNG}
+    projectmarks.import_all()
+    assert riv["downloads"] == ["https://s3/too-big.png", "https://s3/c.png"]
