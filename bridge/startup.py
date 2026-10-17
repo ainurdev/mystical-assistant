@@ -26,6 +26,12 @@ The window half also starts the **tray companion** (windows/tray.ps1 under WSL,
 linux/tray.py on a Linux desktop): Mystical.app's menu bar for these systems.
 It runs from this checkout with what the OS ships, so there is nothing to
 install; launch_tray() is `mystical app` for not waiting until the next login.
+
+Under WSL, once `mystical app` has built **Mystical.exe** (windows/), the exe is
+the window and the tray in one: the .cmd starts it instead of the browser
+window and tray.ps1, launch_tray() opens it, and refresh_launcher() rewrites
+the .cmd right after the install, so nobody has to toggle a switch to stop
+getting two trays at the next login.
 """
 from __future__ import annotations
 
@@ -99,6 +105,16 @@ def _startup_dir() -> str | None:
 def _wsl() -> bool:
     """WSL needs the Windows side to wake the distro; native Linux does not."""
     return "microsoft" in platform.release().lower()
+
+
+def _win_app() -> str | None:
+    """Mystical.exe, once `mystical app` has installed it (windows/build.sh puts
+    it under the one Windows profile's %LOCALAPPDATA%\\Programs\\Mystical)."""
+    d = _startup_dir()
+    if not d:
+        return None
+    exe = d.split("/AppData/", 1)[0] + "/AppData/Local/Programs/Mystical/Mystical.exe"
+    return exe if os.path.isfile(exe) else None
 
 
 def _browser() -> str | None:
@@ -256,7 +272,12 @@ def _script(open_window: bool, profile: str | None = None) -> str:
         'set "UP=%errorlevel%"',
     ]
     browser = _browser()
-    if open_window:
+    app = _win_app() if open_window else None
+    if app:
+        lines += ["", "REM Mystical.exe (windows/) is the window and the tray in one; it has",
+                  "REM its own placeholder, so it starts whether or not the bridge answered.",
+                  f'start "" "{_win_path(app)}"']
+    elif open_window:
         prof = (profile or _profile(browser, port)) if browser else None
         lines += ["", "REM The tray icon comes up whether or not the bridge did,",
                   "REM so a failed start still leaves you a tray with Start in it.",
@@ -271,7 +292,7 @@ def _script(open_window: bool, profile: str | None = None) -> str:
         "  exit /b 1",
         ")",
     ]
-    if open_window and browser:
+    if open_window and browser and not app:
         pick = f' --profile-directory="{prof}"' if prof else ""
         lines += ["", f'start "" "{_win_path(browser)}"{pick} '
                       f'--app=http://localhost:{port}/']
@@ -368,8 +389,15 @@ def launch_tray() -> None:
     if win:
         if not os.path.isfile(_POWERSHELL):
             raise RuntimeError(f"no Windows PowerShell at {_POWERSHELL}")
+        app = _win_app()
+        if app:
+            # The exe is the tray. Start-Process, not cmd's `start`: run from
+            # WSL, that one waits for its GUI child to exit.
+            argv = [_POWERSHELL, "-NoProfile", "-Command", f"Start-Process -FilePath '{_win_path(app)}'"]
+        else:
+            argv = [_POWERSHELL, *argv]
         # A Windows working dir: run from a WSL path, Windows sees a UNC cwd.
-        argv, cwd = [_POWERSHELL, *argv], os.path.dirname(_POWERSHELL)
+        cwd = os.path.dirname(_POWERSHELL)
     else:
         try:
             check = subprocess.run([*argv[:2], "--check"], capture_output=True,
@@ -383,6 +411,21 @@ def launch_tray() -> None:
     # cgroup and goes down with its next restart; the login entry's doesn't.
     subprocess.Popen(argv, cwd=cwd, start_new_session=True, stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def refresh_launcher() -> bool:
+    """Rewrite the Startup .cmd from the current state — after `mystical app`
+    installs Mystical.exe, the window line changes from a browser window plus
+    the tray to the exe — and nothing else: no `systemctl enable`, no linger.
+    True when it was rewritten; False off WSL, or with login off."""
+    if not _wsl():
+        return False
+    st = state()
+    if not st["supported"] or not st["login"]:
+        return False
+    with open(os.path.join(_startup_dir(), CMD_NAME), "w", encoding="utf-8", newline="") as f:
+        f.write(_script(st["window"], st["profile"]))
+    return True
 
 
 # --- macOS: launchd -----------------------------------------------------------
@@ -553,7 +596,9 @@ def state() -> dict:
         pass
     # Both halves have to be in place; if they drift apart the switch reads
     # off, and turning it on writes both back.
-    return {**base, "login": bool(text) and enabled, "window": "--app=" in text,
+    return {**base, "login": bool(text) and enabled,
+            "window": "--app=" in text or "Mystical.exe" in text,
+            "browser": "Mystical.exe" if _win_app() else base["browser"],
             "profile": _written_profile(text)}
 
 

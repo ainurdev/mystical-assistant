@@ -82,10 +82,11 @@ class PreviewQueue:
     as their first argument."""
 
     def __init__(self, run_fn, *, interrupt_fn=None, publish_fn=None,
-                 persist_path=None):
+                 steer_fn=None, persist_path=None):
         # run_fn(item) -> job_id | None  (None means the session was busy).
         self._run_fn = run_fn
         self._interrupt_fn = interrupt_fn      # interrupt_fn(job_id) -> None
+        self._steer_fn = steer_fn              # steer_fn(sid, text, images) -> took it
         self._publish_fn = publish_fn          # publish_fn(sid, snapshot) -> None
         self._path = persist_path
         self._lock = threading.RLock()
@@ -257,6 +258,23 @@ class PreviewQueue:
             self._touch(dst, d)
             self._touch(sid, b)
 
+    def steer(self, sid: str, item_id: str) -> bool:
+        """Send a queued item into the session's running turn instead of after it
+        (runner.steer) — a prompt meant to steer that got queued. It leaves the
+        queue only once the turn took it; False, and it keeps its place,
+        otherwise. Under the lock, so the queue can't also start it on its own."""
+        with self._lock:
+            b = self._bucket(sid)
+            it = next((x for x in b["items"] if x.id == item_id), None)
+            # A batch's turn is its own step, as in move.
+            if it is None or it.status != "queued" or it.ref or self._steer_fn is None:
+                return False
+            if not self._steer_fn(sid, it.prompt, it.images):
+                return False
+            b["items"].remove(it)
+            self._touch(sid, b)
+            return True
+
     def edit(self, sid: str, item_id: str, text: str, prompt: str) -> None:
         with self._lock:
             b = self._bucket(sid)
@@ -424,6 +442,11 @@ def _default_interrupt(job_id: str) -> None:
             pass
 
 
+def _default_steer(sid: str, text: str, images: list) -> bool:
+    from bridge import runner
+    return runner.steer(sid, text, list(images or []))
+
+
 def get() -> PreviewQueue:
     global _instance
     with _instance_lock:
@@ -432,7 +455,7 @@ def get() -> PreviewQueue:
             path = os.path.join(os.path.dirname(config.BRIDGE_DB), "preview_queue.json")
             _instance = PreviewQueue(
                 run_fn=_default_run_fn, interrupt_fn=_default_interrupt,
-                persist_path=path)
+                steer_fn=_default_steer, persist_path=path)
         return _instance
 
 
@@ -483,6 +506,10 @@ def remove(sid, item_id):
 
 def move(sid, item_id, dst):
     return get().move(sid, item_id, dst)
+
+
+def steer(sid, item_id):
+    return get().steer(sid, item_id)
 
 
 def edit(sid, item_id, text, prompt):

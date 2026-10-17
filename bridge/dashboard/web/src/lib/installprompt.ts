@@ -35,8 +35,9 @@ window.addEventListener("appinstalled", () => {
 /** Running in its own window rather than a browser tab. */
 export function isInstalled(): boolean {
   return (
-    // Mystical.app (macos/) tags its web view's user agent — already an app.
-    /\bMysticalMac\//.test(navigator.userAgent) ||
+    // Mystical.app (macos/) and Mystical.exe (windows/) tag their web views'
+    // user agents — already an app.
+    /\bMystical(Mac|Win)\//.test(navigator.userAgent) ||
     window.matchMedia("(display-mode: standalone)").matches ||
     (window.navigator as Navigator & { standalone?: boolean }).standalone === true
   );

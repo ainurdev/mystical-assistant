@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- The pure core's asserts, with no test framework to fetch: this console
+       compiles ../app/Core straight in and exits 1 on the first FAIL line.
+       windows/build.sh ‑‑check stages it beside app/ on the Windows side and
+       runs it with dotnet.exe; the TargetFramework below is the floor, the
+       script passes the installed SDK's major. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RollForward>LatestMajor</RollForward>
+    <RootNamespace>Mystical.Check</RootNamespace>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../app/Core/**/*.cs" />
+    <!-- Shim.Source reads this resource; until Task 2 adds the file the check skips it. -->
+    <EmbeddedResource Include="../app/shim.js" LogicalName="shim.js" Condition="Exists('../app/shim.js')" />
+  </ItemGroup>
+</Project>

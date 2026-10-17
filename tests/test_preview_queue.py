@@ -238,6 +238,39 @@ def test_move_refuses_a_batchs_step():
     assert _items(q, "s2") == []
 
 
+# --- steer into the running turn -------------------------------------------
+
+def test_steer_sends_a_queued_item_into_the_running_turn():
+    sent = []
+    q, fake = _q(steer_fn=lambda sid, text, images: (sent.append((sid, text, images)), True)[1])
+    _enq(q, text="a")                  # running
+    b = _enq(q, text="b", prompt="b, composed", images=["/up/r/1.png"])
+    assert q.steer("s1", b) is True
+    assert sent == [("s1", "b, composed", ["/up/r/1.png"])]
+    assert [it["text"] for it in _items(q)] == ["a"]   # out of the queue
+    assert len(fake.calls) == 1                        # and never runs on its own
+
+
+def test_steer_keeps_the_item_when_the_turn_ended_first():
+    q, _ = _q(steer_fn=lambda sid, text, images: False)
+    _enq(q, text="a")
+    b = _enq(q, text="b")
+    assert q.steer("s1", b) is False
+    assert [(it["text"], it["status"]) for it in _items(q)] == [("a", "running"), ("b", "queued")]
+
+
+def test_steer_refuses_running_unknown_and_a_batchs_step():
+    sent = []
+    q, _ = _q(steer_fn=lambda sid, text, images: (sent.append(text), True)[1])
+    a = _enq(q, text="a")              # running
+    c = _enq(q, text="c", ref="w:r1")
+    assert q.steer("s1", a) is False
+    assert q.steer("s1", "nope") is False
+    assert q.steer("s1", c) is False
+    assert sent == []
+    assert [it["text"] for it in _items(q)] == ["a", "c"]
+
+
 # --- remove / edit ---------------------------------------------------------
 
 def test_remove_queued_item():

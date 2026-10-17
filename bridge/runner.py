@@ -1141,7 +1141,8 @@ def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> b
     """Fold a message into a session's IN-FLIGHT turn instead of queueing a new
     one. A stream-json user message written to the live child mid-turn is picked
     up at the next tool-loop boundary (the CLI's queued_command fold-in), so the
-    running prompt changes course. False if that session has no live job.
+    running prompt changes course. False if nothing took it: no live job, or its
+    stdin already closed (the turn ended between the lookup and the write).
 
     Screenshots ride along as paths, exactly as a normal turn's do — the live
     child reads them off disk, so a mid-turn "look at this" works the same as
@@ -1159,8 +1160,9 @@ def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> b
                     if j.store_session_id == session_id and j.status == "running"), None)
     if job is None or job.proc is None or isinstance(job, AcpJob):
         return False
-    job._write_stdin({"type": "user", "message": {"role": "user",
-                                                  "content": _with_images(text, image_paths)}})
+    if not job._write_stdin({"type": "user", "message": {"role": "user",
+                                                         "content": _with_images(text, image_paths)}}):
+        return False
     job.add({"type": "steer", "text": text, "images": list(image_paths or [])})
     return True
 

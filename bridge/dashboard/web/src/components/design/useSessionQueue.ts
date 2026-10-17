@@ -89,5 +89,10 @@ export function useSessionQueue(sessionId: string | null) {
     steer: (text: string, images?: string[]) =>
       api.queueOp("steer", { session_id: sid, text, images })
         .then((s) => { apply(s); return true; }).catch(() => false),
+    /** STEER on a queued prompt: into the running turn instead of after it, and
+     * out of the queue. Returns the promise, like move, so the caller can say why
+     * nothing happened (the turn ended first, and the prompt kept its place). */
+    steerQueued: (id: string) =>
+      api.queueOp("steer", { session_id: sid, item_id: id }).then(apply),
   };
 }

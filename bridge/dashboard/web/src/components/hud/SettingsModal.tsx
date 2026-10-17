@@ -12,7 +12,7 @@ import {
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, 
-  ListChecks, Package, PackageOpen, Truck, AppWindowMac, Pin,
+  ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin,
 } from "lucide-react";
 import { CHAT_BGS, TRANSCRIPT_SCHEMES, type ChatBg, type TranscriptScheme } from "../../lib/toolwidget";
 import { AgentRail, PromptBubble } from "../Transcript";
@@ -81,7 +81,7 @@ import { setAiFeatures, useAiFeatures } from "../../lib/ai";
 import { setIntegrations, useIntegrations } from "../../lib/integrations";
 import { askConfirm } from "../ui/Ask";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
-import { isMacApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
+import { isNativeApp, isWinApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
 import { UpdateButton } from "./UpdateButton";
@@ -166,10 +166,14 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "How a session reads: the chat layout, the composer's send key, the ground and colour scheme every turn is drawn on, whether results start open, and what shows while it works." },
   { key: "notifications", label: "NOTIFY", hint: "events · quiet · sound", icon: Bell, group: "THE HUD",
     about: "What interrupts you, and how: for each kind of news — a session, a Rivendell job, a PR — a pop-up, a sound, a Telegram message, or only the bell." },
-  // Only inside Mystical.app (RAIL and the search both skip it elsewhere): the
-  // switches that are the app's, not the page's (lib/mac).
-  { key: "mac", label: "MAC APP", hint: "window · dock · panel", icon: AppWindowMac, group: "THE HUD",
-    about: "What only the Mac app can do: the window's title, the Dock icon, the floating WAITING ON YOU panel, and rebuilding the app after an update." },
+  // Only inside the native app — Mystical.app or Mystical.exe (RAIL and the
+  // search both skip it elsewhere): the switches that are the app's, not the
+  // page's (lib/mac). One tab, named for the shell it's in.
+  { key: "mac", label: isWinApp() ? "WINDOWS APP" : "MAC APP", hint: isWinApp() ? "window · tray · hotkey" : "window · dock · panel",
+    icon: isWinApp() ? AppWindow : AppWindowMac, group: "THE HUD",
+    about: isWinApp()
+      ? "What only the Windows app can do: the window's title, the floating WAITING ON YOU panel, the Win+Ctrl+A summon, and rebuilding the app after an update."
+      : "What only the Mac app can do: the window's title, the Dock icon, the floating WAITING ON YOU panel, and rebuilding the app after an update." },
   // First under THE WORK: who runs a session and where. One page, five folds —
   // it was five tabs (PROJECTS, SESSION, MCP, ACCOUNTS, AI) that each held a
   // piece of the same question, and the sidebar's SKILLS panel besides.
@@ -182,7 +186,7 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   { key: "move", label: "MOVE", hint: "export · import", icon: Truck, group: "THE WORK",
     about: "Carry this bridge to another machine. EXPORT packs your repos' unpushed work, MCP servers, plugins, Claude Code settings and chat history into one file; IMPORT replays a file from another machine here." },
 ];
-const RAIL = TABS.filter((t) => t.key !== "mac" || isMacApp());
+const RAIL = TABS.filter((t) => t.key !== "mac" || isNativeApp());
 
 // ---- SEARCH -----------------------------------------------------------------
 // Ten categories deep, "where do I turn X off" is a hunt through all ten. One
@@ -205,9 +209,9 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "notifications", sec: "WHAT INTERRUPTS YOU", terms: "events pop up toast banner sound tone telegram away rivendell pr finished failed question approval" },
   { tab: "notifications", sec: "QUIET HOURS", terms: "quiet hours night do not disturb dnd mute schedule" },
   { tab: "notifications", sec: "THIS BROWSER", terms: "os notifications browser push permission alert sound volume chime mute" },
-  { tab: "mac", sec: "WINDOW", terms: "mac app title bar session name dock icon keep cmd-tab space" },
-  { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space" },
-  { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission" },
+  { tab: "mac", sec: "WINDOW", terms: "mac app windows app title bar session name dock icon keep cmd-tab space tray hotkey summon shortcut win ctrl a" },
+  { tab: "mac", sec: "PANEL", terms: "floating panel waiting on you always on top every space window" },
+  { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission mystical.exe mystical.app" },
   { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
   { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
@@ -242,7 +246,7 @@ function search(q: string, env: EnvSetting[], hidden: Set<string>): Hit[] {
   if (!words.length) return [];
   const label = (t: Tab) => TABS.find((x) => x.key === t)!.label;
   const all: (Hit & { hay: string })[] = [
-    ...INDEX.filter((e) => !hidden.has(e.sec) && (e.tab !== "mac" || isMacApp())).map((e) => ({
+    ...INDEX.filter((e) => !hidden.has(e.sec) && (e.tab !== "mac" || isNativeApp())).map((e) => ({
       tab: e.tab, sec: e.sec, hay: `${label(e.tab)} ${e.sec} ${e.terms}`.toLowerCase(),
     })),
     ...env.map((s) => ({
@@ -1104,9 +1108,10 @@ function EnvField({ s, busy, onSave }: {
  *  starts itself, and a launcher — a .cmd in the Windows Startup folder under WSL,
  *  a ~/.config/autostart entry otherwise — owns whether the window comes up with it. Turning login OFF never stops the running bridge — you are
  *  almost certainly talking to it. */
-// ---- MAC APP ----------------------------------------------------------------
-// The switches Mystical.app owns (macos/, MacPrefs.swift), read and written over
-// its message handler (lib/mac) so the app has them before any page has loaded.
+// ---- MAC APP / WINDOWS APP ---------------------------------------------------
+// The switches the native app owns (macos/ MacPrefs.swift, windows/ Prefs.cs),
+// read and written over its message handler (lib/mac) so the app has them before
+// any page has loaded. One panel; the rows that are one platform's hide on the other.
 const MAC_BTN: CSSProperties = {
   appearance: "none", cursor: "pointer",
   border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
@@ -1281,6 +1286,8 @@ function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p
 function MacPanel() {
   const mac = useMacSettings();
   const [busy, setBusy] = useState(false);
+  const win = isWinApp();
+  const appName = win ? "Mystical.exe" : "Mystical.app";
   const flip = (k: MacSwitch) => {
     if (!mac || busy) return;
     setBusy(true);
@@ -1288,31 +1295,43 @@ function MacPanel() {
   };
   if (!mac) {
     return (
-      <Section title="MAC APP" icon={AppWindowMac} desc="No answer from Mystical.app.">
+      <Section title={win ? "WINDOWS APP" : "MAC APP"} icon={win ? AppWindow : AppWindowMac} desc={`No answer from ${appName}.`}>
         <div style={{ ...CARD, color: "var(--txl)", fontSize: "var(--t11)", lineHeight: 1.5 }}>
-          The app running this window predates these settings. Rebuild it from the menu
-          bar (Rebuild App) or with <code>mystical app</code>, then reopen.
+          The app running this window predates these settings. Rebuild it from the{" "}
+          {win ? "tray" : "menu bar"} (Rebuild App) or with <code>mystical app</code>, then reopen.
         </div>
       </Section>
     );
   }
   return (
     <>
-      <Section title="WINDOW" icon={AppWindowMac} desc="The one window, and what it says about itself.">
+      <Section title="WINDOW" icon={win ? AppWindow : AppWindowMac} desc="The one window, and what it says about itself.">
         <div style={CARD}>
           <Row
             first
             label="SESSION IN THE TITLE"
-            desc="Mission Control and the Window menu name the open session instead of the app."
+            desc={win
+              ? "The taskbar and Alt-Tab name the open session instead of the app."
+              : "Mission Control and the Window menu name the open session instead of the app."}
           >
             <Switch on={mac.titleFollowsSession} onClick={() => flip("titleFollowsSession")} />
           </Row>
-          <Row
-            label="KEEP IN DOCK"
-            desc="The Dock icon stays while the window is closed, so ⌘-Tab and the Dock's Assign To Space keep working. Off: menu bar only, until you open it again."
-          >
-            <Switch on={mac.keepInDock} onClick={() => flip("keepInDock")} />
-          </Row>
+          {mac.keepInDock !== undefined && (
+            <Row
+              label="KEEP IN DOCK"
+              desc="The Dock icon stays while the window is closed, so ⌘-Tab and the Dock's Assign To Space keep working. Off: menu bar only, until you open it again."
+            >
+              <Switch on={mac.keepInDock} onClick={() => flip("keepInDock")} />
+            </Row>
+          )}
+          {mac.hotkey !== undefined && (
+            <Row
+              label="SUMMON WITH WIN+CTRL+A"
+              desc="A system-wide shortcut raises the dashboard from any app, and hides it again when it's already in front."
+            >
+              <Switch on={mac.hotkey} onClick={() => flip("hotkey")} />
+            </Row>
+          )}
         </div>
       </Section>
       <Section title="PANEL" icon={Pin} desc="Who is waiting, readable from any app." top>
@@ -1320,7 +1339,7 @@ function MacPanel() {
           <Row
             first
             label="WAITING ON YOU PANEL"
-            desc="A small always-on-top list of the sessions waiting on you, on every Space, while the dashboard isn't in front. Click a row to open that session."
+            desc={`A small always-on-top list of the sessions waiting on you, ${win ? "over every window" : "on every Space"}, while the dashboard isn't in front. Click a row to open that session.`}
           >
             <Switch on={mac.floating} onClick={() => flip("floating")} />
           </Row>
@@ -1331,13 +1350,15 @@ function MacPanel() {
           <Row
             first
             label="VERSION"
-            desc={`Mystical.app ${mac.version}. A bridge update doesn't rebuild the app — REBUILD does, from the checkout, and reopens it.`}
+            desc={`${appName} ${mac.version}. A bridge update doesn't rebuild the app — REBUILD does, from the checkout, and reopens it.`}
           >
             <button onClick={macRebuild} style={MAC_BTN}>REBUILD</button>
           </Row>
           <Row
             label="SCREEN CAPTURE"
-            desc="A session can capture your screen, or one window, through the app (macos/capture.sh). macOS asks for Screen Recording the first time: allow Mystical in System Settings, then quit and reopen the app."
+            desc={win
+              ? "A session can capture your screen, or one window, through the app (windows/capture.sh). Nothing to allow — Windows needs no permission for it."
+              : "A session can capture your screen, or one window, through the app (macos/capture.sh). macOS asks for Screen Recording the first time: allow Mystical in System Settings, then quit and reopen the app."}
           />
         </div>
       </Section>

@@ -54,7 +54,7 @@ ${c_c}✦ mystical${c_d}//${c_0}${c_c}assistant${c_0} ${c_d}— control the brid
   ${c_b}🔗${c_0} mystical ${c_c}design-link${c_0} <rel> <id>  link a repo to a Claude Design project
   ${c_b}📦${c_0} mystical ${c_c}export${c_0}    pack repos, MCPs, settings and history into one file for a new machine
   ${c_b}📥${c_0} mystical ${c_c}import${c_0} <file> [--dry-run]  replay that file on the new machine
-  ${c_b}🍎${c_0} mystical ${c_c}app${c_0} ${c_c}[open]${c_0}  macOS: build + install Mystical.app, or open it · Linux/WSL: start the tray icon
+  ${c_b}🍎${c_0} mystical ${c_c}app${c_0} ${c_c}[open]${c_0}  macOS: build + install Mystical.app · Windows (WSL): build + install Mystical.exe · Linux: start the tray; 'app open' opens it
 EOF
 }
 
@@ -351,15 +351,36 @@ cmd_restart() {
 }
 
 APP="$HOME/Applications/Mystical.app"
+# WSL by the kernel's name, not /proc (a test fakes uname to say Linux).
+wsl() { uname -r 2>/dev/null | grep -qi microsoft; }
+wsl_dotnet() { command -v dotnet.exe >/dev/null 2>&1 || [ -x "/mnt/c/Program Files/dotnet/dotnet.exe" ]; }
 cmd_app() {
   if ! darwin; then
-    # Linux and WSL have nothing to build: the tray (linux/tray.py,
-    # windows/tray.ps1) runs from this checkout. This starts it now; OPEN THE
-    # WINDOW TOO brings it back at every login.
-    [ -z "${1:-}" ] || die "'mystical app $1' is macOS-only. Here the window is your browser's installed app, and 'mystical app' starts the tray."
+    case "${1:-}" in ""|open) ;; *) die "unknown option for app: $1 — 'mystical app' builds (WSL) or starts the tray, 'mystical app open' opens the app" ;; esac
     # bridge.config reads the environment, which run.sh fills from .env; without
     # it a custom DASH_PORT would hand the tray the default port.
     if [ -f "$ENV_FILE" ]; then set -a; . "$ENV_FILE"; set +a; fi
+    if wsl && [ -z "${1:-}" ] && wsl_dotnet; then
+      # Windows: build + install Mystical.exe (windows/build.sh), then point the
+      # Startup entry at it — the tray and the browser window it replaces would
+      # otherwise come back beside it at the next login.
+      "$REPO/windows/build.sh" || exit 1
+      [ -z "${MYSTICAL_APP_DEST:-}" ] || return 0
+      if PYTHONPATH="$REPO" python3 -c 'import sys; from bridge import startup; sys.exit(0 if startup.refresh_launcher() else 3)' 2>/dev/null; then
+        ok "the Startup entry now opens Mystical.exe"
+      fi
+      return 0
+    fi
+    if wsl && [ -z "${1:-}" ]; then
+      warn "no dotnet.exe on the Windows side — starting the PowerShell tray instead ${c_d}(winget install Microsoft.DotNet.SDK.10, then 'mystical app' builds Mystical.exe)${c_0}"
+    fi
+    if [ "${1:-}" = open ]; then
+      wsl || die "'mystical app open' is for macOS and Windows (WSL) — here 'mystical app' starts the tray"
+      PYTHONPATH="$REPO" python3 -c 'import sys; from bridge import startup; sys.exit(0 if startup._win_app() else 1)' \
+        || die "not built yet — run: mystical app"
+    fi
+    # Linux, and WSL without the exe: the tray (linux/tray.py, windows/tray.ps1)
+    # runs from this checkout; with the exe, launch_tray() opens it instead.
     PYTHONPATH="$REPO" python3 -c '
 import sys
 from bridge import startup
@@ -368,7 +389,8 @@ try:
 except RuntimeError as e:
     sys.exit(str(e))
 ' || exit 1
-    ok "tray started — OPEN THE WINDOW TOO (SETTINGS → SYSTEM) brings it back at every login"
+    if [ "${1:-}" = open ]; then ok "Mystical.exe opened"
+    else ok "tray started — OPEN THE WINDOW TOO (SETTINGS → SYSTEM) brings it back at every login"; fi
     return 0
   fi
   case "${1:-}" in

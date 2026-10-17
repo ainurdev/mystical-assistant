@@ -1836,6 +1836,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"item_id": item_id, **queue_manager.snapshot(sid)})
         if not sid:
             return self._json({"error": "session required"}, 400)
+        if op == "steer" and body.get("item_id"):
+            # A queued prompt that was meant to steer: into the running turn, out of the queue.
+            if not queue_manager.steer(sid, str(body["item_id"]).strip()):
+                return self._json({"error": "Nothing running to steer into — the prompt keeps its place in the queue."}, 409)
+            return self._json(queue_manager.snapshot(sid))
         if op == "steer":
             # Not a queue op: goes straight into the running turn (see runner.steer).
             text = (body.get("text") or "").strip()
