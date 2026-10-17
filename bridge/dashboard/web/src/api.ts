@@ -699,7 +699,7 @@ export interface QueueGroup {
 export type QueueOp =
   | "remove" | "edit" | "reorder" | "bump" | "move"
   | "pause" | "resume" | "cancel" | "retry" | "clear-done"
-  | "steer";   // not a queue mutation — folds text into the running turn
+  | "steer";   // folds text into the running turn; with item_id, a queued prompt (it leaves the queue)
 
 // Host vitals (psutil) for the WORKSPACE panel.
 export interface HostStats {

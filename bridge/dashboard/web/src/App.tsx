@@ -2355,6 +2355,7 @@ export function App() {
                       paused={queue.paused} onTogglePause={queue.togglePause}
                       onCancelQueued={(id) => queue.remove(id)}
                       onEjectQueued={(id) => void ejectQueued(id)}
+                      onSteerQueued={agentPick ? undefined : (id) => void queue.steerQueued(id).catch((e) => notify("error", (e as Error).message))}
                       project={sessionProject}
                       onOpenMap={ai.graph && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
