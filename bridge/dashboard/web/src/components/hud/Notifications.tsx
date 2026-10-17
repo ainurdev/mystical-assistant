@@ -304,11 +304,11 @@ const ICON = (
 
 /** Fire one OS banner for a feed row: the verb and the title, where it ran,
  *  what happened — and, in Mystical.app, the buttons that answer it. */
-function osBanner(n: Notice) {
+function osBanner(n: Notice, onOpen: () => void) {
   const where = n.source === "rivendell" ? `Rivendell · ${str(n.meta.instance) || str(n.meta.instance_id)}`
     : [projName(str(n.meta.project)), env.branchOf(str(n.meta.session_id) || n.subject) ?? ""].filter(Boolean).join(" · ");
   const fire = (buttons?: { action: string; title: string }[], onAction?: (a: string) => void) =>
-    push(`${n.verb[0]}${n.verb.slice(1).toLowerCase()} · ${n.title}`, n.body, n.subject, () => openRow(n),
+    push(`${n.verb[0]}${n.verb.slice(1).toLowerCase()} · ${n.title}`, n.body, n.subject, onOpen,
       buttons, onAction, { subtitle: where, thread: n.subject });
   if (n.kind === "rv_offer") {
     return fire([{ action: "accept", title: "Accept" }, { action: "dismiss", title: "Dismiss" }],
@@ -342,6 +342,8 @@ export function NotificationCenter() {
   const wrapRef = useRef<HTMLSpanElement | null>(null);
   const shown = useRef<Set<number>>(new Set());
 
+  // A toast or OS banner you clicked is news you read: its row needn't keep the bell's dot.
+  const read = (id: number) => void api.noticesRead([id]).then(() => load.current(), () => { /* next poll */ });
   const load = useRef(async () => {
     try {
       const r = await api.notices();
@@ -362,7 +364,7 @@ export function NotificationCenter() {
         if (d.sound) tones.add(d.sound);
         if (!d.pop) continue;
         // One place at a time: the toast while you're in this window, else the OS banner.
-        if (!document.hasFocus() && env.push && pushGranted()) osBanner(n);
+        if (!document.hasFocus() && env.push && pushGranted()) osBanner(n, () => { read(n.id); openRow(n); });
         else fresh.push(n);
       }
       // One sound per tone per batch: five sessions finishing together is one chime.
@@ -419,8 +421,6 @@ export function NotificationCenter() {
   }, [open]);
 
   const go = (n: Row) => { close(); openRow(n); };
-  // A toast you clicked is news you read: its row needn't keep the bell's dot.
-  const read = (id: number) => void api.noticesRead([id]).then(() => load.current(), () => { /* next poll */ });
   const markAll = () => { shown.current = new Set(); void api.noticesRead("all").then(() => load.current()); };
 
   const fNeeds = liveNeeds.filter((n) => needMatches(filter, n));
