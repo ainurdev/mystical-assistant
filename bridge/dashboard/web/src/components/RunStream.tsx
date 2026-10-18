@@ -17,7 +17,7 @@ import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
-import { kindsOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
+import { chapterStarts, kindsOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
 import { PromptBubble } from "./PromptBubble";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import type { HudSettings } from "../lib/theme";
@@ -695,7 +695,7 @@ const ROW_IN: Keyframe[] = [
  *  clips anything past the plate), a caret on the step that is out — and every
  *  other form (STATUS, the cat) draws as a row inside the plate
  *  instead of under the turn. */
-function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, live, span, defaultOpen, animate, children }: {
+function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, live, span, chapters, defaultOpen, animate, children }: {
   /** What the zone ran, by kind, and how often the agent spoke inside it. */
   cats: StepCat[];
   notes: number;
@@ -718,6 +718,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   live: string;
   /** Wall time the zone covered, already formatted; "" when unknown. */
   span: string;
+  /** How many chapters a long zone opens on (WorkChapter); 0 for a list of rows. */
+  chapters: number;
   defaultOpen: boolean;
   animate: boolean;
   /** The zone's rows, in order. */
@@ -889,7 +891,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
                 <b className="dwork-st">{state === "work" ? "WORKING" : "THINKING"}{state === "think" ? <i className="dwork-dots" aria-hidden /> : null}</b>
                 <span className="dwork-secs">{secs}s</span>
               </>
-            ) : [`${steps} step${steps === 1 ? "" : "s"}`, span].filter(Boolean).join(" · ")}
+            ) : [`${steps} step${steps === 1 ? "" : "s"}`, chapters ? `${chapters} chapters` : "", span].filter(Boolean).join(" · ")}
           </span>
         </span>
         <span className="dwork-l2">
@@ -929,6 +931,70 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** One chapter of a long WORK zone (lib/dossier chapterStarts): a line on the
+ *  zone's spine (its number, when it began, the note it opens on, what failed,
+ *  its pictures and size) over rows built only while it is open. That is what
+ *  keeps a 1,600-step zone quick to open and to scroll, and the lines read as
+ *  the zone's contents. Open, the line pins under the zone's header (index.css)
+ *  so you know which part you are in. While the turn runs, its last chapter is
+ *  live and opens by itself, and shuts when the next one takes over, unless you
+ *  opened or shut it by hand. */
+function WorkChapter({ n, at, title, steps, span, failed, pics, live, rows }: {
+  n: number;
+  /** When its first step landed, epoch seconds. */
+  at?: number;
+  title: string;
+  steps: number;
+  /** Wall time it covered, already formatted; "" when unknown. */
+  span: string;
+  failed: number;
+  pics: number;
+  live: boolean;
+  /** Its rows, built when it opens. */
+  rows: () => ReactNode[];
+}) {
+  const [open, setOpen] = useState(live);
+  const byHand = useRef(false);
+  useEffect(() => { if (!byHand.current) setOpen(live); }, [live]);
+  const h12 = useClock12();
+  const body = useRef<HTMLDivElement>(null);
+  const toggle = (b: HTMLButtonElement) => {
+    byHand.current = true;
+    const sc = b.closest<HTMLElement>(".mscroll"), y = b.getBoundingClientRect().top;
+    flushSync(() => setOpen(!open));
+    // Shut from its pinned line, the line lands where it was, as the zone's does;
+    // opened, its rows print in the way a zone's do.
+    if (open) { if (sc) sc.scrollTop += b.getBoundingClientRect().top - y; return; }
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    Array.from(body.current?.children ?? []).slice(0, 12).forEach((el, i) =>
+      el.animate(ROW_IN, { duration: 240, delay: 40 + i * 16, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }));
+  };
+  const picsWord = `${pics} picture${pics === 1 ? "" : "s"}`;
+  return (
+    <div className="wzc" data-open={open ? "" : undefined} data-live={live ? "" : undefined}>
+      <button type="button" className="wzc-head" onClick={(e) => toggle(e.currentTarget)} aria-expanded={open}
+        title={open ? "hide this part of the work" : "show this part of the work"}>
+        <span className="wzc-node" aria-hidden>{String(n).padStart(2, "0")}</span>
+        <span className="wzc-obj">
+          {at != null ? <span className="wzc-t">{hhmm(at, h12)}</span> : null}
+          <span className="wzc-title">{title}</span>
+        </span>
+        <span className="wzc-fig">
+          <span className="wzc-c">
+            {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden><MarkIcon mark="fail" size={10} /></i>{failed}</span> : null}
+          </span>
+          <span className="wzc-c">
+            {pics ? <span className="dwork-k" data-m="shot" title={picsWord}><i aria-hidden><ImageIcon size={10} strokeWidth={2.2} /></i>{pics}</span> : null}
+          </span>
+          <span className="wzc-n">{live ? <b>NOW</b> : [`${steps} step${steps === 1 ? "" : "s"}`, span].filter(Boolean).join(" · ")}</span>
+        </span>
+        <ChevronDown size={12} aria-hidden className={`wzc-chev transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
+      </button>
+      {open ? <div ref={body} className="wzc-body">{rows()}</div> : null}
     </div>
   );
 }
@@ -2399,18 +2465,23 @@ export const RunStream = memo(function RunStream({
     return TOP_TYPES.has(e.type);
   };
   const isTop = (seg: Seg): boolean => seg.kind === "prose" && topAt(seg.idx[0]);
-  const workZone = (zsegs: Seg[], lastZone: boolean) => {
+  // A step is what a zone's figure counts: a note or thought with words, a
+  // hook, a tool call.
+  const isStep = (e: RunEvent) => ((e.type === "thinking" || e.type === "text") && !!e.text) || e.type === "log" || e.type === "tool";
+  /** What a stretch of the work holds, for a WORK zone's header and a chapter's line. */
+  const tally = (zsegs: Seg[]) => {
     const cats: StepCat[] = [];
     const pics: Pic[] = [];
     let notes = 0, steps = 0, failed = 0, running = false, live = "", openAt: number | undefined, first: number | undefined, last: number | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
       const e = events[i];
       if (e.at != null) { first ??= e.at; last = e.at; }
-      if ((e.type === "thinking" || e.type === "text") && e.text) { steps++; notes++; }
-      else if (e.type === "log") { steps++; cats.push("log"); if (e.error) failed++; }
+      if (isStep(e)) steps++;
+      if (e.type === "thinking" || e.type === "text") { if (e.text) notes++; }
+      else if (e.type === "log") { cats.push("log"); if (e.error) failed++; }
       else if (e.type === "tool") {
         const d = doneOf(e), c = catOf(e, d);
-        steps++; cats.push(c);
+        cats.push(c);
         if (!d) { running = true; live = e.summary; openAt = e.at; }
         else if (d.is_error) failed++;
         for (const p of d?.images ?? []) pics.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p, unseen: shotUnseen(p, e.at) });
@@ -2418,11 +2489,47 @@ export const RunStream = memo(function RunStream({
       }
     }
     const secs = first != null && last != null ? last - first : 0;
-    const span = secs >= 1 ? wall(secs) : "";
+    return { cats, pics, notes, steps, failed, running, live, openAt, first, last, span: secs >= 1 ? wall(secs) : "" };
+  };
+  /** A chapter's name: the note it opens on (lib/dossier cuts there), else
+   *  the first words or call in it — one line, without the code ticks. */
+  const titleOf = (zsegs: Seg[]): string => {
+    const evs = zsegs.flatMap((s) => s.idx.map((i) => events[i]));
+    const e = evs.find((x) => x.type === "text" && x.text) ?? evs.find((x) => (x.type === "thinking" && x.text) || x.type === "tool");
+    const words = !e ? "" : e.type === "tool" ? e.summary : e.type === "text" || e.type === "thinking" ? e.text ?? "" : "";
+    return words.trim().split("\n")[0].replace(/`/g, "");
+  };
+  const rowsOf = (zsegs: Seg[]) => zsegs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)));
+  const workZone = (zsegs: Seg[], lastZone: boolean) => {
+    const { cats, pics, notes, steps, failed, running, live, openAt, last, span } = tally(zsegs);
     // The last zone of a running turn is live: a tool out is WORKING since it
     // started, nothing out is THINKING since the last thing finished. A card
     // waiting on you is neither — the plate rests until it is answered.
     const state = working && lastZone ? (running ? "work" as const : "think" as const) : null;
+    // A long zone opens on its chapters, and a chapter builds its rows only
+    // while open (lib/dossier chapterStarts); a chapter opens on a note.
+    const starts = chapterStarts(
+      zsegs.map((s) => s.idx.filter((i) => isStep(events[i])).length),
+      zsegs.map((s) => s.kind === "prose" && events[s.idx[0]].type === "text"),
+    );
+    const rows = !starts.length ? rowsOf(zsegs) : starts.map((at, k) => {
+      const segs = zsegs.slice(at, starts[k + 1]);
+      const c = tally(segs);
+      return (
+        <WorkChapter
+          key={`c${segs[0].start}`}
+          n={k + 1}
+          at={c.first}
+          title={titleOf(segs)}
+          steps={c.steps}
+          span={c.span}
+          failed={c.failed}
+          pics={c.pics.length}
+          live={!!state && k === starts.length - 1}
+          rows={() => rowsOf(segs)}
+        />
+      );
+    });
     // Keyed by the tier-1/2 row before it (or a card drawn at the foot), so the
     // zone you opened stays the same zone as rows land.
     let start = zsegs[0].start;
@@ -2443,10 +2550,11 @@ export const RunStream = memo(function RunStream({
         started={turnStarted}
         live={live}
         span={span}
+        chapters={starts.length}
         defaultOpen={foldsOpen}
         animate={animate}
       >
-        {zsegs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)))}
+        {rows}
       </WorkZone>
     );
   };

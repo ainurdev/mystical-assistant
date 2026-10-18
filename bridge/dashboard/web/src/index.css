@@ -1294,7 +1294,7 @@ input {
 .actrow:hover .ax-chev { color: var(--txd); }
 /* a row that opens is a control: say so with the pointer (Tailwind v4 gives
    buttons none, and the rows are divs) */
-.actrow[role="button"], .zrow.log[aria-expanded], .agb-brief, .dwork-head { cursor: pointer; }
+.actrow[role="button"], .zrow.log[aria-expanded], .agb-brief, .dwork-head, .wzc-head { cursor: pointer; }
 /* A query is shown as entered, in its own dashed inset — nothing is committed. */
 .ax-q {
   border: 1px dashed color-mix(in srgb, var(--h) 32%, transparent);
@@ -2099,6 +2099,59 @@ input {
   content: ""; position: absolute; left: calc(var(--zn) / 2 - .5px); top: 14px; bottom: 10px; width: 1px;
   background: linear-gradient(var(--zline), var(--zline) 92%, transparent);
 }
+/* A long zone's chapters (RunStream WorkChapter, lib/dossier chapterStarts): a
+   line each on the zone's grid. A numbered node sits on the spine, then when
+   the chapter began, the note it opens on, then what failed, its pictures and
+   its size, in fixed cells so they read down the column. Open, the line pins
+   under the zone's header (35px tall when open) on the plate's ground, with the
+   spine through it and a dashed rule under it across the plate, and its node
+   fills with the accent. Live, it wears a ring. */
+[data-style="dossier"] .wzc-head {
+  position: relative; display: grid; align-items: center; width: 100%; min-height: 34px; padding: 0; text-align: left;
+  grid-template-columns: var(--zn) var(--zk) minmax(0, 1fr) max-content var(--zc);
+}
+[data-style="dossier"] .wzc-head::after {
+  content: ""; position: absolute; inset: 2px 0 2px var(--zn); z-index: 0; pointer-events: none;
+  border-radius: calc(var(--d-rad) * .5);
+}
+[data-style="dossier"] .wzc-head:hover::after { background: color-mix(in oklab, var(--d-tool) 7%, transparent); }
+[data-style="dossier"] .wzc-head > * { position: relative; z-index: 1; }
+[data-style="dossier"] .wzc-node {
+  grid-column: 1; justify-self: center; display: grid; place-items: center; width: 22px; height: 18px; border-radius: 9px;
+  font-family: var(--mono); font-size: var(--t9); font-weight: 500; line-height: 1; letter-spacing: .3px;
+  color: var(--txd); background: var(--zg);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--txl) 45%, var(--zg)), 0 0 0 3px var(--zg);
+}
+[data-style="dossier"] .wzc-obj { grid-column: 3; display: flex; align-items: baseline; gap: 12px; min-width: 0; }
+[data-style="dossier"] .wzc-t { flex: none; font-family: var(--mono); font-size: var(--t95); letter-spacing: .4px; color: var(--txf); }
+[data-style="dossier"] .wzc-title {
+  min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  font-family: var(--d-face); font-size: var(--t13); color: var(--tx);
+}
+[data-style="dossier"] .wzc-fig {
+  grid-column: 4; display: grid; grid-template-columns: 38px 46px 112px; align-items: center; padding-left: 14px;
+  font-family: var(--mono); font-size: var(--t95); letter-spacing: .4px; color: var(--txf); white-space: nowrap;
+}
+[data-style="dossier"] .wzc-n { justify-self: end; }
+[data-style="dossier"] .wzc-n > b { font-weight: 600; letter-spacing: 1.6px; color: var(--acc); }
+[data-style="dossier"] .wzc-chev { grid-column: 5; justify-self: center; color: var(--txf); }
+[data-style="dossier"] .wzc[data-open] > .wzc-head { position: sticky; top: calc(var(--isle-b, 0px) + 35px); z-index: 2; }
+[data-style="dossier"] .wzc[data-open] > .wzc-head::before {
+  content: ""; position: absolute; z-index: 0; inset: 0 calc(-1 * var(--zpr)) 0 calc(-1 * var(--zpl)); pointer-events: none;
+  background:
+    linear-gradient(90deg, var(--d-hair) 4px, transparent 0) left bottom / 7px 1px repeat-x,
+    linear-gradient(var(--zline), var(--zline)) calc(var(--zpl) + var(--zn) / 2 - .5px) 0 / 1px 100% no-repeat,
+    var(--zg);
+}
+[data-style="dossier"] .wzc[data-open] > .wzc-head .wzc-node { color: var(--acc-on); background: var(--acc); box-shadow: 0 0 0 3px var(--zg); }
+[data-style="dossier"] .wzc[data-open] > .wzc-head .wzc-title { color: var(--txh); }
+[data-style="dossier"] .wzc[data-open] > .wzc-head .wzc-t { color: var(--txd); }
+[data-style="dossier"] .wzc[data-open] > .wzc-head .wzc-chev { color: var(--txm); }
+[data-style="dossier"] .wzc[data-live] > .wzc-head .wzc-node {
+  box-shadow: 0 0 0 3px var(--zg), 0 0 0 4px color-mix(in srgb, var(--acc) 45%, transparent);
+}
+[data-style="dossier"] .wzc-body { display: flex; flex-direction: column; padding: 4px 0 10px; }
+[data-style="dossier"] .wzc-body > * { margin: 0 !important; }
 /* every hue inside the work is the tool role: the component writes each row's
    kind hue inline as --h, and the kind hue is exactly the collision this
    language exists to undo. A failure still swaps to --err (data-err rules). */
