@@ -189,9 +189,10 @@ function TurnBlock({
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
               ended={turn.status !== "running"}
+              working={working}
+              hud={hud}
             />
           )}
-          {working && <WorkingIndicator hud={hud} events={turn.events} boot={boot} started={turn.started} />}
         </div>
       )}
       {turn.outcome && <OutcomeBadge outcome={turn.outcome} />}

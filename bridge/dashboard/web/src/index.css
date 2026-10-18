@@ -1909,13 +1909,15 @@ input {
    seconds in that state after it, and the node as the instrument — a ring
    ripples out of it while the model thinks, a comet orbits it while a tool
    runs; the step that is out follows the chips with a caret */
-[data-style="dossier"] .dwork[data-live] .dwork-ms { color: var(--acc); }
+[data-style="dossier"] .dwork[data-ind="orbit"][data-live] .dwork-ms { color: var(--acc); }
 [data-style="dossier"] .dwork-st { font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; text-transform: uppercase; }
 [data-style="dossier"] .dwork-secs { margin-left: 8px; color: var(--txf); }
 [data-style="dossier"] .dwork-secs::before { content: "\00b7"; margin-right: 5px; color: var(--txl); }
+/* the dots keep their full width and are revealed in place, so the seconds
+   after them never move */
 [data-style="dossier"] .dwork-dots {
-  display: inline-block; width: 0; overflow: hidden; vertical-align: bottom; white-space: nowrap;
-  font-family: var(--mono); letter-spacing: 0; animation: dwdots 2.2s linear infinite;
+  display: inline-block; width: 3ch; vertical-align: bottom; white-space: nowrap;
+  font-family: var(--mono); letter-spacing: 0; animation: dwdots 2.2s steps(1) infinite;
 }
 [data-style="dossier"] .dwork-dots::after { content: "..."; }
 /* a sibling of the step, not inside it, so a long step's ellipsis can't swallow it */
@@ -1927,21 +1929,29 @@ input {
   color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, var(--panel2));
   box-shadow: 0 0 0 2px var(--panel2), 0 0 0 3px color-mix(in oklab, var(--acc) 60%, var(--line2, var(--d-hair)));
 }
-[data-style="dossier"] .dwork[data-live="think"] .dwork-node::before {
+/* ORBIT's two effects live on the node's own ring track, inside the plate: the
+   turn row's paint containment (.vskip-card) clips anything drawn past it.
+   Thinking: a ring is born at the node's centre and dies as it reaches the
+   track. Working: a comet runs the track. */
+[data-style="dossier"] .dwork[data-ind="orbit"][data-live="think"] .dwork-node::before {
   content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid var(--acc);
   animation: dwripple 2.2s ease-out infinite;
 }
-[data-style="dossier"] .dwork[data-live="work"] .dwork-node::after {
-  content: ""; position: absolute; inset: -7px; border-radius: 50%;
+[data-style="dossier"] .dwork[data-ind="orbit"][data-live="work"] .dwork-node::after {
+  content: ""; position: absolute; inset: -4px; border-radius: 50%;
   background: conic-gradient(from 0deg, transparent 0 50%, var(--acc) 100%);
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
-  filter: drop-shadow(0 0 3px color-mix(in oklab, var(--acc) 70%, transparent));
+  filter: drop-shadow(0 0 2px color-mix(in oklab, var(--acc) 70%, transparent));
   animation: dworbit 1.1s linear infinite;
 }
-@keyframes dwripple { 0% { transform: scale(.55); opacity: .95; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes dwripple { 0% { transform: scale(.25); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
 @keyframes dworbit { to { transform: rotate(360deg); } }
-@keyframes dwdots { 0%, 24% { width: 0; } 25%, 49% { width: 1ch; } 50%, 74% { width: 2ch; } 75%, 100% { width: 3ch; } }
+@keyframes dwdots { 0% { clip-path: inset(0 100% 0 0); } 25% { clip-path: inset(0 66.6% 0 0); } 50% { clip-path: inset(0 33.3% 0 0); } 75%, 100% { clip-path: inset(0 0 0 0); } }
+/* the other forms, hosted by the plate: shut, under the header; open, at the foot */
+[data-style="dossier"] .dwork-ind { margin: 6px 2px 1px calc(var(--zn) + 12px); }
+[data-style="dossier"] .dwork[data-open] .dwork-ind { margin-top: 8px; }
+[data-style="dossier"] .dwork-ind > * { margin: 0 !important; }
 @media (prefers-reduced-motion: reduce) {
   [data-style="dossier"] :is(.dwork-dots, .dwork-caret, .dwork[data-live] .dwork-node::before, .dwork[data-live] .dwork-node::after) { display: none; }
 }

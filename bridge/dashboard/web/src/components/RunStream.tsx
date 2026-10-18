@@ -18,6 +18,8 @@ import { foldChips, runsOf, insideRun, byFile, type EditEv } from "../lib/toolfo
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
 import { kindsOf, MARK_GLYPH, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
 import { PromptBubble } from "./PromptBubble";
+import { WorkingIndicator } from "./hud/WorkingIndicator";
+import type { HudSettings } from "../lib/theme";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { ToolWidget } from "./ResultWidgets";
 import { shotName, shotTitle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
@@ -660,11 +662,14 @@ type Pic = { path: string; name: string; unseen: boolean };
  *  (the badge would clear as you scrolled past); opening one does, as does
  *  half a thumbnail in view once the zone is open. It follows the COLLAPSE
  *  STEPS switch like a STEPS fold does. The last zone of a running turn is
- *  live: the figure says THINKING or WORKING with the seconds in that state,
- *  the node is the instrument — a ring ripples out of it while the model
- *  thinks, a comet orbits it while a tool runs (index.css) — and the step
- *  that is out follows the chips with a caret. */
-function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, live, span, defaultOpen, animate, children }: {
+ *  live and hosts the working indicator: the ORBIT form is the plate itself —
+ *  THINKING or WORKING with the seconds in that state where the figure was, a
+ *  ripple in the node while the model thinks, a comet on its ring while a tool
+ *  runs (both inside the node's track, since the turn row's paint containment
+ *  clips anything past the plate), a caret on the step that is out — and every
+ *  other form (the bar, STATUS, the cat) draws as a row inside the plate
+ *  instead of under the turn. */
+function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, live, span, defaultOpen, animate, children }: {
   /** What the zone ran, by kind, and how often the agent spoke inside it. */
   cats: StepCat[];
   notes: number;
@@ -679,6 +684,10 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, liv
   state: "think" | "work" | null;
   /** When that state began, epoch seconds; the mount clock stands in. */
   since?: number;
+  /** The indicator's form, and what the other forms read (lib/workstate). */
+  hud?: HudSettings;
+  events: TimedEvent[];
+  started?: number;
   /** What is out right now, named after the chips while it runs. */
   live: string;
   /** Wall time the zone covered, already formatted; "" when unknown. */
@@ -713,18 +722,27 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, liv
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in re-renders while you are still looking.
   const [zoom, setZoom] = useState<string | null>(null);
+  const orbit = hud?.indicator === "orbit";
   // Seconds in the state, on the store's clock (the event's `at`) so the count
-  // survives the zone remounting; ticks only while live.
+  // survives the zone remounting; ticks only while ORBIT draws it.
   const mountAt = useRef(Date.now() / 1000);
   const [now, setNow] = useState(mountAt.current);
   useEffect(() => {
-    if (!state) return;
+    if (!state || !orbit) return;
     const tick = () => setNow(Date.now() / 1000);
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [state, since]);
+  }, [state, orbit, since]);
   const secs = Math.max(0, Math.floor(now - (since ?? mountAt.current)));
+  // The step that is out is named once: after the chips while the plate is
+  // shut, unless the hosted form already says it (STATUS does; the bar and the
+  // cat don't) — and never while open, where the running row itself does.
+  const namesStep = open || hud?.indicator === "status";
+  // The other forms, hosted by the plate: shut, under the header; open, at the foot.
+  const ind = state && !orbit ? (
+    <div className="dwork-ind"><WorkingIndicator hud={hud} events={events} started={started} /></div>
+  ) : null;
   const fresh = pics.filter((p) => p.unseen);
   const words = workTitle(stepsTitle(cats), notes);
   const picsWord = `${pics.length} picture${pics.length === 1 ? "" : "s"}`;
@@ -734,6 +752,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, liv
       data-open={open ? "" : undefined}
       data-pinned={pinned ? "" : undefined}
       data-live={state ?? undefined}
+      data-ind={orbit ? "orbit" : undefined}
       data-err={failed ? "" : undefined}
       data-shots={fresh.length ? "new" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
@@ -761,7 +780,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, liv
         <span className="dwork-l1">
           <span className="dwork-lab">WORK</span>
           <span className="dwork-ms">
-            {state ? (
+            {state && orbit ? (
               <>
                 <b className="dwork-st">{state === "work" ? "WORKING" : "THINKING"}{state === "think" ? <i className="dwork-dots" aria-hidden /> : null}</b>
                 <span className="dwork-secs">{secs}s</span>
@@ -775,7 +794,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, liv
               <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden>{MARK_GLYPH[k.m]}</i>{k.n}</span>
             ))}
           </span>
-          {state === "work" && live ? <><span className="dwork-live">{live}</span><i className="dwork-caret" aria-hidden /></> : null}
+          {state === "work" && live && !namesStep ? <><span className="dwork-live">{live}</span>{orbit ? <i className="dwork-caret" aria-hidden /> : null}</> : null}
         </span>
         <span className="dwork-right">
           {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden>{"✕"}</i>{failed}</span> : null}
@@ -788,6 +807,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, liv
           ) : null}
         </span>
       </button>
+      {!open ? ind : null}
       {!open && pics.length ? (
         <div className="dwork-row">
           <div className="dwork-row-h">
@@ -811,7 +831,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, liv
         </div>
       ) : null}
       {zoom && <ImageLightbox src={zoom} all={gallery} onClose={() => setZoom(null)} />}
-      {open ? <div className="dwork-body">{children}</div> : null}
+      {open ? <><div className="dwork-body">{children}</div>{ind}</> : null}
     </div>
   );
 }
@@ -1611,6 +1631,8 @@ export const RunStream = memo(function RunStream({
   onOpenFile,
   onAnswer,
   ended = false,
+  working = false,
+  hud,
   boot = null,
   foldsOpen = false,
   compact = false,
@@ -1639,6 +1661,11 @@ export const RunStream = memo(function RunStream({
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
   ended?: boolean;
+  /** Running and waiting on nothing (Transcript's working): the last WORK zone
+   *  is live and hosts the indicator, or, with no zone to carry it, the working
+   *  row draws at the foot. */
+  working?: boolean;
+  hud?: HudSettings;
   /** Whether a STEPS fold mounts open (the COLLAPSE STEPS switch, inverted).
    *  Off by default: the work sits under one line until you ask for it, and
    *  the words stay the thing you see. */
@@ -2138,7 +2165,7 @@ export const RunStream = memo(function RunStream({
     // The last zone of a running turn is live: a tool out is WORKING since it
     // started, nothing out is THINKING since the last thing finished. A card
     // waiting on you is neither — the plate rests until it is answered.
-    const state = !ended && lastZone && !pending.length ? (running ? "work" as const : "think" as const) : null;
+    const state = working && lastZone ? (running ? "work" as const : "think" as const) : null;
     // Keyed by the tier-1/2 row before it (or a card drawn at the foot), so the
     // zone you opened stays the same zone as rows land.
     let start = zsegs[0].start;
@@ -2154,6 +2181,9 @@ export const RunStream = memo(function RunStream({
         gallery={shots}
         state={state}
         since={running ? openAt : last}
+        hud={hud}
+        events={events}
+        started={turnStarted}
         live={live}
         span={span}
         defaultOpen={foldsOpen}
@@ -2164,6 +2194,11 @@ export const RunStream = memo(function RunStream({
     );
   };
 
+  const zones = dossier ? zonesOf(segs, isTop) : [];
+  // Whether a WORK zone is there to carry the working indicator (the last zone,
+  // while it runs); otherwise the indicator draws at the foot — before the
+  // first event, or after a steer the model is still reading.
+  const carried = working && zones.length > 0 && zones[zones.length - 1].kind === "work";
   return (
     // vskip-card: a turn runs to hundreds of events, so each card skips layout
     // and paint while it's off-screen (see .vskip-card in index.css).
@@ -2172,9 +2207,10 @@ export const RunStream = memo(function RunStream({
       {/* The words in the flow, the work under a row each (lib/segments) —
           or, in DOSSIER, under one WORK zone per stretch (lib/dossier). */}
       {dossier
-        ? zonesOf(segs, isTop).map((z, i, zs) =>
-            z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs, i === zs.length - 1))
+        ? zones.map((z, i) =>
+            z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs, i === zones.length - 1))
         : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)))}
+      {working && !carried ? <WorkingIndicator hud={hud} events={events} boot={boot} started={turnStarted} /> : null}
     </div>
   );
 });
