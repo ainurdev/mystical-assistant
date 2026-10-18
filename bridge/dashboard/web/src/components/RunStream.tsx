@@ -1,7 +1,7 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
-  TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown,
+  TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronLeft, ChevronRight,
   Quote, Layers, Image as ImageIcon, Terminal, FileText, Pencil, FilePlus, Search, Globe,
   Plug, Bot, Sparkles, Webhook, ScrollText, CircleX, Wrench, Circle, type LucideIcon,
 } from "lucide-react";
@@ -901,25 +901,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
         {ind || pics.length ? (
           <div className="dwork-part" data-leaving={open && motion ? "" : undefined} hidden={open && !motion}>
             {!open ? ind : null}
-            {pics.length ? (
-              <div className="dwork-row">
-                <div className="dwork-row-thumbs" role="group" aria-label={picsWord}>
-                  {pics.map((p) => {
-                    const src = api.attachmentUrl(p.path);
-                    return (
-                      <figure key={p.path} data-new={p.unseen ? "" : undefined}>
-                        <ZoomButton onOpen={() => setZoom(src)}>
-                          {/* A picture the upload dir has pruned can't be seen: marking it
-                              seen is what clears the badge it would otherwise hold lit. */}
-                          <MediaThumb src={src} alt={p.name} onError={() => markShotSeen(p.path)} />
-                        </ZoomButton>
-                        <figcaption>{p.name}</figcaption>
-                      </figure>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : null}
+            {pics.length ? <ShotRow pics={pics} shut={!open} label={picsWord} onOpen={setZoom} /> : null}
           </div>
         ) : null}
         {open || motion ? (
@@ -929,6 +911,107 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** The shut plate's pictures, one row of equal tiles (index.css .dwork-row).
+ *  It opens on the newest and glides to each picture that lands, even when you
+ *  had scrolled back. A side holding pictures out of view fades under their
+ *  count, which wears the accent while one of them is unseen; a tap pages that way. */
+function ShotRow({ pics, shut, label, onOpen }: {
+  pics: Pic[];
+  /** The zone is shut, so the row is the part on screen. */
+  shut: boolean;
+  label: string;
+  onOpen: (src: string) => void;
+}) {
+  const row = useRef<HTMLDivElement>(null);
+  // Tiles out of view on each side: a tile is once its middle is in the faint
+  // half of the edge's 64px fade (index.css). Hidden while open, so not measured.
+  const [edge, setEdge] = useState({ l: 0, r: 0 });
+  const measure = () => {
+    const el = row.current;
+    if (!el?.clientWidth) return;
+    const from = el.scrollLeft + 32, to = el.scrollLeft + el.clientWidth - 32;
+    let l = 0, r = 0;
+    for (const f of Array.from(el.children) as HTMLElement[]) {
+      const mid = f.offsetLeft + f.offsetWidth / 2;
+      if (mid < from) l++;
+      else if (mid > to) r++;
+    }
+    setEdge((o) => (o.l === l && o.r === r ? o : { l, r }));
+  };
+  // Drawn (mounted, or the zone shut again) it jumps to its end; a picture
+  // landing while it shows glides it there.
+  const was = useRef({ n: 0, shut: false });
+  useLayoutEffect(() => {
+    const el = row.current, w = was.current;
+    was.current = { n: pics.length, shut };
+    if (!el || !shut) return;
+    const glide = w.shut && pics.length > w.n && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollTo({ left: el.scrollWidth, behavior: glide ? "smooth" : "auto" });
+    measure();
+  }, [pics.length, shut]);
+  useEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    let raf = 0;
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; measure(); }); };
+    // A vertical wheel moves the row while it has room that way, and at either
+    // end goes on to the transcript. By hand: React's wheel listener is passive.
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      if (e.deltaY < 0 ? el.scrollLeft <= 0 : el.scrollLeft >= el.scrollWidth - el.clientWidth - 1) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+    };
+    const ro = new ResizeObserver(onScroll);
+    ro.observe(el);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, []);
+  const more = (side: "l" | "r") => {
+    const n = edge[side];
+    if (!n) return null;
+    const fresh = (side === "l" ? pics.slice(0, n) : pics.slice(-n)).filter((p) => p.unseen).length;
+    const words = `${n} more picture${n === 1 ? "" : "s"} to the ${side === "l" ? "left" : "right"}${fresh ? `, ${fresh} not seen yet` : ""}`;
+    // A rowful, less one tile (96px and its 10px gap), so you keep your place.
+    const page = () => row.current?.scrollBy({
+      left: (side === "l" ? -1 : 1) * (row.current.clientWidth - 106),
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+    return (
+      <button type="button" className="dwork-more" data-side={side} data-lit={fresh ? "" : undefined} onClick={page} title={words} aria-label={words}>
+        {side === "l" ? <><ChevronLeft size={11} strokeWidth={2.4} aria-hidden />{n}</> : <>{n}<ChevronRight size={11} strokeWidth={2.4} aria-hidden /></>}
+      </button>
+    );
+  };
+  return (
+    <div className="dwork-row">
+      <div ref={row} className="dwork-row-thumbs" role="group" aria-label={label}>
+        {pics.map((p) => {
+          const src = api.attachmentUrl(p.path);
+          return (
+            <figure key={p.path} data-new={p.unseen ? "" : undefined}>
+              <ZoomButton onOpen={() => onOpen(src)}>
+                {/* A picture the upload dir has pruned can't be seen: marking it
+                    seen is what clears the badge it would otherwise hold lit. */}
+                <MediaThumb src={src} alt={p.name} onError={() => markShotSeen(p.path)} />
+              </ZoomButton>
+              <figcaption>{p.name}</figcaption>
+            </figure>
+          );
+        })}
+      </div>
+      {more("l")}
+      {more("r")}
     </div>
   );
 }

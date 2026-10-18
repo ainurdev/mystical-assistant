@@ -2015,12 +2015,35 @@ input {
    open it. An unseen one wears the accent and a NEW tag; seen, it goes grey
    and stays */
 [data-style="dossier"] .dwork-row {
-  margin: 9px 2px 1px calc(var(--zn) + 12px); padding-top: 3px;
+  position: relative; margin: 9px 2px 1px calc(var(--zn) + 12px); padding-top: 3px;
   border-top: 1px dashed var(--d-hair);
 }
 [data-style="dossier"] .dwork[data-shots="new"] .dwork-row { border-top-color: color-mix(in oklab, var(--acc) 35%, var(--d-hair)); }
-/* the padding is room for the NEW tag, which hangs 6px past its tile's corner */
-[data-style="dossier"] .dwork-row-thumbs { display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-x: contain; padding: 6px 6px 0 0; }
+/* the padding is room for the NEW tag, which hangs 6px past its tile's corner;
+   positioned, so a tile's offsetLeft is its place in the row (ShotRow) */
+[data-style="dossier"] .dwork-row-thumbs { position: relative; display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-x: contain; padding: 6px 6px 0 0; }
+/* a side holding pictures out of view fades out under their count (ShotRow
+   counts a tile once its middle is in the fade's faint half), which wears the
+   accent while one of them is unseen; a tap pages that way */
+[data-style="dossier"] .dwork-row:has(> .dwork-more) > .dwork-row-thumbs {
+  --fl: 0px; --fr: 0px;
+  mask-image: linear-gradient(to right, transparent, #000 var(--fl), #000 calc(100% - var(--fr)), transparent);
+}
+[data-style="dossier"] .dwork-row:has(> .dwork-more[data-side="l"]) > .dwork-row-thumbs { --fl: 64px; }
+[data-style="dossier"] .dwork-row:has(> .dwork-more[data-side="r"]) > .dwork-row-thumbs { --fr: 64px; }
+/* on the tiles' midline: the row's 3px padding, the thumbs' 6px, half a 60px tile */
+[data-style="dossier"] .dwork-more {
+  position: absolute; top: 39px; translate: 0 -50%; z-index: 1;
+  display: inline-flex; align-items: center; gap: 3px; padding: 5px 8px; line-height: 1;
+  border: 1px solid var(--d-hair); border-radius: 999px; background: color-mix(in oklab, var(--zg) 88%, transparent);
+  font-size: var(--t105); color: var(--txm); box-shadow: 0 2px 10px rgb(0 0 0 / .35);
+}
+[data-style="dossier"] .dwork-more[data-side="l"] { left: 0; padding-left: 5px; }
+[data-style="dossier"] .dwork-more[data-side="r"] { right: 0; padding-right: 5px; }
+[data-style="dossier"] .dwork-more[data-lit] {
+  border-color: var(--acc); background: var(--acc); color: var(--acc-on, var(--canvas)); font-weight: 700;
+  box-shadow: 0 0 12px color-mix(in oklab, var(--acc) 45%, transparent);
+}
 [data-style="dossier"] .dwork-row-thumbs figure { position: relative; flex: none; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 [data-style="dossier"] .dwork-row-thumbs :is(img, video) {
   height: 60px; width: 96px; object-fit: cover; border-radius: calc(var(--d-rad) * .4);
