@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, CircleDot, CloudUpload, Ellipsis, FileDiff, LoaderCircle, Minus,
   Plus, RefreshCw, RotateCcw, SquarePen, TriangleAlert, X,
@@ -63,6 +63,76 @@ const byPath = (a: GitFile, b: GitFile) => a.path.localeCompare(b.path);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const MOD = /Mac|iP/.test(navigator.platform) ? "⌘" : "Ctrl+";
 
+/* A switch to another worktree rebuilds this panel (RightPanel's scope), so
+   the parts that would jump keep their last size out here, by name: the new
+   panel glides from the old one's size to its own instead of snapping, and
+   while its tree's first status is on the way it holds that size, so a first
+   visit moves once, when the answer lands, not out and back in. */
+const SIZES = new Map<string, number>();
+function useGlide<T extends HTMLElement>(name: string, axis: "height" | "width", hold: boolean, deps: unknown[]) {
+  const ref = useRef<T>(null);
+  // Every size the part takes, a glide's frames included, so the next glide
+  // starts from what is on screen.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => { if (el.isConnected) SIZES.set(name, el.getBoundingClientRect()[axis]); });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [name, axis]);
+  const ran = useRef(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    // Only a panel that replaced another one (RightPanel's data-swap) starts
+    // from the last one's size; opened from the rail, it slides in as it is.
+    const carry = ran.current || !!el.closest("[data-swap]");
+    ran.current = true;
+    const running = el.getAnimations();
+    const from = running.length ? el.getBoundingClientRect()[axis] : carry ? SIZES.get(name) : undefined;
+    for (const a of running) a.cancel();
+    el.style[axis] = hold && from !== undefined ? `${from}px` : "";
+    el.style.overflow = hold ? "hidden" : "";
+    if (hold || from === undefined) return;
+    const to = el.getBoundingClientRect()[axis];
+    if (Math.abs(to - from) < 1 || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    el.style.overflow = "hidden";
+    const a = el.animate([{ [axis]: `${from}px` }, { [axis]: `${to}px` }], { duration: 280, easing: "cubic-bezier(.2,.8,.2,1)" });
+    a.onfinish = () => { el.style.overflow = ""; };
+    // A switch commits a whole transcript in this same task, and WebKit starts
+    // the clock before that work is done; start it on the frame that draws it.
+    requestAnimationFrame(() => { if (a.playState === "running") a.startTime = document.timeline.currentTime; });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hold, ...deps]);
+  return ref;
+}
+
+/* A figure that changes rolls to its new value, odometer-style: the old one
+   leaves upward as the new one rises into its place. What each slot last
+   showed outlives the rebuild too, so a switch rolls from the last tree's
+   figures to this one's; null holds that figure while the status loads. */
+const SHOWN = new Map<string, string>();
+function Roll({ slot, v }: { slot: string; v: string | null }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const now = v ?? SHOWN.get(slot) ?? "";
+  const [seen, setSeen] = useState<{ now: string; was?: string }>({ now });
+  if (seen.now !== now) setSeen({ now, was: seen.now });
+  // Mounted by a switch (useGlide's data-swap test): roll from the last tree's figure.
+  useLayoutEffect(() => {
+    const last = SHOWN.get(slot);
+    if (last !== undefined && last !== now && ref.current?.closest("[data-swap]")) setSeen({ now, was: last });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => { if (v !== null) SHOWN.set(slot, v); }, [slot, v]);
+  const was = seen.was !== now ? seen.was : undefined;
+  return (
+    <span ref={ref} className="gp-roll">
+      {was !== undefined && <span key={`${was}>${now}`} className="gp-roll-o" aria-hidden>{was}</span>}
+      <span key={now} className={was !== undefined ? "gp-roll-i" : undefined}>{now}</span>
+    </span>
+  );
+}
+
 export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onReveal, onHandOff }: Props) {
   const files = git?.files ?? [];
   // A file is staged when the index half of porcelain's pair moved, and
@@ -95,6 +165,10 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
   const branchName = git?.branch || branch || "";
   const ahead = git?.ahead ?? 0;
   const behind = git?.behind ?? 0;
+  // Whatever can resize the readout, the CHANGES fold or the branch pill.
+  const rdRef = useGlide<HTMLDivElement>("readout", "height", !ready, [git, op]);
+  const chRef = useGlide<HTMLDivElement>("changes", "height", !ready, [git, note, chClosed, grClosed]);
+  const brRef = useGlide<HTMLSpanElement>("branch", "width", false, [branchName]);
 
   async function commit() {
     if (!project || !msg.trim()) return;
@@ -252,7 +326,8 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
   /* The readout: what a push and a pull would move and what's changed, how
      fresh that is, then the one move this state allows — none on a diverged
      branch, where git would refuse both. Zeros dim; "—" is a count that can't
-     exist here (no upstream). */
+     exist here (no upstream). Before the status lands, the last figures hold,
+     dimmed, and roll to this tree's when it does. */
   const fetching = op?.kind === "fetch" && op.phase === "busy";
   const t = git?.fetched_at ? ago(git.fetched_at) : "";
   const when = !t ? "" : t === "now" ? " · checked just now" : ` · checked ${t} ago`;
@@ -264,11 +339,14 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
     : s.kind === "behind" ? { kind: "pull" as const, n: s.n }
     : s.kind === "publish" && s.n > 0 ? { kind: "publish" as const, n: s.n }
     : null;
-  const cell = (icon: ReactNode, value: number | null, label: string, tone: string) => (
-    <div className={`gp-roc ${value ? tone : "z"}`}><b>{icon}{value ?? "—"}</b><span>{label}</span></div>
+  const cell = (slot: string, icon: ReactNode, value: number | null, label: string, tone: string) => (
+    <div className={`gp-roc ${ready && value ? tone : "z"}`}>
+      <b>{icon}<Roll slot={slot} v={ready ? String(value ?? "—") : null} /></b><span>{label}</span>
+    </div>
   );
   const warn = s.kind === "diverged" ? "warn" : "";
   const sub = fetching ? <span>checking origin…</span>
+    : !ready ? <span>reading the working tree…</span>
     : s.kind === "synced" ? <><Check size={12} strokeWidth={2.4} /><span>up to date with <b>{s.upstream}</b>{when}</span></>
     : s.kind === "ahead" || s.kind === "behind" ? <span><b>{s.upstream}</b>{when}</span>
     : s.kind === "diverged" ? <span>diverged from <b>{s.upstream}</b>{when}</span>
@@ -383,7 +461,7 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
       <div className="gp-head">
         <span className="gp-title">GIT</span>
         {branchName && (
-          <span className="gp-branch" title={branchName}><i>⎇</i><span>{branchName}</span></span>
+          <span ref={brRef} className="gp-branch" title={branchName}><i>⎇</i><Roll slot="branch" v={branchName} /></span>
         )}
         <button className={`gp-ib${fetching ? " spin" : ""}`} disabled={busy}
           title={s.kind === "none" ? "refresh" : "fetch from origin, then re-read"} onClick={() => void fetchNow()}>
@@ -392,23 +470,27 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
 
-      {project && s.kind !== "none" && (
-        <div className="gp-rd">
-          <div className="gp-ro">
-            {cell(<ArrowUp size={15} strokeWidth={2.2} />, toPush, s.kind === "publish" ? "to publish" : "to push", warn || (action && action.kind !== "pull" ? "on" : ""))}
-            {cell(<ArrowDown size={15} strokeWidth={2.2} />, toPull, "to pull", warn || (action?.kind === "pull" ? "on" : ""))}
-            {cell(<CircleDot size={14} strokeWidth={2.2} />, changed.size, "changed", "dirty")}
-            {op?.phase === "busy" && op.kind !== "fetch" && <div className="gp-robar"><i /></div>}
-          </div>
-          <div className={`gp-rosub${fetching ? "" : s.kind === "synced" ? " ok" : warn ? " warn" : ""}`}>{sub}</div>
-          {act && <div className="gp-act">{act}</div>}
+      {project && (
+        <div ref={rdRef} className="gp-rdw">
+          {(!ready || s.kind !== "none") && (
+            <div className="gp-rd">
+              <div className="gp-ro">
+                {cell("push", <ArrowUp size={15} strokeWidth={2.2} />, toPush, s.kind === "publish" ? "to publish" : "to push", warn || (action && action.kind !== "pull" ? "on" : ""))}
+                {cell("pull", <ArrowDown size={15} strokeWidth={2.2} />, toPull, "to pull", warn || (action?.kind === "pull" ? "on" : ""))}
+                {cell("changed", <CircleDot size={14} strokeWidth={2.2} />, changed.size, "changed", "dirty")}
+                {op?.phase === "busy" && op.kind !== "fetch" && <div className="gp-robar"><i /></div>}
+              </div>
+              <div className={`gp-rosub${fetching ? "" : s.kind === "synced" ? " ok" : warn ? " warn" : ""}`}>{sub}</div>
+              {act && <div className="gp-act">{act}</div>}
+            </div>
+          )}
         </div>
       )}
 
       {/* Both open: CHANGES takes its content up to half the panel, GRAPH the
           rest. One closed: the other takes everything, and a closed GRAPH's
           head sits at the foot, the way VS Code's panes stack. */}
-      <div className="gp-fold" style={{ flex: chClosed ? "none" : grClosed ? "1 1 0" : "0 1 auto", maxHeight: bothOpen ? "52%" : undefined }}>
+      <div ref={chRef} className="gp-fold" style={{ flex: chClosed ? "none" : grClosed ? "1 1 0" : "0 1 auto", maxHeight: bothOpen ? "52%" : undefined }}>
         <div className="gp-fh" role="button" aria-expanded={!chClosed} onClick={() => setChClosed((v) => !v)}>
           {chClosed ? <ChevronRight size={12} strokeWidth={2} /> : <ChevronDown size={12} strokeWidth={2} />}
           <b>Changes</b>

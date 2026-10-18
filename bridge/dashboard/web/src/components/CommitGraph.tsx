@@ -43,6 +43,11 @@ const SEG: Record<Seg, (h: number) => [number, number]> = {
   in: () => [0, DOT_Y], thru: (h) => [0, h], out: (h) => [DOT_Y, h],
 };
 
+// The last log each (repo, filter, length) read. The GIT tab rebuilds this
+// graph on every switch to another worktree; from here it draws at once and
+// re-reads in place, instead of starting from a skeleton every time.
+const LOGS = new Map<string, GitCommit[]>();
+
 export function CommitGraph({ project, branch, upstream, ahead = 0, behind = 0, nonce = 0 }: {
   project: string;
   branch?: string;
@@ -53,9 +58,10 @@ export function CommitGraph({ project, branch, upstream, ahead = 0, behind = 0, 
   /** bump to re-read the log now */
   nonce?: number;
 }) {
-  const [commits, setCommits] = useState<GitCommit[] | null>(null);
-  const [err, setErr] = useState<string | null>(null);
   const [limit, setLimit] = useState(200);
+  const logKey = `${project}\n${branch ?? ""}\n${limit}`;
+  const [commits, setCommits] = useState<GitCommit[] | null>(() => LOGS.get(logKey) ?? null);
+  const [err, setErr] = useState<string | null>(null);
   // Click a row → its changed files; click a file → that file's diff in the commit.
   const [openSha, setOpenSha] = useState<string | null>(null);
   const [files, setFiles] = useState<CompareFile[] | null>(null);
@@ -64,9 +70,12 @@ export function CommitGraph({ project, branch, upstream, ahead = 0, behind = 0, 
 
   useEffect(() => {
     let live = true;
+    const had = LOGS.get(logKey);
+    if (had) setCommits(had);
     const load = async () => {
       try {
         const r = await api.gitLog(project, limit, branch);
+        LOGS.set(logKey, r.commits);
         if (live) {
           setCommits(r.commits);
           setErr(null);
@@ -86,7 +95,7 @@ export function CommitGraph({ project, branch, upstream, ahead = 0, behind = 0, 
       live = false;
       clearInterval(id);
     };
-  }, [project, branch, limit, nonce]);
+  }, [project, branch, limit, logKey, nonce]);
 
   function pickCommit(sha: string) {
     setOpenFile(null);
