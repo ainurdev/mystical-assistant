@@ -84,7 +84,7 @@ def test_initialize_and_tools_list():
     init = _rpc("initialize")["result"]
     assert init["protocolVersion"] == goal_mcp.PROTOCOL
     names = {t["name"] for t in _rpc("tools/list")["result"]["tools"]}
-    assert names == {"CreateGoal", "UpdateGoal", "GetGoal"}
+    assert names == {"CreateGoal", "UpdateGoal", "GetGoal", "WaitForSession"}
 
 
 def test_notification_gets_no_response():

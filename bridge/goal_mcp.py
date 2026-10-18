@@ -12,6 +12,8 @@ stdout — that channel is the protocol.
 import json
 import os
 import sys
+import urllib.error
+import urllib.request
 
 from bridge import goals, store
 
@@ -57,6 +59,30 @@ _TOOLS = [
         "description": "Read the active objective and how many turns it has run.",
         "inputSchema": {"type": "object", "properties": {}},
     },
+    {
+        "name": "WaitForSession",
+        "description": (
+            "Call this instead of ending a turn with \"I'll do X once session Y "
+            "finishes\". The bridge marks this session WAITING and wakes it with a "
+            "prompt when Y's turn ends, saying how it went. After calling it, end "
+            "your turn with one line saying what you are waiting for. A prompt from "
+            "the user ends the wait; call this again if you still need to wait."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "session": {
+                    "type": "string",
+                    "description": ("The other session's id, or words from its title or "
+                                    "worktree. \"?\" lists the sessions running now."),
+                },
+                "then": {
+                    "type": "string",
+                    "description": "What you will do when it finishes, in one sentence.",
+                },
+            },
+            "required": ["session"],
+        },
+    },
 ]
 
 
@@ -94,7 +120,28 @@ def _call(name: str, args: dict) -> str:
         return (f"Objective: {goal.get('objective')}\n"
                 f"State: {goal.get('state')}\n"
                 f"Turns used: {goal.get('iter', 0)}/{goals.MAX_ITER}")
+    if name == "WaitForSession":
+        return _wait(args)
     return f"Unknown tool: {name}"
+
+
+def _wait(args: dict) -> str:
+    """The bridge holds the wait (bridge/waits.py): it is the process that hears
+    turns end, so this asks it over the dashboard's localhost API."""
+    base = os.environ.get("MYSTICAL_DASH")
+    if not base:
+        return "The dashboard is not running, so the bridge can't hold a wait."
+    body = json.dumps({"session": str(args.get("session") or ""), "then": str(args.get("then") or ""),
+                       "claude_session_id": os.environ.get("MYSTICAL_CLAUDE_SESSION_ID", "")}).encode()
+    req = urllib.request.Request(
+        base.rstrip("/") + "/local/wait", data=body, method="POST",
+        headers={"Content-Type": "application/json",
+                 "X-Dash-Token": os.environ.get("MYSTICAL_DASH_TOKEN", "")})
+    try:
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.load(r).get("text") or "Done."
+    except (urllib.error.URLError, OSError, ValueError) as e:  # noqa: BLE001
+        return f"Could not reach the bridge: {e}"
 
 
 def _handle(req: dict) -> dict | None:

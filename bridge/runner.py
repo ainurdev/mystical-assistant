@@ -31,7 +31,7 @@ import uuid
 
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver, git,
                     inspector, integrations, ladder, limits, machine, native_activity, notices,
-                    profiles, pubsub, relevance, state, store, transcript_jsonl)
+                    profiles, pubsub, relevance, state, store, transcript_jsonl, waits)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send, typing
 
@@ -1373,6 +1373,12 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
     for sid, q in asked_sessions().items():
         status.setdefault(sid, {"state": "asking", "kind": None,
                                 "source": "bridge", "label": q})
+    # A turn that ended on WaitForSession (bridge/waits.py) isn't done either:
+    # it wakes on its own when the session it waits on finishes.
+    for sid, w in waits.active().items():
+        status.setdefault(sid, {"state": "waiting", "kind": None, "source": "bridge",
+                                "label": f"waiting on {w['title']}", "on": w["on"],
+                                "then": w["then"], "since": w["since"]})
     now = time.time()
     for row in external:
         sid = row.get("session_id")
@@ -1398,6 +1404,12 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
         else:
             row["state"] = "idle"
     return status
+
+
+def bridge_status(chat_id: int) -> dict:
+    """_build_status over this chat's bridge sessions only: no process scan."""
+    return _build_status(store.running_session_ids(chat_id), awaiting_input(),
+                         running_jobs(chat_id), [], {})
 
 
 def running_snapshot(chat_id: int) -> dict:
@@ -1510,6 +1522,24 @@ def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool
             _session_kb(chat_id, session_id, "🛠 Open session"),
             kind="failed" if is_error else "done", sid=session_id, body=line,
             meta={"elapsed": turn["elapsed"]} if turn.get("elapsed") else None)
+
+
+def notify_waiting(chat_id: int | None, session_id: str | None, on_title: str) -> None:
+    """A turn that ended on WaitForSession: not DONE, it wakes on its own."""
+    if _plugin_session(session_id):
+        return
+    _notify(chat_id, f"⧖ Claude is waiting — {_session_label(session_id)}\non {on_title}",
+            _session_kb(chat_id, session_id, "🛠 Open session"),
+            kind="waiting", sid=session_id, body=f"waiting on {on_title}")
+
+
+def notify_woken(chat_id: int | None, session_id: str | None, body: str) -> None:
+    """A waiting session was queued its wake-up (bridge/waits.py)."""
+    if _plugin_session(session_id):
+        return
+    _notify(chat_id, f"⧖ Claude is carrying on — {_session_label(session_id)}\n{body}",
+            _session_kb(chat_id, session_id, "🛠 Open session"),
+            kind="resumed", sid=session_id, body=body)
 
 
 def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) -> None:
@@ -2764,6 +2794,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                          runtime=runtime, sha=git.head_sha(cwd))
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
+        waits.drop(session["id"])   # a new turn here ends its wait; Claude can wait again
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort, perm,

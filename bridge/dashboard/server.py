@@ -1223,6 +1223,25 @@ class Handler(BaseHTTPRequestHandler):
             rules = toolsets.clean(body.get("disabled_tools"))
             store.set_disabled_tools(sid, rules)
             return self._json({"ok": True, "disabled_tools": rules})
+        if path == "/local/wait":
+            # The goals MCP's WaitForSession (bridge/goal_mcp.py). Every answer,
+            # a refusal too, is text for Claude.
+            from bridge import waits
+            s = store.get_by_claude_session_id(str(body.get("claude_session_id") or ""))
+            if not s or s["chat_id"] != chat:
+                return self._json({"text": "No session is bound to this tool, so it can't wait."})
+            return self._json({"text": waits.add(chat, s["id"], str(body.get("session") or ""),
+                                                 str(body.get("then") or ""))})
+        if path.startswith("/local/sessions/") and path.endswith("/wait"):
+            from bridge import waits
+            sid = path[len("/local/sessions/"):-len("/wait")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            act = body.get("action")
+            if act not in ("resume", "cancel"):
+                return self._json({"error": "action is resume or cancel"}, 400)
+            return self._json({"ok": waits.resume(sid) if act == "resume" else waits.drop(sid)})
         if path.startswith("/local/sessions/") and path.endswith("/goal"):
             from bridge import goals
             sid = path[len("/local/sessions/"):-len("/goal")]

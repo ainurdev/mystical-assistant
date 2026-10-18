@@ -35,7 +35,7 @@ import re
 import sys
 import threading
 
-from bridge import aifeatures, native, runner
+from bridge import aifeatures, native, runner, waits
 
 # The agent said it will act again by itself. Checked FIRST: "Awaiting your `go`.
 # Next check in 20m" is working, not blocked — the user's `go` only speeds it up.
@@ -159,6 +159,11 @@ def _run(job, cwd: "str | None") -> None:
             return
     except Exception as e:  # noqa: BLE001 — never raise out of a daemon thread
         print(f"[tailstate] classify failed: {e}", file=sys.stderr)
-    runner.notify_turn_done(job.chat_id, job.store_session_id, job.status == "error",
-                            body=(job.error_msg or "") if job.status == "error" else
-                            (job.result or (job.texts[-1] if job.texts else "")))
+    # A turn that ended on WaitForSession isn't done: it wakes on its own.
+    if w := waits.get(job.store_session_id or ""):
+        runner.notify_waiting(job.chat_id, job.store_session_id, w["title"])
+    else:
+        runner.notify_turn_done(job.chat_id, job.store_session_id, job.status == "error",
+                                body=(job.error_msg or "") if job.status == "error" else
+                                (job.result or (job.texts[-1] if job.texts else "")))
+    waits.target_ended(job)

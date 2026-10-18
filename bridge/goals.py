@@ -74,6 +74,9 @@ def continue_after_turn(job, effort=None) -> bool:
         sid = job.store_session_id
         if not sid or job.status != "done" or job.interrupted:
             return False
+        from bridge import waits
+        if waits.waiting(sid):        # it waits on another session; its wake-up is the next turn
+            return False
         goal = get(sid)
         if not should_continue(goal):
             return False
