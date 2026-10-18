@@ -71,3 +71,23 @@ export function workTitle(steps: string, notes: number): string {
   const n = notes ? `${notes} note${notes === 1 ? "" : "s"}` : "";
   return [steps, n].filter(Boolean).join(" · ");
 }
+
+/** Where a long zone's chapters start, as indices into its segments. A zone of
+ *  more than `min` steps is cut about every `size` steps, at the first note the
+ *  agent writes after that many, so each chapter opens on the agent's own
+ *  words and the zone opens on one line per chapter instead of a row per step
+ *  (1,600 of those took most of a second to build and scrolled at ~23 fps).
+ *  Shorter zones, or a long one with no note to cut at, get none: []. A cut
+ *  reads only what came before it, so steps landing in a live zone never move
+ *  one. `steps[i]` is what segment i adds to the zone's figure; `opens[i]`
+ *  whether it is a note a chapter may open on. */
+export function chapterStarts(steps: number[], opens: boolean[], size = 100, min = 200): number[] {
+  if (steps.reduce((a, b) => a + b, 0) <= min) return [];
+  const out = [0];
+  let n = 0;
+  steps.forEach((k, i) => {
+    if (n >= size && opens[i]) { out.push(i); n = 0; }
+    n += k;
+  });
+  return out.length > 1 ? out : [];
+}

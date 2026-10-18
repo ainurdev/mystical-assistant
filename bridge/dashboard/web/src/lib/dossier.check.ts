@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/dossier.check.ts
-import { kindsOf, workTitle, zonesOf, TOP_TYPES } from "./dossier.ts";
+import { chapterStarts, kindsOf, workTitle, zonesOf, TOP_TYPES } from "./dossier.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -59,3 +59,16 @@ const shape = (zs: ReturnType<typeof zonesOf>) =>
 ok(workTitle("2 commands · 1 edit", 3) === "2 commands · 1 edit · 3 notes", "title with notes");
 ok(workTitle("", 1) === "1 note", "notes only");
 ok(workTitle("1 command", 0) === "1 command", "steps only");
+
+// A long zone's chapters: about every 100 steps, at the next note the agent
+// writes, so each opens on its own words; short zones stay one list.
+{
+  const pairs = (n: number) => Array.from({ length: n }, () => [1, 9]).flat(); // a note, then 9 steps
+  const notes = (n: number) => Array.from({ length: n }, () => [true, false]).flat();
+  ok(chapterStarts(pairs(20), notes(20)).join() === "", "200 steps stay one list");
+  ok(chapterStarts(pairs(25), notes(25)).join() === "0,20,40", `250 steps cut at the note after each 100: ${chapterStarts(pairs(25), notes(25))}`);
+  ok(chapterStarts([150, 1, 60], [false, true, false]).join() === "0,1", "a cut waits for the next note");
+  ok(chapterStarts([300], [false]).join() === "", "no note to open a chapter on: one list");
+  const full = chapterStarts(pairs(40), notes(40)), live = chapterStarts(pairs(30).concat(1), notes(30).concat(true));
+  ok(full.slice(0, live.length).join() === live.join(), `steps landing later never move a cut: ${live} / ${full}`);
+}
