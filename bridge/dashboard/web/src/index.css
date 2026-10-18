@@ -1892,9 +1892,9 @@ input {
 }
 /* Open, the header pins at the top while you are inside the zone, so a click
    folds the work from anywhere. --isle-b (Terminal.tsx, on the scroller) is
-   where it pins: 0 under the compact pill, which floats over the plate's
-   right end (its chips hide while pinned, data-isle), or just under the full
-   island bar. Pinned (WorkZone's observer), a hairline cuts it from the rows
+   where it pins: level with the compact pill, which floats over the plate's
+   right end (its chips hide while pinned, data-isle), under VEIL's fade, or
+   under the full island bar. Pinned (WorkZone's measure), a hairline cuts it from the rows
    passing under, and a lid in the plate's colour covers the band above it so
    rows don't surface over the header on their way out. The lid spans the
    plate's padding box (--zpl/--zpr). */
