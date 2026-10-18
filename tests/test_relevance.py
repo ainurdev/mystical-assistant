@@ -25,8 +25,8 @@ def _guard_on(monkeypatch):
     monkeypatch.setattr(config, "RELEVANCE_CHECK", True)
 
 
-def _session(chat=901, project="/relproj", turns=1, title="Fix The Login Form"):
-    s = store.create_session(chat, project, cwd="/tmp")
+def _session(chat=901, project="/relproj", turns=1, title="Fix The Login Form", origin=None):
+    s = store.create_session(chat, project, origin=origin, cwd="/tmp")
     store.rename(s["id"], title)
     for i in range(turns):
         store.start_turn(s["id"], f"{s['id']}-t{i}", f"prior task {i}", None)
@@ -59,6 +59,10 @@ def test_should_check_skips_without_a_session():
     assert relevance.should_check(None, LONG) is False
 
 
+def test_should_check_skips_a_teammates_device_run():
+    assert relevance.should_check(_session(origin="device-run:prod"), LONG) is False
+
+
 def test_should_check_skips_when_disabled(monkeypatch):
     monkeypatch.setattr(config, "RELEVANCE_CHECK", False)
     assert relevance.should_check(_session(), LONG) is False
@@ -76,6 +80,36 @@ def test_settings_toggle_overrides_the_env_default(monkeypatch):
     finally:
         aifeatures.set_enabled("relevance", None)   # back to "env decides"
     assert aifeatures.enabled("relevance") is False  # the patched env, again
+
+
+# --- gate: what may reach the model -----------------------------------------------
+
+def _spy_model(monkeypatch):
+    """The model's two doors, recorded: check_relevance and the one-shot under it
+    (runner.run_blocking). A raising fake wouldn't show: check_relevance fails open."""
+    seen = []
+    monkeypatch.setattr(runner, "run_blocking",
+                        lambda *a, **k: seen.append("run_blocking") or ("", None, None, True))
+    monkeypatch.setattr(relevance, "check_relevance", lambda *a, **k: seen.append("check_relevance") or {
+        "related": False, "reason": "different feature", "suggested_title": None})
+    return seen
+
+
+def test_gate_never_sends_a_teammates_device_run_to_the_model(monkeypatch):
+    """Its first turn is the teammate's request: the check would put that and the
+    session's title into a one-shot on this device's Claude account. The prompt
+    goes on, and the runner refuses it (device_view.REFUSAL)."""
+    s = _session(chat=907, origin="device-run:prod")
+    seen = _spy_model(monkeypatch)
+    assert relevance.gate(907, None, s["id"], LONG) is None
+    assert seen == []
+
+
+def test_gate_still_checks_an_ordinary_session_with_history(monkeypatch):
+    s = _session(chat=908)
+    seen = _spy_model(monkeypatch)
+    assert relevance.gate(908, None, s["id"], LONG)["suggest_new"] is True
+    assert seen == ["check_relevance"]
 
 
 # --- parsing + fail-open -----------------------------------------------------
