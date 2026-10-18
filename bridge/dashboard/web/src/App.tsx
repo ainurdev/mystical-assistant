@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Castle, FolderTree, GitBranch, GraduationCap, Hourglass,
+  Castle, FolderTree, GitBranch, GraduationCap,
 } from "lucide-react";
 import {
   api,
@@ -76,7 +76,6 @@ import { Brand, RightCap, Strip } from "./components/hud/Strip";
 import { PaletteButton } from "./components/hud/PaletteButton";
 import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
-import { QueuePanel } from "./components/hud/QueuePanel";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
@@ -1783,9 +1782,7 @@ export function App() {
   // push, ↓n to pull, ↑↓ diverged.
   const gitSync = syncBadge(syncOf(sessionGit));
 
-  // Sessions waiting on another session (bridge/waits.py): the WAITING tab's
-  // badge, and the open one's pill in the composer.
-  const waitingCount = [...statusMap.values()].filter((st) => st.state === "waiting").length;
+  // The open session waiting on another one (bridge/waits.py): its pill in the composer.
   const openWait = sessionId && statusMap.get(sessionId)?.state === "waiting" ? statusMap.get(sessionId) : undefined;
   const waitView = openWait?.on ? resolve(statusMap.get(openWait.on), false) : null;
   const waitAction = async (action: "resume" | "cancel") => {
@@ -1832,15 +1829,6 @@ export function App() {
           onRead={(k) => setLessonsRead((r) => new Set(r).add(k))} />
       ),
     }] : []),
-    {
-      // Kept id "queue": a saved rightTab still opens it.
-      id: "queue", label: waitingCount ? `Waiting (${waitingCount})` : "Waiting", icon: <Hourglass {...RAIL} />,
-      ownScroll: true, scope: "project" as const, badge: waitingCount ? railCount(waitingCount) : null,
-      render: () => (
-        <QueuePanel project={sessionProject} sessions={sessions} status={statusMap}
-          onOpenSession={(id) => { openSession(id); toChat(); }} />
-      ),
-    },
     ...(rivendellOn ? [{
       id: "rivendell", label: rivendellDown ? "Rivendell tasks — link broken" : "Rivendell tasks",
       icon: <Castle {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,

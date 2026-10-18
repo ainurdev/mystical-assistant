@@ -759,14 +759,6 @@ export interface QueueSnapshot {
   paused: boolean;
   items: QueueItem[];
 }
-// One session's queue on the QUEUE tab (GET /local/queue/all).
-export interface QueueGroup {
-  session_id: string;
-  title: string | null;
-  project: string | null;
-  paused: boolean;
-  items: QueueItem[];
-}
 export type QueueOp =
   | "remove" | "edit" | "reorder" | "bump" | "move"
   | "pause" | "resume" | "cancel" | "retry" | "clear-done"
@@ -2081,9 +2073,6 @@ export const api = {
   // --- prompt queue (per session) ---
   queue: (sessionId: string) =>
     req<QueueSnapshot>(`/local/queue?session=${encodeURIComponent(sessionId)}`),
-  queueAll: (project?: string | null) =>
-    req<{ sessions: QueueGroup[] }>(
-      `/local/queue/all${project ? `?project=${encodeURIComponent(project)}` : ""}`),
   queueEnqueue: (body: {
     session_id: string; text: string; prompt: string; images?: string[];
     sel?: { tag: string; label: string }[]; width?: number; project?: string;

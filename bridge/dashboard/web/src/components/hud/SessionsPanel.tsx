@@ -166,7 +166,7 @@ const BUSY_NOW = ["working", "awaiting", "asking", "checking", "parked", "waitin
 
 type StateView = { lane: LaneKey; c: string; fill: boolean; t: string };
 
-/** A state's word where there is room for one (the WAITING tab, the composer's wait pill). */
+/** A state's word where there is room for one (the composer's wait pill). */
 export const LANE_WORD: Record<LaneKey, string> = {
   ask: "needs you", work: "working", wait: "waiting", parked: "parked", done: "idle", idle: "idle",
 };
