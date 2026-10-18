@@ -37,8 +37,10 @@ code, with every tool allowed. So root never follows a link either could plant:
   included, refuses the run) and handed to the owner at once. It holds Claude's
   stdout, which the run already controls whole, so the owner reads nothing there
   the run couldn't have said. Root reads back only its tail, to find the result
-  line (last_result): every line there is the run's to write, and one that isn't
-  a result is skipped.
+  line (last_result): every line there is the run's to write. One that doesn't
+  hold "result" is never parsed, and in one that does, numbers stay text (a line
+  of a million digits would take minutes to convert); one that isn't a result is
+  skipped.
 - Claude gets the token in its environment only (sudo -E), never in an argument
   list, which any account on the Mac can read with ps.
 - Every process started as mysticalruns starts in / or in the run's own code
@@ -224,10 +226,17 @@ def last_result(data):
     """The last {"type":"result",…} line of Claude's stream-json output, as it
     was written, or b"" when there is none (a run killed before it got there).
     `data` is the run's own stdout, so any line may be anything, and a line that
-    isn't a result is skipped, the half line cut at the start of a tail included."""
+    isn't a result is skipped, the half line cut at the start of a tail included.
+    Root parses it, so a line only reaches json if it holds "result", and json
+    leaves its integers as text: the system Python has no limit on converting a
+    digit string and takes time quadratic in its length, so a line of a million
+    digits would hold root for minutes, deaf to TERM. The line is returned as
+    written, so no integer is ever needed."""
     for line in reversed(data.splitlines()):
+        if b'"result"' not in line:
+            continue
         try:
-            event = json.loads(line)
+            event = json.loads(line, parse_int=str)
         except (ValueError, RecursionError):   # not JSON, or nested deeper than json will read
             continue
         if isinstance(event, dict) and event.get("type") == "result":

@@ -1147,3 +1147,35 @@ def test_a_line_nested_too_deep_does_not_stop_last_result_under_the_system_pytho
             "assert helper.last_result(result + b'\\n' + b'[' * 100000 + b'\\n') == result\n")
     r = subprocess.run([_system_python(), "-I", "-c", code, HELPER], capture_output=True, text=True, timeout=60)
     assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.skipif(_system_python() is None, reason="no system python3 to check against")
+def test_a_line_of_digits_cannot_stall_last_result_under_the_system_python():
+    """3.9 has no limit on turning a decimal string into an int, and takes time
+    quadratic in its digits: 1.6 million of them, written by the run, cost root 8
+    seconds and 8 MB of them minutes, past the run's timeout and deaf to TERM. So
+    json is only handed lines that hold "result", with their integers left as text.
+    (Here json is watched for both, and the lines are timed.)"""
+    code = """
+import importlib.util, sys, time
+spec = importlib.util.spec_from_file_location('helper', sys.argv[1])
+helper = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(helper)
+real_loads = helper.json.loads
+def loads(line, **kw):
+    assert b'"result"' in line, 'json was handed a line that cannot be a result: %r' % line[:40]
+    assert kw.get('parse_int') not in (None, int), 'json would convert the digits itself'
+    return real_loads(line, **kw)
+helper.json.loads = loads
+digits = b'9' * 2000000
+result = b'{"type":"result","result":"ok","n":' + digits + b'}'
+decoy = b'{"type":"assistant","note":"result","n":' + digits + b'}'
+data = b'\\n'.join([b'{"type":"system"}', result, decoy, b'[' + digits + b']', digits, b'\\n' * 100000])
+began = time.monotonic()
+got = helper.last_result(data)
+took = time.monotonic() - began
+assert got == result, 'the result line comes back as the run wrote it'
+assert took < 2, 'took %.1f s' % took
+"""
+    r = subprocess.run([_system_python(), "-I", "-c", code, HELPER], capture_output=True, text=True, timeout=120)
+    assert r.returncode == 0, r.stderr
