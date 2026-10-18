@@ -56,7 +56,7 @@ root-only lock (LOCK), so every mysticalruns process is stopped before each run
 and after it, the user's launchd domains booted out first: one that setsid() out
 of its group, or a KeepAlive job launchd would start again, would otherwise
 outlive the run and read the next requester's code and home. A run doesn't start
-while any is left. Before each run the hidden user's crontab goes too, and
+while any is left. Before and after each run the hidden user's crontab goes too, and
 whatever a run whose helper died left in RUNS_HOME. A stop only ever reaches the
 run holding the lock.
 
@@ -491,6 +491,7 @@ def _start(run_id, cfg, popen):
         raise Refused(err)
     stage_fd, job_fd, token_fd, tar_fd = _open_stage(stage, cfg["uid"])
     run_dir = os.path.join(RUNS_HOME, run_id)
+    run_uid = None
     try:
         with os.fdopen(job_fd, encoding="utf-8") as f:
             job = json.load(f)
@@ -524,6 +525,8 @@ def _start(run_id, cfg, popen):
         try:
             _kill_user(popen)   # nothing of this run outlives it, before its folder goes
         finally:
+            if run_uid is not None:   # the hidden user checked out: nor a crontab the run left (Set up's deny list is best effort)
+                popen(["/usr/bin/crontab", "-r", "-u", RUN_USER], **_QUIET).wait()
             shutil.rmtree(run_dir, ignore_errors=True)   # never follows a link (rmtree.avoids_symlink_attacks)
             try:
                 os.unlink("token", dir_fd=stage_fd)

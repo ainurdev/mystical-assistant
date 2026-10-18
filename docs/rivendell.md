@@ -27,7 +27,7 @@ is installed, it is offered within a few minutes with nothing to press.
 Mystical never sees the password. Then, as root, it:
 
 - creates the hidden user `mysticalruns`, with a random password nobody keeps;
-- keeps that user out of your home folder, and out of cron and at;
+- keeps that user out of your home folder, and clears its crontab before and after every run (macOS no longer lets Set up write the cron deny list);
 - walls that user off this bridge's own ports (the dashboard, the Mini App and
   the landing page) with one packet-filter rule, turns the packet filter on, and
   installs a job that does both again at each boot. Then it checks, as that user,

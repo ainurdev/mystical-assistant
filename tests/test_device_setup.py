@@ -199,6 +199,26 @@ def test_set_up_wont_write_through_a_deny_file_that_is_a_link(tmp_path):
     assert r.returncode != 0 and target.read_text() == "x\n"
 
 
+def test_set_up_goes_on_when_a_deny_file_cant_be_written(tmp_path):
+    """Since macOS 26 the cron folder refuses writes even to root: the file is
+    noted and left, and the helper's clearing of the crontab stands in."""
+    cron = tmp_path / "cron.deny"
+    cron.write_text("Guest\n")
+    cron.chmod(0o444)
+    r = _run_function("setup.sh", "deny_cron", str(cron))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert cron.read_text() == "Guest\n" and "can't be written" in r.stdout + r.stderr
+
+
+def test_remove_goes_on_when_a_deny_file_cant_be_rewritten(tmp_path):
+    cron = tmp_path / "cron.deny"
+    cron.write_text("Guest\nmysticalruns\n")
+    cron.chmod(0o444)
+    r = _run_function("remove.sh", "allow_cron", str(cron))
+    assert r.returncode == 0, r.stdout + r.stderr
+    assert cron.read_text() == "Guest\nmysticalruns\n" and "can't be written" in r.stdout + r.stderr
+
+
 def test_remove_takes_only_the_hidden_users_line_out_and_keeps_the_file(tmp_path):
     cron, at = tmp_path / "cron.deny", tmp_path / "at.deny"
     cron.write_text("Guest\nmysticalruns\nmysticalrunsx\n")
