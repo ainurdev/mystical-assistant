@@ -86,6 +86,8 @@ import { UpdateButton } from "./UpdateButton";
 import { restartBridge } from "../../lib/restart";
 import { takeSettingsFocus } from "../../lib/opensettings";
 import { testText } from "../../lib/rivendelltasks";
+import { PromptBubble } from "../PromptBubble";
+import { FinalResult } from "../RunStream";
 
 export interface SettingsModalProps {
   host: string;
@@ -197,7 +199,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "THEME", terms: "colour color palette scheme aurora claude flint phosphor dark light day bright" },
   { tab: "appearance", sec: "HEADER", terms: "header island frost veil tuck glass readouts" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
-  { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base" },
+  { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base preview" },
   { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars nyan cat" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
@@ -253,12 +255,6 @@ function search(q: string, env: EnvSetting[], hidden: Set<string>): Hit[] {
   ];
   return all.filter((e) => words.every((w) => e.hay.includes(w))).slice(0, 40);
 }
-
-const BASE_FONT_OPTS = BASE_FONTS.map((n) => ({
-  label: n === 0 ? "AUTO" : `${n}PX`,
-  value: String(n),
-}));
-
 
 const CRT_TOGGLES: { key: "scanlines" | "sweep" | "glow"; label: string; desc: string }[] = [
   { key: "scanlines", label: "SCANLINES", desc: "horizontal CRT raster lines" },
@@ -671,6 +667,8 @@ function PickCell({
 
 const FAMILY_NAME: Record<Family, string> = { aurora: "Aurora", claude: "Claude", flint: "Flint", pebble: "Pebble" };
 const FAMILY_TAG: Record<Family, string> = { aurora: "the CRT", claude: "the app itself", flint: "the editor", pebble: "the river stone" };
+// What the Theme typeface is in each family: the face its palette brought.
+const FAMILY_FACE: Record<Family, string> = { aurora: "Share Tech", claude: "System", flint: "Geist", pebble: "Nunito" };
 
 /** A colouring's swatch, filled with what it paints: you, then what waits on
  *  you. A FLINT swatch keeps its ground between the two, because FLINT is
@@ -857,6 +855,162 @@ function CrtToggles({
           <Switch on={settings[g.key]} onClick={() => onToggle(g.key)} />
         </Row>
       ))}
+    </div>
+  );
+}
+
+/** A face's stack. Theme's is the family's own --ui-font, read off the root:
+ *  the HUD container under it carries the picked face instead, and AURORA's
+ *  theme face lives only in CSS (lib/theme FAMILY font ""). */
+function faceStack(key: string, theme: ThemeKey): string {
+  return fontStack(key, theme) || getComputedStyle(document.documentElement).getPropertyValue("--ui-font");
+}
+
+// Every stack in FONTS ends on its generic family, so that names the kind.
+const faceKind = (stack: string) => (stack.endsWith("monospace") ? "Mono" : stack.endsWith("sans-serif") ? "Sans" : "Serif");
+
+const SAMPLE_ASK = "why does the lightbox open on the wrong picture?";
+const SAMPLE_ANSWER = "The strip counted pictures per turn, not per WORK zone, so the third zone opened on picture 0. "
+  + "Fixed in `ImageLightbox.tsx:88`; reload to see it.\n\n"
+  + "- **Cause:** the index restarted in every zone.\n- **Checked:** a 16-picture turn, in Chrome and in WebKit.";
+
+/** A slice of your chat at a face and base size of its own, drawn by the
+ *  transcript's own components inside DOSSIER's markup, so every family, your
+ *  layout and your ground draw it the way they draw the chat. `.typepv`
+ *  re-declares the type scale (index.css), so its --fs reaches every --t*
+ *  inside; --ui-font is the face DOSSIER's prose reads (--d-face). Inert: a
+ *  picture, not a turn. */
+function TypePreview({ stack, size, settings }: { stack: string; size: number; settings: HudSettings }) {
+  const now = Math.floor(Date.now() / 1000);
+  return (
+    <div className="typepv" inert data-bg={settings.chatBg} data-layout={settings.layout}
+      style={{ "--fs": `${size}px`, "--ui-font": stack } as CSSProperties}>
+      <div data-style="dossier" style={{ fontFamily: "var(--mono)", fontSize: "var(--t13)", lineHeight: 1.6 }}>
+        <div className="dturn flex flex-col gap-2" data-last>
+          <div className="dprompt"><PromptBubble text={SAMPLE_ASK} at={now - 126} n={1} /></div>
+          <div className="dreply relative space-y-1.5">
+            <div className="rstream space-y-2">
+              <FinalResult result={SAMPLE_ANSWER} at={now} elapsed={126} tokens={41000} animate={false} idKey="typepv" dossier />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The typeface menu: every face set in itself, grouped by kind in two
+ *  columns. A face under the pointer or the keyboard goes to onHover (the
+ *  preview shows it); a click picks it. */
+function FaceMenu({ value, theme, onPick, onHover }: {
+  value: string;
+  theme: ThemeKey;
+  onPick: (key: string) => void;
+  onHover: (key: string | null) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  const shut = (refocus?: boolean) => {
+    setOpen(false);
+    onHover(null);
+    if (refocus) box.current?.querySelector<HTMLElement>(".tp-pick")?.focus();
+  };
+  useEffect(() => {
+    if (!open) return;
+    // Start on the picked face, and bring the list into the pane: TYPE is the
+    // page's last section, so the menu opens below the fold.
+    const menu = box.current?.querySelector(".tp-menu");
+    menu?.querySelector<HTMLElement>("[aria-selected=true]")?.focus({ preventScroll: true });
+    menu?.scrollIntoView({ block: "nearest" });
+    const away = (e: PointerEvent) => { if (!box.current?.contains(e.target as Node)) shut(); };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  const own = FAMILY_FACE[family(theme)];
+  const row = (f: (typeof FONTS)[number]) => (
+    <button key={f.key} type="button" role="option" aria-selected={f.key === value} className="tp-row"
+      style={{ fontFamily: faceStack(f.key, theme) }}
+      onMouseEnter={() => onHover(f.key)} onFocus={() => onHover(f.key)}
+      onClick={() => { onPick(f.key); shut(true); }}>
+      <span className="tp-name">{f.label}</span>
+      {!f.key && <small>{own}</small>}
+      <span className="tp-ck">{f.key === value ? "✓" : ""}</span>
+    </button>
+  );
+  const kind = (k: string) => FONTS.filter((f) => f.key && faceKind(f.stack) === k).map(row);
+  const cur = FONTS.find((f) => f.key === value) ?? FONTS[0];
+  return (
+    <div ref={box} style={{ position: "relative" }}
+      onKeyDown={(e) => {
+        if (!open) return;
+        if (e.key === "Escape") { e.stopPropagation(); shut(true); }   // the menu, not the dialog
+        else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+          e.preventDefault();
+          const rows = [...e.currentTarget.querySelectorAll<HTMLElement>("[role=option]")];
+          const i = rows.indexOf(document.activeElement as HTMLElement) + (e.key === "ArrowDown" ? 1 : -1);
+          rows[Math.max(0, Math.min(rows.length - 1, i))]?.focus();
+        }
+      }}
+      // Tabbing out shuts it; a click elsewhere is the pointerdown above.
+      onBlur={(e) => { if (open && e.relatedTarget && !e.currentTarget.contains(e.relatedTarget)) shut(); }}>
+      <button type="button" className="tp-pick" aria-haspopup="listbox" aria-expanded={open} data-open={open || undefined}
+        onClick={() => (open ? shut() : setOpen(true))}>
+        <span className="tp-aa" style={{ fontFamily: faceStack(value, theme) }}>Aa</span>
+        <span className="tp-name" style={{ fontFamily: faceStack(value, theme) }}>{cur.label}</span>
+        {!value && <small>{own}</small>}
+        <span className="tp-car">▾</span>
+      </button>
+      {open && (
+        <div className="tp-menu" role="listbox" aria-label="Typeface" onMouseLeave={() => onHover(null)}>
+          <div><div className="tp-gh">Follow the theme</div>{row(FONTS[0])}<div className="tp-gh">Sans</div>{kind("Sans")}</div>
+          <div><div className="tp-gh">Serif</div>{kind("Serif")}<div className="tp-gh">Mono</div>{kind("Mono")}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** THE TYPE section (drafts/type-settings, C · TWO MENUS): a strip of your
+ *  chat at actual size over the typeface menu and a size stepper. The dialog
+ *  never shows a size itself (it is fixed-size in every family), so the strip
+ *  is where a size is judged; a face can be judged there before it is picked. */
+function TypePicker({ settings, autoBase, onPatch }: {
+  settings: HudSettings;
+  autoBase: number;
+  onPatch: (patch: Partial<HudSettings>) => void;
+}) {
+  const voice = useVoice();
+  const [hover, setHover] = useState<string | null>(null);
+  const face = hover ?? settings.font;
+  const trying = hover !== null && hover !== settings.font;
+  const size = settings.baseFont || autoBase;
+  const steps = BASE_FONTS.filter((n) => n > 0);
+  const up = steps.find((n) => n > size) ?? size;
+  const down = [...steps].reverse().find((n) => n < size) ?? size;
+  const name = face ? FONTS.find((f) => f.key === face)?.label : `Theme · ${FAMILY_FACE[family(settings.theme)]}`;
+  return (
+    <div style={CARD}>
+      <div className="tp-bar">
+        <span className="set-key" style={KEY_TX}>{voice("PREVIEW")}</span>
+        <span className="set-desc" style={{ color: "var(--txd)" }}>{trying ? "previewing · click to use" : "actual size"}</span>
+        <span className="tp-tag" data-trying={trying || undefined}>{name} · {settings.baseFont ? "" : "Auto "}{size}px</span>
+      </div>
+      <TypePreview stack={faceStack(face, settings.theme)} size={size} settings={settings} />
+      <div style={LINE}>
+        <Cell label="TYPEFACE" grow="2 1 240px">
+          <FaceMenu value={settings.font} theme={settings.theme} onPick={(font) => onPatch({ font })} onHover={setHover} />
+        </Cell>
+        <Cell label="SIZE" grow="1 1 200px">
+          <div className="tp-step" role="group" aria-label="Size">
+            <button type="button" className="tp-auto" aria-pressed={!settings.baseFont}
+              title={`follows the window — ${autoBase}px on this one`} onClick={() => onPatch({ baseFont: 0 })}>Auto</button>
+            <button type="button" aria-label="Smaller" disabled={down === size} onClick={() => onPatch({ baseFont: down })}>−</button>
+            <span className="tp-val">{size}<small>px</small></span>
+            <button type="button" aria-label="Bigger" disabled={up === size} onClick={() => onPatch({ baseFont: up })}>+</button>
+          </div>
+        </Cell>
+      </div>
     </div>
   );
 }
@@ -4078,7 +4232,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
 
                 {/* One block, not two: a section heading and a fold-out
-                    paragraph each, for one <select> each, spent more of the tab
+                    paragraph each, for one control each, spent more of the tab
                     on the frame than on the two controls it framed. */}
                 <Section
                   title="TYPE"
@@ -4086,50 +4240,16 @@ export function SettingsModal(props: SettingsModalProps) {
                   info={
                     <>
                       A theme is a palette; the type voice is yours.{" "}
-                      <span style={{ color: "var(--txd)" }}>THEME</span> follows whichever one the
+                      <span style={{ color: "var(--txd)" }}>Theme</span> follows whichever one the
                       palette brought — anything else stays put when you switch palettes. Code and
                       logs keep their monospace either way. Every size in the HUD derives from the
                       base: captions, body and headings move together, spacing stays put, and{" "}
-                      <span style={{ color: "var(--txd)" }}>AUTO</span> tracks the window ({autoBase}px
-                      on this one).
+                      <span style={{ color: "var(--txd)" }}>Auto</span> tracks the window ({autoBase}px
+                      on this one). Point at a face in the menu to see it in the preview first.
                     </>
                   }
                 >
-                  <div style={CARD}>
-                    <div style={{ ...LINE, marginTop: 0 }}>
-                      <Cell label="TYPEFACE" grow="2 1 240px">
-                        {/* Each name is set in the face it names — THEME included,
-                            which is how you see what the palette brought without
-                            applying it. */}
-                        <select
-                          value={settings.font}
-                          onChange={(e) => onPatch({ font: e.target.value })}
-                          style={{ ...field, width: "100%", fontFamily: fontStack(settings.font, settings.theme) || "inherit" }}
-                        >
-                          {FONTS.map((f) => (
-                            <option
-                              key={f.key}
-                              value={f.key}
-                              style={{ fontFamily: fontStack(f.key, settings.theme) || "inherit" }}
-                            >
-                              {f.label}
-                            </option>
-                          ))}
-                        </select>
-                      </Cell>
-                      <Cell label="BASE SIZE" grow="1 1 130px">
-                        <select
-                          value={String(settings.baseFont)}
-                          onChange={(e) => onPatch({ baseFont: Number(e.target.value) })}
-                          style={{ ...field, width: "100%" }}
-                        >
-                          {BASE_FONT_OPTS.map((o) => (
-                            <option key={o.value} value={o.value}>{o.label}</option>
-                          ))}
-                        </select>
-                      </Cell>
-                    </div>
-                  </div>
+                  <TypePicker settings={settings} autoBase={autoBase} onPatch={onPatch} />
                 </Section>
 
               </>
