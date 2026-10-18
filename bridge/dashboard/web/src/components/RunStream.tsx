@@ -10,7 +10,7 @@ import { Markdown, type OpenFile } from "./Markdown";
 import { selectionMd } from "../lib/selmd";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
-import { ImageLightbox, MediaThumb, ZoomButton, isVideo, type Clip } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, ZoomButton, type Clip, type Shown } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { hhmm, useClock12 } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
@@ -20,7 +20,7 @@ import { MARK_GLYPH, stripOf, workTitle, zonesOf, TOP_TYPES, type Mark } from ".
 import { PromptBubble } from "./PromptBubble";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { ToolWidget } from "./ResultWidgets";
-import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
+import { shotTitle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
   cmdAbstract, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
   type Shape, type Tier, type ToolKind,
@@ -1214,27 +1214,18 @@ function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
 }
 
 /** Thumbnails for images a tool returned, clickable into the lightbox the
- *  transcript already uses for prompt attachments. The upload dir is pruned by
- *  age, so an old turn's screenshot 404s — that row just disappears rather than
+ *  transcript already uses for prompt attachments; `all` is the turn's whole
+ *  set, so the lightbox pages past this row. The upload dir is pruned by age,
+ *  so an old turn's screenshot 404s — that row just disappears rather than
  *  leaving a broken-image glyph. */
-function ToolImages({ paths, clip }: { paths: string[]; clip?: Clip }) {
+function ToolImages({ paths, all }: { paths: string[]; all: Shown[] }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<string>>(new Set());
   const live = paths.filter((p) => !gone.has(p));
   if (!live.length) return null;
   return (
     <div className="zx mt-2 ml-[var(--rail)] flex flex-wrap gap-2">
-      {/* The panel belongs to the clip, so it only rides along when the thing
-          being opened is the video the metadata was stamped onto — stepping the
-          gallery to a screenshot drops it. */}
-      {zoom && (
-        <ImageLightbox
-          src={zoom}
-          all={live.map((p) => api.attachmentUrl(p))}
-          clip={isVideo(zoom) ? clip : undefined}
-          onClose={() => setZoom(null)}
-        />
-      )}
+      {zoom && <ImageLightbox src={zoom} all={all} onClose={() => setZoom(null)} />}
       {live.map((p) => {
         const src = api.attachmentUrl(p);
         return (
@@ -1595,6 +1586,20 @@ export const RunStream = memo(function RunStream({
   const doneOf = (e: RunEvent): Done | undefined =>
     e.type === "tool" ? (e.id ? toolDone.get(e.id) : {}) : undefined;
 
+  // Every picture this turn's work produced, in order, named for the lightbox's
+  // title (lib/toolwidget shotTitle): opened on any row it pages through the
+  // lot, since the shot you want next is rarely the same row's. A clip rides on
+  // its own row's entries only, so the chapter rail stays with its video.
+  // shortcut: a shot another row found 404'd still sits in the strip (each row
+  // knows only its own); fine while the upload dir prunes a whole turn at once.
+  const shots: Shown[] = [];
+  const addShots = (call: string, about: string, paths?: string[], clip?: Clip) =>
+    paths?.forEach((p, i) => shots.push({ src: api.attachmentUrl(p), name: shotTitle(call, about, i, paths.length), clip }));
+  for (const e of events) {
+    if (e.type === "steer") addShots("STEER", e.text, e.images);
+    else if (e.type === "tool") { const d = doneOf(e); addShots(e.name, e.summary, d?.images, d?.clip); }
+  }
+
   // Only the quiet steps fold away — a terminal, a diff, a delegated run, a
   // fetch or an MCP call each carry their own block and break the run instead.
   // A glance that came back with a shot carries one too: chips would hide the
@@ -1736,9 +1741,9 @@ export const RunStream = memo(function RunStream({
         // look (lib/toolwidget TOOL_STYLES).
         const extra = spec ? (
           <div className="zx ml-[var(--rail)]">
-            <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
+            <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} gallery={shots} />
           </div>
-        ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
+        ) : done?.images?.length ? <ToolImages paths={done.images} all={shots} /> : null;
         const withExtra = (node: ReactNode) =>
           extra ? <div key={i}>{node}{extra}</div> : node;
         // COMPACT reads as a chat, and there the pictures are the reply: the
@@ -1873,7 +1878,7 @@ export const RunStream = memo(function RunStream({
         return (
           <div key={i} id={ckId(turnId, steerKey(i))} className="dprompt scroll-mt-[94px]">
             <PromptBubble steer text={event.text} at={event.at}>
-              {event.images && event.images.length > 0 && <ToolImages paths={event.images} />}
+              {event.images && event.images.length > 0 && <ToolImages paths={event.images} all={shots} />}
             </PromptBubble>
           </div>
         );

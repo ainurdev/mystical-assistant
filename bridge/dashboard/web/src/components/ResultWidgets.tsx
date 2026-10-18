@@ -11,7 +11,7 @@ import {
   type Idea, type Meter, type Output, type PlanRow, type Question, type Source,
   type Stat, type Table,
 } from "../lib/resultfields";
-import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
+import { ImageLightbox, MediaThumb, ZoomButton, type Shown } from "./ImageLightbox";
 
 // The widgets a typed stage's card is made of. Which one draws is the flow's
 // call, not this file's: bridge/flows/*.json declares a field's type and
@@ -24,9 +24,10 @@ import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 // share the markup while each stylesheet gives it its own idiom (square and
 // bracketed on the desktop, rounded on the phone).
 //
-// Mirrors bridge/miniapp/web/src/components/ResultWidgets.tsx (the ONE difference
-// is Shot: this side can put a URL in an <img>, the Mini App's auth lives in a
-// header). Keep them in sync.
+// Mirrors bridge/miniapp/web/src/components/ResultWidgets.tsx. Two differences:
+// Shot (this side can put a URL in an <img>, the Mini App's auth lives in a
+// header) and `gallery`, the turn-wide paging of the dashboard's WORK zone,
+// which the Mini App has no zone to want. Keep the rest in sync.
 
 /** One field of a card. `send` is absent on a card the session has already moved
  *  past — history stays readable, but you can't act on it twice. */
@@ -65,6 +66,9 @@ export function drawWidget(
   value: unknown,
   send?: (text: string) => void,
   onOpenFile?: (path: string, line?: number) => void,
+  /** The whole turn's pictures, when the caller has them: a shot opens into a
+   *  lightbox that pages through those rather than this widget's own. */
+  gallery?: Shown[],
 ): ReactNode {
   switch (type) {
     case "checks": {
@@ -85,7 +89,7 @@ export function drawWidget(
     }
     case "screens": {
       const rows = asScreens(value);
-      return rows && <ScreenGallery rows={rows} send={send} />;
+      return rows && <ScreenGallery rows={rows} send={send} gallery={gallery} />;
     }
     case "confidence": {
       const n = asConfidence(value);
@@ -301,14 +305,14 @@ function shotLabel(s: { path: string; caption?: string }, i: number): string {
 /** Screenshots a design stage produced. On the draft gate they are the thing
  *  being approved, so a note per screen is how you answer without describing
  *  which screen you mean. */
-function ScreenGallery({ rows, send }: { rows: { path: string; caption?: string }[]; send?: (t: string) => void }) {
+function ScreenGallery({ rows, send, gallery }: { rows: { path: string; caption?: string }[]; send?: (t: string) => void; gallery?: Shown[] }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [sent, setSent] = useState(false);
   const written = Object.entries(notes).filter(([, v]) => v.trim());
   return (
     <div className="flc-gal">
-      {zoom && <ImageLightbox src={zoom} all={rows.map((s) => api.attachmentUrl(s.path))} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom} all={gallery ?? rows.map((s) => ({ src: api.attachmentUrl(s.path), name: s.caption }))} onClose={() => setZoom(null)} />}
       <div className="flc-shots">
         {rows.map((s, i) => (
           <figure key={i}>
@@ -856,7 +860,7 @@ const material = (style: ToolStyle): ToolStyle => (style === "dossier" ? "wire" 
  *  picks the material (one of the five languages), idiom picks the weight. All
  *  five are pure CSS — no style is a decision this side any more, which is what
  *  went away when PLAIN, the widget opt-out, was replaced by a fifth look. */
-export function ToolWidget({ spec, accent, style, children }: {
+export function ToolWidget({ spec, accent, style, children, gallery }: {
   spec: ToolWidgetSpec;
   /** The tool's hue (lib/tools toolAccent), so a widget reads as that tool's
    *  output rather than as a generic card. */
@@ -865,8 +869,10 @@ export function ToolWidget({ spec, accent, style, children }: {
   /** Overrides the widget body — used where the caller already has a richer
    *  renderer (a multi-file edit run) and only wants the frame. */
   children?: ReactNode;
+  /** See drawWidget. */
+  gallery?: Shown[];
 }) {
-  const body = children ?? drawWidget(spec.type, spec.value);
+  const body = children ?? drawWidget(spec.type, spec.value, undefined, undefined, gallery);
   if (!body) return null;
   const idiom = idiomFor(spec.type);
   const head = idiom === "plate" || idiom === "field" || idiom === "ledger";

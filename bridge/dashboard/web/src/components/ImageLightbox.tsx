@@ -109,18 +109,23 @@ export type Clip = {
   chapters?: { t: number; text: string }[];
 };
 
+/** One entry of a lightbox gallery. The name is for the title, where the row
+ *  that produced it is out of sight; a clip rides only on the video it was
+ *  stamped onto. */
+export type Shown = { src: string; name?: string; clip?: Clip };
+
 const hasPanel = (c?: Clip) =>
   !!(c && (c.notes || c.chapters?.length || c.todos?.length));
 
 /** Full-size view of one attachment. Video gets its own component rather than
  *  a branch inside the still viewer: pinch-to-zoom fights the scrubber, and the
  *  still's tap-to-close would fire on the play button.
- *  `all` makes it a gallery: ‹ › and ←/→ step through it, and the rest of the
- *  set stays visible as a strip along the bottom. */
-export function ImageLightbox({ src, all, clip, onClose }: { src: string; all?: string[]; clip?: Clip; onClose: () => void }) {
-  const list = all?.length ? all : [src];
-  const [i, setI] = useState(() => Math.max(0, list.indexOf(src)));
-  const cur = list[i] ?? src;
+ *  `all` makes it a gallery: ‹ › and ←/→ step through it, the rest of the set
+ *  stays visible as a strip along the bottom, and a title names the open one. */
+export function ImageLightbox({ src, all, onClose }: { src: string; all?: Shown[]; onClose: () => void }) {
+  const list: Shown[] = all?.length ? all : [{ src }];
+  const [i, setI] = useState(() => Math.max(0, list.findIndex((m) => m.src === src)));
+  const cur = list[i] ?? { src };
   const many = list.length > 1;
   const go = (d: number) => setI((n) => (n + d + list.length) % list.length);
 
@@ -140,10 +145,30 @@ export function ImageLightbox({ src, all, clip, onClose }: { src: string; all?: 
     <>
       {/* Only the video carries the panel — stepping the gallery to a still
           must not leave a clip's chapters sitting beside a screenshot. */}
-      {isVideo(cur) ? <VideoLightbox key={cur} src={cur} strip={many} clip={clip} onClose={onClose} />
-                    : <StillLightbox key={cur} src={cur} strip={many} onClose={onClose} />}
+      {isVideo(cur.src) ? <VideoLightbox key={cur.src} src={cur.src} name={cur.name} strip={many} clip={cur.clip} onClose={onClose} />
+                        : <StillLightbox key={cur.src} src={cur.src} name={cur.name} strip={many} onClose={onClose} />}
+      {(many || cur.name) && <Caption text={[many ? `${i + 1}/${list.length}` : "", cur.name ?? ""].filter(Boolean).join(" · ")} />}
       {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go} />}
     </>
+  );
+}
+
+/** Which one is open: its place in the set and the call that took it. Top-left,
+ *  opposite the ✕ and in its chrome; its own portal, like the strip, so neither
+ *  viewer has to know about it. */
+function Caption({ text }: { text: string }) {
+  return createPortal(
+    <div
+      title={text}
+      style={{ position: "fixed", top: 12, left: 12, zIndex: 96, maxWidth: "calc(100vw - 150px)",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+        background: "color-mix(in srgb, var(--panel3) 70%, transparent)",
+        color: "var(--txm)", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "6px 12px" }}
+    >
+      {text}
+    </div>,
+    document.body,
   );
 }
 
@@ -152,7 +177,7 @@ export function ImageLightbox({ src, all, clip, onClose }: { src: string; all?: 
  *  handler that would close the thing you are paging through. */
 function Filmstrip(
   { list, at, onPick, onStep }:
-  { list: string[]; at: number; onPick: (i: number) => void; onStep: (d: number) => void },
+  { list: Shown[]; at: number; onPick: (i: number) => void; onStep: (d: number) => void },
 ) {
   const arrow: React.CSSProperties = {
     position: "fixed", top: "50%", transform: "translateY(-50%)", zIndex: 96,
@@ -173,16 +198,17 @@ function Filmstrip(
       >
         {list.map((s, k) => (
           <button
-            key={s}
+            key={s.src}
             type="button"
-            aria-label={`Image ${k + 1} of ${list.length}`}
+            title={s.name}
+            aria-label={`Image ${k + 1} of ${list.length}${s.name ? `: ${s.name}` : ""}`}
             aria-current={k === at ? "true" : undefined}
             onClick={() => onPick(k)}
             style={{ appearance: "none", cursor: "pointer", padding: 0, flex: "none", lineHeight: 0,
               border: `1px solid ${k === at ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
               opacity: k === at ? 1 : 0.5, background: "transparent" }}
           >
-            <MediaThumb src={s} style={{ height: 56, width: 84, objectFit: "cover", display: "block" }} />
+            <MediaThumb src={s.src} style={{ height: 56, width: 84, objectFit: "cover", display: "block" }} />
           </button>
         ))}
       </div>
@@ -197,7 +223,7 @@ function Filmstrip(
  *  With a `clip` it grows a rail: what the recording claims, the plan it answers
  *  to, and its chapters. Without one it is exactly the player it always was —
  *  every branch here collapses when nothing was authored. */
-function VideoLightbox({ src, strip, clip, onClose }: { src: string; strip?: boolean; clip?: Clip; onClose: () => void }) {
+function VideoLightbox({ src, name, strip, clip, onClose }: { src: string; name?: string; strip?: boolean; clip?: Clip; onClose: () => void }) {
   const vid = useRef<HTMLVideoElement>(null);
   const [at, setAt] = useState(0);
   const [dur, setDur] = useState(0);
@@ -233,7 +259,7 @@ function VideoLightbox({ src, strip, clip, onClose }: { src: string; strip?: boo
       onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
-      aria-label="Attachment"
+      aria-label={name || "Attachment"}
       style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", gap: panel ? 13 : 0, flexDirection: row ? "row" : "column", padding: 24, paddingBottom: strip ? 108 : 24, background: "color-mix(in srgb, var(--panel3) 82%, transparent)", animation: "backdropIn .18s ease both" }}
     >
       <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, maxWidth: row ? "calc(92vw - 373px)" : "92vw" }}>
@@ -433,7 +459,7 @@ function ClipRail(
  *  Portaled to <body>: rendered inline it can sit under a transformed ancestor
  *  (virtualized rows are translateY'd), which would make position:fixed resolve
  *  against that ancestor instead of the viewport. */
-function StillLightbox({ src, strip, onClose }: { src: string; strip?: boolean; onClose: () => void }) {
+function StillLightbox({ src, name, strip, onClose }: { src: string; name?: string; strip?: boolean; onClose: () => void }) {
   const [v, setV] = useState<View>(FIT);
   const box = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
@@ -531,7 +557,7 @@ function StillLightbox({ src, strip, onClose }: { src: string; strip?: boolean; 
       onPointerCancel={(e) => { ptrs.current.delete(e.pointerId); spread.current = 0; }}
       role="dialog"
       aria-modal="true"
-      aria-label="Attachment"
+      aria-label={name || "Attachment"}
       style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, paddingBottom: strip ? 108 : 24, overflow: "hidden", touchAction: "none", background: "color-mix(in srgb, var(--panel3) 82%, transparent)", cursor: "zoom-out", animation: "backdropIn .18s ease both" }}
     >
       <img

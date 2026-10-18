@@ -1178,7 +1178,7 @@ export function Composer({
     // pieces of chrome bracketing the transcript, and a ground running under
     // them makes the chat look like it has no edges.
     <div className="composer" data-pb={shelled ? composer : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
-      {zoom && <ImageLightbox src={zoom} all={images} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom} all={images.map((src) => ({ src }))} onClose={() => setZoom(null)} />}
       {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
       {shelled ? (
         <>

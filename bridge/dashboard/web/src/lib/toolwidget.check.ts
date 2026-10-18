@@ -5,7 +5,7 @@
 // this checks — not how the widgets look.
 
 import { readFileSync } from "node:fs";
-import { CHAT_BGS, shotName, toChatBg, widgetForRun } from "./toolwidget.ts";
+import { CHAT_BGS, shotName, shotTitle, toChatBg, widgetForRun } from "./toolwidget.ts";
 
 // --- the table --------------------------------------------------------------
 const src = widgetForRun([{ done: { sources: [{ url: "https://a.dev", title: "A" }] } }]);
@@ -44,6 +44,15 @@ console.assert((named?.value as { caption?: string }[])[0].caption === "page.htm
 const pair = widgetForRun([{ done: { images: ["/u/a.png", "/u/b.png"] }, summary: "http://x.dev/page.html" }]);
 console.assert((pair?.value as { caption?: string }[])[1].caption === "page.html · 2",
   "one call's several frames are numbered under one name");
+
+// --- the lightbox title: the call first, because there the row is out of sight
+const mcpShot = shotTitle("mcp__verify__Screenshot", "http://127.0.0.1:8899/dashboard-a-rail.html");
+console.assert(mcpShot === "Screenshot · dashboard-a-rail.html", `an MCP shot is named by its tool and page, got ${mcpShot}`);
+console.assert(shotTitle("Read", "/home/u/logo.png", 1, 2) === "READ · logo.png · 2",
+  `a frame of several is numbered, got ${shotTitle("Read", "/home/u/logo.png", 1, 2)}`);
+console.assert(shotTitle("mcp__verify__Record", "") === "Record",
+  `nothing to name it by leaves the call, got ${shotTitle("mcp__verify__Record", "")}`);
+console.assert(shotTitle("STEER", "try the other rail") === "STEER · try the other rail", "a steer is named by its words");
 
 // --- a run of results is ONE widget -----------------------------------------
 // A group is drawn by its head, so anything a member returned has to be folded

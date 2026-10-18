@@ -13,6 +13,8 @@
 // here. Adding one later is three lines; guessing at their payload shape now
 // would be three lines of fiction.
 
+import { mcpParts, toolKind, toolTag } from "./tools.ts";
+
 /** The wire shape `transcript_jsonl.web_sources` emits. */
 export type WebSource = { url: string; title?: string; code?: number };
 
@@ -109,6 +111,14 @@ export type ToolWidgetSpec = { label: string; type: string; value: unknown; meta
 export function shotName(summary: string): string {
   const s = (summary || "").trim().split(/[?#]/)[0].replace(/\/+$/, "");
   return (s.split("/").pop() || s).slice(0, 40);
+}
+
+/** What a shot is called where its row is out of sight — the lightbox's title:
+ *  the call that took it, then its page or file (shotName), then its frame
+ *  number when one call returned several. "Screenshot · rail.html · 2". */
+export function shotTitle(tool: string, summary: string, i = 0, n = 1): string {
+  const call = toolKind(tool) === "mcp" ? mcpParts(tool).tool : toolTag(tool);
+  return [call, shotName(summary), n > 1 ? i + 1 : ""].filter(Boolean).join(" · ");
 }
 
 /** One widget for a whole run of results — one call or twenty. A group is drawn
