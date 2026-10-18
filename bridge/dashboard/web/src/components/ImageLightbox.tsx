@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FIT, clampPan, zoomAt, type View } from "../lib/imgzoom";
+import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 
 /** How far a press may wander and still count as a tap rather than a pan. */
 const TAP_SLOP = 8;
@@ -78,21 +79,24 @@ function useOnSeen(onSeen?: () => void) {
 }
 
 export function MediaThumb(
-  { src, className, style, alt, onError, onSeen }:
+  { src, className, style, alt, onError, onSeen, fresh }:
   { src: string; className?: string; style?: React.CSSProperties; alt?: string; onError?: () => void;
     /** Fired once, when the thumbnail has been on screen (lib/seenshots). */
-    onSeen?: () => void },
+    onSeen?: () => void;
+    /** Not yet seen: the thumbnail wears the accent (data-new) until it has been. */
+    fresh?: boolean },
 ) {
   const seenRef = useOnSeen(onSeen);
+  const isNew = fresh ? "" : undefined;
   if (isFileUrl(src)) return <FileThumb name={attachName(src)} className={className} style={style} />;
-  if (!isVideo(src)) return <img ref={seenRef} src={src} alt={alt ?? ""} className={className} style={style} onError={onError} />;
+  if (!isVideo(src)) return <img ref={seenRef} src={src} loading="lazy" alt={alt ?? ""} className={className} style={style} onError={onError} data-new={isNew} />;
   // #t=0.1 makes the browser paint a real first frame instead of a black box;
   // a data: URL can't carry a fragment, so it goes without.
   const poster = src.startsWith("data:") ? src : `${src}#t=0.1`;
   return (
     <span style={{ position: "relative", display: "inline-block", lineHeight: 0 }}>
       <video ref={seenRef} src={poster} muted playsInline preload="metadata" aria-label={alt || "video"}
-        className={className} style={style} onError={onError} />
+        className={className} style={style} onError={onError} data-new={isNew} />
       <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center",
         color: "var(--acc)", fontSize: 18, textShadow: "0 0 6px rgba(0,0,0,.8)", pointerEvents: "none" }}>▶</span>
     </span>
@@ -111,8 +115,9 @@ export type Clip = {
 
 /** One entry of a lightbox gallery. The name is for the title, where the row
  *  that produced it is out of sight; a clip rides only on the video it was
- *  stamped onto. */
-export type Shown = { src: string; name?: string; clip?: Clip };
+ *  stamped onto. `path` and `at` (its upload path and its call's clock) are a
+ *  tool shot's, for lib/seenshots: shown, it counts as seen. */
+export type Shown = { src: string; name?: string; clip?: Clip; path?: string; at?: number };
 
 const hasPanel = (c?: Clip) =>
   !!(c && (c.notes || c.chapters?.length || c.todos?.length));
@@ -121,13 +126,16 @@ const hasPanel = (c?: Clip) =>
  *  a branch inside the still viewer: pinch-to-zoom fights the scrubber, and the
  *  still's tap-to-close would fire on the play button.
  *  `all` makes it a gallery: ‹ › and ←/→ step through it, the rest of the set
- *  stays visible as a strip along the bottom, and a title names the open one. */
+ *  stays visible as a strip along the bottom, and a title under the open one
+ *  names it. Paging to a shot sees it, the same as tapping it open. */
 export function ImageLightbox({ src, all, onClose }: { src: string; all?: Shown[]; onClose: () => void }) {
   const list: Shown[] = all?.length ? all : [{ src }];
   const [i, setI] = useState(() => Math.max(0, list.findIndex((m) => m.src === src)));
   const cur = list[i] ?? { src };
   const many = list.length > 1;
   const go = (d: number) => setI((n) => (n + d + list.length) % list.length);
+  useEffect(() => { if (cur.path && shotUnseen(cur.path, cur.at)) markShotSeen(cur.path); }, [cur.path, cur.at]);
+  const title = [many ? `${i + 1}/${list.length}` : "", cur.name ?? ""].filter(Boolean).join(" · ");
 
   useEffect(() => {
     if (!many) return;
@@ -145,40 +153,54 @@ export function ImageLightbox({ src, all, onClose }: { src: string; all?: Shown[
     <>
       {/* Only the video carries the panel — stepping the gallery to a still
           must not leave a clip's chapters sitting beside a screenshot. */}
-      {isVideo(cur.src) ? <VideoLightbox key={cur.src} src={cur.src} name={cur.name} strip={many} clip={cur.clip} onClose={onClose} />
-                        : <StillLightbox key={cur.src} src={cur.src} name={cur.name} strip={many} onClose={onClose} />}
-      {(many || cur.name) && <Caption text={[many ? `${i + 1}/${list.length}` : "", cur.name ?? ""].filter(Boolean).join(" · ")} />}
+      {isVideo(cur.src) ? <VideoLightbox key={cur.src} src={cur.src} name={cur.name} title={title} strip={many} clip={cur.clip} onClose={onClose} />
+                        : <StillLightbox key={cur.src} src={cur.src} name={cur.name} title={title} strip={many} onClose={onClose} />}
       {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go} />}
     </>
   );
 }
 
-/** Which one is open: its place in the set and the call that took it. Top-left,
- *  opposite the ✕ and in its chrome; its own portal, like the strip, so neither
- *  viewer has to know about it. */
-function Caption({ text }: { text: string }) {
-  return createPortal(
+/** A viewer's media height cap. A title hangs 40px under the picture (and under
+ *  a clip's chapter bar, `below`), so in a window too short to hold both the
+ *  picture gives up the title's room rather than push it under the strip or
+ *  off the screen; a tall window keeps the old caps exactly. */
+const capFor = (strip?: boolean, title?: string, below = 0) =>
+  !title ? (strip ? "76vh" : "92vh") : `min(${strip ? "76vh" : "92vh"}, 100vh - ${(strip ? 164 : 92) + below}px)`;
+
+/** Which one is open: its place in the set and the call that took it, hung just
+ *  under the picture, where the eye already is. Out of flow, so the picture stays
+ *  centred where the zoom (lib/imgzoom) measures from; inert, so reaching for it
+ *  can't close the viewer the way the backdrop does. */
+function Title({ text }: { text: string }) {
+  const stop = (e: React.PointerEvent) => e.stopPropagation();
+  return (
     <div
       title={text}
-      style={{ position: "fixed", top: 12, left: 12, zIndex: 96, maxWidth: "calc(100vw - 150px)",
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+      onPointerDown={stop}
+      onPointerUp={stop}
+      style={{ position: "absolute", top: "calc(100% + 10px)", left: "50%", transform: "translateX(-50%)",
+        width: "max-content", maxWidth: "92vw", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
         background: "color-mix(in srgb, var(--panel3) 70%, transparent)",
-        color: "var(--txm)", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "6px 12px" }}
+        color: "var(--tx)", fontSize: "var(--t12)", letterSpacing: 0.5, padding: "5px 12px", cursor: "default" }}
     >
       {text}
-    </div>,
-    document.body,
+    </div>
   );
 }
 
 /** The rest of the set, under the open one. Its own portal, above the viewer's:
  *  a sibling rather than a child, so its clicks never reach the backdrop
- *  handler that would close the thing you are paging through. */
+ *  handler that would close the thing you are paging through. A shot you have
+ *  not seen yet carries an accent dot until you page to it. */
 function Filmstrip(
   { list, at, onPick, onStep }:
   { list: Shown[]; at: number; onPick: (i: number) => void; onStep: (d: number) => void },
 ) {
+  useSeenShots();
+  // A long set scrolls; stepping keeps the open one in the visible part.
+  const strip = useRef<HTMLDivElement>(null);
+  useEffect(() => { strip.current?.querySelector("[aria-current]")?.scrollIntoView({ inline: "nearest", block: "nearest" }); }, [at]);
   const arrow: React.CSSProperties = {
     position: "fixed", top: "50%", transform: "translateY(-50%)", zIndex: 96,
     appearance: "none", cursor: "pointer", padding: "18px 14px", lineHeight: 1,
@@ -191,26 +213,33 @@ function Filmstrip(
       <button type="button" aria-label="Previous" onClick={() => onStep(-1)} style={{ ...arrow, left: 12 }}>‹</button>
       <button type="button" aria-label="Next" onClick={() => onStep(1)} style={{ ...arrow, right: 12 }}>›</button>
       <div
+        ref={strip}
         style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 96, display: "flex", gap: 8,
-          justifyContent: "center", overflowX: "auto", padding: "10px 12px",
+          justifyContent: "safe center", overflowX: "auto", padding: "10px 12px",
           background: "color-mix(in srgb, var(--panel3) 88%, transparent)",
           borderTop: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}
       >
-        {list.map((s, k) => (
-          <button
-            key={s.src}
-            type="button"
-            title={s.name}
-            aria-label={`Image ${k + 1} of ${list.length}${s.name ? `: ${s.name}` : ""}`}
-            aria-current={k === at ? "true" : undefined}
-            onClick={() => onPick(k)}
-            style={{ appearance: "none", cursor: "pointer", padding: 0, flex: "none", lineHeight: 0,
-              border: `1px solid ${k === at ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
-              opacity: k === at ? 1 : 0.5, background: "transparent" }}
-          >
-            <MediaThumb src={s.src} style={{ height: 56, width: 84, objectFit: "cover", display: "block" }} />
-          </button>
-        ))}
+        {list.map((s, k) => {
+          // The open one is being seen right now; its mark lands a frame later.
+          const unseen = k !== at && !!s.path && shotUnseen(s.path, s.at);
+          return (
+            <button
+              key={s.src}
+              type="button"
+              title={s.name}
+              aria-label={`Image ${k + 1} of ${list.length}${s.name ? `: ${s.name}` : ""}${unseen ? ", not seen yet" : ""}`}
+              aria-current={k === at ? "true" : undefined}
+              onClick={() => onPick(k)}
+              style={{ appearance: "none", cursor: "pointer", padding: 0, flex: "none", lineHeight: 0, position: "relative",
+                border: `1px solid ${k === at ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
+                opacity: k === at ? 1 : 0.5, background: "transparent" }}
+            >
+              <MediaThumb src={s.src} style={{ height: 56, width: 84, objectFit: "cover", display: "block" }} />
+              {unseen && <i aria-hidden style={{ position: "absolute", top: 4, right: 4, width: 7, height: 7, borderRadius: "50%",
+                background: "var(--acc)", boxShadow: "0 0 0 2px var(--panel3)" }} />}
+            </button>
+          );
+        })}
       </div>
     </>,
     document.body,
@@ -223,7 +252,7 @@ function Filmstrip(
  *  With a `clip` it grows a rail: what the recording claims, the plan it answers
  *  to, and its chapters. Without one it is exactly the player it always was —
  *  every branch here collapses when nothing was authored. */
-function VideoLightbox({ src, name, strip, clip, onClose }: { src: string; name?: string; strip?: boolean; clip?: Clip; onClose: () => void }) {
+function VideoLightbox({ src, name, title, strip, clip, onClose }: { src: string; name?: string; title?: string; strip?: boolean; clip?: Clip; onClose: () => void }) {
   const vid = useRef<HTMLVideoElement>(null);
   const [at, setAt] = useState(0);
   const [dur, setDur] = useState(0);
@@ -253,16 +282,18 @@ function VideoLightbox({ src, name, strip, clip, onClose }: { src: string; name?
   };
 
   const row = panel && wide;
-  const cap = panel && !wide ? "44vh" : strip ? "76vh" : "92vh";
+  const cap = panel && !wide ? "44vh" : capFor(strip, title, clip?.chapters?.length ? 22 : 0);
   return createPortal(
     <div
-      onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onPointerDown={(e) => { if (e.button === 0 && e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
       aria-label={name || "Attachment"}
       style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", gap: panel ? 13 : 0, flexDirection: row ? "row" : "column", padding: 24, paddingBottom: strip ? 108 : 24, background: "color-mix(in srgb, var(--panel3) 82%, transparent)", animation: "backdropIn .18s ease both" }}
     >
-      <div style={{ display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, maxWidth: row ? "calc(92vw - 373px)" : "92vw" }}>
+      {/* Stacked over the rail, the title would hang onto it: the margin is its room. */}
+      <div style={{ position: "relative", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0, maxWidth: row ? "calc(92vw - 373px)" : "92vw",
+        marginBottom: title && panel && !wide ? 44 : undefined }}>
         {/* autoPlay + loop, muted so a browser will actually honour it: these are
             short screen recordings, and a clip that needs a tap to start reads as
             broken next to a screenshot that is simply there. */}
@@ -281,6 +312,7 @@ function VideoLightbox({ src, name, strip, clip, onClose }: { src: string; name?
         {!!clip?.chapters?.length && (
           <ChapterBar chapters={clip.chapters} at={at} dur={dur} onSeek={seek} />
         )}
+        {title && <Title text={title} />}
       </div>
 
       {panel
@@ -459,8 +491,13 @@ function ClipRail(
  *  Portaled to <body>: rendered inline it can sit under a transformed ancestor
  *  (virtualized rows are translateY'd), which would make position:fixed resolve
  *  against that ancestor instead of the viewport. */
-function StillLightbox({ src, name, strip, onClose }: { src: string; name?: string; strip?: boolean; onClose: () => void }) {
+function StillLightbox({ src, name, title, strip, onClose }: { src: string; name?: string; title?: string; strip?: boolean; onClose: () => void }) {
   const [v, setV] = useState<View>(FIT);
+  // The image's pixel width, once decoded. Laid out by pixel count alone, a 2x
+  // capture of a 600px-wide menu is 1200 CSS px — on a Retina screen every pixel
+  // doubled, which reads as a blurry screenshot. Fit is at most one image pixel
+  // per device pixel; anything past that is a zoom you asked for.
+  const [nat, setNat] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
   const ptrs = useRef(new Map<number, { x: number; y: number }>());
@@ -505,6 +542,7 @@ function StillLightbox({ src, name, strip, onClose }: { src: string; name?: stri
   }, []);
 
   const onDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;   // a right-click is for the menu: never a tap, a pan or a close
     (e.target as Element).setPointerCapture?.(e.pointerId);
     ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.current.size === 1) { down.current = { x: e.clientX, y: e.clientY }; dragged.current = false; }
@@ -536,6 +574,7 @@ function StillLightbox({ src, name, strip, onClose }: { src: string; name?: stri
   };
 
   const onUp = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     ptrs.current.delete(e.pointerId);
     spread.current = 0;
     if (ptrs.current.size || dragged.current) return;   // still pinching, or that was a pan
@@ -560,13 +599,19 @@ function StillLightbox({ src, name, strip, onClose }: { src: string; name?: stri
       aria-label={name || "Attachment"}
       style={{ position: "fixed", inset: 0, zIndex: 95, display: "flex", alignItems: "center", justifyContent: "center", padding: 24, paddingBottom: strip ? 108 : 24, overflow: "hidden", touchAction: "none", background: "color-mix(in srgb, var(--panel3) 82%, transparent)", cursor: "zoom-out", animation: "backdropIn .18s ease both" }}
     >
-      <img
-        ref={img}
-        src={src}
-        alt=""
-        draggable={false}
-        style={{ maxWidth: "92vw", maxHeight: strip ? "76vh" : "92vh", objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-in", userSelect: "none" }}
-      />
+      {/* The picture's own box, for the title to hang from; centred the way the
+          picture was, so the zoom's centre has not moved. */}
+      <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <img
+          ref={img}
+          src={src}
+          alt=""
+          draggable={false}
+          onLoad={(e) => setNat(e.currentTarget.naturalWidth)}
+          style={{ maxWidth: nat ? `min(92vw, ${nat / (window.devicePixelRatio || 1)}px)` : "92vw", maxHeight: capFor(strip, title), objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-in", userSelect: "none" }}
+        />
+        {title && <Title text={title} />}
+      </div>
       <button
         type="button"
         onClick={onClose}

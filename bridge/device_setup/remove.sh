@@ -24,13 +24,16 @@ PF_DAEMON=/Library/LaunchDaemons/cloud.ainurhq.mystical-runs.pf.plist
 
 # Take RUN_USER's line out of each deny file Set up added it to, writing the same
 # file (its owner and mode stay). A file grep can't read is left as it was:
-# emptied, it would let in every user it denies.
+# emptied, it would let in every user it denies. One that can't be written (the
+# cron folder is closed to root since macOS 26) keeps the line, denying an
+# account that is gone.
 allow_cron() { # allow_cron FILE...
   local f rest
   for f in "$@"; do
     if [ -L "$f" ] || [ ! -f "$f" ] || ! grep -qxF "$RUN_USER" "$f"; then continue; fi
     rest=$(grep -vxF "$RUN_USER" "$f") || [ $? -eq 1 ] || continue
-    if [ -n "$rest" ]; then printf '%s\n' "$rest" >"$f"; else : >"$f"; fi
+    { if [ -n "$rest" ]; then printf '%s\n' "$rest" >"$f"; else : >"$f"; fi; } ||
+      echo "$f can't be written on this macOS; the hidden user's line stays there."
   done
 }
 
@@ -80,7 +83,7 @@ unwall
 
 # 5. Cron and at may take the name again (Set up denied it both).
 step="Taking the hidden user out of the cron and at deny lists"
-allow_cron /usr/lib/cron/cron.deny /usr/lib/cron/at.deny
+allow_cron /private/var/at/cron.deny /private/var/at/at.deny
 
 # 6. The helper, its config, its lock, the sudoers rule, the Claude copy, and the
 #    runs folder. The lock's folders go too when nothing else is in them.

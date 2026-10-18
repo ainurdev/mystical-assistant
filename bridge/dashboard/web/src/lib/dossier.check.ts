@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/dossier.check.ts
-import { stripOf, workTitle, zonesOf, STRIP_MAX, TOP_TYPES, type Mark } from "./dossier.ts";
+import { kindsOf, workTitle, zonesOf, TOP_TYPES } from "./dossier.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -47,12 +47,13 @@ const shape = (zs: ReturnType<typeof zonesOf>) =>
   ok(zs.length === 1 && zs[0].kind === "work", "a live turn is one zone");
 }
 
-// The strip caps and says how many it dropped.
+// The header's chips: one per kind of step, in the STEPS title's order, then
+// the notes — the count sentence turned into glyphs.
 {
-  const marks: Mark[] = Array.from({ length: STRIP_MAX + 5 }, () => "command");
-  const s = stripOf(marks);
-  ok(s.shown.length === STRIP_MAX && s.more === 5, "strip caps at STRIP_MAX");
-  ok(stripOf(["think", "fail"]).more === 0, "a short strip is whole");
+  const k = kindsOf(["read", "command", "command", "read", "agent"], 2);
+  ok(k.map((x) => `${x.m}:${x.n}`).join(" ") === "command:2 agent:1 read:2 note:2", `chips in CAT_ORDER then notes: ${k.map((x) => x.m).join(",")}`);
+  ok(kindsOf(["edit"], 0).length === 1, "no notes makes no note chip");
+  ok(kindsOf([], 1).map((x) => x.m).join() === "note", "notes alone are one chip");
 }
 
 ok(workTitle("2 commands · 1 edit", 3) === "2 commands · 1 edit · 3 notes", "title with notes");

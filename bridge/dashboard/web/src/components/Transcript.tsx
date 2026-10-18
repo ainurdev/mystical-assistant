@@ -125,7 +125,7 @@ type Respond = (
  *  unmounts these whole; RunStream's own content-visibility cards keep the
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
-  turn, isActive, isLast, promptIdx, hud, liveTurns, showAll, boot,
+  turn, isActive, isLast, promptIdx, hud, liveTurns, boot,
   onRespond, onRunCommand, onQuote, onOpenFile, onAnswer,
 }: {
   turn: Turn;
@@ -133,8 +133,6 @@ function TurnBlock({
   /** What the live turn is waiting on before its first token, or null. */
   boot?: string | null;
   isLast: boolean;
-  /** Ctrl-F is mounting everything, so the turn's tail cap lifts too. */
-  showAll?: boolean;
   /** Index into the session's turns — what the sticky peek reads to name
    *  the turn the top edge is inside. */
   promptIdx: number;
@@ -191,10 +189,10 @@ function TurnBlock({
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
               ended={turn.status !== "running"}
-              showAll={showAll}
+              working={working}
+              hud={hud}
             />
           )}
-          {working && <WorkingIndicator hud={hud} events={turn.events} boot={boot} started={turn.started} />}
         </div>
       )}
       {turn.outcome && <OutcomeBadge outcome={turn.outcome} />}
@@ -320,8 +318,9 @@ export function Transcript({
     // compresses a turn to well under one card per event. The cache replaces
     // the guess with truth after first mount.
     estimateSize: (i) => sizesRef.current.get(keyOf(rows[i]))
-      // Capped the same way the row renders — a 400-event turn mounts its last
-      // TURN_TAIL, so estimating off the full length would guess ~7x too tall.
+      // Capped: a turn's work sits in zones that are shut unless opened, so a
+      // 400-event turn draws nothing like 400 rows and its full length would
+      // guess ~7x too tall.
       ?? Math.min(20000, 80 + (rows[i].kind === "turn"
         ? Math.min(rows[i].turn.events.length, TURN_TAIL) * 20 : 0)),
     overscan: 2,
@@ -365,8 +364,9 @@ export function Transcript({
   // by the browser's own scroll anchoring — in-flow content inside a row is its
   // job, and doing it again here threw the view up by twice the fold, to the
   // very top of a short session. Measured on the live dashboard: a 200px shrink
-  // above the edge moved the view 400px. Rows moved by transform don't trigger
-  // the browser's anchoring, so the fully-above case is ours alone.
+  // above the edge moved the view 400px. A row re-placed by `top` doesn't
+  // trigger the browser's anchoring (an ancestor's `top` changing suppresses
+  // it; measured in Chrome and WebKit), so the fully-above case is ours alone.
   //
   // And only against a scroll offset the virtualizer actually has: it learns
   // the position from scroll events, which land a frame after App sets
@@ -460,7 +460,6 @@ export function Transcript({
         boot={boot}
         isLast={index === visible.length - 1}
         promptIdx={cut + index}
-        showAll={fullMount}
         hud={hud}
         liveTurns={liveTurns}
         onRespond={onRespond}
@@ -499,10 +498,12 @@ export function Transcript({
     );
   }
 
-  // Virtualized: only the rows near the viewport exist. Row wrappers are
-  // translateY'd, which is why the lightbox portals to body, and pb-3 lives on
-  // the wrapper (absolute rows can't share a flex gap) so measureElement counts
-  // the spacing a row owns.
+  // Virtualized: only the rows near the viewport exist. A row is placed by
+  // `top`, never translateY: browsers resolve position: sticky without
+  // transforms, so inside a row translated by its start an open WORK zone's
+  // header (index.css) pinned that many px early and rode its zone's foot. pb-3
+  // lives on the wrapper (absolute rows can't share a flex gap) so
+  // measureElement counts the spacing a row owns.
   return (
     <>
       {olderButton}
@@ -516,8 +517,7 @@ export function Transcript({
               data-key={keyOf(row)}
               ref={virtualizer.measureElement}
               className="pb-3"
-              style={{ position: "absolute", top: 0, left: 0, width: "100%",
-                       transform: `translateY(${vi.start}px)` }}
+              style={{ position: "absolute", top: vi.start, left: 0, width: "100%" }}
             >
               {blockFor(row, vi.index)}
             </div>

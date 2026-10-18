@@ -37,6 +37,14 @@ export function describe(p: Profile): string {
   return (bits.filter(Boolean).join(" · ") || "defaults").toUpperCase();
 }
 
+/** The tile colour of a Claude login, by slot: the A1/A2 tiles of the settings
+ *  picker and the composer's PROFILE menu. The default login ("") gets the panel. */
+const SLOT_HUES = ["var(--acc)", "var(--ask, var(--purple))", "var(--info)", "var(--ok)", "var(--warn)", "var(--purple)"];
+export function slotHue(slot: string): string {
+  const n = Number(slot) || 0;
+  return n ? SLOT_HUES[(n - 1) % SLOT_HUES.length] : "var(--panel3)";
+}
+
 const LEGACY = "hud-profiles";
 let imported = false; // StrictMode runs a mount effect twice in dev: import once
 

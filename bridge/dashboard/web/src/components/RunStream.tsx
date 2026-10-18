@@ -1,8 +1,9 @@
-import { memo, useEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
-  TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
-  Quote, Layers,
+  TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronLeft, ChevronRight,
+  Quote, Layers, Image as ImageIcon, Terminal, FileText, Pencil, FilePlus, Search, Globe,
+  Plug, Bot, Sparkles, Webhook, ScrollText, CircleX, Wrench, Circle, type LucideIcon,
 } from "lucide-react";
 import { api, type AnswerSelection, type RunEvent, type TimedEvent } from "../api";
 import type { PendingRequest } from "../chat";
@@ -12,15 +13,17 @@ import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, MediaThumb, ZoomButton, type Clip, type Shown } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
-import { hhmm, useClock12 } from "../lib/surfaces";
+import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
-import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
+import { foldChips, runsOf, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
-import { MARK_GLYPH, stripOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
+import { kindsOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
 import { PromptBubble } from "./PromptBubble";
+import { WorkingIndicator } from "./hud/WorkingIndicator";
+import type { HudSettings } from "../lib/theme";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { ToolWidget } from "./ResultWidgets";
-import { shotTitle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
+import { shotName, shotTitle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
   cmdAbstract, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
   type Shape, type Tier, type ToolKind,
@@ -90,17 +93,13 @@ type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[]
 // Diff lines shown before a block folds — a turn can hold dozens.
 const DIFF_PREVIEW = 20;
 
-/** Events of a turn that mount before the rest waits behind a button. Turn
- *  granularity is what the virtualizer windows on, so a session whose turns run
- *  to hundreds of events is three rows and nothing to window — the spec called
- *  this out ("<8k missed when trailing megaturns sit in view") and left
- *  event-level rows as the escalation. This is the cheap half of that: the tail
- *  is what you opened the turn to read, and the churn above it costs ~70 DOM
- *  nodes an event to mount. */
+/** The virtualizer's guess at a turn's height caps the event count here
+ *  (Transcript estimateSize): the work sits in zones that are shut unless you
+ *  open them, so a turn's length overstates what it draws. The tail window this
+ *  once sized — the last 60 events, the rest behind an EARLIER STEPS button —
+ *  is gone for the same reason: a shut zone costs nothing to hold the whole
+ *  turn, and the plate's figure counts all of it. */
 export const TURN_TAIL = 60;
-
-/** Below this, hiding events isn't worth the button that reveals them. */
-const TURN_TAIL_MIN = 10;
 
 /** A failed Bash result opens with the shell's status line ("Exit code 2\n…").
  *  It belongs in the header as a badge, not in the body. */
@@ -157,17 +156,31 @@ function CopyBtn({ text, title }: { text: string; title: string }) {
   );
 }
 
-/** The glyph a tool's row wears on the WORK zone's spine — the same mark the
- *  zone's header strip shows for it (lib/dossier MARK_GLYPH). */
+/** The mark a tool's row wears on the WORK zone's spine — the same mark the
+ *  zone's header chips count it under (lib/dossier kindsOf). */
 const KIND_MARK: Partial<Record<ToolKind, Mark>> = {
   bash: "command", read: "read", write: "write", search: "search", web: "fetch",
   mcp: "call", agent: "agent",
 };
 const kindMark = (name: string): Mark => KIND_MARK[toolKind(name)] ?? "step";
 
-/** The tag a row wears in the zone's kind column, which holds seven characters
- *  (--zk in index.css): a longer name (TOOLSEARCH, MULTIEDIT, BASHOUTPUT) says
- *  its family's word instead of losing its tail. */
+/** What a mark looks like: the icon is the row's kind, so the zone needs no
+ *  column of kind words (they stay in the row, for a screen reader). A note
+ *  and a thought are a dot and a ring drawn by index.css; their icons serve
+ *  the header's chips. */
+const MARK_ICON: Record<Mark, LucideIcon> = {
+  command: Terminal, read: FileText, edit: Pencil, write: FilePlus, search: Search,
+  fetch: Globe, call: Plug, agent: Bot, skill: Sparkles, hook: Webhook, log: ScrollText,
+  fail: CircleX, step: Wrench, note: Circle, think: Circle,
+};
+function MarkIcon({ mark, size = 14 }: { mark: Mark; size?: number }) {
+  const I = MARK_ICON[mark];
+  return <I size={size} strokeWidth={size > 12 ? 1.9 : 2.2} aria-hidden />;
+}
+
+/** The tag a row wears — in the WORK zone it is what a screen reader hears, the
+ *  icon on the spine being what you see: a longer name (TOOLSEARCH, MULTIEDIT,
+ *  BASHOUTPUT) says its family's word. */
 const KIND_WORD: Record<ToolKind, string> = {
   bash: "BASH", read: "READ", write: "EDIT", search: "SEARCH", web: "WEB",
   agent: "AGENT", plan: "PLAN", mcp: "MCP", plain: "TOOL",
@@ -376,6 +389,7 @@ function DiffBlock({
       shape={bare ? undefined : toolShape(name)}
       accent={toolAccent(name)}
       tag={bare ? undefined : kindTag(name)}
+      mark={bare ? undefined : name === "Write" ? "write" : "edit"}
       animate={animate}
       error={error}
       startOpen={autoOpen}
@@ -563,13 +577,14 @@ function BootRow({ text }: { text: string }) {
 }
 
 /** A pause with nothing recorded but its length — a dashed stretch of the
- *  spine, the figure in the kind column. A full-width hairline read as a
- *  section break between things that were one stretch of work. */
+ *  spine, the figure in the figure column. A full-width hairline read as a
+ *  section break between things that were one stretch of work. A pause before
+ *  a note isn't drawn here: the note wears it (renderEvent). */
 function GapMark({ ms }: { ms: number }) {
   return (
     <div aria-hidden className="zrow gap">
       <i className="ax-bar" />
-      <span className="ax-tagcell">+{dur(ms)}</span>
+      <span className="ax-stat">{dur(ms)}</span>
     </div>
   );
 }
@@ -648,25 +663,58 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
   );
 }
 
+/** One picture a zone holds: its upload path, the name its call gave it
+ *  (lib/toolwidget shotName), and whether you have had it on screen yet. */
+type Pic = { path: string; name: string; unseen: boolean };
+
+/** A row arriving in a zone you open prints in from the line above it, with
+ *  the phosphor flash new stream content wears (streamIn). */
+const ROW_IN: Keyframe[] = [
+  { opacity: 0, transform: "translateY(-5px)", filter: "brightness(1.75)" },
+  { opacity: 1, transform: "none", filter: "none" },
+];
+
 /** DOSSIER's tier 3: everything a turn did between what you asked and what it
- *  answered, under one header (lib/dossier). The header carries the zone's
- *  shape as a strip of glyphs, so a shut zone still says "three commands, a
- *  note, a failure" — which is what makes a shut zone safe to be the default.
- *  Pictures are the one result a header loses, so it also counts them, in your
- *  accent until each has been on screen (lib/seenshots).
- *  It follows the COLLAPSE STEPS switch like a STEPS fold does, live turn
- *  included: while one runs, the header names what is out right now.
- *  Open, the strip turns on its side into the spine: every row below wears its
- *  glyph in the column the header's chevron sits in. */
-function WorkZone({ marks, title, failed, shots, fresh, running, live, span, defaultOpen, animate, children }: {
-  marks: Mark[];
-  title: string;
+ *  answered, under one header (lib/dossier) — a plate with a ringed node, WORK
+ *  and the figure on one line and the kind chips under it: the marks the rows
+ *  inside wear on the spine, with a number; the old sentence is their tooltip.
+ *  Pictures are the one result a header loses, so the shut plate shows every
+ *  one of them in one row of equal tiles that scrolls sideways, tap one to
+ *  open it. While any is unseen
+ *  (lib/seenshots) the plate lights — accent border, edge and node, a solid NEW
+ *  badge — and that picture wears the accent and a NEW tag in the row; seen,
+ *  it goes grey and stays. Being on screen in the row does not count as seen
+ *  (the badge would clear as you scrolled past); opening one does, as does
+ *  paging to it in the lightbox (ImageLightbox marks the one on screen), and
+ *  half a thumbnail in view once the zone is open. It follows the COLLAPSE
+ *  STEPS switch like a STEPS fold does. The last zone of a running turn is
+ *  live and hosts the working indicator: the ORBIT form is the plate itself —
+ *  THINKING or WORKING with the seconds in that state where the figure was, a
+ *  ripple in the node while the model thinks, a comet on its ring while a tool
+ *  runs (both inside the node's track, since the turn row's paint containment
+ *  clips anything past the plate), a caret on the step that is out — and every
+ *  other form (the bar, STATUS, the cat) draws as a row inside the plate
+ *  instead of under the turn. */
+function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, live, span, defaultOpen, animate, children }: {
+  /** What the zone ran, by kind, and how often the agent spoke inside it. */
+  cats: StepCat[];
+  notes: number;
+  /** Everything the zone holds, for the figure. */
+  steps: number;
   failed: number;
-  /** Pictures tools came back with, and how many of those you have not had on screen. */
-  shots: number;
-  fresh: number;
-  running: boolean;
-  /** What is out right now, named in the header while it runs. */
+  /** Pictures tools came back with, in order. */
+  pics: Pic[];
+  /** The zone's pictures, for the lightbox's paging. */
+  gallery: Shown[];
+  /** What the turn is doing right now, when this is its live zone. */
+  state: "think" | "work" | null;
+  /** When that state began, epoch seconds; the mount clock stands in. */
+  since?: number;
+  /** The indicator's form, and what the other forms read (lib/workstate). */
+  hud?: HudSettings;
+  events: TimedEvent[];
+  started?: number;
+  /** What is out right now, named after the chips while it runs. */
   live: string;
   /** Wall time the zone covered, already formatted; "" when unknown. */
   span: string;
@@ -676,19 +724,138 @@ function WorkZone({ marks, title, failed, shots, fresh, running, live, span, def
 }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
-  const { shown, more } = stripOf(marks);
+  // Pinned: the sticky header (index.css) is holding at its top offset — at
+  // rest it sits below that line, stuck it sits on it, and leaving with the
+  // zone's end it rides above it. Measured on scroll, like Terminal's peek,
+  // and against the offset as it is now: an IntersectionObserver's margin is
+  // fixed at creation, and the offset moves when the island's LAST row opens.
+  const head = useRef<HTMLButtonElement>(null);
+  const [pinned, setPinned] = useState(false);
+  useEffect(() => {
+    const el = head.current, root = el?.closest(".mscroll");
+    if (!open || !el || !root) { setPinned(false); return; }
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const r = el.getBoundingClientRect(), rootTop = root.getBoundingClientRect().top;
+      setPinned(r.top - rootTop <= (parseFloat(getComputedStyle(el).top) || 0) + 0.5 && r.bottom > rootTop);
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(measure); };
+    measure();
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => { root.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
+  }, [open]);
+  // Shut from the pinned header, the shut line stays on the pin line, so it
+  // keeps the pinned header's dress (index.css: VEIL's fade lifts, the pill's
+  // chips hide) until a scroll moves it off.
+  const [landed, setLanded] = useState(false);
+  useEffect(() => {
+    const el = head.current, root = el?.closest(".mscroll");
+    if (!landed || !el || !root) return;
+    const off = () => {
+      const line = root.getBoundingClientRect().top + (parseFloat(getComputedStyle(root).getPropertyValue("--isle-b")) || 0);
+      if (Math.abs(el.getBoundingClientRect().top - line) > 2) setLanded(false);
+    };
+    root.addEventListener("scroll", off, { passive: true });
+    return () => root.removeEventListener("scroll", off);
+  }, [landed]);
+  // A toggle glides (index.css, THE FOLD): the box under the header runs from
+  // the height it had to the height it gets while the part you leave keeps its
+  // place, lifted out of the flow and fading, and opened rows print in from the
+  // top. Measured rather than keyframed to `auto` (WebKit can't interpolate to
+  // it), and from what is on screen: shut from the pinned header, the zone's
+  // top is far above you. A click mid-glide starts from where the box is.
+  const fold = useRef<HTMLDivElement>(null);
+  const [motion, setMotion] = useState(false);
+  const anims = useRef<Animation[]>([]);
+  const toggle = (b: HTMLButtonElement) => {
+    const f = fold.current, sc = b.closest<HTMLElement>(".mscroll");
+    const y = b.getBoundingClientRect().top, was = f?.getBoundingClientRect();
+    for (const a of anims.current) a.cancel();
+    anims.current = [];
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // The box keeps its height through the swap: a page that just lost a tall
+    // zone would clamp its scroll before the glide began.
+    if (f && was && !still) f.style.height = `${was.height}px`;
+    flushSync(() => { setOpen(!open); setMotion(!still); setLanded(open && pinned); });
+    // Folded from the pinned header, the shut line lands where the header
+    // was (the ANSWER's FOLD does the same): a zone of a thousand pixels
+    // collapsing above the viewport would otherwise drop you on whatever
+    // sat below it.
+    if (open && sc) sc.scrollTop += b.getBoundingClientRect().top - y;
+    if (!f || !was) return;
+    const run = (el: Element, k: Keyframe[], o: KeyframeAnimationOptions) => {
+      const a = el.animate(k, o);
+      anims.current.push(a);
+      return a;
+    };
+    const now = f.getBoundingClientRect();
+    const arriving = f.querySelector(":scope > :not([data-leaving], [hidden])");
+    if (still) { if (arriving) run(arriving, [{ opacity: 0 }, { opacity: 1 }], { duration: 160 }); return; }
+    // The part you left fades first and the arriving one after, so the two
+    // barely overlap; shut, the rows drift up a little as they go.
+    const leaving = f.querySelector<HTMLElement>(":scope > [data-leaving]");
+    if (leaving) {
+      leaving.style.top = `${was.top - now.top}px`;
+      run(leaving, open ? [{ opacity: 1 }, { opacity: 0, transform: "translateY(-6px)" }] : [{ opacity: 1 }, { opacity: 0 }],
+        { duration: open ? 130 : 90, easing: "ease-in", fill: "forwards" });
+    }
+    // Below the scroller's foot nothing shows, so the glide spends itself on what does.
+    const foot = (sc?.getBoundingClientRect().bottom ?? Infinity) + 40 - now.top;
+    const from = Math.max(0, Math.min(was.bottom - now.top, foot));
+    const to = Math.min(arriving?.getBoundingClientRect().height ?? 0, foot);
+    run(f, [{ height: `${from}px` }, { height: `${to}px` }], open
+      ? { duration: 220, easing: "cubic-bezier(.4,0,.2,1)" }
+      : { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" }).onfinish = () => setMotion(false);
+    f.style.height = "";
+    if (open) { if (arriving) run(arriving, [{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, fill: "backwards" }); }
+    else arriving?.querySelectorAll(":scope > .dwork-body > *").forEach((el, i) => {
+      if (i < 24) run(el, ROW_IN, { duration: 240, delay: 40 + Math.min(i, 12) * 16, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" });
+    });
+  };
+  // The lightbox lives here, not in the row: opening a picture marks it seen,
+  // and the row it was tapped in re-renders while you are still looking.
+  const [zoom, setZoom] = useState<string | null>(null);
+  const orbit = hud?.indicator === "orbit";
+  // Seconds in the state, on the store's clock (the event's `at`) so the count
+  // survives the zone remounting; ticks only while ORBIT draws it.
+  const mountAt = useRef(Date.now() / 1000);
+  const [now, setNow] = useState(mountAt.current);
+  useEffect(() => {
+    if (!state || !orbit) return;
+    const tick = () => setNow(Date.now() / 1000);
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [state, orbit, since]);
+  const secs = Math.max(0, Math.floor(now - (since ?? mountAt.current)));
+  // The step that is out is named once: after the chips while the plate is
+  // shut, unless the hosted form already says it (STATUS does; the bar and the
+  // cat don't) — and never while open, where the running row itself does.
+  const namesStep = open || hud?.indicator === "status";
+  // The other forms, hosted by the plate: shut, under the header; open, at the foot.
+  const ind = state && !orbit ? (
+    <div className="dwork-ind"><WorkingIndicator hud={hud} events={events} started={started} /></div>
+  ) : null;
+  const fresh = pics.filter((p) => p.unseen);
+  const words = workTitle(stepsTitle(cats), notes);
+  const picsWord = `${pics.length} picture${pics.length === 1 ? "" : "s"}`;
   return (
     <div
       className="dwork"
       data-open={open ? "" : undefined}
-      data-run={running ? "" : undefined}
+      data-pinned={pinned ? "" : undefined}
+      data-landed={landed ? "" : undefined}
+      data-live={state ?? undefined}
+      data-ind={orbit ? "orbit" : undefined}
       data-err={failed ? "" : undefined}
-      data-shots={fresh ? "new" : undefined}
+      data-shots={fresh.length ? "new" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <button
+        ref={head}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={(e) => toggle(e.currentTarget)}
         aria-expanded={open}
         title={open ? "hide the work" : "show the work"}
         className="dwork-head"
@@ -696,17 +863,155 @@ function WorkZone({ marks, title, failed, shots, fresh, running, live, span, def
         <span className="dwork-node" aria-hidden>
           <ChevronDown size={11} className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
         </span>
-        <span className="dwork-lab">WORK</span>
-        <span className="dwork-title">{running && live ? `${title} \u2014 ${live}` : title}</span>
-        <span className="dwork-strip" aria-hidden>
-          {shown.map((m, k) => <i key={k} data-m={m}>{MARK_GLYPH[m]}</i>)}
-          {more ? <b>+{more}</b> : null}
+        <span className="dwork-l1">
+          <span className="dwork-lab">WORK</span>
+          <span className="dwork-ms">
+            {state && orbit ? (
+              <>
+                <b className="dwork-st">{state === "work" ? "WORKING" : "THINKING"}{state === "think" ? <i className="dwork-dots" aria-hidden /> : null}</b>
+                <span className="dwork-secs">{secs}s</span>
+              </>
+            ) : [`${steps} step${steps === 1 ? "" : "s"}`, span].filter(Boolean).join(" · ")}
+          </span>
         </span>
-        {shots ? <span className="dwork-shot" data-new={fresh ? "" : undefined}>{"\u25A3"} {shots} shot{shots === 1 ? "" : "s"}</span> : null}
-        {failed ? <span className="dwork-fail">{"\u2715"} {failed} failed</span> : null}
-        <span className="dwork-ms">{running ? "RUNNING" : span}</span>
+        <span className="dwork-l2">
+          <span className="dwork-kinds" title={words} aria-label={words}>
+            {kindsOf(cats, notes).map((k) => (
+              <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden><MarkIcon mark={k.m} size={10} /></i>{k.n}</span>
+            ))}
+          </span>
+          {state === "work" && live && !namesStep ? <><span className="dwork-live">{live}</span>{orbit ? <i className="dwork-caret" aria-hidden /> : null}</> : null}
+        </span>
+        <span className="dwork-right">
+          {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden><MarkIcon mark="fail" size={10} /></i>{failed}</span> : null}
+          {fresh.length ? (
+            <span className="dwork-badge" title={`${fresh.length} of ${picsWord} not seen yet`}>
+              <ImageIcon size={11} strokeWidth={2.2} aria-hidden />{fresh.length} NEW
+            </span>
+          ) : pics.length ? (
+            <span className="dwork-k" data-m="shot" title={picsWord}><i aria-hidden><ImageIcon size={10} strokeWidth={2.2} /></i>{pics.length}</span>
+          ) : null}
+        </span>
       </button>
-      {open ? <div className="dwork-body">{children}</div> : null}
+      {zoom && <ImageLightbox src={zoom} all={gallery} onClose={() => setZoom(null)} />}
+      {/* Mid-glide both parts are here, the one you left marked data-leaving.
+          The shut part stays mounted while open, hidden: remounted on shutting,
+          WebKit lays its lazy thumbnails out at no width and the glide aims short. */}
+      <div ref={fold} className="dwork-fold" data-moving={motion ? "" : undefined}>
+        {ind || pics.length ? (
+          <div className="dwork-part" data-leaving={open && motion ? "" : undefined} hidden={open && !motion}>
+            {!open ? ind : null}
+            {pics.length ? <ShotRow pics={pics} shut={!open} label={picsWord} onOpen={setZoom} /> : null}
+          </div>
+        ) : null}
+        {open || motion ? (
+          <div className="dwork-part" data-leaving={open ? undefined : ""}>
+            <div className="dwork-body">{children}</div>
+            {open ? ind : null}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** The shut plate's pictures, one row of equal tiles (index.css .dwork-row).
+ *  It opens on the newest and glides to each picture that lands, even when you
+ *  had scrolled back. A side holding pictures out of view fades under their
+ *  count, which wears the accent while one of them is unseen; a tap pages that way. */
+function ShotRow({ pics, shut, label, onOpen }: {
+  pics: Pic[];
+  /** The zone is shut, so the row is the part on screen. */
+  shut: boolean;
+  label: string;
+  onOpen: (src: string) => void;
+}) {
+  const row = useRef<HTMLDivElement>(null);
+  // Tiles out of view on each side: a tile is once its middle is in the faint
+  // half of the edge's 64px fade (index.css). Hidden while open, so not measured.
+  const [edge, setEdge] = useState({ l: 0, r: 0 });
+  const measure = () => {
+    const el = row.current;
+    if (!el?.clientWidth) return;
+    const from = el.scrollLeft + 32, to = el.scrollLeft + el.clientWidth - 32;
+    let l = 0, r = 0;
+    for (const f of Array.from(el.children) as HTMLElement[]) {
+      const mid = f.offsetLeft + f.offsetWidth / 2;
+      if (mid < from) l++;
+      else if (mid > to) r++;
+    }
+    setEdge((o) => (o.l === l && o.r === r ? o : { l, r }));
+  };
+  // Drawn (mounted, or the zone shut again) it jumps to its end; a picture
+  // landing while it shows glides it there.
+  const was = useRef({ n: 0, shut: false });
+  useLayoutEffect(() => {
+    const el = row.current, w = was.current;
+    was.current = { n: pics.length, shut };
+    if (!el || !shut) return;
+    const glide = w.shut && pics.length > w.n && !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    el.scrollTo({ left: el.scrollWidth, behavior: glide ? "smooth" : "auto" });
+    measure();
+  }, [pics.length, shut]);
+  useEffect(() => {
+    const el = row.current;
+    if (!el) return;
+    let raf = 0;
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; measure(); }); };
+    // A vertical wheel moves the row while it has room that way, and at either
+    // end goes on to the transcript. By hand: React's wheel listener is passive.
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      if (e.deltaY < 0 ? el.scrollLeft <= 0 : el.scrollLeft >= el.scrollWidth - el.clientWidth - 1) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+    };
+    const ro = new ResizeObserver(onScroll);
+    ro.observe(el);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      ro.disconnect();
+      cancelAnimationFrame(raf);
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onWheel);
+    };
+  }, []);
+  const more = (side: "l" | "r") => {
+    const n = edge[side];
+    if (!n) return null;
+    const fresh = (side === "l" ? pics.slice(0, n) : pics.slice(-n)).filter((p) => p.unseen).length;
+    const words = `${n} more picture${n === 1 ? "" : "s"} to the ${side === "l" ? "left" : "right"}${fresh ? `, ${fresh} not seen yet` : ""}`;
+    // A rowful, less one tile (96px and its 10px gap), so you keep your place.
+    const page = () => row.current?.scrollBy({
+      left: (side === "l" ? -1 : 1) * (row.current.clientWidth - 106),
+      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+    });
+    return (
+      <button type="button" className="dwork-more" data-side={side} data-lit={fresh ? "" : undefined} onClick={page} title={words} aria-label={words}>
+        {side === "l" ? <><ChevronLeft size={11} strokeWidth={2.4} aria-hidden />{n}</> : <>{n}<ChevronRight size={11} strokeWidth={2.4} aria-hidden /></>}
+      </button>
+    );
+  };
+  return (
+    <div className="dwork-row">
+      <div ref={row} className="dwork-row-thumbs" role="group" aria-label={label}>
+        {pics.map((p) => {
+          const src = api.attachmentUrl(p.path);
+          return (
+            <figure key={p.path} data-new={p.unseen ? "" : undefined}>
+              <ZoomButton onOpen={() => onOpen(src)}>
+                {/* A picture the upload dir has pruned can't be seen: marking it
+                    seen is what clears the badge it would otherwise hold lit. */}
+                <MediaThumb src={src} alt={p.name} onError={() => markShotSeen(p.path)} />
+              </ZoomButton>
+              <figcaption>{p.name}</figcaption>
+            </figure>
+          );
+        })}
+      </div>
+      {more("l")}
+      {more("r")}
     </div>
   );
 }
@@ -714,8 +1019,10 @@ function WorkZone({ marks, title, failed, shots, fresh, running, live, span, def
 /** A thought, in the flow where it was said (lib/segments) — the agent's own
  *  status line, often a message the CLI handed back reworded. A row on the
  *  zone's grid with the whole text in it, italic, one ink tier under a note. */
-function ThoughtRow({ ms, text, animate, onOpenFile, toolStyle }: {
+function ThoughtRow({ ms, pause, text, animate, onOpenFile, toolStyle }: {
   ms?: number;
+  /** The pause right before it (RunStream pauseAt), worn as its figure. */
+  pause?: number;
   text: string;
   animate: boolean;
   onOpenFile?: OpenFile;
@@ -724,34 +1031,45 @@ function ThoughtRow({ ms, text, animate, onOpenFile, toolStyle }: {
   return (
     <div
       className="zrow thought"
+      data-pause={pause ? "" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <i className="ax-bar" data-g={MARK_GLYPH.think} aria-hidden />
+      <i className="ax-bar" aria-hidden />
       <span className="ax-tagcell"><span className="ax-tag">THINK</span></span>
       <Markdown className="thought-text zo" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
-      <span className="ax-stat">{slow(ms) ? dur(ms) : null}</span>
+      <span className="ax-stat" title={pause ? `${dur(pause)} before this thought` : undefined}>
+        {slow(ms) ? dur(ms) : pause ? dur(pause) : null}
+      </span>
     </div>
   );
 }
 
 /** A hook's output, or a line the child wrote to stderr: the work either side of
  *  the conversation, which used to be visible only when a run died. Shut by
- *  default past the first line — most of it is one line and says everything. */
+ *  default past the first line — most of it is one line and says everything.
+ *  A hook that ran clean only injected context (ponytail's preamble, the same
+ *  every turn), so shut it is its icon on the spine alone, its first line the
+ *  tooltip and all of it a tap away; one that failed or blocked keeps its words. */
 function LogRow({ src, label, text, error, animate }:
   { src: string; label?: string; text: string; error?: boolean; animate: boolean }) {
   const [open, setOpen] = useState(false);
   const lines = text.split("\n");
   const more = lines.length - 1;
+  const quiet = src === "hook" && !error;
+  const opens = more > 0 || quiet;
   return (
     <button
       type="button"
-      onClick={() => more && setOpen((o) => !o)}
+      onClick={() => opens && setOpen((o) => !o)}
+      aria-expanded={opens ? open : undefined}
       className="zrow log"
       data-err={error ? "" : undefined}
-      title={more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
+      data-quiet={quiet && !open ? "" : undefined}
+      title={quiet && !open ? `${label ? `${label} · ` : ""}${lines[0]}`
+        : more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <i className="ax-bar" data-g={MARK_GLYPH[error ? "fail" : "hook"]} aria-hidden />
+      <i className="ax-bar" aria-hidden><MarkIcon mark={error ? "fail" : src === "hook" ? "hook" : "log"} /></i>
       <span className="ax-tagcell"><span className="ax-tag">{src.toUpperCase()}</span></span>
       <span className="zo">
         {label ? <span className="text-muted-2">{label} · </span> : null}
@@ -807,8 +1125,9 @@ function ActionRow({
   t?: string;
   /** Omitted inside a terminal window — its header already said BASH. */
   tag?: string;
-  /** The strip glyph this row wears on the WORK zone's spine (lib/dossier
-   *  MARK_GLYPH). Unset for a run's members: they hang off the run's head. */
+  /** The icon this row wears on the WORK zone's spine (MARK_ICON); a failure
+   *  wears the fail mark instead. Unset for a run's members: they are small
+   *  dots on the spine under the run's head. */
   mark?: Mark;
   stat?: ReactNode;
   drawer?: () => ReactNode;
@@ -877,7 +1196,7 @@ function ActionRow({
           })
         }
       >
-        <i className="ax-bar" data-g={mark ? MARK_GLYPH[mark] : undefined} aria-hidden />
+        <i className="ax-bar" aria-hidden>{mark ? <MarkIcon mark={error ? "fail" : mark} /> : null}</i>
         <span className="ax-tagcell">
           {tag !== undefined && (
             <span className="ax-tag" data-shape={shape}>
@@ -992,7 +1311,7 @@ function WriteCard({ name, path, ms, stat, error, animate, t }: {
       shape={toolShape(name)}
       accent={toolAccent(name)}
       tag={kindTag(name)}
-      mark={kindMark(name)}
+      mark={name === "Write" ? "write" : "edit"}
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}
@@ -1021,6 +1340,8 @@ function SearchCard({ name, summary, ms, stat, error, animate, t }: {
       stat={<Took ms={ms} stat={stat} error={error} />}
     >
       <span className="ax-q">{summary}</span>
+      {/* the search icon is Grep's too, and "select:…" alone says nothing */}
+      {name === "ToolSearch" ? <span className="ax-hint">tool search</span> : null}
     </ActionRow>
   );
 }
@@ -1161,10 +1482,11 @@ function AgentBlock({ run, animate }: { run: AgentRun; animate: boolean }) {
       data-open={open ? "" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <ActionRow tier="reach" mark="agent" accent={agentHue(run)} tag={skill ? "SKILL" : "AGENT"}
+      <ActionRow tier="reach" mark={skill ? "skill" : "agent"} accent={agentHue(run)} tag={skill ? "SKILL" : "AGENT"}
         running={running} error={error} animate={false} stat={agentNums(run, animate)}>
         <span className="text-foreground-bright">{meta?.type || (skill ? summary : "agent")}</span>
         {title ? <span className="text-muted-2">{` \u2014 ${title}`}</span> : null}
+        {skill ? <span className="ax-hint">skill</span> : null}
       </ActionRow>
       {brief ? (
         <button type="button" className="agb-brief" onClick={() => setOpen((o) => !o)}
@@ -1218,7 +1540,10 @@ function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
  *  set, so the lightbox pages past this row. The upload dir is pruned by age,
  *  so an old turn's screenshot 404s — that row just disappears rather than
  *  leaving a broken-image glyph. */
-function ToolImages({ paths, all }: { paths: string[]; all: Shown[] }) {
+/** `at` is the call's clock: with it a thumbnail knows whether you have seen it
+ *  (lib/seenshots) and wears the accent until you have. Your own steer's
+ *  pictures pass none — you sent them. */
+function ToolImages({ paths, all, at }: { paths: string[]; all: Shown[]; at?: number }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<string>>(new Set());
   const live = paths.filter((p) => !gone.has(p));
@@ -1235,6 +1560,7 @@ function ToolImages({ paths, all }: { paths: string[]; all: Shown[] }) {
               alt="tool output"
               onError={() => setGone((g) => new Set(g).add(p))}
               onSeen={() => markShotSeen(p)}
+              fresh={shotUnseen(p, at)}
               className="h-24 w-auto max-w-[240px] border border-border object-cover"
             />
           </ZoomButton>
@@ -1466,7 +1792,7 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
         }
       }}
     >
-      <i className="ax-bar" data-g={MARK_GLYPH.read} aria-hidden />
+      <i className="ax-bar" aria-hidden><MarkIcon mark="read" /></i>
       <span className="ax-tagcell">
         <span className="ax-tag" data-shape="bare">LOOKUPS</span>
       </span>
@@ -1501,7 +1827,8 @@ export const RunStream = memo(function RunStream({
   onOpenFile,
   onAnswer,
   ended = false,
-  showAll = false,
+  working = false,
+  hud,
   boot = null,
   foldsOpen = false,
   compact = false,
@@ -1530,9 +1857,11 @@ export const RunStream = memo(function RunStream({
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
   ended?: boolean;
-  /** Ctrl-F mounted the whole transcript — the tail cap would hide text the
-   *  browser's find is about to look for. */
-  showAll?: boolean;
+  /** Running and waiting on nothing (Transcript's working): the last WORK zone
+   *  is live and hosts the indicator, or, with no zone to carry it, the working
+   *  row draws at the foot. */
+  working?: boolean;
+  hud?: HudSettings;
   /** Whether a STEPS fold mounts open (the COLLAPSE STEPS switch, inverted).
    *  Off by default: the work sits under one line until you ask for it, and
    *  the words stay the thing you see. */
@@ -1563,10 +1892,6 @@ export const RunStream = memo(function RunStream({
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
   // A WORK zone's chip reads lib/seenshots: re-render when a shot gets seen.
   useSeenShots();
-  // Derived from the length rather than stored as an index, so a running turn's
-  // window slides with its tail instead of freezing where it was opened.
-  const [wholeTurn, setWholeTurn] = useState(false);
-  const tailFrom = wholeTurn || showAll ? 0 : Math.max(0, events.length - TURN_TAIL);
   const pendingIds = new Set(pending.map((p) => p.request_id));
   // A card still waiting on you draws at the turn's foot (lib/segments atFoot).
   const waiting = (i: number) => {
@@ -1587,18 +1912,25 @@ export const RunStream = memo(function RunStream({
     e.type === "tool" ? (e.id ? toolDone.get(e.id) : {}) : undefined;
 
   // Every picture this turn's work produced, in order, named for the lightbox's
-  // title (lib/toolwidget shotTitle): opened on any row it pages through the
-  // lot, since the shot you want next is rarely the same row's. A clip rides on
-  // its own row's entries only, so the chapter rail stays with its video.
+  // title (lib/toolwidget shotTitle), and each event's own (shotsOf): opened on
+  // any row it pages through the lot of its zone — in DOSSIER the WORK zone it
+  // sits in (galleryAt, below), elsewhere the turn — since the shot you want
+  // next is rarely the same row's. A clip rides on its own row's entries only,
+  // so the chapter rail stays with its video. A tool's shot carries its path
+  // and clock, so paging to it sees it; a steer's carries no clock — you sent it.
   // shortcut: a shot another row found 404'd still sits in the strip (each row
   // knows only its own); fine while the upload dir prunes a whole turn at once.
   const shots: Shown[] = [];
-  const addShots = (call: string, about: string, paths?: string[], clip?: Clip) =>
-    paths?.forEach((p, i) => shots.push({ src: api.attachmentUrl(p), name: shotTitle(call, about, i, paths.length), clip }));
-  for (const e of events) {
-    if (e.type === "steer") addShots("STEER", e.text, e.images);
-    else if (e.type === "tool") { const d = doneOf(e); addShots(e.name, e.summary, d?.images, d?.clip); }
-  }
+  const shotsOf = new Map<number, Shown[]>();
+  const addShots = (ev: number, call: string, about: string, paths: string[] = [], clip?: Clip, at?: number) => {
+    const own = paths.map((p, i) => ({ src: api.attachmentUrl(p), name: shotTitle(call, about, i, paths.length), clip, path: p, at }));
+    shots.push(...own);
+    shotsOf.set(ev, own);
+  };
+  events.forEach((e, i) => {
+    if (e.type === "steer") addShots(i, "STEER", e.text, e.images);
+    else if (e.type === "tool") { const d = doneOf(e); addShots(i, e.name, e.summary, d?.images, d?.clip, e.at); }
+  });
 
   // Only the quiet steps fold away — a terminal, a diff, a delegated run, a
   // fetch or an MCP call each carry their own block and break the run instead.
@@ -1637,12 +1969,6 @@ export const RunStream = memo(function RunStream({
   const inFlow = (i: number) =>
     (groups.get(groupOf.get(i) ?? i) ?? [i]).some((j) => !!doneOf(events[j])?.images?.length);
 
-  // Never cut a folded run away from the head that draws it. A cut that ends up
-  // hiding only a handful buys nothing and reads as a button in front of
-  // nothing, so it collapses to showing the lot.
-  const cut = headSafeCut(events.length, tailFrom, headOf, groupOf);
-  const from = cut < TURN_TAIL_MIN ? 0 : cut;
-
   // The turn's closing text arrives twice — once streamed as a text block, once
   // as the run's result — so the same words used to print twice, the second time
   // in the RESULT box. Only the box is drawn. A native session emits no result
@@ -1676,6 +2002,21 @@ export const RunStream = memo(function RunStream({
     return false;
   };
 
+  /** In DOSSIER a pause (a thought with nothing recorded but its length) that
+   *  comes right before the agent's words — a note, or a thought with no figure
+   *  of its own — is drawn on them, as their figure: on a row of its own under
+   *  the steps it read as part of the step above it. */
+  const wearsPause = (j: number): boolean => {
+    const e = events[j];
+    if (e?.type === "thinking") return !!e.text && !slow(e.ms);
+    return e?.type === "text" && !!e.text && !(resultText && e.text.trim() === resultText)
+      && !(asksNext(j) || (dossier && j === finalText));
+  };
+  const pauseAt = (j: number): number => {
+    const e = events[j];
+    return e?.type === "thinking" && !e.text && e.ms && !insideRun(j, groups, folds) ? e.ms : 0;
+  };
+
   /** One event as its row. Indices stay absolute: foldChips, runsOf and the
    *  tool_done pairing all key off position in the full array. */
   const renderEvent = (i: number): ReactNode => {
@@ -1695,6 +2036,7 @@ export const RunStream = memo(function RunStream({
               idKey={`${turnId}:${i}`}
             />
           );
+        const pause = dossier ? pauseAt(i - 1) : 0;
         return (
           <div
             key={i}
@@ -1709,6 +2051,7 @@ export const RunStream = memo(function RunStream({
             <MessageBlock text={text} onQuote={onQuote}>
               <Markdown className="leading-relaxed" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
             </MessageBlock>
+            {pause ? <span className="zpause" title={`${dur(pause)} before this note`}>{dur(pause)}</span> : null}
           </div>
         );
       }
@@ -1731,7 +2074,7 @@ export const RunStream = memo(function RunStream({
         // plain row — which is every tool without a table entry. Built from
         // the whole run rather than this event: the head draws the group's
         // one card, so a member's shots or sources would be drawn by nobody.
-        const spec = widgetForRun(run.map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary })));
+        const spec = widgetForRun(run.map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary, at: events[j].at })));
         // Hung under whichever card this tool got, not just the default one:
         // a Read of a PNG returns an image and takes the ReadCard branch, and
         // that is 715 of the 729 image results in this store — a widget only
@@ -1741,14 +2084,30 @@ export const RunStream = memo(function RunStream({
         // look (lib/toolwidget TOOL_STYLES).
         const extra = spec ? (
           <div className="zx ml-[var(--rail)]">
-            <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} gallery={shots} />
+            <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} gallery={galleryAt(i)} />
           </div>
-        ) : done?.images?.length ? <ToolImages paths={done.images} all={shots} /> : null;
+        ) : done?.images?.length ? <ToolImages paths={done.images} all={galleryAt(i)} at={event.at} /> : null;
         const withExtra = (node: ReactNode) =>
           extra ? <div key={i}>{node}{extra}</div> : node;
         // COMPACT reads as a chat, and there the pictures are the reply: the
-        // Read or Attach that fetched them is plumbing, so its row goes.
-        if (compact && extra && inFlow(i)) return <div key={i}>{extra}</div>;
+        // Read or Attach that fetched them is plumbing, so its row goes. In
+        // DOSSIER a plain row stands in for it, so the pictures hang off the
+        // zone's grid instead of floating beside the spine.
+        if (compact && extra && inFlow(i)) {
+          const n = run.reduce((t, j) => t + (doneOf(events[j])?.images?.length ?? 0), 0);
+          return (
+            <div key={i}>
+              {dossier ? (
+                <div className="zrow shots">
+                  <i className="ax-bar" aria-hidden><ImageIcon size={14} strokeWidth={1.9} /></i>
+                  <span className="ax-tagcell"><span className="ax-tag">SHOTS</span></span>
+                  <span className="ax-obj">{n} picture{n === 1 ? "" : "s"}</span>
+                </div>
+              ) : null}
+              {extra}
+            </div>
+          );
+        }
         // A delegation is a turn nested inside this one, so it is drawn as
         // its own framed block — and a run of them as one fan, not as N
         // identical rows or a generic "AGENT · 4 CALLS" box.
@@ -1851,11 +2210,14 @@ export const RunStream = memo(function RunStream({
       case "thinking":
         // A pause swallowed by a group is drawn by nobody: its mark would land
         // at the foot of the card instead of between the rows it fell between,
-        // and two of them would stack on the same pixel.
+        // and two of them would stack on the same pixel. One right before the
+        // agent's words is drawn on them (wearsPause).
         if (!event.text)
-          return event.ms && !insideRun(i, groups, folds) ? <GapMark key={i} ms={event.ms} /> : null;
+          return event.ms && !insideRun(i, groups, folds) && !(dossier && wearsPause(i + 1))
+            ? <GapMark key={i} ms={event.ms} /> : null;
         return (
           <ThoughtRow key={i} ms={event.ms} text={event.text} animate={animate}
+            pause={dossier && !slow(event.ms) ? pauseAt(i - 1) : 0}
             onOpenFile={onOpenFile} toolStyle={toolStyle} />
         );
       case "log":
@@ -1878,7 +2240,7 @@ export const RunStream = memo(function RunStream({
         return (
           <div key={i} id={ckId(turnId, steerKey(i))} className="dprompt scroll-mt-[94px]">
             <PromptBubble steer text={event.text} at={event.at}>
-              {event.images && event.images.length > 0 && <ToolImages paths={event.images} all={shots} />}
+              {event.images && event.images.length > 0 && <ToolImages paths={event.images} all={galleryAt(i)} />}
             </PromptBubble>
           </div>
         );
@@ -2010,7 +2372,7 @@ export const RunStream = memo(function RunStream({
     );
   };
 
-  const segs = segmentsOf(events, from, inFlow, waiting);
+  const segs = segmentsOf(events, 0, inFlow, waiting);
   // Tier 1 and 2 (lib/dossier): the answer, the prose that introduces a card,
   // the cards, your steers, and what ends a turn. Everything else is work.
   const topAt = (i: number): boolean => {
@@ -2019,41 +2381,48 @@ export const RunStream = memo(function RunStream({
     return TOP_TYPES.has(e.type);
   };
   const isTop = (seg: Seg): boolean => seg.kind === "prose" && topAt(seg.idx[0]);
-  const workZone = (zsegs: Seg[]) => {
-    const marks: Mark[] = [];
+  const workZone = (zsegs: Seg[], lastZone: boolean) => {
     const cats: StepCat[] = [];
-    let notes = 0, failed = 0, shots = 0, fresh = 0, running = false, live = "", first: number | undefined, last: number | undefined;
+    const pics: Pic[] = [];
+    let notes = 0, steps = 0, failed = 0, running = false, live = "", openAt: number | undefined, first: number | undefined, last: number | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
       const e = events[i];
       if (e.at != null) { first ??= e.at; last = e.at; }
-      if (e.type === "thinking" && e.text) { marks.push("think"); notes++; }
-      else if (e.type === "text" && e.text) { marks.push("note"); notes++; }
-      else if (e.type === "log") { marks.push(e.error ? "fail" : "hook"); cats.push("log"); if (e.error) failed++; }
+      if ((e.type === "thinking" || e.type === "text") && e.text) { steps++; notes++; }
+      else if (e.type === "log") { steps++; cats.push("log"); if (e.error) failed++; }
       else if (e.type === "tool") {
         const d = doneOf(e), c = catOf(e, d);
-        cats.push(c);
-        if (!d) { running = true; live = e.summary; }
+        steps++; cats.push(c);
+        if (!d) { running = true; live = e.summary; openAt = e.at; }
         else if (d.is_error) failed++;
-        marks.push(d?.is_error ? "fail" : c);
-        for (const p of d?.images ?? []) { shots++; if (shotUnseen(p, e.at)) fresh++; }
+        for (const p of d?.images ?? []) pics.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p, unseen: shotUnseen(p, e.at) });
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
     }
     const secs = first != null && last != null ? last - first : 0;
-    const span = secs >= 1 ? dur(secs * 1000) : "";
-    // Named like a STEPS fold (lib/segments): back past the window's cut to the
-    // tier-1/2 row before it, so the zone you opened stays the same zone.
+    const span = secs >= 1 ? wall(secs) : "";
+    // The last zone of a running turn is live: a tool out is WORKING since it
+    // started, nothing out is THINKING since the last thing finished. A card
+    // waiting on you is neither — the plate rests until it is answered.
+    const state = working && lastZone ? (running ? "work" as const : "think" as const) : null;
+    // Keyed by the tier-1/2 row before it (or a card drawn at the foot), so the
+    // zone you opened stays the same zone as rows land.
     let start = zsegs[0].start;
     while (start > 0 && (waiting(start - 1) || !topAt(start - 1))) start--;
     return (
       <WorkZone
         key={`z${start}`}
-        marks={marks}
-        title={workTitle(stepsTitle(cats), notes)}
+        cats={cats}
+        notes={notes}
+        steps={steps}
         failed={failed}
-        shots={shots}
-        fresh={fresh}
-        running={running}
+        pics={pics}
+        gallery={galleryAt(zsegs[0].idx[0])}
+        state={state}
+        since={running ? openAt : last}
+        hud={hud}
+        events={events}
+        started={turnStarted}
         live={live}
         span={span}
         defaultOpen={foldsOpen}
@@ -2064,27 +2433,32 @@ export const RunStream = memo(function RunStream({
     );
   };
 
+  const zones = dossier ? zonesOf(segs, isTop) : [];
+  // Each zone's pictures, for every event in it: a lightbox opened in a WORK
+  // zone (or on a steer) pages through those, never another zone's.
+  const zoneShots = new Map<number, Shown[]>();
+  for (const z of zones) {
+    const idx = z.segs.flatMap((s) => s.idx);
+    const own = idx.flatMap((i) => shotsOf.get(i) ?? []);
+    for (const i of idx) zoneShots.set(i, own);
+  }
+  const galleryAt = (i: number) => zoneShots.get(i) ?? shots;
+  // Whether a WORK zone is there to carry the working indicator (the last zone,
+  // while it runs); otherwise the indicator draws at the foot — before the
+  // first event, or after a steer the model is still reading.
+  const carried = working && zones.length > 0 && zones[zones.length - 1].kind === "work";
   return (
     // vskip-card: a turn runs to hundreds of events, so each card skips layout
     // and paint while it's off-screen (see .vskip-card in index.css).
     <div className="rstream space-y-2 vskip-card">
       {boot ? <BootRow text={boot} /> : null}
-      {from > 0 && (
-        <button
-          type="button"
-          onClick={() => setWholeTurn(true)}
-          className="ml-[var(--rail)] flex items-center gap-1.5 border border-border px-2.5 py-1 text-[length:var(--t95)] tracking-[1px] text-muted-2 hover:text-foreground-bright"
-        >
-          <ChevronsUp size={11} aria-hidden />
-          {from} EARLIER STEP{from === 1 ? "" : "S"}
-        </button>
-      )}
       {/* The words in the flow, the work under a row each (lib/segments) —
           or, in DOSSIER, under one WORK zone per stretch (lib/dossier). */}
       {dossier
-        ? zonesOf(segs, isTop).map((z) =>
-            z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs))
+        ? zones.map((z, i) =>
+            z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs, i === zones.length - 1))
         : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)))}
+      {working && !carried ? <WorkingIndicator hud={hud} events={events} boot={boot} started={turnStarted} /> : null}
     </div>
   );
 });
@@ -2168,7 +2542,7 @@ function AskBackBar({
  *  never folds, short enough that a 300-line report doesn't bury the transcript. */
 const RESULT_FOLD_LINES = 30;
 
-function FinalResult({
+export function FinalResult({
   result,
   at,
   elapsed,
@@ -2227,7 +2601,7 @@ function FinalResult({
           <span className="res-meta">
             {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
             {typeof elapsed === "number" && elapsed > 0 && (
-              <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
+              <span title="wall time">{wall(elapsed)}</span>
             )}
             {typeof tokens === "number" && tokens > 0 && (
               <span title="tokens this turn spent">

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Castle, FileDiff, FolderTree, GitBranch, GraduationCap, ListOrdered,
+  Castle, FolderTree, GitBranch, GraduationCap, ListOrdered,
 } from "lucide-react";
 import {
   api,
@@ -51,6 +51,9 @@ import {
 } from "./lib/theme";
 import { useHostVitals, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
+import { copySelection, cutSelection, editorFor, pasteInto, selectedText } from "./lib/editorctx";
+import { redo, selectAll, undo } from "@codemirror/commands";
+import type { EditorView } from "@codemirror/view";
 import { useAiFeatures } from "./lib/ai";
 import { useIntegrations } from "./lib/integrations";
 import { useSessionPins, useStickySet } from "./lib/prefs";
@@ -76,7 +79,7 @@ import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
-import { GitTab } from "./components/GitTab";
+import { GitPanel } from "./components/hud/GitPanel";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
@@ -1144,6 +1147,17 @@ export function App() {
       notify("error", (e as Error).message);
     }
   }
+  // The PROFILE menu's pin: the profile new sessions get, bridge-wide (what
+  // SETTINGS ▸ AI & PROFILES' MAKE DEFAULT sets), then the list again so the
+  // DEFAULT pill moves.
+  async function setDefaultProfile(pid: string) {
+    try {
+      await api.profileWrite({ action: "default", id: pid });
+      await loadProfiles();
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
   // SETTINGS ▸ PROJECTS: the profile a project's new sessions are bound to.
   // The sessions it already has keep theirs.
   async function setProjectProfile(rel: string, pid: string) {
@@ -1675,7 +1689,7 @@ export function App() {
     [state, sessionProject]);
 
   // The composer's addFiles, for the fresh screen's drop target (Terminal).
-  const composerFiles = useRef<((files: FileList) => void) | null>(null);
+  const composerFiles = useRef<((files: FileList | File[]) => void) | null>(null);
 
   // Footer git state for that tree. Same 10s cadence as the project badges;
   // clears on switch so the git popover never shows the last session's branch.
@@ -1736,10 +1750,10 @@ export function App() {
   // A break and its end are the bridge's news now (bridge/notices.py, rv_link);
   // the bell only borrows the connections for its RIVENDELL link bar.
   useEffect(() => { setLinks(links); }, [links]);
-  // Uncommitted files in the open session's WORKING TREE — what CHANGES lists
-  // and what its rail badge counts. sessionGit is per-worktree, so two branches
-  // of the same repo get their own number; gitBadges is only keyed by project,
-  // so it's the fallback for the tick before sessionGit lands.
+  // Uncommitted files in the open session's WORKING TREE — what the GIT tab
+  // lists and what its rail badge counts. sessionGit is per-worktree, so two
+  // branches of the same repo get their own number; gitBadges is only keyed by
+  // project, so it's the fallback for the tick before sessionGit lands.
   const dirtyFiles = sessionGit?.dirty ?? gitBadges.get(sessionProject ?? "")?.dirty ?? 0;
 
   const rightTabs: PanelTab[] = [
@@ -1753,21 +1767,18 @@ export function App() {
       ),
     },
     {
-      id: "changes", label: dirtyFiles ? `Changed files (${dirtyFiles})` : "Changed files", icon: <FileDiff {...RAIL} />, ownScroll: true, scope: "worktree",
+      id: "git", label: dirtyFiles ? `Git (${dirtyFiles} changed)` : "Git", icon: <GitBranch {...RAIL} />, ownScroll: true, scope: "worktree",
       badge: dirtyFiles ? railCount(dirtyFiles) : null,
       render: () => (
-        <FilesPanel
-          project={sessionProject} branch={sessionBranch} changedOnly
+        <GitPanel
+          project={sessionProject} branch={sessionBranch} git={sessionGit}
+          onGitChanged={() => setGitNonce((n) => n + 1)}
           onOpenFile={openFileFromPanel}
           onPushFailed={pushFailedSession}
           // A "commit message ready" click lands back here: this session, this tab.
-          onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "changes", rightOpen: true }); }}
+          onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "git", rightOpen: true }); }}
         />
       ),
-    },
-    {
-      id: "git", label: "Source Control", icon: <GitBranch {...RAIL} />, scope: "project",
-      render: () => <GitTab project={sessionProject} />,
     },
     // Hidden while LESSONS is off, like ANALYZE's copy — nothing is being written.
     ...(ai.learn ? [{
@@ -1885,7 +1896,8 @@ export function App() {
     if (!ctxMenu) return [];
     const cproj = analyzeProject || activeProject || "";
     // Copy / open link / image act on what was under the cursor, so they lead.
-    const items: CtxItem[] = nativeCtx.top.length ? [...nativeCtx.top, { divider: true }] : [];
+    // An edit box has its own Copy, so the selection rows would only repeat it.
+    const items: CtxItem[] = nativeCtx.top.length && ctxMenu.type !== "editor" ? [...nativeCtx.top, { divider: true }] : [];
     const copy = (t: string) => { try { void navigator.clipboard?.writeText(t); } catch { /* ignore */ } };
     if (ctxMenu.type === "session") {
       const s = sessions.find((x) => x.id === ctxMenu.id);
@@ -2027,6 +2039,48 @@ export function App() {
       items.push({ icon: "▤", label: "Weekly report", onClick: () => setWeekNonce((n) => n + 1) });
       items.push({ icon: "✎", label: "Clock & weather…", onClick: () => setWxSettings((n) => n + 1) });
       items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
+      items.push({ divider: true });
+    } else if (ctxMenu.type === "editor" && editorFor(ctxMenu.id)) {
+      // The prompt box and the EDITOR body are CodeMirror, a contenteditable the
+      // browser-menu exemption misses (lib/editorctx). The registry hands back
+      // the EditorView itself; the commands want it, the helpers its shape.
+      const ed = editorFor(ctxMenu.id)!;
+      const v = ed.view as unknown as EditorView;
+      const act = ed.actions ?? {};
+      const composer = ctxMenu.id === "composer";
+      const sel = selectedText(ed.view);
+      items.push(
+        { icon: "✂", label: "Cut", hint: "⌘X", onClick: () => void cutSelection(ed.view) },
+        { icon: "⧉", label: "Copy", hint: "⌘C", onClick: () => void copySelection(ed.view) },
+        { icon: "⎘", label: "Paste", hint: "⌘V", onClick: () => void pasteInto(ed.view, composer ? (f) => composerFiles.current?.(f) : undefined)
+            .then((r) => {
+              // ⌘V still works where the menu's read is refused, once the caret is back in the box.
+              if (r === "refused") { v.focus(); notify("info", "Paste is blocked from the menu here — press ⌘V in the box."); }
+              else if (r === "empty") notify("info", "Nothing to paste.");
+            }) },
+        { icon: "☰", label: "Select all", hint: "⌘A", onClick: () => { selectAll(v); v.focus(); } },
+        { icon: "↶", label: "Undo", hint: "⌘Z", onClick: () => { undo(v); v.focus(); } },
+        { icon: "↷", label: "Redo", hint: "⇧⌘Z", onClick: () => { redo(v); v.focus(); } },
+        { divider: true },
+      );
+      if (composer) {
+        if (act.attach) items.push({ icon: "⊕", label: "Attach file…", onClick: act.attach });
+        if (act.mention) items.push({ icon: "@", label: "Insert file mention", onClick: act.mention });
+        if (act.clear) items.push({ icon: "⌫", label: "Clear draft", danger: true, onClick: act.clear });
+      } else {
+        if (act.format) items.push({ icon: "⌥", label: "Format document", hint: "⇧⌥F", onClick: act.format });
+        if (act.symbol) items.push({ icon: "◎", label: "Go to symbol…", hint: "⇧⌃O", onClick: act.symbol });
+        if (act.find) items.push({ icon: "⌕", label: "Find in files", hint: "⇧⌃F", onClick: act.find });
+        if (sel) {
+          const from = v.state.selection.main.from;
+          items.push({ icon: "❞", label: "Send selection to chat", hint: "quotes path:line into the prompt",
+            onClick: () => {
+              quote("```" + `${ed.path?.() ?? "selection"}:${v.state.doc.lineAt(from).number}\n${sel}\n` + "```");
+              // The prompt sits under the project modal; close it unless that would drop unsaved edits.
+              if (ed.leaveOk?.() ?? true) setAnalyzeProject(null);
+            } });
+        }
+      }
       items.push({ divider: true });
     }
     // Dashboard-wide rows. When you right-clicked *something* — a card, a turn,
@@ -2340,6 +2394,7 @@ export function App() {
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={spentUsage} effort={effort}
                       accounts={accounts} agentPick={agentPick} profile={selected?.profile_id ?? ""}
                       profiles={profilesAvailable ? profiles?.profiles : undefined} onProfile={(id) => void pickProfile(id)}
+                      defaultProfile={profiles?.default} onDefaultProfile={(id) => void setDefaultProfile(id)}
                       overrides={selected?.overrides}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       draft={draft} onDraft={setDraft}

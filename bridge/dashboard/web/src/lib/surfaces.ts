@@ -24,6 +24,13 @@ const FALLBACK: Surface = {
   bg: "rgba(156,149,176,.12)",
 };
 
+/** Wall time the way the answer meta prints it: whole seconds under a minute,
+ *  minutes to a tenth from there — `45S`, `6.0M`. The WORK line uses the same
+ *  readout, so a turn has one clock. */
+export function wall(secs: number): string {
+  return secs < 60 ? `${Math.round(secs)}S` : `${(secs / 60).toFixed(1)}M`;
+}
+
 export function surfaceFor(origin: string | null | undefined): Surface {
   return SURFACES[origin ?? ""] ?? FALLBACK;
 }

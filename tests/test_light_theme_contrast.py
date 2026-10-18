@@ -1,7 +1,7 @@
 """The light grounds' ink tiers must stay legible.
 
 The light palettes in the dashboard's theme.ts (CLAUDE's paper, FLINT's
-daylight, every colouring on them) are hand-authored hex, so a retint can
+daylight, PEBBLE's chalk, every colouring on them) are hand-authored hex, so a retint can
 silently drop caption text (`--txl` alone is used 100+ times at 8-10px) to a
 washed-out grey. This reads theme.ts and checks every text tier and every colour
 used as text against WCAG contrast floors on that theme's own canvas.
@@ -38,7 +38,7 @@ GHOST_FLOOR = 3.25
 
 # The grounds the light colourings sit on — each its family's DARKEST light stop,
 # below `panel`, so clearing this clears every surface.
-CANVAS = {"claude": "#efede5", "flint": "#ebebed"}
+CANVAS = {"claude": "#efede5", "flint": "#ebebed", "pebble": "#eef0f4"}
 
 # The light ground has to stay a GROUND, not a spotlight: `panel` is the raised
 # card and `canvas` sits below it, so the biggest surface is never the brightest.
@@ -54,7 +54,9 @@ MIN_LADDER_STEP = 1.008  # each rung measurably lighter than the one below
 COLORFUL = ["aqua", "amber", "magenta", "blueprint", "void",
             "flint-ember", "flint-fuchsia", "flint-kiln", "flint-cobalt", "flint-nocturne", "flint-violet", "flint-signal",
             "flint-ember-light", "flint-fuchsia-light", "flint-kiln-light", "flint-cobalt-light",
-            "flint-nocturne-light", "flint-signal-light"]
+            "flint-nocturne-light", "flint-signal-light",
+            "pebble-sky", "pebble-mint", "pebble-lilac", "pebble-rose", "pebble-coral",
+            "pebble-sky-light", "pebble-mint-light", "pebble-lilac-light", "pebble-rose-light", "pebble-coral-light"]
 HUE_KEYS = ["acc", "ok", "warn", "err", "info", "purple"]
 MIN_HUE_GAP = 20.0   # degrees between any two saturated semantics
 MIN_SAT = 0.16       # below this a colour is neutral ink, so it has no hue to space
@@ -124,7 +126,7 @@ def main():
 
     pals = palettes(src)
     light_keys = [k for k in pals if is_light(k)]
-    assert len(light_keys) == 13, f"expected CLAUDE's 6 + FLINT's 7 light colourings: {light_keys}"
+    assert len(light_keys) == 18, f"expected CLAUDE's 6 + FLINT's 7 + PEBBLE's 5 light colourings: {light_keys}"
 
     css = open(INDEX_CSS, encoding="utf-8").read()
     edges = light_edges(css)

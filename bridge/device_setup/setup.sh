@@ -66,15 +66,18 @@ root_only() { # root_only PATH
 # A deny file that isn't there stays so: with neither it nor the allow file only
 # root may use at (and, by site, cron), and making one would let everyone else
 # in. A last line without its newline gets one first: glued on, the name would
-# un-deny that line's user.
+# un-deny that line's user. Best effort: since macOS 26 the cron folder is off
+# limits to all but Apple's own cron tools (root gets EPERM here, with nothing
+# logged), so a file that can't be written is noted and left, and the helper's
+# clearing of the hidden user's crontab before and after every run stands in.
 deny_cron() { # deny_cron FILE...
   local f
   for f in "$@"; do
     if [ -L "$f" ]; then fail "$f is a link."; fi
     [ -f "$f" ] || continue
     grep -qxF "$RUN_USER" "$f" && continue
-    [ -z "$(tail -c 1 "$f")" ] || printf '\n' >>"$f"
-    printf '%s\n' "$RUN_USER" >>"$f"
+    { [ -z "$(tail -c 1 "$f")" ] || printf '\n' >>"$f"; printf '%s\n' "$RUN_USER" >>"$f"; } ||
+      echo "$f can't be written on this macOS, so the hidden user's crontab is cleared around each run instead."
   done
 }
 
@@ -207,9 +210,11 @@ dscl . -read "/Users/$RUN_USER" >/dev/null 2>&1 || fail "macOS didn't create the
 step="Keeping the hidden user out of your home folder"
 acl=$(ls -led "$home")
 case "$acl" in *"user:$RUN_USER deny"*) ;; *) chmod +a "$DENY" "$home" ;; esac
-#    And out of cron and at, so nothing a run schedules starts after it.
+#    And out of cron and at, so nothing a run schedules starts after it (best
+#    effort, see deny_cron). The files go by their real path, not the manuals'
+#    /usr/lib/cron link.
 step="Keeping the hidden user out of cron and at"
-deny_cron /usr/lib/cron/cron.deny /usr/lib/cron/at.deny
+deny_cron /private/var/at/cron.deny /private/var/at/at.deny
 
 # 5. The wall, before anything runs as the hidden user, and once it exists: pf
 #    resolves the user's name when it loads the rule.

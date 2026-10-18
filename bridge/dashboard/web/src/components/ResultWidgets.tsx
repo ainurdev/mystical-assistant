@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "../api";
-import { markShotSeen } from "../lib/seenshots";
+import { markShotSeen, shotUnseen } from "../lib/seenshots";
 import { idiomFor, type ToolStyle, type ToolWidgetSpec } from "../lib/toolwidget";
 import {
   asChain, asChart, asChecks, asClaims, asCommands, asConfidence, asDiff, asFiles,
@@ -26,7 +26,7 @@ import { ImageLightbox, MediaThumb, ZoomButton, type Shown } from "./ImageLightb
 //
 // Mirrors bridge/miniapp/web/src/components/ResultWidgets.tsx. Two differences:
 // Shot (this side can put a URL in an <img>, the Mini App's auth lives in a
-// header) and `gallery`, the turn-wide paging of the dashboard's WORK zone,
+// header) and `gallery`, the zone-wide paging of the dashboard's WORK zone,
 // which the Mini App has no zone to want. Keep the rest in sync.
 
 /** One field of a card. `send` is absent on a card the session has already moved
@@ -66,8 +66,8 @@ export function drawWidget(
   value: unknown,
   send?: (text: string) => void,
   onOpenFile?: (path: string, line?: number) => void,
-  /** The whole turn's pictures, when the caller has them: a shot opens into a
-   *  lightbox that pages through those rather than this widget's own. */
+  /** The pictures of the WORK zone it sits in, when the caller has them: a shot
+   *  opens into a lightbox that pages through those rather than this widget's own. */
   gallery?: Shown[],
 ): ReactNode {
   switch (type) {
@@ -305,18 +305,18 @@ function shotLabel(s: { path: string; caption?: string }, i: number): string {
 /** Screenshots a design stage produced. On the draft gate they are the thing
  *  being approved, so a note per screen is how you answer without describing
  *  which screen you mean. */
-function ScreenGallery({ rows, send, gallery }: { rows: { path: string; caption?: string }[]; send?: (t: string) => void; gallery?: Shown[] }) {
+function ScreenGallery({ rows, send, gallery }: { rows: { path: string; caption?: string; at?: number }[]; send?: (t: string) => void; gallery?: Shown[] }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [sent, setSent] = useState(false);
   const written = Object.entries(notes).filter(([, v]) => v.trim());
   return (
     <div className="flc-gal">
-      {zoom && <ImageLightbox src={zoom} all={gallery ?? rows.map((s) => ({ src: api.attachmentUrl(s.path), name: s.caption }))} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom} all={gallery ?? rows.map((s) => ({ src: api.attachmentUrl(s.path), name: s.caption, path: s.path, at: s.at }))} onClose={() => setZoom(null)} />}
       <div className="flc-shots">
         {rows.map((s, i) => (
           <figure key={i}>
-            <Shot path={s.path} onZoom={setZoom} />
+            <Shot path={s.path} at={s.at} onZoom={setZoom} />
             {/* Every image a tool returns is saved as mcp-<tool_use_id>-<n>.png
                 (bridge/runner.py) — an id is not a caption, so the call names
                 the shot instead (lib/toolwidget.shotName), and a shot from
@@ -354,13 +354,13 @@ function ScreenGallery({ rows, send, gallery }: { rows: { path: string; caption?
 
 /** The one thing this file does differently from its Mini App twin: the
  *  dashboard is same-origin, so the URL goes straight in an <img>. */
-function Shot({ path, onZoom }: { path: string; onZoom: (src: string) => void }) {
+function Shot({ path, at, onZoom }: { path: string; at?: number; onZoom: (src: string) => void }) {
   const [gone, setGone] = useState(false);
   const src = api.attachmentUrl(path);
   if (gone) return <span className="flc-gone">{path.split("/").pop()}</span>;
   return (
     <ZoomButton onOpen={() => onZoom(src)}>
-      <MediaThumb src={src} alt={path} onError={() => setGone(true)} onSeen={() => markShotSeen(path)} />
+      <MediaThumb src={src} alt={path} onError={() => setGone(true)} onSeen={() => markShotSeen(path)} fresh={shotUnseen(path, at)} />
     </ZoomButton>
   );
 }

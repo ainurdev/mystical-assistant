@@ -1,21 +1,31 @@
 import { useEffect, useMemo, useState } from "react";
+import { Cloud, Copy, GitBranch, Tag } from "lucide-react";
 import { api, type CompareFile, type GitCommit } from "../api";
 import { diffColor } from "../lib/resultfields";
-import { ROW_H, laneColor, layout } from "../lib/gitgraph";
+import { FileIcon } from "../lib/fileicon";
+import { DOT_Y, ROW_H, laneColor, layout, unpushed, type Seg } from "../lib/gitgraph";
 import { ago } from "../lib/surfaces";
 import { Skeleton } from "./ui";
 
 /* Commit graph — `git log --all` laid out into lanes (see lib/gitgraph), VS
    Code Source Control Graph style: one row per commit, rails on the left
-   showing where branches forked and merged back. */
+   showing where branches forked and merged back. The subject comes first and
+   takes the row; a commit carrying refs grows a second line for its chips, so
+   a message never pays for them. Commits the upstream hasn't got are hollow
+   dots and HEAD is ringed. Clicking a row opens its files under it, a file
+   its diff. Held by the GIT tab (hud/GitPanel) and the project modal's
+   history pane; styles under GIT TAB in index.css. */
 
-// ponytail: remote refs spotted by prefix — a local branch really named
-// "origin/x" would mis-chip, and nobody does that.
-function chip(r: string): { label: string; kind: "head" | "tag" | "remote" | "local" } {
+const REF_H = 18;   // the chips line under a subject
+
+// ponytail: remote refs spotted by prefix — the two usual names plus the
+// upstream's own remote. A local branch really named "origin/x" would
+// mis-chip, and nobody does that.
+function chip(r: string, remotes: string[]): { label: string; kind: "head" | "tag" | "remote" | "local" } {
   if (r.startsWith("tag: ")) return { label: r.slice(5), kind: "tag" };
   if (r.startsWith("HEAD -> ")) return { label: r.slice(8), kind: "head" };
   if (r === "HEAD") return { label: "HEAD", kind: "head" };
-  if (/^(origin|upstream)\//.test(r)) return { label: r, kind: "remote" };
+  if (remotes.some((n) => r.startsWith(`${n}/`))) return { label: r, kind: "remote" };
   return { label: r, kind: "local" };
 }
 
@@ -23,14 +33,26 @@ const MARK_COLOR: Record<string, string> = {
   A: "var(--ok)", D: "var(--err)", R: "var(--info)", C: "var(--info)",
 };
 
-const CHIP_CLASS: Record<string, string> = {
-  head: "border-primary text-foreground-bright bg-[var(--ac-12)]",
-  local: "border-border text-primary",
-  remote: "border-[var(--txl)] text-muted-foreground",
-  tag: "border-[var(--warn)] text-[var(--warn)]",
+// "Oct 18 · 07:05" — the card is 275px wide; the full date is on hover.
+const when = (ts: number) => {
+  const d = new Date(ts * 1000);
+  return `${d.toLocaleDateString(undefined, { month: "short", day: "numeric" })} · ${d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`;
 };
 
-export function CommitGraph({ project, branch }: { project: string; branch?: string }) {
+const SEG: Record<Seg, (h: number) => [number, number]> = {
+  in: () => [0, DOT_Y], thru: (h) => [0, h], out: (h) => [DOT_Y, h],
+};
+
+export function CommitGraph({ project, branch, upstream, ahead = 0, behind = 0, nonce = 0 }: {
+  project: string;
+  branch?: string;
+  /** the open worktree's upstream and its distance — the HEAD chip's count and the hollow dots */
+  upstream?: string;
+  ahead?: number;
+  behind?: number;
+  /** bump to re-read the log now */
+  nonce?: number;
+}) {
   const [commits, setCommits] = useState<GitCommit[] | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [limit, setLimit] = useState(200);
@@ -64,7 +86,7 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
       live = false;
       clearInterval(id);
     };
-  }, [project, branch, limit]);
+  }, [project, branch, limit, nonce]);
 
   function pickCommit(sha: string) {
     setOpenFile(null);
@@ -87,6 +109,9 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
   }
 
   const { rows, width } = useMemo(() => layout(commits ?? []), [commits]);
+  const hollow = useMemo(() => unpushed(commits ?? [], upstream), [commits, upstream]);
+  const remotes = useMemo(
+    () => ["origin", "upstream", ...(upstream?.includes("/") ? [upstream.split("/")[0]] : [])], [upstream]);
   // Every row pays for the deepest lane in the whole log, so a repo with five
   // branch lines spent a quarter of the rail panel's row on rails no commit on
   // screen uses. Cap the gutter near 48px; the pitch falls out of it.
@@ -97,10 +122,13 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
     a === b
       ? `M${x(a)},${y1}V${y2}`
       : `M${x(a)},${y1}C${x(a)},${(y1 + y2) / 2} ${x(b)},${(y1 + y2) / 2} ${x(b)},${y2}`;
+  const dist = ahead > 0 || behind > 0
+    ? [ahead > 0 ? `↑${ahead}` : "", behind > 0 ? `↓${behind}` : ""].filter(Boolean).join(" ")
+    : "";
 
   if (commits === null)
     return (
-      <div className="space-y-1.5 px-2.5 py-2">
+      <div className="gg gg-skel">
         {[0, 1, 2, 3, 4].map((i) => (
           <Skeleton key={i} className="h-5 w-full" />
         ))}
@@ -108,129 +136,124 @@ export function CommitGraph({ project, branch }: { project: string; branch?: str
     );
   if (err)
     return (
-      <div className="px-2.5 py-2 text-xs text-muted-foreground">
+      <div className="gg gg-note">
         Graph unavailable — {err}. Restart the bridge if it predates this endpoint.
       </div>
     );
-  if (commits.length === 0)
-    return <div className="px-2.5 py-2 text-xs text-muted-foreground">No commits yet.</div>;
+  if (commits.length === 0) return <div className="gg gg-note">No commits yet.</div>;
 
   return (
-    <div>
+    <div className="gg">
       {rows.map(({ c, lane, edges }) => {
         const isHead = c.refs.some((r) => r === "HEAD" || r.startsWith("HEAD -> "));
         const color = laneColor(lane);
         const open = c.sha === openSha;
+        const h = c.refs.length ? ROW_H + REF_H : ROW_H;
         return (
           <div key={c.sha}>
-          <div
-            onClick={() => pickCommit(c.sha)}
-            title={`${c.sha.slice(0, 12)}\n${c.subject}\n${c.author} · ${new Date(c.ts * 1000).toLocaleString()}`}
-            className={`flex cursor-pointer items-center gap-2 rounded px-1 hover:bg-accent ${open ? "bg-accent" : ""}`}
-            style={{ height: ROW_H }}
-          >
-            <svg width={gw} height={ROW_H} className="shrink-0 overflow-visible">
-              {edges.map((e, i) => (
-                <path
-                  key={i}
-                  d={path(e.a, e.b, e.y1, e.y2)}
-                  fill="none"
-                  stroke={e.color}
-                  strokeWidth={1.5}
-                  opacity={0.75}
-                />
-              ))}
-              <circle
-                cx={x(lane)}
-                cy={ROW_H / 2}
-                r={isHead ? 4.5 : 3.5}
-                fill={isHead ? "var(--panel)" : color}
-                stroke={color}
-                strokeWidth={isHead ? 2 : 0}
-              />
-            </svg>
-            {/* Two chips max — the panel is narrow and the subject matters more. */}
-            {c.refs.slice(0, 2).map((r) => {
-              const { label, kind } = chip(r);
-              return (
-                <span
-                  key={r}
-                  className={`shrink-0 truncate rounded border px-1 font-mono text-[length:var(--t95)] leading-[15px] ${CHIP_CLASS[kind]}`}
-                  style={{ maxWidth: 80 }}
-                >
-                  {label}
-                </span>
-              );
-            })}
-            {c.refs.length > 2 && (
-              <span className="shrink-0 font-mono text-[length:var(--t95)] text-muted-2" title={c.refs.join(", ")}>
-                +{c.refs.length - 2}
-              </span>
-            )}
-            <span className="flex-1 truncate text-[length:var(--t115)] text-card-foreground">{c.subject}</span>
-            <span className="shrink-0 font-mono text-[length:var(--t10)] text-muted-2">{ago(c.ts)}</span>
-          </div>
-          {/* ponytail: the expansion splits the rails of any lane passing this
-              row — the detail's left rule keeps the opened commit's own lane
-              readable, which is the one you're looking at. */}
-          {open && (
             <div
-              className="mb-1 space-y-px py-1 pl-2"
-              style={{ marginLeft: x(lane), borderLeft: `1.5px solid ${color}` }}
+              onClick={() => pickCommit(c.sha)}
+              title={`${c.sha.slice(0, 12)}\n${c.subject}\n${c.author} · ${new Date(c.ts * 1000).toLocaleString()}`}
+              className={`gg-row${isHead ? " head" : ""}${open ? " open" : ""}`}
+              style={{ minHeight: h }}
             >
-              <div className="px-1 pb-1 font-mono text-[length:var(--t95)] text-muted-2">
-                {c.sha.slice(0, 8)} · {c.author} · {new Date(c.ts * 1000).toLocaleString()}
-              </div>
-              {files === null && <div className="px-1 text-[length:var(--t10)] text-muted-2">Loading files…</div>}
-              {files?.length === 0 && <div className="px-1 text-[length:var(--t10)] text-muted-2">No file changes.</div>}
-              {files?.map((f) => (
-                <div key={f.name}>
-                  <div
-                    onClick={() => pickFile(c.sha, f.name)}
-                    title={f.name}
-                    className={`flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 hover:bg-accent ${
-                      openFile === f.name ? "bg-accent" : ""
-                    }`}
-                  >
-                    <span
-                      className="w-2.5 shrink-0 text-center font-mono text-[length:var(--t10)] font-bold"
-                      style={{ color: MARK_COLOR[f.mark] ?? "var(--warn)" }}
-                    >
-                      {f.mark}
-                    </span>
-                    {/* rtl keeps the filename visible when the path is truncated */}
-                    <span
-                      dir="rtl"
-                      className="flex-1 truncate text-left font-mono text-[length:var(--t105)] text-muted-foreground"
-                    >
-                      {f.name}
-                    </span>
-                    <span className="shrink-0 font-mono text-[length:var(--t95)] text-[var(--ok)]">+{f.add}</span>
-                    <span className="shrink-0 font-mono text-[length:var(--t95)] text-[var(--err)]">−{f.del}</span>
-                  </div>
-                  {openFile === f.name && (
-                    <pre className="my-1 max-h-72 overflow-auto rounded border border-border p-1 font-mono text-[length:var(--t10)] leading-[1.55]">
-                      {diff === null
-                        ? "loading…"
-                        : diff.split("\n").map((l, i) => (
-                            <div key={i} style={{ color: diffColor(l) }}>
-                              {l || " "}
-                            </div>
-                          ))}
-                    </pre>
-                  )}
+              <svg width={gw} height={h} className="gg-rails">
+                {edges.map((e, i) => {
+                  const [y1, y2] = SEG[e.seg](h);
+                  return <path key={i} d={path(e.a, e.b, y1, y2)} stroke={e.color} />;
+                })}
+                {isHead ? (
+                  <>
+                    <circle cx={x(lane)} cy={DOT_Y} r={6.5} fill="none" stroke={color} strokeWidth={1.25} opacity={0.5} />
+                    <circle cx={x(lane)} cy={DOT_Y} r={3.5} fill={color} />
+                  </>
+                ) : hollow.has(c.sha) ? (
+                  <circle cx={x(lane)} cy={DOT_Y} r={3.25} fill="var(--panel)" stroke={color} strokeWidth={1.5} />
+                ) : (
+                  <circle cx={x(lane)} cy={DOT_Y} r={3.5} fill={color} />
+                )}
+              </svg>
+              <div className="gg-main">
+                <div className="gg-line">
+                  <span className="gg-sub">{c.subject}</span>
+                  <span className="gg-ago">{ago(c.ts)}</span>
                 </div>
-              ))}
+                {/* Two chips max, then a count — the panel is narrow. */}
+                {c.refs.length > 0 && (
+                  <div className="gg-refs">
+                    {c.refs.slice(0, 2).map((r) => {
+                      const { label, kind } = chip(r, remotes);
+                      return (
+                        <span key={r} className={`gg-chip ${kind}`} title={r}>
+                          {kind === "tag" ? <Tag size={9} strokeWidth={2} />
+                            : kind === "remote" ? <Cloud size={9} strokeWidth={2} />
+                            : <GitBranch size={9} strokeWidth={2} />}
+                          <span>{label}</span>
+                          {kind === "head" && dist && <u>{dist}</u>}
+                        </span>
+                      );
+                    })}
+                    {c.refs.length > 2 && (
+                      <span className="gg-more" title={c.refs.join(", ")}>+{c.refs.length - 2}</span>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
-          )}
+            {/* ponytail: the card splits the rails of any lane passing this
+                row — its left rule keeps the opened commit's own lane readable,
+                which is the one you're looking at. */}
+            {open && (
+              <div className="gg-card" style={{ marginLeft: x(lane) + 10, borderLeftColor: color }}>
+                <div className="gg-meta" title={new Date(c.ts * 1000).toLocaleString()}>
+                  <code>{c.sha.slice(0, 8)}</code>
+                  <span className="who">{c.author}</span>
+                  <span>{when(c.ts)}</span>
+                  <button className="gg-ib" title="copy the full sha"
+                    onClick={() => { try { void navigator.clipboard?.writeText(c.sha); } catch { /* ignore */ } }}>
+                    <Copy size={12} />
+                  </button>
+                </div>
+                {files === null && <div className="gg-note">Loading files…</div>}
+                {files?.length === 0 && <div className="gg-note">No file changes.</div>}
+                {files?.map((f) => {
+                  const cut = f.name.lastIndexOf("/");
+                  const name = cut < 0 ? f.name : f.name.slice(cut + 1);
+                  return (
+                    <div key={f.name}>
+                      <div
+                        onClick={() => pickFile(c.sha, f.name)}
+                        title={f.name}
+                        className={`gg-file${openFile === f.name ? " open" : ""}`}
+                      >
+                        <FileIcon name={name} size={14} />
+                        <span className="gg-fname">{name}</span>
+                        {/* rtl keeps the nearest folder visible when the path is cut */}
+                        <span className="gg-fdir" dir="rtl">{cut < 0 ? "" : f.name.slice(0, cut)}</span>
+                        <span className="gg-fig"><i>+{f.add}</i><i>−{f.del}</i></span>
+                        <span className="gg-mark" style={{ color: MARK_COLOR[f.mark] ?? "var(--warn)" }}>{f.mark}</span>
+                      </div>
+                      {openFile === f.name && (
+                        <pre className="gg-diff">
+                          {diff === null
+                            ? "loading…"
+                            : diff.split("\n").map((l, i) => (
+                                <div key={i} style={{ color: diffColor(l) }}>
+                                  {l || " "}
+                                </div>
+                              ))}
+                        </pre>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         );
       })}
       {commits.length >= limit && (
-        <button
-          onClick={() => setLimit((l) => l + 200)}
-          className="mt-1 w-full rounded-lg border border-input bg-secondary py-1.5 text-[length:var(--t11)] text-muted-foreground hover:bg-accent"
-        >
+        <button onClick={() => setLimit((l) => l + 200)} className="gg-older">
           Load older commits
         </button>
       )}

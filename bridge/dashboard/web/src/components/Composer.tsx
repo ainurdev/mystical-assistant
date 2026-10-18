@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, UserRound } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
-import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows } from "../models";
-import { describe, type Profile } from "../lib/profiles";
+import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows, type Window } from "../models";
+import { describe, slotHue, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago, fmtReset } from "../lib/surfaces";
 import { openSettings } from "../lib/opensettings";
@@ -13,6 +13,7 @@ import { ICON_BODY } from "../lib/fileicons.gen";
 import { applyMention, mentionAt, rankPaths, type Mention } from "../lib/mention";
 import { isExact, rankCommands, slashAt } from "../lib/slash";
 import { Tip } from "./ui/Tip";
+import { askConfirm } from "./ui/Ask";
 import { useChatChrome } from "../lib/chatchrome";
 import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
 
@@ -29,14 +30,15 @@ export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
 // order — so the picker can't offer a posture `claude --permission-mode` would
 // reject, or name one something Claude doesn't. The CLI also takes "manual", but
 // that is just its alias for "default". Each row's tooltip is Claude's own
-// one-line description of the mode.
-export const PERMS: { id: string; label: string; title?: string }[] = [
-  { id: "plan", label: "Plan", title: "Planning mode, no actual tool execution." },
-  { id: "default", label: "Manual", title: "Standard behavior, prompts for dangerous operations." },
-  { id: "dontAsk", label: "Don't Ask", title: "Don't prompt for permissions, deny if not pre-approved." },
-  { id: "acceptEdits", label: "Accept Edits", title: "Auto-accept file edit operations." },
-  { id: "auto", label: "Auto", title: "Use a model classifier to approve/deny permission prompts." },
-  { id: "bypassPermissions", label: "Bypass", title: "Bypass all permission checks — full autonomy." },
+// one-line description of the mode; the row itself prints a shorter reading
+// of it, so the six names explain themselves without a hover.
+export const PERMS: { id: string; label: string; title?: string; hint?: string }[] = [
+  { id: "plan", label: "Plan", hint: "plans only; runs no tools", title: "Planning mode, no actual tool execution." },
+  { id: "default", label: "Manual", hint: "asks before anything dangerous", title: "Standard behavior, prompts for dangerous operations." },
+  { id: "dontAsk", label: "Don't Ask", hint: "never asks; denies what isn't pre-approved", title: "Don't prompt for permissions, deny if not pre-approved." },
+  { id: "acceptEdits", label: "Accept Edits", hint: "file edits go through unasked", title: "Auto-accept file edit operations." },
+  { id: "auto", label: "Auto", hint: "a classifier approves or denies each prompt", title: "Use a model classifier to approve/deny permission prompts." },
+  { id: "bypassPermissions", label: "Bypass", hint: "no checks at all — full autonomy", title: "Bypass all permission checks — full autonomy." },
 ];
 // Per-run code-minimalism intensity, threaded to the runner's env (Task 4/8).
 export const PONYTAILS: { id: string; label: string }[] = [
@@ -56,7 +58,9 @@ const COMPACT_SUGGEST = 0.75;
 const CTX_SEGMENTS = 8;
 const PONYTAIL_TIP = "PONYTAIL — code-minimalism for this session's runs.\n\nClaude answers as a lazy senior dev: reuse what's already in the repo, stdlib or native platform before a new dependency, shortest diff that works, no speculative abstractions.\n\nOff = normal. Lite → Full → Ultra = increasing pressure to write less code. Default keeps whatever the bridge is configured with.";
 
-type DropOption<T extends string> = { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string; tone?: string };
+// hint → a quieter second line under the label (what a mode does); tag → a
+// small pill after it (the run sheet's PROFILE, on the row the profile sets)
+type DropOption<T extends string> = { id: T; label: string; short?: string; group?: string; tail?: ReactNode; title?: string; tone?: string; hint?: string; tag?: string };
 
 /** The rows of a picker menu — shared by the chip dropdowns and the COMPACT
  *  layout's run popover, which lists the same models (with the same usage
@@ -91,11 +95,14 @@ function MenuRows<T extends string>({ options, value, onPick }: {
                 background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent",
                 color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t105)",
                 letterSpacing: ".3px", textAlign: "left", padding: "8px 11px",
-                display: "flex", alignItems: "center", gap: 8, whiteSpace: "nowrap",
+                display: "flex", alignItems: o.hint ? "flex-start" : "center", gap: 8, whiteSpace: "nowrap",
               }}
             >
-              <span style={{ width: 8, color: "var(--acc)", flex: "none" }}>{on ? "✓" : ""}</span>
-              <span style={{ flex: 1, color: o.tone }}>{o.label}</span>
+              <span style={{ width: 8, color: "var(--acc)", flex: "none", marginTop: o.hint ? 2 : 0 }}>{on ? "✓" : ""}</span>
+              <span style={{ flex: 1, color: o.tone, minWidth: 0 }}>
+                {o.label}{o.tag && <span className="mr-tag">{o.tag}</span>}
+                {o.hint && <span className="mr-hint">{o.hint}</span>}
+              </span>
               {o.tail}
             </button>
           </Fragment>
@@ -124,9 +131,12 @@ function OverrideDot() {
 }
 
 function Drop<T extends string>({
-  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter,
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter, menu, className,
 }: {
   label: string;
+  // On the chip's wrapper, for a layout that treats this chip apart (TABS'
+  // footer lets the PROFILE name give way first, .pb-l .drop-prof).
+  className?: string;
   // A field glyph printed inside the chip. The identity of the field then
   // travels with the control instead of sitting beside it as a separate span,
   // which is what let the layout ladder shed it exactly when the row got tight
@@ -159,6 +169,9 @@ function Drop<T extends string>({
   tone?: string;
   // A reading printed after the value (PROFILE: what its login has left).
   meter?: ReactNode;
+  // The menu's rows when they aren't MenuRows (PROFILE draws two-line rows
+  // with a control of their own); `options` still names the chip.
+  menu?: ReactNode;
 }) {
   const cur = options.find((o) => o.id === value) ?? fallback ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
@@ -173,7 +186,7 @@ function Drop<T extends string>({
     ["--dw" as string]: `${minWidth}px`,
   };
   return (
-    <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
+    <div className={className} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
       <button className="drop-btn" onClick={onToggle} title={title ?? `${label} — ${cur.label}`} style={btn}>
         {code && <span className="ctrl-fld">{code}</span>}
         <span className="drop-val" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
@@ -191,7 +204,7 @@ function Drop<T extends string>({
             boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
           }}
         >
-          <MenuRows options={options} value={value} onPick={onPick} />
+          {menu ?? <MenuRows options={options} value={value} onPick={onPick} />}
         </div>
       )}
     </div>
@@ -206,17 +219,90 @@ function sevColor(severity?: string): string {
 }
 
 // A fuel gauge in the MODEL menu: how much of a usage window is still unspent
-// (fill = left, so a full bar is a full tank). A PROFILE row has one per
-// window, tagged 5H / WK.
-function LeftMeter({ left, severity, tag, title }: { left: number; severity?: string; tag?: string; title?: string }) {
+// (fill = left, so a full bar is a full tank). The PROFILE menu draws its own
+// (Fuel below), with the refill written in.
+function LeftMeter({ left, severity }: { left: number; severity?: string }) {
   const c = sevColor(severity);
   return (
-    <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
-      {tag && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)" }}>{tag}</span>}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
       <span style={{ width: 44, height: 3, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
         <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${left}%`, background: c }} />
       </span>
       <span style={{ minWidth: 30, textAlign: "right", fontSize: "var(--t9)", letterSpacing: .5 }}>{left}%</span>
+    </span>
+  );
+}
+
+/** The PROFILE menu (drafts/profile-menu, A · LEDGER): two lines a profile —
+ *  its login's tile, its name and what it sets, then what that login has left
+ *  in each window with the refill written in, so nothing waits on a hover —
+ *  and at the right end the default control: the DEFAULT pill on the profile
+ *  new sessions get (the chip SETTINGS ▸ AI & PROFILES wears), a pin on every
+ *  other row that makes it the default without binding this session. A row is
+ *  a div, not a button, because the pin is a button of its own. */
+function ProfileRows({ profiles, accounts, value, defaultId, onPick, onDefault }: {
+  profiles: Profile[];
+  accounts?: AccountInfo[];
+  value: string;
+  defaultId?: string | null;   // undefined: a bridge too old to say, so no pill and no pin
+  onPick: (id: string) => void;
+  onDefault?: (id: string) => void;
+}) {
+  const key = (id: string) => (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(id); }
+  };
+  return (
+    <div role="listbox" aria-label="Profiles">
+      {profiles.map((p) => {
+        const on = p.id === value;
+        const dead = deadLogin(accounts, p.agent, p.account);
+        const wins = dead === null ? loginWindows(accounts?.find((a) => a.slot === loginSlot(p.agent, p.account))) : [];
+        return (
+          <div key={p.id} className="pm-row" role="option" aria-selected={on} tabIndex={0} data-on={on || undefined} data-dead={dead !== null || undefined}
+            title={dead !== null ? `Account ${dead}'s Claude login has expired. Opens SETTINGS ▸ ACCOUNTS to sign it in again.` : undefined}
+            onClick={() => onPick(p.id)} onKeyDown={key(p.id)}>
+            <span className="pm-chk">{on ? "✓" : ""}</span>
+            {p.agent === "claude"
+              ? <span className="ps-av" style={{ background: slotHue(p.account), color: p.account ? "var(--acc-on)" : "var(--txm)" }}>{p.account ? `A${p.account}` : "A"}</span>
+              : <span className="ps-av ps-av-agent">◇</span>}
+            <span className="pm-main">
+              <span className="pm-l1"><span className="pm-name">{p.name}</span><span className="pm-knobs">{knobs(p)}</span></span>
+              {dead !== null
+                ? <span className="pm-exp">LOGIN EXPIRED ▸ pick to sign in again</span>
+                : wins.length > 0 && <span className="pm-fuel">{wins.map((w) => <Fuel key={w.tag} w={w} />)}</span>}
+            </span>
+            {defaultId !== undefined && (
+              <span className="pm-tail">
+                {p.id === defaultId
+                  ? <span className="pm-tag" title="new sessions get this profile unless their project names another">DEFAULT</span>
+                  : <button type="button" className="pm-pin" aria-label="Make default"
+                      title="Make default · new sessions start on this profile, unless their project names another"
+                      onClick={(e) => { e.stopPropagation(); onDefault?.(p.id); }}><Pin size={13} /></button>}
+              </span>
+            )}
+          </div>
+        );
+      })}
+      <button type="button" className="pm-row pm-new" onClick={() => onPick(NEW_PROFILE)}>+ NEW PROFILE</button>
+    </div>
+  );
+}
+
+/** What a profile sets, without the login its tile already shows: "FABLE-5-1 ·
+ *  BYPASS PERMISSIONS · MAX", or DEFAULTS for one that sets nothing. */
+function knobs(p: Profile): string {
+  return describe(p).replace(/^A\d+( · |$)/, "") || "DEFAULTS";
+}
+
+/** One usage window on a PROFILE row: tag, gauge, what's left, when it refills.
+ *  A spent window prints its refill bright: when the login works again is the
+ *  number that matters. The exact time stays on hover. */
+function Fuel({ w }: { w: Window }) {
+  return (
+    <span className="pm-w" data-spent={w.left === 0 || undefined} style={{ ["--c" as string]: sevColor(w.severity) }}
+      title={`${w.name}: ${w.left}% left${w.resets}`}>
+      <span className="pm-wtag">{w.tag}</span><span className="pm-bar"><span style={{ width: `${w.left}%` }} /></span>
+      <span className="pm-pct">{w.left}%</span><span className="pm-reset">{fmtReset(w.resets_at)}</span>
     </span>
   );
 }
@@ -250,126 +336,126 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
   return <Merge size={size} strokeWidth={1.8} style={{ transform: "rotate(90deg)", flex: "none" }} aria-hidden />;
 }
 
-/** COMPACT layout's one run control: the model, the permission mode and the
- *  effort, which the default layout spreads over three chips. The model is what
- *  you come here for, so it is the headline; the mode rides beside it smaller;
- *  effort is almost always AUTO, so it is a stepped slider below rather than a
- *  menu. The trigger names the model and the session's mode always, effort only
- *  once it is set. Lists open inline, so
- *  the popover never stacks a second floating menu over the transcript. */
-function RunPopover<M extends string>({
-  open, onToggle, model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, agent, overrides,
-}: {
-  open: boolean;
-  onToggle: () => void;
+/** COMPACT layout's one run control, in two pieces: the chip in the footer
+ *  (RunTrigger) and the sheet it opens (RunSheet), which the Composer renders
+ *  among the cmdbox's popovers so it spans the box in every layout — hung from
+ *  the chip, a sheet this wide ran off the column. Model, mode and effort are
+ *  all on show at once, each under its own head with a word on what it
+ *  decides, nothing nested: the popover this replaces opened the two lists
+ *  inside itself one at a time, reflowing under an effort slider whose stops
+ *  had no names. A pick applies at once and the sheet stays open (it is a
+ *  settings sheet, not a menu — all three get set in one visit); a click
+ *  away or Esc closes it. Design: drafts/run-picker. */
+type RunProps<M extends string> = {
   model: M;
   modelOpts: DropOption<M>[];
-  onModel: (m: M) => void;
   perm: string;
-  permOpts: { id: string; label: string; title?: string }[];
-  onPerm: (p: string) => void;
+  permOpts: DropOption<string>[];
   effort: EffortLevel | "";
-  onEffort: (e: EffortLevel | "") => void;
-  /** Another agent: modelOpts/permOpts are already its own; its effort is a
-   *  list like the mode's (or gone), not Claude's slider, and its name stands
-   *  in for an unset model. */
+  /** Another agent: modelOpts/permOpts are already its own; its effort is its
+   *  own list (or none), and its name stands in for an unset model. */
   agent?: AgentPickers | null;
   overrides?: string[]; // the knobs set by hand over the session's profile (OverrideDot)
+};
+
+/** The effort's row: Claude's ladder, or the agent's own list, an unset one
+ *  reading AGENT DEFAULT. */
+function effortRow(effort: string, agent?: AgentPickers | null): { id: string; label: string } {
+  if (agent) return agent.effort?.find((o) => o.id === effort) ?? { id: effort, label: effort || "AGENT DEFAULT" };
+  return EFFORTS.find((e) => e.id === effort) ?? EFFORTS[0];
+}
+
+function RunTrigger<M extends string>({ open, onToggle, model, modelOpts, perm, permOpts, effort, agent, overrides }: RunProps<M> & {
+  open: boolean;
+  onToggle: () => void;
 }) {
   const own = (k: string) => !!overrides?.includes(k);
-  const [sub, setSub] = useState<"" | "model" | "perm" | "effort">("");
-  useEffect(() => { if (!open) setSub(""); }, [open]);
   const cur = modelOpts.find((o) => o.id === model) ?? modelOpts[0];
   const modelName = agent && !model ? agent.label : cur ? cur.short ?? cur.label : String(model);
   const permRow = permOpts.find((o) => o.id === perm) ?? modeRow(perm);
-  const effIdx = Math.max(0, EFFORTS.findIndex((e) => e.id === effort));
-  const effRow = agent ? agent.effort?.find((o) => o.id === effort) ?? { id: effort, label: effort || "AGENT DEFAULT" } : EFFORTS[effIdx];
-  const dim: CSSProperties = { fontStyle: "italic", color: "var(--txl)", fontSize: "var(--t95)" };
-  const list: CSSProperties = {
-    marginTop: 8, maxHeight: 232, overflowY: "auto",
-    border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)",
-    background: "color-mix(in srgb, var(--panel3) 70%, transparent)",
-  };
+  const effRow = effortRow(effort, agent);
+  const sep = <span className="run-sep" aria-hidden>·</span>;
   return (
-    <div style={{ position: "relative", display: "flex", justifyContent: "flex-end", minWidth: 0 }}>
-      <button className="run-trigger" onClick={onToggle}
-        title={`Model ${modelName} · mode ${permRow?.label ?? "Session"} · effort ${effRow.label}`}
-        style={{ appearance: "none", cursor: "pointer", border: 0, padding: 0, background: "transparent",
-                 fontFamily: "inherit", display: "inline-flex", alignItems: "baseline", gap: 7,
-                 whiteSpace: "nowrap", minWidth: 0, maxWidth: "100%" }}>
-        <span style={{ fontWeight: 600, color: open ? "var(--acc)" : "var(--txb)", fontSize: "var(--t105)", overflow: "hidden", textOverflow: "ellipsis" }}>{modelName}{own("model") && <OverrideDot />}</span>
-        {perm !== "" && permRow && <span style={dim}>{permRow.label.toLowerCase()}{own("permission_mode") && <OverrideDot />}</span>}
-        {effort !== "" && <span style={dim}>{effRow.label.toLowerCase()}{own("effort") && <OverrideDot />}</span>}
-      </button>
-      {open && (
-        <div role="dialog" aria-label="Model, mode and effort"
-          style={{
-            position: "absolute", bottom: "calc(100% + 9px)", right: 0, zIndex: 30, width: 320,
-            padding: "12px 14px 13px", border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
-            background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
-            boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
-          }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
-            {/* The model is plain text: the name is the control, no chevron. */}
-            <button onClick={() => modelOpts.length && setSub((v) => (v === "model" ? "" : "model"))}
-              disabled={!modelOpts.length}
-              title={modelOpts.length ? "Change model" : "This agent hasn't listed its models yet — TEST it in Settings ▸ Accounts"}
-              style={{ appearance: "none", border: 0, padding: 0, background: "transparent", fontFamily: "inherit",
-                       cursor: modelOpts.length ? "pointer" : "default", fontSize: "var(--t15)", letterSpacing: ".3px",
-                       color: sub === "model" ? "var(--acc)" : "var(--txb)", whiteSpace: "nowrap",
-                       overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
-              {modelName}
-            </button>
-            {permOpts.length > 0 && <button onClick={() => setSub((v) => (v === "perm" ? "" : "perm"))}
-              title={permRow?.title ?? "Permission mode"}
-              style={{ appearance: "none", border: 0, padding: 0, background: "transparent", fontFamily: "inherit",
-                       cursor: "pointer", fontSize: "var(--t10)", letterSpacing: ".4px", flex: "none",
-                       color: sub === "perm" ? "var(--acc)" : "var(--txl)", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              {permRow?.label ?? "Session"}
-              <span aria-hidden style={{ fontSize: "var(--t8)" }}>▾</span>
-            </button>}
-            {agent?.effort && <button onClick={() => setSub((v) => (v === "effort" ? "" : "effort"))}
-              title="Effort"
-              style={{ appearance: "none", border: 0, padding: 0, background: "transparent", fontFamily: "inherit",
-                       cursor: "pointer", fontSize: "var(--t10)", letterSpacing: ".4px", flex: "none",
-                       color: sub === "effort" ? "var(--acc)" : "var(--txl)", display: "inline-flex", alignItems: "center", gap: 4 }}>
-              {effRow.label}
-              <span aria-hidden style={{ fontSize: "var(--t8)" }}>▾</span>
-            </button>}
+    // A chip like the PROFILE and PONYTAIL chips beside it: the field's glyph
+    // in a tile, the model bold, the mode and effort quieter, a caret.
+    <button className="run-trigger" onClick={onToggle}
+      title={`Model ${modelName} · mode ${permRow.label} · effort ${effRow.label}`}
+      style={{ appearance: "none", cursor: "pointer", border: 0, padding: 0, background: "transparent",
+               fontFamily: "inherit", display: "inline-flex", alignItems: "center", gap: 7, color: "var(--txd)",
+               whiteSpace: "nowrap", minWidth: 0, maxWidth: "100%" }}>
+      <span className="ctrl-fld"><SlidersHorizontal size={12} /></span>
+      <span style={{ fontWeight: 600, color: open ? "var(--acc)" : "var(--txb)", fontSize: "var(--t105)", overflow: "hidden", textOverflow: "ellipsis" }}>{modelName}{own("model") && <OverrideDot />}</span>
+      {perm !== "" && <>{sep}<span style={{ fontSize: "var(--t10)" }}>{permRow.label}{own("permission_mode") && <OverrideDot />}</span></>}
+      {effort !== "" && <>{sep}<span style={{ fontSize: "var(--t10)" }}>{effRow.label}{own("effort") && <OverrideDot />}</span></>}
+      <span className="run-car" aria-hidden style={{ color: open ? "var(--acc)" : "var(--txl)", fontSize: "var(--t8)", flex: "none" }}>▾</span>
+    </button>
+  );
+}
+
+function RunSheet<M extends string>({ model, modelOpts, onModel, perm, permOpts, onPerm, effort, onEffort, agent, overrides, profile }: RunProps<M> & {
+  onModel: (m: M) => void;
+  onPerm: (p: string) => void;
+  onEffort: (e: EffortLevel | "") => void;
+  /** The profile the session is bound to: what a knob set by hand overrides. */
+  profile?: { model: string; mode: string; effort: string } | null;
+}) {
+  const own = (k: string) => !!overrides?.includes(k);
+  const effOpts: DropOption<string>[] = agent ? agent.effort ?? [] : EFFORTS;
+  // The profile's own value for a knob this session overrides — the row the
+  // OverrideDot's "pick the profile's value to follow it again" means, which
+  // nothing named before. null while the knob follows the profile, or the
+  // profile leaves it unset.
+  const from = {
+    model: own("model") && profile?.model ? profile.model : null,
+    perm: own("permission_mode") && profile?.mode ? profile.mode : null,
+    effort: own("effort") && profile?.effort ? profile.effort : null,
+  };
+  const tagged = <T extends string>(opts: DropOption<T>[], id: string | null) =>
+    id === null ? opts : opts.map((o) => (o.id === id ? { ...o, tag: "PROFILE" } : o));
+  const head = (label: string, hint: string, opts: { id: string; label: string }[], id: string | null) => (
+    <div className="rp-hd">
+      <b>{label}</b>
+      {id === null
+        ? <i>{hint}</i>
+        : <i title={OVERRIDE_TIP}><span className="rp-dot">•</span> set here · profile: {opts.find((o) => o.id === id)?.label ?? id.replace(/^claude-/, "")}</i>}
+    </div>
+  );
+  return (
+    <div role="dialog" aria-label="Model, mode and effort" className="rp-sheet"
+      style={{
+        position: "absolute", left: -1, right: -1, bottom: "calc(100% + 9px)", zIndex: 30,
+        border: "1px solid color-mix(in srgb, var(--acc) 35%, transparent)",
+        background: "color-mix(in srgb, var(--panel2) 98%, transparent)",
+        boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
+      }}>
+      <div className="rp-grid">
+        <div className="rp-sec">
+          {head("MODEL", "what runs the turn", modelOpts, from.model)}
+          <div className="rp-list">
+            {modelOpts.length
+              ? <MenuRows options={tagged(modelOpts, from.model)} value={model} onPick={onModel} />
+              : <div className="rp-none">this agent hasn't listed its models yet — TEST it in Settings ▸ Accounts</div>}
           </div>
-          {sub === "model" && (
-            <div style={list}>
-              <MenuRows options={modelOpts} value={model} onPick={(id) => { onModel(id); setSub(""); }} />
-            </div>
-          )}
-          {sub === "perm" && (
-            <div style={list}>
-              <MenuRows options={permOpts} value={perm} onPick={(id) => { onPerm(id); setSub(""); }} />
-            </div>
-          )}
-          {sub === "effort" && agent?.effort && (
-            <div style={list}>
-              <MenuRows options={agent.effort} value={effort} onPick={(id) => { onEffort(id as EffortLevel); setSub(""); }} />
-            </div>
-          )}
-          {!agent && (
-            <div style={{ marginTop: 14 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <span style={{ fontSize: "var(--t8)", letterSpacing: 1.6, color: "var(--txd)" }}>EFFORT</span>
-                <span style={{ flex: 1 }} />
-                <span style={{ fontSize: "var(--t10)", letterSpacing: .5, color: effort === "" ? "var(--txm)" : "var(--acc)" }}>{effRow.label}</span>
-              </div>
-              <input type="range" className="effort-slider" min={0} max={EFFORTS.length - 1} step={1} value={effIdx}
-                aria-label="Effort" aria-valuetext={effRow.label}
-                onChange={(e) => onEffort(EFFORTS[Number(e.target.value)].id)} />
-              {/* One tick per stop, so the track reads as steps, not a dial. */}
-              <div aria-hidden style={{ display: "flex", justifyContent: "space-between", padding: "0 6px", marginTop: 2 }}>
-                {EFFORTS.map((e, i) => (
-                  <span key={e.id || "auto"} style={{ width: 1, height: 4, background: i === effIdx ? "var(--acc)" : "color-mix(in srgb, var(--acc) 25%, transparent)" }} />
-                ))}
-              </div>
-            </div>
-          )}
+        </div>
+        {permOpts.length > 0 && (
+          <div className="rp-sec">
+            {head("MODE", "what it may do without asking", permOpts, from.perm)}
+            <div className="rp-list"><MenuRows options={tagged(permOpts, from.perm)} value={perm} onPick={onPerm} /></div>
+          </div>
+        )}
+      </div>
+      {effOpts.length > 0 && (
+        <div className="rp-eff">
+          {head("EFFORT", "how hard it thinks", effOpts, from.effort)}
+          {/* One named stop per level — the slider it replaces had ticks and no names. */}
+          <div className="rp-seg" role="group" aria-label="Effort">
+            {effOpts.map((e) => (
+              <button key={e.id || "auto"} type="button" className="rp-sg" aria-pressed={e.id === effort}
+                data-on={e.id === effort ? "" : undefined} data-prof={e.id === from.effort ? "" : undefined}
+                title={e.id === from.effort ? "your profile's pick" : undefined}
+                onClick={() => onEffort(e.id as EffortLevel | "")}>{e.label}</button>
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -377,7 +463,7 @@ function RunPopover<M extends string>({
 }
 
 export function Composer({
-  disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink,
 }: {
@@ -406,6 +492,10 @@ export function Composer({
   profile: string;
   profiles?: Profile[];
   onProfile: (id: string) => void;
+  // The profile new sessions get (ProfilesInfo.default) and the menu's pin,
+  // which moves it. undefined: a bridge too old to say, so no pill and no pin.
+  defaultProfile?: string | null;
+  onDefaultProfile?: (id: string) => void;
   overrides?: string[]; // knobs set by hand over the profile — each gets an OverrideDot
   effort: EffortLevel | "";
   perm: string;
@@ -441,7 +531,7 @@ export function Composer({
   pills?: ReactNode;
   // Pointed at addFiles, so a file dropped on the fresh session screen lands
   // here the way one dropped on the box does.
-  fileSink?: { current: ((files: FileList) => void) | null };
+  fileSink?: { current: ((files: FileList | File[]) => void) | null };
 }) {
   const text = draft;
   const setText = onDraft;
@@ -449,6 +539,14 @@ export function Composer({
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "plus" | "queued">("");
+  // The run sheet stays open across picks, so it takes a dialog's Esc as well
+  // as a click away; the other drops close on their pick.
+  useEffect(() => {
+    if (openDrop !== "run") return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenDrop(""); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [openDrop]);
   const { compact, lead, composer, sendKey } = useChatChrome();
   const plugins = useIntegrations();   // the DESIGN button exists while Claude Design is installed
   // TABS / CONSOLE: COMPACT's new composers. CLASSIC is the old markup.
@@ -463,30 +561,9 @@ export function Composer({
     [models, usage, agentPick],
   );
   const permOpts = agentPick ? agentPick.mode ?? [] : PERMS;
-  // PROFILE rows: each ends in what it sets, then what its Claude login has
-  // left in each window (5H, WK; the reset on hover), so the menu answers
-  // "what does picking this change" without a trip to settings. There is no
-  // unbinding from here, only binding or making one.
-  // A profile whose login has expired reads red and says so: picking it opens
-  // that login's RE-LOGIN instead (onPick below).
-  const profileRows = useMemo(() => {
-    const left = (agent?: string, account?: string) =>
-      loginWindows(accounts?.find((a) => a.slot === loginSlot(agent, account))).map((w) =>
-        <LeftMeter key={w.tag} tag={w.tag} left={w.left} severity={w.severity} title={`${w.name}: ${w.left}% left${w.resets}`} />);
-    return [...(profiles ?? []).map((p) => {
-      const dead = deadLogin(accounts, p.agent, p.account);
-      return {
-        id: p.id, label: p.name,
-        ...(dead !== null && { tone: "var(--err)", title: `Account ${dead}'s Claude login has expired. Opens SETTINGS ▸ ACCOUNTS to sign it in again.` }),
-        tail: <>
-          <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" }}>{describe(p)}</span>
-          {dead !== null
-            ? <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--err)", flex: "none" }}>LOGIN EXPIRED ▸</span>
-            : left(p.agent, p.account)}
-        </>,
-      };
-    }), { id: NEW_PROFILE, label: "+ NEW PROFILE" }];
-  }, [profiles, accounts]);
+  // The PROFILE chip's rows only name the profiles; the menu itself is
+  // ProfileRows (what each sets, its login's fuel, the default control).
+  const profileOpts = useMemo(() => (profiles ?? []).map((p) => ({ id: p.id, label: p.name })), [profiles]);
   const bound = profiles?.find((p) => p.id === profile);
   const boundDead = bound ? deadLogin(accounts, bound.agent, bound.account) : null;
   const own = (k: string) => !!overrides?.includes(k);
@@ -781,7 +858,7 @@ export function Composer({
 
   // Pieces both layouts place: DEFAULT strings them along one control row;
   // COMPACT moves the profile and ponytail chips to the row's right end and
-  // folds model / mode / effort into the RunPopover over SEND. A profile the
+  // folds model / mode / effort into the run sheet (RunTrigger + RunSheet) over SEND. A profile the
   // list doesn't have (it failed to load) shows as its id, and a session
   // bound to none as NO PROFILE. Re-picking the
   // current one is no change: a bind would also drop the knobs set by hand.
@@ -811,20 +888,24 @@ export function Composer({
   const chipTitle = chipWins.length
     ? `${chipName} · ${chipWins.map((w) => `${w.name}: ${w.left}% left${w.resets}`).join(" · ")}`
     : chipMeter ? `${chipName} · usage unknown: this login's access token has lapsed; its meter reads again once it runs a turn` : undefined;
+  // A row picked in the PROFILE menu: + NEW PROFILE opens a blank form, an
+  // expired login its RE-LOGIN, another profile binds; the pin is not a pick.
+  const pickProfileRow = (id: string) => {
+    const p = profiles?.find((x) => x.id === id);
+    const dead = p ? deadLogin(accounts, p.agent, p.account) : null;
+    if (id === NEW_PROFILE) openSettings("aimgmt", "new");
+    else if (dead !== null) openSettings("aimgmt", String(dead));
+    else if (id !== profile) onProfile(id);
+    setOpenDrop("");
+  };
   const profileDrop = (right: boolean) => profiles && (
-    <Drop label="PROFILE" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileRows}
+    <Drop label="PROFILE" className="drop-prof" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileOpts}
       fallback={{ id: profile, label: profile || "NO PROFILE" }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
       tone={boundDead !== null ? "var(--err)" : undefined} meter={boundDead !== null ? undefined : chipMeter}
       title={boundDead !== null ? `PROFILE — ${bound?.name}: account ${boundDead}'s Claude login has expired; pick it in this menu to sign in again.` : chipTitle}
       onToggle={() => setOpenDrop((d) => (d === "profile" ? "" : "profile"))}
-      onPick={(id) => {
-        const p = profiles.find((x) => x.id === id);
-        const dead = p ? deadLogin(accounts, p.agent, p.account) : null;
-        if (id === NEW_PROFILE) openSettings("aimgmt", "new");
-        else if (dead !== null) openSettings("aimgmt", String(dead));
-        else if (id !== profile) onProfile(id);
-        setOpenDrop("");
-      }} />
+      onPick={pickProfileRow}
+      menu={<ProfileRows profiles={profiles} accounts={accounts} value={profile} defaultId={defaultProfile} onPick={pickProfileRow} onDefault={onDefaultProfile} />} />
   );
   // Which agent runs this session, when it isn't Claude. A label, not a
   // control: a session keeps the agent it first ran on.
@@ -1011,15 +1092,18 @@ export function Composer({
   );
   const settingsChips = (right: boolean) => (<>{profileDrop(right)}{agentPick && agentChip}{ponyDrop(right)}</>);
   const runTrigger = (
-    <RunPopover open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
-      model={model} modelOpts={modelOpts} onModel={onModel}
-      perm={perm} permOpts={permOpts} onPerm={onPerm}
-      effort={effort} onEffort={onEffort}
-      agent={agentPick}
-      overrides={overrides} />
+    <RunTrigger open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
+      model={model} modelOpts={modelOpts} perm={perm} permOpts={permOpts} effort={effort}
+      agent={agentPick} overrides={overrides} />
   );
   const popovers = (
     <>
+      {openDrop === "run" && (
+        <RunSheet model={model} modelOpts={modelOpts} onModel={onModel}
+          perm={perm} permOpts={permOpts} onPerm={onPerm}
+          effort={effort} onEffort={onEffort}
+          agent={agentPick} overrides={overrides} profile={bound} />
+      )}
       {rsearch !== null && (
         <div style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 31, border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "6px 10px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
@@ -1113,6 +1197,11 @@ export function Composer({
         if (e.key === "Enter" && send) { e.preventDefault(); submit(); }
       }}
       onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
+      onAttach={() => fileRef.current?.click()}
+      onClear={() => {
+        if (text.includes("\n")) void askConfirm("Clear the draft?").then((yes) => { if (yes) setText(""); });
+        else setText("");
+      }}
       placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}
     />
   );
@@ -1179,7 +1268,9 @@ export function Composer({
     // them makes the chat look like it has no edges.
     <div className="composer" data-pb={shelled ? composer : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
       {zoom && <ImageLightbox src={zoom} all={images.map((src) => ({ src }))} onClose={() => setZoom(null)} />}
-      {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
+      {openDrop && <div onClick={() => setOpenDrop("")}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDrop(""); }}
+        style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
       {shelled ? (
         <>
           {fileInput}

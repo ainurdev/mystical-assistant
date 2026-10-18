@@ -122,32 +122,34 @@ function loadPrefs(): Prefs {
   } catch { return { mode: "attention", order: "recent", custom: [], shut: [] }; }
 }
 
-/** The four lanes ATTENTION sorts every session into. */
-type LaneKey = "ask" | "work" | "done" | "idle";
+/** The five lanes ATTENTION sorts every session into. */
+type LaneKey = "ask" | "work" | "parked" | "done" | "idle";
 
 const LANES: { k: LaneKey; label: string; tint: string }[] = [
   { k: "ask", label: "NEEDS YOU", tint: "var(--warn)" },
   { k: "work", label: "WORKING", tint: "var(--ok)" },
+  { k: "parked", label: "PARKED", tint: "var(--info)" },
   { k: "done", label: "DONE — NOT OPENED", tint: "var(--acc)" },
   { k: "idle", label: "IDLE", tint: "var(--txd)" },
 ];
 
 // Server state → lane, dot colour, filled?, tooltip. The dot's grammar: filled
-// means the machine did or is doing something; a ring is passive. Ring colour
-// still tells idle (dim) from live-elsewhere (info) from parked (warn) — the
-// lane collapses to four, the dot keeps the detail.
+// means the bridge holds a turn here — running, blocked on you, or parked until
+// it can resume; a ring is passive. Ring colour still tells idle (dim) from
+// live-elsewhere (info) — the lane collapses to five, the dot keeps the detail.
+// Parked wears info, not warn: nothing on it is yours to answer.
 const SV: Record<string, { lane: LaneKey; c: string; fill: boolean; t: string }> = {
   working: { lane: "work", c: "var(--ok)", fill: true, t: "working now" },
   checking: { lane: "work", c: "var(--ok)", fill: true, t: "checking your prompt against this session" },
   awaiting: { lane: "ask", c: "var(--warn)", fill: true, t: "waiting on your answer" },
   asking: { lane: "ask", c: "var(--warn)", fill: true, t: "asking you a question" },
   live: { lane: "idle", c: "var(--info)", fill: false, t: "live in another window" },
-  parked: { lane: "idle", c: "var(--warn)", fill: false, t: "parked — resumes when the limit resets" },
+  parked: { lane: "parked", c: "var(--info)", fill: true, t: "parked — resumes on its own" },
   idle: { lane: "idle", c: "var(--txl)", fill: false, t: "idle" },
 };
 const SV_DONE = { lane: "done" as LaneKey, c: "var(--acc)", fill: false, t: "finished a turn — not opened yet" };
 
-const BUSY_NOW = ["working", "awaiting", "asking", "checking"];
+const BUSY_NOW = ["working", "awaiting", "asking", "checking", "parked"];
 
 type StateView = { lane: LaneKey; c: string; fill: boolean; t: string };
 
@@ -157,6 +159,8 @@ function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: PromptFl
   const state = st?.state ?? "idle";
   const busy = BUSY_NOW.includes(state);
   let v = isDone && !busy ? SV_DONE : SV[state] ?? SV.idle;
+  // The server knows when a parked turn comes back ("usage limit — resuming ~14:00").
+  if (state === "parked" && st?.label) v = { ...v, t: st.label };
   // A held card is a session that wants you, whatever its runner state says —
   // warn ring, not fill: nothing is running, a prompt of yours is parked on it.
   if (flag === "held" && (v.lane === "idle" || v.lane === "done"))
@@ -286,7 +290,7 @@ function SessionRow({
 /** One virtualised entry in a lane list: a lane header, a session row, or the
  *  idle lane's fold toggle. */
 type LaneItem =
-  | { k: "head"; label: string; tint: string; count: number; pulse: boolean; first: boolean }
+  | { k: "head"; label: string; tint: string; count?: number; pulse: boolean; first: boolean }
   | { k: "row"; s: SessionBrief }
   | { k: "fold"; label: string };
 
@@ -435,7 +439,7 @@ export function SessionsPanel(props: Props) {
   // ATTENTION: the four lanes. Idle is the long tail, so it folds to four rows
   // and nothing else is capped. Searching drops the fold — a search is already
   // the filter.
-  type Lane = { label: string; tint: string; count: number; pulse: boolean; rows: SessionBrief[]; fold: string };
+  type Lane = { label: string; tint: string; count?: number; pulse: boolean; rows: SessionBrief[]; fold: string };
   let lanes: Lane[] = [];
   if (mode === "attention") {
     lanes = LANES.flatMap((d) => {
@@ -443,7 +447,8 @@ export function SessionsPanel(props: Props) {
       if (!all.length) return [];
       const folds = d.k === "idle" && !sq && all.length > 4;
       return [{
-        label: d.label, tint: d.tint, count: all.length, pulse: d.k === "work",
+        // IDLE is every session at rest, so its header carries no number.
+        label: d.label, tint: d.tint, count: d.k === "idle" ? undefined : all.length, pulse: d.k === "work",
         rows: folds && folded ? all.slice(0, 4) : all,
         fold: folds ? (folded ? `${all.length - 4} more idle ↓` : "show less ↑") : "",
       }];
@@ -891,7 +896,7 @@ export function SessionsPanel(props: Props) {
             style={{ flex: "none", width: 6, height: 6, borderRadius: "50%", background: it.tint }} />
       <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: ".22em", color: it.tint }}>{it.label}</span>
       <span style={{ flex: 1, minWidth: 8, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
-      <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{it.count}</span>
+      {it.count !== undefined && <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{it.count}</span>}
     </div>
   );
 

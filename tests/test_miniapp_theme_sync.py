@@ -23,9 +23,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DASH = os.path.join(ROOT, "bridge/dashboard/web/src/lib/theme.ts")
 MINI = os.path.join(ROOT, "bridge/miniapp/web/src/lib/theme.ts")
 
-# FLINT is a family layer in the dashboard's stylesheet (index.css, THE
-# FAMILIES) that the Mini App does not carry, so its colourings stay off the phone.
-DASHBOARD_ONLY = "flint-"
+# FLINT and PEBBLE are family layers in the dashboard's stylesheet (index.css,
+# THE FAMILIES) that the Mini App does not carry, so their colourings stay off the phone.
+DASHBOARD_ONLY = ("flint-", "pebble-")
 
 
 def tokens(body):

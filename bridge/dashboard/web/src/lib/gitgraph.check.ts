@@ -1,50 +1,25 @@
 // Run: node bridge/dashboard/web/src/lib/gitgraph.check.ts
-// Guards the lane layout: a branch that forks and merges back must occupy its
-// own lane for exactly its own commits, and the merge must draw a rail from
-// both parents.
-import { layout } from "./gitgraph.ts";
-import type { GitCommit } from "../api.ts";
+import { layout, unpushed } from "./gitgraph.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
   console.log(`ok - ${what}`);
 };
 
-const c = (sha: string, ...parents: string[]): GitCommit =>
-  ({ sha, parents, author: "a", ts: 0, refs: [], subject: sha });
-
-//  M3 (merge of M2 + F2)
-//  ├─ F2
-//  │  F1
-//  M2 ┘
-//  M1
-const history = [
-  c("M3", "M2", "F2"),
-  c("F2", "F1"),
-  c("F1", "M2"),
-  c("M2", "M1"),
-  c("M1"),
-];
-const { rows, width } = layout(history);
-const byShaLane = new Map(rows.map((r) => [r.c.sha, r.lane]));
-
-ok(width === 2, "a single side branch uses two lanes");
-ok(byShaLane.get("M3") === 0 && byShaLane.get("M2") === 0 && byShaLane.get("M1") === 0,
-   "mainline stays in lane 0");
-ok(byShaLane.get("F1") === 1 && byShaLane.get("F2") === 1, "the branch gets its own lane");
-
-// The merge row must send a rail to each parent lane (0 = M2, 1 = F2).
-const merge = rows[0];
-const down = merge.edges.filter((e) => e.y2 === 28).map((e) => e.b).sort();
-ok(down.length === 2 && down[0] === 0 && down[1] === 1, "merge draws a rail to both parents");
-
-// F1's row: the mainline rail passes straight through lane 0 while F1 sits in 1.
-const f1 = rows[2];
-ok(f1.edges.some((e) => e.a === 0 && e.b === 0), "mainline passes through under a branch commit");
-
-// Parents outside the fetched window must not leave dangling lanes.
-const truncated = layout([c("X", "gone")]);
-ok(truncated.rows[0].edges.length === 0 && truncated.width === 1,
-   "a parent past the log limit draws nothing");
-
-console.log("all ok");
+const c = (sha: string, parents: string[], refs: string[] = []) =>
+  ({ sha, parents, refs, author: "a", ts: 0, subject: sha });
+// a ← b ← c(merge of d and x) ← d, with x a side commit off d; origin/master is on d
+const log = [c("a", ["b"], ["HEAD -> master"]), c("b", ["c"]), c("c", ["d", "x"]), c("x", ["d"], ["feat"]), c("d", [], ["origin/master"])];
+const { rows, width } = layout(log);
+ok(width === 2, "the merge opens a second lane");
+ok(rows[0].edges.length === 1 && rows[0].edges[0].seg === "out", "HEAD's row only has a rail leaving it");
+ok(rows[1].edges.some((e) => e.seg === "in") && rows[1].edges.some((e) => e.seg === "out"), "a middle row's rail enters and leaves");
+ok(rows[3].lane === 1 && rows[3].edges.some((e) => e.seg === "thru" && e.a === 0), "the mainline runs past the side commit");
+ok(rows[4].edges.every((e) => e.seg === "in"), "the root only has rails arriving");
+ok([...unpushed(log, "origin/master")].sort().join() === "a,b,c,x", "everything HEAD reaches that the upstream doesn't: the merge and its side commit");
+// master fast-forwarded onto a branch that merged origin/master in as its SECOND parent
+const ff = [c("m", ["f2", "o"], ["HEAD -> master"]), c("f2", ["f1"]), c("o", ["b"], ["origin/master"]), c("f1", ["b"]), c("b", [])];
+ok([...unpushed(ff, "origin/master")].sort().join() === "f1,f2,m", "a first-parent walk would miss the upstream here; ancestry doesn't");
+ok(unpushed(log, "origin/other").size === 0, "an upstream outside the loaded log hollows nothing");
+ok(unpushed(log, undefined).size === 0, "no upstream, nothing unpushed");
+ok(unpushed(log.slice(1), "origin/master").size === 0, "no HEAD in the log (a branch view), nothing hollowed");

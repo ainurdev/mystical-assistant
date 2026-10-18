@@ -1,7 +1,7 @@
-// Theme system — three FAMILIES, each in several colourings (design:
-// .mystical/design-drafts/theme-families). A family is a structure and a
-// personality: AURORA the CRT, CLAUDE the app itself, FLINT the editor. All
-// three wear FLINT's layer — the settings page, rail, composer, transcript —
+// Theme system — four FAMILIES, each in several colourings (design:
+// .mystical/design-drafts/theme-families, then pebble-theme). A family is a
+// structure and a personality: AURORA the CRT, CLAUDE the app itself, FLINT the
+// editor, PEBBLE the river stone (FLINT worn round). All four wear FLINT's layer — the settings page, rail, composer, transcript —
 // and differ in type, case, corners, line ink and effects (index.css, THE
 // FAMILIES). A colouring is a palette: a ground (ink ladder, surfaces,
 // semantics) and two roles on it, `acc` (you: your prompt, the open row, SEND,
@@ -24,10 +24,12 @@ export type ThemeKey =
   | "claude-light" | "claude-ocean-light" | "claude-fern-light" | "claude-iris-light" | "claude-library-light" | "claude-dusk-light"
   | "flint-ember" | "flint-fuchsia" | "flint-sunset" | "flint-kiln" | "flint-cobalt" | "flint-nocturne" | "flint-violet" | "flint-signal"
   | "flint-ember-light" | "flint-fuchsia-light" | "flint-sunset-light" | "flint-kiln-light" | "flint-cobalt-light"
-  | "flint-nocturne-light" | "flint-signal-light";
+  | "flint-nocturne-light" | "flint-signal-light"
+  | "pebble-sky" | "pebble-mint" | "pebble-lilac" | "pebble-rose" | "pebble-coral"
+  | "pebble-sky-light" | "pebble-mint-light" | "pebble-lilac-light" | "pebble-rose-light" | "pebble-coral-light";
 
-export type Family = "aurora" | "claude" | "flint";
-export const FAMILIES: Family[] = ["aurora", "claude", "flint"];
+export type Family = "aurora" | "claude" | "flint" | "pebble";
+export const FAMILIES: Family[] = ["aurora", "claude", "flint", "pebble"];
 
 /** How the header island sits over the transcript. FROST is glass the
  *  transcript blurs through, its readouts at half ink until reached for; VEIL
@@ -80,6 +82,10 @@ const rgbTriplet = (hex: string): string =>
 // and NOCTURNE's `purple` to a magenta violet so a branch chip is not your violet.
 // VIOLET is NOCTURNE's roles on the graphite ground, so it moves `purple` too;
 // its daylight is NOCTURNE's, so it has no `-light` twin of its own.
+// PEBBLE: FLINT's ink on a lifted, cooler slate, and a chalk daylight solved to
+// FLINT daylight's targets; five colours, each with a twin. SKY moves `info` to
+// cyan, LILAC `purple` to magenta and CORAL `err` to crimson — COBALT's,
+// NOCTURNE's and EMBER's moves — so nothing semantic wears your colour.
 
 /** [key, NAME, feel, ground, roles] — `roles` carries `acc` and `ask`, plus
  *  anything that one colouring moves off its ground. */
@@ -97,6 +103,8 @@ const FLINT_INK: Record<string, string> = { "acc-on": "#160b05", tool: "#9fb3cc"
 const FLINT_WARM: Record<string, string> = { ...FLINT_INK, tool: "#b9b0a6", think: "#c3a9d6", txb: "#fbf7f3", txh: "#efe9e3", tx: "#d8d2cc", txm: "#bbb3aa", txd: "#a0978d", txf: "#938a80", txl: "#867d73", txg: "#5a534c", panel: "#1b1816", panel2: "#151311", panel3: "#0f0d0c", canvas: "#0e0c0b" };
 const FLINT_KILN: Record<string, string> = { ...FLINT_INK, tool: "#8e98a8", think: "#a8a2b8", panel: "#141415", panel2: "#0f0f10", panel3: "#0a0a0b", canvas: "#09090a" };
 const FLINT_NIGHT: Record<string, string> = { ...FLINT_INK, tool: "#9fb0d6", think: "#c9a9d9", purple: "#d49af5", "purple-d": "#c788f0", "purple-h": "#e0b3f8", "purple-b": "#eed6fb", "purple-g": "#7a6690", txb: "#ebecf2", txh: "#d7d8e5", tx: "#c0c3d7", txm: "#a6aac6", txd: "#9399ba", txf: "#898eb3", txl: "#7f86ad", txg: "#616898", panel: "#1d1d2c", panel2: "#171724", panel3: "#13131d", canvas: "#101019" };
+const PEBBLE_INK: Record<string, string> = { "acc-on": "#0f1014", tool: "#9fb3cc", think: "#b8a9d9", ok: "#30d158", warn: "#f5c542", err: "#ff5d5d", "err-hi": "#ff8a85", "err-b": "#ffb3ae", "err-g": "#8a4d4a", info: "#64b5ff", "info-hi": "#93cbff", "info-b": "#c3e2ff", purple: "#c49bff", "purple-d": "#b585ff", "purple-h": "#d5b8ff", "purple-b": "#e6d6ff", "purple-g": "#6f6290", txb: "#f7f7fa", txh: "#e9e9ef", tx: "#d2d3da", txm: "#b3b4bd", txd: "#9a9ba5", txf: "#8e8f99", txl: "#82838d", txg: "#585962", panel: "#23242b", panel2: "#1b1c22", panel3: "#16171c", canvas: "#131419", mono: "'Geist Mono','JetBrains Mono',ui-monospace,monospace" };
+const PEBBLE_DAY: Record<string, string> = { "acc-on": "#ffffff", tool: "#4b5e73", think: "#615486", ok: "#057032", warn: "#775e01", err: "#bc2122", "err-hi": "#a50d14", "err-b": "#87000a", "err-g": "#a1726d", info: "#096790", "info-hi": "#00577c", "info-b": "#034562", purple: "#7a42c2", "purple-d": "#6f3bb1", "purple-h": "#6432a1", "purple-b": "#542988", "purple-g": "#85789f", txb: "#1b1d20", txh: "#2d3034", tx: "#3b3e42", txm: "#4b4d52", txd: "#57595e", txf: "#5e6065", txl: "#64666b", txg: "#7e8085", panel: "#ffffff", panel2: "#f8f9fb", panel3: "#f3f4f7", canvas: "#eef0f4", mono: "'Geist Mono','JetBrains Mono',ui-monospace,monospace" };
 const FLINT_DAY: Record<string, string> = { "acc-on": "#ffffff", tool: "#4b5e73", think: "#615486", ok: "#057032", warn: "#775e01", err: "#bc2122", "err-hi": "#a50d14", "err-b": "#87000a", "err-g": "#a1726d", info: "#096790", "info-hi": "#00577c", "info-b": "#034562", purple: "#7a42c2", "purple-d": "#6f3bb1", "purple-h": "#6432a1", "purple-b": "#542988", "purple-g": "#85789f", txb: "#18181c", txh: "#2c2c30", tx: "#3a3b3e", txm: "#4a4a4e", txd: "#56565a", txf: "#5d5d61", txl: "#636367", txg: "#7c7d81", panel: "#ffffff", panel2: "#f7f7f8", panel3: "#f1f1f3", canvas: "#ebebed", mono: "'Geist Mono','JetBrains Mono',ui-monospace,monospace" };
 const AURORA_ROWS: Row[] = [
   ["aqua", "AURORA", "orbital glass · clean signal", AURORA_GLASS, { acc: "#7fe9d8", ask: "#b9a6ff" }],
@@ -138,10 +146,24 @@ const FLINT_ROWS: Row[] = [
   ["flint-signal-light", "FLINT SIGNAL", "daylight · green is you, magenta waits on you", FLINT_DAY, { acc: "#487005", ask: "#c01573" }],
 ];
 
+const PEBBLE_ROWS: Row[] = [
+  ["pebble-sky", "PEBBLE", "slate · blue is you, coral waits on you", PEBBLE_INK, { acc: "#4fa3ff", ask: "#ff8c5a", info: "#4fd8e8", "info-hi": "#8ae6f1", "info-b": "#c2f1f7" }],
+  ["pebble-mint", "PEBBLE MINT", "slate · teal is you, rose waits on you", PEBBLE_INK, { acc: "#3ecfb0", ask: "#ff7eb6" }],
+  ["pebble-lilac", "PEBBLE LILAC", "slate · violet is you, coral waits on you", PEBBLE_INK, { acc: "#b596ff", ask: "#ff8c5a", purple: "#e08cf0", "purple-d": "#d57ae8", "purple-h": "#e9a8f5", "purple-b": "#f3cdfa", "purple-g": "#7c6487" }],
+  ["pebble-rose", "PEBBLE ROSE", "slate · pink is you, sky waits on you", PEBBLE_INK, { acc: "#ff7eb6", ask: "#4fa3ff" }],
+  ["pebble-coral", "PEBBLE CORAL", "slate · orange is you, sky waits on you", PEBBLE_INK, { acc: "#ff8c5a", ask: "#4fa3ff", err: "#ff4d6d", "err-hi": "#ff8097", "err-b": "#ffb1bf", "err-g": "#8f4a57" }],
+  ["pebble-sky-light", "PEBBLE", "chalk · blue is you, coral waits on you", PEBBLE_DAY, { acc: "#0268c0", ask: "#b14606", info: "#096e79", "info-hi": "#095d66", "info-b": "#1e494f" }],
+  ["pebble-mint-light", "PEBBLE MINT", "chalk · teal is you, rose waits on you", PEBBLE_DAY, { acc: "#007561", ask: "#b33974" }],
+  ["pebble-lilac-light", "PEBBLE LILAC", "chalk · violet is you, coral waits on you", PEBBLE_DAY, { acc: "#7555b8", ask: "#b14606", purple: "#9242a2", "purple-d": "#8c329e", "purple-h": "#74397e", "purple-b": "#58385d", "purple-g": "#91789d" }],
+  ["pebble-rose-light", "PEBBLE ROSE", "chalk · pink is you, sky waits on you", PEBBLE_DAY, { acc: "#b33974", ask: "#0268c0" }],
+  ["pebble-coral-light", "PEBBLE CORAL", "chalk · orange is you, sky waits on you", PEBBLE_DAY, { acc: "#b14606", ask: "#0268c0", err: "#c41445", "err-hi": "#9d2545", "err-b": "#6f2e3e", "err-g": "#b56c79" }],
+];
+
 const FAMILY: Record<Family, { rows: Row[]; font: string; prad: string; fx: boolean }> = {
   aurora: { rows: AURORA_ROWS, font: "", prad: "0", fx: true },
   claude: { rows: CLAUDE_ROWS, font: "ui-sans-serif,-apple-system,'Segoe UI',system-ui,sans-serif", prad: "8px", fx: false },
   flint: { rows: FLINT_ROWS, font: "'Geist',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "10px", fx: false },
+  pebble: { rows: PEBBLE_ROWS, font: "'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "999px", fx: false },
 };
 
 export const THEME_DEFS: ThemeDef[] = FAMILIES.flatMap((fam) => {
@@ -211,19 +233,20 @@ export function themeFont(t: ThemeKey): string {
  * `@fontsource`) — picking one never waits on a font that isn't there.
  */
 export const FONTS: { key: string; label: string; stack: string }[] = [
-  { key: "", label: "THEME", stack: "" },
-  { key: "hud", label: "SHARE TECH", stack: '"Share Tech Mono","JetBrains Mono",ui-monospace,monospace' },
-  { key: "jetbrains", label: "JETBRAINS", stack: "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
-  { key: "spacemono", label: "SPACE MONO", stack: "'Space Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
-  { key: "geist", label: "GEIST", stack: "'Geist',system-ui,-apple-system,sans-serif" },
-  { key: "system", label: "SYSTEM", stack: "system-ui,-apple-system,'Segoe UI',sans-serif" },
-  { key: "work", label: "WORK SANS", stack: "'Work Sans',system-ui,-apple-system,sans-serif" },
-  { key: "grotesk", label: "GROTESK", stack: "'Space Grotesk',system-ui,-apple-system,sans-serif" },
-  { key: "archivo", label: "ARCHIVO", stack: "'Archivo',system-ui,-apple-system,sans-serif" },
-  { key: "garamond", label: "GARAMOND", stack: "'EB Garamond',Georgia,serif" },
-  { key: "spectral", label: "SPECTRAL", stack: "'Spectral',Georgia,serif" },
-  { key: "georgia", label: "GEORGIA", stack: "Georgia,'Times New Roman',serif" },
-  { key: "trebuchet", label: "TREBUCHET", stack: "'Trebuchet MS','Comic Sans MS',sans-serif" },
+  { key: "", label: "Theme", stack: "" },
+  { key: "hud", label: "Share Tech", stack: '"Share Tech Mono","JetBrains Mono",ui-monospace,monospace' },
+  { key: "jetbrains", label: "JetBrains", stack: "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
+  { key: "spacemono", label: "Space Mono", stack: "'Space Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
+  { key: "geist", label: "Geist", stack: "'Geist',system-ui,-apple-system,sans-serif" },
+  { key: "nunito", label: "Nunito", stack: "'Nunito',system-ui,-apple-system,sans-serif" },
+  { key: "system", label: "System", stack: "system-ui,-apple-system,'Segoe UI',sans-serif" },
+  { key: "work", label: "Work Sans", stack: "'Work Sans',system-ui,-apple-system,sans-serif" },
+  { key: "grotesk", label: "Space Grotesk", stack: "'Space Grotesk',system-ui,-apple-system,sans-serif" },
+  { key: "archivo", label: "Archivo", stack: "'Archivo',system-ui,-apple-system,sans-serif" },
+  { key: "garamond", label: "EB Garamond", stack: "'EB Garamond',Georgia,serif" },
+  { key: "spectral", label: "Spectral", stack: "'Spectral',Georgia,serif" },
+  { key: "georgia", label: "Georgia", stack: "Georgia,'Times New Roman',serif" },
+  { key: "trebuchet", label: "Trebuchet", stack: "'Trebuchet MS','Comic Sans MS',sans-serif" },
 ];
 
 /** "" (or an unknown key) → the theme's own font. */
@@ -252,7 +275,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => Object.keys(t.pal))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["files", "changes", "git", "learn", "queue", "rivendell"] as const;
+export const RIGHT_TABS = ["files", "git", "learn", "queue", "rivendell"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 export { INDICATORS, type Indicator } from "./indicator";
@@ -403,7 +426,8 @@ export function loadSettings(): HudSettings {
         sweep: p.sweep ?? true,
         glow: p.glow ?? true,
         rightOpen: p.rightOpen ?? true,
-        rightTab: RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
+        // "changes" was its own tab until the GIT tab took it in (2026-10-18)
+        rightTab: (p.rightTab as string) === "changes" ? "git" : RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
         indicator: toIndicator(p.indicator),
         nyan: NYAN_KEYS.includes(p.nyan as string) ? (p.nyan as NyanMode) : "original",
         nyanSound:

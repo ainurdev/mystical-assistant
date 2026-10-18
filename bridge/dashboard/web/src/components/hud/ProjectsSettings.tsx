@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronRight, Pencil } from "lucide-react";
 import type { AccountInfo } from "../../api";
-import type { ProfilesInfo } from "../../lib/profiles";
+import { slotHue, type ProfilesInfo } from "../../lib/profiles";
 import { agentLabel } from "../../lib/agents";
 import { projectGivenName, projectMark } from "../../lib/surfaces";
 import { ProjectTile } from "../ui/ProjectTile";
@@ -37,12 +37,6 @@ export interface ProjectsSettingsProps {
 function basename(rel: string): string {
   const clean = rel.replace(/\/+$/, "");
   return clean.split("/").pop() || clean;
-}
-
-const SLOT_HUES = ["var(--acc)", "var(--ask, var(--purple))", "var(--info)", "var(--ok)", "var(--warn)", "var(--purple)"];
-function slotHue(slot: string): string {
-  const n = Number(slot) || 0;
-  return n ? SLOT_HUES[(n - 1) % SLOT_HUES.length] : "var(--panel3)";
 }
 
 /** Which folds are shut, kept in this browser. */
