@@ -202,3 +202,61 @@ def test_compare_url_only_for_github(repo):
         "https://github.com/ainurdev/mystical-assistant/compare/aaaaaaa...bbbbbbb"
     _run(repo, "remote", "set-url", "origin", "/tmp/elsewhere")
     assert whatsnew._compare_url("a" * 40, "b" * 40) is None
+
+
+# --- add_note: write, commit that file, push, or roll back --------------------------
+
+def test_add_note_appends_commits_pushes_and_emits_read_and_quiet(repo, origin, monkeypatch):
+    _run(origin, "config", "receive.denyCurrentBranch", "ignore")
+    monkeypatch.setattr(whatsnew.time, "strftime", lambda *a: "2026-10-18")
+    ok, out = whatsnew.add_note("Re-enter the token", "Paste it once.\r\nThen restart.")
+    assert ok, out
+    with open(os.path.join(repo, "docs/notes.md")) as f:
+        assert f.read() == (whatsnew.NOTES_HEADER + "\n## 2026-10-18 · Re-enter the token — Tester\n\n"
+                            "Paste it once.\nThen restart.\n")
+    st = g.status(repo)
+    assert st["dirty"] == 0 and st["ahead"] == 0
+    last = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%s"], capture_output=True, text=True)
+    assert last.stdout.strip() == "note: Re-enter the token"
+    row = notices.feed()[0]
+    assert row["kind"] == "note" and row["read"] is True
+    assert row["meta"] == {"author": "Tester", "date": "2026-10-18", "quiet": True}
+    assert json.loads(store.get_setting("notes_seen")) == ["2026-10-18 · Re-enter the token — Tester"]
+
+
+def test_add_note_commits_only_the_notes_file(repo, origin):
+    _run(origin, "config", "receive.denyCurrentBranch", "ignore")
+    _write(repo, "a.txt", "dirty\n")
+    ok, out = whatsnew.add_note("T", "")
+    assert ok, out
+    assert [f["path"] for f in g.status(repo)["files"]] == ["a.txt"]      # still dirty, uncommitted
+    with open(os.path.join(repo, "docs/notes.md")) as f:
+        assert f.read().endswith("\n## " + whatsnew.time.strftime("%Y-%m-%d") + " · T — Tester\n")
+
+
+def test_add_note_rolls_back_a_refused_push(repo, origin):
+    # origin refuses a push to its checked-out branch; the file had a hand edit already
+    _write(repo, "docs/notes.md", whatsnew.NOTES_HEADER + "\nhand edit\n")
+    head = g.head_sha(repo)
+    ok, out = whatsnew.add_note("T", "b")
+    assert ok is False and out
+    assert g.head_sha(repo) == head
+    with open(os.path.join(repo, "docs/notes.md")) as f:
+        assert f.read() == whatsnew.NOTES_HEADER + "\nhand edit\n"
+    assert [f["path"] for f in g.status(repo)["files"]] == ["docs/notes.md"]   # the hand edit, unstaged
+    assert notices.feed() == [] and store.get_setting("notes_seen") in (None, "[]")
+
+
+def test_add_note_rollback_removes_a_file_it_created(repo, origin):
+    ok, _ = whatsnew.add_note("T", "b")
+    assert ok is False
+    assert not os.path.exists(os.path.join(repo, "docs/notes.md")) and g.status(repo)["dirty"] == 0
+
+
+def test_boot_does_not_repeat_your_own_note(repo, origin):
+    _run(origin, "config", "receive.denyCurrentBranch", "ignore")
+    whatsnew.boot()
+    ok, out = whatsnew.add_note("Mine", "x")
+    assert ok, out
+    whatsnew.boot().join(10)                              # last_head..HEAD now holds the note commit
+    assert [r["kind"] for r in notices.feed()] == ["updated", "note"]

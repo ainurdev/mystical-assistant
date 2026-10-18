@@ -23,9 +23,11 @@ HEAD runs in a daemon thread that prints and never raises.
 """
 
 import json
+import os
 import re
 import sys
 import threading
+import time
 
 from bridge import aifeatures, config, git, native, notices, runner, selfupdate, store
 
@@ -179,6 +181,51 @@ def _telegram(kind: str, text: str) -> None:
             send(chat, text)
     except Exception as e:  # noqa: BLE001
         print(f"[whatsnew] telegram: {e}", file=sys.stderr)
+
+
+# --- a maintainer's note: write, commit that file, push — or roll back ------------------
+
+def add_note(title: str, body: str) -> "tuple[bool, str]":
+    """Append the note to docs/notes.md, commit only that file and push: one tap,
+    like SHIP. The commit or the push refused: put the file back as it was (a hand
+    edit included), drop the commit, return git's words — nothing is left behind.
+    The caller validates lengths; here only line endings and whitespace are tidied."""
+    repo = selfupdate.REPO
+    path = os.path.join(repo, NOTES_PATH)
+    title = title.strip()
+    body = body.replace("\r\n", "\n").strip()
+    author = git._run(repo, "config", "user.name")[1].strip()
+    date = time.strftime("%Y-%m-%d")
+    heading = f"{date} · {title}" + (f" — {author}" if author else "")
+    before = None
+    if os.path.exists(path):
+        with open(path, encoding="utf-8") as f:
+            before = f.read()
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write((before or NOTES_HEADER) + f"\n## {heading}\n" + (f"\n{body}\n" if body else ""))
+    ok, out = git.commit_paths(repo, f"note: {title}", [NOTES_PATH])
+    committed = ok
+    if ok:
+        ok, out = git.push(repo)
+    if not ok:
+        if committed:
+            git._run(repo, "reset", "-q", "--soft", "HEAD~1")
+        git._run(repo, "reset", "-q", "HEAD", "--", NOTES_PATH)
+        if before is None:
+            os.remove(path)
+        else:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(before)
+        return False, out
+    nid = notices.emit("note", f"note:{heading}", title=title, body=body,
+                       meta={"author": author, "date": date, "quiet": True})
+    if nid:
+        notices.mark_read([nid])   # your own note is not news to you
+    seen = _seen()
+    seen.append(heading)
+    _remember(seen)
+    return True, out
 
 
 # --- the notes file ---------------------------------------------------------------------
