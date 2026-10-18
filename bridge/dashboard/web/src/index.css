@@ -1811,7 +1811,7 @@ input {
 
 /* ── tier 1: you ── */
 [data-style="dossier"] .dprompt {
-  display: block; position: relative; padding: 9px 14px 9px 12px;
+  display: block; position: relative; padding: 13px 18px 15px;
   background: color-mix(in oklab, var(--d-you) var(--d-tint), var(--panel));
   border-left: 4px solid var(--d-you);
   border-bottom: 1px solid color-mix(in oklab, var(--d-you) var(--d-edge), var(--panel));
@@ -1830,24 +1830,15 @@ input {
   color: var(--d-you); font-family: var(--mono); font-size: 15px; font-weight: 700; line-height: 1.6;
   text-shadow: 0 0 var(--glow, 0px) color-mix(in oklab, var(--d-you) 70%, transparent);
 }
-/* The stamp: who, which turn, which account or agent when it wasn't the
-   default, and when — tracked, ghost except what is yours, tucked into the
-   free end of your last line the way a chat stamps a message. It is a float
-   after the words, and a last paragraph flows inline so the float can share
-   its line; a full last line pushes it onto a 17px line of its own. As a
-   footer row it cost every prompt 30px, a one-word prompt 71 in all
-   (design-drafts/prompt-plate, R2 · TUCKED). Its twin is the clock in
-   .res-meta, when the answer came back. */
+/* The footer: who, which turn, which account or agent when it wasn't the
+   default, and when — one tracked line on the right, ghost except what is
+   yours. Its twin is the clock in .res-meta, when the answer came back. */
 [data-style="dossier"] .pmeta {
-  float: right; display: inline-flex; align-items: center; gap: 10px;
-  margin: 7px 0 0 16px; line-height: 1; white-space: nowrap;
+  display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0;
+  margin-top: 6px; padding-left: 28px;
   font-size: var(--t95); letter-spacing: 2px; text-transform: uppercase; color: var(--txd);
   font-variant-numeric: tabular-nums;
 }
-/* The markdown root keeps no box of its own here: as a block it stood between
-   the inline last paragraph and the float, so the stamp always began a new line. */
-[data-style="dossier"] .pbub .md { display: contents; }
-[data-style="dossier"] .pbub .md > p:last-child { display: inline; }
 [data-style="dossier"] .pmeta > b { color: var(--d-you); font-weight: 700; }
 [data-style="dossier"] .pmeta .pacct { color: var(--d-you); }
 [data-style="dossier"] .pmeta .pacct[data-agent] { color: var(--warn); }
@@ -1891,8 +1882,8 @@ input {
 /* Open, the header pins at the top while you are inside the zone, so a click
    folds the work from anywhere. --isle-b (Terminal.tsx, on the scroller) is
    where it pins: level with the compact pill, which floats over the plate's
-   right end (its chips hide while pinned, data-isle), under VEIL's fade, or
-   under the full island bar. Pinned (WorkZone's measure), a hairline cuts it from the rows
+   right end (its chips hide while pinned, data-isle; VEIL's fade lifts, THE
+   FAMILIES), or under the full island bar. Pinned (WorkZone's measure), a hairline cuts it from the rows
    passing under, and a lid in the plate's colour covers the band above it so
    rows don't surface over the header on their way out. The lid spans the
    plate's padding box (--zpl/--zpr). */
@@ -2887,9 +2878,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam][data-hdr="veil"] [data-layout]::before {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 74px; z-index: 11; pointer-events: none;
   background: linear-gradient(var(--canvas) 30%, color-mix(in oklab, var(--canvas) 70%, transparent) 62%, transparent);
-  transition: height .2s ease;
+  transition: height .2s ease, opacity .2s ease;
 }
 [data-fam][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
+/* a pinned WORK header (DOSSIER) sits in the fade's band and would be swallowed by it: while one is pinned the fade lifts */
+[data-fam][data-hdr="veil"] [data-layout]:has(.dwork[data-pinned])::before { opacity: 0; }
 [data-fam][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
 /* TUCK: frost folded to its last readout (.isle-keep); the rest unfolds on hover */
 [data-fam][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
