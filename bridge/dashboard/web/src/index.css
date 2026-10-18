@@ -3,7 +3,7 @@
    too), Space Grotesk, Archivo, Space Mono. One request for all of them; every
    stack still names a local fallback (Georgia / system-ui) so an offline
    dashboard stays readable. */
-@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=EB+Garamond:wght@400;600&family=Work+Sans:wght@400;600&family=Spectral:wght@400;600&family=Space+Grotesk:wght@400;600&family=Archivo:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=EB+Garamond:wght@400;600&family=Work+Sans:wght@400;600&family=Spectral:wght@400;600&family=Space+Grotesk:wght@400;600&family=Archivo:wght@400;500;700&family=Nunito:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -2698,7 +2698,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .abub { background: var(--ac-08); }
 
 /* === THE FAMILIES ===========================================================
-   Three themes, one structure (lib/theme FAMILIES). FLINT drew it: an editor,
+   Four themes, one structure (lib/theme FAMILIES). FLINT drew it: an editor,
    not a HUD — nothing glows by default, every surface is a grey step and a 1px
    line, and colour is spent on exactly two roles —
      --acc  you          your prompt, the open session, SEND, focus
@@ -2706,7 +2706,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    CLAUDE and AURORA wear the same structure in their own voice: the tokens
    below set the type, corners and line ink, and the personality blocks after
    the shared rules add what is theirs (CLAUDE's serif titles and soft rows,
-   AURORA's tracked capitals, brackets, glow and hard edges).
+   AURORA's tracked capitals, brackets, glow and hard edges; PEBBLE's pills,
+   20px cards, Nunito and softer lines — FLINT worn round, see · PEBBLE below).
 
    The derived tokens are re-pointed first: the HUD's hairlines and hover washes
    are all accent-at-alpha (--border, --ac-NN), which would draw an orange grid
@@ -2753,6 +2754,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   --f-you: color-mix(in oklab, var(--acc) 7%, var(--panel));
   --ui-font: 'Share Tech Mono', 'JetBrains Mono', ui-monospace, monospace;
   --f-glow: 0 0 10px color-mix(in srgb, var(--acc) 55%, transparent);
+}
+[data-fam="pebble"] {
+  --line: color-mix(in oklab, var(--txl) 18%, var(--canvas));
+  --line2: color-mix(in oklab, var(--txl) 30%, var(--canvas));
+  --f-rad: 20px; --f-rad-s: 12px; --f-rad-l: 26px; --f-d-rad: 20px;
+  --f-you: color-mix(in oklab, var(--acc) 12%, var(--panel));
+  --ui-font: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
 /* Daylight: washes darken instead of lighten, and elevation is a soft tinted
    lift, never a black bloom (see :root[data-light]). */
@@ -3056,7 +3064,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .set-seg2 { display: inline-flex; margin-left: auto; padding: 3px; border-radius: 9px; background: var(--panel3); border: 1px solid var(--line); }
 .set-seg2 button { appearance: none; cursor: pointer; border: 0; background: none; padding: 4px 13px; border-radius: 6px; font: 12.5px var(--ui-font); color: var(--txd); }
 .set-seg2 button[data-on] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line2); }
-.ftgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ftgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
 .ftcard { cursor: pointer; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; transition: border-color .15s ease; }
 .ftcard:hover { border-color: var(--line2); }
 .ftcard[data-on] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
@@ -3090,6 +3098,14 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ftcard[data-pv="aurora"] .ftprev .bx { border-color: color-mix(in oklab, var(--a) 34%, var(--g)); }
 .ftcard[data-pv="aurora"] .ftprev::after { content: ""; position: absolute; inset: 0; pointer-events: none;
   background: repeating-linear-gradient(0deg, transparent 0 2px, rgba(0,0,0,.32) 2px 3px); }
+/* PEBBLE's card: the river stone — a bubble for your prompt, a pill composer, a round send, round swatches */
+.ftcard[data-pv="pebble"] .ftprev .sb { border-radius: 10px; }
+.ftcard[data-pv="pebble"] .ftprev .sb i { border-radius: 999px; }
+.ftcard[data-pv="pebble"] .ftprev .sb i:first-child { height: 7px; width: 86%; background: color-mix(in oklab, var(--a) 30%, var(--g2)); }
+.ftcard[data-pv="pebble"] .ftprev .ch .p { width: 72%; border-radius: 999px 999px 999px 4px; background: color-mix(in oklab, var(--a) 22%, var(--g2)); box-shadow: none; }
+.ftcard[data-pv="pebble"] .ftprev .bx { border-radius: 999px; background: var(--g2); }
+.ftcard[data-pv="pebble"] .ftprev .bx u { width: 8px; height: 8px; top: 1px; right: 3px; border-radius: 50%; }
+.ftcard[data-pv="pebble"] .ftsq button { border-radius: 50%; }
 .ftmeta { display: flex; align-items: center; gap: 9px; padding: 10px 12px 11px; border-top: 1px solid var(--line); }
 .ftmeta .d { width: 10px; height: 10px; border-radius: 50%; background: var(--a); flex: none; }
 .ftmeta b { display: block; font: 600 13.5px var(--ui-font); color: var(--txb); }
@@ -3219,6 +3235,26 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] .ftmeta div > span { font-family: var(--mono); font-size: 11px; }
 [data-fam="aurora"] .ftmeta em { font-weight: 400; letter-spacing: .16em; text-transform: uppercase; background: var(--acc); color: var(--acc-on); }
 [data-fam="aurora"] .ftcard[data-on] { box-shadow: 0 0 18px color-mix(in oklab, var(--acc) 14%, transparent); }
+
+/* ── THE FAMILIES · PEBBLE — the river stone: FLINT's structure worn round
+   (.mystical/design-drafts/pebble-theme). Anything one line tall is a pill;
+   the open row and the active rail item are accent-tinted pills with no bar
+   and no rail; the toggle is bigger; your prompt is a bubble with one tucked
+   corner; headings are bold. The pills are named, not `button` — a full-width
+   multi-line button as a pill reads as a blob. ── */
+[data-fam="pebble"] :is(.sessrow, .sess-search, .projhead, .set-search, .set-close, .setrail button, .set-seg, .set-seg button,
+  .set-seg2, .set-seg2 button, .setpane select, .act-glyph, .act-alt, .act-pri, .pb-plus) { border-radius: 999px !important; }
+[data-fam="pebble"] .projgrp .sessrow { border-radius: 999px; }
+[data-fam="pebble"] .sessrow::before { display: none; }
+[data-fam="pebble"] .sessrow[data-on="true"] { background: color-mix(in oklab, var(--acc) 14%, var(--panel)) !important; box-shadow: none; }
+[data-fam="pebble"] .projrail { border-left-color: transparent !important; }
+[data-fam="pebble"] .setrail button.on { background: color-mix(in oklab, var(--acc) 14%, var(--panel)); box-shadow: none; }
+[data-fam="pebble"] .setpane [style*="padding: 14px 16px"], [data-fam="pebble"] .ftcard { border-radius: var(--f-rad); }
+[data-fam="pebble"] .set-toggle { width: 40px; height: 22px; }
+[data-fam="pebble"] .set-toggle i { top: 2px; left: 2px; width: 18px; height: 18px; }
+[data-fam="pebble"] .set-toggle[data-on] i { left: 20px; }
+[data-fam="pebble"] :is(.set-crumb, .set-head h2, .set-sectitle, .ftmeta b, .set-key) { font-weight: 700 !important; }
+[data-fam="pebble"] [data-style="dossier"] .dprompt { border-color: transparent; border-radius: var(--f-d-rad) var(--f-d-rad) var(--f-d-rad) 8px; box-shadow: none; }
 [data-fam="aurora"] .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--acc), 0 0 10px color-mix(in oklab, var(--acc) 60%, transparent); }
 [data-fam="aurora"] .fthdr small { letter-spacing: .16em; text-transform: uppercase; }
 [data-fam="aurora"] .set-mini { letter-spacing: .12em !important; text-transform: uppercase; }

@@ -214,9 +214,10 @@ on any other. The run never leaves your machine, and there's no app to install.
 
 ![The Appearance tab: three theme cards, Aurora, Claude and Flint, each with its row of colours, above the CRT effects and header styles.](site/public/shots/themes.png)
 
-Three themes, each in its own voice: AURORA, a phosphor CRT with its scanlines
+Four themes, each in its own voice: AURORA, a phosphor CRT with its scanlines
 on their own switches; CLAUDE, the app's own warm greys; FLINT, a graphite
-editor. Twenty colours between them, and daylight grounds for CLAUDE and FLINT.
+editor; PEBBLE, a river stone worn round. Twenty-five colours between them, and
+daylight grounds for CLAUDE, FLINT and PEBBLE.
 You'll stare at it all day. It may as well look like something you chose.
 
 <br />

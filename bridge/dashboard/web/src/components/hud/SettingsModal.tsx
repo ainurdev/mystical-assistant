@@ -669,8 +669,8 @@ function PickCell({
   );
 }
 
-const FAMILY_NAME: Record<Family, string> = { aurora: "Aurora", claude: "Claude", flint: "Flint" };
-const FAMILY_TAG: Record<Family, string> = { aurora: "the CRT", claude: "the app itself", flint: "the editor" };
+const FAMILY_NAME: Record<Family, string> = { aurora: "Aurora", claude: "Claude", flint: "Flint", pebble: "Pebble" };
+const FAMILY_TAG: Record<Family, string> = { aurora: "the CRT", claude: "the app itself", flint: "the editor", pebble: "the river stone" };
 
 /** A colouring's swatch, filled with what it paints: you, then what waits on
  *  you. A FLINT swatch keeps its ground between the two, because FLINT is
@@ -709,7 +709,7 @@ function ThemeGrid({ light, settings, onTheme }: {
           : shown[0];
         const on = mine && keys.includes(cur);
         const d = themeDef(live);
-        const colour = d.name.replace(/^(AURORA|CLAUDE|FLINT)\s*/, "");
+        const colour = d.name.replace(/^(AURORA|CLAUDE|FLINT|PEBBLE)\s*/, "");
         const vars = {
           "--a": d.pal.acc, "--k": d.pal.ask, "--g": d.pal.canvas, "--g2": d.pal.panel,
           "--g3": `color-mix(in oklab, ${d.pal.txg} 45%, ${d.pal.panel})`,
