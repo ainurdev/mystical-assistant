@@ -464,6 +464,11 @@ function ClipRail(
  *  against that ancestor instead of the viewport. */
 function StillLightbox({ src, name, strip, onClose }: { src: string; name?: string; strip?: boolean; onClose: () => void }) {
   const [v, setV] = useState<View>(FIT);
+  // The image's pixel width, once decoded. Laid out by pixel count alone, a 2x
+  // capture of a 600px-wide menu is 1200 CSS px — on a Retina screen every pixel
+  // doubled, which reads as a blurry screenshot. Fit is at most one image pixel
+  // per device pixel; anything past that is a zoom you asked for.
+  const [nat, setNat] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
   const ptrs = useRef(new Map<number, { x: number; y: number }>());
@@ -568,7 +573,8 @@ function StillLightbox({ src, name, strip, onClose }: { src: string; name?: stri
         src={src}
         alt=""
         draggable={false}
-        style={{ maxWidth: "92vw", maxHeight: strip ? "76vh" : "92vh", objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-in", userSelect: "none" }}
+        onLoad={(e) => setNat(e.currentTarget.naturalWidth)}
+        style={{ maxWidth: nat ? `min(92vw, ${nat / (window.devicePixelRatio || 1)}px)` : "92vw", maxHeight: strip ? "76vh" : "92vh", objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-in", userSelect: "none" }}
       />
       <button
         type="button"
