@@ -88,7 +88,7 @@ export function MediaThumb(
   const seenRef = useOnSeen(onSeen);
   const isNew = fresh ? "" : undefined;
   if (isFileUrl(src)) return <FileThumb name={attachName(src)} className={className} style={style} />;
-  if (!isVideo(src)) return <img ref={seenRef} src={src} alt={alt ?? ""} className={className} style={style} onError={onError} data-new={isNew} />;
+  if (!isVideo(src)) return <img ref={seenRef} src={src} loading="lazy" alt={alt ?? ""} className={className} style={style} onError={onError} data-new={isNew} />;
   // #t=0.1 makes the browser paint a real first frame instead of a black box;
   // a data: URL can't carry a fragment, so it goes without.
   const poster = src.startsWith("data:") ? src : `${src}#t=0.1`;

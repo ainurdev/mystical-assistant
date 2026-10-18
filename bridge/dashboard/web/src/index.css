@@ -1898,7 +1898,7 @@ input {
   -webkit-backdrop-filter: blur(10px) saturate(1.15); backdrop-filter: blur(10px) saturate(1.15);
 }
 [data-style="dossier"] .dwork-node {
-  grid-column: 1; grid-row: 1 / 3; justify-self: center; width: 22px; height: 22px; border-radius: 50%;
+  position: relative; grid-column: 1; grid-row: 1 / 3; justify-self: center; width: 22px; height: 22px; border-radius: 50%;
   display: grid; place-items: center; color: var(--txm);
   background: color-mix(in oklab, var(--txl) 14%, var(--panel2));
   box-shadow: 0 0 0 2px var(--panel2), 0 0 0 3px var(--line2, var(--d-hair));
@@ -1906,9 +1906,49 @@ input {
 [data-style="dossier"] .dwork-l1 { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 [data-style="dossier"] .dwork-lab { font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm); }
 [data-style="dossier"] .dwork-ms { color: var(--txf); letter-spacing: .5px; overflow: hidden; text-overflow: ellipsis; }
-[data-style="dossier"] .dwork[data-run] .dwork-ms { color: var(--d-you); animation: blink 1.1s steps(1) infinite; }
+/* live — the last zone of a running turn: the state word where the figure was,
+   seconds in that state after it, and the node as the instrument — a ring
+   ripples out of it while the model thinks, a comet orbits it while a tool
+   runs; the step that is out follows the chips with a caret */
+[data-style="dossier"] .dwork[data-live] .dwork-ms { color: var(--acc); }
+[data-style="dossier"] .dwork-st { font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; text-transform: uppercase; }
+[data-style="dossier"] .dwork-secs { margin-left: 8px; color: var(--txf); }
+[data-style="dossier"] .dwork-secs::before { content: "\00b7"; margin-right: 5px; color: var(--txl); }
+[data-style="dossier"] .dwork-dots {
+  display: inline-block; width: 0; overflow: hidden; vertical-align: bottom; white-space: nowrap;
+  font-family: var(--mono); letter-spacing: 0; animation: dwdots 2.2s linear infinite;
+}
+[data-style="dossier"] .dwork-dots::after { content: "..."; }
+/* a sibling of the step, not inside it, so a long step's ellipsis can't swallow it */
+[data-style="dossier"] .dwork-caret {
+  flex: none; width: 6px; height: 11px; margin-left: 5px;
+  background: var(--acc); animation: caret 1.05s steps(1) infinite;
+}
+[data-style="dossier"] .dwork[data-live] .dwork-node {
+  color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, var(--panel2));
+  box-shadow: 0 0 0 2px var(--panel2), 0 0 0 3px color-mix(in oklab, var(--acc) 60%, var(--line2, var(--d-hair)));
+}
+[data-style="dossier"] .dwork[data-live="think"] .dwork-node::before {
+  content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid var(--acc);
+  animation: dwripple 2.2s ease-out infinite;
+}
+[data-style="dossier"] .dwork[data-live="work"] .dwork-node::after {
+  content: ""; position: absolute; inset: -7px; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 50%, var(--acc) 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  filter: drop-shadow(0 0 3px color-mix(in oklab, var(--acc) 70%, transparent));
+  animation: dworbit 1.1s linear infinite;
+}
+@keyframes dwripple { 0% { transform: scale(.55); opacity: .95; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes dworbit { to { transform: rotate(360deg); } }
+@keyframes dwdots { 0%, 24% { width: 0; } 25%, 49% { width: 1ch; } 50%, 74% { width: 2ch; } 75%, 100% { width: 3ch; } }
+@media (prefers-reduced-motion: reduce) {
+  [data-style="dossier"] :is(.dwork-dots, .dwork-caret, .dwork[data-live] .dwork-node::before, .dwork[data-live] .dwork-node::after) { display: none; }
+}
 [data-style="dossier"] .dwork-l2 { grid-column: 2; grid-row: 2; display: flex; align-items: center; min-width: 0; margin-top: 7px; }
-[data-style="dossier"] .dwork-kinds { display: flex; flex: 0 1 auto; min-width: 0; gap: 14px; overflow: hidden; }
+/* the chips never clip (a sliver of a tile reads as a stray bar); the live step is what gives way */
+[data-style="dossier"] .dwork-kinds { display: flex; flex: none; gap: 14px; }
 [data-style="dossier"] .dwork-k { --m: var(--d-tool); display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--txd); }
 [data-style="dossier"] .dwork-k > i {
   width: 15px; height: 15px; display: grid; place-items: center;
@@ -1942,25 +1982,38 @@ input {
   font-size: var(--t95); font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
   box-shadow: 0 0 12px color-mix(in oklab, var(--acc) 45%, transparent);
 }
-/* the unseen pictures themselves, in the shut plate; tap one to open it */
+/* every picture the zone holds, in the shut plate; tap one to open it. An
+   unseen one wears the accent and a NEW tag; seen, it goes grey and stays */
 [data-style="dossier"] .dwork-row {
   margin: 9px 2px 1px calc(var(--zn) + 12px); padding-top: 9px;
-  border-top: 1px dashed color-mix(in oklab, var(--acc) 35%, var(--d-hair));
+  border-top: 1px dashed var(--d-hair);
 }
+[data-style="dossier"] .dwork[data-shots="new"] .dwork-row { border-top-color: color-mix(in oklab, var(--acc) 35%, var(--d-hair)); }
 [data-style="dossier"] .dwork-row-h {
   display: flex; align-items: center; gap: 10px;
-  font-size: var(--t85); font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--acc);
+  font-size: var(--t85); font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--txd);
 }
-[data-style="dossier"] .dwork-row-h > i { flex: 1 1 0; height: 1px; background: color-mix(in oklab, var(--acc) 28%, transparent); }
+[data-style="dossier"] .dwork-row-h > b { font-weight: 600; color: var(--acc); }
+[data-style="dossier"] .dwork-row-h > b::before { content: "\00b7 "; color: var(--txl); }
+[data-style="dossier"] .dwork-row-h > i { flex: 1 1 0; height: 1px; background: var(--d-hair); }
+[data-style="dossier"] .dwork[data-shots="new"] .dwork-row-h > i { background: color-mix(in oklab, var(--acc) 28%, transparent); }
 [data-style="dossier"] .dwork-row-h > em {
   font-family: var(--d-face); font-size: var(--t105); font-weight: 400; font-style: italic;
   letter-spacing: 0; text-transform: none; color: var(--txd);
 }
 [data-style="dossier"] .dwork-row-thumbs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-[data-style="dossier"] .dwork-row-thumbs figure { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+[data-style="dossier"] .dwork-row-thumbs figure { position: relative; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 [data-style="dossier"] .dwork-row-thumbs :is(img, video) {
   height: 60px; width: auto; max-width: 130px; object-fit: cover; border-radius: calc(var(--d-rad) * .4);
-  border: 1.5px solid var(--acc); box-shadow: 0 0 10px color-mix(in oklab, var(--acc) 40%, transparent); background: #000;
+  border: 1px solid var(--d-hair); background: #000;
+}
+[data-style="dossier"] .dwork-row-thumbs figure[data-new] :is(img, video) {
+  border: 1.5px solid var(--acc); box-shadow: 0 0 10px color-mix(in oklab, var(--acc) 40%, transparent);
+}
+[data-style="dossier"] .dwork-row-thumbs figure[data-new]::after {
+  content: "NEW"; position: absolute; top: -6px; right: -6px; padding: 3px 4px; border-radius: 3px;
+  background: var(--acc); color: var(--acc-on, var(--canvas)); font-size: var(--t75); font-weight: 700; letter-spacing: 1px;
+  box-shadow: 0 0 6px color-mix(in oklab, var(--acc) 45%, transparent);
 }
 [data-style="dossier"] .dwork-row-thumbs figcaption {
   font-size: var(--t85); color: var(--txf); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -3179,7 +3232,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .newsess svg { color: var(--acc); }
 [data-fam] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
 [data-fam] .lanehead > span:nth-child(3) { background: transparent !important; }
-[data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-badge, .dwork-row-h, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
+[data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-st, .dwork-badge, .dwork-row-h, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
 [data-fam] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
 
 /* ── the settings modal's own furniture ── */
