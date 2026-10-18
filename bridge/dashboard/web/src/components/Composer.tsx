@@ -341,7 +341,7 @@ export function SteerIcon({ size = 13 }: { size?: number }) {
  *  inside itself one at a time, reflowing under an effort slider whose stops
  *  had no names. A pick applies at once and the sheet stays open (it is a
  *  settings sheet, not a menu — all three get set in one visit); a click
- *  outside or the scrim closes it, as every drop. Design: drafts/run-picker. */
+ *  away or Esc closes it. Design: drafts/run-picker. */
 type RunProps<M extends string> = {
   model: M;
   modelOpts: DropOption<M>[];
@@ -535,6 +535,14 @@ export function Composer({
   const [zoom, setZoom] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [openDrop, setOpenDrop] = useState<"" | "profile" | "model" | "effort" | "mode" | "pony" | "verbs" | "run" | "plus" | "queued">("");
+  // The run sheet stays open across picks, so it takes a dialog's Esc as well
+  // as a click away; the other drops close on their pick.
+  useEffect(() => {
+    if (openDrop !== "run") return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpenDrop(""); };
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
+  }, [openDrop]);
   const { compact, lead, composer, sendKey } = useChatChrome();
   const plugins = useIntegrations();   // the DESIGN button exists while Claude Design is installed
   // TABS / CONSOLE: COMPACT's new composers. CLASSIC is the old markup.
