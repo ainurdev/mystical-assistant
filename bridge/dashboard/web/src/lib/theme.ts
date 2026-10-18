@@ -252,7 +252,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => Object.keys(t.pal))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["files", "changes", "git", "learn", "queue", "rivendell"] as const;
+export const RIGHT_TABS = ["files", "git", "learn", "queue", "rivendell"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 export { INDICATORS, type Indicator } from "./indicator";
@@ -403,7 +403,8 @@ export function loadSettings(): HudSettings {
         sweep: p.sweep ?? true,
         glow: p.glow ?? true,
         rightOpen: p.rightOpen ?? true,
-        rightTab: RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
+        // "changes" was its own tab until the GIT tab took it in (2026-10-18)
+        rightTab: (p.rightTab as string) === "changes" ? "git" : RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
         indicator: toIndicator(p.indicator),
         nyan: NYAN_KEYS.includes(p.nyan as string) ? (p.nyan as NyanMode) : "original",
         nyanSound:

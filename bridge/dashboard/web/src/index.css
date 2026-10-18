@@ -3886,3 +3886,115 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ntf-pill.rv .ntf-pill-k { background: color-mix(in oklab, var(--purple) 20%, var(--panel)); color: var(--purple); }
 .ntf-btn.pri { background: var(--acc); border-color: transparent; color: var(--acc-on, #111); }
 .ntf-btn.pri:hover { background: var(--acc); filter: brightness(1.08); }
+
+/* === GIT TAB ===================================================================
+   The right rail's GIT panel (hud/GitPanel: header, CHANGES and GRAPH folds)
+   and the commit graph it holds (CommitGraph, also the project modal's
+   history pane). Authored in FLINT's idiom — hairlines, the UI font for words,
+   the mono for paths and figures, FLINT's radii — with fallbacks to the HUD's
+   tokens, so AURORA draws the same bones square and in its phosphor. */
+.gp, .gg {
+  --l: var(--line, var(--border)); --l2: var(--line2, var(--border-bright));
+  --f: var(--ui-font, inherit); --m: var(--mono, var(--font-mono)); --r: var(--f-rad-s, 0px);
+  --wash: var(--ac-06, color-mix(in srgb, var(--acc) 8%, transparent));
+}
+.gp-head { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px 0 12px; flex: none; }
+.gp-title { font-size: var(--t105); letter-spacing: 2.5px; color: var(--txl); margin-right: auto; }
+.gp-branch { display: inline-flex; align-items: center; gap: 4px; max-width: 132px; height: 20px; padding: 0 7px; border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--purple) 30%, transparent); background: color-mix(in srgb, var(--purple) 6%, transparent);
+  color: var(--purple-h); font: 400 var(--t10)/1 var(--m); white-space: nowrap; }
+.gp-branch i { color: var(--purple); font-style: normal; flex: none; }
+.gp-branch span { overflow: hidden; text-overflow: ellipsis; }
+.gp-sync { display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 6px 0 4px; border-radius: var(--r); appearance: none; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 9%, transparent);
+  color: var(--acc); font: 500 var(--t10)/1 var(--m); white-space: nowrap; }
+.gp-sync:hover:not(:disabled) { background: color-mix(in srgb, var(--acc) 18%, transparent); }
+.gp-sync:disabled { opacity: .5; cursor: progress; }
+.gp-sync.quiet { border-color: transparent; background: none; color: var(--txl); gap: 3px; padding: 0 4px; cursor: default; }
+.gp-ib, .gg-ib { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 0; border-radius: var(--r); background: none;
+  color: var(--txl); padding: 0; cursor: pointer; appearance: none; flex: none; }
+.gp-ib:hover:not(:disabled), .gg-ib:hover { color: var(--txh); background: var(--wash); }
+.gp-ib:disabled { opacity: .4; cursor: not-allowed; }
+/* the folds: VS Code's pane heads */
+.gp-fold { display: flex; flex-direction: column; min-height: 0; }
+.gp-fh { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 8px; flex: none; background: var(--panel2);
+  border-top: 1px solid var(--l); border-bottom: 1px solid var(--l); cursor: pointer; user-select: none; color: var(--txd); }
+.gp-fh > b { font: 600 var(--t105)/1 var(--f); letter-spacing: .08em; color: var(--txm); text-transform: uppercase; }
+.gp-fh > em { font: 400 var(--t105)/1 var(--m); font-style: normal; color: var(--txd); }
+.gp-acts { margin-left: auto; display: flex; align-items: center; gap: 1px; }
+.gp-filter { display: inline-flex; align-items: center; gap: 3px; height: 20px; max-width: 150px; padding: 0 5px 0 7px; margin-right: 2px; border-radius: var(--r);
+  border: 1px solid var(--l2); background: none; color: var(--txd); font: 400 var(--t10)/1 var(--m); white-space: nowrap; cursor: pointer; appearance: none; }
+.gp-filter:hover { color: var(--txh); }
+.gp-filter span { overflow: hidden; text-overflow: ellipsis; }
+.gp-body { flex: 1 1 auto; min-height: 0; padding-bottom: 6px; position: relative; }
+/* the commit box */
+.gp-cbox { padding: 8px 10px 9px; border-bottom: 1px solid var(--l); }
+.gp-cbox textarea { display: block; width: 100%; resize: none; border: 1px solid var(--l2); border-radius: var(--r); background: var(--panel2);
+  color: var(--txh); font: 400 var(--t11)/1.5 var(--m); padding: 6px 8px; outline: none; }
+.gp-cbox textarea::placeholder { color: var(--txl); }
+.gp-cbtns { display: flex; gap: 6px; margin-top: 6px; }
+.gp-btn { height: 26px; padding: 0 10px; border-radius: var(--r); border: 1px solid var(--l2); background: none; color: var(--txm);
+  font: 600 var(--t105)/1 var(--f); letter-spacing: .04em; white-space: nowrap; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  cursor: pointer; appearance: none; }
+.gp-btn:hover:not(:disabled) { background: var(--wash); color: var(--txh); }
+.gp-btn.pri { flex: 1; border-color: color-mix(in srgb, var(--acc) 60%, transparent); background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--txb); }
+.gp-btn.pri:hover:not(:disabled) { background: color-mix(in srgb, var(--acc) 24%, transparent); }
+.gp-btn:disabled { opacity: .4; cursor: not-allowed; }
+.gp-btn.wide { width: calc(100% - 20px); margin: 0 10px 6px; }
+.gp-note { margin: 8px 10px 6px; font: 400 var(--t10)/1.5 var(--m); color: var(--txd); white-space: pre-wrap; word-break: break-word; cursor: pointer; }
+/* groups + file rows */
+.gp-group { display: flex; align-items: center; gap: 6px; height: 24px; padding: 4px 7px 0 12px; font: 600 var(--t95)/1 var(--f);
+  letter-spacing: .08em; color: var(--txl); text-transform: uppercase; }
+.gp-group em { font: 400 var(--t10)/1 var(--m); font-style: normal; color: var(--txg); }
+.gp-group .gp-ib { margin-left: auto; width: 18px; height: 18px; }
+.gp-row { display: flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px 0 12px; font: 400 var(--t11)/1 var(--m);
+  white-space: nowrap; cursor: pointer; color: var(--txd); outline: none; }
+.gp-row:focus-visible { box-shadow: inset 0 0 0 1px var(--acc); }
+.gp-name, .gg-fname { color: var(--txh); flex: none; }
+.gp-dir, .gg-fdir { color: var(--txg); font-size: var(--t10); flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.gp-fig, .gg-fig { display: flex; gap: 5px; font: 400 var(--t95)/1 var(--m); flex: none; }
+.gp-fig i, .gg-fig i { font-style: normal; }
+.gp-fig i:first-child, .gg-fig i:first-child { color: var(--ok); opacity: .8; }
+.gp-fig i:last-child, .gg-fig i:last-child { color: var(--err); opacity: .8; }
+.gp-st, .gg-mark { width: 10px; text-align: center; font-weight: 700; font-size: var(--t10); flex: none; }
+/* hover trades the figures for the row's actions, as VS Code does */
+.gp-racts { display: none; flex: none; margin-right: -2px; }
+.gp-racts .gp-ib { width: 20px; height: 20px; color: var(--txd); }
+.gp-row:hover .gp-racts { display: flex; }
+.gp-row:hover .gp-fig { display: none; }
+.gp-empty { padding: 10px 12px 6px; font: 400 var(--t115)/1.5 var(--f); color: var(--txd); }
+/* the graph */
+.gg-row { display: flex; align-items: flex-start; padding: 0 8px 0 10px; cursor: pointer; }
+.gg-row:hover, .gg-row.open { background: var(--wash); }
+.gg-rails { flex: none; overflow: visible; margin-right: 8px; }
+.gg-rails path { fill: none; stroke-width: 1.5; opacity: .75; }
+.gg-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gg-line { display: flex; align-items: center; gap: 8px; height: 28px; }
+.gg-sub { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t115)/1 var(--f); color: var(--txh); }
+.gg-row.head .gg-sub { color: var(--txb); font-weight: 500; }
+.gg-ago { flex: none; font: 400 var(--t10)/1 var(--m); color: var(--txf); }
+.gg-refs { display: flex; gap: 4px; height: 18px; align-items: flex-start; overflow: hidden; margin-top: -5px; }
+.gg-chip { display: inline-flex; align-items: center; gap: 3px; height: 15px; max-width: 150px; padding: 0 5px; border-radius: calc(var(--r) * .6); flex: none;
+  border: 1px solid var(--l2); font: 400 var(--t95)/1 var(--m); color: var(--txm); white-space: nowrap; }
+.gg-chip > span { overflow: hidden; text-overflow: ellipsis; }
+.gg-chip.head { border-color: color-mix(in srgb, var(--acc) 55%, transparent); background: color-mix(in srgb, var(--acc) 12%, transparent); color: var(--txb); }
+.gg-chip.head svg { color: var(--acc); }
+.gg-chip u { text-decoration: none; color: var(--acc); margin-left: 2px; }
+.gg-chip.remote { color: var(--txd); border-style: dashed; }
+.gg-chip.tag { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.gg-more { font: 400 var(--t95)/15px var(--m); color: var(--txl); flex: none; }
+/* a commit, opened: a card hanging off its lane */
+.gg-card { margin: 0 8px 8px 0; padding: 5px 0 3px; background: var(--panel2); border: 1px solid var(--l); border-left-width: 2px; border-radius: 0 var(--r) var(--r) 0; }
+.gg-meta { display: flex; align-items: center; gap: 7px; padding: 2px 6px 5px 10px; font: 400 var(--t10)/1 var(--m); color: var(--txd); white-space: nowrap; }
+.gg-meta .who { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.gg-meta code { color: var(--txh); font: inherit; }
+.gg-meta .gg-ib { margin-left: auto; width: 18px; height: 18px; }
+.gg-file { display: flex; align-items: center; gap: 6px; height: 23px; padding: 0 8px 0 10px; font: 400 var(--t11)/1 var(--m); white-space: nowrap; cursor: pointer; color: var(--txd); }
+.gg-file:hover, .gg-file.open { background: var(--wash); }
+.gg-note { padding: 4px 10px 4px; font: 400 var(--t10)/1.45 var(--m); color: var(--txd); }
+.gg-diff { margin: 3px 8px 5px 10px; padding: 5px 7px; border: 1px solid var(--l); border-radius: var(--r); background: var(--panel3);
+  font: 400 var(--t10)/1.55 var(--m); max-height: 288px; overflow: auto; }
+.gg-older { display: block; width: calc(100% - 20px); height: 26px; margin: 6px 10px 4px; border: 1px solid var(--l2); border-radius: var(--r); background: none;
+  color: var(--txd); font: 600 var(--t10)/1 var(--f); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; appearance: none; }
+.gg-older:hover { color: var(--txh); background: var(--wash); }
+.gg-skel { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }

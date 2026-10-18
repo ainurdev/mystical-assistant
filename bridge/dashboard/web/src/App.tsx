@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Castle, FileDiff, FolderTree, GitBranch, GraduationCap, ListOrdered,
+  Castle, FolderTree, GitBranch, GraduationCap, ListOrdered,
 } from "lucide-react";
 import {
   api,
@@ -76,7 +76,7 @@ import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
-import { GitTab } from "./components/GitTab";
+import { GitPanel } from "./components/hud/GitPanel";
 import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
@@ -1736,10 +1736,10 @@ export function App() {
   // A break and its end are the bridge's news now (bridge/notices.py, rv_link);
   // the bell only borrows the connections for its RIVENDELL link bar.
   useEffect(() => { setLinks(links); }, [links]);
-  // Uncommitted files in the open session's WORKING TREE — what CHANGES lists
-  // and what its rail badge counts. sessionGit is per-worktree, so two branches
-  // of the same repo get their own number; gitBadges is only keyed by project,
-  // so it's the fallback for the tick before sessionGit lands.
+  // Uncommitted files in the open session's WORKING TREE — what the GIT tab
+  // lists and what its rail badge counts. sessionGit is per-worktree, so two
+  // branches of the same repo get their own number; gitBadges is only keyed by
+  // project, so it's the fallback for the tick before sessionGit lands.
   const dirtyFiles = sessionGit?.dirty ?? gitBadges.get(sessionProject ?? "")?.dirty ?? 0;
 
   const rightTabs: PanelTab[] = [
@@ -1753,21 +1753,18 @@ export function App() {
       ),
     },
     {
-      id: "changes", label: dirtyFiles ? `Changed files (${dirtyFiles})` : "Changed files", icon: <FileDiff {...RAIL} />, ownScroll: true, scope: "worktree",
+      id: "git", label: dirtyFiles ? `Git (${dirtyFiles} changed)` : "Git", icon: <GitBranch {...RAIL} />, ownScroll: true, scope: "worktree",
       badge: dirtyFiles ? railCount(dirtyFiles) : null,
       render: () => (
-        <FilesPanel
-          project={sessionProject} branch={sessionBranch} changedOnly
+        <GitPanel
+          project={sessionProject} branch={sessionBranch} git={sessionGit}
+          onGitChanged={() => setGitNonce((n) => n + 1)}
           onOpenFile={openFileFromPanel}
           onPushFailed={pushFailedSession}
           // A "commit message ready" click lands back here: this session, this tab.
-          onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "changes", rightOpen: true }); }}
+          onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "git", rightOpen: true }); }}
         />
       ),
-    },
-    {
-      id: "git", label: "Source Control", icon: <GitBranch {...RAIL} />, scope: "project",
-      render: () => <GitTab project={sessionProject} />,
     },
     // Hidden while LESSONS is off, like ANALYZE's copy — nothing is being written.
     ...(ai.learn ? [{
