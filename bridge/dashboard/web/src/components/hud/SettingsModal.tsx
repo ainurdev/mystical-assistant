@@ -200,7 +200,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "HEADER", terms: "header island frost veil tuck glass readouts" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base preview" },
-  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars nyan cat" },
+  { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat orbit" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
   { tab: "transcript", sec: "RESULTS", terms: "auto-open results bash output edit diffs collapse steps fold" },
@@ -4348,10 +4348,10 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
                 <Section title="WHILE IT WORKS" top>
                   <div style={CARD}>
-                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. EQUALIZER is the braille spinner with level bars. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music. ORBIT is the WORK card itself: a comet on its node while a tool runs, a ripple while the model thinks. Every form lives in the WORK card while a turn runs.">
+                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music. ORBIT is the WORK card itself: a comet on its node while a tool runs, a ripple while the model thinks. Every form lives in the WORK card while a turn runs.">
                       <div style={{ width: 360 }}>
                         <Segmented
-                          options={[{ label: "EQUALIZER", value: "bar" }, { label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }, { label: "ORBIT", value: "orbit" }]}
+                          options={[{ label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }, { label: "ORBIT", value: "orbit" }]}
                           value={settings.indicator}
                           onPick={(indicator) => onPatch({ indicator })}
                         />

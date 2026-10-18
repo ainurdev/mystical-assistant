@@ -16,9 +16,11 @@ const PHRASES = [
 ];
 
 /** The "agent is working" line for the HUD terminal. `hud.indicator` picks the
- *  form: the stock braille spinner + equalizer, a nyan.cat ride, or STATUS,
- *  which drops the cycling phrase for what the turn is actually doing
- *  (lib/workstate). All three share the tick and the elapsed count. */
+ *  form: a nyan.cat ride, or STATUS, which drops the cycling phrase for what
+ *  the turn is actually doing (lib/workstate). ORBIT is the WORK card itself;
+ *  with no card to carry it (before the first step, after a steer) it falls to
+ *  the stock braille spinner + equalizer. All three share the tick and the
+ *  elapsed count. */
 export function WorkingIndicator({
   hud,
   events,

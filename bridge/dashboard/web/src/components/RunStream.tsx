@@ -693,7 +693,7 @@ const ROW_IN: Keyframe[] = [
  *  ripple in the node while the model thinks, a comet on its ring while a tool
  *  runs (both inside the node's track, since the turn row's paint containment
  *  clips anything past the plate), a caret on the step that is out — and every
- *  other form (the bar, STATUS, the cat) draws as a row inside the plate
+ *  other form (STATUS, the cat) draws as a row inside the plate
  *  instead of under the turn. */
 function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, live, span, defaultOpen, animate, children }: {
   /** What the zone ran, by kind, and how often the agent spoke inside it. */
@@ -830,8 +830,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   }, [state, orbit, since]);
   const secs = Math.max(0, Math.floor(now - (since ?? mountAt.current)));
   // The step that is out is named once: after the chips while the plate is
-  // shut, unless the hosted form already says it (STATUS does; the bar and the
-  // cat don't) — and never while open, where the running row itself does.
+  // shut, unless the hosted form already says it (STATUS does; the cat
+  // doesn't) — and never while open, where the running row itself does.
   const namesStep = open || hud?.indicator === "status";
   // The other forms, hosted by the plate: shut, under the header; open, at the foot.
   const ind = state && !orbit ? (
