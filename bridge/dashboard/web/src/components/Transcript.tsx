@@ -192,6 +192,7 @@ function TurnBlock({
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
               ended={turn.status !== "running"}
+              readOnly={!!who}
               working={working}
               hud={hud}
             />

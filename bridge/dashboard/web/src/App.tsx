@@ -1268,6 +1268,9 @@ export function App() {
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
     if (!sid) return false;
+    // A teammate's device run is read only: whoever calls, no prompt starts a
+    // turn in it (the bridge refuses one, but still records it in their view).
+    if (isDeviceRun(sessions.find((x) => x.id === sid)?.origin)) return false;
     const pk = opts?.picks ?? { model, perm: permMode, effort };
     // `/goal <objective>` sets the session's objective instead of prompting; a
     // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
@@ -1611,7 +1614,7 @@ export function App() {
     setSessions((prev) => prev.some((x) => x.id === s.id) ? prev : [s, ...prev]);
     openSession(s.id);
     toChat();
-    if (s.project !== activeProject) selectProjectBg(s.project);
+    if (s.project !== activeProject && !isDeviceRun(s.origin)) selectProjectBg(s.project);
   }
 
   function replayBoot() {
@@ -1873,7 +1876,8 @@ export function App() {
 
   const commands: Command[] = [
     { id: "new-chat", label: "New chat", group: "Session", icon: "+", run: () => activeProject && void newSession(activeProject) },
-    { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) },
+    ...(isDeviceRun(selected?.origin) ? [] : [
+      { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) }]),
     { id: "copy-chat", label: "Copy chat as markdown", group: "Session", icon: "⧉", run: () => {
       const md = chatToMarkdown(turns, sessions.find((s) => s.id === sessionId)?.title ?? undefined);
       if (!md.trim()) { notify("info", "Nothing to copy yet."); return; }
@@ -1984,30 +1988,34 @@ export function App() {
       items.push({ divider: true });
       // The once-a-month rows. Flat inside one section — a submenu can't open
       // its own submenu, so share and relocate live here as plain rows.
+      // A device run keeps only the name to copy: the rest would carry the
+      // teammate's run on, share it, or move it.
       items.push({ icon: "⋯", label: "More", children: [
         { icon: "⧉", label: "Copy session name", onClick: () => s && copy(s.title || "session") },
-        // AUTO TITLES off: the bridge refuses a regenerate, so don't offer one.
-        ...(ai.title && !readOnly ? [{ icon: "↻", label: "Regenerate title",
-          hint: "let the model name it from the whole session",
-          onClick: () => void regenerateTitle(ctxMenu.id) }] : []),
-        { icon: "⧉", label: "Duplicate session",
-          hint: "copy the transcript into a new one",
-          onClick: () => void duplicateSession(ctxMenu.id) },
-        { divider: true },
-        { icon: "⇗", label: "Share read-only link", hint: "expires in 7 days",
-          onClick: () => void shareSession(ctxMenu.id) },
-        { icon: "⊘", label: "Revoke share links",
-          hint: "every link to this session stops working",
-          onClick: () => void revokeShares(ctxMenu.id) },
-        { divider: true },
-        { icon: "⑂", label: "Move to a new worktree",
-          hint: "branch named after the session; uncommitted work stays behind",
-          onClick: () => void moveToNewWorktree(ctxMenu.id) },
-        ...relocTargets.map((wt) => ({
-          icon: "⇉", label: `Relocate to ${wt.branch}`,
-          hint: "rewrites paths so the model never sees the move",
-          onClick: () => void relocateSession(ctxMenu.id, s?.project ?? "", wt.branch),
-        })),
+        ...(readOnly ? [] : [
+          // AUTO TITLES off: the bridge refuses a regenerate, so don't offer one.
+          ...(ai.title ? [{ icon: "↻", label: "Regenerate title",
+            hint: "let the model name it from the whole session",
+            onClick: () => void regenerateTitle(ctxMenu.id) }] : []),
+          { icon: "⧉", label: "Duplicate session",
+            hint: "copy the transcript into a new one",
+            onClick: () => void duplicateSession(ctxMenu.id) },
+          { divider: true },
+          { icon: "⇗", label: "Share read-only link", hint: "expires in 7 days",
+            onClick: () => void shareSession(ctxMenu.id) },
+          { icon: "⊘", label: "Revoke share links",
+            hint: "every link to this session stops working",
+            onClick: () => void revokeShares(ctxMenu.id) },
+          { divider: true },
+          { icon: "⑂", label: "Move to a new worktree",
+            hint: "branch named after the session; uncommitted work stays behind",
+            onClick: () => void moveToNewWorktree(ctxMenu.id) },
+          ...relocTargets.map((wt) => ({
+            icon: "⇉", label: `Relocate to ${wt.branch}`,
+            hint: "rewrites paths so the model never sees the move",
+            onClick: () => void relocateSession(ctxMenu.id, s?.project ?? "", wt.branch),
+          })),
+        ]),
       ] });
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
@@ -2043,10 +2051,12 @@ export function App() {
       if (t?.prompt || reply)
         items.push({ icon: "⧉", label: "Copy turn as Markdown",
           onClick: () => copy(`**${t?.prompt || "(no prompt)"}**\n\n${reply || "_(no reply)_"}`) });
-      if (reply)
+      // A teammate's device run has no prompt box and takes no turn of yours.
+      const readOnly = isDeviceRun(selected?.origin);
+      if (reply && !readOnly)
         items.push({ icon: "❞", label: "Quote reply in composer",
           hint: "drops it into the prompt box", onClick: () => quote(reply) });
-      if (t?.prompt)
+      if (t?.prompt && !readOnly)
         items.push({ icon: "↻", label: "Send this prompt again",
           hint: "runs it as a new turn in this session",
           onClick: () => void send(t.prompt, []) });

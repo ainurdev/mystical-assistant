@@ -428,7 +428,7 @@ export function Terminal({
           ) : empty && loading ? null : empty ? (
             <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} onStartNext={onStartNext} />
           ) : (
-            <Transcript turns={turns} activeId={activeId} boot={boot} who={deviceRun ? selected?.device?.by || "A teammate" : undefined} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={deviceRun ? undefined : onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef} />
+            <Transcript turns={turns} activeId={activeId} boot={boot} who={deviceRun ? selected?.device?.by || "A teammate" : undefined} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={deviceRun ? undefined : onRunCommand} onQuote={deviceRun ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={deviceRun ? undefined : onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef} />
           )}
         </div>
       </div>

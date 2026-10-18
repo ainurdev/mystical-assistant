@@ -1842,6 +1842,7 @@ export const RunStream = memo(function RunStream({
   onOpenFile,
   onAnswer,
   ended = false,
+  readOnly = false,
   working = false,
   hud,
   boot = null,
@@ -1872,6 +1873,8 @@ export const RunStream = memo(function RunStream({
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
   ended?: boolean;
+  /** Someone else's turn, a teammate's device run: nothing in it is yours to continue. */
+  readOnly?: boolean;
   /** Running and waiting on nothing (Transcript's working): the last WORK zone
    *  is live and hosts the indicator, or, with no zone to carry it, the working
    *  row draws at the foot. */
@@ -2327,7 +2330,7 @@ export const RunStream = memo(function RunStream({
             className="ev-stop ml-[var(--rail)] flex items-center gap-1.5 text-xs"
           >
             <CircleStop size={14} className="shrink-0" aria-hidden />
-            <span>Stopped — send a message to continue.</span>
+            <span>{readOnly ? "Stopped" : "Stopped — send a message to continue."}</span>
           </div>
         );
       case "divider":
