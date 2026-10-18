@@ -69,7 +69,7 @@ export interface SessionBrief {
     sha: string;           // the full commit
     pr: number | null;
     task: { key: string; title: string } | null;
-    outcome: "done" | "failed" | "stopped" | null;
+    outcome: "done" | "failed" | "stopped" | "cancelled" | null;   // stopped: by the owner; cancelled: by Rivendell, nothing went back
   } | null;
 }
 

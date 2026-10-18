@@ -363,9 +363,11 @@ class Run:
             self._add({"type": "tool_done", "id": rid, "images": list(kept.values())})
 
     def close(self, outcome: str, body: dict) -> None:
-        """End the run: `outcome` is done, failed or stopped, its turn done or
-        error. A run whose stream said nothing (an older helper writes none) gets
-        the result's summary, or why it failed, as its one text. It is no longer
+        """End the run: `outcome` is done, failed, stopped (by the device's
+        owner) or cancelled (by Rivendell: no report went back), its turn done or
+        error, with a stop's mark in the steps for the last two. A run whose
+        stream said nothing (an older helper writes none) gets the result's
+        summary, or why it failed, as its one text. It is no longer
         the run going now even if the store fails here, so STOP RUN and OPEN ›
         never stay on a run that is over."""
         try:
@@ -373,7 +375,7 @@ class Run:
             if said and not any(e.get("type") == "text" and e.get("turn_id") == self.tid
                                 for e in store.transcript(self.sid)["events"]):
                 self._add({"type": "text", "text": said})
-            if outcome == "stopped":
+            if outcome in ("stopped", "cancelled"):
                 self._add({"type": "stopped"})
             s = store.get_session(self.sid) or {}
             store.finish_turn(self.tid, "done" if outcome == "done" else "error", None,

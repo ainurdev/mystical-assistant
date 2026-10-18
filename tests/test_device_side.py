@@ -819,6 +819,19 @@ def test_owner_stop_during_unpack_posts_failed_once(device):
     assert RID not in ds._owner_stopped and os.listdir(device.root) == []
 
 
+def test_a_stop_run_after_the_run_finished_leaves_its_report_alone(device):
+    """STOP RUN stays on offer until the view closes, after the post: a press as
+    the run finishes finds nothing to stop, and its COMPLETED report goes as it
+    is, never FAILED "Stopped by this device's owner."; its view ends done."""
+    helper = FakeHelper(screens={"1.png": PNG})
+    helper.on_wait = lambda: ds.stop_by_owner(RID, run=helper.stop)    # pressed as it hands back
+    w = Worker()
+    _run(w, helper)
+    assert helper.stops == [["/usr/bin/sudo", "-n", HELPER, "stop", RID]]
+    assert w.results() == [{"status": "COMPLETED", "result": "It works.", "screens": [{"index": 1, "caption": ""}]}]
+    assert _ended() == ("done", "done") and RID not in ds._owner_stopped
+
+
 def test_an_owners_stop_names_only_a_run():
     calls = []
     ds.stop_by_owner("../x", run=lambda argv, **kw: calls.append(argv))
@@ -827,13 +840,25 @@ def test_an_owners_stop_names_only_a_run():
 
 def test_a_rivendell_cancel_still_posts_nothing(device):
     """A cancel is Rivendell's: it has closed the run, so nothing is posted, even
-    with STOP RUN pressed too. The view ends stopped."""
+    with STOP RUN pressed too. The view ends cancelled, not stopped or failed: its
+    plate mustn't say a report went back."""
     helper = _bounded(FakeHelper(hang=3, exit={"code": -15, "timedOut": False}))
     helper.on_wait = lambda: (ds.stop(RID, run=helper.stop), ds.stop_by_owner(RID, run=helper.stop))
     w = Worker()
     _run(w, helper)
-    assert w.results() == [] and _ended() == ("error", "stopped")
+    assert w.results() == [] and _ended() == ("error", "cancelled") and _steps()[-1] == ("stopped", None)
+    assert w.notes[-1][2:4] == ("Mahdi's run on this device ended", "Cancelled after 1 min.")
     assert RID not in ds._cancelled and RID not in ds._owner_stopped and os.listdir(device.root) == []
+
+
+def test_a_cancel_after_the_run_finished_still_posts_nothing(device):
+    """A cancel that lands as the run finishes: Rivendell has closed the run all
+    the same, so its report isn't posted and its view ends cancelled, not done."""
+    helper = FakeHelper()
+    helper.on_wait = lambda: ds.stop(RID, run=helper.stop)
+    w = Worker()
+    _run(w, helper)
+    assert w.results() == [] and _ended() == ("error", "cancelled")
 
 
 @pytest.mark.parametrize("routed", [False, True])

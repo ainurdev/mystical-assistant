@@ -2,7 +2,7 @@ import { useState } from "react";
 import { GitPullRequest, Smartphone, Square } from "lucide-react";
 import { api, type SessionBrief } from "../api";
 import { useChatChrome } from "../lib/chatchrome";
-import { plateStatus } from "../lib/devicerun";
+import { endedLine, plateStatus } from "../lib/devicerun";
 import { hhmm, useClock12 } from "../lib/surfaces";
 import { askConfirm } from "./ui/Ask";
 import { notify } from "./hud/Notifications";
@@ -31,6 +31,7 @@ export function DeviceRunPlate({ s, working, ended }: { s: SessionBrief; working
   const live = working || !outcome;
   const end = ended ?? s.updated;
   const status = plateStatus(working, outcome, Math.round((end - (s.created ?? s.updated)) / 60));
+  const over = outcome && endedLine(outcome, by, d?.by ? d.by.split(" ")[0] : "them", hhmm(end, h12));
   const stop = async () => {
     if (!(await askConfirm(`Stop ${by}'s run on this device? ${by} gets it back as failed.`))) return;
     setStopping(true);   // the helper's stop takes up to a minute: one press is enough
@@ -61,7 +62,7 @@ export function DeviceRunPlate({ s, working, ended }: { s: SessionBrief; working
           <b>Read only.</b>{" "}
           {live
             ? <>{by}'s run on this device, as <code>mysticalruns</code>. It runs at low priority, keeps going through Mystical restarts and updates, and your sessions never wait for it.</>
-            : <>{by}'s run finished at {hhmm(end, h12)} and the report went back to {d?.by ? d.by.split(" ")[0] : "them"}. This view is kept for 7 days.</>}
+            : over}
         </div>
         <div className="drp-chips">
           <span className="drp-chip">

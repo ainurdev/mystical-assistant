@@ -24,15 +24,17 @@ it to run() here:
   5. Upload the screenshots the report lists, then any other PNGs, at most 20
      of at most 5 MB each (the view shows them too), and post the result,
      token-shaped text redacted.
-  6. Remove the stage, token first, on every path. The view ends done, failed or
-     stopped, and the bell gets the run's second row (rv_ended).
+  6. Remove the stage, token first, on every path. The view ends done, failed,
+     stopped (by the owner) or cancelled (by Rivendell, so no report went
+     back), and the bell gets the run's second row (rv_ended).
 A cancel (`device-run-cancel`) calls stop(): the helper's stop now, and again on
 each beat for as long as that run's start goes on, since a cancel that lands
 while the code is unpacking finds no run to stop yet. A cancelled run posts
 nothing; Rivendell has closed it. The owner's STOP RUN (stop_by_owner) is the
 same stop, sent the same way; that run is posted FAILED "Stopped by this
-device's owner." once. It has a mark of its own, as the helper would report the
-killed Claude's exit code.
+device's owner." once, unless it finished first: then its report goes as it is.
+It has a mark of its own, as the helper would report the killed Claude's exit
+code.
 
 The view is only there for the owner to watch, and the run never depends on it:
 every call into it goes through _view(), so an error there is logged and never
@@ -302,9 +304,11 @@ def _run(worker, request_id, popen, call):
 
 
 def _report(worker, base, head, request_id, body):
-    """The result, posted: FAILED saying so for a run its owner stopped, and
-    nothing for one Rivendell cancelled, as Rivendell has closed it. -> the body."""
-    if request_id in _owner_stopped:
+    """The result, posted: FAILED saying so for a run its owner stopped, unless
+    it finished first (STOP RUN stays on offer until the view closes, after the
+    post), and nothing for one Rivendell cancelled, as Rivendell has closed it.
+    -> the body."""
+    if request_id in _owner_stopped and body.get("status") != "COMPLETED":
         body = {"status": "FAILED", "error": _OWNER_STOPPED, "screens": []}
     if request_id not in _cancelled:
         _post(worker, base, head, body)
@@ -312,11 +316,13 @@ def _report(worker, base, head, request_id, body):
 
 
 def _ended(worker, request_id, name, began, view, body):
-    """A run's view closed (done, failed, or stopped by its owner or a cancel),
-    and the bell's second row for it, after rv_started: Telegram only where
-    NOTIFY routes "Started elsewhere"."""
-    outcome = ("stopped" if request_id in _owner_stopped or request_id in _cancelled
-               else "done" if (body or {}).get("status") == "COMPLETED" else "failed")
+    """A run's view closed, as what went back to the asker says: cancelled (by
+    Rivendell: nothing was posted, whatever the run made), done, stopped by its
+    owner, or failed. Then the bell's second row for it, after rv_started:
+    Telegram only where NOTIFY routes "Started elsewhere"."""
+    outcome = ("cancelled" if request_id in _cancelled
+               else "done" if (body or {}).get("status") == "COMPLETED"
+               else "stopped" if request_id in _owner_stopped else "failed")
     _view(view, "close", outcome, body or {})
     title = f"{name or 'A teammate'}'s run on this device ended"
     said = f"{outcome.capitalize()} after {max(1, round((time.time() - began) / 60))} min."
