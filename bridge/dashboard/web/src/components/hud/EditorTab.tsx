@@ -23,6 +23,7 @@ import { ignoredMatcher } from "../../lib/gitignored";
 import { symbolsIn } from "../../lib/symbols";
 import { clampFont, loadPrefs, savePrefs, type EditorPrefs } from "../../lib/editorprefs";
 import { askConfirm } from "../ui/Ask";
+import { registerEditor } from "../../lib/editorctx";
 
 /* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
    the whole working tree of the selected branch/worktree, opens any file into an
@@ -473,6 +474,18 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     const state = cachedState ?? fresh;
     const view = new EditorView({ state, parent: hostRef.current });
     viewRef.current = view;
+    // The right-click menu's rows (lib/editorctx). This effect rebuilds the view
+    // whenever open/meta change, so capturing them here never goes stale; Format
+    // goes through fmtRef like Shift-Alt-F does.
+    const unregister = registerEditor("editor", {
+      view,
+      path: () => open,
+      actions: {
+        ...(meta.formatter === false ? {} : { format: () => fmtRef.current() }),
+        symbol: () => setPalQ("@"),
+        find: () => showView("search"),
+      },
+    });
     view.focus();
     // A restored tab carries the compartments from its last mount, so a pref
     // toggled while another tab was focused never reached it. Re-sync on mount —
@@ -503,6 +516,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       // the undo history and the cursor.
       const b = bufs.current.get(open);
       if (b) { b.text = view.state.doc.toString(); b.state = view.state; }
+      unregister();
       view.destroy(); viewRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1159,7 +1173,8 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
             {editable ? (
               <>
                 {/* hidden, not unmounted, while previewing — CodeMirror keeps the buffer (and its unsaved edits) */}
-                <div ref={hostRef} className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", visibility: preview === null ? "visible" : "hidden" }} />
+                <div ref={hostRef} className="mscroll" data-ctx-type="editor" data-ctx-id="editor" data-ctx-label={open ?? undefined}
+                  style={{ position: "absolute", inset: 0, overflow: "auto", visibility: preview === null ? "visible" : "hidden" }} />
                 {preview !== null && (
                   <div className="mscroll" style={{ position: "absolute", inset: 0, overflow: "auto", padding: "14px 18px", fontSize: "var(--t125)", lineHeight: 1.65, color: "var(--tx)" }}>
                     {/* encodeURIComponent, not base64: the buffer can hold any
