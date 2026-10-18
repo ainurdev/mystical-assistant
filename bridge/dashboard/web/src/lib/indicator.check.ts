@@ -4,6 +4,7 @@ import { toIndicator } from "./indicator.ts";
 console.assert(toIndicator("status") === "status", "status is kept");
 console.assert(toIndicator("bar") === "bar", "bar is kept");
 console.assert(toIndicator("nyan") === "nyan", "the cat is kept");
+console.assert(toIndicator("orbit") === "orbit", "orbit is kept");
 console.assert(toIndicator("piano") === "bar", "a retired form lands on the spinner");
 console.assert(toIndicator("tiles") === "bar", "a retired form lands on the spinner");
 console.assert(toIndicator(undefined) === "bar", "nothing stored is the spinner");

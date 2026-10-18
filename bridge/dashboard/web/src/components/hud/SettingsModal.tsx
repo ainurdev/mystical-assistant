@@ -4227,10 +4227,10 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
                 <Section title="WHILE IT WORKS" top>
                   <div style={CARD}>
-                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. EQUALIZER is the braille spinner with level bars. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music.">
-                      <div style={{ width: 280 }}>
+                    <Row first label="WORKING INDICATOR" desc="STATUS is one quiet line: what is running right now, and for how long. EQUALIZER is the braille spinner with level bars. NYAN CAT is a nyan.cat ride — 36 cats, their trails, their music. ORBIT is the WORK card itself: a comet on its node while a tool runs, a ripple while the model thinks. Every form lives in the WORK card while a turn runs.">
+                      <div style={{ width: 360 }}>
                         <Segmented
-                          options={[{ label: "EQUALIZER", value: "bar" }, { label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }]}
+                          options={[{ label: "EQUALIZER", value: "bar" }, { label: "STATUS", value: "status" }, { label: "NYAN CAT", value: "nyan" }, { label: "ORBIT", value: "orbit" }]}
                           value={settings.indicator}
                           onPick={(indicator) => onPatch({ indicator })}
                         />

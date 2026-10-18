@@ -47,15 +47,11 @@ export function zonesOf(segs: Seg[], isTop: (s: Seg) => boolean): Zone[] {
   return out;
 }
 
-/** One glyph per kind of thing a zone holds: the header's chips count them
- *  (kindsOf), and the same glyphs head the rows inside, on the spine. */
-export type Mark = "think" | "note" | "hook" | StepCat | "fail";
-
-export const MARK_GLYPH: Record<Mark, string> = {
-  think: "∴", note: "◆", hook: "⚙", fail: "✕",
-  command: "$", edit: "✎", write: "✎", read: "◧", search: "⌕", fetch: "⇄",
-  call: "⌁", agent: "◈", log: "⚙", step: "·",
-};
+/** One mark per kind of thing a zone holds: the header's chips count them
+ *  (kindsOf), and the same marks head the rows inside, on the spine — drawn as
+ *  icons (RunStream MARK_ICON), so this module stays free of React. A skill
+ *  counts as an agent in the chips but wears its own mark on its row. */
+export type Mark = "think" | "note" | "hook" | StepCat | "fail" | "skill";
 
 /** The header's chips: one per kind of step the zone ran, in the STEPS title's
  *  order (lib/segments CAT_ORDER), then one for the notes — the count sentence
