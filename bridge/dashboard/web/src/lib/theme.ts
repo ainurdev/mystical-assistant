@@ -233,20 +233,20 @@ export function themeFont(t: ThemeKey): string {
  * `@fontsource`) — picking one never waits on a font that isn't there.
  */
 export const FONTS: { key: string; label: string; stack: string }[] = [
-  { key: "", label: "THEME", stack: "" },
-  { key: "hud", label: "SHARE TECH", stack: '"Share Tech Mono","JetBrains Mono",ui-monospace,monospace' },
-  { key: "jetbrains", label: "JETBRAINS", stack: "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
-  { key: "spacemono", label: "SPACE MONO", stack: "'Space Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
-  { key: "geist", label: "GEIST", stack: "'Geist',system-ui,-apple-system,sans-serif" },
-  { key: "nunito", label: "NUNITO", stack: "'Nunito',system-ui,-apple-system,sans-serif" },
-  { key: "system", label: "SYSTEM", stack: "system-ui,-apple-system,'Segoe UI',sans-serif" },
-  { key: "work", label: "WORK SANS", stack: "'Work Sans',system-ui,-apple-system,sans-serif" },
-  { key: "grotesk", label: "GROTESK", stack: "'Space Grotesk',system-ui,-apple-system,sans-serif" },
-  { key: "archivo", label: "ARCHIVO", stack: "'Archivo',system-ui,-apple-system,sans-serif" },
-  { key: "garamond", label: "GARAMOND", stack: "'EB Garamond',Georgia,serif" },
-  { key: "spectral", label: "SPECTRAL", stack: "'Spectral',Georgia,serif" },
-  { key: "georgia", label: "GEORGIA", stack: "Georgia,'Times New Roman',serif" },
-  { key: "trebuchet", label: "TREBUCHET", stack: "'Trebuchet MS','Comic Sans MS',sans-serif" },
+  { key: "", label: "Theme", stack: "" },
+  { key: "hud", label: "Share Tech", stack: '"Share Tech Mono","JetBrains Mono",ui-monospace,monospace' },
+  { key: "jetbrains", label: "JetBrains", stack: "'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
+  { key: "spacemono", label: "Space Mono", stack: "'Space Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
+  { key: "geist", label: "Geist", stack: "'Geist',system-ui,-apple-system,sans-serif" },
+  { key: "nunito", label: "Nunito", stack: "'Nunito',system-ui,-apple-system,sans-serif" },
+  { key: "system", label: "System", stack: "system-ui,-apple-system,'Segoe UI',sans-serif" },
+  { key: "work", label: "Work Sans", stack: "'Work Sans',system-ui,-apple-system,sans-serif" },
+  { key: "grotesk", label: "Space Grotesk", stack: "'Space Grotesk',system-ui,-apple-system,sans-serif" },
+  { key: "archivo", label: "Archivo", stack: "'Archivo',system-ui,-apple-system,sans-serif" },
+  { key: "garamond", label: "EB Garamond", stack: "'EB Garamond',Georgia,serif" },
+  { key: "spectral", label: "Spectral", stack: "'Spectral',Georgia,serif" },
+  { key: "georgia", label: "Georgia", stack: "Georgia,'Times New Roman',serif" },
+  { key: "trebuchet", label: "Trebuchet", stack: "'Trebuchet MS','Comic Sans MS',sans-serif" },
 ];
 
 /** "" (or an unknown key) → the theme's own font. */

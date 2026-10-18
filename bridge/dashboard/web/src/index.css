@@ -195,8 +195,11 @@
    px it is named after, and at --fs:16px everything is a third bigger.
    Text only — padding, icons and gaps stay put, so a bigger base makes rows
    taller without re-laying-out the HUD (the old whole-container `zoom` did
-   scale those, and broke every position:fixed modal and vh unit inside it). */
-:root {
+   scale those, and broke every position:fixed modal and vh unit inside it).
+   SETTINGS ▸ TYPE's preview (.typepv) re-declares the scale: a custom property
+   resolves where it is declared, so its own --fs (set inline) would otherwise
+   never reach the --t* it inherits from :root. */
+:root, .typepv {
   --fs: 12px;
   --fsu: calc(var(--fs) / 12);
   --t7: calc(var(--fsu) * 7);
@@ -3300,6 +3303,48 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .fthdr label[data-on] button { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc) 18%, transparent); }
 .fthdr small { font: 12px var(--ui-font, inherit); color: var(--txd); }
 .fthdr label[data-on] small { color: var(--txh); }
+/* type (SettingsModal TypePicker, drafts/type-settings C · TWO MENUS): a preview
+   strip of the chat over a typeface menu and a size stepper */
+.tp-bar { display: flex; align-items: center; gap: 8px; }
+.tp-tag { margin-left: auto; padding: 2px 9px; border-radius: 999px; white-space: nowrap;
+  font: 600 10.5px var(--ui-font, inherit); color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, var(--panel)); }
+.tp-tag[data-trying] { color: var(--txb); background: color-mix(in oklab, var(--txl) 26%, var(--panel)); }
+.typepv { position: relative; height: 216px; overflow: hidden; margin-top: 10px; padding: 14px 18px 0;
+  border: 1px solid var(--line); border-radius: var(--f-rad-s, 0);
+  --col: color-mix(in srgb, var(--panel2) 60%, var(--canvas)); background-color: var(--col); }
+[data-fam="pebble"] .typepv { --col: color-mix(in srgb, var(--panel2) 90%, var(--canvas)); }
+/* a fixed window: a bigger size shows fewer lines, fading out, and the controls under it never move */
+.typepv::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 40px; pointer-events: none;
+  background: linear-gradient(transparent, var(--col)); }
+.setpane .typepv[data-layout]::before { content: none !important; }   /* not the chat column: no VEIL band */
+.tp-pick { appearance: none; cursor: pointer; width: 100%; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 12px 0 4px;
+  border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0); background: var(--panel2); color: var(--txb); text-align: left; }
+.tp-pick[data-open] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
+.tp-aa { flex: none; display: grid; place-items: center; width: 36px; height: 24px; border: 1px solid var(--line); border-radius: inherit;
+  background: var(--panel); font-size: 14px; }
+.tp-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+:is(.tp-pick, .tp-row) small { flex: none; font: 12px var(--ui-font, inherit); color: var(--txl); }
+.tp-car { margin-left: auto; font-size: 10px; color: var(--txd); }
+.tp-menu { position: absolute; z-index: 5; left: 0; top: calc(100% + 6px); width: min(500px, 80vw); padding: 4px 6px 8px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 6px; align-items: start;
+  border: 1px solid var(--line2); border-radius: var(--f-rad, 0); background: var(--panel); box-shadow: var(--f-pop-shadow); animation: mpop .12s ease; }
+.tp-gh { padding: 10px 12px 4px; font: 600 10.5px var(--ui-font, inherit); letter-spacing: .12em; text-transform: uppercase; color: var(--txl); }
+.tp-row { appearance: none; cursor: pointer; width: 100%; display: flex; align-items: center; gap: 10px; height: 30px; padding: 0 12px;
+  border: 0; border-radius: var(--f-rad-s, 0); background: none; color: var(--txm); text-align: left; }
+.tp-row .tp-name { font-size: 14.5px; }
+.tp-row:is(:hover, :focus-visible) { outline: none; background: color-mix(in oklab, var(--txl) 9%, transparent); color: var(--txh); }
+.tp-row[aria-selected="true"] { background: var(--f-you, var(--ac-08)); color: var(--txb); }
+.tp-ck { margin-left: auto; font: 12px var(--ui-font, inherit); color: var(--acc); }
+.tp-step { display: flex; align-items: center; gap: 2px; height: 34px; padding: 3px;
+  border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
+.tp-step button { appearance: none; cursor: pointer; height: 26px; min-width: 30px; padding: 0 10px; border: 0;
+  border-radius: max(0px, var(--f-rad-s, 0px) - 2px); background: none; color: var(--txm); font: 15px var(--ui-font, inherit); }
+.tp-step button:hover:not(:disabled) { background: var(--panel); color: var(--txb); }
+.tp-step button:disabled { opacity: .35; cursor: default; }
+.tp-step .tp-auto { font-size: 12.5px; color: var(--txd); }
+.tp-step .tp-auto[aria-pressed="true"] { background: color-mix(in oklab, var(--acc) 16%, var(--panel)); color: var(--acc); }
+.tp-val { flex: 1; text-align: center; font: 13.5px var(--ui-font, inherit); color: var(--txb); font-variant-numeric: tabular-nums; }
+.tp-val small { margin-left: 2px; font-size: 11.5px; color: var(--txl); }
 
 /* bold is bold: no highlighter wash, and a "Label:" lead-in is the same weight
    in the same face, not the HUD's tracked accent capitals */
@@ -3400,6 +3445,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] :is(.set-seg button[data-on], .set-seg2 button[data-on]) { background: color-mix(in oklab, var(--acc) 12%, var(--panel3)) !important;
   color: var(--acc) !important; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 45%, transparent); text-shadow: var(--f-glow); }
 [data-fam="aurora"] .setpane select { font-family: var(--mono) !important; font-size: 12px !important; }
+[data-fam="aurora"] .tp-tag { border-radius: 0; font-weight: 400; letter-spacing: .12em; text-transform: uppercase; color: var(--acc-on); background: var(--acc); }
+[data-fam="aurora"] .tp-tag[data-trying] { color: var(--txb); background: color-mix(in oklab, var(--txl) 30%, var(--panel)); }
+[data-fam="aurora"] .tp-gh { font-weight: 400; letter-spacing: .24em; }
+[data-fam="aurora"] .tp-step .tp-auto { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+[data-fam="aurora"] .tp-step .tp-auto[aria-pressed="true"] { text-shadow: var(--f-glow); }
 [data-fam="aurora"] .ftmeta b { font-weight: 400; font-size: 12.5px; letter-spacing: .16em; text-transform: uppercase; }
 [data-fam="aurora"] .ftmeta div > span { font-family: var(--mono); font-size: 11px; }
 [data-fam="aurora"] .ftmeta em { font-weight: 400; letter-spacing: .16em; text-transform: uppercase; background: var(--acc); color: var(--acc-on); }
@@ -3412,7 +3462,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    corner; headings are bold. The pills are named, not `button` — a full-width
    multi-line button as a pill reads as a blob. ── */
 [data-fam="pebble"] :is(.sessrow, .sess-search, .projhead, .set-search, .set-close, .setrail button, .set-seg, .set-seg button,
-  .set-seg2, .set-seg2 button, .setpane select, .act-glyph, .act-alt, .act-pri, .pb-plus) { border-radius: 999px !important; }
+  .set-seg2, .set-seg2 button, .setpane select, .act-glyph, .act-alt, .act-pri, .pb-plus,
+  .tp-pick, .tp-step, .tp-step button, .tp-row) { border-radius: 999px !important; }
 [data-fam="pebble"] .projgrp .sessrow { border-radius: 999px; }
 [data-fam="pebble"] .sessrow::before { display: none; }
 [data-fam="pebble"] .sessrow[data-on="true"] { background: color-mix(in oklab, var(--acc) 14%, var(--panel)) !important; box-shadow: none; }

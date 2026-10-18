@@ -2542,7 +2542,7 @@ function AskBackBar({
  *  never folds, short enough that a 300-line report doesn't bury the transcript. */
 const RESULT_FOLD_LINES = 30;
 
-function FinalResult({
+export function FinalResult({
   result,
   at,
   elapsed,
