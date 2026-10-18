@@ -29,6 +29,15 @@ export function sectionOf(at: number, now: Date): "TODAY" | "EARLIER" {
   return new Date(at * 1000).toDateString() === now.toDateString() ? "TODAY" : "EARLIER";
 }
 
+/** The changelog's dates: a record, so a day and a time of day ("TODAY", "16:38";
+ *  "OCT 16", "10:05") where the bell's "2h" would keep ageing. */
+export function stamp(at: number, now: Date): { day: string; time: string } {
+  const d = new Date(at * 1000);
+  const time = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const day = sectionOf(at, now) === "TODAY" ? "TODAY" : d.toLocaleDateString("en", { month: "short", day: "numeric" }).toUpperCase();
+  return { day, time };
+}
+
 const SOURCE: Record<Filter, string | null> = { all: null, needs: "", sessions: "session", rivendell: "rivendell", prs: "pr" };
 export function matches(f: Filter, r: Notice): boolean {
   return f === "all" || SOURCE[f] === r.source;

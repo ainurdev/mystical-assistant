@@ -130,7 +130,6 @@ const TONE: Record<string, "ok" | "err" | "ask" | "warn" | "acc" | "dim"> = {
   approve: "ask", question: "ask", asking: "ask", login: "ask", limit_choice: "ask", rv_offer: "ask",
   parked: "warn", pr_changes: "warn", started: "acc", rv_started: "acc",
   rv_held: "dim", rv_dismissed: "dim", weekly: "dim", retrying: "dim",
-  updated: "ok", note: "acc",
 };
 const GLYPH: Record<string, ReactNode> = { ok: "✓", err: "✕", ask: "?", warn: <b className="ntf-pz" />, acc: "▸", dim: null };
 const toneOf = (kind: string) => TONE[kind] ?? "dim";
@@ -138,19 +137,11 @@ const str = (v: unknown) => (typeof v === "string" ? v : "");
 const projName = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 const mins = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`);
 
-// Mystical about itself (an update, a maintainer's note): the brand's diamond, 13px like the other source icons.
-const EMBLEM = (
-  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round">
-    <path d="M12 3 21 12 12 21 3 12Z" /><path d="M12 9 15 12 12 15 9 12Z" fill="var(--acc)" stroke="none" />
-  </svg>
-);
-
 function Source({ kind, source, project }: { kind: string; source: string; project?: string }) {
   const t = toneOf(kind);
   const icon = source === "rivendell" ? <Castle size={13} strokeWidth={1.8} />
     : source === "pr" ? <GitPullRequest size={13} strokeWidth={1.8} />
     : kind === "weekly" ? <CalendarDays size={13} strokeWidth={1.8} />
-    : kind === "updated" || kind === "note" ? EMBLEM
     : source === "bridge" ? <Truck size={13} strokeWidth={1.8} /> : null;
   return (
     <span className={`ntf-src s-${source}`}>
@@ -253,7 +244,6 @@ function RowActions({ n }: { n: Row }) {
   } else if (n.kind === "rv_link" || n.kind === "rv_failed" || n.kind === "rv_refused") {
     b.push(<button key="d" className="ntf-btn ghost" onClick={() => openSettings("plugins", str(m.instance_id) || undefined)}>Details ›</button>);
   }
-  if (n.kind === "updated" && safeUrl(m.url)) b.push(<button key="c" className="ntf-btn ghost" onClick={() => openUrl(m.url)}>Commits ↗</button>);
   if (n.kind === "failed") b.push(<button key="o" className="ntf-btn ghost" onClick={() => openRow(n)}>Open ›</button>);
   return b.length ? <div className="ntf-acts" onClick={(e) => e.stopPropagation()}>{b}</div> : null;
 }
@@ -261,31 +251,10 @@ function RowActions({ n }: { n: Row }) {
 function metaLine(n: { kind: string; source: string; subject: string; meta: Record<string, unknown> }): string[] {
   const m = n.meta;
   if (n.source === "rivendell") return ["rivendell", str(m.instance) || str(m.instance_id), str(m.job_kind)].filter(Boolean);
-  if (n.kind === "updated") {
-    const c = typeof m.commits === "number" ? m.commits : 0;
-    return [`${c} commit${c === 1 ? "" : "s"}`, `${str(m.from).slice(0, 7)} → ${str(m.to).slice(0, 7)}`, str(m.branch) ? `⎇ ${str(m.branch)}` : ""].filter(Boolean);
-  }
-  if (n.kind === "note") return str(m.author) ? [`by ${str(m.author)}`] : [];
   if (n.source !== "session") return [];
   const sid = str(m.session_id) || n.subject;
   const br = env.branchOf(sid);
   return [projName(str(m.project)), br ? `⎇ ${br}` : "", typeof m.elapsed === "number" ? mins(m.elapsed) : ""].filter(Boolean);
-}
-
-/** An update's bullets: a lead, then what it does, split at the first " — "; the
- *  fixes nobody needs to read are a count under them. */
-function Bullets({ body, rest }: { body: string; rest: unknown }) {
-  return (
-    <>
-      <ul className="ntf-ul">
-        {body.split("\n").filter(Boolean).map((line, i) => {
-          const at = line.indexOf(" — ");
-          return <li key={i}>{at > 0 ? <><b>{line.slice(0, at)}</b>{line.slice(at)}</> : line}</li>;
-        })}
-      </ul>
-      {typeof rest === "number" && rest > 0 && <div className="ntf-rest">and {rest} smaller fix{rest === 1 ? "" : "es"}</div>}
-    </>
-  );
 }
 
 export function NoticeRow({ n, now, compact, onOpen }: { n: Row; now: number; compact: boolean; onOpen: () => void }) {
@@ -296,8 +265,7 @@ export function NoticeRow({ n, now, compact, onOpen }: { n: Row; now: number; co
       <div className="ntf-mid">
         <div className="ntf-ttl"><span className={`ntf-verb ntf-v-${compact ? "dim" : toneOf(n.kind)}`}>{n.verb}</span><span className="ntf-s">{n.title}</span>
           {n.earlier > 0 && !compact && <span className="ntf-more">+{n.earlier}</span>}</div>
-        {!compact && n.body && (n.kind === "updated" ? <Bullets body={n.body} rest={n.meta.rest} />
-          : <div className={`ntf-body${n.kind === "note" ? " note" : ""}`}>{n.body}</div>)}
+        {!compact && n.body && <div className="ntf-body">{n.body}</div>}
         {!compact && meta.length > 0 && <div className="ntf-meta">{meta.join(" · ")}</div>}
         {!compact && <RowActions n={n} />}
       </div>
@@ -401,6 +369,8 @@ export function NotificationCenter() {
         if (!d.pop) continue;
         // One place at a time: the toast while you're in this window, else the OS banner.
         if (!document.hasFocus() && env.push && pushGranted()) osBanner(n, () => { read(n.id); openRow(n); });
+        // An update or a note pops out of the rail's changelog (ChangelogButton), where UPDATE was pressed.
+        else if (n.group === "updates") window.dispatchEvent(new CustomEvent("hud:changelog-pop", { detail: n }));
         else fresh.push(n);
       }
       // One sound per tone per batch: five sessions finishing together is one chime.
@@ -444,7 +414,7 @@ export function NotificationCenter() {
     if (ids.length) void api.noticesRead(ids).then(() => load.current(), () => { /* next poll */ });
   }, [openSid, feed]);
 
-  // Updates and notes still pop as toasts (the poll above), but they are read in the changelog.
+  // Updates and notes are the changelog's: it lists them and pops them (the poll above).
   const rows = useMemo(() => groupBySubject(feed.filter((n) => n.group !== "updates")), [feed]);
   const unread = rows.filter((r) => !r.read).length;
   const quiet = prefs ? isQuiet(prefs.quiet, new Date(now * 1000)) : false;

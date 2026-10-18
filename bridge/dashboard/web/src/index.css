@@ -4324,26 +4324,84 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ntf-v-ok { color: var(--ok); } .ntf-v-err { color: var(--err); } .ntf-v-ask { color: var(--ask); } .ntf-v-warn { color: var(--warn); } .ntf-v-acc { color: var(--acc); } .ntf-v-dim { color: var(--txl); }
 .ntf-body { margin-top: 3px; font: 400 var(--t115)/1.45 var(--ui-font); color: var(--tx); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 .ntf-body.mono { font-family: var(--mono); font-size: var(--t10); }
-.ntf-body.note { display: block; -webkit-line-clamp: unset; white-space: pre-wrap; }
-/* an update's bullets: a lead in the title colour, then what it does; the fixes nobody needs to read are a count */
+/* an update's bullets (ChangelogButton): a lead in the title colour, then what it does */
 .ntf-ul { margin: 5px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; list-style: none; }
 .ntf-ul li { position: relative; padding-left: 13px; font: 400 var(--t115)/1.45 var(--ui-font); color: var(--tx); }
 .ntf-ul li::before { content: ""; position: absolute; left: 1px; top: 7px; width: 4px; height: 4px; border-radius: 50%; background: var(--acc); opacity: .8; }
 .ntf-ul li b { color: var(--txb); font-weight: 500; }
-.ntf-rest { margin-top: 4px; padding-left: 13px; font: 400 var(--t10) var(--ui-font); color: var(--txl); }
 .ntf-empty .s { margin-top: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
 .ntf-btn:disabled { opacity: .45; cursor: default; filter: none; }
-/* the changelog's bar (ChangelogButton): write a note for every install, or what became of the last one */
-.ntf-write { appearance: none; cursor: pointer; display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 14px; border: 0; text-align: left;
-  border-bottom: 1px solid var(--line, var(--border)); background: transparent; font: 500 var(--t10) var(--ui-font); color: var(--txd); }
-.ntf-write svg { color: var(--acc); flex: none; }
-.ntf-write .go { color: var(--txl); }
-button.ntf-write:hover { color: var(--txb); background: var(--ac-03); }
-.ntf-write.ok { color: var(--ok); cursor: default; }
-.ntf-write.err { color: var(--err); cursor: default; white-space: pre-wrap; font-family: var(--mono); }
-.ntf-compose { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+/* the changelog (ChangelogButton), in the bell's frame: the newest entry and anything unread as
+   cards, older ones a dated list that unfolds in place, a footer that writes a note for every install */
+.clg-card { margin: 12px 12px 4px; padding: 12px 14px 13px; border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
+.clg-card + .clg-card { margin-top: 8px; }
+.clg-card.new { border-color: color-mix(in oklab, var(--acc) 45%, var(--line, var(--border))); }
+.clg-hm { display: flex; align-items: center; gap: 8px; min-width: 0; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-tag { flex: none; display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: calc(var(--f-rad-s, 0px) * .6);
+  font: 600 var(--t8) var(--ui-font); letter-spacing: .14em; color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, transparent); }
+.clg-verb { flex: none; font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--acc); }
+.clg-ht { margin-top: 7px; font: 500 var(--t15)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
+.clg-note { margin-top: 6px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; }
+.clg-by { margin-top: 6px; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-meta { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-link { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: transparent; font: inherit; color: var(--txd); }
+.clg-link:hover { color: var(--acc); }
+.clg-line { margin-top: 7px; }
+.clg-row + .clg-row { border-top: 1px solid var(--line, var(--border)); }
+.clg-hist { appearance: none; cursor: pointer; display: grid; grid-template-columns: 52px minmax(0, 1fr) 13px; align-items: center; gap: 10px; width: 100%; height: 36px;
+  padding: 0 14px; border: 0; background: transparent; text-align: left; font-family: var(--ui-font); }
+.clg-hist:hover, .clg-hist[aria-expanded="true"], .clg-fold { background: var(--ac-03); }
+.clg-hist .d { font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-hist .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t12) var(--ui-font); color: var(--txh); }
+.clg-hist .s i { margin-right: 7px; font: 600 var(--t85) var(--ui-font); font-style: normal; letter-spacing: .14em; color: var(--acc); }
+.clg-hist svg { color: var(--txl); transition: transform .15s ease; }
+.clg-hist[aria-expanded="true"] svg { transform: rotate(90deg); }
+.clg-fold { padding: 0 14px 12px 76px; }
+.clg-fold .ntf-ul { margin-top: 0; }
+/* the entry a popup or an OS banner opened the changelog on */
+.clg-flash { animation: clg-flash 1.6s ease-out both; }
+@keyframes clg-flash { from { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--acc) 14%, transparent); } }
+.clg-write { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; margin-left: -4px; padding: 3px 6px 3px 4px; border: 0;
+  border-radius: var(--f-rad-s, 0); background: transparent; font: 500 var(--t105) var(--ui-font); color: var(--txd); }
+.clg-write svg { flex: none; color: var(--acc); }
+.clg-write:hover { color: var(--txb); background: var(--ac-06); }
+.clg-sent { color: var(--ok); }
+.clg-err { padding: 8px 14px; border-top: 1px solid var(--line, var(--border)); background: var(--panel2); font: 500 var(--t10) var(--mono); color: var(--err); white-space: pre-wrap; }
+.clg-err + .ntf-compose { border-top: 0; padding-top: 4px; }
+/* an update or a note that just landed, out of the changelog's rail icon (not under the bell); its
+   notch sits on the icon's middle, which ChangelogButton puts 23px over the popup's bottom */
+.clg-co { position: fixed; z-index: 96; width: 340px; max-width: calc(100vw - 80px); cursor: pointer; font-family: var(--ui-font);
+  border: 1px solid var(--line2, var(--border-bright)); background: var(--panel); border-radius: var(--f-rad, 0);
+  box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease both; }
+.clg-co::after { content: ""; position: absolute; right: -6px; bottom: 18px; width: 10px; height: 10px; transform: rotate(45deg); background: var(--panel);
+  border-top: 1px solid var(--line2, var(--border-bright)); border-right: 1px solid var(--line2, var(--border-bright)); }
+.clg-co .in { position: relative; overflow: hidden; padding: 11px 30px 12px 13px; border-radius: var(--f-rad, 0); }
+.clg-co-h { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.clg-co .clg-ic { flex: none; color: var(--ok); }
+.clg-co .v { flex: none; font: 600 var(--t9) var(--ui-font); letter-spacing: .12em; color: var(--ok); }
+.clg-co.note :is(.clg-ic, .v) { color: var(--acc); }
+.clg-co .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-co-t { margin-top: 5px; font: 500 var(--t13)/1.35 var(--ui-font); color: var(--txb); }
+.clg-co-b { margin-top: 5px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; overflow-wrap: anywhere; }
+.clg-co-f { margin-top: 10px; display: flex; align-items: center; gap: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-co-f .go { font: 500 var(--t11) var(--ui-font); color: var(--acc); }
+.clg-co .x { position: absolute; top: 7px; right: 8px; appearance: none; cursor: pointer; padding: 2px 4px; border: 0; background: transparent;
+  font: 400 15px/1 var(--ui-font); color: var(--txl); }
+.clg-co .x:hover { color: var(--txb); }
+/* its clock: 8 s like the bell's news; the bar's animationend dismisses it, so a hover that pauses the bar holds it */
+.clg-co .bar { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--ok); opacity: .55; transform-origin: left; animation: clg-bar 8s linear both; }
+.clg-co.note .bar { background: var(--acc); }
+.clg-co:hover .bar { animation-play-state: paused; }
+@keyframes clg-bar { to { transform: scaleX(0); } }
+/* the rail icon while its popup is out */
+.clg-lit::before { content: ""; position: absolute; inset: 4px 7px; border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--acc) 14%, transparent);
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--acc) 40%, transparent); }
+.clg-lit svg { position: relative; }
+@media (prefers-reduced-motion: reduce) { .clg-co, .clg-flash { animation: none; } .clg-hist svg { transition: none; } }
+.ntf-compose { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line, var(--border)); background: var(--panel2); }
 .ntf-compose .lbl { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--txl); margin-bottom: 2px; }
-.ntf-compose input, .ntf-compose textarea { width: 100%; box-sizing: border-box; background: var(--panel2); border: 1px solid var(--line2, var(--border-bright));
+.ntf-compose input, .ntf-compose textarea { width: 100%; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line2, var(--border-bright));
   border-radius: var(--f-rad-s, 0); padding: 7px 9px; font: 400 var(--t12)/1.45 var(--ui-font); color: var(--txb); outline: none; resize: vertical; }
 .ntf-compose input:focus, .ntf-compose textarea:focus { border-color: var(--acc); }
 .ntf-compose textarea { color: var(--tx); min-height: 84px; }

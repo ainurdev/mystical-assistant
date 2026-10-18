@@ -41,6 +41,7 @@ NOTES_HEADER = (
 _LAST_HEAD = "last_head"
 _SEEN = "notes_seen"
 _SEEN_MAX = 200
+_BULLET = 140   # the prompt asks for under 100; haiku overshoots a little, so keep those whole
 
 # Tagged so the throwaway session stays out of the sessions list (native.scan).
 _PROMPT = (
@@ -137,7 +138,7 @@ def _changelog(old: str, head: str) -> "dict | None":
 def _fallback(subjects: list, n: int) -> dict:
     """Off, or the one-shot failed: the first clause of up to five subjects. The one
     path that does echo commits — nothing is lost, only shorter."""
-    bullets = [s.split(" — ", 1)[0].strip()[:100] for s in subjects[:5]]
+    bullets = [_cut(s.split(" — ", 1)[0], _BULLET) for s in subjects[:5]]
     return {"headline": f"{n} commit{'' if n == 1 else 's'} pulled",
             "bullets": bullets, "rest": n - len(bullets)}
 
@@ -158,15 +159,26 @@ def _summarise(subjects: list, n: int) -> "dict | None":
         return None
     if not isinstance(raw, dict):
         return None
-    headline = str(raw.get("headline") or "").strip()[:40]
+    headline = _cut(str(raw.get("headline") or ""), 40)
     items = raw.get("bullets") if isinstance(raw.get("bullets"), list) else []
-    bullets = [str(x).strip()[:100] for x in items if str(x).strip()][:5]
+    bullets = [_cut(str(x), _BULLET) for x in items if str(x).strip()][:5]
     if not headline or not bullets:
         return None
     rest = raw.get("rest")
     if isinstance(rest, bool) or not isinstance(rest, int) or rest < 0:
         rest = max(0, n - len(bullets))
     return {"headline": headline, "bullets": bullets, "rest": rest}
+
+
+def _cut(s: str, n: int) -> str:
+    """At most n characters, ending on a whole word and "…" when it had to cut:
+    a slice mid-word printed "…Nyan Cat, and Or" in the changelog."""
+    s = s.strip()
+    if len(s) <= n:
+        return s
+    head = s[:n - 1]
+    at = head.rfind(" ")
+    return (head[:at] if at > 0 else head).rstrip(" ,;:—-") + "…"
 
 
 def _compare_url(old: str, head: str) -> "str | None":
