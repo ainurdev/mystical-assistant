@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Castle, GitPullRequest, Moon, Truck, CalendarDays } from "lucide-react";
+import { Castle, GitPullRequest, Moon, Settings, Truck, CalendarDays } from "lucide-react";
 import { api, type Need, type Notice, type NoticePrefs, type PendingCard, type RivendellInstance } from "../../api";
 import { chime, push, pushGranted, type ToneKey } from "../../lib/push";
 import { bannerActions, bannerAnswer } from "../../lib/banner";
 import { openSettings } from "../../lib/opensettings";
 import {
-  ago, badge, cardFor, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf,
+  ago, badge, cardFor, chipCount, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf,
   type Filter, type Row,
 } from "../../lib/notices";
 import { ProjectTile } from "../ui/ProjectTile";
@@ -435,8 +435,7 @@ export function NotificationCenter() {
   const fRows = rows.filter((r) => matches(filter, r));
   const nowRows = filter === "rivendell" ? fRows.filter((r) => r.kind === "rv_started" || r.kind === "rv_held") : [];
   const rest = fRows.filter((r) => !nowRows.includes(r));
-  const count = (f: Filter) => (f === "needs" ? liveNeeds.length
-    : liveNeeds.filter((n) => needMatches(f, n)).length + rows.filter((r) => matches(f, r)).length);
+  const count = (f: Filter) => chipCount(f, liveNeeds, rows);
   if (open) for (const r of fRows) if (!r.read) shown.current.add(r.id);
 
   const section = (label: string, list: Row[]) => list.length > 0 && (
@@ -468,7 +467,7 @@ export function NotificationCenter() {
             {unread > 0 && <span className="n">{unread} new</span>}
             <span style={{ flex: 1 }} />
             {unread > 0 && <button className="ntf-lnk" onClick={markAll}>Mark all read</button>}
-            <button className="ntf-lnk" title="Notify settings" onClick={() => { close(); openSettings("notifications"); }}>⚙</button>
+            <button className="ntf-lnk" title="Notify settings" onClick={() => { close(); openSettings("notifications"); }}><Settings size={15} strokeWidth={1.6} /></button>
           </div>
           <div className="ntf-filters">
             {(["all", "needs", "sessions", "rivendell", "prs"] as Filter[]).filter((f) => f !== "rivendell" || plugins.rivendell).map((f) => (

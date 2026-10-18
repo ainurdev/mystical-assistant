@@ -38,6 +38,13 @@ export function needMatches(f: Filter, n: Need): boolean {
   return f === "all" || f === "needs" || SOURCE[f] === src;
 }
 
+/** A chip's count: what waits on you plus unread news. Rows you read stay
+ *  listed under it, uncounted — the number is a to-do, not a tally. */
+export function chipCount(f: Filter, needs: Need[], rows: Notice[]): number {
+  if (f === "needs") return needs.length;
+  return needs.filter((x) => needMatches(f, x)).length + rows.filter((r) => !r.read && matches(f, r)).length;
+}
+
 /** A peach count only for what waits on you; a dot for unread news; the moon
  *  when quiet hours hold everything else. */
 export function badge(needs: number, unread: number, quiet: boolean): { kind: "count" | "dot" | "moon" | null; n: number } {

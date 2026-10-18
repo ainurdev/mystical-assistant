@@ -3722,7 +3722,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ntf-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; }
 .ntf-head .t { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--acc); }
 .ntf-head .n { font: 500 var(--t10) var(--mono); color: var(--txl); }
-.ntf-lnk { appearance: none; cursor: pointer; border: 0; background: transparent; color: var(--txd); font: 500 var(--t10) var(--ui-font);
+.ntf-lnk { appearance: none; cursor: pointer; display: inline-flex; align-items: center; border: 0; background: transparent; color: var(--txd); font: 500 var(--t10) var(--ui-font);
   padding: 3px 6px; border-radius: var(--f-rad-s, 0); }
 .ntf-lnk:hover { color: var(--txb); background: var(--ac-06); }
 .ntf-filters { display: flex; gap: 4px; padding: 0 12px 10px; border-bottom: 1px solid var(--line, var(--border)); flex-wrap: wrap; }

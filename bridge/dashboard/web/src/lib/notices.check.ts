@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/notices.check.ts
 import type { Need, Notice, NoticePrefs } from "../api.ts";
-import { ago, badge, cardFor, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf } from "./notices.ts";
+import { ago, badge, cardFor, chipCount, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf } from "./notices.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -28,6 +28,11 @@ const offer: Need = { subject: "rv:p:1", kind: "rv_offer", verb: "OFFERED", titl
 const card: Need = { ...offer, subject: "s1", kind: "approve", session_id: "s1" };
 ok(needMatches("rivendell", offer) && !needMatches("sessions", offer) && needMatches("needs", offer), "an offer is Rivendell's");
 ok(needMatches("sessions", card) && !needMatches("rivendell", card) && !needMatches("prs", card), "a card is the session's");
+
+// A chip counts what waits on you plus unread news; rows you read stay listed, uncounted.
+const mixed = [n(1, "a"), n(2, "b", { read: true }), n(3, "rv:p:1", { source: "rivendell" })];
+ok(chipCount("all", [offer, card], mixed) === 4 && chipCount("sessions", [card], mixed) === 2 && chipCount("rivendell", [offer], mixed) === 2
+  && chipCount("needs", [offer, card], mixed) === 2, "chips count needs plus unread, never read rows");
 
 ok(badge(2, 5, true).kind === "count" && badge(2, 5, true).n === 2, "a number only when something waits on you");
 ok(badge(0, 5, true).kind === "dot", "unread news is a dot, even in quiet hours");
