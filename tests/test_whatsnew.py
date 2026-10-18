@@ -106,3 +106,99 @@ def test_file_at_reads_a_committed_version_and_empty_when_missing(repo):
     assert g.file_at(repo, first, "a.txt") == "one\n"
     assert g.file_at(repo, "HEAD", "a.txt") == "one\nx\n"
     assert g.file_at(repo, "HEAD", "docs/notes.md") == "" and g.file_at(repo, "nope", "a.txt") == ""
+
+
+# --- boot: the range since the last boot --------------------------------------------
+
+def test_first_boot_records_head_and_says_nothing(repo):
+    assert whatsnew.boot() is None
+    assert store.get_setting("last_head") == g.head_sha(repo) and notices.feed() == []
+
+
+def test_boot_announces_pulled_commits_and_new_notes(repo, origin):
+    whatsnew.boot()
+    _commit(origin, "two\n", "notifications: the bell counts unread only — the chip tallied every row")
+    _commit(origin, "three\n", "git: HANDLE IN A NEW SESSION opens on the tree whose push failed")
+    _write(origin, "docs/notes.md", whatsnew.NOTES_HEADER
+           + "\n## 2026-10-18 · Re-enter the token — Mahziyar\n\nPaste it once.\n")
+    _run(origin, "add", "-A")
+    _run(origin, "commit", "-qm", "note: Re-enter the token")
+    assert g.pull(repo)[0]
+    t = whatsnew.boot()
+    t.join(10)
+    note, upd = sorted(notices.feed(), key=lambda r: r["kind"])
+    assert note["kind"] == "note" and note["subject"] == "note:2026-10-18 · Re-enter the token — Mahziyar"
+    assert note["title"] == "Re-enter the token" and note["body"] == "Paste it once."
+    assert note["meta"]["author"] == "Mahziyar" and note["read"] is False
+    assert upd["title"] == "3 commits pulled" and upd["subject"] == f"update:{g.head_sha(repo)}"
+    assert upd["body"].splitlines() == ["note: Re-enter the token",
+                                        "git: HANDLE IN A NEW SESSION opens on the tree whose push failed",
+                                        "notifications: the bell counts unread only"]
+    assert upd["meta"]["commits"] == 3 and upd["meta"]["rest"] == 0 and upd["meta"]["branch"] == "main"
+    assert upd["meta"]["url"] is None                      # a /tmp origin is not github
+    assert json.loads(store.get_setting("notes_seen")) == ["2026-10-18 · Re-enter the token — Mahziyar"]
+
+
+def test_boot_is_silent_on_same_head_and_branch_switch(repo):
+    whatsnew.boot()
+    assert whatsnew.boot() is None                         # nothing moved
+    _commit(repo, "m\n", "main work")
+    whatsnew.boot().join(10)                               # one row for the commit on main
+    _run(repo, "checkout", "-q", "-b", "side", "HEAD~1")
+    _commit(repo, "s\n", "side work")                      # not a descendant of the recorded head
+    assert whatsnew.boot() is None
+    assert store.get_setting("last_head") == g.head_sha(repo)
+    assert [r["title"] for r in notices.feed()] == ["1 commit pulled"]
+
+
+def test_fallback_and_rest_count():
+    subs = [f"area: thing {i} — because" for i in range(7)]
+    d = whatsnew._fallback(subs, 9)
+    assert d["headline"] == "9 commits pulled" and d["rest"] == 4
+    assert d["bullets"] == [f"area: thing {i}" for i in range(5)]
+    assert whatsnew._fallback(["x"], 1)["headline"] == "1 commit pulled"
+
+
+def test_summarise_tolerates_wrapped_json_and_overlong(monkeypatch):
+    reply = ('Here you go:\n{"headline": "' + "H" * 60 + '", "bullets": '
+             + json.dumps([f"L{i} — d" for i in range(7)]) + ', "rest": "x"}')
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: (reply, None, 0, False))
+    d = whatsnew._summarise(["s"] * 9, 9)
+    assert len(d["headline"]) == 40 and len(d["bullets"]) == 5 and d["rest"] == 4
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: ("not json", None, 0, False))
+    assert whatsnew._summarise(["s"], 1) is None
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: ("", None, 0, True))
+    assert whatsnew._summarise(["s"], 1) is None
+
+
+def test_boot_falls_back_when_one_shot_fails(repo, origin, monkeypatch):
+    whatsnew.boot()
+    _commit(origin, "two\n", "feat: two — why")
+    g.pull(repo)
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k == "changelog")
+    calls = []
+    monkeypatch.setattr(whatsnew.runner, "run_blocking",
+                        lambda *a, **k: calls.append(k) or ("garbage", None, 0, False))
+    whatsnew.boot().join(10)
+    assert calls and calls[0]["model"] == "haiku" and calls[0]["cwd"] == repo
+    assert notices.feed()[0]["title"] == "1 commit pulled" and notices.feed()[0]["body"] == "feat: two"
+
+
+def test_boot_sends_telegram_when_routed(repo, origin, monkeypatch):
+    whatsnew.boot()
+    _commit(origin, "two\n", "feat: two")
+    g.pull(repo)
+    notices.set_prefs({"events": {"updates": {"tg": "always"}}})
+    monkeypatch.setattr(config, "ALLOWED_CHAT_IDS", [555])
+    sent = []
+    monkeypatch.setattr("bridge.telegram.send", lambda chat, text, *a, **k: sent.append((chat, text)))
+    whatsnew.boot().join(10)
+    assert sent == [(555, "UPDATED · 1 commit pulled\n• feat: two")]
+
+
+def test_compare_url_only_for_github(repo):
+    _run(repo, "remote", "set-url", "origin", "git@github.com:ainurdev/mystical-assistant.git")
+    assert whatsnew._compare_url("a" * 40, "b" * 40) == \
+        "https://github.com/ainurdev/mystical-assistant/compare/aaaaaaa...bbbbbbb"
+    _run(repo, "remote", "set-url", "origin", "/tmp/elsewhere")
+    assert whatsnew._compare_url("a" * 40, "b" * 40) is None
