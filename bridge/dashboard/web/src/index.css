@@ -3288,6 +3288,80 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="pebble"] .set-toggle[data-on] i { left: 20px; }
 [data-fam="pebble"] :is(.set-crumb, .set-head h2, .set-sectitle, .ftmeta b, .set-key) { font-weight: 700 !important; }
 [data-fam="pebble"] [data-style="dossier"] .dprompt { border-color: transparent; border-radius: var(--f-d-rad) var(--f-d-rad) var(--f-d-rad) 8px; box-shadow: none; }
+
+/* ── THE FAMILIES · PEBBLE · SIDEBARS — two pebbles on the ground. The HUD's
+   shell is one flush surface cut by hairlines; PEBBLE lifts the two side
+   columns off it as rounded slabs with a gutter round them, and leaves the
+   transcript as the ground between. Everything inside a slab loses its HUD
+   voice: the mode tabs and the rail are pills, lane heads are bold sentence
+   case with a count pill, rows and tree rows are pills, FILES is a title.
+   ponytail: the columns and the rail have no class of their own, so this
+   matches the grid's structure (.hudgrid > first/last child) and the inline
+   borders with !important — if App's shell markup moves, these fall back to
+   FLINT's flush shell, nothing breaks. ── */
+[data-fam="pebble"] .hudgrid {
+  gap: 10px; padding: 8px 10px 10px;
+  background: radial-gradient(60% 55% at 0% 0%, color-mix(in srgb, var(--acc) 16%, transparent), transparent 70%),
+              radial-gradient(60% 55% at 100% 100%, color-mix(in srgb, var(--ask) 12%, transparent), transparent 70%);
+}
+[data-fam="pebble"] .hudgrid > .shellcol:first-child, [data-fam="pebble"] .hudgrid > div:last-child {
+  border-radius: var(--f-rad-l); background: color-mix(in srgb, var(--panel2) 90%, transparent);
+  border-right: 0 !important; box-shadow: var(--f-pop-shadow);
+}
+[data-fam="pebble"] .hudgrid > .shellcol:first-child > div:first-child { border-bottom-color: transparent !important; }
+[data-fam="pebble"] .shellcol > .panel { background: transparent !important; }
+[data-fam="pebble"] .hudgrid > div:last-child .shellcol { background: transparent; border-left-color: transparent !important; }
+[data-fam="pebble"] .rcap { border-bottom-color: transparent !important; }
+[data-fam="pebble"] .rcap > div { border-left-color: transparent !important; background: transparent !important; }
+/* the activity rail: round buttons in a column, the open one filled */
+[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child { background: transparent !important; border-left-color: transparent !important; gap: 6px; padding: 8px 0; }
+[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button {
+  width: 36px; height: 36px; margin: 0 auto; border: 0 !important; border-radius: 999px; transition: background .15s ease, color .15s ease;
+}
+[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"] {
+  background: color-mix(in oklab, var(--acc) 18%, var(--panel)) !important; color: var(--acc) !important;
+}
+/* the sessions slab */
+[data-fam="pebble"] .shellcol > .panel > div:first-child > div:first-child {
+  border-radius: 999px !important; background: var(--panel3) !important; box-shadow: inset 0 0 0 1px var(--line);
+}
+[data-fam="pebble"] .shellcol > .panel > div:first-child > div:first-child > span[aria-hidden] {
+  border-radius: 999px !important; background: color-mix(in oklab, var(--acc) 18%, var(--panel)) !important;
+}
+[data-fam="pebble"] .shellcol > .panel > div:first-child > div:first-child > button { border-radius: 999px !important; }
+[data-fam="pebble"] .newsess {
+  height: 36px !important; justify-content: center; border-radius: 999px !important;
+  font: 700 var(--t12) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: none !important;
+  background: color-mix(in oklab, var(--acc) 16%, var(--panel)) !important; color: var(--txb) !important;
+}
+[data-fam="pebble"] .newsess svg { color: var(--acc); }
+[data-fam="pebble"] .lanehead { height: 28px !important; padding: 0 10px !important; }
+[data-fam="pebble"] .lanehead > span:nth-child(2) {
+  display: inline-block; font: 700 var(--t11) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: lowercase; color: var(--txh) !important;
+}
+[data-fam="pebble"] .lanehead > span:nth-child(2)::first-letter { text-transform: uppercase; }
+[data-fam="pebble"] .lanehead > span:nth-child(3) { background: transparent !important; }
+[data-fam="pebble"] .lanehead > span:last-child {
+  font: 600 var(--t10) var(--ui-font) !important; padding: 1px 8px; border-radius: 999px; background: var(--ac-08); color: var(--txd) !important;
+}
+[data-fam="pebble"] .sessrow { padding: 9px 12px 10px !important; }
+[data-fam="pebble"] .sessrow > div > div, [data-fam="pebble"] .sessrow > div:last-child > span { font-family: var(--ui-font); }
+[data-fam="pebble"] .ptile { border-radius: 50%; }
+/* the files slab: FILES is a title, the count a pill, the tools round, the rows pills */
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child { padding: 12px 14px 6px !important; }
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child > span:first-child {
+  display: inline-block; font: 700 var(--t13) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: lowercase; color: var(--txb) !important;
+}
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child > span:first-child::first-letter { text-transform: uppercase; }
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child > span:last-child > span {
+  font: 600 var(--t10) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: lowercase;
+  padding: 2px 8px; border-radius: 999px; background: color-mix(in oklab, var(--warn) 16%, var(--panel));
+}
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child button {
+  width: 24px; height: 24px; border-radius: 999px !important; border-color: transparent !important; background: var(--ac-06) !important;
+}
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child + div[style*="linear-gradient"] { display: none; }
+[data-fam="pebble"] .trow { margin: 1px 4px; width: calc(100% - 8px) !important; border-radius: 999px; font-family: var(--ui-font) !important; }
 [data-fam="aurora"] .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--acc), 0 0 10px color-mix(in oklab, var(--acc) 60%, transparent); }
 [data-fam="aurora"] .fthdr small { letter-spacing: .16em; text-transform: uppercase; }
 [data-fam="aurora"] .set-mini { letter-spacing: .12em !important; text-transform: uppercase; }
