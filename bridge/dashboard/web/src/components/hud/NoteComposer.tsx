@@ -1,7 +1,7 @@
 import { useEffect, useState, type KeyboardEvent } from "react";
 import { api } from "../../api";
 
-/** The bell's SEND NOTE form: a one-line title and some text for every install
+/** The changelog's SEND NOTE form: a one-line title and some text for every install
  *  (docs/superpowers/specs/notif-updates.md). One tap commits docs/notes.md in
  *  the platform checkout and pushes it, like SHIP; the bridge rolls a refused
  *  push back, so a failure leaves nothing behind. Four lines, not an editor. */
@@ -31,7 +31,7 @@ export function NoteComposer({ onSent, onCancel, onError }: { onSent: () => void
       <input autoFocus maxLength={80} value={title} onChange={(e) => setTitle(e.target.value)}
         placeholder="Re-enter the Rivendell token after this update" aria-label="title" />
       <textarea rows={4} maxLength={600} value={body} onChange={(e) => setBody(e.target.value)} aria-label="note"
-        placeholder="What changed and what to do about it. Plain text; it lands in the bell of every Mystical that pulls it." />
+        placeholder="What changed and what to do about it. Plain text; it lands in the changelog of every Mystical that pulls it." />
       <div className="foot">
         <button className="ntf-btn pri" disabled={!title.trim() || sending} onClick={send}>{sending ? "SENDING…" : "SEND NOTE"}</button>
         <button className="ntf-btn ghost" onClick={onCancel}>Cancel</button>

@@ -159,10 +159,10 @@ FEATURES = (
               "spend is visible and stoppable. Off, the generate button is hidden "
               "and SHIP commits with a plain list of what changed."},
     {"key": "changelog", "env": "CHANGELOG_ENABLE", "label": "UPDATE NOTES",
-     "hint": "sums up what an update changed, in the bell",
+     "hint": "sums up what an update changed, in the changelog",
      "cost": "1 haiku call per restart with new commits",
      "tokens": "~32k tokens",
-     "about": "After a PULL & RESTART the bell's Updates tab gets a row with a "
+     "about": "After a PULL & RESTART the changelog (the scroll above UPDATE) gets a row with a "
               "headline and a few bullets of what changed, written from the "
               "commits that landed. Fires at a restart that found new commits — "
               "pulled, or on a dev checkout committed here — one haiku call each; "

@@ -546,3 +546,19 @@ def test_updates_group_kinds_and_defaults():
     assert notices.telegram_ok("updated") is False
     notices.set_prefs({"events": {"updates": {"tg": "always"}}})
     assert notices.telegram_ok("note") is True
+
+
+def test_changelog_outlives_the_week_and_the_cap():
+    """The rail's changelog reads updates and notes however old, past the feed's
+    200 rows; the week's prune spares them and only them."""
+    upd = notices.emit("updated", "update:abc", title="Changelog moves to the rail", body="x")
+    old = notices.emit("done", "s-old", title="old")
+    with closing(store._connect()) as c:
+        c.execute("UPDATE notices SET at=? WHERE id IN (?,?)", (time.time() - 30 * 86400, upd, old))
+    for i in range(205):
+        store.add_notice("done", f"s{i}", "t", "", {})
+    note = notices.emit("note", "note:2026-10-18 · Hi", title="Hi")    # the emit prunes
+    assert [r["id"] for r in notices.changelog()] == [note, upd]
+    assert notices.changelog()[1]["verb"] == "UPDATED" and notices.changelog()[1]["group"] == "updates"
+    with closing(store._connect()) as c:
+        assert c.execute("SELECT COUNT(*) FROM notices WHERE id=?", (old,)).fetchone()[0] == 0

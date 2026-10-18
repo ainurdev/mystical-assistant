@@ -5,6 +5,17 @@ routing). Mockups: `.mystical/design-drafts/notif-updates/01-updates.html`, stat
 in `crops/`. Theme in the mockups: FLINT VIOLET. States B (pending-upstream bar), C and D are the
 first draft's; B is dropped below.
 
+**Amended 2026-10-18, before it shipped: the tab became the right rail's changelog.** The user
+asked for "a changelog icon above the update button". So the rows below live behind a scroll
+icon over ↓ UPDATE (`ChangelogButton.tsx`), in the bell's own row look, with an accent dot while
+any is unread; the bell lost its Updates chip and lists none of them. They still pop as toasts and
+banners under NOTIFY's routing, and a toast's click opens the changelog. Two consequences of the
+move: the changelog reads its own `/local/changelog` (the newest 50 updates and notes, however
+old), because the feed's week and its 200 rows (a busy day fills them) would lose this morning's
+update by tonight, so the weekly prune spares those two kinds; and a first boot announces the
+last day's commits instead of only recording HEAD, so the changelog doesn't open empty. Where
+the text below says "the Updates tab" or "the bell", read "the changelog".
+
 ## Why
 
 - An update of Mystical is a count on the rail's ↓ button, a list of raw commit subjects in the

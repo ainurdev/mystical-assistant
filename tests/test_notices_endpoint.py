@@ -89,6 +89,13 @@ def test_post_limit_wait_and_switch(monkeypatch):
     assert _call("POST", "/local/notices", {"op": "limit", "session": "nope"})[0] == 404
 
 
+def test_get_changelog_is_updates_and_notes_only():
+    notices.emit("pr_failing", "pr:o/r:x", title="#9 · x", body="lint")
+    nid = notices.emit("updated", "update:abc", title="Changelog moves", body="a\nb")
+    assert _call("GET", "/local/changelog", {}) == (200, {"notices": notices.changelog()})
+    assert [n["id"] for n in notices.changelog()] == [nid]
+
+
 # --- POST /local/update/note -------------------------------------------------------
 
 def test_update_note_validates(monkeypatch):

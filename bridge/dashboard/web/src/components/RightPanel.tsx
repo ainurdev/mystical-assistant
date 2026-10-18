@@ -60,7 +60,7 @@ export function RightPanel({
   /** The open session's project and branch — what a scoped tab's data belongs to. */
   project?: string | null;
   branch?: string | null;
-  /** Pinned to the rail's foot, under the tabs — the platform's UPDATE and ⌘K. */
+  /** Pinned to the rail's foot, under the tabs — the changelog, the platform's UPDATE and ⌘K. */
   railFoot?: ReactNode;
 }) {
   const current = tabs.find((t) => t.id === activeId) ?? tabs[0];

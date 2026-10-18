@@ -4318,7 +4318,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ntf-rest { margin-top: 4px; padding-left: 13px; font: 400 var(--t10) var(--ui-font); color: var(--txl); }
 .ntf-empty .s { margin-top: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
 .ntf-btn:disabled { opacity: .45; cursor: default; filter: none; }
-/* the Updates tab's bar: write a note for every install, or what became of the last one */
+/* the changelog's bar (ChangelogButton): write a note for every install, or what became of the last one */
 .ntf-write { appearance: none; cursor: pointer; display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 14px; border: 0; text-align: left;
   border-bottom: 1px solid var(--line, var(--border)); background: transparent; font: 500 var(--t10) var(--ui-font); color: var(--txd); }
 .ntf-write svg { color: var(--acc); flex: none; }

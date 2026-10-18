@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Castle, GitPullRequest, Moon, Pencil, Settings, Truck, CalendarDays } from "lucide-react";
+import { Castle, GitPullRequest, Moon, Settings, Truck, CalendarDays } from "lucide-react";
 import { api, type Need, type Notice, type NoticePrefs, type PendingCard, type RivendellInstance } from "../../api";
 import { chime, push, pushGranted, type ToneKey } from "../../lib/push";
 import { bannerActions, bannerAnswer } from "../../lib/banner";
@@ -10,7 +10,6 @@ import {
 } from "../../lib/notices";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useIntegrations } from "../../lib/integrations";
-import { NoteComposer } from "./NoteComposer";
 
 /* The bell, its toasts and the pills (docs/superpowers/specs/notifications.md).
  *
@@ -163,8 +162,11 @@ function Source({ kind, source, project }: { kind: string; source: string; proje
 
 // ---- acting on a row ---------------------------------------------------------------
 
-function openRow(n: { kind: string; subject: string; source: string; meta: Record<string, unknown>; session_id?: string | null }) {
+function openRow(n: { id?: number; kind: string; subject: string; source: string; meta: Record<string, unknown>; session_id?: string | null }) {
   const sid = n.session_id ?? str(n.meta.session_id) ?? "";
+  // Mystical's own updates and notes live in the rail's changelog (ChangelogButton), not the bell;
+  // it opens on this row, unfolded even though the click that got here just marked it read.
+  if (n.kind === "updated" || n.kind === "note") return void window.dispatchEvent(new CustomEvent("hud:changelog", { detail: n.id }));
   if (n.source === "session" || sid) return env.openSession(sid || n.subject);
   if (n.source === "pr") return openUrl(n.meta.url);
   if (n.source === "rivendell") return openSettings("plugins", str(n.meta.instance_id) || undefined);
@@ -286,7 +288,7 @@ function Bullets({ body, rest }: { body: string; rest: unknown }) {
   );
 }
 
-function NoticeRow({ n, now, compact, onOpen }: { n: Row; now: number; compact: boolean; onOpen: () => void }) {
+export function NoticeRow({ n, now, compact, onOpen }: { n: Row; now: number; compact: boolean; onOpen: () => void }) {
   const meta = metaLine(n);
   return (
     <div className={`ntf-row${compact ? " compact" : ""}${n.read ? "" : " unread"}`} onClick={onOpen}>
@@ -371,10 +373,6 @@ export function NotificationCenter() {
   const [stale, setStale] = useState(false);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
-  const [opened, setOpened] = useState<Set<number>>(() => new Set());   // read updates folded open again
-  const [composing, setComposing] = useState(false);                    // the Updates tab's SEND NOTE form
-  const [noteBar, setNoteBar] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
-  useEffect(() => { setComposing(false); setNoteBar(null); }, [filter]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [now, setNow] = useState(() => Date.now() / 1000);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
@@ -446,7 +444,8 @@ export function NotificationCenter() {
     if (ids.length) void api.noticesRead(ids).then(() => load.current(), () => { /* next poll */ });
   }, [openSid, feed]);
 
-  const rows = useMemo(() => groupBySubject(feed), [feed]);
+  // Updates and notes still pop as toasts (the poll above), but they are read in the changelog.
+  const rows = useMemo(() => groupBySubject(feed.filter((n) => n.group !== "updates")), [feed]);
   const unread = rows.filter((r) => !r.read).length;
   const quiet = prefs ? isQuiet(prefs.quiet, new Date(now * 1000)) : false;
   const b = badge(liveNeeds.length, unread, quiet);
@@ -454,7 +453,6 @@ export function NotificationCenter() {
   // Closing the bell marks what it showed read; click-outside closes it.
   const close = () => {
     setOpen(false);
-    setComposing(false); setNoteBar(null);
     const ids = [...shown.current];
     shown.current = new Set();
     if (ids.length) void api.noticesRead(ids).then(() => load.current(), () => { /* next poll */ });
@@ -466,11 +464,8 @@ export function NotificationCenter() {
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
-  // An update or a note has no session behind it: a click folds it open or shut instead.
-  const go = (n: Row) => {
-    if (n.group === "updates") return setOpened((p) => { const s = new Set(p); if (!s.delete(n.id)) s.add(n.id); return s; });
-    close(); openRow(n);
-  };
+  const go = (n: Row) => { close(); openRow(n); };
+  // shortcut: "all" reads the changelog's rows too (the server's every-unread), mark by id if anyone minds
   const markAll = () => { shown.current = new Set(); void api.noticesRead("all").then(() => load.current()); };
 
   const fNeeds = liveNeeds.filter((n) => needMatches(filter, n));
@@ -483,7 +478,7 @@ export function NotificationCenter() {
   const section = (label: string, list: Row[]) => list.length > 0 && (
     <>
       <div className="ntf-sec">{label}<span className="ln" /></div>
-      {list.map((r) => <NoticeRow key={r.id} n={r} now={now} compact={r.read && !opened.has(r.id)} onOpen={() => go(r)} />)}
+      {list.map((r) => <NoticeRow key={r.id} n={r} now={now} compact={r.read} onOpen={() => go(r)} />)}
     </>
   );
   const today = rest.filter((r) => sectionOf(r.at, new Date(now * 1000)) === "TODAY");
@@ -512,10 +507,10 @@ export function NotificationCenter() {
             <button className="ntf-lnk" title="Notify settings" onClick={() => { close(); openSettings("notifications"); }}><Settings size={15} strokeWidth={1.6} /></button>
           </div>
           <div className="ntf-filters">
-            {(["all", "needs", "sessions", "rivendell", "prs", "updates"] as Filter[]).filter((f) => f !== "rivendell" || plugins.rivendell).map((f) => (
+            {(["all", "needs", "sessions", "rivendell", "prs"] as Filter[]).filter((f) => f !== "rivendell" || plugins.rivendell).map((f) => (
               <button key={f} className={`ntf-flt${filter === f ? " on" : ""}`} onClick={() => setFilter(f)}>
                 {f === "needs" && <i className="pip" />}
-                {{ all: "All", needs: "Needs you", sessions: "Sessions", rivendell: "Rivendell", prs: "PRs", updates: "Updates" }[f]}
+                {{ all: "All", needs: "Needs you", sessions: "Sessions", rivendell: "Rivendell", prs: "PRs" }[f]}
                 {count(f) > 0 && <em>{count(f)}</em>}
               </button>
             ))}
@@ -528,17 +523,6 @@ export function NotificationCenter() {
               })}
             </div>
           )}
-          {filter === "updates" && (composing
-            ? noteBar?.kind === "err" && <div className="ntf-write err">{noteBar.text}</div>
-            : noteBar
-              ? <div className={`ntf-write ${noteBar.kind}`}>{noteBar.text}</div>
-              : <button className="ntf-write" onClick={() => setComposing(true)}><Pencil size={12} strokeWidth={1.8} />Write a note for every install<span style={{ flex: 1 }} /><span className="go">›</span></button>)}
-          {composing ? (
-            <NoteComposer
-              onSent={() => { setComposing(false); setNoteBar({ kind: "ok", text: "Sent · every install sees it after its next update" }); void load.current(); }}
-              onCancel={() => { setComposing(false); setNoteBar(null); }}
-              onError={(m) => setNoteBar({ kind: "err", text: m })} />
-          ) : (
           <div className="ntf-list mscroll">
             {stale && <div className="ntf-stale">This page is newer than the bridge. Restart it to see the feed.</div>}
             {fNeeds.length > 0 && (
@@ -552,13 +536,10 @@ export function NotificationCenter() {
             {section("EARLIER", earlier)}
             {nothing && !stale && (
               <div className="ntf-empty">
-                {filter === "updates"
-                  ? <><div className="o">no updates yet — i am as you first summoned me.</div><div className="s">the next PULL &amp; RESTART lists what changed here</div></>
-                  : <div className="o">silence on every channel — i'll knock when something needs you.</div>}
+                <div className="o">silence on every channel — i'll knock when something needs you.</div>
               </div>
             )}
           </div>
-          )}
           <div className="ntf-foot">
             {prefs?.quiet.on ? <span className="q"><Moon size={11} strokeWidth={1.8} />Quiet {prefs.quiet.from} → {prefs.quiet.to}</span> : <span />}
             <span style={{ flex: 1 }} />

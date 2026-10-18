@@ -6,7 +6,7 @@ import type { ToneKey } from "./push";
  *  arrives separately as live state on /local/running, and the copy (`verb`) is
  *  the bridge's too, so the dashboard and the Mac menu bar say the same word. */
 
-export type Filter = "all" | "needs" | "sessions" | "rivendell" | "prs" | "updates";
+export type Filter = "all" | "needs" | "sessions" | "rivendell" | "prs";
 
 /** A subject's newest notice, and how many came before it this week. */
 export interface Row extends Notice { earlier: number }
@@ -29,11 +29,8 @@ export function sectionOf(at: number, now: Date): "TODAY" | "EARLIER" {
   return new Date(at * 1000).toDateString() === now.toDateString() ? "TODAY" : "EARLIER";
 }
 
-const SOURCE: Record<Filter, string | null> = { all: null, needs: "", sessions: "session", rivendell: "rivendell", prs: "pr", updates: null };
-/** By source, except Updates: Mystical's own changelog and notes are a group of the
- *  bridge's rows, and MOVE (the rest of that source) is not an update. */
+const SOURCE: Record<Filter, string | null> = { all: null, needs: "", sessions: "session", rivendell: "rivendell", prs: "pr" };
 export function matches(f: Filter, r: Notice): boolean {
-  if (f === "updates") return r.group === "updates";
   return f === "all" || SOURCE[f] === r.source;
 }
 export function needMatches(f: Filter, n: Need): boolean {

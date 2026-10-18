@@ -655,11 +655,13 @@ def add_notice(kind: str, subject: str, title: str, body: str, meta: dict) -> in
             (time.time(), kind, subject, title, body, json.dumps(meta))).lastrowid
 
 
-def list_notices(since_ts: float, limit: int) -> list[dict]:
-    """Newest first, `meta` decoded (a row that won't decode reads as {})."""
+def list_notices(since_ts: float, limit: int, kinds: tuple = ()) -> list[dict]:
+    """Newest first, `meta` decoded (a row that won't decode reads as {}); `kinds`
+    narrows it to those."""
+    only = f" AND kind IN ({','.join('?' * len(kinds))})" if kinds else ""
     with closing(_connect()) as c:
-        rows = c.execute("SELECT * FROM notices WHERE at>=? ORDER BY id DESC LIMIT ?",
-                         (since_ts, limit)).fetchall()
+        rows = c.execute(f"SELECT * FROM notices WHERE at>=?{only} ORDER BY id DESC LIMIT ?",
+                         (since_ts, *kinds, limit)).fetchall()
     out = []
     for r in rows:
         d = dict(r)
@@ -685,9 +687,11 @@ def mark_notices_read(ids: "list[int] | None") -> int:
                          (time.time(), *ids)).rowcount
 
 
-def prune_notices(before_ts: float) -> None:
+def prune_notices(before_ts: float, keep: tuple = ()) -> None:
+    """Drop rows older than before_ts, except those of the `keep` kinds."""
+    spare = f" AND kind NOT IN ({','.join('?' * len(keep))})" if keep else ""
     with closing(_connect()) as c:
-        c.execute("DELETE FROM notices WHERE at<?", (before_ts,))
+        c.execute(f"DELETE FROM notices WHERE at<?{spare}", (before_ts, *keep))
 
 
 def get_setting(key: str) -> "str | None":

@@ -6,6 +6,7 @@ import json
 import os
 import subprocess
 import tempfile
+import time
 from contextlib import closing
 
 import pytest
@@ -113,6 +114,21 @@ def test_file_at_reads_a_committed_version_and_empty_when_missing(repo):
 def test_first_boot_records_head_and_says_nothing(repo):
     assert whatsnew.boot() is None
     assert store.get_setting("last_head") == g.head_sha(repo) and notices.feed() == []
+
+
+def test_first_boot_tells_the_last_day(repo):
+    """No last head: the commits of the last day, so the changelog doesn't open empty."""
+    with open(os.path.join(repo, "a.txt"), "a") as f:
+        f.write("old\n")
+    two_days = f"{int(time.time()) - 2 * 86400} +0000"
+    subprocess.run(["git", "-C", repo, "commit", "-qam", "older work"], check=True,
+                   env={**os.environ, "GIT_AUTHOR_DATE": two_days, "GIT_COMMITTER_DATE": two_days})
+    _commit(repo, "x\n", "today: one")
+    _commit(repo, "y\n", "today: two")
+    whatsnew.boot().join(10)
+    [upd] = notices.feed()
+    assert upd["title"] == "2 commits pulled" and upd["body"].splitlines() == ["today: two", "today: one"]
+    assert store.get_setting("last_head") == g.head_sha(repo)
 
 
 def test_boot_announces_pulled_commits_and_new_notes(repo, origin):

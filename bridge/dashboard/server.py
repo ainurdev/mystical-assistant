@@ -420,6 +420,8 @@ class Handler(BaseHTTPRequestHandler):
                                "quiet": notices.quiet(),
                                # Whether any route to Telegram exists at all (System ▸ Telegram).
                                "telegram": bool(config.NOTIFY_ENABLE and config.TOKEN)})
+        if path == "/local/changelog":
+            return self._json({"notices": notices.changelog()})
         if path == "/local/queue":
             sid = (qs.get("session", [""])[0] or "").strip()
             return self._json(queue_manager.snapshot(sid) if sid else

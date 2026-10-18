@@ -34,6 +34,10 @@ from bridge import config, store
 
 KEEP_S = 7 * 86400
 LIMIT = 200
+# Mystical's own changelog (bridge/whatsnew.py): read by the right rail's changelog,
+# not the bell, and kept past the week — a few rows a day, so never pruned.
+# shortcut: unbounded, fine at a few rows a day; prune by count if it ever reaches thousands
+CHANGELOG = ("updated", "note")
 _KEY = "notify_prefs"
 
 # kind -> (group, tier, source). The group is the row on Settings ▸ NOTIFY.
@@ -128,7 +132,7 @@ def emit(kind: str, subject: str, *, title: str = "", body: str = "",
     if kind not in CATALOG or not subject:
         return None
     try:
-        store.prune_notices(time.time() - KEEP_S)
+        store.prune_notices(time.time() - KEEP_S, keep=CHANGELOG)
         return store.add_notice(kind, str(subject), str(title or "")[:200],
                                 str(body or "")[:600], dict(meta or {}))
     except Exception as e:  # noqa: BLE001 — the event happened either way
@@ -156,6 +160,12 @@ def feed() -> list:
     """The newest LIMIT rows of the last week, newest first."""
     sessions: dict = {}
     return [_row(r, sessions) for r in store.list_notices(time.time() - KEEP_S, LIMIT)]
+
+
+def changelog() -> list:
+    """The newest 50 updates and notes, however old: the feed's week and its 200
+    rows (a busy day fills them) would lose this morning's update by tonight."""
+    return [_row(r, {}) for r in store.list_notices(0, 50, CHANGELOG)]
 
 
 def mark_read(ids: "list | None") -> int:

@@ -1,6 +1,7 @@
-"""What changed in Mystical, told in the bell: a changelog row each install writes
-at boot from the commits that landed, and a note row for each heading a maintainer
-added to docs/notes.md (docs/superpowers/specs/notif-updates.md).
+"""What changed in Mystical, told in the changelog (the scroll above UPDATE on the
+dashboard's right rail): a row each install writes at boot from the commits that
+landed, and a note row for each heading a maintainer added to docs/notes.md
+(docs/superpowers/specs/notif-updates.md). Both pop like any news when they land.
 
 Why each install writes its own row rather than reading a committed CHANGELOG:
 the range is known only here (`last_head` → HEAD), every path that moves the
@@ -34,8 +35,8 @@ from bridge import aifeatures, config, git, native, notices, runner, selfupdate,
 NOTES_PATH = "docs/notes.md"
 NOTES_HEADER = (
     "# Notes for every install\n\n"
-    "A heading per note. Each lands in the bell of every Mystical that pulls it\n"
-    "(bridge/whatsnew.py). Write one from the bell's Updates tab, or by hand in this shape.\n"
+    "A heading per note. Each lands in the changelog of every Mystical that pulls it\n"
+    "(bridge/whatsnew.py). Write one from the changelog, or by hand in this shape.\n"
 )
 _LAST_HEAD = "last_head"
 _SEEN = "notes_seen"
@@ -61,15 +62,18 @@ _GITHUB = re.compile(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$")
 
 def boot() -> "threading.Thread | None":
     """Record HEAD; when it moved on from the last boot's, announce the range
-    off-thread (the thread is returned so a test can join it). A first boot, an
-    unmoved HEAD, or an old HEAD that isn't an ancestor (a branch switch in a dev
-    checkout) says nothing."""
+    off-thread (the thread is returned so a test can join it). A first boot
+    announces the last day's commits instead, so the changelog doesn't open empty
+    until the next update. An unmoved HEAD, or an old HEAD that isn't an ancestor
+    (a branch switch in a dev checkout), says nothing."""
     repo = selfupdate.REPO
     head = git.head_sha(repo)
     if not head:
         return None
     old = store.get_setting(_LAST_HEAD)
     store.set_setting(_LAST_HEAD, head)
+    if not old:
+        old = git._run(repo, "rev-list", "-1", "--before=1 day ago", head)[1].strip()
     if not old or old == head:
         return None
     if git._run(repo, "merge-base", "--is-ancestor", old, head)[0] != 0:

@@ -73,6 +73,7 @@ import { Brand, RightCap, Strip } from "./components/hud/Strip";
 import { PaletteButton } from "./components/hud/PaletteButton";
 import { GitPopover } from "./components/hud/GitPopover";
 import { UpdateButton } from "./components/hud/UpdateButton";
+import { ChangelogButton } from "./components/hud/ChangelogButton";
 import { QueuePanel } from "./components/hud/QueuePanel";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
@@ -2432,6 +2433,7 @@ export function App() {
                   open={settings.rightOpen} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
                   railFoot={<>
+                    <ChangelogButton />
                     <UpdateButton onFeed={feed} variant="rail" />
                     <PaletteButton onPalette={() => setPaletteOpen(true)} />
                   </>}
