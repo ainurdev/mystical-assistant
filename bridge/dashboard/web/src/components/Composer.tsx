@@ -13,6 +13,7 @@ import { ICON_BODY } from "../lib/fileicons.gen";
 import { applyMention, mentionAt, rankPaths, type Mention } from "../lib/mention";
 import { isExact, rankCommands, slashAt } from "../lib/slash";
 import { Tip } from "./ui/Tip";
+import { askConfirm } from "./ui/Ask";
 import { useChatChrome } from "../lib/chatchrome";
 import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
 
@@ -527,7 +528,7 @@ export function Composer({
   pills?: ReactNode;
   // Pointed at addFiles, so a file dropped on the fresh session screen lands
   // here the way one dropped on the box does.
-  fileSink?: { current: ((files: FileList) => void) | null };
+  fileSink?: { current: ((files: FileList | File[]) => void) | null };
 }) {
   const text = draft;
   const setText = onDraft;
@@ -1193,6 +1194,11 @@ export function Composer({
         if (e.key === "Enter" && send) { e.preventDefault(); submit(); }
       }}
       onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
+      onAttach={() => fileRef.current?.click()}
+      onClear={() => {
+        if (text.includes("\n")) void askConfirm("Clear the draft?").then((yes) => { if (yes) setText(""); });
+        else setText("");
+      }}
       placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}
     />
   );
@@ -1259,7 +1265,9 @@ export function Composer({
     // them makes the chat look like it has no edges.
     <div className="composer" data-pb={shelled ? composer : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
       {zoom && <ImageLightbox src={zoom} all={images.map((src) => ({ src }))} onClose={() => setZoom(null)} />}
-      {openDrop && <div onClick={() => setOpenDrop("")} style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
+      {openDrop && <div onClick={() => setOpenDrop("")}
+        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDrop(""); }}
+        style={{ position: "fixed", inset: 0, zIndex: 25 }} />}
       {shelled ? (
         <>
           {fileInput}

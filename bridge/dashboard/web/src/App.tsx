@@ -51,6 +51,9 @@ import {
 } from "./lib/theme";
 import { useHostVitals, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
+import { copySelection, cutSelection, editorFor, pasteInto, selectedText } from "./lib/editorctx";
+import { redo, selectAll, undo } from "@codemirror/commands";
+import type { EditorView } from "@codemirror/view";
 import { useAiFeatures } from "./lib/ai";
 import { useIntegrations } from "./lib/integrations";
 import { useSessionPins, useStickySet } from "./lib/prefs";
@@ -1686,7 +1689,7 @@ export function App() {
     [state, sessionProject]);
 
   // The composer's addFiles, for the fresh screen's drop target (Terminal).
-  const composerFiles = useRef<((files: FileList) => void) | null>(null);
+  const composerFiles = useRef<((files: FileList | File[]) => void) | null>(null);
 
   // Footer git state for that tree. Same 10s cadence as the project badges;
   // clears on switch so the git popover never shows the last session's branch.
@@ -1893,7 +1896,8 @@ export function App() {
     if (!ctxMenu) return [];
     const cproj = analyzeProject || activeProject || "";
     // Copy / open link / image act on what was under the cursor, so they lead.
-    const items: CtxItem[] = nativeCtx.top.length ? [...nativeCtx.top, { divider: true }] : [];
+    // An edit box has its own Copy, so the selection rows would only repeat it.
+    const items: CtxItem[] = nativeCtx.top.length && ctxMenu.type !== "editor" ? [...nativeCtx.top, { divider: true }] : [];
     const copy = (t: string) => { try { void navigator.clipboard?.writeText(t); } catch { /* ignore */ } };
     if (ctxMenu.type === "session") {
       const s = sessions.find((x) => x.id === ctxMenu.id);
@@ -2035,6 +2039,48 @@ export function App() {
       items.push({ icon: "▤", label: "Weekly report", onClick: () => setWeekNonce((n) => n + 1) });
       items.push({ icon: "✎", label: "Clock & weather…", onClick: () => setWxSettings((n) => n + 1) });
       items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
+      items.push({ divider: true });
+    } else if (ctxMenu.type === "editor" && editorFor(ctxMenu.id)) {
+      // The prompt box and the EDITOR body are CodeMirror, a contenteditable the
+      // browser-menu exemption misses (lib/editorctx). The registry hands back
+      // the EditorView itself; the commands want it, the helpers its shape.
+      const ed = editorFor(ctxMenu.id)!;
+      const v = ed.view as unknown as EditorView;
+      const act = ed.actions ?? {};
+      const composer = ctxMenu.id === "composer";
+      const sel = selectedText(ed.view);
+      items.push(
+        { icon: "✂", label: "Cut", hint: "⌘X", onClick: () => void cutSelection(ed.view) },
+        { icon: "⧉", label: "Copy", hint: "⌘C", onClick: () => void copySelection(ed.view) },
+        { icon: "⎘", label: "Paste", hint: "⌘V", onClick: () => void pasteInto(ed.view, composer ? (f) => composerFiles.current?.(f) : undefined)
+            .then((r) => {
+              // ⌘V still works where the menu's read is refused, once the caret is back in the box.
+              if (r === "refused") { v.focus(); notify("info", "Paste is blocked from the menu here — press ⌘V in the box."); }
+              else if (r === "empty") notify("info", "Nothing to paste.");
+            }) },
+        { icon: "☰", label: "Select all", hint: "⌘A", onClick: () => { selectAll(v); v.focus(); } },
+        { icon: "↶", label: "Undo", hint: "⌘Z", onClick: () => { undo(v); v.focus(); } },
+        { icon: "↷", label: "Redo", hint: "⇧⌘Z", onClick: () => { redo(v); v.focus(); } },
+        { divider: true },
+      );
+      if (composer) {
+        if (act.attach) items.push({ icon: "⊕", label: "Attach file…", onClick: act.attach });
+        if (act.mention) items.push({ icon: "@", label: "Insert file mention", onClick: act.mention });
+        if (act.clear) items.push({ icon: "⌫", label: "Clear draft", danger: true, onClick: act.clear });
+      } else {
+        if (act.format) items.push({ icon: "⌥", label: "Format document", hint: "⇧⌥F", onClick: act.format });
+        if (act.symbol) items.push({ icon: "◎", label: "Go to symbol…", hint: "⇧⌃O", onClick: act.symbol });
+        if (act.find) items.push({ icon: "⌕", label: "Find in files", hint: "⇧⌃F", onClick: act.find });
+        if (sel) {
+          const from = v.state.selection.main.from;
+          items.push({ icon: "❞", label: "Send selection to chat", hint: "quotes path:line into the prompt",
+            onClick: () => {
+              quote("```" + `${ed.path?.() ?? "selection"}:${v.state.doc.lineAt(from).number}\n${sel}\n` + "```");
+              // The prompt sits under the project modal; close it unless that would drop unsaved edits.
+              if (ed.leaveOk?.() ?? true) setAnalyzeProject(null);
+            } });
+        }
+      }
       items.push({ divider: true });
     }
     // Dashboard-wide rows. When you right-clicked *something* — a card, a turn,

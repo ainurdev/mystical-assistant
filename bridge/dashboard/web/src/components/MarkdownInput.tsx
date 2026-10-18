@@ -6,6 +6,7 @@ import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { insertNewlineContinueMarkup, markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { tags as t } from "@lezer/highlight";
+import { registerEditor } from "../lib/editorctx";
 
 // The composer's command line: a live markdown editor, not a preview pane. The
 // symbols stay in the text you edit — dimmed to the ghost tier so they read as
@@ -81,6 +82,9 @@ type Props = {
   onKeyDown: (e: KeyboardEvent) => void;
   onPaste: (e: ClipboardEvent) => void;
   placeholder: string;
+  /** The right-click menu's Attach file… and Clear draft rows (lib/editorctx). */
+  onAttach?: () => void;
+  onClear?: () => void;
 };
 
 export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function MarkdownInput(props, ref) {
@@ -127,7 +131,22 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
       }),
     });
     viewRef.current = view;
-    return () => { view.destroy(); viewRef.current = null; };
+    const off = registerEditor("composer", {
+      view,
+      actions: {
+        attach: () => cb.current.onAttach?.(),
+        clear: () => cb.current.onClear?.(),
+        // A typed "@" is what opens the mention list, and only after a space
+        // (lib/mention mentionAt), so one is put in front when a word ends at the caret.
+        mention: () => {
+          const at = view.state.selection.main.from;
+          const prev = at ? view.state.doc.sliceString(at - 1, at) : "";
+          view.dispatch(view.state.replaceSelection(prev && !/\s/.test(prev) ? " @" : "@"));
+          view.focus();
+        },
+      },
+    });
+    return () => { off(); view.destroy(); viewRef.current = null; };
   }, []);
 
   // Controlled: a draft swapped in from outside (session switch, Ctrl+R, a
@@ -157,5 +176,5 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
     },
   }), []);
 
-  return <div ref={hostRef} style={{ flex: 1, minWidth: 0 }} />;
+  return <div ref={hostRef} data-ctx-type="editor" data-ctx-id="composer" data-ctx-label="prompt" style={{ flex: 1, minWidth: 0 }} />;
 });
