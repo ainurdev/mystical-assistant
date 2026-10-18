@@ -41,21 +41,6 @@ export const CHAT_BGS: { key: ChatBg; label: string; hint: string }[] = [
   { key: "tooth", label: "TOOTH", hint: "a fine diagonal weave — paper grain rather than a grid" },
 ];
 
-/** Which palette DOSSIER's roles read. Both are re-pointings of one role layer
- *  at the theme's own palette, so either works on every theme, light or dark:
- *  a role's tint is mixed INTO the panel rather than washed over transparent,
- *  which is the whole reason it survives a white ground. */
-export type TranscriptScheme = "phosphor" | "contrast";
-
-export const TRANSCRIPT_SCHEMES: { key: TranscriptScheme; label: string; hint: string }[] = [
-  { key: "phosphor", label: "PHOSPHOR", hint: "the theme's accent at different strengths; only trouble keeps its own hue" },
-  { key: "contrast", label: "CONTRAST", hint: "one hue per role, heavier tints, 2px edges, brightest ink" },
-];
-
-export function toTranscriptScheme(v: unknown): TranscriptScheme {
-  return TRANSCRIPT_SCHEMES.some((s) => s.key === v) ? (v as TranscriptScheme) : "phosphor";
-}
-
 export function toChatBg(v: unknown): ChatBg {
   return CHAT_BGS.some((b) => b.key === v) ? (v as ChatBg) : "none";
 }
