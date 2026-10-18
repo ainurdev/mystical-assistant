@@ -26,12 +26,16 @@ export type ToolStyle = "dossier" | "wire";
  *  drawn; this decides what it is drawn on — and the two are independent, so
  *  they are two settings rather than one.
  *
- *  Four grounds and OFF, all authored the same way: one hairline family at the
- *  ghost ink tier, tiled at a reading pitch. None of them is a picture. The
+ *  Seven grounds and OFF. Four hairline patterns, authored the same way: one
+ *  family at the ghost ink tier, tiled at a reading pitch. Then three TONES —
+ *  grain, a lamp, a haze — with no edge in them at all. None is a picture. The
  *  constraint is the only interesting thing here — a transcript is read for
  *  minutes at a time, so a ground that competes for a single fixation has
- *  already failed, however good it looks in a settings tile. */
-export type ChatBg = "none" | "grid" | "dots" | "rule" | "tooth";
+ *  already failed, however good it looks in a settings tile. The tones came
+ *  after the theme families dropped DOSSIER's turn card (index.css, "no turn
+ *  card"), which put the hairlines straight under the prose; under a hairline
+ *  the answer now sits on a mat the colour of the column (index.css, THE MAT). */
+export type ChatBg = "none" | "grid" | "dots" | "rule" | "tooth" | "grain" | "lamp" | "haze";
 
 export const CHAT_BGS: { key: ChatBg; label: string; hint: string }[] = [
   { key: "none", label: "NONE", hint: "the theme's own ground, unmarked" },
@@ -39,22 +43,10 @@ export const CHAT_BGS: { key: ChatBg; label: string; hint: string }[] = [
   { key: "dots", label: "MATRIX", hint: "a dot at every crossing, no lines — the quietest of the four" },
   { key: "rule", label: "RULED", hint: "horizontal rules only, at the reading pitch — nothing crosses a word" },
   { key: "tooth", label: "TOOTH", hint: "a fine diagonal weave — paper grain rather than a grid" },
+  { key: "grain", label: "GRAIN", hint: "paper noise — a tone, not a line, so nothing crosses a word" },
+  { key: "lamp", label: "LAMP", hint: "a pool of light at the top of the column — no texture at all" },
+  { key: "haze", label: "HAZE", hint: "two soft washes of the theme's own hues, in opposite corners" },
 ];
-
-/** Which palette DOSSIER's roles read. Both are re-pointings of one role layer
- *  at the theme's own palette, so either works on every theme, light or dark:
- *  a role's tint is mixed INTO the panel rather than washed over transparent,
- *  which is the whole reason it survives a white ground. */
-export type TranscriptScheme = "phosphor" | "contrast";
-
-export const TRANSCRIPT_SCHEMES: { key: TranscriptScheme; label: string; hint: string }[] = [
-  { key: "phosphor", label: "PHOSPHOR", hint: "the theme's accent at different strengths; only trouble keeps its own hue" },
-  { key: "contrast", label: "CONTRAST", hint: "one hue per role, heavier tints, 2px edges, brightest ink" },
-];
-
-export function toTranscriptScheme(v: unknown): TranscriptScheme {
-  return TRANSCRIPT_SCHEMES.some((s) => s.key === v) ? (v as TranscriptScheme) : "phosphor";
-}
 
 export function toChatBg(v: unknown): ChatBg {
   return CHAT_BGS.some((b) => b.key === v) ? (v as ChatBg) : "none";

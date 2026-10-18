@@ -402,7 +402,7 @@ export function Terminal({
       {/* OUTPUT STYLE is the whole session's idiom, not just its widgets: one
           attribute here and the ledger, the agent block, your prompt and the
           reply's own tables all answer to it (index.css, THE SESSION'S IDIOM). */}
-      <div ref={scrollRef} data-style="dossier" data-scheme={hud?.chatScheme ?? "phosphor"} className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
+      <div ref={scrollRef} data-style="dossier" className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
         onDragOver={(e) => { if (!fileDrag(e)) return; e.preventDefault(); if (!dropping) setDropping(true); }}
         // relatedTarget is where the drag went: still inside, it only crossed a child
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }}

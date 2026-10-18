@@ -14,9 +14,7 @@ import {
   ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin,
 } from "lucide-react";
-import { CHAT_BGS, TRANSCRIPT_SCHEMES, type ChatBg, type TranscriptScheme } from "../../lib/toolwidget";
-import { AgentRail, PromptBubble } from "../Transcript";
-import { RunStream } from "../RunStream";
+import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
 
 import { ago, hhmm, projectName, useClock12, windowLabels } from "../../lib/surfaces";
@@ -39,7 +37,6 @@ import {
   type RivendellInput,
   type RivendellStatus,
   type StartupState,
-  type TimedEvent,
   type TrackerConnection,
   type UpdateInfo,
   type VideoTools,
@@ -164,7 +161,7 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   { key: "appearance", label: "APPEARANCE", hint: "theme · header · type", icon: Palette, group: "THE HUD",
     about: "How the dashboard looks: its theme and colour, the header over the transcript, its typeface and size." },
   { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD",
-    about: "How a session reads: the chat layout, the composer's send key, the ground and colour scheme every turn is drawn on, whether results start open, and what shows while it works." },
+    about: "How a session reads: the chat layout, the composer's send key, the ground every turn is drawn on, whether results start open, and what shows while it works." },
   { key: "notifications", label: "NOTIFY", hint: "events · quiet · sound", icon: Bell, group: "THE HUD",
     about: "What interrupts you, and how: for each kind of news — a session, a Rivendell job, a PR — a pop-up, a sound, a Telegram message, or only the bell." },
   // Only inside the native app — Mystical.app or Mystical.exe (RAIL and the
@@ -204,9 +201,8 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator equalizer spinner status line bars nyan cat" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
-  { tab: "transcript", sec: "COLOUR SCHEME", terms: "colour color scheme phosphor contrast dossier output style" },
   { tab: "transcript", sec: "RESULTS", terms: "auto-open results bash output edit diffs collapse steps fold" },
-  { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
+  { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain noise paper lamp light haze wash mat wallpaper chat background" },
   { tab: "notifications", sec: "WHAT INTERRUPTS YOU", terms: "events pop up toast banner sound tone telegram away rivendell pr finished failed question approval" },
   { tab: "notifications", sec: "QUIET HOURS", terms: "quiet hours night do not disturb dnd mute schedule" },
   { tab: "notifications", sec: "THIS BROWSER", terms: "os notifications browser push permission alert sound volume chime mute" },
@@ -763,124 +759,11 @@ function HeaderStyles({ settings, onHeader }: { settings: HudSettings; onHeader:
   );
 }
 
-/** OUTPUT STYLE, drawn as itself. A dropdown listing CONTROL PLATE · WIRE ·
- *  SIGNAL LOG asks you to picture five things you have never seen, and an
- *  earlier cut of these styles was a few borders apart, so nobody could.
- *
- *  Each tile is a whole TURN, rendered by the same PromptBubble, AgentRail and
- *  RunStream the transcript uses, under the real stylesheet — so a tile cannot
- *  drift from the thing it previews the way a mockup would. It has to be a
- *  turn and not a widget or two: the loudest differences between the five
- *  languages are in the parts an earlier cut of this preview left out entirely
- *  — where your prompt sits, what an action row's tag is shaped like, and
- *  whether there is a T+ gutter down the left at all. A preview that omits
- *  those previews the quietest quarter of the choice.
- *
- *  The wells are `inert`: a preview is a picture, so its rows and links neither
- *  take a click nor a tab stop away from the tile that owns them. */
-const STYLE_PREVIEW_TURN: TimedEvent[] = [
-  // A thought first, so the tile shows how a thought reads; then one of each
-  // tier, because tier is what the ledger draws differently: a `mark` that
-  // changed a file, a `reach` that left the machine and came back with
-  // structure, then the reply and the answer.
-  { type: "thinking", ms: 1400, text: "The table lists four idioms and the type has five — the fifth needs a row before the map does.", at: 2 },
-  { type: "tool", name: "Edit", summary: "lib/toolwidget.ts", id: "s1", at: 3 },
-  { type: "tool_done", id: "s1", ms: 240, stat: "1 edit", at: 3 },
-  { type: "tool", name: "WebSearch", summary: "css subgrid support", id: "s2", at: 5 },
-  {
-    type: "tool_done", id: "s2", ms: 1830, at: 7,
-    sources: [
-      { url: "https://docs.claude.com/en/docs/claude-code", title: "Claude Code — overview", code: 200 },
-      { url: "https://developer.mozilla.org/en-US/docs/Web/CSS", title: "CSS reference — MDN", code: 200 },
-    ],
-  },
-  {
-    type: "text", at: 8,
-    text: "`Idiom` gained a fifth member and the table still lists four:\n\n| Tool | Share |\n| --- | --- |\n| Bash | 70% |\n| Read | 10% |",
-  },
-  { type: "result", result: "Added `field` to the map. Typecheck is clean.", cost: 0.004, elapsed: 9, at: 9 },
-];
-
-/** One tile's well: the same turn, drawn in one language on one ground. Shared
- *  by both pickers below, because "what does this pick look like" has exactly
- *  one honest answer and it should not be written twice. */
-function TranscriptWell({ bg, scheme = "phosphor", children }: {
-  bg: ChatBg;
-  scheme?: TranscriptScheme;
-  children?: ReactNode;
-}) {
-  return (
-    <div
-      inert
-      data-style="dossier"
-      data-scheme={scheme}
-      data-bg={bg}
-      style={{
-        borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
-        // The transcript's own ground, not a panel's: a preview of a texture on
-        // the wrong surface is a preview of a different texture. backgroundColor
-        // and not the `background` shorthand — the shorthand resets
-        // background-image, which is the entire pattern.
-        backgroundColor: "var(--canvas)",
-        padding: "11px 13px",
-        // The transcript scroller's own type, which several of the languages
-        // are measured against (SIGNAL's gutter, PRESS's 74px margin).
-        fontFamily: "'JetBrains Mono',monospace",
-        fontSize: "var(--t12)",
-        lineHeight: 1.6,
-        flex: 1,
-        width: "100%",
-        // The tile is narrower than a transcript, so a long line would wrap
-        // into a different shape than the real thing. Kept short instead.
-        overflow: "hidden",
-      }}
-    >
-      {children ?? (
-        // The turn's own wrappers (Transcript TurnBlock), so DOSSIER's tile is a
-        // card like the real thing; every other language ignores them.
-        <div className="dturn" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div className="dprompt"><PromptBubble text="the fifth idiom isn't in the table" n={7} /></div>
-          <div className="dreply relative space-y-1.5">
-            <AgentRail />
-            <RunStream
-              events={STYLE_PREVIEW_TURN}
-              turnStarted={0}
-              openResults
-              // The tile exists to show how the ledger draws, so its one fold
-              // is open whatever the reader's own setting says.
-              foldsOpen
-              turnId={`prev:${bg}`}
-            />
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** DOSSIER's palette. Same tile, same turn, drawn in DOSSIER whatever the
- *  OUTPUT STYLE is — the scheme only exists there, so a tile in another
- *  language would show two identical pictures. */
-function SchemePicker({ value, bg, onPick }: {
-  value: TranscriptScheme;
-  bg: ChatBg;
-  onPick: (s: TranscriptScheme) => void;
-}) {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
-      {TRANSCRIPT_SCHEMES.map((o) => (
-        <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
-          <TranscriptWell bg={bg} scheme={o.key} />
-        </PickTile>
-      ))}
-    </div>
-  );
-}
-
-/** THE GROUND. Same tile, same turn — only the texture under it changes, which
- *  is the only way to see whether a pattern is still readable with words on it.
- *  A swatch of the pattern alone would show four handsome tiles and tell you
- *  nothing about the thing you actually do with them. */
+/** THE GROUND. A swatch of each texture on the transcript's own canvas, with
+ *  nothing on it. The tile used to carry a short turn so a ground would be
+ *  judged with words over it — but the theme families draw DOSSIER with no turn
+ *  card (index.css, "no turn card"), so the turn covered most of the tile and
+ *  the texture it was there to show peeked out of the gaps. */
 function ChatBgPicker({
   value,
   onPick,
@@ -892,30 +775,26 @@ function ChatBgPicker({
     <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 10 }}>
       {CHAT_BGS.map((o) => (
         <PickTile key={o.key} label={o.label} hint={o.hint} on={value === o.key} onPick={() => onPick(o.key)}>
-          {/* Two lines of prose and one row, not the whole turn: a ground is
-              judged on the gaps between cards, and this is the shortest slice
-              that has any. */}
-          <TranscriptWell bg={o.key}>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <PromptBubble text="does this still read?" />
-              <div className="relative space-y-1.5">
-                <AgentRail />
-                <RunStream
-                  events={STYLE_PREVIEW_TURN.slice(0, 3).concat(STYLE_PREVIEW_TURN.slice(5))}
-                  turnStarted={0}
-                  foldsOpen
-                  turnId={`bg:${o.key}`}
-                />
-              </div>
-            </div>
-          </TranscriptWell>
+          <div
+            data-bg={o.key}
+            style={{
+              borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)",
+              // The transcript's own ground, not a panel's: a preview of a texture on
+              // the wrong surface is a preview of a different texture. backgroundColor
+              // and not the `background` shorthand — the shorthand resets
+              // background-image, which is the entire pattern.
+              backgroundColor: "var(--canvas)",
+              height: 96,
+              width: "100%",
+            }}
+          />
         </PickTile>
       ))}
     </div>
   );
 }
 
-/** The chrome both pickers wear: a name, a live badge, the one-line hint, and
+/** The chrome a tile wears: a name, a live badge, the one-line hint, and
  *  the well underneath. */
 function PickTile({ label, hint, on, onPick, children }: {
   label: string;
@@ -4313,21 +4192,9 @@ export function SettingsModal(props: SettingsModalProps) {
 
 
                 <Section
-                  title="COLOUR SCHEME"
-                  top
-                  info="DOSSIER's palette. Both read the theme's own colours, so either works on every theme, light or dark. PHOSPHOR draws every role in the theme's accent at a different strength, and CONTRAST gives each role its own hue at heavier weight. In both, errors and warnings keep their own colour."
-                >
-                  <SchemePicker
-                    value={settings.chatScheme}
-                    bg={settings.chatBg}
-                    onPick={(chatScheme) => onPatch({ chatScheme })}
-                  />
-                </Section>
-
-                <Section
                   title="THE GROUND"
                   top
-                  info="The texture the transcript is read on. Four grounds and none, all drawn at the ghost ink tier and pinned to the scroller so they don't slide under the words — a ground you keep re-focusing on is a ground you'd turn off by the second screen. Independent of the language above it."
+                  info="The texture the transcript is read on. Four hairline patterns drawn at the ghost ink tier, three tones — grain, a lamp, a haze — with no edge to cross a word, and none. All are pinned to the column so they don't slide under the words. Under a hairline pattern the answer sits on a mat the colour of the column, so the pattern lives in the margins and the gaps between turns."
                 >
                   <ChatBgPicker
                     value={settings.chatBg}
