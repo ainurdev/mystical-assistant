@@ -123,6 +123,19 @@ def test_a_dead_turn_is_reported_as_stalled():
     assert nextup.facts(CHAT, d)["stalled"][0]["status"] == "error"
 
 
+def test_a_teammates_device_run_is_never_reported_as_stalled():
+    """Its prompt is the teammate's ask (it can quote their code and .env values),
+    and the stalled list goes to a scout on this account: a failed device run
+    stays out of it, beside an ordinary one that does go in."""
+    d = _mkrepo()
+    run = store.create_session(CHAT, "/" + os.path.basename(d), origin="device-run:prod", cwd=d)
+    store.start_turn(run["id"], run["id"] + "-t", "the teammate's ask, with their API_KEY=abc", None)
+    store.finish_turn(run["id"] + "-t", "error", None, 1)
+    _session(d, status="error")
+    stalled = nextup.facts(CHAT, d)["stalled"]
+    assert [x["prompt"] for x in stalled] == ["do the thing"]
+
+
 def test_no_tracker_is_read_while_trackers_are_not_installed(monkeypatch):
     from bridge import integrations, trackers
     monkeypatch.setattr(integrations, "_cache", {"rivendell": True, "trackers": False, "design": True})

@@ -350,30 +350,60 @@ def test_screens_and_divider_land_in_the_steps():
     run.close("done", {})
 
 
+def _ordinary():
+    """Two of the owner's own sessions beside the runs: one finished, one with a
+    turn still running. Neither is a device run's, so neither may be touched. The
+    running turn takes its session's id, as a run's one turn does: only the
+    origin tells them apart."""
+    old = store.create_session(CHAT, "/")["id"]
+    store.start_turn(old, old + "-t", "mine", None)
+    store.finish_turn(old + "-t", "done", None, 1)
+    busy = store.create_session(CHAT, "/")["id"]
+    store.start_turn(busy, busy, "still going", None)
+    return old, busy
+
+
+def _untouched(old, busy):
+    for sid, status in ((old, "done"), (busy, "running")):
+        assert store.get_session(sid)["origin"] is None
+        assert [t["status"] for t in store.transcript(sid)["turns"]] == [status]
+
+
 def test_prune_deletes_finished_runs_older_than_7_days():
     week = time.time() + 8 * 86400
     device_view.prune(now=week)                           # whatever earlier tests left finished
+    old, busy = _ordinary()                               # as old as the runs, seen from `week`
     done, failed, going = (device_view.Run.open("prod", _rid(), _claim()) for _ in range(3))
-    done.screens([("1.png", PNG)])
-    done.close("done", {})
-    failed.close("failed", {})
-    assert device_view.prune() == 0                       # newer ones stay
-    assert device_view.prune(now=week) == 2
-    assert store.get_session(done.sid) is None and store.get_session(failed.sid) is None
-    assert store.transcript(done.sid)["turns"] == [] and _events(done.sid) == []
-    assert not os.path.exists(os.path.join(config.UPLOAD_DIR, done.tid))   # its pictures went too
-    assert store.get_session(going.sid)                   # a run still going stays, however old
-    going.close("done", {})
+    try:
+        done.screens([("1.png", PNG)])
+        done.close("done", {})
+        failed.close("failed", {})
+        assert device_view.prune() == 0                   # newer ones stay
+        assert device_view.prune(now=week) == 2
+        assert store.get_session(done.sid) is None and store.get_session(failed.sid) is None
+        assert store.transcript(done.sid)["turns"] == [] and _events(done.sid) == []
+        assert not os.path.exists(os.path.join(config.UPLOAD_DIR, done.tid))   # its pictures went too
+        assert store.get_session(going.sid)               # a run still going stays, however old
+        _untouched(old, busy)                             # only device runs are ever pruned
+    finally:
+        going.close("done", {})
+        store.finish_turn(busy, "done", None, 0)
 
 
 def test_orphans_closes_running_turns_not_kept():
     device_view.orphans(set())                            # whatever earlier tests left going
+    old, busy = _ordinary()
     kept, lost = (device_view.Run.open("prod", _rid(), _claim()) for _ in range(2))
-    assert device_view.orphans({kept.request}) == 1
-    status = lambda r: store.transcript(r.sid)["turns"][0]["status"]   # noqa: E731
-    assert (status(kept), status(lost)) == ("running", "error")
-    assert store.parse_device(store.get_session(lost.sid)["device"])["outcome"] == "failed"
-    kept.close("done", {})
+    try:
+        assert device_view.orphans({kept.request}) == 1
+        status = lambda r: store.transcript(r.sid)["turns"][0]["status"]   # noqa: E731
+        assert (status(kept), status(lost)) == ("running", "error")
+        assert store.parse_device(store.get_session(lost.sid)["device"])["outcome"] == "failed"
+        kept.close("done", {})
+        assert device_view.orphans(set()) == 0            # an ordinary turn running is never ended
+        _untouched(old, busy)
+    finally:
+        store.finish_turn(busy, "done", None, 0)
 
 
 def test_orphans_ends_only_a_run_whose_own_turn_still_runs():

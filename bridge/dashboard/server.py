@@ -1280,6 +1280,9 @@ class Handler(BaseHTTPRequestHandler):
             if body.get("revoke"):
                 return self._json({"ok": True, "revoked": store.revoke_shares(sid),
                                    "shares": []})
+            if device_view.is_device_run(s["origin"]):
+                # A link would show the teammate's run, their code and .env values among it, to whoever holds it.
+                return self._json({"error": device_view.REFUSAL}, 409)
             row = store.create_share(sid, int(body.get("days") or 7))
             store.prune_shares()
             return self._json({"ok": True, "token": row["token"],
@@ -1290,6 +1293,9 @@ class Handler(BaseHTTPRequestHandler):
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
+            if device_view.is_device_run(s["origin"]):
+                # The copy would be an ordinary session, carrying the teammate's run on under this account.
+                return self._json({"error": device_view.REFUSAL}, 409)
             copy = store.duplicate(sid)
             return self._json({"ok": True, "session": _session_brief(copy)})
         if path.startswith("/local/sessions/") and path.endswith("/relocate"):

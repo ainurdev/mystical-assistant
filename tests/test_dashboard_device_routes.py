@@ -12,7 +12,8 @@ draws and drives (bridge/dashboard/server.py).
     teammate's run is going on this device.
   - POST /local/device-runs/stop: the owner's STOP RUN on the run going here (its
     read-only session, which the device rows name as running_session).
-  - POST /local/sessions/<sid>/retitle refuses a teammate's device run.
+  - POST /local/sessions/<sid>/retitle, /share and /duplicate refuse a
+    teammate's device run.
 
 Set up and Remove are real in production: a macOS admin-password prompt, then a
 root script that makes or deletes a macOS user. Nothing here may reach them or
@@ -491,6 +492,33 @@ def test_retitle_of_an_ordinary_session_still_goes_to_the_model(monkeypatch):
     monkeypatch.setattr(titler, "regenerate", lambda chat, s: asked.append(s["id"]) or True)
     r = dpost(f"/local/sessions/{sid}/retitle", {})
     assert r["code"] == 200 and r["obj"] == {"ok": True, "generating": True} and asked == [sid]
+
+
+# --- POST: Share and Duplicate of a session ---------------------------------------------------
+
+def test_share_and_duplicate_refuse_a_teammates_device_run(monkeypatch, run):
+    """The UI hides both, and the bridge refuses them too: a link would show the
+    teammate's run, their code and .env values among it, to whoever holds it, and
+    a copy would be an ordinary session carrying their run on under this
+    account. Revoking links stays open: it can only take one away."""
+    made = []
+    monkeypatch.setattr(store, "create_share", lambda *a, **k: made.append("share"))
+    monkeypatch.setattr(store, "duplicate", lambda *a, **k: made.append("duplicate"))
+    for path in (f"/local/sessions/{run.sid}/share", f"/local/sessions/{run.sid}/duplicate"):
+        r = dpost(path, {"days": 7})
+        assert r["code"] == 409 and r["obj"] == {"error": READ_ONLY}, path
+    assert made == []
+    r = dpost(f"/local/sessions/{run.sid}/share", {"revoke": True})
+    assert r["code"] == 200 and r["obj"]["revoked"] == 0
+
+
+def test_share_and_duplicate_of_an_ordinary_session_still_go():
+    store.init()
+    sid = store.create_session(config.DASH_CHAT_ID, "/")["id"]
+    r = dpost(f"/local/sessions/{sid}/share", {"days": 7})
+    assert r["code"] == 200 and r["obj"]["url"] == f"/share/{r['obj']['token']}"
+    r = dpost(f"/local/sessions/{sid}/duplicate", {})
+    assert r["code"] == 200 and r["obj"]["session"]["id"] != sid
 
 
 # --- the token gate -----------------------------------------------------------------------------
