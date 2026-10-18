@@ -29,8 +29,8 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver, git,
-                    inspector, integrations, ladder, limits, machine, native_activity, notices,
+from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, device_view, devserver,
+                    git, inspector, integrations, ladder, limits, machine, native_activity, notices,
                     profiles, pubsub, relevance, state, store, transcript_jsonl)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send, typing
@@ -2735,6 +2735,9 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
             if account_slot is not None or runtime not in (None, f"acp:{eff['agent']}"):
                 refusal = profiles.claude_account_refusal(eff["agent"])
             account_slot, runtime = None, f"acp:{eff['agent']}"
+        if device_view.is_device_run(session.get("origin")):
+            # A teammate's run (bridge/device_view.py): read only, on every account.
+            refusal, account_slot = device_view.REFUSAL, None
         if account_slot is not None:
             profiles.follow_account(session, account_slot)
         is_acp = (runtime or "").startswith("acp:")

@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   model             TEXT,
   profile_id        TEXT,
   effort            TEXT,
-  agent_session_id  TEXT
+  agent_session_id  TEXT,
+  device            TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -222,6 +223,10 @@ def init() -> None:
         if "ref" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN ref TEXT")
         c.execute("CREATE INDEX IF NOT EXISTS ix_sessions_ref ON sessions(ref)")
+        # A teammate's device run (bridge/device_view.py): who asked for what, as
+        # JSON {request, instance, by, repo, sha, pr, task, outcome}. NULL = not one.
+        if "device" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN device TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'acp:<agent>').
         if "runtime" not in cols:
@@ -350,8 +355,10 @@ def list_sessions(chat_id: int, project: str, include_archived: bool = False,
 
 def latest_session(chat_id: int, project: str) -> dict | None:
     # Unfiltered: resuming a project must find its latest session even if idle.
+    # Except a teammate's device run: it is read only (bridge/device_view.py), so
+    # the bot and a run sent with no session never carry one on.
     rows = list_sessions(chat_id, project, max_age_secs=None)
-    return rows[0] if rows else None
+    return next((r for r in rows if not (r["origin"] or "").startswith("device-run:")), None)
 
 
 def list_sessions_all(chat_id: int, include_archived: bool = False,
@@ -512,6 +519,29 @@ def set_ref(session_id: str, ref: str) -> None:
     """File a plugin run's session under the job that started it (see init)."""
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET ref=? WHERE id=?", (ref, session_id))
+
+
+def set_device(session_id: str, meta: dict) -> None:
+    """File a teammate's device run's facts on its session (see init)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET device=? WHERE id=?", (json.dumps(meta), session_id))
+
+
+def parse_device(raw: "str | None") -> dict | None:
+    """A device run's stored facts (set_device), or None for any other session."""
+    return parse_goal(raw)    # the same rule as a goal's: a JSON object, else None
+
+
+def delete_session(session_id: str) -> None:
+    """A session and everything under it: its events, turns and shares, then the
+    row. For a device run past its week (device_view.prune), whose view can hold
+    the asker's code."""
+    with closing(_connect()) as c:
+        c.execute("BEGIN IMMEDIATE")
+        for table in ("events", "turns", "shares"):
+            c.execute(f"DELETE FROM {table} WHERE session_id=?", (session_id,))
+        c.execute("DELETE FROM sessions WHERE id=?", (session_id,))
+        c.execute("COMMIT")
 
 
 def sessions_for_refs(refs: list[str]) -> dict[str, str]:
@@ -1189,15 +1219,18 @@ def claim_orphaned_turns() -> list[dict]:
     (runner._restart_killed), and a bridge killed outright never got to it.
     Atomically flip them to 'error' and return them joined to their session, so
     the recovery step can resume each on its own Claude session. Idempotent: a
-    second call returns []."""
+    second call returns []. A teammate's device run is left alone: its helper
+    outlives the bridge, device_side takes it back or device_view.orphans ends it,
+    and resuming it would run it on this account."""
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         rows = c.execute(
             "SELECT t.id AS turn_id, t.session_id, t.prompt, t.model, t.runtime, "
             "s.chat_id, s.cwd, s.project, s.claude_session_id "
             "FROM turns t JOIN sessions s ON s.id=t.session_id "
-            "WHERE t.status='running'").fetchall()
-        c.execute("UPDATE turns SET status='error' WHERE status='running'")
+            "WHERE t.status='running' AND COALESCE(s.origin, '') NOT LIKE 'device-run:%'").fetchall()
+        c.execute("UPDATE turns SET status='error' WHERE status='running' AND session_id NOT IN "
+                  "(SELECT id FROM sessions WHERE origin LIKE 'device-run:%')")
         c.execute("COMMIT")
     return [dict(r) for r in rows]
 

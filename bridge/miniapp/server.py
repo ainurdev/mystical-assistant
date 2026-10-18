@@ -213,6 +213,8 @@ def _session_brief(s: dict) -> dict:
             **run,
             "slot": _run_slot(s, run),
             "goal": store.parse_goal(s.get("goal")),
+            # A teammate's device run: who asked, for what, how it ended (None = not one).
+            "device": store.parse_device(s.get("device")),
             "lifecycle": s.get("lifecycle"),
             "work_cwd": wt if wt_branch else None,
             "worktree": git.worktree_name(work),

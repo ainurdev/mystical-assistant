@@ -80,6 +80,20 @@ def test_a_journaled_exit_on_a_turn_left_for_recovery_reads_restarted():
     assert turn["outcome"]["code"] == "restarted"
 
 
+def test_claim_orphaned_turns_skips_device_runs():
+    """A teammate's device run outlives a restart (its helper runs on its own), so
+    boot neither flips its turn nor hands it to recovery to resume on this account."""
+    chat, sid = _session()
+    store.start_turn(sid, "t-mine-orph", "prompt", None)
+    run = store.create_session(chat, "/", origin="device-run:prod")["id"]
+    store.start_turn(run, run, "a teammate's ask", None)
+    claimed = {t["turn_id"] for t in store.claim_orphaned_turns()}
+    assert "t-mine-orph" in claimed and run not in claimed
+    assert [t["status"] for t in store.transcript(sid)["turns"]] == ["error"]
+    assert [t["status"] for t in store.transcript(run)["turns"]] == ["running"]
+    store.finish_turn(run, "error", None, None)
+
+
 def test_the_outcome_survives_an_incremental_poll():
     """The badge must not blink out when a later poll passes a cursor past the
     events the classification was read from."""
