@@ -954,8 +954,6 @@ input {
 .ctrl-verbs-compact .ctrl-more { display: inline-flex; }
 .ctrl-row-compact .ctrl-set { flex: none; }
 @container (max-width: 560px) { .ctrl-row-compact .ctrl-ctx .seg { display: none; } }
-/* The effort slider: a native range, re-inked to the accent. */
-.effort-slider { width: 100%; margin: 0; accent-color: var(--acc); cursor: pointer; height: 14px; }
 .run-trigger:hover > span { color: var(--acc) !important; }
 
 /* Composer action cluster — exactly one primary. STOP and PAUSE are rare,
@@ -1813,7 +1811,7 @@ input {
 
 /* ── tier 1: you ── */
 [data-style="dossier"] .dprompt {
-  display: block; position: relative; padding: 9px 14px 9px 12px;
+  display: block; position: relative; padding: 13px 18px 15px;
   background: color-mix(in oklab, var(--d-you) var(--d-tint), var(--panel));
   border-left: 4px solid var(--d-you);
   border-bottom: 1px solid color-mix(in oklab, var(--d-you) var(--d-edge), var(--panel));
@@ -1832,24 +1830,15 @@ input {
   color: var(--d-you); font-family: var(--mono); font-size: 15px; font-weight: 700; line-height: 1.6;
   text-shadow: 0 0 var(--glow, 0px) color-mix(in oklab, var(--d-you) 70%, transparent);
 }
-/* The stamp: who, which turn, which account or agent when it wasn't the
-   default, and when — tracked, ghost except what is yours, tucked into the
-   free end of your last line the way a chat stamps a message. It is a float
-   after the words, and a last paragraph flows inline so the float can share
-   its line; a full last line pushes it onto a 17px line of its own. As a
-   footer row it cost every prompt 30px, a one-word prompt 71 in all
-   (design-drafts/prompt-plate, R2 · TUCKED). Its twin is the clock in
-   .res-meta, when the answer came back. */
+/* The footer: who, which turn, which account or agent when it wasn't the
+   default, and when — one tracked line on the right, ghost except what is
+   yours. Its twin is the clock in .res-meta, when the answer came back. */
 [data-style="dossier"] .pmeta {
-  float: right; display: inline-flex; align-items: center; gap: 10px;
-  margin: 7px 0 0 16px; line-height: 1; white-space: nowrap;
+  display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0;
+  margin-top: 6px; padding-left: 28px;
   font-size: var(--t95); letter-spacing: 2px; text-transform: uppercase; color: var(--txd);
   font-variant-numeric: tabular-nums;
 }
-/* The markdown root keeps no box of its own here: as a block it stood between
-   the inline last paragraph and the float, so the stamp always began a new line. */
-[data-style="dossier"] .pbub .md { display: contents; }
-[data-style="dossier"] .pbub .md > p:last-child { display: inline; }
 [data-style="dossier"] .pmeta > b { color: var(--d-you); font-weight: 700; }
 [data-style="dossier"] .pmeta .pacct { color: var(--d-you); }
 [data-style="dossier"] .pmeta .pacct[data-agent] { color: var(--warn); }
@@ -1875,6 +1864,8 @@ input {
    the ax-* cells. */
 [data-style="dossier"] .dwork {
   --zn: 24px; --zk: 12px; --zc: 16px; --zobj: calc(var(--zn) + var(--zk));
+  /* the plate's ground: what a node or a dashed stretch paints to cut the spine */
+  --zg: var(--panel2);
   --zline: color-mix(in oklab, var(--txl) 40%, var(--panel2));
   --zpl: 8px; --zpr: 12px;
   background: var(--panel2); padding: 5px var(--zpr) 9px var(--zpl);
@@ -1895,12 +1886,12 @@ input {
 }
 /* Open, the header pins at the top while you are inside the zone, so a click
    folds the work from anywhere. --isle-b (Terminal.tsx, on the scroller) is
-   where it pins: 0 under the compact pill, which floats over the plate's
-   right end (its chips hide while pinned, data-isle), or just under the full
-   island bar. Its hairline (below) cuts it from the rows passing under, and
-   pinned (WorkZone's observer) a lid in the plate's colour covers the band
-   above it so rows don't surface over the header on their way out. The lid
-   spans the plate's padding box (--zpl/--zpr). */
+   where it pins: level with the compact pill, which floats over the plate's
+   right end (its chips hide while pinned, data-isle; VEIL's fade lifts, THE
+   FAMILIES), or under the full island bar. Its hairline (below) cuts it from
+   the rows passing under, and pinned (WorkZone's measure) a lid in the
+   plate's colour covers the band above it so rows don't surface over the
+   header on their way out. The lid spans the plate's padding box (--zpl/--zpr). */
 [data-style="dossier"] .dwork[data-open] > .dwork-head {
   position: sticky; top: var(--isle-b, 0px); z-index: 3; background: inherit;
 }
@@ -1921,7 +1912,7 @@ input {
   height: var(--isle-b, 0px); pointer-events: none; background: var(--panel2);
 }
 [data-style="dossier"] .dwork-node {
-  grid-column: 1; grid-row: 1 / 3; justify-self: center; width: 22px; height: 22px; border-radius: 50%;
+  position: relative; grid-column: 1; grid-row: 1 / 3; justify-self: center; width: 22px; height: 22px; border-radius: 50%;
   display: grid; place-items: center; color: var(--txm);
   background: color-mix(in oklab, var(--txl) 14%, var(--panel2));
   box-shadow: 0 0 0 2px var(--panel2), 0 0 0 3px var(--line2, var(--d-hair));
@@ -1929,9 +1920,49 @@ input {
 [data-style="dossier"] .dwork-l1 { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 [data-style="dossier"] .dwork-lab { font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm); }
 [data-style="dossier"] .dwork-ms { color: var(--txf); letter-spacing: .5px; overflow: hidden; text-overflow: ellipsis; }
-[data-style="dossier"] .dwork[data-run] .dwork-ms { color: var(--d-you); animation: blink 1.1s steps(1) infinite; }
+/* live — the last zone of a running turn: the state word where the figure was,
+   seconds in that state after it, and the node as the instrument — a ring
+   ripples out of it while the model thinks, a comet orbits it while a tool
+   runs; the step that is out follows the chips with a caret */
+[data-style="dossier"] .dwork[data-live] .dwork-ms { color: var(--acc); }
+[data-style="dossier"] .dwork-st { font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; text-transform: uppercase; }
+[data-style="dossier"] .dwork-secs { margin-left: 8px; color: var(--txf); }
+[data-style="dossier"] .dwork-secs::before { content: "\00b7"; margin-right: 5px; color: var(--txl); }
+[data-style="dossier"] .dwork-dots {
+  display: inline-block; width: 0; overflow: hidden; vertical-align: bottom; white-space: nowrap;
+  font-family: var(--mono); letter-spacing: 0; animation: dwdots 2.2s linear infinite;
+}
+[data-style="dossier"] .dwork-dots::after { content: "..."; }
+/* a sibling of the step, not inside it, so a long step's ellipsis can't swallow it */
+[data-style="dossier"] .dwork-caret {
+  flex: none; width: 6px; height: 11px; margin-left: 5px;
+  background: var(--acc); animation: caret 1.05s steps(1) infinite;
+}
+[data-style="dossier"] .dwork[data-live] .dwork-node {
+  color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, var(--panel2));
+  box-shadow: 0 0 0 2px var(--panel2), 0 0 0 3px color-mix(in oklab, var(--acc) 60%, var(--line2, var(--d-hair)));
+}
+[data-style="dossier"] .dwork[data-live="think"] .dwork-node::before {
+  content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1.5px solid var(--acc);
+  animation: dwripple 2.2s ease-out infinite;
+}
+[data-style="dossier"] .dwork[data-live="work"] .dwork-node::after {
+  content: ""; position: absolute; inset: -7px; border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent 0 50%, var(--acc) 100%);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+  filter: drop-shadow(0 0 3px color-mix(in oklab, var(--acc) 70%, transparent));
+  animation: dworbit 1.1s linear infinite;
+}
+@keyframes dwripple { 0% { transform: scale(.55); opacity: .95; } 100% { transform: scale(2.6); opacity: 0; } }
+@keyframes dworbit { to { transform: rotate(360deg); } }
+@keyframes dwdots { 0%, 24% { width: 0; } 25%, 49% { width: 1ch; } 50%, 74% { width: 2ch; } 75%, 100% { width: 3ch; } }
+@media (prefers-reduced-motion: reduce) {
+  [data-style="dossier"] :is(.dwork-dots, .dwork-caret, .dwork[data-live] .dwork-node::before, .dwork[data-live] .dwork-node::after) { display: none; }
+}
 [data-style="dossier"] .dwork-l2 { grid-column: 2; grid-row: 2; display: flex; align-items: center; min-width: 0; margin-top: 7px; }
-[data-style="dossier"] .dwork-kinds { display: flex; flex: 0 1 auto; min-width: 0; gap: 14px; overflow: hidden; }
+/* the chips never clip (a sliver of a tile reads as a stray bar); the live step is what gives way */
+[data-style="dossier"] .dwork-kinds { display: flex; flex: none; gap: 14px; }
 [data-style="dossier"] .dwork-k { --m: var(--d-tool); display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--txd); }
 [data-style="dossier"] .dwork-k > i {
   width: 15px; height: 15px; display: grid; place-items: center;
@@ -1966,25 +1997,38 @@ input {
   font-size: var(--t95); font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
   box-shadow: 0 0 12px color-mix(in oklab, var(--acc) 45%, transparent);
 }
-/* the unseen pictures themselves, in the shut plate; tap one to open it */
+/* every picture the zone holds, in the shut plate; tap one to open it. An
+   unseen one wears the accent and a NEW tag; seen, it goes grey and stays */
 [data-style="dossier"] .dwork-row {
   margin: 9px 2px 1px calc(var(--zn) + 12px); padding-top: 9px;
-  border-top: 1px dashed color-mix(in oklab, var(--acc) 35%, var(--d-hair));
+  border-top: 1px dashed var(--d-hair);
 }
+[data-style="dossier"] .dwork[data-shots="new"] .dwork-row { border-top-color: color-mix(in oklab, var(--acc) 35%, var(--d-hair)); }
 [data-style="dossier"] .dwork-row-h {
   display: flex; align-items: center; gap: 10px;
-  font-size: var(--t85); font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--acc);
+  font-size: var(--t85); font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--txd);
 }
-[data-style="dossier"] .dwork-row-h > i { flex: 1 1 0; height: 1px; background: color-mix(in oklab, var(--acc) 28%, transparent); }
+[data-style="dossier"] .dwork-row-h > b { font-weight: 600; color: var(--acc); }
+[data-style="dossier"] .dwork-row-h > b::before { content: "\00b7 "; color: var(--txl); }
+[data-style="dossier"] .dwork-row-h > i { flex: 1 1 0; height: 1px; background: var(--d-hair); }
+[data-style="dossier"] .dwork[data-shots="new"] .dwork-row-h > i { background: color-mix(in oklab, var(--acc) 28%, transparent); }
 [data-style="dossier"] .dwork-row-h > em {
   font-family: var(--d-face); font-size: var(--t105); font-weight: 400; font-style: italic;
   letter-spacing: 0; text-transform: none; color: var(--txd);
 }
 [data-style="dossier"] .dwork-row-thumbs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-[data-style="dossier"] .dwork-row-thumbs figure { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+[data-style="dossier"] .dwork-row-thumbs figure { position: relative; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 [data-style="dossier"] .dwork-row-thumbs :is(img, video) {
   height: 60px; width: auto; max-width: 130px; object-fit: cover; border-radius: calc(var(--d-rad) * .4);
-  border: 1.5px solid var(--acc); box-shadow: 0 0 10px color-mix(in oklab, var(--acc) 40%, transparent); background: #000;
+  border: 1px solid var(--d-hair); background: #000;
+}
+[data-style="dossier"] .dwork-row-thumbs figure[data-new] :is(img, video) {
+  border: 1.5px solid var(--acc); box-shadow: 0 0 10px color-mix(in oklab, var(--acc) 40%, transparent);
+}
+[data-style="dossier"] .dwork-row-thumbs figure[data-new]::after {
+  content: "NEW"; position: absolute; top: -6px; right: -6px; padding: 3px 4px; border-radius: 3px;
+  background: var(--acc); color: var(--acc-on, var(--canvas)); font-size: var(--t75); font-weight: 700; letter-spacing: 1px;
+  box-shadow: 0 0 6px color-mix(in oklab, var(--acc) 45%, transparent);
 }
 [data-style="dossier"] .dwork-row-thumbs figcaption {
   font-size: var(--t85); color: var(--txf); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -2032,10 +2076,10 @@ input {
 }
 [data-style="dossier"] .dwork-body .ax-bar > svg {
   width: 14px; height: 14px; padding: 4px; box-sizing: content-box; border-radius: 50%;
-  color: var(--m); background: var(--panel2);
+  color: var(--m); background: var(--zg);
 }
 [data-style="dossier"] .dwork-body .actrow[data-run] > .ax-bar > svg {
-  color: var(--d-you); background: color-mix(in oklab, var(--d-you) 16%, var(--panel2));
+  color: var(--d-you); background: color-mix(in oklab, var(--d-you) 16%, var(--zg));
   box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--d-you) 45%, transparent),
     0 0 12px color-mix(in oklab, var(--d-you) 45%, transparent);
   animation: agbpulse 1.4s ease-in-out infinite;
@@ -2082,16 +2126,15 @@ input {
 [data-style="dossier"] .dwork-body > :first-child > .thought:first-child { margin-top: 0; }
 [data-style="dossier"] .dwork-body .thought > .ax-bar::before {
   content: ""; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%;
-  border: 1.5px solid var(--m); background: var(--panel2); box-shadow: 0 0 0 5px var(--panel2);
+  border: 1.5px solid var(--m); background: var(--zg); box-shadow: 0 0 0 5px var(--zg);
 }
 /* a pause before it is its figure (RunStream pauseAt), the spine dashed above */
 [data-style="dossier"] .dwork-body .thought[data-pause]::before {
   content: ""; position: absolute; z-index: 1; left: calc(var(--zn) / 2 - .5px); top: -10px; width: 1px; height: 10px;
-  background: repeating-linear-gradient(to bottom, var(--panel2) 0 2px, transparent 2px 4px);
+  background: repeating-linear-gradient(to bottom, var(--zg) 0 2px, transparent 2px 4px);
 }
 [data-style="dossier"] .dwork-body .thought[data-pause] > .ax-stat { color: var(--txg); }
-[data-style="dossier"] .dwork-body .thought-text { font-size: calc(var(--t12) + .5px); font-style: italic; color: var(--txd); }
-[data-style="dossier"] .dwork-body .thought-text p { margin: 0; }
+[data-style="dossier"] .dwork-body .thought-text { font-size: calc(var(--t12) + .5px); font-style: italic; color: var(--txd); }[data-style="dossier"] .dwork-body .thought-text p { margin: 0; }
 /* an interim note: the agent to you, mid-work — upright, a step brighter, on
    a dot. The row is the bubble's own wrapper; its node is drawn here, and a
    pause right before it (RunStream pauseAt) is its figure, with the spine
@@ -2104,11 +2147,11 @@ input {
 [data-style="dossier"] .dwork-body .group\/msg::before {
   content: ""; grid-column: 1; grid-row: 1; justify-self: center; margin-top: 10.5px;
   position: relative; z-index: 1; width: 7px; height: 7px; border-radius: 50%;
-  background: var(--d-note); box-shadow: 0 0 0 5px var(--panel2);
+  background: var(--d-note); box-shadow: 0 0 0 5px var(--zg);
 }
 [data-style="dossier"] .dwork-body .group\/msg:has(> .zpause)::after {
   content: ""; position: absolute; z-index: 1; left: calc(var(--zn) / 2 - .5px); top: -10px; width: 1px; height: 10px;
-  background: repeating-linear-gradient(to bottom, var(--panel2) 0 2px, transparent 2px 4px);
+  background: repeating-linear-gradient(to bottom, var(--zg) 0 2px, transparent 2px 4px);
 }
 [data-style="dossier"] .dwork-body .abub {
   grid-column: 3; grid-row: 1; max-width: none; padding: 4px 0; border: 0; background: none;
@@ -2140,7 +2183,7 @@ input {
 [data-style="dossier"] .dwork-body .zrow.gap > .ax-bar { height: 16px; }
 [data-style="dossier"] .dwork-body .zrow.gap > .ax-bar::before {
   content: ""; width: 1px; height: 100%;
-  background: repeating-linear-gradient(to bottom, var(--panel2) 0 2px, transparent 2px 5px);
+  background: repeating-linear-gradient(to bottom, var(--zg) 0 2px, transparent 2px 5px);
 }
 [data-style="dossier"] .dwork-body .zrow.gap > .ax-stat { height: 16px; line-height: 16px; color: var(--txg); }
 /* a run (commands, edits, calls, agents): the head is a row like any other,
@@ -2150,7 +2193,7 @@ input {
 [data-style="dossier"] .dwork-body .ax-window > .actrow > .ax-obj { color: var(--txm); }
 [data-style="dossier"] .dwork-body .ax-window > .actrow:not(:first-child) > .ax-bar::before {
   content: ""; width: 5px; height: 5px; border-radius: 50%;
-  background: var(--line2, var(--d-hair)); box-shadow: 0 0 0 4px var(--panel2);
+  background: var(--line2, var(--d-hair)); box-shadow: 0 0 0 4px var(--zg);
 }
 [data-style="dossier"] .dwork-body .ax-window > .actrow:not(:first-child)[data-err] > .ax-bar::before { background: var(--err); }
 [data-style="dossier"] .dwork-body .ax-window > .actrow:not(:first-child)[data-run] > .ax-bar::before { background: var(--d-you); }
@@ -2932,9 +2975,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam][data-hdr="veil"] [data-layout]::before {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 74px; z-index: 11; pointer-events: none;
   background: linear-gradient(var(--canvas) 30%, color-mix(in oklab, var(--canvas) 70%, transparent) 62%, transparent);
-  transition: height .2s ease;
+  transition: height .2s ease, opacity .2s ease;
 }
 [data-fam][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
+/* a pinned WORK header (DOSSIER) sits in the fade's band and would be swallowed by it: while one is pinned the fade lifts */
+[data-fam][data-hdr="veil"] [data-layout]:has(.dwork[data-pinned])::before { opacity: 0; }
 [data-fam][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
 /* TUCK: frost folded to its last readout (.isle-keep); the rest unfolds on hover */
 [data-fam][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
@@ -2958,10 +3003,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .cmdbox[data-drag] { border-color: var(--acc) !important; }
 [data-fam] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--ui-font) !important; }
 [data-fam]:not([data-fam="aurora"]) .cmdbox > span:first-child { display: none; }
-/* the run popover's trigger is a chip like its neighbours, with room: model
-   first, then mode and effort as quieter words */
-[data-fam] .run-trigger { padding: 6px 11px !important; gap: 9px !important; align-items: center !important; }
-[data-fam] .run-trigger > span { font-size: var(--t11) !important; }
+/* the run sheet's trigger is a chip like its neighbours: glyph tile, model
+   first, then mode and effort as quieter words, a caret */
+[data-fam] .run-trigger { padding: 5px 8px 5px 5px !important; gap: 7px !important; align-items: center !important; }
+[data-fam] .run-trigger > span:not(.run-car) { font-size: var(--t11) !important; }
+[data-fam] .run-trigger > .run-sep { color: var(--txg); }
 [data-fam] .drop-btn, [data-fam] .run-trigger {
   border: 1px solid var(--line) !important; background: var(--panel2) !important; border-radius: var(--f-rad-s) !important;
   font-family: var(--ui-font) !important; font-size: var(--t11) !important; letter-spacing: 0 !important; color: var(--txh) !important;
@@ -2979,7 +3025,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint-sunset"] .act-pri { color: #fff; }
 [data-fam] .act-pri.queue { background: var(--ask); color: var(--acc-on); }
 [data-fam] .act-pri:disabled { background: transparent; border-color: var(--line); color: var(--txl); }
-[data-fam] .effort-slider { accent-color: var(--acc); }
 
 /* ── every floating surface: menus, popovers, the run popover, the context
    menu, tips, the bell. ponytail: these are hand-rolled inline (no shared
@@ -3232,7 +3277,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .newsess svg { color: var(--acc); }
 [data-fam] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
 [data-fam] .lanehead > span:nth-child(3) { background: transparent !important; }
-[data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-badge, .dwork-row-h, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
+[data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-st, .dwork-badge, .dwork-row-h, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
 [data-fam] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
 
 /* ── the settings modal's own furniture ── */
@@ -3406,6 +3451,27 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 [data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child + div[style*="linear-gradient"] { display: none; }
 [data-fam="pebble"] .trow { margin: 1px 4px; width: calc(100% - 8px) !important; border-radius: 999px; font-family: var(--ui-font) !important; }
+
+/* ── THE FAMILIES · PEBBLE · THE CHAT — the third pebble (design A · SHEET,
+   .mystical/design-drafts/chat-ground). The column is an opaque rounded sheet
+   in the slabs' material. One token, --col, is its colour: VEIL's fade starts
+   from it and the answer mat is it — both were authored against the HUD's
+   translucent column (panel2 at 60%, hud/Terminal.tsx) and showed through as a
+   dark band and a feathered strip once the slabs' glow sat behind it. The dots
+   go quieter on the sheet; WORK plates sit one step up with no hairline. ── */
+[data-fam="pebble"] [data-ctx-type="terminal"] {
+  --col: color-mix(in srgb, var(--panel2) 90%, var(--canvas));
+  background-color: var(--col) !important; border-radius: var(--f-rad-l); box-shadow: var(--f-pop-shadow);
+}
+[data-fam="pebble"][data-hdr="veil"] [data-layout]::before {
+  background: linear-gradient(var(--col) 30%, color-mix(in oklab, var(--col) 70%, transparent) 62%, transparent);
+  border-radius: var(--f-rad-l) var(--f-rad-l) 0 0;
+}
+[data-fam="pebble"][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { background: linear-gradient(var(--col) 50%, transparent); }
+[data-fam="pebble"] :is([data-bg="grid"], [data-bg="dots"], [data-bg="rule"], [data-bg="tooth"]) [data-style="dossier"] :is(.res, .resblk[data-bad] .res) { --mat: var(--col); }
+[data-fam="pebble"] [data-bg="dots"] { --gnd: color-mix(in srgb, var(--txg) 42%, transparent); }
+[data-fam="pebble"] [data-style="dossier"] .dwork { background: var(--panel); --zg: var(--panel); border-bottom: 0; border-radius: var(--f-rad); }
+[data-fam="pebble"] [data-style="dossier"] .dwork[data-pinned] > .dwork-head::before { background: var(--panel); }
 [data-fam="aurora"] .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--acc), 0 0 10px color-mix(in oklab, var(--acc) 60%, transparent); }
 [data-fam="aurora"] .fthdr small { letter-spacing: .16em; text-transform: uppercase; }
 [data-fam="aurora"] .set-mini { letter-spacing: .12em !important; text-transform: uppercase; }
@@ -3543,8 +3609,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-set { display: flex; align-items: center; gap: 12px; height: 26px; margin-top: 3px; padding: 0 2px; min-width: 0; }
 .pb-set .ctrl-ctx { margin-left: 0; }
 .pb-set :is(.drop-btn, .run-trigger) { border: 0 !important; background: none !important; padding: 0 !important; min-width: 0 !important; }
-/* the run popover opens rightwards from the row's left half; the ··· menu leftwards from its end */
-.pb-set [role="dialog"] { right: auto !important; left: 0 !important; }
+/* the ··· menu opens leftwards from the row's end */
 .pb-set .pb-plus { width: 30px; height: 24px; font-size: 0; }
 .pb-set .pb-plus::before { content: "···"; font-size: var(--t11); letter-spacing: 2px; }
 .pb-set .pb-plus + div { left: auto !important; right: 0 !important; }
@@ -3608,6 +3673,24 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: linear-gradient(transparent 25px, color-mix(in srgb, var(--panel) 88%, transparent) 0) !important; }
 .swapwrap + .composer[data-pb="tabs"] > :not(.pb-tabs), .swapwrap + .composer[data-pb="tabs"] .pb-tabs > * { pointer-events: auto; }
 [data-fam] .swapwrap + .composer[data-pb="tabs"] { background: transparent !important; }
+
+/* ── PEBBLE's prompt box (after FLINT's rules above, which it outranks only by order): TABS' folder tabs hung over the card's 20px corner and left a
+   notch, so in PEBBLE the lead is a row of chips hovering over the card (the
+   tile and the title still one chip), the card lifts with the pop shadow and
+   every control is a pill; CONSOLE's line rounds its free end and its place
+   line is one segmented pill. */
+[data-fam="pebble"] .pb-tabs { align-items: center; gap: 6px; padding: 0 4px 7px; }
+[data-fam="pebble"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run), [data-fam="pebble"] .pb-tabs > .ctrl-ctx {
+  margin-bottom: 0; height: 26px !important; border: 1px solid var(--line) !important; border-radius: 999px !important; background: var(--panel2) !important;
+}
+[data-fam="pebble"] .pb-tabs .np-tile { border-radius: 999px 0 0 999px !important; border-right: 0 !important; padding: 0 3px 0 8px !important; }
+[data-fam="pebble"] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 999px 999px 0 !important; border-left: 0 !important; }
+[data-fam="pebble"] .cmdbox { box-shadow: var(--f-pop-shadow) !important; }
+[data-fam="pebble"] :is(.drop-btn, .run-trigger) { border-radius: 999px !important; }
+[data-fam="pebble"] .pb-cmd, [data-fam="pebble"] .pb-cmd:focus-within { border-radius: 0 18px 18px 0 !important; }
+[data-fam="pebble"] .pb-place { border-radius: 999px; }
+[data-fam="pebble"] .pb-place .np-tile { padding-left: 11px !important; }
+[data-fam="pebble"] .pb-place .np-meta > :last-child { padding-right: 12px !important; }
 
 /* === AI MANAGEMENT ===========================================================
    SETTINGS ▸ AI MANAGEMENT (SettingsModal AiManagementPanel, ProjectsSettings):
@@ -3859,6 +3942,46 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pm-row:hover .pm-pin { color: var(--txl); }
 .pm-pin:hover, .pm-pin:focus-visible { color: var(--txb); background: var(--ac-08); box-shadow: inset 0 0 0 1px var(--line2); outline: 0; }
 .pm-new { align-items: center; }
+
+/* ── the run sheet (Composer RunSheet): MODEL beside MODE, EFFORT along the
+   foot, over the cmdbox in every layout. Rows are MenuRows, restyled here
+   (their inline paddings need the !important). Under 560px of composer the
+   two columns stack. ── */
+.rp-sheet { font-family: var(--ui-font, inherit); overflow: hidden; }
+.rp-grid { display: grid; grid-template-columns: 46fr 54fr; }
+.rp-grid > .rp-sec + .rp-sec { border-left: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)); }
+.rp-sec { padding: 10px 8px 8px; min-width: 0; }
+.rp-hd { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px 8px; white-space: nowrap; min-width: 0; }
+.rp-hd b { font-weight: 600; font-size: var(--t10); letter-spacing: .12em; color: var(--txm); text-transform: uppercase; }
+.rp-hd i { font-style: italic; font-size: var(--t105); color: var(--txd); overflow: hidden; text-overflow: ellipsis; }
+.rp-dot { color: var(--acc); font-style: normal; font-weight: 600; }
+.rp-list > button { border-radius: var(--f-rad-s, 0) !important; padding: 6px 8px !important; min-height: 28px; font-size: var(--t11) !important; }
+.rp-list > button > span:first-child { width: 10px !important; text-align: center; }
+.rp-list > div { padding: 7px 8px 4px !important; border-bottom: 0 !important; font-weight: 600; font-size: var(--t9) !important;
+                 letter-spacing: .08em !important; text-transform: uppercase; }
+.rp-none { padding: 6px 8px; font-size: var(--t10); color: var(--txd); white-space: normal; }
+.rp-eff { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; padding: 9px 14px 10px;
+          border-top: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)); }
+.rp-eff .rp-hd { padding: 0; }
+.rp-seg { margin-left: auto; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px;
+          border: 1px solid var(--line, color-mix(in srgb, var(--acc) 16%, transparent)); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
+.rp-sg { position: relative; appearance: none; cursor: pointer; height: 22px; padding: 0 10px; border: 0; border-radius: var(--f-rad-s, 0);
+         background: transparent; color: var(--txd); font: 600 var(--t95) var(--ui-font, inherit); letter-spacing: .06em !important;
+         text-transform: uppercase; white-space: nowrap; }
+.rp-sg:hover { color: var(--txh); background: var(--ac-08, color-mix(in srgb, var(--acc) 8%, transparent)); }
+[data-fam] .rp-sg[data-on], .rp-sg[data-on] { background: color-mix(in oklab, var(--acc) 20%, var(--panel)) !important; color: var(--acc);
+                                              box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 35%, transparent); }
+/* the profile's own pick, while this session's overrides it: a dot under the stop */
+.rp-sg[data-prof]::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--txl); }
+.mr-hint { display: block; font-size: var(--t10); color: var(--txd); margin-top: 2px; letter-spacing: 0; white-space: normal; }
+.mr-tag { display: inline-flex; align-items: center; height: 15px; padding: 0 6px; margin-left: 6px; border-radius: 999px; vertical-align: 1px;
+          font: 600 var(--t85) var(--ui-font, inherit); letter-spacing: .08em; background: var(--panel3); color: var(--txd);
+          box-shadow: inset 0 0 0 1px var(--line2, color-mix(in srgb, var(--acc) 25%, transparent)); }
+@container (max-width: 560px) {
+  .rp-grid { grid-template-columns: 1fr; }
+  .rp-grid > .rp-sec + .rp-sec { border-left: 0; border-top: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)); }
+  .rp-seg { margin-left: 0; }
+}
 
 /* ── project marks (components/ui/ProjectTile, bridge/projectmarks.py) ──
    An icon draws in the tile's own ink. A logo is drawn as it is, edge to edge,

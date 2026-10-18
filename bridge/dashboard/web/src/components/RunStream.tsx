@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
-  TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
+  TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown,
   Quote, Layers, Image as ImageIcon, Terminal, FileText, Pencil, FilePlus, Search, Globe,
   Plug, Bot, Sparkles, Webhook, ScrollText, CircleX, Wrench, Circle, type LucideIcon,
 } from "lucide-react";
@@ -15,7 +15,7 @@ import { ImageLightbox, MediaThumb, ZoomButton, type Clip, type Shown } from "./
 import { askBack, type AskBack } from "../lib/askback";
 import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
-import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
+import { foldChips, runsOf, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
 import { kindsOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
 import { PromptBubble } from "./PromptBubble";
@@ -91,17 +91,13 @@ type Done = { ms?: number; output?: string; is_error?: boolean; patch?: string[]
 // Diff lines shown before a block folds — a turn can hold dozens.
 const DIFF_PREVIEW = 20;
 
-/** Events of a turn that mount before the rest waits behind a button. Turn
- *  granularity is what the virtualizer windows on, so a session whose turns run
- *  to hundreds of events is three rows and nothing to window — the spec called
- *  this out ("<8k missed when trailing megaturns sit in view") and left
- *  event-level rows as the escalation. This is the cheap half of that: the tail
- *  is what you opened the turn to read, and the churn above it costs ~70 DOM
- *  nodes an event to mount. */
+/** The virtualizer's guess at a turn's height caps the event count here
+ *  (Transcript estimateSize): the work sits in zones that are shut unless you
+ *  open them, so a turn's length overstates what it draws. The tail window this
+ *  once sized — the last 60 events, the rest behind an EARLIER STEPS button —
+ *  is gone for the same reason: a shut zone costs nothing to hold the whole
+ *  turn, and the plate's figure counts all of it. */
 export const TURN_TAIL = 60;
-
-/** Below this, hiding events isn't worth the button that reveals them. */
-const TURN_TAIL_MIN = 10;
 
 /** A failed Bash result opens with the shell's status line ("Exit code 2\n…").
  *  It belongs in the header as a badge, not in the body. */
@@ -664,38 +660,42 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
   );
 }
 
-/** One picture a zone holds that you have not seen: its upload path and the
- *  name its call gave it (lib/toolwidget shotName). */
-type Fresh = { path: string; name: string };
+/** One picture a zone holds: its upload path, the name its call gave it
+ *  (lib/toolwidget shotName), and whether you have had it on screen yet. */
+type Pic = { path: string; name: string; unseen: boolean };
 
 /** DOSSIER's tier 3: everything a turn did between what you asked and what it
  *  answered, under one header (lib/dossier) — a plate with a ringed node, WORK
  *  and the figure on one line and the kind chips under it: the marks the rows
  *  inside wear on the spine, with a number; the old sentence is their tooltip.
- *  Pictures are the one result a header loses, so they get the loudest word:
- *  while any is unseen (lib/seenshots) the plate lights — accent border, edge
- *  and node, a solid NEW badge — and the shut plate shows the unseen pictures
- *  themselves in a SCREENS row, tap one to open it. Being on screen in that
- *  row does not count as seen (the row would fold away as you scrolled past);
- *  opening one does, as does half a thumbnail in view once the zone is open.
- *  Once every picture has been seen the row folds and the badge is a grey chip.
- *  It follows the COLLAPSE STEPS switch like a STEPS fold does, live turn
- *  included: while one runs the figure says RUNNING and the live step follows
- *  the chips. */
-function WorkZone({ cats, notes, steps, failed, shots, fresh, gallery, running, live, span, defaultOpen, animate, children }: {
+ *  Pictures are the one result a header loses, so the shut plate shows every
+ *  one of them in a SCREENS row, tap one to open it. While any is unseen
+ *  (lib/seenshots) the plate lights — accent border, edge and node, a solid NEW
+ *  badge — and that picture wears the accent and a NEW tag in the row; seen,
+ *  it goes grey and stays. Being on screen in the row does not count as seen
+ *  (the badge would clear as you scrolled past); opening one does, as does
+ *  half a thumbnail in view once the zone is open. It follows the COLLAPSE
+ *  STEPS switch like a STEPS fold does. The last zone of a running turn is
+ *  live: the figure says THINKING or WORKING with the seconds in that state,
+ *  the node is the instrument — a ring ripples out of it while the model
+ *  thinks, a comet orbits it while a tool runs (index.css) — and the step
+ *  that is out follows the chips with a caret. */
+function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, live, span, defaultOpen, animate, children }: {
   /** What the zone ran, by kind, and how often the agent spoke inside it. */
   cats: StepCat[];
   notes: number;
   /** Everything the zone holds, for the figure. */
   steps: number;
   failed: number;
-  /** Pictures tools came back with, and the ones you have not had on screen. */
-  shots: number;
-  fresh: Fresh[];
+  /** Pictures tools came back with, in order. */
+  pics: Pic[];
   /** The whole turn's pictures, for the lightbox's paging. */
   gallery: Shown[];
-  running: boolean;
-  /** What is out right now, named in the header while it runs. */
+  /** What the turn is doing right now, when this is its live zone. */
+  state: "think" | "work" | null;
+  /** When that state began, epoch seconds; the mount clock stands in. */
+  since?: number;
+  /** What is out right now, named after the chips while it runs. */
   live: string;
   /** Wall time the zone covered, already formatted; "" when unknown. */
   span: string;
@@ -705,35 +705,51 @@ function WorkZone({ cats, notes, steps, failed, shots, fresh, gallery, running, 
 }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
-  // Pinned: the sticky header (index.css) is holding at its top offset. The
-  // observer's root is shrunk by that offset plus one pixel, so a header at
-  // rest sits wholly inside it and a stuck one is cut by that pixel; a header
-  // further down the page is cut too, from the other side, which the top check
-  // tells apart.
+  // Pinned: the sticky header (index.css) is holding at its top offset — at
+  // rest it sits below that line, stuck it sits on it, and leaving with the
+  // zone's end it rides above it. Measured on scroll, like Terminal's peek,
+  // and against the offset as it is now: an IntersectionObserver's margin is
+  // fixed at creation, and the offset moves when the island's LAST row opens.
   const head = useRef<HTMLButtonElement>(null);
   const [pinned, setPinned] = useState(false);
   useEffect(() => {
     const el = head.current, root = el?.closest(".mscroll");
     if (!open || !el || !root) { setPinned(false); return; }
-    // shortcut: the offset is read once per open, so a LAST peek that opens later moves the pin but not the lid; watch --isle-b if that shows
-    const top = parseFloat(getComputedStyle(el).top) || 0;
-    const io = new IntersectionObserver(([e]) => {
-      setPinned(e.intersectionRatio < 1 && e.boundingClientRect.top < (e.rootBounds?.top ?? -Infinity));
-    }, { root, rootMargin: `-${top + 1}px 0px 0px 0px`, threshold: 1 });
-    io.observe(el);
-    return () => io.disconnect();
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const r = el.getBoundingClientRect(), rootTop = root.getBoundingClientRect().top;
+      setPinned(r.top - rootTop <= (parseFloat(getComputedStyle(el).top) || 0) + 0.5 && r.bottom > rootTop);
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(measure); };
+    measure();
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => { root.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
   }, [open]);
   // The lightbox lives here, not in the row: opening a picture marks it seen,
-  // and the row it was tapped in may fold away while you are still looking.
+  // and the row it was tapped in re-renders while you are still looking.
   const [zoom, setZoom] = useState<string | null>(null);
+  // Seconds in the state, on the store's clock (the event's `at`) so the count
+  // survives the zone remounting; ticks only while live.
+  const mountAt = useRef(Date.now() / 1000);
+  const [now, setNow] = useState(mountAt.current);
+  useEffect(() => {
+    if (!state) return;
+    const tick = () => setNow(Date.now() / 1000);
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [state, since]);
+  const secs = Math.max(0, Math.floor(now - (since ?? mountAt.current)));
+  const fresh = pics.filter((p) => p.unseen);
   const words = workTitle(stepsTitle(cats), notes);
-  const pics = `${shots} picture${shots === 1 ? "" : "s"}`;
+  const picsWord = `${pics.length} picture${pics.length === 1 ? "" : "s"}`;
   return (
     <div
       className="dwork"
       data-open={open ? "" : undefined}
       data-pinned={pinned ? "" : undefined}
-      data-run={running ? "" : undefined}
+      data-live={state ?? undefined}
       data-err={failed ? "" : undefined}
       data-shots={fresh.length ? "new" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
@@ -761,7 +777,12 @@ function WorkZone({ cats, notes, steps, failed, shots, fresh, gallery, running, 
         <span className="dwork-l1">
           <span className="dwork-lab">WORK</span>
           <span className="dwork-ms">
-            {running ? "RUNNING" : [`${steps} step${steps === 1 ? "" : "s"}`, span].filter(Boolean).join(" \u00b7 ")}
+            {state ? (
+              <>
+                <b className="dwork-st">{state === "work" ? "WORKING" : "THINKING"}{state === "think" ? <i className="dwork-dots" aria-hidden /> : null}</b>
+                <span className="dwork-secs">{secs}s</span>
+              </>
+            ) : [`${steps} step${steps === 1 ? "" : "s"}`, span].filter(Boolean).join(" · ")}
           </span>
         </span>
         <span className="dwork-l2">
@@ -770,33 +791,35 @@ function WorkZone({ cats, notes, steps, failed, shots, fresh, gallery, running, 
               <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden><MarkIcon mark={k.m} size={10} /></i>{k.n}</span>
             ))}
           </span>
-          {running && live ? <span className="dwork-live">{live}</span> : null}
+          {state === "work" && live ? <><span className="dwork-live">{live}</span><i className="dwork-caret" aria-hidden /></> : null}
         </span>
         <span className="dwork-right">
           {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden><MarkIcon mark="fail" size={10} /></i>{failed}</span> : null}
           {fresh.length ? (
-            <span className="dwork-badge" title={`${fresh.length} of ${pics} not seen yet`}>
+            <span className="dwork-badge" title={`${fresh.length} of ${picsWord} not seen yet`}>
               <ImageIcon size={11} strokeWidth={2.2} aria-hidden />{fresh.length} NEW
             </span>
-          ) : shots ? (
-            <span className="dwork-k" data-m="shot" title={pics}><i aria-hidden><ImageIcon size={10} strokeWidth={2.2} /></i>{shots}</span>
+          ) : pics.length ? (
+            <span className="dwork-k" data-m="shot" title={picsWord}><i aria-hidden><ImageIcon size={10} strokeWidth={2.2} /></i>{pics.length}</span>
           ) : null}
         </span>
       </button>
-      {!open && fresh.length ? (
+      {!open && pics.length ? (
         <div className="dwork-row">
-          <div className="dwork-row-h">Screens {"\u00b7"} {fresh.length} new<i aria-hidden /><em>tap one to open it</em></div>
+          <div className="dwork-row-h">
+            Screens {"·"} {pics.length}{fresh.length ? <b>{fresh.length} new</b> : null}<i aria-hidden /><em>tap one to open it</em>
+          </div>
           <div className="dwork-row-thumbs">
-            {fresh.map((s) => {
-              const src = api.attachmentUrl(s.path);
+            {pics.map((p) => {
+              const src = api.attachmentUrl(p.path);
               return (
-                <figure key={s.path}>
-                  <ZoomButton onOpen={() => { markShotSeen(s.path); setZoom(src); }}>
+                <figure key={p.path} data-new={p.unseen ? "" : undefined}>
+                  <ZoomButton onOpen={() => { markShotSeen(p.path); setZoom(src); }}>
                     {/* A picture the upload dir has pruned can't be seen: marking it
                         seen is what clears the badge it would otherwise hold lit. */}
-                    <MediaThumb src={src} alt={s.name} onError={() => markShotSeen(s.path)} />
+                    <MediaThumb src={src} alt={p.name} onError={() => markShotSeen(p.path)} />
                   </ZoomButton>
-                  <figcaption>{s.name}</figcaption>
+                  <figcaption>{p.name}</figcaption>
                 </figure>
               );
             })}
@@ -1613,7 +1636,6 @@ export const RunStream = memo(function RunStream({
   onOpenFile,
   onAnswer,
   ended = false,
-  showAll = false,
   boot = null,
   foldsOpen = false,
   compact = false,
@@ -1642,9 +1664,6 @@ export const RunStream = memo(function RunStream({
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
   ended?: boolean;
-  /** Ctrl-F mounted the whole transcript — the tail cap would hide text the
-   *  browser's find is about to look for. */
-  showAll?: boolean;
   /** Whether a STEPS fold mounts open (the COLLAPSE STEPS switch, inverted).
    *  Off by default: the work sits under one line until you ask for it, and
    *  the words stay the thing you see. */
@@ -1675,10 +1694,6 @@ export const RunStream = memo(function RunStream({
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
   // A WORK zone's chip reads lib/seenshots: re-render when a shot gets seen.
   useSeenShots();
-  // Derived from the length rather than stored as an index, so a running turn's
-  // window slides with its tail instead of freezing where it was opened.
-  const [wholeTurn, setWholeTurn] = useState(false);
-  const tailFrom = wholeTurn || showAll ? 0 : Math.max(0, events.length - TURN_TAIL);
   const pendingIds = new Set(pending.map((p) => p.request_id));
   // A card still waiting on you draws at the turn's foot (lib/segments atFoot).
   const waiting = (i: number) => {
@@ -1748,12 +1763,6 @@ export const RunStream = memo(function RunStream({
   // its head draws every member, and a member left behind would head an empty fold.
   const inFlow = (i: number) =>
     (groups.get(groupOf.get(i) ?? i) ?? [i]).some((j) => !!doneOf(events[j])?.images?.length);
-
-  // Never cut a folded run away from the head that draws it. A cut that ends up
-  // hiding only a handful buys nothing and reads as a button in front of
-  // nothing, so it collapses to showing the lot.
-  const cut = headSafeCut(events.length, tailFrom, headOf, groupOf);
-  const from = cut < TURN_TAIL_MIN ? 0 : cut;
 
   // The turn's closing text arrives twice — once streamed as a text block, once
   // as the run's result — so the same words used to print twice, the second time
@@ -2158,7 +2167,7 @@ export const RunStream = memo(function RunStream({
     );
   };
 
-  const segs = segmentsOf(events, from, inFlow, waiting);
+  const segs = segmentsOf(events, 0, inFlow, waiting);
   // Tier 1 and 2 (lib/dossier): the answer, the prose that introduces a card,
   // the cards, your steers, and what ends a turn. Everything else is work.
   const topAt = (i: number): boolean => {
@@ -2167,10 +2176,10 @@ export const RunStream = memo(function RunStream({
     return TOP_TYPES.has(e.type);
   };
   const isTop = (seg: Seg): boolean => seg.kind === "prose" && topAt(seg.idx[0]);
-  const workZone = (zsegs: Seg[]) => {
+  const workZone = (zsegs: Seg[], lastZone: boolean) => {
     const cats: StepCat[] = [];
-    const fresh: Fresh[] = [];
-    let notes = 0, steps = 0, failed = 0, pics = 0, running = false, live = "", first: number | undefined, last: number | undefined;
+    const pics: Pic[] = [];
+    let notes = 0, steps = 0, failed = 0, running = false, live = "", openAt: number | undefined, first: number | undefined, last: number | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
       const e = events[i];
       if (e.at != null) { first ??= e.at; last = e.at; }
@@ -2179,19 +2188,20 @@ export const RunStream = memo(function RunStream({
       else if (e.type === "tool") {
         const d = doneOf(e), c = catOf(e, d);
         steps++; cats.push(c);
-        if (!d) { running = true; live = e.summary; }
+        if (!d) { running = true; live = e.summary; openAt = e.at; }
         else if (d.is_error) failed++;
-        for (const p of d?.images ?? []) {
-          pics++;
-          if (shotUnseen(p, e.at)) fresh.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p });
-        }
+        for (const p of d?.images ?? []) pics.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p, unseen: shotUnseen(p, e.at) });
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
     }
     const secs = first != null && last != null ? last - first : 0;
     const span = secs >= 1 ? wall(secs) : "";
-    // Named like a STEPS fold (lib/segments): back past the window's cut to the
-    // tier-1/2 row before it, so the zone you opened stays the same zone.
+    // The last zone of a running turn is live: a tool out is WORKING since it
+    // started, nothing out is THINKING since the last thing finished. A card
+    // waiting on you is neither — the plate rests until it is answered.
+    const state = !ended && lastZone && !pending.length ? (running ? "work" as const : "think" as const) : null;
+    // Keyed by the tier-1/2 row before it (or a card drawn at the foot), so the
+    // zone you opened stays the same zone as rows land.
     let start = zsegs[0].start;
     while (start > 0 && (waiting(start - 1) || !topAt(start - 1))) start--;
     return (
@@ -2201,10 +2211,10 @@ export const RunStream = memo(function RunStream({
         notes={notes}
         steps={steps}
         failed={failed}
-        shots={pics}
-        fresh={fresh}
+        pics={pics}
         gallery={shots}
-        running={running}
+        state={state}
+        since={running ? openAt : last}
         live={live}
         span={span}
         defaultOpen={foldsOpen}
@@ -2220,21 +2230,11 @@ export const RunStream = memo(function RunStream({
     // and paint while it's off-screen (see .vskip-card in index.css).
     <div className="rstream space-y-2 vskip-card">
       {boot ? <BootRow text={boot} /> : null}
-      {from > 0 && (
-        <button
-          type="button"
-          onClick={() => setWholeTurn(true)}
-          className="ml-[var(--rail)] flex items-center gap-1.5 border border-border px-2.5 py-1 text-[length:var(--t95)] tracking-[1px] text-muted-2 hover:text-foreground-bright"
-        >
-          <ChevronsUp size={11} aria-hidden />
-          {from} EARLIER STEP{from === 1 ? "" : "S"}
-        </button>
-      )}
       {/* The words in the flow, the work under a row each (lib/segments) —
           or, in DOSSIER, under one WORK zone per stretch (lib/dossier). */}
       {dossier
-        ? zonesOf(segs, isTop).map((z) =>
-            z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs))
+        ? zonesOf(segs, isTop).map((z, i, zs) =>
+            z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs, i === zs.length - 1))
         : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)))}
     </div>
   );

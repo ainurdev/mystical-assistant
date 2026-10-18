@@ -125,7 +125,7 @@ type Respond = (
  *  unmounts these whole; RunStream's own content-visibility cards keep the
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
-  turn, isActive, isLast, promptIdx, hud, liveTurns, showAll, boot,
+  turn, isActive, isLast, promptIdx, hud, liveTurns, boot,
   onRespond, onRunCommand, onQuote, onOpenFile, onAnswer,
 }: {
   turn: Turn;
@@ -133,8 +133,6 @@ function TurnBlock({
   /** What the live turn is waiting on before its first token, or null. */
   boot?: string | null;
   isLast: boolean;
-  /** Ctrl-F is mounting everything, so the turn's tail cap lifts too. */
-  showAll?: boolean;
   /** Index into the session's turns — what the sticky peek reads to name
    *  the turn the top edge is inside. */
   promptIdx: number;
@@ -191,7 +189,6 @@ function TurnBlock({
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
               ended={turn.status !== "running"}
-              showAll={showAll}
             />
           )}
           {working && <WorkingIndicator hud={hud} events={turn.events} boot={boot} started={turn.started} />}
@@ -320,8 +317,9 @@ export function Transcript({
     // compresses a turn to well under one card per event. The cache replaces
     // the guess with truth after first mount.
     estimateSize: (i) => sizesRef.current.get(keyOf(rows[i]))
-      // Capped the same way the row renders — a 400-event turn mounts its last
-      // TURN_TAIL, so estimating off the full length would guess ~7x too tall.
+      // Capped: a turn's work sits in zones that are shut unless opened, so a
+      // 400-event turn draws nothing like 400 rows and its full length would
+      // guess ~7x too tall.
       ?? Math.min(20000, 80 + (rows[i].kind === "turn"
         ? Math.min(rows[i].turn.events.length, TURN_TAIL) * 20 : 0)),
     overscan: 2,
@@ -460,7 +458,6 @@ export function Transcript({
         boot={boot}
         isLast={index === visible.length - 1}
         promptIdx={cut + index}
-        showAll={fullMount}
         hud={hud}
         liveTurns={liveTurns}
         onRespond={onRespond}
