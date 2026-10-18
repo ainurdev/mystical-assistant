@@ -87,3 +87,21 @@ def test_post_limit_wait_and_switch(monkeypatch):
     assert _call("POST", "/local/notices", {"op": "limit", "session": sid, "slot": 2}) == (200, {"ok": True})
     assert took == [(sid, 2)]
     assert _call("POST", "/local/notices", {"op": "limit", "session": "nope"})[0] == 404
+
+
+# --- POST /local/update/note -------------------------------------------------------
+
+def test_update_note_validates(monkeypatch):
+    from bridge import whatsnew
+    monkeypatch.setattr(whatsnew, "add_note", lambda t, b: (_ for _ in ()).throw(AssertionError("not reached")))
+    for bad in ({}, {"title": "  "}, {"title": "x" * 81}, {"title": "a\nb"},
+                {"title": "ok", "body": "y" * 601}, {"title": 5}):
+        assert _call("POST", "/local/update/note", bad)[0] == 400, bad
+
+
+def test_update_note_calls_add_note(monkeypatch):
+    from bridge import whatsnew
+    got = []
+    monkeypatch.setattr(whatsnew, "add_note", lambda t, b: got.append((t, b)) or (True, "pushed"))
+    code, obj = _call("POST", "/local/update/note", {"title": " Hello ", "body": "a\r\nb "})
+    assert code == 200 and obj == {"ok": True, "output": "pushed"} and got == [("Hello", "a\nb")]

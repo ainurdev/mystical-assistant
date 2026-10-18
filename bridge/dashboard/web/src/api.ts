@@ -1461,6 +1461,8 @@ export const api = {
   publishUpdate: () =>
     req<{ ok: boolean; output: string; message: string }>(
       "/local/update/publish", { method: "POST", body: {} }),
+  noteUpdate: (title: string, body: string) =>
+    req<{ ok: boolean; output: string }>("/local/update/note", { method: "POST", body: { title, body } }),
   restart: () => req<{ ok: boolean }>("/local/restart", { method: "POST", body: {} }),
   updateClaude: () => req<{ ok: boolean }>("/local/claude/update", { method: "POST", body: {} }),
   projects: (dir?: string) =>
