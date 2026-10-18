@@ -1144,6 +1144,17 @@ export function App() {
       notify("error", (e as Error).message);
     }
   }
+  // The PROFILE menu's pin: the profile new sessions get, bridge-wide (what
+  // SETTINGS ▸ AI & PROFILES' MAKE DEFAULT sets), then the list again so the
+  // DEFAULT pill moves.
+  async function setDefaultProfile(pid: string) {
+    try {
+      await api.profileWrite({ action: "default", id: pid });
+      await loadProfiles();
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
   // SETTINGS ▸ PROJECTS: the profile a project's new sessions are bound to.
   // The sessions it already has keep theirs.
   async function setProjectProfile(rel: string, pid: string) {
@@ -2337,6 +2348,7 @@ export function App() {
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={spentUsage} effort={effort}
                       accounts={accounts} agentPick={agentPick} profile={selected?.profile_id ?? ""}
                       profiles={profilesAvailable ? profiles?.profiles : undefined} onProfile={(id) => void pickProfile(id)}
+                      defaultProfile={profiles?.default} onDefaultProfile={(id) => void setDefaultProfile(id)}
                       overrides={selected?.overrides}
                       injectedText={inject.text} injectNonce={inject.nonce} sessionId={sessionId}
                       draft={draft} onDraft={setDraft}
