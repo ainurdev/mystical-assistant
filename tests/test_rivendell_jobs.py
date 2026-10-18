@@ -121,8 +121,14 @@ def test_classify_knows_every_template_and_leaves_a_custom_prompt_alone():
     assert c("You are an experienced technical project manager keeping a software project's task board honest.\n"
              "Project: Rivendell (Rivendell project id 5eebb57e)\n") \
         == {"kind": "todolist", "step": "recommendations", "title": "Rivendell"}
-    assert c("You are writing the notes of a meeting the way a good meeting assistant does")["kind"] == "meeting-notes"
-    assert c("You are given the transcript of a recording a client uploaded")["kind"] == "video"
+    assert c("You are writing the notes of a meeting the way a good meeting assistant does.\n"
+             "Meeting: Planning with Acme\nWhen: 2026-10-15 19:00 UTC") == {"kind": "meeting-notes", "title": "Planning with Acme"}
+    assert c("You are given the transcript of a recording a client uploaded to the drive we share with them, "
+             "and the screens of it (one image per screen change).\nFile: Contract.mov (length unknown).") \
+        == {"kind": "video", "title": "Contract.mov", "step": "transcribe"}
+    assert c("You are an experienced software engineer implementing a batch of related tasks for the team.\n"
+             "Batch: Unorganized (2 tasks)\nRepository: ainurhq/rivendell — https://github.com/ainurhq/rivendell\n") \
+        == {"kind": "impl", "title": "Unorganized", "repo": "ainurhq/rivendell"}
     assert c("fix the login bug") is None
     assert c(None) is None
 
@@ -133,13 +139,16 @@ def test_backfill_files_older_sessions_once_and_keeps_a_hand_set_title():
                         result=json.dumps(PAPER))
     mine = _rv_session(REVIEW_PROMPT, title_manual="my name for it")
     odd = _rv_session("a custom prompt nobody templated")
-    assert rivendell_jobs.backfill() >= 4
-    got = {sid: store.get_session(sid) for sid in (review, paper, mine, odd)}
+    clip = _rv_session("You are given the transcript of a recording a client uploaded to the drive we share with them, "
+                       "and the screens of it.\nFile: Contract.mov (length unknown).")
+    assert rivendell_jobs.backfill() >= 5
+    got = {sid: store.get_session(sid) for sid in (review, paper, mine, odd, clip)}
     assert store.parse_job(got[review]["job"])["kind"] == "review"
     assert store.parse_job(got[review]["job"])["request"] == f"req-{review[:8]}"
     assert got[review]["title"] == "feat: per-project worker access and removal of the Telegram bot"
     assert got[paper]["title"] == "Patterna opens its shop window"        # the paper's lead headline
     assert got[mine]["title"] == "my name for it"                         # a hand-set title stays
+    assert got[clip]["title"] == "Transcribe · Contract.mov"              # what its runner names a video now
     assert "kind" not in store.parse_job(got[odd]["job"])                 # filed, untagged, never rescanned
     assert rivendell_jobs.backfill() == 0
 
@@ -243,3 +252,33 @@ def test_the_again_route_relays_and_explains(monkeypatch):
     monkeypatch.setattr(rivendell, "rerun", refuse)
     h._post_api("/local/rivendell/again", {"session_id": "s1"})
     assert box == {"obj": {"error": "Rivendell can't run this job again from here", "code": "refused"}, "code": 400}
+
+
+def test_backfill_takes_rivendells_folders_too():
+    """A meeting draft run by hand in .bridge_uploads/meetings is a job the
+    dashboard files under Rivendell jobs; the backfill names it like the runner."""
+    store.init()
+    sid = store.create_session(next(_chat), "/.bridge_uploads/meetings", origin="bridge")["id"]
+    store.start_turn(sid, f"turn-{sid[:12]}", "You are writing the notes of a meeting the way a good meeting "
+                     "assistant does.\nMeeting: Collaboration in the UAE\nWhen: 2026-10-15", None)
+    mine = store.create_session(next(_chat), "/mystical-assistant", origin="dashboard")["id"]
+    rivendell_jobs.backfill()
+    s = store.get_session(sid)
+    assert store.parse_job(s["job"]) == {"kind": "meeting-notes", "title": "Collaboration in the UAE"}
+    assert s["title"] == "Meeting notes · Collaboration in the UAE"
+    assert store.get_session(mine)["job"] is None                      # your own sessions are never touched
+
+
+def test_backfill_files_a_terminal_indexed_run_by_its_title_only():
+    """A Rivendell run MOVE brought over as a terminal session has no stored
+    prompt; its title opens with the template's words. A session of your own
+    that merely starts "You are" is left alone, and asked again next boot."""
+    store.init()
+    run = store.upsert_native_session("native-" + str(next(_chat)), next(_chat), "/", "/x",
+                                      title="You are the editor of a small daily newspaper with exactly o")["id"]
+    yours = store.create_session(next(_chat), "/", origin="dashboard")["id"]
+    store.rename(yours, "You are a helpful reviewer")
+    rivendell_jobs.backfill()
+    assert store.parse_job(store.get_session(run)["job"]) == {"kind": "news"}
+    assert store.get_session(run)["title"] == "You are the editor of a small daily newspaper with exactly o"
+    assert store.get_session(yours)["job"] is None

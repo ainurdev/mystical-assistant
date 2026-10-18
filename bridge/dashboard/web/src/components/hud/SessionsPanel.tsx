@@ -6,6 +6,9 @@ import type { LucideIcon } from "lucide-react";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
+import type { ProjectTint } from "../../lib/surfaces";
+import { dayLabel, isJob, JOB_LABEL, jobGroup, jobLabel, JOBS_REL, jobTarget } from "../../lib/jobs";
+import { JOB_ICON, JobsTile, JobTag } from "./JobTag";
 import { orderBranches } from "../../lib/branchorder";
 import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
@@ -78,6 +81,14 @@ const DETAIL_DEFAULT: Record<Mode, Detail> = {
   projects: { proj: false, branch: true, wt: true },
   plugins: { proj: true, branch: true, wt: true },
   recent: { proj: true, branch: true, wt: true },
+};
+
+/** Rivendell jobs wear the PLUGINS lane's purple, apart from your own projects'. */
+const JOB_TINT: ProjectTint = {
+  color: "var(--purple)",
+  border: "color-mix(in srgb, var(--purple) 45%, transparent)",
+  dim: "color-mix(in srgb, var(--purple) 55%, var(--txd))",
+  faint: "color-mix(in srgb, var(--purple) 30%, var(--txd))",
 };
 
 /** Session origins that belong to plugin workers — the PLUGINS tab's rows. One
@@ -186,7 +197,8 @@ function SessionRow({
   onAttach: () => void;
 }) {
   const [hov, setHov] = useState(false);
-  const tint = projectTint(s.project);
+  const job = isJob(s);
+  const tint = job ? JOB_TINT : projectTint(s.project);
   const fv = flag ? FLAG_VIEW[flag] : null;
   // A sidebar has no room for a full ref, so a row prints the branch's last
   // segment; the full ref lives in the row tooltip. Compact drops the whole meta
@@ -195,17 +207,20 @@ function SessionRow({
   // worktree at all" and "not the main worktree" are the same question.
   const inWorktree = !!(s.worktree || s.work_cwd);
   const wtTitle = s.work_cwd ? `working in ${s.work_cwd}` : s.worktree ? `worktree ${s.worktree}` : "";
-  const projShown = showProj && detail.proj;
-  const branchShown = detail.branch && !!branch;
-  const wtShown = detail.wt && inWorktree;
-  const metaShow = !!(projShown || branchShown || wtShown || fv || s.goal);
+  // A Rivendell job says what kind it is and what it was about, not where it ran.
+  const target = job ? jobTarget(s.job) : "";
+  const projShown = !job && showProj && detail.proj;
+  const branchShown = !job && detail.branch && !!branch;
+  const wtShown = !job && detail.wt && inWorktree;
+  const metaShow = !!(job || projShown || branchShown || wtShown || fv || s.goal);
   return (
     <div
       onClick={onAttach}
       className="sessrow" data-on={showDot && on}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       data-ctx-type="session" data-ctx-id={s.id} data-ctx-label={s.title || "session"}
-      title={`${s.title || "untitled session"} · ${projectName(s.project)} · ${branch} · ${v.t}`}
+      title={job ? `${s.title || "untitled session"} · ${jobLabel(s.job).toLowerCase()}${target ? ` ${target}` : ""} · from Rivendell · ${v.t}`
+        : `${s.title || "untitled session"} · ${projectName(s.project)} · ${branch} · ${v.t}`}
       style={{
         display: "grid", gridTemplateColumns: showDot ? "8px 1fr auto" : "1fr auto", columnGap: 10,
         alignItems: "start", padding: "8px 8px 9px", position: "relative",
@@ -238,6 +253,11 @@ function SessionRow({
         </span>
         {metaShow && (
           <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
+            {job && <JobTag job={s.job} />}
+            {target && (
+              <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                             color: "var(--txd)" }}>{target}</span>
+            )}
             {projShown && (
               <span className="sessproj" style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: tint.color }}>
                 <ProjectTile project={s.project} />{projectName(s.project)}
@@ -283,6 +303,44 @@ function SessionRow({
         <span style={{ flex: "none", width: 26, textAlign: "right", fontSize: "var(--t95)",
                        color: pulse ? "var(--ok)" : "var(--txl)" }}>{ago(s.updated)}</span>
       </div>
+    </div>
+  );
+}
+
+/** The open Rivendell jobs group's kind filter: ALL plus one chip per kind it
+ *  holds, most first, each with its count. */
+function KindFilter({ rows, kind, onKind }: { rows: SessionBrief[]; kind: string; onKind: (k: string) => void }) {
+  const counts = new Map<string, number>();
+  for (const s of rows) counts.set(s.job?.kind ?? "", (counts.get(s.job?.kind ?? "") ?? 0) + 1);
+  const kinds = [...counts].filter(([k]) => k).sort((a, b) => b[1] - a[1]);
+  if (kinds.length < 2) return null;              // one kind: nothing to filter
+  const chip = (k: string, label: string, n: number, Icon?: LucideIcon) => {
+    const on = kind === k;
+    return (
+      <button key={k || "all"} onClick={() => onKind(on && k ? "" : k)} aria-pressed={on}
+        style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 22, padding: "0 7px", borderRadius: 6, cursor: "pointer",
+                 border: `1px solid ${on ? "color-mix(in srgb, var(--purple) 55%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)"}`,
+                 background: on ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "transparent",
+                 color: on ? "var(--purple)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t85)", letterSpacing: ".06em" }}>
+        {Icon && <Icon size={10} strokeWidth={2.2} aria-hidden />}{label}
+        <span style={{ color: on ? "color-mix(in srgb, var(--purple) 70%, var(--txl))" : "var(--txl)" }}>{n}</span>
+      </button>
+    );
+  };
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: 5, margin: "2px 4px 6px 6px" }}>
+      {chip("", "ALL", rows.length)}
+      {kinds.map(([k, n]) => chip(k, jobLabel({ kind: k as keyof typeof JOB_LABEL }), n, JOB_ICON[k as keyof typeof JOB_ICON]))}
+    </div>
+  );
+}
+
+/** A day's label between the open jobs group's rows. */
+function DayCut({ label }: { label: string }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 8, height: 22, margin: "6px 0 0", padding: "0 8px",
+                  fontSize: "var(--t85)", letterSpacing: ".14em", color: "var(--txl)" }}>
+      {label}<span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
     </div>
   );
 }
@@ -353,6 +411,8 @@ export function SessionsPanel(props: Props) {
   // Projects expanded past their default rows. ponytail: not persisted — an
   // expand is "show me this now", not a preference.
   const [open, setOpen] = useState<Set<string>>(new Set());
+  // Which kind the open Rivendell jobs group shows ("" = every kind).
+  const [jobKind, setJobKind] = useState("");
   // A mode switch replaces every row, so the list cascades in once. Rows mount
   // on scroll too, and those must not — hence a flag, not an always-on entrance.
   const [fresh, setFresh] = useState(true);
@@ -506,7 +566,7 @@ export function SessionsPanel(props: Props) {
   const drilled = !sq && open.size > 0;
   const tree = mode !== "projects" ? [] : ps.flatMap((g) => {
     if (drilled && !open.has(g.rel)) return [];
-    const f = sorted.filter((s) => s.project === g.rel);
+    const f = sorted.filter((s) => jobGroup(s) === g.rel);
     if (sq && f.length === 0) return [];
     // Nothing to show is nothing to expand — an empty project is collapsed,
     // whatever the header was last clicked to.
@@ -514,7 +574,9 @@ export function SessionsPanel(props: Props) {
     // Newest rows *plus* anything live — a union, not a replacement: selecting
     // an idle row made it "live" and shoved its sibling out of the list.
     const keep = new Set(f.slice(0, 2).map((s) => s.id));
-    const vis = isShut ? [] : sq || open.has(g.rel) ? f
+    const vis = isShut ? [] : sq || open.has(g.rel)
+      // Opened, the jobs group reads as a log: newest job first, one kind at a time.
+      ? (g.rel === JOBS_REL ? f.filter((s) => !jobKind || (s.job?.kind ?? "") === jobKind).sort(byCreated) : f)
       : f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id)
         || laneOf(s) !== "idle" || flags.has(s.id));
     const rest = Math.max(0, g.sessionCount - vis.length);
@@ -1098,12 +1160,13 @@ export function SessionsPanel(props: Props) {
         ) : (
           <>
             {tree.map(({ g, f, isShut, vis, rest }) => {
-              const tint = projectTint(g.rel);
+              const jobs = g.rel === JOBS_REL;
+              const tint = jobs ? JOB_TINT : projectTint(g.rel);
               return (
                 <div
                   key={g.rel}
                   className="projgrp"
-                  data-ctx-type="project" data-ctx-id={g.rel} data-ctx-label={g.name}
+                  data-ctx-type={jobs ? undefined : "project"} data-ctx-id={g.rel} data-ctx-label={g.name}
                   onDragOver={dragRel ? (e) => { e.preventDefault(); setOverRel(g.rel); } : undefined}
                   onDrop={dragRel ? (e) => { e.preventDefault(); dropOn(g.rel); } : undefined}
                   style={{ marginBottom: isShut ? 4 : 13, opacity: dragRel === g.rel ? 0.4 : 1,
@@ -1132,12 +1195,13 @@ export function SessionsPanel(props: Props) {
                              cursor: order === "custom" && !sq ? "grab" : "pointer" }}
                   >
                     <span className="pdot" style={{ flex: "none", width: 6, height: 6, background: tint.color }} />
-                    <ProjectTile project={g.rel} />
+                    {jobs ? <JobsTile /> : <ProjectTile project={g.rel} />}
                     {/* A label, not a destination — a tier under the session titles so they read first. */}
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
                     <span style={{ flex: 1, minWidth: 6 }} />
-                    <button
+                    {/* Rivendell starts these; there is no session of its to start here. */}
+                    {!jobs && <button
                       onClick={(e) => { e.stopPropagation(); openFor(g.rel); }}
                       title={`New session in ${g.rel}`}
                       draggable={false} onDragStart={(e) => e.preventDefault()}
@@ -1155,7 +1219,7 @@ export function SessionsPanel(props: Props) {
                         <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                       </svg>
                       New
-                    </button>
+                    </button>}
                   </div>
                   {nsOpen && nsScoped && nsProject === g.rel && nsForm}
                   {/* Expanded, a project can be hundreds of rows long — the way
@@ -1174,10 +1238,17 @@ export function SessionsPanel(props: Props) {
                       <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{f.length}</span>
                     </div>
                   )}
+                  {jobs && open.has(g.rel) && !sq && <KindFilter rows={f} kind={jobKind} onKind={setJobKind} />}
                   <div className="projrail" style={{ margin: "1px 0 0 3px", borderLeft: `1px solid color-mix(in srgb, ${tint.color} ${isShut ? 7 : 20}%, transparent)` }}>
                     {/* A search drops the per-project cap, so this can be every
                         session in the store — skip off-screen rows. */}
-                    {vis.length > 0 && <div className="vskip-card">{vis.map((s, i) => rowFor(s, true, false, i))}</div>}
+                    {vis.length > 0 && <div className="vskip-card">{jobs && open.has(g.rel) && !sq
+                      ? vis.flatMap((s, i) => {
+                          const d = dayLabel(s.created ?? s.updated);
+                          const cut = i === 0 || d !== dayLabel(vis[i - 1].created ?? vis[i - 1].updated);
+                          return cut ? [<DayCut key={`day:${d}`} label={d} />, rowFor(s, true, false, i)] : [rowFor(s, true, false, i)];
+                        })
+                      : vis.map((s, i) => rowFor(s, true, false, i))}</div>}
                     {!isShut && !sq && (rest > 0 || (open.has(g.rel) && f.length > 2)) && (
                       <button
                         onClick={() => setOpen((c) => {

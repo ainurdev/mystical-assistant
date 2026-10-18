@@ -1546,6 +1546,124 @@ input {
   font-size: var(--t95); letter-spacing: 1.5px; color: var(--txd);
 }
 .res-fold:hover { color: var(--txb); }
+
+/* === RIVENDELL JOBS =========================================================
+   A Rivendell job's session reads as the job (components/JobPlate, JobBar,
+   Newspaper): its plate where the YOU bubble would be, its bar where the
+   composer would be, its paper where a newspaper's JSON would be. Purple is
+   Rivendell's, as on the PLUGINS lane; every other ink is the theme's own. */
+.jobplate {
+  display: grid; grid-template-columns: 34px 1fr; column-gap: 14px; padding: 14px 18px 13px 16px;
+  border: 1px solid color-mix(in srgb, var(--purple) 24%, transparent); border-left: 3px solid var(--purple);
+  border-radius: 10px; background: color-mix(in srgb, var(--purple) 7%, var(--panel2));
+  font-family: var(--d-face, var(--ui-font, inherit));
+}
+/* DOSSIER already frames a turn's prompt (.dprompt): there the plate drops its
+   own frame, as .pbub does, and the frame takes Rivendell's purple. */
+[data-style="dossier"] .jobplate { padding: 0; border: 0; border-radius: 0; background: none; }
+[data-style="dossier"] .dprompt[data-job] { --d-you: var(--purple); }
+[data-fam] [data-style="dossier"] .dprompt[data-job] {
+  background: color-mix(in srgb, var(--purple) 7%, var(--panel2)); box-shadow: inset 3px 0 0 var(--purple);
+}
+.jobplate-ic {
+  width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; color: var(--purple);
+  background: color-mix(in srgb, var(--purple) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--purple) 35%, transparent);
+}
+.jobplate-kl { display: flex; align-items: center; gap: 8px; min-height: 14px; font-size: var(--t95);
+  font-weight: 600; letter-spacing: .08em; color: var(--purple); }
+.jobplate-kl s { text-decoration: none; color: var(--txl); }
+.jobplate-kl span { color: var(--txl); }
+.jobplate-kl .jobplate-t { margin-left: auto; font-family: var(--mono); font-weight: 400; letter-spacing: 0; }
+.jobplate-h { margin-top: 7px; font-size: var(--t17); font-weight: 600; line-height: 1.32; color: var(--txb); overflow-wrap: anywhere; }
+.jobplate-sub { margin-top: 6px; font-family: var(--mono); font-size: var(--t115); color: var(--txd); overflow-wrap: anywhere; }
+.jobplate-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.jobplate-lnk, .jobbar-btn {
+  height: 28px; display: inline-flex; align-items: center; gap: 7px; padding: 0 11px; border-radius: 7px;
+  border: 1px solid var(--border-bright); background: var(--panel3); color: var(--txh);
+  font-size: var(--t10); font-weight: 600; letter-spacing: .05em; white-space: nowrap; text-decoration: none; cursor: pointer;
+}
+.jobplate-lnk:hover, .jobbar-btn:hover { color: var(--txb); border-color: color-mix(in srgb, var(--txb) 30%, transparent); }
+.jobplate-lnk[data-rv] { color: var(--purple); border-color: color-mix(in srgb, var(--purple) 45%, transparent);
+  background: color-mix(in srgb, var(--purple) 8%, var(--panel3)); }
+.jobplate-fold { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent;
+  font-family: var(--mono); font-size: var(--t10); color: var(--txl); cursor: pointer; }
+.jobplate-fold b { font-weight: 400; color: var(--txg); }
+.jobplate-fold:hover { color: var(--txb); }
+.jobplate-prompt { margin: 10px 0 0; padding: 10px 12px; max-height: 420px; overflow: auto; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--panel3); font-family: var(--mono); font-size: var(--t115);
+  line-height: 1.6; color: var(--txd); white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.jobbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; min-height: 62px; padding: 12px 12px 12px 16px;
+  border: 1px solid var(--border); border-radius: 12px; background: var(--panel2); font-family: var(--d-face, var(--ui-font, inherit)); }
+.jobbar-ic { width: 22px; height: 22px; flex: none; border-radius: 50%; display: grid; place-items: center; }
+.jobbar-ic[data-tone="ok"] { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--ok) 50%, transparent); }
+.jobbar-ic[data-tone="err"] { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--err) 45%, transparent); }
+.jobbar-ic[data-tone="warn"] { color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--warn) 45%, transparent); }
+.jobbar-orb { position: relative; width: 22px; height: 22px; flex: none; }
+.jobbar-orb::before { content: ""; position: absolute; inset: 3px; border-radius: 50%;
+  border: 1.5px solid color-mix(in srgb, var(--purple) 35%, transparent); }
+.jobbar-orb::after { content: ""; position: absolute; left: 50%; top: 0; width: 6px; height: 6px; margin-left: -3px;
+  border-radius: 50%; background: var(--purple); box-shadow: 0 0 8px var(--purple);
+  transform-origin: 3px 11px; animation: jobbar-orbit 1.6s linear infinite; }
+@keyframes jobbar-orbit { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .jobbar-orb::after { animation: none; } }
+.jobbar-w1 { font-size: var(--t10); font-weight: 600; letter-spacing: .07em; color: var(--txh); white-space: nowrap; }
+.jobbar[data-state="running"] .jobbar-w1 { color: var(--purple); }
+.jobbar[data-state="failed"] .jobbar-w1 { color: var(--err); }
+.jobbar-w2 { min-width: 0; flex: 0 1 auto; font-family: var(--mono); font-size: var(--t105); color: var(--txl);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jobbar-sp { flex: 1; }
+.jobbar-btn { height: 32px; padding: 0 13px; font-family: inherit; }
+.jobbar-btn[data-pri] { color: var(--txb); border-color: color-mix(in srgb, var(--acc) 50%, transparent);
+  background: color-mix(in srgb, var(--acc) 14%, var(--panel3)); }
+.jobbar-btn[data-stop] { color: var(--err); border-color: color-mix(in srgb, var(--err) 42%, transparent); background: transparent; }
+.jobbar-btn:disabled { opacity: .6; cursor: default; }
+
+/* The paper takes the column whatever the layout: three stories don't fit 80%. */
+[data-layout="compact"] [data-style] .resblk[data-paper] .res { max-width: 100%; }
+.paper { font-family: var(--d-face, var(--ui-font, inherit)); margin: 10px 12px 12px; padding: 16px 20px 18px; border: 1px solid var(--border); border-radius: 12px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--txb) 2.5%, var(--panel2)), var(--panel2)); }
+.paper-mast { display: flex; align-items: flex-end; gap: 14px; padding-bottom: 10px;
+  border-bottom: 2px solid color-mix(in srgb, var(--txb) 70%, transparent); }
+.paper-dt { font-family: var(--mono); font-size: var(--t10); letter-spacing: .12em; color: var(--txm); }
+.paper-nm { margin-top: 6px; font-size: var(--t26); font-weight: 700; line-height: 1; letter-spacing: -.02em; color: var(--txb); }
+.paper-nm i { font-weight: 500; color: var(--txd); }
+.paper-ear { margin-left: auto; max-width: 240px; text-align: right; font-style: italic; font-size: var(--t11); line-height: 1.35; color: var(--txd); }
+.paper-wx { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border);
+  font-size: var(--t125); color: var(--txm); }
+.paper-wx svg { flex: none; color: var(--txd); }
+.paper-wx b { flex: none; font-family: var(--mono); font-size: var(--t85); font-weight: 600; letter-spacing: .14em; color: var(--txl); }
+.paper-lead { display: grid; grid-template-columns: 1fr auto; gap: 16px; padding: 14px 0 12px; border-bottom: 1px solid var(--border); }
+.paper-lead h3 { margin: 0; font-size: var(--t22); font-weight: 700; line-height: 1.15; letter-spacing: -.01em; color: var(--txb); }
+.paper .paper-deck { margin: 7px 0 0; font-size: var(--t135); font-weight: 500; line-height: 1.45; color: var(--txh); }
+.paper-lead p { margin: 8px 0 0; font-size: var(--t13); line-height: 1.6; color: var(--tx); }
+.paper-illo { width: 64px; height: 64px; border-radius: 12px; display: grid; place-items: center; color: var(--txm);
+  background: color-mix(in srgb, var(--txb) 4%, transparent); border: 1px solid var(--border); }
+.paper-stories { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); border-bottom: 1px solid var(--border); }
+.paper-story { padding: 12px 14px 12px 0; }
+.paper-story + .paper-story { padding-left: 14px; border-left: 1px solid var(--border); }
+.paper-sicon { display: block; margin-bottom: 7px; color: var(--txl); }
+.paper-story h4 { margin: 0; font-size: var(--t14); font-weight: 600; line-height: 1.3; color: var(--txb); }
+.paper-story p { margin: 6px 0 0; font-size: var(--t12); line-height: 1.55; color: var(--txd); }
+.paper-lower { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px; padding-top: 12px; }
+.paper-sec { margin-bottom: 8px; font-family: var(--mono); font-size: var(--t85); font-weight: 600; letter-spacing: .16em; color: var(--txl); }
+.paper-sec[data-ny] { color: var(--warn); }
+.paper-briefs { margin: 0; padding: 0; list-style: none; }
+.paper-briefs li { position: relative; padding: 0 0 7px 13px; font-size: var(--t12); line-height: 1.5; color: var(--tx); }
+.paper-briefs li::before { content: ""; position: absolute; left: 0; top: .6em; width: 5px; height: 5px; border-radius: 50%; background: var(--txg); }
+.paper-ad { display: grid; grid-template-columns: 26px 1fr; column-gap: 10px; margin-bottom: 7px; padding: 9px 10px;
+  border-radius: 9px; border: 1px solid var(--border); background: var(--panel3); }
+.paper-ad[data-big] { border-color: color-mix(in srgb, var(--warn) 26%, var(--border)); }
+.paper-ai { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--txm);
+  background: color-mix(in srgb, var(--txb) 5%, transparent); }
+.paper-ad h5 { margin: 0; font-size: var(--t125); font-weight: 600; line-height: 1.35; color: var(--txb); }
+.paper-ad p { margin: 3px 0 0; font-size: var(--t115); line-height: 1.45; color: var(--txd); }
+.paper-due { display: inline-block; margin-top: 5px; font-family: var(--mono); font-size: var(--t9); letter-spacing: .08em; color: var(--txl); }
+.paper-due[data-late] { color: var(--warn); }
 /* A card the app asks you something on — a permission, a question. The sheet
    never drew one (it drew a transcript, not a dialogue), so each language reads
    it the way it reads its other framed things: the answer box is the closest

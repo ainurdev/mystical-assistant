@@ -26,6 +26,27 @@ export interface Goal {
   iter: number;
   note?: string;
 }
+/** What a Rivendell job was about, filed on its session (bridge/rivendell_jobs.py
+ *  facts()). Only `kind` is near-certain; every other fact is there when Rivendell
+ *  sent it. An older session read back from its prompt may have no kind at all. */
+export interface RivendellJob {
+  kind?: "review" | "impl" | "taskdesc" | "todolist" | "changelog" | "news" | "deck" | "video" | "meeting-notes";
+  instance?: string;          // the Rivendell connection it came from
+  request?: string;           // its request id there
+  step?: string;              // todolist: recommendations | todolist; video: transcribe | ask; meeting: text | recording
+  title?: string;             // the PR title, the task, the project, the file, the meeting
+  repo?: string;              // owner/repo (review, implement)
+  number?: number;            // the PR's number
+  html_url?: string;          // the PR on GitHub
+  url?: string;               // its page in Rivendell, when Rivendell sends one
+  date?: string;              // a paper's edition date, YYYY-MM-DD
+  language?: string;
+  pr_id?: string; task_id?: string; project_id?: string;   // what RUN AGAIN files with
+  outcome?: "completed" | "failed" | "unreported";        // how its result went
+  error?: string;
+  at?: number;                // when the outcome was stamped, epoch seconds
+}
+
 export interface SessionBrief {
   id: string;
   title: string | null;
@@ -45,6 +66,7 @@ export interface SessionBrief {
   autocompact?: string | null; // compact at: "auto" | token count | null (claude's default)
   disabled_tools?: string[]; // claude deny rules — tools/MCP servers switched off here
   goal?: Goal | null;
+  job?: RivendellJob | null; // a Rivendell job's kind and facts (bridge/rivendell_jobs.py); null = not one
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
   // What the session's next run gets (bridge profiles.brief): a knob set by
   // hand in it, else its profile's, else the default. Loaded into the
@@ -1943,6 +1965,10 @@ export const api = {
     req<{ ok: boolean; request: { id: string; status: string } }>("/local/rivendell/implement", {
       method: "POST", body: { instance_id, task_id, note },
     }),
+  /** RUN AGAIN on a failed job's bar (bridge rivendell.rerun). A bridge from
+   *  before the route 404s, which the bar reads as "restart the bridge". */
+  rivendellAgain: (session_id: string) =>
+    req<{ ok: boolean; request: { id?: string } }>("/local/rivendell/again", { method: "POST", body: { session_id } }),
   rivendellTask: (instance_id: string, task_id: string) =>
     req<RivendellTaskDetail>(`/local/rivendell/task?instance_id=${encodeURIComponent(instance_id)}` +
       `&task_id=${encodeURIComponent(task_id)}`),

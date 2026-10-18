@@ -10,7 +10,25 @@ const SURFACES: Record<string, { tag: string; color: string; bg: string }> = {
   terminal: { tag: "CLI", color: "var(--muted-foreground)", bg: "transparent" },
 };
 
-export function SurfaceBadge({ origin }: { origin?: string | null }) {
+// A Rivendell job's tag is its kind, in Rivendell's purple: the dashboard's
+// words for it (dashboard lib/jobs JOB_LABEL).
+const JOB_WORD: Record<string, string> = {
+  review: "REVIEW", impl: "IMPLEMENT", taskdesc: "TASK DESC", todolist: "TODOLIST", changelog: "CHANGELOG",
+  news: "NEWSPAPER", deck: "DECK", video: "VIDEO", "meeting-notes": "MEETING NOTES",
+};
+
+export function SurfaceBadge({ origin, job }: { origin?: string | null; job?: { kind?: string; step?: string } | null }) {
+  if (origin === "rivendell" || origin?.startsWith("rivendell:")) {
+    const tag = job?.kind === "todolist" && job.step === "recommendations" ? "RECOMMEND" : JOB_WORD[job?.kind ?? ""] ?? "RIVENDELL";
+    return (
+      <span
+        className="shrink-0 rounded border px-1.5 py-px text-[9px] tracking-wider"
+        style={{ color: "var(--purple)", background: "color-mix(in srgb, var(--purple) 10%, transparent)", borderColor: "var(--purple)" }}
+      >
+        {tag}
+      </span>
+    );
+  }
   const s = SURFACES[origin ?? ""];
   if (!s) return null;
   return (

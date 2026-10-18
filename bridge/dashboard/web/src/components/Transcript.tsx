@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { api, type AnswerSelection, type TurnOutcome } from "../api";
+import { api, type AnswerSelection, type RivendellJob, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
 import { PromptBubble } from "./PromptBubble";
+import { JobPlate } from "./JobPlate";
 import { Markdown, type OpenFile } from "./Markdown";
 import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
@@ -126,7 +127,7 @@ type Respond = (
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
   turn, isActive, isLast, promptIdx, hud, liveTurns, boot,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, job, jobTitle,
 }: {
   turn: Turn;
   isActive: boolean;
@@ -143,8 +144,13 @@ function TurnBlock({
   onQuote?: (text: string) => void;
   onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
+  /** The Rivendell job behind the session (lib/jobs), on its first turn only. */
+  job?: RivendellJob | null;
+  jobTitle?: string | null;
 }) {
   const working = isActive && turn.status === "running" && turn.pending.length === 0;
+  // Stable, so RunStream's memo holds across polls.
+  const paper = useMemo(() => (job?.kind === "news" ? { date: job.date } : null), [job?.kind, job?.date]);
   const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
   return (
     // data-ctx-*: the dashboard's right-click menu reads the nearest one of
@@ -155,10 +161,11 @@ function TurnBlock({
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
-      <div className="dprompt">
+      <div className="dprompt" data-job={job ? "" : undefined}>
         {turn.prompt && (
           <div data-prompt-idx={promptIdx}>
-            <PromptBubble text={turn.prompt} at={turn.started} n={promptIdx + 1} runtime={turn.runtime} />
+            {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
+              : <PromptBubble text={turn.prompt} at={turn.started} n={promptIdx + 1} runtime={turn.runtime} />}
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (
@@ -191,6 +198,7 @@ function TurnBlock({
               ended={turn.status !== "running"}
               working={working}
               hud={hud}
+              paper={paper}
             />
           )}
         </div>
@@ -237,6 +245,8 @@ export function Transcript({
   navRef,
   restoringRef,
   correctingRef,
+  job,
+  jobTitle,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -265,6 +275,10 @@ export function Transcript({
   /** Set true for the frame after a scroll correction of ours — the scroll
    *  event it fires is not the reader's. */
   correctingRef?: MutableRefObject<boolean>;
+  /** The Rivendell job behind this session, if one started it: its first turn
+   *  draws as the job's plate (JobPlate). */
+  job?: RivendellJob | null;
+  jobTitle?: string | null;
 }) {
   // Tail loading: turns always ship whole but only the last few carry events.
   // Turns before the cut would render as prompt bubbles with missing bodies —
@@ -460,6 +474,8 @@ export function Transcript({
         boot={boot}
         isLast={index === visible.length - 1}
         promptIdx={cut + index}
+        job={cut + index === 0 ? job : null}
+        jobTitle={jobTitle}
         hud={hud}
         liveTurns={liveTurns}
         onRespond={onRespond}

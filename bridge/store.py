@@ -531,15 +531,23 @@ def parse_job(raw: "str | None") -> dict | None:
 
 
 def rivendell_without_job() -> list[dict]:
-    """The Rivendell sessions with no job filed yet (rivendell_jobs.backfill), each
-    with the prompt it started on and its last answer's text."""
+    """The sessions with no job filed yet that may be Rivendell's (rivendell_jobs.
+    backfill): a Rivendell origin or a folder only Rivendell's runs make (flagged
+    `rivendell`), or a title that opens like a Rivendell prompt. Each comes with
+    the prompt it started on and its last answer's text."""
     with closing(_connect()) as c:
         rows = c.execute(
             "SELECT s.id, s.ref, s.title, s.title_source, "
+            "(s.origin LIKE 'rivendell%' OR s.project LIKE '/.bridge_uploads/meetings%' "
+            " OR s.project LIKE '/.bridge_uploads/video%') AS rivendell, "
             "(SELECT t.prompt FROM turns t WHERE t.session_id=s.id ORDER BY t.seq LIMIT 1) AS prompt, "
             "(SELECT e.payload FROM events e WHERE e.session_id=s.id AND e.type='result' "
             " ORDER BY e.seq DESC LIMIT 1) AS result "
-            "FROM sessions s WHERE s.origin LIKE 'rivendell%' AND s.job IS NULL").fetchall()
+            "FROM sessions s WHERE s.job IS NULL AND (s.origin LIKE 'rivendell%' "
+            # The folders only Rivendell's runs make (rivendell.py; dashboard lib/jobs).
+            "OR s.project LIKE '/.bridge_uploads/meetings%' OR s.project LIKE '/.bridge_uploads/video%' "
+            # …or a terminal-indexed run whose title is a Rivendell template's opening.
+            "OR s.title LIKE 'You are %')").fetchall()
     out = []
     for r in rows:
         d = dict(r)

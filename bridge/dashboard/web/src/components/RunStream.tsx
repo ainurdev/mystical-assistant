@@ -23,6 +23,8 @@ import { WorkingIndicator } from "./hud/WorkingIndicator";
 import type { HudSettings } from "../lib/theme";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { ToolWidget } from "./ResultWidgets";
+import { Newspaper } from "./Newspaper";
+import { parsePaper } from "../lib/jobs";
 import { shotName, shotTitle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
   cmdAbstract, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
@@ -1850,6 +1852,7 @@ export const RunStream = memo(function RunStream({
   boot = null,
   foldsOpen = false,
   compact = false,
+  paper = null,
 }: {
   events: TimedEvent[];
   pending?: PendingRequest[];
@@ -1887,6 +1890,8 @@ export const RunStream = memo(function RunStream({
   /** The COMPACT chat layout: a run that came back with pictures is drawn as
    *  its pictures alone. */
   compact?: boolean;
+  /** A newspaper job's turn: its answer is drawn as the paper (FinalResult). */
+  paper?: { date?: string } | null;
 }) {
   // An ask is drawn by its question card and by nothing else. A live run also
   // emits it as a tool: the bridge answers the control request with a `deny`
@@ -2052,6 +2057,7 @@ export const RunStream = memo(function RunStream({
               label={i === finalText ? "ANSWER" : dossier ? "ANSWER // ASK" : "RESULT // ASK"}
               animate={animate}
               idKey={`${turnId}:${i}`}
+              paper={i === finalText ? paper : null}
             />
           );
         const pause = dossier ? pauseAt(i - 1) : 0;
@@ -2278,6 +2284,7 @@ export const RunStream = memo(function RunStream({
             dossier={dossier}
             onAnswer={onAnswer}
             onQuote={onQuote}
+            paper={paper}
           />
         );
       case "error":
@@ -2572,6 +2579,7 @@ export function FinalResult({
   dossier = false,
   onAnswer,
   onQuote,
+  paper,
 }: {
   result: string;
   /** Epoch seconds the answer landed, for the clock in the meta row. */
@@ -2587,9 +2595,13 @@ export function FinalResult({
   dossier?: boolean;
   onAnswer?: (text: string) => void;
   onQuote?: (text: string) => void;
+  /** Set on a newspaper job's turn: an answer that parses as its paper is drawn
+   *  as one (Newspaper) instead of as JSON. */
+  paper?: { date?: string } | null;
 }) {
   const h12 = useClock12();
   const flash = animate && !typedResults.has(idKey);
+  const drawn = paper ? parsePaper(result) : null;
   // The CLI answers a slash command it doesn't have with one line and a clean
   // exit, so the turn arrives is_error:false and drew green — "RESULT // OK",
   // body "Unknown command: /design-first". Nothing ran; say so.
@@ -2608,7 +2620,8 @@ export function FinalResult({
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
     // of rules, a level bar, a margin note, a floating surface) — and nothing
     // overrides an inline rule. See `.res` in index.css and THE SESSION'S IDIOM.
-    <div className="resblk relative my-2 pl-[var(--rail)]" data-bad={bad ? "" : undefined} style={{ "--tone": tone } as React.CSSProperties}>
+    <div className="resblk relative my-2 pl-[var(--rail)]" data-bad={bad ? "" : undefined} data-paper={drawn ? "" : undefined}
+      style={{ "--tone": tone } as React.CSSProperties}>
       <RailNode />
       <div
         className="res group/res"
@@ -2631,7 +2644,7 @@ export function FinalResult({
             <CopyBtn text={result} title="copy result" />
           </span>
         </div>
-        {body && (
+        {drawn ? <Newspaper paper={drawn} date={paper?.date} /> : body && (
           <div className="res-body relative">
             <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
               <Typewriter text={body} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
@@ -2640,7 +2653,7 @@ export function FinalResult({
           </div>
         )}
         {ask && <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
-        {body && lines > RESULT_FOLD_LINES && (
+        {!drawn && body && lines > RESULT_FOLD_LINES && (
           <button
             type="button"
             onClick={(e) => {

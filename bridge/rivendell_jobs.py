@@ -15,7 +15,13 @@ and meeting notes keep the "Transcribe · <file>" / "Meeting notes · <name>" ti
 their runners already give them, because the Telegram pings read those too.
 
 `backfill()` gives the sessions from before this their job, once, by reading the
-prompt each one ran. Rivendell's templates open with fixed lines. The notices that
+prompt each one ran: every session a Rivendell job started, and every one in the
+folders only Rivendell's runs make (.bridge_uploads/meetings, videos, video-<id>),
+which the dashboard files under Rivendell jobs too (lib/jobs isJob). A run that
+was indexed as a terminal session (MOVE brought some over from an older machine)
+has no stored prompt; its title, the prompt's first 60 characters, still opens
+with the template's words, so it is filed by those. Any session with a job lists
+under Rivendell jobs, so no folder stays a project just for holding these. Rivendell's templates open with fixed lines. The notices that
 also name a kind are pruned after a day, so they can't be used. A prompt that
 matches no template (a custom one) still gets a row with no kind. It files under
 Rivendell jobs by its origin, untagged, and is never scanned again.
@@ -134,6 +140,21 @@ _MARKS = (
 )
 
 
+# What a session titled by its prompt's first 60 characters shows of each
+# template: enough to know a Rivendell run that was indexed as a terminal session
+# (an older machine's, brought over by MOVE), whose prompt the bridge never stored.
+_TITLE_MARKS = (
+    ("news", "You are the editor of a small daily newspaper"),
+    ("todolist", "You are an experienced technical project manager"),
+    ("review", "You are an experienced software engineer perform"),
+    ("impl", "You are an experienced software engineer implement"),
+    ("taskdesc", "You are an experienced tech lead writing the descr"),
+    ("changelog", "You are a release manager writing the changelog"),
+    ("meeting-notes", "You are writing the notes of a meeting"),
+    ("video", "You are given the transcript of a recording"),
+)
+
+
 def _line(pat: str, text: str) -> "str | None":
     m = re.search(pat, text, re.M)
     return m.group(1).strip() if m else None
@@ -157,7 +178,7 @@ def classify(prompt: "str | None") -> "dict | None":
         if m:
             job.update(html_url=url, repo=m.group(1), number=int(m.group(2)))
     elif kind in ("impl", "taskdesc"):
-        job["title"] = _line(r"^Task: (.+)$", p)
+        job["title"] = _line(r"^Batch: (.+?)(?: \(\d+ tasks?\))?$", p) or _line(r"^Task: (.+)$", p)
         if kind == "impl":
             job["repo"] = _line(r"^Repository: (\S+)", p)
     elif kind == "todolist":
@@ -167,7 +188,23 @@ def classify(prompt: "str | None") -> "dict | None":
         job["title"] = _line(r"changelog for one release of (.+?)\.", head)
     elif kind == "news":
         job["date"] = _line(r"^Edition: (\d{4}-\d{2}-\d{2})", p)
+    elif kind == "meeting-notes":
+        job["title"] = _line(r"^Meeting: (.+)$", p)
+    elif kind == "video":
+        job["title"] = _line(r"^File: (.+?) \(", p)
+        job["step"] = "transcribe" if "the screens of it" in head else None
     return {k: v for k, v in job.items() if v not in (None, "")}
+
+
+def _runner_title(job: dict) -> "str | None":
+    """The title a video's or a meeting's runner gives its session (rivendell.py
+    _run_video, _run_meeting_notes), for an older one whose title is still its
+    prompt's first line."""
+    if job.get("kind") == "video" and job.get("title"):
+        return f"{'Ask' if job.get('step') == 'ask' else 'Transcribe'} · {job['title']}"
+    if job.get("kind") == "meeting-notes" and job.get("title"):
+        return f"Meeting notes · {job['title']}"
+    return None
 
 
 def backfill() -> int:
@@ -180,10 +217,20 @@ def backfill() -> int:
     n = 0
     for row in store.rivendell_without_job():
         inst, _, req = (row.get("ref") or "").partition(":")
-        job = {**(classify(row.get("prompt")) or {}), **({"instance": inst, "request": req} if req else {})}
+        # The title's opening knows the kind when no prompt was stored (a terminal-indexed run).
+        kind = next((k for k, mark in _TITLE_MARKS if (row.get("title") or "").startswith(mark)), None)
+        job = {**(classify(row.get("prompt")) or ({"kind": kind} if kind else {})),
+               **({"instance": inst, "request": req} if req else {})}
+        if not row.get("rivendell"):
+            # Only its title says it was a Rivendell run: file it only when it does.
+            if kind is None:
+                continue
+            store.set_job(row["id"], {"kind": kind})   # its title is all it has: kept
+            n += 1
+            continue
         store.set_job(row["id"], job)
         name = headline(row.get("result")) if job.get("kind") == "news" else None
-        name = name or title(job)
+        name = name or title(job) or _runner_title(job)
         if name and row.get("title_source") != "manual":
             store.rename(row["id"], name)
         n += 1

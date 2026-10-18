@@ -58,6 +58,8 @@ export interface SessionBrief {
   updated: number;
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
+  // A Rivendell job's kind and facts (bridge/rivendell_jobs.py); null = not one.
+  job?: { kind?: string; step?: string; title?: string } | null;
   fallback_policy?: string | null; // on usage limit: ask | auto | wait | null (default)
   ctx_tokens?: number | null; // window fill at the end of the last turn (null = unmeasured)
   ctx_window?: number; // what ctx_tokens is a fraction of: this session's

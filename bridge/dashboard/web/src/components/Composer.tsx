@@ -465,7 +465,7 @@ function RunSheet<M extends string>({ model, modelOpts, onModel, perm, permOpts,
 export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
-  queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink,
+  queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
 }: {
   disabled: boolean;
   running: boolean;
@@ -532,6 +532,8 @@ export function Composer({
   // Pointed at addFiles, so a file dropped on the fresh session screen lands
   // here the way one dropped on the box does.
   fileSink?: { current: ((files: FileList | File[]) => void) | null };
+  /** The box's idle hint, when the session wants its own (a Rivendell job's follow-up). */
+  placeholder?: string;
 }) {
   const text = draft;
   const setText = onDraft;
@@ -1202,7 +1204,7 @@ export function Composer({
         if (text.includes("\n")) void askConfirm("Clear the draft?").then((yes) => { if (yes) setText(""); });
         else setText("");
       }}
-      placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : "message claude — describe a change, paste an error…"}
+      placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : placeholder ?? "message claude — describe a change, paste an error…"}
     />
   );
   const pfx = <span className="pb-pfx" style={{ color: "var(--purple)", fontSize: "var(--t13)", flex: "none", marginTop: 2 }}>~ ❯</span>;

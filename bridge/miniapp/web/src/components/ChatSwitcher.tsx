@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronDown, ChevronUp, Sparkles, SquarePen, X } from "lucide-react";
-import { api, needsYou, type SessionState } from "../lib/api";
+import { api, needsYou, type SessionBrief, type SessionState } from "../lib/api";
 import { useChat } from "../lib/chat";
 import { FolderNavigator } from "./FolderNavigator";
 import { SurfaceBadge } from "./SurfaceBadge";
@@ -34,6 +34,7 @@ interface Row {
   state: SessionState;
   project: string | null; // set only for chats living in another project
   origin: string | null;
+  job?: SessionBrief["job"];
   when: number | null;
 }
 
@@ -80,6 +81,7 @@ export function ChatSwitcher() {
     state: status[s.id]?.state ?? "idle",
     project: null,
     origin: s.origin ?? null,
+    job: s.job ?? null,
     when: s.updated,
   }));
   // Live chats in other projects: the status map is machine-wide, the session
@@ -160,7 +162,7 @@ export function ChatSwitcher() {
                   {r.project && r.project !== project ? ` · ${r.project}` : ""}
                 </div>
               </div>
-              <SurfaceBadge origin={r.origin} />
+              <SurfaceBadge origin={r.origin} job={r.job} />
               {isWaiting && (
                 <span className="shrink-0 border border-amber-400/50 px-2 py-1 text-[9px] tracking-[1.5px] text-amber-400">
                   ANSWER →

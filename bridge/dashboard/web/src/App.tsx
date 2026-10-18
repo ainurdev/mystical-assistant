@@ -29,6 +29,7 @@ import { activeOf, mergeDelta, type Turn } from "./chat";
 import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
+import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
 import { ago, forgetLegacyTints, legacyTints, projectName, putProjectMark, setProjectMarks, setProjectNames,
          useProjectTints } from "./lib/surfaces";
 import { offerRivendellMarks } from "./components/hud/RivendellMarks";
@@ -68,6 +69,7 @@ import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from ".
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
+import { JobBar } from "./components/JobBar";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, RightCap, Strip } from "./components/hud/Strip";
@@ -482,6 +484,11 @@ export function App() {
 
   const active = activeOf(turns);
   const running = active !== null;
+  // A Rivendell job whose answer is the point (lib/jobs oneShot) shows its job
+  // bar instead of the composer, until you ask about it or it already has a
+  // follow-up. Asked-about sessions are remembered for this page's life only.
+  const [askedJobs, setAskedJobs] = useState<Set<string>>(() => new Set());
+  const jobBar = !!selected && isJob(selected) && oneShot(selected.job) && turns.length <= 1 && !askedJobs.has(selected.id);
   const pendingCount = active?.pending.length ?? 0;
   const activeProject = state?.project?.rel ?? null;
   // Everything the composer shows is scoped to the open session — a check or a
@@ -1638,12 +1645,17 @@ export function App() {
   // --- derived ---
   const projectGroups = useMemo<ProjectGroup[]>(() => {
     const byProj = new Map<string, SessionBrief[]>();
+    // Every session a Rivendell job started lists under one group, wherever it
+    // ran (lib/jobs), so a folder that only ever held jobs is no project.
     for (const s of sessions) {
-      const arr = byProj.get(s.project) ?? [];
+      const key = jobGroup(s);
+      const arr = byProj.get(key) ?? [];
       arr.push(s);
-      byProj.set(s.project, arr);
+      byProj.set(key, arr);
     }
-    if (activeProject && !byProj.has(activeProject)) byProj.set(activeProject, []);
+    // Opening a job selects the folder it ran in; that is no reason to list it.
+    if (activeProject && !byProj.has(activeProject) && !(selected && isJob(selected) && selected.project === activeProject))
+      byProj.set(activeProject, []);
     for (const rel of discovered) if (!byProj.has(rel)) byProj.set(rel, []);
     const groups: ProjectGroup[] = [];
     for (const [rel, ss] of byProj) {
@@ -1656,7 +1668,7 @@ export function App() {
         // The name you gave the project, else its basename — the PROJECTS panel
         // groups rows under a parent-path header, so the org context lives on
         // the group, not the row.
-        rel, name: projectName(rel),
+        rel, name: rel === JOBS_REL ? JOBS_NAME : projectName(rel),
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
       });
     }
@@ -1665,7 +1677,7 @@ export function App() {
     // order, so selecting a project moved it (and others) under the cursor.
     groups.sort((a, b) => a.rel.localeCompare(b.rel));
     return groups;
-  }, [sessions, gitBadges, statusMap, activeProject, discovered, labelVersion]);
+  }, [sessions, gitBadges, statusMap, activeProject, discovered, labelVersion, selected]);
 
   // HIDE keeps a project out of the sidebar; REMOVE detaches it (design manage modal).
   const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && !removedProjects[g.rel]);
@@ -2378,6 +2390,15 @@ export function App() {
                         onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />
                     )}
+                    {jobBar && selected?.job ? (
+                      <JobBar
+                        job={selected.job} turn={turns[0]}
+                        onAsk={() => setAskedJobs((s) => new Set(s).add(selected.id))}
+                        onStop={() => void stop()}
+                        onAgain={() => api.rivendellAgain(selected.id).then(() => null, (e: Error) =>
+                          /^(HTTP 404|not found)$/i.test(e.message) ? "restart the bridge to run jobs again from here" : e.message)}
+                      />
+                    ) : (
                     <Composer
                       pills={
                         // Inside the composer's box, not on the bare panel above
@@ -2413,7 +2434,10 @@ export function App() {
                       project={sessionProject}
                       onOpenMap={ai.graph && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
+                      placeholder={selected && isJob(selected) && oneShot(selected.job)
+                        ? "ask about this — the answer stays here; Rivendell already has its copy" : undefined}
                     />
+                    )}
                   </>
                 }
               />
