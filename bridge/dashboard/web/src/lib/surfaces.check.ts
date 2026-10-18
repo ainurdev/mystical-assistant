@@ -1,5 +1,8 @@
 // Run: node bridge/dashboard/web/src/lib/surfaces.check.ts
-import { fmtReset, projectGivenName, projectLabelsFor, projectName, setProjectNames, usageWindows, windowLabels } from "./surfaces.ts";
+import { fmtReset, projectGivenName, projectLabelsFor, projectName, setProjectNames, usageWindows, wall, windowLabels } from "./surfaces.ts";
+
+// Wall time, the way the answer meta prints it: seconds under a minute, else minutes to a tenth.
+console.assert(wall(45.4) === "45S" && wall(362.3) === "6.0M" && wall(59.6) === "60S", `wall: ${wall(45.4)} ${wall(362.3)} ${wall(59.6)}`);
 
 const at = (ms: number) => new Date(Date.now() + ms).toISOString();
 const cases: [string, string][] = [

@@ -1,6 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "../api";
-import { markShotSeen } from "../lib/seenshots";
+import { markShotSeen, shotUnseen } from "../lib/seenshots";
 import { idiomFor, type ToolStyle, type ToolWidgetSpec } from "../lib/toolwidget";
 import {
   asChain, asChart, asChecks, asClaims, asCommands, asConfidence, asDiff, asFiles,
@@ -305,7 +305,7 @@ function shotLabel(s: { path: string; caption?: string }, i: number): string {
 /** Screenshots a design stage produced. On the draft gate they are the thing
  *  being approved, so a note per screen is how you answer without describing
  *  which screen you mean. */
-function ScreenGallery({ rows, send, gallery }: { rows: { path: string; caption?: string }[]; send?: (t: string) => void; gallery?: Shown[] }) {
+function ScreenGallery({ rows, send, gallery }: { rows: { path: string; caption?: string; at?: number }[]; send?: (t: string) => void; gallery?: Shown[] }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<number, string>>({});
   const [sent, setSent] = useState(false);
@@ -316,7 +316,7 @@ function ScreenGallery({ rows, send, gallery }: { rows: { path: string; caption?
       <div className="flc-shots">
         {rows.map((s, i) => (
           <figure key={i}>
-            <Shot path={s.path} onZoom={setZoom} />
+            <Shot path={s.path} at={s.at} onZoom={setZoom} />
             {/* Every image a tool returns is saved as mcp-<tool_use_id>-<n>.png
                 (bridge/runner.py) — an id is not a caption, so the call names
                 the shot instead (lib/toolwidget.shotName), and a shot from
@@ -354,13 +354,13 @@ function ScreenGallery({ rows, send, gallery }: { rows: { path: string; caption?
 
 /** The one thing this file does differently from its Mini App twin: the
  *  dashboard is same-origin, so the URL goes straight in an <img>. */
-function Shot({ path, onZoom }: { path: string; onZoom: (src: string) => void }) {
+function Shot({ path, at, onZoom }: { path: string; at?: number; onZoom: (src: string) => void }) {
   const [gone, setGone] = useState(false);
   const src = api.attachmentUrl(path);
   if (gone) return <span className="flc-gone">{path.split("/").pop()}</span>;
   return (
     <ZoomButton onOpen={() => onZoom(src)}>
-      <MediaThumb src={src} alt={path} onError={() => setGone(true)} onSeen={() => markShotSeen(path)} />
+      <MediaThumb src={src} alt={path} onError={() => setGone(true)} onSeen={() => markShotSeen(path)} fresh={shotUnseen(path, at)} />
     </ZoomButton>
   );
 }

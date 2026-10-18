@@ -126,8 +126,9 @@ export function shotTitle(tool: string, summary: string, i = 0, n = 1): string {
  *  otherwise, and five Reads of five PNGs are one contact sheet rather than
  *  five galleries a screen tall. Payloads concatenate; sources win over shots.
  *  Fed the whole call and not just its result, because what a shot should be
- *  called is in the input. */
-export function widgetForRun(calls: { done?: Structured; summary?: string }[]): ToolWidgetSpec | null {
+ *  called is in the input — and its clock rides along, so the thumbnail can tell
+ *  whether you have seen it (lib/seenshots). */
+export function widgetForRun(calls: { done?: Structured; summary?: string; at?: number }[]): ToolWidgetSpec | null {
   const sources = calls.flatMap((c) => c.done?.sources ?? []);
   if (sources.length)
     return { label: "SOURCES", type: "sources", value: sources, meta: String(sources.length) };
@@ -136,7 +137,7 @@ export function widgetForRun(calls: { done?: Structured; summary?: string }[]): 
     const name = shotName(c.summary ?? "");
     // One call, several frames: the name alone would caption them identically.
     return paths.map((path, i) => ({
-      path, caption: name && paths.length > 1 ? `${name} · ${i + 1}` : name || undefined,
+      path, caption: name && paths.length > 1 ? `${name} · ${i + 1}` : name || undefined, at: c.at,
     }));
   });
   if (shots.length)

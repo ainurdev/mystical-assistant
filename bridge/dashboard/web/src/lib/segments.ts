@@ -108,7 +108,7 @@ export type StepCat =
 
 /** The order the header lists categories in: what changed the machine first,
  *  what only looked at it last. */
-const CAT_ORDER: StepCat[] = [
+export const CAT_ORDER: StepCat[] = [
   "command", "edit", "write", "agent", "call", "fetch", "search", "read", "log", "step",
 ];
 

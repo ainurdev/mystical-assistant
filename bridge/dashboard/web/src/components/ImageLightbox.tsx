@@ -78,21 +78,24 @@ function useOnSeen(onSeen?: () => void) {
 }
 
 export function MediaThumb(
-  { src, className, style, alt, onError, onSeen }:
+  { src, className, style, alt, onError, onSeen, fresh }:
   { src: string; className?: string; style?: React.CSSProperties; alt?: string; onError?: () => void;
     /** Fired once, when the thumbnail has been on screen (lib/seenshots). */
-    onSeen?: () => void },
+    onSeen?: () => void;
+    /** Not yet seen: the thumbnail wears the accent (data-new) until it has been. */
+    fresh?: boolean },
 ) {
   const seenRef = useOnSeen(onSeen);
+  const isNew = fresh ? "" : undefined;
   if (isFileUrl(src)) return <FileThumb name={attachName(src)} className={className} style={style} />;
-  if (!isVideo(src)) return <img ref={seenRef} src={src} alt={alt ?? ""} className={className} style={style} onError={onError} />;
+  if (!isVideo(src)) return <img ref={seenRef} src={src} alt={alt ?? ""} className={className} style={style} onError={onError} data-new={isNew} />;
   // #t=0.1 makes the browser paint a real first frame instead of a black box;
   // a data: URL can't carry a fragment, so it goes without.
   const poster = src.startsWith("data:") ? src : `${src}#t=0.1`;
   return (
     <span style={{ position: "relative", display: "inline-block", lineHeight: 0 }}>
       <video ref={seenRef} src={poster} muted playsInline preload="metadata" aria-label={alt || "video"}
-        className={className} style={style} onError={onError} />
+        className={className} style={style} onError={onError} data-new={isNew} />
       <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center",
         color: "var(--acc)", fontSize: 18, textShadow: "0 0 6px rgba(0,0,0,.8)", pointerEvents: "none" }}>▶</span>
     </span>

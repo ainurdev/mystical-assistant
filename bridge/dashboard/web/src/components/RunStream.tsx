@@ -2,7 +2,7 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
-  Quote, Layers,
+  Quote, Layers, Image as ImageIcon,
 } from "lucide-react";
 import { api, type AnswerSelection, type RunEvent, type TimedEvent } from "../api";
 import type { PendingRequest } from "../chat";
@@ -12,11 +12,11 @@ import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { ImageLightbox, MediaThumb, ZoomButton, type Clip, type Shown } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
-import { hhmm, useClock12 } from "../lib/surfaces";
+import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
-import { MARK_GLYPH, stripOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
+import { kindsOf, MARK_GLYPH, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
 import { PromptBubble } from "./PromptBubble";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { ToolWidget } from "./ResultWidgets";
@@ -649,18 +649,22 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
 }
 
 /** DOSSIER's tier 3: everything a turn did between what you asked and what it
- *  answered, under one header (lib/dossier). The header carries the zone's
- *  shape as a strip of glyphs, so a shut zone still says "three commands, a
- *  note, a failure" — which is what makes a shut zone safe to be the default.
- *  Pictures are the one result a header loses, so it also counts them, in your
- *  accent until each has been on screen (lib/seenshots).
+ *  answered, under one header (lib/dossier). The header counts what the zone
+ *  holds as glyph chips — the marks the rows inside wear on the spine, with a
+ *  number — so a shut zone still says "eleven commands, two reads, five notes"
+ *  without a sentence; the sentence is the chips' tooltip. Shut, it is a line
+ *  and not a box: the work is a divider between what you asked and what came
+ *  back. Pictures are the one result a header loses, so the right group counts
+ *  them, in your accent until each has been on screen (lib/seenshots), next to
+ *  what failed and the figure.
  *  It follows the COLLAPSE STEPS switch like a STEPS fold does, live turn
- *  included: while one runs, the header names what is out right now.
- *  Open, the strip turns on its side into the spine: every row below wears its
- *  glyph in the column the header's chevron sits in. */
-function WorkZone({ marks, title, failed, shots, fresh, running, live, span, defaultOpen, animate, children }: {
-  marks: Mark[];
-  title: string;
+ *  included: while one runs, the header names what is out right now. */
+function WorkZone({ cats, notes, steps, failed, shots, fresh, running, live, span, defaultOpen, animate, children }: {
+  /** What the zone ran, by kind, and how often the agent spoke inside it. */
+  cats: StepCat[];
+  notes: number;
+  /** Everything the zone holds, for the figure. */
+  steps: number;
   failed: number;
   /** Pictures tools came back with, and how many of those you have not had on screen. */
   shots: number;
@@ -676,7 +680,7 @@ function WorkZone({ marks, title, failed, shots, fresh, running, live, span, def
 }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
-  const { shown, more } = stripOf(marks);
+  const words = workTitle(stepsTitle(cats), notes);
   return (
     <div
       className="dwork"
@@ -697,14 +701,27 @@ function WorkZone({ marks, title, failed, shots, fresh, running, live, span, def
           <ChevronDown size={11} className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
         </span>
         <span className="dwork-lab">WORK</span>
-        <span className="dwork-title">{running && live ? `${title} \u2014 ${live}` : title}</span>
-        <span className="dwork-strip" aria-hidden>
-          {shown.map((m, k) => <i key={k} data-m={m}>{MARK_GLYPH[m]}</i>)}
-          {more ? <b>+{more}</b> : null}
+        <span className="dwork-kinds" title={words} aria-label={words}>
+          {kindsOf(cats, notes).map((k) => (
+            <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden>{MARK_GLYPH[k.m]}</i>{k.n}</span>
+          ))}
         </span>
-        {shots ? <span className="dwork-shot" data-new={fresh ? "" : undefined}>{"\u25A3"} {shots} shot{shots === 1 ? "" : "s"}</span> : null}
-        {failed ? <span className="dwork-fail">{"\u2715"} {failed} failed</span> : null}
-        <span className="dwork-ms">{running ? "RUNNING" : span}</span>
+        {running && live ? <span className="dwork-live">{live}</span> : null}
+        <span className="dwork-rule" aria-hidden />
+        {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden>{"\u2715"}</i>{failed}</span> : null}
+        {shots ? (
+          <span
+            className="dwork-k"
+            data-m="shot"
+            data-new={fresh ? "" : undefined}
+            title={`${shots} picture${shots === 1 ? "" : "s"}${fresh ? `, ${fresh} not seen yet` : ""}`}
+          >
+            <i aria-hidden><ImageIcon size={10} strokeWidth={2.2} /></i>{shots}
+          </span>
+        ) : null}
+        <span className="dwork-ms">
+          {running ? "RUNNING" : [`${steps} STEP${steps === 1 ? "" : "S"}`, span].filter(Boolean).join(" \u00b7 ")}
+        </span>
       </button>
       {open ? <div className="dwork-body">{children}</div> : null}
     </div>
@@ -1218,7 +1235,10 @@ function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
  *  set, so the lightbox pages past this row. The upload dir is pruned by age,
  *  so an old turn's screenshot 404s — that row just disappears rather than
  *  leaving a broken-image glyph. */
-function ToolImages({ paths, all }: { paths: string[]; all: Shown[] }) {
+/** `at` is the call's clock: with it a thumbnail knows whether you have seen it
+ *  (lib/seenshots) and wears the accent until you have. Your own steer's
+ *  pictures pass none — you sent them. */
+function ToolImages({ paths, all, at }: { paths: string[]; all: Shown[]; at?: number }) {
   const [zoom, setZoom] = useState<string | null>(null);
   const [gone, setGone] = useState<Set<string>>(new Set());
   const live = paths.filter((p) => !gone.has(p));
@@ -1235,6 +1255,7 @@ function ToolImages({ paths, all }: { paths: string[]; all: Shown[] }) {
               alt="tool output"
               onError={() => setGone((g) => new Set(g).add(p))}
               onSeen={() => markShotSeen(p)}
+              fresh={shotUnseen(p, at)}
               className="h-24 w-auto max-w-[240px] border border-border object-cover"
             />
           </ZoomButton>
@@ -1731,7 +1752,7 @@ export const RunStream = memo(function RunStream({
         // plain row — which is every tool without a table entry. Built from
         // the whole run rather than this event: the head draws the group's
         // one card, so a member's shots or sources would be drawn by nobody.
-        const spec = widgetForRun(run.map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary })));
+        const spec = widgetForRun(run.map((j) => ({ done: doneOf(events[j]), summary: (events[j] as { summary?: string }).summary, at: events[j].at })));
         // Hung under whichever card this tool got, not just the default one:
         // a Read of a PNG returns an image and takes the ReadCard branch, and
         // that is 715 of the 729 image results in this store — a widget only
@@ -1743,7 +1764,7 @@ export const RunStream = memo(function RunStream({
           <div className="zx ml-[var(--rail)]">
             <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} gallery={shots} />
           </div>
-        ) : done?.images?.length ? <ToolImages paths={done.images} all={shots} /> : null;
+        ) : done?.images?.length ? <ToolImages paths={done.images} all={shots} at={event.at} /> : null;
         const withExtra = (node: ReactNode) =>
           extra ? <div key={i}>{node}{extra}</div> : node;
         // COMPACT reads as a chat, and there the pictures are the reply: the
@@ -2020,27 +2041,24 @@ export const RunStream = memo(function RunStream({
   };
   const isTop = (seg: Seg): boolean => seg.kind === "prose" && topAt(seg.idx[0]);
   const workZone = (zsegs: Seg[]) => {
-    const marks: Mark[] = [];
     const cats: StepCat[] = [];
-    let notes = 0, failed = 0, shots = 0, fresh = 0, running = false, live = "", first: number | undefined, last: number | undefined;
+    let notes = 0, steps = 0, failed = 0, shots = 0, fresh = 0, running = false, live = "", first: number | undefined, last: number | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
       const e = events[i];
       if (e.at != null) { first ??= e.at; last = e.at; }
-      if (e.type === "thinking" && e.text) { marks.push("think"); notes++; }
-      else if (e.type === "text" && e.text) { marks.push("note"); notes++; }
-      else if (e.type === "log") { marks.push(e.error ? "fail" : "hook"); cats.push("log"); if (e.error) failed++; }
+      if ((e.type === "thinking" || e.type === "text") && e.text) { steps++; notes++; }
+      else if (e.type === "log") { steps++; cats.push("log"); if (e.error) failed++; }
       else if (e.type === "tool") {
         const d = doneOf(e), c = catOf(e, d);
-        cats.push(c);
+        steps++; cats.push(c);
         if (!d) { running = true; live = e.summary; }
         else if (d.is_error) failed++;
-        marks.push(d?.is_error ? "fail" : c);
         for (const p of d?.images ?? []) { shots++; if (shotUnseen(p, e.at)) fresh++; }
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
     }
     const secs = first != null && last != null ? last - first : 0;
-    const span = secs >= 1 ? dur(secs * 1000) : "";
+    const span = secs >= 1 ? wall(secs) : "";
     // Named like a STEPS fold (lib/segments): back past the window's cut to the
     // tier-1/2 row before it, so the zone you opened stays the same zone.
     let start = zsegs[0].start;
@@ -2048,8 +2066,9 @@ export const RunStream = memo(function RunStream({
     return (
       <WorkZone
         key={`z${start}`}
-        marks={marks}
-        title={workTitle(stepsTitle(cats), notes)}
+        cats={cats}
+        notes={notes}
+        steps={steps}
         failed={failed}
         shots={shots}
         fresh={fresh}
@@ -2227,7 +2246,7 @@ function FinalResult({
           <span className="res-meta">
             {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
             {typeof elapsed === "number" && elapsed > 0 && (
-              <span title="wall time">{elapsed < 60 ? `${Math.round(elapsed)}S` : `${(elapsed / 60).toFixed(1)}M`}</span>
+              <span title="wall time">{wall(elapsed)}</span>
             )}
             {typeof tokens === "number" && tokens > 0 && (
               <span title="tokens this turn spent">

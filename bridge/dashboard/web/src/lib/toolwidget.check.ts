@@ -41,6 +41,8 @@ console.assert(shotName("") === "", "nothing to name it by falls back to the num
 const named = widgetForRun([{ done: { images: ["/u/mcp-toolu-1-0.png"] }, summary: "http://x.dev/page.html" }]);
 console.assert((named?.value as { caption?: string }[])[0].caption === "page.html",
   "the call captions its shot");
+const timed = widgetForRun([{ done: { images: ["/u/a.png"] }, at: 1700 }]);
+console.assert((timed?.value as { at?: number }[])[0].at === 1700, "a shot carries its call's clock (lib/seenshots reads it)");
 const pair = widgetForRun([{ done: { images: ["/u/a.png", "/u/b.png"] }, summary: "http://x.dev/page.html" }]);
 console.assert((pair?.value as { caption?: string }[])[1].caption === "page.html · 2",
   "one call's several frames are numbered under one name");

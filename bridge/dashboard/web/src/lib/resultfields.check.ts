@@ -112,3 +112,7 @@ console.assert(asIntake([{ topic: "X" }]) === null, "a question needs something 
 console.assert(asIntake([{ ask: "depth?", answer: "guided" }])?.[0].answer === "guided", "an answer is kept");
 
 console.log("resultfields: ok");
+
+// A shot keeps its call's clock through the field reader (lib/seenshots reads it).
+console.assert(asScreens([{ path: "/u/a.png", at: 1700 }])?.[0].at === 1700, "asScreens keeps at");
+console.assert(asScreens([{ path: "/u/a.png", at: "x" }])?.[0].at === undefined, "asScreens drops a non-number at");
