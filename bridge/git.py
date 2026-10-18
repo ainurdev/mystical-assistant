@@ -917,6 +917,14 @@ def show_file(cwd: str, sha: str, path: str) -> str:
     return out
 
 
+def file_at(cwd: str, sha: str, path: str) -> str:
+    """A file's text as committed at `sha` — `git show <sha>:<path>`. "" when the
+    file isn't in that commit or the sha is unknown (callers diff two versions,
+    and "absent" reads the same as "empty")."""
+    rc, out, _ = _run(cwd, "show", f"{sha}:{path}")
+    return out if rc == 0 else ""
+
+
 def since(cwd: str, sha: str) -> dict:
     """How far the tree has drifted from a commit — `git diff <sha>`, i.e. commits
     AND uncommitted work. Powers a checkpoint's "+42 −7 since here"; same file shape
