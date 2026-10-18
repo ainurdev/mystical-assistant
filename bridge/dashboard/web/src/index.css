@@ -1602,14 +1602,6 @@ input {
 [data-layout="compact"] [data-style] .thought { max-width: 80%; }
 [data-layout="compact"] [data-style] .res { max-width: 80%; }
 
-/* When you sent it. Inside the bubble, so every language carries it wherever it
-   puts the bubble; ghost-toned, because the time is a footnote to the prompt.
-   Its twin is the clock in .res-meta — when the answer came back. */
-.pstamp {
-  display: block; margin-top: 2px; text-align: right;
-  font-size: var(--t95); letter-spacing: 1px; color: var(--txd);
-  font-variant-numeric: tabular-nums;
-}
 
 /* === THE GROUND ============================================================
    OUTPUT STYLE says how a turn is drawn; this says what it is drawn ON, and
@@ -1804,14 +1796,28 @@ input {
   max-width: 100%; padding: 0; border: 0; background: none;
 }
 [data-style="dossier"] .pbub .md {
-  font-size: var(--d-big); font-weight: 500; line-height: 1.6; color: var(--txb);
+  font-size: calc(var(--d-big) + 1px); font-weight: 500; line-height: 1.6; color: var(--txb);
 }
-[data-style="dossier"] .pnum {
-  display: flex; gap: 6px; margin-bottom: 4px;
-  font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--d-you);
+/* Your line: the prompt glyph, then what you typed — a steer wears ↳. The
+   glyph's glow follows the GLOW switch (--glow is 0px when it is off). */
+[data-style="dossier"] .pline { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; }
+[data-style="dossier"] .pglyph {
+  color: var(--d-you); font-family: var(--mono); font-size: 15px; font-weight: 700; line-height: 1.6;
+  text-shadow: 0 0 var(--glow, 0px) color-mix(in oklab, var(--d-you) 70%, transparent);
 }
-[data-style="dossier"] .pnum > i { font-style: normal; color: var(--txd); }
-[data-style="dossier"] .pstamp { position: absolute; top: 13px; right: 18px; margin: 0; }
+/* The footer: who, which turn, which account or agent when it wasn't the
+   default, and when — one tracked line on the right, ghost except what is
+   yours. Its twin is the clock in .res-meta, when the answer came back. */
+[data-style="dossier"] .pmeta {
+  display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0;
+  margin-top: 6px; padding-left: 28px;
+  font-size: var(--t95); letter-spacing: 2px; text-transform: uppercase; color: var(--txd);
+  font-variant-numeric: tabular-nums;
+}
+[data-style="dossier"] .pmeta > b { color: var(--d-you); font-weight: 700; }
+[data-style="dossier"] .pmeta .pacct { color: var(--d-you); }
+[data-style="dossier"] .pmeta .pacct[data-agent] { color: var(--warn); }
+[data-style="dossier"] .pmeta .pstamp:not(:first-child)::before { content: "· "; color: var(--txl); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
 
 /* ── tier 3: the work ── */
@@ -1821,13 +1827,13 @@ input {
 [data-style="dossier"] .dreply > * + *,
 [data-style="dossier"] .rstream > * + * { margin-top: 0; }
 [data-style="dossier"] .dreply > :not(.rstream, .agent-rail),
-[data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 12px 18px; }
+[data-style="dossier"] .rstream > :not(.dwork, .resblk, .dprompt) { margin: 12px 18px; }
 /* ONE GRID for everything in a zone: node | kind | object | figure | chevron.
    The node column is the spine — the header's glyph strip turned on its side,
    each row wearing its own strip glyph (data-g, lib/dossier MARK_GLYPH) — so a
    note, a command, a run's members, a drawer and the reason a call failed all
    start in one text column, --zobj. A row is an .actrow (RunStream ActionRow)
-   or a .zrow (thought, log, steer, pause); both use the ax-* cells. */
+   or a .zrow (thought, log, pause); both use the ax-* cells. */
 [data-style="dossier"] .dwork {
   --zn: 24px; --zk: 58px; --zc: 16px; --zobj: calc(var(--zn) + var(--zk));
   --zline: color-mix(in oklab, var(--txl) 40%, var(--panel2));
@@ -1860,7 +1866,6 @@ input {
 }
 [data-style="dossier"] .dwork-strip > i[data-m="think"] { --m: var(--d-think); }
 [data-style="dossier"] .dwork-strip > i[data-m="note"] { --m: var(--d-note); }
-[data-style="dossier"] .dwork-strip > i[data-m="steer"] { --m: var(--d-you); }
 [data-style="dossier"] .dwork-strip > i:is([data-m="hook"], [data-m="log"]) { --m: var(--txl); }
 [data-style="dossier"] .dwork-strip > i[data-m="fail"] { --m: var(--err); }
 [data-style="dossier"] .dwork-strip > b { font-weight: 400; color: var(--txf); padding-left: 3px; }
@@ -1970,16 +1975,6 @@ input {
 }
 [data-style="dossier"] .dwork-body .abub .md p { margin: 0; }
 [data-style="dossier"] .dwork-body .abub + * { grid-column: 4; grid-row: 1; }
-/* your steer, inside the work but still you: your accent, as a plate */
-[data-style="dossier"] .dwork-body .zrow.steer { --m: var(--d-you); margin: 4px 0 2px !important; }
-[data-style="dossier"] .dwork-body .zrow.steer::after {
-  background: color-mix(in oklab, var(--d-you) var(--d-tint), transparent); box-shadow: inset 2px 0 0 var(--d-you);
-}
-[data-style="dossier"] .dwork-body .steer > .zo {
-  padding: 2.5px 8px 3.5px 0; line-height: 19px;
-  font-family: var(--d-face); font-size: calc(var(--t12) + .5px); font-weight: 500; color: var(--txb);
-}
-[data-style="dossier"] .dwork-body .steer .ax-tag { color: var(--d-you); }
 /* a hook's output or a stderr line: the quietest row, its first line only */
 [data-style="dossier"] .dwork-body .zrow.log { --m: var(--txl); }
 [data-style="dossier"] .dwork-body .log > .zo { white-space: pre-wrap; font-family: var(--mono); font-size: var(--t11); color: var(--txl); }
@@ -2093,7 +2088,6 @@ input {
 [data-style="dossier"] .doutcome { padding: 9px 18px 11px; margin: 0; border-top: 1px solid var(--d-hair); }
 
 /* Hooks DOSSIER reads that every other language must not see. */
-.pnum { display: none; }
 .dprompt { display: contents; }
 /* An error and a stop, in every language: off --err and the ink ladder, mixed
    into the panel so they hold on a light ground (they were Tailwind red-300 on
@@ -2876,7 +2870,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] [data-style="dossier"] .res-body { padding: 6px 2px 4px; }
 [data-fam] [data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 12px 2px 0; }
 [data-fam] [data-style="dossier"] .resblk + .ev-stop { border-top: 0; padding: 8px 2px 0; }
-[data-fam] [data-style="dossier"] .rstream > :not(.dwork, .resblk) { margin: 12px 0; }
+[data-fam] [data-style="dossier"] .rstream > :not(.dwork, .resblk, .dprompt) { margin: 12px 0; }
+[data-fam] [data-style="dossier"] .rstream > .dprompt { margin-top: 10px; }
 [data-fam] [data-style="dossier"] .dreply > :not(.rstream, .agent-rail) { margin: 12px 0; }
 [data-fam] [data-style="dossier"] .doutcome { border-top: 0; padding: 10px 2px 0; }
 [data-theme^="flint-kiln"] [data-style="dossier"] { --d-tint: 0%; }
@@ -2887,7 +2882,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint-sunset"] [data-style="dossier"] .dprompt::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(var(--acc), var(--acc2));
 }
-[data-theme^="flint-sunset"] .pnum { background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
+[data-theme^="flint-sunset"] .pmeta > b { background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
 
 /* the context menu's rows: Geist, no tracking, a rounded hover */
 [data-fam] [data-ctxmenu] { width: 232px !important; padding: 2px; }
@@ -3051,7 +3046,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .newsess svg { color: var(--acc); }
 [data-fam] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
 [data-fam] .lanehead > span:nth-child(3) { background: transparent !important; }
-[data-fam] :is(.pnum, .res-head, .dwork-lab, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
+[data-fam] :is(.pmeta, .res-head, .dwork-lab, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
 [data-fam] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
 
 /* ── the settings modal's own furniture ── */

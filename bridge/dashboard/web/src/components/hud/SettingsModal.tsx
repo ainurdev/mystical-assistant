@@ -15,7 +15,8 @@ import {
   ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin,
 } from "lucide-react";
 import { CHAT_BGS, TRANSCRIPT_SCHEMES, type ChatBg, type TranscriptScheme } from "../../lib/toolwidget";
-import { AgentRail, PromptBubble } from "../Transcript";
+import { AgentRail } from "../Transcript";
+import { PromptBubble } from "../PromptBubble";
 import { RunStream } from "../RunStream";
 import { toolAccent } from "../../lib/tools";
 

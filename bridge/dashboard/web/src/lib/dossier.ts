@@ -8,10 +8,11 @@
 // asked and what you got back — are found by reading all of it. DOSSIER ranks
 // tiers instead:
 //
-//   1  your prompt and the turn's answer   (Transcript / FinalResult)
+//   1  your prompt and the turn's answer   (Transcript / FinalResult) — and
+//      a steer, which is yours too          (RunStream, drawn as a prompt)
 //   2  anything waiting on you              (question, permission)
 //   3  everything between                   (thoughts, interim notes, tools,
-//                                            hooks, steers) — one WORK zone
+//                                            hooks) — one WORK zone
 //
 // so `zonesOf` cuts segmentsOf's output at every tier-1/2 segment and wraps each
 // run of the rest in one zone. An error or a stop ends the turn, and lib/segments
@@ -23,6 +24,15 @@ import type { Seg, StepCat } from "./segments";
  *  (a `text` that a question card follows reads as the answer, so the caller
  *  says which segments are tier 1/2; this module never sees event payloads). */
 export type Zone = { kind: "top" | "work"; segs: Seg[] };
+
+/** Event types that are tier 1 or 2 by type alone: the answer and what ends a
+ *  turn, what waits on you, and your steer — yours, so never inside the work
+ *  (it used to be a row in the zone, hidden whenever the zone was shut). A
+ *  `text` is the renderer's call (the last one is the answer, one a card
+ *  follows introduces it), so it is not here. */
+export const TOP_TYPES: ReadonlySet<string> = new Set([
+  "result", "question", "permission", "error", "stopped", "steer",
+]);
 
 /** Cut segments into zones: every `isTop` segment is its own zone, and each
  *  maximal run of the others is one work zone. Order is the turn's. */
@@ -40,10 +50,10 @@ export function zonesOf(segs: Seg[], isTop: (s: Seg) => boolean): Zone[] {
 /** One glyph per thing the zone holds, for the header's strip — so a shut
  *  zone still shows its shape (three commands then a note then a failure)
  *  without opening it. The same glyphs head the rows inside. */
-export type Mark = "think" | "note" | "steer" | "hook" | StepCat | "fail";
+export type Mark = "think" | "note" | "hook" | StepCat | "fail";
 
 export const MARK_GLYPH: Record<Mark, string> = {
-  think: "∴", note: "◆", steer: "↳", hook: "⚙", fail: "✕",
+  think: "∴", note: "◆", hook: "⚙", fail: "✕",
   command: "$", edit: "✎", write: "✎", read: "◧", search: "⌕", fetch: "⇄",
   call: "⌁", agent: "◈", log: "⚙", step: "·",
 };

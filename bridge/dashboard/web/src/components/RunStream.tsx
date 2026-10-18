@@ -16,7 +16,8 @@ import { hhmm, useClock12 } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
-import { MARK_GLYPH, stripOf, workTitle, zonesOf, type Mark } from "../lib/dossier";
+import { MARK_GLYPH, stripOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
+import { PromptBubble } from "./PromptBubble";
 import { ToolWidget } from "./ResultWidgets";
 import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
@@ -1855,18 +1856,14 @@ export const RunStream = memo(function RunStream({
       case "tool_done":
         return null;
       case "steer":
-        // Sent into this turn while it was already running — you, inside the
-        // work: a row on the zone's grid, on a plate in your accent.
+        // Sent into this turn while it was already running — still you, so it
+        // reads the way your prompt does (lib/dossier TOP_TYPES keeps it out of
+        // the work), between the work it interrupted and the work it caused.
         return (
-          <div key={i} id={ckId(turnId, steerKey(i))} className="zrow steer scroll-mt-[94px]">
-            <i className="ax-bar" data-g={MARK_GLYPH.steer} aria-hidden />
-            <span className="ax-tagcell"><span className="ax-tag">STEER</span></span>
-            <div className="zo">
-              <span className="block whitespace-pre-wrap break-words">{event.text}</span>
-              {event.images && event.images.length > 0 && (
-                <ToolImages paths={event.images} />
-              )}
-            </div>
+          <div key={i} id={ckId(turnId, steerKey(i))} className="dprompt scroll-mt-[94px]">
+            <PromptBubble steer text={event.text} at={event.at}>
+              {event.images && event.images.length > 0 && <ToolImages paths={event.images} />}
+            </PromptBubble>
           </div>
         );
       case "result":
@@ -1999,12 +1996,11 @@ export const RunStream = memo(function RunStream({
 
   const segs = segmentsOf(events, from, inFlow, waiting);
   // Tier 1 and 2 (lib/dossier): the answer, the prose that introduces a card,
-  // the cards, and what ends a turn. Everything else is work.
+  // the cards, your steers, and what ends a turn. Everything else is work.
   const topAt = (i: number): boolean => {
     const e = events[i];
     if (e.type === "text") return i === finalText || asksNext(i);
-    return e.type === "result" || e.type === "question" || e.type === "permission"
-      || e.type === "error" || e.type === "stopped";
+    return TOP_TYPES.has(e.type);
   };
   const isTop = (seg: Seg): boolean => seg.kind === "prose" && topAt(seg.idx[0]);
   const workZone = (zsegs: Seg[]) => {
@@ -2016,7 +2012,6 @@ export const RunStream = memo(function RunStream({
       if (e.at != null) { first ??= e.at; last = e.at; }
       if (e.type === "thinking" && e.text) { marks.push("think"); notes++; }
       else if (e.type === "text" && e.text) { marks.push("note"); notes++; }
-      else if (e.type === "steer") marks.push("steer");
       else if (e.type === "log") { marks.push(e.error ? "fail" : "hook"); cats.push("log"); if (e.error) failed++; }
       else if (e.type === "tool") {
         const d = doneOf(e), c = catOf(e, d);

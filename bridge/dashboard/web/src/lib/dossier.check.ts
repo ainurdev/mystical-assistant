@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/dossier.check.ts
-import { stripOf, workTitle, zonesOf, STRIP_MAX, type Mark } from "./dossier.ts";
+import { stripOf, workTitle, zonesOf, STRIP_MAX, TOP_TYPES, type Mark } from "./dossier.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -23,6 +23,16 @@ const shape = (zs: ReturnType<typeof zonesOf>) =>
   const segs = [st(0, 1), p(2), st(3), p(4)];
   const zs = zonesOf(segs, (s) => s.idx[0] === 2 || s.idx[0] === 4);
   ok(shape(zs) === "work:0,1 top:2 work:3 top:4", `split at a question: ${shape(zs)}`);
+}
+
+// Your steer is yours, not the work's: its own tier, and the work around it
+// becomes two zones, the way a question splits it.
+{
+  const types = ["tool", "tool", "steer", "tool", "result"];
+  const segs = [st(0, 1), p(2), st(3), p(4)];
+  const zs = zonesOf(segs, (s) => TOP_TYPES.has(types[s.idx[0]]));
+  ok(shape(zs) === "work:0,1 top:2 work:3 top:4", `a steer splits the work: ${shape(zs)}`);
+  ok(!TOP_TYPES.has("tool") && !TOP_TYPES.has("thinking") && !TOP_TYPES.has("log"), "steps, thoughts and hooks stay work");
 }
 
 // Nothing but the answer: no empty zone in front of it.

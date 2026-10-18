@@ -2,10 +2,10 @@ import { useEffect, useMemo, useRef, useState, type MutableRefObject, type RefOb
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { api, type AnswerSelection, type TurnOutcome } from "../api";
-import { runtimeBadge } from "../lib/agents";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
+import { PromptBubble } from "./PromptBubble";
 import { Markdown, type OpenFile } from "./Markdown";
 import { ImageLightbox, MediaThumb, ZoomButton } from "./ImageLightbox";
 import { ckId } from "../lib/checkpoints";
@@ -52,26 +52,6 @@ function Attachments({ items }: { items: string[] }) {
   );
 }
 
-/** Which runtime ran this turn — shown only when it wasn't the default Claude
- *  account: another login after a usage limit, or another agent (lib/agents). */
-function RuntimeBadge({ runtime }: { runtime: string }) {
-  const b = runtimeBadge(runtime);
-  return (
-    <div className="ml-[var(--rail)] flex">
-      <span
-        className="border px-1.5 py-px text-[length:var(--t95)] tracking-[1px]"
-        style={{
-          color: b.agent ? "var(--warn)" : "var(--acc)",
-          borderColor: "color-mix(in srgb, currentColor 40%, transparent)",
-        }}
-        title={b.title}
-      >
-        {b.text}
-      </span>
-    </div>
-  );
-}
-
 /** Why a failed turn failed. The whole point of the feature: before this, an
  *  interrupted or silent turn rendered as literally nothing — no events, no
  *  runtime, so not even a row — and 384 error turns in the real store could not
@@ -114,31 +94,6 @@ function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
           UPDATE CLAUDE & RESTART
         </button>
       )}
-    </div>
-  );
-}
-
-/** What you said. WHICH SIDE it sits on is the language's call, not this
- *  component's: a log needs it full width to keep its T+ gutter, a press needs
- *  the measure for its margin label, a plate is stamped edge to edge — only HALO
- *  reads it as the right-hand half of a two-sided conversation. So the row and
- *  the width live in `.pbub-row` / `.pbub` (index.css), and nothing here decides
- *  either. Colours are there too — see `.abub` for why not inline. */
-export function PromptBubble({ text, at, n }: { text: string; at?: number; n?: number }) {
-  const h12 = useClock12();
-  return (
-    <div className="pbub-row">
-      <div
-        className="pbub border border-r-[3px] px-3 py-1.5"
-      >
-        {/* The turn's number. Only DOSSIER shows it (`.pnum`, index.css), as
-            the head of the turn's card — the other languages say who spoke
-            with geometry instead, and a number there would be a second label. */}
-        {n != null && <span className="pnum">TURN {String(n).padStart(2, "0")} <i>· YOU</i></span>}
-        {/* Rendered as the same markdown the composer let you write it in. */}
-        <Markdown breaks className="break-words leading-relaxed text-foreground-bright">{text}</Markdown>
-        {at != null && <span className="pstamp">{hhmm(at, h12)}</span>}
-      </div>
     </div>
   );
 }
@@ -205,7 +160,7 @@ function TurnBlock({
       <div className="dprompt">
         {turn.prompt && (
           <div data-prompt-idx={promptIdx}>
-            <PromptBubble text={turn.prompt} at={turn.started} n={promptIdx + 1} />
+            <PromptBubble text={turn.prompt} at={turn.started} n={promptIdx + 1} runtime={turn.runtime} />
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (
@@ -216,7 +171,6 @@ function TurnBlock({
       {replied && (
         <div className="dreply relative space-y-1.5">
           <AgentRail />
-          {turn.runtime && <RuntimeBadge runtime={turn.runtime} />}
           {(turn.events.length > 0 || turn.status === "running") && (
             <RunStream
               events={turn.events}
