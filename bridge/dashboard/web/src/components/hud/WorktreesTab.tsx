@@ -6,6 +6,7 @@ import {
   type SessionBrief,
   type Worktree,
 } from "../../api";
+import { ContextMenu, type CtxItem } from "./ContextMenu";
 
 /* WORKTREES tab of the Analyze modal — a compact one-line row per branch that
    expands (accordion, one at a time) into its actions: checkout, open worktree,
@@ -69,6 +70,9 @@ export function WorktreesTab({
   const [branchInput, setBranchInput] = useState("");
   const [confirmDel, setConfirmDel] = useState<ConfirmState | null>(null);
   const [expanded, setExpanded] = useState("");
+  // Right-click on a branch row: the expanded row's actions, for the row under
+  // the cursor whichever one is open.
+  const [ctx, setCtx] = useState<{ x: number; y: number; name: string } | null>(null);
   const [q, setQ] = useState("");
   const [showAll, setShowAll] = useState(false);
 
@@ -175,22 +179,45 @@ export function WorktreesTab({
     } finally { setBusy(false); }
   }
 
+  /* What a branch row's actions depend on — the row and its right-click menu. */
+  function rowFacts(name: string) {
+    const wt = wtByBranch.get(name);
+    return {
+      wt, open: !!wt,
+      isMerged: merged.has(name) || mergedBranches.includes(name),
+      sess: sessions.filter((s) => (s.branch || base) === name),
+      current: name === cur,
+      targets: branches.filter((b) => b !== name),
+    };
+  }
+
+  function ctxItems(name: string): CtxItem[] {
+    const { wt, open, isMerged, sess, current, targets } = rowFacts(name);
+    const items: CtxItem[] = [];
+    if (!current) items.push({ icon: "⎇", label: "Checkout", onClick: () => void checkout(name) });
+    if (!open && !isMerged) items.push({ icon: "▸", label: "Open worktree", hint: "and start a session", onClick: () => onWorktreeSession(project, name, false) });
+    if (open) items.push({ icon: "▸", label: "Attach session", onClick: () => { const s = sess[0]; if (s) onSelectSession(s); else onWorktreeSession(project, name, false); } });
+    if (open && !isMerged && targets.length)
+      items.push({ icon: "⇉", label: "Merge into", children: targets.map((t) => ({ icon: "⎇", label: t, onClick: () => void doMerge(name, t) })) });
+    items.push({ icon: "⧉", label: "Copy branch name", onClick: () => { void navigator.clipboard?.writeText(name).catch(() => {}); } });
+    items.push({ divider: true });
+    items.push({ icon: "✕", label: "Delete branch", danger: true, hint: open ? "and its worktree" : undefined,
+      onClick: () => setConfirmDel({ branch: name, path: wt?.path ?? "", sessCount: sess.length, hasWorktree: open }) });
+    return items;
+  }
+
   /* one collapsed line per branch; the expanded one shows its actions */
   function branchRow(name: string) {
-    const wt = wtByBranch.get(name);
-    const open = !!wt;
-    const isMerged = merged.has(name) || mergedBranches.includes(name);
-    const sess = sessions.filter((s) => (s.branch || base) === name);
+    const { wt, isMerged, sess, current, targets } = rowFacts(name);
+    const open = !!wt;   // kept local: TS narrows `wt` through it
     const st = stats[name];
-    const current = name === cur;
     const on = expanded === name;
     const dot = isMerged ? "var(--ok)" : open ? "var(--acc)" : "var(--txf)";
     const edge = current ? "var(--acc)" : isMerged ? "color-mix(in srgb, var(--ok) 45%, transparent)" : open ? "color-mix(in srgb, var(--acc) 32%, transparent)" : "transparent";
-    const targets = branches.filter((b) => b !== name);
     const mtSel = targets.includes(mergeTarget[name] || "") ? mergeTarget[name] : (targets.includes(base) ? base : (targets[0] || base));
 
     return (
-      <div key={name} data-ctx-type="branch" data-ctx-id={name} data-ctx-label={name}
+      <div key={name} onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtx({ x: e.clientX, y: e.clientY, name }); }}
         style={{ borderLeft: `2px solid ${edge}`, borderBottom: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)", background: on ? "color-mix(in srgb, var(--acc) 6%, transparent)" : current ? "color-mix(in srgb, var(--acc) 3%, transparent)" : "transparent" }}>
         <div onClick={() => setExpanded((v) => (v === name ? "" : name))} {...hp(`row:${name}`)}
           style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 9px", cursor: "pointer", background: hov === `row:${name}` && !on ? "color-mix(in srgb, var(--acc) 4%, transparent)" : "transparent" }}>
@@ -409,6 +436,9 @@ export function WorktreesTab({
             style={{ width: "100%", marginTop: 11, appearance: "none", cursor: prDisabled ? "not-allowed" : "pointer", border: `1px solid ${prDisabled ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: !prDisabled && hov === "prbtn" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: prDisabled ? "var(--txl)" : "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 9 }}>⇡ CREATE PULL REQUEST</button>
         )}
       </div>
+
+      {ctx && <ContextMenu ctx={{ x: ctx.x, y: ctx.y, type: "branch", id: ctx.name, label: ctx.name }}
+        items={ctxItems(ctx.name)} onClose={() => setCtx(null)} />}
 
       {/* DELETE WORKTREE CONFIRM */}
       {confirmDel && (
