@@ -29,6 +29,14 @@ const card: Need = { ...offer, subject: "s1", kind: "approve", session_id: "s1" 
 ok(needMatches("rivendell", offer) && !needMatches("sessions", offer) && needMatches("needs", offer), "an offer is Rivendell's");
 ok(needMatches("sessions", card) && !needMatches("rivendell", card) && !needMatches("prs", card), "a card is the session's");
 
+// Updates: Mystical's own changelog and a maintainer's note, filtered by group, nothing waiting.
+const upd = n(7, "update:abc", { kind: "updated", verb: "UPDATED", group: "updates", source: "bridge" });
+const note = n(8, "note:x", { kind: "note", verb: "NOTE", group: "updates", source: "bridge" });
+ok(matches("updates", upd) && matches("updates", note) && !matches("sessions", note) && matches("all", note), "updates rows are Updates and All");
+ok(!matches("updates", n(9, "move:1", { kind: "move_done", group: "bridge", source: "bridge" })), "a MOVE row is not an update");
+ok(!needMatches("updates", card) && !needMatches("updates", offer), "nothing waits on you under Updates");
+ok(chipCount("updates", [card], [upd, { ...note, read: true }]) === 1, "the Updates chip counts unread updates only");
+
 // A chip counts what waits on you plus unread news; rows you read stay listed, uncounted.
 const mixed = [n(1, "a"), n(2, "b", { read: true }), n(3, "rv:p:1", { source: "rivendell" })];
 ok(chipCount("all", [offer, card], mixed) === 4 && chipCount("sessions", [card], mixed) === 2 && chipCount("rivendell", [offer], mixed) === 2
