@@ -20,7 +20,7 @@ import { kindsOf, MARK_GLYPH, workTitle, zonesOf, TOP_TYPES, type Mark } from ".
 import { PromptBubble } from "./PromptBubble";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { ToolWidget } from "./ResultWidgets";
-import { shotTitle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
+import { shotName, shotTitle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
   cmdAbstract, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
   type Shape, type Tier, type ToolKind,
@@ -648,27 +648,36 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
   );
 }
 
+/** One picture a zone holds that you have not seen: its upload path and the
+ *  name its call gave it (lib/toolwidget shotName). */
+type Fresh = { path: string; name: string };
+
 /** DOSSIER's tier 3: everything a turn did between what you asked and what it
- *  answered, under one header (lib/dossier). The header counts what the zone
- *  holds as glyph chips — the marks the rows inside wear on the spine, with a
- *  number — so a shut zone still says "eleven commands, two reads, five notes"
- *  without a sentence; the sentence is the chips' tooltip. Shut, it is a line
- *  and not a box: the work is a divider between what you asked and what came
- *  back. Pictures are the one result a header loses, so the right group counts
- *  them, in your accent until each has been on screen (lib/seenshots), next to
- *  what failed and the figure.
+ *  answered, under one header (lib/dossier) — a plate with a ringed node, WORK
+ *  and the figure on one line and the kind chips under it: the marks the rows
+ *  inside wear on the spine, with a number; the old sentence is their tooltip.
+ *  Pictures are the one result a header loses, so they get the loudest word:
+ *  while any is unseen (lib/seenshots) the plate lights — accent border, edge
+ *  and node, a solid NEW badge — and the shut plate shows the unseen pictures
+ *  themselves in a SCREENS row, tap one to open it. Being on screen in that
+ *  row does not count as seen (the row would fold away as you scrolled past);
+ *  opening one does, as does half a thumbnail in view once the zone is open.
+ *  Once every picture has been seen the row folds and the badge is a grey chip.
  *  It follows the COLLAPSE STEPS switch like a STEPS fold does, live turn
- *  included: while one runs, the header names what is out right now. */
-function WorkZone({ cats, notes, steps, failed, shots, fresh, running, live, span, defaultOpen, animate, children }: {
+ *  included: while one runs the figure says RUNNING and the live step follows
+ *  the chips. */
+function WorkZone({ cats, notes, steps, failed, shots, fresh, gallery, running, live, span, defaultOpen, animate, children }: {
   /** What the zone ran, by kind, and how often the agent spoke inside it. */
   cats: StepCat[];
   notes: number;
   /** Everything the zone holds, for the figure. */
   steps: number;
   failed: number;
-  /** Pictures tools came back with, and how many of those you have not had on screen. */
+  /** Pictures tools came back with, and the ones you have not had on screen. */
   shots: number;
-  fresh: number;
+  fresh: Fresh[];
+  /** The whole turn's pictures, for the lightbox's paging. */
+  gallery: Shown[];
   running: boolean;
   /** What is out right now, named in the header while it runs. */
   live: string;
@@ -680,14 +689,18 @@ function WorkZone({ cats, notes, steps, failed, shots, fresh, running, live, spa
 }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
+  // The lightbox lives here, not in the row: opening a picture marks it seen,
+  // and the row it was tapped in may fold away while you are still looking.
+  const [zoom, setZoom] = useState<string | null>(null);
   const words = workTitle(stepsTitle(cats), notes);
+  const pics = `${shots} picture${shots === 1 ? "" : "s"}`;
   return (
     <div
       className="dwork"
       data-open={open ? "" : undefined}
       data-run={running ? "" : undefined}
       data-err={failed ? "" : undefined}
-      data-shots={fresh ? "new" : undefined}
+      data-shots={fresh.length ? "new" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <button
@@ -700,29 +713,52 @@ function WorkZone({ cats, notes, steps, failed, shots, fresh, running, live, spa
         <span className="dwork-node" aria-hidden>
           <ChevronDown size={11} className={`transition-transform duration-200 ${open ? "" : "-rotate-90"}`} />
         </span>
-        <span className="dwork-lab">WORK</span>
-        <span className="dwork-kinds" title={words} aria-label={words}>
-          {kindsOf(cats, notes).map((k) => (
-            <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden>{MARK_GLYPH[k.m]}</i>{k.n}</span>
-          ))}
-        </span>
-        {running && live ? <span className="dwork-live">{live}</span> : null}
-        <span className="dwork-rule" aria-hidden />
-        {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden>{"\u2715"}</i>{failed}</span> : null}
-        {shots ? (
-          <span
-            className="dwork-k"
-            data-m="shot"
-            data-new={fresh ? "" : undefined}
-            title={`${shots} picture${shots === 1 ? "" : "s"}${fresh ? `, ${fresh} not seen yet` : ""}`}
-          >
-            <i aria-hidden><ImageIcon size={10} strokeWidth={2.2} /></i>{shots}
+        <span className="dwork-l1">
+          <span className="dwork-lab">WORK</span>
+          <span className="dwork-ms">
+            {running ? "RUNNING" : [`${steps} step${steps === 1 ? "" : "s"}`, span].filter(Boolean).join(" \u00b7 ")}
           </span>
-        ) : null}
-        <span className="dwork-ms">
-          {running ? "RUNNING" : [`${steps} STEP${steps === 1 ? "" : "S"}`, span].filter(Boolean).join(" \u00b7 ")}
+        </span>
+        <span className="dwork-l2">
+          <span className="dwork-kinds" title={words} aria-label={words}>
+            {kindsOf(cats, notes).map((k) => (
+              <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden>{MARK_GLYPH[k.m]}</i>{k.n}</span>
+            ))}
+          </span>
+          {running && live ? <span className="dwork-live">{live}</span> : null}
+        </span>
+        <span className="dwork-right">
+          {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden>{"\u2715"}</i>{failed}</span> : null}
+          {fresh.length ? (
+            <span className="dwork-badge" title={`${fresh.length} of ${pics} not seen yet`}>
+              <ImageIcon size={11} strokeWidth={2.2} aria-hidden />{fresh.length} NEW
+            </span>
+          ) : shots ? (
+            <span className="dwork-k" data-m="shot" title={pics}><i aria-hidden><ImageIcon size={10} strokeWidth={2.2} /></i>{shots}</span>
+          ) : null}
         </span>
       </button>
+      {!open && fresh.length ? (
+        <div className="dwork-row">
+          <div className="dwork-row-h">Screens {"\u00b7"} {fresh.length} new<i aria-hidden /><em>tap one to open it</em></div>
+          <div className="dwork-row-thumbs">
+            {fresh.map((s) => {
+              const src = api.attachmentUrl(s.path);
+              return (
+                <figure key={s.path}>
+                  <ZoomButton onOpen={() => { markShotSeen(s.path); setZoom(src); }}>
+                    {/* A picture the upload dir has pruned can't be seen: marking it
+                        seen is what clears the badge it would otherwise hold lit. */}
+                    <MediaThumb src={src} alt={s.name} onError={() => markShotSeen(s.path)} />
+                  </ZoomButton>
+                  <figcaption>{s.name}</figcaption>
+                </figure>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+      {zoom && <ImageLightbox src={zoom} all={gallery} onClose={() => setZoom(null)} />}
       {open ? <div className="dwork-body">{children}</div> : null}
     </div>
   );
@@ -2042,7 +2078,8 @@ export const RunStream = memo(function RunStream({
   const isTop = (seg: Seg): boolean => seg.kind === "prose" && topAt(seg.idx[0]);
   const workZone = (zsegs: Seg[]) => {
     const cats: StepCat[] = [];
-    let notes = 0, steps = 0, failed = 0, shots = 0, fresh = 0, running = false, live = "", first: number | undefined, last: number | undefined;
+    const fresh: Fresh[] = [];
+    let notes = 0, steps = 0, failed = 0, pics = 0, running = false, live = "", first: number | undefined, last: number | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
       const e = events[i];
       if (e.at != null) { first ??= e.at; last = e.at; }
@@ -2053,7 +2090,10 @@ export const RunStream = memo(function RunStream({
         steps++; cats.push(c);
         if (!d) { running = true; live = e.summary; }
         else if (d.is_error) failed++;
-        for (const p of d?.images ?? []) { shots++; if (shotUnseen(p, e.at)) fresh++; }
+        for (const p of d?.images ?? []) {
+          pics++;
+          if (shotUnseen(p, e.at)) fresh.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p });
+        }
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
     }
@@ -2070,8 +2110,9 @@ export const RunStream = memo(function RunStream({
         notes={notes}
         steps={steps}
         failed={failed}
-        shots={shots}
+        shots={pics}
         fresh={fresh}
+        gallery={shots}
         running={running}
         live={live}
         span={span}
