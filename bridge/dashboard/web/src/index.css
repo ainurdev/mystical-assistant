@@ -3407,6 +3407,27 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 [data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child + div[style*="linear-gradient"] { display: none; }
 [data-fam="pebble"] .trow { margin: 1px 4px; width: calc(100% - 8px) !important; border-radius: 999px; font-family: var(--ui-font) !important; }
+
+/* ── THE FAMILIES · PEBBLE · THE CHAT — the third pebble (design A · SHEET,
+   .mystical/design-drafts/chat-ground). The column is an opaque rounded sheet
+   in the slabs' material. One token, --col, is its colour: VEIL's fade starts
+   from it and the answer mat is it — both were authored against the HUD's
+   translucent column (panel2 at 60%, hud/Terminal.tsx) and showed through as a
+   dark band and a feathered strip once the slabs' glow sat behind it. The dots
+   go quieter on the sheet; WORK plates sit one step up with no hairline. ── */
+[data-fam="pebble"] [data-ctx-type="terminal"] {
+  --col: color-mix(in srgb, var(--panel2) 90%, var(--canvas));
+  background-color: var(--col) !important; border-radius: var(--f-rad-l); box-shadow: var(--f-pop-shadow);
+}
+[data-fam="pebble"][data-hdr="veil"] [data-layout]::before {
+  background: linear-gradient(var(--col) 30%, color-mix(in oklab, var(--col) 70%, transparent) 62%, transparent);
+  border-radius: var(--f-rad-l) var(--f-rad-l) 0 0;
+}
+[data-fam="pebble"][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { background: linear-gradient(var(--col) 50%, transparent); }
+[data-fam="pebble"] :is([data-bg="grid"], [data-bg="dots"], [data-bg="rule"], [data-bg="tooth"]) [data-style="dossier"] :is(.res, .resblk[data-bad] .res) { --mat: var(--col); }
+[data-fam="pebble"] [data-bg="dots"] { --gnd: color-mix(in srgb, var(--txg) 42%, transparent); }
+[data-fam="pebble"] [data-style="dossier"] .dwork { background: var(--panel); border-bottom: 0; border-radius: var(--f-rad); }
+[data-fam="pebble"] [data-style="dossier"] .dwork[data-pinned] > .dwork-head::before { background: var(--panel); }
 [data-fam="aurora"] .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--acc), 0 0 10px color-mix(in oklab, var(--acc) 60%, transparent); }
 [data-fam="aurora"] .fthdr small { letter-spacing: .16em; text-transform: uppercase; }
 [data-fam="aurora"] .set-mini { letter-spacing: .12em !important; text-transform: uppercase; }
@@ -3608,6 +3629,24 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: linear-gradient(transparent 25px, color-mix(in srgb, var(--panel) 88%, transparent) 0) !important; }
 .swapwrap + .composer[data-pb="tabs"] > :not(.pb-tabs), .swapwrap + .composer[data-pb="tabs"] .pb-tabs > * { pointer-events: auto; }
 [data-fam] .swapwrap + .composer[data-pb="tabs"] { background: transparent !important; }
+
+/* ── PEBBLE's prompt box (after FLINT's rules above, which it outranks only by order): TABS' folder tabs hung over the card's 20px corner and left a
+   notch, so in PEBBLE the lead is a row of chips hovering over the card (the
+   tile and the title still one chip), the card lifts with the pop shadow and
+   every control is a pill; CONSOLE's line rounds its free end and its place
+   line is one segmented pill. */
+[data-fam="pebble"] .pb-tabs { align-items: center; gap: 6px; padding: 0 4px 7px; }
+[data-fam="pebble"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run), [data-fam="pebble"] .pb-tabs > .ctrl-ctx {
+  margin-bottom: 0; height: 26px !important; border: 1px solid var(--line) !important; border-radius: 999px !important; background: var(--panel2) !important;
+}
+[data-fam="pebble"] .pb-tabs .np-tile { border-radius: 999px 0 0 999px !important; border-right: 0 !important; padding: 0 3px 0 8px !important; }
+[data-fam="pebble"] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 999px 999px 0 !important; border-left: 0 !important; }
+[data-fam="pebble"] .cmdbox { box-shadow: var(--f-pop-shadow) !important; }
+[data-fam="pebble"] :is(.drop-btn, .run-trigger) { border-radius: 999px !important; }
+[data-fam="pebble"] .pb-cmd, [data-fam="pebble"] .pb-cmd:focus-within { border-radius: 0 18px 18px 0 !important; }
+[data-fam="pebble"] .pb-place { border-radius: 999px; }
+[data-fam="pebble"] .pb-place .np-tile { padding-left: 11px !important; }
+[data-fam="pebble"] .pb-place .np-meta > :last-child { padding-right: 12px !important; }
 
 /* === AI MANAGEMENT ===========================================================
    SETTINGS ▸ AI MANAGEMENT (SettingsModal AiManagementPanel, ProjectsSettings):
