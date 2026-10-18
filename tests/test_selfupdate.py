@@ -49,7 +49,7 @@ def _commit(origin, text, msg):
 
 def test_up_to_date_has_no_incoming():
     _origin, clone = _clone_with_upstream()
-    assert g.fetch(clone) is True
+    assert g.fetch(clone)[0] is True
     assert g.status(clone)["behind"] == 0
     assert g.incoming(clone) == []
 
@@ -58,7 +58,7 @@ def test_incoming_lists_new_commits_and_pull_applies_them():
     origin, clone = _clone_with_upstream()
     _commit(origin, "two\n", "feat: second")
     _commit(origin, "three\n", "fix: third")
-    assert g.fetch(clone) is True
+    assert g.fetch(clone)[0] is True
     assert g.status(clone)["behind"] == 2
     subjects = [c["subject"] for c in g.incoming(clone)]
     assert subjects == ["fix: third", "feat: second"]   # newest first

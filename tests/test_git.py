@@ -246,6 +246,75 @@ def test_upstream_distinguishes_unpushed_from_synced():
     assert st["ahead"] == 1 and st["behind"] == 0, st
 
 
+def _published():
+    """A repo whose branch is pushed to a bare origin: (bare, repo, branch)."""
+    bare = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "--bare", "-q", bare], check=True)
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    branch = g.current_branch(d)
+    _run(d, "remote", "add", "origin", bare)
+    _run(d, "push", "-q", "-u", "origin", branch)
+    return bare, d, branch
+
+
+def test_fetch_refreshes_behind_and_stamps_fetched_at():
+    """The GIT tab's ⟳ fetches: behind is only as true as the last fetch, and
+    fetched_at says how old that is."""
+    import time
+    bare, a, branch = _published()
+    b = tempfile.mkdtemp()
+    subprocess.run(["git", "clone", "-q", "-b", branch, bare, b], check=True)
+    _write(a, "a.txt", "one\ntwo\n")
+    g.commit(a, "second")
+    _run(a, "push", "-q")
+    assert g.status(b)["behind"] == 0                  # b hasn't looked yet
+    ok, out = g.fetch(b)
+    assert ok is True, out
+    st = g.status(b)
+    assert st["behind"] == 1, st
+    assert st["fetched_at"] and abs(time.time() - st["fetched_at"]) < 60, st
+
+
+def test_fetch_says_why_it_failed():
+    d = _mkrepo()
+    _run(d, "remote", "add", "origin", os.path.join(tempfile.mkdtemp(), "gone"))
+    ok, out = g.fetch(d)
+    assert ok is False and out, out
+
+
+def test_fetched_at_counts_a_fetch_from_any_worktree():
+    """FETCH_HEAD is per worktree but the remote refs it moves are shared, so a
+    fetch run in a worktree is as fresh for the main checkout, and back."""
+    _bare, d, _branch = _published()
+    assert g.status(d)["fetched_at"] is None
+    w = os.path.join(tempfile.mkdtemp(), "w")
+    _run(d, "worktree", "add", "-q", "-b", "feat", w)
+    ok, out = g.fetch(w)
+    assert ok is True, out
+    at = g.status(d)["fetched_at"]
+    assert at is not None and g.status(w)["fetched_at"] == at
+
+
+def test_unpublished_counts_what_a_publish_would_send():
+    _bare, d, branch = _published()
+    assert "unpublished" not in g.status(d)            # tracked: ahead says it
+    _run(d, "checkout", "-qb", "feat")
+    for n in ("two", "three"):
+        _write(d, "a.txt", n)
+        g.commit(d, n)
+    st = g.status(d)
+    assert st["upstream"] == "" and st["unpublished"] == 2, st
+    _run(d, "checkout", "-q", "--detach")
+    assert "unpublished" not in g.status(d)            # no branch to publish
+    lone = _mkrepo()                                   # no origin to publish to
+    _write(lone, "a.txt", "one\n")
+    g.commit(lone, "init")
+    assert g.status(lone)["unpublished"] is None
+
+
 def test_badge_counts_branches_and_worktrees():
     d = _mkrepo()
     _write(d, "a.txt", "one\n")

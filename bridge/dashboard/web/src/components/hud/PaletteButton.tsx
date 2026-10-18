@@ -3,7 +3,7 @@ import { useState } from "react";
 /** ⌘K at the foot of the right rail, under UPDATE. It used to sit in a 34px
  *  footer track of its own under the side columns, alongside the usage meter
  *  and the branch chain; those moved out (the composer's AGENT picker, the
- *  header's GitPopover) and the track went with them, handing its height
+ *  rail's GIT tab) and the track went with them, handing its height
  *  back to the transcript. */
 export function PaletteButton({ onPalette }: { onPalette: () => void }) {
   const [hovered, setHovered] = useState(false);

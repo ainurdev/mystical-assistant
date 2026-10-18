@@ -323,6 +323,12 @@ export interface GitStatus {
   behind: number;
   dirty: number;
   files: GitFile[];
+  // When any checkout of the repo last fetched (epoch s), null = never: how
+  // fresh behind is.
+  fetched_at?: number | null;
+  // Only while upstream is "": commits a publish would send, null when there
+  // is no origin to publish to.
+  unpublished?: number | null;
 }
 // One node of the commit graph — `parents` is what the lane layout walks.
 export interface GitCommit {
@@ -1804,6 +1810,11 @@ export const api = {
     }).then(pushed(project, branch)),
   gitPull: (project: string, branch?: string) =>
     req<{ ok: boolean; output: string }>("/local/git/pull", {
+      method: "POST",
+      body: { project, ...(branch ? { branch } : {}) },
+    }),
+  gitFetch: (project: string, branch?: string) =>
+    req<{ ok: boolean; output: string }>("/local/git/fetch", {
       method: "POST",
       body: { project, ...(branch ? { branch } : {}) },
     }),

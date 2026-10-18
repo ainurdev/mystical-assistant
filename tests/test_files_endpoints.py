@@ -229,6 +229,20 @@ def test_git_op_stages_unstages_and_discards():
     assert git.status(d)["files"] == []
 
 
+def test_git_fetch_route():
+    """The GIT tab's ⟳: fetch the tree's remote, answer with git's words."""
+    name, d = _mkproject("proj_fetch")
+    bare = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "--bare", "-q", bare], check=True)
+    _git(d, "remote", "add", "origin", bare)
+    _git(d, "push", "-q", "-u", "origin", "HEAD")
+    h, box = _handler()
+    h._post_api("/local/git/fetch", {"project": name})
+    assert box["code"] == 200 and box["obj"]["ok"] is True, box
+    h._post_api("/local/git/fetch", {"project": "../outside"})
+    assert box["code"] == 400, box
+
+
 def test_git_op_rejects_unknown_op_and_escape():
     name, d = _mkproject("proj_gitop_bad")
     h, box = _handler()

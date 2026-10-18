@@ -2,7 +2,7 @@
 //
 // The draft a failed push hands to a new session: it has to name the branch,
 // carry git's reason verbatim, and stay readable when a hook prints pages.
-import { pushFailedDraft } from "./pushfailed.ts";
+import { divergedDraft, pushFailedDraft } from "./pushfailed.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -21,3 +21,7 @@ const hook = "line\n".repeat(2000) + "error: the reason";
 const long = pushFailedDraft("x", hook);
 ok(long.includes("…") && long.includes("error: the reason"), "long output keeps its tail");
 ok(long.length < 3400, `long output is capped (${long.length})`);
+
+const dv = divergedDraft("master", "origin/master", 3, 1);
+ok(dv.startsWith("`master` has diverged from `origin/master`: 3 commits here, 1 commit there"), "diverged names both sides and counts");
+ok(!dv.includes("failed") && dv.endsWith("then push."), "diverged claims no failed push, ends with the ask");

@@ -3,6 +3,7 @@ every call shells out to `git -C <cwd> …` with a timeout. Callers pass an abso
 cwd already confined to BASE_PATH by the dashboard's _abs_project."""
 
 import base64
+import glob
 import mimetypes
 import os
 import re
@@ -153,9 +154,40 @@ def status(cwd: str) -> dict:
             add = _count_lines(os.path.join(cwd, path))
         files.append({"path": path, "status": st, "add": add, "del": dele,
                       "x": xy[0], "y": xy[1]})
-    return {"is_repo": True, "branch": branch, "upstream": upstream,
-            "ahead": ahead, "behind": behind,
-            "dirty": len(files), "files": files}
+    st = {"is_repo": True, "branch": branch, "upstream": upstream,
+          "ahead": ahead, "behind": behind,
+          "dirty": len(files), "files": files, "fetched_at": _fetched_at(cwd)}
+    if branch and branch != "(detached)" and not upstream:
+        st["unpublished"] = _unpublished(cwd)
+    return st
+
+
+def _fetched_at(cwd: str) -> float | None:
+    """When this repo last fetched, from any of its checkouts: FETCH_HEAD is per
+    worktree, but the remote-tracking refs a fetch moves are shared, so the
+    newest one says how fresh status()'s behind count is. None = never."""
+    rc, out, _ = _run(cwd, "rev-parse", "--git-common-dir")
+    if rc != 0:
+        return None
+    common = os.path.join(cwd, out.strip())
+    newest = None
+    for head in [os.path.join(common, "FETCH_HEAD"),
+                 *glob.glob(os.path.join(common, "worktrees", "*", "FETCH_HEAD"))]:
+        try:
+            t = os.path.getmtime(head)
+        except OSError:
+            continue
+        newest = t if newest is None else max(newest, t)
+    return newest
+
+
+def _unpublished(cwd: str) -> int | None:
+    """Commits a publish would send (on no remote branch yet), or None when
+    there is no origin to publish to — push() publishes to origin."""
+    if _run(cwd, "remote", "get-url", "origin")[0] != 0:
+        return None
+    rc, out, _ = _run(cwd, "rev-list", "--count", "HEAD", "--not", "--remotes")
+    return int(out.strip() or 0) if rc == 0 else 0
 
 
 def diff(cwd: str, path: str) -> str:
@@ -485,10 +517,10 @@ def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
-def fetch(cwd: str, timeout: int = 20) -> bool:
+def fetch(cwd: str, timeout: int = 20) -> tuple[bool, str]:
     """Refresh the remote-tracking refs, so status()'s behind count is current."""
-    rc, _o, _e = _run(cwd, "fetch", "--quiet", timeout=timeout)
-    return rc == 0
+    rc, out, err = _run(cwd, "fetch", "--quiet", timeout=timeout)
+    return rc == 0, (out + err).strip()
 
 
 def pull(cwd: str, timeout: int = 60) -> tuple[bool, str]:

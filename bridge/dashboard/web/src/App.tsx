@@ -62,6 +62,7 @@ import { recall, remember, type Anchor } from "./lib/scrollmem";
 import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
+import { syncBadge, syncOf } from "./lib/gitsync";
 import { chime, pushGranted } from "./lib/push";
 import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
 import { chatToMarkdown } from "./lib/chatmd";
@@ -71,7 +72,6 @@ import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, RightCap, Strip } from "./components/hud/Strip";
 import { PaletteButton } from "./components/hud/PaletteButton";
-import { GitPopover } from "./components/hud/GitPopover";
 import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
 import { QueuePanel } from "./components/hud/QueuePanel";
@@ -244,7 +244,7 @@ export function App() {
   // The open session's own working tree (its worktree when it has one), which
   // gitBadges can't answer — those are keyed by project, one badge per repo.
   const [sessionGit, setSessionGit] = useState<GitStatus | null>(null);
-  // Bumped by GitPopover's PUSH/PULL — a 10s poll is too slow to watch a row you
+  // Bumped by the GIT tab's ops (commit, push, fetch) — a 10s poll is too slow to watch a row you
   // just acted on, so the push re-runs the fetch below instead of waiting.
   const [gitNonce, setGitNonce] = useState(0);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
@@ -1550,8 +1550,14 @@ export function App() {
   /** A push button's HANDLE IN A NEW SESSION: a session on the branch that
    *  failed to push, with git's message as its unsent draft (lib/pushfailed). */
   function pushFailedSession(project: string | null | undefined, branch: string | null | undefined, output: string) {
+    handOffSession(project, branch, pushFailedDraft(branch, output));
+  }
+
+  /** The GIT tab's HANDLE IN A NEW SESSION: a session on that tree, the draft
+   *  (git's refusal, or a diverged branch's merge) unsent. */
+  function handOffSession(project: string | null | undefined, branch: string | null | undefined, draft: string) {
     if (!project) return;
-    void newSession(project, pushFailedDraft(branch, output), branch || undefined);
+    void newSession(project, draft, branch || undefined);
     toChat();
   }
 
@@ -1705,7 +1711,7 @@ export function App() {
         const g = await api.git(sessionProject, sessionBranch || undefined);
         if (live) setSessionGit(g);
       } catch {
-        // Not a repo / fetch failed — resolve to "no git" so GitPopover's
+        // Not a repo / fetch failed — resolve to "no git" so the GIT tab's
         // READING… clears instead of holding forever.
         if (live) setSessionGit((prev) => prev ?? { is_repo: false, branch: "", ahead: 0, behind: 0, dirty: 0, files: [] });
       }
@@ -1756,6 +1762,9 @@ export function App() {
   // branches of the same repo get their own number; gitBadges is only keyed by
   // project, so it's the fallback for the tick before sessionGit lands.
   const dirtyFiles = sessionGit?.dirty ?? gitBadges.get(sessionProject ?? "")?.dirty ?? 0;
+  // On a clean tree the badge says what the header's git dot used to: ↑n to
+  // push, ↓n to pull, ↑↓ diverged.
+  const gitSync = syncBadge(syncOf(sessionGit));
 
   const rightTabs: PanelTab[] = [
     {
@@ -1768,14 +1777,15 @@ export function App() {
       ),
     },
     {
-      id: "git", label: dirtyFiles ? `Git (${dirtyFiles} changed)` : "Git", icon: <GitBranch {...RAIL} />, ownScroll: true, scope: "worktree",
-      badge: dirtyFiles ? railCount(dirtyFiles) : null,
+      id: "git", label: dirtyFiles ? `Git (${dirtyFiles} changed)` : gitSync ? `Git (${gitSync})` : "Git",
+      icon: <GitBranch {...RAIL} />, ownScroll: true, scope: "worktree",
+      badge: dirtyFiles ? railCount(dirtyFiles) : gitSync,
       render: () => (
         <GitPanel
           project={sessionProject} branch={sessionBranch} git={sessionGit}
           onGitChanged={() => setGitNonce((n) => n + 1)}
           onOpenFile={openFileFromPanel}
-          onPushFailed={pushFailedSession}
+          onHandOff={handOffSession}
           // A "commit message ready" click lands back here: this session, this tab.
           onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "git", rightOpen: true }); }}
         />
@@ -1804,7 +1814,6 @@ export function App() {
     }] : []),
   ];
 
-  const activeBadge = activeProject ? gitBadges.get(activeProject) : undefined;
   // The login the open session spends: its turn in flight's, else the one its
   // next turn takes. The MODEL menu shows that login, so
   // a profile pick or a fallback handover moves them at once: every login's
@@ -2246,17 +2255,6 @@ export function App() {
       onSetUnit={setUnit}
       openSettings={wxSettings}
       openReport={weekNonce}
-      git={
-        <GitPopover
-          // The session you have open, not the bridge's active project —
-          // those differ while you read another session.
-          repo={sessionProject ?? "—"} git={sessionGit}
-          changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
-          branch={sessionBranch}
-          onSynced={() => setGitNonce((n) => n + 1)}
-          onPushFailed={pushFailedSession}
-        />
-      }
     />
   );
 

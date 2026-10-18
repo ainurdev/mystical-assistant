@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
-  ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, Ellipsis, FileDiff, Minus, Plus, RefreshCw, RotateCcw,
+  ArrowDown, ArrowUp, Check, ChevronDown, ChevronRight, CircleDot, CloudUpload, Ellipsis, FileDiff, LoaderCircle, Minus,
+  Plus, RefreshCw, RotateCcw, SquarePen, TriangleAlert, X,
 } from "lucide-react";
 import { api, type GitFile, type GitStatus } from "../../api";
 import { CommitGraph } from "../CommitGraph";
@@ -13,11 +14,16 @@ import { draftKey, patchDraft, useDraft, watched } from "../../lib/commitdraft";
 import { useAiFeatures } from "../../lib/ai";
 import { useStickyFlag } from "../../lib/prefs";
 import { notify } from "./Notifications";
+import { syncOf } from "../../lib/gitsync";
+import { divergedDraft, pushFailedDraft } from "../../lib/pushfailed";
+import { ago } from "../../lib/surfaces";
 
-/* GIT — the right rail's one git tab: a repo header (branch, how far ahead or
-   behind the upstream, push/pull, refresh) over two folds in VS Code's Source
-   Control shape. CHANGES is the working tree with the commit box; GRAPH is
-   the commit graph (CommitGraph). Each fold remembers whether it is open.
+/* GIT — the right rail's one git tab, and the dashboard's only git status
+   (the header's git icon went, 2026-10-18): a repo header (branch, ⟳ fetch),
+   a readout (to push / to pull / changed, how fresh that is, and the one move
+   the state allows), then two folds in VS Code's Source Control shape.
+   CHANGES is the working tree with the commit box; GRAPH is the commit graph
+   (CommitGraph). Each fold remembers whether it is open.
    The working tree comes from App's per-worktree status poll (sessionGit), so
    the header, the rail badge and the list read the same answer; an op here
    bumps that poll (onGitChanged) instead of running a second one. The commit
@@ -38,18 +44,26 @@ interface Props {
   // ready" notification does when clicked, since by then the panel that asked
   // for the message is gone.
   onReveal?: () => void;
-  // A push git refused goes to a new session on the tree that was pushing,
-  // git's message as its unsent draft (App's pushFailedSession). Named here,
+  // HANDLE IN A NEW SESSION: a session on the tree that needs it, the draft
+  // (git's refusal, or a diverged branch) unsent. The project is named here,
   // not read at click time: this panel outlives a switch to another session.
-  onPushFailed?: (project: string, branch: string | null | undefined, output: string) => void;
+  onHandOff?: (project: string, branch: string | null | undefined, draft: string) => void;
 }
+
+type OpKind = "push" | "publish" | "pull" | "fetch";
+// The readout's sync op, in flight or just over: done shows a few seconds,
+// failed stays with git's own words until dismissed or retried.
+type Op = { kind: OpKind; n: number; phase: "busy" }
+  | { kind: OpKind; n: number; phase: "done"; text: string }
+  | { kind: OpKind; n: number; phase: "failed"; output: string; project: string; branch?: string };
+const FAILED: Record<OpKind, string> = { push: "Push refused", publish: "Publish refused", pull: "Pull failed", fetch: "Fetch failed" };
 
 const ST_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
 const byPath = (a: GitFile, b: GitFile) => a.path.localeCompare(b.path);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const MOD = /Mac|iP/.test(navigator.platform) ? "⌘" : "Ctrl+";
 
-export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onReveal, onPushFailed }: Props) {
+export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onReveal, onHandOff }: Props) {
   const files = git?.files ?? [];
   // A file is staged when the index half of porcelain's pair moved, and
   // unstaged when the working-tree half did. An old backend sends neither, so
@@ -65,8 +79,7 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
   const setMsg = (m: string) => patchDraft(key, { msg: m });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
-  // the note, while it is git refusing a push, with the tree that was pushing
-  const [pushErr, setPushErr] = useState<{ project: string; branch?: string; output: string } | null>(null);
+  const [op, setOp] = useState<Op | null>(null);
   // Right-clicked row (`staged` says which half, which decides Stage vs
   // Unstage), or the fold head's ⋯ with no path: the "all" actions alone.
   const [ctx, setCtx] = useState<{ x: number; y: number; path: string; staged: boolean } | null>(null);
@@ -94,26 +107,42 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
     finally { setBusy(false); }
   }
 
-  // Push and pull report under the commit box, so the fold opens to show it.
-  async function push() {
+  const s = syncOf(git);
+  useEffect(() => {
+    if (op?.phase !== "done") return;
+    const t = setTimeout(() => setOp(null), 4000);
+    return () => clearTimeout(t);
+  }, [op]);
+
+  // The readout's one move: PUSH, PUBLISH (push() adds -u) or PULL (ff-only).
+  async function sync(kind: "push" | "publish" | "pull", n: number) {
     if (!project) return;
+    const to = s.kind === "ahead" || s.kind === "behind" ? s.upstream : "origin";
     setBusy(true);
+    setOp({ kind, n, phase: "busy" });
     try {
-      const r = await api.gitPush(project, branch || undefined);
-      setNote(r.ok ? "Pushed." : r.output || "Push failed.");
-      setPushErr(r.ok ? null : { project, branch, output: r.output || "Push failed." });
-    } catch (e) { setNote((e as Error).message); }
-    finally { setBusy(false); setChClosed(false); onGitChanged(); setNonce((n) => n + 1); }
+      const r = kind === "pull" ? await api.gitPull(project, branch || undefined) : await api.gitPush(project, branch || undefined);
+      setOp(r.ok
+        ? { kind, n, phase: "done", text: kind === "pull" ? `Pulled ${plural(n, "commit")} from ${to}`
+            : kind === "publish" ? `Published ${branchName} to origin` : `Pushed ${plural(n, "commit")} to ${to}` }
+        : { kind, n, phase: "failed", output: r.output || `${FAILED[kind]}.`, project, branch });
+    } catch (e) { setOp({ kind, n, phase: "failed", output: (e as Error).message, project, branch }); }
+    finally { setBusy(false); onGitChanged(); setNonce((x) => x + 1); }
   }
 
-  async function pull() {
+  // ⟳ fetches first: behind, and the graph's remote rows, as of now.
+  async function fetchNow() {
     if (!project) return;
+    // No repo, or a bridge not restarted since /local/git/fetch (no fetched_at
+    // key): a plain re-read, as ⟳ always was.
+    if (s.kind === "none" || git?.fetched_at === undefined) { onGitChanged(); setNonce((x) => x + 1); return; }
     setBusy(true);
+    setOp({ kind: "fetch", n: 0, phase: "busy" });
     try {
-      const r = await api.gitPull(project, branch || undefined);
-      setNote(r.ok ? r.output || "Pulled." : r.output || "Pull failed.");
-    } catch (e) { setNote((e as Error).message); }
-    finally { setBusy(false); setChClosed(false); onGitChanged(); setNonce((n) => n + 1); }
+      const r = await api.gitFetch(project, branch || undefined);
+      setOp(r.ok ? null : { kind: "fetch", n: 0, phase: "failed", output: r.output || "Fetch failed.", project, branch });
+    } catch (e) { setOp({ kind: "fetch", n: 0, phase: "failed", output: (e as Error).message, project, branch }); }
+    finally { setBusy(false); onGitChanged(); setNonce((x) => x + 1); }
   }
 
   /** Generate the commit message from what's about to be committed — the
@@ -220,30 +249,83 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
 
   const noCommit = busy || !msg.trim() || !changed.size;
 
-  /* The header's sync chip reads the status: ↑n pushes, ↓n pulls, both when
-     diverged, a quiet ✓ when in step, and a bare PUSH for a branch the remote
-     has never seen (bridge/git.py publishes it with -u). */
-  const sync = !git || !git.is_repo ? null
-    : !git.upstream ? (
-      <button className="gp-sync" disabled={busy} title="publish this branch to origin" onClick={() => void push()}>
-        <ArrowUp size={11} strokeWidth={2} />PUSH
-      </button>
-    ) : ahead === 0 && behind === 0 ? (
-      <span className="gp-sync quiet" title={`in step with ${git.upstream}`}><Check size={11} strokeWidth={2} />synced</span>
-    ) : (
-      <>
-        {ahead > 0 && (
-          <button className="gp-sync" disabled={busy} title={`push ${plural(ahead, "commit")} to ${git.upstream}`} onClick={() => void push()}>
-            <ArrowUp size={11} strokeWidth={2} />{ahead}
+  /* The readout: what a push and a pull would move and what's changed, how
+     fresh that is, then the one move this state allows — none on a diverged
+     branch, where git would refuse both. Zeros dim; "—" is a count that can't
+     exist here (no upstream). */
+  const fetching = op?.kind === "fetch" && op.phase === "busy";
+  const t = git?.fetched_at ? ago(git.fetched_at) : "";
+  const when = !t ? "" : t === "now" ? " · checked just now" : ` · checked ${t} ago`;
+  const toPush = s.kind === "ahead" || s.kind === "publish" ? s.n : s.kind === "diverged" ? s.ahead
+    : s.kind === "synced" || s.kind === "behind" ? 0 : null;
+  const toPull = s.kind === "behind" ? s.n : s.kind === "diverged" ? s.behind
+    : s.kind === "synced" || s.kind === "ahead" ? 0 : null;
+  const action = s.kind === "ahead" ? { kind: "push" as const, n: s.n }
+    : s.kind === "behind" ? { kind: "pull" as const, n: s.n }
+    : s.kind === "publish" && s.n > 0 ? { kind: "publish" as const, n: s.n }
+    : null;
+  const cell = (icon: ReactNode, value: number | null, label: string, tone: string) => (
+    <div className={`gp-roc ${value ? tone : "z"}`}><b>{icon}{value ?? "—"}</b><span>{label}</span></div>
+  );
+  const warn = s.kind === "diverged" ? "warn" : "";
+  const sub = fetching ? <span>checking origin…</span>
+    : s.kind === "synced" ? <><Check size={12} strokeWidth={2.4} /><span>up to date with <b>{s.upstream}</b>{when}</span></>
+    : s.kind === "ahead" || s.kind === "behind" ? <span><b>{s.upstream}</b>{when}</span>
+    : s.kind === "diverged" ? <span>diverged from <b>{s.upstream}</b>{when}</span>
+    : s.kind === "publish" ? <span>not on <b>origin</b> yet · only in this checkout</span>
+    : s.kind === "local" ? <span>no remote · this repo lives only here</span>
+    : <span>detached HEAD · no branch to push</span>;
+  const pushy = op?.kind === "push" || op?.kind === "publish";
+  const act: ReactNode = op?.phase === "failed" ? (
+    <div className="gp-fail" role="alert">
+      <div className="gp-failh">
+        <TriangleAlert size={14} strokeWidth={2} /><b>{FAILED[op.kind]}</b>
+        <button className="gp-ib" title="dismiss" onClick={() => setOp(null)}><X size={12} /></button>
+      </div>
+      <pre>{op.output}</pre>
+      <div className="gp-failbtns">
+        {/* Not a retry in disguise: the push goes to a new session on the
+            branch, which you send yourself (runner._PUSH_NOTE tells agents the same). */}
+        {pushy && onHandOff && (
+          <button className="gp-pb tint" title="Handle it in a new session on this branch, with git's message as an unsent draft"
+            onClick={() => { onHandOff(op.project, op.branch, pushFailedDraft(branchName || op.branch, op.output)); setOp(null); }}>
+            <SquarePen size={13} strokeWidth={2} />Handle in a new session
           </button>
         )}
-        {behind > 0 && (
-          <button className="gp-sync" disabled={busy} title={`pull ${plural(behind, "commit")} from ${git.upstream} (fast-forward only)`} onClick={() => void pull()}>
-            <ArrowDown size={11} strokeWidth={2} />{behind}
-          </button>
-        )}
-      </>
-    );
+        <button className={`gp-pb ghost${pushy ? " sq" : ""}`} title="retry" disabled={busy}
+          onClick={() => void (op.kind === "fetch" ? fetchNow() : sync(op.kind, op.n))}>
+          <RotateCcw size={13} strokeWidth={2} />{!pushy && "Retry"}
+        </button>
+      </div>
+    </div>
+  ) : op?.phase === "done" ? (
+    <div className="gp-done"><Check size={13} strokeWidth={2.4} /><span>{op.text}</span></div>
+  ) : op?.phase === "busy" && op.kind !== "fetch" ? (
+    <button className="gp-pb busy" disabled>
+      <LoaderCircle size={14} strokeWidth={2.2} />
+      {op.kind === "publish" ? "Publishing…" : `${op.kind === "pull" ? "Pulling" : "Pushing"} ${plural(op.n, "commit")}…`}
+    </button>
+  ) : s.kind === "diverged" ? (
+    <>
+      <div className="gp-ronote">A push would be refused and a pull can't fast-forward. A new session can merge{" "}
+        <code>{s.upstream}</code> in and push; you send its first message.</div>
+      {onHandOff && project && (
+        <button className="gp-pb tint" title="Open a session on this branch with the merge as an unsent draft"
+          onClick={() => onHandOff(project, branch, divergedDraft(branchName, s.upstream, s.ahead, s.behind))}>
+          <SquarePen size={13} strokeWidth={2} />Handle in a new session
+        </button>
+      )}
+    </>
+  ) : action ? (
+    <button className="gp-pb" disabled={busy} onClick={() => void sync(action.kind, action.n)}
+      title={action.kind === "publish" ? `publish ${branchName} to origin and track it`
+        : action.kind === "pull" ? `fast-forward ${plural(action.n, "commit")} from ${s.kind === "behind" ? s.upstream : ""}`
+        : `push ${plural(action.n, "commit")} to ${s.kind === "ahead" ? s.upstream : ""}`}>
+      {action.kind === "publish" ? <CloudUpload size={14} strokeWidth={2.2} /> : action.kind === "pull"
+        ? <ArrowDown size={14} strokeWidth={2.2} /> : <ArrowUp size={14} strokeWidth={2.2} />}
+      {action.kind === "publish" ? "Publish branch" : `${action.kind === "pull" ? "Pull" : "Push"} ${plural(action.n, "commit")}`}
+    </button>
+  ) : null;
 
   const row = (f: GitFile, sec: boolean) => {
     // The letter for the half the row is in — a file staged as added and then
@@ -303,12 +385,25 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
         {branchName && (
           <span className="gp-branch" title={branchName}><i>⎇</i><span>{branchName}</span></span>
         )}
-        {sync}
-        <button className="gp-ib" title="refresh" onClick={() => { onGitChanged(); setNonce((n) => n + 1); }}>
+        <button className={`gp-ib${fetching ? " spin" : ""}`} disabled={busy}
+          title={s.kind === "none" ? "refresh" : "fetch from origin, then re-read"} onClick={() => void fetchNow()}>
           <RefreshCw size={13} />
         </button>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
+
+      {project && s.kind !== "none" && (
+        <div className="gp-rd">
+          <div className="gp-ro">
+            {cell(<ArrowUp size={15} strokeWidth={2.2} />, toPush, s.kind === "publish" ? "to publish" : "to push", warn || (action && action.kind !== "pull" ? "on" : ""))}
+            {cell(<ArrowDown size={15} strokeWidth={2.2} />, toPull, "to pull", warn || (action?.kind === "pull" ? "on" : ""))}
+            {cell(<CircleDot size={14} strokeWidth={2.2} />, changed.size, "changed", "dirty")}
+            {op?.phase === "busy" && op.kind !== "fetch" && <div className="gp-robar"><i /></div>}
+          </div>
+          <div className={`gp-rosub${fetching ? "" : s.kind === "synced" ? " ok" : warn ? " warn" : ""}`}>{sub}</div>
+          {act && <div className="gp-act">{act}</div>}
+        </div>
+      )}
 
       {/* Both open: CHANGES takes its content up to half the panel, GRAPH the
           rest. One closed: the other takes everything, and a closed GRAPH's
@@ -355,15 +450,6 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
             )}
             {note && (
               <div className="gp-note" onClick={() => setNote("")} title="dismiss">{note}</div>
-            )}
-            {/* Not a retry: the push goes to a new session on the branch, which
-                you send yourself (runner._PUSH_NOTE tells agents the same). */}
-            {pushErr && note === pushErr.output && onPushFailed && (
-              <button className="gp-btn wide"
-                title="Handle it in a new session on this branch, with git's message as an unsent draft"
-                onClick={() => { onPushFailed(pushErr.project, pushErr.branch, pushErr.output); setNote(""); setPushErr(null); }}>
-                ▸ HANDLE IN A NEW SESSION
-              </button>
             )}
             {!project ? <div className="gp-empty">No session selected.</div>
               : !ready ? (skel ? (

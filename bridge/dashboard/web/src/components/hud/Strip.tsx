@@ -38,7 +38,6 @@ export interface StripProps {
   onSetUnit: (unit: string) => Promise<string | null>;
   openSettings?: number; // nonce — bump to open the clock & weather popover (from the menu)
   openReport?: number; // nonce — bump to open the week report (from the menu)
-  git?: ReactNode; // the open session's GitPopover — App owns its git poll
 }
 
 // Segmented-control button style for the popover's 24H/12H and °C/°F pickers.
@@ -233,7 +232,7 @@ export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => v
  *  right, as one row that sits wherever App puts it (RightCap, or the chat
  *  header while the right panel is collapsed). */
 export function Strip(props: StripProps) {
-  const { clock, weather, onSetCity, onSetUnit, openSettings, openReport, git } = props;
+  const { clock, weather, onSetCity, onSetUnit, openSettings, openReport } = props;
   const [clockHover, setClockHover] = useState(false);
   const [clockOpen, setClockOpen] = useState(false);
   const [weekOpen, setWeekOpen] = useState(false);
@@ -393,10 +392,9 @@ export function Strip(props: StripProps) {
         {weekOpen && <WeekPanel />}
       </span>
 
-      {/* The actions, by the gear: the open session's git and the bell. The
-          platform's own UPDATE lives on the rail, above ⌘K. */}
+      {/* The bell, by the gear. Git lives in the rail's GIT tab, and the
+          platform's own UPDATE on the rail, above ⌘K. */}
       <span style={{ display: "flex", alignItems: "center", gap: 12, flex: "none" }}>
-        {git}
         <NotificationCenter />
       </span>
     </div>

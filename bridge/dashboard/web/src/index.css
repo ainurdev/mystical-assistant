@@ -4444,16 +4444,70 @@ button.ntf-write:hover { color: var(--txb); background: var(--ac-03); }
   color: var(--purple-h); font: 400 var(--t10)/1 var(--m); white-space: nowrap; }
 .gp-branch i { color: var(--purple); font-style: normal; flex: none; }
 .gp-branch span { overflow: hidden; text-overflow: ellipsis; }
-.gp-sync { display: inline-flex; align-items: center; gap: 1px; height: 20px; padding: 0 6px 0 4px; border-radius: var(--r); appearance: none; cursor: pointer;
-  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--acc) 9%, transparent);
-  color: var(--acc); font: 500 var(--t10)/1 var(--m); white-space: nowrap; }
-.gp-sync:hover:not(:disabled) { background: color-mix(in srgb, var(--acc) 18%, transparent); }
-.gp-sync:disabled { opacity: .5; cursor: progress; }
-.gp-sync.quiet { border-color: transparent; background: none; color: var(--txl); gap: 3px; padding: 0 4px; cursor: default; }
 .gp-ib, .gg-ib { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 0; border-radius: var(--r); background: none;
   color: var(--txl); padding: 0; cursor: pointer; appearance: none; flex: none; }
 .gp-ib:hover:not(:disabled), .gg-ib:hover { color: var(--txh); background: var(--wash); }
 .gp-ib:disabled { opacity: .4; cursor: not-allowed; }
+.gp-ib.spin { color: var(--acc); }
+.gp-ib.spin svg { animation: gpspin 1s linear infinite; }
+/* the readout: to push / to pull / changed, how fresh, and the one move the
+   state allows. That move is the panel's only solid button: agents commit, you
+   push. */
+.gp-rd { flex: none; padding: 10px; }
+.gp-ro { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--l2);
+  border-radius: var(--f-rad, 0px); overflow: hidden; }
+.gp-roc { display: flex; flex-direction: column; gap: 5px; min-width: 0; padding: 9px 10px 8px; border-left: 1px solid var(--l); }
+.gp-roc:first-child { border-left: 0; }
+.gp-roc b { display: flex; align-items: center; gap: 3px; font: 500 calc(var(--fsu) * 20)/1 var(--m); color: var(--txb); }
+.gp-roc b svg { flex: none; color: var(--acc); }
+.gp-roc span { font: 600 var(--t85)/1 var(--f); letter-spacing: .12em; text-transform: uppercase; color: var(--txl);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gp-roc.on { background: color-mix(in srgb, var(--acc) 8%, transparent); }
+.gp-roc.warn { background: color-mix(in srgb, var(--warn) 7%, transparent); }
+.gp-roc.warn b svg, .gp-roc.dirty b svg { color: var(--warn); }
+.gp-roc.z b, .gp-roc.z b svg { color: var(--txg); }
+.gp-robar { position: absolute; left: 0; right: 0; bottom: 0; height: 2px; overflow: hidden; background: color-mix(in srgb, var(--acc) 18%, transparent); }
+.gp-robar i { position: absolute; top: 0; bottom: 0; left: 0; width: 38%; background: var(--acc); animation: gpbar 1.1s cubic-bezier(.4, 0, .2, 1) infinite; }
+.gp-rosub { display: flex; align-items: center; gap: 5px; min-width: 0; margin: 8px 2px 0; font: 400 var(--t105)/1.3 var(--f); color: var(--txd); }
+.gp-rosub > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-rosub b { font: 500 var(--t10)/1 var(--m); color: var(--txm); }
+.gp-rosub.warn b { color: inherit; }
+.gp-rosub.ok svg { flex: none; color: var(--ok); }
+.gp-rosub.warn { color: var(--warn); }
+.gp-act { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.gp-pb { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 34px; padding: 0 12px; border: 0;
+  border-radius: var(--r); background: var(--acc); color: var(--acc-on); font: 650 var(--t11)/1 var(--f); letter-spacing: .07em;
+  text-transform: uppercase; white-space: nowrap; cursor: pointer; appearance: none;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .18), 0 6px 18px -8px color-mix(in srgb, var(--acc) 70%, transparent); }
+.gp-pb:hover:not(:disabled) { filter: brightness(1.08); }
+.gp-pb:disabled { cursor: not-allowed; }
+.gp-pb.busy { background: color-mix(in srgb, var(--acc) 34%, var(--panel)); color: var(--txb); box-shadow: none; cursor: progress; }
+.gp-pb.busy svg { animation: gpspin 1s linear infinite; }
+.gp-pb.tint { border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); background: color-mix(in srgb, var(--acc) 15%, transparent);
+  color: var(--txb); letter-spacing: .05em; box-shadow: none; }
+.gp-pb.tint:hover:not(:disabled) { filter: none; background: color-mix(in srgb, var(--acc) 24%, transparent); }
+.gp-pb.ghost { width: auto; flex: none; border: 1px solid var(--l2); background: none; color: var(--txm); box-shadow: none; }
+.gp-pb.ghost:hover:not(:disabled) { filter: none; background: var(--wash); color: var(--txh); }
+.gp-pb.ghost.sq { width: 34px; padding: 0; }
+.gp-done { display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 12px; border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--ok) 34%, transparent); background: color-mix(in srgb, var(--ok) 7%, transparent);
+  color: var(--txh); font: 500 var(--t11)/1 var(--f); animation: mslide .16s ease both; }
+.gp-done svg { flex: none; color: var(--ok); }
+.gp-done span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-fail { display: flex; flex-direction: column; gap: 8px; padding: 9px; border-radius: var(--f-rad, 0px);
+  border: 1px solid color-mix(in srgb, var(--err) 38%, transparent); background: color-mix(in srgb, var(--err) 6%, transparent); }
+.gp-failh { display: flex; align-items: center; gap: 7px; color: var(--err); }
+.gp-failh b { flex: 1; font: 600 var(--t12)/1 var(--f); color: var(--txb); }
+.gp-fail pre { margin: 0; max-height: 9.5em; overflow: auto; padding: 7px 8px; border-radius: var(--r); background: var(--panel3);
+  border: 1px solid color-mix(in srgb, var(--err) 22%, transparent); font: 400 var(--t95)/1.55 var(--m); color: var(--txd);
+  white-space: pre-wrap; word-break: break-word; font-variant-ligatures: none; }
+.gp-failbtns { display: flex; gap: 6px; }
+.gp-failbtns .gp-pb.tint { flex: 1; width: auto; }
+.gp-ronote { font: 400 var(--t105)/1.45 var(--f); color: var(--txd); }
+.gp-ronote code { font: 400 var(--t10)/1 var(--m); color: var(--txm); }
+@keyframes gpspin { to { transform: rotate(360deg); } }
+@keyframes gpbar { from { transform: translateX(-100%); } to { transform: translateX(265%); } }
+@media (prefers-reduced-motion: reduce) { .gp-ib.spin svg, .gp-pb.busy svg, .gp-robar i { animation: none; } }
 /* the folds: VS Code's pane heads */
 .gp-fold { display: flex; flex-direction: column; min-height: 0; }
 .gp-fh { display: flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 0 8px; flex: none; background: var(--panel2);
@@ -4479,7 +4533,6 @@ button.ntf-write:hover { color: var(--txb); background: var(--ac-03); }
 .gp-btn.pri { flex: 1; border-color: color-mix(in srgb, var(--acc) 60%, transparent); background: color-mix(in srgb, var(--acc) 16%, transparent); color: var(--txb); }
 .gp-btn.pri:hover:not(:disabled) { background: color-mix(in srgb, var(--acc) 24%, transparent); }
 .gp-btn:disabled { opacity: .4; cursor: not-allowed; }
-.gp-btn.wide { width: calc(100% - 20px); margin: 0 10px 6px; }
 .gp-note { margin: 8px 10px 6px; font: 400 var(--t10)/1.5 var(--m); color: var(--txd); white-space: pre-wrap; word-break: break-word; cursor: pointer; }
 /* groups + file rows */
 .gp-group { display: flex; align-items: center; gap: 6px; height: 24px; padding: 4px 7px 0 12px; font: 600 var(--t95)/1 var(--f);
