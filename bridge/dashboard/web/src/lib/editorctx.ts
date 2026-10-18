@@ -27,6 +27,9 @@ export interface EditorEntry {
   path?: () => string | undefined;
   /** Owner-specific rows: composer = attach | mention | clear; editor = format | symbol | find. */
   actions?: Record<string, () => void>;
+  /** Whether the box's owner may be closed now (the EDITOR: no unsaved edits in
+   *  any tab); when it may not, the owner says why in its own place. */
+  leaveOk?: () => boolean;
 }
 
 const editors = new Map<string, EditorEntry>();

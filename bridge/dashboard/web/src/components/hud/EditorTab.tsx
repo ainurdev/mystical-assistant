@@ -485,6 +485,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
         symbol: () => setPalQ("@"),
         find: () => showView("search"),
       },
+      leaveOk: () => leaveOk.current(),
     });
     view.focus();
     // A restored tab carries the compartments from its last mount, so a pref
@@ -636,6 +637,16 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
     const b = bufs.current.get(path);
     return !!b && b.text !== b.base;
   }
+
+  // "Send selection to chat" closes the modal, and closing it drops every tab's
+  // unsaved buffer, so it asks here first; read through a ref, the view's
+  // registration outlives the render that made it.
+  const leaveOk = useRef<() => boolean>(() => true);
+  leaveOk.current = () => {
+    if (!dirty && !tabs.some(isDirty)) return true;
+    flash("quoted into the prompt — unsaved edits keep the editor open");
+    return false;
+  };
 
   async function closeTab(path: string) {
     if (isDirty(path) && !(await askConfirm(`${path} has unsaved changes — close it anyway?`))) return;

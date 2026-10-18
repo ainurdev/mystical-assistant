@@ -2054,7 +2054,8 @@ export function App() {
         { icon: "⧉", label: "Copy", hint: "⌘C", onClick: () => void copySelection(ed.view) },
         { icon: "⎘", label: "Paste", hint: "⌘V", onClick: () => void pasteInto(ed.view, composer ? (f) => composerFiles.current?.(f) : undefined)
             .then((r) => {
-              if (r === "refused") notify("info", "Paste is blocked from the menu here — press ⌘V in the box.");
+              // ⌘V still works where the menu's read is refused, once the caret is back in the box.
+              if (r === "refused") { v.focus(); notify("info", "Paste is blocked from the menu here — press ⌘V in the box."); }
               else if (r === "empty") notify("info", "Nothing to paste.");
             }) },
         { icon: "☰", label: "Select all", hint: "⌘A", onClick: () => { selectAll(v); v.focus(); } },
@@ -2073,7 +2074,11 @@ export function App() {
         if (sel) {
           const from = v.state.selection.main.from;
           items.push({ icon: "❞", label: "Send selection to chat", hint: "quotes path:line into the prompt",
-            onClick: () => quote(`${ed.path?.() ?? "selection"}:${v.state.doc.lineAt(from).number}\n${sel}`) });
+            onClick: () => {
+              quote("```" + `${ed.path?.() ?? "selection"}:${v.state.doc.lineAt(from).number}\n${sel}\n` + "```");
+              // The prompt sits under the project modal; close it unless that would drop unsaved edits.
+              if (ed.leaveOk?.() ?? true) setAnalyzeProject(null);
+            } });
         }
       }
       items.push({ divider: true });
