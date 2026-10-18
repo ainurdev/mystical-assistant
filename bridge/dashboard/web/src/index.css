@@ -1865,43 +1865,60 @@ input {
   border-bottom: 1px solid var(--d-hair);
 }
 [data-style="dossier"] .dwork + .dwork { margin-top: 0; }
-/* the header sits on the same grid: its chevron is the spine's first node */
+/* The header is a line. Its chevron is the spine's first node, WORK sits in
+   the kind column, and what the zone ran follows as glyph chips — the spine's
+   own marks with a count — starting where every row's object does. A rule
+   runs out to the right group: what failed, the pictures inside, the figure.
+   Shut, there is no box (the rule below the body ones): the work is a divider
+   between what you asked and what came back. */
 [data-style="dossier"] .dwork-head {
-  display: grid; align-items: center; width: 100%; min-width: 0; min-height: 30px;
-  grid-template-columns: var(--zn) var(--zk) minmax(0, max-content) minmax(0, 1fr) max-content max-content max-content var(--zc);
+  display: flex; align-items: center; width: 100%; min-width: 0; min-height: 30px;
   white-space: nowrap; text-align: left;
   font-size: var(--t105); letter-spacing: .5px; color: var(--txd);
 }
-[data-style="dossier"] .dwork-node { grid-column: 1; display: grid; place-items: center; color: var(--txm); }
+[data-style="dossier"] .dwork-node { flex: none; width: var(--zn); display: grid; place-items: center; color: var(--txm); }
 [data-style="dossier"] .dwork-lab {
-  grid-column: 2; padding-left: 5px;
+  flex: none; width: var(--zk); padding-left: 5px;
   font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm);
 }
-[data-style="dossier"] .dwork-title { grid-column: 3; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-[data-style="dossier"] .dwork-strip { grid-column: 4; display: flex; min-width: 0; gap: 2px; overflow: hidden; padding-left: 10px; }
-/* open, the strip is the spine below it: saying it twice is noise */
-[data-style="dossier"] .dwork[data-open] .dwork-strip { visibility: hidden; }
-[data-style="dossier"] .dwork-strip > i {
-  --m: var(--d-tool);
-  flex: none; width: 15px; height: 15px; display: grid; place-items: center;
+[data-style="dossier"] .dwork-kinds { display: flex; flex: 0 1 auto; min-width: 0; gap: 14px; overflow: hidden; }
+[data-style="dossier"] .dwork-k { --m: var(--d-tool); display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--txd); }
+[data-style="dossier"] .dwork-k > i {
+  width: 15px; height: 15px; display: grid; place-items: center;
   font-style: normal; font-size: var(--t85); line-height: 1; color: var(--m);
   background: color-mix(in oklab, var(--m) var(--d-tint), var(--panel2));
   border-radius: calc(var(--d-rad) * .4);
 }
-[data-style="dossier"] .dwork-strip > i[data-m="think"] { --m: var(--d-think); }
-[data-style="dossier"] .dwork-strip > i[data-m="note"] { --m: var(--d-note); }
-[data-style="dossier"] .dwork-strip > i:is([data-m="hook"], [data-m="log"]) { --m: var(--txl); }
-[data-style="dossier"] .dwork-strip > i[data-m="fail"] { --m: var(--err); }
-[data-style="dossier"] .dwork-strip > b { font-weight: 400; color: var(--txf); padding-left: 3px; }
+[data-style="dossier"] .dwork-k > i > svg { width: 10px; height: 10px; }
+[data-style="dossier"] .dwork-k[data-m="think"] { --m: var(--d-think); }
+[data-style="dossier"] .dwork-k[data-m="note"] { --m: var(--d-note); }
+[data-style="dossier"] .dwork-k:is([data-m="hook"], [data-m="log"]) { --m: var(--txl); }
+[data-style="dossier"] .dwork-k[data-m="fail"] { --m: var(--err); color: var(--err); }
+/* while it runs, the step that is out right now, after the chips so far */
+[data-style="dossier"] .dwork-live { min-width: 0; margin-left: 14px; overflow: hidden; text-overflow: ellipsis; }
+[data-style="dossier"] .dwork-live::before { content: "\2014 "; color: var(--txl); }
+[data-style="dossier"] .dwork-rule { flex: 1 1 0; min-width: 12px; height: 1px; margin: 0 14px; background: var(--line2, var(--d-hair)); }
+[data-style="dossier"] .dwork-head > .dwork-k + :is(.dwork-k, .dwork-ms) { margin-left: 14px; }
 /* pictures inside: your accent until each has been on screen (lib/seenshots),
-   the duration's grey after — the zone's edge and chevron light with the chip */
-[data-style="dossier"] .dwork-shot { grid-column: 5; padding-left: 10px; color: var(--txf); }
-[data-style="dossier"] .dwork-shot[data-new] { color: var(--acc); text-shadow: 0 0 9px color-mix(in oklab, var(--acc) 60%, transparent); }
-[data-style="dossier"] .dwork[data-shots="new"] { box-shadow: inset 2px 0 0 var(--acc); }
+   the figure's grey after — the chevron lights with it, and open, the plate's edge */
+[data-style="dossier"] .dwork-k[data-m="shot"] { --m: var(--txf); color: var(--txf); }
+[data-style="dossier"] .dwork-k[data-m="shot"][data-new] { --m: var(--acc); color: var(--acc); text-shadow: 0 0 9px color-mix(in oklab, var(--acc) 60%, transparent); }
+[data-style="dossier"] .dwork-k[data-m="shot"][data-new] > i {
+  background: color-mix(in oklab, var(--acc) 16%, var(--panel2));
+  box-shadow: 0 0 8px color-mix(in oklab, var(--acc) 45%, transparent);
+}
 [data-style="dossier"] .dwork[data-shots="new"] .dwork-node { color: var(--acc); }
-[data-style="dossier"] .dwork-fail { grid-column: 6; padding-left: 10px; color: var(--err); }
-[data-style="dossier"] .dwork-ms { grid-column: 7; padding-left: 10px; color: var(--txf); letter-spacing: 1px; font-size: var(--t95); }
+[data-style="dossier"] .dwork[data-open][data-shots="new"] { box-shadow: inset 2px 0 0 var(--acc); }
+[data-style="dossier"] .dwork-ms { flex: none; color: var(--txf); letter-spacing: 1px; font-size: var(--t95); }
 [data-style="dossier"] .dwork[data-run] .dwork-ms { color: var(--d-you); animation: blink 1.1s steps(1) infinite; }
+/* shut, the line stands on the ground; open, the body gets its plate (the
+   families' .dwork rule, which this outranks only while shut) */
+[data-style="dossier"] .dwork:not([data-open]) { background: none; border-color: transparent; box-shadow: none; padding-top: 0; padding-bottom: 0; }
+/* an unseen picture inside the open zone wears the accent until it has been on screen */
+[data-style="dossier"] .dwork-body :is(img, video)[data-new] {
+  outline: 1.5px solid var(--acc); outline-offset: 1px;
+  box-shadow: 0 0 10px color-mix(in oklab, var(--acc) 45%, transparent);
+}
 [data-style="dossier"] .dwork-body { position: relative; display: flex; flex-direction: column; }
 [data-style="dossier"] .dwork-body > * { margin: 0 !important; }
 /* the spine, from under the header's chevron down past the last row */
@@ -2894,6 +2911,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] [data-style="dossier"] .dwork {
   margin-top: 10px; border: 1px solid var(--line); border-radius: var(--f-rad); background: var(--panel2);
 }
+/* shut, the WORK line stands on the ground (the DOSSIER rule of the same name
+   outranks the base plate; this one outranks the family's) */
+[data-fam] [data-style="dossier"] .dwork:not([data-open]) { border-color: transparent; background: none; box-shadow: none; }
 [data-fam] [data-style="dossier"] .res,
 [data-fam] [data-style="dossier"] .resblk[data-bad] .res { border-left: 0; background: none; }
 /* THE MAT. With no turn card, a hairline ground (GRAPH, MATRIX, RULED, TOOTH)

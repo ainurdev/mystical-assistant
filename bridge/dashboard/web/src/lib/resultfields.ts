@@ -11,7 +11,7 @@ export type Finding = {
   file: string; line?: number; severity: "high" | "med" | "low"; note: string;
 };
 export type Command = { cmd: string; status?: "ok" | "fail" | "pending" };
-export type Screen = { path: string; caption?: string };
+export type Screen = { path: string; caption?: string; at?: number };
 export type FileRef = { path: string; add?: number; del?: number };
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
@@ -60,7 +60,7 @@ export const asCommands = (v: unknown): Command[] | null =>
 
 export const asScreens = (v: unknown): Screen[] | null =>
   rows(v, (o) => (str(o.path)
-    ? { path: str(o.path), caption: str(o.caption) || undefined } : null));
+    ? { path: str(o.path), caption: str(o.caption) || undefined, at: typeof o.at === "number" ? o.at : undefined } : null));
 
 /** Paths, with the diffstat when the model bothered to count. A plain list of
  *  strings is the common case; objects are how a diffstat arrives. */

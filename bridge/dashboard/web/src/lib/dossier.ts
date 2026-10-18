@@ -18,7 +18,7 @@
 // run of the rest in one zone. An error or a stop ends the turn, and lib/segments
 // already refuses to hide those in a fold; a zone is a fold, so they stay out too.
 
-import type { Seg, StepCat } from "./segments";
+import { CAT_ORDER, type Seg, type StepCat } from "./segments.ts";
 
 /** What a segment's head event is, for the cut — the renderer's own view of it
  *  (a `text` that a question card follows reads as the answer, so the caller
@@ -47,9 +47,8 @@ export function zonesOf(segs: Seg[], isTop: (s: Seg) => boolean): Zone[] {
   return out;
 }
 
-/** One glyph per thing the zone holds, for the header's strip — so a shut
- *  zone still shows its shape (three commands then a note then a failure)
- *  without opening it. The same glyphs head the rows inside. */
+/** One glyph per kind of thing a zone holds: the header's chips count them
+ *  (kindsOf), and the same glyphs head the rows inside, on the spine. */
 export type Mark = "think" | "note" | "hook" | StepCat | "fail";
 
 export const MARK_GLYPH: Record<Mark, string> = {
@@ -58,19 +57,20 @@ export const MARK_GLYPH: Record<Mark, string> = {
   call: "⌁", agent: "◈", log: "⚙", step: "·",
 };
 
-/** Past this many the strip stops being a shape and starts being a ruler. */
-export const STRIP_MAX = 28;
-
-/** The strip, capped: the first STRIP_MAX marks and how many more there are. */
-export function stripOf(marks: Mark[]): { shown: Mark[]; more: number } {
-  return marks.length <= STRIP_MAX
-    ? { shown: marks, more: 0 }
-    : { shown: marks.slice(0, STRIP_MAX), more: marks.length - STRIP_MAX };
+/** The header's chips: one per kind of step the zone ran, in the STEPS title's
+ *  order (lib/segments CAT_ORDER), then one for the notes — the count sentence
+ *  turned into the glyphs the rows inside already wear. */
+export function kindsOf(cats: StepCat[], notes: number): { m: Mark; n: number }[] {
+  const n = new Map<StepCat, number>();
+  for (const c of cats) n.set(c, (n.get(c) ?? 0) + 1);
+  const out: { m: Mark; n: number }[] = CAT_ORDER.filter((c) => n.has(c)).map((c) => ({ m: c, n: n.get(c)! }));
+  if (notes) out.push({ m: "note", n: notes });
+  return out;
 }
 
-/** The header's words: what it ran (stepsTitle's own words, passed in) and how
- *  many times the agent spoke inside it. Thoughts and interim notes are both
- *  "notes" here — the distinction is drawn by the rows, not the count. */
+/** The header's words, now its tooltip: what it ran (stepsTitle's own words,
+ *  passed in) and how many times the agent spoke inside it. Thoughts and interim
+ *  notes are both "notes" here — the distinction is drawn by the rows, not the count. */
 export function workTitle(steps: string, notes: number): string {
   const n = notes ? `${notes} note${notes === 1 ? "" : "s"}` : "";
   return [steps, n].filter(Boolean).join(" · ");
