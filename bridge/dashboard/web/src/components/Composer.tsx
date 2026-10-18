@@ -131,9 +131,12 @@ function OverrideDot() {
 }
 
 function Drop<T extends string>({
-  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter, menu,
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter, menu, className,
 }: {
   label: string;
+  // On the chip's wrapper, for a layout that treats this chip apart (TABS'
+  // footer lets the PROFILE name give way first, .pb-l .drop-prof).
+  className?: string;
   // A field glyph printed inside the chip. The identity of the field then
   // travels with the control instead of sitting beside it as a separate span,
   // which is what let the layout ladder shed it exactly when the row got tight
@@ -183,7 +186,7 @@ function Drop<T extends string>({
     ["--dw" as string]: `${minWidth}px`,
   };
   return (
-    <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
+    <div className={className} style={{ position: "relative", display: "flex", alignItems: "center", gap: 6 }}>
       <button className="drop-btn" onClick={onToggle} title={title ?? `${label} — ${cur.label}`} style={btn}>
         {code && <span className="ctrl-fld">{code}</span>}
         <span className="drop-val" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: code ? 1 : undefined }}>{cur.short ?? cur.label}</span>
@@ -896,7 +899,7 @@ export function Composer({
     setOpenDrop("");
   };
   const profileDrop = (right: boolean) => profiles && (
-    <Drop label="PROFILE" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileOpts}
+    <Drop label="PROFILE" className="drop-prof" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileOpts}
       fallback={{ id: profile, label: profile || "NO PROFILE" }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
       tone={boundDead !== null ? "var(--err)" : undefined} meter={boundDead !== null ? undefined : chipMeter}
       title={boundDead !== null ? `PROFILE — ${bound?.name}: account ${boundDead}'s Claude login has expired; pick it in this menu to sign in again.` : chipTitle}

@@ -3573,10 +3573,19 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-card { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
 .pb-line { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
 /* two groups that wrap as units: the right one (run picker, SEND or the running
-   cluster) moves down whole rather than leaving QUEUE alone on a line */
+   cluster) moves down whole rather than leaving QUEUE alone on a line — but
+   only once the PROFILE name has given way. .pb-l offers line breaking its
+   narrowest (basis 0, min-width auto: its min-content), where that name, free
+   to break anywhere, counts for nothing; on one line it ellipsises into what
+   .pb-r leaves (line-clamp is the ellipsis of a line that may wrap). The run
+   chip pushed SEND's group under the chips at 787px with both sidebars open. */
 .pb-foot { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
 .pb-l, .pb-r { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pb-l { flex: 1 1 0; min-width: auto; }
 .pb-r { margin-left: auto; }
+/* ponytail: no floor — in a ~570–620px column the name is down to a letter or two before
+   SEND's group wraps; a floor that spares short names needs the label split into an unbreakable head */
+.pb-l .drop-prof .drop-val { white-space: normal !important; word-break: break-all; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
 /* a turn runs: profile and ponytail keep their glyph (and the profile its usage), the names go */
 .pb-card[data-running] .pb-foot .drop-val { display: none; }
 .pb-card[data-running] .pb-foot .drop-btn { min-width: 0 !important; }
