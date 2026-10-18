@@ -1890,21 +1890,22 @@ input {
   white-space: nowrap; text-align: left;
   font-size: var(--t105); letter-spacing: .5px; color: var(--txd);
 }
-/* Open, the header pins under the island while you are inside the zone, so a
-   click folds the work from anywhere: --isle-b is the island's bottom edge,
-   written on the scroller by Terminal.tsx. Pinned (WorkZone's observer), a
-   hairline cuts it from the rows passing under, and a lid of the island's own
-   glass covers the band above it, so rows don't surface over the header on
-   their way out. The lid spans the plate's padding box (--zpl/--zpr). */
+/* Open, the header pins at the top while you are inside the zone, so a click
+   folds the work from anywhere. --isle-b (Terminal.tsx, on the scroller) is
+   where it pins: 0 under the compact pill, which floats over the plate's
+   right end (its chips hide while pinned, data-isle), or just under the full
+   island bar. Pinned (WorkZone's observer), a hairline cuts it from the rows
+   passing under, and a lid in the plate's colour covers the band above it so
+   rows don't surface over the header on their way out. The lid spans the
+   plate's padding box (--zpl/--zpr). */
 [data-style="dossier"] .dwork[data-open] > .dwork-head {
-  position: sticky; top: calc(var(--isle-b, 50px) + 6px); z-index: 3; background: inherit;
+  position: sticky; top: var(--isle-b, 0px); z-index: 3; background: inherit;
 }
+[data-style="dossier"][data-isle="pill"] .dwork[data-pinned] .dwork-right { visibility: hidden; }
 [data-style="dossier"] .dwork[data-pinned] > .dwork-head { box-shadow: 0 1px 0 var(--d-hair); }
 [data-style="dossier"] .dwork[data-pinned] > .dwork-head::before {
   content: ""; position: absolute; left: calc(-1 * var(--zpl)); right: calc(-1 * var(--zpr)); bottom: 100%;
-  height: calc(var(--isle-b, 50px) + 6px); pointer-events: none;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  -webkit-backdrop-filter: blur(10px) saturate(1.15); backdrop-filter: blur(10px) saturate(1.15);
+  height: var(--isle-b, 0px); pointer-events: none; background: var(--panel2);
 }
 [data-style="dossier"] .dwork-node {
   grid-column: 1; grid-row: 1 / 3; justify-self: center; width: 22px; height: 22px; border-radius: 50%;
