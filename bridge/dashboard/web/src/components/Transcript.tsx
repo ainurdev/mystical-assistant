@@ -125,10 +125,13 @@ type Respond = (
  *  unmounts these whole; RunStream's own content-visibility cards keep the
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
-  turn, isActive, isLast, promptIdx, hud, liveTurns, boot,
+  turn, isActive, isLast, promptIdx, hud, liveTurns, boot, who,
   onRespond, onRunCommand, onQuote, onOpenFile, onAnswer,
 }: {
   turn: Turn;
+  /** The teammate whose device run this turn is: their name signs the prompt,
+   *  in the device-run blue. */
+  who?: string;
   isActive: boolean;
   /** What the live turn is waiting on before its first token, or null. */
   boot?: string | null;
@@ -155,10 +158,10 @@ function TurnBlock({
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
-      <div className="dprompt">
+      <div className="dprompt" data-who={who ? "" : undefined}>
         {turn.prompt && (
           <div data-prompt-idx={promptIdx}>
-            <PromptBubble text={turn.prompt} at={turn.started} n={promptIdx + 1} runtime={turn.runtime} />
+            <PromptBubble text={turn.prompt} at={turn.started} n={promptIdx + 1} runtime={turn.runtime} who={who} />
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (
@@ -220,6 +223,7 @@ export function Transcript({
   turns,
   activeId,
   boot,
+  who,
   onRespond,
   liveTurns,
   trailingWorking,
@@ -242,6 +246,8 @@ export function Transcript({
   activeId: string | null;
   /** What the live turn is waiting on before its first token, or null. */
   boot?: string | null;
+  /** A teammate's device run: who asked, signing its first turn's prompt. */
+  who?: string;
   onRespond: Respond;
   liveTurns?: Set<string>;
   trailingWorking?: boolean;
@@ -460,6 +466,7 @@ export function Transcript({
         boot={boot}
         isLast={index === visible.length - 1}
         promptIdx={cut + index}
+        who={row.turn.id === turns[0]?.id ? who : undefined}
         hud={hud}
         liveTurns={liveTurns}
         onRespond={onRespond}

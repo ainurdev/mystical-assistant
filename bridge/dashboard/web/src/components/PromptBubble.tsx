@@ -9,7 +9,7 @@ import { hhmm, useClock12 } from "../lib/surfaces";
  *  (lib/agents runtimeBadge — it used to be a box of its own under the prompt),
  *  and when. Geometry and colour live in `.pbub` / `.pline` / `.pmeta`
  *  (index.css, DOSSIER tier 1); nothing here decides either. */
-export function PromptBubble({ text, at, n, runtime, steer, children }: {
+export function PromptBubble({ text, at, n, runtime, steer, who, children }: {
   text: string;
   at?: number;
   /** The turn's number, 1-based; a steer has none. */
@@ -17,6 +17,9 @@ export function PromptBubble({ text, at, n, runtime, steer, children }: {
   /** 'claude:<slot>' | 'acp:<agent>'; null or absent = the default account, unmarked. */
   runtime?: string | null;
   steer?: boolean;
+  /** Whose words these are when they aren't yours: the teammate who asked for
+   *  a device run (lib/devicerun). Their one ask reads ASKED, not a turn number. */
+  who?: string;
   /** Under your words, inside the plate: a steer's screenshots. */
   children?: ReactNode;
 }) {
@@ -34,8 +37,8 @@ export function PromptBubble({ text, at, n, runtime, steer, children }: {
           </div>
         </div>
         <div className="pmeta">
-          <b>{steer ? "↳ STEER" : "YOU"}</b>
-          {!steer && n != null && <span>TURN {String(n).padStart(2, "0")}</span>}
+          <b>{steer ? "↳ STEER" : who ?? "YOU"}</b>
+          {!steer && n != null && <span>{who ? "ASKED" : `TURN ${String(n).padStart(2, "0")}`}</span>}
           {ran && <span className="pacct" data-agent={ran.agent || undefined} title={ran.title}>{ran.text}</span>}
           {at != null && <span className="pstamp">{hhmm(at, h12)}</span>}
         </div>

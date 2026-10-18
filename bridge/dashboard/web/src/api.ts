@@ -60,6 +60,17 @@ export interface SessionBrief {
   // in flight's (a fallback handover moves it off the profile's), else the one
   // its next turn takes. null = it runs on another agent. Absent from an older bridge.
   slot?: number | null;
+  // A teammate's device run (lib/devicerun, bridge/device_view.py): who asked, for
+  // what, and how it ended (outcome null while it runs). null = not one; absent
+  // from an older bridge.
+  device?: {
+    request: string; instance: string; by: string;
+    repo: string;          // "owner/name"
+    sha: string;           // the full commit
+    pr: number | null;
+    task: { key: string; title: string } | null;
+    outcome: "done" | "failed" | "stopped" | null;
+  } | null;
 }
 
 /** Which picker a settings POST was for: a running turn is switched only to
@@ -179,6 +190,9 @@ export type RunEvent =
   | { type: "result"; result: string; cost: number; elapsed: number; is_error?: boolean }
   | { type: "error"; message: string }
   | { type: "stopped" }
+  // A line in a teammate's device run that isn't the run's own: "Mystical
+  // restarted HH:MM · this run kept going" (bridge/device_view.py).
+  | { type: "divider"; text: string }
   // `images`: screenshots sent with the steer, as upload-dir paths (same as
   // tool_done's). Steers recorded before this landed carry none.
   | { type: "steer"; text: string; images?: string[] }
@@ -568,6 +582,7 @@ export interface RivendellDevice {
   };
   shared_on: { on: number; free: number } | null;   // Rivendell's shared devices, kept 30 s; null when it can't say
   running: boolean;   // a teammate's run is running on this device now
+  running_session?: string | null;   // that run's read-only session; null while it starts (no view yet), absent from an older bridge
   setup_running: boolean;   // a Set up or Remove is going (from any tab), up to 15 minutes
   last_run: { at: number; by: string; task: string | null } | null;   // the newest run this device ran
 }
@@ -1952,6 +1967,10 @@ export const api = {
     req<{ ok: boolean; error: string | null; instances: RivendellDevice[] }>("/local/rivendell/devices/setup", {
       method: "POST", body: { action },
     }),
+  // STOP RUN on the teammate's run going on this device (its session's id). 404
+  // when it isn't the run going here, or from an older bridge that has no route.
+  stopDeviceRun: (session: string) =>
+    req<{ ok: boolean }>("/local/device-runs/stop", { method: "POST", body: { session } }),
   trackerProjects: (conn: string) =>
     req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
   trackerTasks: (project: string, sessionId?: string | null) =>

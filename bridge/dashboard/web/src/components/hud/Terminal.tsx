@@ -18,6 +18,8 @@ import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
 import { PrChip } from "./PrChip";
 import { ChatChromeContext } from "../../lib/chatchrome";
+import { isDeviceRun } from "../../lib/devicerun";
+import { DeviceTile } from "../DeviceRunPlate";
 
 /** The header is an island this far in from the chat column's top and sides;
  *  16 clears the ScrollRail on the right edge. */
@@ -269,6 +271,8 @@ export function Terminal({
   onArchive?: () => void;
 }) {
   const sessionProject = selected?.project ?? activeProject ?? null;
+  // A teammate's device run (lib/devicerun): read only, signed by who asked.
+  const deviceRun = isDeviceRun(selected?.origin);
   const tint = projectTint(sessionProject);
   const projectLabel = basename(sessionProject);
   const [projHov, setProjHov] = useState(false);
@@ -424,7 +428,7 @@ export function Terminal({
           ) : empty && loading ? null : empty ? (
             <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} onStartNext={onStartNext} />
           ) : (
-            <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef} />
+            <Transcript turns={turns} activeId={activeId} boot={boot} who={deviceRun ? selected?.device?.by || "A teammate" : undefined} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={deviceRun ? undefined : onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef} />
           )}
         </div>
       </div>
@@ -487,7 +491,7 @@ export function Terminal({
             style={{ display: "inline-flex", alignItems: "center", flex: "none", padding: 0, border: 0, appearance: "none", background: "transparent", cursor: "pointer" }}>
             {/* FLINT draws the tile; the HUD themes hide .ptile and mark a project by its tint dot */}
             <span className="pdot" style={{ width: 5, height: 5, borderRadius: "50%", background: tint.color, flex: "none" }} />
-            <ProjectTile project={sessionProject} />
+            {deviceRun ? <DeviceTile /> : <ProjectTile project={sessionProject} />}
           </button>
         )}
         <button

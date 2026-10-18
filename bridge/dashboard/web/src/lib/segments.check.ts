@@ -49,7 +49,7 @@ const kinds = (evs: { type: string; text?: string }[], from = 0) =>
 
 // Every prose type breaks the work, including the ones that end a turn.
 {
-  for (const p of ["text", "result", "steer", "permission", "question", "error", "stopped"]) {
+  for (const p of ["text", "result", "steer", "permission", "question", "error", "stopped", "divider"]) {
     const evs = [t("tool"), t(p, "x"), t("tool")];
     ok(kinds(evs) === `steps:0 prose:1 steps:2`, `${p} breaks a block`);
   }

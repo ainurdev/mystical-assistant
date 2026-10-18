@@ -67,6 +67,7 @@ import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from ".
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
+import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, RightCap, Strip } from "./components/hud/Strip";
@@ -88,6 +89,7 @@ import { shellCols } from "./lib/shell";
 import { notify, PillHost, setLinks, setNeeds, setNoticeEnv, setNoticeSound } from "./components/hud/Notifications";
 import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
+import { isDeviceRun } from "./lib/devicerun";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
 import { SettingsModal, type Tab as SettingsTab } from "./components/hud/SettingsModal";
@@ -610,7 +612,9 @@ export function App() {
 
   function selectSession(s: SessionBrief) {
     openSession(s.id);  // instant — the transcript keys off the id, not the active project
-    if (s.project !== activeProject) selectProjectBg(s.project);
+    // A teammate's device run sits in "/", no project of yours: opening it
+    // leaves the bridge's active project (Telegram's too) where it was.
+    if (s.project !== activeProject && !isDeviceRun(s.origin)) selectProjectBg(s.project);
   }
 
   // The native app's menu bar or tray opens a session here in place, the way a
@@ -1208,6 +1212,21 @@ export function App() {
     return () => window.removeEventListener("hud:settings", open);
   }, []);
 
+  // "Open this session", from anywhere (lib/devicerun.ts openSession): Settings'
+  // OPEN › on a teammate's run going here. Settings shuts so the chat shows; the
+  // transcript moves and the bridge's active project stays (openSession, never
+  // selectSession).
+  useEffect(() => {
+    const open = (e: Event) => {
+      setSettingsOpen(false);
+      openSession((e as CustomEvent<string>).detail);
+      toChat();
+    };
+    window.addEventListener("hud:open-session", open);
+    return () => window.removeEventListener("hud:open-session", open);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- openSession and toChat read refs and setters only
+  }, []);
+
   // Right-click context menu — reads data-ctx-* off the target chain.
   useEffect(() => {
     const onCtx = (e: MouseEvent) => {
@@ -1633,6 +1652,7 @@ export function App() {
   const projectGroups = useMemo<ProjectGroup[]>(() => {
     const byProj = new Map<string, SessionBrief[]>();
     for (const s of sessions) {
+      if (isDeviceRun(s.origin)) continue;   // a teammate's run, in "/": no project of yours
       const arr = byProj.get(s.project) ?? [];
       arr.push(s);
       byProj.set(s.project, arr);
@@ -1907,7 +1927,10 @@ export function App() {
       // a single Abandon replaces the lifecycle submenu. Its flip side shows
       // only for a hidden row (seeded back into `sessions` by openFromHistory).
       const lc = s?.lifecycle ?? null;
-      items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
+      // A teammate's device run is read only: nothing resumes it, and the bridge
+      // refuses to retitle it.
+      const readOnly = isDeviceRun(s?.origin);
+      if (!readOnly) items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
       items.push(lc === null
         ? { icon: "⊘", label: "Abandon session", danger: true,
             hint: "gave up — hides it, HISTORY tags it abandoned",
@@ -1917,7 +1940,7 @@ export function App() {
             onClick: () => void setLifecycle(ctxMenu.id, null) });
       items.push({ icon: pinned ? "★" : "☆", label: pinned ? "Unpin session" : "Pin session",
         hint: "TOP", onClick: () => togglePin(ctxMenu.id) });
-      items.push({ icon: "✎", label: "Rename session…",
+      if (!readOnly) items.push({ icon: "✎", label: "Rename session…",
         hint: "your own name for it",
         onClick: () => void renameSession(ctxMenu.id, s?.title ?? "") });
       items.push({ divider: true });
@@ -1964,7 +1987,7 @@ export function App() {
       items.push({ icon: "⋯", label: "More", children: [
         { icon: "⧉", label: "Copy session name", onClick: () => s && copy(s.title || "session") },
         // AUTO TITLES off: the bridge refuses a regenerate, so don't offer one.
-        ...(ai.title ? [{ icon: "↻", label: "Regenerate title",
+        ...(ai.title && !readOnly ? [{ icon: "↻", label: "Regenerate title",
           hint: "let the model name it from the whole session",
           onClick: () => void regenerateTitle(ctxMenu.id) }] : []),
         { icon: "⧉", label: "Duplicate session",
@@ -2363,7 +2386,14 @@ export function App() {
                 // Folded to the rail, the right column can't carry the cluster —
                 // the chat header takes it.
                 chrome={settings.rightOpen ? undefined : strip}
-                composer={
+                composer={selected && isDeviceRun(selected.origin) ? (
+                  // A teammate's device run: read only, so the plate stands where
+                  // the composer would. `ended` is its one turn's last event (the
+                  // turn takes the session's id), so another session's turns,
+                  // still on screen mid-switch, never count.
+                  <DeviceRunPlate key={selected.id} s={selected} working={openWorking}
+                    ended={turns.find((t) => t.id === selected.id)?.events.at(-1)?.at} />
+                ) : (
                   <>
                     {ai.relevance && checking !== undefined && <CheckingBanner prompt={checking} />}
                     {held && (
@@ -2417,7 +2447,7 @@ export function App() {
                       fileSink={composerFiles}
                     />
                   </>
-                }
+                )}
               />
 
               {/* RIGHT — activity bar of icons; clicking the active one collapses

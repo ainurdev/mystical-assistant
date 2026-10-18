@@ -272,9 +272,9 @@ export function hhmm(sec: number, h12 = clock12): string {
     : { hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
-export function ago(sec: number | null): string {
+export function ago(sec: number | null, now = Date.now() / 1000): string {
   if (!sec) return "";
-  const s = Math.max(0, Date.now() / 1000 - sec);
+  const s = Math.max(0, now - sec);
   if (s < 60) return "now";
   const m = Math.floor(s / 60);
   if (m < 60) return `${m}m`;

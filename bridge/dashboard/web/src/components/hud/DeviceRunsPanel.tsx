@@ -15,6 +15,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Key, LaptopMinimal } from "lucide-react";
 import { api, type AccountInfo, type RivendellDevice } from "../../api";
 import { accountChoices, setupActions, stateText } from "../../lib/deviceruns";
+import { openSession } from "../../lib/devicerun";
 import { CARD, Row, Section, Switch, riStatusView, useVoice } from "./SettingsModal";
 
 const MONO = "'JetBrains Mono',monospace";
@@ -227,6 +228,13 @@ export function DeviceRunsPanel() {
                     </span>
                   }>
                   <span style={NOW}>{stateText(d)}</span>
+                  {/* The run's read-only view. None yet while the run starts, or if it couldn't open. */}
+                  {d.running && d.running_session && (
+                    <button onClick={() => openSession(d.running_session!)}
+                      style={{ ...NOW, appearance: "none", border: 0, background: "transparent", padding: 0, cursor: "pointer", flex: "none", color: "var(--info)" }}>
+                      OPEN ›
+                    </button>
+                  )}
                 </Row>
                 {(actions.length > 0 || waiting) && (
                   <Row label="SETUP" desc={actions.map((a) => (a === "remove" ? REMOVE_DESC : setupDesc)).join(" ") || undefined}>
