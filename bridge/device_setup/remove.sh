@@ -80,7 +80,7 @@ unwall
 
 # 5. Cron and at may take the name again (Set up denied it both).
 step="Taking the hidden user out of the cron and at deny lists"
-allow_cron /usr/lib/cron/cron.deny /usr/lib/cron/at.deny
+allow_cron /private/var/at/cron.deny /private/var/at/at.deny
 
 # 6. The helper, its config, its lock, the sudoers rule, the Claude copy, and the
 #    runs folder. The lock's folders go too when nothing else is in them.

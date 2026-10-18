@@ -152,7 +152,7 @@ def test_the_scripts_and_the_bridge_name_the_same_paths(script):
         text = f.read()
     for path in (device_share.HELPER, device_share.RUNS_CONFIG, "/etc/sudoers.d/mystical-runs",
                  "/Users/Shared/Mystical Runs", "/usr/local/libexec/mystical-runs",
-                 "/usr/lib/cron/cron.deny", "/usr/lib/cron/at.deny"):
+                 "/private/var/at/cron.deny", "/private/var/at/at.deny"):
         assert path in text, path
 
 

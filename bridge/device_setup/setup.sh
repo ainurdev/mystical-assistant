@@ -207,9 +207,11 @@ dscl . -read "/Users/$RUN_USER" >/dev/null 2>&1 || fail "macOS didn't create the
 step="Keeping the hidden user out of your home folder"
 acl=$(ls -led "$home")
 case "$acl" in *"user:$RUN_USER deny"*) ;; *) chmod +a "$DENY" "$home" ;; esac
-#    And out of cron and at, so nothing a run schedules starts after it.
+#    And out of cron and at, so nothing a run schedules starts after it. The deny
+#    files go by their real path: /usr/lib/cron, the one the manuals name, is a
+#    SIP-restricted link, and a write through it fails even as root.
 step="Keeping the hidden user out of cron and at"
-deny_cron /usr/lib/cron/cron.deny /usr/lib/cron/at.deny
+deny_cron /private/var/at/cron.deny /private/var/at/at.deny
 
 # 5. The wall, before anything runs as the hidden user, and once it exists: pf
 #    resolves the user's name when it loads the rule.
