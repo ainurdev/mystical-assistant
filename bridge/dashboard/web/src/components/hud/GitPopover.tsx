@@ -42,9 +42,10 @@ export interface GitPopoverProps {
   // Push or pull landed — the owner of the 10s git poll re-reads it now
   // rather than leave a row you just changed stale.
   onSynced?: () => void;
-  // A push git refused: hand it to a new session on this branch, git's
-  // message as its unsent draft (App's pushFailedSession).
-  onPushFailed?: (output: string) => void;
+  // A push git refused: hand it to a new session on the tree that was pushing,
+  // git's message as its unsent draft (App's pushFailedSession). Named here, not
+  // read at click time: this popover outlives a switch to another session.
+  onPushFailed?: (repo: string, branch: string | null | undefined, output: string) => void;
 }
 
 const label = (t: string): ReactNode => (
@@ -56,7 +57,8 @@ export function GitPopover({ repo, changes, git, branch, onSynced, onPushFailed 
   const [hover, setHover] = useState(false);
   const [busy, setBusy] = useState(false);
   const [syncErr, setSyncErr] = useState("");
-  const [pushErr, setPushErr] = useState("");   // git's refusal of a push, for NEW SESSION
+  // git's refusal of a push, with the tree it was pushing, for NEW SESSION
+  const [pushErr, setPushErr] = useState<{ repo: string; branch?: string | null; output: string } | null>(null);
   const [actHov, setActHov] = useState(false);
   const [newHov, setNewHov] = useState(false);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
@@ -91,14 +93,14 @@ export function GitPopover({ repo, changes, git, branch, onSynced, onPushFailed 
     if (noRepo || busy) return;
     setBusy(true);
     setSyncErr("");
-    setPushErr("");
+    setPushErr(null);
     try {
       const r = kind === "push"
         ? await api.gitPush(repo, branch || undefined)
         : await api.gitPull(repo, branch || undefined);
       if (!r.ok) {
         setSyncErr(r.output || `${kind} failed`);
-        if (kind === "push") setPushErr(r.output || "push failed");
+        if (kind === "push") setPushErr({ repo, branch, output: r.output || "push failed" });
       }
       else onSynced?.();
     } catch (e) { setSyncErr((e as Error).message); }
@@ -234,7 +236,7 @@ export function GitPopover({ repo, changes, git, branch, onSynced, onPushFailed 
                   {pushErr && onPushFailed && (
                     <button
                       type="button"
-                      onClick={() => { onPushFailed(pushErr); setPushErr(""); setSyncErr(""); setOpen(false); }}
+                      onClick={() => { onPushFailed(pushErr.repo, pushErr.branch, pushErr.output); setPushErr(null); setSyncErr(""); setOpen(false); }}
                       title="Handle it in a new session on this branch, with git's message as an unsent draft"
                       onMouseEnter={() => setNewHov(true)}
                       onMouseLeave={() => setNewHov(false)}

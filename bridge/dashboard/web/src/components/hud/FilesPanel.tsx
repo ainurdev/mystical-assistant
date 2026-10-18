@@ -32,9 +32,10 @@ interface Props {
   // "commit message ready" notification does when clicked, since by then the
   // panel that asked for the message is gone.
   onReveal?: () => void;
-  // CHANGES mode: a push git refused goes to a new session on this branch,
-  // git's message as its unsent draft (App's pushFailedSession).
-  onPushFailed?: (output: string) => void;
+  // CHANGES mode: a push git refused goes to a new session on the tree that was
+  // pushing, git's message as its unsent draft (App's pushFailedSession). Named
+  // here, not read at click time: this panel outlives a switch to another session.
+  onPushFailed?: (project: string, branch: string | null | undefined, output: string) => void;
 }
 
 /* A tree row, or — in CHANGES mode — a section header (`head`) or one of its
@@ -89,7 +90,8 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile, onReveal,
   const setMsg = (m: string) => patchDraft(key, { msg: m });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState("");
-  const [pushErr, setPushErr] = useState("");   // the note, while it is git refusing a push
+  // the note, while it is git refusing a push, with the tree that was pushing
+  const [pushErr, setPushErr] = useState<{ project: string; branch?: string; output: string } | null>(null);
   // Right-clicked row. `staged` says which half it was clicked in, which is
   // what decides between Stage and Unstage.
   const [ctx, setCtx] = useState<{ x: number; y: number; path: string; dir: boolean; staged: boolean } | null>(null);
@@ -187,7 +189,7 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile, onReveal,
     try {
       const r = await api.gitPush(project, branch || undefined);
       setNote(r.ok ? "Pushed." : r.output || "Push failed.");
-      setPushErr(r.ok ? "" : r.output || "Push failed.");
+      setPushErr(r.ok ? null : { project, branch, output: r.output || "Push failed." });
     } catch (e) { setNote((e as Error).message); }
     finally { setBusy(false); }
   }
@@ -372,8 +374,8 @@ export function FilesPanel({ project, branch, changedOnly, onOpenFile, onReveal,
         )}
         {/* Not a retry: the push goes to a new session on the branch, which you
             send yourself (runner._PUSH_NOTE tells agents the same). */}
-        {pushErr && note === pushErr && onPushFailed && (
-          <button onClick={() => { onPushFailed(pushErr); setNote(""); setPushErr(""); }}
+        {pushErr && note === pushErr.output && onPushFailed && (
+          <button onClick={() => { onPushFailed(pushErr.project, pushErr.branch, pushErr.output); setNote(""); setPushErr(null); }}
             title="Handle it in a new session on this branch, with git's message as an unsent draft"
             onMouseEnter={() => setHov("pf")} onMouseLeave={() => setHov("")}
             style={{ display: "block", width: "calc(100% - 16px)", margin: "0 8px 8px", appearance: "none", whiteSpace: "nowrap", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 24%, transparent)", background: hov === "pf" ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.2, padding: "5px 10px" }}>

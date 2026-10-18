@@ -1759,7 +1759,7 @@ export function App() {
         <FilesPanel
           project={sessionProject} branch={sessionBranch} changedOnly
           onOpenFile={openFileFromPanel}
-          onPushFailed={(output) => pushFailedSession(sessionProject, sessionBranch, output)}
+          onPushFailed={pushFailedSession}
           // A "commit message ready" click lands back here: this session, this tab.
           onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "changes", rightOpen: true }); }}
         />
@@ -2199,7 +2199,7 @@ export function App() {
           changes={sessionGit?.dirty ?? activeBadge?.dirty ?? 0}
           branch={sessionBranch}
           onSynced={() => setGitNonce((n) => n + 1)}
-          onPushFailed={(output) => pushFailedSession(sessionProject, sessionBranch, output)}
+          onPushFailed={pushFailedSession}
         />
       }
     />
