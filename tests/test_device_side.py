@@ -279,7 +279,7 @@ def test_a_run_uploads_its_screens_and_posts_the_report_with_captions_in_index_o
     assert helper.saw == {
         "job": {"prompt": CLAIM["prompt"], "gitAuthorName": "Mahdi", "gitAuthorEmail": "mahdi@example.com",
                 "developerDir": DEV, "timeoutSeconds": 600, "instance": "t1", "requester": "Mahdi",
-                "task": "RIV-42"},
+                "task": "RIV-42", "repository": "ainurhq/app"},
         "token": TOKEN, "code": CODE, "names": ["code.tar.gz", "job.json", "token"],
         "stage_mode": 0o700, "token_mode": 0o600}
     assert device.fetched == [(CLAIM["snapshotUrl"], 60)]
@@ -967,6 +967,32 @@ def test_sweep_still_stops_a_dead_helpers_stage(device, seen):
     assert calls == [["/usr/bin/sudo", "-n", HELPER, "stop", RID]]
     assert os.listdir(device.root) == [] and ds._interrupted == {"t1": [RID]} and ds._adopted == {}
     assert _ended() == ("error", "failed")
+
+
+@pytest.mark.parametrize("posted", [False, True], ids=["not posted yet", "posted already (409)"])
+def test_a_restart_after_the_hand_back_posts_the_runs_own_result(device, posted):
+    """The bridge restarted after the helper handed its results back, while it
+    uploaded or posted them: the helper is gone, but out/exit.json is there. The
+    run is taken back, never posted FAILED as cut short, and its own result is
+    posted once, at once; Rivendell answers 409 if the bridge before had posted
+    it already, and that settles it."""
+    device_view.Run.open("t1", RID, dict(CLAIM))
+    device_view._running.clear()
+    stage = _stale(device, RID, "t1", token=False)
+    (stage / "out" / "exit.json").write_text(json.dumps({"code": 0, "timedOut": False}))
+    (stage / "out" / "claude.json").write_text(_claude("It works."))
+    nothing = lambda argv, **kw: pytest.fail("nothing to stop")    # noqa: E731
+    ds.sweep(run=nothing, alive=_gone)
+    assert ds._adopted == {"t1": [RID]} and ds._interrupted == {} and _ended() == ("running", None)
+    w = Worker()
+    if posted:
+        w.result_errors = [_http(409)]
+    beats = []
+    ds.resume(w, ds.take_adopted("t1")[0], call=nothing, alive=lambda rid: beats.append(rid) or False)
+    ds.report_interrupted(w, HEAD)
+    assert beats == [RID], "it left its watch at once"
+    assert w.results() == [{"status": "COMPLETED", "result": "It works.", "screens": []}]
+    assert _ended() == ("done", "done") and not stage.exists()
 
 
 def test_a_ps_that_fails_mid_run_never_ends_the_watch(device, monkeypatch):

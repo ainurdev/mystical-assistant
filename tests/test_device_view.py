@@ -321,6 +321,22 @@ def test_close_marks_the_turn_and_outcome(tmp_path):
     assert store.parse_device(t["session"]["device"])["outcome"] == "done"
 
 
+def test_a_close_that_fails_still_ends_the_run_going_now(monkeypatch):
+    """STOP RUN and OPEN › follow running_session: a close the store fails
+    mustn't leave them on a run that is over until the next restart."""
+    run = device_view.Run.open("prod", _rid(), _claim())
+    finish = store.finish_turn
+
+    def boom(*a, **k):
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(store, "finish_turn", boom)
+    with pytest.raises(RuntimeError):
+        run.close("done", {})
+    assert device_view.running_session() is None
+    monkeypatch.setattr(store, "finish_turn", finish)
+    run.close("done", {})                                 # no running turn left in the suite's store
+
+
 def test_screens_and_divider_land_in_the_steps():
     run = device_view.Run.open("prod", _rid(), _claim())
     run.divider("Mystical restarted 17:31 · this run kept going")

@@ -51,15 +51,16 @@ def no_link_alerts(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def no_device_probe(monkeypatch):
+def no_device_probe(monkeypatch, tmp_path):
     """_connect asks device_share what this device is, which on a Mac runs xcrun
     and friends, and catch-up, the policy and acks ask device_side whether it is
     READY for teammates' runs; no test here may probe the developer's machine, so
     by default it is not. The handshake headers themselves are tested in
-    test_rivendell_channel.py."""
+    test_rivendell_channel.py. A run taken back reads its stage, here a temp dir."""
     monkeypatch.setattr(device_share, "handshake_headers", lambda inst: [])
     monkeypatch.setattr(device_side, "headers", lambda inst: None)
     monkeypatch.setattr(rivendell, "_device_run", None)      # no device run in flight on this device
+    monkeypatch.setattr(device_side, "STAGE_ROOT", str(tmp_path / "Mystical Runs"))
     # Nothing here may reach sudo or the helper through device_side's own
     # defaults: they refuse, and one reached (on any thread) fails the test.
     reached = []
@@ -2954,6 +2955,23 @@ def test_a_run_taken_back_never_frees_the_device_from_another(monkeypatch):
         if t.name == f"rivendell-adopt-{w.id}":
             t.join(5)
     assert resumed == [DRID] and rivendell._device_run == DOTHER and w.running_snapshot() == []
+
+
+def test_a_run_taken_back_names_its_repository(monkeypatch):
+    """The claim that named the repository went with the restart: the RUNNING
+    row of a run taken back reads it from the run's job.json, never "(no repo)"."""
+    stage = os.path.join(device_side.STAGE_ROOT, DRID)
+    os.makedirs(stage)
+    with open(os.path.join(stage, "job.json"), "w") as f:
+        json.dump({"instance": "t1", "requester": "Mahdi", "repository": "ainurhq/app"}, f)
+    w = _worker()
+    seen = []
+    monkeypatch.setattr(device_side, "resume", lambda worker, rid: seen.append(w.running_snapshot()))
+    w._adopt_device_run(DRID)
+    for t in threading.enumerate():
+        if t.name == f"rivendell-adopt-{w.id}":
+            t.join(5)
+    assert [(r["request_id"], r["slug"], r["label"]) for r in seen[0]] == [(DRID, "ainurhq/app", "ainurhq/app")]
 
 
 def test_one_device_run_at_a_time_on_this_device_whichever_rivendell_sent_it(monkeypatch, acks, workers):

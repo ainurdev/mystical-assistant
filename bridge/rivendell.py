@@ -1860,13 +1860,16 @@ class Worker:
         lists any new run, it holds this device's one run, so a run listed or
         announced meanwhile is acked "queued" and starts after it. Should
         another instance's new run have taken the device first, that one keeps
-        it (its helper waits at the helper's lock for this one)."""
+        it (its helper waits at the helper's lock for this one). Its RUNNING row
+        names the repository its job.json kept, the claim having gone with the
+        restart."""
         global _device_run
         with _device_lock:
             if _device_run is None:
                 _device_run = request_id
+        repo = device_side.staged_job(request_id).get("repository")
         threading.Thread(target=self._run_device_run,
-                         args=({"request_id": request_id, "slug": None, "adopted": True},),
+                         args=({"request_id": request_id, "slug": repo, "adopted": True},),
                          name=f"rivendell-adopt-{self.id}", daemon=True).start()
 
     def _run_in_workdir(self, what: str, kind: str, request_id: str,

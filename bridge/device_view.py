@@ -365,18 +365,22 @@ class Run:
     def close(self, outcome: str, body: dict) -> None:
         """End the run: `outcome` is done, failed or stopped, its turn done or
         error. A run whose stream said nothing (an older helper writes none) gets
-        the result's summary, or why it failed, as its one text."""
-        said = (_str(body.get("result")) or _str(body.get("error"))).strip()
-        if said and not any(e.get("type") == "text" and e.get("turn_id") == self.tid
-                            for e in store.transcript(self.sid)["events"]):
-            self._add({"type": "text", "text": said})
-        if outcome == "stopped":
-            self._add({"type": "stopped"})
-        s = store.get_session(self.sid) or {}
-        store.finish_turn(self.tid, "done" if outcome == "done" else "error", None,
-                          int(time.time() - s.get("created", time.time())))
-        store.set_device(self.sid, {**(store.parse_device(s.get("device")) or {}), "outcome": outcome})
-        _running.pop(self.request, None)
+        the result's summary, or why it failed, as its one text. It is no longer
+        the run going now even if the store fails here, so STOP RUN and OPEN ›
+        never stay on a run that is over."""
+        try:
+            said = (_str(body.get("result")) or _str(body.get("error"))).strip()
+            if said and not any(e.get("type") == "text" and e.get("turn_id") == self.tid
+                                for e in store.transcript(self.sid)["events"]):
+                self._add({"type": "text", "text": said})
+            if outcome == "stopped":
+                self._add({"type": "stopped"})
+            s = store.get_session(self.sid) or {}
+            store.finish_turn(self.tid, "done" if outcome == "done" else "error", None,
+                              int(time.time() - s.get("created", time.time())))
+            store.set_device(self.sid, {**(store.parse_device(s.get("device")) or {}), "outcome": outcome})
+        finally:
+            _running.pop(self.request, None)
 
 
 reopen = Run.reopen

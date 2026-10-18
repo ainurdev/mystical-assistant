@@ -40,16 +40,20 @@ fails or holds up the run, its result or its clean-up.
 
 A Mystical restart (an update, `mystical restart`) re-execs the bridge in place,
 and the helper, in its own session, runs on. At the next start (rivendell.start)
-sweep() takes back each stage whose helper ps still lists (helper_alive): the
-stage is kept and filed under its job.json's instance. That instance's worker
-takes it at its first READY connect, before any new run (take_adopted), and
-resume() watches it to its end as run() would: the view reopened past a
-"Mystical restarted HH:MM · this run kept going" line, the same beats, stops and
-timeout, and the result posted once. A stage whose helper is gone (a reboot, a
-crash) is told to stop, which does nothing unless that run holds the helper's
-lock, and goes; report_interrupted() posts each such run FAILED once its
-instance's device is connected again (Rivendell takes a device's result only
-then). Every other view still RUNNING ends failed (device_view.orphans).
+sweep() takes back each stage whose helper ps still lists (helper_alive), or
+whose results the helper already handed back (out/exit.json: the restart came
+while they were uploaded or posted): the stage is kept and filed under its
+job.json's instance. That instance's worker takes it at its first READY
+connect, before any new run (take_adopted), and resume() watches it to its end
+as run() would: the view reopened past a "Mystical restarted HH:MM · this run
+kept going" line, the same beats, stops and timeout, and the run's own result
+posted once (Rivendell answers a second post, should the bridge before have
+made it, with 409, which _post takes as final). A stage whose helper is gone
+(a reboot, a crash) is told to stop, which does nothing unless that run holds
+the helper's lock, and goes; report_interrupted() posts each such run FAILED
+once its instance's device is connected again (Rivendell takes a device's
+result only then). Every other view still RUNNING ends failed
+(device_view.orphans).
 """
 
 import json
@@ -97,6 +101,12 @@ def redact(text: str) -> str:
 def stage_dir(request_id: str) -> str:
     """Where a run is staged for the helper."""
     return os.path.join(STAGE_ROOT, request_id)
+
+
+def staged_job(request_id: str) -> dict:
+    """What a staged run's job.json says, {} when there is none to read: after a
+    restart, what is known of a run taken back (its repository, for one)."""
+    return _read_json(os.path.join(stage_dir(request_id), "job.json"))
 
 
 def _root_is_ours() -> bool:
@@ -319,8 +329,9 @@ def _write_stage(stage, claim, timeout, instance):
     """The stage the helper checks: the owner's 0700 folder with job.json, the
     code and, last, the token. The code comes from the web only: a file:// URL
     would hand the run one of the owner's own files as its code. job.json also
-    names the Rivendell instance, the asker and the task (none a secret), for
-    sweep() and resume() after a restart. The claim lets go of the token here:
+    names the Rivendell instance, the asker, the task and the repository (none a
+    secret), for sweep(), resume() and the worker's RUNNING row after a restart
+    (staged_job). The claim lets go of the token here:
     from now on only the stage holds it, until the helper reads it and takes it
     off the disk."""
     token = claim.pop("claudeToken")
@@ -330,7 +341,7 @@ def _write_stage(stage, claim, timeout, instance):
         "prompt": claim["prompt"], "gitAuthorName": claim.get("gitAuthorName"),
         "gitAuthorEmail": claim.get("gitAuthorEmail"), "developerDir": device_share.developer_dir(),
         "timeoutSeconds": timeout, "instance": instance, "requester": _dig(claim, "requester", "name"),
-        "task": _dig(claim, "task", "key")}).encode())
+        "task": _dig(claim, "task", "key"), "repository": claim["repository"]}).encode())
     url = claim["snapshotUrl"]
     if urlsplit(url).scheme not in ("http", "https"):
         raise ValueError("the code's address isn't a web address")
@@ -489,12 +500,14 @@ def sweep(run=subprocess.run, alive=helper_alive) -> None:
     """At bridge start: the stages a bridge that stopped mid-run left. The helper
     runs in a session of its own, so a stale stage's run may still be going, with
     or without a token on disk (the helper takes it off as it starts). One whose
-    helper still goes (`alive`) is taken back: kept, and filed under the
-    instance its job.json names, for that worker to watch to its end
-    (take_adopted, resume). Every other one is told to stop, which does nothing
-    unless that run holds the helper's lock, nobody being left to report it; it
-    is noted for report_interrupted() under its instance, then the stage goes,
-    token first. Last, every view still RUNNING but the ones taken back ends
+    helper still goes (`alive`), or already handed back its results
+    (out/exit.json: the bridge stopped while it uploaded or posted them), is
+    taken back: kept, and filed under the instance its job.json names, for that
+    worker to watch to its end and post its own result (take_adopted, resume).
+    Every other one is told to stop, which does nothing unless that run holds
+    the helper's lock, nobody being left to report it; it is noted for
+    report_interrupted() under its instance, then the stage goes, token first.
+    Last, every view still RUNNING but the ones taken back ends
     (device_view.orphans), a view whose stage went long ago too.
     Only a stage root that is this account's own is looked in, and only its
     folders named by a run id count, never through a link."""
@@ -524,7 +537,8 @@ def _sweep(run, alive):
             continue
         instance = _read_json(os.path.join(stage, "job.json")).get("instance")
         named = isinstance(instance, str) and instance
-        if named and alive(name):    # None, ps can't tell, counts as gone
+        handed_back = os.path.exists(os.path.join(stage, "out", "exit.json"))
+        if named and (handed_back or alive(name)):    # None, ps can't tell, counts as gone
             _adopted.setdefault(instance, []).append(name)
             continue
         _stop(name, run)
@@ -534,14 +548,15 @@ def _sweep(run, alive):
 
 
 def resume(worker, request_id: str, call=subprocess.run, alive=helper_alive) -> None:
-    """A run sweep() took back, its helper still going after a restart, seen to
-    its end as run() would: its view reopened past a divider, a beat at a time
-    until `alive` says the helper is gone, not while it can't tell (the view
-    takes what live.jsonl gained, and a cancel, the owner's stop, or the timeout
-    counted from job.json's time, sends the stop), then the result posted once,
-    the last run noted, the view closed, the bell rung and the stage dropped.
-    The helper's stderr went with the bridge that started it, so one that ended
-    without handing back says only that.
+    """A run sweep() took back, its helper still going after a restart or its
+    results already handed back, seen to its end as run() would: its view
+    reopened past a divider, a beat at a time until `alive` says the helper is
+    gone (at once, for one that had handed back and exited), not while it can't
+    tell (the view takes what live.jsonl gained, and a cancel, the owner's stop,
+    or the timeout counted from job.json's time, sends the stop), then the
+    result posted once, the last run noted, the view closed, the bell rung and
+    the stage dropped. The helper's stderr went with the bridge that started
+    it, so one that ended without handing back says only that.
     shortcut: the helper's sudo stays a child of this process (the restart
     re-exec'd it in place), and once it exits nobody reaps it: a harmless zombie
     until the bridge next really starts; reap it if they ever pile up."""
