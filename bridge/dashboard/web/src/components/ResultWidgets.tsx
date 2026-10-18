@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { api } from "../api";
+import { markShotSeen } from "../lib/seenshots";
 import { idiomFor, type ToolStyle, type ToolWidgetSpec } from "../lib/toolwidget";
 import {
   asChain, asChart, asChecks, asClaims, asCommands, asConfidence, asDiff, asFiles,
@@ -355,7 +356,7 @@ function Shot({ path, onZoom }: { path: string; onZoom: (src: string) => void })
   if (gone) return <span className="flc-gone">{path.split("/").pop()}</span>;
   return (
     <ZoomButton onOpen={() => onZoom(src)}>
-      <MediaThumb src={src} alt={path} onError={() => setGone(true)} />
+      <MediaThumb src={src} alt={path} onError={() => setGone(true)} onSeen={() => markShotSeen(path)} />
     </ZoomButton>
   );
 }

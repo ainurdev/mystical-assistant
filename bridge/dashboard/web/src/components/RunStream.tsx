@@ -17,6 +17,7 @@ import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
 import { MARK_GLYPH, stripOf, workTitle, zonesOf, type Mark } from "../lib/dossier";
+import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { ToolWidget } from "./ResultWidgets";
 import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
@@ -650,14 +651,19 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
  *  answered, under one header (lib/dossier). The header carries the zone's
  *  shape as a strip of glyphs, so a shut zone still says "three commands, a
  *  note, a failure" — which is what makes a shut zone safe to be the default.
+ *  Pictures are the one result a header loses, so it also counts them, in your
+ *  accent until each has been on screen (lib/seenshots).
  *  It follows the COLLAPSE STEPS switch like a STEPS fold does, live turn
  *  included: while one runs, the header names what is out right now.
  *  Open, the strip turns on its side into the spine: every row below wears its
  *  glyph in the column the header's chevron sits in. */
-function WorkZone({ marks, title, failed, running, live, span, defaultOpen, animate, children }: {
+function WorkZone({ marks, title, failed, shots, fresh, running, live, span, defaultOpen, animate, children }: {
   marks: Mark[];
   title: string;
   failed: number;
+  /** Pictures tools came back with, and how many of those you have not had on screen. */
+  shots: number;
+  fresh: number;
   running: boolean;
   /** What is out right now, named in the header while it runs. */
   live: string;
@@ -676,6 +682,7 @@ function WorkZone({ marks, title, failed, running, live, span, defaultOpen, anim
       data-open={open ? "" : undefined}
       data-run={running ? "" : undefined}
       data-err={failed ? "" : undefined}
+      data-shots={fresh ? "new" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <button
@@ -694,6 +701,7 @@ function WorkZone({ marks, title, failed, running, live, span, defaultOpen, anim
           {shown.map((m, k) => <i key={k} data-m={m}>{MARK_GLYPH[m]}</i>)}
           {more ? <b>+{more}</b> : null}
         </span>
+        {shots ? <span className="dwork-shot" data-new={fresh ? "" : undefined}>{"\u25A3"} {shots} shot{shots === 1 ? "" : "s"}</span> : null}
         {failed ? <span className="dwork-fail">{"\u2715"} {failed} failed</span> : null}
         <span className="dwork-ms">{running ? "RUNNING" : span}</span>
       </button>
@@ -1234,6 +1242,7 @@ function ToolImages({ paths, clip }: { paths: string[]; clip?: Clip }) {
               src={src}
               alt="tool output"
               onError={() => setGone((g) => new Set(g).add(p))}
+              onSeen={() => markShotSeen(p)}
               className="h-24 w-auto max-w-[240px] border border-border object-cover"
             />
           </ZoomButton>
@@ -1560,6 +1569,8 @@ export const RunStream = memo(function RunStream({
     return s < 100 ? s.toFixed(1) : String(Math.round(s));
   };
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
+  // A WORK zone's chip reads lib/seenshots: re-render when a shot gets seen.
+  useSeenShots();
   // Derived from the length rather than stored as an index, so a running turn's
   // window slides with its tail instead of freezing where it was opened.
   const [wholeTurn, setWholeTurn] = useState(false);
@@ -2010,7 +2021,7 @@ export const RunStream = memo(function RunStream({
   const workZone = (zsegs: Seg[]) => {
     const marks: Mark[] = [];
     const cats: StepCat[] = [];
-    let notes = 0, failed = 0, running = false, live = "", first: number | undefined, last: number | undefined;
+    let notes = 0, failed = 0, shots = 0, fresh = 0, running = false, live = "", first: number | undefined, last: number | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
       const e = events[i];
       if (e.at != null) { first ??= e.at; last = e.at; }
@@ -2024,6 +2035,7 @@ export const RunStream = memo(function RunStream({
         if (!d) { running = true; live = e.summary; }
         else if (d.is_error) failed++;
         marks.push(d?.is_error ? "fail" : c);
+        for (const p of d?.images ?? []) { shots++; if (shotUnseen(p, e.at)) fresh++; }
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
     }
@@ -2039,6 +2051,8 @@ export const RunStream = memo(function RunStream({
         marks={marks}
         title={workTitle(stepsTitle(cats), notes)}
         failed={failed}
+        shots={shots}
+        fresh={fresh}
         running={running}
         live={live}
         span={span}
