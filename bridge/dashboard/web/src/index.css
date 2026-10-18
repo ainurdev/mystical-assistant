@@ -1813,7 +1813,7 @@ input {
 
 /* ── tier 1: you ── */
 [data-style="dossier"] .dprompt {
-  display: block; position: relative; padding: 13px 18px 15px;
+  display: block; position: relative; padding: 9px 14px 9px 12px;
   background: color-mix(in oklab, var(--d-you) var(--d-tint), var(--panel));
   border-left: 4px solid var(--d-you);
   border-bottom: 1px solid color-mix(in oklab, var(--d-you) var(--d-edge), var(--panel));
@@ -1832,15 +1832,24 @@ input {
   color: var(--d-you); font-family: var(--mono); font-size: 15px; font-weight: 700; line-height: 1.6;
   text-shadow: 0 0 var(--glow, 0px) color-mix(in oklab, var(--d-you) 70%, transparent);
 }
-/* The footer: who, which turn, which account or agent when it wasn't the
-   default, and when — one tracked line on the right, ghost except what is
-   yours. Its twin is the clock in .res-meta, when the answer came back. */
+/* The stamp: who, which turn, which account or agent when it wasn't the
+   default, and when — tracked, ghost except what is yours, tucked into the
+   free end of your last line the way a chat stamps a message. It is a float
+   after the words, and a last paragraph flows inline so the float can share
+   its line; a full last line pushes it onto a 17px line of its own. As a
+   footer row it cost every prompt 30px, a one-word prompt 71 in all
+   (design-drafts/prompt-plate, R2 · TUCKED). Its twin is the clock in
+   .res-meta, when the answer came back. */
 [data-style="dossier"] .pmeta {
-  display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0;
-  margin-top: 6px; padding-left: 28px;
+  float: right; display: inline-flex; align-items: center; gap: 10px;
+  margin: 7px 0 0 16px; line-height: 1; white-space: nowrap;
   font-size: var(--t95); letter-spacing: 2px; text-transform: uppercase; color: var(--txd);
   font-variant-numeric: tabular-nums;
 }
+/* The markdown root keeps no box of its own here: as a block it stood between
+   the inline last paragraph and the float, so the stamp always began a new line. */
+[data-style="dossier"] .pbub .md { display: contents; }
+[data-style="dossier"] .pbub .md > p:last-child { display: inline; }
 [data-style="dossier"] .pmeta > b { color: var(--d-you); font-weight: 700; }
 [data-style="dossier"] .pmeta .pacct { color: var(--d-you); }
 [data-style="dossier"] .pmeta .pacct[data-agent] { color: var(--warn); }
