@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { ProjectTile } from "../ui/ProjectTile";
 import { type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
@@ -402,7 +402,8 @@ export function Terminal({
       {/* OUTPUT STYLE is the whole session's idiom, not just its widgets: one
           attribute here and the ledger, the agent block, your prompt and the
           reply's own tables all answer to it (index.css, THE SESSION'S IDIOM). */}
-      <div ref={scrollRef} data-style="dossier" className="mscroll mscroll-bare" style={{ flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
+      {/* --isle-b: the island's bottom edge, where an open WORK zone's header pins (index.css, DOSSIER) */}
+      <div ref={scrollRef} data-style="dossier" className="mscroll mscroll-bare" style={{ ...({ "--isle-b": `${ISLE_EDGE + (showPeek && !compact ? PEEK_H : 0)}px` } as CSSProperties), flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
         onDragOver={(e) => { if (!fileDrag(e)) return; e.preventDefault(); if (!dropping) setDropping(true); }}
         // relatedTarget is where the drag went: still inside, it only crossed a child
         onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDropping(false); }}
