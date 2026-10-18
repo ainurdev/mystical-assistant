@@ -202,7 +202,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
   { tab: "transcript", sec: "RESULTS", terms: "auto-open results bash output edit diffs collapse steps fold" },
-  { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain paper wallpaper chat background" },
+  { tab: "transcript", sec: "THE GROUND", terms: "background pattern texture ground graph grid dots matrix ruled lines tooth grain noise paper lamp light haze wash mat wallpaper chat background" },
   { tab: "notifications", sec: "WHAT INTERRUPTS YOU", terms: "events pop up toast banner sound tone telegram away rivendell pr finished failed question approval" },
   { tab: "notifications", sec: "QUIET HOURS", terms: "quiet hours night do not disturb dnd mute schedule" },
   { tab: "notifications", sec: "THIS BROWSER", terms: "os notifications browser push permission alert sound volume chime mute" },
@@ -4194,7 +4194,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 <Section
                   title="THE GROUND"
                   top
-                  info="The texture the transcript is read on. Four grounds and none, all drawn at the ghost ink tier and pinned to the scroller so they don't slide under the words — a ground you keep re-focusing on is a ground you'd turn off by the second screen."
+                  info="The texture the transcript is read on. Four hairline patterns drawn at the ghost ink tier, three tones — grain, a lamp, a haze — with no edge to cross a word, and none. All are pinned to the column so they don't slide under the words. Under a hairline pattern the answer sits on a mat the colour of the column, so the pattern lives in the margins and the gaps between turns."
                 >
                   <ChatBgPicker
                     value={settings.chatBg}

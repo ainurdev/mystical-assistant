@@ -63,7 +63,7 @@ console.assert(widgetForRun([{}, { done: {} }]) === null, "a run that carried no
 // The one failure this can have is silent: a key with no CSS rule behind it is
 // a tile that draws nothing and reads exactly like NONE. So the list is checked
 // against the stylesheet, not against itself.
-console.assert(CHAT_BGS.length === 5, `four grounds and NONE, got ${CHAT_BGS.length}`);
+console.assert(CHAT_BGS.length === 8, `four hairlines, three tones and NONE, got ${CHAT_BGS.length}`);
 console.assert(CHAT_BGS[0].key === "none", "NONE is the default, and leads");
 console.assert(toChatBg("grid") === "grid", "a current ground passes through");
 console.assert(toChatBg("wallpaper") === "none", "an unknown ground falls back");
@@ -72,6 +72,8 @@ console.assert(toChatBg(undefined) === "none", "a missing ground falls back");
   const css = readFileSync(new URL("../index.css", import.meta.url), "utf8");
   for (const b of CHAT_BGS.slice(1))
     console.assert(css.includes(`[data-bg="${b.key}"]`), `${b.key} has a rule in index.css`);
+  console.assert(/:is\(\[data-bg="grid"\], \[data-bg="dots"\], \[data-bg="rule"\], \[data-bg="tooth"\]\) \[data-style="dossier"\]/.test(css),
+    "the four hairline grounds put a mat under the answer");
   console.assert(
     css.includes("background-image: var(--ground, none), var(--wash, none)"),
     "the ground is composed as a layer, so a language's own wash cannot replace it",
