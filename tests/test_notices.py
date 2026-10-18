@@ -537,6 +537,19 @@ def test_limit_reset_row_is_written_with_telegram_off(monkeypatch):
     assert pinged == []
 
 
+def test_a_device_runs_end_rings_like_its_start(monkeypatch):
+    """A teammate's device run ending is its second row in the bell
+    (bridge/device_side.py), routed with "Started elsewhere"."""
+    assert notices.CATALOG["rv_ended"] == notices.CATALOG["rv_started"] == ("started", "fyi", "rivendell")
+    notices.emit("rv_ended", "rv:prod:r1", title="Mahdi's run on this device ended", body="Done after 3 min.",
+                 meta={"job_kind": "device-run"})
+    assert [(r["verb"], r["title"]) for r in notices.feed()] == [("ENDED", "Mahdi's run on this device ended")]
+    monkeypatch.setattr(notices, "_last_seen", time.time() - 3600)    # away for an hour
+    assert notices.telegram_ok("rv_ended") is False
+    notices.set_prefs({"events": {"started": {"tg": "away"}}})
+    assert notices.telegram_ok("rv_ended") is True
+
+
 def test_updates_group_kinds_and_defaults():
     """Mystical's own changelog and a maintainer's note share one group, news
     from the bridge, silent on Telegram until the user says otherwise."""

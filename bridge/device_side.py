@@ -9,25 +9,47 @@ it to run() here:
      can plant that name in /Users/Shared), then tell the owner who is testing
      what on this device: a row in the bell, and Telegram only where Settings ▸
      NOTIFY routes "Started elsewhere" (bridge/notices.py), like every ping.
+     The run gets its view: a read-only session the owner can watch
+     (bridge/device_view.py).
   3. Stage it in /Users/Shared/Mystical Runs/<id>/, the owner's own 0700 folder:
      job.json, the code snapshot, and the asker's Claude token (0600) last.
   4. Start the root helper (bridge/device_setup/mystical_run_helper.py) with
      sudo -n, in a session of its own, so a bridge restart doesn't kill it
      before its clean-up. It takes the token off the disk as soon as it has read
-     it, runs Claude as the hidden user mysticalruns, and hands back out/
-     (exit.json, claude.json, screens/).
+     it, runs Claude as the hidden user mysticalruns, writes Claude's steps into
+     the stage's live.jsonl as they happen, and hands back out/ (exit.json,
+     claude.json, screens/). Each beat the view takes what live.jsonl gained (a
+     helper from before the live view writes none: the view then shows the
+     summary once the run ends).
   5. Upload the screenshots the report lists, then any other PNGs, at most 20
-     of at most 5 MB each, and post the result, token-shaped text redacted.
-  6. Remove the stage, token first, on every path.
+     of at most 5 MB each (the view shows them too), and post the result,
+     token-shaped text redacted.
+  6. Remove the stage, token first, on every path. The view ends done, failed or
+     stopped, and the bell gets the run's second row (rv_ended).
 A cancel (`device-run-cancel`) calls stop(): the helper's stop now, and again on
 each beat for as long as that run's start goes on, since a cancel that lands
 while the code is unpacking finds no run to stop yet. A cancelled run posts
-nothing; Rivendell has closed it.
+nothing; Rivendell has closed it. The owner's STOP RUN (stop_by_owner) is the
+same stop, sent the same way; that run is posted FAILED "Stopped by this
+device's owner." once. It has a mark of its own, as the helper would report the
+killed Claude's exit code.
 
-A bridge that stopped mid-run leaves its stage behind; sweep() clears those at
-the next start (rivendell.start), stopping a helper that may still be running,
-and report_interrupted() posts each such run FAILED once its instance's device
-is connected again (Rivendell takes a device's result only then).
+The view is only there for the owner to watch, and the run never depends on it:
+every call into it goes through _view(), so an error there is logged and never
+fails or holds up the run, its result or its clean-up.
+
+A Mystical restart (an update, `mystical restart`) re-execs the bridge in place,
+and the helper, in its own session, runs on. At the next start (rivendell.start)
+sweep() takes back each stage whose helper ps still lists (helper_alive): the
+stage is kept and filed under its job.json's instance. That instance's worker
+takes it at its first READY connect, before any new run (take_adopted), and
+resume() watches it to its end as run() would: the view reopened past a
+"Mystical restarted HH:MM · this run kept going" line, the same beats, stops and
+timeout, and the result posted once. A stage whose helper is gone (a reboot, a
+crash) is told to stop, which does nothing unless that run holds the helper's
+lock, and goes; report_interrupted() posts each such run FAILED once its
+instance's device is connected again (Rivendell takes a device's result only
+then). Every other view still RUNNING ends failed (device_view.orphans).
 """
 
 import json
@@ -41,7 +63,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-from bridge import device_share, notices
+from bridge import device_share, device_view, notices
 
 STAGE_ROOT = "/Users/Shared/Mystical Runs"    # test seam: tests point it at a temp dir
 _RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -56,8 +78,12 @@ _GIVE_UP = 60        # seconds of stops after that before the bridge stops waiti
 _RETRIES = (2, 10, 30)   # the result POST, as rivendell._RESULT_RETRIES: a finished run is expensive
 
 _cancelled: set = set()   # run ids a cancel came in for (set operations are atomic under the GIL)
+_owner_stopped: set = set()   # run ids the device's owner stopped (stop_by_owner)
 _interrupted: dict = {}   # instance id -> run ids a restart cut short, still to report (sweep, report_interrupted)
+_adopted: dict = {}       # instance id -> run ids whose helper outlived a restart, to watch (sweep, take_adopted)
 _RESTARTED = "The device restarted during the run."
+_OWNER_STOPPED = "Stopped by this device's owner."
+_UNREPORTED = "The run ended before it handed back its results."
 _SECRET = re.compile(r"sk-ant-[A-Za-z0-9_.-]+|CLAUDE_CODE_OAUTH_TOKEN=\S+")
 
 
@@ -107,6 +133,16 @@ def stop(request_id: str, run=subprocess.run) -> None:
     _stop(request_id, run)
 
 
+def stop_by_owner(request_id: str, run=subprocess.run) -> None:
+    """STOP RUN, from the device's owner: the helper's stop now, and again on
+    each beat while the run goes on, as for a cancel. Unlike a cancel's, the run
+    is then posted FAILED, saying its owner stopped it, once."""
+    if not _RUN_ID.fullmatch(request_id or ""):
+        return
+    _owner_stopped.add(request_id)
+    _stop(request_id, run)
+
+
 def _stop(request_id, run):
     try:
         r = run(_helper("stop", request_id), stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
@@ -117,26 +153,62 @@ def _stop(request_id, run):
         print(f"device run {request_id}: the stop failed: {(r.stderr or '').strip()}")
 
 
+def helper_alive(request_id: str, run=subprocess.run) -> bool:
+    """Whether this run's helper still goes: ps lists it (or the sudo that
+    started it) as `… mystical-run-helper start <id>`. A ps that can't be read
+    counts as gone, which is how a restart ended every run before."""
+    try:
+        out = run(["/bin/ps", "-axo", "command="], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                  errors="replace", timeout=30).stdout or ""
+    except (OSError, subprocess.SubprocessError) as e:
+        print(f"device run {request_id}: ps couldn't be read: {e}")
+        return False
+    return any(line.rstrip().endswith(f"mystical-run-helper start {request_id}") for line in out.splitlines())
+
+
+def take_adopted(instance: str) -> list:
+    """The runs of this instance that sweep() took back, each handed out once,
+    for the instance's worker to watch to their end (resume)."""
+    return _adopted.pop(instance, [])
+
+
+def _view(obj, call: str, *args):
+    """obj.call(*args) on a run's view (bridge/device_view.py), or None. The
+    view is the owner's to watch: an error there is logged, and never fails or
+    holds up the teammate's run, its result or its clean-up. No view, no call."""
+    if obj is None:
+        return None
+    try:
+        return getattr(obj, call)(*args)
+    except Exception as e:  # noqa: BLE001 — the run goes on without its view
+        print(f"device runs: the view's {call} failed: {e}")
+        return None
+
+
 def parse_report(claude_json: str) -> "tuple[str, list]":
     """The run's report, out of Claude's JSON output: the last JSON object in its
     result text that has a "summary" (the prompt asks Claude to end on one), as
-    (summary, [{file, caption}]). With none, the whole result text and []."""
+    (summary, [{file, caption}]). With none, the whole result text and []. Only
+    the text's last _RESULT_MAX characters are looked in, parsed there alone:
+    each "{" tried is a JSON parse, and a failed one counts the lines up to where
+    it failed, so over all 16 MB a run can hand back that could take a day."""
     try:
         text = json.loads(claude_json).get("result")
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, RecursionError):
         text = None
     if not isinstance(text, str):
         return "", []
-    found, decoder, i = None, json.JSONDecoder(), text.find("{")
+    tail = text[-_RESULT_MAX:]
+    found, decoder, i = None, json.JSONDecoder(), tail.find("{")
     while i != -1:
         try:
-            obj, end = decoder.raw_decode(text, i)
-        except ValueError:
-            i = text.find("{", i + 1)
+            obj, end = decoder.raw_decode(tail, i)
+        except (ValueError, RecursionError):
+            i = tail.find("{", i + 1)
             continue
         if isinstance(obj, dict) and isinstance(obj.get("summary"), str):
             found = obj
-        i = text.find("{", end)
+        i = tail.find("{", end)
     if found is None:
         return text, []
     screens = [{"file": s["file"], "caption": s.get("caption") if isinstance(s.get("caption"), str) else ""}
@@ -147,11 +219,12 @@ def parse_report(claude_json: str) -> "tuple[str, list]":
 def run(worker, request_id: str, popen=subprocess.Popen, call=subprocess.run) -> None:
     """One teammate's device run, start to finish (the module docstring has the
     steps). `popen` starts the helper, `call` stops it: the tests' seams. A
-    cancel noted for it is forgotten however it ends."""
+    cancel or an owner's stop noted for it is forgotten however it ends."""
     try:
         _run(worker, request_id, popen, call)
     finally:
         _cancelled.discard(request_id)
+        _owner_stopped.discard(request_id)
 
 
 def _dig(d, *keys):
@@ -184,6 +257,7 @@ def _run(worker, request_id, popen, call):
         return
     stage = stage_dir(request_id)
     timeout = int(worker.inst.get("impl_timeout", 10800))
+    view = began = body = None
     try:
         try:
             if not _root_is_ours():
@@ -192,36 +266,65 @@ def _run(worker, request_id, popen, call):
             worker._note("rv_started", request_id, claim["repository"], said, job_kind="device-run")
             if notices.telegram_ok("rv_started"):
                 worker._deliver_telegram(said, None)
+            began = time.time()
+            view = _view(device_view.Run, "open", worker.inst["id"], request_id, claim)
             _write_stage(stage, claim, timeout, worker.inst["id"])
             if request_id in _cancelled:
                 return
-            rc, err, late = _start(request_id, timeout, popen, call)
-            body = _result(worker, base, head, stage, rc, err, late, max(1, timeout // 60))
+            rc, err, late = _start(request_id, timeout, popen, call, view)
+            body = _result(worker, base, head, stage, rc, err, late, max(1, timeout // 60), view)
         except Exception as e:  # noqa: BLE001 — still this run's failure, and it is posted
             print(f"rivendell[{worker.name}]: device run {request_id} crashed: {e}")
             body = {"status": "FAILED", "error": f"bridge error: {e}"[:_ERROR_MAX], "screens": []}
-        if request_id not in _cancelled:
-            _post(worker, base, head, body)
+        body = _report(worker, base, head, request_id, body)
         device_share.record_last_run(_dig(claim, "requester", "name") or "", _dig(claim, "task", "key"))
     finally:
         if _root_is_ours():    # never remove anything through a root someone else planted
             _drop(stage)
+        if began is not None:
+            _ended(worker, request_id, _dig(claim, "requester", "name"), began, view, body)
+
+
+def _report(worker, base, head, request_id, body):
+    """The result, posted: FAILED saying so for a run its owner stopped, and
+    nothing for one Rivendell cancelled, as Rivendell has closed it. -> the body."""
+    if request_id in _owner_stopped:
+        body = {"status": "FAILED", "error": _OWNER_STOPPED, "screens": []}
+    if request_id not in _cancelled:
+        _post(worker, base, head, body)
+    return body
+
+
+def _ended(worker, request_id, name, began, view, body):
+    """A run's view closed (done, failed, or stopped by its owner or a cancel),
+    and the bell's second row for it, after rv_started: Telegram only where
+    NOTIFY routes "Started elsewhere"."""
+    outcome = ("stopped" if request_id in _owner_stopped or request_id in _cancelled
+               else "done" if (body or {}).get("status") == "COMPLETED" else "failed")
+    _view(view, "close", outcome, body or {})
+    title = f"{name or 'A teammate'}'s run on this device ended"
+    said = f"{outcome.capitalize()} after {max(1, round((time.time() - began) / 60))} min."
+    worker._note("rv_ended", request_id, title, said, job_kind="device-run")
+    if notices.telegram_ok("rv_ended"):
+        worker._deliver_telegram(f"{title}. {said}", None)
 
 
 def _write_stage(stage, claim, timeout, instance):
     """The stage the helper checks: the owner's 0700 folder with job.json, the
     code and, last, the token. The code comes from the web only: a file:// URL
     would hand the run one of the owner's own files as its code. job.json also
-    names the Rivendell instance (not a secret), for sweep() after a restart.
-    The claim lets go of the token here: from now on only the stage holds it,
-    until the helper reads it and takes it off the disk."""
+    names the Rivendell instance, the asker and the task (none a secret), for
+    sweep() and resume() after a restart. The claim lets go of the token here:
+    from now on only the stage holds it, until the helper reads it and takes it
+    off the disk."""
     token = claim.pop("claudeToken")
     os.mkdir(stage, 0o700)
     os.chmod(stage, 0o700)    # exactly, whatever the umask
     _write(os.path.join(stage, "job.json"), json.dumps({
         "prompt": claim["prompt"], "gitAuthorName": claim.get("gitAuthorName"),
         "gitAuthorEmail": claim.get("gitAuthorEmail"), "developerDir": device_share.developer_dir(),
-        "timeoutSeconds": timeout, "instance": instance}).encode())
+        "timeoutSeconds": timeout, "instance": instance, "requester": _dig(claim, "requester", "name"),
+        "task": _dig(claim, "task", "key")}).encode())
     url = claim["snapshotUrl"]
     if urlsplit(url).scheme not in ("http", "https"):
         raise ValueError("the code's address isn't a web address")
@@ -238,13 +341,15 @@ def _write(path, data):
         f.write(data)
 
 
-def _start(request_id, timeout, popen, call):
-    """The helper's start, in a session of its own, waited on a beat at a time:
-    a cancel, or the run's timeout plus _SLACK, sends its stop, again on each beat
-    until it ends. After _GIVE_UP more seconds the bridge stops waiting.
-    -> (its exit code, its stderr's last line, whether it ran out of time)."""
+def _start(request_id, timeout, popen, call, view):
+    """The helper's start, in a session of its own, waited on a beat at a time.
+    Each beat the run's view takes what live.jsonl gained, and a cancel, the
+    owner's stop, or the run's timeout plus _SLACK, sends the helper's stop, again
+    on each beat until it ends. After _GIVE_UP more seconds the bridge stops
+    waiting. -> (its exit code, its stderr's last line, whether it ran out of time)."""
     p = popen(_helper("start", request_id), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
               stderr=subprocess.PIPE, text=True, errors="replace", start_new_session=True)
+    stage = stage_dir(request_id)
     deadline = time.monotonic() + timeout + _SLACK
     late, err = False, ""
     while True:
@@ -252,20 +357,22 @@ def _start(request_id, timeout, popen, call):
             err = p.communicate(timeout=_BEAT)[1] or ""
             break
         except subprocess.TimeoutExpired:
+            _view(view, "pump", stage)
             late = late or time.monotonic() >= deadline
-            if late or request_id in _cancelled:
+            if late or request_id in _cancelled or request_id in _owner_stopped:
                 _stop(request_id, call)
             if late and time.monotonic() >= deadline + _GIVE_UP:
                 # shortcut: a helper that won't stop is left to end on its own (its stage
                 # goes now, so it finds none); kill it outright if hung helpers show up.
                 break
+    _view(view, "pump", stage)
     lines = [line.strip() for line in err.splitlines() if line.strip()]
     return p.returncode, (lines[-1].removeprefix("mystical-run-helper: ") if lines else ""), late
 
 
-def _result(worker, base, head, stage, rc, err, late, minutes):
-    """The result body. COMPLETED needs the helper and Claude to have exited 0
-    and a summary; its screens go up first."""
+def _result(worker, base, head, stage, rc, err, late, minutes, view):
+    """The result body. COMPLETED needs the helper and Claude to have exited 0,
+    out/ handed back and a summary; its screens go up first, and into the view."""
     out = os.path.join(stage, "out")
     done = _read_json(os.path.join(out, "exit.json"))
     summary, listed = parse_report(_read(os.path.join(out, "claude.json")))
@@ -273,21 +380,24 @@ def _result(worker, base, head, stage, rc, err, late, minutes):
         error = f"The run timed out after {minutes} min."
     elif rc:
         error = err or f"The run stopped with exit code {rc}."
+    elif not done:
+        error = _UNREPORTED    # exit 0 follows a hand-back: a taken-back run's helper was killed or refused
     elif done.get("code") not in (0, None):
         error = f"The run stopped with exit code {done['code']}."
     elif not summary.strip():
         error = "No report came back."
     else:
-        screens, note = _upload(worker, base, head, os.path.join(out, "screens"), listed)
+        screens, note = _upload(worker, base, head, os.path.join(out, "screens"), listed, view)
         return {"status": "COMPLETED", "result": summary[:_RESULT_MAX - len(note)] + note, "screens": screens}
     return {"status": "FAILED", "error": error[:_ERROR_MAX], "screens": []}
 
 
-def _upload(worker, base, head, screens_dir, listed):
+def _upload(worker, base, head, screens_dir, listed, view):
     """The screens, PUT as 1, 2, ...: the report's in its order, then any other
     PNGs by name. Only plain files directly in out/screens are read, whatever the
     report names. One Rivendell refuses is left out, as a result naming it would
-    be refused whole. -> ([{index, caption}], a note for the summary)."""
+    be refused whole. The ones that went up show in the run's view too.
+    -> ([{index, caption}], a note for the summary)."""
     try:
         sizes = {e.name: e.stat(follow_symlinks=False).st_size
                  for e in os.scandir(screens_dir) if e.is_file(follow_symlinks=False)}
@@ -300,7 +410,7 @@ def _upload(worker, base, head, screens_dir, listed):
     for name in sorted(sizes):
         if name.lower().endswith(".png"):
             order.setdefault(name, "")
-    screens, over = [], []
+    screens, over, shown = [], [], []
     for name, caption in order.items():
         if sizes[name] > _SCREEN_MAX:
             over.append(name)
@@ -316,6 +426,8 @@ def _upload(worker, base, head, screens_dir, listed):
             print(f"rivendell[{worker.name}]: screen {name} of {base} didn't upload: {e}")
             continue
         screens.append({"index": index, "caption": caption[:_CAPTION_MAX]})
+        shown.append((name, data))
+    _view(view, "screens", shown)
     note = f"\n\nScreenshots over 5 MB were left out: {', '.join(over)}." if over else ""
     return screens, note
 
@@ -367,15 +479,26 @@ def _drop(stage):
     shutil.rmtree(stage, ignore_errors=True)
 
 
-def sweep(run=subprocess.run) -> None:
+def sweep(run=subprocess.run, alive=helper_alive) -> None:
     """At bridge start: the stages a bridge that stopped mid-run left. The helper
     runs in a session of its own, so a stale stage's run may still be going, with
-    or without a token on disk (the helper takes it off as it starts): each one
-    is told to stop, which does nothing unless that run holds the helper's lock,
-    nobody being left to report it. Each run is noted for report_interrupted()
-    under the instance its job.json names, then the stage goes, token first.
+    or without a token on disk (the helper takes it off as it starts). One whose
+    helper still goes (`alive`) is taken back: kept, and filed under the
+    instance its job.json names, for that worker to watch to its end
+    (take_adopted, resume). Every other one is told to stop, which does nothing
+    unless that run holds the helper's lock, nobody being left to report it; it
+    is noted for report_interrupted() under its instance, then the stage goes,
+    token first. Last, every view still RUNNING but the ones taken back ends
+    (device_view.orphans), a view whose stage went long ago too.
     Only a stage root that is this account's own is looked in, and only its
     folders named by a run id count, never through a link."""
+    try:
+        _sweep(run, alive)
+    finally:
+        _view(device_view, "orphans", {rid for ids in _adopted.values() for rid in ids})
+
+
+def _sweep(run, alive):
     if not os.path.lexists(STAGE_ROOT):
         return     # not set up
     if not _root_is_ours():
@@ -393,11 +516,69 @@ def sweep(run=subprocess.run) -> None:
             continue
         if not _RUN_ID.fullmatch(name) or not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
             continue
-        _stop(name, run)
         instance = _read_json(os.path.join(stage, "job.json")).get("instance")
-        if isinstance(instance, str) and instance:
+        named = isinstance(instance, str) and instance
+        if named and alive(name):
+            _adopted.setdefault(instance, []).append(name)
+            continue
+        _stop(name, run)
+        if named:
             _interrupted.setdefault(instance, []).append(name)
         _drop(stage)
+
+
+def resume(worker, request_id: str, call=subprocess.run, alive=helper_alive) -> None:
+    """A run sweep() took back, its helper still going after a restart, seen to
+    its end as run() would: its view reopened past a divider, a beat at a time
+    while `alive` finds the helper (the view takes what live.jsonl gained, and a
+    cancel, the owner's stop, or the timeout counted from job.json's time, sends
+    the stop), then the result posted once, the last run noted, the view closed,
+    the bell rung and the stage dropped. The helper's stderr went with the bridge
+    that started it, so one that ended without handing back says only that.
+    shortcut: the helper's sudo stays a child of this process (the restart
+    re-exec'd it in place), and once it exits nobody reaps it: a harmless zombie
+    until the bridge next really starts; reap it if they ever pile up."""
+    try:
+        _resume(worker, request_id, call, alive)
+    finally:
+        _cancelled.discard(request_id)
+        _owner_stopped.discard(request_id)
+
+
+def _resume(worker, request_id, call, alive):
+    stage = stage_dir(request_id)
+    job = _read_json(os.path.join(stage, "job.json"))
+    try:
+        began = os.lstat(os.path.join(stage, "job.json")).st_mtime    # staged just before the helper started
+    except OSError:
+        began = time.time()
+    head, base = headers(worker.inst), f"/plugin/device-run-requests/{request_id}"
+    view = _view(device_view, "reopen", request_id)
+    _view(view, "divider", f"Mystical restarted {time.strftime('%H:%M')} · this run kept going")
+    body = None
+    try:
+        try:
+            timeout = int(job.get("timeoutSeconds") or worker.inst.get("impl_timeout", 10800))
+            deadline, late = began + timeout + _SLACK, False
+            while alive(request_id):
+                _view(view, "pump", stage)
+                late = late or time.time() >= deadline
+                if late or request_id in _cancelled or request_id in _owner_stopped:
+                    _stop(request_id, call)
+                if late and time.time() >= deadline + _GIVE_UP:
+                    break    # as in _start: left to end on its own
+                time.sleep(_BEAT)
+            _view(view, "pump", stage)
+            body = _result(worker, base, head, stage, 0, "", late, max(1, timeout // 60), view)
+        except Exception as e:  # noqa: BLE001 — still this run's failure, and it is posted
+            print(f"rivendell[{worker.name}]: device run {request_id} crashed: {e}")
+            body = {"status": "FAILED", "error": f"bridge error: {e}"[:_ERROR_MAX], "screens": []}
+        body = _report(worker, base, head, request_id, body)
+        device_share.record_last_run(job.get("requester") or "", job.get("task"))
+    finally:
+        if _root_is_ours():    # never remove anything through a root someone else planted
+            _drop(stage)
+        _ended(worker, request_id, job.get("requester"), began, view, body)
 
 
 def report_interrupted(worker, head: dict) -> None:

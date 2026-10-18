@@ -276,7 +276,10 @@ class Run:
             if isinstance(task, dict) else None,
             "outcome": None})
         store.start_turn(sid, sid, ask, None)
-        prune()
+        try:
+            prune()
+        except Exception as e:  # noqa: BLE001 - last week's views can go at the next run; this one can't wait
+            print(f"device runs: old views weren't pruned: {e}")
         return cls(sid, request_id)
 
     @classmethod
@@ -404,12 +407,16 @@ def prune(days: int = 7, now: "float | None" = None) -> int:
 def orphans(keep: set) -> int:
     """At bridge start: end, failed, every device run still running but the ones
     in `keep` (the request ids whose helper is still going and is taken back),
-    so no view says RUNNING forever. -> how many."""
+    so no view says RUNNING forever. Only the run's own turn counts: a finished
+    run's session can hold another running turn (an owner's refused one that a
+    restart cut short), and ending it again would make every boot turn its
+    done into failed. -> how many."""
     n = 0
     for sid in store.running_session_ids(config.DASH_CHAT_ID):
         s = store.get_session(sid)
         rid = (s.get("ref") or "").removeprefix(ORIGIN + ":") if s else ""
-        if s and is_device_run(s["origin"]) and rid not in keep:
+        if s and is_device_run(s["origin"]) and rid not in keep and any(
+                t["id"] == sid and t["status"] == "running" for t in store.transcript(sid)["turns"]):
             Run(sid, rid).close("failed", {})
             n += 1
     return n

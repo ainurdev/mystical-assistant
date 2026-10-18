@@ -360,6 +360,32 @@ def test_orphans_closes_running_turns_not_kept():
     kept.close("done", {})
 
 
+def test_orphans_ends_only_a_run_whose_own_turn_still_runs():
+    """A finished run whose session holds some other running turn (an owner's
+    refused one a restart cut short) is no orphan: every boot would otherwise
+    turn its done into failed."""
+    device_view.orphans(set())                            # whatever earlier tests left going
+    done = device_view.Run.open("prod", _rid(), _claim())
+    done.close("done", {})
+    store.start_turn(done.sid, "stray-" + done.sid, "keep going", None)
+    try:
+        assert device_view.orphans(set()) == 0
+        assert store.transcript(done.sid)["turns"][0]["status"] == "done"
+        assert store.parse_device(store.get_session(done.sid)["device"])["outcome"] == "done"
+    finally:
+        store.finish_turn("stray-" + done.sid, "error", None, 0)
+
+
+def test_open_survives_a_prune_that_fails(monkeypatch):
+    """Last week's views can go at the next run; this run's view can't wait."""
+    def boom(*a, **k):
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(device_view, "prune", boom)
+    run = device_view.Run.open("prod", _rid(), _claim())
+    assert device_view.running_session() == run.sid
+    run.close("done", {})
+
+
 def test_a_device_run_is_never_a_projects_latest_session():
     chat = 777_001
     mine = store.create_session(chat, "/")
