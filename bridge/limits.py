@@ -187,8 +187,13 @@ def _arm_locked(target: float) -> None:
 
 
 def note_ok(session_id: str) -> None:
-    """A turn completed on this session — its failure episode (if any) is over."""
+    """A turn completed on this session — its failure episode (if any) is over,
+    and so is any park. The turn that just finished IS the resume the park was
+    waiting to send (you typed "continue" into a limit-parked session, or ran
+    it on another login): left parked, the status map reads "hit limit" on a
+    session that is done, and the timer later nudges it into a pointless turn."""
     _last_tries.pop(session_id, None)
+    _unpark(session_id)
 
 
 def parked() -> dict:
@@ -254,6 +259,13 @@ def cancel(session_id: str) -> bool:
     """Unpark a session because something else took the work (a fallback-ladder
     rung). Returns whether it was parked. Taking a rung counts as the episode
     ending, so the try-count is cleared too."""
+    had = _unpark(session_id)
+    if had:
+        _last_tries.pop(session_id, None)
+    return had
+
+
+def _unpark(session_id: str) -> bool:
     with _lock:
         had = _pending.pop(session_id, None) is not None
         if had:
@@ -261,8 +273,6 @@ def cancel(session_id: str) -> bool:
             if _pending:
                 _arm_locked(min(e.get("at", time.time())
                                 for e in _pending.values()))
-    if had:
-        note_ok(session_id)
     return had
 
 

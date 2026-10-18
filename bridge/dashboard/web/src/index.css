@@ -3641,6 +3641,38 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ps-k { margin-left: auto; font: 11px var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
 .ps-lbl { font-size: 12.5px; color: var(--txd); white-space: nowrap; }
 
+/* the composer's PROFILE menu (Composer ProfileRows; drafts/profile-menu): two
+   lines a profile, the login's tile from the picker above, and the default
+   control at the right end. Rows are divs (the pin is a button of its own), so
+   they carry the hover and the wash the family layer gives a popover's buttons. */
+.pm-row { display: flex; align-items: flex-start; gap: 8px; width: 100%; padding: 9px 11px; border: 0; background: transparent; color: var(--txm);
+  font: inherit; font-size: var(--t11); letter-spacing: 0; text-align: left; cursor: pointer; white-space: nowrap; }
+.pm-row:hover, .pm-row:focus-visible { background: var(--ac-08); outline: 0; }
+.pm-row[data-on] { background: var(--f-you); color: var(--txb); }
+.pm-chk { width: 8px; flex: none; color: var(--acc); line-height: 18px; }
+.pm-main { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.pm-l1 { display: flex; align-items: center; gap: 10px; line-height: 18px; }
+.pm-name { color: var(--txh); }
+.pm-row[data-on] .pm-name { color: var(--txb); }
+.pm-row[data-dead] .pm-name { color: var(--err); }
+.pm-knobs { font: var(--t10) var(--mono); letter-spacing: .3px; color: var(--txd); }
+.pm-fuel { display: flex; gap: 16px; line-height: 12px; }
+.pm-w { display: inline-flex; align-items: center; gap: 6px; font: var(--t95) var(--mono); letter-spacing: .4px; color: var(--c); }
+.pm-wtag { font-size: var(--t85); letter-spacing: 1px; color: var(--txl); }
+.pm-bar { width: 56px; height: 4px; border-radius: min(2px, var(--f-rad-s, 0px)); background: color-mix(in oklab, var(--txl) 22%, var(--panel)); overflow: hidden; }
+.pm-bar > span { display: block; height: 100%; background: var(--c); }
+.pm-pct { min-width: 30px; text-align: right; }
+.pm-reset { color: var(--txd); }
+.pm-w[data-spent] .pm-reset { color: var(--txh); }
+.pm-exp { font: 600 var(--t95) var(--ui-font); letter-spacing: .06em; color: var(--err); line-height: 12px; }
+.pm-tail { margin-left: auto; align-self: center; padding-left: 14px; display: flex; align-items: center; flex: none; }
+.pm-tag { display: inline-flex; align-items: center; height: 16px; padding: 0 7px; border-radius: 999px; font: 600 var(--t9) var(--ui-font); letter-spacing: .08em;
+  background: color-mix(in oklab, var(--ok) 16%, var(--panel)); color: var(--ok); }
+.pm-pin { appearance: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--f-rad-s, 0); background: transparent; color: var(--txg); cursor: pointer; }
+.pm-row:hover .pm-pin { color: var(--txl); }
+.pm-pin:hover, .pm-pin:focus-visible { color: var(--txb); background: var(--ac-08); box-shadow: inset 0 0 0 1px var(--line2); outline: 0; }
+.pm-new { align-items: center; }
+
 /* ── project marks (components/ui/ProjectTile, bridge/projectmarks.py) ──
    An icon draws in the tile's own ink. A logo is drawn as it is, edge to edge,
    with nothing behind it: no plate, tint or ring (the user's call, 2026-10-16).

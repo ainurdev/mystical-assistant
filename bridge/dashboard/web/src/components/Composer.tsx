@@ -1,8 +1,8 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, Square, UserRound } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
-import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows } from "../models";
-import { describe, type Profile } from "../lib/profiles";
+import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows, type Window } from "../models";
+import { describe, slotHue, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago, fmtReset } from "../lib/surfaces";
 import { openSettings } from "../lib/opensettings";
@@ -124,7 +124,7 @@ function OverrideDot() {
 }
 
 function Drop<T extends string>({
-  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter,
+  label, code, value, options, fallback, open, onToggle, onPick, minWidth = 78, align = "left", title, dot, tone, meter, menu,
 }: {
   label: string;
   // A field glyph printed inside the chip. The identity of the field then
@@ -159,6 +159,9 @@ function Drop<T extends string>({
   tone?: string;
   // A reading printed after the value (PROFILE: what its login has left).
   meter?: ReactNode;
+  // The menu's rows when they aren't MenuRows (PROFILE draws two-line rows
+  // with a control of their own); `options` still names the chip.
+  menu?: ReactNode;
 }) {
   const cur = options.find((o) => o.id === value) ?? fallback ?? options[0];
   if (!cur) return null;                 // nothing to pick from yet (still loading)
@@ -191,7 +194,7 @@ function Drop<T extends string>({
             boxShadow: "0 -8px 26px var(--shadow-pop)", animation: "mpop .12s ease",
           }}
         >
-          <MenuRows options={options} value={value} onPick={onPick} />
+          {menu ?? <MenuRows options={options} value={value} onPick={onPick} />}
         </div>
       )}
     </div>
@@ -206,17 +209,90 @@ function sevColor(severity?: string): string {
 }
 
 // A fuel gauge in the MODEL menu: how much of a usage window is still unspent
-// (fill = left, so a full bar is a full tank). A PROFILE row has one per
-// window, tagged 5H / WK.
-function LeftMeter({ left, severity, tag, title }: { left: number; severity?: string; tag?: string; title?: string }) {
+// (fill = left, so a full bar is a full tank). The PROFILE menu draws its own
+// (Fuel below), with the refill written in.
+function LeftMeter({ left, severity }: { left: number; severity?: string }) {
   const c = sevColor(severity);
   return (
-    <span title={title} style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
-      {tag && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txd)" }}>{tag}</span>}
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, marginLeft: 18, color: c, flex: "none" }}>
       <span style={{ width: 44, height: 3, background: "color-mix(in srgb, var(--acc) 12%, transparent)", position: "relative", overflow: "hidden" }}>
         <span style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${left}%`, background: c }} />
       </span>
       <span style={{ minWidth: 30, textAlign: "right", fontSize: "var(--t9)", letterSpacing: .5 }}>{left}%</span>
+    </span>
+  );
+}
+
+/** The PROFILE menu (drafts/profile-menu, A · LEDGER): two lines a profile —
+ *  its login's tile, its name and what it sets, then what that login has left
+ *  in each window with the refill written in, so nothing waits on a hover —
+ *  and at the right end the default control: the DEFAULT pill on the profile
+ *  new sessions get (the chip SETTINGS ▸ AI & PROFILES wears), a pin on every
+ *  other row that makes it the default without binding this session. A row is
+ *  a div, not a button, because the pin is a button of its own. */
+function ProfileRows({ profiles, accounts, value, defaultId, onPick, onDefault }: {
+  profiles: Profile[];
+  accounts?: AccountInfo[];
+  value: string;
+  defaultId?: string | null;   // undefined: a bridge too old to say, so no pill and no pin
+  onPick: (id: string) => void;
+  onDefault?: (id: string) => void;
+}) {
+  const key = (id: string) => (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(id); }
+  };
+  return (
+    <div role="listbox" aria-label="Profiles">
+      {profiles.map((p) => {
+        const on = p.id === value;
+        const dead = deadLogin(accounts, p.agent, p.account);
+        const wins = dead === null ? loginWindows(accounts?.find((a) => a.slot === loginSlot(p.agent, p.account))) : [];
+        return (
+          <div key={p.id} className="pm-row" role="option" aria-selected={on} tabIndex={0} data-on={on || undefined} data-dead={dead !== null || undefined}
+            title={dead !== null ? `Account ${dead}'s Claude login has expired. Opens SETTINGS ▸ ACCOUNTS to sign it in again.` : undefined}
+            onClick={() => onPick(p.id)} onKeyDown={key(p.id)}>
+            <span className="pm-chk">{on ? "✓" : ""}</span>
+            {p.agent === "claude"
+              ? <span className="ps-av" style={{ background: slotHue(p.account), color: p.account ? "var(--acc-on)" : "var(--txm)" }}>{p.account ? `A${p.account}` : "A"}</span>
+              : <span className="ps-av ps-av-agent">◇</span>}
+            <span className="pm-main">
+              <span className="pm-l1"><span className="pm-name">{p.name}</span><span className="pm-knobs">{knobs(p)}</span></span>
+              {dead !== null
+                ? <span className="pm-exp">LOGIN EXPIRED ▸ pick to sign in again</span>
+                : wins.length > 0 && <span className="pm-fuel">{wins.map((w) => <Fuel key={w.tag} w={w} />)}</span>}
+            </span>
+            {defaultId !== undefined && (
+              <span className="pm-tail">
+                {p.id === defaultId
+                  ? <span className="pm-tag" title="new sessions get this profile unless their project names another">DEFAULT</span>
+                  : <button type="button" className="pm-pin" aria-label="Make default"
+                      title="Make default · new sessions start on this profile, unless their project names another"
+                      onClick={(e) => { e.stopPropagation(); onDefault?.(p.id); }}><Pin size={13} /></button>}
+              </span>
+            )}
+          </div>
+        );
+      })}
+      <button type="button" className="pm-row pm-new" onClick={() => onPick(NEW_PROFILE)}>+ NEW PROFILE</button>
+    </div>
+  );
+}
+
+/** What a profile sets, without the login its tile already shows: "FABLE-5-1 ·
+ *  BYPASS PERMISSIONS · MAX", or DEFAULTS for one that sets nothing. */
+function knobs(p: Profile): string {
+  return describe(p).replace(/^A\d+( · |$)/, "") || "DEFAULTS";
+}
+
+/** One usage window on a PROFILE row: tag, gauge, what's left, when it refills.
+ *  A spent window prints its refill bright: when the login works again is the
+ *  number that matters. The exact time stays on hover. */
+function Fuel({ w }: { w: Window }) {
+  return (
+    <span className="pm-w" data-spent={w.left === 0 || undefined} style={{ ["--c" as string]: sevColor(w.severity) }}
+      title={`${w.name}: ${w.left}% left${w.resets}`}>
+      <span className="pm-wtag">{w.tag}</span><span className="pm-bar"><span style={{ width: `${w.left}%` }} /></span>
+      <span className="pm-pct">{w.left}%</span><span className="pm-reset">{fmtReset(w.resets_at)}</span>
     </span>
   );
 }
@@ -377,7 +453,7 @@ function RunPopover<M extends string>({
 }
 
 export function Composer({
-  disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
+  disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink,
 }: {
@@ -406,6 +482,10 @@ export function Composer({
   profile: string;
   profiles?: Profile[];
   onProfile: (id: string) => void;
+  // The profile new sessions get (ProfilesInfo.default) and the menu's pin,
+  // which moves it. undefined: a bridge too old to say, so no pill and no pin.
+  defaultProfile?: string | null;
+  onDefaultProfile?: (id: string) => void;
   overrides?: string[]; // knobs set by hand over the profile — each gets an OverrideDot
   effort: EffortLevel | "";
   perm: string;
@@ -463,30 +543,9 @@ export function Composer({
     [models, usage, agentPick],
   );
   const permOpts = agentPick ? agentPick.mode ?? [] : PERMS;
-  // PROFILE rows: each ends in what it sets, then what its Claude login has
-  // left in each window (5H, WK; the reset on hover), so the menu answers
-  // "what does picking this change" without a trip to settings. There is no
-  // unbinding from here, only binding or making one.
-  // A profile whose login has expired reads red and says so: picking it opens
-  // that login's RE-LOGIN instead (onPick below).
-  const profileRows = useMemo(() => {
-    const left = (agent?: string, account?: string) =>
-      loginWindows(accounts?.find((a) => a.slot === loginSlot(agent, account))).map((w) =>
-        <LeftMeter key={w.tag} tag={w.tag} left={w.left} severity={w.severity} title={`${w.name}: ${w.left}% left${w.resets}`} />);
-    return [...(profiles ?? []).map((p) => {
-      const dead = deadLogin(accounts, p.agent, p.account);
-      return {
-        id: p.id, label: p.name,
-        ...(dead !== null && { tone: "var(--err)", title: `Account ${dead}'s Claude login has expired. Opens SETTINGS ▸ ACCOUNTS to sign it in again.` }),
-        tail: <>
-          <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)" }}>{describe(p)}</span>
-          {dead !== null
-            ? <span style={{ marginLeft: 18, fontSize: "var(--t9)", letterSpacing: .5, color: "var(--err)", flex: "none" }}>LOGIN EXPIRED ▸</span>
-            : left(p.agent, p.account)}
-        </>,
-      };
-    }), { id: NEW_PROFILE, label: "+ NEW PROFILE" }];
-  }, [profiles, accounts]);
+  // The PROFILE chip's rows only name the profiles; the menu itself is
+  // ProfileRows (what each sets, its login's fuel, the default control).
+  const profileOpts = useMemo(() => (profiles ?? []).map((p) => ({ id: p.id, label: p.name })), [profiles]);
   const bound = profiles?.find((p) => p.id === profile);
   const boundDead = bound ? deadLogin(accounts, bound.agent, bound.account) : null;
   const own = (k: string) => !!overrides?.includes(k);
@@ -811,20 +870,24 @@ export function Composer({
   const chipTitle = chipWins.length
     ? `${chipName} · ${chipWins.map((w) => `${w.name}: ${w.left}% left${w.resets}`).join(" · ")}`
     : chipMeter ? `${chipName} · usage unknown: this login's access token has lapsed; its meter reads again once it runs a turn` : undefined;
+  // A row picked in the PROFILE menu: + NEW PROFILE opens a blank form, an
+  // expired login its RE-LOGIN, another profile binds; the pin is not a pick.
+  const pickProfileRow = (id: string) => {
+    const p = profiles?.find((x) => x.id === id);
+    const dead = p ? deadLogin(accounts, p.agent, p.account) : null;
+    if (id === NEW_PROFILE) openSettings("aimgmt", "new");
+    else if (dead !== null) openSettings("aimgmt", String(dead));
+    else if (id !== profile) onProfile(id);
+    setOpenDrop("");
+  };
   const profileDrop = (right: boolean) => profiles && (
-    <Drop label="PROFILE" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileRows}
+    <Drop label="PROFILE" code={agentPick ? <UserRound size={12} /> : <ClaudeLogo />} value={profile} options={profileOpts}
       fallback={{ id: profile, label: profile || "NO PROFILE" }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
       tone={boundDead !== null ? "var(--err)" : undefined} meter={boundDead !== null ? undefined : chipMeter}
       title={boundDead !== null ? `PROFILE — ${bound?.name}: account ${boundDead}'s Claude login has expired; pick it in this menu to sign in again.` : chipTitle}
       onToggle={() => setOpenDrop((d) => (d === "profile" ? "" : "profile"))}
-      onPick={(id) => {
-        const p = profiles.find((x) => x.id === id);
-        const dead = p ? deadLogin(accounts, p.agent, p.account) : null;
-        if (id === NEW_PROFILE) openSettings("aimgmt", "new");
-        else if (dead !== null) openSettings("aimgmt", String(dead));
-        else if (id !== profile) onProfile(id);
-        setOpenDrop("");
-      }} />
+      onPick={pickProfileRow}
+      menu={<ProfileRows profiles={profiles} accounts={accounts} value={profile} defaultId={defaultProfile} onPick={pickProfileRow} onDefault={onDefaultProfile} />} />
   );
   // Which agent runs this session, when it isn't Claude. A label, not a
   // control: a session keeps the agent it first ran on.
