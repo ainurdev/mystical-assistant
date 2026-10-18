@@ -387,6 +387,7 @@ function DiffBlock({
       shape={bare ? undefined : toolShape(name)}
       accent={toolAccent(name)}
       tag={bare ? undefined : kindTag(name)}
+      mark={bare ? undefined : name === "Write" ? "write" : "edit"}
       animate={animate}
       error={error}
       startOpen={autoOpen}

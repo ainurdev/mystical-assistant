@@ -2134,7 +2134,9 @@ input {
   background: repeating-linear-gradient(to bottom, var(--zg) 0 2px, transparent 2px 4px);
 }
 [data-style="dossier"] .dwork-body .thought[data-pause] > .ax-stat { color: var(--txg); }
-[data-style="dossier"] .dwork-body .thought-text { font-size: calc(var(--t12) + .5px); font-style: italic; color: var(--txd); }[data-style="dossier"] .dwork-body .thought-text p { margin: 0; }
+[data-style="dossier"] .dwork-body .thought-text { font-size: calc(var(--t12) + .5px); font-style: italic; color: var(--txd); }
+/* the slant leans the word before a code span into its space: give it back */
+[data-style="dossier"] .dwork-body .thought-text code { margin-left: 2px; }[data-style="dossier"] .dwork-body .thought-text p { margin: 0; }
 /* an interim note: the agent to you, mid-work — upright, a step brighter, on
    a dot. The row is the bubble's own wrapper; its node is drawn here, and a
    pause right before it (RunStream pauseAt) is its figure, with the spine
