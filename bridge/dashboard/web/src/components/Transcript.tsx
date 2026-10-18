@@ -200,7 +200,7 @@ function TurnBlock({
     // `dturn` / `dprompt` / `dreply` are inert outside DOSSIER (display:contents
     // on the wrapper), where they make a turn one card: prompt, work, answer.
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
-      data-ctx-type="turn" data-ctx-id={turn.id}
+      data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       <div className="dprompt">
         {turn.prompt && (

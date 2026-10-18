@@ -2860,6 +2860,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: none; border: 0; border-radius: 0; overflow: visible;
   border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 6px;
 }
+/* The hairline ends a turn another follows. The last turn has no line: in a
+   short session it sat mid-screen and slid down with every streamed token. */
+[data-fam] [data-style="dossier"] .dturn[data-last] { border-bottom: 0; }
 [data-fam] [data-style="dossier"] .dprompt {
   background: var(--f-you); border: 1px solid var(--line2); border-radius: var(--f-d-rad); overflow: hidden;
   box-shadow: inset 3px 0 0 var(--acc);

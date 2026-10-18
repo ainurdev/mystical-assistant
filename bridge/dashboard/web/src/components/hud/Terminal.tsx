@@ -411,7 +411,7 @@ export function Terminal({
             below it: parked at the top nothing has slid under it, so the
             LAST row stays folded and the transcript opens on its first
             message, not on a header repeating it. */}
-        <div ref={contentRef} style={{ padding: `${ISLE_EDGE + 12}px 0 16px` }}>
+        <div ref={contentRef} style={{ minHeight: "100%", padding: `${ISLE_EDGE + 12}px 0 16px` }}>
           {/* A switch that lands inside the delay renders neither: no
               scanline for a load that's already over, and no FreshState
               flashing in front of a transcript that's about to arrive. */}
