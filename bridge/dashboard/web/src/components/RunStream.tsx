@@ -667,6 +667,13 @@ function Fold({ label, icon, title, stat, defaultOpen, animate, children }: {
  *  (lib/toolwidget shotName), and whether you have had it on screen yet. */
 type Pic = { path: string; name: string; unseen: boolean };
 
+/** A row arriving in a zone you open prints in from the line above it, with
+ *  the phosphor flash new stream content wears (streamIn). */
+const ROW_IN: Keyframe[] = [
+  { opacity: 0, transform: "translateY(-5px)", filter: "brightness(1.75)" },
+  { opacity: 1, transform: "none", filter: "none" },
+];
+
 /** DOSSIER's tier 3: everything a turn did between what you asked and what it
  *  answered, under one header (lib/dossier) — a plate with a ringed node, WORK
  *  and the figure on one line and the kind chips under it: the marks the rows
@@ -737,6 +744,74 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
     root.addEventListener("scroll", onScroll, { passive: true });
     return () => { root.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
   }, [open]);
+  // Shut from the pinned header, the shut line stays on the pin line, so it
+  // keeps the pinned header's dress (index.css: VEIL's fade lifts, the pill's
+  // chips hide) until a scroll moves it off.
+  const [landed, setLanded] = useState(false);
+  useEffect(() => {
+    const el = head.current, root = el?.closest(".mscroll");
+    if (!landed || !el || !root) return;
+    const off = () => {
+      const line = root.getBoundingClientRect().top + (parseFloat(getComputedStyle(root).getPropertyValue("--isle-b")) || 0);
+      if (Math.abs(el.getBoundingClientRect().top - line) > 2) setLanded(false);
+    };
+    root.addEventListener("scroll", off, { passive: true });
+    return () => root.removeEventListener("scroll", off);
+  }, [landed]);
+  // A toggle glides (index.css, THE FOLD): the box under the header runs from
+  // the height it had to the height it gets while the part you leave keeps its
+  // place, lifted out of the flow and fading, and opened rows print in from the
+  // top. Measured rather than keyframed to `auto` (WebKit can't interpolate to
+  // it), and from what is on screen: shut from the pinned header, the zone's
+  // top is far above you. A click mid-glide starts from where the box is.
+  const fold = useRef<HTMLDivElement>(null);
+  const [motion, setMotion] = useState(false);
+  const anims = useRef<Animation[]>([]);
+  const toggle = (b: HTMLButtonElement) => {
+    const f = fold.current, sc = b.closest<HTMLElement>(".mscroll");
+    const y = b.getBoundingClientRect().top, was = f?.getBoundingClientRect();
+    for (const a of anims.current) a.cancel();
+    anims.current = [];
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // The box keeps its height through the swap: a page that just lost a tall
+    // zone would clamp its scroll before the glide began.
+    if (f && was && !still) f.style.height = `${was.height}px`;
+    flushSync(() => { setOpen(!open); setMotion(!still); setLanded(open && pinned); });
+    // Folded from the pinned header, the shut line lands where the header
+    // was (the ANSWER's FOLD does the same): a zone of a thousand pixels
+    // collapsing above the viewport would otherwise drop you on whatever
+    // sat below it.
+    if (open && sc) sc.scrollTop += b.getBoundingClientRect().top - y;
+    if (!f || !was) return;
+    const run = (el: Element, k: Keyframe[], o: KeyframeAnimationOptions) => {
+      const a = el.animate(k, o);
+      anims.current.push(a);
+      return a;
+    };
+    const now = f.getBoundingClientRect();
+    const arriving = f.querySelector(":scope > :not([data-leaving], [hidden])");
+    if (still) { if (arriving) run(arriving, [{ opacity: 0 }, { opacity: 1 }], { duration: 160 }); return; }
+    // The part you left fades first and the arriving one after, so the two
+    // barely overlap; shut, the rows drift up a little as they go.
+    const leaving = f.querySelector<HTMLElement>(":scope > [data-leaving]");
+    if (leaving) {
+      leaving.style.top = `${was.top - now.top}px`;
+      run(leaving, open ? [{ opacity: 1 }, { opacity: 0, transform: "translateY(-6px)" }] : [{ opacity: 1 }, { opacity: 0 }],
+        { duration: open ? 130 : 90, easing: "ease-in", fill: "forwards" });
+    }
+    // Below the scroller's foot nothing shows, so the glide spends itself on what does.
+    const foot = (sc?.getBoundingClientRect().bottom ?? Infinity) + 40 - now.top;
+    const from = Math.max(0, Math.min(was.bottom - now.top, foot));
+    const to = Math.min(arriving?.getBoundingClientRect().height ?? 0, foot);
+    run(f, [{ height: `${from}px` }, { height: `${to}px` }], open
+      ? { duration: 220, easing: "cubic-bezier(.4,0,.2,1)" }
+      : { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)" }).onfinish = () => setMotion(false);
+    f.style.height = "";
+    if (open) { if (arriving) run(arriving, [{ opacity: 0 }, { opacity: 1 }], { duration: 170, delay: 90, fill: "backwards" }); }
+    else arriving?.querySelectorAll(":scope > .dwork-body > *").forEach((el, i) => {
+      if (i < 24) run(el, ROW_IN, { duration: 240, delay: 40 + Math.min(i, 12) * 16, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" });
+    });
+  };
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in re-renders while you are still looking.
   const [zoom, setZoom] = useState<string | null>(null);
@@ -769,6 +844,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
       className="dwork"
       data-open={open ? "" : undefined}
       data-pinned={pinned ? "" : undefined}
+      data-landed={landed ? "" : undefined}
       data-live={state ?? undefined}
       data-ind={orbit ? "orbit" : undefined}
       data-err={failed ? "" : undefined}
@@ -778,16 +854,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
       <button
         ref={head}
         type="button"
-        onClick={(e) => {
-          // Folded from the pinned header, the shut line lands where the header
-          // was (the ANSWER's FOLD does the same): a zone of a thousand pixels
-          // collapsing above the viewport would otherwise drop you on whatever
-          // sat below it.
-          const b = e.currentTarget, y = b.getBoundingClientRect().top;
-          flushSync(() => setOpen((o) => !o));
-          const sc = b.closest(".mscroll");
-          if (open && sc) sc.scrollTop += b.getBoundingClientRect().top - y;
-        }}
+        onClick={(e) => toggle(e.currentTarget)}
         aria-expanded={open}
         title={open ? "hide the work" : "show the work"}
         className="dwork-head"
@@ -825,31 +892,45 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
           ) : null}
         </span>
       </button>
-      {!open ? ind : null}
-      {!open && pics.length ? (
-        <div className="dwork-row">
-          <div className="dwork-row-h">
-            Screens {"·"} {pics.length}{fresh.length ? <b>{fresh.length} new</b> : null}<i aria-hidden /><em>tap one to open it</em>
-          </div>
-          <div className="dwork-row-thumbs">
-            {pics.map((p) => {
-              const src = api.attachmentUrl(p.path);
-              return (
-                <figure key={p.path} data-new={p.unseen ? "" : undefined}>
-                  <ZoomButton onOpen={() => setZoom(src)}>
-                    {/* A picture the upload dir has pruned can't be seen: marking it
-                        seen is what clears the badge it would otherwise hold lit. */}
-                    <MediaThumb src={src} alt={p.name} onError={() => markShotSeen(p.path)} />
-                  </ZoomButton>
-                  <figcaption>{p.name}</figcaption>
-                </figure>
-              );
-            })}
-          </div>
-        </div>
-      ) : null}
       {zoom && <ImageLightbox src={zoom} all={gallery} onClose={() => setZoom(null)} />}
-      {open ? <><div className="dwork-body">{children}</div>{ind}</> : null}
+      {/* Mid-glide both parts are here, the one you left marked data-leaving.
+          The shut part stays mounted while open, hidden: remounted on shutting,
+          WebKit lays its lazy thumbnails out at no width and the glide aims short. */}
+      <div ref={fold} className="dwork-fold" data-moving={motion ? "" : undefined}>
+        {ind || pics.length ? (
+          <div className="dwork-part" data-leaving={open && motion ? "" : undefined} hidden={open && !motion}>
+            {!open ? ind : null}
+            {pics.length ? (
+              <div className="dwork-row">
+                <div className="dwork-row-h">
+                  Screens {"·"} {pics.length}{fresh.length ? <b>{fresh.length} new</b> : null}<i aria-hidden /><em>tap one to open it</em>
+                </div>
+                <div className="dwork-row-thumbs">
+                  {pics.map((p) => {
+                    const src = api.attachmentUrl(p.path);
+                    return (
+                      <figure key={p.path} data-new={p.unseen ? "" : undefined}>
+                        <ZoomButton onOpen={() => setZoom(src)}>
+                          {/* A picture the upload dir has pruned can't be seen: marking it
+                              seen is what clears the badge it would otherwise hold lit. */}
+                          <MediaThumb src={src} alt={p.name} onError={() => markShotSeen(p.path)} />
+                        </ZoomButton>
+                        <figcaption>{p.name}</figcaption>
+                      </figure>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {open || motion ? (
+          <div className="dwork-part" data-leaving={open ? undefined : ""}>
+            <div className="dwork-body">{children}</div>
+            {open ? ind : null}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
