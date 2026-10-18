@@ -4,9 +4,11 @@ ended: a turn in the chat that asked, a Device run section in the PR, and
 Rivendell told it was delivered.
 
 Nothing here reaches a real process, gh, Rivendell, Telegram, the queue or the
-web: every default refuses and fails the test (the `guard` fixture). The one
-exception is git in the snapshot tests, run for real by the `git` fixture, only
-inside the test's temp dir and with HOME and git's global config pointed there.
+web: every default refuses and fails the test (the `guard` fixture), the
+`claude` that renews a login among them. Nor a real Claude login: the accounts
+and their logins are the `logins` fixture's. The one exception is git in the
+snapshot tests, run for real by the `git` fixture, only inside the test's temp
+dir and with HOME and git's global config pointed there.
 Run: python -m pytest tests/test_device_ask.py -v
 """
 
@@ -29,8 +31,8 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from bridge import (config, device_ask as da, device_side, github, integrations, queue_manager,
-                    rivendell, rivendell_instances, store, telegram)
+from bridge import (accounts, config, credentials, device_ask as da, device_side, github, integrations,
+                    queue_manager, rivendell, rivendell_instances, store, telegram)
 from bridge.dashboard import server as dash
 
 RID = "0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19"
@@ -39,8 +41,16 @@ RID3 = "2b3c4d5e-6f70-4b1c-8d2e-4f5a6b7c8d9e"
 DEVICE = "7c50be1739dfacbb"
 MAC = "Mahziyar's MacBook Pro"
 FILE = "/plugin/device-run-requests"
-INST = {"id": "t1", "name": "test", "enable": True, "api_url": "http://api.example",
-        "token": "rvd_bridge_token", "device_token": "sk-ant-oat01-mahdis-device-token"}
+INST = {"id": "t1", "name": "test", "enable": True, "api_url": "http://api.example", "token": "rvd_bridge_token"}
+# This Mystical's Claude accounts, as accounts.list_accounts() has them.
+LOGINS = [{"slot": 1, "email": "mahdi@example.com", "alias": None, "disabled": False, "default": True},
+          {"slot": 2, "email": "mahdi@work.example", "alias": "Work", "disabled": False, "default": False},
+          {"slot": 3, "email": "old@example.com", "alias": None, "disabled": True, "default": False}]
+ACCESS1, ACCESS2 = "sk-ant-oat01-mahdis-access-token", "sk-ant-oat01-works-access-token"
+RENEWED = "sk-ant-oat01-renewed-access-token"
+REFRESH = "sk-ant-ort01-never-leaves-this-machine"
+RENEW_ARGV = ["-p", "ok", "--model", "haiku", "--no-session-persistence", "--tools", "", "--strict-mcp-config",
+              "--settings", '{"disableAllHooks":true}']
 SNAP = {"tar_gz": b"\x1f\x8b the code", "repository": "ainurhq/app", "commitSha": "4e1c9a2", "dirty": True,
         "gitAuthorName": "Mahdi", "gitAuthorEmail": "mahdi@example.com"}
 PNG = b"\x89PNG\r\n\x1a\n"
@@ -76,6 +86,7 @@ def guard(monkeypatch, tmp_path):
         reached.append(a)
         raise AssertionError("reached without a fake: %r" % (a,))
     monkeypatch.setattr(da.snapshot, "__defaults__", (refuse,))
+    monkeypatch.setattr(da._renew, "__defaults__", (refuse,))     # the `claude` that renews a login
     monkeypatch.setattr(subprocess, "run", refuse)
     monkeypatch.setattr(subprocess, "Popen", refuse)
     monkeypatch.setattr(github, "_run", refuse)
@@ -94,6 +105,47 @@ def guard(monkeypatch, tmp_path):
     da._busy.clear()
     yield sent
     assert not reached, "reached without a fake: %r" % reached
+
+
+def _login(access, minutes):
+    """A login as Claude Code keeps it, with `minutes` left (less than 0: it ended that long ago)."""
+    return {"claudeAiOauth": {"accessToken": access, "refreshToken": REFRESH, "subscriptionType": "max",
+                              "expiresAt": int((time.time() + minutes * 60) * 1000)}}
+
+
+@pytest.fixture(autouse=True)
+def logins(monkeypatch):
+    """This Mystical's Claude accounts (LOGINS: 1 the default, 2 another, 3
+    disabled) and their logins, by slot in `creds`, read through
+    credentials.load at the slot's own path; both start with 8 hours left. A
+    slot's profile is /accounts/<slot> (slot 1 is the ambient login: none)."""
+    box = types.SimpleNamespace(creds={1: _login(ACCESS1, 480), 2: _login(ACCESS2, 480)})
+    slots = {accounts.credentials_path(s): s for s in (1, 2, 3)}
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [dict(a) for a in LOGINS])
+    monkeypatch.setattr(credentials, "load", lambda path: json.loads(json.dumps(box.creds.get(slots.get(path), {}))))
+    monkeypatch.setattr(accounts, "env_for",
+                        lambda slot: {} if slot == 1 else {"CLAUDE_CONFIG_DIR": f"/accounts/{slot}"})
+    return box
+
+
+class Claude:
+    """`claude` as _renew runs it, in place of the guard's refusing one: the
+    login it runs as (its CLAUDE_CONFIG_DIR's slot, else slot 1) comes back
+    renewed for 8 hours, unless `renews` is off, then it exits `code`; `raises`
+    is raised instead. Each call is kept as (argv, the rest)."""
+
+    def __init__(self, logins, renews=True, code=0, raises=None):
+        self.logins, self.renews, self.code, self.raises, self.calls = logins, renews, code, raises, []
+
+    def __call__(self, argv, **kw):
+        self.calls.append((argv, kw))
+        assert os.listdir(kw["cwd"]) == [], "it runs in an empty folder of its own"
+        if self.raises:
+            raise self.raises
+        if self.renews:
+            config_dir = kw["env"].get("CLAUDE_CONFIG_DIR")
+            self.logins.creds[int(config_dir.rsplit("/", 1)[1]) if config_dir else 1] = _login(RENEWED, 480)
+        return subprocess.CompletedProcess(argv, self.code, b"", b"")
 
 
 @pytest.fixture
@@ -380,7 +432,7 @@ def test_a_pack_over_the_limit_is_refused(git, tmp_path, monkeypatch):
 
 # --- start ----------------------------------------------------------------------------------------
 
-def test_start_files_the_run_with_the_instances_token_and_uploads_the_code(riv, snap, chat):
+def test_start_files_the_run_with_the_default_logins_access_token_and_uploads_the_code(riv, snap, chat):
     got = da.start(chat.csid, "Test the lesson planner on the iOS simulator", "NR-31", None, DEVICE, None)
 
     assert got == {"id": RID, "device": MAC, "sentence": f"Sent to {MAC}."}
@@ -388,11 +440,12 @@ def test_start_files_the_run_with_the_instances_token_and_uploads_the_code(riv, 
     assert riv.calls == [("t1", "rvd_bridge_token", FILE, {
         "request": "Test the lesson planner on the iOS simulator", "repositoryFullName": "ainurhq/app",
         "commitSha": "4e1c9a2", "dirty": True, "gitAuthorName": "Mahdi", "gitAuthorEmail": "mahdi@example.com",
-        "claudeToken": INST["device_token"], "taskKey": "NR-31", "deviceId": DEVICE})]
+        "claudeToken": ACCESS1, "taskKey": "NR-31", "deviceId": DEVICE})]
     assert riv.puts == [("rvd_bridge_token", f"{FILE}/{RID}/code", SNAP["tar_gz"], "application/octet-stream")]
     assert da._runs() == {RID: _record(chat.id, device=MAC)}
     assert stat.S_IMODE(os.stat(da._path()).st_mode) == 0o600
-    assert INST["device_token"] not in open(da._path()).read()
+    assert ACCESS1 not in open(da._path()).read()
+    assert REFRESH not in repr((riv.calls, riv.puts)) + open(da._path()).read(), "the refresh token never leaves"
 
 
 @pytest.mark.parametrize("created, device, sentence", [
@@ -450,14 +503,6 @@ def test_start_takes_a_pull_request_in_each_form(riv, snap, chat, given, reposit
     assert da._runs()[RID]["pr"] == f"{repository}#57"
 
 
-def test_start_without_a_device_token_says_where_to_save_one(riv, snap, chat, monkeypatch):
-    monkeypatch.setattr(rivendell_instances, "raw_instances", lambda: [{**INST, "device_token": ""}])
-    got = da.start(chat.csid, "Test it", "NR-31", None, None, None)
-    assert got == {"id": None, "device": None,
-                   "sentence": "Save your Claude token for device runs in Settings › Integrations › Rivendell first."}
-    assert riv.calls == [] and snap == []
-
-
 def test_with_rivendell_removed_no_device_run_goes(riv, snap, chat, monkeypatch):
     """Removed under Settings › Integrations, Rivendell keeps its connections on
     disk, but nothing of it runs: no code goes, and nothing is listed or stopped."""
@@ -492,6 +537,24 @@ def test_a_refused_task_is_never_said_to_exist(riv, snap, chat):
     assert riv.puts == [] and da._runs() == {}
 
 
+def test_a_refused_task_reads_the_same_when_rivendell_only_says_permission(riv, snap, chat):
+    """Rivendell's access check answers "Missing required permission.": our sentence says more."""
+    body = json.dumps({"message": "Missing required permission.", "error": "Forbidden", "statusCode": 403}).encode()
+    riv.errors[FILE] = urllib.error.HTTPError("http://api" + FILE, 403, "Forbidden", None, io.BytesIO(body))
+    got = da.start(chat.csid, "Test it", "NR-404", None, None, None)
+    assert got["sentence"] == "Rivendell refused: you can't see that task or pull request, or it doesn't exist."
+
+
+def test_a_403_that_says_why_is_passed_on_in_rivendells_words(riv, snap, chat):
+    """Devices are shared per device by their owner: Rivendell names the one you may not use."""
+    why = "Mahziyar hasn't shared Mahziyar\u2019s MacBook Pro with you."
+    body = json.dumps({"message": why, "error": "Forbidden", "statusCode": 403}).encode()
+    riv.errors[FILE] = urllib.error.HTTPError("http://api" + FILE, 403, "Forbidden", None, io.BytesIO(body))
+    got = da.start(chat.csid, "Test it", "NR-31", None, DEVICE, None)
+    assert got == {"id": None, "device": None, "sentence": f"Rivendell refused: {why}"}
+    assert riv.puts == [] and da._runs() == {}
+
+
 def test_an_upload_that_fails_calls_the_run_off(riv, snap, chat):
     """No run may sit waiting with the token for code that never came."""
     riv.errors[f"{FILE}/{RID}/code"] = urllib.error.URLError("timed out")
@@ -499,6 +562,96 @@ def test_an_upload_that_fails_calls_the_run_off(riv, snap, chat):
     assert got["id"] is None and got["sentence"].startswith("The code didn't upload")
     assert riv.paths() == [FILE, f"{FILE}/{RID}/cancel", f"{FILE}/{RID}/delivered"]
     assert da._runs() == {}
+
+
+# --- the Claude login a run goes with ----------------------------------------------------------
+
+def _pick(monkeypatch, slot):
+    """The account the instance's device runs use, as Settings saved it (None: the default login)."""
+    monkeypatch.setattr(rivendell_instances, "raw_instances", lambda: [{**INST, "device_account": slot}])
+
+
+@pytest.mark.parametrize("slot, sent", [(None, ACCESS1), (1, ACCESS1), (2, ACCESS2)])
+def test_a_run_goes_with_the_access_token_of_the_account_picked(riv, snap, chat, monkeypatch, slot, sent):
+    _pick(monkeypatch, slot)
+    assert da.start(chat.csid, "Test it", "NR-31", None, None, None)["id"] == RID
+    assert riv.calls[0][3]["claudeToken"] == sent
+    assert REFRESH not in repr((riv.calls, riv.puts)), "only the access token goes"
+
+
+@pytest.mark.parametrize("slot", [3, 7], ids=["disabled", "removed"])
+def test_an_account_no_longer_in_this_mystical_sends_nothing(riv, snap, chat, monkeypatch, slot):
+    _pick(monkeypatch, slot)
+    got = da.start(chat.csid, "Test it", "NR-31", None, None, None)
+    assert got == {"id": None, "device": None, "sentence": (
+        "That Claude account isn't in this Mystical anymore. Pick one in Settings › Integrations › Rivendell.")}
+    assert riv.calls == [] and snap == []
+
+
+def test_with_no_login_on_this_machine_the_default_is_gone_too(riv, snap, chat, monkeypatch):
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [dict(LOGINS[1])])     # no ambient ~/.claude login
+    assert da.start(chat.csid, "Test it", "NR-31", None, None, None)["sentence"] == da.GONE
+    assert riv.calls == []
+
+
+@pytest.mark.parametrize("left", [-90, 0, 4.9], ids=["ended", "ending", "in-the-clis-5-minutes"])
+@pytest.mark.parametrize("slot, profile", [(None, None), (2, "/accounts/2")])
+def test_a_login_that_has_ended_or_is_ending_is_renewed_by_claude_code_then_sent(
+        riv, snap, chat, logins, monkeypatch, left, slot, profile):
+    """Claude Code renews a login under its own lock; Mystical only runs it on that
+    account. Slot 1 is the ambient login, so an inherited CLAUDE_CONFIG_DIR goes."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/a/login/the/bridge/inherited")
+    logins.creds[slot or 1] = _login("sk-ant-oat01-stale", left)
+    claude = Claude(logins)
+    monkeypatch.setattr(da._renew, "__defaults__", (claude,))
+    _pick(monkeypatch, slot)
+
+    assert da.start(chat.csid, "Test it", "NR-31", None, None, None)["id"] == RID
+    assert riv.calls[0][3]["claudeToken"] == RENEWED
+    (argv, kw), = claude.calls
+    assert argv[1:] == RENEW_ARGV and kw["timeout"] == 60 and kw["stdin"] is subprocess.DEVNULL
+    assert kw["env"].get("CLAUDE_CONFIG_DIR") == profile
+    assert not os.path.exists(kw["cwd"]), "its folder goes when it's done"
+    assert REFRESH not in repr((riv.calls, riv.puts))
+
+
+@pytest.mark.parametrize("left, wait", [(19.5, 15), (12, 7), (5.2, 1)])
+def test_a_login_with_5_to_20_minutes_left_says_when_it_can_be_renewed(riv, snap, chat, logins, monkeypatch,
+                                                                       left, wait):
+    """Too short for a run, and too early for Claude Code to renew: the refusing
+    `claude` (the guard's) is never run."""
+    logins.creds[2] = _login(ACCESS2, left)
+    _pick(monkeypatch, 2)
+    got = da.start(chat.csid, "Test it", "NR-31", None, None, None)
+    assert got["sentence"] == (f"Work's Claude login renews in {wait} min. "
+                               "Ask again then, or pick another account in Settings › Integrations › Rivendell.")
+    assert riv.calls == [] and snap == []
+
+
+def test_20_minutes_left_is_enough(riv, snap, chat, logins):
+    logins.creds[1] = _login(ACCESS1, 20.1)
+    assert da.start(chat.csid, "Test it", "NR-31", None, None, None)["id"] == RID
+
+
+@pytest.mark.parametrize("claude", [
+    dict(renews=False, code=1), dict(renews=False, raises=subprocess.TimeoutExpired("claude", 60)),
+    dict(renews=False, raises=FileNotFoundError("claude"))], ids=["refused", "timed-out", "missing"])
+def test_a_login_claude_code_cant_renew_says_to_sign_in_again(riv, snap, chat, logins, monkeypatch, claude):
+    logins.creds[1] = _login(ACCESS1, -30)
+    fake = Claude(logins, **claude)
+    monkeypatch.setattr(da._renew, "__defaults__", (fake,))
+    got = da.start(chat.csid, "Test it", "NR-31", None, None, None)
+    assert got == {"id": None, "device": None, "sentence": (
+        "mahdi@example.com's Claude login couldn't be renewed. "
+        "Sign in to it again in Settings › AI management › Accounts.")}
+    assert len(fake.calls) == 1 and riv.calls == [] and snap == []
+
+
+def test_a_login_with_no_token_left_is_renewed_too(riv, snap, chat, logins, monkeypatch):
+    logins.creds[1] = {}
+    monkeypatch.setattr(da._renew, "__defaults__", (Claude(logins),))
+    assert da.start(chat.csid, "Test it", "NR-31", None, None, None)["id"] == RID
+    assert riv.calls[0][3]["claudeToken"] == RENEWED
 
 
 # --- the device list, and cancel ----------------------------------------------------------------
@@ -516,12 +669,17 @@ def test_the_device_list_reads_one_line_each(riv):
         device("a" * 16, "Erfan's MacBook Air", "BUSY", "27.0", {
             "requesterName": "Payam", "taskKey": "EFAS-12", "task": None, "repository": "ainurhq/efas",
             "since": since}),
-        device("b" * 16, "Payam's Mac mini", "OFF", "26.4")]}
+        device("b" * 16, "Payam's Mac mini", "OFF", "26.4"),
+        # Someone else's run on someone else's device: Rivendell leaves out who and what.
+        device("c" * 16, "Bilbo's Mac mini", "BUSY", "27.0", {
+            "requesterName": None, "taskKey": None, "task": None, "repository": None, "since": since})]}
     assert da.list_text() == "\n".join([
         f"{MAC} — free · macOS 27.0 · Xcode 27.0 · iOS 27.0, 26.4 · id: {DEVICE}",
         "Erfan's MacBook Air — busy · macOS 27.0 · Xcode 27.0 · iOS 27.0 · Payam's EFAS-12 run, 6 min in"
         f" · yours would go next · id: {'a' * 16}",
         f"Payam's Mac mini — off · macOS 26.4 · Xcode 26.4 · iOS 26.4 · id: {'b' * 16}",
+        "Bilbo's Mac mini — busy · macOS 27.0 · Xcode 27.0 · iOS 27.0 · on a run, 6 min in"
+        f" · yours would go next · id: {'c' * 16}",
         "2 on, 1 free."])
     assert riv.calls == [("t1", "rvd_bridge_token", "/plugin/devices", None)]
 
@@ -841,10 +999,12 @@ def test_an_update_frame_is_handed_back_off_the_listener(monkeypatch):
         release.set()
 
 
-@pytest.mark.parametrize("token, times", [("sk-ant-oat01-x", 1), ("", 0)])
-def test_each_connect_catches_up_on_outcomes_only_with_a_device_token(monkeypatch, token, times):
+@pytest.mark.parametrize("sent_through, times", [("t1", 1), ("another-link", 0), (None, 0)])
+def test_each_connect_catches_up_on_outcomes_only_with_a_run_out_through_that_link(monkeypatch, sent_through, times):
+    if sent_through:
+        da._save_run(RID, _record("s1", instance=sent_through))
     server, client = socket.socketpair()
-    w = rivendell.Worker({**INST, "device_token": token})
+    w = rivendell.Worker(dict(INST))
     caught = []
     monkeypatch.setattr(da, "catch_up", lambda worker: caught.append(worker))
     monkeypatch.setattr(w, "_connect", lambda: (client, client.makefile("rb")))

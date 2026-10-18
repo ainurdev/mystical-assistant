@@ -1231,7 +1231,8 @@ class Worker:
             self.features = frozenset()     # this connection hasn't said hello yet
             self._set_status("connected", url)
             caught = self._catch_up()
-            if self.inst.get("device_token"):     # only then can this Mystical have sent device runs
+            # Only runs noted as sent through this link can be handed back, so with none out there's nothing to ask.
+            if any(r.get("instance") == self.id for r in device_ask._runs().values()):
                 threading.Thread(target=device_ask.catch_up, args=(self,),
                                  name=f"rivendell-device-catch-up-{self.id}", daemon=True).start()
             print(f"rivendell[{self.name}]: connected to {url}"

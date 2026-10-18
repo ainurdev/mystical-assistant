@@ -533,7 +533,7 @@ export interface RivendellInstance {
   origin: string;      // "rivendell:<name>" — its runs' session origin
   token: string;       // masked: "…" + last 4, or "set"/"" ; never sent back to keep
   share_device: boolean;    // Share this device: this Rivendell may send it device runs, once it is ready
-  device_token: string;     // masked like token: the Claude token your device runs use; "" when none is saved
+  device_account: number | null;   // the Claude account (slot) the device runs you send use; null: the default login
   status: RivendellStatus;  // live; merged in by the GET route, not stored
 }
 /** A create/edit payload. token blank on edit keeps the stored one, and so does
@@ -549,10 +549,8 @@ export interface RivendellInput {
   review_timeout: number;
   impl_timeout: number;
   share_device?: boolean;   // left out keeps the stored choice (on for a new instance)
-  device_token?: string;    // blank on edit keeps the stored one
 }
-/** Settings › Plugins › DEVICE RUNS, one per instance (GET /local/rivendell/devices).
- *  The Claude token for device runs never comes back: whether it is saved, and its last 4. */
+/** Settings › Plugins › DEVICE RUNS, one per instance (GET /local/rivendell/devices). */
 export interface RivendellDevice {
   id: string;
   name: string;
@@ -560,8 +558,7 @@ export interface RivendellDevice {
   enable: boolean;
   status: RivendellStatus;
   share_device: boolean;
-  token_saved: boolean;
-  token_last4: string;
+  device_account: number | null;   // the Claude account (slot) the runs you send use; null: the default login
   /** Where this device stands for this instance (bridge/device_share.py share_state). */
   share: {
     state: "NOT_MAC" | "OFF" | "XCODE_MISSING" | "NEEDS_SETUP" | "READY";
@@ -573,12 +570,11 @@ export interface RivendellDevice {
   setup_running: boolean;   // a Set up or Remove is going (from any tab), up to 15 minutes
   last_run: { at: number; by: string; task: string | null } | null;   // the newest run this device ran
 }
-/** Leave a field out to keep it. A blank token keeps the saved one; clear_token forgets it. */
+/** Leave a field out to keep it. device_account null is the default login. */
 export interface RivendellDeviceInput {
   id: string;
   share_device?: boolean;
-  device_token?: string;
-  clear_token?: boolean;
+  device_account?: number | null;
 }
 /** One request held PENDING in a worker's queue, awaiting accept/reject. The
  *  kinds match bridge/rivendell.py: a PR review, a task implementation, a project
@@ -1947,7 +1943,7 @@ export const api = {
   rivendellTest: (instance_id: string, job = false) =>
     req<RivendellTest>("/local/rivendell/test", { method: "POST", body: { instance_id, job } }),
   // DEVICE RUNS: Share this device, Set up / Remove (one Mac password prompt, up
-  // to 15 minutes before it answers), and the Claude token for device runs.
+  // to 15 minutes before it answers), and the Claude account for device runs.
   rivendellDevices: () => req<{ instances: RivendellDevice[] }>("/local/rivendell/devices"),
   updateRivendellDevice: (body: RivendellDeviceInput) =>
     req<{ ok: boolean; instances: RivendellDevice[] }>("/local/rivendell/devices", { method: "POST", body }),

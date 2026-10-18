@@ -68,16 +68,30 @@ Claude copy. Last, it takes the wall down: the packet-filter rule, its reference
 and the boot job. STATE then says NEEDS SETUP, or XCODE MISSING if Xcode or its
 iOS Simulator runtime is gone, or OFF if Share this device is off.
 
-### Your Claude token for device runs
+### The Claude account for device runs
 
-The runs you send use your own Claude account, so the usage is yours. Make a
-token with `claude setup-token` and save it under **CLAUDE TOKEN FOR DEVICE
-RUNS**. You can't send a run without it.
+The runs you send go out under one of the Claude accounts in this Mystical, so
+the usage is that account's. Pick it under **CLAUDE ACCOUNT FOR DEVICE RUNS**;
+until you do, it is Mystical's default login. There is no token to paste.
 
-It is kept beside the session store (mode 0600) and never shown again in full:
-the panel shows its last four characters, and REPLACE swaps it. It goes with each
-run you send. Rivendell keeps it encrypted until a device claims the run, then
-erases it, and that device deletes it from disk before the run starts.
+Each run carries only the account's current login (its access token), never its
+refresh token, so a device can use it for a few hours at most. Claude Code
+renews a login for about 8 hours at a time, and a run goes only while the login
+has 20 minutes or more left:
+
+- A login that has ended, or is in its last 5 minutes, is renewed first:
+  Mystical runs Claude Code once on that account (one word from Haiku, no
+  tools), and Claude Code renews it as it always does, under its own lock.
+  Mystical never renews a login itself, since racing Claude Code can sign the
+  account out. If the renewal fails, sign in to the account again in
+  **Settings › AI management › Accounts**.
+- With 5 to 20 minutes left, Claude Code won't renew it yet: nothing is sent,
+  and you are told when to ask again, or you can pick another account.
+
+Rivendell keeps the token encrypted until a device claims the run, then erases
+it, and that device deletes it from disk before the run starts. A token you
+pasted here before accounts replaced it is deleted from this machine when
+Mystical next starts.
 
 Off macOS the panel shows only this side: how many shared devices are on and free
-right now, and the token.
+right now, and the account.

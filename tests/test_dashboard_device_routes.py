@@ -1,11 +1,12 @@
 """Settings › Plugins › DEVICE RUNS: the three dashboard routes DeviceRunsPanel
 draws and drives (bridge/dashboard/server.py).
   - GET /local/rivendell/devices: per instance, Share this device, where this
-    device stands (device_share.share_state), whether a Claude token for device
-    runs is saved and its last 4 (never the token), the shared devices on now
+    device stands (device_share.share_state), the Claude account the runs you
+    send use (a slot, null for the default login), the shared devices on now
     (Rivendell's, cached 30 s, null when it can't say) and the last run here.
-  - POST /local/rivendell/devices: Share this device on or off, the token saved
-    or forgotten. Real JSON booleans only, since bool("false") is True.
+  - POST /local/rivendell/devices: Share this device on or off, the account
+    picked. Real JSON booleans only, since bool("false") is True, and only one
+    of this Mystical's account slots, or null.
   - POST /local/rivendell/devices/setup: Set up or Remove, then the device is
     looked at afresh and each link whose offer changed redials.
 
@@ -13,7 +14,9 @@ Set up and Remove are real in production: a macOS admin-password prompt, then a
 root script that makes or deletes a macOS user. Nothing here may reach them or
 any command: an autouse fixture makes device_setup.run, every subprocess
 device_setup and device_share could start, and Rivendell refuse, and one reached
-fails the test. A setup test installs a recording fake of its own.
+fails the test. A setup test installs a recording fake of its own. This
+Mystical's Claude accounts are slots 1 and 2 (accounts.list_accounts, faked: the
+real one reads the logins on this machine).
 Driven socket-free through Handler.__new__ (test_rivendell_tasks_endpoint.py).
 Run: python -m pytest tests/test_dashboard_device_routes.py -v
 """
@@ -28,10 +31,9 @@ import urllib.error
 
 import pytest
 
-from bridge import config, device_ask, device_setup, device_share, rivendell, rivendell_instances
+from bridge import accounts, config, device_ask, device_setup, device_share, rivendell, rivendell_instances
 from bridge.dashboard import server as dash
 
-TOKEN = "sk-ant-oat01-device-run-secret-4f2c"
 CHECKS = [{"key": "user", "label": "USER MYSTICALRUNS", "ok": True}]
 LAST = {"at": 1760607600.0, "by": "Mahdi", "task": "NR-29"}
 
@@ -68,6 +70,9 @@ def refusing(monkeypatch, tmp_path):
     monkeypatch.setattr(dash, "_shared_on", {})
     monkeypatch.setattr(config, "RIVENDELL_API_URL", "")
     monkeypatch.setattr(config, "RIVENDELL_TOKEN", "")
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [
+        {"slot": 1, "email": "mahdi@example.com", "alias": None, "disabled": False, "default": True, "plan": None},
+        {"slot": 2, "email": "mahdi@work.example", "alias": "Work", "disabled": False, "default": False, "plan": None}])
     yield
     assert not reached, f"reached from a device route test: {reached}"
 
@@ -124,8 +129,9 @@ def _stored():
 
 # --- GET ------------------------------------------------------------------------------------------
 
-def test_get_draws_each_enabled_instance_and_never_its_tokens(device):
-    a = _inst(device_token=TOKEN)
+def test_get_draws_each_enabled_instance_and_never_its_token(device):
+    a = _inst()
+    rivendell_instances.update_device(a["id"], device_account=2)
     b = _inst(name="staging", share_device=False)
     off = _inst(name="old", enable=False)
     r = dget()
@@ -134,18 +140,17 @@ def test_get_draws_each_enabled_instance_and_never_its_tokens(device):
     assert sorted(rows) == ["production", "staging"], "a switched-off instance isn't drawn"
     assert off["id"] not in device["looked"], "nor looked at: no dscl for it on every poll"
     p, s = rows["production"], rows["staging"]
-    assert {k: p[k] for k in ("id", "api_url", "enable", "share_device", "token_saved", "token_last4")} == {
+    assert {k: p[k] for k in ("id", "api_url", "enable", "share_device", "device_account")} == {
         "id": a["id"], "api_url": "https://api.rivendell.ainurhq.cloud", "enable": True,
-        "share_device": True, "token_saved": True, "token_last4": "4f2c"}
+        "share_device": True, "device_account": 2}
     assert p["status"]["state"] == "off", "no worker runs it here"
     assert p["share"] == {"state": "READY", "checks": CHECKS, "facts": None, "installed": True}
     assert p["last_run"] == LAST and p["running"] is False and p["setup_running"] is False
-    assert (s["id"], s["share_device"], s["token_saved"], s["token_last4"]) == (b["id"], False, False, "")
+    assert (s["id"], s["share_device"], s["device_account"]) == (b["id"], False, None)
     assert s["share"]["state"] == "OFF"
     assert p["shared_on"] is None and s["shared_on"] is None and device["asked"] == [], \
         "on a Mac SHARED DEVICES ON NOW isn't drawn, so Rivendell isn't asked: a save never waits on it"
-    text = json.dumps(r["obj"])
-    assert TOKEN not in text and "rvd_owner" not in text
+    assert "rvd_owner" not in json.dumps(r["obj"])
 
 
 def test_off_macos_the_shared_devices_on_now_come_from_rivendell(device):
@@ -199,41 +204,43 @@ def test_shared_devices_on_now_is_cached_30_s_and_null_when_rivendell_cant_say(m
     assert len(device["asked"]) == 2
 
 
-# --- POST: Share this device and the token -------------------------------------------------------
+# --- POST: Share this device and the account ---------------------------------------------------
 
-def test_post_switches_sharing_and_saves_the_token_but_never_echoes_it(monkeypatch, device):
+def test_post_switches_sharing_and_picks_the_account(monkeypatch, device):
     a = _inst()
     seen = []
     monkeypatch.setattr(rivendell, "reconfigure", lambda: seen.append(_stored()))
-    r = dpost("/local/rivendell/devices", {"id": a["id"], "share_device": False, "device_token": f"  {TOKEN}\n"})
+    r = dpost("/local/rivendell/devices", {"id": a["id"], "share_device": False, "device_account": 2})
     assert r["code"] == 200 and r["obj"]["ok"] is True
     stored = _stored()
-    assert stored["share_device"] is False and stored["device_token"] == TOKEN
+    assert (stored["share_device"], stored["device_account"]) == (False, 2)
     assert (stored["name"], stored["enable"], stored["token"]) == ("production", True, "rvd_owner"), "nothing else moves"
     assert [s["share_device"] for s in seen] == [False], "the link redials with the change saved"
     row, = r["obj"]["instances"]
-    assert (row["share_device"], row["token_saved"], row["token_last4"]) == (False, True, "4f2c")
-    assert TOKEN not in json.dumps(r["obj"])
+    assert (row["share_device"], row["device_account"]) == (False, 2)
 
 
-def test_a_field_left_out_is_kept_and_clear_token_forgets_the_token(device):
-    a = _inst(device_token=TOKEN, share_device=False)
-    assert dpost("/local/rivendell/devices", {"id": a["id"], "device_token": ""})["code"] == 200
-    assert (_stored()["share_device"], _stored()["device_token"]) == (False, TOKEN)
-    r = dpost("/local/rivendell/devices", {"id": a["id"], "clear_token": True})
-    assert r["code"] == 200 and _stored()["device_token"] == "" and _stored()["share_device"] is False
-    assert r["obj"]["instances"][0]["token_saved"] is False
+def test_a_field_left_out_is_kept_and_a_null_account_is_the_default_login(device):
+    a = _inst(share_device=False)
+    rivendell_instances.update_device(a["id"], device_account=2)
+    for body in ({}, {"share_device": None}):
+        assert dpost("/local/rivendell/devices", {"id": a["id"], **body})["code"] == 200
+        assert (_stored()["share_device"], _stored()["device_account"]) == (False, 2)
+    r = dpost("/local/rivendell/devices", {"id": a["id"], "device_account": None})
+    assert r["code"] == 200 and (_stored()["share_device"], _stored()["device_account"]) == (False, None)
+    assert r["obj"]["instances"][0]["device_account"] is None
 
 
 @pytest.mark.parametrize("bad", [
     {"share_device": "false"}, {"share_device": 0}, {"share_device": 1},
-    {"clear_token": "true"}, {"clear_token": 1}, {"device_token": 1234}, {"device_token": ["sk-ant"]},
+    {"device_account": 7}, {"device_account": "2"}, {"device_account": 2.0}, {"device_account": True},
+    {"device_account": [2]}, {"device_account": {"slot": 2}},
 ])
-def test_post_takes_only_real_booleans_and_a_string_token(monkeypatch, bad):
-    a = _inst(device_token=TOKEN)
+def test_post_takes_only_real_booleans_and_this_mysticals_accounts(monkeypatch, bad):
+    a = _inst()
     monkeypatch.setattr(rivendell, "reconfigure", lambda: pytest.fail("nothing was saved"))
     assert dpost("/local/rivendell/devices", {"id": a["id"], **bad})["code"] == 400
-    assert (_stored()["share_device"], _stored()["device_token"]) == (True, TOKEN)
+    assert (_stored()["share_device"], _stored()["device_account"]) == (True, None)
 
 
 def test_post_for_an_instance_that_isnt_there_is_a_400():

@@ -242,7 +242,8 @@ _TOOLS = [
 # print its URL, so this outwaits it rather than reporting a false failure.
 RUN_TIMEOUT = 25
 # RunOnDevice answers once git has packed the checkout and up to 9 MB of it is on
-# Rivendell (a 30 s filing call, then a 120 s upload), so this outwaits both.
+# Rivendell (a renew of the Claude login of up to 60 s, a 30 s filing call, then a
+# 120 s upload), so this outwaits them all.
 DEVICE_TIMEOUT = 300
 _DEVICE_ROUTES = {"ListDevices": "list", "RunOnDevice": "start", "CancelDeviceRun": "cancel"}
 

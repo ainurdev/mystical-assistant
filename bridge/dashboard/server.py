@@ -215,8 +215,8 @@ def _shared_on_now(inst: dict) -> "dict | None":
 def _device_rows() -> list:
     """The panel's blocks, one per enabled instance (a switched-off one isn't
     drawn, so it isn't looked at either): Share this device, where this device
-    stands, the Claude token for device runs (whether it is saved and its last
-    4, never the token), the shared devices on now (asked of Rivendell only off
+    stands, the Claude account the runs you send use (its slot, None for the
+    default login), the shared devices on now (asked of Rivendell only off
     macOS, the one view that shows them), whether a teammate's run is running
     here now or which one ran last, and whether a Set up or Remove is going."""
     live = rivendell.status()
@@ -227,13 +227,12 @@ def _device_rows() -> list:
     for inst in rivendell_instances.raw_instances():
         if not inst.get("enable"):
             continue
-        tok = inst.get("device_token") or ""
         share = device_share.share_state(inst)
         rows.append({
             "id": inst["id"], "name": inst.get("name", ""), "api_url": inst.get("api_url", ""),
             "enable": True, "status": live.get(inst["id"], {"state": "off"}),
             "share_device": bool(inst.get("share_device", True)),
-            "token_saved": bool(tok), "token_last4": tok[-4:] if len(tok) > 4 else "",
+            "device_account": inst.get("device_account"),
             "share": share,
             "shared_on": _shared_on_now(inst) if share["state"] == "NOT_MAC" else None,
             "running": running, "last_run": last, "setup_running": setting,
@@ -1483,7 +1482,6 @@ class Handler(BaseHTTPRequestHandler):
                 "review_timeout": body.get("review_timeout"),
                 "impl_timeout": body.get("impl_timeout"),
                 "share_device": body.get("share_device"),
-                "device_token": (body.get("device_token") or "")[:2000],
             }
             try:
                 if op == "add":
@@ -1565,16 +1563,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "that Rivendell connection is off"}, 409)
             return self._json(res)
         if path == "/local/rivendell/devices":
-            # DEVICE RUNS: Share this device, and the Claude token for device runs.
-            # Real booleans only (bool("false") is True); the token never comes back.
-            share, clear, tok = body.get("share_device"), body.get("clear_token"), body.get("device_token")
-            if (not all(v is None or isinstance(v, bool) for v in (share, clear))
-                    or not (tok is None or isinstance(tok, str))):
-                return self._json({"error": "share_device and clear_token must be true or false, "
-                                            "device_token text"}, 400)
+            # DEVICE RUNS: Share this device, and the Claude account the runs you send use.
+            # A real boolean (bool("false") is True), and one of this Mystical's account
+            # slots or null for the default login. A field left out (a null share_device too) is kept.
+            from bridge import accounts
+            share, acct = body.get("share_device"), body.get("device_account")
+            if share is not None and not isinstance(share, bool):
+                return self._json({"error": "share_device must be true or false"}, 400)
+            if acct is not None and (type(acct) is not int
+                                     or acct not in {a["slot"] for a in accounts.list_accounts()}):
+                return self._json({"error": "device_account must be one of this Mystical's Claude accounts, "
+                                            "or null for the default login"}, 400)
+            fields = {"share_device": share} if share is not None else {}
+            if "device_account" in body:
+                fields["device_account"] = acct
             try:
-                rivendell_instances.update_device(str(body.get("id") or ""), share, (tok or "")[:2000],
-                                                  bool(clear))
+                rivendell_instances.update_device(str(body.get("id") or ""), **fields)
             except rivendell_instances.RivendellError as e:
                 return self._json({"error": str(e)}, 400)
             rivendell.reconfigure()      # a changed instance redials, as after any save
