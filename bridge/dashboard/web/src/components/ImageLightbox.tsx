@@ -147,14 +147,15 @@ export function ImageLightbox({ src, all, onClose }: { src: string; all?: Shown[
     return () => window.removeEventListener("keydown", onKey);
   }, [many, list.length]);
 
-  // key={cur}: each image opens at fit, rather than inheriting the pan and zoom
-  // of the one before it.
+  // A still viewer stays mounted while you page, so the backdrop doesn't replay
+  // its fade; it opens each picture at fit itself. A video's player is its own
+  // viewer, keyed, so it starts fresh.
   return (
     <>
       {/* Only the video carries the panel — stepping the gallery to a still
           must not leave a clip's chapters sitting beside a screenshot. */}
       {isVideo(cur.src) ? <VideoLightbox key={cur.src} src={cur.src} name={cur.name} title={title} strip={many} clip={cur.clip} onClose={onClose} />
-                        : <StillLightbox key={cur.src} src={cur.src} name={cur.name} title={title} strip={many} onClose={onClose} />}
+                        : <StillLightbox src={cur.src} name={cur.name} title={title} strip={many} onClose={onClose} />}
       {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go} />}
     </>
   );
@@ -198,9 +199,15 @@ function Filmstrip(
   { list: Shown[]; at: number; onPick: (i: number) => void; onStep: (d: number) => void },
 ) {
   useSeenShots();
-  // A long set scrolls; stepping keeps the open one in the visible part.
+  // A long set scrolls: paging glides the open one to the middle (opening jumps).
   const strip = useRef<HTMLDivElement>(null);
-  useEffect(() => { strip.current?.querySelector("[aria-current]")?.scrollIntoView({ inline: "nearest", block: "nearest" }); }, [at]);
+  const opened = useRef(false);
+  useEffect(() => {
+    const s = strip.current, t = s?.querySelector<HTMLElement>("[aria-current]");
+    if (s && t) s.scrollTo({ left: t.offsetLeft + t.offsetWidth / 2 - s.clientWidth / 2,
+      behavior: opened.current && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "auto" });
+    opened.current = true;
+  }, [at]);
   const arrow: React.CSSProperties = {
     position: "fixed", top: "50%", transform: "translateY(-50%)", zIndex: 96,
     appearance: "none", cursor: "pointer", padding: "18px 14px", lineHeight: 1,
@@ -230,11 +237,9 @@ function Filmstrip(
               aria-label={`Image ${k + 1} of ${list.length}${s.name ? `: ${s.name}` : ""}${unseen ? ", not seen yet" : ""}`}
               aria-current={k === at ? "true" : undefined}
               onClick={() => onPick(k)}
-              style={{ appearance: "none", cursor: "pointer", padding: 0, flex: "none", lineHeight: 0, position: "relative",
-                border: `1px solid ${k === at ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
-                opacity: k === at ? 1 : 0.5, background: "transparent" }}
+              className="lbx-th"
             >
-              <MediaThumb src={s.src} style={{ height: 56, width: 84, objectFit: "cover", display: "block" }} />
+              <MediaThumb src={s.src} style={{ height: 56, width: 84, objectFit: "cover", display: "block", borderRadius: "inherit" }} />
               {unseen && <i aria-hidden style={{ position: "absolute", top: 4, right: 4, width: 7, height: 7, borderRadius: "50%",
                 background: "var(--acc)", boxShadow: "0 0 0 2px var(--panel3)" }} />}
             </button>
@@ -496,10 +501,26 @@ function StillLightbox({ src, name, title, strip, onClose }: { src: string; name
   // The image's pixel width, once decoded. Laid out by pixel count alone, a 2x
   // capture of a 600px-wide menu is 1200 CSS px — on a Retina screen every pixel
   // doubled, which reads as a blurry screenshot. Fit is at most one image pixel
-  // per device pixel; anything past that is a zoom you asked for.
-  const [nat, setNat] = useState(0);
+  // per device pixel; anything past that is a zoom you asked for. Null until it
+  // has loaded (or failed): the picture shows, fading in, once there is one.
+  const [nat, setNat] = useState<number | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
+  // Paging hands this viewer the next picture: it opens at fit, and the one you
+  // left keeps its place out of the flow and fades out over it. Measured here,
+  // in the render the page caused, because after it the old picture is gone.
+  const [shown, setShown] = useState(src);
+  const [leaving, setLeaving] = useState<{ src: string; at: React.CSSProperties } | null>(null);
+  if (shown !== src) {
+    const i = img.current, b = box.current;
+    if (i && b && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const r = i.getBoundingClientRect(), o = b.getBoundingClientRect();
+      setLeaving({ src: shown, at: { left: r.left - o.left, top: r.top - o.top, width: r.width, height: r.height } });
+    }
+    setShown(src);
+    setV(FIT);
+    setNat(null);
+  }
   const ptrs = useRef(new Map<number, { x: number; y: number }>());
   const spread = useRef(0);   // the previous two-finger distance, 0 = not pinching
   const down = useRef({ x: 0, y: 0 });
@@ -603,15 +624,27 @@ function StillLightbox({ src, name, title, strip, onClose }: { src: string; name
           picture was, so the zoom's centre has not moved. */}
       <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center" }}>
         <img
+          key={src}
           ref={img}
           src={src}
           alt=""
           draggable={false}
           onLoad={(e) => setNat(e.currentTarget.naturalWidth)}
-          style={{ maxWidth: nat ? `min(92vw, ${nat / (window.devicePixelRatio || 1)}px)` : "92vw", maxHeight: capFor(strip, title), objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-in", userSelect: "none" }}
+          onError={() => setNat(0)}
+          style={{ maxWidth: nat ? `min(92vw, ${nat / (window.devicePixelRatio || 1)}px)` : "92vw", maxHeight: capFor(strip, title), objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", transform: `translate(${v.x}px, ${v.y}px) scale(${v.s})`, willChange: "transform", cursor: v.s > 1 ? "grab" : "zoom-in", userSelect: "none", opacity: nat === null ? 0 : 1, transition: "opacity .22s cubic-bezier(.2,.8,.2,1)" }}
         />
         {title && <Title text={title} />}
       </div>
+      {leaving && (
+        <img
+          key={`out:${leaving.src}`}
+          src={leaving.src}
+          alt=""
+          aria-hidden
+          onAnimationEnd={() => setLeaving(null)}
+          style={{ position: "absolute", ...leaving.at, margin: 0, objectFit: "contain", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", pointerEvents: "none", animation: "backdropOut .18s ease-in both" }}
+        />
+      )}
       <button
         type="button"
         onClick={onClose}

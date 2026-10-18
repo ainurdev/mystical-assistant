@@ -2060,6 +2060,21 @@ input {
 [data-style="dossier"] .dwork-row-thumbs figcaption {
   font-size: var(--t85); color: var(--txf); max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* The lightbox's strip (ImageLightbox Filmstrip): the open picture wears an
+   accent ring off a 2px gap, with a glow; the rest sit back at 55% and come up
+   on hover, and both ease. Corners are the family's button corners. */
+.lbx-th {
+  position: relative; flex: none; padding: 0; line-height: 0; appearance: none; cursor: pointer;
+  border: 0; background: transparent; opacity: .55;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--acc) 16%, transparent);
+  transition: opacity .18s ease, box-shadow .22s ease;
+}
+.lbx-th:hover { opacity: .85; }
+.lbx-th[aria-current] {
+  opacity: 1;
+  box-shadow: 0 0 0 2px var(--panel3), 0 0 0 4px var(--acc), 0 0 18px color-mix(in srgb, var(--acc) 45%, transparent);
+}
+@media (prefers-reduced-motion: reduce) { .lbx-th { transition: none; } }
 /* an unseen picture inside the open zone wears the accent until it has been on screen */
 [data-style="dossier"] .dwork-body :is(img, video)[data-new] {
   outline: 1.5px solid var(--acc); outline-offset: 1px;
