@@ -954,8 +954,6 @@ input {
 .ctrl-verbs-compact .ctrl-more { display: inline-flex; }
 .ctrl-row-compact .ctrl-set { flex: none; }
 @container (max-width: 560px) { .ctrl-row-compact .ctrl-ctx .seg { display: none; } }
-/* The effort slider: a native range, re-inked to the accent. */
-.effort-slider { width: 100%; margin: 0; accent-color: var(--acc); cursor: pointer; height: 14px; }
 .run-trigger:hover > span { color: var(--acc) !important; }
 
 /* Composer action cluster — exactly one primary. STOP and PAUSE are rare,
@@ -1881,21 +1879,22 @@ input {
   white-space: nowrap; text-align: left;
   font-size: var(--t105); letter-spacing: .5px; color: var(--txd);
 }
-/* Open, the header pins under the island while you are inside the zone, so a
-   click folds the work from anywhere: --isle-b is the island's bottom edge,
-   written on the scroller by Terminal.tsx. Pinned (WorkZone's observer), a
-   hairline cuts it from the rows passing under, and a lid of the island's own
-   glass covers the band above it, so rows don't surface over the header on
-   their way out. The lid spans the plate's padding box (--zpl/--zpr). */
+/* Open, the header pins at the top while you are inside the zone, so a click
+   folds the work from anywhere. --isle-b (Terminal.tsx, on the scroller) is
+   where it pins: level with the compact pill, which floats over the plate's
+   right end (its chips hide while pinned, data-isle; VEIL's fade lifts, THE
+   FAMILIES), or under the full island bar. Pinned (WorkZone's measure), a hairline cuts it from the rows
+   passing under, and a lid in the plate's colour covers the band above it so
+   rows don't surface over the header on their way out. The lid spans the
+   plate's padding box (--zpl/--zpr). */
 [data-style="dossier"] .dwork[data-open] > .dwork-head {
-  position: sticky; top: calc(var(--isle-b, 50px) + 6px); z-index: 3; background: inherit;
+  position: sticky; top: var(--isle-b, 0px); z-index: 3; background: inherit;
 }
+[data-style="dossier"][data-isle="pill"] .dwork[data-pinned] .dwork-right { visibility: hidden; }
 [data-style="dossier"] .dwork[data-pinned] > .dwork-head { box-shadow: 0 1px 0 var(--d-hair); }
 [data-style="dossier"] .dwork[data-pinned] > .dwork-head::before {
   content: ""; position: absolute; left: calc(-1 * var(--zpl)); right: calc(-1 * var(--zpr)); bottom: 100%;
-  height: calc(var(--isle-b, 50px) + 6px); pointer-events: none;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  -webkit-backdrop-filter: blur(10px) saturate(1.15); backdrop-filter: blur(10px) saturate(1.15);
+  height: var(--isle-b, 0px); pointer-events: none; background: var(--panel2);
 }
 [data-style="dossier"] .dwork-node {
   position: relative; grid-column: 1; grid-row: 1 / 3; justify-self: center; width: 22px; height: 22px; border-radius: 50%;
@@ -2932,9 +2931,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam][data-hdr="veil"] [data-layout]::before {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 74px; z-index: 11; pointer-events: none;
   background: linear-gradient(var(--canvas) 30%, color-mix(in oklab, var(--canvas) 70%, transparent) 62%, transparent);
-  transition: height .2s ease;
+  transition: height .2s ease, opacity .2s ease;
 }
 [data-fam][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
+/* a pinned WORK header (DOSSIER) sits in the fade's band and would be swallowed by it: while one is pinned the fade lifts */
+[data-fam][data-hdr="veil"] [data-layout]:has(.dwork[data-pinned])::before { opacity: 0; }
 [data-fam][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
 /* TUCK: frost folded to its last readout (.isle-keep); the rest unfolds on hover */
 [data-fam][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
@@ -2958,10 +2959,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .cmdbox[data-drag] { border-color: var(--acc) !important; }
 [data-fam] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--ui-font) !important; }
 [data-fam]:not([data-fam="aurora"]) .cmdbox > span:first-child { display: none; }
-/* the run popover's trigger is a chip like its neighbours, with room: model
-   first, then mode and effort as quieter words */
-[data-fam] .run-trigger { padding: 6px 11px !important; gap: 9px !important; align-items: center !important; }
-[data-fam] .run-trigger > span { font-size: var(--t11) !important; }
+/* the run sheet's trigger is a chip like its neighbours: glyph tile, model
+   first, then mode and effort as quieter words, a caret */
+[data-fam] .run-trigger { padding: 5px 8px 5px 5px !important; gap: 7px !important; align-items: center !important; }
+[data-fam] .run-trigger > span:not(.run-car) { font-size: var(--t11) !important; }
+[data-fam] .run-trigger > .run-sep { color: var(--txg); }
 [data-fam] .drop-btn, [data-fam] .run-trigger {
   border: 1px solid var(--line) !important; background: var(--panel2) !important; border-radius: var(--f-rad-s) !important;
   font-family: var(--ui-font) !important; font-size: var(--t11) !important; letter-spacing: 0 !important; color: var(--txh) !important;
@@ -2979,7 +2981,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-theme^="flint-sunset"] .act-pri { color: #fff; }
 [data-fam] .act-pri.queue { background: var(--ask); color: var(--acc-on); }
 [data-fam] .act-pri:disabled { background: transparent; border-color: var(--line); color: var(--txl); }
-[data-fam] .effort-slider { accent-color: var(--acc); }
 
 /* ── every floating surface: menus, popovers, the run popover, the context
    menu, tips, the bell. ponytail: these are hand-rolled inline (no shared
@@ -3332,6 +3333,80 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="pebble"] .set-toggle[data-on] i { left: 20px; }
 [data-fam="pebble"] :is(.set-crumb, .set-head h2, .set-sectitle, .ftmeta b, .set-key) { font-weight: 700 !important; }
 [data-fam="pebble"] [data-style="dossier"] .dprompt { border-color: transparent; border-radius: var(--f-d-rad) var(--f-d-rad) var(--f-d-rad) 8px; box-shadow: none; }
+
+/* ── THE FAMILIES · PEBBLE · SIDEBARS — two pebbles on the ground. The HUD's
+   shell is one flush surface cut by hairlines; PEBBLE lifts the two side
+   columns off it as rounded slabs with a gutter round them, and leaves the
+   transcript as the ground between. Everything inside a slab loses its HUD
+   voice: the mode tabs and the rail are pills, lane heads are bold sentence
+   case with a count pill, rows and tree rows are pills, FILES is a title.
+   ponytail: the columns and the rail have no class of their own, so this
+   matches the grid's structure (.hudgrid > first/last child) and the inline
+   borders with !important — if App's shell markup moves, these fall back to
+   FLINT's flush shell, nothing breaks. ── */
+[data-fam="pebble"] .hudgrid {
+  gap: 10px; padding: 8px 10px 10px;
+  background: radial-gradient(60% 55% at 0% 0%, color-mix(in srgb, var(--acc) 16%, transparent), transparent 70%),
+              radial-gradient(60% 55% at 100% 100%, color-mix(in srgb, var(--ask) 12%, transparent), transparent 70%);
+}
+[data-fam="pebble"] .hudgrid > .shellcol:first-child, [data-fam="pebble"] .hudgrid > div:last-child {
+  border-radius: var(--f-rad-l); background: color-mix(in srgb, var(--panel2) 90%, transparent);
+  border-right: 0 !important; box-shadow: var(--f-pop-shadow);
+}
+[data-fam="pebble"] .hudgrid > .shellcol:first-child > div:first-child { border-bottom-color: transparent !important; }
+[data-fam="pebble"] .shellcol > .panel { background: transparent !important; }
+[data-fam="pebble"] .hudgrid > div:last-child .shellcol { background: transparent; border-left-color: transparent !important; }
+[data-fam="pebble"] .rcap { border-bottom-color: transparent !important; }
+[data-fam="pebble"] .rcap > div { border-left-color: transparent !important; background: transparent !important; }
+/* the activity rail: round buttons in a column, the open one filled */
+[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child { background: transparent !important; border-left-color: transparent !important; gap: 6px; padding: 8px 0; }
+[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button {
+  width: 36px; height: 36px; margin: 0 auto; border: 0 !important; border-radius: 999px; transition: background .15s ease, color .15s ease;
+}
+[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"] {
+  background: color-mix(in oklab, var(--acc) 18%, var(--panel)) !important; color: var(--acc) !important;
+}
+/* the sessions slab */
+[data-fam="pebble"] .shellcol > .panel > div:first-child > div:first-child {
+  border-radius: 999px !important; background: var(--panel3) !important; box-shadow: inset 0 0 0 1px var(--line);
+}
+[data-fam="pebble"] .shellcol > .panel > div:first-child > div:first-child > span[aria-hidden] {
+  border-radius: 999px !important; background: color-mix(in oklab, var(--acc) 18%, var(--panel)) !important;
+}
+[data-fam="pebble"] .shellcol > .panel > div:first-child > div:first-child > button { border-radius: 999px !important; }
+[data-fam="pebble"] .newsess {
+  height: 36px !important; justify-content: center; border-radius: 999px !important;
+  font: 700 var(--t12) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: none !important;
+  background: color-mix(in oklab, var(--acc) 16%, var(--panel)) !important; color: var(--txb) !important;
+}
+[data-fam="pebble"] .newsess svg { color: var(--acc); }
+[data-fam="pebble"] .lanehead { height: 28px !important; padding: 0 10px !important; }
+[data-fam="pebble"] .lanehead > span:nth-child(2) {
+  display: inline-block; font: 700 var(--t11) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: lowercase; color: var(--txh) !important;
+}
+[data-fam="pebble"] .lanehead > span:nth-child(2)::first-letter { text-transform: uppercase; }
+[data-fam="pebble"] .lanehead > span:nth-child(3) { background: transparent !important; }
+[data-fam="pebble"] .lanehead > span:last-child {
+  font: 600 var(--t10) var(--ui-font) !important; padding: 1px 8px; border-radius: 999px; background: var(--ac-08); color: var(--txd) !important;
+}
+[data-fam="pebble"] .sessrow { padding: 9px 12px 10px !important; }
+[data-fam="pebble"] .sessrow > div > div, [data-fam="pebble"] .sessrow > div:last-child > span { font-family: var(--ui-font); }
+[data-fam="pebble"] .ptile { border-radius: 50%; }
+/* the files slab: FILES is a title, the count a pill, the tools round, the rows pills */
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child { padding: 12px 14px 6px !important; }
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child > span:first-child {
+  display: inline-block; font: 700 var(--t13) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: lowercase; color: var(--txb) !important;
+}
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child > span:first-child::first-letter { text-transform: uppercase; }
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child > span:last-child > span {
+  font: 600 var(--t10) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: lowercase;
+  padding: 2px 8px; border-radius: 999px; background: color-mix(in oklab, var(--warn) 16%, var(--panel));
+}
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child button {
+  width: 24px; height: 24px; border-radius: 999px !important; border-color: transparent !important; background: var(--ac-06) !important;
+}
+[data-fam="pebble"] .hudgrid > div:last-child .panel > div:first-child + div[style*="linear-gradient"] { display: none; }
+[data-fam="pebble"] .trow { margin: 1px 4px; width: calc(100% - 8px) !important; border-radius: 999px; font-family: var(--ui-font) !important; }
 [data-fam="aurora"] .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--acc), 0 0 10px color-mix(in oklab, var(--acc) 60%, transparent); }
 [data-fam="aurora"] .fthdr small { letter-spacing: .16em; text-transform: uppercase; }
 [data-fam="aurora"] .set-mini { letter-spacing: .12em !important; text-transform: uppercase; }
@@ -3469,8 +3544,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-set { display: flex; align-items: center; gap: 12px; height: 26px; margin-top: 3px; padding: 0 2px; min-width: 0; }
 .pb-set .ctrl-ctx { margin-left: 0; }
 .pb-set :is(.drop-btn, .run-trigger) { border: 0 !important; background: none !important; padding: 0 !important; min-width: 0 !important; }
-/* the run popover opens rightwards from the row's left half; the ··· menu leftwards from its end */
-.pb-set [role="dialog"] { right: auto !important; left: 0 !important; }
+/* the ··· menu opens leftwards from the row's end */
 .pb-set .pb-plus { width: 30px; height: 24px; font-size: 0; }
 .pb-set .pb-plus::before { content: "···"; font-size: var(--t11); letter-spacing: 2px; }
 .pb-set .pb-plus + div { left: auto !important; right: 0 !important; }
@@ -3785,6 +3859,46 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pm-row:hover .pm-pin { color: var(--txl); }
 .pm-pin:hover, .pm-pin:focus-visible { color: var(--txb); background: var(--ac-08); box-shadow: inset 0 0 0 1px var(--line2); outline: 0; }
 .pm-new { align-items: center; }
+
+/* ── the run sheet (Composer RunSheet): MODEL beside MODE, EFFORT along the
+   foot, over the cmdbox in every layout. Rows are MenuRows, restyled here
+   (their inline paddings need the !important). Under 560px of composer the
+   two columns stack. ── */
+.rp-sheet { font-family: var(--ui-font, inherit); overflow: hidden; }
+.rp-grid { display: grid; grid-template-columns: 46fr 54fr; }
+.rp-grid > .rp-sec + .rp-sec { border-left: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)); }
+.rp-sec { padding: 10px 8px 8px; min-width: 0; }
+.rp-hd { display: flex; align-items: baseline; gap: 8px; padding: 2px 6px 8px; white-space: nowrap; min-width: 0; }
+.rp-hd b { font-weight: 600; font-size: var(--t10); letter-spacing: .12em; color: var(--txm); text-transform: uppercase; }
+.rp-hd i { font-style: italic; font-size: var(--t105); color: var(--txd); overflow: hidden; text-overflow: ellipsis; }
+.rp-dot { color: var(--acc); font-style: normal; font-weight: 600; }
+.rp-list > button { border-radius: var(--f-rad-s, 0) !important; padding: 6px 8px !important; min-height: 28px; font-size: var(--t11) !important; }
+.rp-list > button > span:first-child { width: 10px !important; text-align: center; }
+.rp-list > div { padding: 7px 8px 4px !important; border-bottom: 0 !important; font-weight: 600; font-size: var(--t9) !important;
+                 letter-spacing: .08em !important; text-transform: uppercase; }
+.rp-none { padding: 6px 8px; font-size: var(--t10); color: var(--txd); white-space: normal; }
+.rp-eff { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; padding: 9px 14px 10px;
+          border-top: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)); }
+.rp-eff .rp-hd { padding: 0; }
+.rp-seg { margin-left: auto; display: inline-flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 2px;
+          border: 1px solid var(--line, color-mix(in srgb, var(--acc) 16%, transparent)); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
+.rp-sg { position: relative; appearance: none; cursor: pointer; height: 22px; padding: 0 10px; border: 0; border-radius: var(--f-rad-s, 0);
+         background: transparent; color: var(--txd); font: 600 var(--t95) var(--ui-font, inherit); letter-spacing: .06em !important;
+         text-transform: uppercase; white-space: nowrap; }
+.rp-sg:hover { color: var(--txh); background: var(--ac-08, color-mix(in srgb, var(--acc) 8%, transparent)); }
+[data-fam] .rp-sg[data-on], .rp-sg[data-on] { background: color-mix(in oklab, var(--acc) 20%, var(--panel)) !important; color: var(--acc);
+                                              box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 35%, transparent); }
+/* the profile's own pick, while this session's overrides it: a dot under the stop */
+.rp-sg[data-prof]::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--txl); }
+.mr-hint { display: block; font-size: var(--t10); color: var(--txd); margin-top: 2px; letter-spacing: 0; white-space: normal; }
+.mr-tag { display: inline-flex; align-items: center; height: 15px; padding: 0 6px; margin-left: 6px; border-radius: 999px; vertical-align: 1px;
+          font: 600 var(--t85) var(--ui-font, inherit); letter-spacing: .08em; background: var(--panel3); color: var(--txd);
+          box-shadow: inset 0 0 0 1px var(--line2, color-mix(in srgb, var(--acc) 25%, transparent)); }
+@container (max-width: 560px) {
+  .rp-grid { grid-template-columns: 1fr; }
+  .rp-grid > .rp-sec + .rp-sec { border-left: 0; border-top: 1px solid var(--line, color-mix(in srgb, var(--acc) 12%, transparent)); }
+  .rp-seg { margin-left: 0; }
+}
 
 /* ── project marks (components/ui/ProjectTile, bridge/projectmarks.py) ──
    An icon draws in the tile's own ink. A logo is drawn as it is, edge to edge,

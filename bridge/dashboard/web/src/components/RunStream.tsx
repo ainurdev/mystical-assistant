@@ -689,23 +689,26 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, liv
 }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
-  // Pinned: the sticky header (index.css) is holding at its top offset. The
-  // observer's root is shrunk by that offset plus one pixel, so a header at
-  // rest sits wholly inside it and a stuck one is cut by that pixel; a header
-  // further down the page is cut too, from the other side, which the top check
-  // tells apart.
+  // Pinned: the sticky header (index.css) is holding at its top offset — at
+  // rest it sits below that line, stuck it sits on it, and leaving with the
+  // zone's end it rides above it. Measured on scroll, like Terminal's peek,
+  // and against the offset as it is now: an IntersectionObserver's margin is
+  // fixed at creation, and the offset moves when the island's LAST row opens.
   const head = useRef<HTMLButtonElement>(null);
   const [pinned, setPinned] = useState(false);
   useEffect(() => {
     const el = head.current, root = el?.closest(".mscroll");
     if (!open || !el || !root) { setPinned(false); return; }
-    // shortcut: the offset is read once per open, so a LAST peek that opens later moves the pin but not the lid; watch --isle-b if that shows
-    const top = parseFloat(getComputedStyle(el).top) || 0;
-    const io = new IntersectionObserver(([e]) => {
-      setPinned(e.intersectionRatio < 1 && e.boundingClientRect.top < (e.rootBounds?.top ?? -Infinity));
-    }, { root, rootMargin: `-${top + 1}px 0px 0px 0px`, threshold: 1 });
-    io.observe(el);
-    return () => io.disconnect();
+    let raf = 0;
+    const measure = () => {
+      raf = 0;
+      const r = el.getBoundingClientRect(), rootTop = root.getBoundingClientRect().top;
+      setPinned(r.top - rootTop <= (parseFloat(getComputedStyle(el).top) || 0) + 0.5 && r.bottom > rootTop);
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(measure); };
+    measure();
+    root.addEventListener("scroll", onScroll, { passive: true });
+    return () => { root.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
   }, [open]);
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in re-renders while you are still looking.
