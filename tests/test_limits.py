@@ -765,6 +765,28 @@ def test_cancel_keeps_the_timer_alive_for_whoever_is_left():
         restore()
 
 
+def test_a_completed_turn_drops_the_park():
+    """You typed "continue" into a limit-parked session (or it ran on another
+    login) and that turn finished: the park is stale. Left in place, the status
+    map read "hit limit" on a done session until the reset, when the timer
+    nudged it into a turn nobody asked for (2026-10-18)."""
+    _reset_limits()
+    restore = _usage(100, time.time() + 3600)
+    try:
+        limits.defer("s-done", CHAT, "/tmp/done")
+        limits.defer("s-other", CHAT, "/tmp/other")
+        assert "s-done" in limits.parked()
+        limits.note_ok("s-done")
+        assert "s-done" not in limits.parked(), "a finished turn is the resume the park waited for"
+        assert "s-other" in limits.parked(), "only that session's park goes"
+        with open(limits._path()) as f:
+            assert "s-done" not in json.load(f), "and it stays gone across a restart"
+        assert limits.defer("s-done", CHAT, "/tmp/done")[1] is True   # a fresh episode
+    finally:
+        _reset_limits()
+        restore()
+
+
 def test_cancel_ends_the_failure_episode():
     """Taking a rung is a success, so the next limit death starts a fresh count."""
     _reset_limits()
