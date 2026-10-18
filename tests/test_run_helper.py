@@ -453,10 +453,10 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
     assert (st / "job.json").exists(), "the rest of the stage is the bridge's to remove"
 
     (bootout_user, bootout_gui, kill, wait, cron, clear, *wall, install, untar, launch, writer, reader,
-     bootout_user_again, bootout_gui_again, kill_again, wait_again) = run.calls
+     bootout_user_again, bootout_gui_again, kill_again, wait_again, cron_again) = run.calls
     assert wall == WALL, "the wall is proved as the hidden user, before its code is unpacked"
     assert [bootout_user, bootout_gui] == BOOTOUT == [bootout_user_again, bootout_gui_again], "as root, fixed argv"
-    assert cron == CRONTAB, "as root, with its fixed argv"
+    assert cron == CRONTAB == cron_again, "as root, with its fixed argv, before the run and after its processes are gone"
     assert clear[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and clear[-1] == str(box.tmp)
     code = str(box.runs / RUN_ID / "code")
     assert install[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"] and install[3:6] == ["/usr/bin/install", "-d", "-m"]
@@ -936,14 +936,16 @@ def test_a_leftover_that_will_not_go_refuses_the_run(box, capsys):
     assert _left_behind(box, st) == [] and len(capsys.readouterr().err.strip().splitlines()) == 1
 
 
-def test_the_hidden_users_crontab_goes_before_each_run_and_none_is_no_error(box):
-    """Set up keeps mysticalruns out of cron; this takes away any crontab it had
-    all the same. Having none (crontab exits 1) is the usual case, not a failure."""
+def test_the_hidden_users_crontab_goes_before_and_after_each_run_and_none_is_no_error(box):
+    """macOS 26 no longer lets Set up write the cron deny list, so this takes away
+    any crontab the hidden user had before the run and any it left after. Having
+    none (crontab exits 1) is the usual case, not a failure."""
     run = Runner(cron_rc=1)
     _stage(box)
     assert h.main(["start", RUN_ID], popen=run) == 0
     launch = next(i for i, c in enumerate(run.calls) if "-p" in c)
-    assert run.calls.count(CRONTAB) == 1 and run.calls.index(CRONTAB) < launch
+    at = [i for i, c in enumerate(run.calls) if c == CRONTAB]
+    assert len(at) == 2 and at[0] < launch < at[1]
 
 
 def test_set_up_makes_the_locks_folder_and_remove_takes_the_lock():
