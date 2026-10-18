@@ -627,7 +627,7 @@ def _no_helper(argv, **kw):
 
 
 def _gone(request_id):
-    """ps finds no helper for the run: a reboot or a crash took it."""
+    """ps was read and lists no helper for the run: a reboot or a crash took it."""
     return False
 
 
@@ -862,10 +862,17 @@ def test_a_helper_is_alive_while_ps_lists_its_start(ps, alive):
     assert asked == [["/bin/ps", "-axo", "command="]]
 
 
-def test_a_helper_ps_cannot_see_is_gone():
-    def fail(argv, **kw):
-        raise OSError("no ps")
-    assert ds.helper_alive(RID, run=fail) is False
+@pytest.mark.parametrize("ps", [OSError("no ps"), subprocess.TimeoutExpired(["/bin/ps"], 30),
+                                subprocess.CompletedProcess(["/bin/ps"], 1, f"{HELPER} start {RID}\n", "ps: sysctl")],
+                         ids=["fails", "times out", "exits non-zero"])
+def test_a_ps_that_cannot_be_read_cannot_tell(ps):
+    """None, not "gone": a watch that ended on it would drop a stage whose
+    helper still runs Claude, and post a result that isn't the run's."""
+    def run(argv, **kw):
+        if isinstance(ps, Exception):
+            raise ps
+        return ps
+    assert ds.helper_alive(RID, run=run) is None
 
 
 def test_sweep_adopts_a_live_helper_and_resume_posts_once(device, monkeypatch):
@@ -934,8 +941,8 @@ def test_resume_stops_a_run_its_owner_stopped(device, monkeypatch):
 
 
 def test_resume_without_exit_json_fails_clearly(device):
-    """A helper that ended without handing back (killed, or it refused and its
-    stderr went with the bridge it had): FAILED, saying so."""
+    """A helper ps no longer lists that ended without handing back (killed, or
+    it refused and its stderr went with the bridge it had): FAILED, saying so."""
     device_view.Run.open("t1", RID, dict(CLAIM))
     device_view._running.clear()
     stage = _stale(device, RID, "t1", token=False)
@@ -947,18 +954,48 @@ def test_resume_without_exit_json_fails_clearly(device):
     assert w.notes[0][2] == "A teammate's run on this device ended"     # job.json from before it named them
 
 
-def test_sweep_still_stops_a_dead_helpers_stage(device):
+@pytest.mark.parametrize("seen", [False, None], ids=["gone", "ps can't tell"])
+def test_sweep_still_stops_a_dead_helpers_stage(device, seen):
     """A helper that is gone (a reboot, a crash) hands nothing back: its stage is
     stopped, noted for report_interrupted and dropped, as before, and its view
-    ends failed."""
+    ends failed. At boot, a ps that can't tell counts as gone, as before."""
     device_view.Run.open("t1", RID, dict(CLAIM))
     device_view._running.clear()
     _stale(device, RID, "t1")
     calls = []
-    ds.sweep(run=lambda argv, **kw: calls.append(argv) or _no_helper(argv), alive=_gone)
+    ds.sweep(run=lambda argv, **kw: calls.append(argv) or _no_helper(argv), alive=lambda rid: seen)
     assert calls == [["/usr/bin/sudo", "-n", HELPER, "stop", RID]]
     assert os.listdir(device.root) == [] and ds._interrupted == {"t1": [RID]} and ds._adopted == {}
     assert _ended() == ("error", "failed")
+
+
+def test_a_ps_that_fails_mid_run_never_ends_the_watch(device, monkeypatch):
+    """A ps that hangs once and exits non-zero once says nothing about the
+    helper: the watch goes on, nothing is stopped, and the run's own result is
+    posted, once, when ps no longer lists it."""
+    monkeypatch.setattr(ds, "_BEAT", 0)
+    device_view.Run.open("t1", RID, dict(CLAIM))
+    device_view._running.clear()
+    stage = _stale(device, RID, "t1", token=False)
+    looks = []
+
+    def ps(argv, **kw):
+        looks.append(argv)
+        if len(looks) == 2:
+            raise subprocess.TimeoutExpired(argv, 30)
+        if len(looks) == 3:
+            return subprocess.CompletedProcess(argv, 1, "", "ps: sysctl failed")
+        if len(looks) == 4:                                           # it hands back and ends
+            (stage / "out" / "exit.json").write_text(json.dumps({"code": 0, "timedOut": False}))
+            (stage / "out" / "claude.json").write_text(_claude("It works."))
+            return subprocess.CompletedProcess(argv, 0, "/sbin/launchd\n", "")
+        return subprocess.CompletedProcess(argv, 0, f"/sbin/launchd\n/usr/bin/sudo -n {HELPER} start {RID}\n", "")
+    w = Worker()
+    ds.resume(w, RID, call=lambda argv, **kw: pytest.fail("nothing to stop"),
+              alive=lambda rid: ds.helper_alive(rid, run=ps))
+    assert len(looks) == 4
+    assert w.results() == [{"status": "COMPLETED", "result": "It works.", "screens": []}]
+    assert _ended() == ("done", "done") and not stage.exists()
 
 
 def test_a_view_that_fails_never_fails_the_run(device, monkeypatch):

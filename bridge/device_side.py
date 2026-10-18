@@ -153,17 +153,23 @@ def _stop(request_id, run):
         print(f"device run {request_id}: the stop failed: {(r.stderr or '').strip()}")
 
 
-def helper_alive(request_id: str, run=subprocess.run) -> bool:
+def helper_alive(request_id: str, run=subprocess.run) -> "bool | None":
     """Whether this run's helper still goes: ps lists it (or the sudo that
-    started it) as `… mystical-run-helper start <id>`. A ps that can't be read
-    counts as gone, which is how a restart ended every run before."""
+    started it) as `… mystical-run-helper start <id>`. None when ps can't tell
+    (it failed, timed out or exited non-zero): sweep() then counts the run as
+    gone, as a restart ended every run before, and resume() keeps watching, as
+    ending the watch would drop a stage its helper still runs from."""
     try:
-        out = run(["/bin/ps", "-axo", "command="], stdin=subprocess.DEVNULL, capture_output=True, text=True,
-                  errors="replace", timeout=30).stdout or ""
+        r = run(["/bin/ps", "-axo", "command="], stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                errors="replace", timeout=30)
     except (OSError, subprocess.SubprocessError) as e:
         print(f"device run {request_id}: ps couldn't be read: {e}")
-        return False
-    return any(line.rstrip().endswith(f"mystical-run-helper start {request_id}") for line in out.splitlines())
+        return None
+    if r.returncode:
+        print(f"device run {request_id}: ps couldn't be read: it exited {r.returncode}")
+        return None
+    return any(line.rstrip().endswith(f"mystical-run-helper start {request_id}")
+               for line in (r.stdout or "").splitlines())
 
 
 def take_adopted(instance: str) -> list:
@@ -518,7 +524,7 @@ def _sweep(run, alive):
             continue
         instance = _read_json(os.path.join(stage, "job.json")).get("instance")
         named = isinstance(instance, str) and instance
-        if named and alive(name):
+        if named and alive(name):    # None, ps can't tell, counts as gone
             _adopted.setdefault(instance, []).append(name)
             continue
         _stop(name, run)
@@ -530,11 +536,12 @@ def _sweep(run, alive):
 def resume(worker, request_id: str, call=subprocess.run, alive=helper_alive) -> None:
     """A run sweep() took back, its helper still going after a restart, seen to
     its end as run() would: its view reopened past a divider, a beat at a time
-    while `alive` finds the helper (the view takes what live.jsonl gained, and a
-    cancel, the owner's stop, or the timeout counted from job.json's time, sends
-    the stop), then the result posted once, the last run noted, the view closed,
-    the bell rung and the stage dropped. The helper's stderr went with the bridge
-    that started it, so one that ended without handing back says only that.
+    until `alive` says the helper is gone, not while it can't tell (the view
+    takes what live.jsonl gained, and a cancel, the owner's stop, or the timeout
+    counted from job.json's time, sends the stop), then the result posted once,
+    the last run noted, the view closed, the bell rung and the stage dropped.
+    The helper's stderr went with the bridge that started it, so one that ended
+    without handing back says only that.
     shortcut: the helper's sudo stays a child of this process (the restart
     re-exec'd it in place), and once it exits nobody reaps it: a harmless zombie
     until the bridge next really starts; reap it if they ever pile up."""
@@ -560,7 +567,7 @@ def _resume(worker, request_id, call, alive):
         try:
             timeout = int(job.get("timeoutSeconds") or worker.inst.get("impl_timeout", 10800))
             deadline, late = began + timeout + _SLACK, False
-            while alive(request_id):
+            while alive(request_id) is not False:    # None, ps can't tell: watch on, the deadline still bounds it
                 _view(view, "pump", stage)
                 late = late or time.time() >= deadline
                 if late or request_id in _cancelled or request_id in _owner_stopped:
