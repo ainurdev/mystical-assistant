@@ -1686,7 +1686,7 @@ export function App() {
     [state, sessionProject]);
 
   // The composer's addFiles, for the fresh screen's drop target (Terminal).
-  const composerFiles = useRef<((files: FileList) => void) | null>(null);
+  const composerFiles = useRef<((files: FileList | File[]) => void) | null>(null);
 
   // Footer git state for that tree. Same 10s cadence as the project badges;
   // clears on switch so the git popover never shows the last session's branch.
