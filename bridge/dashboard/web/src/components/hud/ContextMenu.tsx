@@ -22,7 +22,7 @@ export interface CtxItem {
 const TYPE_LABEL: Record<string, string> = {
   session: "SESSION", project: "PROJECT", issue: "ISSUE",
   branch: "BRANCH", terminal: "TERMINAL", surface: "DASHBOARD",
-  file: "FILE", folder: "FOLDER", turn: "MESSAGE",
+  file: "FILE", folder: "FOLDER", turn: "MESSAGE", editor: "EDITOR", task: "TASK",
 };
 
 // A short hint ("TOP", "⌘K") rides on the title's row; a prose one would eat
@@ -123,7 +123,7 @@ export function ContextMenu({ ctx, items, closing, onClose }: {
         style={{ ...PANEL, left: x, top: y, zIndex: 97, animation: closing ? "ctxOut .165s ease both" : "ctxIn .28s cubic-bezier(.16,.84,.3,1) both" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
           <span style={{ width: 6, height: 6, background: "var(--acc)", transform: "rotate(45deg)", flex: "none" }} />
-          <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>{TYPE_LABEL[ctx.type] || "DASHBOARD"}</span>
+          <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>{TYPE_LABEL[ctx.type] || ctx.type.toUpperCase()}</span>
           <span style={{ fontSize: "var(--t10)", color: "var(--tx)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ctx.label || "all surfaces"}</span>
         </div>
         <div className="mscroll" style={{ padding: "4px 0", maxHeight: vh - 56, overflowY: "auto" }}>
