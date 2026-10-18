@@ -260,3 +260,36 @@ def test_boot_does_not_repeat_your_own_note(repo, origin):
     assert ok, out
     whatsnew.boot().join(10)                              # last_head..HEAD now holds the note commit
     assert [r["kind"] for r in notices.feed()] == ["updated", "note"]
+
+
+# --- the final review's findings: what other installs would have seen ----------------
+
+def test_notes_in_keeps_a_dash_in_the_title_and_skips_empty_headings():
+    text = "## 2026-10-18 · Settings moved — see PLUGINS — Tester\n\nbody\n\n## \n\n## 2026-10-18 · Plain\n"
+    a, b = whatsnew.notes_in(text)
+    assert a["title"] == "Settings moved — see PLUGINS" and a["author"] == "Tester" and a["body"] == "body"
+    assert b["title"] == "Plain"
+
+
+def test_add_note_round_trips_a_heading_line_in_the_body(repo, origin):
+    _run(origin, "config", "receive.denyCurrentBranch", "ignore")
+    ok, out = whatsnew.add_note("Steps", "## Step 1\nDo X")
+    assert ok, out
+    with open(os.path.join(repo, "docs/notes.md")) as f:
+        text = f.read()
+    assert "\n ## Step 1\nDo X\n" in text                       # escaped in the file …
+    (e,) = whatsnew.notes_in(text)
+    assert e["title"] == "Steps" and e["body"] == "## Step 1\nDo X"   # … read back as typed, one note
+    assert notices.feed()[0]["body"] == "## Step 1\nDo X"        # the author sees what the others will
+
+
+def test_changelog_skips_merge_commits(repo, origin):
+    whatsnew.boot()
+    _run(origin, "checkout", "-q", "-b", "topic")
+    _commit(origin, "t\n", "feat: topic work")
+    _run(origin, "checkout", "-q", "main")
+    _run(origin, "merge", "-q", "--no-ff", "-m", "Merge branch 'topic'", "topic")
+    assert g.pull(repo)[0]
+    whatsnew.boot().join(10)
+    row = notices.feed()[0]
+    assert row["title"] == "1 commit pulled" and row["body"] == "feat: topic work" and row["meta"]["commits"] == 1

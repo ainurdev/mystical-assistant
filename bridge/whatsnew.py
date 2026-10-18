@@ -119,11 +119,11 @@ def _remember(seen: list) -> None:
 
 def _changelog(old: str, head: str) -> "dict | None":
     repo = selfupdate.REPO
-    rc, out, _ = git._run(repo, "rev-list", "--count", f"{old}..{head}")
+    rc, out, _ = git._run(repo, "rev-list", "--count", "--no-merges", f"{old}..{head}")
     n = int(out.strip() or 0) if rc == 0 else 0
     if n <= 0:
         return None
-    _rc, log, _ = git._run(repo, "log", "-80", "--format=%s", f"{old}..{head}")
+    _rc, log, _ = git._run(repo, "log", "-80", "--no-merges", "--format=%s", f"{old}..{head}")
     subjects = [s for s in log.splitlines() if s.strip()]
     d = (_summarise(subjects, n) if aifeatures.enabled("changelog") else None) or _fallback(subjects, n)
     d.update(commits=n, branch=git.current_branch(repo), url=_compare_url(old, head))
@@ -194,6 +194,9 @@ def add_note(title: str, body: str) -> "tuple[bool, str]":
     path = os.path.join(repo, NOTES_PATH)
     title = title.strip()
     body = body.replace("\r\n", "\n").strip()
+    # A line that starts "## " would read as the next note on every other install:
+    # the file gets it behind a space, which notes_in takes off again.
+    escaped = "\n".join(" " + l if l.startswith("## ") else l for l in body.split("\n"))
     author = git._run(repo, "config", "user.name")[1].strip()
     date = time.strftime("%Y-%m-%d")
     heading = f"{date} · {title}" + (f" — {author}" if author else "")
@@ -203,7 +206,7 @@ def add_note(title: str, body: str) -> "tuple[bool, str]":
             before = f.read()
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
-        f.write((before or NOTES_HEADER) + f"\n## {heading}\n" + (f"\n{body}\n" if body else ""))
+        f.write((before or NOTES_HEADER) + f"\n## {heading}\n" + (f"\n{escaped}\n" if escaped else ""))
     ok, out = git.commit_paths(repo, f"note: {title}", [NOTES_PATH])
     committed = ok
     if ok:
@@ -212,6 +215,7 @@ def add_note(title: str, body: str) -> "tuple[bool, str]":
         if committed:
             git._run(repo, "reset", "-q", "--soft", "HEAD~1")
         git._run(repo, "reset", "-q", "HEAD", "--", NOTES_PATH)
+        # shortcut: a hand edit that was already staged comes back unstaged, upgrade if anyone stages notes by hand
         if before is None:
             os.remove(path)
         else:
@@ -230,9 +234,10 @@ def add_note(title: str, body: str) -> "tuple[bool, str]":
 
 # --- the notes file ---------------------------------------------------------------------
 
-# `## 2026-10-18 · Title — Author`; the author is optional. Anything else under a
+# `## 2026-10-18 · Title — Author`; the author is optional and never holds an em
+# dash, so the LAST ` — ` splits and a title keeps its own. Anything else under a
 # `## ` is a hand-written heading: the title whole, no date, no author.
-_HEADING = re.compile(r"^(\d{4}-\d{2}-\d{2}) · (.+?)(?: — (.+))?$")
+_HEADING = re.compile(r"^(\d{4}-\d{2}-\d{2}) · (.+?)(?: — ([^—]+))?$")
 
 
 def notes_in(text: str) -> list:
@@ -243,12 +248,15 @@ def notes_in(text: str) -> list:
     for line in text.splitlines():
         if line.startswith("## "):
             heading = line[3:].strip()
+            if not heading:
+                continue   # a bare `## ` is nobody's note
+            # shortcut: two notes with the same heading on one day are one note, upgrade to an id line if it ever happens
             m = _HEADING.match(heading)
             out.append({"heading": heading, "date": m.group(1) if m else "",
                         "title": (m.group(2) if m else heading).strip(),
                         "author": (m.group(3) or "").strip() if m else "", "body": ""})
         elif out:
-            out[-1]["body"] += line + "\n"
+            out[-1]["body"] += (line[1:] if line.startswith(" ## ") else line) + "\n"
     for e in out:
         e["body"] = e["body"].strip()
     return out
