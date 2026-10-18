@@ -775,9 +775,11 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   // header), the rest once it has played out. Built whole in the click, a zone
   // of a thousand rows held it for most of a second, and the glide was over
   // before its first frame.
-  // shortcut: the rest lands in one go (~0.5s for 1300 rows in WebKit). A few
-  // rows a frame cost more in all, since each insertion restyles the whole
-  // stream (in Chrome, the TABS composer's :has() rules); revisit with those.
+  // shortcut: the rest lands in one go: ~0.5s for 1300 rows in WebKit, but a
+  // zone over 200 steps opens on its chapters (WorkChapter), so ~150 rows at
+  // most now. A few rows a frame cost more in all, since each insertion
+  // restyles the whole stream (in Chrome, the TABS composer's :has() rules);
+  // revisit with those.
   const [cap, setCap] = useState(Infinity);
   const anims = useRef<Animation[]>([]);
   const toggle = (b: HTMLButtonElement) => {
