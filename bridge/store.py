@@ -41,7 +41,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   model             TEXT,
   profile_id        TEXT,
   effort            TEXT,
-  agent_session_id  TEXT
+  agent_session_id  TEXT,
+  job               TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -222,6 +223,10 @@ def init() -> None:
         if "ref" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN ref TEXT")
         c.execute("CREATE INDEX IF NOT EXISTS ix_sessions_ref ON sessions(ref)")
+        # What a Rivendell job was about (bridge/rivendell_jobs.py): its kind and the
+        # facts Rivendell sent (PR, task, edition, links), as JSON. NULL = not one.
+        if "job" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN job TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'acp:<agent>').
         if "runtime" not in cols:
@@ -512,6 +517,38 @@ def set_ref(session_id: str, ref: str) -> None:
     """File a plugin run's session under the job that started it (see init)."""
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET ref=? WHERE id=?", (ref, session_id))
+
+
+def set_job(session_id: str, job: dict) -> None:
+    """File a Rivendell job's facts on its session (see init)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET job=? WHERE id=?", (json.dumps(job), session_id))
+
+
+def parse_job(raw: "str | None") -> dict | None:
+    """A Rivendell session's stored job (set_job), or None for any other session."""
+    return parse_goal(raw)    # the same rule as a goal's: a JSON object, else None
+
+
+def rivendell_without_job() -> list[dict]:
+    """The Rivendell sessions with no job filed yet (rivendell_jobs.backfill), each
+    with the prompt it started on and its last answer's text."""
+    with closing(_connect()) as c:
+        rows = c.execute(
+            "SELECT s.id, s.ref, s.title, s.title_source, "
+            "(SELECT t.prompt FROM turns t WHERE t.session_id=s.id ORDER BY t.seq LIMIT 1) AS prompt, "
+            "(SELECT e.payload FROM events e WHERE e.session_id=s.id AND e.type='result' "
+            " ORDER BY e.seq DESC LIMIT 1) AS result "
+            "FROM sessions s WHERE s.origin LIKE 'rivendell%' AND s.job IS NULL").fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["result"] = (json.loads(d["result"]) or {}).get("result") if d["result"] else None
+        except (ValueError, AttributeError):
+            d["result"] = None
+        out.append(d)
+    return out
 
 
 def sessions_for_refs(refs: list[str]) -> dict[str, str]:

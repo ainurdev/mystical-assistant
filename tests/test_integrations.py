@@ -218,7 +218,7 @@ ROUTES = {
                   ("GET", "/local/rivendell/tasks"), ("GET", "/local/rivendell/task"),
                   ("GET", "/local/rivendell/todolist"), ("POST", "/local/rivendell"),
                   ("POST", "/local/rivendell/queue"), ("POST", "/local/rivendell/implement"),
-                  ("POST", "/local/rivendell/test")],
+                  ("POST", "/local/rivendell/again"), ("POST", "/local/rivendell/test")],
     "trackers": [("GET", "/local/trackers"), ("GET", "/local/tracker/projects"),
                  ("GET", "/local/tracker/tasks"), ("GET", "/local/tracker/statuses"),
                  ("POST", "/local/trackers"), ("POST", "/local/tracker/update"),

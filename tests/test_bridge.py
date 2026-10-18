@@ -501,7 +501,7 @@ def test_session_brief_shape(monkeypatch):
     s = store.create_session(555, "p6")
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "created", "updated", "archived",
-                      "origin", "cwd", "branch", "fallback_policy", "goal",
+                      "origin", "cwd", "branch", "fallback_policy", "goal", "job",
                       "lifecycle", "disabled_tools",
                       "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
                       "worktree", "model", "permission_mode",

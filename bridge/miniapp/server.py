@@ -213,6 +213,8 @@ def _session_brief(s: dict) -> dict:
             **run,
             "slot": _run_slot(s, run),
             "goal": store.parse_goal(s.get("goal")),
+            # A Rivendell job's kind and facts (rivendell_jobs): its tag, plate and bar.
+            "job": store.parse_job(s.get("job")),
             "lifecycle": s.get("lifecycle"),
             "work_cwd": wt if wt_branch else None,
             "worktree": git.worktree_name(work),

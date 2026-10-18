@@ -204,7 +204,7 @@ import urllib.request
 import uuid
 from urllib.parse import quote, urlsplit
 
-from bridge import config, device_ask, device_share, device_side, integrations, notices, wsutil
+from bridge import config, device_ask, device_share, device_side, integrations, notices, rivendell_jobs, wsutil
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -338,6 +338,11 @@ class Worker:
         # call it. Memory only: a restart ends a one-turn run anyway, and a
         # queue-mode batch is found again through its queue items (_reattach).
         self._running: "dict[str, dict]" = {}
+        # Request id -> what its event or catch-up row said, and what its claim
+        # said (prompt left out), until _track files them on its session as the
+        # job (rivendell_jobs.facts). Memory only: catch-up says it all again.
+        self._job_src: "dict[str, dict]" = {}
+        self._job_claim: "dict[str, dict]" = {}
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
         self._progress_thread: threading.Thread | None = None
@@ -579,7 +584,9 @@ class Worker:
         must not run it. A refused claim (409) is someone else's request, so
         nothing is posted; any other error lands it FAILED."""
         try:
-            return self._fetch_prompt(kind_path, request_id)
+            resp = self._fetch_prompt(kind_path, request_id)
+            self._job_claim[request_id] = {k: v for k, v in resp.items() if k not in ("prompt", "steps")}
+            return resp
         except Exception as e:  # noqa: BLE001 — report, don't crash the worker
             if _refused(e):
                 print(f"rivendell[{self.name}]: {request_id} is not ours "
@@ -632,12 +639,30 @@ class Worker:
                 if delay is None:
                     print(f"rivendell[{self.name}]: result POST failed for "
                           f"{request_id}: {e} (transcript still in dashboard)")
+                    self._stamp(request_id, outcome="unreported")
                     self._note("rv_failed", request_id, f"Rivendell job {request_id[:8]}",
                                "Couldn't report the result to Rivendell; the transcript is in "
                                "the dashboard.")
                     return
                 time.sleep(delay)
+        self._stamp(request_id, outcome="completed" if ok else "failed",
+                    **({} if ok else {"error": (text or "")[:300]}))
         self._ping_done(request_id, ok, text, kind_path=kind_path)
+
+    def _stamp(self, request_id: str, **facts) -> None:
+        """Add to a job's session what became of its result (the job bar reads
+        `outcome`: completed, failed, or unreported when Rivendell never got it).
+        Best-effort, like the ping: a job that never had a session has nothing to
+        stamp."""
+        try:
+            from bridge import store                 # local import: heavy module
+            ref = f"{self.id}:{request_id}"
+            sid = store.sessions_for_refs([ref]).get(ref)
+            if sid:
+                job = store.parse_job((store.get_session(sid) or {}).get("job")) or {}
+                store.set_job(sid, {**job, **facts, "at": time.time()})
+        except Exception as e:  # noqa: BLE001
+            print(f"rivendell[{self.name}]: could not stamp {request_id}: {e}")
 
     def _progress_loop(self) -> None:
         """Rivendell's live feed for every run in flight here (_progress_tick on
@@ -875,7 +900,7 @@ class Worker:
             before = len(self._pending)
         try:
             for item in self._api("/plugin/review-requests"):
-                self._apply_policy(self._enqueue("review", item["id"], item.get("repositoryFullName"), offered=bool(item.get("offered"))))
+                self._apply_policy(self._enqueue("review", item["id"], item.get("repositoryFullName"), offered=bool(item.get("offered")), src=item))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: review catch-up failed: {e}")
         try:
@@ -883,44 +908,45 @@ class Worker:
                 if self._reattach(item):
                     continue
                 self._apply_policy(self._enqueue("impl", item["id"], item.get("repositoryFullName"),
-                                                 batch=_batch_of(item.get("batch")), offered=bool(item.get("offered"))))
+                                                 batch=_batch_of(item.get("batch")), offered=bool(item.get("offered")),
+                                                 src=item))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: implementation catch-up failed: {e}")
         try:
             for item in self._api("/plugin/todolist-requests"):
                 self._apply_policy(self._enqueue(
                     "todolist", item["id"], item.get("projectName"),
-                    step=_todolist_step(item.get("kind")), offered=bool(item.get("offered"))))
+                    step=_todolist_step(item.get("kind")), offered=bool(item.get("offered")), src=item))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: todolist catch-up failed: {e}")
         try:
             for item in self._api("/plugin/task-description-requests"):
-                self._apply_policy(self._enqueue("taskdesc", item["id"], item.get("taskName"), offered=bool(item.get("offered"))))
+                self._apply_policy(self._enqueue("taskdesc", item["id"], item.get("taskName"), offered=bool(item.get("offered")), src=item))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: task-description catch-up failed: {e}")
         try:
             for item in self._api("/plugin/changelog-requests"):
-                self._apply_policy(self._enqueue("changelog", item["id"], item.get("projectName"), offered=bool(item.get("offered"))))
+                self._apply_policy(self._enqueue("changelog", item["id"], item.get("projectName"), offered=bool(item.get("offered")), src=item))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: changelog catch-up failed: {e}")
         try:
             for item in self._api("/plugin/news-requests"):
-                self._apply_policy(self._enqueue("news", item["id"], item.get("userName"), offered=bool(item.get("offered"))))
+                self._apply_policy(self._enqueue("news", item["id"], item.get("userName"), offered=bool(item.get("offered")), src=item))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: news catch-up failed: {e}")
         try:
             for item in self._api("/plugin/deck-requests"):
-                self._apply_policy(self._enqueue("deck", item["id"], item.get("siteTitle"), offered=bool(item.get("offered"))))
+                self._apply_policy(self._enqueue("deck", item["id"], item.get("siteTitle"), offered=bool(item.get("offered")), src=item))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: deck catch-up failed: {e}")
         try:
             for item in self._api("/plugin/video-requests"):
-                self._apply_policy(self._enqueue("video", item["id"], item.get("fileName"), offered=bool(item.get("offered"))))
+                self._apply_policy(self._enqueue("video", item["id"], item.get("fileName"), offered=bool(item.get("offered")), src=item))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: video catch-up failed: {e}")
         try:
             for item in self._api("/plugin/meeting-notes-requests"):
-                self._apply_policy(self._enqueue("meeting-notes", item["id"], item.get("meetingName"), offered=bool(item.get("offered"))))
+                self._apply_policy(self._enqueue("meeting-notes", item["id"], item.get("meetingName"), offered=bool(item.get("offered")), src=item))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: meeting-notes catch-up failed: {e}")
         try:
@@ -936,7 +962,7 @@ class Worker:
 
     def _enqueue(self, kind: str, request_id: str, slug: "str | None" = None,
                  step: "str | None" = None, batch: "dict | None" = None,
-                 offered: bool = False) -> "str | None":
+                 offered: bool = False, src: "dict | None" = None) -> "str | None":
         """Hold a request PENDING for the operator, deduped per _seen. It adds
         the row and nothing more — running (or auto-accepting, or pinging
         Telegram, or acking) is _apply_policy's job, kept separate so the
@@ -947,7 +973,9 @@ class Worker:
         "todolist"); None when the sender did not say (an older rivendell-api).
         `batch` is the start-work batch this request belongs to (_batch_of),
         None for a task on its own. `offered` marks a teammate's job Rivendell
-        opened to every bridge: such a row only ever runs on an explicit accept."""
+        opened to every bridge: such a row only ever runs on an explicit accept.
+        `src` is the event or catch-up row itself, kept for the job's session
+        (rivendell_jobs.facts)."""
         key = f"{kind}:{request_id}"
         with self._seen_lock:
             dup = key in self._seen
@@ -963,6 +991,8 @@ class Worker:
             return None
         now = time.time()
         self.last_event_at = now
+        if src:
+            self._job_src[request_id] = src
         with self._q_lock:
             self._pending[key] = {
                 "key": key, "kind": kind, "request_id": request_id,
@@ -1116,7 +1146,7 @@ class Worker:
             pr = obj.get("pullRequest") or {}
             print(f"rivendell[{self.name}]: review requested for "
                   f"{pr.get('repositoryFullName', '?')}#{pr.get('number', '?')}")
-            return self._enqueue("review", obj["requestId"], pr.get("repositoryFullName"), offered=offered)
+            return self._enqueue("review", obj["requestId"], pr.get("repositoryFullName"), offered=offered, src=obj)
         if (obj.get("type") == "task-implementation-request"
                 and obj.get("requestId")):
             task = obj.get("task") or {}
@@ -1124,7 +1154,7 @@ class Worker:
             print(f"rivendell[{self.name}]: implementation requested in "
                   f"{repo.get('fullName', '?')}: {task.get('name', '?')}")
             return self._enqueue("impl", obj["requestId"], repo.get("fullName"),
-                                 batch=_batch_of(obj.get("batch")), offered=offered)
+                                 batch=_batch_of(obj.get("batch")), offered=offered, src=obj)
         if (obj.get("type") == "project-todolist-request"
                 and obj.get("requestId")):
             project = obj.get("project") or {}
@@ -1133,38 +1163,38 @@ class Worker:
                   f"{'task recommendations' if step == 'recommendations' else 'todolist'} "
                   f"requested for project {project.get('name', '?')}")
             return self._enqueue("todolist", obj["requestId"], project.get("name"),
-                                 step=step, offered=offered)
+                                 step=step, offered=offered, src=obj)
         if (obj.get("type") == "task-description-request"
                 and obj.get("requestId")):
             task = obj.get("task") or {}
             print(f"rivendell[{self.name}]: task description requested for "
                   f"{task.get('name', '?')}")
-            return self._enqueue("taskdesc", obj["requestId"], task.get("name"), offered=offered)
+            return self._enqueue("taskdesc", obj["requestId"], task.get("name"), offered=offered, src=obj)
         if obj.get("type") == "changelog-request" and obj.get("requestId"):
             project = obj.get("project") or {}
             print(f"rivendell[{self.name}]: changelog requested for project "
                   f"{project.get('name', '?')}")
-            return self._enqueue("changelog", obj["requestId"], project.get("name"), offered=offered)
+            return self._enqueue("changelog", obj["requestId"], project.get("name"), offered=offered, src=obj)
         if obj.get("type") == "news-request" and obj.get("requestId"):
             user = obj.get("user") or {}
             print(f"rivendell[{self.name}]: newspaper of {obj.get('editionDate', '?')} "
                   f"requested for {user.get('name', '?')}")
-            return self._enqueue("news", obj["requestId"], user.get("name"), offered=offered)
+            return self._enqueue("news", obj["requestId"], user.get("name"), offered=offered, src=obj)
         if obj.get("type") == "deck-request" and obj.get("requestId"):
             site = obj.get("site") or {}
             print(f"rivendell[{self.name}]: deck draft requested for "
                   f"{site.get('title', '?')}")
-            return self._enqueue("deck", obj["requestId"], site.get("title"), offered=offered)
+            return self._enqueue("deck", obj["requestId"], site.get("title"), offered=offered, src=obj)
         if obj.get("type") == "video-request" and obj.get("requestId"):
             file = obj.get("file") or {}
             print(f"rivendell[{self.name}]: video {str(obj.get('kind') or '').lower() or 'job'} "
                   f"requested for {file.get('name', '?')}")
-            return self._enqueue("video", obj["requestId"], file.get("name"), offered=offered)
+            return self._enqueue("video", obj["requestId"], file.get("name"), offered=offered, src=obj)
         if obj.get("type") == "meeting-notes-request" and obj.get("requestId"):
             meeting = obj.get("meeting") or {}
             print(f"rivendell[{self.name}]: meeting notes ({str(obj.get('source') or '?').lower()}) "
                   f"requested for {meeting.get('name', '?')}")
-            return self._enqueue("meeting-notes", obj["requestId"], meeting.get("name"), offered=offered)
+            return self._enqueue("meeting-notes", obj["requestId"], meeting.get("name"), offered=offered, src=obj)
         if obj.get("type") == "device-run-request" and obj.get("requestId"):
             print(f"rivendell[{self.name}]: {(obj.get('requester') or {}).get('name', '?')} asks this "
                   f"device for a run of {obj.get('repository', '?')}")
@@ -1879,6 +1909,12 @@ class Worker:
             self._untrack(request_id)
         print(f"rivendell[{self.name}]: {what} {request_id} "
               f"{'completed' if ok else 'failed'}")
+        if ok and kind == "news" and (name := rivendell_jobs.headline(text)):
+            try:
+                from bridge import store             # local import: heavy module
+                store.rename(job.store_session_id, name)
+            except Exception as e:  # noqa: BLE001 — a title never fails the result
+                print(f"rivendell[{self.name}]: could not title {request_id}: {e}")
         self._post_result(kind_path, request_id, ok, text)
 
     _KIND_PATH = {
@@ -2015,6 +2051,14 @@ class Worker:
         try:
             from bridge import store                 # local import: heavy module
             store.set_ref(session_id, f"{self.id}:{request_id}")
+            # What the job is about, for the dashboard (rivendell_jobs), and the
+            # session named after it. A device run is a teammate's, filed apart.
+            if kind != "device-run" and session_id:
+                job = rivendell_jobs.facts(kind, request_id, self.id, self._job_src.pop(request_id, None),
+                                           self._job_claim.pop(request_id, None))
+                store.set_job(session_id, job)
+                if (name := rivendell_jobs.title(job)):
+                    store.rename(session_id, name)
         except Exception as e:  # noqa: BLE001
             print(f"rivendell[{self.name}]: could not file {request_id} "
                   f"under {session_id}: {e}")
@@ -2803,6 +2847,40 @@ def implement(instance_id: str, task_id: str, note: str = "") -> dict:
     return r
 
 
+def again_call(job: dict) -> "tuple[str, dict] | None":
+    """The Rivendell route RUN AGAIN files a fresh job with, for a job of this
+    kind, or None when it can't from here. These are Rivendell's own "do it with
+    AI" routes. They take the bridge's token the way the dashboard takes its
+    cookie, and the new job comes back to this bridge like any other. Not for
+    a changelog (it needs the sources picked on the page), a video (needs the
+    client id) or meeting notes (need the meeting's text or recording). A paper
+    can only be reprinted on its own day. The dashboard asks the same question
+    before it shows the button (lib/jobs.ts canRunAgain)."""
+    kind = job.get("kind")
+    if kind == "review" and job.get("pr_id"):
+        return "/review-requests", {"pullRequestId": job["pr_id"]}
+    if kind == "taskdesc" and job.get("task_id"):
+        return "/task-description-requests", {"taskId": job["task_id"]}
+    if kind == "todolist" and job.get("project_id"):
+        return "/project-todolists", {"projectId": job["project_id"],
+                                      "kind": "RECOMMENDATIONS" if job.get("step") == "recommendations" else "TODOLIST"}
+    if kind == "news" and job.get("date") == time.strftime("%Y-%m-%d"):
+        return "/news/reprint", {}
+    return None
+
+
+def rerun(session_id: str) -> dict:
+    """RUN AGAIN on a Rivendell job's session: file the same job afresh in the
+    Rivendell it came from (again_call). Returns Rivendell's answer; raises
+    TasksError, as implement() does."""
+    from bridge import store                     # local import: heavy module
+    job = store.parse_job((store.get_session(session_id) or {}).get("job")) or {}
+    call = again_call(job)
+    if call is None:
+        raise TasksError("refused", "Rivendell can't run this job again from here")
+    return _ask(_worker(job.get("instance") or ""), *call)
+
+
 # Boot entry point (claude_telegram_bridge.py) and the settings save hook both
 # call this; reconfigure is the whole mechanism, so start is just its name at
 # boot.
@@ -2937,8 +3015,14 @@ def answer_reply(message_id: int, text: str) -> "str | bool | None":
 def start() -> None:
     """Boot: clear what a bridge stopped mid-run left of teammates' device runs,
     then dial every enabled instance. Only here: a settings save (reconfigure)
-    can come while a run is going."""
+    can come while a run is going. Sessions from before jobs were kept on them
+    get theirs first (rivendell_jobs.backfill), once each."""
     device_side.sweep()
+    try:
+        if (n := rivendell_jobs.backfill()):
+            print(f"rivendell: filed the job of {n} older session(s)")
+    except Exception as e:  # noqa: BLE001 — never keeps the workers from dialling
+        print(f"rivendell: backfill failed: {e}")
     reconfigure()
 
 

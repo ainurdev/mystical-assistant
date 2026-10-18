@@ -1561,6 +1561,17 @@ class Handler(BaseHTTPRequestHandler):
             except rivendell.TasksError as e:
                 return self._json({"error": str(e), "code": e.code},
                                   502 if e.code == "unreachable" else 400)
+        if path == "/local/rivendell/again":
+            # RUN AGAIN on a failed job's bar: the same job, filed afresh in the
+            # Rivendell it came from, which sends it back here (rivendell.rerun).
+            sid = (body.get("session_id") or "").strip()
+            if not sid:
+                return self._json({"error": "session_id is required"}, 400)
+            try:
+                return self._json({"ok": True, "request": rivendell.rerun(sid)})
+            except rivendell.TasksError as e:
+                return self._json({"error": str(e), "code": e.code},
+                                  502 if e.code == "unreachable" else 400)
         if path == "/local/rivendell/test":
             # TEST LINK (Settings ▸ PLUGINS, and the RIVENDELL tab's TOKEN
             # REJECTED banner): a round trip on the live socket, or a re-dial.
