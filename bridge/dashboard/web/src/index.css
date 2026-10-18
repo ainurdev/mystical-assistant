@@ -1884,8 +1884,8 @@ input {
 /* Open, the header pins at the top while you are inside the zone, so a click
    folds the work from anywhere. --isle-b (Terminal.tsx, on the scroller) is
    where it pins: level with the compact pill, which floats over the plate's
-   right end (its chips hide while pinned, data-isle), under VEIL's fade, or
-   under the full island bar. Pinned (WorkZone's measure), a hairline cuts it from the rows
+   right end (its chips hide while pinned, data-isle; VEIL's fade lifts, THE
+   FAMILIES), or under the full island bar. Pinned (WorkZone's measure), a hairline cuts it from the rows
    passing under, and a lid in the plate's colour covers the band above it so
    rows don't surface over the header on their way out. The lid spans the
    plate's padding box (--zpl/--zpr). */
@@ -2880,9 +2880,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam][data-hdr="veil"] [data-layout]::before {
   content: ""; position: absolute; left: 0; right: 0; top: 0; height: 74px; z-index: 11; pointer-events: none;
   background: linear-gradient(var(--canvas) 30%, color-mix(in oklab, var(--canvas) 70%, transparent) 62%, transparent);
-  transition: height .2s ease;
+  transition: height .2s ease, opacity .2s ease;
 }
 [data-fam][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
+/* a pinned WORK header (DOSSIER) sits in the fade's band and would be swallowed by it: while one is pinned the fade lifts */
+[data-fam][data-hdr="veil"] [data-layout]:has(.dwork[data-pinned])::before { opacity: 0; }
 [data-fam][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
 /* TUCK: frost folded to its last readout (.isle-keep); the rest unfolds on hover */
 [data-fam][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
