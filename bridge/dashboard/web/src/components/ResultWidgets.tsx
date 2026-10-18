@@ -26,7 +26,7 @@ import { ImageLightbox, MediaThumb, ZoomButton, type Shown } from "./ImageLightb
 //
 // Mirrors bridge/miniapp/web/src/components/ResultWidgets.tsx. Two differences:
 // Shot (this side can put a URL in an <img>, the Mini App's auth lives in a
-// header) and `gallery`, the turn-wide paging of the dashboard's WORK zone,
+// header) and `gallery`, the zone-wide paging of the dashboard's WORK zone,
 // which the Mini App has no zone to want. Keep the rest in sync.
 
 /** One field of a card. `send` is absent on a card the session has already moved
@@ -66,8 +66,8 @@ export function drawWidget(
   value: unknown,
   send?: (text: string) => void,
   onOpenFile?: (path: string, line?: number) => void,
-  /** The whole turn's pictures, when the caller has them: a shot opens into a
-   *  lightbox that pages through those rather than this widget's own. */
+  /** The pictures of the WORK zone it sits in, when the caller has them: a shot
+   *  opens into a lightbox that pages through those rather than this widget's own. */
   gallery?: Shown[],
 ): ReactNode {
   switch (type) {

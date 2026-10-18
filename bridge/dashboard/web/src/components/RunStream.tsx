@@ -704,7 +704,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   failed: number;
   /** Pictures tools came back with, in order. */
   pics: Pic[];
-  /** The whole turn's pictures, for the lightbox's paging. */
+  /** The zone's pictures, for the lightbox's paging. */
   gallery: Shown[];
   /** What the turn is doing right now, when this is its live zone. */
   state: "think" | "work" | null;
@@ -1912,20 +1912,25 @@ export const RunStream = memo(function RunStream({
     e.type === "tool" ? (e.id ? toolDone.get(e.id) : {}) : undefined;
 
   // Every picture this turn's work produced, in order, named for the lightbox's
-  // title (lib/toolwidget shotTitle): opened on any row it pages through the
-  // lot, since the shot you want next is rarely the same row's. A clip rides on
-  // its own row's entries only, so the chapter rail stays with its video. A
-  // tool's shot carries its path and clock, so paging to it sees it; a steer's
-  // carries no clock — you sent it.
+  // title (lib/toolwidget shotTitle), and each event's own (shotsOf): opened on
+  // any row it pages through the lot of its zone — in DOSSIER the WORK zone it
+  // sits in (galleryAt, below), elsewhere the turn — since the shot you want
+  // next is rarely the same row's. A clip rides on its own row's entries only,
+  // so the chapter rail stays with its video. A tool's shot carries its path
+  // and clock, so paging to it sees it; a steer's carries no clock — you sent it.
   // shortcut: a shot another row found 404'd still sits in the strip (each row
   // knows only its own); fine while the upload dir prunes a whole turn at once.
   const shots: Shown[] = [];
-  const addShots = (call: string, about: string, paths?: string[], clip?: Clip, at?: number) =>
-    paths?.forEach((p, i) => shots.push({ src: api.attachmentUrl(p), name: shotTitle(call, about, i, paths.length), clip, path: p, at }));
-  for (const e of events) {
-    if (e.type === "steer") addShots("STEER", e.text, e.images);
-    else if (e.type === "tool") { const d = doneOf(e); addShots(e.name, e.summary, d?.images, d?.clip, e.at); }
-  }
+  const shotsOf = new Map<number, Shown[]>();
+  const addShots = (ev: number, call: string, about: string, paths: string[] = [], clip?: Clip, at?: number) => {
+    const own = paths.map((p, i) => ({ src: api.attachmentUrl(p), name: shotTitle(call, about, i, paths.length), clip, path: p, at }));
+    shots.push(...own);
+    shotsOf.set(ev, own);
+  };
+  events.forEach((e, i) => {
+    if (e.type === "steer") addShots(i, "STEER", e.text, e.images);
+    else if (e.type === "tool") { const d = doneOf(e); addShots(i, e.name, e.summary, d?.images, d?.clip, e.at); }
+  });
 
   // Only the quiet steps fold away — a terminal, a diff, a delegated run, a
   // fetch or an MCP call each carry their own block and break the run instead.
@@ -2079,9 +2084,9 @@ export const RunStream = memo(function RunStream({
         // look (lib/toolwidget TOOL_STYLES).
         const extra = spec ? (
           <div className="zx ml-[var(--rail)]">
-            <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} gallery={shots} />
+            <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} gallery={galleryAt(i)} />
           </div>
-        ) : done?.images?.length ? <ToolImages paths={done.images} all={shots} at={event.at} /> : null;
+        ) : done?.images?.length ? <ToolImages paths={done.images} all={galleryAt(i)} at={event.at} /> : null;
         const withExtra = (node: ReactNode) =>
           extra ? <div key={i}>{node}{extra}</div> : node;
         // COMPACT reads as a chat, and there the pictures are the reply: the
@@ -2235,7 +2240,7 @@ export const RunStream = memo(function RunStream({
         return (
           <div key={i} id={ckId(turnId, steerKey(i))} className="dprompt scroll-mt-[94px]">
             <PromptBubble steer text={event.text} at={event.at}>
-              {event.images && event.images.length > 0 && <ToolImages paths={event.images} all={shots} />}
+              {event.images && event.images.length > 0 && <ToolImages paths={event.images} all={galleryAt(i)} />}
             </PromptBubble>
           </div>
         );
@@ -2412,7 +2417,7 @@ export const RunStream = memo(function RunStream({
         steps={steps}
         failed={failed}
         pics={pics}
-        gallery={shots}
+        gallery={galleryAt(zsegs[0].idx[0])}
         state={state}
         since={running ? openAt : last}
         hud={hud}
@@ -2429,6 +2434,15 @@ export const RunStream = memo(function RunStream({
   };
 
   const zones = dossier ? zonesOf(segs, isTop) : [];
+  // Each zone's pictures, for every event in it: a lightbox opened in a WORK
+  // zone (or on a steer) pages through those, never another zone's.
+  const zoneShots = new Map<number, Shown[]>();
+  for (const z of zones) {
+    const idx = z.segs.flatMap((s) => s.idx);
+    const own = idx.flatMap((i) => shotsOf.get(i) ?? []);
+    for (const i of idx) zoneShots.set(i, own);
+  }
+  const galleryAt = (i: number) => zoneShots.get(i) ?? shots;
   // Whether a WORK zone is there to carry the working indicator (the last zone,
   // while it runs); otherwise the indicator draws at the foot — before the
   // first event, or after a steer the model is still reading.
