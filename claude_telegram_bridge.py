@@ -43,7 +43,7 @@ import sys
 from bridge import (config, devserver, dream, envsettings, landing, limits,
                     native_activity, onboard, profiles, pubsub, recovery,
                     projectmarks, report, rivendell, runner, selfupdate, state, store,
-                    toolsets, tunnel)
+                    toolsets, tunnel, whatsnew)
 from bridge.dispatch import handle_callback, on_message
 from bridge.telegram import get_updates, tg
 
@@ -185,6 +185,7 @@ def main():
         if config.TOKEN:
             report.boot()              # Monday-morning weekly report (catches up a dark Monday)
         dream.boot()                   # nightly per-repo digest (catches up a night asleep)
+        whatsnew.boot()                # what the last update changed, and new notes, into the bell
         # Always reconcile: the enabled set lives per-instance in the instances
         # store (dashboard PLUGINS tab), not in the RIVENDELL_ENABLE env flag —
         # which now only seeds the migrated "production" instance. start()
