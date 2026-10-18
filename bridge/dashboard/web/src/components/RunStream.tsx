@@ -679,7 +679,8 @@ const ROW_IN: Keyframe[] = [
  *  and the figure on one line and the kind chips under it: the marks the rows
  *  inside wear on the spine, with a number; the old sentence is their tooltip.
  *  Pictures are the one result a header loses, so the shut plate shows every
- *  one of them in a SCREENS row, tap one to open it. While any is unseen
+ *  one of them in one row of equal tiles that scrolls sideways, tap one to
+ *  open it. While any is unseen
  *  (lib/seenshots) the plate lights — accent border, edge and node, a solid NEW
  *  badge — and that picture wears the accent and a NEW tag in the row; seen,
  *  it goes grey and stays. Being on screen in the row does not count as seen
@@ -902,10 +903,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
             {!open ? ind : null}
             {pics.length ? (
               <div className="dwork-row">
-                <div className="dwork-row-h">
-                  Screens {"·"} {pics.length}{fresh.length ? <b>{fresh.length} new</b> : null}<i aria-hidden /><em>tap one to open it</em>
-                </div>
-                <div className="dwork-row-thumbs">
+                <div className="dwork-row-thumbs" role="group" aria-label={picsWord}>
                   {pics.map((p) => {
                     const src = api.attachmentUrl(p.path);
                     return (
