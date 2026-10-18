@@ -2189,6 +2189,14 @@ input {
 [data-style="dossier"] .dwork-body .zrow.log { --m: var(--txl); }
 [data-style="dossier"] .dwork-body .log > .zo { white-space: pre-wrap; font-family: var(--mono); font-size: var(--t11); color: var(--txl); }
 [data-style="dossier"] .dwork-body .log[data-err] > .zo { color: var(--err); }
+/* a hook that ran clean, shut (LogRow data-quiet): its icon alone, the row no
+   wider than the node; the words stay for a screen reader */
+[data-style="dossier"] .dwork-body .zrow.log[data-quiet] { width: var(--zn); grid-template-columns: var(--zn); }
+[data-style="dossier"] .dwork-body .zrow.log[data-quiet] > :not(.ax-bar) {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+[data-style="dossier"] .dwork-body .zrow.log[data-quiet]:hover > .ax-bar > svg { color: var(--txm); }
 /* a pause before anything but a note: a dashed stretch of the spine, its
    length in the figure column */
 [data-style="dossier"] .dwork-body .zrow.gap { min-height: 16px; }

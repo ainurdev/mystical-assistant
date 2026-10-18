@@ -884,20 +884,27 @@ function ThoughtRow({ ms, pause, text, animate, onOpenFile, toolStyle }: {
 
 /** A hook's output, or a line the child wrote to stderr: the work either side of
  *  the conversation, which used to be visible only when a run died. Shut by
- *  default past the first line — most of it is one line and says everything. */
+ *  default past the first line — most of it is one line and says everything.
+ *  A hook that ran clean only injected context (ponytail's preamble, the same
+ *  every turn), so shut it is its icon on the spine alone, its first line the
+ *  tooltip and all of it a tap away; one that failed or blocked keeps its words. */
 function LogRow({ src, label, text, error, animate }:
   { src: string; label?: string; text: string; error?: boolean; animate: boolean }) {
   const [open, setOpen] = useState(false);
   const lines = text.split("\n");
   const more = lines.length - 1;
+  const quiet = src === "hook" && !error;
+  const opens = more > 0 || quiet;
   return (
     <button
       type="button"
-      onClick={() => more && setOpen((o) => !o)}
-      aria-expanded={more ? open : undefined}
+      onClick={() => opens && setOpen((o) => !o)}
+      aria-expanded={opens ? open : undefined}
       className="zrow log"
       data-err={error ? "" : undefined}
-      title={more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
+      data-quiet={quiet && !open ? "" : undefined}
+      title={quiet && !open ? `${label ? `${label} · ` : ""}${lines[0]}`
+        : more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <i className="ax-bar" aria-hidden><MarkIcon mark={error ? "fail" : src === "hook" ? "hook" : "log"} /></i>
