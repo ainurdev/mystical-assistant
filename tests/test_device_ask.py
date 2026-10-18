@@ -669,12 +669,17 @@ def test_the_device_list_reads_one_line_each(riv):
         device("a" * 16, "Erfan's MacBook Air", "BUSY", "27.0", {
             "requesterName": "Payam", "taskKey": "EFAS-12", "task": None, "repository": "ainurhq/efas",
             "since": since}),
-        device("b" * 16, "Payam's Mac mini", "OFF", "26.4")]}
+        device("b" * 16, "Payam's Mac mini", "OFF", "26.4"),
+        # Someone else's run on someone else's device: Rivendell leaves out who and what.
+        device("c" * 16, "Bilbo's Mac mini", "BUSY", "27.0", {
+            "requesterName": None, "taskKey": None, "task": None, "repository": None, "since": since})]}
     assert da.list_text() == "\n".join([
         f"{MAC} — free · macOS 27.0 · Xcode 27.0 · iOS 27.0, 26.4 · id: {DEVICE}",
         "Erfan's MacBook Air — busy · macOS 27.0 · Xcode 27.0 · iOS 27.0 · Payam's EFAS-12 run, 6 min in"
         f" · yours would go next · id: {'a' * 16}",
         f"Payam's Mac mini — off · macOS 26.4 · Xcode 26.4 · iOS 26.4 · id: {'b' * 16}",
+        "Bilbo's Mac mini — busy · macOS 27.0 · Xcode 27.0 · iOS 27.0 · on a run, 6 min in"
+        f" · yours would go next · id: {'c' * 16}",
         "2 on, 1 free."])
     assert riv.calls == [("t1", "rvd_bridge_token", "/plugin/devices", None)]
 

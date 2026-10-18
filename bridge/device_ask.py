@@ -274,8 +274,11 @@ def _describe(d: dict) -> str:
              tools.get("iosRuntimes") and "iOS " + ", ".join(map(str, tools["iosRuntimes"]))]
     running = d.get("running")
     if state == "busy" and isinstance(running, dict):
-        parts += [f"{running.get('requesterName')}'s {running.get('taskKey') or running.get('repository')} run, "
-                  f"{_minutes_since(running.get('since'))} min in", "yours would go next"]
+        # Rivendell names who and what only to the run's asker and the device's owner.
+        who, what = running.get("requesterName"), running.get("taskKey") or running.get("repository")
+        mins = _minutes_since(running.get("since"))
+        parts += [f"{who}'s {what} run, {mins} min in" if who and what else f"on a run, {mins} min in",
+                  "yours would go next"]
     return f"{d.get('name')} — " + " · ".join(p for p in parts if p)
 
 
