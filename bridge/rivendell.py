@@ -2052,8 +2052,10 @@ class Worker:
             from bridge import store                 # local import: heavy module
             store.set_ref(session_id, f"{self.id}:{request_id}")
             # What the job is about, for the dashboard (rivendell_jobs), and the
-            # session named after it. A device run is a teammate's, filed apart.
-            if kind != "device-run" and session_id:
+            # session named after it, once: a batch re-attached after a restart
+            # (_reattach) keeps its facts and any name you gave it since. A device
+            # run is a teammate's, filed apart.
+            if kind != "device-run" and session_id and not (store.get_session(session_id) or {}).get("job"):
                 job = rivendell_jobs.facts(kind, request_id, self.id, self._job_src.pop(request_id, None),
                                            self._job_claim.pop(request_id, None))
                 store.set_job(session_id, job)

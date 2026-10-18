@@ -282,3 +282,18 @@ def test_backfill_files_a_terminal_indexed_run_by_its_title_only():
     assert store.parse_job(store.get_session(run)["job"]) == {"kind": "news"}
     assert store.get_session(run)["title"] == "You are the editor of a small daily newspaper with exactly o"
     assert store.get_session(yours)["job"] is None
+
+
+def test_a_reattached_batch_keeps_its_job_and_your_name_for_it(monkeypatch):
+    """_reattach tracks a queue-mode batch again after a restart: its session
+    already has its job, so nothing is refiled and a rename of yours stands."""
+    w = _worker()
+    store.init()
+    sid = store.create_session(next(_chat), "/", origin="rivendell:t1")["id"]
+    store.set_job(sid, {"kind": "impl", "title": "Batch A", "outcome": "completed"})
+    store.rename(sid, "my batch")
+    w._job_src["b1"] = {"batch": {"name": "Something else"}}
+    w._track("b1", "impl", "acme/app", sid, label=None, link=None)
+    s = store.get_session(sid)
+    assert store.parse_job(s["job"]) == {"kind": "impl", "title": "Batch A", "outcome": "completed"}
+    assert s["title"] == "my batch"
