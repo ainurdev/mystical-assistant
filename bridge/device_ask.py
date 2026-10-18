@@ -83,6 +83,7 @@ GONE = "That Claude account isn't in this Mystical anymore. Pick one in Settings
 NOT_A_CHECKOUT = "This folder isn't a git checkout."
 NOT_GITHUB = "Its origin isn't a GitHub repository."
 UNSEEN = "Rivendell refused: you can't see that task or pull request, or it doesn't exist."
+_NO_GRANT = "Missing required permission."   # Rivendell's AccessService.assert: says nothing about why
 
 
 class DeviceAskError(Exception):
@@ -236,7 +237,7 @@ def _refusal(e: Exception, forbidden: str) -> str:
         msg = None
     if isinstance(msg, list):            # class-validator answers with a list
         msg = "; ".join(map(str, msg))
-    if e.code == 403 and not msg:
+    if e.code == 403 and (not msg or msg == _NO_GRANT):
         return forbidden
     return f"Rivendell refused: {msg or f'HTTP {e.code}'}"
 

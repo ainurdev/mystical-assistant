@@ -537,6 +537,14 @@ def test_a_refused_task_is_never_said_to_exist(riv, snap, chat):
     assert riv.puts == [] and da._runs() == {}
 
 
+def test_a_refused_task_reads_the_same_when_rivendell_only_says_permission(riv, snap, chat):
+    """Rivendell's access check answers "Missing required permission.": our sentence says more."""
+    body = json.dumps({"message": "Missing required permission.", "error": "Forbidden", "statusCode": 403}).encode()
+    riv.errors[FILE] = urllib.error.HTTPError("http://api" + FILE, 403, "Forbidden", None, io.BytesIO(body))
+    got = da.start(chat.csid, "Test it", "NR-404", None, None, None)
+    assert got["sentence"] == "Rivendell refused: you can't see that task or pull request, or it doesn't exist."
+
+
 def test_a_403_that_says_why_is_passed_on_in_rivendells_words(riv, snap, chat):
     """Devices are shared per device by their owner: Rivendell names the one you may not use."""
     why = "Mahziyar hasn't shared Mahziyar\u2019s MacBook Pro with you."
