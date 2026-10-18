@@ -1,12 +1,16 @@
 import type { CtxItem } from "../components/hud/ContextMenu";
 import { confirmLeave } from "./leaveGuard";
 import { selectionMd } from "./selmd";
+import { isNativeApp } from "./mac";
 
 /* The browser's own context-menu entries, rebuilt for the custom HUD menu —
    preventDefault() takes the native one away, so anything it offered has to be
    re-implemented here. `top` is target-specific (selection / link / image) and
    goes above the app items; `page` is the browser-level block below them.
-   ponytail: view-source and inspect aren't reachable from JS, so they're gone. */
+   ponytail: view-source and inspect aren't reachable from JS, so they're gone.
+   Inside Mystical.app / Mystical.exe there is no tab strip and no history: the
+   shell sends every new window to the system browser (URLPolicy), so "new tab"
+   rows say where they really go and Back / Forward are left out. */
 
 const copy = (t: string) => { try { void navigator.clipboard?.writeText(t); } catch { /* ignore */ } };
 const open = (url: string) => window.open(url, "_blank", "noopener,noreferrer");
@@ -41,6 +45,7 @@ function selectAll() {
 
 export function nativeCtxItems(e: MouseEvent): { top: CtxItem[]; page: CtxItem[] } {
   const el = e.target as HTMLElement;
+  const native = isNativeApp();
   // Read the selection now — clicking a menu row drops it.
   const sel = (window.getSelection()?.toString() ?? "").trim();
   const selMd = selectionMd() ?? sel;
@@ -54,12 +59,12 @@ export function nativeCtxItems(e: MouseEvent): { top: CtxItem[]; page: CtxItem[]
     top.push({ icon: "⌕", label: `Search web for “${q}”`, onClick: () => open(`https://www.google.com/search?q=${encodeURIComponent(sel)}`) });
   }
   if (link) {
-    top.push({ icon: "↗", label: "Open link in new tab", onClick: () => open(link.href) });
+    top.push({ icon: "↗", label: native ? "Open link in browser" : "Open link in new tab", onClick: () => open(link.href) });
     top.push({ icon: "⧉", label: "Copy link address", onClick: () => copy(link.href) });
   }
   if (img) {
     const src = img.currentSrc || img.src;
-    top.push({ icon: "↗", label: "Open image in new tab", onClick: () => open(src) });
+    top.push({ icon: "↗", label: native ? "Open image in browser" : "Open image in new tab", onClick: () => open(src) });
     top.push({ icon: "⧉", label: "Copy image", onClick: () => void copyImage(img) });
     top.push({ icon: "⧉", label: "Copy image address", onClick: () => copy(src) });
     top.push({ icon: "↓", label: "Save image as…", onClick: () => saveAs(src) });
@@ -67,8 +72,10 @@ export function nativeCtxItems(e: MouseEvent): { top: CtxItem[]; page: CtxItem[]
 
   const page: CtxItem[] = [
     { icon: "☰", label: "Select all", hint: "⌘A", onClick: selectAll },
-    { icon: "←", label: "Back", onClick: () => history.back() },
-    { icon: "→", label: "Forward", onClick: () => history.forward() },
+    ...(native ? [] : [
+      { icon: "←", label: "Back", onClick: () => history.back() },
+      { icon: "→", label: "Forward", onClick: () => history.forward() },
+    ]),
     { icon: "↻", label: "Reload", hint: "⌘R", onClick: () => void confirmLeave().then((ok) => ok && location.reload()) },
     { icon: "⎙", label: "Print…", hint: "⌘P", onClick: () => window.print() },
   ];
