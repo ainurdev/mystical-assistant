@@ -8,15 +8,19 @@ draws and drives (bridge/dashboard/server.py).
     picked. Real JSON booleans only, since bool("false") is True, and only one
     of this Mystical's account slots, or null.
   - POST /local/rivendell/devices/setup: Set up or Remove, then the device is
-    looked at afresh and each link whose offer changed redials.
+    looked at afresh and each link whose offer changed redials. Neither while a
+    teammate's run is going on this device.
+  - POST /local/device-runs/stop: the owner's STOP RUN on the run going here (its
+    read-only session, which the device rows name as running_session).
+  - POST /local/sessions/<sid>/retitle refuses a teammate's device run.
 
 Set up and Remove are real in production: a macOS admin-password prompt, then a
 root script that makes or deletes a macOS user. Nothing here may reach them or
 any command: an autouse fixture makes device_setup.run, every subprocess
-device_setup and device_share could start, and Rivendell refuse, and one reached
-fails the test. A setup test installs a recording fake of its own. This
-Mystical's Claude accounts are slots 1 and 2 (accounts.list_accounts, faked: the
-real one reads the logins on this machine).
+device_setup and device_share could start, device_side's STOP (sudo) and
+Rivendell refuse, and one reached fails the test. A setup test installs a
+recording fake of its own. This Mystical's Claude accounts are slots 1 and 2
+(accounts.list_accounts, faked: the real one reads the logins on this machine).
 Driven socket-free through Handler.__new__ (test_rivendell_tasks_endpoint.py).
 Run: python -m pytest tests/test_dashboard_device_routes.py -v
 """
@@ -26,16 +30,21 @@ import io
 import json
 import os
 import subprocess
+import threading
 import types
 import urllib.error
 
 import pytest
 
-from bridge import accounts, config, device_ask, device_setup, device_share, rivendell, rivendell_instances
+from bridge import (accounts, config, device_ask, device_setup, device_share, device_side, device_view,
+                    rivendell, rivendell_instances, store, titler)
 from bridge.dashboard import server as dash
 
 CHECKS = [{"key": "user", "label": "USER MYSTICALRUNS", "ok": True}]
 LAST = {"at": 1760607600.0, "by": "Mahdi", "task": "NR-29"}
+RID = "5b1d2c3e-0000-4000-8000-000000000001"
+RUN_GOING = "A teammate's run is going on this device. Set up when it ends."
+READ_ONLY = "This is a teammate's device run on this device. It's read only."
 
 
 @pytest.fixture(autouse=True)
@@ -63,9 +72,12 @@ def refusing(monkeypatch, tmp_path):
         monkeypatch.setattr(f, "__defaults__", (cmd,))
     monkeypatch.setattr(device_share.setup_state, "__defaults__", (os.path.exists, cmd))
     monkeypatch.setattr(device_ask, "list_devices", refuse("Rivendell"))
+    # stop_by_owner took subprocess.run as a default when it was imported: replaced whole.
+    monkeypatch.setattr(device_side, "stop_by_owner", refuse("device_side.stop_by_owner"))
     monkeypatch.setattr(rivendell, "_workers", {})
     monkeypatch.setattr(rivendell, "reconfigure", lambda: None)
     monkeypatch.setattr(rivendell, "_device_run", None)         # no teammate's run going here
+    monkeypatch.setattr(device_view, "_running", {})            # nor a read-only session of one
     monkeypatch.setattr(config, "BRIDGE_DB", str(tmp_path / "bridge.db"))
     monkeypatch.setattr(dash, "_shared_on", {})
     monkeypatch.setattr(config, "RIVENDELL_API_URL", "")
@@ -97,6 +109,15 @@ def device(monkeypatch):
     monkeypatch.setattr(device_ask, "list_devices",
                         lambda inst: box["asked"].append(inst["id"]) or {"devices": [], "on": 3, "free": 2})
     return box
+
+
+@pytest.fixture
+def run(monkeypatch, tmp_path):
+    """A teammate's run going on this device: its read-only session, filed under
+    device-run:<request id> by device_view.Run.open, in this test's own store."""
+    monkeypatch.setattr(config, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    store.init()
+    return device_view.Run.open("prod", RID, {})
 
 
 def _inst(**kw):
@@ -181,6 +202,15 @@ def test_a_run_going_on_this_device_says_so_in_every_block(monkeypatch, device):
     _inst(name="staging")
     monkeypatch.setattr(rivendell, "_device_run", "5b1d2c3e-0000-4000-8000-000000000001")
     assert [row["running"] for row in dget()["obj"]["instances"]] == [True, True]
+
+
+def test_a_run_going_on_this_device_names_its_read_only_session_in_every_block(device, run):
+    """The panel's WATCH and STOP RUN act on this session; null once the run is over."""
+    _inst()
+    _inst(name="staging")
+    assert [row["running_session"] for row in dget()["obj"]["instances"]] == [run.sid, run.sid]
+    run.close("done", {})
+    assert [row["running_session"] for row in dget()["obj"]["instances"]] == [None, None]
 
 
 def test_shared_devices_on_now_is_cached_30_s_and_null_when_rivendell_cant_say(monkeypatch, device):
@@ -317,6 +347,22 @@ def test_one_setup_at_a_time(device):
     assert r["code"] == 409
 
 
+@pytest.mark.parametrize("action", ["setup", "remove"])
+def test_set_up_and_remove_wait_while_a_teammates_run_goes_on_here(monkeypatch, device, action):
+    """Set up proves the pf wall round the run's user again and may take it down
+    for a moment; Remove deletes that user. Refused before anything runs or the
+    lock is taken; the same call goes through once the run is over."""
+    _inst()
+    done, order = _record_setup(monkeypatch, {"ok": True, "checks": [], "error": None})
+    monkeypatch.setattr(rivendell, "_device_run", RID)
+    r = dpost("/local/rivendell/devices/setup", {"action": action})
+    assert r["code"] == 409 and r["obj"] == {"error": RUN_GOING}
+    assert done == [] and order == [] and not dash._setup_lock.locked()
+    monkeypatch.setattr(rivendell, "_device_run", None)
+    r = dpost("/local/rivendell/devices/setup", {"action": action})
+    assert r["code"] == 200 and [d[0] for d in done] == [action] and order == ["run", "refresh", "redial"]
+
+
 @pytest.mark.parametrize("share, code", [("false", 400), (0, 400), ("", 400), (False, 200), (None, 200)])
 def test_the_instance_form_takes_only_a_real_boolean_for_share_device_too(share, code):
     a = _inst()
@@ -324,6 +370,84 @@ def test_the_instance_form_takes_only_a_real_boolean_for_share_device_too(share,
                                    "api_url": "https://api.rivendell.ainurhq.cloud", "share_device": share})
     assert r["code"] == code, r["obj"]
     assert _stored()["share_device"] is (share is not False), "None keeps it; a refused one changes nothing"
+
+
+# --- POST: STOP RUN ----------------------------------------------------------------------------
+
+def _record_stops(monkeypatch):
+    """device_side.stop_by_owner recording the request ids it is asked to stop;
+    `began` is set when one is."""
+    stops, began = [], threading.Event()
+
+    def stop_by_owner(request_id):
+        stops.append(request_id)
+        began.set()
+    monkeypatch.setattr(device_side, "stop_by_owner", stop_by_owner)
+    return stops, began
+
+
+def test_stop_stops_the_run_going_here_and_answers_before_the_stop_is_done(monkeypatch, run):
+    """The helper's stop can take up to 60 s (stop_by_owner): it runs on a thread
+    of its own, and the answer doesn't wait for it."""
+    began, let_go, ended, seen = threading.Event(), threading.Event(), threading.Event(), []
+
+    def stop_by_owner(request_id):
+        seen.append((request_id, threading.get_ident()))
+        began.set()
+        let_go.wait(10)
+        ended.set()
+    monkeypatch.setattr(device_side, "stop_by_owner", stop_by_owner)
+    r = dpost("/local/device-runs/stop", {"session": run.sid})
+    assert r["code"] == 200 and r["obj"] == {"ok": True}
+    assert began.wait(5) and not ended.is_set(), "the answer waited for the stop"
+    let_go.set()
+    assert ended.wait(5)
+    assert [rid for rid, _ in seen] == [RID], "the request id is the one in the session's ref"
+    assert seen[0][1] != threading.get_ident()
+
+
+def test_stopping_what_isnt_the_run_going_here_is_a_404_and_stops_nothing(monkeypatch, run):
+    stops, began = _record_stops(monkeypatch)
+    over = device_view.Run.open("prod", "7c0e1a2b-0000-4000-8000-000000000002", {})
+    over.close("done", {})                                     # a finished run's session is still a device run's
+    ordinary = store.create_session(config.DASH_CHAT_ID, "/")["id"]
+    for body in ({"session": over.sid}, {"session": ordinary}, {"session": "nope"}, {"session": ""},
+                 {"session": None}, {"session": 7}, {"session": [run.sid]}, {"session": {"id": run.sid}}, {}):
+        r = dpost("/local/device-runs/stop", body)
+        assert r["code"] == 404 and r["obj"] == {"error": "not a device run going on this device"}, body
+    assert not began.wait(0.05) and stops == []
+
+
+def test_with_no_run_going_a_stop_naming_no_session_is_still_a_404(monkeypatch):
+    """No run and no session are both None: they mustn't count as a match."""
+    stops, began = _record_stops(monkeypatch)
+    assert device_view.running_session() is None
+    for body in ({}, {"session": None}, {"session": ""}):
+        r = dpost("/local/device-runs/stop", body)
+        assert r["code"] == 404 and r["obj"] == {"error": "not a device run going on this device"}, body
+    assert not began.wait(0.05) and stops == []
+
+
+# --- POST: Retitle of a session ----------------------------------------------------------------
+
+def test_retitle_refuses_a_teammates_device_run_and_asks_no_model(monkeypatch, run):
+    """Titling sends the session's prompt and reply to a model on this device's
+    Claude account: the teammate's words don't go there."""
+    asked = []
+    monkeypatch.setattr(titler, "regenerate", lambda chat, s: asked.append(s["id"]) or True)
+    for body in ({}, {"title": "Mine"}):
+        r = dpost(f"/local/sessions/{run.sid}/retitle", body)
+        assert r["code"] == 409 and r["obj"] == {"error": READ_ONLY}
+    assert asked == [] and store.get_session(run.sid)["title"] != "Mine"
+
+
+def test_retitle_of_an_ordinary_session_still_goes_to_the_model(monkeypatch):
+    store.init()
+    sid = store.create_session(config.DASH_CHAT_ID, "/")["id"]
+    asked = []
+    monkeypatch.setattr(titler, "regenerate", lambda chat, s: asked.append(s["id"]) or True)
+    r = dpost(f"/local/sessions/{sid}/retitle", {})
+    assert r["code"] == 200 and r["obj"] == {"ok": True, "generating": True} and asked == [sid]
 
 
 # --- the token gate -----------------------------------------------------------------------------
@@ -343,6 +467,7 @@ def _post_through_the_gate(path, body, token=None):
 @pytest.mark.parametrize("path, body", [
     ("/local/rivendell/devices/setup", {"action": "setup"}),
     ("/local/rivendell/devices", {"id": "x", "share_device": False}),
+    ("/local/device-runs/stop", {"session": "x"}),
 ])
 def test_a_post_without_the_dash_token_is_refused(path, body):
     """Refused at the gate every POST passes, before any route runs: the
@@ -356,3 +481,9 @@ def test_with_the_dash_token_the_setup_post_gets_through(monkeypatch, device):
     done, _ = _record_setup(monkeypatch, {"ok": True, "checks": [], "error": None})
     r = _post_through_the_gate("/local/rivendell/devices/setup", {"action": "setup"}, config.DASH_TOKEN)
     assert r["code"] == 200 and [d[0] for d in done] == ["setup"]
+
+
+def test_with_the_dash_token_the_stop_post_gets_through(monkeypatch, run):
+    stops, began = _record_stops(monkeypatch)
+    r = _post_through_the_gate("/local/device-runs/stop", {"session": run.sid}, config.DASH_TOKEN)
+    assert r["code"] == 200 and began.wait(5) and stops == [RID]

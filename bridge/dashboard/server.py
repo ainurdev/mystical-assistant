@@ -33,7 +33,8 @@ from urllib.parse import parse_qs, quote, urlparse
 import re
 
 from bridge import (acp_agents, agents, attribution, browser, config,
-                    device_ask, device_setup, device_share, devserver, fmt, git,
+                    device_ask, device_setup, device_share, device_side, device_view,
+                    devserver, fmt, git,
                     github, graphmap, httpgz, integrations,
                     models, native, notices, preview_detect, profiles, project_config, projectmarks,
                     prstatus,
@@ -218,10 +219,12 @@ def _device_rows() -> list:
     stands, the Claude account the runs you send use (its slot, None for the
     default login), the shared devices on now (asked of Rivendell only off
     macOS, the one view that shows them), whether a teammate's run is running
-    here now or which one ran last, and whether a Set up or Remove is going."""
+    here now (and its read-only session, to watch or stop) or which one ran
+    last, and whether a Set up or Remove is going."""
     live = rivendell.status()
     last = device_share.last_run()
     running = rivendell._device_run is not None      # one at a time on the device, whichever instance sent it
+    session = device_view.running_session()          # None until the run's view is made
     setting = _setup_lock.locked()
     rows = []
     for inst in rivendell_instances.raw_instances():
@@ -235,7 +238,7 @@ def _device_rows() -> list:
             "device_account": inst.get("device_account"),
             "share": share,
             "shared_on": _shared_on_now(inst) if share["state"] == "NOT_MAC" else None,
-            "running": running, "last_run": last, "setup_running": setting,
+            "running": running, "running_session": session, "last_run": last, "setup_running": setting,
         })
     return sorted(rows, key=lambda r: r["name"].lower())
 
@@ -1250,6 +1253,9 @@ class Handler(BaseHTTPRequestHandler):
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
+            if device_view.is_device_run(s["origin"]):
+                # Titling sends the prompt and reply to a model on this account.
+                return self._json({"error": device_view.REFUSAL}, 409)
             title = (body.get("title") or "").strip()
             if title:
                 store.rename(sid, title[:80])      # a rename sticks: title_source=manual
@@ -1591,6 +1597,12 @@ class Handler(BaseHTTPRequestHandler):
             action = body.get("action")
             if action not in ("setup", "remove"):
                 return self._json({"error": "action must be setup or remove"}, 400)
+            # Set up proves the pf wall round the run's user again and may take it down for a
+            # moment; Remove deletes that user: neither under a teammate's run.
+            # shortcut: the look and the lock aren't one step, so a run claimed in between still
+            # meets the Set up; make the run and Set up take one lock if that ever shows.
+            if rivendell._device_run is not None:
+                return self._json({"error": "A teammate's run is going on this device. Set up when it ends."}, 409)
             if device_share.device_facts() is None:
                 return self._json({"error": "Set up and Remove are for macOS only."}, 400)
             if not _setup_lock.acquire(blocking=False):
@@ -1604,6 +1616,16 @@ class Handler(BaseHTTPRequestHandler):
                 finally:
                     _setup_lock.release()      # the panel's WAITING… lasts until the device was looked at again
             return self._json({"ok": bool(r.get("ok")), "error": r.get("error"), "instances": _device_rows()})
+        if path == "/local/device-runs/stop":
+            # STOP RUN, from the device's owner, on the run going here (its read-only session).
+            # The helper's stop can take up to 60 s, so it goes on a thread and the answer doesn't wait.
+            sid = body.get("session")
+            going = device_view.running_session()
+            if going is None or sid != going:
+                return self._json({"error": "not a device run going on this device"}, 404)
+            rid = store.get_session(sid)["ref"].removeprefix(device_view.ORIGIN + ":")
+            threading.Thread(target=device_side.stop_by_owner, args=(rid,), daemon=True).start()
+            return self._json({"ok": True})
         if path in ("/local/device-runs/list", "/local/device-runs/start", "/local/device-runs/cancel"):
             # The verify MCP's ListDevices, RunOnDevice and CancelDeviceRun: the
             # Rivendell token and the session's checkout are the bridge's
