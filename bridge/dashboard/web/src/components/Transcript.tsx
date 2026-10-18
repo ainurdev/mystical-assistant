@@ -364,8 +364,9 @@ export function Transcript({
   // by the browser's own scroll anchoring — in-flow content inside a row is its
   // job, and doing it again here threw the view up by twice the fold, to the
   // very top of a short session. Measured on the live dashboard: a 200px shrink
-  // above the edge moved the view 400px. Rows moved by transform don't trigger
-  // the browser's anchoring, so the fully-above case is ours alone.
+  // above the edge moved the view 400px. A row re-placed by `top` doesn't
+  // trigger the browser's anchoring (an ancestor's `top` changing suppresses
+  // it; measured in Chrome and WebKit), so the fully-above case is ours alone.
   //
   // And only against a scroll offset the virtualizer actually has: it learns
   // the position from scroll events, which land a frame after App sets
@@ -497,10 +498,12 @@ export function Transcript({
     );
   }
 
-  // Virtualized: only the rows near the viewport exist. Row wrappers are
-  // translateY'd, which is why the lightbox portals to body, and pb-3 lives on
-  // the wrapper (absolute rows can't share a flex gap) so measureElement counts
-  // the spacing a row owns.
+  // Virtualized: only the rows near the viewport exist. A row is placed by
+  // `top`, never translateY: browsers resolve position: sticky without
+  // transforms, so inside a row translated by its start an open WORK zone's
+  // header (index.css) pinned that many px early and rode its zone's foot. pb-3
+  // lives on the wrapper (absolute rows can't share a flex gap) so
+  // measureElement counts the spacing a row owns.
   return (
     <>
       {olderButton}
@@ -514,8 +517,7 @@ export function Transcript({
               data-key={keyOf(row)}
               ref={virtualizer.measureElement}
               className="pb-3"
-              style={{ position: "absolute", top: 0, left: 0, width: "100%",
-                       transform: `translateY(${vi.start}px)` }}
+              style={{ position: "absolute", top: vi.start, left: 0, width: "100%" }}
             >
               {blockFor(row, vi.index)}
             </div>

@@ -1895,7 +1895,7 @@ input {
 [data-style="dossier"] .dwork[data-open] > .dwork-head {
   position: sticky; top: var(--isle-b, 0px); z-index: 3; background: inherit;
 }
-[data-style="dossier"][data-isle="pill"] .dwork[data-pinned] .dwork-right { visibility: hidden; }
+[data-style="dossier"][data-isle="pill"] .dwork:is([data-pinned], [data-landed]) .dwork-right { visibility: hidden; }
 /* Open, the header is one line — its chips hide, the rows below wear them —
    with a hairline under it across the plate, so what follows reads as the
    list under a title; the node drops its ring, the spine starts at row one. */
@@ -2048,6 +2048,18 @@ input {
   outline: 1.5px solid var(--acc); outline-offset: 1px;
   box-shadow: 0 0 10px color-mix(in oklab, var(--acc) 45%, transparent);
 }
+/* THE FOLD: everything under the header, in two parts — what a shut zone
+   shows (the hosted indicator, SCREENS) and what an open one does (the rows).
+   A toggle glides it (WorkZone): its height runs from the box it had to the
+   box it gets, clipped, while the part you left keeps its place over the one
+   arriving, out of the flow, fading. Each part keeps its margins inside, so
+   lifting it moves nothing. The scroller's anchoring sits the glide out: an
+   anchor picked below the fold would pull the page along with its edge. */
+[data-style="dossier"] .dwork-part { display: flow-root; }
+[data-style="dossier"] .dwork-part[hidden] { display: none; }
+[data-style="dossier"] .dwork-fold[data-moving] { position: relative; overflow: clip; }
+.mscroll:has(.dwork-fold[data-moving]) { overflow-anchor: none; }
+[data-style="dossier"] .dwork-part[data-leaving] { position: absolute; left: 0; right: 0; pointer-events: none; }
 [data-style="dossier"] .dwork-body { position: relative; display: flex; flex-direction: column; }
 [data-style="dossier"] .dwork-body > * { margin: 0 !important; }
 /* the spine, from the first row's node down past the last row */
@@ -2189,6 +2201,14 @@ input {
 [data-style="dossier"] .dwork-body .zrow.log { --m: var(--txl); }
 [data-style="dossier"] .dwork-body .log > .zo { white-space: pre-wrap; font-family: var(--mono); font-size: var(--t11); color: var(--txl); }
 [data-style="dossier"] .dwork-body .log[data-err] > .zo { color: var(--err); }
+/* a hook that ran clean, shut (LogRow data-quiet): its icon alone, the row no
+   wider than the node; the words stay for a screen reader */
+[data-style="dossier"] .dwork-body .zrow.log[data-quiet] { width: var(--zn); grid-template-columns: var(--zn); }
+[data-style="dossier"] .dwork-body .zrow.log[data-quiet] > :not(.ax-bar) {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+[data-style="dossier"] .dwork-body .zrow.log[data-quiet]:hover > .ax-bar > svg { color: var(--txm); }
 /* a pause before anything but a note: a dashed stretch of the spine, its
    length in the figure column */
 [data-style="dossier"] .dwork-body .zrow.gap { min-height: 16px; }
@@ -2990,8 +3010,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   transition: height .2s ease, opacity .2s ease;
 }
 [data-fam][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
-/* a pinned WORK header (DOSSIER) sits in the fade's band and would be swallowed by it: while one is pinned the fade lifts */
-[data-fam][data-hdr="veil"] [data-layout]:has(.dwork[data-pinned])::before { opacity: 0; }
+/* a pinned WORK header (DOSSIER) sits in the fade's band and would be swallowed by it: while one is pinned the fade lifts,
+   and stays lifted for a zone shut from there until you scroll (data-landed) */
+[data-fam][data-hdr="veil"] [data-layout]:has(.dwork:is([data-pinned], [data-landed]))::before { opacity: 0; }
 [data-fam][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
 /* TUCK: frost folded to its last readout (.isle-keep); the rest unfolds on hover */
 [data-fam][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
