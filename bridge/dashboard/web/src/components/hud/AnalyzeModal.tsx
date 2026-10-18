@@ -20,6 +20,7 @@ import { useAiFeatures } from "../../lib/ai";
 import { useIntegrations } from "../../lib/integrations";
 import { parseDiff, type DiffRow } from "../../lib/diff";
 import { branchForIssue, branchForTask, keyFromBranch } from "../../lib/issuebranch";
+import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { useStickyFlag } from "../../lib/prefs";
 import {
   countByPath, loadNotes, noteRange, notesKey, notesMessage, reanchor, saveNotes,
@@ -980,6 +981,8 @@ function TasksTab({ project, data, sessions, activeSession, onFeed, onShip, onRe
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
   const [open, setOpen] = useState<string | null>(null);
+  // Right-click on a task row: the detail view's actions, for that task.
+  const [ctx, setCtx] = useState<{ x: number; y: number; key: string } | null>(null);
   const [mine, setMine] = useState(false);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [fed, setFed] = useState<Set<string>>(new Set());
@@ -1023,6 +1026,17 @@ function TasksTab({ project, data, sessions, activeSession, onFeed, onShip, onRe
     onFeed([taskText(data.kind, t)]);
     setFed((f) => new Set(f).add(t.key));
     showBanner(`Fed ${t.key} to Claude`);
+  }
+  function ctxItems(t: TrackerTask): CtxItem[] {
+    const items: CtxItem[] = [
+      { icon: "▸", label: "Feed to Claude", onClick: () => feedOne(t) },
+      { icon: "⑂", label: "Ship it", hint: `branch ${branchForTask(t.key, t.title)}`, onClick: () => onShip(t) },
+    ];
+    if (t.url) items.push({ icon: "↗", label: "Open in tracker", onClick: () => { window.open(t.url, "_blank", "noopener,noreferrer"); } });
+    items.push({ icon: "⧉", label: "Copy key", onClick: () => { void navigator.clipboard?.writeText(t.key).catch(() => {}); } });
+    items.push({ divider: true });
+    items.push({ icon: "⌁", label: "Post update…", onClick: () => { setOpen(t.key); openUpdate(t); } });
+    return items;
   }
   function openUpdate(t: TrackerTask) {
     setUpd(true); setStatuses(null); setStatus(""); setNote(""); setUpdErr("");
@@ -1093,7 +1107,8 @@ function TasksTab({ project, data, sessions, activeSession, onFeed, onShip, onRe
             const isSel = sel.has(t.key);
             const ses = sessionFor(t.key);
             return (
-              <div key={t.key} onClick={() => setOpen(t.key)} data-ctx-type="task" data-ctx-id={t.key} data-ctx-label={t.key} {...hp(`row:${t.key}`)}
+              <div key={t.key} onClick={() => setOpen(t.key)} {...hp(`row:${t.key}`)}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtx({ x: e.clientX, y: e.clientY, key: t.key }); }}
                 style={{ border: `1px solid ${isOpen ? "color-mix(in srgb, var(--acc) 40%, transparent)" : hov === `row:${t.key}` ? "color-mix(in srgb, var(--acc) 30%, transparent)" : isSel ? "color-mix(in srgb, var(--acc) 25%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)"}`, borderLeft: `2px solid ${isOpen ? "var(--acc)" : t.due && t.due < today ? "var(--err)" : "transparent"}`, padding: "9px 10px", marginBottom: 7, cursor: "pointer", background: isOpen ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", display: "flex", gap: 9 }}>
                 <span onClick={(e) => { e.stopPropagation(); toggleSel(t.key); }} title="select"
                   style={{ width: 15, height: 15, border: `1px solid ${isSel ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: isSel ? "var(--acc)" : "transparent", flex: "none", marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--acc-on)", fontSize: "var(--t11)", fontWeight: 700, cursor: "pointer" }}>{isSel ? "✓" : ""}</span>
@@ -1201,6 +1216,11 @@ function TasksTab({ project, data, sessions, activeSession, onFeed, onShip, onRe
           )}
         </div>
       </div>
+      {ctx && (() => {
+        const t = data.tasks.find((x) => x.key === ctx.key);
+        return t && <ContextMenu ctx={{ x: ctx.x, y: ctx.y, type: "task", id: t.key, label: t.key }}
+          items={ctxItems(t)} onClose={() => setCtx(null)} />;
+      })()}
     </div>
   );
 }
