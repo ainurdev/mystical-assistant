@@ -535,3 +535,14 @@ def test_limit_reset_row_is_written_with_telegram_off(monkeypatch):
     limits._fire(run=lambda *a, **k: object(), notify=lambda *a, **k: pinged.append(a))
     assert [(r["kind"], r["subject"]) for r in notices.feed()] == [("resumed", "s9")]
     assert pinged == []
+
+
+def test_updates_group_kinds_and_defaults():
+    """Mystical's own changelog and a maintainer's note share one group, news
+    from the bridge, silent on Telegram until the user says otherwise."""
+    assert notices.CATALOG["updated"] == ("updates", "news", "bridge") == notices.CATALOG["note"]
+    assert notices.verb("updated") == "UPDATED" and notices.verb("note") == "NOTE"
+    assert notices.prefs()["events"]["updates"] == {"pop": True, "sound": "none", "tg": "off"}
+    assert notices.telegram_ok("updated") is False
+    notices.set_prefs({"events": {"updates": {"tg": "always"}}})
+    assert notices.telegram_ok("note") is True

@@ -158,6 +158,15 @@ FEATURES = (
               "unlike the extras above it ships ON — the switch is here so the "
               "spend is visible and stoppable. Off, the generate button is hidden "
               "and SHIP commits with a plain list of what changed."},
+    {"key": "changelog", "env": "CHANGELOG_ENABLE", "label": "UPDATE NOTES",
+     "hint": "sums up what an update changed, in the bell",
+     "cost": "1 haiku call per restart with new commits",
+     "tokens": "~32k tokens",
+     "about": "After a PULL & RESTART the bell's Updates tab gets a row with a "
+              "headline and a few bullets of what changed, written from the "
+              "commits that landed. Fires at a restart that found new commits — "
+              "pulled, or on a dev checkout committed here — one haiku call each; "
+              "off, the row lists the commit subjects instead."},
 )
 
 _KEYS = {f["key"] for f in FEATURES}

@@ -64,6 +64,8 @@ CATALOG = {
     "move_done": ("bridge", "news", "bridge"),
     "move_failed": ("bridge", "news", "bridge"),
     "weekly": ("weekly", "fyi", "bridge"),
+    "updated": ("updates", "news", "bridge"),
+    "note": ("updates", "news", "bridge"),
 }
 
 # The one place the copy lives: the dashboard and the Mac app render `verb`.
@@ -76,6 +78,7 @@ VERBS = {
     "rv_refused": "REFUSED", "rv_link": "LINK DOWN", "rv_link_back": "LINK BACK",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
     "move_failed": "MOVE FAILED", "weekly": "WEEKLY REPORT",
+    "updated": "UPDATED", "note": "NOTE",
 }
 _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED"}
 
@@ -100,6 +103,7 @@ DEFAULTS = {
     "pr": {"pop": True, "sound": "blip", "tg": "away"},
     "bridge": {"pop": True, "sound": "none", "tg": "off"},
     "weekly": {"pop": False, "sound": "none", "tg": "always"},
+    "updates": {"pop": True, "sound": "none", "tg": "off"},
 }
 SOUNDS = ("blip", "chime", "ping", "knock", "none")
 ROUTES = ("off", "away", "always")

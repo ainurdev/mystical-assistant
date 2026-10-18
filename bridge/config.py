@@ -236,6 +236,9 @@ TASKS_DIGEST = os.environ.get("TASKS_DIGEST", "1").lower() \
 # visible and stoppable.
 COMMIT_MSG_AI = os.environ.get("COMMIT_MSG_AI", "1").lower() \
     not in ("0", "false", "no", "")
+# The bell's UPDATE NOTES: a haiku summary of what a pull changed, at boot.
+CHANGELOG_ENABLE = os.environ.get("CHANGELOG_ENABLE", "1").lower() \
+    not in ("0", "false", "no", "")
 
 # --- Rivendell PR review plugin ----------------------------------------------
 # A websocket client that connects to a rivendell-api instance, listens for
