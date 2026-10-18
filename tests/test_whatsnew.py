@@ -187,6 +187,22 @@ def test_summarise_tolerates_wrapped_json_and_overlong(monkeypatch):
     assert whatsnew._summarise(["s"], 1) is None
 
 
+def test_cut_ends_on_a_whole_word():
+    s = "Equalizer removed — it's gone from the working indicator choices, which are Status, Nyan Cat, and Orbit"
+    assert whatsnew._cut(s, 140) == s
+    assert whatsnew._cut(s, 100) == ("Equalizer removed — it's gone from the working indicator choices, "
+                                     "which are Status, Nyan Cat, and…")
+    assert whatsnew._cut("H" * 60, 40) == "H" * 39 + "…"   # one long word: a hard cut
+    assert whatsnew._cut("  short  ", 40) == "short"
+
+
+def test_summarise_keeps_a_bullet_a_little_over_the_prompts_100(monkeypatch):
+    b = "Lead — " + "word " * 22 + "end"   # 120 characters: haiku overshoots "under 100"
+    reply = json.dumps({"headline": "H", "bullets": [b], "rest": 0})
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: (reply, None, 0, False))
+    assert whatsnew._summarise(["s"], 1)["bullets"] == [b]
+
+
 def test_boot_falls_back_when_one_shot_fails(repo, origin, monkeypatch):
     whatsnew.boot()
     _commit(origin, "two\n", "feat: two — why")

@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/notices.check.ts
 import type { Need, Notice, NoticePrefs } from "../api.ts";
-import { ago, badge, cardFor, chipCount, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf } from "./notices.ts";
+import { ago, badge, cardFor, chipCount, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf, stamp } from "./notices.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -20,6 +20,9 @@ ok(rows.map((r) => `${r.id}:${r.earlier}`).join() === "5:2,2:0", "newest per sub
 const day = new Date(2026, 9, 16, 17, 37);
 ok(sectionOf(new Date(2026, 9, 16, 0, 5).getTime() / 1000, day) === "TODAY", "after midnight today is TODAY");
 ok(sectionOf(new Date(2026, 9, 15, 23, 59).getTime() / 1000, day) === "EARLIER", "yesterday is EARLIER");
+const st = (d: Date) => JSON.stringify(stamp(d.getTime() / 1000, day));
+ok(st(new Date(2026, 9, 16, 9, 5)) === '{"day":"TODAY","time":"09:05"}', "the changelog stamps today with the time of day");
+ok(st(new Date(2026, 9, 15, 23, 59)) === '{"day":"OCT 15","time":"23:59"}', "and an earlier day with its date");
 
 ok(matches("all", n(1, "a")) && matches("sessions", n(1, "a")) && !matches("rivendell", n(1, "a")), "a session row is All and Sessions");
 ok(matches("rivendell", n(1, "rv:p:1", { source: "rivendell" })), "a Rivendell row is Rivendell");
