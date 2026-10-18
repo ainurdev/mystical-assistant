@@ -263,7 +263,7 @@ function VideoLightbox({ src, name, strip, clip, onClose }: { src: string; name?
   const cap = panel && !wide ? "44vh" : strip ? "76vh" : "92vh";
   return createPortal(
     <div
-      onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      onPointerDown={(e) => { if (e.button === 0 && e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
       aria-label={name || "Attachment"}
@@ -517,6 +517,7 @@ function StillLightbox({ src, name, strip, onClose }: { src: string; name?: stri
   }, []);
 
   const onDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;   // a right-click is for the menu: never a tap, a pan or a close
     (e.target as Element).setPointerCapture?.(e.pointerId);
     ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.current.size === 1) { down.current = { x: e.clientX, y: e.clientY }; dragged.current = false; }
@@ -548,6 +549,7 @@ function StillLightbox({ src, name, strip, onClose }: { src: string; name?: stri
   };
 
   const onUp = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
     ptrs.current.delete(e.pointerId);
     spread.current = 0;
     if (ptrs.current.size || dragged.current) return;   // still pinching, or that was a pan
