@@ -9,7 +9,10 @@ review decision. Why it is shaped like this:
 - **Polled, cached, shared.** The dashboard asks every 60s while a session is
   open in a visible tab, on focus, and after a push. Each answer is cached for
   each (repo, branch) for TTL seconds, so two tabs on one session make one gh
-  call. `force` (focus, a push) only shortens that to FORCE_FLOOR.
+  call. `force` (focus, a push) only shortens that to FORCE_FLOOR. A merged or
+  closed PR is cached no longer than an open one: the cache is per branch, not
+  per PR, and a long-lived branch (sdlc → master) opens its next PR right
+  after the last one merged.
   ponytail: no server-side poller. A PR that no visible tab has open is not
   watched, so its pings wait for the next look. Add a timer here if pings
   must reach Telegram while every dashboard tab is closed.
@@ -53,7 +56,6 @@ from bridge import browser, config, git, github, notices, store, telegram
 TTL = 45           # s: under the dashboard's 60s poll, so each poll reads fresh
 FORCE_FLOOR = 10   # s: focus, visibilitychange and a push can all ask at once
 ERR_TTL = 300      # s: gh broken or rate-limited, so wait five minutes
-DONE_TTL = 600     # s: a merged or closed PR barely changes (a reopen waits this long)
 LOG_LINES = 60
 FIELDS = ("number,title,state,url,baseRefName,headRefName,headRefOid,additions,"
           "deletions,createdAt,mergedAt,statusCheckRollup,reviewDecision,"
@@ -314,7 +316,7 @@ def fetch(slug: str, branch: str) -> "tuple[dict | None, int]":
     except (ValueError, KeyError, TypeError):
         return None, ERR_TTL
     if pr["state"] != "OPEN":
-        return pr, DONE_TTL   # its popover shows no checks or review: no logs, no comments
+        return pr, TTL   # its popover shows no checks or review: no logs, no comments
     for c in pr["checks"]:
         if c["state"] == "fail":
             c["log"] = _failure_log(slug, c["url"])

@@ -1877,7 +1877,7 @@ input {
    the spine's own marks with a count; the old sentence is their tooltip. The
    right group is what wants you: what failed, and the pictures inside. While
    a picture is unseen (lib/seenshots) the plate lights — accent border, edge
-   and node, a solid NEW badge — and, shut, shows the pictures in a SCREENS row. */
+   and node, a solid NEW badge — and, shut, shows the pictures in a row. */
 [data-style="dossier"] .dwork-head {
   display: grid; grid-template-columns: var(--zn) minmax(0, 1fr) auto; column-gap: 12px; align-items: center;
   width: 100%; min-width: 0; padding: 4px 2px 3px 0;
@@ -2007,29 +2007,20 @@ input {
   font-size: var(--t95); font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
   box-shadow: 0 0 12px color-mix(in oklab, var(--acc) 45%, transparent);
 }
-/* every picture the zone holds, in the shut plate; tap one to open it. An
-   unseen one wears the accent and a NEW tag; seen, it goes grey and stays */
+/* every picture the zone holds, in the shut plate: one row of equal tiles,
+   whatever the picture's shape (more than fit scroll sideways); tap one to
+   open it. An unseen one wears the accent and a NEW tag; seen, it goes grey
+   and stays */
 [data-style="dossier"] .dwork-row {
-  margin: 9px 2px 1px calc(var(--zn) + 12px); padding-top: 9px;
+  margin: 9px 2px 1px calc(var(--zn) + 12px); padding-top: 3px;
   border-top: 1px dashed var(--d-hair);
 }
 [data-style="dossier"] .dwork[data-shots="new"] .dwork-row { border-top-color: color-mix(in oklab, var(--acc) 35%, var(--d-hair)); }
-[data-style="dossier"] .dwork-row-h {
-  display: flex; align-items: center; gap: 10px;
-  font-size: var(--t85); font-weight: 600; letter-spacing: 2px; text-transform: uppercase; color: var(--txd);
-}
-[data-style="dossier"] .dwork-row-h > b { font-weight: 600; color: var(--acc); }
-[data-style="dossier"] .dwork-row-h > b::before { content: "\00b7 "; color: var(--txl); }
-[data-style="dossier"] .dwork-row-h > i { flex: 1 1 0; height: 1px; background: var(--d-hair); }
-[data-style="dossier"] .dwork[data-shots="new"] .dwork-row-h > i { background: color-mix(in oklab, var(--acc) 28%, transparent); }
-[data-style="dossier"] .dwork-row-h > em {
-  font-family: var(--d-face); font-size: var(--t105); font-weight: 400; font-style: italic;
-  letter-spacing: 0; text-transform: none; color: var(--txd);
-}
-[data-style="dossier"] .dwork-row-thumbs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
-[data-style="dossier"] .dwork-row-thumbs figure { position: relative; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+/* the padding is room for the NEW tag, which hangs 6px past its tile's corner */
+[data-style="dossier"] .dwork-row-thumbs { display: flex; gap: 10px; overflow-x: auto; overscroll-behavior-x: contain; padding: 6px 6px 0 0; }
+[data-style="dossier"] .dwork-row-thumbs figure { position: relative; flex: none; margin: 0; display: flex; flex-direction: column; gap: 4px; }
 [data-style="dossier"] .dwork-row-thumbs :is(img, video) {
-  height: 60px; width: auto; max-width: 130px; object-fit: cover; border-radius: calc(var(--d-rad) * .4);
+  height: 60px; width: 96px; object-fit: cover; border-radius: calc(var(--d-rad) * .4);
   border: 1px solid var(--d-hair); background: #000;
 }
 [data-style="dossier"] .dwork-row-thumbs figure[data-new] :is(img, video) {
@@ -2041,7 +2032,7 @@ input {
   box-shadow: 0 0 6px color-mix(in oklab, var(--acc) 45%, transparent);
 }
 [data-style="dossier"] .dwork-row-thumbs figcaption {
-  font-size: var(--t85); color: var(--txf); max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: var(--t85); color: var(--txf); max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 /* an unseen picture inside the open zone wears the accent until it has been on screen */
 [data-style="dossier"] .dwork-body :is(img, video)[data-new] {
@@ -3310,7 +3301,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .newsess svg { color: var(--acc); }
 [data-fam] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
 [data-fam] .lanehead > span:nth-child(3) { background: transparent !important; }
-[data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-st, .dwork-badge, .dwork-row-h, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
+[data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-st, .dwork-badge, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
 [data-fam] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
 
 /* ── the settings modal's own furniture ── */
