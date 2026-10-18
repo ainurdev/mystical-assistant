@@ -1,8 +1,9 @@
 // Which tool screenshots you have had on screen, so a shut WORK zone can say
 // "2 shots" in your accent until you have, and in grey after (RunStream's
-// WorkZone reads it; MediaThumb's onSeen writes it). The bridge keeps no read
-// state for a tool result, so this lives in the browser like the lessons' read
-// set (LearnTab READ_KEY): Mystical.app beside Chrome starts with its own memory.
+// WorkZone reads it; MediaThumb's onSeen and the lightbox write it). The
+// bridge keeps no read state for a tool result, so this lives in the browser
+// like the lessons' read set (LearnTab READ_KEY): Mystical.app beside Chrome
+// starts with its own memory.
 //
 // Shots from before the store was born count as seen. Without that, the day it
 // ships every old turn with a screenshot lights up at once, and shots the upload

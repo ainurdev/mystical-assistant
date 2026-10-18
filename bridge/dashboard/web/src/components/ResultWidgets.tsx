@@ -312,7 +312,7 @@ function ScreenGallery({ rows, send, gallery }: { rows: { path: string; caption?
   const written = Object.entries(notes).filter(([, v]) => v.trim());
   return (
     <div className="flc-gal">
-      {zoom && <ImageLightbox src={zoom} all={gallery ?? rows.map((s) => ({ src: api.attachmentUrl(s.path), name: s.caption }))} onClose={() => setZoom(null)} />}
+      {zoom && <ImageLightbox src={zoom} all={gallery ?? rows.map((s) => ({ src: api.attachmentUrl(s.path), name: s.caption, path: s.path, at: s.at }))} onClose={() => setZoom(null)} />}
       <div className="flc-shots">
         {rows.map((s, i) => (
           <figure key={i}>

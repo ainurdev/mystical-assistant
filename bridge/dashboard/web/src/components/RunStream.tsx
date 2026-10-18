@@ -658,6 +658,7 @@ type Pic = { path: string; name: string; unseen: boolean };
  *  badge — and that picture wears the accent and a NEW tag in the row; seen,
  *  it goes grey and stays. Being on screen in the row does not count as seen
  *  (the badge would clear as you scrolled past); opening one does, as does
+ *  paging to it in the lightbox (ImageLightbox marks the one on screen), and
  *  half a thumbnail in view once the zone is open. It follows the COLLAPSE
  *  STEPS switch like a STEPS fold does. The last zone of a running turn is
  *  live: the figure says THINKING or WORKING with the seconds in that state,
@@ -798,7 +799,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, liv
               const src = api.attachmentUrl(p.path);
               return (
                 <figure key={p.path} data-new={p.unseen ? "" : undefined}>
-                  <ZoomButton onOpen={() => { markShotSeen(p.path); setZoom(src); }}>
+                  <ZoomButton onOpen={() => setZoom(src)}>
                     {/* A picture the upload dir has pruned can't be seen: marking it
                         seen is what clears the badge it would otherwise hold lit. */}
                     <MediaThumb src={src} alt={p.name} onError={() => markShotSeen(p.path)} />
@@ -1691,15 +1692,17 @@ export const RunStream = memo(function RunStream({
   // Every picture this turn's work produced, in order, named for the lightbox's
   // title (lib/toolwidget shotTitle): opened on any row it pages through the
   // lot, since the shot you want next is rarely the same row's. A clip rides on
-  // its own row's entries only, so the chapter rail stays with its video.
+  // its own row's entries only, so the chapter rail stays with its video. A
+  // tool's shot carries its path and clock, so paging to it sees it; a steer's
+  // carries no clock — you sent it.
   // shortcut: a shot another row found 404'd still sits in the strip (each row
   // knows only its own); fine while the upload dir prunes a whole turn at once.
   const shots: Shown[] = [];
-  const addShots = (call: string, about: string, paths?: string[], clip?: Clip) =>
-    paths?.forEach((p, i) => shots.push({ src: api.attachmentUrl(p), name: shotTitle(call, about, i, paths.length), clip }));
+  const addShots = (call: string, about: string, paths?: string[], clip?: Clip, at?: number) =>
+    paths?.forEach((p, i) => shots.push({ src: api.attachmentUrl(p), name: shotTitle(call, about, i, paths.length), clip, path: p, at }));
   for (const e of events) {
     if (e.type === "steer") addShots("STEER", e.text, e.images);
-    else if (e.type === "tool") { const d = doneOf(e); addShots(e.name, e.summary, d?.images, d?.clip); }
+    else if (e.type === "tool") { const d = doneOf(e); addShots(e.name, e.summary, d?.images, d?.clip, e.at); }
   }
 
   // Only the quiet steps fold away — a terminal, a diff, a delegated run, a
