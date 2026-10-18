@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { BellRing, FolderTree, History, Puzzle } from "lucide-react";
+import { BellRing, FolderTree, History, Hourglass, Puzzle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
@@ -133,12 +133,13 @@ function loadPrefs(): Prefs {
   } catch { return { mode: "attention", order: "recent", custom: [], shut: [] }; }
 }
 
-/** The five lanes ATTENTION sorts every session into. */
-type LaneKey = "ask" | "work" | "parked" | "done" | "idle";
+/** The six lanes ATTENTION sorts every session into. */
+type LaneKey = "ask" | "work" | "wait" | "parked" | "done" | "idle";
 
 const LANES: { k: LaneKey; label: string; tint: string }[] = [
   { k: "ask", label: "NEEDS YOU", tint: "var(--warn)" },
   { k: "work", label: "WORKING", tint: "var(--ok)" },
+  { k: "wait", label: "WAITING", tint: "var(--purple)" },
   { k: "parked", label: "PARKED", tint: "var(--info)" },
   { k: "done", label: "DONE — NOT OPENED", tint: "var(--acc)" },
   { k: "idle", label: "IDLE", tint: "var(--txd)" },
@@ -156,15 +157,21 @@ const SV: Record<string, { lane: LaneKey; c: string; fill: boolean; t: string }>
   asking: { lane: "ask", c: "var(--warn)", fill: true, t: "asking you a question" },
   live: { lane: "idle", c: "var(--info)", fill: false, t: "live in another window" },
   parked: { lane: "parked", c: "var(--info)", fill: true, t: "parked — resumes on its own" },
+  waiting: { lane: "wait", c: "var(--purple)", fill: true, t: "waiting on another session — wakes when it finishes" },
   idle: { lane: "idle", c: "var(--txl)", fill: false, t: "idle" },
 };
 const SV_DONE = { lane: "done" as LaneKey, c: "var(--acc)", fill: false, t: "finished a turn — not opened yet" };
 
-const BUSY_NOW = ["working", "awaiting", "asking", "checking", "parked"];
+const BUSY_NOW = ["working", "awaiting", "asking", "checking", "parked", "waiting"];
 
 type StateView = { lane: LaneKey; c: string; fill: boolean; t: string };
 
-function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: PromptFlag): StateView {
+/** A state's word where there is room for one (the WAITING tab, the composer's wait pill). */
+export const LANE_WORD: Record<LaneKey, string> = {
+  ask: "needs you", work: "working", wait: "waiting", parked: "parked", done: "idle", idle: "idle",
+};
+
+export function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: PromptFlag): StateView {
   // DONE (finished, unopened) outranks idle/live, but never a state it's in
   // *now* — working, awaiting you, asking you, or having a prompt checked.
   const state = st?.state ?? "idle";
@@ -172,6 +179,7 @@ function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: PromptFl
   let v = isDone && !busy ? SV_DONE : SV[state] ?? SV.idle;
   // The server knows when a parked turn comes back ("usage limit — resuming ~14:00").
   if (state === "parked" && st?.label) v = { ...v, t: st.label };
+  if (state === "waiting" && st?.label) v = { ...v, t: st.then ? `${st.label} — then ${st.then}` : st.label };
   // A held card is a session that wants you, whatever its runner state says —
   // warn ring, not fill: nothing is running, a prompt of yours is parked on it.
   if (flag === "held" && (v.lane === "idle" || v.lane === "done"))
@@ -179,10 +187,15 @@ function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: PromptFl
   return v;
 }
 
+/** What a WAITING row's third line names: the session it waits on, that
+ *  session's state colour, and whether you are the one holding it up. */
+type WaitLine = { title: string; c: string; needs: boolean };
+
 function SessionRow({
-  s, i, on, v, flag, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
+  s, i, on, v, flag, wait, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
 }: {
   s: SessionBrief;
+  wait?: WaitLine;
   i?: number;        // place in a non-virtualised list — its entrance stagger
   on: boolean;
   v: StateView;
@@ -288,6 +301,17 @@ function SessionRow({
                          animation: s.goal.state === "active" ? "mpulse 2.4s infinite" : "none" }}
               >◎</span>
             )}
+          </div>
+        )}
+        {wait && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1, color: "var(--txd)" }}>
+            <Hourglass size={11} strokeWidth={2} aria-hidden style={{ flex: "none", color: "var(--purple)" }} />
+            <span style={{ flex: "none", color: "var(--purple)" }}>on</span>
+            <span style={{ flex: "none", width: 6, height: 6, borderRadius: "50%", background: wait.c,
+                           boxShadow: `0 0 6px color-mix(in srgb, ${wait.c} 45%, transparent)` }} />
+            <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                           fontFamily: "var(--ui-font, inherit)", color: "var(--txm)" }}>{wait.title}</span>
+            {wait.needs && <span style={{ flex: "none", color: "var(--warn)" }}>· needs you</span>}
           </div>
         )}
       </div>
@@ -583,11 +607,21 @@ export function SessionsPanel(props: Props) {
     return [{ g, f, isShut, vis, rest }];
   });
 
+  // A WAITING row names the session it waits on and wears that one's state.
+  const waitOf = (s: SessionBrief): WaitLine | undefined => {
+    const on = status.get(s.id)?.state === "waiting" ? status.get(s.id)?.on : undefined;
+    if (!on) return undefined;
+    const t = views.get(on) ?? resolve(status.get(on), done.has(on), flags.get(on));
+    const title = sessions.find((x) => x.id === on)?.title
+      || status.get(s.id)?.label?.replace(/^waiting on /, "") || "another session";
+    return { title, c: t.c, needs: t.lane === "ask" };
+  };
+
   const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean, i?: number) => (
     <SessionRow
       key={s.id} s={s} i={i} showDot={showDot} showProj={showProj} detail={detail}
       on={s.id === selectedSessionId}
-      v={views.get(s.id) ?? SV.idle} flag={flags.get(s.id)}
+      v={views.get(s.id) ?? SV.idle} flag={flags.get(s.id)} wait={waitOf(s)}
       pulse={(status.get(s.id)?.state ?? "idle") === "working"}
       branch={branchFor(s)}
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}

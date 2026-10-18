@@ -116,7 +116,7 @@ def test_a_target_that_finishes_quietly_wakes_its_waiters(fresh):
     assert waits.get(a) is None
     (sid, kw), = fresh["queued"]
     assert sid == a and kw["surface"] == "wait"
-    assert kw["prompt"].startswith("⧖ Smooth Transitions finished — done in 14m.")
+    assert kw["prompt"].startswith("⧖ **Smooth Transitions** finished — done in 14m.")
     assert 'It ended with: "Merged to master as 3 commits."' in kw["prompt"]
     assert "You were waiting to: rebase the readout. Carry on." in kw["prompt"]
     assert fresh["pings"][-1]["kind"] == "resumed" and fresh["pings"][-1]["sid"] == a
@@ -128,7 +128,7 @@ def test_a_failed_target_wakes_them_with_the_error(fresh):
     waits.add(CHAT, a, "target", "merge")
     waits.target_ended(_job(b, status="error", error="tests failed"))
     (_, kw), = fresh["queued"]
-    assert "Target failed — tests failed." in kw["prompt"] and "check before you go ahead" in kw["prompt"]
+    assert "**Target** failed — tests failed." in kw["prompt"] and "check before you go ahead" in kw["prompt"]
 
 
 def test_a_target_busy_again_or_waiting_itself_keeps_them_waiting(fresh, monkeypatch):
@@ -150,7 +150,7 @@ def test_resume_now_wakes_early_and_cancel_just_drops(fresh):
     waits.add(CHAT, a, "target", "merge")
     assert waits.resume(a) is True
     (_, kw), = fresh["queued"]
-    assert "resumed you before Target finished" in kw["prompt"] and waits.get(a) is None
+    assert "resumed you before **Target** finished" in kw["prompt"] and waits.get(a) is None
     waits.add(CHAT, a, "target", "merge")
     assert waits.drop(a) is True and waits.get(a) is None and len(fresh["queued"]) == 1
     assert waits.resume(a) is False

@@ -39,10 +39,10 @@ _loaded = False
 _FILLER = {"the", "a", "an", "session", "sessions", "one", "that", "this", "which",
            "for", "on", "of", "and", "to"}
 
-DONE = "⧖ {title} finished — done{took}.{said}\n\nYou were waiting to: {then}. Carry on."
-FAILED = ("⧖ {title} failed — {error}.\n\nYou were waiting to: {then}. It didn't finish, "
+DONE = "⧖ **{title}** finished — done{took}.{said}\n\nYou were waiting to: {then}. Carry on."
+FAILED = ("⧖ **{title}** failed — {error}.\n\nYou were waiting to: {then}. It didn't finish, "
           "so check before you go ahead.")
-EARLY = ("⧖ The user resumed you before {title} finished (it is {state}).\n\n"
+EARLY = ("⧖ The user resumed you before **{title}** finished (it is {state}).\n\n"
          "You were waiting to: {then}. Go ahead now, or call WaitForSession again to keep waiting.")
 
 

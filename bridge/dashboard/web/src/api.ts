@@ -890,9 +890,10 @@ export interface AwaitingSession {
 // prompt of yours is being checked against this session; parked = killed by a
 // usage limit or API error and waiting to auto-resume; asking = the last turn
 // finished by asking you something (the transcript's ASK card) — your move, but
-// nothing is blocked; else idle.
+// nothing is blocked; waiting = the last turn ended on WaitForSession and it
+// wakes when the session `on` finishes (bridge/waits.py); else idle.
 export type SessionState =
-  "working" | "awaiting" | "checking" | "parked" | "asking" | "live" | "idle";
+  "working" | "awaiting" | "checking" | "parked" | "asking" | "waiting" | "live" | "idle";
 // One unified per-session status, identical on every surface. Bridge sessions can
 // be any state; native (VS Code/terminal) sessions are working/idle only.
 export interface SessionStatus {
@@ -901,6 +902,10 @@ export interface SessionStatus {
   kind: "question" | "permission" | "limit" | "server" | null;
   source: "bridge" | "native";
   label: string | null;
+  // `waiting` only: the session it waits on, what it will do then, since when (epoch s).
+  on?: string;
+  then?: string;
+  since?: number;
 }
 export interface JobActivity {
   state: "tool" | "awaiting" | "thinking";
@@ -2087,6 +2092,9 @@ export const api = {
     "/local/queue/enqueue", { method: "POST", body }),
   queueOp: (op: QueueOp, body: Record<string, unknown>) =>
     req<QueueSnapshot>(`/local/queue/${op}`, { method: "POST", body }),
+  // A waiting session (bridge/waits.py): wake it now, or drop the wait.
+  waitAction: (sessionId: string, action: "resume" | "cancel") =>
+    req<{ ok: boolean }>(`/local/sessions/${encodeURIComponent(sessionId)}/wait`, { method: "POST", body: { action } }),
   agents: (sessionId: string) =>
     req<AgentsInfo>(`/local/agents?session=${encodeURIComponent(sessionId)}`),
   agentActivity: (sessionId: string, agentId: string, cursor: number, workflowId?: string) =>

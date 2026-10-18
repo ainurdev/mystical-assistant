@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Castle, FolderTree, GitBranch, GraduationCap, ListOrdered,
+  Castle, FolderTree, GitBranch, GraduationCap, Hourglass,
 } from "lucide-react";
 import {
   api,
@@ -83,7 +83,7 @@ import { FilesPanel } from "./components/hud/FilesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitPanel } from "./components/hud/GitPanel";
-import { SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
+import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
 import { shellCols } from "./lib/shell";
@@ -103,6 +103,7 @@ import { ToolsModal } from "./components/hud/ToolsModal";
 import { InspectorModal } from "./components/hud/InspectorModal";
 import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
+import { WaitPill } from "./components/WaitPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
 import { Spinner } from "./components/ui";
 
@@ -1026,7 +1027,7 @@ export function App() {
     prevStatus.current = statusMap;
     const finished = [...prev]
       .filter(([id, st]) => st.state === "working" && id !== sessionId
-        && !["working", "awaiting", "parked"].includes(statusMap.get(id)?.state ?? ""))
+        && !["working", "awaiting", "parked", "waiting"].includes(statusMap.get(id)?.state ?? ""))
       .map(([id]) => id);
     if (finished.length) setDoneIds((d) => new Set([...d, ...finished]));
   }, [statusMap, sessionId]);
@@ -1782,6 +1783,21 @@ export function App() {
   // push, ↓n to pull, ↑↓ diverged.
   const gitSync = syncBadge(syncOf(sessionGit));
 
+  // Sessions waiting on another session (bridge/waits.py): the WAITING tab's
+  // badge, and the open one's pill in the composer.
+  const waitingCount = [...statusMap.values()].filter((st) => st.state === "waiting").length;
+  const openWait = sessionId && statusMap.get(sessionId)?.state === "waiting" ? statusMap.get(sessionId) : undefined;
+  const waitView = openWait?.on ? resolve(statusMap.get(openWait.on), false) : null;
+  const waitAction = async (action: "resume" | "cancel") => {
+    if (!sessionId) return;
+    try {
+      await api.waitAction(sessionId, action);
+      setStatusMap((m) => { const n = new Map(m); n.delete(sessionId); return n; });
+    } catch (e) {
+      notify("error", `Couldn't ${action} the wait: ${(e as Error).message}`);
+    }
+  };
+
   const rightTabs: PanelTab[] = [
     {
       id: "files", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree",
@@ -1817,8 +1833,13 @@ export function App() {
       ),
     }] : []),
     {
-      id: "queue", label: "Queue", icon: <ListOrdered {...RAIL} />, ownScroll: true, scope: "project" as const,
-      render: () => <QueuePanel project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }} />,
+      // Kept id "queue": a saved rightTab still opens it.
+      id: "queue", label: waitingCount ? `Waiting (${waitingCount})` : "Waiting", icon: <Hourglass {...RAIL} />,
+      ownScroll: true, scope: "project" as const, badge: waitingCount ? railCount(waitingCount) : null,
+      render: () => (
+        <QueuePanel project={sessionProject} sessions={sessions} status={statusMap}
+          onOpenSession={(id) => { openSession(id); toChat(); }} />
+      ),
     },
     ...(rivendellOn ? [{
       id: "rivendell", label: rivendellDown ? "Rivendell tasks — link broken" : "Rivendell tasks",
@@ -2413,6 +2434,13 @@ export function App() {
                             goal={sessions.find((s) => s.id === sessionId)?.goal}
                             onClear={() => void send("/goal", [])}
                           />
+                          {openWait?.on && (
+                            <WaitPill
+                              title={sessions.find((s) => s.id === openWait.on)?.title || openWait.label?.replace(/^waiting on /, "") || "another session"}
+                              word={LANE_WORD[waitView!.lane]} c={waitView!.c}
+                              onResume={() => void waitAction("resume")} onCancel={() => void waitAction("cancel")}
+                            />
+                          )}
                         </div>
                       }
                       disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={spentUsage} effort={effort}
@@ -2439,7 +2467,8 @@ export function App() {
                       onOpenMap={ai.graph && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
-                        ? "ask about this — the answer stays here; Rivendell already has its copy" : undefined}
+                        ? "ask about this — the answer stays here; Rivendell already has its copy"
+                        : openWait ? "message claude — sending ends the wait…" : undefined}
                     />
                     )}
                   </>
