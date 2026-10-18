@@ -689,6 +689,24 @@ function WorkZone({ cats, notes, steps, failed, shots, fresh, gallery, running, 
 }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
+  // Pinned: the sticky header (index.css) is holding at its top offset. The
+  // observer's root is shrunk by that offset plus one pixel, so a header at
+  // rest sits wholly inside it and a stuck one is cut by that pixel; a header
+  // further down the page is cut too, from the other side, which the top check
+  // tells apart.
+  const head = useRef<HTMLButtonElement>(null);
+  const [pinned, setPinned] = useState(false);
+  useEffect(() => {
+    const el = head.current, root = el?.closest(".mscroll");
+    if (!open || !el || !root) { setPinned(false); return; }
+    // shortcut: the offset is read once per open, so a LAST peek that opens later moves the pin but not the lid; watch --isle-b if that shows
+    const top = parseFloat(getComputedStyle(el).top) || 0;
+    const io = new IntersectionObserver(([e]) => {
+      setPinned(e.intersectionRatio < 1 && e.boundingClientRect.top < (e.rootBounds?.top ?? -Infinity));
+    }, { root, rootMargin: `-${top + 1}px 0px 0px 0px`, threshold: 1 });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [open]);
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in may fold away while you are still looking.
   const [zoom, setZoom] = useState<string | null>(null);
@@ -698,14 +716,25 @@ function WorkZone({ cats, notes, steps, failed, shots, fresh, gallery, running, 
     <div
       className="dwork"
       data-open={open ? "" : undefined}
+      data-pinned={pinned ? "" : undefined}
       data-run={running ? "" : undefined}
       data-err={failed ? "" : undefined}
       data-shots={fresh.length ? "new" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <button
+        ref={head}
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={(e) => {
+          // Folded from the pinned header, the shut line lands where the header
+          // was (the ANSWER's FOLD does the same): a zone of a thousand pixels
+          // collapsing above the viewport would otherwise drop you on whatever
+          // sat below it.
+          const b = e.currentTarget, y = b.getBoundingClientRect().top;
+          flushSync(() => setOpen((o) => !o));
+          const sc = b.closest(".mscroll");
+          if (open && sc) sc.scrollTop += b.getBoundingClientRect().top - y;
+        }}
         aria-expanded={open}
         title={open ? "hide the work" : "show the work"}
         className="dwork-head"
@@ -799,6 +828,7 @@ function LogRow({ src, label, text, error, animate }:
     <button
       type="button"
       onClick={() => more && setOpen((o) => !o)}
+      aria-expanded={more ? open : undefined}
       className="zrow log"
       data-err={error ? "" : undefined}
       title={more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}

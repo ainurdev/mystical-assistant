@@ -1291,6 +1291,9 @@ input {
 }
 .ax-chev { display: flex; justify-content: center; color: var(--txg); }
 .actrow:hover .ax-chev { color: var(--txd); }
+/* a row that opens is a control: say so with the pointer (Tailwind v4 gives
+   buttons none, and the rows are divs) */
+.actrow[role="button"], .zrow.log[aria-expanded], .agb-brief, .dwork-head { cursor: pointer; }
 /* A query is shown as entered, in its own dashed inset — nothing is committed. */
 .ax-q {
   border: 1px dashed color-mix(in srgb, var(--h) 32%, transparent);
@@ -1861,7 +1864,8 @@ input {
 [data-style="dossier"] .dwork {
   --zn: 24px; --zk: 58px; --zc: 16px; --zobj: calc(var(--zn) + var(--zk));
   --zline: color-mix(in oklab, var(--txl) 40%, var(--panel2));
-  background: var(--panel2); padding: 5px 12px 9px 8px;
+  --zpl: 8px; --zpr: 12px;
+  background: var(--panel2); padding: 5px var(--zpr) 9px var(--zpl);
   border-bottom: 1px solid var(--d-hair);
 }
 [data-style="dossier"] .dwork + .dwork { margin-top: 0; }
@@ -1876,6 +1880,22 @@ input {
   width: 100%; min-width: 0; padding: 4px 2px 3px 0;
   white-space: nowrap; text-align: left;
   font-size: var(--t105); letter-spacing: .5px; color: var(--txd);
+}
+/* Open, the header pins under the island while you are inside the zone, so a
+   click folds the work from anywhere: --isle-b is the island's bottom edge,
+   written on the scroller by Terminal.tsx. Pinned (WorkZone's observer), a
+   hairline cuts it from the rows passing under, and a lid of the island's own
+   glass covers the band above it, so rows don't surface over the header on
+   their way out. The lid spans the plate's padding box (--zpl/--zpr). */
+[data-style="dossier"] .dwork[data-open] > .dwork-head {
+  position: sticky; top: calc(var(--isle-b, 50px) + 6px); z-index: 3; background: inherit;
+}
+[data-style="dossier"] .dwork[data-pinned] > .dwork-head { box-shadow: 0 1px 0 var(--d-hair); }
+[data-style="dossier"] .dwork[data-pinned] > .dwork-head::before {
+  content: ""; position: absolute; left: calc(-1 * var(--zpl)); right: calc(-1 * var(--zpr)); bottom: 100%;
+  height: calc(var(--isle-b, 50px) + 6px); pointer-events: none;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  -webkit-backdrop-filter: blur(10px) saturate(1.15); backdrop-filter: blur(10px) saturate(1.15);
 }
 [data-style="dossier"] .dwork-node {
   grid-column: 1; grid-row: 1 / 3; justify-self: center; width: 22px; height: 22px; border-radius: 50%;
@@ -2023,6 +2043,10 @@ input {
   font-size: var(--t10); font-variant-numeric: tabular-nums;
 }
 [data-style="dossier"] .dwork-body :is(.actrow, .zrow) > .ax-chev { grid-column: 5; grid-row: 1; height: 24px; align-items: center; }
+/* a row that opens says so at rest: the chevron in the figure's own colour, so
+   "4 lines ›" is one control; open, it stays lit */
+[data-style="dossier"] .dwork-body .ax-chev { color: var(--txf); }
+[data-style="dossier"] .dwork-body [aria-expanded="true"] > .ax-chev { color: var(--txm); }
 
 /* the agent's own words: a thought is italic, a step under a note */
 [data-style="dossier"] .dwork-body .zo { padding: 3px 0 4px; line-height: 18px; overflow-wrap: anywhere; }
