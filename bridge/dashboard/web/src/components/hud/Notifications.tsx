@@ -130,6 +130,7 @@ const TONE: Record<string, "ok" | "err" | "ask" | "warn" | "acc" | "dim"> = {
   approve: "ask", question: "ask", asking: "ask", login: "ask", limit_choice: "ask", rv_offer: "ask",
   parked: "warn", pr_changes: "warn", started: "acc", rv_started: "acc",
   rv_held: "dim", rv_dismissed: "dim", weekly: "dim", retrying: "dim",
+  updated: "ok", note: "acc",
 };
 const GLYPH: Record<string, ReactNode> = { ok: "✓", err: "✕", ask: "?", warn: <b className="ntf-pz" />, acc: "▸", dim: null };
 const toneOf = (kind: string) => TONE[kind] ?? "dim";
@@ -137,11 +138,19 @@ const str = (v: unknown) => (typeof v === "string" ? v : "");
 const projName = (p: string) => p.split("/").filter(Boolean).pop() ?? p;
 const mins = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 60)}s` : `${Math.round(s)}s`);
 
+// Mystical about itself (an update, a maintainer's note): the brand's diamond, 13px like the other source icons.
+const EMBLEM = (
+  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round">
+    <path d="M12 3 21 12 12 21 3 12Z" /><path d="M12 9 15 12 12 15 9 12Z" fill="var(--acc)" stroke="none" />
+  </svg>
+);
+
 function Source({ kind, source, project }: { kind: string; source: string; project?: string }) {
   const t = toneOf(kind);
   const icon = source === "rivendell" ? <Castle size={13} strokeWidth={1.8} />
     : source === "pr" ? <GitPullRequest size={13} strokeWidth={1.8} />
     : kind === "weekly" ? <CalendarDays size={13} strokeWidth={1.8} />
+    : kind === "updated" || kind === "note" ? EMBLEM
     : source === "bridge" ? <Truck size={13} strokeWidth={1.8} /> : null;
   return (
     <span className={`ntf-src s-${source}`}>
@@ -241,17 +250,39 @@ function RowActions({ n }: { n: Row }) {
   } else if (n.kind === "rv_link" || n.kind === "rv_failed" || n.kind === "rv_refused") {
     b.push(<button key="d" className="ntf-btn ghost" onClick={() => openSettings("plugins", str(m.instance_id) || undefined)}>Details ›</button>);
   }
+  if (n.kind === "updated" && safeUrl(m.url)) b.push(<button key="c" className="ntf-btn ghost" onClick={() => openUrl(m.url)}>Commits ↗</button>);
   if (n.kind === "failed") b.push(<button key="o" className="ntf-btn ghost" onClick={() => openRow(n)}>Open ›</button>);
   return b.length ? <div className="ntf-acts" onClick={(e) => e.stopPropagation()}>{b}</div> : null;
 }
 
-function metaLine(n: { source: string; subject: string; meta: Record<string, unknown> }): string[] {
+function metaLine(n: { kind: string; source: string; subject: string; meta: Record<string, unknown> }): string[] {
   const m = n.meta;
   if (n.source === "rivendell") return ["rivendell", str(m.instance) || str(m.instance_id), str(m.job_kind)].filter(Boolean);
+  if (n.kind === "updated") {
+    const c = typeof m.commits === "number" ? m.commits : 0;
+    return [`${c} commit${c === 1 ? "" : "s"}`, `${str(m.from).slice(0, 7)} → ${str(m.to).slice(0, 7)}`, str(m.branch) ? `⎇ ${str(m.branch)}` : ""].filter(Boolean);
+  }
+  if (n.kind === "note") return str(m.author) ? [`by ${str(m.author)}`] : [];
   if (n.source !== "session") return [];
   const sid = str(m.session_id) || n.subject;
   const br = env.branchOf(sid);
   return [projName(str(m.project)), br ? `⎇ ${br}` : "", typeof m.elapsed === "number" ? mins(m.elapsed) : ""].filter(Boolean);
+}
+
+/** An update's bullets: a lead, then what it does, split at the first " — "; the
+ *  fixes nobody needs to read are a count under them. */
+function Bullets({ body, rest }: { body: string; rest: unknown }) {
+  return (
+    <>
+      <ul className="ntf-ul">
+        {body.split("\n").filter(Boolean).map((line, i) => {
+          const at = line.indexOf(" — ");
+          return <li key={i}>{at > 0 ? <><b>{line.slice(0, at)}</b>{line.slice(at)}</> : line}</li>;
+        })}
+      </ul>
+      {typeof rest === "number" && rest > 0 && <div className="ntf-rest">and {rest} smaller fix{rest === 1 ? "" : "es"}</div>}
+    </>
+  );
 }
 
 function NoticeRow({ n, now, compact, onOpen }: { n: Row; now: number; compact: boolean; onOpen: () => void }) {
@@ -262,7 +293,8 @@ function NoticeRow({ n, now, compact, onOpen }: { n: Row; now: number; compact: 
       <div className="ntf-mid">
         <div className="ntf-ttl"><span className={`ntf-verb ntf-v-${compact ? "dim" : toneOf(n.kind)}`}>{n.verb}</span><span className="ntf-s">{n.title}</span>
           {n.earlier > 0 && !compact && <span className="ntf-more">+{n.earlier}</span>}</div>
-        {!compact && n.body && <div className="ntf-body">{n.body}</div>}
+        {!compact && n.body && (n.kind === "updated" ? <Bullets body={n.body} rest={n.meta.rest} />
+          : <div className={`ntf-body${n.kind === "note" ? " note" : ""}`}>{n.body}</div>)}
         {!compact && meta.length > 0 && <div className="ntf-meta">{meta.join(" · ")}</div>}
         {!compact && <RowActions n={n} />}
       </div>
@@ -338,6 +370,7 @@ export function NotificationCenter() {
   const [stale, setStale] = useState(false);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
+  const [opened, setOpened] = useState<Set<number>>(() => new Set());   // read updates folded open again
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [now, setNow] = useState(() => Date.now() / 1000);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
@@ -428,7 +461,11 @@ export function NotificationCenter() {
     return () => document.removeEventListener("pointerdown", onDown);
   }, [open]);
 
-  const go = (n: Row) => { close(); openRow(n); };
+  // An update or a note has no session behind it: a click folds it open or shut instead.
+  const go = (n: Row) => {
+    if (n.group === "updates") return setOpened((p) => { const s = new Set(p); if (!s.delete(n.id)) s.add(n.id); return s; });
+    close(); openRow(n);
+  };
   const markAll = () => { shown.current = new Set(); void api.noticesRead("all").then(() => load.current()); };
 
   const fNeeds = liveNeeds.filter((n) => needMatches(filter, n));
@@ -441,7 +478,7 @@ export function NotificationCenter() {
   const section = (label: string, list: Row[]) => list.length > 0 && (
     <>
       <div className="ntf-sec">{label}<span className="ln" /></div>
-      {list.map((r) => <NoticeRow key={r.id} n={r} now={now} compact={r.read} onOpen={() => go(r)} />)}
+      {list.map((r) => <NoticeRow key={r.id} n={r} now={now} compact={r.read && !opened.has(r.id)} onOpen={() => go(r)} />)}
     </>
   );
   const today = rest.filter((r) => sectionOf(r.at, new Date(now * 1000)) === "TODAY");
@@ -470,10 +507,10 @@ export function NotificationCenter() {
             <button className="ntf-lnk" title="Notify settings" onClick={() => { close(); openSettings("notifications"); }}><Settings size={15} strokeWidth={1.6} /></button>
           </div>
           <div className="ntf-filters">
-            {(["all", "needs", "sessions", "rivendell", "prs"] as Filter[]).filter((f) => f !== "rivendell" || plugins.rivendell).map((f) => (
+            {(["all", "needs", "sessions", "rivendell", "prs", "updates"] as Filter[]).filter((f) => f !== "rivendell" || plugins.rivendell).map((f) => (
               <button key={f} className={`ntf-flt${filter === f ? " on" : ""}`} onClick={() => setFilter(f)}>
                 {f === "needs" && <i className="pip" />}
-                {{ all: "All", needs: "Needs you", sessions: "Sessions", rivendell: "Rivendell", prs: "PRs" }[f]}
+                {{ all: "All", needs: "Needs you", sessions: "Sessions", rivendell: "Rivendell", prs: "PRs", updates: "Updates" }[f]}
                 {count(f) > 0 && <em>{count(f)}</em>}
               </button>
             ))}
@@ -499,7 +536,9 @@ export function NotificationCenter() {
             {section("EARLIER", earlier)}
             {nothing && !stale && (
               <div className="ntf-empty">
-                <div className="o">silence on every channel — i'll knock when something needs you.</div>
+                {filter === "updates"
+                  ? <><div className="o">no updates yet — i am as you first summoned me.</div><div className="s">the next PULL &amp; RESTART lists what changed here</div></>
+                  : <div className="o">silence on every channel — i'll knock when something needs you.</div>}
               </div>
             )}
           </div>
