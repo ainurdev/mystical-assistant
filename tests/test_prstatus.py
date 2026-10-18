@@ -255,7 +255,7 @@ def sent(monkeypatch):
     monkeypatch.setattr(prstatus.github, "remote_slug", lambda d: "acme/rivendell")
     monkeypatch.setattr(prstatus.git, "default_branch", lambda d: "main")
     monkeypatch.setattr(prstatus.git, "branches", lambda d: [
-        "main", "feat/x", "feat/share", "feat/blip", "feat/ping", "feat/tg-down", "59", "#59",
+        "main", "feat/x", "feat/next", "feat/share", "feat/blip", "feat/ping", "feat/tg-down", "59", "#59",
         "+59", "--web"])
     monkeypatch.setattr(prstatus, "_spawn", lambda fn, *a: fn(*a))
     monkeypatch.setattr(prstatus.config, "NOTIFY_ENABLE", True)
@@ -323,11 +323,11 @@ def test_a_cancelled_check_is_red_but_does_not_ping():
     assert prstatus.alerts(both) == {"failing:abc123"}
 
 
-def test_a_merged_pr_is_trusted_longer_and_fetches_no_logs(monkeypatch):
+def test_a_merged_pr_fetches_no_logs(monkeypatch):
     calls = _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw(state="MERGED", statusCheckRollup=[
         _run("backend", conclusion="FAILURE", job=7)])), ""))])
     pr, ttl = prstatus.fetch("acme/rivendell", "feat/x")
-    assert pr["status"] == "merged" and ttl == prstatus.DONE_TTL > prstatus.TTL
+    assert pr["status"] == "merged" and ttl == prstatus.TTL
     assert [c[0] for c in calls] == ["pr"]
 
 
@@ -394,6 +394,21 @@ def test_an_error_backs_off_keeps_the_last_chip_and_outlasts_force(monkeypatch):
     now[0] += prstatus.ERR_TTL
     prstatus.snapshot("/r", "feat/blip")
     assert len(calls) == 2
+
+
+def test_a_new_pr_after_a_merged_one_shows_on_the_next_poll_and_on_focus(monkeypatch):
+    """A long-lived branch (sdlc → master) opens its next PR right after the
+    last one merged. The merged answer was trusted for ten minutes and force
+    couldn't shorten it, so the chip kept the old PR (2026-10-18, #80 → #81)."""
+    now = _clock(monkeypatch)
+    _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw(number=80, state="MERGED")), ""))])
+    prstatus.snapshot("/r", "feat/x")
+    prstatus.snapshot("/r", "feat/next")
+    _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw(number=81)), ""))])
+    now[0] += prstatus.FORCE_FLOOR
+    assert prstatus.snapshot("/r", "feat/next", force=True)["pr"]["number"] == 81   # focus
+    now[0] += prstatus.TTL
+    assert prstatus.snapshot("/r", "feat/x")["pr"]["number"] == 81                  # the 60s poll
 
 
 def test_no_chip_without_a_remote_or_on_the_default_branch(monkeypatch):
