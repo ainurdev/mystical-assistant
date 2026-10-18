@@ -182,6 +182,9 @@ function Filmstrip(
   { list, at, onPick, onStep }:
   { list: Shown[]; at: number; onPick: (i: number) => void; onStep: (d: number) => void },
 ) {
+  // A long set scrolls; stepping keeps the open one in the visible part.
+  const strip = useRef<HTMLDivElement>(null);
+  useEffect(() => { strip.current?.querySelector("[aria-current]")?.scrollIntoView({ inline: "nearest", block: "nearest" }); }, [at]);
   const arrow: React.CSSProperties = {
     position: "fixed", top: "50%", transform: "translateY(-50%)", zIndex: 96,
     appearance: "none", cursor: "pointer", padding: "18px 14px", lineHeight: 1,
@@ -194,8 +197,9 @@ function Filmstrip(
       <button type="button" aria-label="Previous" onClick={() => onStep(-1)} style={{ ...arrow, left: 12 }}>‹</button>
       <button type="button" aria-label="Next" onClick={() => onStep(1)} style={{ ...arrow, right: 12 }}>›</button>
       <div
+        ref={strip}
         style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 96, display: "flex", gap: 8,
-          justifyContent: "center", overflowX: "auto", padding: "10px 12px",
+          justifyContent: "safe center", overflowX: "auto", padding: "10px 12px",
           background: "color-mix(in srgb, var(--panel3) 88%, transparent)",
           borderTop: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}
       >
