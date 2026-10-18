@@ -20,11 +20,11 @@ function ago(sec: number | null): string {
 // The states you can act on sort first — blocked mid-turn, then ended on a
 // question — and only then what is running.
 const ORDER: Record<SessionState, number> = {
-  awaiting: 0, asking: 1, working: 2, checking: 3, live: 4, idle: 5,
+  awaiting: 0, asking: 1, working: 2, checking: 3, parked: 4, live: 5, idle: 6,
 };
 const DOT: Record<SessionState, string> = {
   awaiting: "bg-amber-400", asking: "bg-amber-400/60", working: "bg-emerald-400",
-  checking: "bg-emerald-400/60", live: "bg-sky-400", idle: "bg-[var(--tg-hint)]/40",
+  checking: "bg-emerald-400/60", parked: "bg-sky-400/60", live: "bg-sky-400", idle: "bg-[var(--tg-hint)]/40",
 };
 
 interface Row {

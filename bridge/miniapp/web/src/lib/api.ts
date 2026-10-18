@@ -300,7 +300,8 @@ export interface AwaitingSession {
 // runs (bridge/relevance.py); no job exists yet, but the session is in play.
 // "asking" = the last turn finished by asking you something (the ASK card in the
 // transcript). Nothing is blocked — but the next move is yours.
-export type SessionState = "working" | "awaiting" | "asking" | "checking" | "live" | "idle";
+// "parked" = killed by a usage limit or API error; the bridge resumes it by itself.
+export type SessionState = "working" | "awaiting" | "asking" | "checking" | "parked" | "live" | "idle";
 /** The two states where the session is stopped until you say something — one
  *  mid-turn, one at the end of it. Every "waiting" count, filter and badge
  *  means both. */
