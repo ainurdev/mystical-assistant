@@ -720,7 +720,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   span: string;
   defaultOpen: boolean;
   animate: boolean;
-  children: ReactNode;
+  /** The zone's rows, in order. */
+  children: ReactNode[];
 }) {
   const [open, setOpen] = useState(defaultOpen);
   useEffect(() => { setOpen(defaultOpen); }, [defaultOpen]);
@@ -767,17 +768,32 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   // top is far above you. A click mid-glide starts from where the box is.
   const fold = useRef<HTMLDivElement>(null);
   const [motion, setMotion] = useState(false);
+  // How many of the zone's rows are mounted. Opening, only those the glide can
+  // show (a row is 28px or more, so this many fill the scroller under the
+  // header), the rest once it has played out. Built whole in the click, a zone
+  // of a thousand rows held it for most of a second, and the glide was over
+  // before its first frame.
+  // shortcut: the rest lands in one go (~0.5s for 1300 rows in WebKit). A few
+  // rows a frame cost more in all, since each insertion restyles the whole
+  // stream (in Chrome, the TABS composer's :has() rules); revisit with those.
+  const [cap, setCap] = useState(Infinity);
   const anims = useRef<Animation[]>([]);
   const toggle = (b: HTMLButtonElement) => {
     const f = fold.current, sc = b.closest<HTMLElement>(".mscroll");
     const y = b.getBoundingClientRect().top, was = f?.getBoundingClientRect();
     for (const a of anims.current) a.cancel();
-    anims.current = [];
+    const mine: Animation[] = [];
+    anims.current = mine;
+    // WebKit starts an animation's clock before this task's work (the rows
+    // built and laid out) is done, so a glide's first frame landed well into
+    // it; each starts on the frame that first draws it.
+    requestAnimationFrame(() => { if (anims.current === mine) for (const a of mine) a.startTime = document.timeline.currentTime; });
     const still = matchMedia("(prefers-reduced-motion: reduce)").matches;
     // The box keeps its height through the swap: a page that just lost a tall
     // zone would clamp its scroll before the glide began.
     if (f && was && !still) f.style.height = `${was.height}px`;
-    flushSync(() => { setOpen(!open); setMotion(!still); setLanded(open && pinned); });
+    const rows = Math.ceil(Math.max(0, (sc?.getBoundingClientRect().bottom ?? Infinity) + 40 - (was?.top ?? 0)) / 28);
+    flushSync(() => { setOpen(!open); setMotion(!still); setLanded(open && pinned); if (!open) setCap(still || !was ? Infinity : rows); });
     // Folded from the pinned header, the shut line lands where the header
     // was (the ANSWER's FOLD does the same): a zone of a thousand pixels
     // collapsing above the viewport would otherwise drop you on whatever
@@ -812,6 +828,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
     else arriving?.querySelectorAll(":scope > .dwork-body > *").forEach((el, i) => {
       if (i < 24) run(el, ROW_IN, { duration: 240, delay: 40 + Math.min(i, 12) * 16, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" });
     });
+    // after the rows' print-in too, so the long mount can't stall a fade on screen
+    Promise.all(mine.map((a) => a.finished)).then(() => setCap(Infinity), () => {});
   };
   // The lightbox lives here, not in the row: opening a picture marks it seen,
   // and the row it was tapped in re-renders while you are still looking.
@@ -906,7 +924,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
         ) : null}
         {open || motion ? (
           <div className="dwork-part" data-leaving={open ? undefined : ""}>
-            <div className="dwork-body">{children}</div>
+            <div className="dwork-body">{children.slice(0, cap)}</div>
             {open ? ind : null}
           </div>
         ) : null}
