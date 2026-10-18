@@ -564,6 +564,7 @@ export interface RivendellDevice {
     state: "NOT_MAC" | "OFF" | "XCODE_MISSING" | "NEEDS_SETUP" | "READY";
     checks: { key: string; label: string; ok: boolean }[];
     installed: boolean;   // anything of Set up's is here, whatever the state: what REMOVE is offered on
+    outdated?: boolean;   // root's run helper isn't the one Mystical would install: SET UP is offered on a READY device, which stays shared (absent off macOS)
   };
   shared_on: { on: number; free: number } | null;   // Rivendell's shared devices, kept 30 s; null when it can't say
   running: boolean;   // a teammate's run is running on this device now

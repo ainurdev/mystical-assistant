@@ -24,11 +24,13 @@ export function stateText(d: Pick<RivendellDevice, "share" | "running" | "last_r
 }
 
 /** The SETUP row's buttons: SET UP for a device that needs it and has Xcode
- *  (NEEDS_SETUP), and REMOVE whenever anything of Set up's is here (share_state's
- *  `installed`, a setup cut short too), sharing on or off. None: no row. */
+ *  (NEEDS_SETUP), or that is READY with a run helper older than Mystical's
+ *  (`outdated`: it stays shared, SET UP only updates the helper), and REMOVE
+ *  whenever anything of Set up's is here (share_state's `installed`, a setup cut
+ *  short too), sharing on or off. None: no row. */
 export function setupActions(d: Pick<RivendellDevice, "share">): ("setup" | "remove")[] {
   const out: ("setup" | "remove")[] = [];
-  if (d.share.state === "NEEDS_SETUP") out.push("setup");
+  if (d.share.state === "NEEDS_SETUP" || (d.share.state === "READY" && d.share.outdated)) out.push("setup");
   if (d.share.installed) out.push("remove");
   return out;
 }

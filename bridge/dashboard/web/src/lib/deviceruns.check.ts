@@ -3,9 +3,11 @@
 // What Settings › Plugins › DEVICE RUNS says about this device: STATE's
 // right-hand text, and the buttons the SETUP row holds. Things that go wrong
 // quietly: a teammate's run in progress reads "idle", the text blames Xcode when
-// only the iOS runtime is missing, and a device with anything of Set up's on it
-// (a setup cut short, sharing off) is left with no way to remove it. And the
-// choices of CLAUDE ACCOUNT FOR DEVICE RUNS, where a pick that's gone must still show.
+// only the iOS runtime is missing, a device with anything of Set up's on it
+// (a setup cut short, sharing off) is left with no way to remove it, and a READY
+// device whose run helper is older than Mystical's is left on it with no way to
+// update it. And the choices of CLAUDE ACCOUNT FOR DEVICE RUNS, where a pick
+// that's gone must still show.
 import type { RivendellDevice } from "../api.ts";
 import { accountChoices, setupActions, stateText } from "./deviceruns.ts";
 import { hhmm } from "./surfaces.ts";
@@ -26,6 +28,8 @@ const dev = (state: State, installed: boolean, more: Partial<RivendellDevice> = 
   last_run: null,
   ...more,
 });
+/** The same device with its run helper older than Mystical's, or current (share_state's `outdated`). */
+const helper = (d: ReturnType<typeof dev>, outdated: boolean) => ({ ...d, share: { ...d.share, outdated } });
 const at = new Date(2026, 9, 16, 11, 40).getTime() / 1000;
 const last = { at, by: "Mahdi", task: "NR-29" };
 
@@ -53,6 +57,13 @@ eq(setupActions(dev("NEEDS_SETUP", true)), ["setup", "remove"],
 eq(setupActions(dev("OFF", false)), [], "nothing here and not shared: no row");
 eq(setupActions(dev("XCODE_MISSING", false)), [], "nothing here and no Xcode: set up waits for Xcode");
 eq(setupActions({ share: { state: "NOT_MAC", checks: [], installed: false } }), [], "off macOS: no setup at all");
+
+// An older run helper: a READY device stays shared and is offered SET UP to update it
+eq(setupActions(helper(dev("READY", true), true)), ["setup", "remove"], "ready with an older run helper: set up to update it, or remove");
+eq(setupActions(helper(dev("READY", true), false)), ["remove"], "ready with the current run helper: remove only");
+eq(setupActions(helper(dev("OFF", true), true)), ["remove"], "an older helper while not shared: the update waits for sharing");
+eq(setupActions(helper(dev("XCODE_MISSING", true), true)), ["remove"], "an older helper without Xcode: set up waits for Xcode");
+eq(setupActions(helper(dev("NEEDS_SETUP", true), true)), ["setup", "remove"], "an older helper on a device that needs setup: set up once");
 
 // CLAUDE ACCOUNT FOR DEVICE RUNS: the logins a run can go out under, and the pick
 const logins = [

@@ -31,6 +31,7 @@ const STATE_CHIP: Record<string, [string, string]> = {
   OFF: ["OFF", "var(--txf)"],
 };
 const SETUP_DESC = "Creates a hidden macOS user for runs, keeps it out of your home folder and installs Claude Code for it. Asks for your Mac password once.";
+const UPDATE_DESC = "Updates the run helper for the live view and low priority. Asks for your Mac password once.";
 const REMOVE_DESC = "Deletes the hidden user and everything runs left behind. Asks for your Mac password.";
 
 /** A label in the dialog's voice, whose sentence case can't spell these three. */
@@ -202,6 +203,7 @@ export function DeviceRunsPanel() {
           );
         }
         const actions = setupActions(d);
+        const setupDesc = d.share.state === "READY" ? UPDATE_DESC : SETUP_DESC;   // SET UP on a READY device is the helper's update
         const waiting = d.setup_running || busy === "setup" || busy === "remove";
         const [chip, color] = STATE_CHIP[d.share.state];
         return (
@@ -227,7 +229,7 @@ export function DeviceRunsPanel() {
                   <span style={NOW}>{stateText(d)}</span>
                 </Row>
                 {(actions.length > 0 || waiting) && (
-                  <Row label="SETUP" desc={actions.map((a) => (a === "remove" ? REMOVE_DESC : SETUP_DESC)).join(" ") || undefined}>
+                  <Row label="SETUP" desc={actions.map((a) => (a === "remove" ? REMOVE_DESC : setupDesc)).join(" ") || undefined}>
                     <span style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
                       {waiting
                         ? <Btn tone="pri" disabled onClick={() => {}}>WAITING FOR YOUR PASSWORD…</Btn>
