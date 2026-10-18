@@ -1864,14 +1864,17 @@ input {
 [data-style="dossier"] .rstream > * + * { margin-top: 0; }
 [data-style="dossier"] .dreply > :not(.rstream, .agent-rail),
 [data-style="dossier"] .rstream > :not(.dwork, .resblk, .dprompt) { margin: 12px 18px; }
-/* ONE GRID for everything in a zone: node | kind | object | figure | chevron.
-   The node column is the spine — the header's glyph strip turned on its side,
-   each row wearing its own strip glyph (data-g, lib/dossier MARK_GLYPH) — so a
-   note, a command, a run's members, a drawer and the reason a call failed all
-   start in one text column, --zobj. A row is an .actrow (RunStream ActionRow)
-   or a .zrow (thought, log, pause); both use the ax-* cells. */
+/* ONE GRID for everything in a zone: node | gutter | object | figure | chevron,
+   every row 28px, prose on a 20px line. The node column is the spine and the
+   node is the row's kind, as an icon (RunStream MARK_ICON) — a note is a dot,
+   a thought a ring, a run's members small dots — so the kind words left the
+   grid (they stay in the row for a screen reader, in the gutter's cell) and a
+   note, a command, a drawer and the reason a call failed all start in one
+   text column, --zobj, level with the header's WORK. A row is an .actrow
+   (RunStream ActionRow) or a .zrow (thought, log, pause, pictures); both use
+   the ax-* cells. */
 [data-style="dossier"] .dwork {
-  --zn: 24px; --zk: 58px; --zc: 16px; --zobj: calc(var(--zn) + var(--zk));
+  --zn: 24px; --zk: 12px; --zc: 16px; --zobj: calc(var(--zn) + var(--zk));
   --zline: color-mix(in oklab, var(--txl) 40%, var(--panel2));
   --zpl: 8px; --zpr: 12px;
   background: var(--panel2); padding: 5px var(--zpr) 9px var(--zpl);
@@ -1894,15 +1897,25 @@ input {
    folds the work from anywhere. --isle-b (Terminal.tsx, on the scroller) is
    where it pins: 0 under the compact pill, which floats over the plate's
    right end (its chips hide while pinned, data-isle), or just under the full
-   island bar. Pinned (WorkZone's observer), a hairline cuts it from the rows
-   passing under, and a lid in the plate's colour covers the band above it so
-   rows don't surface over the header on their way out. The lid spans the
-   plate's padding box (--zpl/--zpr). */
+   island bar. Its hairline (below) cuts it from the rows passing under, and
+   pinned (WorkZone's observer) a lid in the plate's colour covers the band
+   above it so rows don't surface over the header on their way out. The lid
+   spans the plate's padding box (--zpl/--zpr). */
 [data-style="dossier"] .dwork[data-open] > .dwork-head {
   position: sticky; top: var(--isle-b, 0px); z-index: 3; background: inherit;
 }
 [data-style="dossier"][data-isle="pill"] .dwork[data-pinned] .dwork-right { visibility: hidden; }
-[data-style="dossier"] .dwork[data-pinned] > .dwork-head { box-shadow: 0 1px 0 var(--d-hair); }
+/* Open, the header is one line — its chips hide, the rows below wear them —
+   with a hairline under it across the plate, so what follows reads as the
+   list under a title; the node drops its ring, the spine starts at row one. */
+[data-style="dossier"] .dwork[data-open] > .dwork-head { min-height: 35px; padding: 0 2px 0 0; margin-bottom: 6px; }
+[data-style="dossier"] .dwork[data-open] > .dwork-head::after {
+  content: ""; position: absolute; left: calc(-1 * var(--zpl)); right: calc(-1 * var(--zpr)); bottom: 0;
+  height: 1px; pointer-events: none; background: var(--line, var(--d-hair));
+}
+[data-style="dossier"] .dwork[data-open] .dwork-l2 { display: none; }
+[data-style="dossier"] .dwork[data-open] :is(.dwork-node, .dwork-right) { grid-row: 1; }
+[data-style="dossier"] .dwork[data-open] .dwork-node { background: none; box-shadow: none; }
 [data-style="dossier"] .dwork[data-pinned] > .dwork-head::before {
   content: ""; position: absolute; left: calc(-1 * var(--zpl)); right: calc(-1 * var(--zpr)); bottom: 100%;
   height: var(--isle-b, 0px); pointer-events: none; background: var(--panel2);
@@ -1927,6 +1940,7 @@ input {
   border-radius: calc(var(--d-rad) * .4);
 }
 [data-style="dossier"] .dwork-k > i > svg { width: 10px; height: 10px; }
+[data-style="dossier"] .dwork-k[data-m="note"] > i > svg { width: 7px; height: 7px; fill: currentColor; }
 [data-style="dossier"] .dwork-k[data-m="think"] { --m: var(--d-think); }
 [data-style="dossier"] .dwork-k[data-m="note"] { --m: var(--d-note); }
 [data-style="dossier"] .dwork-k:is([data-m="hook"], [data-m="log"]) { --m: var(--txl); }
@@ -1982,9 +1996,9 @@ input {
 }
 [data-style="dossier"] .dwork-body { position: relative; display: flex; flex-direction: column; }
 [data-style="dossier"] .dwork-body > * { margin: 0 !important; }
-/* the spine, from under the header's chevron down past the last row */
+/* the spine, from the first row's node down past the last row */
 [data-style="dossier"] .dwork-body::before {
-  content: ""; position: absolute; left: calc(var(--zn) / 2 - .5px); top: -14px; bottom: 10px; width: 1px;
+  content: ""; position: absolute; left: calc(var(--zn) / 2 - .5px); top: 14px; bottom: 10px; width: 1px;
   background: linear-gradient(var(--zline), var(--zline) 92%, transparent);
 }
 /* every hue inside the work is the tool role: the component writes each row's
@@ -1994,13 +2008,13 @@ input {
 
 [data-style="dossier"] .dwork-body :is(.actrow, .zrow) {
   --m: var(--d-tool);
-  position: relative; display: grid; align-items: start; width: 100%; max-width: none; min-height: 24px;
+  position: relative; display: grid; align-items: start; width: 100%; max-width: none; min-height: 28px;
   grid-template-columns: var(--zn) var(--zk) minmax(0, 1fr) max-content var(--zc);
   margin: 0; padding: 0; border: 0; border-radius: 0; background: none; text-align: left;
 }
 [data-style="dossier"] .dwork-body :is(.actrow, .zrow)[data-err] { --m: var(--err); }
-/* a plate (hover, a failure, your steer) starts at the kind column, so the
-   spine runs past it untouched */
+/* a plate (hover, a failure) starts right of the spine, so the spine runs
+   past it untouched */
 [data-style="dossier"] .dwork-body :is(.actrow, .zrow)::after {
   content: ""; position: absolute; inset: 0 0 0 var(--zn); z-index: 0; pointer-events: none;
   border-radius: calc(var(--d-rad) * .5);
@@ -2010,115 +2024,136 @@ input {
   background: color-mix(in oklab, var(--d-tool) 7%, transparent);
 }
 [data-style="dossier"] .dwork-body .actrow[data-err]::after { background: color-mix(in oklab, var(--err) var(--d-tint), transparent); }
-/* node: the strip's own chip, ringed in the ground so it cuts the spine */
+/* node: the row's icon on a disc of the plate's own colour, so it cuts the
+   spine; a failure's icon is the fail mark (ActionRow), in --err */
 [data-style="dossier"] .dwork-body :is(.actrow, .zrow) > .ax-bar {
-  grid-column: 1; grid-row: 1; align-self: start; width: auto; height: 24px;
+  grid-column: 1; grid-row: 1; align-self: start; width: auto; height: 28px;
   display: grid; place-items: center; background: none; animation: none;
 }
-[data-style="dossier"] .dwork-body .ax-bar[data-g]::before {
-  content: attr(data-g);
-  width: 16px; height: 16px; display: grid; place-items: center;
-  font-size: var(--t10); line-height: 1; color: var(--m);
-  background: color-mix(in oklab, var(--m) 14%, var(--panel2));
-  border-radius: calc(var(--d-rad) * .4); box-shadow: 0 0 0 2.5px var(--panel2);
+[data-style="dossier"] .dwork-body .ax-bar > svg {
+  width: 14px; height: 14px; padding: 4px; box-sizing: content-box; border-radius: 50%;
+  color: var(--m); background: var(--panel2);
 }
-[data-style="dossier"] .dwork-body .actrow[data-err] > .ax-bar[data-g]::before { content: "\2715"; }
-[data-style="dossier"] .dwork-body .actrow[data-run] > .ax-bar[data-g]::before {
-  color: var(--d-you); background: color-mix(in oklab, var(--d-you) 18%, var(--panel2));
-  box-shadow: 0 0 0 2.5px var(--panel2), 0 0 0 4px color-mix(in oklab, var(--d-you) 35%, transparent),
+[data-style="dossier"] .dwork-body .actrow[data-run] > .ax-bar > svg {
+  color: var(--d-you); background: color-mix(in oklab, var(--d-you) 16%, var(--panel2));
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--d-you) 45%, transparent),
     0 0 12px color-mix(in oklab, var(--d-you) 45%, transparent);
   animation: agbpulse 1.4s ease-in-out infinite;
 }
 @media (prefers-reduced-motion: reduce) {
-  [data-style="dossier"] .dwork-body .actrow[data-run] > .ax-bar[data-g]::before { animation: none; }
+  [data-style="dossier"] .dwork-body .actrow[data-run] > .ax-bar > svg { animation: none; }
 }
-/* kind: the category word, in the row's role */
+/* kind: the word stays in the row for a screen reader, out of sight — the
+   icon says it — so its column is only the gutter between node and text */
 [data-style="dossier"] .dwork-body :is(.actrow, .zrow) > .ax-tagcell {
-  grid-column: 2; grid-row: 1; align-self: stretch; align-items: flex-start; min-height: 24px; padding: 0 4px 0 5px;
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
 }
-[data-style="dossier"] .dwork-body .ax-tag {
-  height: auto; padding: 0; border: 0; border-radius: 0; background: none;
-  font-size: var(--t9); font-weight: 500; line-height: 24px; letter-spacing: 1.2px;
-  color: color-mix(in oklab, var(--m) 78%, var(--panel2));
-}
-[data-style="dossier"] .dwork-body .ax-tag::after { content: none; }
-[data-style="dossier"] .dwork-body .actrow[data-run] :is(.ax-tag, .ax-stat) { color: var(--d-you); }
+[data-style="dossier"] .dwork-body .actrow[data-run] > .ax-stat { color: var(--d-you); }
 /* object, then figure and chevron: a row with no drawer keeps the empty
    chevron cell, so every figure ends on one edge */
 [data-style="dossier"] .dwork-body :is(.actrow, .zrow) > :is(.ax-obj, .zo) { grid-column: 3; grid-row: 1; min-width: 0; }
-[data-style="dossier"] .dwork-body .ax-obj { padding-right: 0; line-height: 24px; font-size: var(--t115); color: var(--d-ink); }
+[data-style="dossier"] .dwork-body .ax-obj { padding-right: 0; line-height: 28px; font-size: var(--t115); color: var(--d-ink); }
+/* a span in another face (a command's words are sans) would grow the line */
+[data-style="dossier"] .dwork-body .ax-obj > * { vertical-align: top; }
 [data-style="dossier"] .dwork-body .actrow[data-tier="glance"] .ax-obj { color: var(--txd); }
+/* what the object can't say for itself (a skill's name, a tool search's
+   query): one quiet word after it */
+[data-style="dossier"] .dwork-body .ax-hint { padding-left: 10px; color: var(--txg); }
+/* a query is quoted like any other, without the dashed inset */
+[data-style="dossier"] .dwork-body .ax-q { border: 0; padding: 0; color: var(--txh); }
+[data-style="dossier"] .dwork-body .ax-q::before { content: "\201C"; }
+[data-style="dossier"] .dwork-body .ax-q::after { content: "\201D"; }
 [data-style="dossier"] .dwork-body :is(.actrow, .zrow) > .ax-stat {
-  grid-column: 4; grid-row: 1; height: 24px; padding-left: 14px;
-  font-size: var(--t10); font-variant-numeric: tabular-nums;
+  grid-column: 4; grid-row: 1; height: 28px; padding-left: 16px;
+  font-size: var(--t105); font-variant-numeric: tabular-nums;
 }
-[data-style="dossier"] .dwork-body :is(.actrow, .zrow) > .ax-chev { grid-column: 5; grid-row: 1; height: 24px; align-items: center; }
+[data-style="dossier"] .dwork-body :is(.actrow, .zrow) > .ax-chev { grid-column: 5; grid-row: 1; height: 28px; align-items: center; }
 /* a row that opens says so at rest: the chevron in the figure's own colour, so
    "4 lines ›" is one control; open, it stays lit */
 [data-style="dossier"] .dwork-body .ax-chev { color: var(--txf); }
 [data-style="dossier"] .dwork-body [aria-expanded="true"] > .ax-chev { color: var(--txm); }
 
-/* the agent's own words: a thought is italic, a step under a note */
-[data-style="dossier"] .dwork-body .zo { padding: 3px 0 4px; line-height: 18px; overflow-wrap: anywhere; }
-[data-style="dossier"] .dwork-body .thought { --m: var(--d-think); }
-[data-style="dossier"] .dwork-body .thought-text { font-size: var(--t12); font-style: italic; color: var(--txd); }
+/* the agent's own words: prose on a 20px line, padded to the row's 28px, with
+   air above each one (it starts a beat) unless it opens the zone */
+[data-style="dossier"] .dwork-body .zo { padding: 4px 0; line-height: 20px; overflow-wrap: anywhere; }
+/* a thought: italic, a step under a note, on a ring */
+[data-style="dossier"] .dwork-body .thought { --m: var(--d-think); margin-top: 10px; }
+[data-style="dossier"] .dwork-body > :first-child > .thought:first-child { margin-top: 0; }
+[data-style="dossier"] .dwork-body .thought > .ax-bar::before {
+  content: ""; width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%;
+  border: 1.5px solid var(--m); background: var(--panel2); box-shadow: 0 0 0 5px var(--panel2);
+}
+/* a pause before it is its figure (RunStream pauseAt), the spine dashed above */
+[data-style="dossier"] .dwork-body .thought[data-pause]::before {
+  content: ""; position: absolute; z-index: 1; left: calc(var(--zn) / 2 - .5px); top: -10px; width: 1px; height: 10px;
+  background: repeating-linear-gradient(to bottom, var(--panel2) 0 2px, transparent 2px 4px);
+}
+[data-style="dossier"] .dwork-body .thought[data-pause] > .ax-stat { color: var(--txg); }
+[data-style="dossier"] .dwork-body .thought-text { font-size: calc(var(--t12) + .5px); font-style: italic; color: var(--txd); }
 [data-style="dossier"] .dwork-body .thought-text p { margin: 0; }
-/* an interim note: the agent to you, mid-work — upright, a step brighter, with
-   a little air above it so each one reads as the start of a beat. The row is
-   the bubble's own wrapper; its node and NOTE word are drawn here. */
+/* an interim note: the agent to you, mid-work — upright, a step brighter, on
+   a dot. The row is the bubble's own wrapper; its node is drawn here, and a
+   pause right before it (RunStream pauseAt) is its figure, with the spine
+   dashed through the air above it. */
 [data-style="dossier"] .dwork-body .group\/msg {
-  display: grid; align-items: start; padding: 0; margin-top: 7px !important;
-  grid-template-columns: var(--zn) var(--zk) minmax(0, 1fr) max-content;
+  display: grid; align-items: start; padding: 0; margin-top: 10px !important;
+  grid-template-columns: var(--zn) var(--zk) minmax(0, 1fr) max-content var(--zc);
 }
+[data-style="dossier"] .dwork-body > .group\/msg:first-child { margin-top: 0 !important; }
 [data-style="dossier"] .dwork-body .group\/msg::before {
-  content: "\25C6"; grid-column: 1; grid-row: 1; justify-self: center; margin-top: 4px;
-  position: relative; z-index: 1; width: 16px; height: 16px; display: grid; place-items: center;
-  font-size: var(--t10); line-height: 1; color: var(--d-note);
-  background: color-mix(in oklab, var(--d-note) 14%, var(--panel2));
-  border-radius: calc(var(--d-rad) * .4); box-shadow: 0 0 0 2.5px var(--panel2);
+  content: ""; grid-column: 1; grid-row: 1; justify-self: center; margin-top: 10.5px;
+  position: relative; z-index: 1; width: 7px; height: 7px; border-radius: 50%;
+  background: var(--d-note); box-shadow: 0 0 0 5px var(--panel2);
 }
-[data-style="dossier"] .dwork-body .group\/msg::after {
-  content: "NOTE"; grid-column: 2; grid-row: 1; padding-left: 5px;
-  font-size: var(--t9); font-weight: 500; line-height: 24px; letter-spacing: 1.2px; color: var(--txm);
+[data-style="dossier"] .dwork-body .group\/msg:has(> .zpause)::after {
+  content: ""; position: absolute; z-index: 1; left: calc(var(--zn) / 2 - .5px); top: -10px; width: 1px; height: 10px;
+  background: repeating-linear-gradient(to bottom, var(--panel2) 0 2px, transparent 2px 4px);
 }
 [data-style="dossier"] .dwork-body .abub {
-  grid-column: 3; grid-row: 1; max-width: none; padding: 2.5px 0 3.5px; border: 0; background: none;
-  font-size: calc(var(--t12) + .5px); line-height: 19px; color: var(--txh);
+  grid-column: 3; grid-row: 1; max-width: none; padding: 4px 0; border: 0; background: none;
+  font-size: var(--t13); line-height: 20px; color: var(--txh);
 }
+[data-style="dossier"] .dwork-body .abub .md { line-height: inherit; }
 [data-style="dossier"] .dwork-body .abub .md p { margin: 0; }
 [data-style="dossier"] .dwork-body .abub + * { grid-column: 4; grid-row: 1; }
+[data-style="dossier"] .dwork-body .zpause {
+  grid-column: 4; grid-row: 1; justify-self: end; padding-left: 16px;
+  font-family: var(--mono); font-size: var(--t105); line-height: 28px; font-variant-numeric: tabular-nums; color: var(--txg);
+}
+/* the note's COPY / QUOTE take the figure's cell while you hover it */
+[data-style="dossier"] .dwork-body .group\/msg:hover > .zpause { visibility: hidden; }
+/* inline code in a note or a thought takes no more room than its text: its
+   copy button floats over what follows instead of holding a gap open after
+   every span; a file ref (a box in the line) keeps its border but fits the
+   20px line it sits on */
+[data-style="dossier"] .dwork-body .md code + .md-copy { position: absolute; }
+[data-style="dossier"] .dwork-body .md-fileref { vertical-align: middle; line-height: 1; }
+[data-style="dossier"] .dwork-body .md-fileref > code { line-height: 14px; }
 /* a hook's output or a stderr line: the quietest row, its first line only */
 [data-style="dossier"] .dwork-body .zrow.log { --m: var(--txl); }
 [data-style="dossier"] .dwork-body .log > .zo { white-space: pre-wrap; font-family: var(--mono); font-size: var(--t11); color: var(--txl); }
 [data-style="dossier"] .dwork-body .log[data-err] > .zo { color: var(--err); }
-/* a pause: a dashed stretch of the spine, its length in the kind column */
-[data-style="dossier"] .dwork-body .zrow.gap { min-height: 18px; }
-[data-style="dossier"] .dwork-body .zrow.gap > .ax-bar { height: 18px; }
+/* a pause before anything but a note: a dashed stretch of the spine, its
+   length in the figure column */
+[data-style="dossier"] .dwork-body .zrow.gap { min-height: 16px; }
+[data-style="dossier"] .dwork-body .zrow.gap > .ax-bar { height: 16px; }
 [data-style="dossier"] .dwork-body .zrow.gap > .ax-bar::before {
   content: ""; width: 1px; height: 100%;
   background: repeating-linear-gradient(to bottom, var(--panel2) 0 2px, transparent 2px 5px);
 }
-[data-style="dossier"] .dwork-body .zrow.gap > .ax-tagcell {
-  min-height: 18px; align-items: center; font-size: var(--t9); letter-spacing: .4px; color: var(--txg);
-}
+[data-style="dossier"] .dwork-body .zrow.gap > .ax-stat { height: 16px; line-height: 16px; color: var(--txg); }
 /* a run (commands, edits, calls, agents): the head is a row like any other,
-   and its members hang off the head's kind column on a ├ └ connector, so
-   their objects stay in the one column */
+   its members small dots on the spine under the head's icon, their objects
+   in the one column */
 [data-style="dossier"] .dwork-body .ax-window { margin: 0; border: 0; background: none; }
 [data-style="dossier"] .dwork-body .ax-window > .actrow > .ax-obj { color: var(--txm); }
-[data-style="dossier"] .dwork-body .ax-window > .actrow:not(:first-child) > .ax-tagcell::before {
-  content: ""; position: absolute; left: 9px; top: -7px; bottom: 0; width: 1px; background: var(--zline);
+[data-style="dossier"] .dwork-body .ax-window > .actrow:not(:first-child) > .ax-bar::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--line2, var(--d-hair)); box-shadow: 0 0 0 4px var(--panel2);
 }
-[data-style="dossier"] .dwork-body .ax-window > .actrow:not(:first-child):not(:has(~ .actrow)) > .ax-tagcell::before {
-  bottom: auto; height: 19px;
-}
-[data-style="dossier"] .dwork-body .ax-window > .actrow:not(:first-child) > .ax-tagcell::after {
-  content: ""; position: absolute; left: 9px; top: 12px; width: 12px; height: 1px; background: var(--zline);
-}
-/* an open member's drawer carries the connector on to the next member */
-[data-style="dossier"] .dwork-body .ax-window > .ax-drawer:has(~ .actrow)::before {
-  content: ""; position: absolute; left: calc(8px - var(--zk)); top: -3px; bottom: -8px; width: 1px; background: var(--zline);
-}
+[data-style="dossier"] .dwork-body .ax-window > .actrow:not(:first-child)[data-err] > .ax-bar::before { background: var(--err); }
+[data-style="dossier"] .dwork-body .ax-window > .actrow:not(:first-child)[data-run] > .ax-bar::before { background: var(--d-you); }
 /* an agent: a turn nested in yours, so its row and brief sit on a plate */
 [data-style="dossier"] .dwork-body .agb { position: relative; display: flow-root; }  /* keeps the brief's margin on the plate */
 [data-style="dossier"] .dwork-body .agb[data-plate] { margin: 4px 0 !important; }
@@ -2130,7 +2165,7 @@ input {
 /* what hangs under a row — a drawer, a widget, shots, the reason a call failed
    — starts at the object column */
 [data-style="dossier"] .dwork-body .ax-drawer {
-  position: relative; margin: 2px 0 7px var(--zobj) !important; padding: 7px 10px 8px;
+  position: relative; margin: 2px 0 8px var(--zobj) !important; padding: 8px 12px;
   background: var(--panel3); border: 1px solid var(--zline); border-radius: calc(var(--d-rad) * .5);
 }
 [data-style="dossier"] .dwork-body .zx { margin-left: var(--zobj) !important; }
@@ -2141,8 +2176,16 @@ input {
 [data-style="dossier"] .dwork-body .zx .tw[data-idiom="field"] { background: none; border: 0; }
 [data-style="dossier"] .dwork-body .zx .tw > :is(.tw-head, .tw-body) { padding-left: 0; padding-right: 0; }
 [data-style="dossier"] .dwork-body .zx :is(img, video) {
-  height: 76px; width: auto; max-width: 176px; border-color: var(--zline); border-radius: calc(var(--d-rad) * .5);
+  height: 64px; width: auto; max-width: 180px; border-color: var(--zline); border-radius: calc(var(--d-rad) * .5);
 }
+/* pictures: the row above names them (the call, or "N pictures"), so the
+   gallery drops its SCREENS caption and rule; names under each, legible */
+[data-style="dossier"] .dwork-body .zx .tw:has(.flc-gal) { margin: 2px 0 8px; }
+[data-style="dossier"] .dwork-body .zx .tw:has(.flc-gal) > .tw-head { display: none; }
+[data-style="dossier"] .dwork-body .zx .tw:has(.flc-gal) > .tw-body { padding: 0; }
+[data-style="dossier"] .dwork-body .zx .flc-shots { gap: 10px; }
+[data-style="dossier"] .dwork-body .zx .flc-shots :is(figure, figcaption) { max-width: 180px; }
+[data-style="dossier"] .dwork-body .zx .flc-shots figcaption { font-size: var(--t95); letter-spacing: 0; }
 
 /* ── tier 1: the answer ── */
 [data-style="dossier"] .resblk { margin: 0; }

@@ -2,7 +2,8 @@ import { memo, useEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronsUp,
-  Quote, Layers, Image as ImageIcon,
+  Quote, Layers, Image as ImageIcon, Terminal, FileText, Pencil, FilePlus, Search, Globe,
+  Plug, Bot, Sparkles, Webhook, ScrollText, CircleX, Wrench, Circle, type LucideIcon,
 } from "lucide-react";
 import { api, type AnswerSelection, type RunEvent, type TimedEvent } from "../api";
 import type { PendingRequest } from "../chat";
@@ -16,7 +17,7 @@ import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
-import { kindsOf, MARK_GLYPH, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
+import { kindsOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
 import { PromptBubble } from "./PromptBubble";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { ToolWidget } from "./ResultWidgets";
@@ -157,17 +158,31 @@ function CopyBtn({ text, title }: { text: string; title: string }) {
   );
 }
 
-/** The glyph a tool's row wears on the WORK zone's spine — the same mark the
- *  zone's header strip shows for it (lib/dossier MARK_GLYPH). */
+/** The mark a tool's row wears on the WORK zone's spine — the same mark the
+ *  zone's header chips count it under (lib/dossier kindsOf). */
 const KIND_MARK: Partial<Record<ToolKind, Mark>> = {
   bash: "command", read: "read", write: "write", search: "search", web: "fetch",
   mcp: "call", agent: "agent",
 };
 const kindMark = (name: string): Mark => KIND_MARK[toolKind(name)] ?? "step";
 
-/** The tag a row wears in the zone's kind column, which holds seven characters
- *  (--zk in index.css): a longer name (TOOLSEARCH, MULTIEDIT, BASHOUTPUT) says
- *  its family's word instead of losing its tail. */
+/** What a mark looks like: the icon is the row's kind, so the zone needs no
+ *  column of kind words (they stay in the row, for a screen reader). A note
+ *  and a thought are a dot and a ring drawn by index.css; their icons serve
+ *  the header's chips. */
+const MARK_ICON: Record<Mark, LucideIcon> = {
+  command: Terminal, read: FileText, edit: Pencil, write: FilePlus, search: Search,
+  fetch: Globe, call: Plug, agent: Bot, skill: Sparkles, hook: Webhook, log: ScrollText,
+  fail: CircleX, step: Wrench, note: Circle, think: Circle,
+};
+function MarkIcon({ mark, size = 14 }: { mark: Mark; size?: number }) {
+  const I = MARK_ICON[mark];
+  return <I size={size} strokeWidth={size > 12 ? 1.9 : 2.2} aria-hidden />;
+}
+
+/** The tag a row wears — in the WORK zone it is what a screen reader hears, the
+ *  icon on the spine being what you see: a longer name (TOOLSEARCH, MULTIEDIT,
+ *  BASHOUTPUT) says its family's word. */
 const KIND_WORD: Record<ToolKind, string> = {
   bash: "BASH", read: "READ", write: "EDIT", search: "SEARCH", web: "WEB",
   agent: "AGENT", plan: "PLAN", mcp: "MCP", plain: "TOOL",
@@ -563,13 +578,14 @@ function BootRow({ text }: { text: string }) {
 }
 
 /** A pause with nothing recorded but its length — a dashed stretch of the
- *  spine, the figure in the kind column. A full-width hairline read as a
- *  section break between things that were one stretch of work. */
+ *  spine, the figure in the figure column. A full-width hairline read as a
+ *  section break between things that were one stretch of work. A pause before
+ *  a note isn't drawn here: the note wears it (renderEvent). */
 function GapMark({ ms }: { ms: number }) {
   return (
     <div aria-hidden className="zrow gap">
       <i className="ax-bar" />
-      <span className="ax-tagcell">+{dur(ms)}</span>
+      <span className="ax-stat">{dur(ms)}</span>
     </div>
   );
 }
@@ -751,13 +767,13 @@ function WorkZone({ cats, notes, steps, failed, shots, fresh, gallery, running, 
         <span className="dwork-l2">
           <span className="dwork-kinds" title={words} aria-label={words}>
             {kindsOf(cats, notes).map((k) => (
-              <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden>{MARK_GLYPH[k.m]}</i>{k.n}</span>
+              <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden><MarkIcon mark={k.m} size={10} /></i>{k.n}</span>
             ))}
           </span>
           {running && live ? <span className="dwork-live">{live}</span> : null}
         </span>
         <span className="dwork-right">
-          {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden>{"\u2715"}</i>{failed}</span> : null}
+          {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden><MarkIcon mark="fail" size={10} /></i>{failed}</span> : null}
           {fresh.length ? (
             <span className="dwork-badge" title={`${fresh.length} of ${pics} not seen yet`}>
               <ImageIcon size={11} strokeWidth={2.2} aria-hidden />{fresh.length} NEW
@@ -796,8 +812,10 @@ function WorkZone({ cats, notes, steps, failed, shots, fresh, gallery, running, 
 /** A thought, in the flow where it was said (lib/segments) — the agent's own
  *  status line, often a message the CLI handed back reworded. A row on the
  *  zone's grid with the whole text in it, italic, one ink tier under a note. */
-function ThoughtRow({ ms, text, animate, onOpenFile, toolStyle }: {
+function ThoughtRow({ ms, pause, text, animate, onOpenFile, toolStyle }: {
   ms?: number;
+  /** The pause right before it (RunStream pauseAt), worn as its figure. */
+  pause?: number;
   text: string;
   animate: boolean;
   onOpenFile?: OpenFile;
@@ -806,12 +824,15 @@ function ThoughtRow({ ms, text, animate, onOpenFile, toolStyle }: {
   return (
     <div
       className="zrow thought"
+      data-pause={pause ? "" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <i className="ax-bar" data-g={MARK_GLYPH.think} aria-hidden />
+      <i className="ax-bar" aria-hidden />
       <span className="ax-tagcell"><span className="ax-tag">THINK</span></span>
       <Markdown className="thought-text zo" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
-      <span className="ax-stat">{slow(ms) ? dur(ms) : null}</span>
+      <span className="ax-stat" title={pause ? `${dur(pause)} before this thought` : undefined}>
+        {slow(ms) ? dur(ms) : pause ? dur(pause) : null}
+      </span>
     </div>
   );
 }
@@ -834,7 +855,7 @@ function LogRow({ src, label, text, error, animate }:
       title={more ? (open ? "hide the rest" : `show ${more} more line${more > 1 ? "s" : ""}`) : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <i className="ax-bar" data-g={MARK_GLYPH[error ? "fail" : "hook"]} aria-hidden />
+      <i className="ax-bar" aria-hidden><MarkIcon mark={error ? "fail" : src === "hook" ? "hook" : "log"} /></i>
       <span className="ax-tagcell"><span className="ax-tag">{src.toUpperCase()}</span></span>
       <span className="zo">
         {label ? <span className="text-muted-2">{label} · </span> : null}
@@ -890,8 +911,9 @@ function ActionRow({
   t?: string;
   /** Omitted inside a terminal window — its header already said BASH. */
   tag?: string;
-  /** The strip glyph this row wears on the WORK zone's spine (lib/dossier
-   *  MARK_GLYPH). Unset for a run's members: they hang off the run's head. */
+  /** The icon this row wears on the WORK zone's spine (MARK_ICON); a failure
+   *  wears the fail mark instead. Unset for a run's members: they are small
+   *  dots on the spine under the run's head. */
   mark?: Mark;
   stat?: ReactNode;
   drawer?: () => ReactNode;
@@ -960,7 +982,7 @@ function ActionRow({
           })
         }
       >
-        <i className="ax-bar" data-g={mark ? MARK_GLYPH[mark] : undefined} aria-hidden />
+        <i className="ax-bar" aria-hidden>{mark ? <MarkIcon mark={error ? "fail" : mark} /> : null}</i>
         <span className="ax-tagcell">
           {tag !== undefined && (
             <span className="ax-tag" data-shape={shape}>
@@ -1075,7 +1097,7 @@ function WriteCard({ name, path, ms, stat, error, animate, t }: {
       shape={toolShape(name)}
       accent={toolAccent(name)}
       tag={kindTag(name)}
-      mark={kindMark(name)}
+      mark={name === "Write" ? "write" : "edit"}
       animate={animate}
       error={error}
       stat={<Took ms={ms} stat={stat} error={error} />}
@@ -1104,6 +1126,8 @@ function SearchCard({ name, summary, ms, stat, error, animate, t }: {
       stat={<Took ms={ms} stat={stat} error={error} />}
     >
       <span className="ax-q">{summary}</span>
+      {/* the search icon is Grep's too, and "select:…" alone says nothing */}
+      {name === "ToolSearch" ? <span className="ax-hint">tool search</span> : null}
     </ActionRow>
   );
 }
@@ -1244,10 +1268,11 @@ function AgentBlock({ run, animate }: { run: AgentRun; animate: boolean }) {
       data-open={open ? "" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
-      <ActionRow tier="reach" mark="agent" accent={agentHue(run)} tag={skill ? "SKILL" : "AGENT"}
+      <ActionRow tier="reach" mark={skill ? "skill" : "agent"} accent={agentHue(run)} tag={skill ? "SKILL" : "AGENT"}
         running={running} error={error} animate={false} stat={agentNums(run, animate)}>
         <span className="text-foreground-bright">{meta?.type || (skill ? summary : "agent")}</span>
         {title ? <span className="text-muted-2">{` \u2014 ${title}`}</span> : null}
+        {skill ? <span className="ax-hint">skill</span> : null}
       </ActionRow>
       {brief ? (
         <button type="button" className="agb-brief" onClick={() => setOpen((o) => !o)}
@@ -1553,7 +1578,7 @@ function FoldedChips({ names, onOpen }: { names: string[]; onOpen: () => void })
         }
       }}
     >
-      <i className="ax-bar" data-g={MARK_GLYPH.read} aria-hidden />
+      <i className="ax-bar" aria-hidden><MarkIcon mark="read" /></i>
       <span className="ax-tagcell">
         <span className="ax-tag" data-shape="bare">LOOKUPS</span>
       </span>
@@ -1763,6 +1788,21 @@ export const RunStream = memo(function RunStream({
     return false;
   };
 
+  /** In DOSSIER a pause (a thought with nothing recorded but its length) that
+   *  comes right before the agent's words — a note, or a thought with no figure
+   *  of its own — is drawn on them, as their figure: on a row of its own under
+   *  the steps it read as part of the step above it. */
+  const wearsPause = (j: number): boolean => {
+    const e = events[j];
+    if (e?.type === "thinking") return !!e.text && !slow(e.ms);
+    return e?.type === "text" && !!e.text && !(resultText && e.text.trim() === resultText)
+      && !(asksNext(j) || (dossier && j === finalText));
+  };
+  const pauseAt = (j: number): number => {
+    const e = events[j];
+    return e?.type === "thinking" && !e.text && e.ms && !insideRun(j, groups, folds) ? e.ms : 0;
+  };
+
   /** One event as its row. Indices stay absolute: foldChips, runsOf and the
    *  tool_done pairing all key off position in the full array. */
   const renderEvent = (i: number): ReactNode => {
@@ -1782,6 +1822,7 @@ export const RunStream = memo(function RunStream({
               idKey={`${turnId}:${i}`}
             />
           );
+        const pause = dossier ? pauseAt(i - 1) : 0;
         return (
           <div
             key={i}
@@ -1796,6 +1837,7 @@ export const RunStream = memo(function RunStream({
             <MessageBlock text={text} onQuote={onQuote}>
               <Markdown className="leading-relaxed" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
             </MessageBlock>
+            {pause ? <span className="zpause" title={`${dur(pause)} before this note`}>{dur(pause)}</span> : null}
           </div>
         );
       }
@@ -1834,8 +1876,24 @@ export const RunStream = memo(function RunStream({
         const withExtra = (node: ReactNode) =>
           extra ? <div key={i}>{node}{extra}</div> : node;
         // COMPACT reads as a chat, and there the pictures are the reply: the
-        // Read or Attach that fetched them is plumbing, so its row goes.
-        if (compact && extra && inFlow(i)) return <div key={i}>{extra}</div>;
+        // Read or Attach that fetched them is plumbing, so its row goes. In
+        // DOSSIER a plain row stands in for it, so the pictures hang off the
+        // zone's grid instead of floating beside the spine.
+        if (compact && extra && inFlow(i)) {
+          const n = run.reduce((t, j) => t + (doneOf(events[j])?.images?.length ?? 0), 0);
+          return (
+            <div key={i}>
+              {dossier ? (
+                <div className="zrow shots">
+                  <i className="ax-bar" aria-hidden><ImageIcon size={14} strokeWidth={1.9} /></i>
+                  <span className="ax-tagcell"><span className="ax-tag">SHOTS</span></span>
+                  <span className="ax-obj">{n} picture{n === 1 ? "" : "s"}</span>
+                </div>
+              ) : null}
+              {extra}
+            </div>
+          );
+        }
         // A delegation is a turn nested inside this one, so it is drawn as
         // its own framed block — and a run of them as one fan, not as N
         // identical rows or a generic "AGENT · 4 CALLS" box.
@@ -1938,11 +1996,14 @@ export const RunStream = memo(function RunStream({
       case "thinking":
         // A pause swallowed by a group is drawn by nobody: its mark would land
         // at the foot of the card instead of between the rows it fell between,
-        // and two of them would stack on the same pixel.
+        // and two of them would stack on the same pixel. One right before the
+        // agent's words is drawn on them (wearsPause).
         if (!event.text)
-          return event.ms && !insideRun(i, groups, folds) ? <GapMark key={i} ms={event.ms} /> : null;
+          return event.ms && !insideRun(i, groups, folds) && !(dossier && wearsPause(i + 1))
+            ? <GapMark key={i} ms={event.ms} /> : null;
         return (
           <ThoughtRow key={i} ms={event.ms} text={event.text} animate={animate}
+            pause={dossier && !slow(event.ms) ? pauseAt(i - 1) : 0}
             onOpenFile={onOpenFile} toolStyle={toolStyle} />
         );
       case "log":
