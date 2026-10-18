@@ -4,9 +4,10 @@
 // right-hand text, and the buttons the SETUP row holds. Things that go wrong
 // quietly: a teammate's run in progress reads "idle", the text blames Xcode when
 // only the iOS runtime is missing, and a device with anything of Set up's on it
-// (a setup cut short, sharing off) is left with no way to remove it.
+// (a setup cut short, sharing off) is left with no way to remove it. And the
+// choices of CLAUDE ACCOUNT FOR DEVICE RUNS, where a pick that's gone must still show.
 import type { RivendellDevice } from "../api.ts";
-import { setupActions, stateText } from "./deviceruns.ts";
+import { accountChoices, setupActions, stateText } from "./deviceruns.ts";
 import { hhmm } from "./surfaces.ts";
 
 const ok = (cond: boolean, what: string) => {
@@ -52,3 +53,21 @@ eq(setupActions(dev("NEEDS_SETUP", true)), ["setup", "remove"],
 eq(setupActions(dev("OFF", false)), [], "nothing here and not shared: no row");
 eq(setupActions(dev("XCODE_MISSING", false)), [], "nothing here and no Xcode: set up waits for Xcode");
 eq(setupActions({ share: { state: "NOT_MAC", checks: [], installed: false } }), [], "off macOS: no setup at all");
+
+// CLAUDE ACCOUNT FOR DEVICE RUNS: the logins a run can go out under, and the pick
+const logins = [
+  { slot: 1, email: "mahdi@example.com", alias: null, disabled: false, default: true },
+  { slot: 2, email: "work@example.com", alias: "Work", disabled: false, default: false },
+  { slot: 3, email: "old@example.com", alias: null, disabled: true, default: false },
+];
+const none = accountChoices(logins, null);
+eq(none.options.map((o) => o.label), ["A1 · mahdi@example.com · default", "A2 · Work"],
+  "each login that can take a run, by alias else email, the default marked; a disabled one isn't offered");
+eq([none.slot, none.def, none.gone], [1, 1, false], "no pick: the default login");
+eq([accountChoices(logins, 2).slot, accountChoices(logins, 2).gone], [2, false], "a picked login");
+for (const [slot, why] of [[3, "disabled"], [9, "removed"]] as const) {
+  const c = accountChoices(logins, slot);
+  eq([c.slot, c.gone, c.options.at(-1)], [slot, true, { slot, label: `A${slot} · not in this Mystical` }],
+    `a ${why} pick still shows, as gone`);
+}
+eq([accountChoices([], null).slot, accountChoices([], null).gone], [1, true], "no login at all: slot 1, gone");

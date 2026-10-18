@@ -1,4 +1,4 @@
-/* INTEGRATIONS ▸ RIVENDELL ▸ DEVICE RUNS — Share this device, and the Claude token for device runs
+/* INTEGRATIONS ▸ RIVENDELL ▸ DEVICE RUNS — Share this device, and the Claude account for device runs
    (bridge/device_share.py, bridge/device_setup.py; the routes are
    /local/rivendell/devices and /local/rivendell/devices/setup in
    bridge/dashboard/server.py).
@@ -6,15 +6,15 @@
    On a Mac, a teammate allowed in Rivendell can test an iOS app here: the run
    executes as the hidden user mysticalruns. SET UP makes that user behind one Mac
    password prompt and REMOVE undoes it. Off macOS only the asking side shows: how
-   many shared devices are on, and the token. One block per enabled Rivendell
+   many shared devices are on, and the account. One block per enabled Rivendell
    instance, headed by its link the way the RIVENDELL panel above shows it.
    Drafts H, I and J: rivendell/.mystical/design-drafts/device-runs/
    05-mystical-share-this-device.html. */
 
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Key, LaptopMinimal } from "lucide-react";
-import { api, type RivendellDevice } from "../../api";
-import { setupActions, stateText } from "../../lib/deviceruns";
+import { api, type AccountInfo, type RivendellDevice } from "../../api";
+import { accountChoices, setupActions, stateText } from "../../lib/deviceruns";
 import { CARD, Row, Section, Switch, riStatusView, useVoice } from "./SettingsModal";
 
 const MONO = "'JetBrains Mono',monospace";
@@ -92,51 +92,36 @@ function Head({ d }: { d: RivendellDevice }) {
   );
 }
 
-function TokenRow({ d, first, busy, onSave }: {
+/** The account the runs you send go out under: one of this Mystical's logins
+ *  (null until they are read), the default one unless another is picked. */
+function AccountRow({ d, logins, first, busy, onSave }: {
   d: RivendellDevice;
+  logins: AccountInfo[] | null;
   first?: boolean;
   busy: boolean;
-  onSave: (token: string) => Promise<boolean>;
+  onSave: (device_account: number | null) => void;
 }) {
-  const [replacing, setReplacing] = useState(false);
-  const [tok, setTok] = useState("");
-  const say = useSay();
-  async function save() {
-    if (await onSave(tok.trim())) {
-      setTok("");
-      setReplacing(false);
-    }
-  }
+  const c = accountChoices(logins ?? [], d.device_account);
   return (
-    <Row first={first} label="CLAUDE TOKEN FOR DEVICE RUNS"
+    <Row first={first} label="CLAUDE ACCOUNT FOR DEVICE RUNS"
       desc={<>
-        {!d.token_saved && <span style={{ color: "var(--warn)" }}>Needed before you can send a run. </span>}
-        Your runs use your own Claude account, so the usage is yours. Make a token with <code style={CODE}>claude setup-token</code>.
+        {logins && c.gone && <span style={{ color: "var(--warn)" }}>That account isn't in this Mystical anymore; pick another. </span>}
+        Runs use that account's current login, never its refresh token, so a device can use it for a few hours at most.
       </>}>
-      <span style={{ display: "flex", alignItems: "center", gap: 8, flex: "none" }}>
-        {d.token_saved && !replacing ? (
-          <>
-            <span style={{ ...BOX, padding: "4px 9px", color: "var(--txm)", letterSpacing: 0.5 }}>
-              <span className="set-caps">{say("SAVED")}</span> ····{d.token_last4}
-            </span>
-            <Btn onClick={() => setReplacing(true)}>REPLACE</Btn>
-          </>
-        ) : (
-          <>
-            <input type="password" value={tok} onChange={(e) => setTok(e.target.value)} placeholder="paste token"
-              aria-label="Claude token for device runs"
-              style={{ ...BOX, width: 210, outline: "none", color: "var(--txb)" }} />
-            {replacing && <Btn onClick={() => { setTok(""); setReplacing(false); }}>CANCEL</Btn>}
-            <Btn disabled={busy || !tok.trim()} onClick={() => void save()}>SAVE</Btn>
-          </>
-        )}
-      </span>
+      {logins && (
+        <select value={c.slot} disabled={busy} aria-label="Claude account for device runs"
+          onChange={(e) => { const s = Number(e.target.value); onSave(s === c.def ? null : s); }}
+          style={{ ...BOX, maxWidth: 260, outline: "none", color: "var(--txb)", opacity: busy ? 0.6 : 1 }}>
+          {c.options.map((o) => <option key={o.slot} value={o.slot}>{o.label}</option>)}
+        </select>
+      )}
     </Row>
   );
 }
 
 export function DeviceRunsPanel() {
   const [rows, setRows] = useState<RivendellDevice[] | null>(null);
+  const [logins, setLogins] = useState<AccountInfo[] | null>(null);
   // An instance id while one of its saves is in flight, or "setup" | "remove"
   // while this tab's Set up or Remove runs (up to 15 minutes).
   const [busy, setBusy] = useState("");
@@ -144,6 +129,8 @@ export function DeviceRunsPanel() {
   const answered = useRef(0);   // bumped by each change's answer: a read sent before it is dropped
   const say = useSay();
   const saving = busy !== "" && busy !== "setup" && busy !== "remove";
+
+  useEffect(() => { void api.accounts().then((r) => setLogins(r.accounts)).catch(() => {}); }, []);
 
   // Read now, then every 4 s while open, as RivendellPanel does. A save holds
   // the reads off, being quick; a Set up doesn't, so every tab, a reload too,
@@ -191,9 +178,9 @@ export function DeviceRunsPanel() {
   return (
     <>
       {shown.map((d) => {
-        const token = (first: boolean) => (
-          <TokenRow d={d} first={first} busy={!!busy}
-            onSave={(device_token) => act(d.id, `${d.id}:token`, () => api.updateRivendellDevice({ id: d.id, device_token }))} />
+        const account = (first: boolean) => (
+          <AccountRow d={d} logins={logins} first={first} busy={!!busy}
+            onSave={(device_account) => void act(d.id, `${d.id}:account`, () => api.updateRivendellDevice({ id: d.id, device_account }))} />
         );
         if (d.share.state === "NOT_MAC") {
           return (
@@ -207,9 +194,9 @@ export function DeviceRunsPanel() {
                       <span style={NOW}>{d.shared_on.on} on · {d.shared_on.free} free</span>
                     </Row>
                   )}
-                  {token(false)}
+                  {account(false)}
                 </div>
-                {errLine(`${d.id}:token`)}
+                {errLine(`${d.id}:account`)}
               </Section>
             </div>
           );
@@ -257,8 +244,8 @@ export function DeviceRunsPanel() {
               {errLine(`${d.id}:device`)}
             </Section>
             <Section top title="DEVICE RUNS · YOUR ACCOUNT" icon={Key} desc="for the runs you send to a shared device.">
-              <div style={CARD}>{token(true)}</div>
-              {errLine(`${d.id}:token`)}
+              <div style={CARD}>{account(true)}</div>
+              {errLine(`${d.id}:account`)}
             </Section>
           </div>
         );

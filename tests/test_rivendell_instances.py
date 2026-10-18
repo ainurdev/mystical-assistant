@@ -163,32 +163,61 @@ def test_an_edit_that_does_not_mention_share_device_leaves_it_alone(monkeypatch)
     assert ri.raw_instances()[0]["share_device"] is False, "null is not an answer either"
 
 
-def test_an_instance_stored_before_device_runs_shares_by_default_with_no_token(monkeypatch):
+def test_an_instance_stored_before_device_runs_shares_by_default_on_the_default_account(monkeypatch):
     d = _fresh_db(monkeypatch)
     with open(os.path.join(d, "rivendell_instances.json"), "w") as f:
         json.dump({"instances": {"old": {"id": "old", "name": "old", "enable": True,
                                          "api_url": "http://x", "token": "rvd_old"}}}, f)
     got = ri.instances()[0]
-    assert got["share_device"] is True and got["device_token"] == ""
+    assert got["share_device"] is True and got["device_account"] is None
 
 
-def test_device_token_is_masked_and_kept_on_a_blank_edit(monkeypatch):
-    _fresh_db(monkeypatch)
-    a = ri.add_instance(name="p", api_url="http://x", token="rvd_t", device_token="sk-ant-oat01-supersecret")
-    assert a["device_token"] == "…cret", "the panel only ever sees the last 4"
-    assert "supersecret" not in json.dumps(ri.instances()), "the full token never leaves"
-    assert ri.raw_instances()[0]["device_token"] == "sk-ant-oat01-supersecret"
-
-    ri.update_instance(a["id"], name="p", api_url="http://x", token="", device_token="")
-    assert ri.raw_instances()[0]["device_token"] == "sk-ant-oat01-supersecret", "a blank edit keeps it"
-    ri.update_instance(a["id"], name="p", api_url="http://x", token="", device_token="sk-ant-oat01-another")
-    assert ri.raw_instances()[0]["device_token"] == "sk-ant-oat01-another"
+def _with_a_pasted_device_token(d):
+    """The file as a bridge from before device runs used an account left it."""
+    path = os.path.join(d, "rivendell_instances.json")
+    with open(path, "w") as f:
+        json.dump({"instances": {"old": {"id": "old", "name": "old", "enable": True, "api_url": "http://x",
+                                         "token": "rvd_old", "share_device": False,
+                                         "device_token": "sk-ant-oat01-supersecret"}}}, f)
+    return path
 
 
-def test_no_device_token_is_a_blank_not_an_error(monkeypatch):
+def test_a_token_once_pasted_for_device_runs_is_dropped_from_the_file_at_the_first_read(monkeypatch):
+    path = _with_a_pasted_device_token(_fresh_db(monkeypatch))
+    raw, = ri.raw_instances()
+    assert "device_token" not in raw and (raw["token"], raw["share_device"]) == ("rvd_old", False)
+    assert "supersecret" not in open(path).read(), "gone from the disk, not only from the answer"
+    assert "device_token" not in ri.instances()[0]
+
+
+def test_a_read_still_answers_when_the_file_cant_be_written(monkeypatch):
+    """Every Rivendell link reads the instances: a disk that refuses the write
+    must not take them down. The token goes at the next save that works."""
+    path = _with_a_pasted_device_token(_fresh_db(monkeypatch))
+    monkeypatch.setattr(ri.config, "RIVENDELL_API_URL", "http://seed")     # a seed must not replace the file
+    monkeypatch.setattr(ri.config, "RIVENDELL_TOKEN", "rvd_seed")
+
+    def refused(d):
+        raise OSError(30, "Read-only file system")
+    monkeypatch.setattr(ri, "_save", refused)
+    raw, = ri.raw_instances()
+    assert raw["id"] == "old" and "device_token" not in raw
+    assert "supersecret" in open(path).read()
+
+
+def test_device_runs_start_on_the_default_account_and_keep_the_one_picked(monkeypatch):
     _fresh_db(monkeypatch)
     a = ri.add_instance(name="p", api_url="http://x", token="t")
-    assert a["device_token"] == "" and ri.raw_instances()[0]["device_token"] == ""
+    assert a["device_account"] is None and ri.raw_instances()[0]["device_account"] is None
+    ri.update_device(a["id"], device_account=2)
+    ri.update_instance(a["id"], name="renamed", api_url="http://x", token="")
+    assert ri.raw_instances()[0]["device_account"] == 2, "the instance form doesn't know the field"
+    assert ri.instances()[0]["device_account"] == 2
+    ri.update_device(a["id"], share_device=False)
+    assert ri.raw_instances()[0]["device_account"] == 2, "a field left out is kept"
+    ri.update_device(a["id"], device_account=None)
+    raw = ri.raw_instances()[0]
+    assert raw["device_account"] is None and raw["share_device"] is False
 
 
 def _post(path, body):
@@ -199,22 +228,22 @@ def _post(path, body):
     return box
 
 
-def test_the_dashboard_route_takes_both_fields_and_a_form_save_keeps_them(monkeypatch):
+def test_the_dashboard_route_takes_share_device_and_a_form_save_keeps_the_device_run_choices(monkeypatch):
     _fresh_db(monkeypatch)
     monkeypatch.setattr(dash.rivendell, "reconfigure", lambda: None)   # no worker dials anywhere
     r = _post("/local/rivendell", {"op": "add", "name": "p", "api_url": "http://x", "token": "rvd_t",
                                    "share_device": False, "device_token": "sk-ant-oat01-supersecret"})
     assert r["code"] == 200
-    assert r["obj"]["instance"]["share_device"] is False and r["obj"]["instance"]["device_token"] == "…cret"
-    assert "supersecret" not in json.dumps(r["obj"])
+    assert r["obj"]["instance"]["share_device"] is False and r["obj"]["instance"]["device_account"] is None
+    assert "supersecret" not in json.dumps(ri.raw_instances()), "a pasted Claude token isn't taken any more"
     iid = ri.raw_instances()[0]["id"]
-    assert ri.raw_instances()[0]["device_token"] == "sk-ant-oat01-supersecret"
+    ri.update_device(iid, device_account=2)
 
-    # What the instance form sends: no share_device, no device_token.
+    # What the instance form sends: no share_device, no device_account.
     r = _post("/local/rivendell", {"op": "update", "id": iid, "name": "p2", "api_url": "http://x", "token": ""})
     assert r["code"] == 200
     raw = ri.raw_instances()[0]
-    assert raw["name"] == "p2" and raw["share_device"] is False and raw["device_token"] == "sk-ant-oat01-supersecret"
+    assert (raw["name"], raw["share_device"], raw["device_account"]) == ("p2", False, 2)
 
 
 # --- migration ---------------------------------------------------------------

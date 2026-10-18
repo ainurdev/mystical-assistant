@@ -1624,7 +1624,7 @@ function riToInput(c: RivendellInstance): RivendellInput {
     name: c.name, enable: c.enable, api_url: c.api_url, token: "",
     ws_url: c.ws_url, model: c.model, workdir: c.workdir,
     review_timeout: c.review_timeout, impl_timeout: c.impl_timeout,
-    share_device: c.share_device, device_token: "",
+    share_device: c.share_device,
   };
 }
 

@@ -1,7 +1,7 @@
 // What Settings › Plugins › DEVICE RUNS (components/hud/DeviceRunsPanel.tsx)
-// says about this device: STATE's right-hand text and the SETUP row's buttons.
-// Checked by deviceruns.check.ts.
-import type { RivendellDevice } from "../api";
+// says about this device: STATE's right-hand text and the SETUP row's buttons,
+// and the choices of CLAUDE ACCOUNT FOR DEVICE RUNS. Checked by deviceruns.check.ts.
+import type { AccountInfo, RivendellDevice } from "../api";
 import { hhmm } from "./surfaces.ts";
 
 /** STATE's right-hand text. A teammate's run going now comes first, whatever
@@ -31,4 +31,19 @@ export function setupActions(d: Pick<RivendellDevice, "share">): ("setup" | "rem
   if (d.share.state === "NEEDS_SETUP") out.push("setup");
   if (d.share.installed) out.push("remove");
   return out;
+}
+
+/** CLAUDE ACCOUNT FOR DEVICE RUNS: the logins a run can go out under (not a
+ *  disabled one), the one picked (`picked` null is the default login), and
+ *  whether that one is gone from this Mystical, kept as a choice so the pick
+ *  still shows. `def` is the default login's slot: picking it saves null. */
+export function accountChoices(logins: Pick<AccountInfo, "slot" | "email" | "alias" | "disabled" | "default">[],
+  picked: number | null) {
+  const def = logins.find((a) => a.default)?.slot ?? 1;
+  const slot = picked ?? def;
+  const options = logins.filter((a) => !a.disabled).map((a) => ({
+    slot: a.slot, label: `A${a.slot} · ${a.alias || a.email || "unknown"}${a.default ? " · default" : ""}`,
+  }));
+  const gone = !options.some((o) => o.slot === slot);
+  return { slot, def, gone, options: gone ? [...options, { slot, label: `A${slot} · not in this Mystical` }] : options };
 }
