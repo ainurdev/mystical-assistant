@@ -3818,6 +3818,23 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ntf-ul li b { color: var(--txb); font-weight: 500; }
 .ntf-rest { margin-top: 4px; padding-left: 13px; font: 400 var(--t10) var(--ui-font); color: var(--txl); }
 .ntf-empty .s { margin-top: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.ntf-btn:disabled { opacity: .45; cursor: default; filter: none; }
+/* the Updates tab's bar: write a note for every install, or what became of the last one */
+.ntf-write { appearance: none; cursor: pointer; display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 14px; border: 0; text-align: left;
+  border-bottom: 1px solid var(--line, var(--border)); background: transparent; font: 500 var(--t10) var(--ui-font); color: var(--txd); }
+.ntf-write svg { color: var(--acc); flex: none; }
+.ntf-write .go { color: var(--txl); }
+button.ntf-write:hover { color: var(--txb); background: var(--ac-03); }
+.ntf-write.ok { color: var(--ok); cursor: default; }
+.ntf-write.err { color: var(--err); cursor: default; white-space: pre-wrap; font-family: var(--mono); }
+.ntf-compose { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; }
+.ntf-compose .lbl { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--txl); margin-bottom: 2px; }
+.ntf-compose input, .ntf-compose textarea { width: 100%; box-sizing: border-box; background: var(--panel2); border: 1px solid var(--line2, var(--border-bright));
+  border-radius: var(--f-rad-s, 0); padding: 7px 9px; font: 400 var(--t12)/1.45 var(--ui-font); color: var(--txb); outline: none; resize: vertical; }
+.ntf-compose input:focus, .ntf-compose textarea:focus { border-color: var(--acc); }
+.ntf-compose textarea { color: var(--tx); min-height: 84px; }
+.ntf-compose .foot { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.ntf-compose .hint { font: 500 var(--t10) var(--mono); color: var(--txl); text-align: right; }
 .ntf-meta { margin-top: 5px; font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ntf-when { font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; padding-top: 2px; }
 .ntf-acts { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }

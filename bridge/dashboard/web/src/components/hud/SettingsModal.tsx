@@ -1021,7 +1021,8 @@ const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?
     ["rv_failed", "Job failed or refused"],
     ["rv_link", "Link broken · token refused"]] },
   { head: "PRs", rows: [["pr", "Checks failing · changes requested"]] },
-  { head: "THE BRIDGE", rows: [["bridge", "MOVE finished"], ["weekly", "Weekly report"]] },
+  { head: "THE BRIDGE", rows: [["bridge", "MOVE finished"], ["weekly", "Weekly report"],
+    ["updates", "Mystical updated · a note for every install", "what changed after a pull, and notes the maintainers wrote"]] },
 ];
 const SOUND_OPTS = ["none", ...Object.keys(TONES)] as ("none" | ToneKey)[];
 const ROUTE_OPTS = ["off", "away", "always"] as const;

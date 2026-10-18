@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Castle, GitPullRequest, Moon, Settings, Truck, CalendarDays } from "lucide-react";
+import { Castle, GitPullRequest, Moon, Pencil, Settings, Truck, CalendarDays } from "lucide-react";
 import { api, type Need, type Notice, type NoticePrefs, type PendingCard, type RivendellInstance } from "../../api";
 import { chime, push, pushGranted, type ToneKey } from "../../lib/push";
 import { bannerActions, bannerAnswer } from "../../lib/banner";
@@ -10,6 +10,7 @@ import {
 } from "../../lib/notices";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useIntegrations } from "../../lib/integrations";
+import { NoteComposer } from "./NoteComposer";
 
 /* The bell, its toasts and the pills (docs/superpowers/specs/notifications.md).
  *
@@ -371,6 +372,9 @@ export function NotificationCenter() {
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<Filter>("all");
   const [opened, setOpened] = useState<Set<number>>(() => new Set());   // read updates folded open again
+  const [composing, setComposing] = useState(false);                    // the Updates tab's SEND NOTE form
+  const [noteBar, setNoteBar] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  useEffect(() => { setComposing(false); setNoteBar(null); }, [filter]);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [now, setNow] = useState(() => Date.now() / 1000);
   const wrapRef = useRef<HTMLSpanElement | null>(null);
@@ -450,6 +454,7 @@ export function NotificationCenter() {
   // Closing the bell marks what it showed read; click-outside closes it.
   const close = () => {
     setOpen(false);
+    setComposing(false); setNoteBar(null);
     const ids = [...shown.current];
     shown.current = new Set();
     if (ids.length) void api.noticesRead(ids).then(() => load.current(), () => { /* next poll */ });
@@ -523,6 +528,17 @@ export function NotificationCenter() {
               })}
             </div>
           )}
+          {filter === "updates" && (composing
+            ? noteBar?.kind === "err" && <div className="ntf-write err">{noteBar.text}</div>
+            : noteBar
+              ? <div className={`ntf-write ${noteBar.kind}`}>{noteBar.text}</div>
+              : <button className="ntf-write" onClick={() => setComposing(true)}><Pencil size={12} strokeWidth={1.8} />Write a note for every install<span style={{ flex: 1 }} /><span className="go">›</span></button>)}
+          {composing ? (
+            <NoteComposer
+              onSent={() => { setComposing(false); setNoteBar({ kind: "ok", text: "Sent · every install sees it after its next update" }); void load.current(); }}
+              onCancel={() => { setComposing(false); setNoteBar(null); }}
+              onError={(m) => setNoteBar({ kind: "err", text: m })} />
+          ) : (
           <div className="ntf-list mscroll">
             {stale && <div className="ntf-stale">This page is newer than the bridge. Restart it to see the feed.</div>}
             {fNeeds.length > 0 && (
@@ -542,6 +558,7 @@ export function NotificationCenter() {
               </div>
             )}
           </div>
+          )}
           <div className="ntf-foot">
             {prefs?.quiet.on ? <span className="q"><Moon size={11} strokeWidth={1.8} />Quiet {prefs.quiet.from} → {prefs.quiet.to}</span> : <span />}
             <span style={{ flex: 1 }} />
