@@ -241,9 +241,10 @@ export function App() {
   const [lessonsRead, setLessonsRead] = useStickySet(READ_KEY);
   const [lessonKeys, setLessonKeys] = useState<string[]>([]);
   const [gitBadges, setGitBadges] = useState<Map<string, GitBadge>>(new Map());
-  // The open session's own working tree (its worktree when it has one), which
+  // Each session's own working tree (its worktree when it has one), which
   // gitBadges can't answer — those are keyed by project, one badge per repo.
-  const [sessionGit, setSessionGit] = useState<GitStatus | null>(null);
+  // Keyed by tree, so going back to a session shows its last status at once.
+  const [gitByTree, setGitByTree] = useState<Map<string, GitStatus>>(new Map());
   // Bumped by the GIT tab's ops (commit, push, fetch) — a 10s poll is too slow to watch a row you
   // just acted on, so the push re-runs the fetch below instead of waiting.
   const [gitNonce, setGitNonce] = useState(0);
@@ -1698,22 +1699,25 @@ export function App() {
   // The composer's addFiles, for the fresh screen's drop target (Terminal).
   const composerFiles = useRef<((files: FileList | File[]) => void) | null>(null);
 
-  // Footer git state for that tree. Same 10s cadence as the project badges;
-  // clears on switch so the git popover never shows the last session's branch.
-  // Clearing is its own effect: a push bumps gitNonce to re-read now, and that
-  // must not blank the chain back to its loading stand-ins on the way.
-  useEffect(() => { setSessionGit(null); }, [sessionProject, sessionBranch]);
+  // The open tree's git status, on the same 10s cadence as the project badges.
+  // Read by the tree's own key, so a switch never shows the last session's
+  // branch, and a tree opened before answers from its last status while this
+  // read is on the way: the GIT tab keeps its shape instead of blanking and
+  // filling back in.
+  const treeKey = `${sessionProject ?? ""}@${sessionBranch ?? ""}`;
+  const sessionGit = gitByTree.get(treeKey) ?? null;
   useEffect(() => {
     if (!sessionProject) return;
     let live = true;
     const tick = async () => {
       try {
         const g = await api.git(sessionProject, sessionBranch || undefined);
-        if (live) setSessionGit(g);
+        if (live) setGitByTree((m) => new Map(m).set(treeKey, g));
       } catch {
         // Not a repo / fetch failed — resolve to "no git" so the GIT tab's
         // READING… clears instead of holding forever.
-        if (live) setSessionGit((prev) => prev ?? { is_repo: false, branch: "", ahead: 0, behind: 0, dirty: 0, files: [] });
+        if (live) setGitByTree((m) => m.has(treeKey) ? m
+          : new Map(m).set(treeKey, { is_repo: false, branch: "", ahead: 0, behind: 0, dirty: 0, files: [] }));
       }
     };
     void tick();

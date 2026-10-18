@@ -4555,6 +4555,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   color: var(--purple-h); font: 400 var(--t10)/1 var(--m); white-space: nowrap; }
 .gp-branch i { color: var(--purple); font-style: normal; flex: none; }
 .gp-branch span { overflow: hidden; text-overflow: ellipsis; }
+.gp-branch > .gp-roll { flex: 1 1 auto; }
 .gp-ib, .gg-ib { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 0; border-radius: var(--r); background: none;
   color: var(--txl); padding: 0; cursor: pointer; appearance: none; flex: none; }
 .gp-ib:hover:not(:disabled), .gg-ib:hover { color: var(--txh); background: var(--wash); }
@@ -4564,15 +4565,26 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* the readout: to push / to pull / changed, how fresh, and the one move the
    state allows. That move is the panel's only solid button: agents commit, you
    push. */
+.gp-rdw { flex: none; }
 .gp-rd { flex: none; padding: 10px; }
 .gp-ro { position: relative; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border: 1px solid var(--l2);
   border-radius: var(--f-rad, 0px); overflow: hidden; }
-.gp-roc { display: flex; flex-direction: column; gap: 5px; min-width: 0; padding: 9px 10px 8px; border-left: 1px solid var(--l); }
+.gp-roc { display: flex; flex-direction: column; gap: 5px; min-width: 0; padding: 9px 10px 8px; border-left: 1px solid var(--l);
+  transition: background-color .3s ease; }
 .gp-roc:first-child { border-left: 0; }
-.gp-roc b { display: flex; align-items: center; gap: 3px; font: 500 calc(var(--fsu) * 20)/1 var(--m); color: var(--txb); }
-.gp-roc b svg { flex: none; color: var(--acc); }
-.gp-roc span { font: 600 var(--t85)/1 var(--f); letter-spacing: .12em; text-transform: uppercase; color: var(--txl);
+.gp-roc b { display: flex; align-items: center; gap: 3px; font: 500 calc(var(--fsu) * 20)/1 var(--m); color: var(--txb); transition: color .3s ease; }
+.gp-roc b svg { flex: none; color: var(--acc); transition: color .3s ease; }
+.gp-roc > span { font: 600 var(--t85)/1 var(--f); letter-spacing: .12em; text-transform: uppercase; color: var(--txl);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* A figure that changes rolls (Roll in GitPanel): the old one leaves upward as
+   the new one rises into its place, clipped to its own line top and bottom. */
+.gp-roll { position: relative; display: inline-flex; min-width: 0; clip-path: inset(0 -100vw); }
+.gp-roll > span { min-width: 0; }
+.gp-roll-i { animation: gprollin .3s cubic-bezier(.2, .8, .2, 1) both; }
+.gp-roll-o { position: absolute; top: 0; left: 0; animation: gprollout .3s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes gprollin { from { transform: translateY(80%); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes gprollout { to { transform: translateY(-80%); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .gp-roll-i { animation: none; } .gp-roll-o { display: none; } }
 .gp-roc.on { background: color-mix(in srgb, var(--acc) 8%, transparent); }
 .gp-roc.warn { background: color-mix(in srgb, var(--warn) 7%, transparent); }
 .gp-roc.warn b svg, .gp-roc.dirty b svg { color: var(--warn); }
