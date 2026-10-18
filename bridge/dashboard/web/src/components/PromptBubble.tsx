@@ -4,13 +4,11 @@ import { runtimeBadge } from "../lib/agents";
 import { hhmm, useClock12 } from "../lib/surfaces";
 
 /** What you said — a prompt, or a steer sent into a turn already running. The
- *  prompt glyph leads your words; a stamp at the free end of your last line
- *  says who (YOU, or ↳ STEER), which turn, which account or agent ran it when
- *  that wasn't the default (lib/agents runtimeBadge — it used to be a box of
- *  its own under the prompt), and when. Geometry and colour live in `.pbub` /
- *  `.pline` / `.pmeta` (index.css, DOSSIER tier 1); nothing here decides
- *  either — the stamp is last in the words' column so the stylesheet can float
- *  it into the line. */
+ *  prompt glyph leads your words; one footer line says who (YOU, or ↳ STEER),
+ *  which turn, which account or agent ran it when that wasn't the default
+ *  (lib/agents runtimeBadge — it used to be a box of its own under the prompt),
+ *  and when. Geometry and colour live in `.pbub` / `.pline` / `.pmeta`
+ *  (index.css, DOSSIER tier 1); nothing here decides either. */
 export function PromptBubble({ text, at, n, runtime, steer, children }: {
   text: string;
   at?: number;
@@ -33,13 +31,13 @@ export function PromptBubble({ text, at, n, runtime, steer, children }: {
             {/* Rendered as the same markdown the composer let you write it in. */}
             <Markdown breaks className="break-words leading-relaxed text-foreground-bright">{text}</Markdown>
             {children}
-            <div className="pmeta">
-              <b>{steer ? "↳ STEER" : "YOU"}</b>
-              {!steer && n != null && <span>TURN {String(n).padStart(2, "0")}</span>}
-              {ran && <span className="pacct" data-agent={ran.agent || undefined} title={ran.title}>{ran.text}</span>}
-              {at != null && <span className="pstamp">{hhmm(at, h12)}</span>}
-            </div>
           </div>
+        </div>
+        <div className="pmeta">
+          <b>{steer ? "↳ STEER" : "YOU"}</b>
+          {!steer && n != null && <span>TURN {String(n).padStart(2, "0")}</span>}
+          {ran && <span className="pacct" data-agent={ran.agent || undefined} title={ran.title}>{ran.text}</span>}
+          {at != null && <span className="pstamp">{hhmm(at, h12)}</span>}
         </div>
       </div>
     </div>
