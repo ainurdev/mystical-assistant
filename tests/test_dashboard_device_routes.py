@@ -77,6 +77,7 @@ def refusing(monkeypatch, tmp_path):
     monkeypatch.setattr(rivendell, "_workers", {})
     monkeypatch.setattr(rivendell, "reconfigure", lambda: None)
     monkeypatch.setattr(rivendell, "_device_run", None)         # no teammate's run going here
+    monkeypatch.setattr(device_side, "_adopted", {})            # nor one a restart didn't end, waiting to be taken back
     monkeypatch.setattr(device_view, "_running", {})            # nor a read-only session of one
     monkeypatch.setattr(config, "BRIDGE_DB", str(tmp_path / "bridge.db"))
     monkeypatch.setattr(dash, "_shared_on", {})
@@ -350,8 +351,8 @@ def test_one_setup_at_a_time(device):
 @pytest.mark.parametrize("action", ["setup", "remove"])
 def test_set_up_and_remove_wait_while_a_teammates_run_goes_on_here(monkeypatch, device, action):
     """Set up proves the pf wall round the run's user again and may take it down
-    for a moment; Remove deletes that user. Refused before anything runs or the
-    lock is taken; the same call goes through once the run is over."""
+    for a moment; Remove deletes that user. Refused before anything runs, the
+    lock let go; the same call goes through once the run is over."""
     _inst()
     done, order = _record_setup(monkeypatch, {"ok": True, "checks": [], "error": None})
     monkeypatch.setattr(rivendell, "_device_run", RID)
@@ -361,6 +362,48 @@ def test_set_up_and_remove_wait_while_a_teammates_run_goes_on_here(monkeypatch, 
     monkeypatch.setattr(rivendell, "_device_run", None)
     r = dpost("/local/rivendell/devices/setup", {"action": action})
     assert r["code"] == 200 and [d[0] for d in done] == [action] and order == ["run", "refresh", "redial"]
+
+
+@pytest.mark.parametrize("action", ["setup", "remove"])
+def test_a_run_a_restart_didnt_end_counts_as_going_until_it_is_taken_back(monkeypatch, device, action):
+    """After a restart a run whose helper went on is filed for its instance's
+    worker (device_side.sweep), holding no _device_run until that worker's first
+    READY connect: meanwhile STATE says running now, and Set up and Remove wait."""
+    _inst()
+    done, order = _record_setup(monkeypatch, {"ok": True, "checks": [], "error": None})
+    monkeypatch.setattr(device_side, "_adopted", {"t1": [RID]})
+    assert [row["running"] for row in dget()["obj"]["instances"]] == [True]
+    r = dpost("/local/rivendell/devices/setup", {"action": action})
+    assert r["code"] == 409 and r["obj"] == {"error": RUN_GOING}
+    assert done == [] and order == [] and not dash._setup_lock.locked()
+    monkeypatch.setattr(device_side, "_adopted", {})             # taken back: _device_run holds it from here
+    assert [row["running"] for row in dget()["obj"]["instances"]] == [False]
+
+
+def test_no_run_is_claimed_while_set_up_runs(monkeypatch, device):
+    """Set up holds its lock for up to 15 minutes while the device stays READY:
+    all that time the device names itself to nothing (device_side.headers), so
+    a run announced meanwhile is never claimed. The lock goes with the Set up."""
+    _inst()
+    seen = []
+
+    class Worker:
+        inst, name = {"id": "t1"}, "production"
+
+        def _api(self, path, *a, **k):
+            seen.append(("claimed", path))
+
+    def setup(action, owner, **kw):
+        seen.append(("headers", device_side.headers({"id": "t1"})))
+        device_side.run(Worker(), RID, popen=lambda *a, **k: pytest.fail("no helper mid-Set up"),
+                        call=lambda *a, **k: pytest.fail("nothing to stop"))
+        return {"ok": True, "checks": [], "error": None}
+    monkeypatch.setattr(device_setup, "run", setup)
+    monkeypatch.setattr(device_share, "refresh", lambda: None)
+    monkeypatch.setattr(rivendell, "redial", lambda: None)
+    r = dpost("/local/rivendell/devices/setup", {"action": "setup"})
+    assert r["code"] == 200 and seen == [("headers", None)]
+    assert not device_side.setup_lock.locked() and not dash._setup_lock.locked()
 
 
 @pytest.mark.parametrize("share, code", [("false", 400), (0, 400), ("", 400), (False, 200), (None, 200)])

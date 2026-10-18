@@ -194,7 +194,14 @@ def _plain_commit_message(paths: "list[str]") -> str:
 # one at a time.
 _SHARED_ON_TTL = 30.0
 _shared_on: dict = {}     # instance id -> (monotonic at, {on, free} | None)
-_setup_lock = threading.Lock()
+_setup_lock = device_side.setup_lock     # Set up or Remove going: the device takes no run meanwhile
+
+
+def _run_going() -> bool:
+    """Is a teammate's run going on this device: the one in flight, whichever
+    instance sent it, or one whose helper a restart didn't end that its
+    instance's worker hasn't taken back yet (device_side.sweep, take_adopted)."""
+    return rivendell._device_run is not None or any(device_side._adopted.values())
 
 
 def _shared_on_now(inst: dict) -> "dict | None":
@@ -223,7 +230,7 @@ def _device_rows() -> list:
     last, and whether a Set up or Remove is going."""
     live = rivendell.status()
     last = device_share.last_run()
-    running = rivendell._device_run is not None      # one at a time on the device, whichever instance sent it
+    running = _run_going()                           # one at a time on the device, whichever instance sent it
     session = device_view.running_session()          # None until the run's view is made
     setting = _setup_lock.locked()
     rows = []
@@ -1597,16 +1604,20 @@ class Handler(BaseHTTPRequestHandler):
             action = body.get("action")
             if action not in ("setup", "remove"):
                 return self._json({"error": "action must be setup or remove"}, 400)
-            # Set up proves the pf wall round the run's user again and may take it down for a
-            # moment; Remove deletes that user: neither under a teammate's run.
-            # shortcut: the look and the lock aren't one step, so a run claimed in between still
-            # meets the Set up; make the run and Set up take one lock if that ever shows.
-            if rivendell._device_run is not None:
-                return self._json({"error": "A teammate's run is going on this device. Set up when it ends."}, 409)
             if device_share.device_facts() is None:
                 return self._json({"error": "Set up and Remove are for macOS only."}, 400)
             if not _setup_lock.acquire(blocking=False):
                 return self._json({"error": "Set up or Remove is already running."}, 409)
+            # Set up proves the pf wall round the run's user again and may take it down for a
+            # moment; Remove deletes that user: neither under a teammate's run. Looked for with
+            # the lock held, while the device takes no run (device_side.headers), so a run is
+            # either seen here or never claimed.
+            # shortcut: a run taken back after a restart is in neither _adopted nor _device_run
+            # for the instant between take_adopted and _adopt_device_run; take both under one
+            # lock if that ever shows.
+            if _run_going():
+                _setup_lock.release()
+                return self._json({"error": "A teammate's run is going on this device. Set up when it ends."}, 409)
             try:
                 r = device_setup.run(action, getpass.getuser())
             finally:

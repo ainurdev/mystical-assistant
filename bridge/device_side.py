@@ -64,6 +64,7 @@ import re
 import shutil
 import stat
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -86,7 +87,10 @@ _RETRIES = (2, 10, 30)   # the result POST, as rivendell._RESULT_RETRIES: a fini
 _cancelled: set = set()   # run ids a cancel came in for (set operations are atomic under the GIL)
 _owner_stopped: set = set()   # run ids the device's owner stopped (stop_by_owner)
 _interrupted: dict = {}   # instance id -> run ids a restart cut short, still to report (sweep, report_interrupted)
-_adopted: dict = {}       # instance id -> run ids whose helper outlived a restart, to watch (sweep, take_adopted)
+_adopted: dict = {}       # instance id -> run ids a restart didn't end, to watch (sweep, take_adopted)
+# Held while Set up or Remove runs (the dashboard's setup route), one at a time: the
+# device takes no run meanwhile (headers).
+setup_lock = threading.Lock()
 _RESTARTED = "The device restarted during the run."
 _OWNER_STOPPED = "Stopped by this device's owner."
 _UNREPORTED = "The run ended before it handed back its results."
@@ -126,7 +130,12 @@ def _root_is_ours() -> bool:
 
 def headers(inst: dict) -> "dict | None":
     """What this device's calls carry, X-Mystical-Device-Id, when it is READY for
-    teammates' runs; None when it isn't, and then it takes none."""
+    teammates' runs; None when it isn't, and then it takes none. Nor while Set up
+    or Remove runs (setup_lock), though the device stays READY: Set up may take
+    the run user's wall down for a moment and Remove deletes that user, so no
+    run is claimed, acked or taken back then."""
+    if setup_lock.locked():
+        return None
     s = device_share.share_state(inst)
     device = s["facts"]["id"] if s["state"] == "READY" else None
     return {"X-Mystical-Device-Id": device} if device else None

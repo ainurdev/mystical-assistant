@@ -255,6 +255,22 @@ def test_a_device_names_itself_only_when_it_is_ready(monkeypatch, state, facts, 
     assert ds.headers({"id": "t1"}) == sends
 
 
+def test_a_device_mid_set_up_or_remove_takes_no_run(monkeypatch):
+    """Set up may take the run user's wall down for a moment and Remove deletes
+    that user: while either runs (setup_lock, up to 15 minutes), a READY device
+    names itself to nothing, so no run is claimed, acked or taken back; after,
+    it does again."""
+    monkeypatch.setattr(device_share, "share_state",
+                        lambda inst: {"state": "READY", "checks": [], "facts": {"id": "7c50be1739dfacbb"}})
+    w = Worker()
+    with ds.setup_lock:
+        assert ds.headers({"id": "t1"}) is None
+        ds.run(w, RID, popen=lambda *a, **k: pytest.fail("no helper mid-Set up"),
+               call=lambda *a, **k: pytest.fail("nothing to stop"))
+    assert w.api == [], "never claimed"
+    assert ds.headers({"id": "t1"}) == HEAD
+
+
 def test_a_device_that_is_no_longer_ready_claims_nothing(device, monkeypatch):
     monkeypatch.setattr(ds, "headers", lambda inst: None)
     w = Worker()
