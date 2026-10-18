@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FIT, clampPan, zoomAt, type View } from "../lib/imgzoom";
 
@@ -55,18 +55,43 @@ function FileThumb(
 /** An <img>, unless the src is a video — then a muted inline preview with a ▶
  *  badge. Same props either way, so the eight call sites that used to hardcode
  *  <img> don't each grow a branch. */
+/** A callback ref that fires `onSeen` once, when at least half of the element
+ *  has been in view. A thumbnail in a shut fold never mounts, and one far down
+ *  an open zone mounts without being looked at, so "rendered" is not "seen".
+ *  The latest `onSeen` sits in a ref: callers pass a fresh closure every render,
+ *  and a callback ref that changed with it would rebuild the observer each time. */
+function useOnSeen(onSeen?: () => void) {
+  const cb = useRef(onSeen);
+  cb.current = onSeen;
+  const io = useRef<IntersectionObserver | null>(null);
+  return useCallback((el: Element | null) => {
+    io.current?.disconnect();
+    io.current = null;
+    if (!el || !cb.current) return;
+    io.current = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return;
+      io.current?.disconnect();
+      cb.current?.();
+    }, { threshold: 0.5 });
+    io.current.observe(el);
+  }, []);
+}
+
 export function MediaThumb(
-  { src, className, style, alt, onError }:
-  { src: string; className?: string; style?: React.CSSProperties; alt?: string; onError?: () => void },
+  { src, className, style, alt, onError, onSeen }:
+  { src: string; className?: string; style?: React.CSSProperties; alt?: string; onError?: () => void;
+    /** Fired once, when the thumbnail has been on screen (lib/seenshots). */
+    onSeen?: () => void },
 ) {
+  const seenRef = useOnSeen(onSeen);
   if (isFileUrl(src)) return <FileThumb name={attachName(src)} className={className} style={style} />;
-  if (!isVideo(src)) return <img src={src} alt={alt ?? ""} className={className} style={style} onError={onError} />;
+  if (!isVideo(src)) return <img ref={seenRef} src={src} alt={alt ?? ""} className={className} style={style} onError={onError} />;
   // #t=0.1 makes the browser paint a real first frame instead of a black box;
   // a data: URL can't carry a fragment, so it goes without.
   const poster = src.startsWith("data:") ? src : `${src}#t=0.1`;
   return (
     <span style={{ position: "relative", display: "inline-block", lineHeight: 0 }}>
-      <video src={poster} muted playsInline preload="metadata" aria-label={alt || "video"}
+      <video ref={seenRef} src={poster} muted playsInline preload="metadata" aria-label={alt || "video"}
         className={className} style={style} onError={onError} />
       <span aria-hidden="true" style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center",
         color: "var(--acc)", fontSize: 18, textShadow: "0 0 6px rgba(0,0,0,.8)", pointerEvents: "none" }}>▶</span>

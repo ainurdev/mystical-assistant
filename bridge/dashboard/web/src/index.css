@@ -1678,6 +1678,39 @@ input {
   --gnd: color-mix(in srgb, var(--txg) 20%, transparent);
   --ground: repeating-linear-gradient(135deg, var(--gnd) 0 1px, transparent 1px 9px);
 }
+/* The three below are TONES, not patterns: nothing in them has an edge, so
+   nothing in them can cross a word. They came after the theme families dropped
+   DOSSIER's turn card (see "no turn card" below), which put the four hairlines
+   above straight under the prose. */
+/* GRAIN — paper noise. An SVG turbulence tile, white at a whisper on dark
+   grounds and black on light ones: a data URI can't read --gnd, so this is the
+   one ground with its colour baked in. */
+[data-bg="grain"] {
+  --ground: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --gsize: 200px 200px;
+}
+:root[data-light] [data-bg="grain"] { --ground: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+/* LAMP — a pool of light where the reading is, centre-top of the column. Ghost
+   ink on dark grounds; white on light ones, where ghost ink would be a shadow,
+   the opposite of a lamp. The column doesn't scroll, so the pool stays put. */
+[data-bg="lamp"] {
+  --ground: radial-gradient(ellipse 72% 58% at 50% 34%, color-mix(in srgb, var(--txg) 52%, transparent), transparent 72%);
+}
+:root[data-light] [data-bg="lamp"] {
+  --ground: radial-gradient(ellipse 72% 58% at 50% 34%, rgb(255 255 255 / .75), transparent 72%);
+}
+/* HAZE — two soft washes of the theme's own hues in opposite corners, the
+   accent and the thinking tint. Halved on paper, like the hairlines. */
+[data-bg="haze"] {
+  --ground:
+    radial-gradient(ellipse 48% 42% at 12% 18%, color-mix(in srgb, var(--acc) 11%, transparent), transparent 72%),
+    radial-gradient(ellipse 52% 46% at 92% 88%, color-mix(in srgb, var(--think) 9%, transparent), transparent 72%);
+}
+:root[data-light] [data-bg="haze"] {
+  --ground:
+    radial-gradient(ellipse 48% 42% at 12% 18%, color-mix(in srgb, var(--acc) 7%, transparent), transparent 72%),
+    radial-gradient(ellipse 52% 46% at 92% 88%, color-mix(in srgb, var(--think) 5%, transparent), transparent 72%);
+}
 /* A pattern is a decoration, and a reader who has asked for less motion and
    less noise has already said what to do with it. */
 /* …and the three that set their own strength above re-state it halved, since a
@@ -1737,10 +1770,10 @@ input {
    the kinds borrowed the status hues — an edit was ok-green, a search was
    warn-amber, a read was the thinking violet — so no colour meant anything.
    Here a role's tint and edge are mixed INTO --panel rather than washed over
-   transparent, which is why the same 10% reads on paper as on glass, and the
-   scheme (data-scheme, lib/toolwidget TRANSCRIPT_SCHEMES) only re-points roles.
-   err / warn / ok keep their own hue in every scheme: trouble is the one thing
-   that must never be on-brand. */
+   transparent, which is why the same 10% reads on paper as on glass.
+   err / warn / ok keep their own hue: trouble is the one thing that must never
+   be on-brand. (A second scheme, CONTRAST, re-pointed these roles until
+   2026-10-18; it was a border width apart from this one, so it went.) */
 [data-style="dossier"] {
   --d-you: var(--acc);
   --d-ask: var(--acc);
@@ -1758,15 +1791,6 @@ input {
   --d-hair: color-mix(in oklab, var(--txl) 55%, var(--panel));
   --d-big: calc(var(--t13) + 1px);
   --d-face: var(--ui-font, var(--mono));
-}
-[data-style="dossier"][data-scheme="contrast"] {
-  --d-think: color-mix(in oklab, var(--purple) 80%, var(--txb));
-  --d-tool: color-mix(in oklab, var(--info) 80%, var(--txb));
-  --d-tint: 18%;
-  --d-edge: 85%;
-  --d-bw: 2px;
-  --d-ink: var(--txb);
-  --d-hair: color-mix(in oklab, var(--txl) 85%, var(--panel));
 }
 [data-style="dossier"] .dturn {
   gap: 0; overflow: hidden; background: var(--panel);
@@ -1844,7 +1868,7 @@ input {
 /* the header sits on the same grid: its chevron is the spine's first node */
 [data-style="dossier"] .dwork-head {
   display: grid; align-items: center; width: 100%; min-width: 0; min-height: 30px;
-  grid-template-columns: var(--zn) var(--zk) minmax(0, max-content) minmax(0, 1fr) max-content max-content var(--zc);
+  grid-template-columns: var(--zn) var(--zk) minmax(0, max-content) minmax(0, 1fr) max-content max-content max-content var(--zc);
   white-space: nowrap; text-align: left;
   font-size: var(--t105); letter-spacing: .5px; color: var(--txd);
 }
@@ -1869,8 +1893,14 @@ input {
 [data-style="dossier"] .dwork-strip > i:is([data-m="hook"], [data-m="log"]) { --m: var(--txl); }
 [data-style="dossier"] .dwork-strip > i[data-m="fail"] { --m: var(--err); }
 [data-style="dossier"] .dwork-strip > b { font-weight: 400; color: var(--txf); padding-left: 3px; }
-[data-style="dossier"] .dwork-fail { grid-column: 5; padding-left: 10px; color: var(--err); }
-[data-style="dossier"] .dwork-ms { grid-column: 6; padding-left: 10px; color: var(--txf); letter-spacing: 1px; font-size: var(--t95); }
+/* pictures inside: your accent until each has been on screen (lib/seenshots),
+   the duration's grey after — the zone's edge and chevron light with the chip */
+[data-style="dossier"] .dwork-shot { grid-column: 5; padding-left: 10px; color: var(--txf); }
+[data-style="dossier"] .dwork-shot[data-new] { color: var(--acc); text-shadow: 0 0 9px color-mix(in oklab, var(--acc) 60%, transparent); }
+[data-style="dossier"] .dwork[data-shots="new"] { box-shadow: inset 2px 0 0 var(--acc); }
+[data-style="dossier"] .dwork[data-shots="new"] .dwork-node { color: var(--acc); }
+[data-style="dossier"] .dwork-fail { grid-column: 6; padding-left: 10px; color: var(--err); }
+[data-style="dossier"] .dwork-ms { grid-column: 7; padding-left: 10px; color: var(--txf); letter-spacing: 1px; font-size: var(--t95); }
 [data-style="dossier"] .dwork[data-run] .dwork-ms { color: var(--d-you); animation: blink 1.1s steps(1) infinite; }
 [data-style="dossier"] .dwork-body { position: relative; display: flex; flex-direction: column; }
 [data-style="dossier"] .dwork-body > * { margin: 0 !important; }
@@ -2866,6 +2896,19 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 [data-fam] [data-style="dossier"] .res,
 [data-fam] [data-style="dossier"] .resblk[data-bad] .res { border-left: 0; background: none; }
+/* THE MAT. With no turn card, a hairline ground (GRAPH, MATRIX, RULED, TOOTH)
+   ran under every line of the answer. Under those four the answer sits on a
+   mat the colour of the column — the column is panel2 at 60% over the shell's
+   canvas (hud/Terminal.tsx, App.tsx), so the mat is that mix and reads as
+   nothing — feathered by two shadows so the pattern fades out around the words
+   instead of stopping at a rectangle. It lives on in the margins and the gaps
+   between turns. The tones (GRAIN, LAMP, HAZE) have no edge to keep off a
+   word, so they go on under it unmatted. */
+[data-fam] :is([data-bg="grid"], [data-bg="dots"], [data-bg="rule"], [data-bg="tooth"]) [data-style="dossier"] :is(.res, .resblk[data-bad] .res) {
+  --mat: color-mix(in srgb, var(--panel2) 60%, var(--canvas));
+  background: var(--mat);
+  box-shadow: 0 0 0 12px var(--mat), 0 0 22px 20px var(--mat);
+}
 [data-fam] [data-style="dossier"] .res-head { padding: 16px 2px 0; }
 [data-fam] [data-style="dossier"] .res-body { padding: 6px 2px 4px; }
 [data-fam] [data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 12px 2px 0; }

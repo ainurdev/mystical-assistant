@@ -16,7 +16,7 @@
 import { toIndicator, type Indicator } from "./indicator";
 import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
 import { TONES, type ToneKey } from "./push";
-import { toChatBg, toTranscriptScheme, type ChatBg, type TranscriptScheme } from "./toolwidget";
+import { toChatBg, type ChatBg } from "./toolwidget";
 
 export type ThemeKey =
   | "aqua" | "green" | "amber" | "magenta" | "blueprint" | "void"
@@ -292,8 +292,6 @@ export interface HudSettings {
   pushVolume: number; // 0..1
   // The texture under all of it — independent of the language (see lib/toolwidget).
   chatBg: ChatBg;
-  // Which palette DOSSIER's roles read (see lib/toolwidget TRANSCRIPT_SCHEMES).
-  chatScheme: TranscriptScheme;
   // FLINT's header island (see HEADER_STYLES).
   headerStyle: HeaderStyle;
   // How the chat column is laid out. DEFAULT is the nameplate header over a
@@ -351,7 +349,7 @@ const DEFAULTS: HudSettings = {
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   push: false, pushSound: true,
-  pushTone: "blip", pushVolume: 0.6, chatBg: "none", chatScheme: "phosphor", headerStyle: "frost",
+  pushTone: "blip", pushVolume: 0.6, chatBg: "none", headerStyle: "frost",
   layout: "default", composer: "tabs", sendKey: "enter",
 };
 
@@ -438,7 +436,6 @@ export function loadSettings(): HudSettings {
         pushTone: p.pushTone && p.pushTone in TONES ? p.pushTone : "blip",
         pushVolume: clamp01(p.pushVolume, 0.6),
         chatBg: toChatBg(p.chatBg),
-        chatScheme: toTranscriptScheme(p.chatScheme),
         headerStyle: HEADER_STYLES.includes(p.headerStyle as HeaderStyle) ? (p.headerStyle as HeaderStyle) : "frost",
         sendKey: p.sendKey === "ctrl-enter" ? "ctrl-enter" : "enter",
         layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
