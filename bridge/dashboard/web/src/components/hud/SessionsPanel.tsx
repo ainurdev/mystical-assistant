@@ -290,7 +290,7 @@ function SessionRow({
 /** One virtualised entry in a lane list: a lane header, a session row, or the
  *  idle lane's fold toggle. */
 type LaneItem =
-  | { k: "head"; label: string; tint: string; count: number; pulse: boolean; first: boolean }
+  | { k: "head"; label: string; tint: string; count?: number; pulse: boolean; first: boolean }
   | { k: "row"; s: SessionBrief }
   | { k: "fold"; label: string };
 
@@ -439,7 +439,7 @@ export function SessionsPanel(props: Props) {
   // ATTENTION: the four lanes. Idle is the long tail, so it folds to four rows
   // and nothing else is capped. Searching drops the fold — a search is already
   // the filter.
-  type Lane = { label: string; tint: string; count: number; pulse: boolean; rows: SessionBrief[]; fold: string };
+  type Lane = { label: string; tint: string; count?: number; pulse: boolean; rows: SessionBrief[]; fold: string };
   let lanes: Lane[] = [];
   if (mode === "attention") {
     lanes = LANES.flatMap((d) => {
@@ -447,7 +447,8 @@ export function SessionsPanel(props: Props) {
       if (!all.length) return [];
       const folds = d.k === "idle" && !sq && all.length > 4;
       return [{
-        label: d.label, tint: d.tint, count: all.length, pulse: d.k === "work",
+        // IDLE is every session at rest, so its header carries no number.
+        label: d.label, tint: d.tint, count: d.k === "idle" ? undefined : all.length, pulse: d.k === "work",
         rows: folds && folded ? all.slice(0, 4) : all,
         fold: folds ? (folded ? `${all.length - 4} more idle ↓` : "show less ↑") : "",
       }];
@@ -895,7 +896,7 @@ export function SessionsPanel(props: Props) {
             style={{ flex: "none", width: 6, height: 6, borderRadius: "50%", background: it.tint }} />
       <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: ".22em", color: it.tint }}>{it.label}</span>
       <span style={{ flex: 1, minWidth: 8, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
-      <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{it.count}</span>
+      {it.count !== undefined && <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{it.count}</span>}
     </div>
   );
 
