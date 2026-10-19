@@ -1574,14 +1574,16 @@ export function App() {
 
   /** A new session in `project`, in `branch`'s worktree when given; `draft`
    *  waits in its composer, unsent (the RIVENDELL tab's WORK ON IT). */
-  async function newSession(project: string, draft?: string, branch?: string, title?: string) {
+  /** A new session in `project` (the new session's id, or null when it couldn't be made). */
+  async function newSession(project: string, draft?: string, branch?: string, title?: string): Promise<string | null> {
     openBlank();
     try {
       const { session } = await api.createSession(project, undefined, title, branch);
       setSessions((prev) => [session, ...prev]);
       if (draft) setDrafts((d) => ({ ...d, [session.id]: draft }));
       openSession(session.id);
-    } catch { setLoadingSession(false); }
+      return session.id;
+    } catch { setLoadingSession(false); return null; }
   }
 
   /** A push button's HANDLE IN A NEW SESSION: a session on the branch that
@@ -1611,7 +1613,10 @@ export function App() {
   /** CONTINUE HERE: a session of your own in your checkout of their repository,
    *  their code on a branch of its own when it came, their transcript and pictures
    *  in the composer, and the opening prompt left unsent. */
+  const continuing = useRef(new Set<string>());
   async function continueShare(id: string) {
+    if (continuing.current.has(id)) return;      // a second click while the first sets up
+    continuing.current.add(id);
     try {
       const plan = await api.teamContinue(id);
       let project = plan.project;
@@ -1624,14 +1629,21 @@ export function App() {
       }
       if (branch) {
         const wt = await api.worktreeAdd(project, branch, plan.base ?? undefined);
+        if (!wt.ok || !wt.path) {
+          notify("error", `Couldn't make the ${branch} worktree: ${wt.output?.trim() || "git refused"}`);
+          return;
+        }
         await api.teamUnpack(id, wt.path).catch((e: Error) => notify("info", e.message));
       }
-      pendingAttach.current = plan.attachments;
-      await newSession(project, plan.draft, branch, plan.title ?? undefined);
+      const sid = await newSession(project, plan.draft, branch, plan.title ?? undefined);
+      if (!sid) { notify("error", "Couldn't start the session; nothing was marked continued."); return; }
+      setAttachFor({ sid, files: plan.attachments });
       void api.teamState(id, "continued").then(() => void loadTeam(), () => { /* best effort */ });
     } catch (e) {
       const m = (e as Error).message;
       notify("error", m === "not found" ? "Restart the bridge to continue shares here." : m);
+    } finally {
+      continuing.current.delete(id);
     }
   }
 
@@ -1785,20 +1797,20 @@ export function App() {
 
   // The composer's addFiles, for the fresh screen's drop target (Terminal).
   const composerFiles = useRef<((files: FileList | File[]) => void) | null>(null);
-  // CONTINUE HERE's attachments (the transcript as Markdown, the pictures): handed
-  // to the composer once the new session shows one.
-  const pendingAttach = useRef<{ name: string; url: string }[] | null>(null);
+  // CONTINUE HERE's attachments (the transcript as Markdown, the pictures): handed to
+  // the composer once the session they were made for is open, and to no other.
+  const [attachFor, setAttachFor] = useState<{ sid: string; files: { name: string; url: string }[] } | null>(null);
   useEffect(() => {
-    const want = pendingAttach.current;
-    if (!want || !sessionId) return;
+    if (!attachFor || attachFor.sid !== sessionId) return;
+    const want = attachFor;
     let tries = 0;
     const id = setInterval(() => {
       if (!composerFiles.current && ++tries < 60) return;
       clearInterval(id);
-      pendingAttach.current = null;
+      setAttachFor((a) => (a === want ? null : a));
       const sink = composerFiles.current;
-      if (!sink || !want.length) return;
-      void Promise.all(want.map(async (a) => {
+      if (!sink || !want.files.length) return;
+      void Promise.all(want.files.map(async (a) => {
         const r = await fetch(a.url);
         if (!r.ok) throw new Error(a.name);
         const b = await r.blob();
@@ -1806,7 +1818,7 @@ export function App() {
       })).then((files) => sink(files), () => notify("error", "Some of what they sent couldn't be attached."));
     }, 50);
     return () => clearInterval(id);
-  }, [sessionId]);
+  }, [attachFor, sessionId]);
 
   // The open tree's git status, on the same 10s cadence as the project badges.
   // Read by the tree's own key, so a switch never shows the last session's

@@ -2364,10 +2364,11 @@ def _prune_uploads():
     transcript and the dashboard serves them back (/local/attachment) — so
     bound the dir by age instead of deleting each run's images on the spot."""
     cutoff = time.time() - config.UPLOAD_KEEP_DAYS * 86400
+    keep = team.owned_uploads()     # what teammates sent: kept till dismissed or expired (team.py)
     try:
         with os.scandir(config.UPLOAD_DIR) as it:
             for e in it:
-                if e.is_dir() and e.stat().st_mtime < cutoff:
+                if e.is_dir() and e.name not in keep and e.stat().st_mtime < cutoff:
                     shutil.rmtree(e.path, ignore_errors=True)
     except OSError:
         pass

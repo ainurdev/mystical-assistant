@@ -142,6 +142,7 @@ def snapshot(folder: str, run=subprocess.run, *, env: bool = True) -> dict:
     names = {os.fsdecode(p) for p in new.split(b"\0") if p} | {n for n in os.listdir(root) if n.startswith(".env")}
     if not env:
         names = {n for n in names if not os.path.basename(n).startswith(".env")}
+        tar = _without_env(tar)
     # shortcut: git's whole archive is held in memory; stream it if big checkouts show up.
     tar_gz = gzip.compress(_with_files(tar, root, sorted(names)))
     if len(tar_gz) > _SNAPSHOT_MAX:
@@ -170,6 +171,17 @@ def _is_the_bridge(run, root: str) -> bool:
         return True
     mine, theirs = _common_dir(run, _BRIDGE_ROOT), _common_dir(run, root)
     return bool(mine and theirs) and _same(mine, theirs)
+
+
+def _without_env(tar: bytes) -> bytes:
+    """git's archive less every .env* file in it, wherever it sits: a repository that
+    tracks one still never sends it with a teammate's share (snapshot env=False)."""
+    out = io.BytesIO()
+    with tarfile.open(fileobj=io.BytesIO(tar)) as src, tarfile.open(fileobj=out, mode="w", format=tarfile.PAX_FORMAT) as dst:
+        for m in src.getmembers():
+            if not os.path.basename(m.name.rstrip("/")).startswith(".env"):
+                dst.addfile(m, src.extractfile(m) if m.isfile() else None)
+    return out.getvalue()
 
 
 def _with_files(tar: bytes, root: str, names: list) -> bytes:
