@@ -1130,7 +1130,8 @@ class Worker:
             others = [k for k, it in self._pending.items()
                       if k != key and not it.get("offered") and it["kind"] != "device-run"]
             idle = not others and self._active_runs == 0
-        if idle and not item.get("offered"):
+        # A brief needs no checkout, runs with tools off and takes seconds, and is wanted before its meeting: never held for a tap.
+        if (idle or item.get("kind") == "meeting-brief") and not item.get("offered"):
             self._ack(key, "received")
             self.accept(key)            # auto-accept: run it now, no Telegram ping
         else:
@@ -2126,7 +2127,8 @@ class Worker:
             return
         try:
             from bridge import telegram   # local import: telegram pulls state/config
-            telegram.send(config.DASH_CHAT_ID, text, kb)
+            # Titles, meeting names and a model's lead come from outside: a markdown link there must not become a disguised link.
+            telegram.send(config.DASH_CHAT_ID, text, kb, markdown=False)
         except Exception as e:  # noqa: BLE001 — a ping failure must never crash a worker
             print(f"rivendell[{self.name}]: queue Telegram ping failed: {e}")
 

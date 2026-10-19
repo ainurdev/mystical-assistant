@@ -57,7 +57,7 @@ def quiet(monkeypatch):
     from bridge import telegram
     sent = []
 
-    def send(chat_id, text, reply_markup=None):
+    def send(chat_id, text, reply_markup=None, markdown=True):
         sent.append({"chat": chat_id, "text": text, "kb": reply_markup, "mid": next(_mids)})
         return {"message_id": sent[-1]["mid"]}
     monkeypatch.setattr(telegram, "send", send)
