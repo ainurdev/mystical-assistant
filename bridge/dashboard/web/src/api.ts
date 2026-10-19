@@ -631,6 +631,7 @@ export interface RivendellQueueItem {
  *  Teamwork project linked to a Rivendell project that links this repo. */
 export interface RivendellTask {
   id: string;
+  key: string | null;        // e.g. NRA-61; a PR whose branch or title carries it links to the task
   name: string;
   htmlUrl: string | null;    // the task in Teamwork
   url: string | null;       // the task on its Rivendell board

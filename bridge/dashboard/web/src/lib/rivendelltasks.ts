@@ -158,12 +158,14 @@ export function nextUp(list: RivendellTodolist | null, open: Set<string>, n = 3)
 
 /** WORK ON IT's first prompt, left in a new session's composer, never sent:
  *  the task, where its spec lives (or its description, when nothing else
- *  holds it), and where it is tracked. */
-export function workPrompt(t: Pick<RivendellTask, "name" | "url" | "htmlUrl">, d: RivendellTaskDetail | null): string {
+ *  holds it), where it is tracked, and its key to carry, so Rivendell links
+ *  the PR to the task. */
+export function workPrompt(t: Pick<RivendellTask, "name" | "url" | "htmlUrl"> & { key?: string | null }, d: RivendellTaskDetail | null): string {
   const lines = [`Rivendell task: ${t.name.replace(/\uFE0F/g, "").trim()}`];
   if (d?.spec) lines.push(`Spec: ${d.spec.url}`);
   const at = [t.htmlUrl && `Teamwork: ${t.htmlUrl}`, t.url && `Rivendell: ${t.url}`].filter(Boolean).join(" · ");
   if (at) lines.push(at);
+  if (t.key) lines.push(`Put ${t.key} in the branch name and the PR title, so Rivendell links the PR to this task.`);
   const desc = d?.spec ? "" : d?.description?.trim() ?? "";
   if (desc) lines.push("", desc.length > 1500 ? `${desc.slice(0, 1500)}…` : desc);
   return `${lines.join("\n")}\n\n`;
