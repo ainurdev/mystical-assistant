@@ -2971,21 +2971,23 @@ _BOARD = {
 }
 
 
-def _rv(tasks_answer, routes, calls):
-    """/plugin/tasks answers `tasks_answer`; /mcp answers by (tool, path), as _routes does."""
+def _rv(tasks_answer, routes, calls, by_slug=None):
+    """/plugin/tasks answers `tasks_answer` (or by_slug[repository]); /mcp answers
+    by (tool, path), as _routes does."""
     mcp = _routes(routes, calls)
 
     def api(path, payload=None):
         if path.startswith("/plugin/tasks"):
             calls.append(("plugin", path))
-            return json.loads(json.dumps(tasks_answer))
+            got = by_slug[path.split("repository=", 1)[1]] if by_slug else tasks_answer
+            return json.loads(json.dumps(got))
         return mcp(path, payload)
     return api
 
 
 def _on_board(workers, monkeypatch, routes=None, tasks_answer=None):
     """One running instance; its repo acme/app is on the NR Chatbot & Complaints board."""
-    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: "acme/app")
+    monkeypatch.setattr(rivendell, "_repo_slugs", lambda path: ["acme/app"])
     calls = []
     w = _worker(id="a", name="prod")
     w._api = _rv(tasks_answer or {"projects": [_PROJ], "tasks": [_OPEN]},
@@ -2998,7 +3000,7 @@ def _writes(calls):
     return [c for c in calls if c[0] == "write_route"]
 
 
-def test_repo_slug_reads_a_worktree_of_the_checkout(tmp_path):
+def test_repo_slugs_read_a_worktree_and_put_origin_first(tmp_path):
     import subprocess
     repo, wt = tmp_path / "app", tmp_path / "wt"
 
@@ -3008,7 +3010,10 @@ def test_repo_slug_reads_a_worktree_of_the_checkout(tmp_path):
     git("-C", str(repo), "remote", "add", "origin", "git@github.com:acme/app.git")
     git("-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x")
     git("-C", str(repo), "worktree", "add", "-q", str(wt))
-    assert rivendell._repo_slug(str(wt)) == "acme/app"
+    assert rivendell._repo_slugs(str(wt)) == ["acme/app"]
+    git("-C", str(repo), "remote", "add", "nr", "https://github.com/upstream/app.git")
+    git("-C", str(repo), "remote", "add", "fork", "git@github.com:zed/app.git")
+    assert rivendell._repo_slugs(str(repo)) == ["acme/app", "upstream/app", "zed/app"]   # origin first
 
 
 def test_on_board_uses_the_cached_answer_without_asking(workers, monkeypatch):
@@ -3031,10 +3036,10 @@ def test_on_board_is_false_without_a_board(workers, monkeypatch):
 
 
 def test_on_board_is_false_with_no_slug_or_no_connection(workers, monkeypatch):
-    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: "acme/app")
+    monkeypatch.setattr(rivendell, "_repo_slugs", lambda path: ["acme/app"])
     assert rivendell.on_board("/x") is False                 # no running instance
     _on_board(workers, monkeypatch)
-    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: None)
+    monkeypatch.setattr(rivendell, "_repo_slugs", lambda path: [])
     assert rivendell.on_board("/x") is False                 # no GitHub remote
 
 
@@ -3063,12 +3068,12 @@ def test_work_list_without_a_board_says_there_is_nothing_to_track_in(workers, mo
 
 def test_work_list_without_a_github_remote_asks_for_repo(workers, monkeypatch):
     _on_board(workers, monkeypatch)
-    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: None)
+    monkeypatch.setattr(rivendell, "_repo_slugs", lambda path: [])
     assert "pass repo" in rivendell.work_list("/x")
 
 
 def test_work_list_with_no_connection_says_so(workers, monkeypatch):
-    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: "acme/app")
+    monkeypatch.setattr(rivendell, "_repo_slugs", lambda path: ["acme/app"])
     assert "No Rivendell connection" in rivendell.work_list("/x")
 
 
@@ -3149,3 +3154,38 @@ def test_work_create_reports_rivendells_refusal(workers, monkeypatch):
         ("write_route", "/task-management/tasks"): "POST /task-management/tasks answered 403: Forbidden resource"})
     text = rivendell.work_create("/x", "Add audit log")
     assert text.startswith("Rivendell couldn't answer") and "403" in text
+
+
+# NR checkouts: origin is the ainurdev mirror, which Rivendell doesn't know; the
+# `nr` remote is the upstream its project links.
+_NR = {"ainurdev/apex": {"projects": [], "tasks": []},
+       "nationalerijschool/apex": {"projects": [_PROJ], "tasks": [_OPEN]}}
+
+
+def _nr(workers, monkeypatch):
+    monkeypatch.setattr(rivendell, "_repo_slugs", lambda path: ["ainurdev/apex", "nationalerijschool/apex"])
+    calls = []
+    w = _worker(id="a", name="prod")
+    w._api = _rv(None, dict(_BOARD), calls, by_slug=_NR)
+    workers["a"] = w
+    return calls
+
+
+def test_work_list_finds_the_board_through_another_remote(workers, monkeypatch):
+    _nr(workers, monkeypatch)
+    text = rivendell.work_list("/x")
+    assert "Rivendell boards for nationalerijschool/apex" in text
+    assert "NR Chatbot & Complaints ▸ Inbox" in text and "NRA-61" in text
+
+
+def test_on_board_finds_the_board_through_another_remote(workers, monkeypatch):
+    calls = _nr(workers, monkeypatch)
+    assert rivendell.on_board("/x") is True
+    assert [c[1] for c in calls if c[0] == "plugin"] == [
+        "/plugin/tasks?repository=ainurdev/apex", "/plugin/tasks?repository=nationalerijschool/apex"]
+
+
+def test_work_create_files_on_the_board_another_remote_names(workers, monkeypatch):
+    calls = _nr(workers, monkeypatch)
+    assert "Created NRA-74" in rivendell.work_create("/x", "Add audit log")
+    assert calls[-1][3]["tasklistId"] == "l-in"

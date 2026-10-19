@@ -87,13 +87,17 @@ The note says:
 - Do this once per piece of work, again for each new piece in the same session.
   Questions, reviews and research need none.
 
-**"Has a board"** means Rivendell's `/plugin/tasks?repository=<origin slug>`
+**"Has a board"** means Rivendell's `/plugin/tasks?repository=<slug>`
 answer has a non-empty `projects` list. It names only projects that have a
-board the token's owner can read (`plugin-tasks.service.ts`). The origin slug
-is found the way the RIVENDELL tab finds it (`github.origin_slug` or
-`remote_slug`). Rivendell matches mirrors too. Each running worker's cached
-last answer (`Worker._last_tasks[slug]`) is used when present. Otherwise one
-fetch runs, and the spawn waits at most 2 s for it (a thread joined with a
+board the token's owner can read (`plugin-tasks.service.ts`). Every remote's
+slug is tried, origin first, until one names a project. The live check
+(2026-10-19) showed why origin alone isn't enough. Rivendell matches a repo or
+its registered mirror, but an NR checkout's origin is the `ainurdev` copy that
+Rivendell doesn't know, and only its `nr` remote names the upstream the project
+links (`nationalerijschool/apex`). `projectmarks` matches on every remote for
+the same reason. Each running worker's cached last answer
+(`Worker._last_tasks[slug]`) is used when present. Otherwise the fetches run,
+and the spawn waits at most 2 s for them (a thread joined with a
 timeout, like `trackers.tasks(rel, wait=2.0)`). On a timeout or any error
 there is no note. The finished fetch still fills the cache for the next
 session.

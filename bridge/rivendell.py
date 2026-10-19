@@ -2820,31 +2820,60 @@ _NO_REMOTE = ("This folder has no GitHub remote, so Rivendell can't know it. If 
 _NO_LINK = "No Rivendell connection is on in this bridge, so there's nothing to track this work in."
 
 
-def _repo_slug(path: str) -> "str | None":
-    """The slug the RIVENDELL tab asks Rivendell about for a checkout. origin_slug
-    reads .git/config, which a linked worktree doesn't have (its .git is a
-    file), so remote_slug's git call is the fallback."""
+def _repo_slugs(path: str) -> list:
+    """Every slug a checkout's remotes name, origin's first. Rivendell matches a
+    repo or its registered mirror, but an NR checkout's origin is the ainurdev
+    copy it doesn't know, and only the `nr` remote names the upstream the
+    project links (the same reason projectmarks matches on every remote).
+    origin_slug reads .git/config, which a linked worktree doesn't have (its
+    .git is a file), so remote_slug's git call is the fallback."""
     from bridge import github                    # local import: subprocess-heavy
-    return github.origin_slug(path) or github.remote_slug(path)
+    origin = github.origin_slug(path) or github.remote_slug(path)
+    return [origin] * bool(origin) + sorted(github.remote_slugs(path) - {origin})
+
+
+def _slug_answer(path: str) -> "tuple[str | None, dict | None]":
+    """The first of the checkout's slugs whose tasks() answer names a project,
+    with that answer; else the first slug's, which says why there is none."""
+    first = (None, None)
+    for slug in _repo_slugs(path):
+        d = tasks(slug)
+        if d.get("projects"):
+            return slug, d
+        first = first if first[0] else (slug, d)
+    return first
 
 
 def on_board(path: str, wait: float = 2.0) -> bool:
     """Is the checkout at `path` on a Rivendell task board? For the runner's
-    note at a session's first run, so it never holds a spawn past `wait`: a
-    cached tasks() answer decides when any worker has one (boards rarely change,
-    and the RIVENDELL tab keeps it fresh); else one tasks() runs off-thread, and
-    if it hasn't answered in time the answer is no. Its result still lands in
-    the cache for the next session."""
-    slug = _repo_slug(path)
+    note at a session's first run, so it never holds a spawn past `wait`: cached
+    tasks() answers decide when they cover it (boards rarely change, and the
+    RIVENDELL tab keeps them fresh); else tasks() runs off-thread, slug by slug,
+    and if it hasn't answered in time the answer is no. What it learns still
+    lands in the cache for the next session."""
+    slugs = _repo_slugs(path)
     with _manager_lock:
         running = list(_workers.values())
-    if not slug or not running:
+    if not slugs or not running:
         return False
-    if not any(slug in w._last_tasks for w in running):
-        t = threading.Thread(target=tasks, args=(slug,), daemon=True, name="rivendell-on-board")
+
+    def known(slug):
+        return any((w._last_tasks.get(slug) or {}).get("projects") for w in running)
+
+    def asked(slug):
+        return any(slug in w._last_tasks for w in running)
+
+    def ask():
+        for slug in slugs:
+            if not asked(slug):
+                tasks(slug)
+            if known(slug):
+                return
+    if not any(known(s) for s in slugs) and not all(asked(s) for s in slugs):
+        t = threading.Thread(target=ask, daemon=True, name="rivendell-on-board")
         t.start()
         t.join(wait)
-    return any((w._last_tasks.get(slug) or {}).get("projects") for w in running)
+    return any(known(s) for s in slugs)
 
 
 def _boards(d: dict) -> list:
@@ -2923,11 +2952,10 @@ def work_list(path: str) -> str:
     """ListRivendellTasks: the boards a task for this checkout's work can go on,
     each with the list it would land in, then the open tasks already there, as
     text for Claude ending with what to do next. Every failure is a line too."""
-    slug = _repo_slug(path)
-    if not slug:
-        return _NO_REMOTE
     try:
-        d = tasks(slug)
+        slug, d = _slug_answer(path)
+        if not slug:
+            return _NO_REMOTE
         if not d["instances"]:
             return _NO_LINK
         boards = _boards(d)
@@ -2961,11 +2989,10 @@ def work_create(path: str, title: str, description: str = "", board: str = "") -
     title = (title or "").strip()
     if not title:
         return "title is required."
-    slug = _repo_slug(path)
-    if not slug:
-        return _NO_REMOTE
     try:
-        d = tasks(slug)
+        slug, d = _slug_answer(path)
+        if not slug:
+            return _NO_REMOTE
         if not d["instances"]:
             return _NO_LINK
         boards = _boards(d)
