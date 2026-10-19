@@ -7,7 +7,7 @@ import { askConfirm } from "../ui/Ask";
 const KIND_LABEL: Record<RivendellQueueItem["kind"], string> = {
   review: "REVIEW", impl: "IMPLEMENT", todolist: "TODOLIST", taskdesc: "TASK DESC",
   changelog: "CHANGELOG", news: "NEWSPAPER", deck: "DECK", video: "VIDEO", "meeting-notes": "MEETING NOTES",
-  "project-summary": "SUMMARY",
+  "project-summary": "SUMMARY", "meeting-brief": "BRIEF",
 };
 
 /** The badge for a row: a todolist's first step reads as the recommendations it is. */

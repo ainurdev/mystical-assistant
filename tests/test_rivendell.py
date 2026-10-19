@@ -18,6 +18,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -424,6 +425,34 @@ def test_catch_up_queues_project_summary_requests(monkeypatch):
     assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [("project-summary:s1", "Rivendell")]
 
 
+def test_handle_message_meeting_brief_requests():
+    """meeting-brief-request events queue as "meeting-brief" with the meeting's name; what
+    the brief says is rendered into the prompt server-side."""
+    w = _worker()
+    ev = json.dumps({"type": "meeting-brief-request", "requestId": "b7",
+                     "meeting": {"name": "Weekly sync", "startsAt": "2026-10-20T10:00:00.000Z",
+                                 "url": "https://rivendell.example/circleback/briefs/abc"}}).encode()
+    w._handle_message(ev)
+    w._handle_message(ev)                          # duplicate: dropped
+    assert _drain(w) == [("meeting-brief", "b7", "Weekly sync")]
+
+
+def test_catch_up_queues_meeting_brief_requests(monkeypatch):
+    """Catch-up lists open briefs by their meeting's name."""
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+
+    def api(path, payload=None):
+        if path == "/plugin/meeting-brief-requests":
+            return [{"id": "b1", "meetingName": "Weekly sync", "startsAt": "2026-10-20T10:00:00.000Z",
+                     "url": "https://rivendell.example/circleback/briefs/abc",
+                     "createdAt": "2026-10-20T08:00:00.000Z"}]
+        return []
+    monkeypatch.setattr(w, "_api", api)
+    w._catch_up()
+    assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [("meeting-brief:b1", "Weekly sync")]
+
+
 def test_handle_message_news_requests():
     """news-request events queue as "news" with the reader's name; the paper is
     written by that reader's own bridge from rivendell's MCP context."""
@@ -632,6 +661,7 @@ def test_catch_up_queues_meeting_notes_requests(monkeypatch):
 @pytest.mark.parametrize("kind, path, runner", [
     ("meeting-notes", "meeting-notes-requests", "_run_meeting_notes"),
     ("project-summary", "project-summary-requests", "_run_project_summary"),
+    ("meeting-brief", "meeting-brief-requests", "_run_meeting_brief"),
     ("device-run", "device-run-requests", "_run_device_run"),
 ])
 def test_each_kind_is_routed_by_its_own_path_never_the_review_fallback(monkeypatch, kind, path, runner):
@@ -664,6 +694,13 @@ def test_queued_message_names_a_project_summary():
             "slug": "Rivendell", "created_at": 0.0}
     text, _kb = _worker()._queued_message(item, "tok")
     assert "Rivendell summary queued — Rivendell" in text
+
+
+def test_queued_message_names_a_meeting_brief():
+    item = {"key": "meeting-brief:b1", "kind": "meeting-brief", "request_id": "b1",
+            "slug": "Weekly sync", "created_at": 0.0}
+    text, _kb = _worker()._queued_message(item, "tok")
+    assert "Rivendell meeting brief queued — Weekly sync" in text
 
 
 def _meeting_claim(**over):
@@ -807,7 +844,7 @@ def test_run_meeting_notes_runs_claude_with_no_tools(monkeypatch, tmp_path):
 
 
 def test_run_video_keeps_its_tools(monkeypatch, tmp_path):
-    """Only the meeting-notes and project-summary kinds run tools-off; a video run starts as it always did."""
+    """Only the meeting-notes, project-summary and meeting-brief kinds run tools-off; a video run starts as it always did."""
     from bridge import rivendell_video as rv
     w = _worker(workdir=str(tmp_path))
     monkeypatch.setattr(rivendell.config, "UPLOAD_DIR", str(tmp_path))
@@ -885,11 +922,12 @@ def test_dedup_is_separate_across_all_kinds():
                        ("deck-request", {"site": {}}),
                        ("video-request", {"kind": "TRANSCRIBE", "file": {"id": "f", "name": "n"}}),
                        ("meeting-notes-request", {"source": "TEXT", "meeting": {"id": "g", "name": "n"}}),
-                       ("project-summary-request", {"project": {}})):
+                       ("project-summary-request", {"project": {}}),
+                       ("meeting-brief-request", {"meeting": {}})):
         w._handle_message(json.dumps({"type": typ, "requestId": "same", **extra}).encode())
     kinds = [k for (k, _rid, _s) in _drain(w)]
     assert kinds == ["review", "impl", "todolist", "taskdesc", "changelog", "news", "deck", "video",
-                     "meeting-notes", "project-summary"]
+                     "meeting-notes", "project-summary", "meeting-brief"]
 
 
 def test_run_todolist_runs_in_workdir_without_checkout(monkeypatch):
@@ -1009,6 +1047,31 @@ def test_run_project_summary_runs_with_no_tools_in_workdir_and_posts_the_text(mo
     assert posted == [("project-summary-requests", "s1", True, "Two tasks shipped.\n")]
 
 
+def test_run_meeting_brief_runs_with_no_tools_in_workdir_and_posts_the_answer(monkeypatch):
+    """A meeting brief needs no repo match (its claim names none): it runs in the worker's
+    workdir and posts the answer, the brief's JSON, back to the brief endpoint as it is.
+    Its prompt carries commit messages, comments and titles anyone wrote, so the run reaches
+    the runner with no tools (skip_pack)."""
+    from bridge import runner
+    w = _worker(workdir="/dedicated")
+    posted, ran = [], []
+    answer = '{"lead": "Two tasks shipped.", "sections": [], "projects": []}'
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kind_path, rid: {"prompt": "brief the meeting", "meetingName": "Weekly sync",
+                                                "repositories": []})
+    monkeypatch.setattr(w, "_find_checkout",
+                        lambda slug: (_ for _ in ()).throw(AssertionError("no checkout for briefs")))
+    monkeypatch.setattr(w, "_new_session", lambda workdir, title=None: "sess-1")
+    monkeypatch.setattr(runner, "start_streaming_job",
+                        lambda chat, prompt, images, **kw:
+                        ran.append((prompt, kw["project"], kw["skip_pack"])) or _StubJob("done", result=answer))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    w._run_meeting_brief("b1", "Weekly sync")
+    assert ran == [("brief the meeting", "/dedicated", True)]
+    assert posted == [("meeting-brief-requests", "b1", True, answer)]
+
+
 def test_workers_have_independent_queues():
     """Two instances dedup and queue separately — the same request id in each
     is two runs, not one deduped away."""
@@ -1065,6 +1128,7 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     monkeypatch.setattr(w, "_run_video", lambda rid, slug: calls.append(("video", rid, slug)))
     monkeypatch.setattr(w, "_run_meeting_notes", lambda rid, slug: calls.append(("meeting-notes", rid, slug)))
     monkeypatch.setattr(w, "_run_project_summary", lambda rid, slug: calls.append(("project-summary", rid, slug)))
+    monkeypatch.setattr(w, "_run_meeting_brief", lambda rid, slug: calls.append(("meeting-brief", rid, slug)))
     monkeypatch.setattr(w, "_run_device_run", lambda item: calls.append(("device-run", item["request_id"], item["slug"])))
     w._run_accepted({"kind": "impl", "request_id": "i1", "slug": "acme/app"})
     w._run_accepted({"kind": "todolist", "request_id": "t1", "slug": "Proj"})
@@ -1074,12 +1138,13 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     w._run_accepted({"kind": "video", "request_id": "v1", "slug": "S.mov"})
     w._run_accepted({"kind": "meeting-notes", "request_id": "m1", "slug": "Weekly sync"})
     w._run_accepted({"kind": "project-summary", "request_id": "s1", "slug": "Rivendell"})
+    w._run_accepted({"kind": "meeting-brief", "request_id": "b1", "slug": "Weekly sync"})
     w._run_accepted({"kind": "device-run", "request_id": "d1", "slug": "ainurhq/app"})
     w._run_accepted({"kind": "review", "request_id": "r1", "slug": None})
     assert calls == [("impl", "i1", "acme/app"), ("todolist", "t1", "Proj"),
                      ("changelog", "c1", "Proj"), ("news", "n1", "Mahdi"), ("deck", "k1", "Deck"),
                      ("video", "v1", "S.mov"), ("meeting-notes", "m1", "Weekly sync"),
-                     ("project-summary", "s1", "Rivendell"),
+                     ("project-summary", "s1", "Rivendell"), ("meeting-brief", "b1", "Weekly sync"),
                      ("device-run", "d1", "ainurhq/app"), ("review", "r1", None)]
 
 
@@ -1408,6 +1473,125 @@ def test_deliver_telegram_silent_without_telegram(monkeypatch):
                         lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not send")))
     monkeypatch.setattr(rivendell.config, "TOKEN", "")
     _worker()._deliver_telegram("hi", {})           # no TOKEN -> silent
+
+
+# --- a meeting brief's Telegram message ----------------------------------------
+
+_BRIEF_URL = "https://rivendell.example/circleback/briefs/abc123"
+_BRIEF_NOW = datetime(2026, 10, 19, 9, 0).astimezone()      # Mon 19 Oct, 09:00 wherever this runs
+
+
+def _starts(day, hour, minute=0):
+    """A meeting at that local time on `day` Oct 2026, as Rivendell sends it: a UTC instant."""
+    return datetime(2026, 10, day, hour, minute).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+def _brief(day=19, lead="Two tasks shipped."):
+    meta = {"name": "Weekly sync", "startsAt": _starts(day, 14, 30), "url": _BRIEF_URL}
+    answer = json.dumps({"lead": lead, "sections": [], "projects": []})
+    return rivendell._brief_message(meta, answer, now=_BRIEF_NOW)
+
+
+def test_brief_message_is_the_contracts_three_lines_over_one_open_button():
+    text, kb = _brief()
+    assert text == "✦ Brief ready: Weekly sync\nToday, 14:30 local\nTwo tasks shipped."
+    assert kb == {"inline_keyboard": [[{"text": "Open brief ↗", "url": _BRIEF_URL}]]}
+
+
+def test_brief_message_says_today_tomorrow_or_the_date():
+    day = lambda d: _brief(d)[0].splitlines()[1]  # noqa: E731
+    assert day(19) == "Today, 14:30 local"
+    assert day(20) == "Tomorrow, 14:30 local"
+    assert day(23) == "Fri 23 Oct, 14:30 local"
+    assert day(18) == "Sun 18 Oct, 14:30 local"        # one that began yesterday is not "today"
+
+
+def test_brief_message_cuts_the_lead_at_400_characters():
+    assert _brief(lead="x" * 900)[0].splitlines()[2] == "x" * 400
+    assert _brief(lead="y" * 400)[0].splitlines()[2] == "y" * 400       # one that fits stays whole
+
+
+def test_brief_message_reads_the_lead_out_of_a_fenced_answer():
+    meta = {"name": "Weekly sync", "startsAt": _starts(19, 14, 30), "url": _BRIEF_URL}
+    text, _kb = rivendell._brief_message(meta, 'Here it is:\n```json\n{"lead": "Fenced.", "sections": []}\n```', now=_BRIEF_NOW)
+    assert text.splitlines()[2] == "Fenced."
+
+
+@pytest.mark.parametrize("answer", ["not json at all", "", '{"sections": []}', '{"lead": 7}', "[1, 2]"])
+def test_brief_message_without_a_readable_lead_has_no_lead_line(answer):
+    """The server decides whether the answer is a brief; the message never breaks on one."""
+    meta = {"name": "Weekly sync", "startsAt": _starts(19, 14, 30), "url": _BRIEF_URL}
+    text, kb = rivendell._brief_message(meta, answer, now=_BRIEF_NOW)
+    assert text == "✦ Brief ready: Weekly sync\nToday, 14:30 local"
+    assert kb["inline_keyboard"][0][0]["url"] == _BRIEF_URL
+
+
+def test_brief_message_leaves_out_what_the_request_did_not_say():
+    text, kb = rivendell._brief_message({}, '{"lead": "L"}', now=_BRIEF_NOW)
+    assert text == "✦ Brief ready\nL" and kb is None
+    text, _kb = rivendell._brief_message({"name": "N", "startsAt": "soon"}, '{"lead": "L"}', now=_BRIEF_NOW)
+    assert text == "✦ Brief ready: N\nL"
+
+
+_BRIEF_FRAME = {"type": "meeting-brief-request", "requestId": "b1",
+                "meeting": {"name": "Weekly sync", "startsAt": _starts(20, 14, 30), "url": _BRIEF_URL}}
+_BRIEF_ROW = {"id": "b1", "meetingName": "Weekly sync", "startsAt": _starts(20, 14, 30), "url": _BRIEF_URL,
+              "createdAt": "2026-10-20T08:00:00.000Z"}
+
+
+def _brief_ran(monkeypatch, request_id, src):
+    """A worker sent brief `request_id` (as `src`, a frame or a catch-up row) and that ran it in
+    a session of its own, with the default routes; the Telegram messages it would send are
+    collected. Returns (worker, sent)."""
+    from bridge import store
+    store.init()
+    store.set_setting("notify_prefs", None)
+    monkeypatch.setattr(rivendell.config, "NOTIFY_ENABLE", True)
+    monkeypatch.setattr(rivendell, "_result_view", lambda sid, checks=True: {})
+    w = _worker()
+    sid = store.create_session(555, "/repo", origin="rivendell:t1")["id"]
+    store.set_ref(sid, f"t1:{request_id}")
+    store.rename(sid, "Weekly sync · brief")
+    w._enqueue("meeting-brief", request_id, "Weekly sync", src=src)
+    sent = []
+    monkeypatch.setattr(w, "_deliver_telegram", lambda text, kb: sent.append((text, kb)))
+    return w, sent
+
+
+def _feed_of(request_id):
+    from bridge import notices
+    return [r for r in notices.feed() if r["subject"] == f"rv:t1:{request_id}"]
+
+
+@pytest.mark.parametrize("src, rid", [(_BRIEF_FRAME, "b-frame"), (_BRIEF_ROW, "b-row")], ids=["frame", "catch-up row"])
+def test_a_finished_brief_emits_rv_brief_not_rv_done_and_sends_the_brief_message(monkeypatch, src, rid):
+    """Either way the request arrived, the meeting's name, time and url were kept for the message."""
+    w, sent = _brief_ran(monkeypatch, rid, src)
+    answer = json.dumps({"lead": "Two tasks shipped.", "sections": [], "projects": []})
+    w._ping_done(rid, True, answer, kind_path="meeting-brief-requests")
+    rows = _feed_of(rid)
+    assert [(r["kind"], r["verb"], r["title"], r["body"]) for r in rows] == [
+        ("rv_brief", "BRIEF READY", "Weekly sync · brief", "Two tasks shipped.")]
+    assert rows[0]["meta"]["job_kind"] == "meeting-brief"
+    (text, kb), = sent
+    assert text.startswith("✦ Brief ready: Weekly sync\n") and text.endswith("\nTwo tasks shipped.")
+    assert kb["inline_keyboard"][0][0]["url"] == _BRIEF_URL
+
+
+def test_a_finished_brief_waits_for_its_own_telegram_route(monkeypatch):
+    from bridge import notices
+    w, sent = _brief_ran(monkeypatch, "b-off", _BRIEF_FRAME)
+    notices.set_prefs({"events": {"rv_brief": {"tg": "off"}}})
+    w._ping_done("b-off", True, '{"lead": "L"}', kind_path="meeting-brief-requests")
+    assert [r["kind"] for r in _feed_of("b-off")] == ["rv_brief"] and sent == []
+
+
+def test_a_failed_brief_keeps_the_generic_failure_path(monkeypatch):
+    w, sent = _brief_ran(monkeypatch, "b-bad", _BRIEF_FRAME)
+    w._ping_done("b-bad", False, "bridge error: boom", kind_path="meeting-brief-requests")
+    assert [(r["kind"], r["verb"]) for r in _feed_of("b-bad")] == [("rv_failed", "FAILED")]
+    (text, _kb), = sent
+    assert text.startswith("✕ Rivendell job failed") and "Brief ready" not in text
 
 
 def test_token_registry_resolves_once():
@@ -2073,7 +2257,8 @@ def test_run_implementation_names_its_session_only_while_it_runs(monkeypatch):
 
 @pytest.mark.parametrize("run, kind", [("_run_review", "review"), ("_run_todolist", "todolist"),
                                        ("_run_taskdesc", "taskdesc"), ("_run_changelog", "changelog"),
-                                       ("_run_deck", "deck"), ("_run_project_summary", "project-summary")])
+                                       ("_run_deck", "deck"), ("_run_project_summary", "project-summary"),
+                                       ("_run_meeting_brief", "meeting-brief")])
 def test_every_kind_is_listed_in_flight_only_while_it_runs(monkeypatch, run, kind):
     """The QUEUE tab lists every accepted run, not only implementations."""
     w = _worker()

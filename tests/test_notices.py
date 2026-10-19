@@ -548,6 +548,18 @@ def test_updates_group_kinds_and_defaults():
     assert notices.telegram_ok("note") is True
 
 
+def test_a_ready_meeting_brief_has_its_own_group_and_reaches_telegram_by_default():
+    """Not an "away" event like a finished job: a brief is wanted before its meeting, whether or
+    not a dashboard is open, so its group defaults to "always"."""
+    assert notices.CATALOG["rv_brief"] == ("rv_brief", "news", "rivendell")
+    assert notices.verb("rv_brief") == "BRIEF READY"
+    assert notices.prefs()["events"]["rv_brief"] == {"pop": True, "sound": "chime", "tg": "always"}
+    notices.seen(time.time())                                  # someone is at a dashboard right now
+    assert notices.telegram_ok("rv_brief") is True and notices.telegram_ok("rv_done") is False
+    notices.set_prefs({"events": {"rv_brief": {"tg": "off"}}})
+    assert notices.telegram_ok("rv_brief") is False
+
+
 def test_changelog_outlives_the_week_and_the_cap():
     """The rail's changelog reads updates and notes however old, past the feed's
     200 rows; the week's prune spares them and only them."""
