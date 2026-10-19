@@ -36,7 +36,7 @@ import sys
 import threading
 import time
 
-from bridge import aifeatures, config, device_view, git, github, integrations, machine, runner, store
+from bridge import aifeatures, config, git, github, integrations, machine, runner, store, team
 from bridge.browser import rel
 
 _lock = threading.Lock()
@@ -150,8 +150,8 @@ def facts(chat_id: int, cwd: str) -> dict:
     live = set(store.running_session_ids(chat_id))
     stalled = []
     for s in store.list_sessions_all(chat_id, max_age_secs=config.NEXTUP_DAYS * 86400):
-        if s["id"] in live or device_view.is_device_run(s.get("origin")):
-            continue    # a teammate's device run: its prompt is theirs, never a scout's on this account
+        if s["id"] in live or team.refusal(s.get("origin")):
+            continue    # a teammate's device run or share: its prompt is theirs, never a scout's on this account
         if os.path.realpath(os.path.expanduser(s.get("cwd") or _abs(s.get("project") or "/"))) != cwd:
             continue
         # cursor past every event: turns are all we need, and a long session's

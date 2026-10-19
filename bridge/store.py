@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   effort            TEXT,
   agent_session_id  TEXT,
   job               TEXT,
-  device            TEXT
+  device            TEXT,
+  team              TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -234,6 +235,10 @@ def init() -> None:
         # JSON {request, instance, by, repo, sha, pr, task, outcome}. NULL = not one.
         if "device" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN device TEXT")
+        # A session a teammate sent (bridge/team.py): who, when, their note, as JSON
+        # {share, instance, kind, from, note, sent, meta}. NULL = not one.
+        if "team" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN team TEXT")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'acp:<agent>').
         if "runtime" not in cols:
@@ -367,10 +372,11 @@ def list_sessions(chat_id: int, project: str, include_archived: bool = False,
 
 def latest_session(chat_id: int, project: str) -> dict | None:
     # Unfiltered: resuming a project must find its latest session even if idle.
-    # Except a teammate's device run: it is read only (bridge/device_view.py), so
-    # the bot and a run sent with no session never carry one on.
+    # Except a teammate's device run or a session a teammate sent: they are read
+    # only (bridge/device_view.py, bridge/team.py), so the bot and a run sent with
+    # no session never carry one on.
     rows = list_sessions(chat_id, project, max_age_secs=None)
-    return next((r for r in rows if not (r["origin"] or "").startswith("device-run:")), None)
+    return next((r for r in rows if not (r["origin"] or "").startswith(("device-run:", "team:"))), None)
 
 
 def list_sessions_all(chat_id: int, include_archived: bool = False,
@@ -580,6 +586,17 @@ def set_device(session_id: str, meta: dict) -> None:
 def parse_device(raw: "str | None") -> dict | None:
     """A device run's stored facts (set_device), or None for any other session."""
     return parse_goal(raw)    # the same rule as a goal's: a JSON object, else None
+
+
+def set_team(session_id: str, meta: dict) -> None:
+    """File what a teammate's share was on the session it became (see init)."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET team=? WHERE id=?", (json.dumps(meta), session_id))
+
+
+def parse_team(raw: "str | None") -> dict | None:
+    """A received share's stored facts (set_team), or None for any other session."""
+    return parse_goal(raw)
 
 
 def delete_session(session_id: str) -> None:
@@ -1275,14 +1292,16 @@ def claim_orphaned_turns() -> list[dict]:
     the recovery step can resume each on its own Claude session. Idempotent: a
     second call returns []. A teammate's device run is left alone: its helper
     outlives the bridge, device_side takes it back or device_view.orphans ends it,
-    and resuming it would run it on this account."""
+    and resuming it would run it on this account. A session a teammate sent
+    (bridge/team.py) is never resumed either, for that last reason."""
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         rows = c.execute(
             "SELECT t.id AS turn_id, t.session_id, t.prompt, t.model, t.runtime, "
             "s.chat_id, s.cwd, s.project, s.claude_session_id "
             "FROM turns t JOIN sessions s ON s.id=t.session_id "
-            "WHERE t.status='running' AND COALESCE(s.origin, '') NOT LIKE 'device-run:%'").fetchall()
+            "WHERE t.status='running' AND COALESCE(s.origin, '') NOT LIKE 'device-run:%' "
+            "AND COALESCE(s.origin, '') NOT LIKE 'team:%'").fetchall()
         c.execute("UPDATE turns SET status='error' WHERE status='running' AND session_id NOT IN "
                   "(SELECT id FROM sessions WHERE origin LIKE 'device-run:%')")
         c.execute("COMMIT")

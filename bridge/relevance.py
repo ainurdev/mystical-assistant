@@ -14,7 +14,7 @@ import json
 import re
 import sys
 
-from bridge import aifeatures, config, device_view, state, store
+from bridge import aifeatures, config, state, store, team
 from bridge.browser import rel
 
 _SYS = (
@@ -52,7 +52,7 @@ def should_check(session: dict | None, prompt: str, force: bool = False) -> bool
     send to a model on this account (the runner refuses the prompt anyway)."""
     if not aifeatures.enabled("relevance") or force or not session:
         return False
-    if device_view.is_device_run(session.get("origin")):
+    if team.refusal(session.get("origin")):
         return False
     if not store.recent_prompts(session["id"], 1):
         return False
