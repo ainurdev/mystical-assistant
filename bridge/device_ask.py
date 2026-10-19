@@ -106,19 +106,21 @@ def _config(run, root, key):
     return out.decode(errors="replace").strip() if rc == 0 else ""
 
 
-def snapshot(folder: str, run=subprocess.run) -> dict:
+def snapshot(folder: str, run=subprocess.run, *, env: bool = True) -> dict:
     """The checkout `folder` is in, packed for a device run: {tar_gz, repository,
     commitSha, dirty, gitAuthorName, gitAuthorEmail}. Uncommitted changes to
     tracked files count (`git stash create` leaves the tree and the stash list
     alone), and so do new files git doesn't ignore and the .env* files at its
-    root. Raises DeviceAskError. `run` is the tests' seam."""
+    root. With env=False (a teammate's share, bridge/team.py) no .env* file goes,
+    and so this bridge's own checkout may: its .env was the reason it never did.
+    Raises DeviceAskError. `run` is the tests' seam."""
     if not folder or not os.path.isabs(folder) or not os.path.isdir(folder):
         raise DeviceAskError(NOT_A_CHECKOUT)     # "" or a relative one would be the bridge's own folder
     rc, out, _ = _git(run, folder, "rev-parse", "--show-toplevel")
     if rc:
         raise DeviceAskError(NOT_A_CHECKOUT)
     root = os.fsdecode(out.rstrip(b"\n"))
-    if _is_the_bridge(run, root):
+    if env and _is_the_bridge(run, root):
         raise DeviceAskError(MYSTICAL)
     rc, out, _ = _git(run, root, "remote", "get-url", "origin")
     m = _GITHUB.search(out.decode(errors="replace").strip()) if rc == 0 else None
@@ -138,6 +140,8 @@ def snapshot(folder: str, run=subprocess.run) -> dict:
     if rc:      # leaving them out would fail the device's build without a word
         raise DeviceAskError(f"Its new files couldn't be listed ({err}).")
     names = {os.fsdecode(p) for p in new.split(b"\0") if p} | {n for n in os.listdir(root) if n.startswith(".env")}
+    if not env:
+        names = {n for n in names if not os.path.basename(n).startswith(".env")}
     # shortcut: git's whole archive is held in memory; stream it if big checkouts show up.
     tar_gz = gzip.compress(_with_files(tar, root, sorted(names)))
     if len(tar_gz) > _SNAPSHOT_MAX:

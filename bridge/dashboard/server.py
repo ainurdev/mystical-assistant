@@ -284,6 +284,28 @@ class Handler(BaseHTTPRequestHandler):
             pass
         return None
 
+    def _download(self, path: str, name: str):
+        """A file someone sent (bridge/team.py), as a download only: never shown as
+        a page of this origin, never sniffed into one."""
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except OSError:
+            return self._json({"error": "not found"}, 404)
+        self.send_response(200)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+        self.send_header("Content-Security-Policy", "default-src 'none'; sandbox")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        return None
+
     def _json(self, obj, code: int = 200):
         raw, zipped = httpgz.maybe_gzip(
             json.dumps(obj).encode(), self.headers.get("Accept-Encoding", ""))
@@ -633,6 +655,22 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"instances": insts, "video": rivendell_video.tools()})
         if path == "/local/rivendell/devices":
             return self._json({"instances": _device_rows()})
+        # TEAM (bridge/team.py): the roster, what was sent here, what you sent.
+        if path == "/local/rivendell/team":
+            return self._json(team.overview())
+        if path == "/local/rivendell/team/preview":
+            try:
+                return self._json(team.preview((qs.get("session", [""])[0] or "").strip()))
+            except team.TeamError as e:
+                return self._json({"error": str(e)}, 400)
+        if path == "/local/rivendell/team/file":
+            got = team.file_path((qs.get("id", [""])[0] or "").strip())
+            return self._download(*got) if got else self._json({"error": "not found"}, 404)
+        if path == "/local/rivendell/team/transcript.md":
+            md = team.transcript_md((qs.get("id", [""])[0] or "").strip())
+            if md is None:
+                return self._json({"error": "not found"}, 404)
+            return self._send(md.encode(), 200, "text/markdown; charset=utf-8", "no-store")
         if path in ("/local/rivendell/gallery", "/local/rivendell/gallery/image"):
             # The mark editor's From Rivendell strip, and one of its images
             # through the bridge so the editor can take it like a dropped file.
@@ -1647,6 +1685,32 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e)}, 400)
             rivendell.reconfigure()      # a changed instance redials, as after any save
             return self._json({"ok": True, "instances": _device_rows()})
+        if path == "/local/rivendell/team/send":
+            # A session, a picture (in the upload folder) or a file picked in the Files tab.
+            kind, where = body.get("kind"), body.get("path")
+            if kind == "file":
+                cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+                where = os.path.realpath(os.path.join(cwd, str(body.get("file") or ""))) if cwd else ""
+                if not cwd or not where.startswith(os.path.realpath(cwd) + os.sep):
+                    return self._json({"error": "That file isn't in this project."}, 400)
+            try:
+                share = team.send(kind, body.get("to"), body.get("note") or "", session_id=body.get("session"),
+                                  pictures=body.get("pictures") is not False, code=body.get("code") is True,
+                                  path=where if kind in ("picture", "file") else None)
+            except team.TeamError as e:
+                return self._json({"error": str(e)}, 400)
+            return self._json({"ok": True, "share": share})
+        if path in ("/local/rivendell/team/continue", "/local/rivendell/team/unpack", "/local/rivendell/team/state"):
+            share_id = str(body.get("id") or "")
+            try:
+                if path.endswith("/continue"):
+                    return self._json(team.continue_plan(share_id))
+                if path.endswith("/unpack"):
+                    return self._json({"ok": True, "files": team.unpack(share_id, str(body.get("cwd") or ""))})
+                team.mark(share_id, str(body.get("state") or ""))
+                return self._json({"ok": True})
+            except team.TeamError as e:
+                return self._json({"error": str(e)}, 400)
         if path == "/local/rivendell/devices/setup":
             # SET UP / REMOVE: one macOS password prompt, then setup.sh or remove.sh
             # as root (bridge/device_setup.py, up to 15 minutes), one at a time.
