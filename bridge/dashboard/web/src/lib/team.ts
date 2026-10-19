@@ -14,7 +14,8 @@ export const readOnly = (origin?: string | null): boolean => isDeviceRun(origin)
 
 export const KIND_LABEL = { session: "SESSION", picture: "PICTURE", file: "FILE" } as const;
 
-const PALETTE = ["var(--info)", "var(--purple)", "var(--warn)", "var(--ok)", "var(--err)"];
+// Never the error red: a person is not an alarm.
+const PALETTE = ["var(--info)", "var(--purple)", "var(--warn)", "var(--ok)", "color-mix(in srgb, var(--ok), var(--info))"];
 
 /** A teammate's colour, the same on every surface: by their id. */
 export function personTint(id: string): string {
