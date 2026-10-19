@@ -104,6 +104,20 @@ _PUSH_NOTE = (
     "human handle it in a new session on that branch: Mystical's dashboard "
     "opens one from its push buttons, with the failure as an unsent draft.")
 
+# Told to every interactive run of a session whose repo is on a Rivendell task
+# board (_rivendell_note_for): the work gets a task, the task's key rides the
+# branch and the PR, and Rivendell links the PR by that key on its own.
+_RIVENDELL_NOTE = (
+    "This repo's work is tracked on a Rivendell task board. Before you change code for a "
+    "piece of work, call mcp__goals__ListRivendellTasks (a deferred tool: load it with "
+    "ToolSearch first). If an open task covers the work, put its key in the branch name, "
+    "keeping the repo's own branch style (e.g. fix/NRA-61-login-redirect), and in the PR "
+    "title, so Rivendell links the PR to the task. If none covers it, ask the user with one "
+    "AskUserQuestion card whether to create one, naming the board and list the tool reports. "
+    "On yes, call mcp__goals__CreateRivendellTask and use the new key the same way; on no, "
+    "don't ask again for that work. Check once per piece of work, and again for each new one "
+    "in this session. Questions, reviews and research need no task.")
+
 
 def _ensure_mystical(cwd: "str | None") -> None:
     """The note promises .mystical/; make it exist. Repos only, not every cwd."""
@@ -167,8 +181,9 @@ _HIDDEN_BROWSER_NOTE = (
     "machine — no `open <url>`, no headed launches; the user is working in front of it.")
 
 
-def _compose_system_prompt(graph: str = "") -> str:
-    """ASK prompt + the dev-log and push notes, then the graph pack.
+def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
+    """ASK prompt + the dev-log and push notes (+ the Rivendell note for a
+    session that gets it), then the graph pack.
 
     Ordering does NOT protect the cache: the whole string lands in
     --append-system-prompt, which sits after the last cache breakpoint, so any
@@ -176,7 +191,7 @@ def _compose_system_prompt(graph: str = "") -> str:
     volatile packs once per session — see _base_cmd."""
     parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE,
                          _HIDDEN_BROWSER_NOTE if config.AI_BROWSER_HEADLESS else "",
-                         graph.strip()) if p]
+                         rivendell, graph.strip()) if p]
     return "\n\n".join(parts)
 
 
@@ -188,6 +203,32 @@ def _compose_system_prompt(graph: str = "") -> str:
 # transcript). Once per session is also all that's useful: turn 1's pack is still
 # in context. Bounded by sessions-since-boot.
 _packed_sessions: set[str] = set()
+
+# claude session id -> whether its runs carry the Rivendell note, decided at the
+# session's first run and kept: a board linked later, or a Rivendell that was
+# down that moment, must not re-write a running session's appended prompt (the
+# same cache cost as above). Bounded by sessions-since-boot, like the set above.
+_rivendell_notes: dict[str, bool] = {}
+
+
+def _rivendell_note_for(chat_id: int, claude_session_id: str, cwd: "str | None") -> str:
+    """The Rivendell note for an interactive run of this session, or "". The
+    RIVENDELL TASKS switch is read every run, since a switch applies to the next
+    turn. Whether the repo is on a board is asked once (rivendell.on_board, at
+    most 2 s) and kept. Rivendell's own runs never get the note: they run
+    unattended, so nobody is there to answer its card."""
+    if not aifeatures.enabled("rvtrack"):
+        return ""
+    if claude_session_id not in _rivendell_notes:
+        try:
+            from bridge import rivendell
+            row = store.get_by_claude_session_id(claude_session_id) or {}
+            _rivendell_notes[claude_session_id] = bool(
+                not str(row.get("origin") or "").startswith("rivendell")
+                and rivendell.on_board(cwd or state.project_dir(chat_id)))
+        except Exception:  # noqa: BLE001 — the note never blocks a turn
+            _rivendell_notes[claude_session_id] = False
+    return _RIVENDELL_NOTE if _rivendell_notes[claude_session_id] else ""
 
 
 # --- ponytail (per-run code-minimalism intensity) ----------------------------
@@ -510,7 +551,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         if claude_session_id:
             _packed_sessions.add(claude_session_id)
     _ensure_mystical(cwd)
-    cmd += ["--append-system-prompt", _compose_system_prompt(graph)]
+    # Only runs that get the goals server (below) can act on the note.
+    rv_note = (_rivendell_note_for(chat_id, claude_session_id, cwd)
+               if interactive and claude_session_id and not skip_pack else "")
+    cmd += ["--append-system-prompt", _compose_system_prompt(graph, rv_note)]
     if skip_pack and not (permission_mode and not interactive):
         # Internal one-shots (titler/commit-msg) are pure text transforms
         # whose prompts embed untrusted conversation text. No tools and no
