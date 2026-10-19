@@ -36,7 +36,7 @@ import time
 
 # A kind's tag in the dashboard is the PLUGINS queue's word for it (RivendellQueue.tsx).
 KINDS = ("review", "impl", "taskdesc", "todolist", "changelog", "news", "deck", "video", "meeting-notes",
-         "project-summary")
+         "project-summary", "meeting-brief")
 
 
 def _pick(*vals):
@@ -70,6 +70,7 @@ def facts(kind: str, request_id: str, instance_id: str,
         "deck": _pick((s.get("site") or {}).get("title"), s.get("siteTitle")),
         "video": _pick(file.get("name"), s.get("fileName")),
         "meeting-notes": _pick(meeting.get("name"), s.get("meetingName")),
+        "meeting-brief": _pick(meeting.get("name"), s.get("meetingName"), c.get("meetingName")),
     }.get(kind)
     job = {
         "kind": kind, "instance": instance_id, "request": request_id, "step": step, "title": title,
@@ -112,6 +113,8 @@ def title(job: dict) -> "str | None":
         return f"{name} · {kind}"
     if kind == "project-summary":
         return f"{name} · summary"
+    if kind == "meeting-brief":
+        return f"{name} · brief"
     return name
 
 
@@ -130,8 +133,10 @@ def headline(text: "str | None") -> "str | None":
 
 
 # The fixed opening of each Rivendell prompt template (backend/src/**/*prompt.template.ts).
-# The summary's comes first: its prompt's head can quote a commit title that holds another template's words.
+# The brief's and the summary's come first: a prompt's head can quote a meeting's or a commit's title,
+# and that can hold another template's words.
 _MARKS = (
+    ("meeting-brief", "You are preparing a brief for the meeting"),
     ("project-summary", "You are writing a short summary of what happened in the project"),
     ("review", "performing a code review"),
     ("impl", "implementing a task"),
@@ -158,6 +163,7 @@ _TITLE_MARKS = (
     ("changelog", "You are a release manager writing the changelog"),
     ("meeting-notes", "You are writing the notes of a meeting"),
     ("project-summary", "You are writing a short summary of what happened"),
+    ("meeting-brief", "You are preparing a brief for the meeting"),
     ("video", "You are given the transcript of a recording"),
 )
 
@@ -199,6 +205,8 @@ def classify(prompt: "str | None") -> "dict | None":
         job["title"] = _line(r"^Meeting: (.+)$", p)
     elif kind == "project-summary":
         job["title"] = _line(r'in the project "(.+?)"\.', head)
+    elif kind == "meeting-brief":
+        job["title"] = _line(r'for the meeting "(.+?)"\.', head)
     elif kind == "video":
         job["title"] = _line(r"^File: (.+?) \(", p)
         job["step"] = "transcribe" if "the screens of it" in head else None

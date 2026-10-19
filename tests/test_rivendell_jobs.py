@@ -33,6 +33,9 @@ REVIEW_PROMPT = (
 SUMMARY_PROMPT = (
     'You are writing a short summary of what happened in the project "Rivendell".\n\n'
     "Period: Sat 17 Oct to Sun 18 Oct\n\nTasks finished: 4…")
+BRIEF_PROMPT = (
+    'You are preparing a brief for the meeting "Weekly sync".\n\n'
+    "Since the last meeting (Sat 17 Oct): tasks finished: 4…")
 PAPER = {"ear": "31 commits", "lead": {"headline": "Patterna opens its shop window", "deck": "d", "body": ["b"]}}
 
 
@@ -92,6 +95,19 @@ def test_facts_name_a_project_summary_by_its_project_from_an_event_a_row_and_a_c
     assert rivendell_jobs.facts("project-summary", "s1", "t1", None, claim)["title"] == "Rivendell"
 
 
+def test_facts_name_a_meeting_brief_by_its_meeting_from_an_event_a_row_and_a_claim():
+    frame = {"type": "meeting-brief-request", "requestId": "b1",
+             "meeting": {"name": "Weekly sync", "startsAt": "2026-10-20T10:00:00.000Z", "url": "https://r.example/b/abc"}}
+    row = {"id": "b1", "meetingName": "Weekly sync", "startsAt": "2026-10-20T10:00:00.000Z",
+           "url": "https://r.example/b/abc", "createdAt": "2026-10-20T08:00:00.000Z"}
+    job = {"kind": "meeting-brief", "instance": "t1", "request": "b1", "title": "Weekly sync"}
+    assert rivendell_jobs.facts("meeting-brief", "b1", "t1", frame) == job
+    assert rivendell_jobs.facts("meeting-brief", "b1", "t1", row) == {**job, "url": "https://r.example/b/abc"}
+    claim = {"requestId": "b1", "status": "IN_PROGRESS", "meetingName": "Weekly sync", "startsAt": "2026-10-20T10:00:00.000Z",
+             "url": "https://r.example/b/abc", "repositories": []}
+    assert rivendell_jobs.facts("meeting-brief", "b1", "t1", None, claim) == {**job, "url": "https://r.example/b/abc"}
+
+
 # --- titles ---------------------------------------------------------------
 
 def test_title_names_each_kind_the_way_rivendell_does():
@@ -104,6 +120,8 @@ def test_title_names_each_kind_the_way_rivendell_does():
     assert t({"kind": "changelog", "title": "Mystical"}) == "Mystical · changelog"
     assert t({"kind": "project-summary", "title": "Rivendell"}) == "Rivendell · summary"
     assert t({"kind": "project-summary"}) is None
+    assert t({"kind": "meeting-brief", "title": "Weekly sync"}) == "Weekly sync · brief"
+    assert t({"kind": "meeting-brief"}) is None
     assert t({"kind": "impl", "title": "Link PRs to tasks"}) == "Link PRs to tasks"
     # Videos and meeting notes keep their runners' titles; no facts, no title.
     assert t({"kind": "video", "title": "Contract.mov"}) is None
@@ -150,6 +168,13 @@ def test_classify_knows_every_template_and_leaves_a_custom_prompt_alone():
     # What it carries can sound like another template: a commit titled "writing the changelog".
     assert c(SUMMARY_PROMPT.replace("Tasks finished: 4…", "Commits: writing the changelog, implementing a task")) \
         == {"kind": "project-summary", "title": "Rivendell"}
+    assert c(BRIEF_PROMPT) == {"kind": "meeting-brief", "title": "Weekly sync"}
+    # A meeting is named by anyone who invites you, so its title can hold another template's words,
+    # and what the brief carries can too: the brief's own opening line wins.
+    assert c(BRIEF_PROMPT.replace("Weekly sync", "Review: performing a code review")) \
+        == {"kind": "meeting-brief", "title": "Review: performing a code review"}
+    assert c(BRIEF_PROMPT.replace("tasks finished: 4…", "commits: writing the changelog, implementing a task")) \
+        == {"kind": "meeting-brief", "title": "Weekly sync"}
     assert c("fix the login bug") is None
     assert c(None) is None
 
@@ -227,6 +252,25 @@ def test_a_project_summary_event_ends_up_on_its_session_named_for_its_project(mo
     assert s["title"] == "Rivendell · summary" and s["ref"] == "t1:s1"
 
 
+def test_a_meeting_brief_event_ends_up_on_its_session_named_for_its_meeting(monkeypatch):
+    monkeypatch.setattr(rivendell.Worker, "_ack", lambda self, key, state: None)
+    w = _worker()
+    frame = {"type": "meeting-brief-request", "requestId": "b1",
+             "meeting": {"name": "Weekly sync", "startsAt": "2026-10-20T10:00:00.000Z", "url": "https://r.example/b/abc"}}
+    assert w._handle_message(json.dumps(frame).encode()) == "meeting-brief:b1"
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {
+        "requestId": "b1", "status": "IN_PROGRESS", "prompt": "brief it", "meetingName": "Weekly sync",
+        "startsAt": "2026-10-20T10:00:00.000Z", "url": "https://r.example/b/abc", "repositories": []})
+    assert w._claim("meeting-brief-requests", "b1")["prompt"] == "brief it"
+    store.init()
+    sid = store.create_session(next(_chat), "/", origin="rivendell:t1")["id"]
+    w._track("b1", "meeting-brief", "Weekly sync", sid, label=None, link=None)
+    s = store.get_session(sid)
+    job = store.parse_job(s["job"])
+    assert (job["kind"], job["title"], job["url"]) == ("meeting-brief", "Weekly sync", "https://r.example/b/abc")
+    assert s["title"] == "Weekly sync · brief" and s["ref"] == "t1:b1"
+
+
 def test_a_posted_result_is_stamped_on_the_job(monkeypatch):
     w = _worker()
     store.init()
@@ -255,6 +299,7 @@ def test_again_call_files_each_kind_with_rivendells_own_route():
     assert a({"kind": "review"}) is None                                   # no PR id, nothing to file
     assert a({"kind": "changelog", "project_id": "p"}) is None
     assert a({"kind": "project-summary", "project_id": "p"}) is None       # asked for again on its project's page
+    assert a({"kind": "meeting-brief", "title": "Weekly sync"}) is None    # written again on its brief page
     assert a({"kind": "video"}) is None and a({}) is None
 
 
@@ -337,6 +382,21 @@ def test_backfill_files_a_project_summary_by_its_prompt_and_by_its_title():
     assert store.get_session(kept)["title"] == "Rivendell · summary"
     assert store.parse_job(store.get_session(moved)["job"]) == {"kind": "project-summary"}
     assert store.get_session(moved)["title"] == SUMMARY_PROMPT[:60]
+
+
+def test_backfill_files_a_meeting_brief_by_its_prompt_and_by_its_title():
+    """Rivendell's brief template opens with a fixed line: a session that kept its prompt is
+    filed by it and named as the worker names it now; one MOVE brought over has only its title,
+    the prompt's first 60 characters."""
+    store.init()
+    kept = _rv_session(BRIEF_PROMPT)
+    moved = store.upsert_native_session("native-" + str(next(_chat)), next(_chat), "/", "/x",
+                                        title=BRIEF_PROMPT[:60])["id"]
+    rivendell_jobs.backfill()
+    assert store.parse_job(store.get_session(kept)["job"])["kind"] == "meeting-brief"
+    assert store.get_session(kept)["title"] == "Weekly sync · brief"
+    assert store.parse_job(store.get_session(moved)["job"]) == {"kind": "meeting-brief"}
+    assert store.get_session(moved)["title"] == BRIEF_PROMPT[:60]
 
 
 def test_a_reattached_batch_keeps_its_job_and_your_name_for_it(monkeypatch):

@@ -1173,6 +1173,7 @@ const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?
   { head: "RIVENDELL", rows: [
     ["rv_held", "Job held behind running work", "it starts by itself; RUN IT TOO starts it now"],
     ["rv_done", "Job done", "PR review, implementation, todolist, changelog…"],
+    ["rv_brief", "Meeting brief ready", "your bridge wrote the brief of an upcoming meeting"],
     ["rv_failed", "Job failed or refused"],
     ["rv_link", "Link broken · token refused"]] },
   { head: "PRs", rows: [["pr", "Checks failing · changes requested"]] },

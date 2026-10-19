@@ -15,7 +15,7 @@ export const JOBS_NAME = "Rivendell jobs";
 export const JOB_LABEL: Record<NonNullable<RivendellJob["kind"]>, string> = {
   review: "REVIEW", impl: "IMPLEMENT", todolist: "TODOLIST", taskdesc: "TASK DESC",
   changelog: "CHANGELOG", news: "NEWSPAPER", deck: "DECK", video: "VIDEO", "meeting-notes": "MEETING NOTES",
-  "project-summary": "SUMMARY",
+  "project-summary": "SUMMARY", "meeting-brief": "BRIEF",
 };
 
 export const jobLabel = (job: RivendellJob | null | undefined): string =>

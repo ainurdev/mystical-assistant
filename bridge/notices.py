@@ -60,6 +60,7 @@ CATALOG = {
     "rv_held": ("rv_held", "fyi", "rivendell"),
     "rv_dismissed": ("rv_held", "fyi", "rivendell"),
     "rv_done": ("rv_done", "news", "rivendell"),
+    "rv_brief": ("rv_brief", "news", "rivendell"),
     "rv_failed": ("rv_failed", "news", "rivendell"),
     "rv_refused": ("rv_failed", "news", "rivendell"),
     "rv_link": ("rv_link", "news", "rivendell"),
@@ -81,6 +82,7 @@ VERBS = {
     "started": "STARTED", "rv_started": "STARTED", "rv_ended": "ENDED",
     "rv_held": "HELD", "rv_dismissed": "DISMISSED", "rv_done": "DONE", "rv_failed": "FAILED",
     "rv_refused": "REFUSED", "rv_link": "LINK DOWN", "rv_link_back": "LINK BACK",
+    "rv_brief": "BRIEF READY",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
     "move_failed": "MOVE FAILED", "weekly": "WEEKLY REPORT",
     "updated": "UPDATED", "note": "NOTE",
@@ -90,7 +92,9 @@ _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED"}
 # group -> what interrupts you. The spec's defaults: today's behaviour, except
 # that "started elsewhere" stops popping up and Telegram waits until you're away,
 # and what the bridge got past by itself (a resume, an API retry, a link back,
-# your own Wait) only lands in the bell: the run's DONE or FAILED is the news.
+# your own Wait) only lands in the bell: the run's DONE or FAILED is the news. A
+# meeting's brief that is ready is the exception to waiting: it is wanted before
+# its meeting, so Telegram gets it whether or not you are at a dashboard.
 DEFAULTS = {
     "ask": {"pop": True, "sound": "ping", "tg": "away"},
     "asked": {"pop": True, "sound": "ping", "tg": "away"},
@@ -103,6 +107,7 @@ DEFAULTS = {
     "started": {"pop": False, "sound": "none", "tg": "off"},
     "rv_held": {"pop": False, "sound": "none", "tg": "away"},
     "rv_done": {"pop": True, "sound": "chime", "tg": "away"},
+    "rv_brief": {"pop": True, "sound": "chime", "tg": "always"},
     "rv_failed": {"pop": True, "sound": "knock", "tg": "away"},
     "rv_link": {"pop": True, "sound": "none", "tg": "always"},
     "pr": {"pop": True, "sound": "blip", "tg": "away"},

@@ -25,6 +25,7 @@ by refusing it (below):
     task-description-request           |   auto-accepted; the rest ping Telegram)
     changelog-request                  |
     project-summary-request            |
+    meeting-brief-request              |
     deck-request                       v  ACCEPT (dashboard PLUGINS tab / Telegram)
           -> GET  /plugin/<kind>-requests/<id>/prompt
           (the GET claims the request: PENDING -> IN_PROGRESS)
@@ -57,10 +58,11 @@ rivendell-api parses it by the request's kind — and only uses the step to labe
 the request in the log, the Telegram ping and the dashboard queue.
 
 Reviews and implementations need a local checkout of the named repository;
-todolists, task descriptions, changelogs, deck drafts and project summaries need
-none — the whole project/task context (for a changelog: the tasks, pull requests and
-commits the user picked; for a deck: its slides and the project's work of a period;
-for a project summary: what happened in the project over a period) is
+todolists, task descriptions, changelogs, deck drafts, project summaries and meeting
+briefs need none — the whole project/task context (for a changelog: the tasks, pull
+requests and commits the user picked; for a deck: its slides and the project's work of
+a period; for a project summary: what happened in the project over a period; for a
+meeting brief: what its project did since the last meeting) is
 rendered into the prompt server-side, so they run in the worker's workdir like a
 generic read task (rivendell-api writes a task description back onto the Teamwork
 task itself; the bridge only returns the generated text). The exception is a
@@ -68,16 +70,26 @@ claim that names the project's repositories (todolists, changelogs and deck draf
 rivendell-api that sends them): it runs in the folder holding this machine's
 checkouts of those repos, matched on any git remote (_project_dir), so its
 session lands under that project rather than BASE_PATH's root. A project
-summary's claim names none, so it always runs in the workdir.
+summary's or a meeting brief's claim names none, so those always run in the workdir.
 
 Runs go through the normal runner (not a bare subprocess) on purpose: each run
 gets its own store session (origin "rivendell:<instance>"), so it shows up in
 the dashboard with a full transcript — and tagged with which Rivendell it came
 from — inherits the watchdog, journaling and auto-resume machinery, and never
-contends with other sessions' run slots. A meeting's notes and a project's
-summary are the exception to the tools: their prompts carry what anyone pasted or
-said in the meeting, or wrote in a commit message, a comment or a title, and need
-no tools, so those runs get none (and no auto-resume, which would).
+contends with other sessions' run slots. A meeting's notes, a project's summary
+and a meeting's brief are the exception to the tools: their prompts carry what anyone
+pasted or said in the meeting, or wrote in a commit message, a comment or a title, and
+need no tools, so those runs get none (and no auto-resume, which would).
+
+A meeting's brief is written ahead of the meeting it is about, so once its result is
+posted it is told as that, not as the generic "job done": "Brief ready" with the
+meeting, when it starts (in this machine's time) and the brief's lead, over a button
+that opens the brief in Rivendell (_brief_message). The meeting's name, start and url
+come from the request's event or catch-up row, kept until then (Worker._briefs); the
+lead from the answer, which is the brief's JSON. Its notice kind, rv_brief, has a NOTIFY
+group of its own, which reaches Telegram whether or not you are at a dashboard
+(bridge/notices.py). A brief that failed, or that Rivendell could not use (it answers
+the result POST FAILED), is an ordinary failed job.
 
 Each request names its repository (owner/repo); _find_checkout maps that to a
 local checkout under BASE_PATH by matching git origin remotes (the scan is
@@ -135,7 +147,8 @@ comes back into the queue for a fresh accept rather than sticking IN_PROGRESS
 forever — except a queue-mode batch, which re-attaches to its persisted turns
 instead (below). In-process duplicates are prevented by each worker's _seen set (keys
 "review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>" / "changelog:<id>" / "deck:<id>" /
-"project-summary:<id>", since the request kinds have separate id spaces). A refused request leaves
+"project-summary:<id>" / "meeting-brief:<id>", since the request kinds have separate id
+spaces). A refused request leaves
 _seen (catch-up no longer lists it, so that costs no rescan per reconnect);
 on an older API a dismissed one is claimed+FAILED, so catch-up never
 resurrects it.
@@ -214,6 +227,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+from datetime import datetime
 from urllib.parse import quote, urlsplit
 
 from bridge import (config, device_ask, device_share, device_side, device_view, integrations, notices,
@@ -356,6 +370,9 @@ class Worker:
         # job (rivendell_jobs.facts). Memory only: catch-up says it all again.
         self._job_src: "dict[str, dict]" = {}
         self._job_claim: "dict[str, dict]" = {}
+        # Request id -> the meeting a brief is about ({name, startsAt, url}, read off its
+        # event or catch-up row), until _ping_done tells it. Memory only, like the two above.
+        self._briefs: "dict[str, dict]" = {}
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
         self._progress_thread: threading.Thread | None = None
@@ -622,7 +639,8 @@ class Worker:
         doesn't know. `error` is cut to Rivendell's _ERROR_MAX; with `ok` it
         rides beside the result (a video's transcript landed, its summary did
         not, and the viewer says why). Only a result that landed gets the
-        "job done" ping."""
+        "job done" ping, and one Rivendell answers FAILED (it could not use a
+        COMPLETED result: a brief that is not one) is the failure it is."""
         payload = {
             "status": "COMPLETED" if ok else "FAILED",
             ("result" if ok else "error"): text if ok else text[:_ERROR_MAX],
@@ -639,7 +657,7 @@ class Worker:
         delays = iter(_RESULT_RETRIES)
         while True:
             try:
-                self._api(f"/plugin/{kind_path}/{request_id}/result", payload)
+                answer = self._api(f"/plugin/{kind_path}/{request_id}/result", payload)
                 break
             except Exception as e:  # noqa: BLE001 — retried; loud on final failure
                 code = e.code if isinstance(e, urllib.error.HTTPError) else None
@@ -658,6 +676,8 @@ class Worker:
                                "the dashboard.")
                     return
                 time.sleep(delay)
+        if ok and isinstance(answer, dict) and answer.get("status") == "FAILED":
+            ok, text = False, "Rivendell could not use the result."
         self._stamp(request_id, outcome="completed" if ok else "failed",
                     **({} if ok else {"error": (text or "")[:300]}))
         self._ping_done(request_id, ok, text, kind_path=kind_path)
@@ -801,7 +821,10 @@ class Worker:
     def _ping_done(self, request_id: str, ok: bool, text: str,
                    kind_path: "str | None" = None) -> None:
         """The job's one Telegram message once its result is posted: done or
-        failed, its PR and time, with OPEN PR and OPEN SESSION. The Telegram
+        failed, its PR and time, with OPEN PR and OPEN SESSION. A meeting's brief
+        that was written is told as what it is instead, on its own notice kind:
+        "Brief ready", with its meeting, its time and its lead, over OPEN BRIEF
+        (_brief_message); one that failed is an ordinary failure. The Telegram
         message is only for a job that ran here (a session is filed under it);
         the feed hears a job that died before it ran too. Checks are left out —
         they have only just started. Best-effort: a lost ping never fails a result."""
@@ -809,9 +832,12 @@ class Worker:
             from bridge import store                 # local import: heavy module
             ref = f"{self.id}:{request_id}"
             sid = store.sessions_for_refs([ref]).get(ref)
-            kind = "rv_done" if ok else "rv_failed"
             job_kind = next((k for k, v in self._KIND_PATH.items() if v == kind_path), None)
-            line = next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")[:200]
+            meeting = self._briefs.pop(request_id, None) if job_kind == "meeting-brief" else None
+            brief = ok and job_kind == "meeting-brief"
+            kind = "rv_brief" if brief else ("rv_done" if ok else "rv_failed")
+            line = (_brief_lead(text) if brief
+                    else next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")[:200])
             if sid is None:
                 self._note(kind, request_id, f"Rivendell job {request_id[:8]}",
                            "" if ok else line, job_kind=job_kind)
@@ -825,7 +851,7 @@ class Worker:
                        pr_url=pr.get("url"), pr_number=pr.get("number"))
             if not notices.telegram_ok(kind):
                 return
-            msg, kb = _done_message(sess, ok, text, res)
+            msg, kb = _brief_message(meeting or {}, text) if brief else _done_message(sess, ok, text, res)
             self._deliver_telegram(msg, kb)
         except Exception as e:  # noqa: BLE001
             print(f"rivendell[{self.name}]: done ping failed for {request_id}: {e}")
@@ -968,6 +994,11 @@ class Worker:
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: project-summary catch-up failed: {e}")
         try:
+            for item in self._api("/plugin/meeting-brief-requests"):
+                self._apply_policy(self._enqueue("meeting-brief", item["id"], item.get("meetingName"), offered=bool(item.get("offered")), src=item))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: meeting-brief catch-up failed: {e}")
+        try:
             head = device_side.headers(self.inst)    # teammates' device runs: only on a device READY for one
             if head:
                 device_side.report_interrupted(self, head)   # runs a restart cut short, first
@@ -995,7 +1026,8 @@ class Worker:
         None for a task on its own. `offered` marks a teammate's job Rivendell
         opened to every bridge: such a row only ever runs on an explicit accept.
         `src` is the event or catch-up row itself, kept for the job's session
-        (rivendell_jobs.facts)."""
+        (rivendell_jobs.facts); a brief's meeting is read off it for its Telegram
+        message (_ping_done)."""
         key = f"{kind}:{request_id}"
         with self._seen_lock:
             dup = key in self._seen
@@ -1013,6 +1045,10 @@ class Worker:
         self.last_event_at = now
         if src:
             self._job_src[request_id] = src
+            if kind == "meeting-brief":
+                m = src.get("meeting") or src       # an event nests the meeting; a catch-up row is flat
+                self._briefs[request_id] = {"name": m.get("name") or m.get("meetingName"),
+                                            "startsAt": m.get("startsAt"), "url": m.get("url")}
         with self._q_lock:
             self._pending[key] = {
                 "key": key, "kind": kind, "request_id": request_id,
@@ -1220,6 +1256,11 @@ class Worker:
             print(f"rivendell[{self.name}]: project summary requested for project "
                   f"{project.get('name', '?')}")
             return self._enqueue("project-summary", obj["requestId"], project.get("name"), offered=offered, src=obj)
+        if obj.get("type") == "meeting-brief-request" and obj.get("requestId"):
+            meeting = obj.get("meeting") or {}
+            print(f"rivendell[{self.name}]: meeting brief requested for "
+                  f"{meeting.get('name', '?')}")
+            return self._enqueue("meeting-brief", obj["requestId"], meeting.get("name"), offered=offered, src=obj)
         if obj.get("type") == "device-run-request" and obj.get("requestId"):
             print(f"rivendell[{self.name}]: {(obj.get('requester') or {}).get('name', '?')} asks this "
                   f"device for a run of {obj.get('repository', '?')}")
@@ -1732,6 +1773,14 @@ class Worker:
         run gets none. The text returned is the summary, shown as it is."""
         self._run_in_workdir("project summary", "project-summary", request_id, project, tools_off=True)
 
+    def _run_meeting_brief(self, request_id: str, name: "str | None") -> None:
+        """A brief of what the meeting's project did since the last meeting (or all
+        our work, for a team meeting) — no checkout (see _run_in_workdir). Its prompt
+        carries the commit messages, comments and titles anyone wrote, and the brief
+        needs no tools, so the run gets none. The text returned is the brief's JSON,
+        parsed in rivendell; its lead is what the Telegram message shows (_ping_done)."""
+        self._run_in_workdir("meeting brief", "meeting-brief", request_id, name, tools_off=True)
+
     def _run_video(self, request_id: str, name: "str | None") -> None:
         """A drive video job. The Mac does what Claude cannot (rivendell_video:
         download, ffmpeg, whisper.cpp), each step reported as a phase and each
@@ -1985,6 +2034,7 @@ class Worker:
         "video": "video-requests",
         "meeting-notes": "meeting-notes-requests",
         "project-summary": "project-summary-requests",
+        "meeting-brief": "meeting-brief-requests",
         "device-run": "device-run-requests",
     }
 
@@ -2000,6 +2050,7 @@ class Worker:
         "video": "video transcript",
         "meeting-notes": "meeting notes",
         "project-summary": "summary",
+        "meeting-brief": "meeting brief",
         "device-run": "Device run",
     }
 
@@ -2206,6 +2257,8 @@ class Worker:
                 self._run_meeting_notes(request_id, slug)
             elif kind == "project-summary":
                 self._run_project_summary(request_id, slug)
+            elif kind == "meeting-brief":
+                self._run_meeting_brief(request_id, slug)
             elif kind == "device-run":
                 self._run_device_run(item)
             else:
@@ -3151,8 +3204,9 @@ def again_call(job: dict) -> "tuple[str, dict] | None":
     AI" routes. They take the bridge's token the way the dashboard takes its
     cookie, and the new job comes back to this bridge like any other. Not for
     a changelog (it needs the sources picked on the page), a video (needs the
-    client id), meeting notes (need the meeting's text or recording) or a project
-    summary (asked for again on its project's page in Rivendell). A paper
+    client id), meeting notes (need the meeting's text or recording), a project
+    summary (asked for again on its project's page in Rivendell) or a meeting brief
+    (written again on its brief's page there). A paper
     can only be reprinted on its own day. The dashboard asks the same question
     before it shows the button (lib/jobs.ts canRunAgain)."""
     kind = job.get("kind")
@@ -3274,6 +3328,45 @@ def _done_message(sess: dict, ok: bool, text: str, res: dict) -> tuple:
                                  "Open session ↗") or {}).get("inline_keyboard", []) for b in r]
     return (f"{head}\n{sess.get('title') or 'Rivendell job'}\n{line}",
             {"inline_keyboard": [row]} if row else None)
+
+
+def _brief_lead(answer: str) -> str:
+    """The `lead` of a brief's answer, at most 400 characters (what a message
+    holds). The answer is the brief's JSON, sometimes in a ```json fence, as a
+    newspaper's is (rivendell_jobs.headline). "" when it has none: whether it is
+    a brief is rivendell's call (it fails one that isn't, and _post_result then
+    treats the job as failed), never this message's."""
+    raw = answer or ""
+    i, j = raw.find("{"), raw.rfind("}")
+    try:
+        body = json.loads(raw[i:j + 1]) if 0 <= i < j else None
+    except ValueError:
+        return ""
+    lead = body.get("lead") if isinstance(body, dict) else None
+    return lead.strip()[:400] if isinstance(lead, str) else ""
+
+
+def _brief_when(starts_at, now: "datetime | None" = None) -> str:
+    """"Today, 14:30 local", "Tomorrow, …" or "Mon 19 Oct, …": when a meeting starts
+    (an ISO instant), read in this machine's time. "" when it can't be read."""
+    try:
+        start = datetime.fromisoformat(str(starts_at).replace("Z", "+00:00")).astimezone()
+    except ValueError:
+        return ""
+    days = (start.date() - (now or datetime.now()).astimezone().date()).days
+    day = "Today" if days == 0 else "Tomorrow" if days == 1 else f"{start:%a} {start.day} {start:%b}"
+    return f"{day}, {start:%H:%M} local"
+
+
+def _brief_message(meta: dict, answer: str, now: "datetime | None" = None) -> tuple:
+    """A written brief's ping: the meeting, when it starts and the brief's lead,
+    over OPEN BRIEF, which opens it in Rivendell. `meta` is the request's meeting
+    ({name, startsAt, url}); a line or button it can't fill is left out. Pure
+    (`now` is the clock's seam), so the wording is unit-testable."""
+    lines = [f"✦ Brief ready: {meta['name']}" if meta.get("name") else "✦ Brief ready"]
+    lines += [ln for ln in (_brief_when(meta.get("startsAt"), now), _brief_lead(answer)) if ln]
+    url = meta.get("url")
+    return "\n".join(lines), ({"inline_keyboard": [[{"text": "Open brief ↗", "url": url}]]} if url else None)
 
 
 def _answer(token: str, labels: list, notes: str = "") -> "str | None":
