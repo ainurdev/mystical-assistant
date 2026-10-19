@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Castle, GitPullRequest, Moon, Settings, Truck, CalendarDays } from "lucide-react";
+import { Castle, GitPullRequest, Moon, Settings, Truck, CalendarDays, Users } from "lucide-react";
 import { api, type Need, type Notice, type NoticePrefs, type PendingCard, type RivendellInstance } from "../../api";
 import { chime, push, pushGranted, type ToneKey } from "../../lib/push";
 import { bannerActions, bannerAnswer } from "../../lib/banner";
@@ -128,7 +128,7 @@ const TONE: Record<string, "ok" | "err" | "ask" | "warn" | "acc" | "dim"> = {
   done: "ok", rv_done: "ok", move_done: "ok", resumed: "ok", rv_link_back: "dim",
   failed: "err", rv_failed: "err", rv_refused: "err", rv_link: "err", pr_failing: "err", move_failed: "err",
   approve: "ask", question: "ask", asking: "ask", login: "ask", limit_choice: "ask", rv_offer: "ask",
-  parked: "warn", pr_changes: "warn", started: "acc", rv_started: "acc",
+  parked: "warn", pr_changes: "warn", started: "acc", rv_started: "acc", team_in: "acc",
   rv_held: "dim", rv_dismissed: "dim", weekly: "dim", retrying: "dim",
 };
 const GLYPH: Record<string, ReactNode> = { ok: "✓", err: "✕", ask: "?", warn: <b className="ntf-pz" />, acc: "▸", dim: null };
@@ -140,6 +140,7 @@ const mins = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 
 function Source({ kind, source, project }: { kind: string; source: string; project?: string }) {
   const t = toneOf(kind);
   const icon = source === "rivendell" ? <Castle size={13} strokeWidth={1.8} />
+    : source === "team" ? <Users size={13} strokeWidth={1.8} />
     : source === "pr" ? <GitPullRequest size={13} strokeWidth={1.8} />
     : kind === "weekly" ? <CalendarDays size={13} strokeWidth={1.8} />
     : source === "bridge" ? <Truck size={13} strokeWidth={1.8} /> : null;
@@ -161,6 +162,8 @@ function openRow(n: { id?: number; kind: string; subject: string; source: string
   if (n.source === "session" || sid) return env.openSession(sid || n.subject);
   if (n.source === "pr") return openUrl(n.meta.url);
   if (n.source === "rivendell") return openSettings("plugins", str(n.meta.instance_id) || undefined);
+  // A picture or a file a teammate sent: it waits in the TEAM tab.
+  if (n.source === "team") return void window.dispatchEvent(new CustomEvent("hud:team"));
   if (n.kind.startsWith("move_")) return openSettings("move");
 }
 

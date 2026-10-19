@@ -826,6 +826,10 @@ def unpack(share_id: str, cwd: str) -> int:
     root = os.path.realpath(str(cwd or ""))
     if not root.startswith(os.path.realpath(config.BASE_PATH) + os.sep) or not os.path.isdir(root):
         raise TeamError("That folder isn't inside your projects.")
+    from bridge import git
+    rc, out, _ = git._run(root, "status", "--porcelain")
+    if rc == 0 and out.strip():      # a second CONTINUE HERE reuses the branch's worktree: never over your work
+        raise TeamError("That worktree already has changes, so their code wasn't unpacked over them.")
     try:
         raw = _download(_client(rec["instance"]), share_id, f, _RAW_MAX)
         with tarfile.open(fileobj=io.BytesIO(raw), mode="r:gz") as t:

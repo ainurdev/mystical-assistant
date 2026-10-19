@@ -539,6 +539,22 @@ def test_unpack_refuses_escape(riv):
         team.unpack(share, "/tmp")
 
 
+def test_unpack_never_lands_on_your_changes(riv):
+    code = _tgz([("app.py", "file", b"theirs")])
+    doc = {"v": 1, "title": "t", "turns": [{"prompt": "p", "events": []}]}
+    share = riv.offer("session", [("transcript", "transcript.json.gz", _transcript(doc)), ("code", "code.tar.gz", code)],
+                      meta={"code": True})
+    team.on_share(riv.worker, riv.row(share))
+    wt = os.path.join(config.BASE_PATH, "acme-wt")
+    os.makedirs(wt, exist_ok=True)
+    g = lambda *a: subprocess.run(["git", "-C", wt, *a], check=True, capture_output=True)  # noqa: E731
+    g("init", "-q")
+    open(os.path.join(wt, "app.py"), "w").write("mine, unsaved")
+    with pytest.raises(team.TeamError, match="already has changes"):
+        team.unpack(share, wt)
+    assert open(os.path.join(wt, "app.py")).read() == "mine, unsaved"
+
+
 def test_overview_without_a_link_still_lists_what_came(monkeypatch, riv):
     share = riv.offer("file", [("file", "a.txt", b"a")], title="a.txt")
     team.on_share(riv.worker, riv.row(share))

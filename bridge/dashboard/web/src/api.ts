@@ -93,6 +93,15 @@ export interface SessionBrief {
     task: { key: string; title: string } | null;
     outcome: "done" | "failed" | "stopped" | "cancelled" | null;   // stopped: by the owner; cancelled: by Rivendell, nothing went back
   } | null;
+  // A session a teammate sent (lib/team, bridge/team.py): who, when, their note.
+  // null = not one; absent from an older bridge.
+  team?: {
+    share: string; instance: string; kind: string;
+    from: { id: string; name: string };
+    note: string;
+    sent: string;          // ISO
+    meta: Record<string, unknown>;
+  } | null;
 }
 
 /** Which picker a settings POST was for: a running turn is switched only to
@@ -944,6 +953,86 @@ export interface RunningInfo {
   needs?: Need[]; // everything waiting on you (bridge/notices.py); absent on an older bridge
 }
 
+/** A Rivendell teammate (bridge/team.py, from GET /plugin/teammates). `online` is
+ *  "their Mystical holds Rivendell's agent socket now"; `lastSeenAt` null is a
+ *  teammate who never linked Mystical. */
+export interface Teammate {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  online: boolean;
+  lastSeenAt: string | null;
+  device: { id: string; name: string; online: boolean } | null;   // a Mac they share with you for device runs
+}
+
+export type ShareKind = "session" | "picture" | "file";
+
+/** A share as Rivendell has it: one you sent, in YOU SENT. Times are ISO. */
+export interface Share {
+  id: string;
+  kind: ShareKind;
+  title: string;
+  note: string | null;
+  meta: Record<string, unknown>;
+  from: { id: string; name: string };
+  to: { id: string; name: string };
+  sentAt: string;
+  deliveredAt: string | null;
+  openedAt: string | null;
+  continuedAt: string | null;
+  dismissedAt: string | null;
+  expiresAt: string;
+}
+
+/** Something a teammate sent this bridge, as it keeps it (team.json): a session it
+ *  made read only here (`session`), or a picture or file (`url` opens it). */
+export interface Received {
+  id: string;
+  kind: ShareKind;
+  title: string;
+  note: string;
+  from: { id: string; name: string };
+  sent: string;
+  meta: Record<string, unknown>;
+  session: string | null;
+  file: string | null;
+  url: string | null;
+  opened: boolean;
+  continued: boolean;
+  at: number;
+}
+
+export interface TeamOverview {
+  roster: Teammate[];
+  inbox: Received[];
+  outbox: Share[];
+  unread: number;
+  error: string | null;     // why the roster couldn't be read (no link, Rivendell down)
+}
+
+export interface TeamPreview {
+  title: string; project: string; repo: string | null; branch: string | null;
+  turns: number; pictures: number; redacted: number;
+}
+
+/** What CONTINUE HERE sets up: `project` null when the repository isn't cloned
+ *  here (or a picture or file, which goes to the active project). */
+export interface ContinuePlan {
+  project: string | null;
+  repo: string | null;
+  branch: string | null;     // a new worktree branch for their code
+  base: string | null;       // the commit to cut it from, when it is here
+  draft: string;
+  attachments: { name: string; url: string }[];
+}
+
+export interface TeamSend {
+  kind: ShareKind; to: string; note?: string;
+  session?: string; pictures?: boolean; code?: boolean;     // a session
+  path?: string;                                            // a picture, in the upload folder
+  project?: string; branch?: string; file?: string;         // a file, relative to its project
+}
+
 /** One row of the bridge's notification feed (bridge/notices.py). `verb` is
  *  the copy ("FAILED", "REVIEWED"); `group` is its Settings ▸ NOTIFY row. */
 export interface Notice {
@@ -953,7 +1042,7 @@ export interface Notice {
   verb: string;
   group: string;
   tier: "needs" | "news" | "fyi";
-  source: "session" | "rivendell" | "pr" | "bridge";
+  source: "session" | "rivendell" | "pr" | "bridge" | "team";
   subject: string; // a session id, rv:<instance>:<request>, rv-link:<instance>, pr:<slug>:<branch>
   title: string;
   body: string;
@@ -2007,6 +2096,19 @@ export const api = {
     req<{ ok: boolean; error: string | null; instances: RivendellDevice[] }>("/local/rivendell/devices/setup", {
       method: "POST", body: { action },
     }),
+  // TEAM (bridge/team.py): the roster, what teammates sent here, what you sent. An
+  // older bridge answers 404 "not found": the TEAM tab says to restart it.
+  team: () => req<TeamOverview>("/local/rivendell/team"),
+  teamPreview: (session: string) =>
+    req<TeamPreview>(`/local/rivendell/team/preview?session=${encodeURIComponent(session)}`),
+  teamSend: (body: TeamSend) =>
+    req<{ ok: boolean; share: Share }>("/local/rivendell/team/send", { method: "POST", body }),
+  teamContinue: (id: string) =>
+    req<ContinuePlan>("/local/rivendell/team/continue", { method: "POST", body: { id } }),
+  teamUnpack: (id: string, cwd: string) =>
+    req<{ ok: boolean; files: number }>("/local/rivendell/team/unpack", { method: "POST", body: { id, cwd } }),
+  teamState: (id: string, state: "opened" | "continued" | "dismissed") =>
+    req<{ ok: boolean }>("/local/rivendell/team/state", { method: "POST", body: { id, state } }),
   // STOP RUN on the teammate's run going on this device (its session's id). 404
   // when it isn't the run going here, or from an older bridge that has no route.
   stopDeviceRun: (session: string) =>
