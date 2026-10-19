@@ -21,6 +21,8 @@ interface Props {
   // `changed` lets the caller land a dirty file on the GIT tab (diff) instead
   // of the editor, so its changed lines are visible.
   onOpenFile: (path: string, changed: boolean) => void;
+  // TEAM: send this file to a teammate (absent while there's no one to send to).
+  onSendFile?: (path: string) => void;
 }
 
 type Row = { key: string; dir: boolean; depth: number; name: string; path: string };
@@ -47,7 +49,7 @@ function ancestorsOf(paths: Iterable<string>): Set<string> {
   return out;
 }
 
-export function FilesPanel({ project, branch, onOpenFile }: Props) {
+export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
   const [paths, setPaths] = useState<string[]>([]);
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
   const [ignored, setIgnored] = useState<string[]>([]);
@@ -156,6 +158,9 @@ export function FilesPanel({ project, branch, onOpenFile }: Props) {
       });
     }
     items.push({ divider: true });
+    // TEAM (bridge/team.py): never a .env file, which the bridge refuses anyway.
+    if (onSendFile && !/^\.env/i.test(t.path.split("/").pop() ?? ""))
+      items.push({ icon: "➤", label: "Send to teammate…", hint: "through Rivendell", onClick: () => onSendFile(t.path) });
     items.push({ icon: "⧉", label: "Copy Path", onClick: () => copyPath(t.path) });
     items.push({
       icon: "✕", label: "Delete File", danger: true,

@@ -32,7 +32,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from bridge import (accounts, config, credentials, device_ask as da, device_side, github, integrations,
-                    queue_manager, rivendell, rivendell_instances, store, telegram)
+                    queue_manager, rivendell, rivendell_instances, store, team, telegram)
 from bridge.dashboard import server as dash
 
 RID = "0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19"
@@ -1007,6 +1007,7 @@ def test_each_connect_catches_up_on_outcomes_only_with_a_run_out_through_that_li
     w = rivendell.Worker(dict(INST))
     caught = []
     monkeypatch.setattr(da, "catch_up", lambda worker: caught.append(worker))
+    monkeypatch.setattr(team, "catch_up", lambda worker: None)     # its own test: tests/test_team.py
     monkeypatch.setattr(w, "_connect", lambda: (client, client.makefile("rb")))
     monkeypatch.setattr(w, "_catch_up", lambda: 0)
     t = threading.Thread(target=w._listen, daemon=True)

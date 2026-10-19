@@ -40,7 +40,8 @@ export function stamp(at: number, now: Date): { day: string; time: string } {
 
 const SOURCE: Record<Filter, string | null> = { all: null, needs: "", sessions: "session", rivendell: "rivendell", prs: "pr" };
 export function matches(f: Filter, r: Notice): boolean {
-  return f === "all" || SOURCE[f] === r.source;
+  // What teammates send comes through Rivendell, so its filter shows it.
+  return f === "all" || SOURCE[f] === r.source || (f === "rivendell" && r.source === "team");
 }
 export function needMatches(f: Filter, n: Need): boolean {
   const src = n.kind === "rv_offer" ? "rivendell" : "session";

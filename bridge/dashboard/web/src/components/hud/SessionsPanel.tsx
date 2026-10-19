@@ -13,6 +13,7 @@ import { orderBranches } from "../../lib/branchorder";
 import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
 import { isDeviceRun, rowAge } from "../../lib/devicerun";
+import { isTeam, readOnly } from "../../lib/team";
 import { DeviceTile } from "../DeviceRunPlate";
 import type { ProjectGroup } from "./ProjectsPanel";
 import { RivendellQueue } from "./RivendellQueue";
@@ -102,6 +103,7 @@ const JOB_TINT: ProjectTint = {
  *  accent and Rivendell's purple. */
 const PLUGINS: { label: string; sub?: string; tint: string; match: (s: SessionBrief) => boolean }[] = [
   { label: "DEVICE RUNS", sub: "teammates on this device", tint: "var(--info)", match: (s) => isDeviceRun(s.origin) },
+  { label: "FROM TEAMMATES", sub: "sessions sent to you", tint: "var(--purple)", match: (s) => isTeam(s.origin) },
   { label: "RIVENDELL", tint: "var(--purple)", match: isJob },
 ];
 /** The PLUGINS tab orders by when a session was created, not last touched — a
@@ -538,9 +540,9 @@ export function SessionsPanel(props: Props) {
   // read this map so they can never disagree.
   const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
   const laneOf = (s: SessionBrief) => views.get(s.id)?.lane ?? "idle";
-  // A teammate's device run is never yours to attend to: it lives in PLUGINS ▸
-  // DEVICE RUNS only, out of every other tab and the ATTENTION count.
-  const mine = sorted.filter((s) => !isDeviceRun(s.origin));
+  // A teammate's device run or share is never yours to attend to: it lives in
+  // PLUGINS only, out of every other tab and the ATTENTION count.
+  const mine = sorted.filter((s) => !readOnly(s.origin));
 
   // ATTENTION: the four lanes. Idle is the long tail, so it folds to four rows
   // and nothing else is capped. Searching drops the fold — a search is already

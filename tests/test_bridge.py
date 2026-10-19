@@ -501,7 +501,7 @@ def test_session_brief_shape(monkeypatch):
     s = store.create_session(555, "p6")
     b = _session_brief(s)
     assert set(b) == {"id", "title", "project", "created", "updated", "archived",
-                      "origin", "cwd", "branch", "fallback_policy", "goal", "job", "device",
+                      "origin", "cwd", "branch", "fallback_policy", "goal", "job", "device", "team",
                       "lifecycle", "disabled_tools",
                       "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
                       "worktree", "model", "permission_mode",
@@ -515,6 +515,7 @@ def test_session_brief_shape(monkeypatch):
     assert b["goal"] is None              # parsed from the column, not the raw JSON
     assert b["lifecycle"] is None         # a fresh session is active
     assert b["device"] is None            # not a teammate's device run
+    assert b["team"] is None              # nor a session a teammate sent
 
 
 def test_store_list_sessions_all():

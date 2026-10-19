@@ -39,7 +39,8 @@ from bridge import config
 # needs    -- what it takes before it does anything, shown on the card
 # env_keys -- settings the plugin owns: envsettings lists them only while it is installed
 # origins  -- session origins its workers stamp; "rivendell" also matches "rivendell:<name>",
-#             and "device-run:<name>" is a teammate's run on this device (bridge/device_view.py)
+#             "device-run:<name>" is a teammate's run on this device (bridge/device_view.py),
+#             and "team:<name>" a session a teammate sent (bridge/team.py)
 # routes   -- path prefixes both servers answer 404 to while it is not installed
 PLUGINS: tuple[dict, ...] = (
     {"id": "rivendell", "label": "Rivendell",
@@ -48,7 +49,7 @@ PLUGINS: tuple[dict, ...] = (
               "and the video kind.",
      "needs": "Rivendell token",
      "env_keys": ("FFMPEG_BIN", "WHISPER_BIN", "WHISPER_MODEL"),
-     "origins": ("rivendell", "device-run"),
+     "origins": ("rivendell", "device-run", "team"),
      "routes": ("/local/rivendell",)},
     {"id": "trackers", "label": "Teamwork · Jira",
      "blurb": "A repo linked to a Teamwork or Jira project opens every session with what is "

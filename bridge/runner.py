@@ -29,9 +29,9 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, device_view, devserver,
+from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver,
                     git, inspector, integrations, ladder, limits, machine, native_activity, notices,
-                    profiles, pubsub, relevance, state, store, transcript_jsonl, waits)
+                    profiles, pubsub, relevance, state, store, team, transcript_jsonl, waits)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send, typing
 
@@ -2364,10 +2364,11 @@ def _prune_uploads():
     transcript and the dashboard serves them back (/local/attachment) — so
     bound the dir by age instead of deleting each run's images on the spot."""
     cutoff = time.time() - config.UPLOAD_KEEP_DAYS * 86400
+    keep = team.owned_uploads()     # what teammates sent: kept till dismissed or expired (team.py)
     try:
         with os.scandir(config.UPLOAD_DIR) as it:
             for e in it:
-                if e.is_dir() and e.stat().st_mtime < cutoff:
+                if e.is_dir() and e.name not in keep and e.stat().st_mtime < cutoff:
                     shutil.rmtree(e.path, ignore_errors=True)
     except OSError:
         pass
@@ -2812,9 +2813,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
             if account_slot is not None or runtime not in (None, f"acp:{eff['agent']}"):
                 refusal = profiles.claude_account_refusal(eff["agent"])
             account_slot, runtime = None, f"acp:{eff['agent']}"
-        if device_view.is_device_run(session.get("origin")):
-            # A teammate's run (bridge/device_view.py): read only, on every account.
-            refusal, account_slot = device_view.REFUSAL, None
+        if team.refusal(session.get("origin")):
+            # A teammate's device run or a session a teammate sent (bridge/device_view.py,
+            # bridge/team.py): read only, on every account.
+            refusal, account_slot = team.refusal(session.get("origin")), None
         if account_slot is not None:
             profiles.follow_account(session, account_slot)
         is_acp = (runtime or "").startswith("acp:")

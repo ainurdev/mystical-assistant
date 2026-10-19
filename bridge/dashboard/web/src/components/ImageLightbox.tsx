@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { Send } from "lucide-react";
 import { FIT, clampPan, zoomAt, type View } from "../lib/imgzoom";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 
@@ -122,6 +123,13 @@ export type Shown = { src: string; name?: string; clip?: Clip; path?: string; at
 const hasPanel = (c?: Clip) =>
   !!(c && (c.notes || c.chapters?.length || c.todos?.length));
 
+let sendPicture: ((p: { path: string; url: string; name: string }) => void) | null = null;
+/** TEAM (App.tsx): the viewer's SEND, set while there are teammates to send to. */
+export function setLightboxSend(fn: typeof sendPicture) { sendPicture = fn; }
+/** A picture this bridge holds: its upload path, from the entry or its URL. */
+const uploadPath = (s: Shown): string | null =>
+  s.path ?? (s.src.startsWith("/local/attachment?") ? new URLSearchParams(s.src.split("?")[1]).get("path") : null);
+
 /** Full-size view of one attachment. Video gets its own component rather than
  *  a branch inside the still viewer: pinch-to-zoom fights the scrubber, and the
  *  still's tap-to-close would fire on the play button.
@@ -157,6 +165,12 @@ export function ImageLightbox({ src, all, onClose }: { src: string; all?: Shown[
       {isVideo(cur.src) ? <VideoLightbox key={cur.src} src={cur.src} name={cur.name} title={title} strip={many} clip={cur.clip} onClose={onClose} />
                         : <StillLightbox src={cur.src} name={cur.name} title={title} strip={many} onClose={onClose} />}
       {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go} />}
+      {sendPicture && !isVideo(cur.src) && uploadPath(cur) && createPortal(
+        <button type="button" title="Send this picture to a teammate"
+          onClick={() => { const p = uploadPath(cur); if (p) sendPicture?.({ path: p, url: cur.src, name: cur.name || p.split("/").pop() || "picture" }); }}
+          style={{ position: "fixed", top: 12, right: 96, zIndex: 96, appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "color-mix(in srgb, var(--panel3) 70%, transparent)", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "6px 12px" }}>
+          <Send size={11} strokeWidth={2} aria-hidden />SEND
+        </button>, document.body)}
     </>
   );
 }

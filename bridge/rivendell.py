@@ -231,7 +231,7 @@ from datetime import datetime
 from urllib.parse import quote, urlsplit
 
 from bridge import (config, device_ask, device_share, device_side, device_view, integrations, notices,
-                    rivendell_jobs, wsutil)
+                    rivendell_jobs, team, wsutil)
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -1276,6 +1276,12 @@ class Worker:
             threading.Thread(target=device_ask.on_update, args=(self, obj),
                              name=f"rivendell-device-update-{self.id}", daemon=True).start()
             return None
+        if obj.get("type") in ("team-share", "team-share-update") and obj.get("requestId"):
+            # A teammate's share, or news of one you sent (bridge/team.py): taking one in
+            # downloads and writes, so off the listener.
+            take = team.on_share if obj["type"] == "team-share" else team.on_update
+            threading.Thread(target=take, args=(self, obj), name=f"rivendell-team-{self.id}", daemon=True).start()
+            return None
         return None
 
     def _block_on_token(self, detail: str) -> None:
@@ -1332,6 +1338,9 @@ class Worker:
             if any(r.get("instance") == self.id for r in device_ask._runs().values()):
                 threading.Thread(target=device_ask.catch_up, args=(self,),
                                  name=f"rivendell-device-catch-up-{self.id}", daemon=True).start()
+            # What teammates sent while this bridge was away (bridge/team.py).
+            threading.Thread(target=team.catch_up, args=(self,),
+                             name=f"rivendell-team-catch-up-{self.id}", daemon=True).start()
             print(f"rivendell[{self.name}]: connected to {url}"
                   + (f" ({caught} pending request(s) caught up)" if caught else ""))
             missed = 0

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Castle, FolderTree, GitBranch, GraduationCap,
+  Castle, FolderTree, GitBranch, GraduationCap, Users,
 } from "lucide-react";
 import {
   api,
@@ -21,6 +21,8 @@ import {
   type AccountInfo,
   type AcpAgentsInfo,
   type RivendellInstance,
+  type Received,
+  type TeamOverview,
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
@@ -78,6 +80,10 @@ import { PaletteButton } from "./components/hud/PaletteButton";
 import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
+import { TeamPanel } from "./components/hud/TeamPanel";
+import { TeamSendSheet, type SendWhat } from "./components/TeamSendSheet";
+import { TeamBar } from "./components/TeamBar";
+import { setLightboxSend } from "./components/ImageLightbox";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
@@ -91,10 +97,11 @@ import { notify, PillHost, setLinks, setNeeds, setNoticeEnv, setNoticeSound } fr
 import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
 import { isDeviceRun } from "./lib/devicerun";
+import { isTeam, readOnly as isReadOnly } from "./lib/team";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
 import { SettingsModal, type Tab as SettingsTab } from "./components/hud/SettingsModal";
-import { AskDialog, askPrompt } from "./components/ui/Ask";
+import { AskDialog, askConfirm, askPrompt } from "./components/ui/Ask";
 import { confirmLeave, leavePending, leavingOnPurpose, setLeavePending } from "./lib/leaveGuard";
 import { RestartIntro, restartBridge } from "./lib/restart";
 import { NativeTips } from "./components/ui/Tip";
@@ -622,7 +629,7 @@ export function App() {
     openSession(s.id);  // instant — the transcript keys off the id, not the active project
     // A teammate's device run sits in "/", no project of yours: opening it
     // leaves the bridge's active project (Telegram's too) where it was.
-    if (s.project !== activeProject && !isDeviceRun(s.origin)) selectProjectBg(s.project);
+    if (s.project !== activeProject && !isReadOnly(s.origin)) selectProjectBg(s.project);
   }
 
   // The native app's menu bar or tray opens a session here in place, the way a
@@ -1278,7 +1285,7 @@ export function App() {
     if (!sid) return false;
     // A teammate's device run is read only: whoever calls, no prompt starts a
     // turn in it (the bridge refuses one, but still records it in their view).
-    if (isDeviceRun(sessions.find((x) => x.id === sid)?.origin)) return false;
+    if (isReadOnly(sessions.find((x) => x.id === sid)?.origin)) return false;
     const pk = opts?.picks ?? { model, perm: permMode, effort };
     // `/goal <objective>` sets the session's objective instead of prompting; a
     // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
@@ -1567,20 +1574,77 @@ export function App() {
 
   /** A new session in `project`, in `branch`'s worktree when given; `draft`
    *  waits in its composer, unsent (the RIVENDELL tab's WORK ON IT). */
-  async function newSession(project: string, draft?: string, branch?: string) {
+  /** A new session in `project` (the new session's id, or null when it couldn't be made). */
+  async function newSession(project: string, draft?: string, branch?: string, title?: string): Promise<string | null> {
     openBlank();
     try {
-      const { session } = await api.createSession(project, undefined, undefined, branch);
+      const { session } = await api.createSession(project, undefined, title, branch);
       setSessions((prev) => [session, ...prev]);
       if (draft) setDrafts((d) => ({ ...d, [session.id]: draft }));
       openSession(session.id);
-    } catch { setLoadingSession(false); }
+      return session.id;
+    } catch { setLoadingSession(false); return null; }
   }
 
   /** A push button's HANDLE IN A NEW SESSION: a session on the branch that
    *  failed to push, with git's message as its unsent draft (lib/pushfailed). */
   function pushFailedSession(project: string | null | undefined, branch: string | null | undefined, output: string) {
     handOffSession(project, branch, pushFailedDraft(branch, output));
+  }
+
+  /** OPEN on something a teammate sent: a session opens read only (TeamPanel
+   *  shows a picture and downloads a file itself); either way its sender hears. */
+  function openReceived(r: Received) {
+    if (r.kind === "session" && r.session) { openSession(r.session); toChat(); }
+    if (!r.opened) void api.teamState(r.id, "opened").then(() => void loadTeam(), () => { /* best effort */ });
+  }
+
+  async function dismissShare(id: string, wasOpen = false) {
+    try {
+      await api.teamState(id, "dismissed");
+      if (wasOpen) openBlank();      // the read-only session it was is gone
+      await loadSessions();
+      void loadTeam();
+    } catch (e) {
+      notify("error", (e as Error).message);
+    }
+  }
+
+  /** CONTINUE HERE: a session of your own in your checkout of their repository,
+   *  their code on a branch of its own when it came, their transcript and pictures
+   *  in the composer, and the opening prompt left unsent. */
+  const continuing = useRef(new Set<string>());
+  async function continueShare(id: string) {
+    if (continuing.current.has(id)) return;      // a second click while the first sets up
+    continuing.current.add(id);
+    try {
+      const plan = await api.teamContinue(id);
+      let project = plan.project;
+      let branch = plan.branch ?? undefined;
+      if (!project) {
+        if (!activeProject) { notify("error", "Pick a project to continue it in first."); return; }
+        if (plan.repo && !(await askConfirm(`${plan.repo} isn't cloned here. Continue in ${projectName(activeProject)} without their code?`))) return;
+        project = activeProject;
+        branch = undefined;
+      }
+      if (branch) {
+        const wt = await api.worktreeAdd(project, branch, plan.base ?? undefined);
+        if (!wt.ok || !wt.path) {
+          notify("error", `Couldn't make the ${branch} worktree: ${wt.output?.trim() || "git refused"}`);
+          return;
+        }
+        await api.teamUnpack(id, wt.path).catch((e: Error) => notify("info", e.message));
+      }
+      const sid = await newSession(project, plan.draft, branch, plan.title ?? undefined);
+      if (!sid) { notify("error", "Couldn't start the session; nothing was marked continued."); return; }
+      setAttachFor({ sid, files: plan.attachments });
+      void api.teamState(id, "continued").then(() => void loadTeam(), () => { /* best effort */ });
+    } catch (e) {
+      const m = (e as Error).message;
+      notify("error", m === "not found" ? "Restart the bridge to continue shares here." : m);
+    } finally {
+      continuing.current.delete(id);
+    }
   }
 
   /** The GIT tab's HANDLE IN A NEW SESSION: a session on that tree, the draft
@@ -1628,7 +1692,7 @@ export function App() {
     setSessions((prev) => prev.some((x) => x.id === s.id) ? prev : [s, ...prev]);
     openSession(s.id);
     toChat();
-    if (s.project !== activeProject && !isDeviceRun(s.origin)) selectProjectBg(s.project);
+    if (s.project !== activeProject && !isReadOnly(s.origin)) selectProjectBg(s.project);
   }
 
   function replayBoot() {
@@ -1671,7 +1735,7 @@ export function App() {
     // Every session a Rivendell job started lists under one group, wherever it
     // ran (lib/jobs), so a folder that only ever held jobs is no project.
     for (const s of sessions) {
-      if (isDeviceRun(s.origin)) continue;   // a teammate's run, in "/": no project of yours
+      if (isReadOnly(s.origin)) continue;   // a teammate's run or share, in "/": no project of yours
       const key = jobGroup(s);
       const arr = byProj.get(key) ?? [];
       arr.push(s);
@@ -1733,6 +1797,28 @@ export function App() {
 
   // The composer's addFiles, for the fresh screen's drop target (Terminal).
   const composerFiles = useRef<((files: FileList | File[]) => void) | null>(null);
+  // CONTINUE HERE's attachments (the transcript as Markdown, the pictures): handed to
+  // the composer once the session they were made for is open, and to no other.
+  const [attachFor, setAttachFor] = useState<{ sid: string; files: { name: string; url: string }[] } | null>(null);
+  useEffect(() => {
+    if (!attachFor || attachFor.sid !== sessionId) return;
+    const want = attachFor;
+    let tries = 0;
+    const id = setInterval(() => {
+      if (!composerFiles.current && ++tries < 60) return;
+      clearInterval(id);
+      setAttachFor((a) => (a === want ? null : a));
+      const sink = composerFiles.current;
+      if (!sink || !want.files.length) return;
+      void Promise.all(want.files.map(async (a) => {
+        const r = await fetch(a.url);
+        if (!r.ok) throw new Error(a.name);
+        const b = await r.blob();
+        return new File([b], a.name, { type: b.type || "application/octet-stream" });
+      })).then((files) => sink(files), () => notify("error", "Some of what they sent couldn't be attached."));
+    }, 50);
+    return () => clearInterval(id);
+  }, [attachFor, sessionId]);
 
   // The open tree's git status, on the same 10s cadence as the project badges.
   // Read by the tree's own key, so a switch never shows the last session's
@@ -1793,6 +1879,35 @@ export function App() {
   const links = useMemo(() => (plugins.rivendell ? rivendell : []), [plugins.rivendell, rivendell]);
   const rivendellOn = links.length > 0;
   const rivendellDown = links.some((i) => i.enable && !!i.status?.alert_at);
+  // TEAM (bridge/team.py, components/hud/TeamPanel): the roster, what teammates
+  // sent here and what you sent. Polled while Rivendell is linked, since the rail
+  // badge, the session menu's Send to teammate and the lightbox read it too.
+  const [team, setTeam] = useState<TeamOverview | null>(null);
+  const [teamFail, setTeamFail] = useState<string | null>(null);
+  const [sendWhat, setSendWhat] = useState<{ what: SendWhat; to?: string } | null>(null);
+  const loadTeam = useCallback(() => api.team().then((t) => { setTeam(t); setTeamFail(null); },
+    (e: Error) => setTeamFail(e.message)), []);
+  useEffect(() => {
+    if (!rivendellOn) { setTeam(null); return; }
+    void loadTeam();
+    const id = setInterval(() => void loadTeam(), 30000);
+    return () => clearInterval(id);
+  }, [rivendellOn, loadTeam]);
+  const teammates = team && !team.error ? team.roster : [];
+  // The lightbox's SEND, and a bell row for a picture or a file, reach here.
+  useEffect(() => {
+    setLightboxSend(teammates.length ? (p) => setSendWhat({ what: { kind: "picture", ...p } }) : null);
+    const show = () => patchSettings({ rightTab: "team", rightOpen: true });
+    window.addEventListener("hud:team", show);
+    return () => { window.removeEventListener("hud:team", show); setLightboxSend(null); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- patchSettings is a setter
+  }, [teammates.length]);
+  // A share opened any way (the bell, the sidebar, OPEN) is opened: tell its sender once.
+  useEffect(() => {
+    const share = selected?.team?.share;
+    if (share && team?.inbox.some((r) => r.id === share && !r.opened))
+      void api.teamState(share, "opened").then(() => void loadTeam(), () => { /* best effort */ });
+  }, [selected?.team?.share, team, loadTeam]);
   // A break and its end are the bridge's news now (bridge/notices.py, rv_link);
   // the bell only borrows the connections for its RIVENDELL link bar.
   useEffect(() => { setLinks(links); }, [links]);
@@ -1825,6 +1940,9 @@ export function App() {
         <FilesPanel
           project={sessionProject} branch={sessionBranch}
           onOpenFile={openFileFromPanel}
+          onSendFile={teammates.length && sessionProject
+            ? (file) => setSendWhat({ what: { kind: "file", project: sessionProject, branch: sessionBranch || undefined, file } })
+            : undefined}
         />
       ),
     },
@@ -1858,6 +1976,18 @@ export function App() {
       render: () => (
         <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
           onWorkOn={(text) => { if (sessionProject) { void newSession(sessionProject, text); toChat(); } }} />
+      ),
+    }] : []),
+    ...(rivendellOn ? [{
+      id: "team", label: team?.unread ? `Team (${team.unread} new)` : "Team",
+      icon: <Users {...RAIL} />, ownScroll: true, badge: team?.unread ? railCount(team.unread) : null,
+      render: () => (
+        <TeamPanel data={team} fail={teamFail}
+          sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}
+          onRefresh={() => void loadTeam()}
+          onSendTo={(t) => { if (selected) setSendWhat({ what: { kind: "session", session: selected.id, title: selected.title || "session" }, to: t.id }); }}
+          onOpen={openReceived} onContinue={(r) => void continueShare(r.id)}
+          onDismiss={(r) => void dismissShare(r.id, !!r.session && r.session === sessionId)} />
       ),
     }] : []),
   ];
@@ -1910,7 +2040,7 @@ export function App() {
 
   const commands: Command[] = [
     { id: "new-chat", label: "New chat", group: "Session", icon: "+", run: () => activeProject && void newSession(activeProject) },
-    ...(isDeviceRun(selected?.origin) ? [] : [
+    ...(isReadOnly(selected?.origin) ? [] : [
       { id: "compact", label: "Compact context (/compact)", group: "Session", icon: "▢", run: () => void send("/compact", []) }]),
     { id: "copy-chat", label: "Copy chat as markdown", group: "Session", icon: "⧉", run: () => {
       const md = chatToMarkdown(turns, sessions.find((s) => s.id === sessionId)?.title ?? undefined);
@@ -1965,9 +2095,9 @@ export function App() {
       // a single Abandon replaces the lifecycle submenu. Its flip side shows
       // only for a hidden row (seeded back into `sessions` by openFromHistory).
       const lc = s?.lifecycle ?? null;
-      // A teammate's device run is read only: nothing resumes it, and the bridge
-      // refuses to retitle it.
-      const readOnly = isDeviceRun(s?.origin);
+      // A teammate's device run or a session a teammate sent is read only:
+      // nothing resumes it, and the bridge refuses to retitle it.
+      const readOnly = isReadOnly(s?.origin);
       if (!readOnly) items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
       items.push(lc === null
         ? { icon: "⊘", label: "Abandon session", danger: true,
@@ -1981,6 +2111,14 @@ export function App() {
       if (!readOnly) items.push({ icon: "✎", label: "Rename session…",
         hint: "your own name for it",
         onClick: () => void renameSession(ctxMenu.id, s?.title ?? "") });
+      // TEAM (bridge/team.py): who's on first, an away teammate's waits for them.
+      if (!readOnly && s && teammates.length) {
+        const on = teammates.filter((t) => t.online).length;
+        items.push({ icon: "➤", label: "Send to teammate", hint: on ? `${on} on now` : "nobody on now",
+          children: [...teammates].sort((a, b) => Number(b.online) - Number(a.online) || a.name.localeCompare(b.name))
+            .map((t) => ({ icon: t.online ? "●" : "○", label: t.name, hint: t.online ? "on now" : "away · it waits for them",
+              onClick: () => setSendWhat({ what: { kind: "session", session: s.id, title: s.title || "session" }, to: t.id }) })) });
+      }
       items.push({ divider: true });
       const nOff = s?.disabled_tools?.length ?? 0;
       items.push({ icon: "⚒", label: "Tools & MCP…",
@@ -2086,7 +2224,7 @@ export function App() {
         items.push({ icon: "⧉", label: "Copy turn as Markdown",
           onClick: () => copy(`**${t?.prompt || "(no prompt)"}**\n\n${reply || "_(no reply)_"}`) });
       // A teammate's device run has no prompt box and takes no turn of yours.
-      const readOnly = isDeviceRun(selected?.origin);
+      const readOnly = isReadOnly(selected?.origin);
       if (reply && !readOnly)
         items.push({ icon: "❞", label: "Quote reply in composer",
           hint: "drops it into the prompt box", onClick: () => quote(reply) });
@@ -2426,6 +2564,11 @@ export function App() {
                   // still on screen mid-switch, never count.
                   <DeviceRunPlate key={selected.id} s={selected} working={openWorking}
                     ended={turns.find((t) => t.id === selected.id)?.events.at(-1)?.at} />
+                ) : selected && isTeam(selected.origin) ? (
+                  // A session a teammate sent: read only, so the bar stands where the composer would.
+                  <TeamBar key={selected.id} s={selected}
+                    onContinue={() => { if (selected.team) void continueShare(selected.team.share); }}
+                    onDismiss={() => { if (selected.team) void dismissShare(selected.team.share, true); }} />
                 ) : (
                   <>
                     {ai.relevance && checking !== undefined && <CheckingBanner prompt={checking} />}
@@ -2605,6 +2748,15 @@ export function App() {
             {/* every plain title="" in here, drawn in the HUD's own type */}
             <NativeTips />
             <AskDialog />
+            {sendWhat && (
+              <TeamSendSheet what={sendWhat.what} to={sendWhat.to} teammates={teammates}
+                onClose={() => setSendWhat(null)}
+                onSent={(_share, t) => {
+                  setSendWhat(null);
+                  notify("info", t.online ? `Sent to ${t.name}.` : `Sent. It waits in Rivendell until ${t.name} is back.`);
+                  void loadTeam();
+                }} />
+            )}
             <RestartIntro theme={settings.theme} scanlines={settings.scanlines} />
         </div>
       )}

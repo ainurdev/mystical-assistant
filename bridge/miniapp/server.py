@@ -217,6 +217,8 @@ def _session_brief(s: dict) -> dict:
             "job": store.parse_job(s.get("job")),
             # A teammate's device run: who asked, for what, how it ended (None = not one).
             "device": store.parse_device(s.get("device")),
+            # A session a teammate sent: who, when, their note (None = not one).
+            "team": store.parse_team(s.get("team")),
             "lifecycle": s.get("lifecycle"),
             "work_cwd": wt if wt_branch else None,
             "worktree": git.worktree_name(work),
