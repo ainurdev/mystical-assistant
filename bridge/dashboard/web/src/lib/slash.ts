@@ -40,3 +40,16 @@ export function isExact(c: SlashCommand, q: string): boolean {
   const low = c.name.toLowerCase();
   return low === q || low.slice(low.indexOf(":") + 1) === q;
 }
+
+/** The command a prompt leads with, drawn as the segment its line starts with
+ *  (index.css .cmdseg, design-drafts/slash-chip, C · SEGMENT): a `/name` at
+ *  index 0 that the list knows, by the same match as Enter. The box waits until
+ *  the caret is out of the word, so a name you're still typing stays text and
+ *  the list stays open; the plate passes no caret. `end` takes the one space
+ *  after the name, so Backspace takes both; a newline stays a newline. */
+export function leadCommand(text: string, caret: number | undefined, cmds: SlashCommand[]): { name: string; desc: string; end: number } | null {
+  const m = /^\/(\S+)/.exec(text);
+  if (!m || (caret !== undefined && caret >= 1 && caret <= m[0].length)) return null;
+  const c = cmds.find((c) => isExact(c, m[1].toLowerCase()));
+  return c ? { name: m[1], desc: c.description, end: m[0].length + (text[m[0].length] === " " ? 1 : 0) } : null;
+}

@@ -1983,6 +1983,30 @@ input {
 [data-style="dossier"] .ppips { display: inline-flex; gap: 2px; }
 [data-style="dossier"] .ppips i { width: 3px; height: 8px; border-radius: 1px; background: color-mix(in oklab, currentColor 24%, transparent); }
 [data-style="dossier"] .ppips i[data-on] { background: currentColor; }
+/* A /command, drawn as the prompt it is (lib/slash leadCommand,
+   design-drafts/slash-chip, C · SEGMENT): a solid segment with a powerline
+   arrow, a plugin's namespace a quieter segment in front. The composer's line
+   (MarkdownInput's CmdWidget) and the sent plate (PromptBubble's CmdSeg) share
+   it. Sized in em, so it follows the type settings; the family's small radius
+   rounds its back, and AURORA's is 0. */
+.cmdseg { display: inline-flex; margin-right: 1.25em; font-size: .92em; white-space: nowrap; }
+.cmdseg .sg {
+  --sgc: var(--acc);
+  position: relative; height: 1.6em; padding: 0 .35em 0 .7em;
+  border-radius: calc(var(--f-rad-s, 0px) * .7) 0 0 calc(var(--f-rad-s, 0px) * .7);
+  background: var(--sgc); color: var(--acc-on);
+  font-family: var(--mono); font-weight: 500; line-height: 1.6em;
+}
+.cmdseg .sg::after {
+  content: ""; position: absolute; left: 100%; top: 0;
+  border-left: .67em solid var(--sgc); border-block: .8em solid transparent;
+}
+.cmdseg .ns { --sgc: color-mix(in oklab, var(--acc) 30%, var(--panel)); color: var(--txh); z-index: 1; }
+.cmdseg .ns ~ .sg { border-radius: 0; padding-left: 1.15em; }
+/* On the plate it stands in for the ❯ glyph: the line drops the glyph's column,
+   and the segment floats, so your words run on beside it and wrap under it. */
+[data-style="dossier"] .pline[data-cmd] { grid-template-columns: minmax(0, 1fr); }
+[data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
 
 /* ── tier 3: the work ── */

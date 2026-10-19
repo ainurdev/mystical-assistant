@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { api, type AnswerSelection, type RivendellJob, type TurnOutcome } from "../api";
+import { api, type AnswerSelection, type RivendellJob, type SlashCommand, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
@@ -16,6 +16,29 @@ import { anchorAt, type Anchor, type Rows } from "../lib/scrollmem";
 import { hhmm, useClock12 } from "../lib/surfaces";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { RuneSpirit } from "./hud/RuneSpirit";
+
+// The plates draw a prompt that ran a /command as one (PromptBubble, lib/slash
+// leadCommand), checked against the project's command list: read once per
+// project and page, and shared by every plate.
+// shortcut: a skill installed after the page loaded stays words on its plates
+// until a reload; refresh this from the composer's re-read if that ever bites.
+const cmdLists = new Map<string, Promise<SlashCommand[]>>();
+function useCommands(project?: string | null): SlashCommand[] {
+  const [cmds, setCmds] = useState<SlashCommand[]>([]);
+  useEffect(() => {
+    const key = project ?? "";
+    let list = cmdLists.get(key);
+    if (!list) {
+      // A failed read isn't kept, so the next switch here tries again.
+      list = api.commands(project).then((r) => r.commands, () => { cmdLists.delete(key); return []; });
+      cmdLists.set(key, list);
+    }
+    let live = true;
+    void list.then((c) => { if (live) setCmds(c); });
+    return () => { live = false; };
+  }, [project]);
+  return cmds;
+}
 
 function Attachments({ items }: { items: string[] }) {
   const [zoom, setZoom] = useState<string | null>(null);
@@ -127,11 +150,13 @@ type Respond = (
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
   turn, prev, isActive, isLast, promptIdx, hud, liveTurns, boot,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, job, jobTitle,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, job, jobTitle, cmds,
 }: {
   turn: Turn;
   /** The turn before it, whose run your prompt's tag compares against. */
   prev?: Turn;
+  /** The project's command list, for the plate (useCommands). */
+  cmds: SlashCommand[];
   isActive: boolean;
   /** What the live turn is waiting on before its first token, or null. */
   boot?: string | null;
@@ -167,7 +192,7 @@ function TurnBlock({
         {turn.prompt && (
           <div data-prompt-idx={promptIdx}>
             {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
-              : <PromptBubble text={turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} />}
+              : <PromptBubble text={turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} />}
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (
@@ -249,6 +274,7 @@ export function Transcript({
   correctingRef,
   job,
   jobTitle,
+  project,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -281,7 +307,10 @@ export function Transcript({
    *  draws as the job's plate (JobPlate). */
   job?: RivendellJob | null;
   jobTitle?: string | null;
+  /** The session's project, whose command list the plates read. */
+  project?: string | null;
 }) {
+  const cmds = useCommands(project);
   // Tail loading: turns always ship whole but only the last few carry events.
   // Turns before the cut would render as prompt bubbles with missing bodies —
   // worse than absent — so they hide behind the "load older" control.
@@ -479,6 +508,7 @@ export function Transcript({
         promptIdx={cut + index}
         job={cut + index === 0 ? job : null}
         jobTitle={jobTitle}
+        cmds={cmds}
         hud={hud}
         liveTurns={liveTurns}
         onRespond={onRespond}

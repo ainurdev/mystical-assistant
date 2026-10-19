@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/slash.check.ts
 import { applyMention } from "./mention.ts";
-import { isExact, rankCommands, slashAt } from "./slash.ts";
+import { isExact, leadCommand, rankCommands, slashAt } from "./slash.ts";
 import type { SlashCommand } from "../api.ts";
 
 // --- slashAt ---------------------------------------------------------------
@@ -40,5 +40,18 @@ console.assert(isExact(cmds[2], "compact"), "full name is exact");
 console.assert(!isExact(cmds[2], "comp"), "a prefix is not");
 console.assert(isExact(cmds[0], "brainstorming"), "a plugin command's bare name is exact");
 console.assert(!isExact(cmds[0], "superpowers"), "the plugin alone is not");
+
+// --- leadCommand: the command the line leads with, drawn as a segment ------
+const lc = (t: string, caret?: number) => leadCommand(t, caret, cmds);
+console.assert(JSON.stringify(lc("/compact keep auth", 18)) === JSON.stringify({ name: "compact", desc: "", end: 9 }), `caret past it: /compact and its space: ${JSON.stringify(lc("/compact keep auth", 18))}`);
+console.assert(lc("/compact keep auth", 4) === null, "caret still in the word: text, the list stays open");
+console.assert(lc("/compact", 8) === null, "caret at the word's end: still typing it");
+console.assert(lc("/compact", 0)?.end === 8, "caret before the /: drawn, nothing after it");
+console.assert(lc("/compact\nkeep auth", 13)?.end === 8, "a newline after it stays a newline");
+console.assert(lc("/compakt keep", 13) === null, "an unknown name stays text");
+console.assert(lc("/tmp/x is full") === null, "a path stays text");
+console.assert(lc("fix /compact") === null, "only a / at index 0");
+console.assert(lc("/ponytail-review it")?.name === "ponytail-review", "a plugin command's bare name counts, as for Enter");
+console.assert(lc("/superpowers:brainstorming")?.name === "superpowers:brainstorming", "the plate: no caret, the whole prompt");
 
 console.log("slash.check: ok");

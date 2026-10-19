@@ -1,12 +1,14 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import { EditorView, keymap, placeholder as cmPlaceholder } from "@codemirror/view";
-import { Compartment, EditorState, Prec } from "@codemirror/state";
+import { Decoration, EditorView, WidgetType, keymap, placeholder as cmPlaceholder, type DecorationSet } from "@codemirror/view";
+import { Compartment, EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, insertNewlineAndIndent } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { languages } from "@codemirror/language-data";
 import { insertNewlineContinueMarkup, markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { tags as t } from "@lezer/highlight";
 import { registerEditor } from "../lib/editorctx";
+import { leadCommand } from "../lib/slash";
+import type { SlashCommand } from "../api";
 
 // The composer's command line: a live markdown editor, not a preview pane. The
 // symbols stay in the text you edit — dimmed to the ghost tier so they read as
@@ -74,8 +76,49 @@ const newlineKeys = keymap.of([{
   run: (v) => insertNewlineContinueMarkup(v) || insertNewlineAndIndent(v),
 }]);
 
+// A /command the line leads with is drawn as its segment (lib/slash leadCommand,
+// .cmdseg in index.css): a replace decoration over `/name `, so the doc still
+// holds the text you send, and atomic, so Backspace takes the command whole.
+// Derived in the same transaction as the keystroke, so it never lags a frame.
+const setCmds = StateEffect.define<SlashCommand[]>();
+const cmdList = StateField.define<SlashCommand[]>({
+  create: () => [],
+  update: (v, tr) => tr.effects.reduce((a, e) => (e.is(setCmds) ? e.value : a), v),
+});
+
+/** `/superpowers:brainstorming` → a quiet `superpowers` segment, then `brainstorming`.
+ *  The hidden `/` and `:` keep it the command it is for a screen reader. Its twin
+ *  for the sent plate is CmdSeg in PromptBubble. */
+class CmdWidget extends WidgetType {
+  constructor(readonly name: string, readonly desc: string) { super(); }
+  eq(o: CmdWidget) { return o.name === this.name && o.desc === this.desc; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "cmdseg";
+    el.title = this.desc;
+    const add = (cls: string, t: string) => { const s = document.createElement("span"); s.className = cls; s.textContent = t; el.append(s); };
+    const i = this.name.lastIndexOf(":");
+    add("sr-only", "/");
+    if (i > 0) { add("sg ns", this.name.slice(0, i)); add("sr-only", ":"); }
+    add("sg", this.name.slice(i + 1));
+    return el;
+  }
+}
+
+const cmdDeco = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update: (_, tr) => {
+    const s = tr.state;
+    const c = leadCommand(s.doc.sliceString(0, 300), s.selection.main.head, s.field(cmdList));
+    return c ? Decoration.set(Decoration.replace({ widget: new CmdWidget(c.name, c.desc) }).range(0, c.end)) : Decoration.none;
+  },
+  provide: (f) => [EditorView.decorations.from(f), EditorView.atomicRanges.of((v) => v.state.field(f))],
+});
+
 type Props = {
   value: string;
+  /** The bridge's command list, so a leading /command draws as one. */
+  commands?: SlashCommand[];
   onChange: (text: string, caret: number) => void;
   onCaret: (caret: number) => void;
   /** Runs before the editor's own keys; preventDefault() to take the key. */
@@ -121,6 +164,8 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
           EditorView.lineWrapping,
           EditorView.contentAttributes.of({ "aria-label": "Message", spellcheck: "true" }),
           ph.current.of(cmPlaceholder(cb.current.placeholder)),
+          cmdList,
+          cmdDeco,
           mdTheme,
           EditorView.updateListener.of((u) => {
             const head = u.state.selection.main.head;
@@ -165,6 +210,10 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
   useEffect(() => {
     viewRef.current?.dispatch({ effects: ph.current.reconfigure(cmPlaceholder(props.placeholder)) });
   }, [props.placeholder]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setCmds.of(props.commands ?? []) });
+  }, [props.commands]);
 
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),

@@ -686,14 +686,18 @@ export function Composer({
   const [slashDismissed, setSlashDismissed] = useState(false);
   const slash = slashAt(text, caret);
   const slashOn = slash !== null;
+  // A box that leads with a /word needs the list too, to draw it as a command
+  // (MarkdownInput): a draft can come back with one already in it.
+  const leadsSlash = text.startsWith("/");
   useEffect(() => {
-    if (!slashOn) { setSlashDismissed(false); return; }
+    if (!slashOn) setSlashDismissed(false);
+    if (!slashOn && !leadsSlash) return;
     let live = true;
     void api.commands(project)
       .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };
-  }, [slashOn, project]);
+  }, [slashOn, leadsSlash, project]);
   const shits = slash ? rankCommands(cmds, slash.q) : [];
   const slashOpen = !!slash && !slashDismissed && (shits.length > 0 || cmdsStale);
   useEffect(() => { setSlashPick(0); }, [slash?.q]);
@@ -1186,6 +1190,7 @@ export function Composer({
     <MarkdownInput
       ref={taRef}
       value={text}
+      commands={cmds}
       onChange={(t, c) => { setText(t); setCaret(c); }}
       onCaret={setCaret}
       onKeyDown={(e) => {

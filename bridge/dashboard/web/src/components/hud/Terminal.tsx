@@ -426,7 +426,7 @@ export function Terminal({
             <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} onStartNext={onStartNext} />
           ) : (
             <Transcript turns={turns} activeId={activeId} boot={boot} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={onRunCommand} onQuote={onQuote} onOpenFile={onOpenFile} onAnswer={onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
-              job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} />
+              job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject} />
           )}
         </div>
       </div>
