@@ -1253,6 +1253,20 @@ def test_active_run_keeps_queue_busy_so_next_pings(monkeypatch):
     assert pinged == ["review:r2"]
 
 
+def test_meeting_brief_auto_accepts_even_behind_running_work(monkeypatch, acks):
+    """A brief needs no checkout, runs with tools off and takes seconds, and it is wanted before
+    a meeting: it never waits for a tap behind other work, which still does."""
+    w = _worker()
+    accepted, pinged = [], []
+    monkeypatch.setattr(w, "accept", lambda key: accepted.append(key) or True)
+    monkeypatch.setattr(w, "_notify_queued", lambda key: pinged.append(key))
+    w._active_runs = 1                                   # something already runs here
+    w._apply_policy(w._enqueue("review", "r1", "acme/app"))
+    w._apply_policy(w._enqueue("meeting-brief", "b1", "Weekly sync"))
+    assert accepted == ["meeting-brief:b1"] and pinged == ["review:r1"]
+    assert acks == [("review:r1", "queued"), ("meeting-brief:b1", "received")]
+
+
 def test_held_request_starts_once_the_bridge_is_free(monkeypatch):
     """A request held because a run was in flight starts on its own when that
     run finishes and nothing else runs — it does not wait on an Approve forever.
