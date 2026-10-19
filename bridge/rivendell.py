@@ -88,7 +88,8 @@ that opens the brief in Rivendell (_brief_message). The meeting's name, start an
 come from the request's event or catch-up row, kept until then (Worker._briefs); the
 lead from the answer, which is the brief's JSON. Its notice kind, rv_brief, has a NOTIFY
 group of its own, which reaches Telegram whether or not you are at a dashboard
-(bridge/notices.py). A brief that failed is an ordinary failed job.
+(bridge/notices.py). A brief that failed, or that Rivendell could not use (it answers
+the result POST FAILED), is an ordinary failed job.
 
 Each request names its repository (owner/repo); _find_checkout maps that to a
 local checkout under BASE_PATH by matching git origin remotes (the scan is
@@ -629,7 +630,8 @@ class Worker:
         doesn't know. `error` is cut to Rivendell's _ERROR_MAX; with `ok` it
         rides beside the result (a video's transcript landed, its summary did
         not, and the viewer says why). Only a result that landed gets the
-        "job done" ping."""
+        "job done" ping, and one Rivendell answers FAILED (it could not use a
+        COMPLETED result: a brief that is not one) is the failure it is."""
         payload = {
             "status": "COMPLETED" if ok else "FAILED",
             ("result" if ok else "error"): text if ok else text[:_ERROR_MAX],
@@ -646,7 +648,7 @@ class Worker:
         delays = iter(_RESULT_RETRIES)
         while True:
             try:
-                self._api(f"/plugin/{kind_path}/{request_id}/result", payload)
+                answer = self._api(f"/plugin/{kind_path}/{request_id}/result", payload)
                 break
             except Exception as e:  # noqa: BLE001 — retried; loud on final failure
                 code = e.code if isinstance(e, urllib.error.HTTPError) else None
@@ -665,6 +667,8 @@ class Worker:
                                "the dashboard.")
                     return
                 time.sleep(delay)
+        if ok and isinstance(answer, dict) and answer.get("status") == "FAILED":
+            ok, text = False, "Rivendell could not use the result."
         self._stamp(request_id, outcome="completed" if ok else "failed",
                     **({} if ok else {"error": (text or "")[:300]}))
         self._ping_done(request_id, ok, text, kind_path=kind_path)
@@ -3063,7 +3067,8 @@ def _brief_lead(answer: str) -> str:
     """The `lead` of a brief's answer, at most 400 characters (what a message
     holds). The answer is the brief's JSON, sometimes in a ```json fence, as a
     newspaper's is (rivendell_jobs.headline). "" when it has none: whether it is
-    a brief is rivendell's call (it fails one that isn't), never this message's."""
+    a brief is rivendell's call (it fails one that isn't, and _post_result then
+    treats the job as failed), never this message's."""
     raw = answer or ""
     i, j = raw.find("{"), raw.rfind("}")
     try:

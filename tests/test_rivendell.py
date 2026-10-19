@@ -1594,6 +1594,32 @@ def test_a_failed_brief_keeps_the_generic_failure_path(monkeypatch):
     assert text.startswith("✕ Rivendell job failed") and "Brief ready" not in text
 
 
+def test_a_brief_rivendell_cannot_use_is_a_failed_job_not_a_ready_one(monkeypatch):
+    """The result route answers {id, status}, and a COMPLETED answer it cannot use (not a brief)
+    lands FAILED there: the stamp, the bell and Telegram say it failed, never "Brief ready"."""
+    from bridge import store
+    w, sent = _brief_ran(monkeypatch, "b-rej", _BRIEF_FRAME)
+    posted = []
+    monkeypatch.setattr(w, "_api", lambda path, payload=None, headers=None:
+                        posted.append((path, payload["status"])) or {"id": "b-rej", "status": "FAILED"})
+    w._post_result("meeting-brief-requests", "b-rej", True, "I could not make a brief of this.")
+    assert posted == [("/plugin/meeting-brief-requests/b-rej/result", "COMPLETED")]      # what the bridge sent
+    assert [(r["kind"], r["verb"]) for r in _feed_of("b-rej")] == [("rv_failed", "FAILED")]
+    (text, _kb), = sent
+    assert text.startswith("✕ Rivendell job failed") and "Brief ready" not in text
+    job = store.parse_job(store.get_session(store.sessions_for_refs(["t1:b-rej"])["t1:b-rej"])["job"])
+    assert (job["outcome"], job["error"]) == ("failed", "Rivendell could not use the result.")
+
+
+def test_a_brief_rivendell_accepts_is_still_announced_once_its_result_is_posted(monkeypatch):
+    w, sent = _brief_ran(monkeypatch, "b-acc", _BRIEF_FRAME)
+    monkeypatch.setattr(w, "_api", lambda path, payload=None, headers=None: {"id": "b-acc", "status": "COMPLETED"})
+    w._post_result("meeting-brief-requests", "b-acc", True, '{"lead": "Two tasks shipped."}')
+    assert [r["kind"] for r in _feed_of("b-acc")] == ["rv_brief"]
+    (text, _kb), = sent
+    assert text.startswith("✦ Brief ready: Weekly sync\n")
+
+
 def test_token_registry_resolves_once():
     tok = rivendell._register_token("inst", "review:r1")
     assert rivendell.resolve_token(tok) == ("inst", "review:r1")
