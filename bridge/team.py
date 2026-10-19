@@ -706,9 +706,9 @@ def _announce(worker, share_id: str, rec: dict) -> None:
     notices.emit("team_in", f"team:{share_id}", title=f"{name} sent you {_what(rec['kind'])}",
                  body=rec["title"] + (f" — “{note}”" if note else ""), meta=meta)
     if notices.telegram_ok("team_in"):
-        # Their title and note go fenced: a teammate's words never render as markdown (a link) here.
-        said = "\n".join(x for x in (rec["title"], note) if x).replace("`", "ʼ")
-        worker._deliver_telegram(f"{name} sent you {_what(rec['kind'])}:\n```\n{said}\n```\nIt's in Mystical's TEAM tab.", None)
+        # _deliver_telegram sends as typed, so a teammate's words never render as markdown (a link) here.
+        said = "\n".join(x for x in (rec["title"], note) if x)
+        worker._deliver_telegram(f"{name} sent you {_what(rec['kind'])}:\n{said}\n\nIt's in Mystical's TEAM tab.", None)
 
 
 def _stamp(worker, share_id: str, state: str) -> None:
