@@ -1944,9 +1944,11 @@ input {
 [data-style="dossier"] .pbub .md {
   font-size: calc(var(--d-big) + 1px); font-weight: 500; line-height: 1.6; color: var(--txb);
 }
-/* Your line: the prompt glyph, then what you typed — a steer wears ↳. The
-   glyph's glow follows the GLOW switch (--glow is 0px when it is off). */
-[data-style="dossier"] .pline { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; align-items: start; }
+/* Your line: what you typed, with no glyph (a ❯ there read as the WORK zone's
+   expand chevron under it). A steer wears ↳ and a wake ⧖ in a column of their
+   own; the glyph's glow follows the GLOW switch (--glow is 0px when it is off). */
+[data-style="dossier"] .pline { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: start; }
+[data-style="dossier"] .pline[data-glyph] { grid-template-columns: 20px minmax(0, 1fr); }
 [data-style="dossier"] .pglyph {
   color: var(--d-you); font-family: var(--mono); font-size: 15px; font-weight: 700; line-height: 1.6;
   text-shadow: 0 0 var(--glow, 0px) color-mix(in oklab, var(--d-you) 70%, transparent);
@@ -2003,9 +2005,7 @@ input {
 }
 .cmdseg .ns { --sgc: color-mix(in oklab, var(--acc) 30%, var(--panel)); color: var(--txh); z-index: 1; }
 .cmdseg .ns ~ .sg { border-radius: 0; padding-left: 1.15em; }
-/* On the plate it stands in for the ❯ glyph: the line drops the glyph's column,
-   and the segment floats, so your words run on beside it and wrap under it. */
-[data-style="dossier"] .pline[data-cmd] { grid-template-columns: minmax(0, 1fr); }
+/* On the plate the segment floats, so your words run on beside it and wrap under it. */
 [data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
 /* A teammate's ask, a device run's one prompt (TurnBlock `who`): the device-run

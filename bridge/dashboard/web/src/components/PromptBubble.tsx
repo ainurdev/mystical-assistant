@@ -24,14 +24,17 @@ function CmdSeg({ name, desc }: { name: string; desc: string }) {
 }
 
 /** What you said — a prompt, or a steer sent into a turn already running. The
- *  prompt glyph leads your words and the plate holds nothing else: the rest
- *  rides one tag pinned to the plate's lower edge — ↳ STEER or ⧖ WAIT OVER when
- *  it isn't a prompt of yours, the account or agent when it wasn't the default
- *  (lib/agents runtimeBadge), the model · effort · permission the turn ran with,
+ *  plate holds your words and nothing else; a prompt wears no glyph, since a ❯
+ *  there read as the WORK zone's expand chevron right under it
+ *  (.mystical/design-drafts/prompt-glyph, A · BARE); a steer leads with ↳ and a
+ *  wake with ⧖. The rest rides one tag pinned to the plate's lower edge —
+ *  ↳ STEER or ⧖ WAIT OVER when it isn't a prompt of yours, the account or agent
+ *  when it wasn't the default (lib/agents runtimeBadge), the model · effort ·
+ *  permission the turn ran with,
  *  and when. A value that moved since the turn before is lit; a turn from before
  *  turns recorded effort and mode shows only its model — nothing is borrowed from
  *  the session's current picks. A prompt that ran a /command leads with it as a
- *  segment in place of the glyph (.mystical/design-drafts/slash-chip, C · SEGMENT).
+ *  segment (.mystical/design-drafts/slash-chip, C · SEGMENT).
  *  Geometry and colour live in `.pbub` / `.pline` / `.pmeta` / `.cmdseg`
  *  (index.css, DOSSIER tier 1); nothing here decides either. Design:
  *  .mystical/design-drafts/sent-prompt, B · RIM. */
@@ -58,6 +61,7 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
   // its words, but not yours.
   const wake = !steer && text.startsWith("⧖ ");
   const purple = wake ? { color: "var(--purple)" } : undefined;
+  const glyph = wake ? "⧖" : steer ? "↳" : null;
   const cmd = steer || wake || !commands ? null : leadCommand(text, undefined, commands);
   // Pips lit = the effort's place in the picker (Auto 0 … Max 5); an agent's own
   // effort id isn't on that ladder and reads as its word alone.
@@ -86,8 +90,8 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
   return (
     <div className="pbub-row">
       <div className="pbub">
-        <div className="pline" data-cmd={cmd ? "" : undefined}>
-          {!cmd && <span className="pglyph" aria-hidden style={purple}>{wake ? "⧖" : steer ? "↳" : "❯"}</span>}
+        <div className="pline" data-glyph={glyph ? "" : undefined}>
+          {glyph && <span className="pglyph" aria-hidden style={purple}>{glyph}</span>}
           <div className="min-w-0">
             {cmd && <CmdSeg name={cmd.name} desc={cmd.desc} />}
             {/* Rendered as the same markdown the composer let you write it in. */}
