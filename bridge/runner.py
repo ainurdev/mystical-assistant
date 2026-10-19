@@ -705,8 +705,10 @@ def handle_task(chat_id: int, prompt: str, session: dict,
         started = time.time()
         job_id = uuid.uuid4().hex
         files = adopt_uploads(job_id, attachments)
+        # run_blocking passes no --effort: the CLI's own, so the turn says auto.
         store.start_turn(session["id"], job_id, prompt, files, model=eff["model"],
-                         sha=git.head_sha(state.project_dir(chat_id)))
+                         sha=git.head_sha(state.project_dir(chat_id)), effort="auto",
+                         permission_mode=eff["permission_mode"])
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job_id)
         claude_sid, is_new, fork = _claim_session_id(
@@ -2836,7 +2838,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         _register(job)
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
-                         runtime=runtime, sha=git.head_sha(cwd))
+                         runtime=runtime, sha=git.head_sha(cwd),
+                         effort=effort or "auto", permission_mode=perm)
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
         waits.drop(session["id"])   # a new turn here ends its wait; Claude can wait again

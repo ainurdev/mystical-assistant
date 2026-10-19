@@ -28,6 +28,10 @@ export interface Turn {
   // Commit HEAD was on when the turn started; undefined for client-sent turns
   // until the store echoes it back, null outside a repo.
   sha?: string | null;
+  // What it ran with (StoreTurn); undefined until the store echoes a client-sent turn.
+  model?: string | null;
+  effort?: string | null;
+  permission_mode?: string | null;
   // Total tokens this turn spent, or null when it never reported usage —
   // which must read as unknown, not as free.
   tokens?: number | null;
@@ -85,9 +89,11 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
       const prompt = ex.prompt || st.prompt;
       if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
           || ex.runtime !== st.runtime || ex.sha !== st.sha
+          || ex.model !== st.model || ex.effort !== st.effort || ex.permission_mode !== st.permission_mode
           || ex.outcome?.code !== st.outcome?.code)
         map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime,
-                         sha: st.sha, tokens: tokensOf(st), outcome: st.outcome });
+                         sha: st.sha, model: st.model, effort: st.effort, permission_mode: st.permission_mode,
+                         tokens: tokensOf(st), outcome: st.outcome });
       if (ex.status !== st.status) touched.add(st.id);   // a turn ending clears its pending
     } else
       map.set(st.id, {
@@ -99,6 +105,9 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         attachments: st.attachments,
         runtime: st.runtime,
         sha: st.sha,
+        model: st.model,
+        effort: st.effort,
+        permission_mode: st.permission_mode,
         started: st.started,
         tokens: tokensOf(st),
         outcome: st.outcome,

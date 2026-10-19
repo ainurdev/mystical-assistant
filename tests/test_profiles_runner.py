@@ -56,6 +56,22 @@ def test_a_bound_session_runs_its_profile(monkeypatch):
     assert job.account_slot == 2 and job.runtime == "claude:2"
 
 
+def test_the_turn_records_what_it_ran_with(monkeypatch):
+    """Your prompt's plate shows the model, effort and mode that turn ran with,
+    so the turn row says it — the session's picks move on after it. No effort
+    is "auto" (no --effort, the CLI's default), not unknown."""
+    p = _profile()
+    s = store.create_session(CHAT, "/pr-rec", cwd=config.BASE_PATH, profile_id=p["id"])
+    _, seen = _start(monkeypatch, session_id=s["id"])
+    t = store.transcript(s["id"])["turns"][-1]
+    assert (t["model"], t["effort"], t["permission_mode"]) == (seen["model"], seen["effort"], seen["perm"])
+    assert (t["model"], t["effort"], t["permission_mode"]) == ("claude-fable-5-1", "high", "plan")
+    p2 = _profile(name="P2", effort="")
+    s2 = store.create_session(CHAT, "/pr-rec2", cwd=config.BASE_PATH, profile_id=p2["id"])
+    _start(monkeypatch, session_id=s2["id"])
+    assert store.transcript(s2["id"])["turns"][-1]["effort"] == "auto"
+
+
 def test_a_hand_set_knob_beats_the_profile_and_a_caller_beats_both(monkeypatch):
     p = _profile()
     s = store.create_session(CHAT, "/pr-own", cwd=config.BASE_PATH, profile_id=p["id"])

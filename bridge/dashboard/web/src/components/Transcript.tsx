@@ -126,10 +126,12 @@ type Respond = (
  *  unmounts these whole; RunStream's own content-visibility cards keep the
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
-  turn, isActive, isLast, promptIdx, hud, liveTurns, boot,
+  turn, prev, isActive, isLast, promptIdx, hud, liveTurns, boot,
   onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, job, jobTitle,
 }: {
   turn: Turn;
+  /** The turn before it, whose run your prompt's tag compares against. */
+  prev?: Turn;
   isActive: boolean;
   /** What the live turn is waiting on before its first token, or null. */
   boot?: string | null;
@@ -165,7 +167,7 @@ function TurnBlock({
         {turn.prompt && (
           <div data-prompt-idx={promptIdx}>
             {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
-              : <PromptBubble text={turn.prompt} at={turn.started} n={promptIdx + 1} runtime={turn.runtime} />}
+              : <PromptBubble text={turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} />}
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (
@@ -470,6 +472,7 @@ export function Transcript({
     row.kind === "turn" ? (
       <TurnBlock
         turn={row.turn}
+        prev={turns[cut + index - 1]}
         isActive={row.turn.id === activeId}
         boot={boot}
         isLast={index === visible.length - 1}

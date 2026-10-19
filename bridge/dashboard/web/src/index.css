@@ -1932,7 +1932,7 @@ input {
 
 /* ── tier 1: you ── */
 [data-style="dossier"] .dprompt {
-  display: block; position: relative; padding: 13px 18px 15px;
+  display: block; position: relative; padding: 12px 16px 13px 14px;
   background: color-mix(in oklab, var(--d-you) var(--d-tint), var(--panel));
   border-left: 4px solid var(--d-you);
   border-bottom: 1px solid color-mix(in oklab, var(--d-you) var(--d-edge), var(--panel));
@@ -1951,19 +1951,38 @@ input {
   color: var(--d-you); font-family: var(--mono); font-size: 15px; font-weight: 700; line-height: 1.6;
   text-shadow: 0 0 var(--glow, 0px) color-mix(in oklab, var(--d-you) 70%, transparent);
 }
-/* The footer: who, which turn, which account or agent when it wasn't the
-   default, and when — one tracked line on the right, ghost except what is
-   yours. Its twin is the clock in .res-meta, when the answer came back. */
+/* The tag: a steer's or a wake's name, the account or agent when it wasn't the
+   default, the model · effort · permission the turn ran with, and when — one
+   pill pinned half over the plate's lower edge, so your words get the plate and
+   no footer line (design-drafts/sent-prompt, B · RIM). Hairlines part the items;
+   the run sits in ghost ink, a value that moved since the turn before in yours.
+   Its twin is the clock in .res-meta, when the answer came back.
+   ponytail: one line, never wraps — a column under ~360px would push it past the
+   plate's left edge; drop the model first if the dashboard ever gets that narrow. */
 [data-style="dossier"] .pmeta {
-  display: flex; justify-content: flex-end; align-items: center; flex-wrap: wrap; gap: 10px; min-width: 0;
-  margin-top: 6px; padding-left: 28px;
-  font-size: var(--t95); letter-spacing: 2px; text-transform: uppercase; color: var(--txd);
+  position: absolute; right: 14px; bottom: 0; transform: translateY(50%); z-index: 1;
+  display: flex; align-items: center; gap: 8px; height: 19px; padding: 0 9px; white-space: nowrap;
+  background: var(--panel2); border: 1px solid var(--line2); border-radius: var(--f-d-rad, 999px);
+  font-size: var(--t95); line-height: 1; letter-spacing: 2px; text-transform: uppercase; color: var(--txd);
   font-variant-numeric: tabular-nums;
 }
+[data-style="dossier"] .pmeta > * + * { padding-left: 8px; border-left: 1px solid var(--line2); }
+/* Room under the plate for the half of the tag that hangs below it. */
+[data-style="dossier"] .dprompt:not([data-job]) { margin-bottom: 8px; }
+/* A steer's plate is a .vskip-card row, whose paint containment would cut its
+   tag in half; a turn holds a few steers at most, so they skip the saving. */
+[data-style="dossier"] .vskip-card > .dprompt { content-visibility: visible; }
 [data-style="dossier"] .pmeta > b { color: var(--d-you); font-weight: 700; }
 [data-style="dossier"] .pmeta .pacct { color: var(--d-you); }
 [data-style="dossier"] .pmeta .pacct[data-agent] { color: var(--warn); }
-[data-style="dossier"] .pmeta .pstamp:not(:first-child)::before { content: "· "; color: var(--txl); }
+[data-style="dossier"] .pmeta .prun { display: inline-flex; align-items: center; gap: 5px; color: var(--txl); }
+[data-style="dossier"] .pmeta .pmodel { color: var(--txm); }
+[data-style="dossier"] .pmeta .prun[data-new] { color: var(--d-you); }
+[data-style="dossier"] .pmeta .pstamp { font-family: var(--mono); letter-spacing: .04em; }
+/* Effort as the composer's lamps: five pips, as many lit as its place in the picker. */
+[data-style="dossier"] .ppips { display: inline-flex; gap: 2px; }
+[data-style="dossier"] .ppips i { width: 3px; height: 8px; border-radius: 1px; background: color-mix(in oklab, currentColor 24%, transparent); }
+[data-style="dossier"] .ppips i[data-on] { background: currentColor; }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
 
 /* ── tier 3: the work ── */
@@ -3302,7 +3321,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    short session it sat mid-screen and slid down with every streamed token. */
 [data-fam] [data-style="dossier"] .dturn[data-last] { border-bottom: 0; }
 [data-fam] [data-style="dossier"] .dprompt {
-  background: var(--f-you); border: 1px solid var(--line2); border-radius: var(--f-d-rad); overflow: hidden;
+  background: var(--f-you); border: 1px solid var(--line2); border-radius: var(--f-d-rad);
   box-shadow: inset 3px 0 0 var(--acc);
 }
 [data-fam] [data-style="dossier"] .dwork {
@@ -3330,16 +3349,16 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] [data-style="dossier"] .res:not(:has(.res-body)) .res-head { padding: 12px 2px 0; }
 [data-fam] [data-style="dossier"] .resblk + .ev-stop { border-top: 0; padding: 8px 2px 0; }
 [data-fam] [data-style="dossier"] .rstream > :not(.dwork, .resblk, .dprompt) { margin: 12px 0; }
-[data-fam] [data-style="dossier"] .rstream > .dprompt { margin-top: 10px; }
+[data-fam] [data-style="dossier"] .rstream > .dprompt { margin-top: 10px; margin-bottom: 20px; }
 [data-fam] [data-style="dossier"] .dreply > :not(.rstream, .agent-rail) { margin: 12px 0; }
 [data-fam] [data-style="dossier"] .doutcome { border-top: 0; padding: 10px 2px 0; }
 [data-theme^="flint-kiln"] [data-style="dossier"] { --d-tint: 0%; }
+/* The 3px bar is a background layer, so the plate's corners round it without
+   clipping the plate — the prompt's tag hangs out over its lower edge. */
 [data-theme^="flint-sunset"] [data-style="dossier"] .dprompt {
-  background: linear-gradient(100deg, color-mix(in oklab, var(--acc) 12%, var(--panel)), color-mix(in oklab, var(--acc2) 8%, var(--panel)) 60%, var(--panel));
+  background: linear-gradient(var(--acc), var(--acc2)) left / 3px 100% no-repeat,
+    linear-gradient(100deg, color-mix(in oklab, var(--acc) 12%, var(--panel)), color-mix(in oklab, var(--acc2) 8%, var(--panel)) 60%, var(--panel));
   box-shadow: none;
-}
-[data-theme^="flint-sunset"] [data-style="dossier"] .dprompt::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: linear-gradient(var(--acc), var(--acc2));
 }
 [data-theme^="flint-sunset"] .pmeta > b { background: linear-gradient(90deg, var(--acc), var(--acc2)); -webkit-background-clip: text; background-clip: text; color: transparent !important; }
 

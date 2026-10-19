@@ -47,6 +47,14 @@ def test_duplicate_copies_turns_and_events():
     assert len(t["events"]) == 1
 
 
+def test_duplicate_keeps_what_each_turn_ran_with():
+    s = store.create_session(CHAT, "/dup-run", cwd="/repo/main")
+    store.start_turn(s["id"], f"{s['id']}-t1", "go", [], model="claude-opus-5-5",
+                     effort="max", permission_mode="bypassPermissions")
+    t = store.transcript(store.duplicate(s["id"])["id"])["turns"][0]
+    assert (t["model"], t["effort"], t["permission_mode"]) == ("claude-opus-5-5", "max", "bypassPermissions")
+
+
 def test_duplicate_does_not_adopt_the_sources_claude_session():
     """The whole point: continuing a copy must not append to the original's
     transcript. The copy holds the source id as fork_from, not as its own."""

@@ -75,6 +75,15 @@ export function familyOf(id: string): string {
   return id.replace(/^claude-/, "").split("-")[0];
 }
 
+/** "claude-fable-5-1" -> "Fable 5.1", the name the composer's chip gives it
+ *  (the live list's label less "Claude "), read off the id so a past turn needs
+ *  no list; "opus" -> "Opus", a dated id drops its date. An id of another shape
+ *  (an agent's own model) comes back as it is. */
+export function modelName(id: string): string {
+  const m = /^(?:claude-)?([a-z]+)((?:-\d{1,2})*)(?:-\d{8})?$/.exec(id);
+  return m ? m[1][0].toUpperCase() + m[1].slice(1) + m[2].replace("-", " ").replaceAll("-", ".") : id;
+}
+
 /**
  * The model to show when `pick` isn't one the server offers, or null to leave it
  * be. Nothing snaps until the server's own list is in: snapping against the

@@ -870,6 +870,7 @@ function faceStack(key: string, theme: ThemeKey): string {
 const faceKind = (stack: string) => (stack.endsWith("monospace") ? "Mono" : stack.endsWith("sans-serif") ? "Sans" : "Serif");
 
 const SAMPLE_ASK = "why does the lightbox open on the wrong picture?";
+const SAMPLE_RUN = { model: "claude-opus-5-5", effort: "max", permission_mode: "bypassPermissions" };
 const SAMPLE_ANSWER = "The strip counted pictures per turn, not per WORK zone, so the third zone opened on picture 0. "
   + "Fixed in `ImageLightbox.tsx:88`; reload to see it.\n\n"
   + "- **Cause:** the index restarted in every zone.\n- **Checked:** a 16-picture turn, in Chrome and in WebKit.";
@@ -887,7 +888,7 @@ function TypePreview({ stack, size, settings }: { stack: string; size: number; s
       style={{ "--fs": `${size}px`, "--ui-font": stack } as CSSProperties}>
       <div data-style="dossier" style={{ fontFamily: "var(--mono)", fontSize: "var(--t13)", lineHeight: 1.6 }}>
         <div className="dturn flex flex-col gap-2" data-last>
-          <div className="dprompt"><PromptBubble text={SAMPLE_ASK} at={now - 126} n={1} /></div>
+          <div className="dprompt"><PromptBubble text={SAMPLE_ASK} at={now - 126} run={SAMPLE_RUN} /></div>
           <div className="dreply relative space-y-1.5">
             <div className="rstream space-y-2">
               <FinalResult result={SAMPLE_ANSWER} at={now} elapsed={126} tokens={41000} animate={false} idKey="typepv" dossier />

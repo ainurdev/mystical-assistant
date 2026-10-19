@@ -3,7 +3,7 @@
 // a stored claude-fable-5-1 snapped to Opus on every reload because the snap ran
 // against the pre-load alias FALLBACK. And runPicks: which picks a session shows.
 // And whose meter the footer and pickers read (spendingSlot, loginWindows).
-import { DEFAULT_SLOT, chipWindow, deadLogin, familyOf, loginSlot, loginWindows, loginUsage, runPicks, snapModel, spendingSlot, tightest } from "./models.ts";
+import { DEFAULT_SLOT, chipWindow, deadLogin, familyOf, loginSlot, loginWindows, loginUsage, modelName, runPicks, snapModel, spendingSlot, tightest } from "./models.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -18,6 +18,12 @@ const LIVE = list("claude-fable-5-1", "claude-opus-5-5", "claude-sonnet-5",
 
 ok(familyOf("claude-fable-5-1") === "fable" && familyOf("fable") === "fable", "an id and its alias share a family");
 ok(familyOf("claude-haiku-4-5-20251001") === "haiku", "a dated id keeps its family");
+
+// modelName: a past turn's model, named the way the composer's chip names it.
+ok(modelName("claude-fable-5-1") === "Fable 5.1" && modelName("claude-opus-5-5") === "Opus 5.5", "a full id reads as the chip does");
+ok(modelName("opus") === "Opus" && modelName("claude-sonnet-5") === "Sonnet 5", "an alias, and a one-number version");
+ok(modelName("claude-haiku-4-5-20251001") === "Haiku 4.5", "a dated id drops its date");
+ok(modelName("gpt-5.5-codex") === "gpt-5.5-codex" && modelName("o4-mini") === "o4-mini", "an agent's own id is left alone");
 
 ok(snapModel("claude-fable-5-1", undefined) === null, "pre-load: no list, no snap");
 ok(snapModel("claude-fable-5-1", []) === null, "an empty list is no list");

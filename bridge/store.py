@@ -63,7 +63,9 @@ CREATE TABLE IF NOT EXISTS turns (
   tok_in      INTEGER,
   tok_out     INTEGER,
   tok_cache_w INTEGER,
-  tok_cache_r INTEGER
+  tok_cache_r INTEGER,
+  effort      TEXT,
+  permission_mode TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_id, seq);
 CREATE INDEX IF NOT EXISTS ix_turns_status ON turns(status);
@@ -242,6 +244,11 @@ def init() -> None:
         for col in ("tok_in", "tok_out", "tok_cache_w", "tok_cache_r"):
             if col not in cols:
                 c.execute(f"ALTER TABLE turns ADD COLUMN {col} INTEGER")
+        # The effort and permission mode the turn ran with, beside its model, for
+        # the prompt plate. effort 'auto' = no --effort went; NULL = predates this.
+        for col in ("effort", "permission_mode"):
+            if col not in cols:
+                c.execute(f"ALTER TABLE turns ADD COLUMN {col} TEXT")
         # (Old DBs may carry a dead last_auto_resume column from the retired
         # auto-resume cooldown — harmless, never read.)
         # Turns left 'running' at startup are orphaned (the bridge restarted). They
@@ -873,7 +880,8 @@ def prompt_history(limit: int = 200) -> list[str]:
 
 def start_turn(session_id: str, turn_id: str, prompt: str,
                attachments: list[str] | None, model: str | None = None,
-               runtime: str | None = None, sha: str | None = None) -> None:
+               runtime: str | None = None, sha: str | None = None,
+               effort: str | None = None, permission_mode: str | None = None) -> None:
     now = time.time()
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
@@ -881,9 +889,11 @@ def start_turn(session_id: str, turn_id: str, prompt: str,
                         (session_id,)).fetchone()["n"]
         c.execute(
             "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-            "elapsed,started,model,runtime,sha) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            "elapsed,started,model,runtime,sha,effort,permission_mode) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (turn_id, session_id, seq, prompt, json.dumps(attachments or []),
-             "running", None, None, now, model, runtime, sha or None))
+             "running", None, None, now, model, runtime, sha or None, effort,
+             permission_mode))
         c.execute("UPDATE sessions SET updated=? WHERE id=?", (now, session_id))
         cur = c.execute("SELECT title FROM sessions WHERE id=?", (session_id,)).fetchone()
         if cur is not None and not cur["title"]:
@@ -995,10 +1005,11 @@ def duplicate(session_id: str) -> dict | None:
             idmap[t["id"]] = uuid.uuid4().hex
             c.execute(
                 "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-                "elapsed,started,model,runtime,sha) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                "elapsed,started,model,runtime,sha,effort,permission_mode) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (idmap[t["id"]], copy["id"], t["seq"], t["prompt"], t["attachments"],
                  t["status"], t["cost"], t["elapsed"], t["started"], t["model"],
-                 t["runtime"], t["sha"]))
+                 t["runtime"], t["sha"], t["effort"], t["permission_mode"]))
         for e in c.execute("SELECT * FROM events WHERE session_id=? ORDER BY seq",
                            (session_id,)).fetchall():
             c.execute("INSERT INTO events(session_id,turn_id,seq,type,payload,ts) "

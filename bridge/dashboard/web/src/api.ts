@@ -117,6 +117,11 @@ export interface StoreTurn {
   started: number;
   runtime?: string | null; // null = default Claude account; 'claude:<slot>' | 'acp:<agent>'
   sha?: string | null;     // commit HEAD was on when the turn started (checkpoint drift)
+  // What the turn ran with. effort "auto" = no --effort went; null = the turn
+  // predates the column, so unknown — never the session's current pick.
+  model?: string | null;
+  effort?: string | null;
+  permission_mode?: string | null;
   // What the turn spent. All four null = never reported (unknown, not zero).
   tok_in?: number | null;
   tok_out?: number | null;
