@@ -2008,6 +2008,9 @@ input {
 [data-style="dossier"] .pline[data-cmd] { grid-template-columns: minmax(0, 1fr); }
 [data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
+/* A teammate's ask, a device run's one prompt (TurnBlock `who`): the device-run
+   blue wherever your prompt wears the accent, the families' bar and ground too. */
+.dprompt[data-who] { --acc: var(--info); --d-you: var(--info); --f-you: color-mix(in oklab, var(--info) 10%, var(--panel)); }
 
 /* ── tier 3: the work ── */
 [data-style="dossier"] .dreply { padding-bottom: 2px; }
@@ -4009,6 +4012,22 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: linear-gradient(transparent 25px, color-mix(in srgb, var(--panel) 88%, transparent) 0) !important; }
 .swapwrap + .composer[data-pb="tabs"] > :not(.pb-tabs), .swapwrap + .composer[data-pb="tabs"] .pb-tabs > * { pointer-events: auto; }
 [data-fam] .swapwrap + .composer[data-pb="tabs"] { background: transparent !important; }
+
+/* A teammate's device run, read only (components/DeviceRunPlate): the TABS shell
+   above with what the run is in the card instead of a box to type in. The
+   fallbacks are for the HUD themes, which have no --line or --f-rad-s. */
+.drp-ro { font-size: var(--t13); line-height: 1.6; color: var(--txd); }
+.drp-ro b { font-weight: 600; color: var(--txh); }
+.drp-ro code { font-family: var(--mono); color: var(--txm); }
+.drp-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.drp-chip { display: inline-flex; align-items: center; gap: 8px; height: 28px; padding: 0 10px; white-space: nowrap;
+            border: 1px solid var(--line, color-mix(in srgb, var(--acc) 18%, transparent)); border-radius: var(--f-rad-s, 0);
+            background: var(--panel3); font-size: var(--t115); color: var(--txm); }
+.drp-chip code { font-family: var(--mono); color: var(--txl); }
+.drp-av { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 8px; font-weight: 600;
+          background: color-mix(in srgb, var(--info) 22%, transparent); color: var(--info); }
+.act-alt.drp-stop { margin-left: auto; color: var(--err); border-color: color-mix(in srgb, var(--err) 42%, transparent); }
+.act-alt.drp-stop:hover:not(:disabled) { background: color-mix(in srgb, var(--err) 10%, transparent); }
 
 /* ── PEBBLE's prompt box (after FLINT's rules above, which it outranks only by order): TABS' folder tabs hung over the card's 20px corner and left a
    notch, so in PEBBLE the lead is a row of chips hovering over the card (the

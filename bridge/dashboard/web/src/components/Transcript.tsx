@@ -149,7 +149,7 @@ type Respond = (
  *  unmounts these whole; RunStream's own content-visibility cards keep the
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
-  turn, prev, isActive, isLast, promptIdx, hud, liveTurns, boot,
+  turn, prev, isActive, isLast, promptIdx, hud, liveTurns, boot, who,
   onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, job, jobTitle, cmds,
 }: {
   turn: Turn;
@@ -157,6 +157,9 @@ function TurnBlock({
   prev?: Turn;
   /** The project's command list, for the plate (useCommands). */
   cmds: SlashCommand[];
+  /** The teammate whose device run this turn is: their name signs the prompt,
+   *  in the device-run blue. */
+  who?: string;
   isActive: boolean;
   /** What the live turn is waiting on before its first token, or null. */
   boot?: string | null;
@@ -188,11 +191,11 @@ function TurnBlock({
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
-      <div className="dprompt" data-job={job ? "" : undefined}>
+      <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}>
         {turn.prompt && (
           <div data-prompt-idx={promptIdx}>
             {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
-              : <PromptBubble text={turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} />}
+              : <PromptBubble text={turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} />}
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (
@@ -223,6 +226,7 @@ function TurnBlock({
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
               ended={turn.status !== "running"}
+              readOnly={!!who}
               working={working}
               hud={hud}
               paper={paper}
@@ -255,6 +259,7 @@ export function Transcript({
   turns,
   activeId,
   boot,
+  who,
   onRespond,
   liveTurns,
   trailingWorking,
@@ -280,6 +285,8 @@ export function Transcript({
   activeId: string | null;
   /** What the live turn is waiting on before its first token, or null. */
   boot?: string | null;
+  /** A teammate's device run: who asked, signing its first turn's prompt. */
+  who?: string;
   onRespond: Respond;
   liveTurns?: Set<string>;
   trailingWorking?: boolean;
@@ -509,6 +516,7 @@ export function Transcript({
         job={cut + index === 0 ? job : null}
         jobTitle={jobTitle}
         cmds={cmds}
+        who={row.turn.id === turns[0]?.id ? who : undefined}
         hud={hud}
         liveTurns={liveTurns}
         onRespond={onRespond}

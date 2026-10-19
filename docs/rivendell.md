@@ -46,6 +46,8 @@ The hidden user is another account on this device, and it can't read your home
 folder, so it can't see your files, keychain or logins. Each run starts in a
 fresh home of its own. The code comes from the asker's own checkout, sent by
 their Mystical, and the report and screenshots go back to them and onto the task.
+You see more than the report, though: every step of the run, the commands it
+runs and what they print, as it goes and for 7 days after (see Watching a run).
 
 Runs can't reach this bridge either: its dashboard, Mini App and landing ports
 are walled off from the hidden user, and before every run the helper checks that
@@ -57,6 +59,31 @@ SET UP again. If one of the bridge's ports changes, STATE says NEEDS SETUP with
 Other services this device runs on localhost stay reachable from runs: databases,
 dev servers, Docker. Keep sensitive data off localhost while you share this
 device.
+
+### Watching a run
+
+A teammate's run on this device is listed in the sessions panel's **Plugins**
+tab, under **DEVICE RUNS**, newest first. Open one to watch it live, with the
+steps, commands and screenshots a session of yours shows. It is read only, with
+nothing to type in. **STOP RUN** stops it, after asking, and the asker gets it
+back as failed.
+
+A run stays out of your way. It runs at low priority, so your apps, builds and
+sessions stay quick and the run takes longer while you are busy. Your own
+sessions and Rivendell jobs never wait for it. It keeps going through Mystical
+restarts and updates, and its view picks up where it was; a reboot or a crash
+of this device still ends it.
+
+Mystical keeps a run's steps on this device for 7 days, then deletes them with
+their screenshots. They can hold the asker's code and `.env` values: only text
+shaped like a Claude token is redacted.
+
+When an update to Mystical brings a newer run helper, **SET UP** shows again on
+a device that is READY. It installs the new helper, for the live view and low
+priority, and asks for your Mac password once. Until then the device keeps
+taking runs, and their view shows only the ask and, at the end, the report. SET
+UP never overlaps a run: while one is going it asks you to wait until it ends,
+and while SET UP works the device takes no new run.
 
 ### Remove
 

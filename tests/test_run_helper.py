@@ -62,6 +62,7 @@ ME = os.getuid()
 JOB = {"prompt": "Test the app on the iOS simulator for RIV-42.", "gitAuthorName": "Mahdi",
        "gitAuthorEmail": "mahdi@example.com", "developerDir": "/Applications/Xcode.app/Contents/Developer",
        "timeoutSeconds": 60}
+UTILITY = ["/usr/sbin/taskpolicy", "-c", "utility"]     # the clamp every run's command line starts with
 
 
 # --- valid_run_id -------------------------------------------------------------------
@@ -154,9 +155,14 @@ def test_no_developer_dir_in_the_job_is_none_in_the_environment(dev):
 
 def test_claude_runs_headless_with_every_tool_and_no_mcp_server():
     assert h.claude_argv("hi") == [
-        "/Users/mysticalruns/.local/bin/claude", "-p", "hi", "--output-format", "json",
+        "/Users/mysticalruns/.local/bin/claude", "-p", "hi", "--output-format", "stream-json", "--verbose",
         "--dangerously-skip-permissions", "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
     assert h.claude_argv("hi", "/opt/elsewhere/claude")[0] == "/opt/elsewhere/claude"
+
+
+def test_claude_streams_json_verbosely():
+    argv = h.claude_argv("hi", "/c")
+    assert argv[argv.index("--output-format") + 1] == "stream-json" and "--verbose" in argv
 
 
 def test_a_run_launches_through_sudo_or_launchctl_asuser_and_nothing_else():
@@ -164,12 +170,37 @@ def test_a_run_launches_through_sudo_or_launchctl_asuser_and_nothing_else():
     # -E: sudo hands the command the environment it was given (claude_env), so
     # the token never has to be spelled out in an argument list. No -H: it would
     # reset HOME to the hidden user's own home, which every run shares.
-    assert h.launch_argv("sudo", 502, inner) == ["/usr/bin/sudo", "-E", "-u", "mysticalruns", *inner]
+    assert h.launch_argv("sudo", 502, inner) == [*UTILITY, "/usr/bin/sudo", "-E", "-u", "mysticalruns", *inner]
     assert h.launch_argv("asuser", 502, inner) == [
-        "/bin/launchctl", "asuser", "502", "/usr/bin/sudo", "-E", "-u", "mysticalruns", *inner]
+        *UTILITY, "/bin/launchctl", "asuser", "502", "/usr/bin/sudo", "-E", "-u", "mysticalruns", *inner]
     for bad in ("root", "", None, "SUDO", "asuser "):
         with pytest.raises(ValueError):
             h.launch_argv(bad, 502, inner)
+
+
+def test_the_run_is_clamped_to_utility_qos():
+    """taskpolicy execs the command in place, so the pid the helper keeps is still the
+    group leader; everything the run starts inherits the clamp. The owner's apps,
+    builds and sessions stay quick, and a run takes longer while they are busy."""
+    assert h.launch_argv("sudo", 502, ["/c"])[:3] == ["/usr/sbin/taskpolicy", "-c", "utility"]
+    assert h.launch_argv("asuser", 502, ["/c"])[:4] == ["/usr/sbin/taskpolicy", "-c", "utility", "/bin/launchctl"]
+
+
+# --- last_result ----------------------------------------------------------------------------
+
+def test_last_result_is_the_final_result_line():
+    lines = b'{"type":"system"}\n{"type":"result","result":"a"}\n{"type":"assistant"}\n{"type":"result","result":"b"}\nnot json\n'
+    assert json.loads(h.last_result(lines))["result"] == "b"
+    assert h.last_result(b'{"type":"assistant"}\n') == b""
+    assert h.last_result(b"") == b""
+
+
+def test_last_result_skips_whatever_the_run_wrote_that_is_not_a_result_line():
+    """The stream is the run's own stdout: any line may be anything, and root parses it."""
+    result = b'{"type":"result","result":"a"}'
+    junk = [b"[", b"[1,2]", b"7", b"null", b'"result"', b'\xff\xfe{"type":"result"}',
+            b'{"type":["result"]}', b'{"result":"no type"}']
+    assert h.last_result(result + b"\n" + b"\n".join(junk) + b"\n") == result
 
 
 # --- check_root_path, on os.lstat fakes ---------------------------------------------
@@ -261,10 +292,11 @@ class Runner:
     exit code instead of running it, None lets it run.
 
     Only tar, install, python3, rm and the test's own fake Claude run for real,
-    as you, without the `/usr/bin/sudo [-E] -u <user>` in front, and only on
-    paths inside the test's temp dir (`root`, which the box fixture sets).
-    Anything else is refused (and fails the test, see no_real_process): nothing
-    falls through to a real command."""
+    as you, without the `/usr/sbin/taskpolicy -c utility` and the
+    `/usr/bin/sudo [-E] -u <user>` in front, and only on paths inside the test's
+    temp dir (`root`, which the box fixture sets). taskpolicy itself never runs,
+    and no form of it but that clamp is understood. Anything else is refused (and
+    fails the test, see no_real_process): nothing falls through to a real command."""
 
     FAKED = ("/usr/bin/pkill", "/usr/bin/pgrep", "/usr/bin/crontab", "/bin/launchctl", "/usr/bin/nc")
     REAL = ("/usr/bin/tar", "/usr/bin/install", "/usr/bin/python3", "/bin/rm")
@@ -280,6 +312,11 @@ class Runner:
         self.calls.append(list(argv))
         self.cwds.append(kw.get("cwd"))
         cmd = list(argv)
+        if cmd[:1] == ["/usr/sbin/taskpolicy"]:   # never run: only the run's utility clamp is understood, and dropped
+            if cmd[:3] != UTILITY:
+                Runner.refused.append(list(argv))
+                raise AssertionError("the Runner understands no taskpolicy but the utility clamp: %r" % (argv,))
+            cmd = cmd[3:]
         if cmd and cmd[0] == "/usr/bin/sudo":
             cmd = cmd[1:]
             while cmd and cmd[0].startswith("-"):
@@ -430,7 +467,7 @@ printf 'x' > "$MYSTICAL_RUN_OUT/screens/.hidden.png"
 ln -s /etc/hosts "$MYSTICAL_RUN_OUT/screens/02-link.png"
 mkdir "$MYSTICAL_RUN_OUT/screens/deeper" && printf 'x' > "$MYSTICAL_RUN_OUT/screens/deeper/03.png"
 printf 'mine' > "$MYSTICAL_RUN_OUT/exit.json"
-printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s", "home_ok": "%s"}' \\
+printf '{"type": "result", "result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s", "home_ok": "%s"}' \\
   "$cd_ok" "$PWD" "$CLAUDE_CODE_OAUTH_TOKEN" "$CLAUDE_CONFIG_DIR" "$HOME" "$home_ok"
 """)
     st = _stage(box)
@@ -463,6 +500,7 @@ printf '{"result": "%s", "cwd": "%s", "token": "%s", "config": "%s", "home": "%s
     assert str(box.runs / RUN_ID / "home") in install, "the fresh home is made as mysticalruns, 0700"
     assert untar == ["/usr/bin/sudo", "-u", "mysticalruns", "/usr/bin/tar", "-xzf", "-", "-C", code, "--no-same-owner"]
     assert launch == h.launch_argv("sudo", RUN_UID, h.claude_argv(JOB["prompt"], str(box.claude)))
+    assert launch[:3] == UTILITY, "Claude and all it starts yield the CPU to the owner's own work"
     assert reader[:3] == ["/usr/bin/sudo", "-u", "mysticalruns"], "the screens are read as the run's user"
     assert reader[-2:] == ["out/screens", "out/claude.err"]
     assert writer[:3] == ["/usr/bin/sudo", "-u", "#%d" % ME], "and written as the owner"
@@ -533,7 +571,82 @@ def test_claudes_stderr_file_is_mysticalruns_so_its_own_tar_can_read_it_back(box
     (Here that chown is faked, so the hand-over is checked as a call.)"""
     _stage(box)
     assert h.main(["start", RUN_ID], popen=Runner()) == 0
-    assert box.fchowns == [(RUN_UID, -1)]
+    assert box.fchowns == [(ME, -1), (RUN_UID, -1)], "the stage's live.jsonl goes to its owner first, then this"
+
+
+def test_a_run_writes_its_stream_to_the_stage_as_it_goes(box):
+    """live.jsonl is Claude's stdout itself, not a copy made at the end: the owner's
+    bridge reads it while the run is still going. out/claude.json is the stream's
+    result line alone. (The run waits for the test to have seen its first line.)"""
+    seen = box.tmp / "seen"
+    _claude(box, """
+echo '{"type":"assistant","message":{"content":[]}}'
+while [ ! -e "%s" ]; do sleep 0.05; done
+echo '{"type":"result","result":"ok"}'
+""" % seen)
+    st = _stage(box, job={**JOB, "timeoutSeconds": 20})
+    live, rc = st / "live.jsonl", []
+    t = threading.Thread(target=lambda: rc.append(h.main(["start", RUN_ID], popen=_watching(box))))
+    t.start()
+    deadline = time.monotonic() + 10
+    while not (live.exists() and live.read_bytes().endswith(b"\n")) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    midway = live.read_bytes() if live.exists() else b""
+    seen.write_text("")
+    t.join(15)
+    assert rc == [0]
+    assert [json.loads(l)["type"] for l in midway.splitlines()] == ["assistant"], "there while the run went on"
+    assert [json.loads(l)["type"] for l in live.read_bytes().splitlines()] == ["assistant", "result"]
+    assert json.loads((st / "out" / "claude.json").read_text()) == {"type": "result", "result": "ok"}
+    mode = os.lstat(live)
+    assert stat.S_ISREG(mode.st_mode) and stat.S_IMODE(mode.st_mode) == 0o600
+    assert (ME, -1) in box.fchowns, "made by root, handed to the stage's owner (the chown is faked here)"
+
+
+@pytest.mark.parametrize("plant", ["a file", "a link", "a dangling link"])
+def test_a_planted_live_file_refuses_the_run_and_nothing_is_followed(box, capsys, plant):
+    """live.jsonl is made new through the stage's checked handle, so a name already
+    taken there is refused: root never writes through a file or a link that someone
+    else put in the owner's stage, nor creates what a dangling link points to."""
+    st, target = _stage(box), box.tmp / "target"
+    live = st / "live.jsonl"
+    if plant == "a file":
+        live.write_text("planted\n")
+    else:
+        if plant == "a link":
+            target.write_text("keep\n")
+        live.symlink_to(target)
+    run = Runner()
+    assert h.main(["start", RUN_ID], popen=run) == 2
+    assert capsys.readouterr().err == "mystical-run-helper: The stage already has a live.jsonl.\n"
+    assert not [c for c in run.calls if "-p" in c], "Claude never started"
+    if plant == "a file":
+        assert live.read_text() == "planted\n"
+    elif plant == "a link":
+        assert os.path.islink(live) and target.read_text() == "keep\n"
+    else:
+        assert os.path.islink(live) and not target.exists()
+    assert not (st / "out").exists() and _left_behind(box, st) == []
+
+
+@pytest.mark.parametrize("where", ["last", "first"])
+def test_only_the_tail_of_a_long_stream_is_searched_for_its_result(box, monkeypatch, where):
+    """claude.json comes from the last RESULT_TAIL bytes of the stream (8 MB, shrunk
+    here), so the read stays small however long a run talks. A result line at the
+    end is found past a longer line before it; one with more than the tail after it
+    isn't (the known limit, see RESULT_TAIL)."""
+    monkeypatch.setattr(h, "RESULT_TAIL", 256)
+    junk = "head -c 1000 /dev/zero | tr '\\0' x; echo\n"
+    result = "echo '{\"type\":\"result\",\"result\":\"late\"}'\n"
+    _claude(box, junk + result if where == "last" else result + junk)
+    st = _stage(box)
+    assert h.main(["start", RUN_ID], popen=Runner()) == 0
+    assert len((st / "live.jsonl").read_bytes()) > 1000, "the whole stream is in live.jsonl"
+    report = (st / "out" / "claude.json").read_bytes()
+    if where == "last":
+        assert json.loads(report)["result"] == "late"
+    else:
+        assert report == b""
 
 
 def test_a_claude_binary_others_can_change_is_never_run(box, capsys):
@@ -672,7 +785,12 @@ def test_the_runner_runs_nothing_it_does_not_know(box):
     run = Runner()
     for argv in (["/usr/bin/osascript", "-e", "beep"], ["/bin/rm", "-rf", "--", os.path.expanduser("~")],
                  ["/usr/bin/sudo", "-u", "mysticalruns", "/usr/bin/tar", "-xf", "-", "-C", "/Users/Shared"],
-                 ["launchctl", "bootout", "gui/%d" % ME]):
+                 ["launchctl", "bootout", "gui/%d" % ME],
+                 # taskpolicy is understood as the one utility clamp and nothing else
+                 ["/usr/sbin/taskpolicy", "-c", "background", str(box.claude)],
+                 ["/usr/sbin/taskpolicy", "-b", str(box.claude)],
+                 ["/usr/sbin/taskpolicy", "-c", "utility", "-b", str(box.claude)],
+                 ["/usr/sbin/taskpolicy"]):
         with pytest.raises(AssertionError):
             run(argv)
     assert Runner.refused == [list(a) for a in run.calls]
@@ -956,6 +1074,43 @@ def test_set_up_makes_the_locks_folder_and_remove_takes_the_lock():
     assert os.path.dirname(h.LOCK) in setup and h.LOCK in remove
 
 
+# --- the bridge that started it may be gone ---------------------------------------------------
+
+class _GoneStderr:
+    """What sys.stderr is once the reader of its pipe has gone: every write fails."""
+
+    def write(self, text):
+        raise BrokenPipeError(32, "Broken pipe")
+
+    def flush(self):
+        raise BrokenPipeError(32, "Broken pipe")
+
+
+@pytest.mark.parametrize("argv, status", [(["nonsense"], 2), (["start", RUN_ID], 1)])
+def test_main_survives_a_closed_stderr(monkeypatch, argv, status):
+    """The bridge that started the helper may have re-exec'd, closing its end of the
+    stderr pipe. A refusal (2) or an error (1) still ends in its status, not a traceback."""
+    def boom():
+        raise RuntimeError("boom")
+    monkeypatch.setattr(h, "_config", boom)
+    monkeypatch.setattr(sys, "stderr", _GoneStderr())
+    assert h.main(argv) == status
+
+
+def test_the_exit_status_survives_a_stderr_pipe_nobody_reads():
+    """Python swaps the status for 120 when what it couldn't write to a broken pipe
+    fails to flush again at exit; here the helper is really run, with nonsense, so
+    it touches nothing, and its stderr is a pipe with no reader."""
+    r, w = os.pipe()
+    os.close(r)
+    try:
+        done = subprocess.run([sys.executable, "-I", HELPER, "nonsense"], stdin=subprocess.DEVNULL,
+                              stdout=subprocess.DEVNULL, stderr=w, timeout=60)
+    finally:
+        os.close(w)
+    assert done.returncode == 2
+
+
 # --- the interpreter root runs it with ------------------------------------------------------
 
 def _system_python():
@@ -977,4 +1132,50 @@ def test_the_helper_is_isolated_and_parses_under_the_system_python():
     r = subprocess.run([_system_python(), "-I", "-c",
                         "import sys; compile(open(sys.argv[1]).read(), sys.argv[1], 'exec')", HELPER],
                        capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.skipif(_system_python() is None, reason="no system python3 to check against")
+def test_a_line_nested_too_deep_does_not_stop_last_result_under_the_system_python():
+    """Where the run's stdout is parsed, as root. json raises RecursionError there
+    (3.9), not the ValueError of the newer Pythons this suite may run on."""
+    code = ("import importlib.util, sys\n"
+            "spec = importlib.util.spec_from_file_location('helper', sys.argv[1])\n"
+            "helper = importlib.util.module_from_spec(spec)\n"
+            "spec.loader.exec_module(helper)\n"
+            "result = b'{\"type\":\"result\"}'\n"
+            "assert helper.last_result(result + b'\\n' + b'[' * 100000 + b'\\n') == result\n")
+    r = subprocess.run([_system_python(), "-I", "-c", code, HELPER], capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+
+
+@pytest.mark.skipif(_system_python() is None, reason="no system python3 to check against")
+def test_a_line_of_digits_cannot_stall_last_result_under_the_system_python():
+    """3.9 has no limit on turning a decimal string into an int, and takes time
+    quadratic in its digits: 1.6 million of them, written by the run, cost root 8
+    seconds and 8 MB of them minutes, past the run's timeout and deaf to TERM. So
+    json is only handed lines that hold "result", with their integers left as text.
+    (Here json is watched for both, and the lines are timed.)"""
+    code = """
+import importlib.util, sys, time
+spec = importlib.util.spec_from_file_location('helper', sys.argv[1])
+helper = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(helper)
+real_loads = helper.json.loads
+def loads(line, **kw):
+    assert b'"result"' in line, 'json was handed a line that cannot be a result: %r' % line[:40]
+    assert kw.get('parse_int') not in (None, int), 'json would convert the digits itself'
+    return real_loads(line, **kw)
+helper.json.loads = loads
+digits = b'9' * 2000000
+result = b'{"type":"result","result":"ok","n":' + digits + b'}'
+decoy = b'{"type":"assistant","note":"result","n":' + digits + b'}'
+data = b'\\n'.join([b'{"type":"system"}', result, decoy, b'[' + digits + b']', digits, b'\\n' * 100000])
+began = time.monotonic()
+got = helper.last_result(data)
+took = time.monotonic() - began
+assert got == result, 'the result line comes back as the run wrote it'
+assert took < 2, 'took %.1f s' % took
+"""
+    r = subprocess.run([_system_python(), "-I", "-c", code, HELPER], capture_output=True, text=True, timeout=120)
     assert r.returncode == 0, r.stderr

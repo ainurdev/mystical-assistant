@@ -1,7 +1,7 @@
 import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
-  TriangleAlert, CircleStop, Copy, Check, RotateCw, ChevronDown, ChevronLeft, ChevronRight,
+  TriangleAlert, CircleStop, Copy, Check, RotateCw, RotateCcw, ChevronDown, ChevronLeft, ChevronRight,
   Quote, Layers, Image as ImageIcon, Terminal, FileText, Pencil, FilePlus, Search, Globe,
   Plug, Bot, Sparkles, Webhook, ScrollText, CircleX, Wrench, Circle, type LucideIcon,
 } from "lucide-react";
@@ -574,6 +574,21 @@ function BootRow({ text }: { text: string }) {
             className="h-1.5 w-1.5 flex-none animate-pulse rounded-full bg-current motion-reduce:animate-none" />
       <span className="text-[length:var(--t10)] uppercase tracking-[2px]">{text}</span>
       <span aria-hidden className="h-px flex-1 bg-border" />
+    </div>
+  );
+}
+
+/** A line in a teammate's device run that isn't the run's own ("Mystical
+ *  restarted 17:31 · this run kept going"): BootRow's look on the zone's spine,
+ *  a refresh glyph for its node and a dashed rule to the row's end. */
+function DividerRow({ text }: { text: string }) {
+  return (
+    <div role="note" className="zrow text-muted-2" style={{ ["--m" as string]: "var(--txm)" }}>
+      <i className="ax-bar" aria-hidden><RotateCcw size={14} /></i>
+      <span className="zo flex items-center gap-3">
+        <span className="flex-none text-[length:var(--t10)] uppercase tracking-[2px]">{text}</span>
+        <span aria-hidden className="flex-1 border-t border-dashed border-border" />
+      </span>
     </div>
   );
 }
@@ -1915,6 +1930,7 @@ export const RunStream = memo(function RunStream({
   onOpenFile,
   onAnswer,
   ended = false,
+  readOnly = false,
   working = false,
   hud,
   boot = null,
@@ -1946,6 +1962,8 @@ export const RunStream = memo(function RunStream({
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
   ended?: boolean;
+  /** Someone else's turn, a teammate's device run: nothing in it is yours to continue. */
+  readOnly?: boolean;
   /** Running and waiting on nothing (Transcript's working): the last WORK zone
    *  is live and hosts the indicator, or, with no zone to carry it, the working
    *  row draws at the foot. */
@@ -2405,9 +2423,11 @@ export const RunStream = memo(function RunStream({
             className="ev-stop ml-[var(--rail)] flex items-center gap-1.5 text-xs"
           >
             <CircleStop size={14} className="shrink-0" aria-hidden />
-            <span>Stopped — send a message to continue.</span>
+            <span>{readOnly ? "Stopped" : "Stopped — send a message to continue."}</span>
           </div>
         );
+      case "divider":
+        return <DividerRow key={i} text={event.text} />;
       case "permission_resolved":
       case "question_answered":
         return null; // shown inside the relevant card

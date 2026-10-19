@@ -35,7 +35,7 @@ function CmdSeg({ name, desc }: { name: string; desc: string }) {
  *  Geometry and colour live in `.pbub` / `.pline` / `.pmeta` / `.cmdseg`
  *  (index.css, DOSSIER tier 1); nothing here decides either. Design:
  *  .mystical/design-drafts/sent-prompt, B · RIM. */
-export function PromptBubble({ text, at, runtime, run, prev, steer, commands, children }: {
+export function PromptBubble({ text, at, runtime, run, prev, steer, who, commands, children }: {
   text: string;
   at?: number;
   /** The project's command list: a leading `/name` it knows is drawn as a command. */
@@ -46,6 +46,9 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, commands, ch
   run?: Run;
   prev?: Run;
   steer?: boolean;
+  /** Whose words these are when they aren't yours: the teammate who asked for
+   *  a device run (lib/devicerun). Their name leads the tag the way ↳ STEER does. */
+  who?: string;
   /** Under your words, inside the plate: a steer's screenshots. */
   children?: ReactNode;
 }) {
@@ -62,7 +65,7 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, commands, ch
   // Lit only when both turns recorded it: an older turn's unknown is no change.
   const moved = (k: keyof Run) => (prev?.[k] && run?.[k] && prev[k] !== run[k]) || undefined;
   const meta = [
-    (wake || steer) && <b key="who" style={purple}>{wake ? "⧖ WAIT OVER" : "↳ STEER"}</b>,
+    (wake || steer || who) && <b key="who" style={purple}>{wake ? "⧖ WAIT OVER" : steer ? "↳ STEER" : who}</b>,
     ran && <span key="acct" className="pacct" data-agent={ran.agent || undefined} title={ran.title}>{ran.text}</span>,
     run?.model && <span key="model" className="prun pmodel" data-new={moved("model")} title="model">{modelName(run.model)}</span>,
     run?.effort && (

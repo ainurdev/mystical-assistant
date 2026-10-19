@@ -33,8 +33,10 @@ export type Seg = { kind: SegKind; idx: number[]; start: number };
 /** The conversation itself — the agent's words, the answer, your steers, and
  *  anything that asks you something. Each of these breaks the work around it,
  *  the way a paragraph breaks a run of chips. `error` and `stopped` are here
- *  because they end the turn and must never hide inside a fold. */
-const PROSE = new Set(["text", "result", "steer", "permission", "question", "error", "stopped"]);
+ *  because they end the turn and must never hide inside a fold; `divider` (a
+ *  device run's "Mystical restarted") because a stretch with no tool in it
+ *  draws nothing, and the line would go with it. */
+const PROSE = new Set(["text", "result", "steer", "permission", "question", "error", "stopped", "divider"]);
 
 /** Events that render a row when they land in a steps fold. `tool_done`,
  *  `permission_resolved` and a textless `thinking` inside a run draw nothing,

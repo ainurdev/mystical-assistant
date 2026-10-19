@@ -37,7 +37,9 @@ def no_real_helper(monkeypatch):
     def refuse(argv, **kw):
         reached.append(list(argv))
         raise AssertionError("a command reached sudo from a channel test: %r" % (argv,))
-    for f, d in ((device_side.run, (refuse, refuse)), (device_side.stop, (refuse,)), (device_side.sweep, (refuse,)),
+    for f, d in ((device_side.run, (refuse, refuse)), (device_side.stop, (refuse,)), (device_side.sweep, (refuse, refuse)),
+                 (device_side.stop_by_owner, (refuse,)), (device_side.resume, (refuse, refuse)),
+                 (device_side.helper_alive, (refuse,)),
                  (device_share.developer_dir, (refuse,)), (device_share.device_facts, (refuse,)),
                  (device_share.share_state, (refuse,)), (device_share.handshake_headers, (refuse,)),
                  (device_share.setup_state, (device_share.setup_state.__defaults__[0], refuse))):

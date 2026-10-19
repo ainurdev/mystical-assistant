@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api, type EnrichedSession } from "../api";
+import { isDeviceRun } from "../lib/devicerun";
 import { Skeleton } from "./ui";
 
 function ago(sec: number): string {
@@ -49,7 +50,8 @@ export function HistoryView({ onOpen }: { onOpen: (s: EnrichedSession) => void }
       try {
         const h = await api.history(showArchived);
         if (live) {
-          setSessions(h.sessions);
+          // A teammate's device run lives in PLUGINS ▸ DEVICE RUNS only.
+          setSessions(h.sessions.filter((s) => !isDeviceRun(s.origin)));
           setLoaded(true);
         }
       } catch {

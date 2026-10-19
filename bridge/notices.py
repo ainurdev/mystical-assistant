@@ -56,6 +56,7 @@ CATALOG = {
     "waiting": ("resumed", "fyi", "session"),
     "started": ("started", "fyi", "session"),
     "rv_started": ("started", "fyi", "rivendell"),
+    "rv_ended": ("started", "fyi", "rivendell"),    # a teammate's device run ending (device_side)
     "rv_held": ("rv_held", "fyi", "rivendell"),
     "rv_dismissed": ("rv_held", "fyi", "rivendell"),
     "rv_done": ("rv_done", "news", "rivendell"),
@@ -77,7 +78,7 @@ VERBS = {
     "approve": "APPROVE", "question": "QUESTION", "asking": "ASKS", "login": "SIGN IN",
     "limit_choice": "LIMIT", "rv_offer": "OFFERED", "done": "DONE", "failed": "FAILED",
     "parked": "PARKED", "resumed": "RESUMED", "retrying": "RETRYING", "waiting": "WAITING",
-    "started": "STARTED", "rv_started": "STARTED",
+    "started": "STARTED", "rv_started": "STARTED", "rv_ended": "ENDED",
     "rv_held": "HELD", "rv_dismissed": "DISMISSED", "rv_done": "DONE", "rv_failed": "FAILED",
     "rv_refused": "REFUSED", "rv_link": "LINK DOWN", "rv_link_back": "LINK BACK",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",

@@ -14,7 +14,7 @@ import json
 import re
 import sys
 
-from bridge import aifeatures, config, state, store
+from bridge import aifeatures, config, device_view, state, store
 from bridge.browser import rel
 
 _SYS = (
@@ -47,8 +47,12 @@ def checking_ids() -> set[str]:
 def should_check(session: dict | None, prompt: str, force: bool = False) -> bool:
     """True only for a substantial prompt landing on a session that already has
     turns. Short follow-ups ("yes", "fix that") and fresh sessions never pay for a
-    check — a session with no history has nothing to be unrelated to."""
+    check — a session with no history has nothing to be unrelated to. Never a
+    teammate's device run: its first turn is their request, which the check would
+    send to a model on this account (the runner refuses the prompt anyway)."""
     if not aifeatures.enabled("relevance") or force or not session:
+        return False
+    if device_view.is_device_run(session.get("origin")):
         return False
     if not store.recent_prompts(session["id"], 1):
         return False

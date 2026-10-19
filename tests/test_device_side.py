@@ -1,17 +1,19 @@
 """The device side of device runs (bridge/device_side.py): a teammate's run on
 this shared device, from the claim to the report.
 
-Nothing here runs the helper, sudo or the network. `popen=` stands in for the
-helper's start: FakeHelper does to the stage what the real one does (it notes
-what the stage held, writes out/, takes the token). `call=` stands in for its
-stop. The worker is a fake with the Worker's _api, _api_put_bytes,
-_deliver_telegram, _note, inst and name. The stage root is a temp dir, and the
-snapshot download is a stub.
+Nothing here runs the helper, sudo, ps or the network. `popen=` stands in for
+the helper's start: FakeHelper does to the stage what the real one does (it
+notes what the stage held, streams into live.jsonl, writes out/, takes the
+token). `call=` stands in for its stop, `alive=` for ps. The worker is a fake
+with the Worker's _api, _api_put_bytes, _deliver_telegram, _note, inst and name.
+The stage root is a temp dir, and the snapshot download is a stub. The run's
+view (bridge/device_view.py) is real, on the test DB.
 Run: python -m pytest tests/test_device_side.py -v
 """
 
 import json
 import os
+import re
 import stat
 import subprocess
 import time
@@ -20,8 +22,9 @@ import urllib.error
 
 import pytest
 
-from bridge import device_share, device_side as ds
+from bridge import config, device_share, device_side as ds, device_view, store
 
+store.init()
 RID = "0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19"
 OTHER = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
 HEAD = {"X-Mystical-Device-Id": "7c50be1739dfacbb"}
@@ -90,12 +93,14 @@ class FakeHelper:
     notes what the stage held and takes the token off the disk, as the helper
     does once it has read it; done, it writes out/ and exits `rc` with `stderr`. Until `hang` stops have come in (through `stops`,
     which the test also hands run() as its `call`), each wait for it times out,
-    as a real one would while it runs."""
+    as a real one would while it runs. So does each wait while lines of
+    `stream` are left: one more goes into the stage's live.jsonl each time."""
 
-    def __init__(self, rc=0, exit=None, claude=None, screens=None, stderr="", hang=0, on_wait=None, on_start=None):
+    def __init__(self, rc=0, exit=None, claude=None, screens=None, stderr="", hang=0, on_wait=None, on_start=None,
+                 stream=()):
         self.rc, self.exit, self.stderr, self.hang, self.on_wait = rc, exit, stderr, hang, on_wait
         self.claude = _claude() if claude is None else claude
-        self.screens, self.on_start = screens or {}, on_start
+        self.screens, self.on_start, self.stream = screens or {}, on_start, list(stream)
         self.argv = self.kw = self.saw = self.returncode = None
         self.stops = []
 
@@ -120,6 +125,10 @@ class FakeHelper:
         if self.on_wait:
             self.on_wait()
             self.on_wait = None
+        if self.stream:
+            with open(os.path.join(self.stage, "live.jsonl"), "ab") as f:
+                f.write(self.stream.pop(0))
+            raise subprocess.TimeoutExpired(self.argv, timeout)
         if len(self.stops) < self.hang:
             raise subprocess.TimeoutExpired(self.argv, timeout)
         out = os.path.join(self.stage, "out")
@@ -166,26 +175,34 @@ def device(tmp_path, monkeypatch):
             d.on_fetch()
         return Reply(d.code)
     monkeypatch.setattr(ds.urllib.request, "urlopen", urlopen)
-    ds._cancelled.clear()
-    ds._interrupted.clear()
+    for marks in (ds._cancelled, ds._owner_stopped, ds._interrupted, ds._adopted):
+        marks.clear()
     yield d
-    ds._cancelled.clear()
-    ds._interrupted.clear()
+    for marks in (ds._cancelled, ds._owner_stopped, ds._interrupted, ds._adopted):
+        marks.clear()
+
+
+@pytest.fixture(autouse=True)
+def views(monkeypatch, tmp_path):
+    """The runs' views keep their pictures in a temp dir, and no run is going."""
+    monkeypatch.setattr(config, "UPLOAD_DIR", str(tmp_path / "uploads"))
+    monkeypatch.setattr(device_view, "_running", {})
 
 
 @pytest.fixture(autouse=True)
 def no_real_helper():
-    """run(), stop() and sweep() reach sudo and the helper through their own
-    defaults, which in production is right. Here every test hands them fakes;
-    their defaults refuse, so nothing slips through to sudo, and a test that
-    reaches one fails."""
+    """run(), stop(), stop_by_owner(), sweep(), resume() and helper_alive() reach
+    sudo, the helper and ps through their own defaults, which in production is
+    right. Here every test hands them fakes; their defaults refuse, so nothing
+    slips through, and a test that reaches one fails."""
     reached = []
 
     def refuse(argv, **kw):
         reached.append(list(argv))
         raise AssertionError("a command reached sudo without a fake: %r" % (argv,))
-    saved = {f: f.__defaults__ for f in (ds.run, ds.stop, ds.sweep)}
-    ds.run.__defaults__, ds.stop.__defaults__, ds.sweep.__defaults__ = (refuse, refuse), (refuse,), (refuse,)
+    saved = {f: f.__defaults__ for f in (ds.run, ds.stop, ds.stop_by_owner, ds.sweep, ds.resume, ds.helper_alive)}
+    ds.run.__defaults__ = ds.sweep.__defaults__ = ds.resume.__defaults__ = (refuse, refuse)
+    ds.stop.__defaults__ = ds.stop_by_owner.__defaults__ = ds.helper_alive.__defaults__ = (refuse,)
     try:
         yield
     finally:
@@ -238,6 +255,22 @@ def test_a_device_names_itself_only_when_it_is_ready(monkeypatch, state, facts, 
     assert ds.headers({"id": "t1"}) == sends
 
 
+def test_a_device_mid_set_up_or_remove_takes_no_run(monkeypatch):
+    """Set up may take the run user's wall down for a moment and Remove deletes
+    that user: while either runs (setup_lock, up to 15 minutes), a READY device
+    names itself to nothing, so no run is claimed, acked or taken back; after,
+    it does again."""
+    monkeypatch.setattr(device_share, "share_state",
+                        lambda inst: {"state": "READY", "checks": [], "facts": {"id": "7c50be1739dfacbb"}})
+    w = Worker()
+    with ds.setup_lock:
+        assert ds.headers({"id": "t1"}) is None
+        ds.run(w, RID, popen=lambda *a, **k: pytest.fail("no helper mid-Set up"),
+               call=lambda *a, **k: pytest.fail("nothing to stop"))
+    assert w.api == [], "never claimed"
+    assert ds.headers({"id": "t1"}) == HEAD
+
+
 def test_a_device_that_is_no_longer_ready_claims_nothing(device, monkeypatch):
     monkeypatch.setattr(ds, "headers", lambda inst: None)
     w = Worker()
@@ -261,12 +294,13 @@ def test_a_run_uploads_its_screens_and_posts_the_report_with_captions_in_index_o
     assert helper.kw["start_new_session"] is True, "a bridge restart doesn't take the run down"
     assert helper.saw == {
         "job": {"prompt": CLAIM["prompt"], "gitAuthorName": "Mahdi", "gitAuthorEmail": "mahdi@example.com",
-                "developerDir": DEV, "timeoutSeconds": 600, "instance": "t1"},
+                "developerDir": DEV, "timeoutSeconds": 600, "instance": "t1", "requester": "Mahdi",
+                "task": "RIV-42", "repository": "ainurhq/app"},
         "token": TOKEN, "code": CODE, "names": ["code.tar.gz", "job.json", "token"],
         "stage_mode": 0o700, "token_mode": 0o600}
     assert device.fetched == [(CLAIM["snapshotUrl"], 60)]
-    assert w.notes == [("rv_started", RID, "ainurhq/app", "Mahdi is testing ainurhq/app on this device.",
-                        {"job_kind": "device-run"})]
+    assert w.notes[0] == ("rv_started", RID, "ainurhq/app", "Mahdi is testing ainurhq/app on this device.",
+                          {"job_kind": "device-run"})
     assert w.puts == [(BASE + "/screens/1", PNG + b"two", "application/octet-stream", HEAD),
                       (BASE + "/screens/2", PNG + b"one", "application/octet-stream", HEAD)]
     assert w.results() == [{"status": "COMPLETED", "result": "It works.",
@@ -278,10 +312,10 @@ def test_a_run_uploads_its_screens_and_posts_the_report_with_captions_in_index_o
 def test_who_is_testing_reaches_telegram_only_where_notify_routes_it(device, monkeypatch, routed):
     """The bell always has it; Telegram follows Settings ▸ NOTIFY ▸ Started elsewhere."""
     asked = []
-    monkeypatch.setattr(ds.notices, "telegram_ok", lambda kind: asked.append(kind) or routed)
+    monkeypatch.setattr(ds.notices, "telegram_ok", lambda kind: asked.append(kind) or (routed and kind == "rv_started"))
     w = Worker()
     _run(w, FakeHelper())
-    assert asked == ["rv_started"] and len(w.notes) == 1
+    assert asked[0] == "rv_started" and w.notes[0][0] == "rv_started"
     assert w.telegram == (["Mahdi is testing ainurhq/app on this device."] if routed else [])
     assert os.listdir(device.root) == [], "the stage goes"
     last = device_share.last_run()
@@ -541,6 +575,18 @@ def test_output_that_isnt_claudes_json_is_no_report(claude):
     assert ds.parse_report(claude) == ("", [])
 
 
+def test_a_hostile_result_is_read_in_bounded_time():
+    """Each "{" tried is a JSON parse, and a failed one counts the lines up to it:
+    over all 16 MB a run can hand back, a result of "{"s would hold the run's
+    thread for a day. Only the tail Rivendell would take is looked in."""
+    hostile = "{" * 200_000 + '{"a":' * 1_000           # 19 s unbounded on an M-series Mac, and quadratic
+    t0 = time.monotonic()
+    assert ds.parse_report(json.dumps({"result": hostile})) == (hostile, [])
+    assert time.monotonic() - t0 < 5
+    text = "x" * 30_000 + '\n{"summary": "Login works.", "screens": []}'
+    assert ds.parse_report(json.dumps({"result": text})) == ("Login works.", [])
+
+
 def test_a_stage_is_its_run_id_under_the_stage_root(device):
     assert ds.stage_dir(RID) == os.path.join(str(device.root), RID)
 
@@ -570,7 +616,8 @@ def test_a_bridge_start_clears_stages_left_mid_run_token_first(device, tmp_path)
     (device.root / "2b3c4d5e-6f7a-4b2c-8d3e-4f5a6b7c8d9e").symlink_to(elsewhere)
     calls = []
     try:
-        ds.sweep(run=lambda argv, **kw: calls.append(argv) or subprocess.CompletedProcess(argv, 0, "", ""))
+        ds.sweep(run=lambda argv, **kw: calls.append(argv) or subprocess.CompletedProcess(argv, 0, "", ""),
+                 alive=_gone)
         assert sorted(calls) == sorted([["/usr/bin/sudo", "-n", HELPER, "stop", RID],
                                         ["/usr/bin/sudo", "-n", HELPER, "stop", OTHER]]), "the one with no token too"
         going.chmod(0o700)
@@ -595,13 +642,18 @@ def _no_helper(argv, **kw):
     return subprocess.CompletedProcess(argv, 0, "", "")
 
 
+def _gone(request_id):
+    """ps was read and lists no helper for the run: a reboot or a crash took it."""
+    return False
+
+
 def test_a_run_cut_short_by_a_restart_is_reported_failed_to_its_instance_once(device):
     """M12: the stage names its instance. At bridge start the stage goes; once
     that instance's device is connected again (Rivendell takes a device's result
     only then), the run is posted FAILED there, once, with the device header."""
     _stale(device, RID, "t1")
     _stale(device, OTHER, "t2", token=False)
-    ds.sweep(run=_no_helper)
+    ds.sweep(run=_no_helper, alive=_gone)
     assert os.listdir(device.root) == []
     mine, theirs = Worker(), Worker()
     theirs.inst = {**theirs.inst, "id": "t2"}
@@ -617,7 +669,7 @@ def test_a_restart_report_that_fails_is_tried_again_on_the_next_connect(device, 
     """A failed post is logged and kept for the next READY connect, until it
     lands. The stage went at bridge start either way."""
     _stale(device, RID, "t1")
-    ds.sweep(run=_no_helper)
+    ds.sweep(run=_no_helper, alive=_gone)
     assert os.listdir(device.root) == []
     w = Worker()
     w.result_errors = [_http(502)]
@@ -631,7 +683,7 @@ def test_a_restart_report_that_fails_is_tried_again_on_the_next_connect(device, 
 def test_a_restart_report_rivendell_answers_409_is_settled(device):
     """409: the run has ended there already, so there is nothing left to report."""
     _stale(device, RID, "t1")
-    ds.sweep(run=_no_helper)
+    ds.sweep(run=_no_helper, alive=_gone)
     w = Worker()
     w.result_errors = [_http(409)]
     ds.report_interrupted(w, HEAD)
@@ -683,3 +735,350 @@ def test_a_stage_root_others_could_change_is_left_alone(device, monkeypatch, how
     _run(w, helper, rid=OTHER)                        # a run with no stage there yet
     assert helper.argv is None and w.results()[0]["status"] == "FAILED" and w.telegram == []
     assert sorted(os.listdir(device.root)) == [RID], "nothing staged there, and nothing removed"
+
+
+# --- the run's view, the owner's stop, and a run taken back after a restart -------------------------
+
+def _line(rec):
+    return (json.dumps(rec) + "\n").encode()
+
+
+def _said(text):
+    """One line of Claude's stream-json: an assistant step that says `text`."""
+    return _line({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
+
+
+def _view_row(rid=RID):
+    """The session of a run's newest view."""
+    ref = f"device-run:{rid}"
+    return store.get_session(store.sessions_for_refs([ref])[ref])
+
+
+def _steps(rid=RID):
+    return [(e["type"], e.get("text")) for e in store.transcript(_view_row(rid)["id"])["events"]]
+
+
+def _ended(rid=RID):
+    s = _view_row(rid)
+    return store.transcript(s["id"])["turns"][0]["status"], store.parse_device(s["device"])["outcome"]
+
+
+def _bounded(helper, most=10):
+    """A wait past `most` fails the run rather than spinning: a stop that is
+    never sent again would otherwise hang the test."""
+    wait, waits = helper.communicate, []
+
+    def communicate(timeout=None):
+        waits.append(timeout)
+        assert len(waits) <= most, "the helper's stop never came again"
+        return wait(timeout)
+    helper.communicate = communicate
+    return helper
+
+
+def test_a_run_streams_into_its_view(device):
+    """Each beat the view takes the lines the helper's stream gained, so the owner
+    watches the run as it goes; it ends done once the result is posted."""
+    helper = FakeHelper(stream=[_said("Booting a simulator."), _said("The app runs.")])
+    seen, wait = [], helper.communicate
+
+    def communicate(timeout=None):
+        seen.append(len(store.transcript(device_view.running_session())["events"]))
+        return wait(timeout)
+    helper.communicate = communicate
+    w = Worker()
+    at_post, api = [], w._api
+
+    def record(path, payload=None, headers=None):
+        if path.endswith("/result"):
+            at_post.append(store.transcript(device_view.running_session())["turns"][0]["status"])
+        return api(path, payload, headers)
+    w._api = record
+    _run(w, helper)
+    assert seen == [0, 1, 2], "each line is in the view a beat after it is written, before the helper ends"
+    assert at_post == ["running"] and w.results()[0]["status"] == "COMPLETED"
+    assert _steps() == [("text", "Booting a simulator."), ("text", "The app runs.")]
+    assert _ended() == ("done", "done") and device_view.running_session() is None
+
+
+def test_run_without_live_file_still_reports(device):
+    """A device that hasn't re-run Set up: its helper writes no live.jsonl and an
+    old claude.json. The run posts as it always did, and its view shows the
+    summary once it ends."""
+    w = Worker()
+    _run(w, FakeHelper())
+    assert w.results() == [{"status": "COMPLETED", "result": "It works.", "screens": []}]
+    assert _steps() == [("text", "It works.")] and _ended() == ("done", "done")
+
+
+def test_the_screens_that_went_up_show_in_the_view(device):
+    helper = FakeHelper(claude=_claude("Look.", [{"file": "1.png", "caption": "Home"}]),
+                        screens={"1.png": PNG + b"one", "notes.txt": b"x"})
+    _run(Worker(), helper)
+    tool, done, text = store.transcript(_view_row()["id"])["events"]
+    assert (tool["name"], tool["summary"], len(done["images"]), text["text"]) == ("Screenshots", "1.png", 1, "Look.")
+    assert open(done["images"][0], "rb").read() == PNG + b"one"
+
+
+def test_owner_stop_during_unpack_posts_failed_once(device):
+    """STOP RUN while the code still unpacks finds no run to stop yet: it is sent
+    again each beat until the run ends, and the run is posted FAILED, saying who
+    stopped it, once; its view ends stopped."""
+    helper = _bounded(FakeHelper(hang=3, exit={"code": -15, "timedOut": False}))
+    helper.on_wait = lambda: ds.stop_by_owner(RID, run=helper.stop)
+    w = Worker()
+    _run(w, helper)
+    assert helper.stops == [["/usr/bin/sudo", "-n", HELPER, "stop", RID]] * 3
+    assert w.results() == [{"status": "FAILED", "error": "Stopped by this device's owner.", "screens": []}]
+    assert _ended() == ("error", "stopped")
+    assert _steps() == [("text", "Stopped by this device's owner."), ("stopped", None)]
+    assert RID not in ds._owner_stopped and os.listdir(device.root) == []
+
+
+def test_a_stop_run_after_the_run_finished_leaves_its_report_alone(device):
+    """STOP RUN stays on offer until the view closes, after the post: a press as
+    the run finishes finds nothing to stop, and its COMPLETED report goes as it
+    is, never FAILED "Stopped by this device's owner."; its view ends done."""
+    helper = FakeHelper(screens={"1.png": PNG})
+    helper.on_wait = lambda: ds.stop_by_owner(RID, run=helper.stop)    # pressed as it hands back
+    w = Worker()
+    _run(w, helper)
+    assert helper.stops == [["/usr/bin/sudo", "-n", HELPER, "stop", RID]]
+    assert w.results() == [{"status": "COMPLETED", "result": "It works.", "screens": [{"index": 1, "caption": ""}]}]
+    assert _ended() == ("done", "done") and RID not in ds._owner_stopped
+
+
+def test_an_owners_stop_names_only_a_run():
+    calls = []
+    ds.stop_by_owner("../x", run=lambda argv, **kw: calls.append(argv))
+    assert calls == [] and ds._owner_stopped == set()
+
+
+def test_a_rivendell_cancel_still_posts_nothing(device):
+    """A cancel is Rivendell's: it has closed the run, so nothing is posted, even
+    with STOP RUN pressed too. The view ends cancelled, not stopped or failed: its
+    plate mustn't say a report went back."""
+    helper = _bounded(FakeHelper(hang=3, exit={"code": -15, "timedOut": False}))
+    helper.on_wait = lambda: (ds.stop(RID, run=helper.stop), ds.stop_by_owner(RID, run=helper.stop))
+    w = Worker()
+    _run(w, helper)
+    assert w.results() == [] and _ended() == ("error", "cancelled") and _steps()[-1] == ("stopped", None)
+    assert w.notes[-1][2:4] == ("Mahdi's run on this device ended", "Cancelled after 1 min.")
+    assert RID not in ds._cancelled and RID not in ds._owner_stopped and os.listdir(device.root) == []
+
+
+def test_a_cancel_after_the_run_finished_still_posts_nothing(device):
+    """A cancel that lands as the run finishes: Rivendell has closed the run all
+    the same, so its report isn't posted and its view ends cancelled, not done."""
+    helper = FakeHelper()
+    helper.on_wait = lambda: ds.stop(RID, run=helper.stop)
+    w = Worker()
+    _run(w, helper)
+    assert w.results() == [] and _ended() == ("error", "cancelled")
+
+
+@pytest.mark.parametrize("routed", [False, True])
+def test_a_finished_run_rings_once_more(device, monkeypatch, routed):
+    """The bell's second row for a run: whose it was, how it ended and how long it
+    took. Telegram only where NOTIFY routes "Started elsewhere"."""
+    monkeypatch.setattr(ds.notices, "telegram_ok", lambda kind: routed and kind == "rv_ended")
+    w = Worker()
+    _run(w, FakeHelper())
+    assert [n[0] for n in w.notes] == ["rv_started", "rv_ended"]
+    assert w.notes[1] == ("rv_ended", RID, "Mahdi's run on this device ended", "Done after 1 min.",
+                          {"job_kind": "device-run"})
+    assert w.telegram == (["Mahdi's run on this device ended. Done after 1 min."] if routed else [])
+
+
+@pytest.mark.parametrize("ps, alive", [
+    (f"/usr/bin/sudo -n {HELPER} start {RID}\n", True),
+    (f"/usr/bin/python3 -I {HELPER} start {RID}  \n", True),
+    (f"/usr/bin/sudo -n {HELPER} stop {RID}\n(sudo)\n", False),          # a stop, and a zombie
+    (f"/usr/bin/python3 -I {HELPER} start {OTHER}\n", False),
+])
+def test_a_helper_is_alive_while_ps_lists_its_start(ps, alive):
+    asked = []
+    run = lambda argv, **kw: asked.append(argv) or subprocess.CompletedProcess(argv, 0, "launchd\n" + ps, "")  # noqa: E731
+    assert ds.helper_alive(RID, run=run) is alive
+    assert asked == [["/bin/ps", "-axo", "command="]]
+
+
+@pytest.mark.parametrize("ps", [OSError("no ps"), subprocess.TimeoutExpired(["/bin/ps"], 30),
+                                subprocess.CompletedProcess(["/bin/ps"], 1, f"{HELPER} start {RID}\n", "ps: sysctl")],
+                         ids=["fails", "times out", "exits non-zero"])
+def test_a_ps_that_cannot_be_read_cannot_tell(ps):
+    """None, not "gone": a watch that ended on it would drop a stage whose
+    helper still runs Claude, and post a result that isn't the run's."""
+    def run(argv, **kw):
+        if isinstance(ps, Exception):
+            raise ps
+        return ps
+    assert ds.helper_alive(RID, run=run) is None
+
+
+def test_sweep_adopts_a_live_helper_and_resume_posts_once(device, monkeypatch):
+    """A bridge restart mid-run: the helper runs on in a session of its own. The
+    boot takes the run back rather than stopping it, and its instance's worker
+    watches it to the end: the view carries on from where it got to, past a
+    divider, and the result is posted once."""
+    monkeypatch.setattr(ds, "_BEAT", 0)
+    view = device_view.Run.open("t1", RID, dict(CLAIM))            # the bridge before the restart
+    stage = _stale(device, RID, "t1", token=False)
+    (stage / "job.json").write_text(json.dumps({"prompt": "p", "timeoutSeconds": 600, "instance": "t1",
+                                                "requester": "Mahdi", "task": "RIV-42"}))
+    (stage / "live.jsonl").write_bytes(_said("Before the restart."))
+    assert view.pump(str(stage)) == 1                                # read this far, noted in live.offset
+    device_view._running.clear()                                     # the restart forgets what was going
+    calls = []
+    ds.sweep(run=lambda argv, **kw: calls.append(argv), alive=lambda rid: True)
+    assert calls == [] and (stage / "job.json").exists() and ds._adopted == {"t1": [RID]}
+    assert _ended() == ("running", None), "a run taken back is no orphan"
+    assert ds.take_adopted("t1") == [RID] and ds.take_adopted("t1") == []
+
+    beats = []
+
+    def alive(rid):
+        beats.append(rid)
+        if len(beats) == 2:
+            with (stage / "live.jsonl").open("ab") as f:
+                f.write(_said("After it."))
+            return True
+        if len(beats) == 3:                                          # it ends, its results handed back
+            (stage / "out" / "exit.json").write_text(json.dumps({"code": 0, "timedOut": False}))
+            (stage / "out" / "claude.json").write_text(_claude("It works."))
+            return False
+        return True
+    w = Worker()
+    ds.resume(w, RID, call=lambda argv, **kw: pytest.fail("nothing to stop"), alive=alive)
+    assert beats == [RID] * 3
+    (first, divider, after) = _steps()
+    assert first == ("text", "Before the restart.") and after == ("text", "After it.")
+    assert divider[0] == "divider" and re.fullmatch(r"Mystical restarted \d\d:\d\d · this run kept going", divider[1])
+    assert w.results() == [{"status": "COMPLETED", "result": "It works.", "screens": []}]
+    assert _ended() == ("done", "done") and device_view.running_session() is None
+    assert w.notes == [("rv_ended", RID, "Mahdi's run on this device ended", "Done after 1 min.",
+                        {"job_kind": "device-run"})]
+    assert device_share.last_run()["by"] == "Mahdi" and not stage.exists()
+
+
+def test_resume_stops_a_run_its_owner_stopped(device, monkeypatch):
+    monkeypatch.setattr(ds, "_BEAT", 0)
+    device_view.Run.open("t1", RID, dict(CLAIM))
+    device_view._running.clear()
+    stage = _stale(device, RID, "t1", token=False)
+    stops = []
+
+    def stop(argv, **kw):
+        stops.append(argv)
+        (stage / "out" / "exit.json").write_text(json.dumps({"code": -15, "timedOut": False}))
+        return _no_helper(argv)
+    ds.stop_by_owner(RID, run=stop)
+    beats = []
+    w = Worker()
+    ds.resume(w, RID, call=stop, alive=lambda rid: beats.append(rid) or (len(stops) < 2 and len(beats) < 10))
+    assert len(stops) == 2 and w.results() == [
+        {"status": "FAILED", "error": "Stopped by this device's owner.", "screens": []}]
+    assert _ended() == ("error", "stopped") and RID not in ds._owner_stopped
+
+
+def test_resume_without_exit_json_fails_clearly(device):
+    """A helper ps no longer lists that ended without handing back (killed, or
+    it refused and its stderr went with the bridge it had): FAILED, saying so."""
+    device_view.Run.open("t1", RID, dict(CLAIM))
+    device_view._running.clear()
+    stage = _stale(device, RID, "t1", token=False)
+    w = Worker()
+    ds.resume(w, RID, call=lambda argv, **kw: pytest.fail("nothing to stop"), alive=_gone)
+    assert w.results() == [{"status": "FAILED", "error": "The run ended before it handed back its results.",
+                            "screens": []}]
+    assert _ended() == ("error", "failed") and not stage.exists()
+    assert w.notes[0][2] == "A teammate's run on this device ended"     # job.json from before it named them
+
+
+@pytest.mark.parametrize("seen", [False, None], ids=["gone", "ps can't tell"])
+def test_sweep_still_stops_a_dead_helpers_stage(device, seen):
+    """A helper that is gone (a reboot, a crash) hands nothing back: its stage is
+    stopped, noted for report_interrupted and dropped, as before, and its view
+    ends failed. At boot, a ps that can't tell counts as gone, as before."""
+    device_view.Run.open("t1", RID, dict(CLAIM))
+    device_view._running.clear()
+    _stale(device, RID, "t1")
+    calls = []
+    ds.sweep(run=lambda argv, **kw: calls.append(argv) or _no_helper(argv), alive=lambda rid: seen)
+    assert calls == [["/usr/bin/sudo", "-n", HELPER, "stop", RID]]
+    assert os.listdir(device.root) == [] and ds._interrupted == {"t1": [RID]} and ds._adopted == {}
+    assert _ended() == ("error", "failed")
+
+
+@pytest.mark.parametrize("posted", [False, True], ids=["not posted yet", "posted already (409)"])
+def test_a_restart_after_the_hand_back_posts_the_runs_own_result(device, posted):
+    """The bridge restarted after the helper handed its results back, while it
+    uploaded or posted them: the helper is gone, but out/exit.json is there. The
+    run is taken back, never posted FAILED as cut short, and its own result is
+    posted once, at once; Rivendell answers 409 if the bridge before had posted
+    it already, and that settles it."""
+    device_view.Run.open("t1", RID, dict(CLAIM))
+    device_view._running.clear()
+    stage = _stale(device, RID, "t1", token=False)
+    (stage / "out" / "exit.json").write_text(json.dumps({"code": 0, "timedOut": False}))
+    (stage / "out" / "claude.json").write_text(_claude("It works."))
+    nothing = lambda argv, **kw: pytest.fail("nothing to stop")    # noqa: E731
+    ds.sweep(run=nothing, alive=_gone)
+    assert ds._adopted == {"t1": [RID]} and ds._interrupted == {} and _ended() == ("running", None)
+    w = Worker()
+    if posted:
+        w.result_errors = [_http(409)]
+    beats = []
+    ds.resume(w, ds.take_adopted("t1")[0], call=nothing, alive=lambda rid: beats.append(rid) or False)
+    ds.report_interrupted(w, HEAD)
+    assert beats == [RID], "it left its watch at once"
+    assert w.results() == [{"status": "COMPLETED", "result": "It works.", "screens": []}]
+    assert _ended() == ("done", "done") and not stage.exists()
+
+
+def test_a_ps_that_fails_mid_run_never_ends_the_watch(device, monkeypatch):
+    """A ps that hangs once and exits non-zero once says nothing about the
+    helper: the watch goes on, nothing is stopped, and the run's own result is
+    posted, once, when ps no longer lists it."""
+    monkeypatch.setattr(ds, "_BEAT", 0)
+    device_view.Run.open("t1", RID, dict(CLAIM))
+    device_view._running.clear()
+    stage = _stale(device, RID, "t1", token=False)
+    looks = []
+
+    def ps(argv, **kw):
+        looks.append(argv)
+        if len(looks) == 2:
+            raise subprocess.TimeoutExpired(argv, 30)
+        if len(looks) == 3:
+            return subprocess.CompletedProcess(argv, 1, "", "ps: sysctl failed")
+        if len(looks) == 4:                                           # it hands back and ends
+            (stage / "out" / "exit.json").write_text(json.dumps({"code": 0, "timedOut": False}))
+            (stage / "out" / "claude.json").write_text(_claude("It works."))
+            return subprocess.CompletedProcess(argv, 0, "/sbin/launchd\n", "")
+        return subprocess.CompletedProcess(argv, 0, f"/sbin/launchd\n/usr/bin/sudo -n {HELPER} start {RID}\n", "")
+    w = Worker()
+    ds.resume(w, RID, call=lambda argv, **kw: pytest.fail("nothing to stop"),
+              alive=lambda rid: ds.helper_alive(rid, run=ps))
+    assert len(looks) == 4
+    assert w.results() == [{"status": "COMPLETED", "result": "It works.", "screens": []}]
+    assert _ended() == ("done", "done") and not stage.exists()
+
+
+def test_a_view_that_fails_never_fails_the_run(device, monkeypatch):
+    """The view is the owner's to watch: a store error there is logged, and the
+    teammate's run, its result and its clean-up go on as if there were none."""
+    def boom(*a, **k):
+        raise RuntimeError("database is locked")
+    monkeypatch.setattr(device_view.Run, "open", boom)
+    w = Worker()
+    _run(w, FakeHelper(stream=[_said("hi")]))
+    assert w.results() == [{"status": "COMPLETED", "result": "It works.", "screens": []}]
+    assert os.listdir(device.root) == []
+    monkeypatch.setattr(device_view, "reopen", boom)
+    monkeypatch.setattr(device_view, "orphans", boom)
+    _stale(device, RID, "t1", token=False)
+    ds.sweep(run=_no_helper, alive=lambda rid: True)
+    ds.resume(w, ds.take_adopted("t1")[0], call=_no_helper, alive=_gone)
+    assert w.results()[-1]["error"] == "The run ended before it handed back its results."
+    assert os.listdir(device.root) == []

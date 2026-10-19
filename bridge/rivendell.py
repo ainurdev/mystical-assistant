@@ -212,7 +212,8 @@ import urllib.request
 import uuid
 from urllib.parse import quote, urlsplit
 
-from bridge import config, device_ask, device_share, device_side, integrations, notices, rivendell_jobs, wsutil
+from bridge import (config, device_ask, device_share, device_side, device_view, integrations, notices,
+                    rivendell_jobs, wsutil)
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -961,6 +962,8 @@ class Worker:
             head = device_side.headers(self.inst)    # teammates' device runs: only on a device READY for one
             if head:
                 device_side.report_interrupted(self, head)   # runs a restart cut short, first
+                for rid in device_side.take_adopted(self.inst["id"]):   # then the ones it didn't, before any new one
+                    self._adopt_device_run(rid)
                 for item in self._api("/plugin/device-run-requests", headers=head):
                     self._apply_policy(self._enqueue("device-run", item["requestId"], item.get("repository")))
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
@@ -1872,20 +1875,41 @@ class Worker:
 
     def _run_device_run(self, item: dict) -> None:
         """A teammate's run on this shared device (bridge/device_side.py), listed
-        in flight while it runs. Then the oldest device run waiting here starts
-        by itself, whichever instance's worker holds it, and whatever else is
-        running (Ruling 2). It is no part of _active_runs (M11): the owner's own
-        jobs ran past it all along."""
+        in flight while it runs, or one taken back after a restart (adopted:
+        device_side.resume watches it to its end). Then the oldest device run
+        waiting here starts by itself, whichever instance's worker holds it, and
+        whatever else is running (Ruling 2). It is no part of _active_runs (M11):
+        the owner's own jobs ran past it all along."""
         global _device_run
         request_id = item["request_id"]
         self._track(request_id, "device-run", item["slug"], None, label=None, link=None)
         try:
-            device_side.run(self, request_id)
+            (device_side.resume if item.get("adopted") else device_side.run)(self, request_id)
         finally:
             self._untrack(request_id)
             with _device_lock:
-                _device_run = None
+                if _device_run == request_id:      # one taken back may not hold the device (_adopt_device_run)
+                    _device_run = None
             _start_next_device_run(self)
+
+    def _adopt_device_run(self, request_id: str) -> None:
+        """A teammate's run whose helper outlived a Mystical restart
+        (device_side.sweep), watched to its end on a thread of its own, like a
+        new one. Taken back at the first READY connect, before the catch-up
+        lists any new run, it holds this device's one run, so a run listed or
+        announced meanwhile is acked "queued" and starts after it. Should
+        another instance's new run have taken the device first, that one keeps
+        it (its helper waits at the helper's lock for this one). Its RUNNING row
+        names the repository its job.json kept, the claim having gone with the
+        restart."""
+        global _device_run
+        with _device_lock:
+            if _device_run is None:
+                _device_run = request_id
+        repo = device_side.staged_job(request_id).get("repository")
+        threading.Thread(target=self._run_device_run,
+                         args=({"request_id": request_id, "slug": repo, "adopted": True},),
+                         name=f"rivendell-adopt-{self.id}", daemon=True).start()
 
     def _run_in_workdir(self, what: str, kind: str, request_id: str,
                         name: "str | None", mcp_on: "str | None" = None) -> None:
@@ -3258,11 +3282,16 @@ def answer_reply(message_id: int, text: str) -> "str | bool | None":
 
 
 def start() -> None:
-    """Boot: clear what a bridge stopped mid-run left of teammates' device runs,
-    then dial every enabled instance. Only here: a settings save (reconfigure)
-    can come while a run is going. Sessions from before jobs were kept on them
-    get theirs first (rivendell_jobs.backfill), once each."""
+    """Boot: clear what a bridge stopped mid-run left of teammates' device runs
+    (taking back the ones still going) and their views past a week, then dial
+    every enabled instance. Only here: a settings save (reconfigure) can come
+    while a run is going. Sessions from before jobs were kept on them get theirs
+    first (rivendell_jobs.backfill), once each."""
     device_side.sweep()
+    try:
+        device_view.prune()
+    except Exception as e:  # noqa: BLE001 — an old view kept a while longer never holds up the boot
+        print(f"device runs: old views weren't pruned: {e}")
     try:
         if (n := rivendell_jobs.backfill()):
             print(f"rivendell: filed the job of {n} older session(s)")

@@ -12,6 +12,8 @@ import { JOB_ICON, JobsTile, JobTag } from "./JobTag";
 import { orderBranches } from "../../lib/branchorder";
 import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
+import { isDeviceRun, rowAge } from "../../lib/devicerun";
+import { DeviceTile } from "../DeviceRunPlate";
 import type { ProjectGroup } from "./ProjectsPanel";
 import { RivendellQueue } from "./RivendellQueue";
 
@@ -95,9 +97,12 @@ const JOB_TINT: ProjectTint = {
  *  plugin lands as a new lane here, not a redesign. The tab itself exists while
  *  Rivendell is installed. A lane holds what PROJECTS files under that plugin's
  *  group (lib/jobs isJob), not only sessions with its origin: meeting notes run
- *  by hand carry none, so they never showed here. */
-const PLUGINS: { label: string; match: (s: SessionBrief) => boolean }[] = [
-  { label: "RIVENDELL", match: isJob },
+ *  by hand carry none, so they never showed here. DEVICE RUNS are teammates'
+ *  runs on this device (lib/devicerun), in the device-run blue, apart from your
+ *  accent and Rivendell's purple. */
+const PLUGINS: { label: string; sub?: string; tint: string; match: (s: SessionBrief) => boolean }[] = [
+  { label: "DEVICE RUNS", sub: "teammates on this device", tint: "var(--info)", match: (s) => isDeviceRun(s.origin) },
+  { label: "RIVENDELL", tint: "var(--purple)", match: isJob },
 ];
 /** The PLUGINS tab orders by when a session was created, not last touched — a
  *  plugin run is a job you triaged, read newest-first. `created` is optional on
@@ -204,7 +209,10 @@ function SessionRow({
 }) {
   const [hov, setHov] = useState(false);
   const job = isJob(s);
-  const tint = job ? JOB_TINT : projectTint(s.project);
+  // A teammate's device run: no project of yours, so it wears the device-run blue.
+  const dev = isDeviceRun(s.origin) ? s.device : null;
+  const tint = job ? JOB_TINT : { ...projectTint(s.project), ...(dev && { color: "var(--info)", dim: "var(--info)" }) };
+  const age = dev ? rowAge(s, pulse, Date.now() / 1000) : null;
   const fv = flag ? FLAG_VIEW[flag] : null;
   // A sidebar has no room for a full ref, so a row prints the branch's last
   // segment; the full ref lives in the row tooltip. Compact drops the whole meta
@@ -257,7 +265,19 @@ function SessionRow({
                        fontWeight: on ? 600 : 500, color: on ? "var(--txb)" : "var(--txh)" }}>
           {s.title || "untitled session"}
         </span>
-        {metaShow && (
+        {dev ? (
+          // Who asked, in the run's blue, then the repo and its PR: short of
+          // room the repo's name gives way first, and the PR never does.
+          <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
+            <span className="sessproj" style={{ flex: "0 0 auto", maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--info)" }}>
+              <DeviceTile />{dev.by}
+            </span>
+            <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--mono)", color: "var(--txl)" }}>
+              {dev.repo.split("/").pop()}
+            </span>
+            {dev.pr != null && <span style={{ flex: "none", marginLeft: -2, fontFamily: "var(--mono)", color: "var(--txl)" }}>#{dev.pr}</span>}
+          </div>
+        ) : metaShow && (
           <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
             {job && <JobTag job={s.job} />}
             {target && (
@@ -317,8 +337,13 @@ function SessionRow({
                    padding: 0, fontFamily: "inherit", fontSize: "var(--t10)", lineHeight: 1, textAlign: "center",
                    color: pinned ? "var(--warn)" : "var(--txl)" }}
         >{pinned ? "★" : "☆"}</button>
-        <span style={{ flex: "none", width: 26, textAlign: "right", fontSize: "var(--t95)",
-                       color: pulse ? "var(--ok)" : "var(--txl)" }}>{ago(s.updated)}</span>
+        <span style={{ flex: "none", minWidth: 26, textAlign: "right", fontSize: "var(--t95)",
+                       color: age?.tone === "run" ? "var(--info)" : pulse ? "var(--ok)" : "var(--txl)" }}>
+          {age && (age.tone === "ok" || age.tone === "bad")
+            // ✓ / ✕ in their own colour, the age after it quiet like every row's
+            ? <><span style={{ color: age.tone === "ok" ? "var(--ok)" : "var(--err)" }}>{age.text.slice(0, 1)}</span>{age.text.slice(1)}</>
+            : age?.text ?? ago(s.updated)}
+        </span>
       </div>
     </div>
   );
@@ -365,7 +390,7 @@ function DayCut({ label }: { label: string }) {
 /** One virtualised entry in a lane list: a lane header, a session row, the
  *  idle lane's fold toggle, or a PLUGINS day label. */
 type LaneItem =
-  | { k: "head"; label: string; tint: string; count?: number; pulse: boolean; first: boolean }
+  | { k: "head"; label: string; sub?: string; tint: string; count?: number; pulse: boolean; first: boolean }
   | { k: "row"; s: SessionBrief }
   | { k: "fold"; label: string }
   | { k: "day"; label: string };
@@ -513,15 +538,18 @@ export function SessionsPanel(props: Props) {
   // read this map so they can never disagree.
   const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
   const laneOf = (s: SessionBrief) => views.get(s.id)?.lane ?? "idle";
+  // A teammate's device run is never yours to attend to: it lives in PLUGINS ▸
+  // DEVICE RUNS only, out of every other tab and the ATTENTION count.
+  const mine = sorted.filter((s) => !isDeviceRun(s.origin));
 
   // ATTENTION: the four lanes. Idle is the long tail, so it folds to four rows
   // and nothing else is capped. Searching drops the fold — a search is already
   // the filter.
-  type Lane = { label: string; tint: string; count?: number; pulse: boolean; rows: SessionBrief[]; fold: string };
+  type Lane = { label: string; sub?: string; tint: string; count?: number; pulse: boolean; rows: SessionBrief[]; fold: string };
   let lanes: Lane[] = [];
   if (mode === "attention") {
     lanes = LANES.flatMap((d) => {
-      const all = sorted.filter((s) => laneOf(s) === d.k);
+      const all = mine.filter((s) => laneOf(s) === d.k);
       if (!all.length) return [];
       const folds = d.k === "idle" && !sq && all.length > 4;
       return [{
@@ -534,10 +562,10 @@ export function SessionsPanel(props: Props) {
   } else if (mode === "plugins") {
     // PLUGINS: one lane per worker. An empty lane stays — "RIVENDELL 0" is the
     // "configured, nothing yet" answer this tab exists to give.
-    lanes = PLUGINS.map(({ label, match }) => {
+    lanes = PLUGINS.map(({ label, sub, tint, match }) => {
       const rows = sorted.filter(match).sort(byCreated);
       return {
-        label, tint: "var(--purple)", count: rows.length,
+        label, sub, tint, count: rows.length,
         pulse: rows.some((s) => laneOf(s) === "work"), rows, fold: "",
       };
     });
@@ -548,7 +576,7 @@ export function SessionsPanel(props: Props) {
     lanes = cuts.flatMap(([max, label], i) => {
       const min = i === 0 ? -1 : cuts[i - 1][0];
       const age = (s: SessionBrief) => now - s.updated;
-      const rows = sorted.filter((s) => age(s) > min && age(s) <= max);
+      const rows = mine.filter((s) => age(s) > min && age(s) <= max);
       return rows.length ? [{ label, tint: "var(--txd)", count: rows.length, pulse: false, rows, fold: "" }] : [];
     });
   }
@@ -559,7 +587,7 @@ export function SessionsPanel(props: Props) {
   const laneItems: LaneItem[] = [];
   if (mode !== "projects") {
     lanes.forEach((l, i) => {
-      laneItems.push({ k: "head", label: l.label, tint: l.tint, count: l.count, pulse: l.pulse, first: i === 0 });
+      laneItems.push({ k: "head", label: l.label, sub: l.sub, tint: l.tint, count: l.count, pulse: l.pulse, first: i === 0 });
       let day = "";
       for (const s of l.rows) {
         // PLUGINS reads as a log, like the opened jobs group: each day gets a label.
@@ -591,7 +619,7 @@ export function SessionsPanel(props: Props) {
   const drilled = !sq && open.size > 0;
   const tree = mode !== "projects" ? [] : ps.flatMap((g) => {
     if (drilled && !open.has(g.rel)) return [];
-    const f = sorted.filter((s) => jobGroup(s) === g.rel);
+    const f = mine.filter((s) => jobGroup(s) === g.rel);
     if (sq && f.length === 0) return [];
     // Nothing to show is nothing to expand — an empty project is collapsed,
     // whatever the header was last clicked to.
@@ -981,17 +1009,21 @@ export function SessionsPanel(props: Props) {
   // Tabs are icons only — the label survives as the tooltip and the
   // accessible name, so the bar stays narrow and never wraps.
   const modeTabs: { id: Mode; label: string; Icon: LucideIcon; count: number; tip: string }[] = [
-    { id: "attention", label: "Attention", Icon: BellRing, count: sorted.filter((s) => laneOf(s) !== "idle").length, tip: "Attention — grouped by what each session wants from you" },
+    { id: "attention", label: "Attention", Icon: BellRing, count: mine.filter((s) => laneOf(s) !== "idle").length, tip: "Attention — grouped by what each session wants from you" },
     { id: "projects", label: "Projects", Icon: FolderTree, count: groups.length, tip: "Projects — grouped by project" },
     ...(plugins.rivendell ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
-    { id: "recent", label: "Recent", Icon: History, count: sorted.length, tip: "Recent — one flat stream, newest first" },
+    { id: "recent", label: "Recent", Icon: History, count: mine.length, tip: "Recent — one flat stream, newest first" },
   ];
+  // The PLUGINS icon's blue dot: a teammate's run is going on this device (a
+  // search doesn't hide it).
+  const deviceLive = sessions.some((s) => isDeviceRun(s.origin) && status.get(s.id)?.state === "working");
 
   const laneHead = (it: Extract<LaneItem, { k: "head" }>) => (
     <div className="lanehead" style={{ display: "flex", alignItems: "center", gap: 9, height: 24, padding: "0 6px", marginTop: it.first ? 0 : 16 }}>
       <span className="sessdot" data-work={it.pulse}
             style={{ flex: "none", width: 6, height: 6, borderRadius: "50%", background: it.tint }} />
       <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: ".22em", color: it.tint }}>{it.label}</span>
+      {it.sub && <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--t9)", letterSpacing: ".04em", color: "var(--txl)" }}>· {it.sub}</span>}
       <span style={{ flex: 1, minWidth: 8, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
       {it.count !== undefined && <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{it.count}</span>}
     </div>
@@ -1022,6 +1054,11 @@ export function SessionsPanel(props: Props) {
                          cursor: "pointer", fontFamily: "inherit", color: on ? "var(--txb)" : "var(--txf)", transition: "color .15s ease" }}
               >
                 <m.Icon size={14} strokeWidth={1.8} aria-hidden style={{ flex: "none" }} />
+                {m.id === "plugins" && deviceLive && (
+                  <span aria-hidden
+                    style={{ position: "absolute", top: 4, left: "calc(50% + 4px)", width: 6, height: 6, borderRadius: "50%", background: "var(--info)",
+                             boxShadow: "0 0 0 2px var(--panel2), 0 0 8px var(--info)" }} />
+                )}
                 {/* Only ATTENTION's count is a number you act on; the other two
                     just measure the list you are already looking at. */}
                 {m.id === "attention" && (

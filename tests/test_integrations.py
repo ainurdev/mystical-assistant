@@ -37,7 +37,7 @@ def test_the_registry_holds_the_three_bundled_plugins():
     for p in integrations.PLUGINS:
         assert {"id", "label", "blurb", "needs", "env_keys", "origins", "routes"} <= set(p)
     assert integrations.PLUGINS[0]["env_keys"] == ("FFMPEG_BIN", "WHISPER_BIN", "WHISPER_MODEL")
-    assert integrations.PLUGINS[0]["origins"] == ("rivendell",)
+    assert integrations.PLUGINS[0]["origins"] == ("rivendell", "device-run")
 
 
 def test_a_first_boot_with_nothing_to_adopt_installs_nothing(fresh):
@@ -123,6 +123,14 @@ def test_plugin_origins_follow_the_install(fresh):
     assert integrations.is_plugin_origin("rivendell")
     assert not integrations.is_plugin_origin("dashboard")
     assert not integrations.is_plugin_origin(None)
+
+
+def test_device_run_sessions_count_as_plugin_sessions(fresh):
+    """A teammate's run on this device is listed with the plugins' sessions, and
+    only while Rivendell, which brings device runs, is installed."""
+    assert not integrations.is_plugin_origin("device-run:production")
+    integrations.set_installed("rivendell", True)
+    assert integrations.is_plugin_origin("device-run:production")
 
 
 def test_the_rivendell_worker_dials_nothing_while_not_installed(fresh, monkeypatch):

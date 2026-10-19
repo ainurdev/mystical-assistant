@@ -8,6 +8,12 @@ READY, so Rivendell never routes a run to a device that cannot take it.
 The facts come from a handful of system binaries; `run=` is the seam the tests
 use. A missing, slow or failing binary is a missing fact, never an exception: a
 device hiccup must not keep the Rivendell link down.
+
+A run helper older than this checkout's is not a reason to stop sharing: it still
+takes runs, and only Set up can replace root's copy. So that is a flag of its own,
+`outdated` on share_state, which only has the panel offer SET UP. It stays out of
+setup_state, where any False makes the device NEEDS_SETUP and takes it off
+Rivendell's list.
 """
 
 import base64
@@ -24,6 +30,8 @@ from bridge import config
 
 RUN_USER = "mysticalruns"
 HELPER = "/usr/local/libexec/mystical-run-helper"
+# The helper Set up would install: setup.sh copies the file beside it.
+REPO_HELPER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "device_setup", "mystical_run_helper.py")
 RUNS_CONFIG = "/usr/local/etc/mystical-runs.json"
 XCODE_DEV = "/Applications/Xcode.app/Contents/Developer"
 
@@ -177,6 +185,25 @@ def setup_state(exists=os.path.exists, run=subprocess.run):
     }
 
 
+def _read_bytes(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
+def helper_outdated(read=_read_bytes):
+    """Whether root's copy of the run helper is not the one Set up would install
+    now: it is there and its bytes differ from REPO_HELPER's. A newer Mystical can
+    bring a newer helper (the live view and low priority did), and the old one
+    stays until Set up runs again. A file that can't be read is "can't say", not
+    outdated, so a hiccup never offers a password prompt for nothing. shortcut:
+    both files are read whole on every state read (about 32 KB, from the page
+    cache); upgrade to a cached hash if the helper ever reaches megabytes."""
+    try:
+        return read(HELPER) != read(REPO_HELPER)
+    except OSError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # State and handshake
 # ---------------------------------------------------------------------------
@@ -188,13 +215,16 @@ def _check(key, ok, *words):
 
 
 def share_state(inst, run=subprocess.run):
-    """Where this device stands for one instance: {state, checks, facts, installed}.
+    """Where this device stands for one instance: {state, checks, facts, installed,
+    outdated}.
 
     NOT_MAC (not macOS) > OFF (Share this device is off) > XCODE_MISSING (no
     Xcode, or no iOS runtime) > NEEDS_SETUP (the hidden user, helper or Claude
     is missing, or the wall isn't on the bridge's ports now) > READY. Node and
     CocoaPods show in the checks but hold nothing back. `installed` is whether
     anything of Set up's is here, whatever the state: what REMOVE is offered on.
+    `outdated` is helper_outdated(): it changes no state, only what SET UP is
+    offered on. Off macOS there is no helper, so NOT_MAC has no `outdated`.
     """
     facts = device_facts(run)
     if facts is None:
@@ -219,7 +249,8 @@ def share_state(inst, run=subprocess.run):
         state = "NEEDS_SETUP"
     else:
         state = "READY"
-    return {"state": state, "checks": checks, "facts": facts, "installed": any(setup.values())}
+    return {"state": state, "checks": checks, "facts": facts, "installed": any(setup.values()),
+            "outdated": helper_outdated()}
 
 
 def _last_run_path():

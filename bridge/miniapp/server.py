@@ -215,6 +215,8 @@ def _session_brief(s: dict) -> dict:
             "goal": store.parse_goal(s.get("goal")),
             # A Rivendell job's kind and facts (rivendell_jobs): its tag, plate and bar.
             "job": store.parse_job(s.get("job")),
+            # A teammate's device run: who asked, for what, how it ended (None = not one).
+            "device": store.parse_device(s.get("device")),
             "lifecycle": s.get("lifecycle"),
             "work_cwd": wt if wt_branch else None,
             "worktree": git.worktree_name(work),

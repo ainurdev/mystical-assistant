@@ -13,6 +13,7 @@ import base64
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import types
 
@@ -56,6 +57,9 @@ FACTS = {"id": ID, "name": "Mahziyar’s MacBook Pro", "os": "macOS", "osVersion
 SET_UP = {"user": True, "helper": True, "claude": True, "wall": True}
 # This bridge's own ports, which Set up walls the hidden user off: the dashboard, the Mini App, the landing page.
 WALLED = sorted({config.DASH_PORT, config.MINIAPP_PORT, config.LANDING_PORT})
+# The run helper as this checkout installs it, and as an older Mystical installed it.
+HELPER_NEW = b"#!/usr/bin/python3\n# the run helper this checkout installs\n"
+HELPER_OLD = b"#!/usr/bin/python3\n# the run helper from before the live view\n"
 
 
 def fake_run(answers=None):
@@ -312,12 +316,55 @@ def test_claude_is_what_set_up_recorded_not_a_look_inside_the_hidden_home(monkey
     assert not [p for p in looked if p.startswith("/Users/mysticalruns")]
 
 
+# --- helper_outdated --------------------------------------------------------------
+
+def _reads(installed, repo=HELPER_NEW):
+    """A `read` for helper_outdated: the installed helper holds `installed` and
+    this checkout's holds `repo` (None: there is no such file, an OSError: it
+    can't be read). Any other path is a KeyError, so a test notices a file it did
+    not expect."""
+    def read(path):
+        got = {ds.HELPER: installed, ds.REPO_HELPER: repo}[path]
+        if got is None:
+            raise FileNotFoundError(path)
+        if isinstance(got, OSError):
+            raise got
+        return got
+    return read
+
+
+@pytest.mark.parametrize("why, installed, repo, outdated", [
+    ("an older helper is installed", HELPER_OLD, HELPER_NEW, True),
+    ("the installed helper is this checkout's", HELPER_NEW, HELPER_NEW, False),
+    ("no helper is installed", None, HELPER_NEW, False),
+    ("the installed one can't be read", PermissionError("root's"), HELPER_NEW, False),
+    ("this checkout's can't be read", HELPER_OLD, FileNotFoundError("moved"), False),
+])
+def test_the_helper_is_outdated_only_when_one_is_installed_and_it_differs(why, installed, repo, outdated):
+    assert ds.helper_outdated(read=_reads(installed, repo)) is outdated, why
+
+
+def test_what_set_up_installs_is_not_outdated_until_it_differs(monkeypatch, tmp_path):
+    """The default read, on real files. setup.sh installs a copy of the file beside
+    it, so a copy of REPO_HELPER is current; a REPO_HELPER that pointed anywhere
+    else would read as unreadable, never outdated, and SET UP would never be offered."""
+    assert os.path.isfile(os.path.join(os.path.dirname(ds.REPO_HELPER), "setup.sh"))
+    copy = tmp_path / "mystical-run-helper"
+    shutil.copyfile(ds.REPO_HELPER, copy)
+    monkeypatch.setattr(ds, "HELPER", str(copy))
+    assert ds.helper_outdated() is False
+    copy.write_bytes(HELPER_OLD)
+    assert ds.helper_outdated() is True
+
+
 # --- share_state ------------------------------------------------------------------
 
-def _device(monkeypatch, facts=FACTS, setup=SET_UP):
-    """This device is what the arguments say, whatever machine the test runs on."""
+def _device(monkeypatch, facts=FACTS, setup=SET_UP, helper=HELPER_NEW):
+    """This device is what the arguments say, whatever machine the test runs on
+    (`helper`: what the installed run helper holds, against this checkout's)."""
     monkeypatch.setattr(ds, "device_facts", lambda *a, **k: facts)
     monkeypatch.setattr(ds, "setup_state", lambda *a, **k: setup)
+    monkeypatch.setattr(ds.helper_outdated, "__defaults__", (_reads(helper),))
 
 
 def _state(monkeypatch, inst=None, facts=FACTS, setup=SET_UP):
@@ -339,6 +386,7 @@ def test_a_device_that_has_everything_is_ready(monkeypatch):
         {"key": "wall", "label": "WALL", "ok": True},
     ]
     assert s["installed"] is True
+    assert s["outdated"] is False, "the installed helper is this checkout's"
 
 
 def test_sharing_defaults_to_on_so_an_old_instance_shares(monkeypatch):
@@ -444,6 +492,18 @@ def test_the_device_header_is_url_safe_base64_without_padding(monkeypatch):
     _device(monkeypatch, facts)
     raw = ds.handshake_headers({})[1].partition(": ")[2]
     assert _decode(raw) == facts
+
+
+def test_outdated_helper_stays_ready_and_offers_setup(monkeypatch):
+    """A helper from before the live view still takes runs, so the device stays
+    shared; `outdated` only has the panel offer SET UP. It is no part of
+    setup_state: any False there would take the device off Rivendell's list."""
+    _device(monkeypatch, helper=HELPER_OLD)
+    s = ds.share_state({})
+    assert s["state"] == "READY" and s["outdated"] is True
+    feature, device = ds.handshake_headers({})
+    assert feature == "X-Mystical-Features: device-runs"
+    assert _decode(device.partition(": ")[2]) == FACTS
 
 
 @pytest.mark.parametrize("why, inst, facts, setup", [

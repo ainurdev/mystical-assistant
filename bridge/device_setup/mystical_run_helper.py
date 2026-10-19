@@ -11,9 +11,13 @@ else, run it as root without a password:
 The owner's bridge stages a run in /Users/Shared/Mystical Runs/<run-id>/, a 0700
 folder of the owner's holding job.json, token and code.tar.gz. `start` unpacks
 the code in /Users/mysticalruns/runs/<run-id>/ and runs Claude Code there as
-mysticalruns, with the asker's token, then hands back out/exit.json,
-out/claude.json and out/screens/. It exits 0 on a finished run, whatever Claude
-made of it. Anything it won't or can't do is one stderr line and a non-zero exit.
+mysticalruns, with the asker's token. Claude's steps (its stream-json output,
+one event a line) go into the stage's live.jsonl as they happen, for the owner's
+bridge to show. At the end `start` hands back out/exit.json, out/claude.json (the
+stream's last result line) and out/screens/. It exits 0 on a finished run,
+whatever Claude made of it. Anything it won't or can't do is one stderr line and
+a non-zero exit; the line is dropped, and the exit status kept, if the bridge
+that started the helper has since closed its end of that pipe.
 
 Root sits between two parties it must not trust. One is the owner, who fills
 the stage. The other is the run: a teammate's prompt plus their repository's
@@ -27,6 +31,16 @@ code, with every tool allowed. So root never follows a link either could plant:
   deletes the tree with shutil's link-safe rmtree.
 - Results reach the stage through the owner's own tar, so nothing root writes
   lands where a link points. Only plain files with plain names get through.
+- The one file root writes into the stage itself is live.jsonl, and only through
+  a descriptor it opened on a name that can't be a link: made new (0600) through
+  the stage's checked handle (O_EXCL, O_NOFOLLOW, so a name already taken, a link
+  included, refuses the run) and handed to the owner at once. It holds Claude's
+  stdout, which the run already controls whole, so the owner reads nothing there
+  the run couldn't have said. Root reads back only its tail, to find the result
+  line (last_result): every line there is the run's to write. One that doesn't
+  hold "result" is never parsed, and in one that does, numbers stay text (a line
+  of a million digits would take minutes to convert); one that isn't a result is
+  skipped.
 - Claude gets the token in its environment only (sudo -E), never in an argument
   list, which any account on the Mac can read with ps.
 - Every process started as mysticalruns starts in / or in the run's own code
@@ -41,6 +55,10 @@ code, with every tool allowed. So root never follows a link either could plant:
   Otherwise the owner's passwordless sudo would run whatever replaced them.
 - Claude's stderr is kept as out/claude.err (the first megabyte), so a failed
   run says why.
+- Claude and everything it starts run at utility QoS (`taskpolicy -c utility`):
+  the owner's own apps, builds and sessions stay quick, and a run takes longer
+  while they are busy. taskpolicy execs in place, so the process the helper
+  starts is still the group leader that the pid file and the kill name.
 - No run reaches the owner's bridge. Set up walled the hidden user off its ports
   (the dashboard, which hands out its token and an owner's shell with it; the
   Mini App; the landing page) with a pf rule, and recorded them as the config's
@@ -76,7 +94,6 @@ import stat
 import subprocess
 import sys
 import tarfile
-import tempfile
 import time
 
 RUN_USER = "mysticalruns"
@@ -89,6 +106,9 @@ RUN_PATH = "/usr/local/libexec/mystical-runs:/opt/homebrew/bin:/usr/local/bin:/u
 GRACE = 10                                     # seconds: a group's TERM to KILL, and the most a kill by user keeps at it
 BOOTOUT_WAIT = 30                              # seconds one launchctl bootout gets before it is killed
 ERR_CAP = 1 << 20                              # bytes of Claude's stderr handed back
+# shortcut: only the stream's last 8 MB is searched for the result line, a deeper one is lost; scan in blocks if a run gets there
+RESULT_TAIL = 8 << 20
+TASKPOLICY = ["/usr/sbin/taskpolicy", "-c", "utility"]   # QoS utility; execs in place, so the pid stays the group leader
 _QUIET = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
 _RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 _SCREEN = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_. -]{0,127}")   # a screenshot's name: no folder, not hidden
@@ -195,22 +215,47 @@ def claude_env(job, token, run_dir):
 
 
 def claude_argv(prompt, claude_path="/Users/mysticalruns/.local/bin/claude"):
-    """Claude Code, headless, with every tool allowed and no MCP server at all."""
-    return [claude_path, "-p", prompt, "--output-format", "json", "--dangerously-skip-permissions",
+    """Claude Code, headless, with every tool allowed and no MCP server at all. It
+    streams its steps as JSON lines (stream-json, which -p wants --verbose for),
+    the last of which is the result."""
+    return [claude_path, "-p", prompt, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions",
             "--strict-mcp-config", "--mcp-config", '{"mcpServers":{}}']
+
+
+def last_result(data):
+    """The last {"type":"result",…} line of Claude's stream-json output, as it
+    was written, or b"" when there is none (a run killed before it got there).
+    `data` is the run's own stdout, so any line may be anything, and a line that
+    isn't a result is skipped, the half line cut at the start of a tail included.
+    Root parses it, so a line only reaches json if it holds "result", and json
+    leaves its integers as text: the system Python has no limit on converting a
+    digit string and takes time quadratic in its length, so a line of a million
+    digits would hold root for minutes, deaf to TERM. The line is returned as
+    written, so no integer is ever needed."""
+    for line in reversed(data.splitlines()):
+        if b'"result"' not in line:
+            continue
+        try:
+            event = json.loads(line, parse_int=str)
+        except (ValueError, RecursionError):   # not JSON, or nested deeper than json will read
+            continue
+        if isinstance(event, dict) and event.get("type") == "result":
+            return line
+    return b""
 
 
 def launch_argv(launch, uid, inner):
     """`inner` as mysticalruns: through sudo (the default), or inside that user's
     launchd session ("asuser"), the one alternative, for a Simulator that needs
-    it. -E hands the command the environment sudo was given, which is claude_env
-    and nothing else. There is no -H, which would reset HOME to the hidden user's
-    own home, shared by every run."""
+    it. Either way at utility QoS (TASKPOLICY), which everything the run starts
+    inherits. -E hands the command the environment sudo was given, which is
+    claude_env and nothing else. There is no -H, which would reset HOME to the
+    hidden user's own home, shared by every run."""
     as_runs = ["/usr/bin/sudo", "-E", "-u", RUN_USER]
     if launch == "sudo":
-        return as_runs + list(inner)
+        return TASKPOLICY + as_runs + list(inner)
     if launch == "asuser":
-        return ["/bin/launchctl", "asuser", str(uid)] + as_runs + list(inner)
+        return TASKPOLICY + ["/bin/launchctl", "asuser", str(uid)] + as_runs + list(inner)
     raise ValueError("launch must be sudo or asuser, not %r" % (launch,))
 
 
@@ -276,6 +321,22 @@ def _open_stage(stage, uid):
             os.close(fd)
         raise Refused(err)
     return fds
+
+
+def _open_live(stage_fd, owner_uid):
+    """<stage>/live.jsonl, new: Claude's stdout, which the owner's bridge follows as
+    the run goes. Made through the stage's checked handle without following a
+    link, and refused where the name is taken (a file or a link someone planted
+    there); handed to the owner at once."""
+    fd = None
+    try:
+        fd = os.open("live.jsonl", os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=stage_fd)
+        os.fchown(fd, owner_uid, -1)
+        return os.fdopen(fd, "w+b")
+    except OSError:
+        if fd is not None:
+            os.close(fd)
+        raise Refused("The stage already has a live.jsonl.")
 
 
 def _kill_group(pgid, leader=None):
@@ -422,20 +483,21 @@ def _put(tar, name, f=None, size=0):
 
 def _hand_back(popen, run_dir, stage, owner_uid, claude_out, exit_info):
     """The results, into the stage's out/: exit.json and claude.json from this
-    helper, plus Claude's stderr (its first ERR_CAP bytes) and the screenshots
-    the run saved. mysticalruns's own tar reads those two, so a link reaches
-    nothing that user couldn't read. The owner's own tar writes everything, so
-    nothing lands where a link points."""
+    helper (claude.json is the result line found in the last RESULT_TAIL bytes
+    of Claude's stream, `claude_out`), plus Claude's stderr (its first ERR_CAP
+    bytes) and the screenshots the run saved. mysticalruns's own tar reads those
+    two, so a link reaches nothing that user couldn't read. The owner's own tar
+    writes everything, so nothing lands where a link points."""
     exit_json = json.dumps(exit_info).encode()
+    claude_out.seek(max(0, os.fstat(claude_out.fileno()).st_size - RESULT_TAIL))
+    report = last_result(claude_out.read(RESULT_TAIL))
     writer = popen(["/usr/bin/sudo", "-u", "#%d" % owner_uid, "/usr/bin/tar", "-xf", "-", "-C", stage],
                    stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd="/")
     try:
         with tarfile.open(fileobj=writer.stdin, mode="w|") as dst:
             _put(dst, "out/screens")
             _put(dst, "out/exit.json", io.BytesIO(exit_json), len(exit_json))
-            size = os.fstat(claude_out.fileno()).st_size
-            claude_out.seek(0)
-            _put(dst, "out/claude.json", claude_out, size)
+            _put(dst, "out/claude.json", io.BytesIO(report), len(report))
             reader = popen(["/usr/bin/sudo", "-u", RUN_USER, "/usr/bin/tar", "-cf", "-", "-C", run_dir,
                             "out/screens", "out/claude.err"],
                            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd="/")
@@ -518,7 +580,7 @@ def _start(run_id, cfg, popen):
             "The run's folders couldn't be made.")
         _as(RUN_USER, popen, ["/usr/bin/tar", "-xzf", "-", "-C", code, "--no-same-owner"],
             "The code snapshot didn't unpack.", stdin=tar_fd)
-        with tempfile.TemporaryFile() as out:   # Claude's stdout stays in root's hands
+        with _open_live(stage_fd, cfg["uid"]) as out:   # Claude's stdout is the stage's live.jsonl
             rc, timed_out = _launch(argv, claude_env(job, token, run_dir), run_dir, run_uid, timeout, popen, out)
             _hand_back(popen, run_dir, stage, cfg["uid"], out, {"code": rc, "timedOut": timed_out})
     finally:
@@ -571,6 +633,17 @@ def _stop(run_id, popen):
         _kill_user(popen)   # and whatever setsid() out of the group
 
 
+def _say(line):
+    """One line on stderr. The bridge that started the helper may have re-exec'd
+    since, closing its end of that pipe: the line is then dropped, and so is
+    stderr, or Python would flush what it couldn't write again at exit and end
+    with status 120 in place of the one main returns."""
+    try:
+        print(line, file=sys.stderr)
+    except OSError:
+        sys.stderr = io.StringIO()
+
+
 def main(argv=None, popen=subprocess.Popen):
     """mystical-run-helper start|stop <run-id>, for the owner recorded at Set up only."""
     argv = sys.argv[1:] if argv is None else argv
@@ -588,10 +661,10 @@ def main(argv=None, popen=subprocess.Popen):
             stop(argv[1], popen)
         return 0
     except Refused as e:
-        print("mystical-run-helper: %s" % e, file=sys.stderr)
+        _say("mystical-run-helper: %s" % e)
         return 2
     except Exception as e:  # noqa: BLE001 — one line, never a traceback
-        print("mystical-run-helper: %s: %s" % (type(e).__name__, " ".join(str(e).split())), file=sys.stderr)
+        _say("mystical-run-helper: %s: %s" % (type(e).__name__, " ".join(str(e).split())))
         return 1
 
 
