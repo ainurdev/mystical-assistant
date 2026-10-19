@@ -3189,3 +3189,28 @@ def test_work_create_files_on_the_board_another_remote_names(workers, monkeypatc
     calls = _nr(workers, monkeypatch)
     assert "Created NRA-74" in rivendell.work_create("/x", "Add audit log")
     assert calls[-1][3]["tasklistId"] == "l-in"
+
+
+def test_a_dead_connection_leaves_the_healthy_one_usable(workers, monkeypatch):
+    """tasks() hands back a dead connection's last good answer, marked stale;
+    its boards must not be asked about (a hung host would hold the call for the
+    HTTP timeout) and must not sink the healthy connection's answer."""
+    calls = _on_board(workers, monkeypatch)
+    dead_calls = []
+    dead = _worker(id="b", name="local")
+    dead.status, dead.status_detail = "error", "connection refused"
+    dead._last_tasks["acme/app"] = {"projects": [{"id": "p2", "name": "Local", "url": "https://lo/projects/p2"}],
+                                    "tasks": []}
+    dead._api = _rv({}, {}, dead_calls)
+    workers["b"] = dead
+    text = rivendell.work_list("/x")
+    assert "NR Chatbot & Complaints ▸ Inbox" in text and "local couldn't answer" in text
+    assert "Created NRA-74" in rivendell.work_create("/x", "Add audit log")
+    assert dead_calls == [] and calls[-1][2] == "/task-management/tasks"
+
+
+def test_a_refused_project_read_is_reported_not_called_boardless(workers, monkeypatch):
+    _on_board(workers, monkeypatch, routes={
+        ("read_route", "/projects/p1"): "GET /projects/p1 answered 403: Forbidden resource"})
+    text = rivendell.work_list("/x")
+    assert "403" in text and "isn't on a Rivendell task board" not in text

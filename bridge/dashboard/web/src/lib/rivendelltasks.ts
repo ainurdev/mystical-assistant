@@ -165,7 +165,7 @@ export function workPrompt(t: Pick<RivendellTask, "name" | "url" | "htmlUrl"> & 
   if (d?.spec) lines.push(`Spec: ${d.spec.url}`);
   const at = [t.htmlUrl && `Teamwork: ${t.htmlUrl}`, t.url && `Rivendell: ${t.url}`].filter(Boolean).join(" · ");
   if (at) lines.push(at);
-  if (t.key) lines.push(`Put ${t.key} in the branch name and the PR title, so Rivendell links the PR to this task.`);
+  if (t.key) lines.push(`Put ${t.key} in the branch name, the commit messages and the PR title, so Rivendell links the PR to this task.`);
   const desc = d?.spec ? "" : d?.description?.trim() ?? "";
   if (desc) lines.push("", desc.length > 1500 ? `${desc.slice(0, 1500)}…` : desc);
   return `${lines.join("\n")}\n\n`;

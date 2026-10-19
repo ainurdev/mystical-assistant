@@ -110,9 +110,10 @@ _PUSH_NOTE = (
 _RIVENDELL_NOTE = (
     "This repo's work is tracked on a Rivendell task board. Before you change code for a "
     "piece of work, call mcp__goals__ListRivendellTasks (a deferred tool: load it with "
-    "ToolSearch first). If an open task covers the work, put its key in the branch name, "
-    "keeping the repo's own branch style (e.g. fix/NRA-61-login-redirect), and in the PR "
-    "title, so Rivendell links the PR to the task. If none covers it, ask the user with one "
+    "ToolSearch first). If an open task covers the work, carry its key: in the PR title, so "
+    "Rivendell links the PR to the task; in the name of a branch you create, keeping the "
+    "repo's own branch style (e.g. fix/NRA-61-login-redirect), but never rename a branch "
+    "that already exists; and in your commit messages. If none covers it, ask the user with one "
     "AskUserQuestion card whether to create one, naming the board and list the tool reports. "
     "On yes, call mcp__goals__CreateRivendellTask and use the new key the same way; on no, "
     "don't ask again for that work. Check once per piece of work, and again for each new one "

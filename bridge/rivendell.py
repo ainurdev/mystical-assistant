@@ -2880,11 +2880,25 @@ def _boards(d: dict) -> list:
     """The boards behind the projects a tasks() answer names: each project's
     linked Teamwork projects (read_route /projects/<id>), minus the ones gone
     from Teamwork, once each. Labelled with the instance when boards come from
-    more than one connection, so `board` can tell same-named ones apart."""
+    more than one connection, so `board` can tell same-named ones apart.
+
+    A connection that is down is skipped: tasks() already named it in
+    `errors` and handed back its last good answer, and asking its dead host
+    would hold the call for the HTTP timeout. A read that fails becomes one
+    more `errors` line, so one connection never sinks another's boards."""
     out, seen = [], set()
     for p in d.get("projects") or []:
-        w = _worker(p["instance_id"])
-        proj = _tool(w, "read_route", {"path": f"/projects/{p['id']}"})
+        try:
+            w = _worker(p["instance_id"])
+        except TasksError:
+            continue
+        if w.status in ("error", "auth_error"):
+            continue
+        try:
+            proj = _tool(w, "read_route", {"path": f"/projects/{p['id']}"})
+        except TasksError as e:
+            d["errors"].append({"instance_id": w.id, "instance": w.name, "error": e.code, "detail": str(e)})
+            continue
         for b in (proj.get("teamworkProjects") if isinstance(proj, dict) else None) or []:
             bid = b.get("teamworkProjectId")
             if not bid or b.get("missing") or (w.id, bid) in seen:

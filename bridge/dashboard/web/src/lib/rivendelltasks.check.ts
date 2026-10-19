@@ -121,7 +121,7 @@ ok(workPrompt(task, { description: "Do the thing.", tasklist: null, createdBy: n
   .includes("\n\nDo the thing.\n"), "with no spec link, the description itself goes in");
 ok(workPrompt(task, null).startsWith("Rivendell task: "), "and it still works before the peek has loaded");
 eq(workPrompt({ ...task, key: "NRA-61" }, null),
-  "Rivendell task: T26 — Moneybird OAuth ⏸\nTeamwork: https://tw/50998944 · Rivendell: https://rv/tasks/t26\nPut NRA-61 in the branch name and the PR title, so Rivendell links the PR to this task.\n\n",
+  "Rivendell task: T26 — Moneybird OAuth ⏸\nTeamwork: https://tw/50998944 · Rivendell: https://rv/tasks/t26\nPut NRA-61 in the branch name, the commit messages and the PR title, so Rivendell links the PR to this task.\n\n",
   "WORK ON IT tells the session to carry the task key");
 eq(sentryPrompt("Prisma error", { label: "BACKEND-9", url: "https://s/9" }),
   "Sentry issue BACKEND-9: https://s/9\nOn Rivendell's todolist: Prisma error\n\n", "FIX IT names the issue and why");
