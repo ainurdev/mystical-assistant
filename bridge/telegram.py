@@ -128,17 +128,18 @@ def panel_kb(chat_id: int, session_id: str | None = None,
         {"text": label, "web_app": {"url": state.miniapp_url + (f"?{q}" if q else "")}}]]}
 
 
-def send(chat_id: int, text: str, reply_markup: dict | None = None):
+def send(chat_id: int, text: str, reply_markup: dict | None = None, markdown: bool = True):
     """Send `text` (split on lines past TG_MAX), buttons on the last chunk.
     Returns the last message Telegram accepted — the one carrying the buttons,
-    which a later reply or edit refers to — or None."""
+    which a later reply or edit refers to — or None. markdown=False sends text
+    from outside as typed (only escaped), so none of it becomes a link."""
     text = text or "(empty)"
     extra = {"reply_markup": json.dumps(reply_markup)} if reply_markup else {}
     # Margin under TG_MAX: escaping and tags only ever grow the text.
     chunks = _chunks(text, config.TG_MAX - 512) or [text]
     sent = None
     for i, raw in enumerate(chunks):
-        html = _md_to_html(raw)
+        html = _md_to_html(raw) if markdown else _esc(raw)
         params = dict(chat_id=chat_id, disable_web_page_preview="true",
                       # Buttons ride the LAST chunk: that's where reading ends.
                       **(extra if i == len(chunks) - 1 else {}))

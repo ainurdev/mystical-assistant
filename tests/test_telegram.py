@@ -114,6 +114,20 @@ def test_send_falls_back_to_plain_text_when_telegram_rejects_html():
     assert sent[-1]["text"] == "**hi**"
 
 
+def test_send_without_markdown_shows_the_text_as_typed():
+    """Text from outside (a calendar invite, a model's answer) must never become
+    markup: a markdown link would be a link whose words hide where it goes."""
+    sent = []
+    telegram.tg, real = (lambda method, **p: sent.append(p) or {"ok": True}), telegram.tg
+    try:
+        telegram.send(1, "[Re-sign in](https://evil.example) **now** <b>x</b> & `code`", markdown=False)
+    finally:
+        telegram.tg = real
+    (params,) = sent
+    assert params["parse_mode"] == "HTML" and "<a" not in params["text"]
+    assert params["text"] == "[Re-sign in](https://evil.example) **now** &lt;b&gt;x&lt;/b&gt; &amp; `code`"
+
+
 def test_panel_kb_deep_links_to_the_session(monkeypatch):
     monkeypatch.setattr(telegram.state, "miniapp_url", "https://x.example")
     kb = telegram.panel_kb(42, "sess1", "/org/repo", "open")

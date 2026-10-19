@@ -1456,15 +1456,17 @@ def test_notify_queued_noop_when_already_decided(monkeypatch):
     assert calls == []
 
 
-def test_deliver_telegram_sends_to_dash_chat(monkeypatch):
+def test_deliver_telegram_sends_to_dash_chat_without_markdown(monkeypatch):
+    """Every Rivendell ping carries text from outside (titles, names, a model's lead), so it
+    goes as typed: no markdown turns into a link."""
     import bridge.telegram as tg_mod
     sent = []
-    monkeypatch.setattr(tg_mod, "send", lambda chat, text, kb: sent.append((chat, text, kb)))
+    monkeypatch.setattr(tg_mod, "send", lambda chat, text, kb, markdown=True: sent.append((chat, text, kb, markdown)))
     monkeypatch.setattr(rivendell.config, "NOTIFY_ENABLE", True)
     monkeypatch.setattr(rivendell.config, "TOKEN", "x")
     monkeypatch.setattr(rivendell.config, "DASH_CHAT_ID", 555)
     _worker()._deliver_telegram("hi", {"inline_keyboard": []})
-    assert sent == [(555, "hi", {"inline_keyboard": []})]
+    assert sent == [(555, "hi", {"inline_keyboard": []}, False)]
 
 
 def test_deliver_telegram_silent_without_telegram(monkeypatch):
@@ -1576,6 +1578,27 @@ def test_a_finished_brief_emits_rv_brief_not_rv_done_and_sends_the_brief_message
     (text, kb), = sent
     assert text.startswith("✦ Brief ready: Weekly sync\n") and text.endswith("\nTwo tasks shipped.")
     assert kb["inline_keyboard"][0][0]["url"] == _BRIEF_URL
+
+
+def test_brief_ready_shows_a_markdown_link_in_its_name_or_lead_as_typed(monkeypatch):
+    """The meeting's name comes from any calendar invite and the lead is the model's: a markdown
+    link in either would arrive as a link whose words hide where it goes. OPEN BRIEF stays a button."""
+    import bridge.telegram as tg_mod
+    evil = "[Re-sign in](https://evil.example)"
+    frame = {**_BRIEF_FRAME, "requestId": "b-evil", "meeting": {**_BRIEF_FRAME["meeting"], "name": evil}}
+    w, _stubbed = _brief_ran(monkeypatch, "b-evil", frame)
+    monkeypatch.setattr(w, "_deliver_telegram", rivendell.Worker._deliver_telegram.__get__(w))   # the real one
+    monkeypatch.setattr(rivendell.config, "TOKEN", "x")
+    monkeypatch.setattr(rivendell.config, "DASH_CHAT_ID", 555)
+    calls = []
+    monkeypatch.setattr(tg_mod, "tg", lambda method, **p: calls.append(p) or {"message_id": 1})
+    lead = f"Sign-in moved, see {evil} first."
+    w._ping_done("b-evil", True, json.dumps({"lead": lead, "sections": [], "projects": []}),
+                 kind_path="meeting-brief-requests")
+    (params,) = calls
+    assert "<a" not in params["text"]
+    assert params["text"].startswith(f"✦ Brief ready: {evil}\n") and params["text"].endswith(f"\n{lead}")
+    assert json.loads(params["reply_markup"]) == {"inline_keyboard": [[{"text": "Open brief ↗", "url": _BRIEF_URL}]]}
 
 
 def test_a_finished_brief_waits_for_its_own_telegram_route(monkeypatch):

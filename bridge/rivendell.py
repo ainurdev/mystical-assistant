@@ -2094,7 +2094,8 @@ class Worker:
             return
         try:
             from bridge import telegram   # local import: telegram pulls state/config
-            telegram.send(config.DASH_CHAT_ID, text, kb)
+            # Titles, meeting names and a model's lead come from outside: a markdown link there must not become a disguised link.
+            telegram.send(config.DASH_CHAT_ID, text, kb, markdown=False)
         except Exception as e:  # noqa: BLE001 — a ping failure must never crash a worker
             print(f"rivendell[{self.name}]: queue Telegram ping failed: {e}")
 
