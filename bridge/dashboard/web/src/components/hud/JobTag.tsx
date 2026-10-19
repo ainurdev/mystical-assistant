@@ -1,4 +1,4 @@
-import { GitPullRequest, Hammer, Inbox, ListChecks, Newspaper, PenLine, Presentation, ScrollText, Users, Video } from "lucide-react";
+import { GitPullRequest, Hammer, History, Inbox, ListChecks, Newspaper, PenLine, Presentation, ScrollText, Users, Video } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { RivendellJob } from "../../api";
 import { jobLabel } from "../../lib/jobs";
@@ -6,7 +6,7 @@ import { jobLabel } from "../../lib/jobs";
 /** Each kind's glyph, beside its word (lib/jobs JOB_LABEL). */
 export const JOB_ICON: Record<NonNullable<RivendellJob["kind"]>, LucideIcon> = {
   review: GitPullRequest, impl: Hammer, taskdesc: PenLine, todolist: ListChecks, changelog: ScrollText,
-  news: Newspaper, deck: Presentation, video: Video, "meeting-notes": Users,
+  news: Newspaper, deck: Presentation, video: Video, "meeting-notes": Users, "project-summary": History,
 };
 
 /** A job's tag on a session row: its glyph and word in Rivendell's purple. A

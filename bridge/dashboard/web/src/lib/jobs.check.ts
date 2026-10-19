@@ -14,9 +14,10 @@ console.assert(jobGroup({ origin: "rivendell:a", project: "/ainurhq/efas/app" })
 console.assert(jobGroup({ origin: "dashboard", project: "/mystical-assistant" }) === "/mystical-assistant", "yours stays in its folder");
 
 console.assert(jobLabel({ kind: "news" }) === "NEWSPAPER", "the queue's word");
+console.assert(jobLabel({ kind: "project-summary" }) === "SUMMARY", "a project summary reads SUMMARY");
 console.assert(jobLabel({ kind: "todolist", step: "recommendations" }) === "RECOMMEND", "step 1 reads as what it is");
 console.assert(jobLabel(null) === "RIVENDELL", "no kind on record");
-console.assert(oneShot({ kind: "review" }) && oneShot({ kind: "news" }), "answers are the point");
+console.assert(oneShot({ kind: "review" }) && oneShot({ kind: "news" }) && oneShot({ kind: "project-summary" }), "answers are the point");
 console.assert(!oneShot({ kind: "impl" }), "an implementation keeps the composer");
 console.assert(!oneShot({}) && !oneShot(null), "no kind, no bar");
 
@@ -31,6 +32,7 @@ console.assert(!canRunAgain({ kind: "review" }, today), "no PR id, nothing to fi
 console.assert(canRunAgain({ kind: "news", date: "2026-10-18" }, today), "today's paper reprints");
 console.assert(!canRunAgain({ kind: "news", date: "2026-10-17" }, today), "yesterday's doesn't");
 console.assert(!canRunAgain({ kind: "video" }, today) && !canRunAgain({ kind: "changelog", project_id: "p" }, today), "not from here");
+console.assert(!canRunAgain({ kind: "project-summary", project_id: "p" }, today), "asked for again on its project's page");
 
 const now = new Date(2026, 9, 18, 19, 0);
 console.assert(dayLabel(new Date(2026, 9, 18, 8, 0).getTime() / 1000, now) === "TODAY", "today");
