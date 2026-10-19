@@ -1218,6 +1218,28 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"text": "No session is bound to this tool, so it can't wait."})
             return self._json({"text": waits.add(chat, s["id"], str(body.get("session") or ""),
                                                  str(body.get("then") or ""))})
+        if path == "/local/rivendell/work":
+            # The goals MCP's ListRivendellTasks / CreateRivendellTask
+            # (bridge/goal_mcp.py, bridge/rivendell.py work_list/work_create).
+            # Every answer, a refusal too, is text for Claude, as /local/wait's
+            # are. The folder is the session's own (the worktree its shell moved
+            # into, else where it started); `repo` is read against it.
+            s = store.get_by_claude_session_id(str(body.get("claude_session_id") or ""))
+            if not s or s["chat_id"] != chat:
+                return self._json({"text": "No session is bound to this tool, so it can't reach Rivendell."})
+            if str(s.get("origin") or "").startswith("rivendell"):
+                return self._json({"text": "Rivendell's own runs don't file tasks: this run already has its job."})
+            base = (_abs_within(s.get("work_cwd") or "") or _abs_within(s.get("cwd") or "")
+                    or _abs_project(s["project"]))
+            repo = str(body.get("repo") or "").strip()
+            d = _abs_within(os.path.join(base or "", os.path.expanduser(repo))) if repo else base
+            if d is None:
+                return self._json({"text": f"{repo or 'This session’s folder'} isn't a folder inside the workspace."})
+            if body.get("action") == "create":
+                return self._json({"text": rivendell.work_create(
+                    d, str(body.get("title") or ""), str(body.get("description") or ""),
+                    str(body.get("board") or ""))})
+            return self._json({"text": rivendell.work_list(d)})
         if path.startswith("/local/sessions/") and path.endswith("/wait"):
             from bridge import waits
             sid = path[len("/local/sessions/"):-len("/wait")]

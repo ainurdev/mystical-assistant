@@ -229,6 +229,14 @@ GRAPH_ENABLE = os.environ.get("GRAPH_ENABLE", "1").lower() \
 TASKS_DIGEST = os.environ.get("TASKS_DIGEST", "1").lower() \
     not in ("0", "false", "no", "")
 
+# --- Rivendell tasks -----------------------------------------------------------
+# A session in a repo on a Rivendell task board is told to find the task behind
+# its work, or ask and then file one tagged `unplanned`, and gets the two goals
+# tools that do it (bridge/rivendell.py work_list / work_create). Off, no note
+# goes out and the tools are hidden. Rivendell's own runs never get either.
+RIVENDELL_TRACK = os.environ.get("RIVENDELL_TRACK", "1").lower() \
+    not in ("0", "false", "no", "")
+
 # --- Generated commit messages -----------------------------------------------
 # The GIT tab's "generate" button and the header's SHIP button describe a diff
 # with a one-shot haiku call. Unlike the extras above this only runs when you

@@ -169,3 +169,74 @@ def test_todolist_relays_to_the_instance(monkeypatch):
 def test_todolist_needs_both_ids(monkeypatch):
     monkeypatch.setattr(rivendell, "todolist", lambda iid, pid: pytest.fail("must not be called"))
     assert dget("/local/rivendell/todolist?project_id=p1")["code"] == 400
+
+
+# --- the goals MCP's ListRivendellTasks / CreateRivendellTask ------------------
+
+@pytest.fixture
+def work(monkeypatch):
+    """rivendell.work_list / work_create stubbed: the folder (and fields) each got."""
+    seen = []
+    monkeypatch.setattr(rivendell, "work_list", lambda path: seen.append(("list", path)) or "the list")
+    monkeypatch.setattr(rivendell, "work_create", lambda path, title, description="", board="":
+                        seen.append(("create", path, title, description, board)) or "created")
+    return seen
+
+
+def _bound(tmp_path, **kw):
+    """A dashboard session in a repo under the workspace, bound to a claude session id."""
+    from bridge import store
+    store.init()
+    rel = _repo(tmp_path)
+    s = store.create_session(config.DASH_CHAT_ID, "/" + rel, **kw)
+    store.set_claude_session_id(s["id"], "csid-" + s["id"])
+    return s, os.path.realpath(os.path.join(config.BASE_PATH, rel)), "csid-" + s["id"]
+
+
+def test_work_lists_for_the_sessions_own_folder(tmp_path, work):
+    _, d, csid = _bound(tmp_path)
+    r = dpost("/local/rivendell/work", {"claude_session_id": csid, "action": "list"})
+    assert r["obj"] == {"text": "the list"}
+    assert work == [("list", d)]
+
+
+def test_work_uses_the_worktree_the_session_moved_into(tmp_path, work):
+    from bridge import store
+    s, _, csid = _bound(tmp_path)
+    wt = os.path.join(config.BASE_PATH, ".worktrees", tmp_path.name + "-wt")
+    os.makedirs(wt)
+    store.set_work_cwd(s["id"], wt)
+    dpost("/local/rivendell/work", {"claude_session_id": csid})
+    assert work == [("list", os.path.realpath(wt))]
+
+
+def test_work_resolves_repo_against_the_sessions_folder(tmp_path, work):
+    _, d, csid = _bound(tmp_path)
+    os.makedirs(os.path.join(d, "sub"))
+    dpost("/local/rivendell/work", {"claude_session_id": csid, "repo": "sub"})
+    assert work == [("list", os.path.join(d, "sub"))]
+
+
+def test_work_refuses_a_repo_outside_the_workspace(tmp_path, work):
+    _, _, csid = _bound(tmp_path)
+    r = dpost("/local/rivendell/work", {"claude_session_id": csid, "repo": "/etc"})
+    assert "inside the workspace" in r["obj"]["text"] and work == []
+
+
+def test_work_refuses_rivendells_own_runs(tmp_path, work):
+    _, _, csid = _bound(tmp_path, origin="rivendell:a")
+    r = dpost("/local/rivendell/work", {"claude_session_id": csid, "action": "create", "title": "x"})
+    assert "Rivendell's own runs" in r["obj"]["text"] and work == []
+
+
+def test_work_with_an_unknown_session_says_so(work):
+    r = dpost("/local/rivendell/work", {"claude_session_id": "nope"})
+    assert "No session is bound" in r["obj"]["text"] and work == []
+
+
+def test_work_create_relays_title_description_board(tmp_path, work):
+    _, d, csid = _bound(tmp_path)
+    r = dpost("/local/rivendell/work", {"claude_session_id": csid, "action": "create",
+                                        "title": "Add audit log", "description": "Why.", "board": "Elvou"})
+    assert r["obj"] == {"text": "created"}
+    assert work == [("create", d, "Add audit log", "Why.", "Elvou")]

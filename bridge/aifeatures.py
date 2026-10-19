@@ -149,6 +149,16 @@ FEATURES = (
               "a two-minute cache, sent once per session so the prompt cache holds, "
               "and never waits more than two seconds for the tracker. Off, "
               "nothing is injected; the TASKS tab and FEED still work."},
+    {"key": "rvtrack", "env": "RIVENDELL_TRACK", "label": "RIVENDELL TASKS",
+     "hint": "work in a repo on a Rivendell board finds or files its task",
+     "cost": "no extra call; a note per run in a repo on a board, plus a tool call per piece of work",
+     "tokens": "~200 tokens a turn",
+     "about": "A session in a repo whose Rivendell project has a task board is told, before it "
+              "changes code, to look up that board's open tasks. When one covers the work, the "
+              "branch name and the PR title carry its key, so Rivendell links the PR to it. When "
+              "none does, a card asks you first, and on yes the session files one tagged "
+              "unplanned. Rivendell's own runs never do this. Off, no note goes out and the two "
+              "tools are hidden."},
     {"key": "commitmsg", "env": "COMMIT_MSG_AI", "label": "COMMIT MESSAGES",
      "hint": "writes a commit message from the diff you selected",
      "cost": "1 haiku call per press",
