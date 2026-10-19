@@ -91,21 +91,14 @@ const JOB_TINT: ProjectTint = {
   faint: "color-mix(in srgb, var(--purple) 30%, var(--txd))",
 };
 
-/** Session origins that belong to plugin workers — the PLUGINS tab's rows. One
- *  entry per worker the bridge can run, so a second plugin lands as a new lane
- *  here, not a redesign. The tab itself exists while Rivendell is installed. */
-const PLUGINS: { origin: string; label: string }[] = [
-  { origin: "rivendell", label: "RIVENDELL" },
+/** The PLUGINS tab's rows, one entry per worker the bridge can run, so a second
+ *  plugin lands as a new lane here, not a redesign. The tab itself exists while
+ *  Rivendell is installed. A lane holds what PROJECTS files under that plugin's
+ *  group (lib/jobs isJob), not only sessions with its origin: meeting notes run
+ *  by hand carry none, so they never showed here. */
+const PLUGINS: { label: string; match: (s: SessionBrief) => boolean }[] = [
+  { label: "RIVENDELL", match: isJob },
 ];
-
-/** A session belongs to a plugin worker when its origin is that worker's — but a
- *  run actually carries "<origin>:<instance>" (rivendell origin_for, e.g.
- *  "rivendell:prod"), so an exact match against the bare origin missed every real
- *  run and left the PLUGINS tab empty. Match the prefix. */
-const originMatches = (origin: string | null | undefined, base: string) =>
-  !!origin && (origin === base || origin.startsWith(base + ":"));
-const isPluginOrigin = (origin: string | null | undefined) =>
-  PLUGINS.some((p) => originMatches(origin, p.origin));
 /** The PLUGINS tab orders by when a session was created, not last touched — a
  *  plugin run is a job you triaged, read newest-first. `created` is optional on
  *  older payloads, so fall back to `updated`. */
@@ -359,7 +352,7 @@ function KindFilter({ rows, kind, onKind }: { rows: SessionBrief[]; kind: string
   );
 }
 
-/** A day's label between the open jobs group's rows. */
+/** A day's label between job rows: the open jobs group's and PLUGINS'. */
 function DayCut({ label }: { label: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8, height: 22, margin: "6px 0 0", padding: "0 8px",
@@ -369,12 +362,13 @@ function DayCut({ label }: { label: string }) {
   );
 }
 
-/** One virtualised entry in a lane list: a lane header, a session row, or the
- *  idle lane's fold toggle. */
+/** One virtualised entry in a lane list: a lane header, a session row, the
+ *  idle lane's fold toggle, or a PLUGINS day label. */
 type LaneItem =
   | { k: "head"; label: string; tint: string; count?: number; pulse: boolean; first: boolean }
   | { k: "row"; s: SessionBrief }
-  | { k: "fold"; label: string };
+  | { k: "fold"; label: string }
+  | { k: "day"; label: string };
 
 export function SessionsPanel(props: Props) {
   const {
@@ -540,8 +534,8 @@ export function SessionsPanel(props: Props) {
   } else if (mode === "plugins") {
     // PLUGINS: one lane per worker. An empty lane stays — "RIVENDELL 0" is the
     // "configured, nothing yet" answer this tab exists to give.
-    lanes = PLUGINS.map(({ origin, label }) => {
-      const rows = sorted.filter((s) => originMatches(s.origin, origin)).sort(byCreated);
+    lanes = PLUGINS.map(({ label, match }) => {
+      const rows = sorted.filter(match).sort(byCreated);
       return {
         label, tint: "var(--purple)", count: rows.length,
         pulse: rows.some((s) => laneOf(s) === "work"), rows, fold: "",
@@ -566,7 +560,14 @@ export function SessionsPanel(props: Props) {
   if (mode !== "projects") {
     lanes.forEach((l, i) => {
       laneItems.push({ k: "head", label: l.label, tint: l.tint, count: l.count, pulse: l.pulse, first: i === 0 });
-      for (const s of l.rows) laneItems.push({ k: "row", s });
+      let day = "";
+      for (const s of l.rows) {
+        // PLUGINS reads as a log, like the opened jobs group: each day gets a label.
+        const d = mode === "plugins" ? dayLabel(s.created ?? s.updated) : "";
+        if (d && d !== day) laneItems.push({ k: "day", label: d });
+        day = d;
+        laneItems.push({ k: "row", s });
+      }
       if (l.fold) laneItems.push({ k: "fold", label: l.fold });
     });
   }
@@ -638,7 +639,7 @@ export function SessionsPanel(props: Props) {
     getScrollElement: () => scrollRef.current,
     estimateSize: (i) => {
       const it = laneItems[i];
-      return it.k === "head" ? (it.first ? 24 : 40) : it.k === "fold" ? 30 : 50;
+      return it.k === "head" ? (it.first ? 24 : 40) : it.k === "fold" ? 30 : it.k === "day" ? 28 : 50;
     },
     overscan: 8,
     scrollMargin,
@@ -976,7 +977,7 @@ export function SessionsPanel(props: Props) {
 
   // The PLUGINS tab exists while Rivendell is installed, and `mode` can't be
   // "plugins" otherwise, so the pill never stands on a tab that isn't rendered.
-  const pluginRows = sorted.filter((s) => isPluginOrigin(s.origin));
+  const pluginRows = sorted.filter((s) => PLUGINS.some((p) => p.match(s)));
   // Tabs are icons only — the label survives as the tooltip and the
   // accessible name, so the bar stays narrow and never wraps.
   const modeTabs: { id: Mode; label: string; Icon: LucideIcon; count: number; tip: string }[] = [
@@ -1044,7 +1045,8 @@ export function SessionsPanel(props: Props) {
             style={{ flex: 1, minWidth: 0, height: "100%", border: 0, outline: "none", background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: "var(--txb)" }}
           />
           <span title="Press / to jump here" style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>/</span>
-          <span style={{ flex: "none", width: 1, height: 14, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />
+          {/* Job rows print no project, branch or worktree, so PLUGINS has no row details to pick. */}
+          {mode !== "plugins" && <span style={{ flex: "none", width: 1, height: 14, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />}
           {mode === "projects" && (
             <button
               onClick={() => { setDetailMenu(false); setOrderMenu((o) => !o); }}
@@ -1082,7 +1084,7 @@ export function SessionsPanel(props: Props) {
               </div>
             </>
           )}
-          <button
+          {mode !== "plugins" && <button
             onClick={() => { setOrderMenu(false); setDetailMenu((o) => !o); }}
             title={`Row details in ${mode.toUpperCase()} — ${shownFields || "nothing"}`}
             aria-expanded={detailMenu}
@@ -1090,7 +1092,7 @@ export function SessionsPanel(props: Props) {
             style={{ flex: "none", border: 0, background: "transparent", padding: "0 2px", margin: 0, cursor: "pointer", fontFamily: "inherit",
                      fontSize: "var(--t12)", lineHeight: 1,
                      color: detailMenu || hov === "detail" ? "var(--acc)" : shownFields ? "var(--acc)" : "var(--txl)" }}
-          >⎇</button>
+          >⎇</button>}
           {detailMenu && (
             <>
               <div onClick={() => setDetailMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
@@ -1179,6 +1181,7 @@ export function SessionsPanel(props: Props) {
                 >
                   {it.k === "head" ? laneHead(it)
                     : it.k === "row" ? rowFor(it.s, false, true, fresh ? vi.index : undefined)
+                    : it.k === "day" ? <DayCut label={it.label} />
                     : (
                       <button
                         onClick={() => setFolded((v) => !v)}
