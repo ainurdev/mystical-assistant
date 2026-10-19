@@ -189,6 +189,14 @@ and the store; nothing asks Rivendell. A Rivendell run's question pings
 Telegram with its options as buttons (ping_question); a tap or a text reply
 answers the live run. The channel around it — link state, run views, NEEDS
 YOU — is docs/superpowers/specs/rivendell-channel.md.
+
+A session in a repo on a Rivendell board finds the task that covers its work,
+or files one tagged `unplanned` once the user says yes on a card (on_board /
+work_list / work_create, after link_repo). The goals MCP's two tools only relay
+here through the dashboard, because the token and tasks() live here. It rides
+Rivendell's MCP read_route/write_route as the token's owner, the way link_repo
+does, so Rivendell needed no new route. Why and what was left out:
+docs/superpowers/specs/rivendell-unplanned-tasks.md.
 """
 
 import base64
@@ -2800,6 +2808,200 @@ def link_repo(instance_id: str, project_id: str, slugs) -> str:
             raise
     return repo["fullName"]
 
+
+
+# --- a task for every piece of work (the goals MCP's two Rivendell tools) -------
+
+UNPLANNED_TAG = "unplanned"
+_TRACK_RULE = ("If one of these covers your work, put its key in the branch name and the PR title. "
+               "If none does, ask the user with one card before calling CreateRivendellTask.")
+_NO_REMOTE = ("This folder has no GitHub remote, so Rivendell can't know it. If you are changing "
+              "a checkout somewhere else, pass repo: its path.")
+_NO_LINK = "No Rivendell connection is on in this bridge, so there's nothing to track this work in."
+
+
+def _repo_slug(path: str) -> "str | None":
+    """The slug the RIVENDELL tab asks Rivendell about for a checkout. origin_slug
+    reads .git/config, which a linked worktree doesn't have (its .git is a
+    file), so remote_slug's git call is the fallback."""
+    from bridge import github                    # local import: subprocess-heavy
+    return github.origin_slug(path) or github.remote_slug(path)
+
+
+def on_board(path: str, wait: float = 2.0) -> bool:
+    """Is the checkout at `path` on a Rivendell task board? For the runner's
+    note at a session's first run, so it never holds a spawn past `wait`: a
+    cached tasks() answer decides when any worker has one (boards rarely change,
+    and the RIVENDELL tab keeps it fresh); else one tasks() runs off-thread, and
+    if it hasn't answered in time the answer is no. Its result still lands in
+    the cache for the next session."""
+    slug = _repo_slug(path)
+    with _manager_lock:
+        running = list(_workers.values())
+    if not slug or not running:
+        return False
+    if not any(slug in w._last_tasks for w in running):
+        t = threading.Thread(target=tasks, args=(slug,), daemon=True, name="rivendell-on-board")
+        t.start()
+        t.join(wait)
+    return any((w._last_tasks.get(slug) or {}).get("projects") for w in running)
+
+
+def _boards(d: dict) -> list:
+    """The boards behind the projects a tasks() answer names: each project's
+    linked Teamwork projects (read_route /projects/<id>), minus the ones gone
+    from Teamwork, once each. Labelled with the instance when boards come from
+    more than one connection, so `board` can tell same-named ones apart."""
+    out, seen = [], set()
+    for p in d.get("projects") or []:
+        w = _worker(p["instance_id"])
+        proj = _tool(w, "read_route", {"path": f"/projects/{p['id']}"})
+        for b in (proj.get("teamworkProjects") if isinstance(proj, dict) else None) or []:
+            bid = b.get("teamworkProjectId")
+            if not bid or b.get("missing") or (w.id, bid) in seen:
+                continue
+            seen.add((w.id, bid))
+            out.append({"id": bid, "name": b.get("name") or "board", "w": w,
+                        "frontend": (p.get("url") or "").rsplit("/projects/", 1)[0]})
+    several = len({b["w"].id for b in out}) > 1
+    for b in out:
+        b["label"] = f"{b['name']} ({b['w'].name})" if several else b["name"]
+    return out
+
+
+def _landing_list(rows) -> "dict | None":
+    """The list a new task lands in: the board's Inbox, else its Unorganized,
+    else its first open list.
+    ponytail: the catch-all is found by name, the two names the boards here
+    use. A board whose catch-all is called something else gets its first list;
+    let the card offer a list if that turns up."""
+    rows = [r for r in rows or [] if isinstance(r, dict) and r.get("id") and not r.get("completed")]
+    for name in ("inbox", "unorganized"):
+        hit = next((r for r in rows if (r.get("name") or "").strip().lower() == name), None)
+        if hit:
+            return hit
+    return rows[0] if rows else None
+
+
+def _lists(b: dict) -> list:
+    return _tool(b["w"], "read_route", {"path": f"/task-management/projects/{b['id']}/tasklists"}) or []
+
+
+def _unplanned_tag(w: Worker) -> "str | None":
+    """The `unplanned` tag's id for a new task, made (account-wide) the first
+    time anyone needs it. When making it fails, another session may have just
+    made it, so it is looked up once more; failing that, None: the task is
+    still filed, untagged, because a tracked task beats a perfect one."""
+    def find():
+        rows = _tool(w, "read_route", {"path": "/task-management/tags"})
+        return next((t.get("externalId") for t in rows if isinstance(t, dict)
+                     and (t.get("name") or "").strip().lower() == UNPLANNED_TAG), None) \
+            if isinstance(rows, list) else None
+    try:
+        if tag := find():
+            return tag
+        try:
+            made = _tool(w, "write_route", {"method": "POST", "path": "/task-management/tags",
+                                            "body": {"name": UNPLANNED_TAG}})
+            if isinstance(made, dict) and made.get("externalId"):
+                return made["externalId"]
+        except TasksError:
+            pass
+        return find()
+    except TasksError:
+        return None
+
+
+def _no_board(slug: str, d: dict) -> str:
+    if d.get("errors"):
+        return f"Rivendell couldn't answer: {d['errors'][0]['detail']}"
+    return (f"{slug} isn't on a Rivendell task board, so there's nothing to track this work in. "
+            "Go ahead without a task.")
+
+
+def work_list(path: str) -> str:
+    """ListRivendellTasks: the boards a task for this checkout's work can go on,
+    each with the list it would land in, then the open tasks already there, as
+    text for Claude ending with what to do next. Every failure is a line too."""
+    slug = _repo_slug(path)
+    if not slug:
+        return _NO_REMOTE
+    try:
+        d = tasks(slug)
+        if not d["instances"]:
+            return _NO_LINK
+        boards = _boards(d)
+        if not boards:
+            return _no_board(slug, d)
+        lines = [f"Rivendell boards for {slug} (a new task lands in the list after ▸):"]
+        for b in boards:
+            lst = _landing_list(_lists(b))
+            lines.append(f"- {b['label']} ▸ {lst['name'] if lst else '(no task list)'}")
+        rows = d["tasks"]
+        lines.append(f"Open tasks ({len(rows)}):" if rows else "No open tasks.")
+        for t in rows:
+            bits = [f"{t.get('key') or '?'} {t.get('name')}"]
+            bits += [x for x in (t.get("column"), "yours" if t.get("mine") else None,
+                                 t.get("projectName") if len(boards) > 1 else None) if x]
+            lines.append("- " + " · ".join(bits) + (" (last known)" if t.get("stale") else ""))
+        lines += [f"({e['instance']} couldn't answer: {e['detail']})" for e in d["errors"]]
+        lines.append(_TRACK_RULE)
+        return "\n".join(lines)
+    except TasksError as e:
+        return f"Rivendell couldn't answer: {e}"
+
+
+def work_create(path: str, title: str, description: str = "", board: str = "") -> str:
+    """CreateRivendellTask: file a task for work no open task covers, on the
+    checkout's board (the one named `board` when there are several), in the
+    list work_list names, tagged `unplanned`. A title an open task on that
+    board already has is refused with that task's key: a retried call, or a
+    second session on the same work, must not leave a client's board a
+    duplicate. Text for Claude, failures too."""
+    title = (title or "").strip()
+    if not title:
+        return "title is required."
+    slug = _repo_slug(path)
+    if not slug:
+        return _NO_REMOTE
+    try:
+        d = tasks(slug)
+        if not d["instances"]:
+            return _NO_LINK
+        boards = _boards(d)
+        if not boards:
+            return _no_board(slug, d)
+        b = boards[0]
+        if len(boards) > 1:
+            pick = [x for x in boards if x["label"].lower() == (board or "").strip().lower()]
+            if len(pick) != 1:
+                return ("This repo is on more than one board: " + ", ".join(x["label"] for x in boards)
+                        + ". Ask the user which, then call again with board set to it.")
+            b = pick[0]
+        same = next((t for t in d["tasks"] if t.get("instance_id") == b["w"].id
+                     and t.get("projectName") in (None, b["name"])
+                     and (t.get("name") or "").strip().lower() == title.lower()), None)
+        if same:
+            return (f"{same.get('key')} already covers that: \"{same.get('name')}\". "
+                    "Use its key instead of filing another.")
+        lst = _landing_list(_lists(b))
+        if not lst:
+            return f"{b['label']} has no task list to put it in."
+        tag = _unplanned_tag(b["w"])
+        body = {"tasklistId": lst["id"], "name": title[:500]}   # Rivendell's MaxLength
+        if (description or "").strip():
+            body["description"] = description.strip()
+        if tag:
+            body["tagExternalIds"] = [tag]
+        t = _tool(b["w"], "write_route", {"method": "POST", "path": "/task-management/tasks", "body": body})
+        t = t if isinstance(t, dict) else {}
+        key = t.get("key") or "the new task"
+        return (f"Created {key} \"{t.get('name') or body['name']}\" on {b['label']} ▸ {lst['name']}, "
+                + ("tagged unplanned" if tag else "untagged (Rivendell wouldn't make the unplanned tag)")
+                + f": {b['frontend']}/task-management/projects/{b['id']}?task={t.get('id')}"
+                + f"\nPut {key} in the branch name and the PR title, so Rivendell links the PR to it.")
+    except TasksError as e:
+        return f"Rivendell couldn't answer: {e}"
 
 # What the mark editor's drop path takes (projectmarks.sniff's four types).
 _IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/svg+xml")

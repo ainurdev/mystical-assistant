@@ -2953,3 +2953,199 @@ def test_client_images_keeps_the_images_the_editor_takes_with_their_preview_urls
                                                   {"id": "d3", "name": "icon.png", "url": "https://s/3"}]
     assert rivendell.client_image_url("a", "c1", "d1") == "https://s/dl1"
     assert calls[-1] == ("read_route", "GET", "/clients/c1/documents/d1/download", None)
+
+
+# --- a task for every piece of work (ListRivendellTasks / CreateRivendellTask) --
+
+_PROJ = {"id": "p1", "name": "NR exam automation", "url": "https://rv/projects/p1"}
+_OPEN = {"id": "t61", "key": "NRA-61", "name": "Fix login redirect", "column": "In progress",
+         "mine": True, "projectName": "NR Chatbot & Complaints", "implementation": None}
+_BOARD = {
+    ("read_route", "/projects/p1"): {"teamworkProjects": [
+        {"teamworkProjectId": "b1", "name": "NR Chatbot & Complaints"},
+        {"teamworkProjectId": "b0", "name": "Old", "missing": True}]},
+    ("read_route", "/task-management/projects/b1/tasklists"): [
+        {"id": "l-fu", "name": "Follow-ups"}, {"id": "l-in", "name": "Inbox"}],
+    ("read_route", "/task-management/tags"): [{"externalId": "tag-1", "name": "Unplanned"}],
+    ("write_route", "/task-management/tasks"): {"id": "t74", "key": "NRA-74", "name": "Add audit log"},
+}
+
+
+def _rv(tasks_answer, routes, calls):
+    """/plugin/tasks answers `tasks_answer`; /mcp answers by (tool, path), as _routes does."""
+    mcp = _routes(routes, calls)
+
+    def api(path, payload=None):
+        if path.startswith("/plugin/tasks"):
+            calls.append(("plugin", path))
+            return json.loads(json.dumps(tasks_answer))
+        return mcp(path, payload)
+    return api
+
+
+def _on_board(workers, monkeypatch, routes=None, tasks_answer=None):
+    """One running instance; its repo acme/app is on the NR Chatbot & Complaints board."""
+    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: "acme/app")
+    calls = []
+    w = _worker(id="a", name="prod")
+    w._api = _rv(tasks_answer or {"projects": [_PROJ], "tasks": [_OPEN]},
+                 {**_BOARD, **(routes or {})}, calls)
+    workers["a"] = w
+    return calls
+
+
+def _writes(calls):
+    return [c for c in calls if c[0] == "write_route"]
+
+
+def test_repo_slug_reads_a_worktree_of_the_checkout(tmp_path):
+    import subprocess
+    repo, wt = tmp_path / "app", tmp_path / "wt"
+
+    def git(*a):
+        subprocess.run(["git", *a], check=True, capture_output=True)
+    git("init", "-q", str(repo))
+    git("-C", str(repo), "remote", "add", "origin", "git@github.com:acme/app.git")
+    git("-C", str(repo), "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x")
+    git("-C", str(repo), "worktree", "add", "-q", str(wt))
+    assert rivendell._repo_slug(str(wt)) == "acme/app"
+
+
+def test_on_board_uses_the_cached_answer_without_asking(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch)
+    workers["a"]._last_tasks["acme/app"] = {"projects": [_PROJ], "tasks": []}
+    assert rivendell.on_board("/x") is True
+    assert calls == []
+
+
+def test_on_board_asks_once_when_nothing_is_cached(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch)
+    assert rivendell.on_board("/x") is True
+    assert rivendell.on_board("/x") is True
+    assert calls == [("plugin", "/plugin/tasks?repository=acme/app")]
+
+
+def test_on_board_is_false_without_a_board(workers, monkeypatch):
+    _on_board(workers, monkeypatch, tasks_answer={"projects": [], "tasks": []})
+    assert rivendell.on_board("/x") is False
+
+
+def test_on_board_is_false_with_no_slug_or_no_connection(workers, monkeypatch):
+    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: "acme/app")
+    assert rivendell.on_board("/x") is False                 # no running instance
+    _on_board(workers, monkeypatch)
+    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: None)
+    assert rivendell.on_board("/x") is False                 # no GitHub remote
+
+
+def test_on_board_gives_up_after_wait(workers, monkeypatch):
+    _on_board(workers, monkeypatch)
+    monkeypatch.setattr(rivendell, "tasks", lambda slug: time.sleep(1))
+    t0 = time.monotonic()
+    assert rivendell.on_board("/x", wait=0.05) is False
+    assert time.monotonic() - t0 < 0.5
+
+
+def test_work_list_names_board_list_and_open_tasks(workers, monkeypatch):
+    _on_board(workers, monkeypatch)
+    text = rivendell.work_list("/x")
+    assert "NR Chatbot & Complaints ▸ Inbox" in text
+    assert "NRA-61 Fix login redirect · In progress · yours" in text
+    assert text.endswith("If one of these covers your work, put its key in the branch name and the PR "
+                         "title. If none does, ask the user with one card before calling CreateRivendellTask.")
+    assert "Old" not in text
+
+
+def test_work_list_without_a_board_says_there_is_nothing_to_track_in(workers, monkeypatch):
+    _on_board(workers, monkeypatch, tasks_answer={"projects": [], "tasks": []})
+    assert "isn't on a Rivendell task board" in rivendell.work_list("/x")
+
+
+def test_work_list_without_a_github_remote_asks_for_repo(workers, monkeypatch):
+    _on_board(workers, monkeypatch)
+    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: None)
+    assert "pass repo" in rivendell.work_list("/x")
+
+
+def test_work_list_with_no_connection_says_so(workers, monkeypatch):
+    monkeypatch.setattr(rivendell, "_repo_slug", lambda path: "acme/app")
+    assert "No Rivendell connection" in rivendell.work_list("/x")
+
+
+def test_landing_list_prefers_inbox_then_unorganized_then_first():
+    def pick(rows):
+        return (rivendell._landing_list(rows) or {}).get("id")
+    assert pick([{"id": "a", "name": "Phase 1"}, {"id": "b", "name": " inbox "},
+                 {"id": "c", "name": "Unorganized"}]) == "b"
+    assert pick([{"id": "a", "name": "Phase 1"}, {"id": "c", "name": "UNORGANIZED"}]) == "c"
+    assert pick([{"id": "a", "name": "Phase 1"}, {"id": "d", "name": "Phase 2"}]) == "a"
+    assert pick([{"id": "x", "name": "Inbox", "completed": True}, {"id": "a", "name": "Phase 1"}]) == "a"
+    assert pick([{"name": "Inbox"}]) is None and pick([]) is None
+
+
+def test_work_create_files_a_tagged_task_on_the_inbox(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch)
+    text = rivendell.work_create("/x", "Add audit log", "Why.")
+    assert calls[-1] == ("write_route", "POST", "/task-management/tasks",
+                         {"tasklistId": "l-in", "name": "Add audit log", "description": "Why.",
+                          "tagExternalIds": ["tag-1"]})
+    assert "Created NRA-74" in text and "tagged unplanned" in text
+    assert "https://rv/task-management/projects/b1?task=t74" in text
+
+
+def test_work_create_needs_a_title(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch)
+    assert rivendell.work_create("/x", "  ") == "title is required."
+    assert calls == []
+
+
+def test_work_create_makes_the_tag_once_when_missing(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch, routes={
+        ("read_route", "/task-management/tags"): [{"externalId": "x", "name": "Review"}],
+        ("write_route", "/task-management/tags"): {"externalId": "tag-new", "name": "unplanned"}})
+    rivendell.work_create("/x", "Add audit log")
+    assert ("write_route", "POST", "/task-management/tags", {"name": "unplanned"}) in calls
+    assert calls[-1][3] == {"tasklistId": "l-in", "name": "Add audit log", "tagExternalIds": ["tag-new"]}
+
+
+def test_work_create_files_untagged_when_no_tag_can_be_had(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch, routes={
+        ("read_route", "/task-management/tags"): [],
+        ("write_route", "/task-management/tags"): "POST /task-management/tags answered 403: Forbidden resource"})
+    text = rivendell.work_create("/x", "Add audit log")
+    assert calls[-1][3] == {"tasklistId": "l-in", "name": "Add audit log"}
+    assert len([c for c in calls if c[:3] == ("read_route", "GET", "/task-management/tags")]) == 2
+    assert "Created NRA-74" in text and "untagged" in text
+
+
+def test_work_create_on_two_boards_needs_board(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch, routes={
+        ("read_route", "/projects/p1"): {"teamworkProjects": [
+            {"teamworkProjectId": "b1", "name": "NR Chatbot & Complaints"},
+            {"teamworkProjectId": "b2", "name": "Elvou"}]},
+        ("read_route", "/task-management/projects/b2/tasklists"): [{"id": "l-elv", "name": "Unorganized"}]})
+    text = rivendell.work_create("/x", "Add audit log")
+    assert "NR Chatbot & Complaints" in text and "Elvou" in text
+    assert _writes(calls) == []
+    rivendell.work_create("/x", "Add audit log", board="elvou")
+    assert calls[-1][3]["tasklistId"] == "l-elv"
+
+
+def test_work_create_refuses_a_title_an_open_task_has(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch)
+    text = rivendell.work_create("/x", "fix login redirect ")
+    assert "NRA-61" in text
+    assert _writes(calls) == []
+
+
+def test_work_create_cuts_a_long_title_to_500(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch)
+    rivendell.work_create("/x", "x" * 600)
+    assert len(calls[-1][3]["name"]) == 500
+
+
+def test_work_create_reports_rivendells_refusal(workers, monkeypatch):
+    _on_board(workers, monkeypatch, routes={
+        ("write_route", "/task-management/tasks"): "POST /task-management/tasks answered 403: Forbidden resource"})
+    text = rivendell.work_create("/x", "Add audit log")
+    assert text.startswith("Rivendell couldn't answer") and "403" in text
