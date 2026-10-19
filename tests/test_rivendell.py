@@ -401,6 +401,32 @@ def test_handle_message_changelog_requests():
     assert _drain(w) == [("changelog", "c7", "Rivendell")]
 
 
+def test_handle_message_project_summary_requests():
+    """project-summary-request events queue as "project-summary" with the project's name; the
+    period's activity is rendered into the prompt server-side."""
+    w = _worker()
+    ev = json.dumps({"type": "project-summary-request",
+                     "requestId": "s7",
+                     "project": {"id": "p1", "name": "Rivendell"}}).encode()
+    w._handle_message(ev)
+    w._handle_message(ev)                          # duplicate: dropped
+    assert _drain(w) == [("project-summary", "s7", "Rivendell")]
+
+
+def test_catch_up_queues_project_summary_requests(monkeypatch):
+    """Catch-up lists open project summaries by their project's name."""
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+
+    def api(path, payload=None):
+        if path == "/plugin/project-summary-requests":
+            return [{"id": "s1", "projectId": "p1", "projectName": "Rivendell"}]
+        return []
+    monkeypatch.setattr(w, "_api", api)
+    w._catch_up()
+    assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [("project-summary:s1", "Rivendell")]
+
+
 def test_handle_message_news_requests():
     """news-request events queue as "news" with the reader's name; the paper is
     written by that reader's own bridge from rivendell's MCP context."""
@@ -608,6 +634,7 @@ def test_catch_up_queues_meeting_notes_requests(monkeypatch):
 
 @pytest.mark.parametrize("kind, path, runner", [
     ("meeting-notes", "meeting-notes-requests", "_run_meeting_notes"),
+    ("project-summary", "project-summary-requests", "_run_project_summary"),
     ("device-run", "device-run-requests", "_run_device_run"),
 ])
 def test_each_kind_is_routed_by_its_own_path_never_the_review_fallback(monkeypatch, kind, path, runner):
@@ -633,6 +660,13 @@ def test_queued_message_names_meeting_notes():
             "slug": "Weekly sync", "created_at": 0.0}
     text, _kb = _worker()._queued_message(item, "tok")
     assert "Rivendell meeting notes queued — Weekly sync" in text
+
+
+def test_queued_message_names_a_project_summary():
+    item = {"key": "project-summary:s1", "kind": "project-summary", "request_id": "s1",
+            "slug": "Rivendell", "created_at": 0.0}
+    text, _kb = _worker()._queued_message(item, "tok")
+    assert "Rivendell summary queued — Rivendell" in text
 
 
 def _meeting_claim(**over):
@@ -776,7 +810,7 @@ def test_run_meeting_notes_runs_claude_with_no_tools(monkeypatch, tmp_path):
 
 
 def test_run_video_keeps_its_tools(monkeypatch, tmp_path):
-    """Only the meeting-notes kind runs tools-off; a video run starts as it always did."""
+    """Only the meeting-notes and project-summary kinds run tools-off; a video run starts as it always did."""
     from bridge import rivendell_video as rv
     w = _worker(workdir=str(tmp_path))
     monkeypatch.setattr(rivendell.config, "UPLOAD_DIR", str(tmp_path))
@@ -853,11 +887,12 @@ def test_dedup_is_separate_across_all_kinds():
                        ("news-request", {"user": {}}),
                        ("deck-request", {"site": {}}),
                        ("video-request", {"kind": "TRANSCRIBE", "file": {"id": "f", "name": "n"}}),
-                       ("meeting-notes-request", {"source": "TEXT", "meeting": {"id": "g", "name": "n"}})):
+                       ("meeting-notes-request", {"source": "TEXT", "meeting": {"id": "g", "name": "n"}}),
+                       ("project-summary-request", {"project": {}})):
         w._handle_message(json.dumps({"type": typ, "requestId": "same", **extra}).encode())
     kinds = [k for (k, _rid, _s) in _drain(w)]
     assert kinds == ["review", "impl", "todolist", "taskdesc", "changelog", "news", "deck", "video",
-                     "meeting-notes"]
+                     "meeting-notes", "project-summary"]
 
 
 def test_run_todolist_runs_in_workdir_without_checkout(monkeypatch):
@@ -953,6 +988,30 @@ def test_run_deck_runs_in_workdir_without_checkout(monkeypatch):
     assert posted == [("deck-requests", "k1", True, '{"pages": []}')]
 
 
+def test_run_project_summary_runs_with_no_tools_in_workdir_and_posts_the_text(monkeypatch):
+    """A project summary needs no repo match (its claim names none): it runs in the worker's
+    workdir and posts the text back to the summary endpoint as it is. Its prompt carries the
+    commit messages, comments and titles anyone wrote, so the run reaches the runner with no
+    tools (skip_pack)."""
+    from bridge import runner
+    w = _worker(workdir="/dedicated")
+    posted, ran = [], []
+    monkeypatch.setattr(w, "_fetch_prompt",
+                        lambda kind_path, rid: {"prompt": "summarise the project", "projectName": "Rivendell",
+                                                "repositories": []})
+    monkeypatch.setattr(w, "_find_checkout",
+                        lambda slug: (_ for _ in ()).throw(AssertionError("no checkout for summaries")))
+    monkeypatch.setattr(w, "_new_session", lambda workdir, title=None: "sess-1")
+    monkeypatch.setattr(runner, "start_streaming_job",
+                        lambda chat, prompt, images, **kw:
+                        ran.append((prompt, kw["project"], kw["skip_pack"])) or _StubJob("done", result="Two tasks shipped.\n"))
+    monkeypatch.setattr(w, "_post_result",
+                        lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    w._run_project_summary("s1", "Rivendell")
+    assert ran == [("summarise the project", "/dedicated", True)]
+    assert posted == [("project-summary-requests", "s1", True, "Two tasks shipped.\n")]
+
+
 def test_workers_have_independent_queues():
     """Two instances dedup and queue separately — the same request id in each
     is two runs, not one deduped away."""
@@ -1008,6 +1067,7 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     monkeypatch.setattr(w, "_run_deck", lambda rid, slug: calls.append(("deck", rid, slug)))
     monkeypatch.setattr(w, "_run_video", lambda rid, slug: calls.append(("video", rid, slug)))
     monkeypatch.setattr(w, "_run_meeting_notes", lambda rid, slug: calls.append(("meeting-notes", rid, slug)))
+    monkeypatch.setattr(w, "_run_project_summary", lambda rid, slug: calls.append(("project-summary", rid, slug)))
     monkeypatch.setattr(w, "_run_device_run", lambda item: calls.append(("device-run", item["request_id"], item["slug"])))
     w._run_accepted({"kind": "impl", "request_id": "i1", "slug": "acme/app"})
     w._run_accepted({"kind": "todolist", "request_id": "t1", "slug": "Proj"})
@@ -1016,11 +1076,13 @@ def test_run_accepted_dispatches_by_kind(monkeypatch):
     w._run_accepted({"kind": "deck", "request_id": "k1", "slug": "Deck"})
     w._run_accepted({"kind": "video", "request_id": "v1", "slug": "S.mov"})
     w._run_accepted({"kind": "meeting-notes", "request_id": "m1", "slug": "Weekly sync"})
+    w._run_accepted({"kind": "project-summary", "request_id": "s1", "slug": "Rivendell"})
     w._run_accepted({"kind": "device-run", "request_id": "d1", "slug": "ainurhq/app"})
     w._run_accepted({"kind": "review", "request_id": "r1", "slug": None})
     assert calls == [("impl", "i1", "acme/app"), ("todolist", "t1", "Proj"),
                      ("changelog", "c1", "Proj"), ("news", "n1", "Mahdi"), ("deck", "k1", "Deck"),
                      ("video", "v1", "S.mov"), ("meeting-notes", "m1", "Weekly sync"),
+                     ("project-summary", "s1", "Rivendell"),
                      ("device-run", "d1", "ainurhq/app"), ("review", "r1", None)]
 
 
@@ -2014,7 +2076,7 @@ def test_run_implementation_names_its_session_only_while_it_runs(monkeypatch):
 
 @pytest.mark.parametrize("run, kind", [("_run_review", "review"), ("_run_todolist", "todolist"),
                                        ("_run_taskdesc", "taskdesc"), ("_run_changelog", "changelog"),
-                                       ("_run_deck", "deck")])
+                                       ("_run_deck", "deck"), ("_run_project_summary", "project-summary")])
 def test_every_kind_is_listed_in_flight_only_while_it_runs(monkeypatch, run, kind):
     """The QUEUE tab lists every accepted run, not only implementations."""
     w = _worker()
@@ -2025,7 +2087,7 @@ def test_every_kind_is_listed_in_flight_only_while_it_runs(monkeypatch, run, kin
 
     monkeypatch.setattr(w, "_fetch_prompt", lambda kp, rid: {"prompt": "do it"})
     monkeypatch.setattr(w, "_find_checkout", lambda slug: "/tmp")
-    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None: _Job())
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None, tools_off=False: _Job())
     monkeypatch.setattr(w, "_wait_job",
                         lambda job, timeout: (seen.append(w.running_snapshot()), (True, "ok"))[1])
     monkeypatch.setattr(w, "_post_result", lambda *a: None)

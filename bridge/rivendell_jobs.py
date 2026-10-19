@@ -35,7 +35,8 @@ import re
 import time
 
 # A kind's tag in the dashboard is the PLUGINS queue's word for it (RivendellQueue.tsx).
-KINDS = ("review", "impl", "taskdesc", "todolist", "changelog", "news", "deck", "video", "meeting-notes")
+KINDS = ("review", "impl", "taskdesc", "todolist", "changelog", "news", "deck", "video", "meeting-notes",
+         "project-summary")
 
 
 def _pick(*vals):
@@ -65,6 +66,7 @@ def facts(kind: str, request_id: str, instance_id: str,
         "taskdesc": _pick(task.get("name"), s.get("taskName"), c.get("taskName")),
         "todolist": _pick(project.get("name"), s.get("projectName"), c.get("projectName")),
         "changelog": _pick(project.get("name"), s.get("projectName"), c.get("projectName")),
+        "project-summary": _pick(project.get("name"), s.get("projectName"), c.get("projectName")),
         "deck": _pick((s.get("site") or {}).get("title"), s.get("siteTitle")),
         "video": _pick(file.get("name"), s.get("fileName")),
         "meeting-notes": _pick(meeting.get("name"), s.get("meetingName")),
@@ -108,6 +110,8 @@ def title(job: dict) -> "str | None":
         return f"{name} · {'recommendations' if job.get('step') == 'recommendations' else 'todolist'}"
     if kind in ("changelog", "deck"):
         return f"{name} · {kind}"
+    if kind == "project-summary":
+        return f"{name} · summary"
     return name
 
 
@@ -126,7 +130,9 @@ def headline(text: "str | None") -> "str | None":
 
 
 # The fixed opening of each Rivendell prompt template (backend/src/**/*prompt.template.ts).
+# The summary's comes first: its prompt's head can quote a commit title that holds another template's words.
 _MARKS = (
+    ("project-summary", "You are writing a short summary of what happened in the project"),
     ("review", "performing a code review"),
     ("impl", "implementing a task"),
     ("impl", "implementing a batch of related tasks"),
@@ -151,6 +157,7 @@ _TITLE_MARKS = (
     ("taskdesc", "You are an experienced tech lead writing the descr"),
     ("changelog", "You are a release manager writing the changelog"),
     ("meeting-notes", "You are writing the notes of a meeting"),
+    ("project-summary", "You are writing a short summary of what happened"),
     ("video", "You are given the transcript of a recording"),
 )
 
@@ -190,6 +197,8 @@ def classify(prompt: "str | None") -> "dict | None":
         job["date"] = _line(r"^Edition: (\d{4}-\d{2}-\d{2})", p)
     elif kind == "meeting-notes":
         job["title"] = _line(r"^Meeting: (.+)$", p)
+    elif kind == "project-summary":
+        job["title"] = _line(r'in the project "(.+?)"\.', head)
     elif kind == "video":
         job["title"] = _line(r"^File: (.+?) \(", p)
         job["step"] = "transcribe" if "the screens of it" in head else None

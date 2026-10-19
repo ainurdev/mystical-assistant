@@ -24,6 +24,7 @@ by refusing it (below):
     project-todolist-request           |  (the first into an idle queue is
     task-description-request           |   auto-accepted; the rest ping Telegram)
     changelog-request                  |
+    project-summary-request            |
     deck-request                       v  ACCEPT (dashboard PLUGINS tab / Telegram)
           -> GET  /plugin/<kind>-requests/<id>/prompt
           (the GET claims the request: PENDING -> IN_PROGRESS)
@@ -56,24 +57,27 @@ rivendell-api parses it by the request's kind — and only uses the step to labe
 the request in the log, the Telegram ping and the dashboard queue.
 
 Reviews and implementations need a local checkout of the named repository;
-todolists, task descriptions, changelogs and deck drafts need none — the whole project/task
-context (for a changelog: the tasks, pull requests and commits the user picked; for a
-deck: its slides and the project's work of a period) is
+todolists, task descriptions, changelogs, deck drafts and project summaries need
+none — the whole project/task context (for a changelog: the tasks, pull requests and
+commits the user picked; for a deck: its slides and the project's work of a period;
+for a project summary: what happened in the project over a period) is
 rendered into the prompt server-side, so they run in the worker's workdir like a
 generic read task (rivendell-api writes a task description back onto the Teamwork
 task itself; the bridge only returns the generated text). The exception is a
 claim that names the project's repositories (todolists, changelogs and deck drafts, from a
 rivendell-api that sends them): it runs in the folder holding this machine's
 checkouts of those repos, matched on any git remote (_project_dir), so its
-session lands under that project rather than BASE_PATH's root.
+session lands under that project rather than BASE_PATH's root. A project
+summary's claim names none, so it always runs in the workdir.
 
 Runs go through the normal runner (not a bare subprocess) on purpose: each run
 gets its own store session (origin "rivendell:<instance>"), so it shows up in
 the dashboard with a full transcript — and tagged with which Rivendell it came
 from — inherits the watchdog, journaling and auto-resume machinery, and never
-contends with other sessions' run slots. A meeting's notes are the exception
-to the tools: their prompt carries what anyone pasted or said in the meeting
-and needs no tools, so that run gets none (and no auto-resume, which would).
+contends with other sessions' run slots. A meeting's notes and a project's
+summary are the exception to the tools: their prompts carry what anyone pasted or
+said in the meeting, or wrote in a commit message, a comment or a title, and need
+no tools, so those runs get none (and no auto-resume, which would).
 
 Each request names its repository (owner/repo); _find_checkout maps that to a
 local checkout under BASE_PATH by matching git origin remotes (the scan is
@@ -130,8 +134,8 @@ also return IN_PROGRESS requests, so a run interrupted mid-flight by a restart
 comes back into the queue for a fresh accept rather than sticking IN_PROGRESS
 forever — except a queue-mode batch, which re-attaches to its persisted turns
 instead (below). In-process duplicates are prevented by each worker's _seen set (keys
-"review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>" / "changelog:<id>" / "deck:<id>",
-since the request kinds have separate id spaces). A refused request leaves
+"review:<id>" / "impl:<id>" / "todolist:<id>" / "taskdesc:<id>" / "changelog:<id>" / "deck:<id>" /
+"project-summary:<id>", since the request kinds have separate id spaces). A refused request leaves
 _seen (catch-up no longer lists it, so that costs no rescan per reconnect);
 on an older API a dismissed one is claimed+FAILED, so catch-up never
 resurrects it.
@@ -959,6 +963,11 @@ class Worker:
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: meeting-notes catch-up failed: {e}")
         try:
+            for item in self._api("/plugin/project-summary-requests"):
+                self._apply_policy(self._enqueue("project-summary", item["id"], item.get("projectName"), offered=bool(item.get("offered")), src=item))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: project-summary catch-up failed: {e}")
+        try:
             head = device_side.headers(self.inst)    # teammates' device runs: only on a device READY for one
             if head:
                 device_side.report_interrupted(self, head)   # runs a restart cut short, first
@@ -1206,6 +1215,11 @@ class Worker:
             print(f"rivendell[{self.name}]: meeting notes ({str(obj.get('source') or '?').lower()}) "
                   f"requested for {meeting.get('name', '?')}")
             return self._enqueue("meeting-notes", obj["requestId"], meeting.get("name"), offered=offered, src=obj)
+        if obj.get("type") == "project-summary-request" and obj.get("requestId"):
+            project = obj.get("project") or {}
+            print(f"rivendell[{self.name}]: project summary requested for project "
+                  f"{project.get('name', '?')}")
+            return self._enqueue("project-summary", obj["requestId"], project.get("name"), offered=offered, src=obj)
         if obj.get("type") == "device-run-request" and obj.get("requestId"):
             print(f"rivendell[{self.name}]: {(obj.get('requester') or {}).get('name', '?')} asks this "
                   f"device for a run of {obj.get('repository', '?')}")
@@ -1711,6 +1725,13 @@ class Worker:
         rivendell; one that doesn't fit the slides fails there, with why."""
         self._run_in_workdir("deck", "deck", request_id, title)
 
+    def _run_project_summary(self, request_id: str, project: "str | None") -> None:
+        """A short summary of what happened in a project over a period — no
+        checkout (see _run_in_workdir). Its prompt carries the commit messages,
+        comments and titles anyone wrote, and the summary needs no tools, so the
+        run gets none. The text returned is the summary, shown as it is."""
+        self._run_in_workdir("project summary", "project-summary", request_id, project, tools_off=True)
+
     def _run_video(self, request_id: str, name: "str | None") -> None:
         """A drive video job. The Mac does what Claude cannot (rivendell_video:
         download, ffmpeg, whisper.cpp), each step reported as a phase and each
@@ -1912,13 +1933,15 @@ class Worker:
                          name=f"rivendell-adopt-{self.id}", daemon=True).start()
 
     def _run_in_workdir(self, what: str, kind: str, request_id: str,
-                        name: "str | None", mcp_on: "str | None" = None) -> None:
+                        name: "str | None", mcp_on: "str | None" = None,
+                        tools_off: bool = False) -> None:
         """Run a request that needs NO checkout: its whole context is rendered
         into the prompt server-side, read-only in spirit. A claim that names
         the project's repositories runs beside this machine's checkouts of them
         (_project_dir) so it files under that project; anything else runs in
         the worker's workdir. Reviews' timeout governs it. `what` names it in
-        the log, `name` is the project/task it is about."""
+        the log, `name` is the project/task it is about. `tools_off` runs it
+        with no tools at all (_start_run), for a prompt carrying untrusted text."""
         kind_path = self._KIND_PATH[kind]
         resp = self._claim(kind_path, request_id)
         if resp is None:
@@ -1928,7 +1951,9 @@ class Worker:
         workdir = _project_dir(resp.get("repositories")) or self._workdir()
         print(f"rivendell[{self.name}]: {what} {request_id} "
               f"({name or '?'}) running in {workdir}")
-        job = self._start_run(prompt, workdir, mcp_on=mcp_on) if mcp_on else self._start_run(prompt, workdir)
+        # Only what this kind asks for goes to _start_run; most kinds ask for neither.
+        opts = {k: v for k, v in (("mcp_on", mcp_on), ("tools_off", tools_off)) if v}
+        job = self._start_run(prompt, workdir, **opts)
         if job is None:  # can't happen for a fresh session; never hang the queue
             self._post_result(kind_path, request_id, False,
                               "could not start a Claude run (session busy)")
@@ -1959,6 +1984,7 @@ class Worker:
         "deck": "deck-requests",
         "video": "video-requests",
         "meeting-notes": "meeting-notes-requests",
+        "project-summary": "project-summary-requests",
         "device-run": "device-run-requests",
     }
 
@@ -1973,6 +1999,7 @@ class Worker:
         "deck": "deck draft",
         "video": "video transcript",
         "meeting-notes": "meeting notes",
+        "project-summary": "summary",
         "device-run": "Device run",
     }
 
@@ -2177,6 +2204,8 @@ class Worker:
                 self._run_video(request_id, slug)
             elif kind == "meeting-notes":
                 self._run_meeting_notes(request_id, slug)
+            elif kind == "project-summary":
+                self._run_project_summary(request_id, slug)
             elif kind == "device-run":
                 self._run_device_run(item)
             else:
@@ -3122,7 +3151,8 @@ def again_call(job: dict) -> "tuple[str, dict] | None":
     AI" routes. They take the bridge's token the way the dashboard takes its
     cookie, and the new job comes back to this bridge like any other. Not for
     a changelog (it needs the sources picked on the page), a video (needs the
-    client id) or meeting notes (need the meeting's text or recording). A paper
+    client id), meeting notes (need the meeting's text or recording) or a project
+    summary (asked for again on its project's page in Rivendell). A paper
     can only be reprinted on its own day. The dashboard asks the same question
     before it shows the button (lib/jobs.ts canRunAgain)."""
     kind = job.get("kind")

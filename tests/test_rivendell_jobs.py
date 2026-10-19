@@ -30,6 +30,9 @@ REVIEW_PROMPT = (
     "Pull request: feat: per-project worker access and removal of the Telegram bot\n"
     "Pull request URL: https://github.com/ainurhq/ibgroups_operations/pull/81\n"
     "Repository: https://github.com/ainurdev/ibgroups_operations\n\nCheck out the pull request branch…")
+SUMMARY_PROMPT = (
+    'You are writing a short summary of what happened in the project "Rivendell".\n\n'
+    "Period: Sat 17 Oct to Sun 18 Oct\n\nTasks finished: 4…")
 PAPER = {"ear": "31 commits", "lead": {"headline": "Patterna opens its shop window", "deck": "d", "body": ["b"]}}
 
 
@@ -79,6 +82,16 @@ def test_facts_take_the_claims_extras_and_drop_the_empty():
     assert (todo["step"], todo["title"], todo["project_id"]) == ("recommendations", "Rivendell", "p")
 
 
+def test_facts_name_a_project_summary_by_its_project_from_an_event_a_row_and_a_claim():
+    frame = {"type": "project-summary-request", "requestId": "s1", "project": {"id": "p1", "name": "Rivendell"}}
+    row = {"id": "s1", "projectId": "p1", "projectName": "Rivendell"}
+    job = {"kind": "project-summary", "instance": "t1", "request": "s1", "title": "Rivendell", "project_id": "p1"}
+    assert rivendell_jobs.facts("project-summary", "s1", "t1", frame) == job
+    assert rivendell_jobs.facts("project-summary", "s1", "t1", row) == job
+    claim = {"requestId": "s1", "status": "IN_PROGRESS", "projectName": "Rivendell", "repositories": []}
+    assert rivendell_jobs.facts("project-summary", "s1", "t1", None, claim)["title"] == "Rivendell"
+
+
 # --- titles ---------------------------------------------------------------
 
 def test_title_names_each_kind_the_way_rivendell_does():
@@ -89,6 +102,8 @@ def test_title_names_each_kind_the_way_rivendell_does():
     assert t({"kind": "todolist", "title": "Rivendell", "step": "recommendations"}) == "Rivendell · recommendations"
     assert t({"kind": "todolist", "title": "Rivendell", "step": "todolist"}) == "Rivendell · todolist"
     assert t({"kind": "changelog", "title": "Mystical"}) == "Mystical · changelog"
+    assert t({"kind": "project-summary", "title": "Rivendell"}) == "Rivendell · summary"
+    assert t({"kind": "project-summary"}) is None
     assert t({"kind": "impl", "title": "Link PRs to tasks"}) == "Link PRs to tasks"
     # Videos and meeting notes keep their runners' titles; no facts, no title.
     assert t({"kind": "video", "title": "Contract.mov"}) is None
@@ -129,6 +144,12 @@ def test_classify_knows_every_template_and_leaves_a_custom_prompt_alone():
     assert c("You are an experienced software engineer implementing a batch of related tasks for the team.\n"
              "Batch: Unorganized (2 tasks)\nRepository: ainurhq/rivendell — https://github.com/ainurhq/rivendell\n") \
         == {"kind": "impl", "title": "Unorganized", "repo": "ainurhq/rivendell"}
+    assert c(SUMMARY_PROMPT) == {"kind": "project-summary", "title": "Rivendell"}
+    assert c('You are writing a short summary of what happened in the project "Mystical v2.0".\n\nPeriod: …') \
+        == {"kind": "project-summary", "title": "Mystical v2.0"}
+    # What it carries can sound like another template: a commit titled "writing the changelog".
+    assert c(SUMMARY_PROMPT.replace("Tasks finished: 4…", "Commits: writing the changelog, implementing a task")) \
+        == {"kind": "project-summary", "title": "Rivendell"}
     assert c("fix the login bug") is None
     assert c(None) is None
 
@@ -188,6 +209,24 @@ def test_a_review_event_ends_up_on_its_session_with_the_pr_as_title(monkeypatch)
     assert w._job_src == {} and w._job_claim == {}                        # nothing held once filed
 
 
+def test_a_project_summary_event_ends_up_on_its_session_named_for_its_project(monkeypatch):
+    monkeypatch.setattr(rivendell.Worker, "_ack", lambda self, key, state: None)
+    w = _worker()
+    frame = {"type": "project-summary-request", "requestId": "s1", "project": {"id": "p1", "name": "Rivendell"}}
+    assert w._handle_message(json.dumps(frame).encode()) == "project-summary:s1"
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {
+        "requestId": "s1", "status": "IN_PROGRESS", "prompt": "summarise it", "projectName": "Rivendell",
+        "repositories": []})
+    assert w._claim("project-summary-requests", "s1")["prompt"] == "summarise it"
+    store.init()
+    sid = store.create_session(next(_chat), "/", origin="rivendell:t1")["id"]
+    w._track("s1", "project-summary", "Rivendell", sid, label=None, link=None)
+    s = store.get_session(sid)
+    job = store.parse_job(s["job"])
+    assert (job["kind"], job["title"], job["project_id"]) == ("project-summary", "Rivendell", "p1")
+    assert s["title"] == "Rivendell · summary" and s["ref"] == "t1:s1"
+
+
 def test_a_posted_result_is_stamped_on_the_job(monkeypatch):
     w = _worker()
     store.init()
@@ -215,6 +254,7 @@ def test_again_call_files_each_kind_with_rivendells_own_route():
     assert a({"kind": "news", "date": "2026-01-01"}) is None              # only today's paper reprints
     assert a({"kind": "review"}) is None                                   # no PR id, nothing to file
     assert a({"kind": "changelog", "project_id": "p"}) is None
+    assert a({"kind": "project-summary", "project_id": "p"}) is None       # asked for again on its project's page
     assert a({"kind": "video"}) is None and a({}) is None
 
 
@@ -282,6 +322,21 @@ def test_backfill_files_a_terminal_indexed_run_by_its_title_only():
     assert store.parse_job(store.get_session(run)["job"]) == {"kind": "news"}
     assert store.get_session(run)["title"] == "You are the editor of a small daily newspaper with exactly o"
     assert store.get_session(yours)["job"] is None
+
+
+def test_backfill_files_a_project_summary_by_its_prompt_and_by_its_title():
+    """Rivendell's summary template opens with a fixed line: a session that kept its prompt is
+    filed by it and named as the worker names it now; one MOVE brought over has only its title,
+    the prompt's first 60 characters."""
+    store.init()
+    kept = _rv_session(SUMMARY_PROMPT)
+    moved = store.upsert_native_session("native-" + str(next(_chat)), next(_chat), "/", "/x",
+                                        title=SUMMARY_PROMPT[:60])["id"]
+    rivendell_jobs.backfill()
+    assert store.parse_job(store.get_session(kept)["job"])["kind"] == "project-summary"
+    assert store.get_session(kept)["title"] == "Rivendell · summary"
+    assert store.parse_job(store.get_session(moved)["job"]) == {"kind": "project-summary"}
+    assert store.get_session(moved)["title"] == SUMMARY_PROMPT[:60]
 
 
 def test_a_reattached_batch_keeps_its_job_and_your_name_for_it(monkeypatch):

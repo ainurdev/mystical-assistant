@@ -30,7 +30,7 @@ export interface Goal {
  *  facts()). Only `kind` is near-certain; every other fact is there when Rivendell
  *  sent it. An older session read back from its prompt may have no kind at all. */
 export interface RivendellJob {
-  kind?: "review" | "impl" | "taskdesc" | "todolist" | "changelog" | "news" | "deck" | "video" | "meeting-notes";
+  kind?: "review" | "impl" | "taskdesc" | "todolist" | "changelog" | "news" | "deck" | "video" | "meeting-notes" | "project-summary";
   instance?: string;          // the Rivendell connection it came from
   request?: string;           // its request id there
   step?: string;              // todolist: recommendations | todolist; video: transcribe | ask; meeting: text | recording
@@ -627,14 +627,14 @@ export interface RivendellDeviceInput {
 }
 /** One request held PENDING in a worker's queue, awaiting accept/reject. The
  *  kinds match bridge/rivendell.py: a PR review, a task implementation, a project
- *  todolist, an AI task description, a changelog, a reader's daily newspaper, a slide deck draft, a drive video transcript, or a meeting's notes. */
+ *  todolist, an AI task description, a changelog, a reader's daily newspaper, a slide deck draft, a drive video transcript, a meeting's notes, or a project's summary. */
 export interface RivendellQueueItem {
   instance_id: string;     // which worker holds it
   instance: string;        // that instance's display name
   key: string;             // "<kind>:<request_id>" — the accept/reject handle
-  kind: "review" | "impl" | "todolist" | "taskdesc" | "changelog" | "news" | "deck" | "video" | "meeting-notes";
+  kind: "review" | "impl" | "todolist" | "taskdesc" | "changelog" | "news" | "deck" | "video" | "meeting-notes" | "project-summary";
   request_id: string;
-  slug: string | null;     // repo (review/impl), project (todolist/changelog), task (taskdesc), reader (news), deck title (deck) or meeting name (meeting-notes)
+  slug: string | null;     // repo (review/impl), project (todolist/changelog/project-summary), task (taskdesc), reader (news), deck title (deck) or meeting name (meeting-notes)
   /** A todolist's step: task recommendations first, then the todolist itself.
    *  Null when rivendell-api did not say (older API). */
   step?: "recommendations" | "todolist" | null;
