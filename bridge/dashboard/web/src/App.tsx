@@ -1574,10 +1574,10 @@ export function App() {
 
   /** A new session in `project`, in `branch`'s worktree when given; `draft`
    *  waits in its composer, unsent (the RIVENDELL tab's WORK ON IT). */
-  async function newSession(project: string, draft?: string, branch?: string) {
+  async function newSession(project: string, draft?: string, branch?: string, title?: string) {
     openBlank();
     try {
-      const { session } = await api.createSession(project, undefined, undefined, branch);
+      const { session } = await api.createSession(project, undefined, title, branch);
       setSessions((prev) => [session, ...prev]);
       if (draft) setDrafts((d) => ({ ...d, [session.id]: draft }));
       openSession(session.id);
@@ -1627,7 +1627,7 @@ export function App() {
         await api.teamUnpack(id, wt.path).catch((e: Error) => notify("info", e.message));
       }
       pendingAttach.current = plan.attachments;
-      await newSession(project, plan.draft, branch);
+      await newSession(project, plan.draft, branch, plan.title ?? undefined);
       void api.teamState(id, "continued").then(() => void loadTeam(), () => { /* best effort */ });
     } catch (e) {
       const m = (e as Error).message;

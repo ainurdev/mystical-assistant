@@ -778,7 +778,7 @@ def continue_plan(share_id: str) -> dict:
     name, note, meta = rec["from"]["name"], rec["note"], rec["meta"]
     said = f" Their note: “{note}”" if note else ""
     if rec["kind"] != "session":
-        return {"project": None, "repo": None, "branch": None, "base": None,
+        return {"project": None, "repo": None, "branch": None, "base": None, "title": None,
                 "draft": f"{name} sent me this {rec['kind']}.{said}",
                 "attachments": [{"name": os.path.basename(rec["file"]), "url": _file_url(rec, share_id)}]
                 if rec.get("file") else []}
@@ -791,7 +791,7 @@ def continue_plan(share_id: str) -> dict:
     attach = [{"name": "transcript.md", "url": f"/local/rivendell/team/transcript.md?id={share_id}"}]
     attach += [{"name": os.path.basename(p), "url": "/local/attachment?path=" + urllib.parse.quote(p)}
                for p in _session_pictures(rec)[:_ATTACH - 1]]
-    return {"project": project, "repo": meta.get("repo"),
+    return {"project": project, "repo": meta.get("repo"), "title": rec["title"],
             "branch": f"from-{first}/{_slug(rec['title'], 40)}" if code else None, "base": base,
             "draft": f"{name} sent me this session to pick up. Read the attached transcript first"
                      + (", then look at their code on this branch." if code else ".") + said,

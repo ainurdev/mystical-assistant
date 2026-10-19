@@ -496,7 +496,7 @@ def test_continue_finds_your_checkout_and_names_the_branch(riv):
                       meta={"repo": "ainurhq/rivendell", "code": True, "commitSha": "abc1234"})
     team.on_share(riv.worker, riv.row(share))
     plan = team.continue_plan(share)
-    assert plan["project"] == "/ainurhq/rivendell"
+    assert plan["project"] == "/ainurhq/rivendell" and plan["title"] == "Done Tasks Still Show Due Alerts"
     assert plan["branch"] == "from-erfan/done-tasks-still-show-due-alerts"
     assert plan["base"] is None                       # that commit isn't here
     assert plan["draft"].startswith("Erfan Besharat sent me this session to pick up. Read the attached "

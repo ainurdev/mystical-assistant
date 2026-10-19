@@ -1022,6 +1022,7 @@ export interface ContinuePlan {
   repo: string | null;
   branch: string | null;     // a new worktree branch for their code
   base: string | null;       // the commit to cut it from, when it is here
+  title: string | null;      // a session's, for yours: it carries their session on
   draft: string;
   attachments: { name: string; url: string }[];
 }
