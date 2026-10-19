@@ -1141,7 +1141,8 @@ export function SessionsPanel(props: Props) {
             </svg>
             Add project
           </button>
-        ) : (
+        ) : mode !== "plugins" && (
+          // PLUGINS lists what plugin workers started — there's no session of yours to start there.
           <button
             className="newsess" onClick={toggleForm} title="start a session — current worktree or a new one"
             onMouseEnter={() => setHov("new")} onMouseLeave={() => setHov("")}
@@ -1160,7 +1161,7 @@ export function SessionsPanel(props: Props) {
       </div>
 
       <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "16px 10px 26px" }}>
-        {nsOpen && !nsScoped && nsForm}
+        {nsOpen && !nsScoped && mode !== "plugins" && nsForm}
         {npOpen && mode === "projects" && npForm}
         {/* Pending plugin requests sit above the sessions they become on accept. */}
         {plugins.rivendell && <RivendellQueue active={mode === "plugins"} />}
