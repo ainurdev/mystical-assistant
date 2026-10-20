@@ -711,6 +711,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"slug": None, "instances": None,
                                    "projects": [], "tasks": [], "errors": []})
             return self._json({"slug": slug, **rivendell.tasks(slug)})
+        if path == "/local/rivendell/taskstate":
+            # The task tab (docs/superpowers/specs/rivendell-task-check.md): the
+            # branch's Rivendell task, beside the branch in the prompt box and
+            # in the GIT tab. A null task draws nothing.
+            from bridge import aifeatures
+            cwd = _worktree_cwd(qs.get("project", [None])[0], (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json({"task": rivendell.task_state(cwd) if aifeatures.enabled("rvtrack") else None})
         if path in ("/local/rivendell/task", "/local/rivendell/todolist"):
             # The RIVENDELL tab's peek (one task in full, and the spec its
             # description defers to) and NEXT UP (the project's todolist), both
@@ -1288,6 +1297,18 @@ class Handler(BaseHTTPRequestHandler):
                     d, str(body.get("title") or ""), str(body.get("description") or ""),
                     str(body.get("board") or ""))})
             return self._json({"text": rivendell.work_list(d)})
+        if path == "/local/rivendell/taskstate":
+            # The task tab's NOT A TASK: this branch's pushes stop asking (taskcheck).
+            from bridge import taskcheck
+            branch = str(body.get("branch") or "").strip()
+            cwd = _worktree_cwd(body.get("project"), branch)
+            if cwd is None or body.get("state") != "skip":
+                return self._json({"error": "invalid project or state"}, 400)
+            top = taskcheck.toplevel(cwd)
+            if not branch or taskcheck.branch(top) != branch:
+                return self._json({"error": f"{branch or 'that branch'} isn't checked out here"}, 409)
+            taskcheck.record(top, branch, "skip")
+            return self._json({"task": rivendell.task_state(cwd)})
         if path.startswith("/local/sessions/") and path.endswith("/wait"):
             from bridge import waits
             sid = path[len("/local/sessions/"):-len("/wait")]

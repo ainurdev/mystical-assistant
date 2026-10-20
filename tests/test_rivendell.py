@@ -3442,7 +3442,7 @@ def test_work_list_names_board_list_and_open_tasks(workers, monkeypatch):
     assert "NR Chatbot & Complaints ▸ Inbox" in text
     assert "NRA-61 Fix login redirect · In progress · yours" in text
     assert text.endswith("If one of these covers your work, put its key in the branch name and the PR "
-                         "title. If none does, ask the user with one card before calling CreateRivendellTask.")
+                         "title. If none does, do the work, and ask with the Task card before its first push.")
     assert "Old" not in text
 
 
@@ -3481,6 +3481,72 @@ def test_work_create_files_a_tagged_task_on_the_inbox(workers, monkeypatch):
                           "tagExternalIds": ["tag-1"]})
     assert "Created NRA-74" in text and "tagged unplanned" in text
     assert "https://rv/task-management/projects/b1?task=t74" in text
+
+
+def _checkout(tmp_path, branch="fix/login", pushed=False):
+    """A git checkout on `branch` with a commit, pushed to an origin or not."""
+    import subprocess
+    d, remote = str(tmp_path / "app"), str(tmp_path / "remote.git")
+
+    def git(*a):
+        subprocess.run(["git", *a], check=True, capture_output=True)
+    git("init", "-q", "-b", "main", d)
+    git("-C", d, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty", "-m", "x")
+    git("-C", d, "checkout", "-q", "-b", branch)
+    if pushed:
+        git("init", "-q", "--bare", remote)
+        git("-C", d, "remote", "add", "origin", remote)
+        git("-C", d, "push", "-q", "origin", branch)
+    return d
+
+
+def test_work_create_keeps_the_new_key_for_the_branch(workers, monkeypatch, tmp_path):
+    from bridge import taskcheck
+    _on_board(workers, monkeypatch)
+    repo = _checkout(tmp_path)
+    assert "Created NRA-74" in rivendell.work_create(repo, "Add audit log")
+    assert taskcheck.read(taskcheck.toplevel(repo)) == {"fix/login": "NRA-74"}
+
+
+def test_key_prefixes_come_from_the_cached_tasks(workers, monkeypatch):
+    _on_board(workers, monkeypatch)
+    assert rivendell.key_prefixes("/x") == []                          # nothing cached: no network
+    workers["a"]._last_tasks["acme/app"] = {"tasks": [_OPEN, {"key": "elv-3"}, {"key": None}]}
+    assert rivendell.key_prefixes("/x") == ["ELV", "NRA"]
+
+
+@pytest.fixture
+def cached(workers, monkeypatch):
+    """On the NR board, with NRA-61 in the cached open tasks."""
+    _on_board(workers, monkeypatch)
+    workers["a"]._last_tasks["acme/app"] = {"projects": [_PROJ], "tasks": [{**_OPEN, "url": "https://rv/t61"}]}
+
+
+def test_task_state_links_the_key_in_the_branch_in_any_case(cached, tmp_path):
+    s = rivendell.task_state(_checkout(tmp_path, "fix/nra-61-login"))
+    assert s == {"state": "linked", "key": "NRA-61", "title": "Fix login redirect", "url": "https://rv/t61",
+                 "board": "NR Chatbot & Complaints", "board_url": "https://rv/projects/p1"}
+
+
+def test_task_state_reads_a_recorded_answer(cached, tmp_path):
+    from bridge import taskcheck
+    repo = _checkout(tmp_path)
+    assert rivendell.task_state(repo)["state"] == "none"               # work no task covers yet
+    taskcheck.record(repo, "fix/login", "NRA-74")                       # filed, not in the cache yet
+    s = rivendell.task_state(repo)
+    assert (s["state"], s["key"], s["title"], s["url"]) == ("linked", "NRA-74", None, "https://rv/projects/p1")
+    taskcheck.record(repo, "fix/login", "skip")
+    assert rivendell.task_state(repo)["state"] == "skip"
+
+
+def test_task_state_draws_nothing_without_work_a_board_or_a_branch(cached, workers, tmp_path, monkeypatch):
+    import subprocess
+    assert rivendell.task_state(_checkout(tmp_path, pushed=True)) is None     # nothing to push
+    repo = _checkout(tmp_path / "b")
+    subprocess.run(["git", "-C", repo, "checkout", "-q", "--detach"], check=True)
+    assert rivendell.task_state(repo) is None
+    monkeypatch.setattr(rivendell, "on_board", lambda path, wait=2.0: False)
+    assert rivendell.task_state(_checkout(tmp_path / "c")) is None
 
 
 def test_work_create_needs_a_title(workers, monkeypatch):

@@ -491,6 +491,18 @@ export interface PrInfo {
   draft: boolean;       // a draft PR: never READY, says DRAFT
   conflicts?: boolean;  // GitHub's mergeable = CONFLICTING; absent on an older bridge
 }
+/** The task tab (docs/superpowers/specs/rivendell-task-check.md): the branch's
+ *  Rivendell task, beside the branch in the prompt box and in the GIT tab.
+ *  linked: its key is in the branch, or a create or a card answer recorded one;
+ *  skip: you said it isn't a task; none: work no task covers yet. */
+export interface TaskState {
+  state: "none" | "linked" | "skip";
+  key: string | null;
+  title: string | null;
+  url: string | null;         // the task, else its board's project in Rivendell
+  board: string | null;
+  board_url: string | null;
+}
 export interface PrStatus {
   pr: PrInfo | null;    // null = no chip: no PR, no GitHub remote, gh missing or signed out
   pinged: string[];     // alerts the bridge has pinged (failing:<sha>, changes:<by>:<at>)
@@ -2048,6 +2060,12 @@ export const api = {
     req<PrStatus>(
       `/local/github/pr/status?project=${encodeURIComponent(project)}&branch=${encodeURIComponent(branch)}${
         session ? `&session=${encodeURIComponent(session)}` : ""}${force ? "&force=1" : ""}`),
+  /** null draws nothing: not on a board, the switch off, or nothing to push. */
+  taskState: (project: string, branch: string) =>
+    req<{ task: TaskState | null }>(
+      `/local/rivendell/taskstate?project=${encodeURIComponent(project)}&branch=${encodeURIComponent(branch)}`),
+  taskSkip: (project: string, branch: string) =>
+    req<{ task: TaskState | null }>("/local/rivendell/taskstate", { method: "POST", body: { project, branch, state: "skip" } }),
   // --- task trackers ---
   trackers: () => req<{ connections: TrackerConnection[] }>("/local/trackers"),
   addTracker: (body: { kind: "teamwork" | "jira"; name: string; site: string; email?: string; token: string }) =>

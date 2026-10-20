@@ -1976,6 +1976,7 @@ export function App() {
           onGitChanged={() => setGitNonce((n) => n + 1)}
           onOpenFile={openFileFromPanel}
           onHandOff={handOffSession}
+          onSend={(text) => void send(text, [], { force: true })}
           // A "commit message ready" click lands back here: this session, this tab.
           onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "git", rightOpen: true }); }}
         />

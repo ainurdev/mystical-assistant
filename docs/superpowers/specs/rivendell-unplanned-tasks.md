@@ -9,6 +9,11 @@ planned tasks. The user wants every piece of work in a Rivendell project tied to
 a task. When no task covers it, a task gets created (after asking) and the work
 gets linked to it.
 
+**Since 2026-10-20 the question waits for the push.** A push gate holds a
+keyless push, and the card and the branch's state are dressed in the dashboard:
+see [rivendell-task-check](rivendell-task-check.md). The rest of this spec still
+describes the tools, the boards and the tag.
+
 ## What the user decided
 
 - **Ask first.** When no open task covers the work, the session asks with one

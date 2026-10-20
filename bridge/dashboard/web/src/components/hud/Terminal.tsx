@@ -18,6 +18,7 @@ import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
 import { PrChip } from "./PrChip";
+import { TaskChip } from "./TaskChip";
 import { ChatChromeContext } from "../../lib/chatchrome";
 import { isDeviceRun } from "../../lib/devicerun";
 import { readOnly } from "../../lib/team";
@@ -553,6 +554,11 @@ export function Terminal({
                 <span style={{ color: "var(--purple-g)" }}>⎇</span><span className="np-name" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: 0 }}>{branch}</span>
               </button>
             </>
+          )}
+          {/* The branch's Rivendell task (rivendell-task-check.md). Draws nothing,
+              hairline included, off a board or with nothing to push. */}
+          {branch && sessionProject && (
+            <TaskChip project={sessionProject} branch={branch} busy={!!activeId} onSend={onSendText} />
           )}
           {/* The branch's PR (review loop B/C). Draws nothing, hairline included,
               until the bridge reports one. */}

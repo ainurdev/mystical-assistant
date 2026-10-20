@@ -17,6 +17,7 @@ import { notify } from "./Notifications";
 import { syncOf } from "../../lib/gitsync";
 import { divergedDraft, pushFailedDraft } from "../../lib/pushfailed";
 import { ago } from "../../lib/surfaces";
+import { TaskLine } from "./TaskChip";
 
 /* GIT — the right rail's one git tab, and the dashboard's only git status
    (the header's git icon went, 2026-10-18): a repo header (branch, ⟳ fetch),
@@ -48,6 +49,8 @@ interface Props {
   // (git's refusal, or a diverged branch) unsent. The project is named here,
   // not read at click time: this panel outlives a switch to another session.
   onHandOff?: (project: string, branch: string | null | undefined, draft: string) => void;
+  // To this session's chat: the task line's "link one".
+  onSend?: (text: string) => void;
 }
 
 type OpKind = "push" | "publish" | "pull" | "fetch";
@@ -133,7 +136,7 @@ function Roll({ slot, v }: { slot: string; v: string | null }) {
   );
 }
 
-export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onReveal, onHandOff }: Props) {
+export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onReveal, onHandOff, onSend }: Props) {
   const files = git?.files ?? [];
   // A file is staged when the index half of porcelain's pair moved, and
   // unstaged when the working-tree half did. An old backend sends neither, so
@@ -481,6 +484,7 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
                 {op?.phase === "busy" && op.kind !== "fetch" && <div className="gp-robar"><i /></div>}
               </div>
               <div className={`gp-rosub${fetching ? "" : s.kind === "synced" ? " ok" : warn ? " warn" : ""}`}>{sub}</div>
+              <TaskLine project={project} branch={branchName} onSend={onSend} />
               {act && <div className="gp-act">{act}</div>}
             </div>
           )}

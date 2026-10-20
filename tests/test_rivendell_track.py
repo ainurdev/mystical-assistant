@@ -8,6 +8,8 @@ Run: python -m pytest tests/test_rivendell_track.py -v"""
 
 import json
 import os
+import shlex
+import subprocess
 import sys
 import tempfile
 
@@ -15,7 +17,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bridge import aifeatures, goal_mcp, integrations, rivendell, rivendell_instances, runner, store  # noqa: E402
+from bridge import (aifeatures, goal_mcp, integrations, rivendell, rivendell_instances,  # noqa: E402
+                    runner, store, taskcheck)
 
 store.init()
 
@@ -155,3 +158,45 @@ def test_one_shots_and_bot_runs_never_get_the_note(note):
     assert runner._RIVENDELL_NOTE not in _appended("c-1", skip_pack=True)
     assert runner._RIVENDELL_NOTE not in _appended("c-1", interactive=False)
     assert note["calls"] == 0
+
+
+# --- the push gate and the Task card's answer (rivendell-task-check.md) ------------
+
+@pytest.fixture
+def checkout(tmp_path):
+    """A git checkout on fix/login."""
+    d = str(tmp_path / "app")
+    subprocess.run(["git", "init", "-q", "-b", "main", d], check=True)
+    subprocess.run(["git", "-C", d, "-c", "user.email=t@t", "-c", "user.name=t",
+                    "commit", "-q", "--allow-empty", "-m", "init"], check=True)
+    subprocess.run(["git", "-C", d, "checkout", "-q", "-b", "fix/login"], check=True)
+    return d
+
+
+def _gated(cwd, csid):
+    cmd = runner._base_cmd("hi", 555, stream=True, cwd=cwd, interactive=True, claude_session_id=csid)
+    return json.loads(cmd[cmd.index("--settings") + 1]) if "--settings" in cmd else None
+
+
+def test_a_session_with_the_note_gets_the_push_gate(note, checkout, monkeypatch):
+    monkeypatch.setattr(rivendell, "key_prefixes", lambda path: ["NRA"])
+    hook = _gated(checkout, "c-g")["hooks"]["PreToolUse"][0]
+    assert hook["matcher"] == "Bash"
+    argv = shlex.split(hook["hooks"][0]["command"])
+    assert argv[1:] == ["-I", os.path.join(runner._REPO_ROOT, "bridge", "taskcheck.py"),
+                        taskcheck.repo_id(checkout), "NRA"]
+
+
+def test_no_push_gate_without_the_note_or_a_repo(note, checkout):
+    assert _gated(tempfile.mkdtemp(), "c-g1") is None        # nothing to gate outside git
+    note["on"] = False
+    assert _gated(checkout, "c-g2") is None
+
+
+def test_a_task_card_answer_is_kept_for_the_branch(checkout):
+    job = runner.Job("j-task", 555)
+    job.cwd = checkout
+    q = [{"header": "Task", "question": "Track it?", "options": [{"label": "Not a task"}]}]
+    job.add_pending({"request_id": "r1", "kind": "question", "questions": q})
+    assert job.respond("r1", answers=[{"header": "Task", "labels": ["Not a task"]}])
+    assert taskcheck.read(taskcheck.toplevel(checkout)) == {"fix/login": "skip"}

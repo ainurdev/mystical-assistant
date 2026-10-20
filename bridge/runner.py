@@ -106,18 +106,35 @@ _PUSH_NOTE = (
 
 # Told to every interactive run of a session whose repo is on a Rivendell task
 # board (_rivendell_note_for): the work gets a task, the task's key rides the
-# branch and the PR, and Rivendell links the PR by that key on its own.
+# branch and the PR, and Rivendell links the PR by that key on its own. The ask
+# waits for the push (docs/superpowers/specs/rivendell-task-check.md): a card at
+# the start stopped the turn before any work while you were away, and its title
+# was a guess from one line. The card's shape is fixed here because the
+# dashboard dresses a "Task" card (QuestionCard) and the bridge reads its answer
+# (taskcheck.answer_state); _push_gate holds a push that skipped it.
 _RIVENDELL_NOTE = (
     "This repo's work is tracked on a Rivendell task board. Before you change code for a "
     "piece of work, call mcp__goals__ListRivendellTasks (a deferred tool: load it with "
-    "ToolSearch first). If an open task covers the work, carry its key: in the PR title, so "
-    "Rivendell links the PR to the task; in the name of a branch you create, keeping the "
-    "repo's own branch style (e.g. fix/NRA-61-login-redirect), but never rename a branch "
-    "that already exists; and in your commit messages. If none covers it, ask the user with one "
-    "AskUserQuestion card whether to create one, naming the board and list the tool reports. "
-    "On yes, call mcp__goals__CreateRivendellTask and use the new key the same way; on no, "
-    "don't ask again for that work. Check once per piece of work, and again for each new one "
-    "in this session. Questions, reviews and research need no task.")
+    "ToolSearch first). If an open task covers the work, carry its key without asking: in "
+    "the name of a branch you create, in the repo's own branch style (e.g. "
+    "fix/NRA-61-login-redirect), in your commit messages, and in the PR title, which is how "
+    "Rivendell links the PR. If none covers it, don't ask yet: do the work. Ask once, right "
+    "before the first git push or gh pr create of work that carries no key, with one "
+    "AskUserQuestion card whose header is \"Task\". Its question says that nothing open on "
+    "<board> ▸ <list> (as the tool reports them) covers this push and asks whether to track it "
+    "as a task, then on a second line: ⎇ <branch> · <n> commits · <git diff --shortstat of "
+    "what the push sends>. Its options, the one you recommend first with \" (Recommended)\" at "
+    "the end of its label: Create “<a title written from what the work did>” (description: "
+    "New task in <list>, tagged unplanned. Its key goes in the branch and the PR title.); "
+    "It's <KEY> <its title>, only for an open task that may cover it (description: The closest "
+    "open task (<column>). Its key goes in the PR title.); Not a task (description: Push as "
+    "is. This branch won't ask again.). Recommend Not a task for a tiny change (a version "
+    "bump, a typo), the open task when it likely covers the work, and Create otherwise. On "
+    "Create, call mcp__goals__CreateRivendellTask with that title. On Create or It's <KEY>, "
+    "rename the branch to carry the key if it was never pushed (never rename a pushed one) "
+    "and put the key in the PR title. On Not a task, push as is. A push that carries no key "
+    "is held back once per branch until you have asked. Questions, reviews and research need "
+    "no task.")
 
 
 def _ensure_mystical(cwd: "str | None") -> None:
@@ -230,6 +247,25 @@ def _rivendell_note_for(chat_id: int, claude_session_id: str, cwd: "str | None")
         except Exception:  # noqa: BLE001 — the note never blocks a turn
             _rivendell_notes[claude_session_id] = False
     return _RIVENDELL_NOTE if _rivendell_notes[claude_session_id] else ""
+
+
+def _push_gate(cwd: str) -> "str | None":
+    """--settings for a run that carries the Rivendell note: bridge/taskcheck.py
+    as a PreToolUse hook on Bash, which holds back a push from this repo that
+    names no task, once per branch. Inline JSON: it holds paths and key prefixes,
+    no secret. None when `cwd` isn't in a git repo, since there is nothing to gate."""
+    from bridge import rivendell, taskcheck
+    try:
+        home = taskcheck.repo_id(cwd)
+        prefixes = ",".join(rivendell.key_prefixes(cwd)) if home else ""
+    except Exception:  # noqa: BLE001 — the gate never blocks a turn
+        return None
+    if not home:
+        return None
+    hook = " ".join(shlex.quote(a) for a in (
+        sys.executable, "-I", os.path.join(_REPO_ROOT, "bridge", "taskcheck.py"), home, prefixes))
+    return json.dumps({"hooks": {"PreToolUse": [
+        {"matcher": "Bash", "hooks": [{"type": "command", "command": hook}]}]}})
 
 
 # --- ponytail (per-run code-minimalism intensity) ----------------------------
@@ -556,6 +592,9 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     rv_note = (_rivendell_note_for(chat_id, claude_session_id, cwd)
                if interactive and claude_session_id and not skip_pack else "")
     cmd += ["--append-system-prompt", _compose_system_prompt(graph, rv_note)]
+    gate = _push_gate(cwd or state.project_dir(chat_id)) if rv_note else None
+    if gate:
+        cmd += ["--settings", gate]
     if skip_pack and not (permission_mode and not interactive):
         # Internal one-shots (titler/commit-msg) are pure text transforms
         # whose prompts embed untrusted conversation text. No tools and no
@@ -950,6 +989,7 @@ class Job:
                     "message": _format_answers(entry.get("questions", []), answers or [])}
             self.add({"type": "question_answered", "request_id": request_id,
                       "answers": answers or []})
+            _record_task_answer(self.work_cwd or self.cwd, entry.get("questions", []), answers or [])
         elif behavior == "allow":
             resp = {"behavior": "allow", "updatedInput": entry.get("input", {})}
             self.add({"type": "permission_resolved", "request_id": request_id,
@@ -1900,6 +1940,21 @@ def _format_answers(questions: list, answers: list) -> str:
     if not parts:
         return "The user did not select an option."
     return "The user answered. " + "; ".join(parts)
+
+
+def _record_task_answer(cwd: "str | None", questions: list, answers: list) -> None:
+    """An answered Task card (the Rivendell note's push question) goes into the
+    checkout's .mystical/tasks.json, for its branch: the task tab shows it, and
+    the push gate lets that branch's pushes through. Any surface's answer counts,
+    because they all land here. Never raises into the answer."""
+    try:
+        from bridge import taskcheck
+        got = taskcheck.answer_state(questions, answers)
+        if got:
+            top = taskcheck.toplevel(cwd)
+            taskcheck.record(top, taskcheck.branch(top), got)
+    except Exception as e:  # noqa: BLE001
+        print(f"[runner] task answer not recorded: {e}", file=sys.stderr)
 
 
 def _mcp_detail(inp) -> str:

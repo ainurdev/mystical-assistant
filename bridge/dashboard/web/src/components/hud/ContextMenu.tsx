@@ -31,7 +31,7 @@ const stacked = (it: CtxItem) => !!it.hint && it.hint.length > 8;
 
 const W = 216;
 // ~26 hint chars fit per wrapped line at this width; each line adds ~12px.
-const menuH = (items: CtxItem[], chrome: number) => chrome + items.reduce((h, it) =>
+export const menuH = (items: CtxItem[], chrome: number) => chrome + items.reduce((h, it) =>
   h + (it.divider ? 9 : stacked(it) ? 30 + 12 * Math.ceil(it.hint!.length / 26) : 30), 0);
 
 const PANEL: React.CSSProperties = {
