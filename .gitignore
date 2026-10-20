@@ -26,3 +26,6 @@ dist*/
 
 # graphify knowledge-graph output (regenerable, ~20MB incl. cache)
 graphify-out/
+
+# macOS Finder metadata — Finder drops one in every folder it opens on the Mac
+.DS_Store
