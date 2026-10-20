@@ -13,7 +13,7 @@ import time
 import pytest
 
 from bridge import (acp_agents, config, learn, profiles, project_config, relevance, runner,
-                    state, store, tailstate, titler)
+                    state, store, titler)
 from bridge.dashboard import server as dash
 from bridge.miniapp import server as mini
 
@@ -41,8 +41,9 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(runner, "_jobs", {})
     monkeypatch.setattr(store, "default_disabled_tools", lambda: [])   # no `claude mcp list`
     monkeypatch.setattr(runner, "_notify", lambda *a, **k: None)       # no Telegram
-    for mod in (titler, learn, tailstate):                              # no model calls
+    for mod in (titler, learn):                                         # no model calls
         monkeypatch.setattr(mod, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)                # no end-of-turn ping thread
     # Journal by draining, never the worker thread: once started it outlives this
     # module, and test_bridge's drain-then-read journal test races it.
     monkeypatch.setattr(runner, "_ensure_journal_thread", lambda: None)

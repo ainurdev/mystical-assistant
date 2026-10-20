@@ -128,7 +128,7 @@ const subscribe = (fn: () => void) => { subs.add(fn); return () => { subs.delete
 const TONE: Record<string, "ok" | "err" | "ask" | "warn" | "acc" | "dim"> = {
   done: "ok", rv_done: "ok", move_done: "ok", resumed: "ok", rv_link_back: "dim",
   failed: "err", rv_failed: "err", rv_refused: "err", rv_link: "err", pr_failing: "err", move_failed: "err",
-  approve: "ask", question: "ask", asking: "ask", login: "ask", limit_choice: "ask", rv_offer: "ask",
+  approve: "ask", question: "ask", login: "ask", limit_choice: "ask", rv_offer: "ask",
   parked: "warn", pr_changes: "warn", started: "acc", rv_started: "acc", team_in: "acc",
   rv_held: "dim", rv_dismissed: "dim", weekly: "dim", retrying: "dim",
 };

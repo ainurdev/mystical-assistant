@@ -1299,9 +1299,8 @@ def test_a_restart_killed_turn_stays_running_in_the_queue(monkeypatch):
 
 
 def test_a_failed_turn_hands_the_queue_its_error(monkeypatch):
-    from bridge import tailstate
     q, sid = _queued_turn(monkeypatch, "p-err-queue")
-    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)   # no ping thread
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)   # no ping thread
     job = runner.Job("j1", 555, sid)
     job.error_msg = "tests red"            # what a child that died without a result leaves
     runner._run_streaming(job, "p", [], config.BASE_PATH)
@@ -1334,14 +1333,14 @@ def _dying_turn(monkeypatch, project, rc, stderr=""):
     """A started turn whose child exits `rc` the moment it spawns. Every tool
     switched on, so the run never asks toolsets (or `claude mcp list`) for a
     default deny list."""
-    from bridge import tailstate, toolsets
+    from bridge import toolsets
     sid = store.create_session(555, project)["id"]
     store.set_disabled_tools(sid, [])
     job = runner.Job(f"j-{project}", 555, sid)
     store.start_turn(sid, job.id, "p", [])
     monkeypatch.setattr(runner.subprocess, "Popen", _child(rc, stderr))
     monkeypatch.setattr(toolsets, "ready", lambda: True)
-    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)
     return sid, job
 
 
