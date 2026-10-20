@@ -1065,7 +1065,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
           ) : (
           <>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px 8px", flex: "none" }}>
-            <span style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>EXPLORER · {paths.length}</span>
+            <span className="caps" style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Explorer · {paths.length}</span>
             <span style={{ flex: 1 }} />
             <div style={{ position: "relative", flex: "none" }}>
               <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}

@@ -451,7 +451,7 @@ export function NotificationCenter() {
 
   const section = (label: string, list: Row[]) => list.length > 0 && (
     <>
-      <div className="ntf-sec">{label}<span className="ln" /></div>
+      <div className="ntf-sec caps">{label}<span className="ln" /></div>
       {list.map((r) => <NoticeRow key={r.id} n={r} now={now} compact={r.read} onOpen={() => go(r)} />)}
     </>
   );
@@ -501,13 +501,13 @@ export function NotificationCenter() {
             {stale && <div className="ntf-stale">This page is newer than the bridge. Restart it to see the feed.</div>}
             {fNeeds.length > 0 && (
               <>
-                <div className="ntf-sec ask">NEEDS YOU<span className="ln" />{fNeeds.length}</div>
+                <div className="ntf-sec ask caps">Needs you<span className="ln" />{fNeeds.length}</div>
                 {fNeeds.map((n) => <NeedRow key={n.subject} n={n} now={now} done={() => void load.current()} onOpen={() => { close(); openNeed(n); }} />)}
               </>
             )}
-            {section("NOW", nowRows)}
-            {section("TODAY", today)}
-            {section("EARLIER", earlier)}
+            {section("Now", nowRows)}
+            {section("Today", today)}
+            {section("Earlier", earlier)}
             {nothing && !stale && (
               <div className="ntf-empty">
                 <div className="o">silence on every channel — i'll knock when something needs you.</div>

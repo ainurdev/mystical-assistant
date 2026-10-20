@@ -77,8 +77,8 @@ export function DeviceRunPlate({ s, working, ended }: { s: SessionBrief; working
             </span>
           )}
           {live && (
-            <button type="button" className="act-alt drp-stop" onClick={() => void stop()} disabled={stopping}>
-              <Square size={10} fill="currentColor" strokeWidth={0} aria-hidden />STOP RUN
+            <button type="button" className="act-alt drp-stop caps" onClick={() => void stop()} disabled={stopping}>
+              <Square size={10} fill="currentColor" strokeWidth={0} aria-hidden />Stop run
             </button>
           )}
         </div>

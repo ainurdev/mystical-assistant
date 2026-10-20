@@ -518,14 +518,14 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
                   }} />
                 <div className="gp-cbtns">
                   {ai.commitmsg && (
-                    <button className="gp-btn" disabled={gen || busy || !changed.size} title="write the message from the diff"
-                      onClick={() => void generate()}>{gen ? "WRITING…" : "✧ GENERATE"}</button>
+                    <button className="gp-btn caps" disabled={gen || busy || !changed.size} title="write the message from the diff"
+                      onClick={() => void generate()}>{gen ? "Writing…" : "✧ Generate"}</button>
                   )}
                   {/* The label is the promise: with an index, COMMIT takes only
                       what's in it (bridge/git.py commit()), so saying "ALL"
                       would be wrong the moment you stage one file. */}
-                  <button className="gp-btn pri" disabled={noCommit} title={`${MOD}Enter`} onClick={() => void commit()}>
-                    {!ready ? "▸ COMMIT" : staged.length ? `▸ COMMIT STAGED (${staged.length})` : `▸ COMMIT ALL (${changed.size})`}
+                  <button className="gp-btn pri caps" disabled={noCommit} title={`${MOD}Enter`} onClick={() => void commit()}>
+                    {!ready ? "▸ Commit" : staged.length ? `▸ Commit staged (${staged.length})` : `▸ Commit all (${changed.size})`}
                   </button>
                 </div>
               </div>

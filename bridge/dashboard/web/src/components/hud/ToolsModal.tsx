@@ -102,13 +102,13 @@ export function ToolsModal({
             OFF applies to this session's next turn · a switched-off tool leaves the model's context, so its schema stops costing tokens
           </div>
 
-          <div style={LABEL}>BUILT-IN TOOLS</div>
+          <div className="caps" style={LABEL}>Built-in tools</div>
           <div style={box}>
             {(sets?.builtins ?? []).map((b) => row(b.rule, b.label, b.hint, b.rule))}
           </div>
 
-          <div style={LABEL}>
-            MCP SERVERS{sets ? ` · ${sets.servers.filter((s) => !off.has(s.rule)).length}/${sets.servers.length} ON` : ""}
+          <div className="caps" style={LABEL}>
+            MCP servers{sets ? ` · ${sets.servers.filter((s) => !off.has(s.rule)).length}/${sets.servers.length} on` : ""}
             {/* All 17 on measured ~263k tokens of schemas against a 200k window,
                 so the count is the number that matters most on this screen. */}
             {sets && sets.servers.every((s) => !off.has(s.rule)) && sets.servers.length > 6 && (

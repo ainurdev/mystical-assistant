@@ -283,7 +283,7 @@ function ProfileRows({ profiles, accounts, value, defaultId, onPick, onDefault }
           </div>
         );
       })}
-      <button type="button" className="pm-row pm-new" onClick={() => onPick(NEW_PROFILE)}>+ NEW PROFILE</button>
+      <button type="button" className="pm-row pm-new caps" onClick={() => onPick(NEW_PROFILE)}>+ New profile</button>
     </div>
   );
 }
@@ -1001,9 +1001,9 @@ export function Composer({
       <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
   );
   const designBtn = plugins.design && (
-    <button className="act-alt neutral" onClick={design} disabled={disabled || !text.trim()}
+    <button className="act-alt neutral caps" onClick={design} disabled={disabled || !text.trim()}
       title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
-      DESIGN <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
+      Design <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
   );
   /* Exactly one primary. STOP and PAUSE are rare and modal and one of
      them is destructive, so they sit as recessive glyphs and only take
@@ -1030,19 +1030,19 @@ export function Composer({
       <span className="act-fence" aria-hidden />
       {withDesign && designBtn}
       {onSteer && (
-        <button className="act-alt" onClick={steer} disabled={!text.trim()}
+        <button className="act-alt caps" onClick={steer} disabled={!text.trim()}
           title="STEER — fold this into the turn that's running now (falls back to queueing if the run just ended)">
-          STEER <SteerIcon /></button>
+          Steer <SteerIcon /></button>
       )}
-      <button className="act-pri queue" onClick={submit} disabled={disabled || !text.trim()}
+      <button className="act-pri queue caps" onClick={submit} disabled={disabled || !text.trim()}
         title="QUEUE — run this prompt after the current turn (Enter)">
-        QUEUE <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
+        Queue <ChevronsRight size={13} strokeWidth={1.8} aria-hidden /></button>
     </>
   ) : (
     <>
       {withDesign && designBtn}
-      <button className="act-pri" onClick={submit} disabled={disabled || !text.trim()} title="SEND (Enter)">
-        SEND <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
+      <button className="act-pri caps" onClick={submit} disabled={disabled || !text.trim()} title="SEND (Enter)">
+        Send <ChevronRight size={13} strokeWidth={1.8} aria-hidden /></button>
     </>
   );
   const actionCluster = (<>{fileInput}{paperclip}{actions(true)}</>);

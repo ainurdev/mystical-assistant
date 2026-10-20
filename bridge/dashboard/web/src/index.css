@@ -352,6 +352,9 @@ body {
    lands centred, Consolas and Courier New ride 2-3px high. Trimmed to cap
    height and baseline, every theme's mono sits on the same midline. */
 .trim { text-box: trim-both cap alphabetic; }
+/* A label the HUD shouts. The markup says it in natural case and the capitals
+   come from here, so a family that doesn't shout (PEBBLE) turns them off. */
+.caps { text-transform: uppercase; }
 /* A shell column is one flush surface, divided from its neighbour by a single
    hairline — so the panel that fills a column must not draw a second box
    inside it. This outranks the panels' own inline border on purpose: the same
@@ -821,7 +824,9 @@ input {
 .md-copy:hover, .md-copy:focus-visible { color: var(--acc); opacity: 1; }
 .md a + .md-copy { display: inline-block; vertical-align: middle; margin-left: 1px; }
 .md a:hover + .md-copy { opacity: 1; }
-.md code + .md-copy { display: inline-block; vertical-align: middle; margin-left: 1px; }
+/* inline code's copy button floats over what follows instead of holding a gap
+   open after every span */
+.md code + .md-copy { display: inline-block; vertical-align: middle; margin-left: 1px; position: absolute; }
 .md code:hover + .md-copy { opacity: 1; }
 .md blockquote > .md-copy { float: right; margin: 0.15em 0 0.2em 0.5em; }
 .md blockquote:hover > .md-copy { opacity: 1; }
@@ -2765,11 +2770,8 @@ input {
 }
 /* the note's COPY / QUOTE take the figure's cell while you hover it */
 [data-style="dossier"] .dwork-body .group\/msg:hover > .zpause { visibility: hidden; }
-/* inline code in a note or a thought takes no more room than its text: its
-   copy button floats over what follows instead of holding a gap open after
-   every span; a file ref (a box in the line) keeps its border but fits the
-   20px line it sits on */
-[data-style="dossier"] .dwork-body .md code + .md-copy { position: absolute; }
+/* a file ref in a note or a thought (a box in the line) keeps its border but
+   fits the 20px line it sits on */
 [data-style="dossier"] .dwork-body .md-fileref { vertical-align: middle; line-height: 1; }
 [data-style="dossier"] .dwork-body .md-fileref > code { line-height: 14px; }
 /* a hook's output or a stderr line: the quietest row, its first line only */
@@ -5219,3 +5221,145 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   color: var(--txd); font: 600 var(--t10)/1 var(--f); letter-spacing: .06em; text-transform: uppercase; cursor: pointer; appearance: none; }
 .gg-older:hover { color: var(--txh); background: var(--wash); }
 .gg-skel { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+
+/* === THE FAMILIES · PEBBLE · STANDARD ======================================
+   The roast's fixes (.mystical/design-drafts/pebble-standard). Keep this block
+   last: it was drawn and checked as the last stylesheet, and several rules win
+   over FLINT's !important ones only by coming after them. PEBBLE was FLINT with its corners
+   filed down in the places someone looked: the slabs and the composer went
+   round and soft while everything they open kept FLINT's square boxes,
+   tracked capitals and mono. Five rules make it one theme:
+     1 one voice     the UI face in natural case; mono is for code
+     2 one corner    a line tall is a pill, taller is a card, nothing is square
+     3 one mark      selected = an accent-tinted fill; no bars, no underlines
+     4 one ladder    ground < slab < card < popover, each opaque, one step apart
+     5 one primary   the filled accent pill, flat — no glow ── */
+
+/* ── 1 · ONE VOICE ── */
+/* The HUD's base face is mono by accident: the themed container's inline
+   style carries --mono, so the families' pin rule ([style*="JetBrains Mono"])
+   matches the container itself and sets the whole app in mono. PEBBLE's base
+   is its UI face; code keeps a face of its own. */
+[data-fam="pebble"][data-theme] { font-family: var(--ui-font) !important; }
+[data-fam="pebble"] { --pb-code: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace; }
+/* chrome: what the HUD sets in mono (pins and var(--mono)) reads in the UI
+   face with even figures; code inside it keeps mono */
+[data-fam="pebble"] :is(.hudgrid > .shellcol:first-child, .hudgrid > div:last-child, .composer, .isle, .ntf-pop,
+  [data-ctxmenu], [style*="--shadow-pop"], [style*="--shadow-modal"], [role="dialog"]:not(.agm)) {
+  --mono: var(--ui-font); font-variant-numeric: tabular-nums;
+}
+[data-fam="pebble"] :is(code, pre, kbd, samp, .cm-editor, .xterm, [data-style]) { --mono: var(--pb-code); }
+/* the transcript's own chrome: the WORK plate's head, the answer's head, your prompt's tag */
+[data-fam="pebble"] [data-style="dossier"] :is(.dwork-lab, .dwork-ms, .dwork-k, .res-lab, .res-meta, .pmeta, .pmeta *, .jump-latest) {
+  font-family: var(--ui-font) !important; letter-spacing: 0 !important; font-variant-numeric: tabular-nums;
+}
+[data-fam="pebble"] .jump-latest { font-family: var(--ui-font) !important; letter-spacing: 0 !important; }
+/* the new-session screen sits outside every region above: its words in the UI
+   voice, the oracle line in Nunito's italic */
+[data-fam="pebble"] [style*="min-height: 330px"][style*="gap: 14px"] { --mono: var(--ui-font); font-family: var(--ui-font); }
+[data-fam="pebble"] [style*="min-height: 330px"][style*="gap: 14px"] :is(div, span, button) { letter-spacing: 0 !important; }
+[data-fam="pebble"] .fresh-quote { font-family: var(--ui-font) !important; font-size: var(--t17) !important; }
+/* natural case. A title or a label takes a capital, a reading stays lower
+   ("8 steps · 35s", "4h12m"), nothing is tracked. The HUD writes many labels
+   in capitals in the markup, so they are lowered here and the title ones get
+   their capital back; where CSS can't (text straight inside a flex button, a
+   label carrying an acronym) the markup says it and wears .caps. */
+[data-fam="pebble"] .caps { text-transform: none !important; letter-spacing: 0 !important; }
+[data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d) {
+  text-transform: lowercase !important; letter-spacing: 0 !important;
+}
+[data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d)::first-letter { text-transform: uppercase; }
+[data-fam="pebble"] :is(.dwork-ms, .res-meta > span, .ctrl-meter > span, .pm-wtag, .pm-reset, .pm-pct, .pm-tag, .ntf-when,
+  .isle-reads button, .isle-reads span, .gg-ago, .pstamp,
+  [data-ctxmenu] .mscroll button > span:last-child[style*="letter-spacing"], .hudgrid > div:last-child span[style*="border: 1px solid"],
+  .hudgrid > div:last-child .swapin > span[style*="margin-left: auto"]) {
+  text-transform: lowercase !important; letter-spacing: 0 !important;
+}
+/* the readings that were caps by CSS rather than in the markup */
+[data-fam="pebble"] :is(.gp-pb, .gg-older, .rp-sg, .prun, .setgroup) { text-transform: none !important; letter-spacing: 0 !important; }
+/* modal heads (TOOLS, ANALYZE), their buttons and tabs, the editor's EDIT/SAVE */
+[data-fam="pebble"] [style*="--shadow-modal"] > div:first-child > :is(span:first-child, button),
+[data-fam="pebble"] [style*="--shadow-modal"] span[style*="padding: 5px 12px"] {
+  text-transform: lowercase !important; letter-spacing: 0 !important;
+}
+[data-fam="pebble"] [style*="--shadow-modal"] > div:first-child > :is(span:first-child, button)::first-letter,
+[data-fam="pebble"] [style*="--shadow-modal"] span[style*="padding: 5px 12px"]::first-letter { text-transform: uppercase; }
+[data-fam="pebble"] [style*="--shadow-modal"] span[style*="padding: 5px 12px"] { border-radius: 999px; margin: 4px 0 4px 6px; padding: 2px 12px !important; }
+/* headings in the popovers read as titles, like the slabs' Files and Git */
+[data-fam="pebble"] :is(.ntf-head .t) { font: 700 var(--t13) var(--ui-font) !important; color: var(--txb) !important; }
+[data-fam="pebble"] .rp-hd b { font-weight: 700 !important; font-size: var(--t11) !important; color: var(--txh) !important; }
+[data-fam="pebble"] .gp-fh b { font-weight: 700 !important; font-size: var(--t11) !important; color: var(--txh) !important; }
+[data-fam="pebble"] :is(.dwork-lab, .res-lab) { font-weight: 700 !important; color: var(--txm) !important; }
+[data-fam="pebble"] .setgroup { font-weight: 700 !important; font-size: var(--t11) !important; color: var(--txd) !important; }
+
+/* ── 2 · ONE CORNER ── */
+/* two-line rows are cards, not stadiums (PEBBLE's own rule: a multi-line pill reads as a blob) */
+[data-fam="pebble"] .hudgrid .sessrow { border-radius: 16px !important; }
+/* a round control holds round parts: the icon tile in the composer's chips, avatars, tiles */
+[data-fam="pebble"] :is(.ctrl-fld, .ps-av, .ntf-src, .ntf-src .ptile) { border-radius: 999px !important; }
+/* chips drawn with an inline border (LINKED, LIVE, counts, ESC) are pills */
+[data-fam="pebble"] :is(.hudgrid, [style*="--shadow-modal"], [style*="--shadow-pop"]) span[style*="border: 1px solid"] { border-radius: 999px !important; }
+[data-fam="pebble"] [style*="--shadow-modal"] span[style*="padding: 2px 7px"] { border-color: var(--line2) !important; }
+/* the context meter's cells */
+[data-fam="pebble"] .ctrl-ctx .seg i { border-radius: 999px !important; }
+/* the fresh session's board, and the boxes inside modals: cards */
+[data-fam="pebble"] [style*="min(560px, 100%)"] {
+  border-radius: var(--f-rad) !important; border-color: var(--line) !important; background: var(--panel2); overflow: hidden;
+}
+[data-fam="pebble"] [style*="min(560px, 100%)"] [style*="border-bottom: 1px solid color-mix"] { border-bottom-color: var(--line) !important; }
+[data-fam="pebble"] [style*="--shadow-modal"] div[style*="margin-bottom: 16px"][style*="border: 1px solid"] { border-radius: 16px !important; overflow: hidden; border-color: var(--line) !important; }
+/* the History list's Tailwind boxes */
+[data-fam="pebble"] .rounded-md { border-radius: 16px !important; }
+[data-fam="pebble"] .rounded { border-radius: 999px !important; }
+
+/* ── 3 · ONE SELECTION MARK ── */
+/* the HUD marks the active row with a 2px accent bar down its left edge
+   (palette, file pickers, menus); PEBBLE marks it with the tint it uses for
+   the open session */
+[data-fam="pebble"] [style*="border-left: 2px solid var(--acc)"] {
+  border-left-color: transparent !important; border-radius: 12px !important;
+  background: color-mix(in oklab, var(--acc) 14%, transparent) !important;
+}
+[data-fam="pebble"] [style*="--shadow-modal"] .mscroll > button { border-radius: 12px !important; border-left-color: transparent !important; }
+/* tabs underlined in the accent (Analyze, the fresh board) become tinted pills */
+[data-fam="pebble"] button[style*="border-bottom: 2px solid"], [data-fam="pebble"] [style*="min(560px, 100%)"] button[style*="border-bottom: 1px solid"] {
+  border-bottom-color: transparent !important; border-radius: 999px !important; padding-left: 10px !important; padding-right: 10px !important;
+}
+[data-fam="pebble"] button[style*="border-bottom: 2px solid var(--acc)"], [data-fam="pebble"] [style*="min(560px, 100%)"] button[style*="border-bottom: 1px solid var(--acc)"] {
+  background: color-mix(in oklab, var(--acc) 14%, transparent) !important; color: var(--txb) !important;
+}
+/* the rail's foot (changelog, update, ⌘K) wears the rail's circles */
+[data-fam="pebble"] .hudgrid > div:last-child .mt-auto button { border-left: 0 !important; border-radius: 999px !important; }
+[data-fam="pebble"] .hudgrid > div:last-child .mt-auto button[aria-label="Command palette"] { width: 30px !important; border-color: var(--line2) !important; }
+/* a rail badge sits on the circle's edge with a ring of the slab round it */
+[data-fam="pebble"] .hudgrid > div:last-child button > span.rounded-full { box-shadow: 0 0 0 2px var(--panel2); }
+
+/* the Git slab's sections are titled, not ruled: FLINT's hairlines ran edge to edge through a rounded slab */
+[data-fam="pebble"] :is(.gp-fold, .gp-fh, .gp-cbox) { border-color: transparent !important; }
+
+/* ── 4 · ONE LADDER ── */
+/* the slabs are opaque: at 90% the corner glow tinted them blue at the top-left and coral at the foot */
+[data-fam="pebble"] .hudgrid > .shellcol:first-child, [data-fam="pebble"] .hudgrid > div:last-child { background: var(--panel2) !important; }
+/* a popover is one step up from what it covers, so it doesn't sink into the sheet */
+[data-fam="pebble"] { --pb-pop: color-mix(in oklab, var(--panel) 95%, var(--txb)); }
+:root[data-light] [data-fam="pebble"], :root[data-light][data-fam="pebble"] { --pb-pop: var(--panel); }
+[data-fam="pebble"] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm), .ntf-pop):not(.isle):not(.sessrow) {
+  background: var(--pb-pop) !important; border-color: color-mix(in oklab, var(--txl) 26%, var(--panel)) !important;
+}
+/* inline code reads as a chip on the sheet (at 5% accent it vanished into it) */
+[data-fam="pebble"] .md :not(pre) > code { background: color-mix(in oklab, var(--txl) 15%, transparent) !important; border-radius: 6px !important; padding: .1em .4em !important; }
+/* the chip row hangs 25px over the transcript's foot, so scrolled text ran
+   between the chips: the prompt box stands on the sheet, and the text fades out above it */
+[data-fam="pebble"] .composer { background: var(--col, var(--panel2)); }
+[data-fam="pebble"] .composer::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 18px; pointer-events: none;
+  background: linear-gradient(transparent, var(--col, var(--panel2)));
+}
+
+/* modal and palette heads ruled in the accent (the HUD's tint): a neutral line, like every other rule here */
+[data-fam="pebble"] [style*="--shadow-modal"] [style*="border-bottom: 1px solid color-mix(in srgb, var(--acc)"] { border-bottom-color: var(--line) !important; }
+
+/* ── 5 · ONE PRIMARY ── */
+[data-fam="pebble"] .gp-pb { box-shadow: none !important; }

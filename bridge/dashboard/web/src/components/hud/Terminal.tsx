@@ -139,8 +139,8 @@ function FreshState({ project, branch, run, onOpenRun, onStartNext }: {
         <span style={{ position: "absolute", top: 26, left: -2, color: "var(--ok)", fontSize: "var(--t9)", animation: "twinkle 3.5s infinite 1s" }}>+</span>
       </div>
       <div style={{ maxWidth: 450 }}>
-        <div style={{ fontSize: "var(--t95)", letterSpacing: 3, color: "var(--txl)", marginBottom: 13 }}>
-          {(basename(project) || "WORKSPACE").toUpperCase()} · FRESH SESSION
+        <div className="caps" style={{ fontSize: "var(--t95)", letterSpacing: 3, color: "var(--txl)", marginBottom: 13 }}>
+          {basename(project) || "workspace"} · fresh session
         </div>
         <div className="fresh-quote" style={{ fontSize: "var(--t16)", lineHeight: 1.55, color: "var(--txh)", fontStyle: "italic", minHeight: 50 }}>
           <span key={qi} style={{ display: "inline-block", animation: "quotein .75s cubic-bezier(.2,.85,.25,1) both, quoteglow 7.2s ease-in-out infinite" }}>
@@ -447,7 +447,7 @@ export function Terminal({
           hit-testing while hidden. */}
       {!empty && (
         <button
-          type="button" className="jump-latest" onClick={onJumpBottom} title="jump to latest"
+          type="button" className="jump-latest caps" onClick={onJumpBottom} title="jump to latest"
           style={{
             position: "absolute", right: 20, bottom: 14, zIndex: 6,
             display: "flex", alignItems: "center", gap: 6, cursor: "pointer",
@@ -463,7 +463,7 @@ export function Terminal({
             transition: "opacity .22s ease, transform .22s ease, visibility .22s",
           }}
         >
-          <span style={{ fontSize: "var(--t11)", lineHeight: 1 }}>↓</span>LATEST
+          <span style={{ fontSize: "var(--t11)", lineHeight: 1 }}>↓</span>Latest
         </button>
       )}
       {/* Last, so the whole outgoing session recedes behind it, transcript

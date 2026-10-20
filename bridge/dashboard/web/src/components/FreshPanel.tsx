@@ -16,10 +16,10 @@ import { ago } from "../lib/surfaces";
  *  and whether or not the NEXT-UP BOARD switch is on. */
 
 const TABS: { id: NextKind; label: string; blurb: string }[] = [
-  { id: "next", label: "NEXT", blurb: "what is worth finishing here" },
-  { id: "review", label: "REVIEW", blurb: "what is wrong in what changed" },
-  { id: "research", label: "RESEARCH", blurb: "what has not been decided yet" },
-  { id: "polish", label: "POLISH", blurb: "where the UI drifts from the system" },
+  { id: "next", label: "Next", blurb: "what is worth finishing here" },
+  { id: "review", label: "Review", blurb: "what is wrong in what changed" },
+  { id: "research", label: "Research", blurb: "what has not been decided yet" },
+  { id: "polish", label: "Polish", blurb: "where the UI drifts from the system" },
 ];
 const EFFORT: Record<NextItem["effort"], string> = { small: "·", medium: "··", large: "···" };
 
@@ -147,22 +147,22 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
         <span style={{ flex: 1 }} />
         {runSlot === "run" && (
           <button type="button" onClick={() => void startRun()} disabled={starting}
-            title={runErr || `start ${runCmd}`}
+            title={runErr || `start ${runCmd}`} className="caps"
             style={{ appearance: "none", flex: "none", cursor: starting ? "default" : "pointer",
                      fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
                      padding: "3px 9px", background: "transparent",
                      border: `1px solid color-mix(in srgb, ${runErr ? "var(--err) 45%" : "var(--acc) 30%"}, transparent)`,
                      color: runErr ? "var(--err)" : starting ? "var(--txd)" : "var(--acc)" }}>
-            {starting ? "STARTING…" : runErr ? "FAILED" : "▸ RUN"}
+            {starting ? "Starting…" : runErr ? "Failed" : "▸ Run"}
           </button>
         )}
         {runSlot === "setup" && (
-          <button type="button" onClick={onOpenRun}
+          <button type="button" className="caps" onClick={onOpenRun}
             title="No run command saved for this project — set one in its TERMINAL tab"
             style={{ appearance: "none", flex: "none", cursor: "pointer", fontFamily: "inherit",
                      fontSize: "var(--t9)", letterSpacing: 1.5, padding: 0, border: 0,
                      background: "transparent", color: "var(--txd)" }}>
-            SET UP RUN
+            Set up run
           </button>
         )}
       </div>
@@ -171,7 +171,7 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
                       fontFamily: "var(--mono)", fontSize: "var(--t9)", color: "var(--txd)",
                       borderBottom: `1px solid ${RULE}` }}
              title={`${commit.sha.slice(0, 7)} · ${commit.author}`}>
-          <span style={{ letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>LAST</span>
+          <span className="caps" style={{ letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>Last</span>
           <span style={{ color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden",
                          textOverflow: "ellipsis", minWidth: 0 }}>{commit.subject}</span>
           <span style={{ flex: "none" }}>{ago(commit.ts)}</span>
@@ -181,7 +181,7 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
       {/* the four questions */}
       <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "8px 12px 0" }}>
         {TABS.map((t) => (
-          <button key={t.id} type="button" onClick={() => setKind(t.id)} title={t.blurb}
+          <button key={t.id} type="button" className="caps" onClick={() => setKind(t.id)} title={t.blurb}
             style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent",
                      fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
                      padding: "4px 8px", color: kind === t.id ? "var(--acc)" : "var(--txd)",

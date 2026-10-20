@@ -202,18 +202,18 @@ export function AnalyzeModal(props: Props) {
   }, [branches, cur, selectedBranch, worktrees]);
 
   const tabs: { k: Tab; l: string; badge?: number }[] = [
-    { k: "editor", l: "EDITOR" },
-    { k: "changes", l: "GIT", badge: git?.dirty || undefined },
-    { k: "worktrees", l: "WORKTREES", badge: linkedWt || undefined },
-    { k: "terminal", l: "TERMINAL", badge: termCount || undefined },
-    { k: "issues", l: "ISSUES", badge: issueCount || undefined },
+    { k: "editor", l: "Editor" },
+    { k: "changes", l: "Git", badge: git?.dirty || undefined },
+    { k: "worktrees", l: "Worktrees", badge: linkedWt || undefined },
+    { k: "terminal", l: "Terminal", badge: termCount || undefined },
+    { k: "issues", l: "Issues", badge: issueCount || undefined },
     // only a linked repo has a task list (the header's LINK TASKS makes one), and only while Trackers is installed
-    ...(plugins.trackers && tracker?.linked ? [{ k: "tasks" as Tab, l: "TASKS", badge: tracker.overdue || undefined }] : []),
-    { k: "skills", l: "SKILLS" },
-    ...(plugins.design ? [{ k: "design" as Tab, l: "DESIGN" }] : []),
+    ...(plugins.trackers && tracker?.linked ? [{ k: "tasks" as Tab, l: "Tasks", badge: tracker.overdue || undefined }] : []),
+    { k: "skills", l: "Skills" },
+    ...(plugins.design ? [{ k: "design" as Tab, l: "Design" }] : []),
     // hidden while their AI switch is off — nothing is being built or written
-    ...(aiFeatures.graph ? [{ k: "map" as Tab, l: "MAP" }] : []),
-    ...(aiFeatures.learn ? [{ k: "learn" as Tab, l: "LEARN" }] : []),
+    ...(aiFeatures.graph ? [{ k: "map" as Tab, l: "Map" }] : []),
+    ...(aiFeatures.learn ? [{ k: "learn" as Tab, l: "Learn" }] : []),
   ];
 
   return (
@@ -305,7 +305,7 @@ export function AnalyzeModal(props: Props) {
         {/* tabs */}
         <div style={{ display: "flex", flex: "none", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "0 6px", overflowX: "auto" }}>
           {tabs.map((t) => (
-            <button key={t.k} onClick={() => setTab(t.k)} {...hp(`tab:${t.k}`)}
+            <button key={t.k} className="caps" onClick={() => setTab(t.k)} {...hp(`tab:${t.k}`)}
               style={{ appearance: "none", border: 0, borderBottom: `2px solid ${tab === t.k ? "var(--acc)" : "transparent"}`, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "10px 11px", background: tab === t.k ? "color-mix(in srgb, var(--acc) 6%, transparent)" : hov === `tab:${t.k}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", color: tab === t.k ? "var(--txb)" : "var(--txl)", display: "flex", alignItems: "center", gap: 7 }}>
               {t.l}
               {t.badge != null && <span style={{ fontSize: "var(--t9)", color: "var(--acc)", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", padding: "0 5px" }}>{t.badge}</span>}
