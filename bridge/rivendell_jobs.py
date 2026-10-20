@@ -78,7 +78,9 @@ def facts(kind: str, request_id: str, instance_id: str,
                       s.get("repositoryFullName"), c.get("repositoryFullName")),
         "number": _pick(pr.get("number"), s.get("pullRequestNumber")),
         "html_url": _pick(pr.get("htmlUrl"), s.get("pullRequestHtmlUrl"), task.get("htmlUrl")),
-        "url": _pick(s.get("url"), c.get("url"), batch.get("url")),
+        "url": _pick(s.get("url"), c.get("url"), batch.get("url"), meeting.get("url")),
+        # A brief's meeting start, for its view's date and countdown (JobViews).
+        "starts": _pick(meeting.get("startsAt"), s.get("startsAt"), c.get("startsAt")),
         "date": _pick(s.get("editionDate"), c.get("editionDate")),
         "language": c.get("language"),
         # What RUN AGAIN files a fresh job with (rivendell.rerun).

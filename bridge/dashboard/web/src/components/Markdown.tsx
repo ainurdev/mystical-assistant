@@ -2,7 +2,7 @@ import { cloneElement, isValidElement, memo, useEffect, useState, type ReactNode
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
-import { Check, Copy } from "lucide-react";
+import { Check, Copy, Play } from "lucide-react";
 import { selectionMd } from "../lib/selmd";
 import { tokenize, type Tok } from "../lib/hl";
 import { parseFileRef } from "../lib/filepath";
@@ -221,7 +221,8 @@ export const Markdown = memo(function Markdown({
         components={{
           // The glyph after a link copies its URL; a footnote's own `#fn1` hop
           // is not a link anyone wants on the clipboard.
-          a: ({ node, href, children, ...props }) => (
+          // A `#t=` link is a moment in a recording (a video ASK answer, JobViews): a chip, not a link.
+          a: ({ node, href, children, ...props }) => href?.startsWith("#t=") ? <span className="md-tc"><Play size={9} aria-hidden />{children}</span> : (
             <>
               <a href={href} target="_blank" rel="noreferrer" {...props}>{children}</a>
               {href && !href.startsWith("#") && <CopyBtn title="Copy link" text={href} />}

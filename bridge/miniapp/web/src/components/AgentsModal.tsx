@@ -35,11 +35,12 @@ export function AgentsModal({
       // above reset events/cursor for a new agent; without seq dedupe it would
       // append the wrong agent's feed. Discard it if we've switched away.
       if (selectedRef.current !== forAgent) return a;
-      if (a.events.length) {
-        setEvents((prev) => [...prev, ...a.events]);
+      const rows = a.events.filter((e): e is AgentActivityRow => e.type === "text" || e.type === "tool");
+      if (rows.length) {
+        setEvents((prev) => [...prev, ...rows]);
       }
       cursorRef.current = a.next_cursor; // always advance: next_cursor counts all
-      return a;                          // lines read, incl. non-assistant (no-event) ones
+      return a;                          // events, incl. the ones this feed doesn't draw
     },
     refetchInterval: (q) =>
       (q.state.data?.status ?? "running") === "running" ? 1000 : false,

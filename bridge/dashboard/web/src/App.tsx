@@ -952,6 +952,21 @@ export function App() {
       else el.scrollTop = el.scrollHeight;
     });
     ro.observe(content);
+    // Opening a fold where it is (a WORK zone, one of its chapters, a step's
+    // drawer: anything in the chat that says aria-expanded) is reading what's
+    // there, not waiting for the latest. Parked at the bottom, the snap above
+    // pulled the view down by every pixel the fold grew, so the zone you opened
+    // slid up out of reach and then dropped you on its end. The cards you answer
+    // stay out of it: a question's note field opening at the live end is still
+    // followed into view. Only the ref, so the click doesn't render the app once
+    // more; the resize that follows sets the jump button.
+    const reading = (e: Event) => {
+      if (e instanceof KeyboardEvent && e.key !== "Enter" && e.key !== " ") return;
+      const t = e.target as Element;
+      if (t.closest?.("[aria-expanded]") && !t.closest(".chatcard")) stickRef.current = false;
+    };
+    el.addEventListener("click", reading);
+    el.addEventListener("keydown", reading);
     // Touch the scroller mid-restore and it's yours again — 2s of re-aiming
     // would otherwise fight you.
     const giveUp = () => endRestore();
@@ -960,6 +975,8 @@ export function App() {
     if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     return () => {
       el.removeEventListener("scroll", sync);
+      el.removeEventListener("click", reading);
+      el.removeEventListener("keydown", reading);
       el.removeEventListener("wheel", giveUp);
       el.removeEventListener("touchstart", giveUp);
       ro.disconnect();
@@ -2601,7 +2618,7 @@ export function App() {
                         // Inside the composer's box, not on the bare panel above
                         // it: a lone pill on its own strip read as a layout slip.
                         <div className="pillstrip">
-                          <AgentsPill sessionId={sessionId} running={running} />
+                          <AgentsPill sessionId={sessionId} running={running} hud={settings} />
                           <GoalPill
                             goal={sessions.find((s) => s.id === sessionId)?.goal}
                             onClear={() => void send("/goal", [])}

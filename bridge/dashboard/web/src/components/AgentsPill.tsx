@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api, type AgentsInfo } from "../api";
+import type { HudSettings } from "../lib/theme";
+import { OPEN_AGENT, setRoster } from "../lib/subagents";
 import { AgentsModal, SPIN, fmtSince } from "./AgentsModal";
 
 /** The subagent readout above the composer: how many are working, on what, and
@@ -9,11 +11,14 @@ import { AgentsModal, SPIN, fmtSince } from "./AgentsModal";
 export function AgentsPill({
   sessionId,
   running,
+  hud,
 }: {
   sessionId: string | null;
   running: boolean;
+  hud?: HudSettings;
 }) {
-  const [open, setOpen] = useState(false);
+  // false = shut; true = open on the first agent; a string = open on that agent.
+  const [open, setOpen] = useState<boolean | string>(false);
   const [hov, setHov] = useState(false);
   const [data, setData] = useState<AgentsInfo | null>(null);
   const [tick, setTick] = useState(0);
@@ -28,6 +33,7 @@ export function AgentsPill({
         const d = await api.agents(sessionId);
         if (!live) return;
         setData(d);
+        setRoster(d);            // the transcript's AGENT plates read it (lib/subagents)
         if (live && (runningRef.current || d.running > 0)) {
           setTimeout(poll, 1500);
         }
@@ -36,6 +42,15 @@ export function AgentsPill({
     void poll();
     return () => { live = false; };
   }, [sessionId, running]);
+
+  useEffect(() => () => setRoster(null), [sessionId]);
+
+  // An AGENT plate's open ↗ (lib/subagents openAgent).
+  useEffect(() => {
+    const onOpen = (e: Event) => setOpen((e as CustomEvent<string>).detail);
+    window.addEventListener(OPEN_AGENT, onOpen);
+    return () => window.removeEventListener(OPEN_AGENT, onOpen);
+  }, []);
 
   // Spinner frame + live elapsed, only while something is actually working.
   const working = (data?.running ?? 0) > 0;
@@ -110,6 +125,8 @@ export function AgentsPill({
           sessionId={sessionId}
           agents={data.agents}
           workflows={data.workflows ?? []}
+          initial={typeof open === "string" ? open : null}
+          hud={hud}
           onClose={() => setOpen(false)}
         />
       )}

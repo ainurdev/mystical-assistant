@@ -356,7 +356,9 @@ export type AgentActivityEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; summary: string };
 export type AgentActivity = {
-  events: AgentActivityEvent[];
+  // The run in the transcript's vocabulary (bridge/agents.agent_activity): text
+  // and tool are what the Mini App draws; tool_done, thinking & co. ride along.
+  events: (AgentActivityEvent | { type: string })[];
   next_cursor: number;
   status: "running" | "done";
   description: string;

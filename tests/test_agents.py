@@ -101,11 +101,75 @@ def test_agent_activity_parses_and_cursors():
         assert ("tool", "Bash") in kinds
         assert act["status"] == "done"
         assert act["agent_type"] == "general-purpose"
-        assert act["next_cursor"] == 2                  # two records consumed
-        # cursor skips already-seen records
+        assert act["next_cursor"] == 2                  # two events (seq)
+        # cursor skips already-seen events
         act2 = agents.agent_activity({"claude_session_id": sid}, "agent-a1",
                                      cursor=act["next_cursor"])
         assert act2["events"] == []
+    finally:
+        transcript_jsonl.PROJECTS_DIR = orig
+
+
+def _agent(root, sid, aid, meta, records):
+    """One more sub-agent in the fixture tree: its meta and its own transcript."""
+    sub = os.path.join(root, "-tmp-proj", sid, "subagents")
+    with open(os.path.join(sub, aid + ".meta.json"), "w") as f:
+        json.dump(meta, f)
+    with open(os.path.join(sub, aid + ".jsonl"), "w") as f:
+        for r in records:
+            f.write(json.dumps({"isSidechain": True, **r}) + "\n")
+
+
+def test_roster_times_an_agent_by_its_records_not_the_file_clock():
+    """started_at/updated_at were st_ctime/st_mtime, and ctime is the inode-change
+    time, i.e. mtime: every finished agent spanned 0 s and the roster sorted by
+    last write. The records carry their own timestamps, and the model and the
+    number of tool calls come off the same pass."""
+    root, sid = _fixture()
+    _agent(root, sid, "agent-a4", {"agentType": "Explore", "description": "timed", "toolUseId": "T4"}, [
+        {"type": "user", "timestamp": "2026-01-01T10:00:00Z",
+         "message": {"role": "user", "content": "go"}},
+        {"type": "assistant", "timestamp": "2026-01-01T10:01:00Z", "message": {
+            "role": "assistant", "model": "claude-opus-5-5", "content": [
+                {"type": "tool_use", "id": "x1", "name": "Bash", "input": {"command": "ls"}},
+                {"type": "tool_use", "id": "x2", "name": "Read", "input": {"file_path": "/a"}}]}},
+        {"type": "assistant", "timestamp": "2026-01-01T10:09:30Z", "message": {
+            "role": "assistant", "content": [{"type": "text", "text": "done"}]}},
+    ])
+    orig = transcript_jsonl.PROJECTS_DIR
+    transcript_jsonl.PROJECTS_DIR = root
+    try:
+        roster = agents.session_agents({"claude_session_id": sid})["agents"]
+        a4 = {a["agent_id"]: a for a in roster}["agent-a4"]
+        assert a4["started_at"] == transcript_jsonl._ts({"timestamp": "2026-01-01T10:00:00Z"})
+        assert a4["updated_at"] - a4["started_at"] == 570
+        assert a4["model"] == "opus"
+        assert a4["tools"] == 2
+    finally:
+        transcript_jsonl.PROJECTS_DIR = orig
+
+
+def test_agent_activity_is_the_run_as_a_turn():
+    """The modal draws an agent's run the way the chat draws a turn, so activity
+    comes back in the transcript's shape: the brief as the turn's prompt, and
+    each result paired to its call for the WORK zone."""
+    root, sid = _fixture()
+    _agent(root, sid, "agent-a5", {"agentType": "general-purpose", "toolUseId": "T5"}, [
+        {"type": "user", "uuid": "u1", "message": {"role": "user", "content": "check the build"}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "b1", "name": "Bash", "input": {"command": "make"}}]}},
+        {"type": "user", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "b1", "content": "ok"}]}},
+        {"type": "assistant", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "build is green"}]}},
+    ])
+    orig = transcript_jsonl.PROJECTS_DIR
+    transcript_jsonl.PROJECTS_DIR = root
+    try:
+        act = agents.agent_activity({"claude_session_id": sid}, "agent-a5")
+        assert [t["prompt"] for t in act["turns"]] == ["check the build"]
+        assert [e["type"] for e in act["events"]] == ["tool", "tool_done", "text"]
+        assert act["events"][1]["id"] == "b1"
     finally:
         transcript_jsonl.PROJECTS_DIR = orig
 

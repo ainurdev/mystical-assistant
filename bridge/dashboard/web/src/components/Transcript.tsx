@@ -180,7 +180,9 @@ function TurnBlock({
 }) {
   const working = isActive && turn.status === "running" && turn.pending.length === 0;
   // Stable, so RunStream's memo holds across polls.
-  const paper = useMemo(() => (job?.kind === "news" ? { date: job.date } : null), [job?.kind, job?.date]);
+  // The job arrives as a new object each poll, so it is keyed by its contents.
+  const jobKey = job?.kind ? JSON.stringify(job) : "";
+  const view = useMemo(() => (jobKey ? { job: JSON.parse(jobKey) as RivendellJob, prompt: turn.prompt } : null), [jobKey, turn.prompt]);
   const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
   return (
     // data-ctx-*: the dashboard's right-click menu reads the nearest one of
@@ -229,7 +231,7 @@ function TurnBlock({
               readOnly={!!who}
               working={working}
               hud={hud}
-              paper={paper}
+              view={view}
             />
           )}
         </div>
