@@ -40,6 +40,7 @@ export interface RivendellJob {
   html_url?: string;          // the PR on GitHub
   url?: string;               // its page in Rivendell, when Rivendell sends one
   date?: string;              // a paper's edition date, YYYY-MM-DD
+  starts?: string;            // a meeting brief's meeting, ISO start time
   language?: string;
   pr_id?: string; task_id?: string; project_id?: string;   // what RUN AGAIN files with
   outcome?: "completed" | "failed" | "unreported";        // how its result went

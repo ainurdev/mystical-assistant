@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, RotateCcw, ChevronDown, ChevronLeft, ChevronRight,
@@ -23,8 +23,8 @@ import { WorkingIndicator } from "./hud/WorkingIndicator";
 import type { HudSettings } from "../lib/theme";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { ToolWidget } from "./ResultWidgets";
-import { Newspaper } from "./Newspaper";
-import { parsePaper } from "../lib/jobs";
+import { jobView, type JobViewInput } from "./JobViews";
+import { JobTag } from "./hud/JobTag";
 import { shotName, shotTitle, widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
 import {
   cmdAbstract, hostOf, mcpParts, toolAccent, toolKind, toolShape, toolTag, toolTier,
@@ -1936,7 +1936,7 @@ export const RunStream = memo(function RunStream({
   boot = null,
   foldsOpen = false,
   compact = false,
-  paper = null,
+  view = null,
 }: {
   events: TimedEvent[];
   pending?: PendingRequest[];
@@ -1976,8 +1976,8 @@ export const RunStream = memo(function RunStream({
   /** The COMPACT chat layout: a run that came back with pictures is drawn as
    *  its pictures alone. */
   compact?: boolean;
-  /** A newspaper job's turn: its answer is drawn as the paper (FinalResult). */
-  paper?: { date?: string } | null;
+  /** A Rivendell job's first turn: its answer is drawn as the job's view (FinalResult, JobViews). */
+  view?: JobViewInput | null;
 }) {
   // An ask is drawn by its question card and by nothing else. A live run also
   // emits it as a tool: the bridge answers the control request with a `deny`
@@ -2143,7 +2143,7 @@ export const RunStream = memo(function RunStream({
               label={i === finalText ? "ANSWER" : dossier ? "ANSWER // ASK" : "RESULT // ASK"}
               animate={animate}
               idKey={`${turnId}:${i}`}
-              paper={i === finalText ? paper : null}
+              view={i === finalText ? view : null}
             />
           );
         const pause = dossier ? pauseAt(i - 1) : 0;
@@ -2370,7 +2370,7 @@ export const RunStream = memo(function RunStream({
             dossier={dossier}
             onAnswer={onAnswer}
             onQuote={onQuote}
-            paper={paper}
+            view={view}
           />
         );
       case "error":
@@ -2709,7 +2709,7 @@ export function FinalResult({
   dossier = false,
   onAnswer,
   onQuote,
-  paper,
+  view,
 }: {
   result: string;
   /** Epoch seconds the answer landed, for the clock in the meta row. */
@@ -2725,13 +2725,13 @@ export function FinalResult({
   dossier?: boolean;
   onAnswer?: (text: string) => void;
   onQuote?: (text: string) => void;
-  /** Set on a newspaper job's turn: an answer that parses as its paper is drawn
-   *  as one (Newspaper) instead of as JSON. */
-  paper?: { date?: string } | null;
+  /** Set on a Rivendell job's turn: an answer its kind can read is drawn as the
+   *  job's view (a brief, minutes, a review, the newspaper…) instead of as text. */
+  view?: JobViewInput | null;
 }) {
   const h12 = useClock12();
   const flash = animate && !typedResults.has(idKey);
-  const drawn = paper ? parsePaper(result) : null;
+  const drawn = useMemo(() => (view ? jobView(view, result) : null), [view, result]);
   // The CLI answers a slash command it doesn't have with one line and a clean
   // exit, so the turn arrives is_error:false and drew green — "RESULT // OK",
   // body "Unknown command: /design-first". Nothing ran; say so.
@@ -2739,7 +2739,8 @@ export function FinalResult({
   const tone = bad ? "var(--err)" : label ? "var(--acc)" : "var(--ok)";
   // The model asked in prose instead of using a question card: lift the question
   // out of the body so it reads as an ask, and offer the answers it expected.
-  const ask = onAnswer && !bad ? askBack(result) : null;
+  // A job's view is its deliverable: an open question in a task or a brief is for its readers, not for you.
+  const ask = onAnswer && !bad && !drawn ? askBack(result) : null;
   const body = ask ? ask.body : result;
   const lines = body.split("\n").length;
   // A live result stays open — you're watching it land. Long ones from earlier in
@@ -2759,6 +2760,7 @@ export function FinalResult({
       >
         <div className="res-head">
           <span className="res-lab">{label ?? (dossier ? (bad ? "ANSWER // ERROR" : "ANSWER") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
+          {drawn && view?.job.kind && <span className="res-kind"><JobTag job={view.job} /></span>}
           <span className="res-meta">
             {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
             {typeof elapsed === "number" && elapsed > 0 && (
@@ -2774,14 +2776,14 @@ export function FinalResult({
             <CopyBtn text={result} title="copy result" />
           </span>
         </div>
-        {drawn ? <Newspaper paper={drawn} date={paper?.date} /> : body && (
+        {drawn ?? (body && (
           <div className="res-body relative">
             <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
               <Typewriter text={body} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
             </div>
             {!open && <div className="res-fade" aria-hidden />}
           </div>
-        )}
+        ))}
         {ask && <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
         {!drawn && body && lines > RESULT_FOLD_LINES && (
           <button

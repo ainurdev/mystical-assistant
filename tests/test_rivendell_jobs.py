@@ -100,12 +100,13 @@ def test_facts_name_a_meeting_brief_by_its_meeting_from_an_event_a_row_and_a_cla
              "meeting": {"name": "Weekly sync", "startsAt": "2026-10-20T10:00:00.000Z", "url": "https://r.example/b/abc"}}
     row = {"id": "b1", "meetingName": "Weekly sync", "startsAt": "2026-10-20T10:00:00.000Z",
            "url": "https://r.example/b/abc", "createdAt": "2026-10-20T08:00:00.000Z"}
-    job = {"kind": "meeting-brief", "instance": "t1", "request": "b1", "title": "Weekly sync"}
-    assert rivendell_jobs.facts("meeting-brief", "b1", "t1", frame) == job
-    assert rivendell_jobs.facts("meeting-brief", "b1", "t1", row) == {**job, "url": "https://r.example/b/abc"}
+    job = {"kind": "meeting-brief", "instance": "t1", "request": "b1", "title": "Weekly sync",
+           "url": "https://r.example/b/abc", "starts": "2026-10-20T10:00:00.000Z"}
+    assert rivendell_jobs.facts("meeting-brief", "b1", "t1", frame) == job        # the brief's page and its meeting's start
+    assert rivendell_jobs.facts("meeting-brief", "b1", "t1", row) == job
     claim = {"requestId": "b1", "status": "IN_PROGRESS", "meetingName": "Weekly sync", "startsAt": "2026-10-20T10:00:00.000Z",
              "url": "https://r.example/b/abc", "repositories": []}
-    assert rivendell_jobs.facts("meeting-brief", "b1", "t1", None, claim) == {**job, "url": "https://r.example/b/abc"}
+    assert rivendell_jobs.facts("meeting-brief", "b1", "t1", None, claim) == job
 
 
 # --- titles ---------------------------------------------------------------
