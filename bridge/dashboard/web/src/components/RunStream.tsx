@@ -22,6 +22,7 @@ import { PromptBubble } from "./PromptBubble";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import type { HudSettings } from "../lib/theme";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
+import { fmtSpan, openAgent, useAgentFor } from "../lib/subagents";
 import { ToolWidget } from "./ResultWidgets";
 import { Newspaper } from "./Newspaper";
 import { parsePaper } from "../lib/jobs";
@@ -1525,6 +1526,8 @@ type AgentMeta = { type?: string; title?: string };
 type AgentRun = {
   name: string; summary: string; meta?: AgentMeta;
   ms?: number; stat?: string; error?: boolean; running?: boolean;
+  /** The Agent call's tool_use id — how the roster (lib/subagents) finds it. */
+  id?: string;
 };
 
 /** The hue a delegation wears: teal for an agent, violet for a skill (the
@@ -1566,6 +1569,25 @@ function agentNums(r: AgentRun, animate: boolean): ReactNode {
   );
 }
 
+/** A run's figure once the roster knows its agent: what the agent did and
+ *  whether it is still at it, which a background agent's own call can't say
+ *  (its tool_result is the launch receipt, "6 lines"), and open ↗ into the
+ *  AGENTS modal. A skill, a failed call, or an agent the roster doesn't know
+ *  keeps what the call said. */
+function AgentStat({ run, children }: { run: AgentRun; children: ReactNode }) {
+  const a = useAgentFor(run.id);
+  if (!a || run.error) return <>{children}</>;
+  return (
+    <>
+      {a.status === "running" ? <span style={{ color: "var(--h)" }}>WORKING</span>
+        : <span>{fmtSpan(a.updated_at - a.started_at)}</span>}
+      {a.tools ? <b>{a.tools} tools</b> : null}
+      <button type="button" className="agb-open" title="open this agent's run"
+        onClick={(e) => { e.stopPropagation(); openAgent(a.agent_id); }}>open ↗</button>
+    </>
+  );
+}
+
 /** A delegated run is not a step of your turn but a turn nested inside it —
  *  its own tool calls, its own minutes, its own report — so its row sits on a
  *  plate with the brief under it, two lines shut and all of it on a click. The
@@ -1586,7 +1608,7 @@ function AgentBlock({ run, animate }: { run: AgentRun; animate: boolean }) {
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
     >
       <ActionRow tier="reach" mark={skill ? "skill" : "agent"} accent={agentHue(run)} tag={skill ? "SKILL" : "AGENT"}
-        running={running} error={error} animate={false} stat={agentNums(run, animate)}>
+        running={running} error={error} animate={false} stat={<AgentStat run={run}>{agentNums(run, animate)}</AgentStat>}>
         <span className="text-foreground-bright">{meta?.type || (skill ? summary : "agent")}</span>
         {title ? <span className="text-muted-2">{` \u2014 ${title}`}</span> : null}
         {skill ? <span className="ax-hint">skill</span> : null}
@@ -1626,9 +1648,9 @@ function AgentFan({ runs, animate }: { runs: AgentRun[]; animate: boolean }) {
         const done = r.stat || slow(r.ms);
         return (
           <ActionRow key={k} tier="reach" accent={agentHue(r)} running={r.running} error={r.error} animate={false}
-            stat={r.error ? <span style={{ color: "var(--err)" }}>FAILED</span>
+            stat={<AgentStat run={r}>{r.error ? <span style={{ color: "var(--err)" }}>FAILED</span>
               : r.running ? <span style={{ color: "var(--h)" }}>WORKING</span>
-              : done ? <span>{done}</span> : null}>
+              : done ? <span>{done}</span> : null}</AgentStat>}>
             <span className="text-foreground-bright">{r.meta?.type || (r.name === "Skill" ? "skill" : "agent")}</span>
             {said ? <span className="text-muted-2">{` \u2014 ${said}`}</span> : null}
           </ActionRow>
@@ -2223,10 +2245,10 @@ export const RunStream = memo(function RunStream({
         // identical rows or a generic "AGENT · 4 CALLS" box.
         if (toolKind(event.name) === "agent") {
           const runs = run.map((j) => {
-            const e = events[j] as { name: string; summary: string; agent?: AgentMeta };
+            const e = events[j] as { name: string; summary: string; agent?: AgentMeta; id?: string };
             const d = doneOf(events[j]);
             return { name: e.name, summary: e.summary, meta: e.agent, ms: d?.ms,
-                     stat: d?.stat, error: d?.is_error, running: !d };
+                     stat: d?.stat, error: d?.is_error, running: !d, id: e.id };
           });
           return runs.length > 1
             ? <AgentFan key={i} runs={runs} animate={animate} />

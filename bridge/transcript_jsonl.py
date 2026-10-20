@@ -11,8 +11,11 @@ tool_done), so both frontends render it unchanged. A `thinking` block carries th
 reasoning text as it was recorded (Claude Code keeps it on disk, it just never
 prints it) plus the length of the pause; a block whose text was stripped, leaving
 only a signature, falls back to the bare marker it always was — how long it
-thought. Subagent `isSidechain` records are dropped — the bridge never surfaces
-those (the runner doesn't either). Stdlib only; no bridge.config dependency.
+thought. Subagent `isSidechain` records are dropped — they are not the session's
+turns (the runner doesn't surface them either) — unless the caller asks for them:
+a sub-agent's own file is nothing but sidechain records, and bridge/agents.py
+reads one as the agent's run (`sidechain=True`). Stdlib only; no bridge.config
+dependency.
 """
 
 import glob
@@ -28,7 +31,7 @@ PROJECTS_DIR = os.path.expanduser("~/.claude/projects")
 # it's open; without this, every poll re-reads and re-parses the whole JSONL. We
 # cache the full parse keyed on (mtime, size) so an unchanged file costs a stat +
 # a slice, and only a grown transcript triggers a real re-parse.
-_parse_cache: "dict[str, tuple]" = {}   # path -> ((mtime, size), full_result)
+_parse_cache: "dict[tuple, tuple]" = {}  # (path, sidechain) -> ((mtime, size), full_result)
 _parse_lock = threading.Lock()
 _PARSE_CACHE_MAX = 64
 # session-uuid -> resolved path; the uuid filename is stable, so a cached hit that
@@ -444,10 +447,11 @@ def recover_meta(path: str) -> tuple[str | None, str]:
     return cwd, ("terminal" if entrypoint and "vscode" not in entrypoint else "vscode")
 
 
-def parse_jsonl(path: str, cursor: int = 0) -> dict:
+def parse_jsonl(path: str, cursor: int = 0, sidechain: bool = False) -> dict:
     """Parse a native transcript into {turns, events, next_cursor}. `seq` is a
     stable, monotonic per-session counter; events with seq < cursor are dropped so
     the same incremental-polling contract as store.transcript() holds.
+    `sidechain` keeps the isSidechain records — a sub-agent's own file.
 
     Memoized on (mtime, size): a repeat poll of an unchanged file returns a slice
     of the cached parse instead of re-reading the whole JSONL."""
@@ -456,13 +460,14 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
     except OSError:
         return {"turns": [], "events": [], "next_cursor": cursor}
     key = (st.st_mtime, st.st_size)
+    ck = (path, sidechain)
     with _parse_lock:
-        entry = _parse_cache.get(path)
+        entry = _parse_cache.get(ck)
         full = entry[1] if entry and entry[0] == key else None
     if full is None:
-        full = _parse_full(path)
+        full = _parse_full(path, sidechain)
         with _parse_lock:
-            _parse_cache[path] = (key, full)
+            _parse_cache[ck] = (key, full)
             if len(_parse_cache) > _PARSE_CACHE_MAX:      # drop oldest entries
                 for k in list(_parse_cache)[:len(_parse_cache) - _PARSE_CACHE_MAX]:
                     _parse_cache.pop(k, None)
@@ -474,7 +479,7 @@ def parse_jsonl(path: str, cursor: int = 0) -> dict:
             "next_cursor": total if total > cursor else cursor}
 
 
-def _parse_full(path: str) -> dict:
+def _parse_full(path: str, sidechain: bool = False) -> dict:
     """The actual JSONL→transcript parse, emitting every event (cursor filtering
     happens in parse_jsonl against the cached result)."""
     turns: list[dict] = []
@@ -502,8 +507,8 @@ def _parse_full(path: str) -> dict:
 
     try:
         fh = open(path, encoding="utf-8", errors="replace")
-    except OSError:
-        return {"turns": [], "events": [], "next_cursor": cursor}
+    except OSError:                  # gone between parse_jsonl's stat and here
+        return {"turns": [], "events": [], "next_cursor": 0}
     with fh:
         for line in fh:
             line = line.strip()
@@ -513,7 +518,7 @@ def _parse_full(path: str) -> dict:
                 rec = json.loads(line)
             except json.JSONDecodeError:
                 continue
-            if not isinstance(rec, dict) or rec.get("isSidechain"):
+            if not isinstance(rec, dict) or (rec.get("isSidechain") and not sidechain):
                 continue
             t = rec.get("type")
             msg = rec.get("message") if isinstance(rec.get("message"), dict) else {}
@@ -532,7 +537,9 @@ def _parse_full(path: str) -> dict:
                             end = _ts(rec)
                             ms = int((end - t0) * 1000) if t0 and end else 0
                             emit(tool_done(rid, name, ms, b, rec.get("toolUseResult")))
-                else:
+                elif not rec.get("isMeta"):
+                    # isMeta: what the CLI adds beside a turn, never a prompt —
+                    # an image Read's "[Image: original …]" companion opened a turn per picture.
                     open_turn(rec, _text_of(content))
             elif t == "assistant":
                 if state["turn"] is None:

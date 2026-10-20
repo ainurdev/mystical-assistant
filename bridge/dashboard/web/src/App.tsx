@@ -2601,7 +2601,7 @@ export function App() {
                         // Inside the composer's box, not on the bare panel above
                         // it: a lone pill on its own strip read as a layout slip.
                         <div className="pillstrip">
-                          <AgentsPill sessionId={sessionId} running={running} />
+                          <AgentsPill sessionId={sessionId} running={running} hud={settings} />
                           <GoalPill
                             goal={sessions.find((s) => s.id === sessionId)?.goal}
                             onClear={() => void send("/goal", [])}

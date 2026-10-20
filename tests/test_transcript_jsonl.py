@@ -215,6 +215,45 @@ def test_user_tool_result_is_not_a_new_turn():
     assert [e["type"] for e in out["events"]] == ["tool", "tool_done"]
 
 
+def test_an_image_reads_companion_is_not_a_new_turn():
+    # Reading a picture makes the CLI add an isMeta user message ("[Image:
+    # original …]") beside the tool_result. Taken for a prompt, it split one run
+    # into a turn per picture.
+    recs = [
+        {"type": "user", "uuid": "t1", "message": {"role": "user", "content": "look at the shot"}},
+        {"type": "assistant", "uuid": "a1", "message": {"role": "assistant", "content": [
+            {"type": "tool_use", "id": "R1", "name": "Read", "input": {"file_path": "/x/a.png"}}]}},
+        {"type": "user", "uuid": "tr", "message": {"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "R1", "content": "ok"}]}},
+        {"type": "user", "uuid": "m1", "isMeta": True, "message": {"role": "user",
+         "content": "[Image: original 1560x2200, displayed at 1418x2000.]"}},
+        {"type": "assistant", "uuid": "a2", "message": {"role": "assistant", "content": [
+            {"type": "text", "text": "it shows a cat"}]}},
+    ]
+    out = T.parse_jsonl(_write(recs))
+    assert [t["prompt"] for t in out["turns"]] == ["look at the shot"]
+    assert [e["type"] for e in out["events"]] == ["tool", "tool_done", "text"]
+
+
+def test_a_subagent_file_parses_when_its_sidechain_is_asked_for():
+    # Every record of a sub-agent's own file is isSidechain. The session view
+    # drops them; the agents modal asks for them and gets the run as one turn,
+    # the brief as its prompt. Same path both ways: the parse cache must not
+    # hand one reading to the other.
+    p = _write([
+        {"type": "user", "uuid": "b1", "isSidechain": True,
+         "message": {"role": "user", "content": "map the backend"}},
+        {"type": "assistant", "uuid": "a1", "isSidechain": True, "message": {
+            "role": "assistant", "model": "claude-sonnet-5-5", "content": [
+                {"type": "text", "text": "mapped"}]}},
+    ])
+    assert T.parse_jsonl(p)["events"] == []
+    out = T.parse_jsonl(p, sidechain=True)
+    assert [t["prompt"] for t in out["turns"]] == ["map the backend"]
+    assert out["turns"][0]["model"] == "sonnet"
+    assert [e.get("text") for e in out["events"]] == ["mapped"]
+
+
 def test_bash_output_pairs_by_id_and_stays_bash_only():
     # The terminal block needs the command AND its output, paired by tool_use id.
     # A Read result must stay output-free (a whole file would bloat the store).
