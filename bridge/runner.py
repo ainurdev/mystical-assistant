@@ -2178,6 +2178,12 @@ def _handle_event(job: Job, d: dict):
                 if imgs:
                     ev["images"] = imgs
                 job.add(ev)
+    elif t == "system" and d.get("subtype") == "init" and job.status == "done":
+        # Another turn in the same process. On --resume the CLI first replays
+        # the notice of a background task the last process left behind, a
+        # no-op whose result ("", num_turns 0) beats our prompt (CLI 2.1.302).
+        # Left done, _watchdog's shell grace killed the child mid-thinking.
+        job.status, job.elapsed = "running", None
     elif t == "system" and d.get("subtype") == "hook_response":
         _hook_log(job, d)
     elif t == "control_response":
@@ -2395,22 +2401,28 @@ def _watchdog(job: Job, proc) -> None:
     proc is the claude child, or an agent turn's acp.Conn (its poll() never
     reaps; its kill() sweeps the group). It stands down once the turn has
     ended (job.exited): a descendant still holding an agent's stream must not
-    get a finished turn timed out and killed."""
-    quiet_since = time.time()
+    get a finished turn timed out and killed.
+
+    Silence is awake time: the monotonic clock stops while the machine sleeps,
+    the wall clock jumps. On wall time a closed lid read as a hang -- all 20
+    hung kills on the Mac 2026-10-13..20 were sleep, not a stuck child."""
+    seen, quiet_since = job.last_at, time.monotonic()
     limit = job.hang_timeout or config.RUN_TIMEOUT
     while proc.poll() is None and not job.exited.wait(1.0):
-        if job.pending or job.interrupted:
-            quiet_since = time.time()   # waiting on the user, or stopping: not a hang
-            continue
+        if job.pending or job.interrupted or job.last_at != seen:
+            seen, quiet_since = job.last_at, time.monotonic()
+            if job.pending or job.interrupted:
+                continue                # waiting on the user, or stopping: not a hang
+        quiet = time.monotonic() - quiet_since
         if (job.status != "running" and not (job.runtime or "").startswith("acp:")
-                and time.time() - job.last_at >= BG_SHELL_GRACE
+                and quiet >= BG_SHELL_GRACE
                 and not (job.session_id and _running_agents(job.session_id))):
             proc.terminate()
             job.exited.wait(INTERRUPT_KILL)
             if proc.poll() is None:
                 proc.kill()
             return
-        if time.time() - max(job.last_at, quiet_since) >= limit:
+        if quiet >= limit:
             job.timed_out = True
             proc.kill()
             return
@@ -2553,9 +2565,12 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 _handle_control_request(job, d)
                 continue
             _handle_event(job, d)
-            if d.get("type") == "result":
+            if d.get("type") == "result" and (d.get("num_turns") or d.get("result")):
                 # Turn finished; close stdin so the stream-json process exits
-                # (it otherwise stays alive awaiting more input).
+                # (it otherwise stays alive awaiting more input). Not on the
+                # empty no-op a replayed notice gets (see _handle_event's init):
+                # our prompt runs after it and answers its cards over stdin.
+                # A lone one is ended by _watchdog's shell grace instead.
                 job.close_stdin()
         proc.wait()
 

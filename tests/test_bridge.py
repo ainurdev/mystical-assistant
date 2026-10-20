@@ -1728,6 +1728,67 @@ def test_watchdog_ends_a_done_turn_held_only_by_background_shells(monkeypatch):
     assert not job.timed_out                   # ended, not hung: no error row, no resume
 
 
+def test_watchdog_does_not_count_sleep_as_silence(monkeypatch):
+    """A closed lid sleeps the Mac: the wall clock jumps and nothing ran. All 20
+    hung kills on the Mac 2026-10-13..20 were sleep, each auto-resume slept and
+    was killed again. Silence counts awake time only; a real hang still dies."""
+    monkeypatch.setattr(config, "RUN_TIMEOUT", 2)
+    real, slept = time.time, {"s": 0.0}
+    monkeypatch.setattr(time, "time", lambda: real() + slept["s"])
+    job, proc = runner.Job("wd-sleep", 555), _FakeProc()
+    threading.Thread(target=runner._watchdog, args=(job, proc), daemon=True).start()
+    time.sleep(0.5)
+    slept["s"] = 3600                          # an hour asleep: wall clock only
+    time.sleep(1.2)
+    assert not proc.killed and not job.timed_out
+    time.sleep(1.8)                            # awake and silent past RUN_TIMEOUT
+    assert proc.killed and job.timed_out
+
+
+def test_a_replayed_notice_does_not_end_the_turn():
+    """On --resume, claude -p first replays the notice of a background task the
+    last process left behind: a no-op turn whose result ("", num_turns 0) lands
+    before the prompt is read, then a fresh init and the real work (CLI 2.1.302).
+    Read as the answer, the turn went DONE in 1 s and _watchdog's shell grace
+    killed the child mid-thinking: 7 prompts lost 2026-10-16..20."""
+    job = runner.Job("replay", 555)
+    for d in ({"type": "system", "subtype": "init", "session_id": "c1"},
+              {"type": "result", "subtype": "success", "result": "", "num_turns": 0,
+               "session_id": "c1"},
+              {"type": "system", "subtype": "init", "session_id": "c1"}):
+        runner._handle_event(job, d)
+    assert job.status == "running" and job.elapsed is None
+
+
+def test_a_replayed_notice_leaves_stdin_open_for_the_real_turn(monkeypatch):
+    """The no-op result is not the turn's end: our prompt runs after it, and its
+    cards are answered over stdin (Job.respond). Closed there, the answer to a
+    question the real turn raised went nowhere."""
+    stream = [{"type": "system", "subtype": "init", "session_id": "c1"},
+              {"type": "result", "subtype": "success", "result": "", "num_turns": 0},
+              {"type": "system", "subtype": "init", "session_id": "c1"},
+              {"type": "result", "subtype": "success", "result": "pineapple", "num_turns": 1}]
+    open_for_real_turn = []
+
+    class Child(_child(0)):
+        def __init__(self, cmd, **kw):
+            super().__init__(cmd, **kw)
+            self.stdin = stdin = _FakeStdin()
+
+            def out():
+                for i, d in enumerate(stream):
+                    if i == 2:
+                        open_for_real_turn.append(not stdin.closed)
+                    yield json.dumps(d) + "\n"
+            self.stdout = out()
+
+    sid, job = _dying_turn(monkeypatch, "p-replayed-notice", 0)
+    monkeypatch.setattr(runner.subprocess, "Popen", Child)
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    assert open_for_real_turn == [True]
+    assert (job.status, job.result, job.proc.stdin.closed) == ("done", "pineapple", True)
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]
