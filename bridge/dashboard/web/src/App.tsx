@@ -1645,7 +1645,7 @@ export function App() {
       let branch = plan.branch ?? undefined;
       if (!project) {
         if (!activeProject) { notify("error", "Pick a project to continue it in first."); return; }
-        if (plan.repo && !(await askConfirm(`${plan.repo} isn't cloned here. Continue in ${projectName(activeProject)} without their code?`))) return;
+        if (plan.repo && !(await askConfirm(`Continue in ${projectName(activeProject)} without their code? ${plan.repo} isn't cloned here.`, { ok: "Continue" }))) return;
         project = activeProject;
         branch = undefined;
       }
@@ -2336,7 +2336,7 @@ export function App() {
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
-    const next = (await askPrompt("Name this session", current))?.trim();
+    const next = (await askPrompt("Name this session", current, "Rename"))?.trim();
     if (!next || next === current) return;
     try {
       await api.retitle(id, next);

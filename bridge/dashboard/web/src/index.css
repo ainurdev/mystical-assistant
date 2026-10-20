@@ -996,8 +996,15 @@ input {
            box-shadow: 0 0 12px color-mix(in srgb, var(--acc) 14%, transparent); }
 .act-pri.queue { border-color: var(--purple); background: var(--purple-d); color: var(--panel3);
                  box-shadow: 0 0 12px color-mix(in srgb, var(--purple) 16%, transparent); }
+.act-pri.danger { border-color: var(--err); background: var(--err); color: var(--acc-on);
+                  box-shadow: 0 0 12px color-mix(in srgb, var(--err) 16%, transparent); }
 .act-pri:disabled { background: transparent; color: var(--txl); box-shadow: none; cursor: not-allowed;
                     border-color: color-mix(in srgb, var(--acc) 16%, transparent); }
+/* AskDialog (ui/Ask.tsx): the button Enter presses wears a ring. :focus, not
+   :focus-visible, because a dialog opened by a click autofocuses without
+   "visible" focus, and the ring is how you see that Enter cancels a destructive
+   ask. A click on either button closes the dialog, so no ring lingers. */
+.ask :is(.act-alt, .act-pri):focus { outline: 2px solid color-mix(in srgb, var(--acc) 60%, transparent); outline-offset: 2px; }
 
 /* --- SETTINGS MODAL --------------------------------------------------------
    The category rail runs down the side of the panel, and across the top of it
@@ -3636,6 +3643,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .act-pri { box-shadow: none; background: var(--f-grad); border-color: transparent; color: var(--acc-on); }
 [data-theme^="flint-sunset"] .act-pri { color: #fff; }
 [data-fam] .act-pri.queue { background: var(--ask); color: var(--acc-on); }
+[data-fam] .act-pri.danger { background: var(--err); }
 [data-fam] .act-pri:disabled { background: transparent; border-color: var(--line); color: var(--txl); }
 
 /* ── every floating surface: menus, popovers, the run popover, the context
@@ -3648,10 +3656,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   background: var(--panel) !important; box-shadow: var(--f-pop-shadow) !important;
   overflow: hidden; font-family: var(--ui-font);
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.nt-act) {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act) {
   border-bottom-color: transparent !important; font-family: var(--ui-font) !important; letter-spacing: 0 !important;
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.nt-act):hover {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):hover {
   background: var(--ac-08) !important;
 }
 [data-fam] :is([style*="--shadow-pop"], [role="dialog"]:not(.agm)) [style*="acc) 10%"] { background: var(--f-you) !important; }
@@ -4165,6 +4173,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] :is(.act-alt, .act-pri) { font-weight: 400; letter-spacing: .16em; text-transform: uppercase; }
 [data-fam="aurora"] .act-pri:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--acc) 40%, transparent); }
 [data-fam="aurora"] .act-pri.queue:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--ask) 40%, transparent); }
+[data-fam="aurora"] .act-pri.danger:not(:disabled) { box-shadow: 0 0 14px color-mix(in srgb, var(--err) 40%, transparent); }
 [data-fam="aurora"] :is(.ctrl-verb, .ctrl-more) { letter-spacing: .14em; text-transform: uppercase; }
 [data-fam="aurora"] :is(.drop-btn, .run-trigger) { letter-spacing: .06em !important; }
 [data-fam="aurora"] .lanehead > span:nth-child(2) { font-weight: 400; letter-spacing: .2em !important; }

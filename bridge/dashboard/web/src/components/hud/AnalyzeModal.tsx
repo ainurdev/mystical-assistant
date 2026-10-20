@@ -485,7 +485,7 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
   }
 
   async function clearNotes() {
-    if (await askConfirm(`Drop ${notes.length} review note${notes.length === 1 ? "" : "s"} on ${branch}?`)) setNotes([]);
+    if (await askConfirm(`Drop ${notes.length} review note${notes.length === 1 ? "" : "s"} on ${branch}?`, { ok: "Drop", danger: true })) setNotes([]);
   }
 
   async function sendNotes() {

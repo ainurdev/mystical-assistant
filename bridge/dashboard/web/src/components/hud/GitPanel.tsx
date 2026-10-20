@@ -258,7 +258,7 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
   function discard(path: string, untracked: boolean) {
     void askConfirm(untracked
       ? `Delete ${path}? It was never committed, so there is nothing to restore.`
-      : `Discard your changes to ${path}? This can't be undone.`)
+      : `Discard your changes to ${path}? This can't be undone.`, { ok: untracked ? "Delete" : "Discard", danger: true })
       .then((yes) => { if (yes) void gitOp("discard", [path]); });
   }
 
@@ -303,7 +303,7 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
         { icon: "⧉", label: "Copy Path", onClick: () => copyPath(t.path) },
         {
           icon: "✕", label: "Delete File", danger: true,
-          onClick: () => void askConfirm(`Delete ${t.path} from disk?`)
+          onClick: () => void askConfirm(`Delete ${t.path} from disk?`, { ok: "Delete", danger: true })
             .then((yes) => { if (yes) void del(t.path); }),
         },
       );
@@ -318,7 +318,7 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
     if (unstaged.length)
       items.push({
         icon: "↺", label: `Discard All Changes (${unstaged.length})`, danger: true,
-        onClick: () => void askConfirm(`Discard every unstaged change in this working tree (${plural(unstaged.length, "file")})? This can't be undone.`)
+        onClick: () => void askConfirm(`Discard every unstaged change in this working tree (${plural(unstaged.length, "file")})? This can't be undone.`, { ok: "Discard all", danger: true })
           .then((yes) => { if (yes) void gitOp("discard", unstaged.map((f) => f.path)); }),
       });
     return items;

@@ -16,7 +16,7 @@ export const leavingOnPurpose = () => leaving;
 /** Whether it's fine to go. Asks in the HUD's own dialog if a card is waiting. */
 export async function confirmLeave(): Promise<boolean> {
   if (!pending) return true;
-  if (!(await askConfirm("A question is waiting for an answer here. Reload anyway?"))) return false;
+  if (!(await askConfirm("Reload anyway? A question is waiting for an answer here.", { ok: "Reload" }))) return false;
   leaving = true; // so the beforeunload backstop doesn't ask the same thing again
   return true;
 }

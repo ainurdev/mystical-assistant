@@ -2122,7 +2122,7 @@ function IntegrationsPanel() {
   }
 
   async function remove(p: Integration) {
-    if (await askConfirm(`Remove ${p.label}? Its tabs, buttons and worker go; its connections stay on disk, so installing it again restores them.`))
+    if (await askConfirm(`Remove ${p.label}? Its tabs, buttons and worker go; its connections stay on disk, so installing it again restores them.`, { ok: "Remove" }))
       await set(p.id, "remove");
   }
 
