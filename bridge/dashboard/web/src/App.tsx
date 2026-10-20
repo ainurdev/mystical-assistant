@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  Castle, FolderTree, GitBranch, GraduationCap, Users,
+  FolderTree, GitBranch, GraduationCap, Users,
 } from "lucide-react";
 import {
   api,
@@ -98,6 +98,7 @@ import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
 import { isDeviceRun } from "./lib/devicerun";
 import { isTeam, readOnly as isReadOnly } from "./lib/team";
+import { RivendellIcon } from "./lib/rivendellicon";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
 import { SettingsModal, type Tab as SettingsTab } from "./components/hud/SettingsModal";
@@ -1972,7 +1973,7 @@ export function App() {
     }] : []),
     ...(rivendellOn ? [{
       id: "rivendell", label: rivendellDown ? "Rivendell tasks — link broken" : "Rivendell tasks",
-      icon: <Castle {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
+      icon: <RivendellIcon {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
       render: () => (
         <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
           onWorkOn={(text) => { if (sessionProject) { void newSession(sessionProject, text); toChat(); } }} />

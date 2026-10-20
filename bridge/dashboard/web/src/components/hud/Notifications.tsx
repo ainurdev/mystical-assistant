@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { Castle, GitPullRequest, Moon, Settings, Truck, CalendarDays, Users } from "lucide-react";
+import { GitPullRequest, Moon, Settings, Truck, CalendarDays, Users } from "lucide-react";
 import { api, type Need, type Notice, type NoticePrefs, type PendingCard, type RivendellInstance } from "../../api";
 import { chime, push, pushGranted, type ToneKey } from "../../lib/push";
 import { bannerActions, bannerAnswer } from "../../lib/banner";
 import { openSettings } from "../../lib/opensettings";
+import { RivendellIcon } from "../../lib/rivendellicon";
 import {
   ago, badge, cardFor, chipCount, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf,
   type Filter, type Row,
@@ -71,7 +72,7 @@ export function PillHost() {
   return (
     <div className="ntf-pillhost" role="status" aria-live="polite">
       <div key={p.id} className={`ntf-pill${p.kind === "error" ? " err" : ""}${p.kind === "rivendell" ? " rv" : ""}${rich ? " rich" : ""}`}>
-        <span className="ntf-pill-k">{p.kind === "error" ? "✕" : p.kind === "rivendell" ? <Castle size={10} strokeWidth={2} /> : "✓"}</span>
+        <span className="ntf-pill-k">{p.kind === "error" ? "✕" : p.kind === "rivendell" ? <RivendellIcon size={10} strokeWidth={2} /> : "✓"}</span>
         <span className="ntf-pill-t">{p.text}
           {p.sub && <small>{p.sub}</small>}
           {!!p.logos?.length && (
@@ -139,7 +140,7 @@ const mins = (s: number) => (s >= 60 ? `${Math.floor(s / 60)}m ${Math.round(s % 
 
 function Source({ kind, source, project }: { kind: string; source: string; project?: string }) {
   const t = toneOf(kind);
-  const icon = source === "rivendell" ? <Castle size={13} strokeWidth={1.8} />
+  const icon = source === "rivendell" ? <RivendellIcon size={13} strokeWidth={1.8} />
     : source === "team" ? <Users size={13} strokeWidth={1.8} />
     : source === "pr" ? <GitPullRequest size={13} strokeWidth={1.8} />
     : kind === "weekly" ? <CalendarDays size={13} strokeWidth={1.8} />

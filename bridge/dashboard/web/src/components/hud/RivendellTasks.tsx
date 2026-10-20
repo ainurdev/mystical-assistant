@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { Castle, ListTodo, Play, SquarePen } from "lucide-react";
+import { ListTodo, Play, SquarePen } from "lucide-react";
 import type {
   RivendellLink, RivendellTask, RivendellTaskDetail, RivendellTasks as TasksAnswer, RivendellTodolist,
 } from "../../api";
 import { api } from "../../api";
 import { openSettings } from "../../lib/opensettings";
+import { RivendellIcon } from "../../lib/rivendellicon";
 import {
   cardState, closeCode, dueLabel, groupTasks, initials, linkChip, nextUp, resultBits, sentryPrompt, since,
   splitTitle, testText, workPrompt, type CardTone, type LinkTone,
@@ -679,7 +680,7 @@ function Section({ label, n, color, onClick, chev }: { label: string; n: number;
 function Empty({ title, text, icon, settings }: { title: string; text: ReactNode; icon?: ReactNode; settings?: boolean }) {
   return (
     <div style={{ padding: "26px 16px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center" }}>
-      <span style={{ color: "var(--txg)" }}>{icon ?? <Castle size={26} strokeWidth={1.3} />}</span>
+      <span style={{ color: "var(--txg)" }}>{icon ?? <RivendellIcon size={26} strokeWidth={1.3} />}</span>
       <div style={{ fontSize: "var(--t115)", color: "var(--txh)" }}>{title}</div>
       <div style={{ fontSize: "var(--t10)", lineHeight: 1.55, color: "var(--txl)", maxWidth: 240 }}>{text}</div>
       {settings && (
