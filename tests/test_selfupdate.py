@@ -131,6 +131,30 @@ def test_restart_endpoint_arms_a_restart():
     assert box["code"] == 200 and box["obj"] == {"ok": True}
 
 
+def test_update_rebuilds_both_uis_then_restarts():
+    """UPDATE pulls, rebuilds the Mini App and the dashboard, then restarts; a
+    failed build restarts nothing. Stubbed: no real pull, npm or SIGINT."""
+    built, restarts, result = [], [], [(True, "")]
+
+    def build(name, web):
+        built.append(name)
+        return result[0]
+
+    saved = selfupdate.git.pull, selfupdate._build, selfupdate.restart
+    selfupdate.git.pull = lambda repo: (True, "pulled")
+    selfupdate._build = build
+    selfupdate.restart = lambda *a, **k: restarts.append(True)
+    try:
+        assert selfupdate.update() == (True, "pulled")
+        assert built == ["Mini App", "dashboard"] and restarts == [True]
+        built.clear(); restarts.clear(); result[0] = (False, "boom")
+        ok, out = selfupdate.update()
+    finally:
+        selfupdate.git.pull, selfupdate._build, selfupdate.restart = saved
+    assert ok is False and "Mini App build failed:\nboom" in out
+    assert built == ["Mini App"] and restarts == []     # the first failure stops it
+
+
 def test_claude_update_endpoint_arms_the_update_and_a_restart():
     """POST /local/claude/update doesn't install anything itself: it flags the
     update and restarts, and the install runs once the bridge is down."""

@@ -48,32 +48,35 @@ def check() -> dict:
             "files": st["files"][:50]}
 
 
-_DASH_WEB = os.path.join(REPO, "bridge", "dashboard", "web")
+# Mini App first: if its build fails, the dashboard's bundle still matches the running Python.
+_WEB_UIS = [("Mini App", os.path.join(REPO, "bridge", "miniapp", "web")),
+            ("dashboard", os.path.join(REPO, "bridge", "dashboard", "web"))]
 
 
-def _build_dashboard() -> tuple[bool, str]:
-    """Rebuild the dashboard bundle. dist/ is generated, not committed, so a pull
+def _build(name: str, web: str) -> tuple[bool, str]:
+    """Rebuild one UI's bundle. dist/ is generated, not committed, so a pull
     that changes the UI would otherwise keep serving the old (or a deleted) one.
     No node_modules → nothing we can build; leave what's on disk."""
-    if not os.path.isdir(os.path.join(_DASH_WEB, "node_modules")):
-        return True, "dashboard build skipped (no node_modules)"
+    if not os.path.isdir(os.path.join(web, "node_modules")):
+        return True, f"{name} build skipped (no node_modules)"
     try:
-        p = subprocess.run(["npm", "run", "build"], cwd=_DASH_WEB,
+        p = subprocess.run(["npm", "run", "build"], cwd=web,
                            capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as e:
-        return False, f"dashboard build failed: {e}"
+        return False, str(e)
     return p.returncode == 0, (p.stdout + p.stderr).strip()[-2000:]
 
 
 def update() -> tuple[bool, str]:
-    """Pull, rebuild the UI, then arm the restart (delayed, so the caller's HTTP
+    """Pull, rebuild both UIs, then arm the restart (delayed, so the caller's HTTP
     response still gets out). A failed pull or build restarts nothing."""
     ok, output = git.pull(REPO)
     if not ok:
         return False, output
-    built, build_out = _build_dashboard()
-    if not built:
-        return False, f"{output}\n\n{build_out}"
+    for name, web in _WEB_UIS:
+        built, build_out = _build(name, web)
+        if not built:
+            return False, f"{output}\n\n{name} build failed:\n{build_out}"
     restart()
     return True, output
 
