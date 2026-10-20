@@ -23,6 +23,7 @@ import {
   type RivendellInstance,
   type Received,
   type TeamOverview,
+  type InstallStep,
 } from "./api";
 import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
@@ -1634,13 +1635,28 @@ export function App() {
 
   /** CONTINUE HERE: a session of your own in your checkout of their repository,
    *  their code on a branch of its own when it came, their transcript and pictures
-   *  in the composer, and the opening prompt left unsent. */
+   *  in the composer, and the opening prompt left unsent. When the repository isn't
+   *  cloned here, CLONE & INSTALL clones it first and installs it in the folder the
+   *  session runs in; a failed clone falls back to continuing without their code. */
   const continuing = useRef(new Set<string>());
+  const [contStep, setContStep] = useState<{ id: string; text: string } | null>(null);   // on the button pressed
   async function continueShare(id: string) {
     if (continuing.current.has(id)) return;      // a second click while the first sets up
     continuing.current.add(id);
     try {
-      const plan = await api.teamContinue(id);
+      let plan = await api.teamContinue(id);
+      let cwd: string | null = null;             // where to install: the new checkout, or the worktree their code goes into
+      if (!plan.project && plan.repo && plan.clone && await askConfirm(
+        `${plan.repo} isn't cloned here. Clone it into ${plan.clone}, install it, and continue ${plan.from ?? "their"}'s session there?`,
+        { yes: "CLONE & INSTALL", no: "NOT NOW" })) {
+        setContStep({ id, text: "CLONING…" });
+        try {
+          cwd = (await api.teamClone(id)).path;
+          void refreshProjects();
+          plan = await api.teamContinue(id);
+        } catch (e) { notify("error", (e as Error).message); }
+        setContStep(null);
+      }
       let project = plan.project;
       let branch = plan.branch ?? undefined;
       if (!project) {
@@ -1656,6 +1672,16 @@ export function App() {
           return;
         }
         await api.teamUnpack(id, wt.path).catch((e: Error) => notify("info", e.message));
+        if (cwd) cwd = wt.path;
+      }
+      if (cwd) {
+        setContStep({ id, text: "INSTALLING…" });
+        await api.teamInstall(id, cwd).then(({ steps }) => {
+          const bad = steps.filter((s) => !s.ok);
+          const where = (s: InstallStep) => s.cmd + (s.dir === "." ? "" : ` in ${s.dir}/`);
+          if (bad.length) notify("error", `${where(bad[0])} failed: ${bad[0].why}${bad.length > 1 ? ` (+${bad.length - 1} more)` : ""}`);
+          else notify("info", steps.length ? `Installed: ${steps.map(where).join(", ")}` : "Cloned. No lockfile here, so nothing was installed.");
+        }, (e: Error) => notify("error", e.message));
       }
       const sid = await newSession(project, plan.draft, branch, plan.title ?? undefined);
       if (!sid) { notify("error", "Couldn't start the session; nothing was marked continued."); return; }
@@ -1666,6 +1692,7 @@ export function App() {
       notify("error", m === "not found" ? "Restart the bridge to continue shares here." : m);
     } finally {
       continuing.current.delete(id);
+      setContStep(null);
     }
   }
 
@@ -2008,7 +2035,7 @@ export function App() {
           sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}
           onRefresh={() => void loadTeam()}
           onSendTo={(t) => { if (selected) setSendWhat({ what: { kind: "session", session: selected.id, title: selected.title || "session" }, to: t.id }); }}
-          onOpen={openReceived} onContinue={(r) => void continueShare(r.id)}
+          onOpen={openReceived} onContinue={(r) => void continueShare(r.id)} step={contStep}
           onDismiss={(r) => void dismissShare(r.id, !!r.session && r.session === sessionId)} />
       ),
     }] : []),
@@ -2590,6 +2617,7 @@ export function App() {
                   // A session a teammate sent: read only, so the bar stands where the composer would.
                   <TeamBar key={selected.id} s={selected} src={team?.roster.find((p) => p.id === selected.team?.from.id)?.avatarUrl}
                     onContinue={() => { if (selected.team) void continueShare(selected.team.share); }}
+                    step={contStep && contStep.id === selected.team?.share ? contStep.text : null}
                     onDismiss={() => { if (selected.team) void dismissShare(selected.team.share, true); }} />
                 ) : (
                   <>

@@ -13,7 +13,10 @@ export function TeamTile() {
  *  what they asked, and offers the two ways on: DISMISS, or CONTINUE HERE, which
  *  starts a session of your own with their work attached and the prompt unsent.
  *  Styled with JobBar's classes. */
-export function TeamBar({ s, src, onContinue, onDismiss }: { s: SessionBrief; src?: string | null; onContinue: () => void; onDismiss: () => void }) {
+export function TeamBar({ s, src, onContinue, onDismiss, step }: {
+  s: SessionBrief; src?: string | null; onContinue: () => void; onDismiss: () => void;
+  step?: string | null;      // CLONE & INSTALL's progress, in place of CONTINUE HERE
+}) {
   const t = s.team;
   if (!t) return null;
   const first = t.from.name.split(" ")[0] || t.from.name;
@@ -45,7 +48,7 @@ export function TeamBar({ s, src, onContinue, onDismiss }: { s: SessionBrief; sr
       </button>
       <button type="button" className="jobbar-btn" data-pri style={{ flex: "none" }} onClick={onContinue}
         title="Your own session: their work attached, the prompt left for you to send">
-        <Forward size={12} strokeWidth={2} aria-hidden />CONTINUE HERE
+        <Forward size={12} strokeWidth={2} aria-hidden />{step ?? "CONTINUE HERE"}
       </button>
     </div>
     </div>

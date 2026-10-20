@@ -63,7 +63,7 @@ const Sect = ({ label, right, top = 12 }: { label: string; right?: ReactNode; to
  *  who's away, and how far your own sends got. App owns the data (it polls, and
  *  the rail badge and the session menu read it too). SEND on a teammate sends the
  *  session you have open: `sessionTitle` is null when it isn't yours to send. */
-export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onDismiss }: {
+export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onDismiss, step }: {
   data: TeamOverview | null;
   fail: string | null;
   sessionTitle: string | null;
@@ -72,6 +72,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
   onOpen: (r: Received) => void;
   onContinue: (r: Received) => void;
   onDismiss: (r: Received) => void;
+  step?: { id: string; text: string } | null;    // CLONE & INSTALL's progress, on the share it is for
 }) {
   const h12 = useClock12();
   const now = Date.now() / 1000;
@@ -147,7 +148,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
               <Download size={11} strokeWidth={2} />DOWNLOAD
             </a>
           )}
-          <Btn icon={<Forward size={11} strokeWidth={2} />} label="CONTINUE HERE" pri onClick={() => onContinue(r)}
+          <Btn icon={<Forward size={11} strokeWidth={2} />} label={step?.id === r.id ? step.text : "CONTINUE HERE"} pri onClick={() => onContinue(r)}
             title="Your own session: their work attached, the prompt left for you to send" />
         </div>
       </div>

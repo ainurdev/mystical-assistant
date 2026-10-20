@@ -1730,11 +1730,17 @@ class Handler(BaseHTTPRequestHandler):
             except team.TeamError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "share": share})
-        if path in ("/local/rivendell/team/continue", "/local/rivendell/team/unpack", "/local/rivendell/team/state"):
+        if path in ("/local/rivendell/team/continue", "/local/rivendell/team/clone", "/local/rivendell/team/install",
+                    "/local/rivendell/team/unpack", "/local/rivendell/team/state"):
             share_id = str(body.get("id") or "")
             try:
                 if path.endswith("/continue"):
                     return self._json(team.continue_plan(share_id))
+                if path.endswith("/clone"):      # CLONE & INSTALL: minutes on a big repository, answered when done
+                    rel = team.clone(share_id)
+                    return self._json({"ok": True, "project": rel, "path": os.path.join(config.BASE_PATH, rel.lstrip("/"))})
+                if path.endswith("/install"):
+                    return self._json({"ok": True, "steps": team.install(share_id, str(body.get("cwd") or ""))})
                 if path.endswith("/unpack"):
                     return self._json({"ok": True, "files": team.unpack(share_id, str(body.get("cwd") or ""))})
                 team.mark(share_id, str(body.get("state") or ""))

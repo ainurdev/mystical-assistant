@@ -9,14 +9,16 @@ type Ask = {
   kind: "confirm" | "prompt";
   text: string;
   value: string;
+  yes?: string;                // the buttons' words, OK and CANCEL unless the question names them
+  no?: string;
   done: (v: boolean | string | null) => void;
 };
 
 let host: ((a: Ask) => void) | null = null;
 
-export function askConfirm(text: string): Promise<boolean> {
+export function askConfirm(text: string, labels: { yes?: string; no?: string } = {}): Promise<boolean> {
   if (!host) return Promise.resolve(window.confirm(text)); // asked before the HUD mounted
-  return new Promise((done) => host?.({ kind: "confirm", text, value: "", done: done as Ask["done"] }));
+  return new Promise((done) => host?.({ kind: "confirm", text, value: "", ...labels, done: done as Ask["done"] }));
 }
 
 export function askPrompt(text: string, value = ""): Promise<string | null> {
@@ -67,9 +69,9 @@ export function AskDialog() {
           )}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 9 }}>
             <button onClick={cancel} {...hp("no")}
-              style={{ ...btn, border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "no" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)" }}>CANCEL</button>
+              style={{ ...btn, border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "no" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)" }}>{ask.no ?? "CANCEL"}</button>
             <button onClick={accept} autoFocus={ask.kind === "confirm"} {...hp("yes")}
-              style={{ ...btn, border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: hov === "yes" ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "color-mix(in srgb, var(--acc) 8%, transparent)", color: "var(--txb)" }}>OK</button>
+              style={{ ...btn, border: "1px solid color-mix(in srgb, var(--acc) 45%, transparent)", background: hov === "yes" ? "color-mix(in srgb, var(--acc) 20%, transparent)" : "color-mix(in srgb, var(--acc) 8%, transparent)", color: "var(--txb)" }}>{ask.yes ?? "OK"}</button>
           </div>
         </div>
       </div>

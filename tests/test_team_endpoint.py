@@ -142,3 +142,23 @@ def test_the_transcript_comes_as_markdown(monkeypatch):
     h._get_api("/local/rivendell/team/transcript.md", {"id": ["s-1"]})
     assert box["body"].getvalue() == b"# t\n" and box["headers"]["Content-Type"] == "text/markdown; charset=utf-8"
     assert dget("/local/rivendell/team/transcript.md", {"id": ["x"]})["code"] == 404
+
+
+def test_clone_and_install_answer_with_what_happened_or_why_not(monkeypatch):
+    monkeypatch.setattr(team, "clone", lambda share_id: f"/ainurhq/{share_id}")
+    steps = [{"dir": ".", "cmd": "pnpm install", "ok": True, "why": None}]
+    got = []
+    monkeypatch.setattr(team, "install", lambda share_id, cwd: got.append((share_id, cwd)) or steps)
+    assert dpost("/local/rivendell/team/clone", {"id": "osanwe"}) == {
+        "obj": {"ok": True, "project": "/ainurhq/osanwe", "path": os.path.join(config.BASE_PATH, "ainurhq", "osanwe")},
+        "code": 200}
+    assert dpost("/local/rivendell/team/install", {"id": "s1", "cwd": "/w"}) == {"obj": {"ok": True, "steps": steps}, "code": 200}
+    assert got == [("s1", "/w")]
+
+    def refuse(*a):
+        raise team.TeamError("Couldn't clone ainurdev/osanwe: GraphQL: Could not resolve to a Repository")
+    monkeypatch.setattr(team, "clone", refuse)
+    monkeypatch.setattr(team, "install", refuse)
+    for route in ("/local/rivendell/team/clone", "/local/rivendell/team/install"):
+        r = dpost(route, {"id": "x"})
+        assert r["code"] == 400 and r["obj"]["error"].startswith("Couldn't clone ainurdev/osanwe"), route

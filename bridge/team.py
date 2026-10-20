@@ -23,6 +23,13 @@ What arrives is a teammate's, so nothing of it runs here without a tap:
   - CONTINUE HERE starts your own session: the transcript as Markdown and the
     pictures go into the composer as attachments, the code (when it came) into a
     new worktree branch, and the opening prompt is an unsent draft.
+  - When their repository isn't cloned here, CONTINUE HERE offers CLONE & INSTALL:
+    `gh repo clone` with your own login, beside your other checkouts from the same
+    GitHub owner (your layout, not theirs), then each lockfile's installer in the
+    folder the session runs in. The tap is the consent: installers run the
+    repository's own scripts. Not built: a clone of a repository with no GitHub
+    remote, Python's requirements.txt, poetry, Go or Cargo, and installing in a
+    worktree of a checkout you already had.
   - A file is kept in the bridge's state folder, never in a project, and the
     dashboard hands it out only as a download.
 
@@ -43,6 +50,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import sys
 import tarfile
 import threading
@@ -80,6 +88,14 @@ _UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}
 _REPO = re.compile(r"[A-Za-z0-9_.-]{1,100}/[A-Za-z0-9_.-]{1,100}")
 _SHA = re.compile(r"[0-9a-f]{7,40}")
 _NAME_BAD = re.compile(r"[^A-Za-z0-9._-]")
+_PART = re.compile(r"[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}")   # a folder a clone may make, or a GitHub name: no leading dot or dash
+# Lockfile -> its installer. Node takes the first match (preview_detect's order); the
+# others all run, since a Laravel app keeps composer.lock beside package-lock.json.
+_NODE = (("pnpm-lock.yaml", "pnpm install"), ("yarn.lock", "yarn install"), ("bun.lock", "bun install"),
+         ("bun.lockb", "bun install"), ("package-lock.json", "npm install"))
+_OTHERS = (("composer.lock", "composer install --no-interaction"), ("uv.lock", "uv sync"))
+_CLONE_S, _INSTALL_S = 1800, 900   # seconds before a clone, or one installer, is stopped
+_ERR_LINE = re.compile(r"\berror\b|\bERR[!_]", re.I)
 # Token-shaped text, broader than device_side.redact: what a session most often
 # prints (Anthropic, Rivendell, GitHub, AWS, Slack keys, private-key blocks) and
 # any NAME_TOKEN=value line.
@@ -107,6 +123,7 @@ _FIELDS = {
 
 _lock = threading.RLock()
 _busy: set = set()                 # share ids being taken in now: a frame and a catch-up can bring one twice
+_cloning = threading.Lock()        # one clone at a time: a second of the same repository then finds the first
 _cache: dict = {}                  # "roster" | "outbox" -> (at, rows)
 
 
@@ -821,10 +838,45 @@ def _local_project(meta: dict) -> "str | None":
     return meta.get("project") if meta.get("project") in projects else None
 
 
+def _free(rel) -> bool:
+    """Can a clone go at `rel` and show as a project: one to three plain folder names
+    (browser.list_projects' depth), nothing there yet, and no checkout or link above it."""
+    parts = rel.split("/")[1:] if isinstance(rel, str) and rel.startswith("/") else []
+    if not 1 <= len(parts) <= 3 or not all(_PART.fullmatch(p) and p not in config.SKIP_DIRS for p in parts):
+        return False
+    path = config.BASE_PATH
+    for p in parts[:-1]:
+        path = os.path.join(path, p)
+        if os.path.islink(path) or os.path.lexists(os.path.join(path, ".git")) \
+                or (os.path.lexists(path) and not os.path.isdir(path)):
+            return False
+    return not os.path.lexists(os.path.join(path, parts[-1]))
+
+
+def _clone_to(meta: dict) -> "str | None":
+    """Where CLONE & INSTALL puts their repository: beside most of your checkouts from
+    the same GitHub owner (your layout, not theirs), else at the path they keep it,
+    else under its own name at the top. None when the repository's name isn't a plain
+    one or every place is taken."""
+    from bridge import browser, github
+    owner, _, name = (meta.get("repo") or "").partition("/")
+    if not (_PART.fullmatch(owner) and _PART.fullmatch(name)):
+        return None
+    near: dict = {}
+    for p in browser.list_projects():
+        slugs = github.remote_slugs(os.path.join(config.BASE_PATH, p.lstrip("/")))
+        if owner.lower() in {s.split("/")[0].lower() for s in slugs}:
+            near[os.path.dirname(p)] = near.get(os.path.dirname(p), 0) + 1
+    beside = [max(near, key=near.get).rstrip("/") + "/" + name] if near else []
+    return next((rel for rel in beside + [meta.get("project"), "/" + name] if _free(rel)), None)
+
+
 def continue_plan(share_id: str) -> dict:
     """What CONTINUE HERE needs to set up your own session: the project to start it
     in (None when the repository isn't cloned here), the branch for their code and
-    the commit to cut it from, the unsent draft, and the attachments."""
+    the commit to cut it from, the unsent draft, and the attachments. When it isn't
+    cloned, `clone` is the folder CLONE & INSTALL would make, written for people
+    (None: nowhere it can go)."""
     from bridge import git
     rec = _get(share_id or "")
     if not rec or rec.get("dismissed"):
@@ -832,7 +884,7 @@ def continue_plan(share_id: str) -> dict:
     name, note, meta = rec["from"]["name"], rec["note"], rec["meta"]
     said = f" Their note: “{note}”" if note else ""
     if rec["kind"] != "session":
-        return {"project": None, "repo": None, "branch": None, "base": None, "title": None,
+        return {"project": None, "repo": None, "branch": None, "base": None, "title": None, "from": name, "clone": None,
                 "draft": f"{name} sent me this {rec['kind']}.{said}",
                 "attachments": [{"name": os.path.basename(rec["file"]), "url": _file_url(rec, share_id)}]
                 if rec.get("file") else []}
@@ -845,7 +897,11 @@ def continue_plan(share_id: str) -> dict:
     attach = [{"name": "transcript.md", "url": f"/local/rivendell/team/transcript.md?id={share_id}"}]
     attach += [{"name": os.path.basename(p), "url": "/local/attachment?path=" + urllib.parse.quote(p)}
                for p in _session_pictures(rec)[:_ATTACH - 1]]
-    return {"project": project, "repo": meta.get("repo"), "title": rec["title"],
+    to = _clone_to(meta) if project is None else None
+    to = to and os.path.join(config.BASE_PATH, to.lstrip("/"))
+    home = os.path.realpath(os.path.expanduser("~"))   # BASE_PATH is a realpath too
+    return {"project": project, "repo": meta.get("repo"), "title": rec["title"], "from": name,
+            "clone": "~" + to[len(home):] if to and to.startswith(home + os.sep) else to,
             "branch": f"from-{first}/{_slug(rec['title'], 40)}" if code else None, "base": base,
             "draft": f"{name} sent me this session to pick up. Read the attached transcript first"
                      + (", then look at their code on this branch." if code else ".") + said + " "
@@ -915,6 +971,95 @@ def unpack(share_id: str, cwd: str) -> int:
     except (urllib.error.URLError, OSError, ValueError, tarfile.TarError, EOFError, zlib.error) as e:
         raise TeamError(f"Their code couldn't be unpacked: {_why(e) if isinstance(e, urllib.error.URLError) else e}") from None
     return sum(1 for m in members if m.isfile())
+
+
+def _session_share(share_id: str) -> dict:
+    rec = _get(share_id or "")
+    if not rec or rec.get("dismissed") or rec["kind"] != "session":
+        raise TeamError("That share is gone.")
+    return rec
+
+
+def _last_line(text: str, default: str) -> str:
+    return next((line.strip() for line in reversed(text.splitlines()) if line.strip()), default)
+
+
+def _failure(out: str) -> str:
+    """An installer's own words for why it failed: its first error line (pnpm, npm and
+    yarn say what went wrong there and add the detail after), else its last line."""
+    lines = [line.strip() for line in out.splitlines() if line.strip()]
+    return next((line for line in lines if _ERR_LINE.search(line)), lines[-1] if lines else "it failed")
+
+
+def clone(share_id: str) -> str:
+    """CLONE & INSTALL, first half: their repository, cloned with your own GitHub login
+    (`gh`, so a private one works when you can see it) where continue_plan said.
+    Returns the project, or the checkout you have already. Raises TeamError in gh's
+    own words, leaving no folder behind."""
+    meta = _session_share(share_id)["meta"]
+    with _cloning:
+        mine = _local_project(meta)
+        if mine:
+            return mine
+        rel = _clone_to(meta)
+        if not rel:
+            raise TeamError(f"There's no free folder to clone {meta['repo']} into." if meta.get("repo")
+                            else "It came from a folder with no GitHub repository, so there's nothing to clone.")
+        parts = rel.split("/")[1:]
+        top = config.BASE_PATH
+        for p in parts:            # the first folder this clone makes: all of it goes if the clone fails
+            top = os.path.join(top, p)
+            if not os.path.lexists(top):
+                break
+        dest = os.path.join(config.BASE_PATH, *parts)
+        try:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            r = subprocess.run(["gh", "repo", "clone", meta["repo"], dest], capture_output=True, text=True,
+                               timeout=_CLONE_S, stdin=subprocess.DEVNULL,
+                               env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
+            why = None if r.returncode == 0 else _last_line(r.stderr, "gh refused")
+        except FileNotFoundError:
+            why = "the GitHub CLI isn't installed here (install gh, then run gh auth login)"
+        except subprocess.TimeoutExpired:
+            why = f"it took over {_CLONE_S // 60} minutes and was stopped"
+        except OSError as e:
+            why = str(e)
+        if why is None:
+            return rel
+        shutil.rmtree(top, ignore_errors=True)
+        raise TeamError(f"Couldn't clone {meta['repo']}: {why}")
+
+
+def install(share_id: str, cwd: str) -> list:
+    """CLONE & INSTALL, second half, in the folder the continued session runs in (the
+    new checkout, or the worktree their code went into): each lockfile's installer at
+    the top and one folder down (Rivendell keeps backend/ and frontend/ apart). One
+    row per installer: where, what, ok, and why not in its own last line. A failed or
+    missing installer doesn't stop the rest. Raises TeamError."""
+    from bridge import git
+    _session_share(share_id)
+    root = os.path.realpath(cwd) if isinstance(cwd, str) and os.path.isabs(cwd) else ""
+    if not root.startswith(os.path.realpath(config.BASE_PATH) + os.sep) or not os.path.isdir(root) \
+            or not git.is_repo(root):
+        raise TeamError("Installing only runs in a checkout under your projects folder.")
+    steps = []
+    for d in ["."] + [n for n in sorted(os.listdir(root)) if not n.startswith(".") and n not in config.SKIP_DIRS
+                      and os.path.isdir(os.path.join(root, n))]:
+        here = os.path.normpath(os.path.join(root, d))
+        node = next((cmd for f, cmd in _NODE if os.path.isfile(os.path.join(here, f))), None)
+        for cmd in ([node] if node else []) + [cmd for f, cmd in _OTHERS if os.path.isfile(os.path.join(here, f))]:
+            try:
+                r = subprocess.run(cmd.split(), cwd=here, capture_output=True, text=True, timeout=_INSTALL_S,
+                                   stdin=subprocess.DEVNULL)
+                why = None if r.returncode == 0 else _failure(r.stdout + r.stderr)
+            except FileNotFoundError:
+                why = f"{cmd.split()[0]} isn't installed here"
+            except subprocess.TimeoutExpired:
+                why = f"it took over {_INSTALL_S // 60} minutes and was stopped"
+            except OSError as e:
+                why = str(e)
+            steps.append({"dir": d, "cmd": cmd, "ok": why is None, "why": why})
+    return steps
 
 
 def transcript_md(share_id: str) -> "str | None":

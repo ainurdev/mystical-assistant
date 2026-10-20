@@ -1043,9 +1043,14 @@ export interface ContinuePlan {
   branch: string | null;     // a new worktree branch for their code
   base: string | null;       // the commit to cut it from, when it is here
   title: string | null;      // a session's, for yours: it carries their session on
+  from?: string;             // the sender's name (absent from an older bridge)
+  clone?: string | null;     // not cloned: the folder CLONE & INSTALL would make (~/…), null when it can't
   draft: string;
   attachments: { name: string; url: string }[];
 }
+
+/** One installer CLONE & INSTALL ran: `dir` "." or a folder one down, `why` its last line when it failed. */
+export interface InstallStep { dir: string; cmd: string; ok: boolean; why: string | null }
 
 export interface TeamSend {
   kind: ShareKind; to: string; note?: string;
@@ -2132,6 +2137,10 @@ export const api = {
     req<{ ok: boolean; share: Share }>("/local/rivendell/team/send", { method: "POST", body }),
   teamContinue: (id: string) =>
     req<ContinuePlan>("/local/rivendell/team/continue", { method: "POST", body: { id } }),
+  teamClone: (id: string) =>
+    req<{ ok: boolean; project: string; path: string }>("/local/rivendell/team/clone", { method: "POST", body: { id } }),
+  teamInstall: (id: string, cwd: string) =>
+    req<{ ok: boolean; steps: InstallStep[] }>("/local/rivendell/team/install", { method: "POST", body: { id, cwd } }),
   teamUnpack: (id: string, cwd: string) =>
     req<{ ok: boolean; files: number }>("/local/rivendell/team/unpack", { method: "POST", body: { id, cwd } }),
   teamState: (id: string, state: "opened" | "continued" | "dismissed") =>
