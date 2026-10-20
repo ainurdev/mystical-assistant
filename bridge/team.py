@@ -855,20 +855,22 @@ def _free(rel) -> bool:
 
 
 def _clone_to(meta: dict) -> "str | None":
-    """Where CLONE & INSTALL puts their repository: beside most of your checkouts from
-    the same GitHub owner (your layout, not theirs), else at the path they keep it,
-    else under its own name at the top. None when the repository's name isn't a plain
-    one or every place is taken."""
+    """Where CLONE & INSTALL puts their repository: in the folder that holds your
+    checkouts from the same GitHub owner (your layout, not theirs), else at the path
+    they keep it, else under its own name at the top. None when the repository's name
+    isn't a plain one or every place is taken."""
     from bridge import browser, github
     owner, _, name = (meta.get("repo") or "").partition("/")
     if not (_PART.fullmatch(owner) and _PART.fullmatch(name)):
         return None
-    near: dict = {}
-    for p in browser.list_projects():
-        slugs = github.remote_slugs(os.path.join(config.BASE_PATH, p.lstrip("/")))
-        if owner.lower() in {s.split("/")[0].lower() for s in slugs}:
-            near[os.path.dirname(p)] = near.get(os.path.dirname(p), 0) + 1
-    beside = [max(near, key=near.get).rstrip("/") + "/" + name] if near else []
+    parents = [os.path.dirname(p) for p in browser.list_projects()
+               if owner.lower() in {s.split("/")[0].lower()
+                                    for s in github.remote_slugs(os.path.join(config.BASE_PATH, p.lstrip("/")))}]
+    # The top folder holding most of them, at the deepest point they all share inside it: a
+    # client's folder full of mirrors (ainurhq/nationale-rijschool/) doesn't pull a new repo in.
+    tops = [p.split("/")[1] for p in parents]
+    org = [p for p in parents if p.split("/")[1] == max(tops, key=tops.count)] if parents else []
+    beside = [os.path.commonpath(org).rstrip("/") + "/" + name] if org else []
     return next((rel for rel in beside + [meta.get("project"), "/" + name] if _free(rel)), None)
 
 
