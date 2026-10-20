@@ -38,7 +38,9 @@ GHOST_FLOOR = 3.25
 
 # The grounds the light colourings sit on — each its family's DARKEST light stop,
 # below `panel`, so clearing this clears every surface.
-CANVAS = {"claude": "#efede5", "flint": "#ebebed", "pebble": "#eef0f4"}
+CANVAS = {"claude": "#efede5", "flint": "#ebebed", "pebble": "#eef0f4",
+          # MIDDLE-EARTH: each of Rivendell's schemes is a ground of its own
+          "rivendell": "#f6f5f0", "havens": "#f1f5f5", "edoras": "#f1e1a6"}
 
 # The light ground has to stay a GROUND, not a spotlight: `panel` is the raised
 # card and `canvas` sits below it, so the biggest surface is never the brightest.
@@ -50,7 +52,9 @@ MIN_LADDER_STEP = 1.008  # each rung measurably lighter than the one below
 # your colour is never a warning's. Exempt on purpose: the claude-* set (its
 # brand clay sits ~7 degrees off its err salmon, and LIBRARY's gold is the
 # warning's), VIRIDIAN (green phosphor: go and good are one word, as FERN's),
-# and FLINT SUNSET (warm by design, its orange leans on err's red).
+# FLINT SUNSET (warm by design, its orange leans on err's red), and the
+# middle-earth set (Rivendell's own schemes, kept as Rivendell has them: its
+# gold is its warning's hue, its forest its success's, Edoras's red its error's).
 COLORFUL = ["aqua", "amber", "magenta", "blueprint", "void",
             "flint-ember", "flint-fuchsia", "flint-kiln", "flint-cobalt", "flint-nocturne", "flint-violet", "flint-signal",
             "flint-ember-light", "flint-fuchsia-light", "flint-kiln-light", "flint-cobalt-light",
@@ -126,7 +130,7 @@ def main():
 
     pals = palettes(src)
     light_keys = [k for k in pals if is_light(k)]
-    assert len(light_keys) == 18, f"expected CLAUDE's 6 + FLINT's 7 + PEBBLE's 5 light colourings: {light_keys}"
+    assert len(light_keys) == 21, f"expected CLAUDE's 6 + FLINT's 7 + PEBBLE's 5 + MIDDLE-EARTH's 3 light colourings: {light_keys}"
 
     css = open(INDEX_CSS, encoding="utf-8").read()
     edges = light_edges(css)
@@ -140,7 +144,8 @@ def main():
         assert f"{tok}: color-mix" in light_block, f"light ground must retint {tok}"
 
     fails = []
-    grounds = ("acc-on", "panel", "panel2", "panel3", "canvas")
+    # surfaces and fills, not ink (MIDDLE-EARTH's frame, its rows and wells, its crest)
+    grounds = ("acc-on", "panel", "panel2", "panel3", "canvas", "side", "side-row", "side-well", "crest")
     for key in light_keys:
         pal = pals[key]
         bg = CANVAS[key.split("-")[0]]

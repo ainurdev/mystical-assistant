@@ -309,6 +309,7 @@ export interface ProjectsListing {
   names?: Record<string, string>; // rel -> the display name you gave it
   remotes?: Record<string, string>; // rel -> owner/repo of origin, absent if not GitHub
   marks?: Record<string, ProjectMark>; // rel -> its mark; absent on a bridge older than marks
+  self?: string; // the bridge's own checkout, when it sits under BASE_PATH
 }
 
 /** What a project's tile shows and the colour it wears (bridge/projectmarks.py).

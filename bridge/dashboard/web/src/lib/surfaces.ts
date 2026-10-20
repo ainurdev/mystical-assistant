@@ -191,6 +191,19 @@ export function projectMark(name: string | null | undefined): ProjectMark | null
   return projectMarks[(name ?? "").replace(/\/+$/, "")] ?? null;
 }
 
+// The bridge's own checkout (the listing's `self`): the one project whose logo
+// is ours, so a family can draw it in its own ink (ProjectTile). Set before the
+// marks, whose change re-renders every tile.
+let selfProject = "";
+
+export function setSelfProject(rel: string | undefined): void {
+  if (rel) selfProject = rel.replace(/\/+$/, "");
+}
+
+export function isSelfProject(name: string | null | undefined): boolean {
+  return !!selfProject && (name ?? "").replace(/\/+$/, "") === selfProject;
+}
+
 /** What this browser picked in the old colour picker, for the listed rels
  *  that have no mark yet (rel -> colour). App saves these as marks once. */
 export function legacyTints(rels: Iterable<string>): Record<string, string> {

@@ -3,7 +3,7 @@
    too), Space Grotesk, Archivo, Space Mono. One request for all of them; every
    stack still names a local fallback (Georgia / system-ui) so an offline
    dashboard stays readable. */
-@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=EB+Garamond:wght@400;600&family=Work+Sans:wght@400;600&family=Spectral:wght@400;600&family=Space+Grotesk:wght@400;600&family=Archivo:wght@400;500;700&family=Nunito:wght@400;600;700&family=Space+Mono:wght@400;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=JetBrains+Mono:wght@400;500;700&family=EB+Garamond:wght@400;600&family=Work+Sans:wght@400;600&family=Spectral:wght@400;600&family=Space+Grotesk:wght@400;600&family=Archivo:wght@400;500;700&family=Nunito:wght@400;600;700&family=Space+Mono:wght@400;700&family=Source+Sans+3:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Source+Serif+4:wght@400;600&family=Source+Code+Pro:wght@400;500;600&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -3427,7 +3427,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .abub { background: var(--ac-08); }
 
 /* === THE FAMILIES ===========================================================
-   Four themes, one structure (lib/theme FAMILIES). FLINT drew it: an editor,
+   Five themes, one structure (lib/theme FAMILIES). FLINT drew it: an editor,
    not a HUD — nothing glows by default, every surface is a grey step and a 1px
    line, and colour is spent on exactly two roles —
      --acc  you          your prompt, the open session, SEND, focus
@@ -3436,7 +3436,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    below set the type, corners and line ink, and the personality blocks after
    the shared rules add what is theirs (CLAUDE's serif titles and soft rows,
    AURORA's tracked capitals, brackets, glow and hard edges; PEBBLE's pills,
-   20px cards, Nunito and softer lines — FLINT worn round, see · PEBBLE below).
+   20px cards, Nunito and softer lines — FLINT worn round, see · PEBBLE below;
+   MIDDLE-EARTH's frame and sheet, at the end of the file).
 
    The derived tokens are re-pointed first: the HUD's hairlines and hover washes
    are all accent-at-alpha (--border, --ac-NN), which would draw an orange grid
@@ -3796,7 +3797,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .set-seg2 { display: inline-flex; margin-left: auto; padding: 3px; border-radius: 9px; background: var(--panel3); border: 1px solid var(--line); }
 .set-seg2 button { appearance: none; cursor: pointer; border: 0; background: none; padding: 4px 13px; border-radius: 6px; font: 12.5px var(--ui-font); color: var(--txd); }
 .set-seg2 button[data-on] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line2); }
-.ftgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.ftgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
 .ftcard { cursor: pointer; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; transition: border-color .15s ease; }
 .ftcard:hover { border-color: var(--line2); }
 .ftcard[data-on] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
@@ -3838,6 +3839,17 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ftcard[data-pv="pebble"] .ftprev .bx { border-radius: 999px; background: var(--g2); }
 .ftcard[data-pv="pebble"] .ftprev .bx u { width: 8px; height: 8px; top: 1px; right: 3px; border-radius: 50%; }
 .ftcard[data-pv="pebble"] .ftsq button { border-radius: 50%; }
+/* MIDDLE-EARTH's card: its shell in small — the frame down the left with the crest at its head, the sheet set into it */
+.ftcard[data-pv="middle-earth"] .ftprev { grid-template-columns: 28% 1fr; gap: 0; padding: 0; background: var(--s); }
+.ftcard[data-pv="middle-earth"] .ftprev .sb { border-radius: 0; background: var(--s); padding: 10px 8px; gap: 5px; }
+.ftcard[data-pv="middle-earth"] .ftprev .sb i { background: var(--g3); }
+.ftcard[data-pv="middle-earth"] .ftprev .sb i:first-child { width: 62%; background: var(--c); }
+.ftcard[data-pv="middle-earth"] .ftprev .sb i:nth-child(2) { height: 9px; border-radius: 3px; background: color-mix(in oklab, var(--g3) 45%, var(--s)); }
+.ftcard[data-pv="middle-earth"] .ftprev .ch { margin: 6px 6px 6px 0; padding: 8px 10px; border-radius: 8px; background: var(--g); }
+.ftcard[data-pv="middle-earth"] .ftprev .ch .p { border-radius: 5px; background: var(--g2); box-shadow: inset 0 0 0 1px var(--g3); }
+.ftcard[data-pv="middle-earth"] .ftprev .bx { border-radius: 6px; background: var(--g2); }
+.ftcard[data-pv="middle-earth"] .ftprev .bx u { border-radius: 2px; }
+.ftcard[data-pv="middle-earth"] .ftmeta b { font-family: 'Source Serif 4', Georgia, serif; }
 .ftmeta { display: flex; align-items: center; gap: 9px; padding: 10px 12px 11px; border-top: 1px solid var(--line); }
 .ftmeta .d { width: 10px; height: 10px; border-radius: 50%; background: var(--a); flex: none; }
 .ftmeta b { display: block; font: 600 13.5px var(--ui-font); color: var(--txb); }
@@ -5478,3 +5490,214 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── 5 · ONE PRIMARY ── */
 [data-fam="pebble"] .gp-pb { box-shadow: none !important; }
+
+/* === THE FAMILIES · MIDDLE-EARTH ===========================================
+   Rivendell's own dashboard (.mystical/design-drafts/rivendell-theme) and the
+   schemes it ships: RIVENDELL, GREY HAVENS, EDORAS, MORIA, MORDOR (lib/theme
+   MIDDLE_EARTH_ROWS). The sidebar's colour is the frame (--side): the sessions
+   column and the rail stand on it; the transcript and the right panel are one
+   sheet set into it, 14px round, as Rivendell's pages sit in its sidebar. In
+   RIVENDELL's daylight the frame is the forest, so what stands on it reads
+   cream on forest with the gold as its mark. Source Sans for the UI, Source
+   Serif for titles and big figures, Source Code Pro for code; sentence case,
+   nothing tracked; 8px controls, 10px rows, 14px cards; one soft shadow, for
+   floating things only. Kept last in the file, after PEBBLE · STANDARD, for
+   the reason given there: its voice rules beat FLINT's !important by order. ── */
+
+[data-fam="middle-earth"] {
+  --line: color-mix(in oklab, var(--txl) 20%, var(--canvas));
+  --line2: color-mix(in oklab, var(--txl) 32%, var(--canvas));
+  --f-rad: 10px; --f-rad-s: 8px; --f-rad-l: 14px; --f-d-rad: 14px;
+  --f-you: color-mix(in oklab, var(--acc) 9%, var(--panel));
+  --ui-font: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-disp: 'Source Serif 4', Georgia, serif;
+  --me-code: 'Source Code Pro', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --f-pop-shadow: 0 1px 2px rgb(0 0 0 / 30%), 0 18px 44px -12px rgb(0 0 0 / 60%);
+}
+/* by day: each scheme's own hairline (its --border and --input) and Rivendell's one soft shadow */
+:root[data-light] [data-fam="middle-earth"], :root[data-light][data-fam="middle-earth"] {
+  --line: #e2ded3; --line2: #d5d0c3;
+  --f-pop-shadow: 0 1px 2px rgb(28 38 34 / 6%), 0 16px 40px -12px rgb(28 38 34 / 22%);
+}
+:root[data-light] [data-theme="havens-light"], :root[data-light][data-theme="havens-light"] { --line: #d5e1e2; --line2: #c6d5d7; }
+:root[data-light] [data-theme="edoras-light"], :root[data-light][data-theme="edoras-light"] { --line: #dcc47a; --line2: #cfb466; }
+
+/* ── RIVENDELL by day: the frame is the forest, and what stands on it reads
+   cream on forest with the gold as its mark (Rivendell's .app-sidebar block,
+   as tokens). The other schemes' frames sit on their own ground's side. ── */
+[data-theme="rivendell-light"] :is(.hudgrid > .shellcol:first-child, .hudgrid > div:last-child > div:last-child > div:last-child, .rcap > div:last-child) {
+  color-scheme: dark;
+  --canvas: var(--side); --panel3: #34503f; --panel2: #3a5548; --panel: #455e54;
+  --txb: #fbf8ef; --txh: #f1eee5; --tx: #e4e2d8; --txm: #cbccc1; --txd: #b1b6ab; --txf: #a4aa9f; --txl: #97a095; --txg: #6c7b70;
+  --acc: #d4b483; --accent-rgb: 212 180 131; --acc-on: #0f2a24; --ask: #e9c27a;
+  --ok: #6ccb8e; --warn: #e9c27a; --err: #e88b8b; --info: #8ab4ee; --purple: #c6a6e3;
+  --line: rgb(255 255 255 / 10%); --line2: rgb(255 255 255 / 16%);
+  --border: var(--line); --border-bright: var(--line2); --input: var(--line2);
+  --ac-03: rgba(255,255,255,.025); --ac-06: rgba(255,255,255,.05); --ac-08: rgba(255,255,255,.065);
+  --ac-12: rgba(255,255,255,.09); --ac-16: rgba(255,255,255,.11); --ac-20: rgba(255,255,255,.13); --ac-22: rgba(255,255,255,.15);
+  --muted: var(--txl); --muted-2: var(--txm);
+}
+/* the frame and the sheet */
+[data-fam="middle-earth"] .hudgrid { background: var(--side); padding: 8px 0; }
+[data-fam="middle-earth"] .hudgrid > .shellcol:first-child { margin: -8px 0; background: var(--side); border-right: 0 !important; }
+[data-fam="middle-earth"] .hudgrid > .shellcol:first-child > .panel { background: transparent !important; border: 0 !important; }
+[data-fam="middle-earth"] .hudgrid > .shellcol:first-child > div:first-child { border-bottom: 0 !important; }
+[data-fam="middle-earth"] [data-ctx-type="terminal"] {
+  --col: var(--canvas);
+  background-color: var(--canvas) !important; border-radius: var(--f-rad-l) 0 0 var(--f-rad-l);
+}
+[data-fam="middle-earth"] .hudgrid > div:last-child { background: transparent !important; }
+[data-fam="middle-earth"] .rcap { border-bottom: 0 !important; }
+[data-fam="middle-earth"] .rcap > div:first-child {
+  background: var(--canvas); border-radius: 0 var(--f-rad-l) 0 0;
+  border-left: 1px solid var(--line) !important; border-bottom: 1px solid var(--line) !important;
+}
+[data-fam="middle-earth"] .rcap > div:last-child { background: transparent !important; border: 0 !important; }
+[data-fam="middle-earth"] .hudgrid > div:last-child .shellcol {
+  background: var(--canvas) !important; border-radius: 0 0 var(--f-rad-l) 0; border-left: 1px solid var(--line) !important; overflow: hidden;
+}
+[data-fam="middle-earth"] .hudgrid > div:last-child .shellcol > .panel { background: transparent !important; border: 0 !important; }
+/* dark: the sheet is a step darker than the forest round it (Rivendell's inset), with an edge */
+:root:not([data-light]) [data-fam="middle-earth"] [data-ctx-type="terminal"] { box-shadow: inset 1px 1px 0 var(--line), inset 0 -1px 0 var(--line); }
+/* the right panel folded to the rail: the transcript is the whole sheet */
+[data-fam="middle-earth"] .hudgrid:not(:has(> div:last-child .shellcol)) [data-ctx-type="terminal"] { border-radius: var(--f-rad-l); }
+:root:not([data-light]) [data-fam="middle-earth"] .hudgrid:not(:has(> div:last-child .shellcol)) [data-ctx-type="terminal"] { box-shadow: inset 0 0 0 1px var(--line); }
+
+/* ── the sessions column, as Rivendell's sidebar ── */
+/* the wordmark in Rivendell's: the serif, a capital each (as specific as the families' lower-case rule it follows) */
+[data-fam="middle-earth"]:not([data-fam="aurora"]) .wordmark {
+  font-family: var(--f-disp) !important; font-size: 18px !important; letter-spacing: -.005em !important; text-transform: capitalize; color: var(--txb) !important;
+}
+[data-fam="middle-earth"] .wordmark :is(.bw-a, .bw-b) { display: inline-block; font-weight: 600; text-transform: lowercase; }
+[data-fam="middle-earth"] .wordmark :is(.bw-a, .bw-b)::first-letter { text-transform: uppercase; }
+/* the mode tabs: one well, the open tab a lighter fill with a gold glyph */
+[data-fam="middle-earth"] .shellcol > .panel > div:first-child > div:first-child {
+  border: 0 !important; border-radius: var(--f-rad) !important; background: var(--side-well) !important; box-shadow: none !important;
+}
+[data-fam="middle-earth"] .shellcol > .panel > div:first-child > div:first-child > span[aria-hidden] {
+  border-radius: var(--f-rad-s) !important; background: var(--side-row) !important; box-shadow: none !important; border: 0 !important;
+}
+[data-fam="middle-earth"] .shellcol > .panel > div:first-child > div:first-child > button { border-radius: var(--f-rad-s) !important; }
+[data-fam="middle-earth"] .shellcol > .panel > div:first-child > div:first-child > button[aria-selected="true"],
+[data-fam="middle-earth"] .shellcol > .panel > div:first-child > div:first-child > button[aria-pressed="true"] { color: var(--acc) !important; }
+/* the search: Rivendell's "Jump to…" well */
+[data-fam="middle-earth"] .sess-search {
+  border: 0 !important; border-radius: var(--f-rad) !important; background: var(--side-well) !important; height: 36px !important;
+}
+[data-fam="middle-earth"] .sess-search input { font-size: var(--t13) !important; color: var(--txb) !important; }
+[data-fam="middle-earth"] .sess-search input::placeholder { color: var(--txl) !important; }
+/* + Add project / New session: a nav row with a gold mark, not a box */
+[data-fam="middle-earth"] .newsess {
+  justify-content: flex-start !important; border: 0 !important; border-radius: var(--f-rad) !important; background: transparent !important;
+  font: 500 var(--t13) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: none !important; color: var(--txh) !important;
+  padding: 0 10px !important;
+}
+[data-fam="middle-earth"] .newsess:hover { background: var(--side-row) !important; }
+[data-fam="middle-earth"] .newsess svg { color: var(--acc) !important; }
+/* projects head their sessions like Rivendell's nav: a tile, a name, no rail */
+[data-fam="middle-earth"] .projhead { height: 32px !important; border-radius: var(--f-rad) !important; }
+[data-fam="middle-earth"] .projhead > span:nth-of-type(2) { font-size: var(--t13) !important; font-weight: 600 !important; color: var(--txb) !important; }
+[data-fam="middle-earth"] .projrail { border-left-color: transparent !important; margin-left: 4px !important; }
+[data-fam="middle-earth"] .ptile { border-radius: 6px; }
+:is(:root:not([data-light]), [data-theme="rivendell-light"]) [data-fam="middle-earth"] .hudgrid > .shellcol:first-child .ptile:not([data-kind="logo"]) {
+  color: color-mix(in oklab, var(--pc) 35%, white); background: color-mix(in oklab, var(--pc) 34%, var(--side));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 40%, transparent);
+}
+/* a session is a nav row: the open one a lighter fill and bolder, no bar */
+[data-fam="middle-earth"] .sessrow { border-radius: var(--f-rad) !important; padding: 8px 10px 9px !important; }
+[data-fam="middle-earth"] .sessrow::before { display: none; }
+[data-fam="middle-earth"] .sessrow[data-on="true"] { background: var(--side-row) !important; box-shadow: none !important; }
+[data-fam="middle-earth"] .sessrow:hover { background: var(--ac-08) !important; }
+[data-fam="middle-earth"] .sessrow[data-on="true"]:hover { background: var(--side-row) !important; }
+[data-fam="middle-earth"] .sessrow > div > span:first-child { font-size: var(--t13); font-weight: 500; color: var(--txh) !important; }
+[data-fam="middle-earth"] .sessrow[data-on="true"] > div > span:first-child { font-weight: 600; color: var(--txb) !important; }
+[data-fam="middle-earth"] .lanehead > span:nth-child(2) { font: 600 var(--t11) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: none !important; color: var(--txl) !important; }
+
+/* ── the right panel's head: a title, as Rivendell's cards are ("Your week"), and no accent rule under it ── */
+[data-fam="middle-earth"] :is(.gp-title, .hudgrid > div:last-child .panel > div:first-child > span:first-child) {
+  display: inline-block; font: 700 var(--t14) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: lowercase; color: var(--txb) !important;
+}
+[data-fam="middle-earth"] :is(.gp-title, .hudgrid > div:last-child .panel > div:first-child > span:first-child)::first-letter { text-transform: uppercase; }
+[data-fam="middle-earth"] .hudgrid > div:last-child .panel > div:first-child + div[style*="linear-gradient"] { display: none; }
+[data-fam="middle-earth"] .gp-head { border-bottom: 1px solid var(--line); }
+
+/* ── the rail, on the forest: cream glyphs, the open tab a lighter fill and gold ── */
+[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child {
+  background: transparent !important; border-left: 0 !important; gap: 4px; padding-top: 6px;
+}
+[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child button {
+  width: 36px !important; height: 36px !important; margin: 0 auto; border: 0 !important; border-radius: var(--f-rad) !important; color: var(--txm) !important;
+}
+[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"] {
+  background: var(--side-row) !important; color: var(--acc) !important;
+}
+[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"]::before { display: none !important; }
+[data-fam="middle-earth"] .hudgrid > div:last-child button > span.rounded-full { box-shadow: 0 0 0 2px var(--side); }
+[data-fam="middle-earth"] .rcap > div:last-child button { color: var(--txm) !important; }
+
+/* ── one voice: Source Sans in natural case; mono is for code (PEBBLE · STANDARD's rule 1) ── */
+[data-fam="middle-earth"][data-theme] { font-family: var(--ui-font) !important; }
+[data-fam="middle-earth"] :is(.hudgrid > .shellcol:first-child, .hudgrid > div:last-child, .composer, .isle, .ntf-pop,
+  [data-ctxmenu], [style*="--shadow-pop"], [style*="--shadow-modal"], [role="dialog"]:not(.agm)) {
+  --mono: var(--ui-font); font-variant-numeric: tabular-nums;
+}
+[data-fam="middle-earth"] :is(code, pre, kbd, samp, .cm-editor, .xterm, [data-style]) { --mono: var(--me-code); }
+[data-fam="middle-earth"] [data-style="dossier"] :is(.dwork-lab, .dwork-ms, .dwork-k, .res-lab, .res-meta, .pmeta, .pmeta *, .jump-latest) {
+  font-family: var(--ui-font) !important; letter-spacing: 0 !important; font-variant-numeric: tabular-nums;
+}
+[data-fam="middle-earth"] .jump-latest { font-family: var(--ui-font) !important; letter-spacing: 0 !important; }
+[data-fam="middle-earth"] .caps { text-transform: none !important; letter-spacing: 0 !important; }
+[data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d) {
+  text-transform: lowercase !important; letter-spacing: 0 !important;
+}
+[data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d)::first-letter { text-transform: uppercase; }
+[data-fam="middle-earth"] :is(.dwork-ms, .res-meta > span, .ctrl-meter > span, .pm-wtag, .pm-reset, .pm-pct, .pm-tag, .ntf-when,
+  .isle-reads button, .isle-reads span, .gg-ago, .pstamp,
+  [data-ctxmenu] .mscroll button > span:last-child[style*="letter-spacing"], .hudgrid > div:last-child span[style*="border: 1px solid"],
+  .hudgrid > div:last-child .swapin > span[style*="margin-left: auto"]) {
+  text-transform: lowercase !important; letter-spacing: 0 !important;
+}
+[data-fam="middle-earth"] :is(.gp-pb, .gg-older, .rp-sg, .prun, .setgroup) { text-transform: none !important; letter-spacing: 0 !important; }
+[data-fam="middle-earth"] :is(.dwork-lab, .res-lab) { font-weight: 600 !important; color: var(--txm) !important; }
+/* the live state, WORKING / THINKING, as a word */
+[data-fam="middle-earth"] .dwork-st { display: inline-block; text-transform: lowercase; letter-spacing: 0 !important; font-family: var(--ui-font) !important; font-weight: 600; }
+[data-fam="middle-earth"] .dwork-st::first-letter { text-transform: uppercase; }
+[data-fam="middle-earth"] .gp-fh b { font-weight: 600 !important; font-size: var(--t12) !important; color: var(--txh) !important; }
+
+/* ── titles and big numbers in the serif (Rivendell's h1 and its canopy figures) ── */
+[data-fam="middle-earth"] :is(.np-title, .set-head h2, .ntf-head .t) { font-family: var(--f-disp) !important; font-weight: 600 !important; letter-spacing: 0 !important; }
+[data-fam="middle-earth"] .gp-roc b { font-family: var(--f-disp) !important; font-weight: 600 !important; }
+
+/* ── the transcript on paper: plates and cards are white cards with a hairline ── */
+[data-fam="middle-earth"] [data-bg="haze"] { --gnd: transparent; }
+[data-fam="middle-earth"] [data-style="dossier"] .dwork { background: var(--panel); --zg: var(--panel); border: 1px solid var(--line); border-radius: var(--f-rad-l); }
+[data-fam="middle-earth"] [data-style="dossier"] .dwork[data-pinned] > .dwork-head::before { background: var(--panel); }
+/* your prompt: a tinted card with a hairline, no bar (Rivendell marks with a fill, never a bar) */
+[data-fam="middle-earth"] [data-style="dossier"] .dprompt { box-shadow: none; border-color: var(--line); }
+[data-fam="middle-earth"] .md :not(pre) > code { background: color-mix(in oklab, var(--txl) 13%, transparent) !important; border-radius: 6px !important; padding: .1em .4em !important; }
+
+/* ── one ladder: popovers are cards one step up, with the soft shadow ── */
+[data-fam="middle-earth"] :is([style*="--shadow-pop"], [data-ctxmenu], .ntf-pop):not(.isle):not(.sessrow) {
+  background: var(--panel) !important; border-color: var(--line) !important; box-shadow: var(--f-pop-shadow) !important;
+}
+[data-fam="middle-earth"] [style*="border-left: 2px solid var(--acc)"] {
+  border-left-color: transparent !important; border-radius: var(--f-rad-s) !important; background: color-mix(in oklab, var(--acc) 10%, transparent) !important;
+}
+
+/* ── the prompt box: a white card that floats, the primary filled and flat ── */
+[data-fam="middle-earth"] .cmdbox { background: var(--panel) !important; border-radius: var(--f-rad-l) !important; box-shadow: var(--f-pop-shadow) !important; }
+[data-fam="middle-earth"] .composer { background: var(--canvas); }
+[data-fam="middle-earth"] .composer::before {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 18px; pointer-events: none;
+  background: linear-gradient(transparent, var(--canvas));
+}
+[data-fam="middle-earth"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run), [data-fam="middle-earth"] .pb-tabs > .ctrl-ctx { background: var(--panel) !important; }
+[data-fam="middle-earth"] .gp-pb { box-shadow: none !important; }
+
+/* ── our own logo in the theme's ink: the bridge's emblem (ProjectTile
+   SelfMark) where the project's logo file would be ── */
+.ptile-em { display: none; }
+[data-fam="middle-earth"] .ptile[data-self] > img { display: none; }
+[data-fam="middle-earth"] .ptile[data-self] > .ptile-em { display: block; width: 100%; height: 100%; }

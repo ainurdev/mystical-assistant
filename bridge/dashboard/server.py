@@ -93,6 +93,12 @@ def web_built() -> bool:
     return os.path.isfile(os.path.join(WEB_DIR, "index.html"))
 
 
+def _self_rel() -> "str | None":
+    """The bridge's own checkout as a project rel, or None when it lives outside BASE_PATH."""
+    real = os.path.realpath(selfupdate.REPO)
+    return browser.rel(real) if real.startswith(config.BASE_PATH + os.sep) else None
+
+
 def _abs_project(project) -> str | None:
     if not project:
         return None
@@ -424,7 +430,10 @@ class Handler(BaseHTTPRequestHandler):
                                                os.path.join(config.BASE_PATH, r.lstrip("/"))))},
                                "hidden": project_config.hidden_projects(),
                                "names": project_config.names(),
-                               "marks": project_config.marks()})
+                               "marks": project_config.marks(),
+                               # The bridge's own checkout, so the dashboard
+                               # knows which project's logo is ours.
+                               "self": _self_rel()})
         if path.startswith("/local/project-mark/logo/"):
             got = projectmarks.logo(path[len("/local/project-mark/logo/"):])
             if got is None:

@@ -107,7 +107,7 @@ export function Brand() {
           y="41"
           width="18"
           height="18"
-          fill="var(--purple)"
+          fill="var(--crest, var(--purple))"
           style={{ transformOrigin: "50px 50px", transform: "rotate(45deg)" }}
         />
       </svg>

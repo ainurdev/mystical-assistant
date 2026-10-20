@@ -1,7 +1,9 @@
-// Theme system — four FAMILIES, each in several colourings (design:
-// .mystical/design-drafts/theme-families, then pebble-theme). A family is a
-// structure and a personality: AURORA the CRT, CLAUDE the app itself, FLINT the
-// editor, PEBBLE the river stone (FLINT worn round). All four wear FLINT's layer — the settings page, rail, composer, transcript —
+// Theme system — five FAMILIES, each in several colourings (design:
+// .mystical/design-drafts/theme-families, then pebble-theme, rivendell-theme).
+// A family is a structure and a personality: AURORA the CRT, CLAUDE the app
+// itself, FLINT the editor, PEBBLE the river stone (FLINT worn round),
+// MIDDLE-EARTH Rivendell's own dashboard (a forest frame round a paper sheet).
+// All five wear FLINT's layer — the settings page, rail, composer, transcript —
 // and differ in type, case, corners, line ink and effects (index.css, THE
 // FAMILIES). A colouring is a palette: a ground (ink ladder, surfaces,
 // semantics) and two roles on it, `acc` (you: your prompt, the open row, SEND,
@@ -26,10 +28,11 @@ export type ThemeKey =
   | "flint-ember-light" | "flint-fuchsia-light" | "flint-sunset-light" | "flint-kiln-light" | "flint-cobalt-light"
   | "flint-nocturne-light" | "flint-signal-light"
   | "pebble-sky" | "pebble-mint" | "pebble-lilac" | "pebble-rose" | "pebble-coral"
-  | "pebble-sky-light" | "pebble-mint-light" | "pebble-lilac-light" | "pebble-rose-light" | "pebble-coral-light";
+  | "pebble-sky-light" | "pebble-mint-light" | "pebble-lilac-light" | "pebble-rose-light" | "pebble-coral-light"
+  | "rivendell" | "moria" | "mordor" | "rivendell-light" | "havens-light" | "edoras-light";
 
-export type Family = "aurora" | "claude" | "flint" | "pebble";
-export const FAMILIES: Family[] = ["aurora", "claude", "flint", "pebble"];
+export type Family = "aurora" | "claude" | "flint" | "pebble" | "middle-earth";
+export const FAMILIES: Family[] = ["aurora", "claude", "flint", "pebble", "middle-earth"];
 
 /** How the header island sits over the transcript. FROST is glass the
  *  transcript blurs through, its readouts at half ink until reached for; VEIL
@@ -86,6 +89,14 @@ const rgbTriplet = (hex: string): string =>
 // FLINT daylight's targets; five colours, each with a twin. SKY moves `info` to
 // cyan, LILAC `purple` to magenta and CORAL `err` to crimson — COBALT's,
 // NOCTURNE's and EMBER's moves — so nothing semantic wears your colour.
+// MIDDLE-EARTH: Rivendell's own schemes (rivendell/frontend/src/styles), each
+// its own ground: RIVENDELL by day (paper, forest is you) and by night (forest,
+// gold is you), GREY HAVENS and EDORAS by day, MORIA and MORDOR by night. Each
+// carries `side` (the frame its sidebar stands on), `side-row` (the open row),
+// `side-well` (search and tab wells) and `crest` (our emblem's heart). The
+// light papers are solved to the floors above; every scheme keeps its own
+// semantics even where they sit by `acc` (Rivendell's gold is its warning's
+// hue), as CLAUDE does.
 
 /** [key, NAME, feel, ground, roles] — `roles` carries `acc` and `ask`, plus
  *  anything that one colouring moves off its ground. */
@@ -106,6 +117,12 @@ const FLINT_NIGHT: Record<string, string> = { ...FLINT_INK, tool: "#9fb0d6", thi
 const PEBBLE_INK: Record<string, string> = { "acc-on": "#0f1014", tool: "#9fb3cc", think: "#b8a9d9", ok: "#30d158", warn: "#f5c542", err: "#ff5d5d", "err-hi": "#ff8a85", "err-b": "#ffb3ae", "err-g": "#8a4d4a", info: "#64b5ff", "info-hi": "#93cbff", "info-b": "#c3e2ff", purple: "#c49bff", "purple-d": "#b585ff", "purple-h": "#d5b8ff", "purple-b": "#e6d6ff", "purple-g": "#6f6290", txb: "#f7f7fa", txh: "#e9e9ef", tx: "#d2d3da", txm: "#b3b4bd", txd: "#9a9ba5", txf: "#8e8f99", txl: "#82838d", txg: "#585962", panel: "#23242b", panel2: "#1b1c22", panel3: "#16171c", canvas: "#131419", mono: "'Geist Mono','JetBrains Mono',ui-monospace,monospace" };
 const PEBBLE_DAY: Record<string, string> = { "acc-on": "#ffffff", tool: "#4b5e73", think: "#615486", ok: "#057032", warn: "#775e01", err: "#bc2122", "err-hi": "#a50d14", "err-b": "#87000a", "err-g": "#a1726d", info: "#096790", "info-hi": "#00577c", "info-b": "#034562", purple: "#7a42c2", "purple-d": "#6f3bb1", "purple-h": "#6432a1", "purple-b": "#542988", "purple-g": "#85789f", txb: "#1b1d20", txh: "#2d3034", tx: "#3b3e42", txm: "#4b4d52", txd: "#57595e", txf: "#5e6065", txl: "#64666b", txg: "#7e8085", panel: "#ffffff", panel2: "#f8f9fb", panel3: "#f3f4f7", canvas: "#eef0f4", mono: "'Geist Mono','JetBrains Mono',ui-monospace,monospace" };
 const FLINT_DAY: Record<string, string> = { "acc-on": "#ffffff", tool: "#4b5e73", think: "#615486", ok: "#057032", warn: "#775e01", err: "#bc2122", "err-hi": "#a50d14", "err-b": "#87000a", "err-g": "#a1726d", info: "#096790", "info-hi": "#00577c", "info-b": "#034562", purple: "#7a42c2", "purple-d": "#6f3bb1", "purple-h": "#6432a1", "purple-b": "#542988", "purple-g": "#85789f", txb: "#18181c", txh: "#2c2c30", tx: "#3a3b3e", txm: "#4a4a4e", txd: "#56565a", txf: "#5d5d61", txl: "#636367", txg: "#7c7d81", panel: "#ffffff", panel2: "#f7f7f8", panel3: "#f1f1f3", canvas: "#ebebed", mono: "'Geist Mono','JetBrains Mono',ui-monospace,monospace" };
+const ME_RIVENDELL: Record<string, string> = { "acc-on": "#0f2a24", tool: "#a9bcd6", think: "#d6c3a0", ok: "#6ccb8e", warn: "#e4b564", err: "#e88b8b", "err-hi": "#fda3a2", "err-b": "#fec5c4", "err-g": "#7c4d4d", info: "#8ab4ee", "info-hi": "#a6cafd", "info-b": "#cbe0ff", purple: "#c6a6e3", "purple-d": "#b99ad6", "purple-h": "#d9b9f7", "purple-b": "#ead6fe", "purple-g": "#63566e", txb: "#f2f7f2", txh: "#e6ebe6", tx: "#d7dcd7", txm: "#b5c5be", txd: "#9aaaa3", txf: "#8d9c95", txl: "#7f8e87", txg: "#54615c", panel: "#163730", panel2: "#12302a", panel3: "#0f2a24", canvas: "#0b1f1a", side: "#0f2a24", "side-row": "#163730", "side-well": "rgb(255 255 255 / 5%)", crest: "#b6cbdc", mono: "'Source Code Pro',ui-monospace,SFMono-Regular,Menlo,monospace" };
+const ME_MORIA: Record<string, string> = { "acc-on": "#0e1014", tool: "#9fb0d6", think: "#b8a9d9", ok: "#7fd1a0", warn: "#e4b564", err: "#f08c8c", "err-hi": "#fda9a8", "err-b": "#fecbc9", "err-g": "#834e4e", info: "#8ab4ee", "info-hi": "#a6cafd", "info-b": "#cbe0ff", purple: "#c3aef0", "purple-d": "#b6a1e3", "purple-h": "#d5c3fd", "purple-b": "#e9e0ff", "purple-g": "#645c77", txb: "#e4eaf3", txh: "#d9dee7", tx: "#cacfd8", txm: "#b1b8c5", txd: "#979eaa", txf: "#8a909d", txl: "#7d838f", txg: "#525863", panel: "#1b1f27", panel2: "#15181e", panel3: "#121419", canvas: "#0e1014", side: "#0a0c0f", "side-row": "#1d222b", "side-well": "rgb(255 255 255 / 5%)", crest: "#5fd4c4", mono: "'Source Code Pro',ui-monospace,SFMono-Regular,Menlo,monospace" };
+const ME_MORDOR: Record<string, string> = { "acc-on": "#1a0f0c", tool: "#bba9a2", think: "#d9b8a4", ok: "#8fcf7a", warn: "#f5b83d", err: "#ff8a7a", "err-hi": "#ffafa3", "err-b": "#ffd1c9", "err-g": "#914c43", info: "#9ab8e0", "info-hi": "#b0cef7", "info-b": "#d3e4fb", purple: "#d0a6e0", "purple-d": "#c39ad3", "purple-h": "#e4b9f4", "purple-b": "#f3d6fe", "purple-g": "#68576f", txb: "#f8efeb", txh: "#ece3df", tx: "#ddd4d0", txm: "#c3b5b0", txd: "#a89b96", txf: "#9b8e89", txl: "#8e817c", txg: "#625551", panel: "#241c1a", panel2: "#1c1615", panel3: "#181312", canvas: "#141010", side: "#0f0b0b", "side-row": "#2a1c18", "side-well": "rgb(255 255 255 / 5%)", crest: "#f5b83d", mono: "'Source Code Pro',ui-monospace,SFMono-Regular,Menlo,monospace" };
+const ME_RIVENDELL_PAPER: Record<string, string> = { "acc-on": "#ffffff", tool: "#3f5470", think: "#6e5526", ok: "#2e7d4f", warn: "#916101", err: "#b3413f", "err-hi": "#9f2e2f", "err-b": "#8a181e", "err-g": "#d5605c", info: "#2f63b8", "info-hi": "#2154a8", "info-b": "#0e4295", purple: "#7d5c7d", "purple-d": "#735274", "purple-h": "#684969", "purple-b": "#5b3b5c", "purple-g": "#9c799d", txb: "#19221f", txh: "#2b3531", tx: "#38433f", txm: "#47524e", txd: "#535f5a", txf: "#5a6561", txl: "#606c67", txg: "#7a8681", panel: "#ffffff", panel2: "#fcfcfa", panel3: "#f9f8f5", canvas: "#f6f5f0", side: "#2e4a3f", "side-row": "rgb(255 255 255 / 11%)", "side-well": "rgb(255 255 255 / 8%)", crest: "#b6cbdc", mono: "'Source Code Pro',ui-monospace,SFMono-Regular,Menlo,monospace" };
+const ME_HAVENS: Record<string, string> = { "acc-on": "#ffffff", tool: "#3f5470", think: "#6e5526", ok: "#287756", warn: "#906100", err: "#b3413f", "err-hi": "#9f2d2e", "err-b": "#8a171e", "err-g": "#d55f5b", info: "#0f6e78", "info-hi": "#00606a", "info-b": "#014e55", purple: "#7d5b7d", "purple-d": "#735273", "purple-h": "#684869", "purple-b": "#5a3b5c", "purple-g": "#9b799c", txb: "#112226", txh: "#23353a", tx: "#314348", txm: "#3f5257", txd: "#4c5f64", txf: "#52666b", txl: "#596c71", txg: "#72868b", panel: "#fbfdfd", panel2: "#f8fafa", panel3: "#f4f8f8", canvas: "#f1f5f5", side: "#e3eced", "side-row": "#fbfdfd", "side-well": "#d5dfe1", crest: "#c4513a", mono: "'Source Code Pro',ui-monospace,SFMono-Regular,Menlo,monospace" };
+const ME_EDORAS: Record<string, string> = { "acc-on": "#fff6e0", tool: "#3f5470", think: "#6e5526", ok: "#3d6b1f", warn: "#835504", err: "#a3121b", "err-hi": "#9c0214", "err-b": "#7c000d", "err-g": "#d24743", info: "#2f5d8a", "info-hi": "#204e7a", "info-b": "#0b3c67", purple: "#715071", "purple-d": "#664768", "purple-h": "#5c3d5e", "purple-b": "#4e3050", "purple-g": "#8e6c8f", txb: "#180a03", txh: "#332218", tx: "#433127", txm: "#534035", txd: "#5f4d41", txf: "#675348", txl: "#6d594e", txg: "#877266", panel: "#faf1cf", panel2: "#f7ecc1", panel3: "#f4e6b4", canvas: "#f1e1a6", side: "#e6cf82", "side-row": "#faf1cf", "side-well": "#d8c078", crest: "#c79a2e", mono: "'Source Code Pro',ui-monospace,SFMono-Regular,Menlo,monospace" };
 const AURORA_ROWS: Row[] = [
   ["aqua", "AURORA", "orbital glass · clean signal", AURORA_GLASS, { acc: "#7fe9d8", ask: "#b9a6ff" }],
   ["green", "VIRIDIAN", "buried relay · net-runner", VIRIDIAN_GLASS, { acc: "#5fdd8f", ask: "#b9a6ff" }],
@@ -159,11 +176,21 @@ const PEBBLE_ROWS: Row[] = [
   ["pebble-coral-light", "PEBBLE CORAL", "chalk · orange is you, sky waits on you", PEBBLE_DAY, { acc: "#b14606", ask: "#0268c0", err: "#c41445", "err-hi": "#9d2545", "err-b": "#6f2e3e", "err-g": "#b56c79" }],
 ];
 
+const MIDDLE_EARTH_ROWS: Row[] = [
+  ["rivendell", "RIVENDELL", "forest night · gold is you, blue waits on you", ME_RIVENDELL, { acc: "#d4b483", ask: "#8ab4ee" }],
+  ["moria", "MORIA", "the mines · mithril is you, the runes wait on you", ME_MORIA, { acc: "#b8c9e3", ask: "#5fd4c4" }],
+  ["mordor", "MORDOR", "ash and ember · lava is you, the forge waits on you", ME_MORDOR, { acc: "#e8613a", ask: "#f5b83d" }],
+  ["rivendell-light", "RIVENDELL", "paper · forest is you, ochre waits on you", ME_RIVENDELL_PAPER, { acc: "#2e4a3f", ask: "#916101" }],
+  ["havens-light", "GREY HAVENS", "sea mist · teal is you, the sunset waits on you", ME_HAVENS, { acc: "#0f6e78", ask: "#b6452e" }],
+  ["edoras-light", "EDORAS", "the golden hall · red is you, blue waits on you", ME_EDORAS, { acc: "#8e1414", ask: "#2f5d8a" }],
+];
+
 const FAMILY: Record<Family, { rows: Row[]; font: string; prad: string; fx: boolean }> = {
   aurora: { rows: AURORA_ROWS, font: "", prad: "0", fx: true },
   claude: { rows: CLAUDE_ROWS, font: "ui-sans-serif,-apple-system,'Segoe UI',system-ui,sans-serif", prad: "8px", fx: false },
   flint: { rows: FLINT_ROWS, font: "'Geist',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "10px", fx: false },
   pebble: { rows: PEBBLE_ROWS, font: "'Nunito',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "999px", fx: false },
+  "middle-earth": { rows: MIDDLE_EARTH_ROWS, font: "'Source Sans 3',system-ui,-apple-system,'Segoe UI',sans-serif", prad: "10px", fx: false },
 };
 
 export const THEME_DEFS: ThemeDef[] = FAMILIES.flatMap((fam) => {
@@ -239,6 +266,7 @@ export const FONTS: { key: string; label: string; stack: string }[] = [
   { key: "spacemono", label: "Space Mono", stack: "'Space Mono',ui-monospace,SFMono-Regular,Menlo,monospace" },
   { key: "geist", label: "Geist", stack: "'Geist',system-ui,-apple-system,sans-serif" },
   { key: "nunito", label: "Nunito", stack: "'Nunito',system-ui,-apple-system,sans-serif" },
+  { key: "sourcesans", label: "Source Sans", stack: "'Source Sans 3',system-ui,-apple-system,sans-serif" },
   { key: "system", label: "System", stack: "system-ui,-apple-system,'Segoe UI',sans-serif" },
   { key: "work", label: "Work Sans", stack: "'Work Sans',system-ui,-apple-system,sans-serif" },
   { key: "grotesk", label: "Space Grotesk", stack: "'Space Grotesk',system-ui,-apple-system,sans-serif" },

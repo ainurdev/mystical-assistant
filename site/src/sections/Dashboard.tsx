@@ -142,8 +142,8 @@ export function Dashboard() {
       <Band
         src="./shots/themes.png"
         alt="The Appearance tab: three theme cards, Aurora, Claude and Flint, each with its row of colours, above the CRT effects and header styles."
-        kicker="Appearance · four themes, twenty-five colours"
-        caption="Four themes, each in its own voice: AURORA, a phosphor CRT with its scanlines on their own switches; CLAUDE, the app's own warm greys; FLINT, a graphite editor; PEBBLE, a river stone worn round. Twenty-five colours between them, and daylight grounds for CLAUDE, FLINT and PEBBLE. You'll stare at it all day. It may as well look like something you chose."
+        kicker="Appearance · five themes, thirty colours"
+        caption="Five themes, each in its own voice: AURORA, a phosphor CRT with its scanlines on their own switches; CLAUDE, the app's own warm greys; FLINT, a graphite editor; PEBBLE, a river stone worn round; MIDDLE-EARTH, Rivendell's own dashboard in its five schemes. Thirty colours between them, and daylight grounds for CLAUDE, FLINT, PEBBLE and MIDDLE-EARTH. You'll stare at it all day. It may as well look like something you chose."
       />
     </>
   );

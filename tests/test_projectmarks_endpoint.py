@@ -135,3 +135,15 @@ def test_the_gallery_routes_reach_projectmarks_and_send_an_image_safely(tmp_path
     assert "sandbox" in h["Content-Security-Policy"]
     assert dget(f"/local/rivendell/gallery/image?project={rel}&document=d9")["code"] == 404
     assert dget("/local/rivendell/gallery/image?project=../../etc&document=d1")["code"] == 400
+
+
+def test_listing_names_the_bridges_own_checkout(tmp_path, monkeypatch):
+    # MIDDLE-EARTH draws our own logo in the theme's ink: the listing says which project is ours
+    from bridge import selfupdate
+    repo = tmp_path / "base" / "mystical-assistant"
+    repo.mkdir(parents=True)
+    monkeypatch.setattr(config, "BASE_PATH", str(tmp_path / "base"))
+    monkeypatch.setattr(selfupdate, "REPO", str(repo))
+    assert dash._self_rel() == "/mystical-assistant"
+    monkeypatch.setattr(selfupdate, "REPO", str(tmp_path / "elsewhere"))
+    assert dash._self_rel() is None

@@ -669,10 +669,10 @@ function PickCell({
   );
 }
 
-const FAMILY_NAME: Record<Family, string> = { aurora: "Aurora", claude: "Claude", flint: "Flint", pebble: "Pebble" };
-const FAMILY_TAG: Record<Family, string> = { aurora: "the CRT", claude: "the app itself", flint: "the editor", pebble: "the river stone" };
+const FAMILY_NAME: Record<Family, string> = { aurora: "Aurora", claude: "Claude", flint: "Flint", pebble: "Pebble", "middle-earth": "Middle-earth" };
+const FAMILY_TAG: Record<Family, string> = { aurora: "the CRT", claude: "the app itself", flint: "the editor", pebble: "the river stone", "middle-earth": "the realms" };
 // What the Theme typeface is in each family: the face its palette brought.
-const FAMILY_FACE: Record<Family, string> = { aurora: "Share Tech", claude: "System", flint: "Geist", pebble: "Nunito" };
+const FAMILY_FACE: Record<Family, string> = { aurora: "Share Tech", claude: "System", flint: "Geist", pebble: "Nunito", "middle-earth": "Source Sans" };
 
 /** A colouring's swatch, filled with what it paints: you, then what waits on
  *  you. A FLINT swatch keeps its ground between the two, because FLINT is
@@ -715,6 +715,8 @@ function ThemeGrid({ light, settings, onTheme }: {
         const vars = {
           "--a": d.pal.acc, "--k": d.pal.ask, "--g": d.pal.canvas, "--g2": d.pal.panel,
           "--g3": `color-mix(in oklab, ${d.pal.txg} 45%, ${d.pal.panel})`,
+          // MIDDLE-EARTH's card draws its frame and its crest (other families have neither)
+          "--s": d.pal.side ?? d.pal.canvas, "--c": d.pal.crest ?? d.pal.acc,
         } as CSSProperties;
         return (
           <div key={fam} className="ftcard" data-pv={fam} data-on={on || undefined} data-off={!keys.length || undefined}

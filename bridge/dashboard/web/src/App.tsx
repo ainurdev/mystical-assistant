@@ -32,7 +32,7 @@ import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
 import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
-import { ago, forgetLegacyTints, legacyTints, projectName, putProjectMark, setProjectMarks, setProjectNames,
+import { ago, forgetLegacyTints, legacyTints, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
          useProjectTints } from "./lib/surfaces";
 import { offerRivendellMarks } from "./components/hud/RivendellMarks";
 import {
@@ -704,6 +704,7 @@ export function App() {
       // field, in which case the cached localStorage set stands.
       if (p.hidden) setHiddenProjects(Object.fromEntries(p.hidden.map((rel) => [rel, true])));
       setProjectNames(p.names ?? {}, p.projects ?? []);
+      setSelfProject(p.self);
       setProjectMarks(p.marks);
       // First listing from a bridge with marks: the colours this browser
       // picked before marks existed move onto the bridge, once; then the
