@@ -1646,9 +1646,11 @@ export function App() {
     try {
       let plan = await api.teamContinue(id);
       let cwd: string | null = null;             // where to install: the new checkout, or the worktree their code goes into
+      const then = plan.code     // their changes go in first, so the tap is consent to their install scripts too
+        ? `install it with ${plan.from}'s changes (that runs their install scripts), and continue their session there?`
+        : `install it, and continue ${plan.from}'s session there?`;
       if (!plan.project && plan.repo && plan.clone && await askConfirm(
-        `${plan.repo} isn't cloned here. Clone it into ${plan.clone}, install it, and continue ${plan.from ?? "their"}'s session there?`,
-        { yes: "CLONE & INSTALL", no: "NOT NOW" })) {
+        `${plan.repo} isn't cloned here. Clone it into ${plan.clone}, ${then}`, { yes: "CLONE & INSTALL", no: "NOT NOW" })) {
         setContStep({ id, text: "CLONING…" });
         try {
           cwd = (await api.teamClone(id)).path;

@@ -199,6 +199,24 @@ All additive, so it deploys before Mystical and old Mysticals don't notice:
   switch (see "What that means for privacy").
 - People are named by name, and the interface never guesses a pronoun.
 
+## Built so far (2026-10-21)
+
+Only the clone, as **CLONE & INSTALL** in CONTINUE HERE's existing confirm (no sheet yet), plus an
+install step this spec didn't have (`team.clone`, `team.install`):
+
+- **Where the clone goes:** beside most of your checkouts from the same GitHub owner, else at their
+  path, else under its name at the top. For example, `ainurdev/osanwe` goes to
+  `~/Projects/ainurhq/osanwe`, because your other ainurdev checkouts live under `ainurhq/`. This
+  replaces "their path first" in section 2: their folder layout isn't yours.
+- **Install:** after the clone, each lockfile's installer runs in the folder the session runs in, at
+  the top and one folder down. That means pnpm, yarn, bun or npm (the first match), then composer and
+  uv. When their code came, it goes in first and the ask says their install scripts run. A failed
+  install still opens the session, and the error quotes the installer's own first error line.
+- **A failed clone** leaves no folder it made behind, and falls back to today's "continue without
+  their code".
+- **Still unbuilt:** the rest of this spec. That covers Claude's memory file, the access and push
+  warnings, TELL, Rivendell's `ask` route, and the sheet.
+
 ## Goals
 
 - Continue a teammate's session with Claude remembering all of it, on your own account.

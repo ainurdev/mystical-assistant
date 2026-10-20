@@ -1045,6 +1045,7 @@ export interface ContinuePlan {
   title: string | null;      // a session's, for yours: it carries their session on
   from?: string;             // the sender's name (absent from an older bridge)
   clone?: string | null;     // not cloned: the folder CLONE & INSTALL would make (~/…), null when it can't
+  code?: boolean;            // their uncommitted changes came with it, so installing runs their scripts too
   draft: string;
   attachments: { name: string; url: string }[];
 }

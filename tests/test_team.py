@@ -728,7 +728,7 @@ def test_the_clone_goes_beside_most_of_your_checkouts_from_that_owner(riv):
     share = _session_share(riv, {"repo": "sibowner/osanwe", "project": "/ainur/osanwe", "code": True})
     plan = team.continue_plan(share)
     assert plan["project"] is None and plan["repo"] == "sibowner/osanwe"
-    assert plan["clone"] == _at("/work/osanwe")
+    assert plan["clone"] == _at("/work/osanwe") and plan["code"] is True     # the ask then says their scripts run
 
 
 def test_with_none_from_that_owner_it_goes_where_they_keep_it_then_by_its_name(riv):
@@ -743,7 +743,7 @@ def test_with_none_from_that_owner_it_goes_where_they_keep_it_then_by_its_name(r
 def test_the_offer_names_the_sender_and_writes_home_as_a_tilde(riv, monkeypatch):
     monkeypatch.setenv("HOME", os.path.dirname(config.BASE_PATH))
     plan = team.continue_plan(_session_share(riv, {"repo": "tilde-owner/thing3"}))
-    assert plan["from"] == "Erfan Besharat"
+    assert plan["from"] == "Erfan Besharat" and plan["code"] is False
     assert plan["clone"] == f"~/{os.path.basename(config.BASE_PATH)}/thing3"
 
 
@@ -786,22 +786,41 @@ def test_clone_uses_your_github_login_and_continue_then_finds_the_checkout(riv, 
 def test_a_failed_clone_leaves_no_folder_and_says_why(riv, monkeypatch):
     ran = []
     monkeypatch.setattr(subprocess, "run", _fake_gh(ran, rc=1, err="Cloning into 'x'...\nGraphQL: Could not resolve "
-                                                    "to a Repository with the name 'gh-owner/private'. (repository)\n"))
-    share = _session_share(riv, {"repo": "gh-owner/private", "project": "/nobody-has/private"})
-    with pytest.raises(team.TeamError, match=r"^Couldn't clone gh-owner/private: GraphQL: Could not resolve"):
+                                                    "to a Repository with the name 'fail-owner/private'. (repository)\n"))
+    share = _session_share(riv, {"repo": "fail-owner/private", "project": "/nobody-has/private"})
+    with pytest.raises(team.TeamError, match=r"^Couldn't clone fail-owner/private: GraphQL: Could not resolve"):
         team.clone(share)
+    assert ran[0][4] == os.path.join(config.BASE_PATH, "nobody-has", "private")
     assert not os.path.exists(os.path.join(config.BASE_PATH, "nobody-has"))
 
 
+def test_a_failed_clone_keeps_what_someone_else_put_in_a_folder_it_made(riv, monkeypatch):
+    def run(argv, *a, **k):
+        if argv[0] == "gh":
+            assert argv[4] == os.path.join(config.BASE_PATH, "raced-team", "deep", "raced")
+            open(os.path.join(os.path.dirname(argv[4]), "theirs.txt"), "w").close()    # written there meanwhile
+            return subprocess.CompletedProcess(argv, 1, "", "fatal: the remote end hung up\n")
+        return _real_run(argv, *a, **k)
+    monkeypatch.setattr(subprocess, "run", run)
+    share = _session_share(riv, {"repo": "race-owner/raced", "project": "/raced-team/deep/raced"})
+    with pytest.raises(team.TeamError, match="hung up"):
+        team.clone(share)
+    assert os.listdir(os.path.join(config.BASE_PATH, "raced-team", "deep")) == ["theirs.txt"]
+
+
 def test_clone_without_the_github_cli_says_how_to_get_it(riv, monkeypatch):
+    tried = []
+
     def no_gh(argv, *a, **k):
         if argv[0] == "gh":
+            tried.append(argv[4])
             raise FileNotFoundError(2, "No such file or directory", "gh")
         return _real_run(argv, *a, **k)
     monkeypatch.setattr(subprocess, "run", no_gh)
-    share = _session_share(riv, {"repo": "gh-owner/nocli", "project": "/nocli-team/nocli"})
+    share = _session_share(riv, {"repo": "nocli-owner/nocli", "project": "/nocli-team/nocli"})
     with pytest.raises(team.TeamError, match="GitHub CLI"):
         team.clone(share)
+    assert tried == [os.path.join(config.BASE_PATH, "nocli-team", "nocli")]
     assert not os.path.exists(os.path.join(config.BASE_PATH, "nocli-team"))
 
 
@@ -811,6 +830,9 @@ def test_install_runs_each_lockfiles_installer_at_the_root_and_one_folder_down(r
               "py/uv.lock", "node_modules/x/pnpm-lock.yaml", ".hidden/pnpm-lock.yaml", "docs/README.md"):
         os.makedirs(os.path.dirname(os.path.join(root, f)), exist_ok=True)
         open(os.path.join(root, f), "w").close()
+    elsewhere = _checkout("/inst/elsewhere", "inst-owner/elsewhere")
+    open(os.path.join(elsewhere, "package-lock.json"), "w").close()
+    os.symlink(elsewhere, os.path.join(root, "linked"))     # a link could lead to another project: never followed
     calls = []
 
     def run(argv, *a, cwd=None, **k):
@@ -838,12 +860,22 @@ def test_install_runs_each_lockfiles_installer_at_the_root_and_one_folder_down(r
     assert [c[0] for c in calls] == [".", ".", "backend", "py", "web"]
 
 
-def test_install_runs_only_in_a_checkout_under_your_projects(riv, tmp_path):
+def test_install_runs_only_in_your_checkout_of_their_repository_or_a_worktree_of_it(riv, tmp_path):
+    mine = _checkout("/inst2/app2", "inst-owner/app2")
     share = _session_share(riv, {"repo": "inst-owner/app2"})
+    other = _checkout("/inst2/other", "inst-owner/other")
     plain = os.path.join(config.BASE_PATH, "plain-folder")
     os.makedirs(plain, exist_ok=True)
-    for bad in ("", "relative/path", str(tmp_path), config.BASE_PATH, plain):
-        with pytest.raises(team.TeamError):
+    for bad in ("", "relative/path", str(tmp_path), config.BASE_PATH, plain, other):
+        with pytest.raises(team.TeamError, match="your checkout of their repository"):
             team.install(share, bad)
+    assert team.install(share, mine) == []                 # no lockfile: nothing to run
+    subprocess.run(["git", "-C", mine, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "--allow-empty",
+                    "-m", "first"], check=True, capture_output=True)
+    wt = os.path.join(config.BASE_PATH, ".worktrees", "app2", "from-erfan-x")
+    subprocess.run(["git", "-C", mine, "worktree", "add", "-q", "-b", "from-erfan/x", wt], check=True, capture_output=True)
+    assert team.install(share, wt) == []
     with pytest.raises(team.TeamError, match="gone"):
-        team.install("no-such-share", _checkout("/inst/other", "inst-owner/other"))
+        team.install("no-such-share", mine)
+    with pytest.raises(team.TeamError, match="your checkout"):       # no checkout of theirs here at all
+        team.install(_session_share(riv, {"repo": "inst-owner/not-here"}), mine)

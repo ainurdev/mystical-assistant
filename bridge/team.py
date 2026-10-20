@@ -26,8 +26,9 @@ What arrives is a teammate's, so nothing of it runs here without a tap:
   - When their repository isn't cloned here, CONTINUE HERE offers CLONE & INSTALL:
     `gh repo clone` with your own login, beside your other checkouts from the same
     GitHub owner (your layout, not theirs), then each lockfile's installer in the
-    folder the session runs in. The tap is the consent: installers run the
-    repository's own scripts. Not built: a clone of a repository with no GitHub
+    folder the session runs in. The tap is the consent, and the ask says so:
+    installers run the repository's scripts, and their changes' when their code
+    came. Not built: a clone of a repository with no GitHub
     remote, Python's requirements.txt, poetry, Go or Cargo, and installing in a
     worktree of a checkout you already had.
   - A file is kept in the bridge's state folder, never in a project, and the
@@ -885,6 +886,7 @@ def continue_plan(share_id: str) -> dict:
     said = f" Their note: “{note}”" if note else ""
     if rec["kind"] != "session":
         return {"project": None, "repo": None, "branch": None, "base": None, "title": None, "from": name, "clone": None,
+                "code": False,
                 "draft": f"{name} sent me this {rec['kind']}.{said}",
                 "attachments": [{"name": os.path.basename(rec["file"]), "url": _file_url(rec, share_id)}]
                 if rec.get("file") else []}
@@ -902,6 +904,7 @@ def continue_plan(share_id: str) -> dict:
     home = os.path.realpath(os.path.expanduser("~"))   # BASE_PATH is a realpath too
     return {"project": project, "repo": meta.get("repo"), "title": rec["title"], "from": name,
             "clone": "~" + to[len(home):] if to and to.startswith(home + os.sep) else to,
+            "code": meta.get("code") is True,
             "branch": f"from-{first}/{_slug(rec['title'], 40)}" if code else None, "base": base,
             "draft": f"{name} sent me this session to pick up. Read the attached transcript first"
                      + (", then look at their code on this branch." if code else ".") + said + " "
@@ -1006,12 +1009,9 @@ def clone(share_id: str) -> str:
             raise TeamError(f"There's no free folder to clone {meta['repo']} into." if meta.get("repo")
                             else "It came from a folder with no GitHub repository, so there's nothing to clone.")
         parts = rel.split("/")[1:]
-        top = config.BASE_PATH
-        for p in parts:            # the first folder this clone makes: all of it goes if the clone fails
-            top = os.path.join(top, p)
-            if not os.path.lexists(top):
-                break
         dest = os.path.join(config.BASE_PATH, *parts)
+        above = [os.path.join(config.BASE_PATH, *parts[:i]) for i in range(1, len(parts))]
+        made = [d for d in above if not os.path.lexists(d)]      # the folders above it this clone makes
         try:
             os.makedirs(os.path.dirname(dest), exist_ok=True)
             r = subprocess.run(["gh", "repo", "clone", meta["repo"], dest], capture_output=True, text=True,
@@ -1026,7 +1026,12 @@ def clone(share_id: str) -> str:
             why = str(e)
         if why is None:
             return rel
-        shutil.rmtree(top, ignore_errors=True)
+        shutil.rmtree(dest, ignore_errors=True)
+        for d in reversed(made):   # deepest first, and only while empty: nothing put there meanwhile goes
+            try:
+                os.rmdir(d)
+            except OSError:
+                break
         raise TeamError(f"Couldn't clone {meta['repo']}: {why}")
 
 
@@ -1034,17 +1039,18 @@ def install(share_id: str, cwd: str) -> list:
     """CLONE & INSTALL, second half, in the folder the continued session runs in (the
     new checkout, or the worktree their code went into): each lockfile's installer at
     the top and one folder down (Rivendell keeps backend/ and frontend/ apart). One
-    row per installer: where, what, ok, and why not in its own last line. A failed or
+    row per installer: where, what, ok, and why not in its own words. A failed or
     missing installer doesn't stop the rest. Raises TeamError."""
     from bridge import git
-    _session_share(share_id)
+    mine = _local_project(_session_share(share_id)["meta"])
+    checkout = os.path.realpath(os.path.join(config.BASE_PATH, mine.lstrip("/"))) if mine else ""
     root = os.path.realpath(cwd) if isinstance(cwd, str) and os.path.isabs(cwd) else ""
-    if not root.startswith(os.path.realpath(config.BASE_PATH) + os.sep) or not os.path.isdir(root) \
-            or not git.is_repo(root):
-        raise TeamError("Installing only runs in a checkout under your projects folder.")
+    if not checkout or not root.startswith(os.path.realpath(config.BASE_PATH) + os.sep) or not os.path.isdir(root) \
+            or not (root == checkout or git.is_worktree_of(checkout, root)):
+        raise TeamError("Installing only runs in your checkout of their repository, or a worktree of it.")
     steps = []
     for d in ["."] + [n for n in sorted(os.listdir(root)) if not n.startswith(".") and n not in config.SKIP_DIRS
-                      and os.path.isdir(os.path.join(root, n))]:
+                      and os.path.isdir(os.path.join(root, n)) and not os.path.islink(os.path.join(root, n))]:
         here = os.path.normpath(os.path.join(root, d))
         node = next((cmd for f, cmd in _NODE if os.path.isfile(os.path.join(here, f))), None)
         for cmd in ([node] if node else []) + [cmd for f, cmd in _OTHERS if os.path.isfile(os.path.join(here, f))]:
