@@ -2879,6 +2879,7 @@ input {
   border-radius: var(--d-rad) var(--d-rad) 0 0;
 }
 [data-style="dossier"] .qcard-live::before { content: "● NEEDS YOUR ANSWER"; }
+[data-style="dossier"] .qcard-live.tcard::before { content: "● NEEDS YOUR ANSWER · RIVENDELL TASK"; }
 [data-style="dossier"] .pcard-live::before { content: "● NEEDS YOUR OK · PERMISSION"; }
 [data-style="dossier"] .chatcard:not(.qcard-live, .pcard-live) { border: 1px solid var(--d-hair); }
 [data-style="dossier"] .qopt {
@@ -3977,7 +3978,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] :is(.ptile, .isle-pill, [data-style="dossier"] .dprompt, [data-style="dossier"] .dwork, [style*="--shadow-modal"],
   .setdlg, .set-search, .set-close, .setrail button, .setpane [style*="padding: 14px 16px"], .set-toggle, .set-toggle i,
   .set-seg, .set-seg button, .setpane select, .set-seg2, .set-seg2 button, .ftcard, .ftmeta em, .ftsq button, .fthdr button, .fthdr button span,
-  .pb-tabs .np-tile, .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run), .pb-tabs > .ctrl-ctx, .pb-paused > button, .pb-place, .ctrl-ctx .seg i,
+  .pb-tabs .np-tile, .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run, .np-task), .pb-tabs > .ctrl-ctx, .pb-paused > button, .pb-place, .ctrl-ctx .seg i,
   .aim-fold, .aim-card, .aim-editor, .aim-f input, .aim-f select, .aim-sel, .aim-field, .aim-x, .aim-xic, .aim-xbtn, .aim-xaside, .aim-chip,
   .aim-chipbtn, .aim-note, .aim-search, .aim-hero, .aim-vfield, .aim-pills em, .aim-prof, .aim-addrow, .aim-segwrap > div, .aim-segwrap > div button,
   .set-mini, .ps-rows, .ps-btn, .ps-pick, .ps-menu, .ps-opt, .ps-chip, .ps-av, .ps-name input,
@@ -4194,9 +4195,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .composer[data-pb] { container-type: inline-size; --pb-ground: var(--panel2); }
 .pb-lead .np-sep { display: none; }
 [data-fam] .pb-lead .np-tile .pdot { display: none; }
-.pb-lead :is(.np-tile, .np-title-btn, .np-proj, .np-branch, .np-pr, .np-run) { box-sizing: border-box; white-space: nowrap; }
+.pb-lead :is(.np-tile, .np-title-btn, .np-proj, .np-branch, .np-pr, .np-run, .np-task) { box-sizing: border-box; white-space: nowrap; }
 .pb-lead .np-title-btn { flex: 0 1 auto !important; min-width: 110px !important; align-items: center !important; }
-.pb-lead :is(.np-branch, .np-pr, .np-run) { font-size: var(--t10) !important; }
+.pb-lead :is(.np-branch, .np-pr, .np-run, .np-task) { font-size: var(--t10) !important; }
 .pb-lead .np-pr { letter-spacing: 0 !important; }
 .pb-lead .np-branch .np-name { max-width: 220px; }
 [data-pb] .sp { flex: 1; }
@@ -4246,10 +4247,10 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── TABS: the lead as folder tabs on the card's top edge, CTX the last tab ── */
 .pb-tabs { display: flex; align-items: flex-end; gap: 4px; padding: 0 12px; min-width: 0; }
-.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run), .pb-tabs > .ctrl-ctx {
+.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task), .pb-tabs > .ctrl-ctx {
   display: inline-flex !important; align-items: center !important; gap: 7px; flex: none; min-width: 0; height: 26px !important;
   margin-bottom: -1px; padding: 0 10px !important; border-bottom: 0 !important; }
-.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run), .pb-tabs > .ctrl-ctx {
+.pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run, .np-task), .pb-tabs > .ctrl-ctx {
   border: 1px solid var(--pb-edge) !important; border-bottom: 0 !important; background: var(--pb-ground) !important; }
 /* the PR tab keeps its state's ink: tone border, tone tint over the ground (PrChip's --tone-bg) */
 .pb-tabs .np-pr { background: linear-gradient(var(--tone-bg, transparent), var(--tone-bg, transparent)), var(--pb-ground) !important; }
@@ -4276,7 +4277,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-pb="console"] .pb-attach { margin: 0 0 8px 4px; }
 .pb-place { display: flex; align-items: stretch; height: 24px; margin-top: 7px; min-width: 0; overflow: hidden;
             border: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); background: var(--pb-ground); }
-.pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run) {
+.pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task) {
   display: inline-flex !important; align-items: center !important; gap: 6px; flex: none; min-width: 0; height: auto !important; padding: 0 10px !important;
   border: 0 !important; border-right: 1px solid color-mix(in srgb, var(--acc) 14%, transparent) !important; border-radius: 0 !important; background: transparent !important; }
 .pb-place .np-proj { display: none !important; }
@@ -4306,12 +4307,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* FLINT: the same shells in its skin — radius, hairlines, Geist */
 [data-fam] .composer[data-pb] { --pb-ground: var(--panel); }
-[data-fam] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run), [data-fam] .pb-tabs > .ctrl-ctx { font-family: var(--ui-font); }
-[data-fam] .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run), [data-fam] .pb-tabs > .ctrl-ctx { border-radius: 8px 8px 0 0 !important; }
+[data-fam] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-run, .np-task), [data-fam] .pb-tabs > .ctrl-ctx { font-family: var(--ui-font); }
+[data-fam] .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run, .np-task), [data-fam] .pb-tabs > .ctrl-ctx { border-radius: 8px 8px 0 0 !important; }
 [data-fam] .pb-tabs .np-tile { border-radius: 8px 0 0 0 !important; }
 [data-fam] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 8px 0 0 !important; }
 [data-fam] .pb-tabs > .ctrl-ctx { background: var(--panel2) !important; }
-[data-fam] .pb-tabs :is(.np-branch, .np-pr, .np-run) { font-family: var(--mono) !important; }
+[data-fam] .pb-tabs :is(.np-branch, .np-pr, .np-run, .np-task) { font-family: var(--mono) !important; }
 [data-fam] :is(.pb-tabs, .pb-place) .np-title { font-size: var(--t12) !important; }
 [data-fam] .pb-plus { border-color: var(--line); border-radius: var(--f-rad-s); }
 [data-fam] :is(.pb-queued, .pb-paused, .pb-activity) { font-family: var(--ui-font); letter-spacing: 0; }
@@ -4325,7 +4326,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam]:not([data-fam="aurora"]) [data-pb]:not([data-pb="console"]) .pb-pfx { display: none; }
 [data-fam] [data-pb="console"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--mono) !important; }
 [data-fam] .pb-place { border-radius: 7px; border-color: var(--line); }
-[data-fam] .pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run) { border-right-color: var(--line) !important; }
+[data-fam] .pb-place :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task) { border-right-color: var(--line) !important; }
 /* CONSOLE's line is yours in every state, so a running turn never recolours it
    (■ ❚❚ » and the queue placeholder say it runs). Here ASK is the "waits on you"
    magenta, so CONSOLE's QUEUE fills like SEND instead. */
@@ -4376,7 +4377,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    every control is a pill; CONSOLE's line rounds its free end and its place
    line is one segmented pill. */
 [data-fam="pebble"] .pb-tabs { align-items: center; gap: 6px; padding: 0 4px 7px; }
-[data-fam="pebble"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run), [data-fam="pebble"] .pb-tabs > .ctrl-ctx {
+[data-fam="pebble"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task), [data-fam="pebble"] .pb-tabs > .ctrl-ctx {
   margin-bottom: 0; height: 26px !important; border: 1px solid var(--line) !important; border-radius: 999px !important; background: var(--panel2) !important;
 }
 [data-fam="pebble"] .pb-tabs .np-tile { border-radius: 999px 0 0 999px !important; border-right: 0 !important; padding: 0 3px 0 8px !important; }
@@ -5232,6 +5233,15 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .gp-rosub.warn b { color: inherit; }
 .gp-rosub.ok svg { flex: none; color: var(--ok); }
 .gp-rosub.warn { color: var(--warn); }
+/* The branch's Rivendell task (TaskChip.tsx TaskLine), under the readout's line. */
+.gp-task { margin-top: 6px; gap: 7px; }
+.gp-task b { color: var(--ask); }
+.gp-task b.ln { color: var(--acc); }
+.gp-task b.skip { color: var(--txl); }
+.gp-task button { appearance: none; border: 0; padding: 0; background: none; font: inherit; color: var(--acc); cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-task span button { text-decoration: underline; text-underline-offset: 2px; }
+.gp-task > button { color: var(--txd); }
+.gp-task > button:hover, .gp-task span button:hover { color: var(--txb); }
 .gp-act { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .gp-pb { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 34px; padding: 0 12px; border: 0;
   border-radius: var(--r); background: var(--acc); color: var(--acc-on); font: 650 var(--t11)/1 var(--f); letter-spacing: .07em;
@@ -5490,6 +5500,21 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── 5 · ONE PRIMARY ── */
 [data-fam="pebble"] .gp-pb { box-shadow: none !important; }
+
+/* The Rivendell note's Task card (QuestionCard.tsx, rivendell-task-check.md):
+   the board's mark beside the question, the push's work line, keys as chips,
+   and the suggestion's tag. */
+.tcard .tc-q { display: flex; gap: 11px; align-items: flex-start; }
+.tcard .tc-mark { flex: none; width: 28px; height: 28px; margin-top: 1px; border-radius: 8px; display: grid; place-items: center; color: var(--acc);
+  background: color-mix(in oklab, var(--acc) 12%, var(--panel)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 32%, var(--panel)); }
+.tcard .tc-work { margin-top: 6px; font-family: var(--mono); font-size: var(--t105); color: var(--txd); overflow-wrap: anywhere; }
+.tcard .tc-work .add { color: var(--ok); }
+.tcard .tc-work .del { color: var(--err); }
+.tcard .tc-sug { display: inline-block; margin-right: 7px; padding: 1px 6px 0; border-radius: 5px; font-size: var(--t85); font-weight: 700; letter-spacing: 1.3px; vertical-align: 1.5px;
+  color: var(--ask); background: color-mix(in oklab, var(--ask) 18%, transparent); }
+.tcard .tc-key { display: inline-block; margin: 0 2px; padding: 0 5px; border-radius: 5px; font-family: var(--mono); font-size: .92em; font-weight: 500; color: var(--acc);
+  background: color-mix(in oklab, var(--acc) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 30%, transparent); }
+.tcard .tc-tag { font-family: var(--mono); font-size: .95em; padding: 0 4px; border-radius: 4px; background: color-mix(in oklab, var(--txl) 22%, transparent); }
 
 /* === THE FAMILIES · MIDDLE-EARTH ===========================================
    Rivendell's own dashboard (.mystical/design-drafts/rivendell-theme) and the

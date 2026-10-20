@@ -2931,7 +2931,7 @@ def link_repo(instance_id: str, project_id: str, slugs) -> str:
 
 UNPLANNED_TAG = "unplanned"
 _TRACK_RULE = ("If one of these covers your work, put its key in the branch name and the PR title. "
-               "If none does, ask the user with one card before calling CreateRivendellTask.")
+               "If none does, do the work, and ask with the Task card before its first push.")
 _NO_REMOTE = ("This folder has no GitHub remote, so Rivendell can't know it. If you are changing "
               "a checkout somewhere else, pass repo: its path.")
 _NO_LINK = "No Rivendell connection is on in this bridge, so there's nothing to track this work in."
@@ -2991,6 +2991,56 @@ def on_board(path: str, wait: float = 2.0) -> bool:
         t.start()
         t.join(wait)
     return any(known(s) for s in slugs)
+
+
+def _cached(path: str) -> "tuple[list, list]":
+    """(tasks, projects) the last tasks() answers hold for this checkout's
+    slugs: what on_board and the RIVENDELL tab already fetched, with no
+    network, so neither a spawn nor a tab poll waits on Rivendell."""
+    with _manager_lock:
+        running = list(_workers.values())
+    got = [w._last_tasks.get(s) or {} for s in _repo_slugs(path) for w in running]
+    return ([t for d in got for t in d.get("tasks") or [] if isinstance(t, dict)],
+            [p for d in got for p in d.get("projects") or [] if isinstance(p, dict)])
+
+
+def key_prefixes(path: str) -> list:
+    """The key prefixes (NRA in NRA-61) of the cached open tasks on this
+    checkout's boards, for the push gate (runner._push_gate). Empty when nothing
+    is cached; the gate then takes all-caps keys only."""
+    return sorted({str(t.get("key")).rsplit("-", 1)[0].upper()
+                   for t in _cached(path)[0] if "-" in str(t.get("key") or "")})
+
+
+def task_state(path: str) -> "dict | None":
+    """The task tab's state for the checkout at `path`
+    (docs/superpowers/specs/rivendell-task-check.md), or None to draw nothing:
+    not on a board, no branch, or nothing to push and nothing decided.
+    linked: the branch carries a key, or a create or a card answer recorded one
+    (taskcheck's .mystical/tasks.json); skip: the answer was Not a task; none:
+    work no task covers yet. Titles and links come from the cache, so a poll
+    costs a few git calls."""
+    from bridge import taskcheck
+    if not on_board(path):
+        return None
+    top = taskcheck.toplevel(path)
+    br = taskcheck.branch(top)
+    if not br:
+        return None
+    tasks, projects = _cached(top)
+    rec = taskcheck.read(top).get(br)
+    m = taskcheck.key_re(key_prefixes(top)).search(br)
+    key = m.group(0).upper() if m else (rec if rec not in (None, "asked", "skip") else None)
+    board_url = next((p["url"] for p in projects if p.get("url")), None)
+    out = {"state": "none", "key": key, "title": None, "url": board_url, "board_url": board_url,
+           "board": next((t["projectName"] for t in tasks if t.get("projectName")), None)
+           or next((p["name"] for p in projects if p.get("name")), None)}
+    if key:
+        t = next((t for t in tasks if str(t.get("key") or "").upper() == key), {})
+        return {**out, "state": "linked", "title": t.get("name"), "url": t.get("url") or board_url}
+    if rec == "skip":
+        return {**out, "state": "skip"}
+    return out if taskcheck.has_work(top) else None
 
 
 def _boards(d: dict) -> list:
@@ -3153,6 +3203,10 @@ def work_create(path: str, title: str, description: str = "", board: str = "") -
             body["tagExternalIds"] = [tag]
         t = _tool(b["w"], "write_route", {"method": "POST", "path": "/task-management/tasks", "body": body})
         t = t if isinstance(t, dict) else {}
+        if t.get("key"):                         # the task tab shows it before the branch carries it
+            from bridge import taskcheck
+            top = taskcheck.toplevel(path)
+            taskcheck.record(top, taskcheck.branch(top), t["key"])
         key = t.get("key") or "the new task"
         return (f"Created {key} \"{t.get('name') or body['name']}\" on {b['label']} ▸ {lst['name']}, "
                 + ("tagged unplanned" if tag else "untagged (Rivendell wouldn't make the unplanned tag)")

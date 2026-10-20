@@ -3,6 +3,58 @@ import { flushSync } from "react-dom";
 import { Button, Card, Spinner } from "./ui";
 import type { AnswerSelection, Question } from "../api";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
+import { RivendellIcon } from "../lib/rivendellicon";
+
+/* The Rivendell note's push question (header "Task",
+   docs/superpowers/specs/rivendell-task-check.md) wears the board's mark, the
+   work line the question carries on a ⎇ line, keys as chips, and the
+   suggestion (the option the note marks "(Recommended)") picked before you
+   touch anything. Display only: the labels go back exactly as asked, because
+   the bridge reads the answer (taskcheck.answer_state). The Mini App and
+   Telegram show it as a plain card. */
+const REC = /\s*\(Recommended\)\s*$/i;
+const KEYS = /(\b[A-Z][A-Z0-9]{1,9}-\d+\b)/;
+const isTask = (qs: Question[]) => qs.length === 1 && qs[0].header.trim().toLowerCase() === "task";
+const chips = (text: string, re: RegExp, cls: string) =>
+  text.split(re).map((p, i) => (i % 2 ? <span key={i} className={cls}>{p}</span> : p));
+
+function TaskQuestion({ text }: { text: string }) {
+  const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+  const work = lines.find((l) => l.startsWith("⎇"));
+  return (
+    <div className="tc-q">
+      <span className="tc-mark"><RivendellIcon size={16} strokeWidth={1.9} /></span>
+      <div className="min-w-0">
+        <div className="text-sm font-medium">{lines.filter((l) => l !== work).join(" ")}</div>
+        {work && (
+          <div className="tc-work">
+            {work.split(/((?<=\s)\+\d+|(?<=\s)[−-]\d+)/).map((p, i) =>
+              i % 2 ? <span key={i} className={p.startsWith("+") ? "add" : "del"}>{p}</span> : p)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const taskLabel = (label: string, suggest = false) => (
+  <>
+    {suggest && REC.test(label) && <span className="tc-sug">SUGGESTED</span>}
+    {chips(label.replace(REC, ""), KEYS, "tc-key")}
+  </>
+);
+
+/** What the send button does, said: the card comes at the push, or earlier
+ *  when you asked for it from the task tab. */
+function taskVerb(q: Question, picked?: string): string | null {
+  if (!picked) return null;
+  const push = /\bpush/i.test(q.question);
+  const key = picked.match(KEYS)?.[1];
+  if (/^create\b/i.test(picked)) return push ? "Create task & push" : "Create task";
+  if (/^it[’']?s\b/i.test(picked) && key) return push ? `Link ${key} & push` : `Link ${key}`;
+  if (/^not a task/i.test(picked)) return push ? "Push without a task" : "Not a task";
+  return null;
+}
 
 // Mirrors bridge/miniapp/web/src/components/QuestionCard.tsx (shared design):
 // full-width option rows with descriptions, not cramped wrapping chips.
@@ -24,7 +76,11 @@ export function QuestionCard({
   onSubmit: (answers: AnswerSelection[]) => void | Promise<boolean | void>;
 }) {
   const [restored] = useState(() => readDraft(requestId));
-  const [sel, setSel] = useState<Record<string, string[]>>(restored.sel);
+  const task = isTask(questions);
+  const [sel, setSel] = useState<Record<string, string[]>>(() => {
+    const rec = task && !Object.keys(restored.sel).length && questions[0].options.find((o) => REC.test(o.label));
+    return rec ? { [questions[0].header]: [rec.label] } : restored.sel;
+  });
   const [notes, setNotes] = useState<Record<string, string>>(restored.notes);
   // The free-text fold per question. A restored note opens it by default (or the
   // draft reads as lost); your own toggling overrides that — `restored` is static.
@@ -48,13 +104,13 @@ export function QuestionCard({
     // Resolved / historical: still show the prepared answers as buttons, with the
     // chosen one(s) highlighted (matches Claude Code's answered-question look).
     return (
-      <Card className="chatcard qcard space-y-3 border border-[var(--tg-button)]/30">
+      <Card className={`chatcard qcard${task ? " tcard" : ""} space-y-3 border border-[var(--tg-button)]/30`}>
         {questions.map((q) => {
           const given = answered?.find((x) => x.header === q.header);
           const chosen = given?.labels ?? [];
           return (
             <div key={q.header} className="space-y-1.5">
-              <div className="text-sm font-medium">{q.question}</div>
+              {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
               <div className="flex flex-col gap-1.5">
                 {q.options.map((o) => {
                   const picked = chosen.includes(o.label);
@@ -67,10 +123,10 @@ export function QuestionCard({
                           : "bg-[var(--tg-bg)] opacity-60"
                       }`}
                     >
-                      <div className="font-medium">{o.label}</div>
+                      <div className="font-medium">{task ? taskLabel(o.label) : o.label}</div>
                       {o.description && (
                         <div className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}>
-                          {o.description}
+                          {task ? chips(o.description, /(\bunplanned\b)/, "tc-tag") : o.description}
                         </div>
                       )}
                     </div>
@@ -129,7 +185,7 @@ export function QuestionCard({
   }
 
   return (
-    <Card className="chatcard qcard qcard-live space-y-3 border border-[var(--tg-button)]/30">
+    <Card className={`chatcard qcard qcard-live${task ? " tcard" : ""} space-y-3 border border-[var(--tg-button)]/30`}>
       {questions.map((q) => {
         const open = openNotes[q.header] ?? (restored.notes[q.header] ?? "") !== "";
         // Typed text counts as the answer (see `ready`), so the frame says so.
@@ -138,7 +194,7 @@ export function QuestionCard({
           : "border-[var(--tg-hint)]/40";
         return (
         <div key={q.header} className="space-y-1.5">
-          <div className="text-sm font-medium">{q.question}</div>
+          {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
           <div className="flex flex-col gap-1.5">
             {q.options.map((o) => {
               const picked = (sel[q.header] ?? []).includes(o.label);
@@ -153,12 +209,12 @@ export function QuestionCard({
                       : "bg-[var(--tg-bg)]"
                   }`}
                 >
-                  <div className="font-medium">{o.label}</div>
+                  <div className="font-medium">{task ? taskLabel(o.label, true) : o.label}</div>
                   {o.description && (
                     <div
                       className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}
                     >
-                      {o.description}
+                      {task ? chips(o.description, /(\bunplanned\b)/, "tc-tag") : o.description}
                     </div>
                   )}
                 </button>
@@ -224,7 +280,7 @@ export function QuestionCard({
           <span className="inline-flex items-center gap-1.5">
             <Spinner className="h-3 w-3 border" /> Sending…
           </span>
-        ) : multi ? "Submit" : "Send answer"}
+        ) : (task && taskVerb(questions[0], sel[questions[0].header]?.[0])) || (multi ? "Submit" : "Send answer")}
       </Button>
     </Card>
   );
