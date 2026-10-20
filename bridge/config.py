@@ -194,13 +194,6 @@ LEARN_ENABLE = os.environ.get("LEARN_ENABLE", "0").lower() \
 DREAM_ENABLE = os.environ.get("DREAM_ENABLE", "0").lower() \
     not in ("0", "false", "no", "")
 
-# Decide whether a turn that ENDED on a question is waiting on you or just being
-# polite. Free markers (auth failures, usage limits, "reply go") always count;
-# this is the fall-through to a model call for the ambiguous rest. Automatic —
-# nobody clicks it — so it defaults OFF.
-TAIL_STATE_AI = os.environ.get("TAIL_STATE_AI", "0").lower() \
-    not in ("0", "false", "no", "")
-
 # --- Run command detection ----------------------------------------------------
 # Opening a project's TERMINAL tab, or analysing it, works out how to start its
 # dev server. A free heuristic reads the lockfile and scripts first; this decides

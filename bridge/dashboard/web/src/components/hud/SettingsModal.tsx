@@ -1165,7 +1165,6 @@ const MAC_BTN: CSSProperties = {
 const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?][] }[] = [
   { head: "NEEDS YOU · always in the bell, pinned", ask: true, rows: [
     ["ask", "Approval or question", "a session's card, or a Rivendell run that paused for you"],
-    ["asked", "Turn ended on a question"],
     ["rv_offer", "Rivendell offer", "a teammate's job that would run on your accounts"],
     ["account", "Login expired · limit choice"]] },
   { head: "SESSIONS", rows: [

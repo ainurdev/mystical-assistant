@@ -1061,7 +1061,7 @@ export interface Notice {
 /** Something waiting on you right now — live state, not a stored row. */
 export interface Need {
   subject: string;
-  kind: string; // approve | question | asking | login | limit_choice | rv_offer
+  kind: string; // approve | question | login | limit_choice | rv_offer
   verb: string;
   title: string;
   body: string;

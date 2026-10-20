@@ -100,7 +100,7 @@ def test_a_run_keeps_mcp_secrets_off_argv(monkeypatch):
     0700 dir, never in argv, which any process on the machine can read from
     /proc/<pid>/cmdline. The file lives exactly as long as the child: claude may
     re-read it mid-run, and nothing should outlive the run."""
-    from bridge import store, tailstate
+    from bridge import store
     store.init()
     sid = store.create_session(555, "p-mcp-secrets")["id"]
     store.set_disabled_tools(sid, [])                      # everything switched on
@@ -113,7 +113,7 @@ def test_a_run_keeps_mcp_secrets_off_argv(monkeypatch):
         "railway": {"type": "stdio", "command": "railway", "args": ["mcp"],
                     "env": {"RAILWAY_API_TOKEN": "rw_TESTSECRET"}}})
     monkeypatch.setattr(toolsets, "ready", lambda: True)
-    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)
     seen = {}
 
     def mid_run(path):
@@ -183,7 +183,7 @@ def test_a_config_that_fails_mid_write_leaves_nothing_behind(monkeypatch, tmp_pa
 def test_a_run_only_ever_removes_a_dir_mcp_config_made(monkeypatch, tmp_path):
     """The cleanup reads its target back off argv, so it is held to the one shape
     _mcp_config makes: no other directory is ever rmtree'd."""
-    from bridge import store, tailstate
+    from bridge import store
     keep = tmp_path / "keep"
     keep.mkdir()
     (keep / "mcp.json").write_text("{}")
@@ -191,7 +191,7 @@ def test_a_run_only_ever_removes_a_dir_mcp_config_made(monkeypatch, tmp_path):
     monkeypatch.setattr(toolsets, "servers", lambda: [])
     monkeypatch.setattr(runner, "_configured_mcp_servers", lambda cwd: {})
     monkeypatch.setattr(toolsets, "ready", lambda: True)
-    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)
 
     class Popen:
         def __init__(self, cmd, **kw):
@@ -269,11 +269,12 @@ def test_a_tools_off_streaming_run_has_no_tools_no_mcp_and_is_never_resumed(monk
     a turn that dies is not resumed, since the resume would run with them."""
     import threading
     import time
-    from bridge import learn, store, tailstate, titler
+    from bridge import learn, store, titler
     store.init()
     sid = store.create_session(555, "p-tools-off", cwd=config.BASE_PATH)["id"]
-    for mod in (titler, learn, tailstate):
+    for mod in (titler, learn):
         monkeypatch.setattr(mod, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)
     monkeypatch.setattr(runner, "_ensure_journal_thread", lambda: None)
     monkeypatch.setattr(runner, "_notify", lambda *a, **k: None)
     monkeypatch.setattr(toolsets, "ready", lambda: True)

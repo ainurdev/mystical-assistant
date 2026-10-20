@@ -193,9 +193,9 @@ def resume(sid: str) -> bool:
 
 
 def target_ended(job) -> None:
-    """A turn ended done or failed and nobody has to answer it (tailstate's
-    verdict). Wakes whoever waited on that session, unless it's busy again
-    (its queue started the next prompt) or is waiting itself (a chain)."""
+    """A turn ended done or failed. Wakes whoever waited on that session, unless
+    it's busy again (its queue started the next prompt) or is waiting itself (a
+    chain)."""
     try:
         from bridge import report, state  # local import: report pulls the store in
         sid = job.store_session_id

@@ -167,13 +167,13 @@ def test_needs_from_status_offers_and_login(monkeypatch):
     notices.emit("login", "s4", body="Account 2", meta={"slot": 2})
     notices.emit("resumed", "s4", body="Signed in")          # superseded: no longer needs you
     status = {"s1": {"state": "awaiting", "kind": "permission", "label": "Bash"},
-              "s2": {"state": "awaiting", "kind": None, "label": "pick a name?"},
+              "s2": {"state": "awaiting", "kind": "question", "label": "pick a name?"},
               "s5": {"state": "working", "kind": None, "label": None}}
     got = {n["subject"]: n for n in notices.needs(status)}
     assert set(got) == {"s1", "s2", "s3", "rv:prod:r1"}
     assert got["s1"]["kind"] == "approve" and got["s1"]["body"] == "Bash: rm -rf old"
     assert got["s1"]["meta"]["job_id"] == "j1" and got["s1"]["verb"] == "APPROVE"
-    assert got["s2"]["kind"] == "asking" and got["s2"]["body"] == "pick a name?"
+    assert got["s2"]["kind"] == "question" and got["s2"]["body"] == "pick a name?"
     assert got["s3"]["kind"] == "login" and got["s3"]["verb"] == "SIGN IN"
     rv = got["rv:prod:r1"]
     assert rv["kind"] == "rv_offer" and rv["session_id"] is None
@@ -237,7 +237,6 @@ def test_plugin_session_turn_emits_nothing(monkeypatch, sent):
     sid = _sess(origin="rivendell:prod")
     monkeypatch.setattr(store, "last_turn", lambda s: {"status": "done", "elapsed": 1, "outcome": None})
     runner.notify_turn_done(555, sid, False, body="step 3 done")
-    runner.notify_needs_you(555, sid, "which branch?")
     assert notices.feed() == [] and sent == []
 
 
@@ -250,14 +249,6 @@ def test_awaiting_emits_approve_with_summary(sent):
     assert (a["kind"], a["body"], a["meta"]) == ("approve", "Bash: rm -rf old", {"job_id": "j1", "request_id": "r1", "project": "/repo", "session_id": sid})
     assert q["meta"]["request_id"] == "r2"
     assert (q["kind"], q["body"]) == ("question", "Keep 344px?")
-
-
-def test_needs_you_emits_asking(sent):
-    from bridge import runner
-    sid = _sess()
-    runner.notify_needs_you(555, sid, "Pick a name for the branch?")
-    assert notices.feed()[0]["kind"] == "asking"
-    assert notices.feed()[0]["body"] == "Pick a name for the branch?"
 
 
 def test_tg_off_suppresses_send(monkeypatch, sent):

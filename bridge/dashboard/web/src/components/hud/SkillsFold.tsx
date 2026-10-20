@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Code2, FlaskConical, GitCommitVertical, GraduationCap, ListTodo, MessageCircleQuestion, Palette, PenLine,
+  Code2, FlaskConical, GitCommitVertical, GraduationCap, ListTodo, Palette, PenLine,
   Play, Puzzle, Scissors, ShieldQuestion, Sparkles, Waypoints, Workflow, type LucideIcon,
 } from "lucide-react";
 import {
@@ -31,7 +31,6 @@ const EXTRA_ICONS: Record<string, LucideIcon> = {
   nextup: ListTodo,
   preview: Play,
   learn: GraduationCap,
-  tailstate: MessageCircleQuestion,
   ponytail: Scissors,
   graph: Waypoints,
   commitmsg: GitCommitVertical,

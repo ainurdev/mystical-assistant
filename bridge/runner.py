@@ -811,7 +811,6 @@ class Job:
         # long as its agents work.
         self.hang_timeout: float | None = None
         self.error_msg: str | None = None  # stderr/exit error when no result event came
-        self.tail_needs: str | None = None  # set when the closing ended needing the user
         self.ask_dismissed = False       # you waved off the closing question (see dismiss_ask)
         self.account_slot: int | None = None  # Claude account this ran on (None = default)
         self.refusal: str | None = None   # set before spawn: the bound profile can't run (see profiles.refusal)
@@ -1272,13 +1271,6 @@ def _latest_jobs() -> dict[str, "Job"]:
     return latest
 
 
-def blocked_sessions() -> dict[str, str]:
-    """Store-session ids whose MOST RECENT turn ended needing you, mapped to the
-    ask."""
-    return {sid: j.tail_needs for sid, j in _latest_jobs().items()
-            if j.status != "running" and j.tail_needs}
-
-
 # The closing sentence when a turn signed off by asking you something. Same shape
 # the transcript's ASK card splits out (web/src/lib/askback.ts): the last
 # sentence, ending in "?", short enough to be a question rather than a paragraph
@@ -1303,13 +1295,11 @@ def _closing_question(text: str) -> str | None:
 
 def asked_sessions() -> dict[str, str]:
     """Store-session ids whose last turn *finished* by asking you something,
-    mapped to the question. Not blocked_sessions(): that turn couldn't deliver
-    what you asked for, this one did and then asked a follow-up. It's still your
-    move, and only you can make it."""
+    mapped to the question. It's still your move, and only you can make it."""
     out: dict[str, str] = {}
     now = time.time()
     for sid, j in _latest_jobs().items():
-        if j.status != "done" or j.tail_needs or j.ask_dismissed:
+        if j.status != "done" or j.ask_dismissed:
             continue
         if now - j.last_at > _ASK_TTL:
             continue
@@ -1326,9 +1316,6 @@ def dismiss_ask(session_id: str) -> bool:
     if not j or j.status == "running":
         return False
     j.ask_dismissed = True
-    # A closing tailstate read as *blocked* (WAIT) shows the same chips and is
-    # waved off the same way — without this the row stayed amber after "No".
-    j.tail_needs = None
     return True
 
 
@@ -1390,14 +1377,6 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
         else:
             status[sid] = {"state": "working", "kind": None, "source": "bridge",
                            "label": job_label.get(sid) or "working…"}
-    # A turn that ENDED on a question only you can answer is awaiting you just as
-    # much as one stopped mid-run — it just had no card to raise (see
-    # bridge/tailstate.py). Same state, so every surface already sorts, counts and
-    # flags it; `kind` is None because there is no pending card to respond to.
-    # setdefault: a session that has since started another turn is working now.
-    for sid, needs in blocked_sessions().items():
-        status.setdefault(sid, {"state": "awaiting", "kind": None,
-                                "source": "bridge", "label": needs})
     # A prompt being checked against its session (bridge/relevance.py) holds the
     # send for ~10s before any job exists — surface it so the session stays in the
     # active lists instead of vanishing until the prompt is approved.
@@ -1589,15 +1568,16 @@ def notify_woken(chat_id: int | None, session_id: str | None, body: str) -> None
             kind="resumed", sid=session_id, body=body)
 
 
-def notify_needs_you(chat_id: int | None, session_id: str | None, needs: str) -> None:
-    """Ping when a turn *ended* on something only you can answer. Carries the ask
-    itself: it's read off a lock screen, and acting on it shouldn't cost opening
-    the transcript to find out what was asked (bridge/tailstate.py)."""
-    if _plugin_session(session_id):
-        return
-    _notify(chat_id, f"❓ Claude needs you — {_session_label(session_id)}\n{needs}",
-            _session_kb(chat_id, session_id, "❓ Answer in Panel"),
-            kind="asking", sid=session_id, body=needs)
+def _announce_end(job) -> None:
+    """A turn that ended by itself: WAITING when it ended on WaitForSession (it
+    wakes on its own), else DONE or FAILED; then wake whoever waited on it."""
+    if w := waits.get(job.store_session_id or ""):
+        notify_waiting(job.chat_id, job.store_session_id, w["title"])
+    else:
+        notify_turn_done(job.chat_id, job.store_session_id, job.status == "error",
+                         body=(job.error_msg or "") if job.status == "error" else
+                         (job.result or (job.texts[-1] if job.texts else "")))
+    waits.target_ended(job)
 
 
 # ---------------------------------------------------------------------------
@@ -2665,10 +2645,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
-            # Owns the ping: "finished" is a lie for a turn that ended asking you
-            # something, so what it says depends on how the closing reads.
-            from bridge import tailstate  # local import: runner<->tailstate cycle
-            tailstate.kick(job, cwd)
+            # In a thread: a ping can sit on the network, and teardown shouldn't wait.
+            threading.Thread(target=_announce_end, args=(job,), daemon=True).start()
         if job.store_session_id and job.status == "done":
             _sess = store.get_session(job.store_session_id)
             if _sess:

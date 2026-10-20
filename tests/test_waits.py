@@ -8,7 +8,7 @@ import types
 
 import pytest
 
-from bridge import queue_manager, runner, state, store, tailstate, waits
+from bridge import queue_manager, runner, state, store, waits
 
 store.init()
 CHAT = 4242
@@ -174,26 +174,15 @@ def test_status_map_reads_waiting_after_working(fresh):
     assert runner._build_status([a], [], [], [], {})[a]["state"] == "working"   # noqa: SLF001
 
 
-def test_tailstate_pings_waiting_not_done_and_wakes_the_chain(fresh, monkeypatch):
+def test_the_end_ping_says_waiting_not_done_and_wakes_the_chain(fresh):
     a, b = _session("Waiter"), _session("Target")
     fresh["busy"] = {b: {"state": "working", "label": "x"}}
-    monkeypatch.setattr(tailstate, "needs_you", lambda *a, **k: None)
     waits.add(CHAT, a, "target", "merge")
-    tailstate._run(_job(a, result="Waiting on Target."), None)        # noqa: SLF001
+    runner._announce_end(_job(a, result="Waiting on Target."))       # noqa: SLF001
     assert fresh["pings"][-1]["kind"] == "waiting" and not fresh["queued"]
-    tailstate._run(_job(b, result="All done."), None)                 # noqa: SLF001
+    runner._announce_end(_job(b, result="All done."))                # noqa: SLF001
     assert [p["kind"] for p in fresh["pings"][-2:]] == ["done", "resumed"]
     assert fresh["queued"][0][0] == a
-
-
-def test_a_target_that_ends_asking_you_keeps_them_waiting(fresh, monkeypatch):
-    a, b = _session("Waiter"), _session("Target")
-    fresh["busy"] = {b: {"state": "working", "label": "x"}}
-    monkeypatch.setattr(tailstate, "needs_you", lambda *a, **k: "approve or revise?")
-    monkeypatch.setattr(runner, "notify_needs_you", lambda *a, **k: None)
-    waits.add(CHAT, a, "target", "merge")
-    tailstate._run(_job(b, result="Approve or revise?"), None)        # noqa: SLF001
-    assert waits.get(a) and not fresh["queued"]
 
 
 # --- the routes and the tool ------------------------------------------------

@@ -135,14 +135,14 @@ def test_the_turns_end_hands_on_the_model_it_was_switched_to(monkeypatch):
     """Crash resumes and limit parks take their model from the turn's end, so a
     switch made mid-turn has to be the model they see. (A goal nudge is queued
     with none: it reads the session's when it starts.)"""
-    from bridge import goals, tailstate, toolsets
+    from bridge import goals, toolsets
     s = store.create_session(CHAT, "/srs-end", cwd=config.BASE_PATH)
     seen = {}
     monkeypatch.setattr(runner, "_maybe_auto_resume",
                         lambda job, cwd, model, effort: seen.update(resume=model) or False)
     monkeypatch.setattr(goals, "continue_after_turn",
                         lambda job, effort=None: seen.update(goal=True) or False)
-    monkeypatch.setattr(tailstate, "kick", lambda job, cwd=None: None)
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)
     monkeypatch.setattr(toolsets, "ready", lambda: True)
 
     class Popen:                              # the spawn fails at once: straight to finally
@@ -350,7 +350,7 @@ def test_a_pick_made_while_the_child_spawns_reaches_it_before_the_prompt(monkeyp
     """job.proc is None while the argv is built (MCP health check, graph pack,
     task digest): a pick made then is held and written the moment the child
     exists, ahead of the prompt — not dropped."""
-    from bridge import goals, tailstate, toolsets
+    from bridge import goals, toolsets
     s = store.create_session(CHAT, "/srs-spawn", cwd=config.BASE_PATH)
     job = runner.Job("j-srs-spawn", CHAT, s["id"])
     picked = {}
@@ -380,7 +380,7 @@ def test_a_pick_made_while_the_child_spawns_reaches_it_before_the_prompt(monkeyp
     monkeypatch.setattr(store, "default_disabled_tools", lambda: [])   # no `claude mcp list`
     monkeypatch.setattr(runner, "_maybe_auto_resume", lambda *a, **k: False)
     monkeypatch.setattr(goals, "continue_after_turn", lambda *a, **k: False)
-    monkeypatch.setattr(tailstate, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)
     runner._run_streaming(job, "go", [], config.BASE_PATH, None, None, None, None)
     assert picked["ok"] is True
     assert [l["request"]["subtype"] if l["type"] == "control_request" else l["type"]
