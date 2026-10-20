@@ -721,7 +721,17 @@ def _at(rel: str) -> str:
     return os.path.join(config.BASE_PATH, rel.lstrip("/"))
 
 
-def test_the_clone_goes_beside_most_of_your_checkouts_from_that_owner(riv):
+def test_a_client_folder_full_of_that_owners_mirrors_doesnt_pull_the_clone_in(riv):
+    # This Mac's layout: ainurdev repos under ainurhq/, and five client mirrors (with an ainurdev remote) under
+    # ainurhq/nationale-rijschool/. A new ainurdev repo belongs in ainurhq/, not in the client's folder.
+    for rel in ("/org/elvou", "/org/invoicer", "/org/client/apex", "/org/client/app", "/org/client/cbrmux",
+                "/org/client/mock", "/org/mono/unideck", "/root-repo"):
+        _checkout(rel, "mirror-owner/" + rel.rsplit("/", 1)[1])
+    share = _session_share(riv, {"repo": "mirror-owner/osanwe", "project": "/ainur/osanwe"})
+    assert team.continue_plan(share)["clone"] == _at("/org/osanwe")
+
+
+def test_the_clone_goes_in_the_folder_that_holds_your_checkouts_from_that_owner(riv):
     _checkout("/work/elvou", "SibOwner/elvou")
     _checkout("/work/invoicer", "sibowner/invoicer")
     _checkout("/loose", "sibowner/loose")

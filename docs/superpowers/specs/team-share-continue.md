@@ -204,10 +204,12 @@ All additive, so it deploys before Mystical and old Mysticals don't notice:
 Only the clone, as **CLONE & INSTALL** in CONTINUE HERE's existing confirm (no sheet yet), plus an
 install step this spec didn't have (`team.clone`, `team.install`):
 
-- **Where the clone goes:** beside most of your checkouts from the same GitHub owner, else at their
-  path, else under its name at the top. For example, `ainurdev/osanwe` goes to
-  `~/Projects/ainurhq/osanwe`, because your other ainurdev checkouts live under `ainurhq/`. This
-  replaces "their path first" in section 2: their folder layout isn't yours.
+- **Where the clone goes:** in the folder that holds your checkouts from the same GitHub owner,
+  else at their path, else under its name at the top. That folder is the top-level folder with most
+  of them, taken at the deepest point they all share inside it. For example, `ainurdev/osanwe` goes
+  to `~/Projects/ainurhq/osanwe`. It does not go to `ainurhq/nationale-rijschool/`, even though five
+  client mirrors there also carry an ainurdev remote. This replaces "their path first" in section 2:
+  their folder layout isn't yours.
 - **Install:** after the clone, each lockfile's installer runs in the folder the session runs in, at
   the top and one folder down. That means pnpm, yarn, bun or npm (the first match), then composer and
   uv. When their code came, it goes in first and the ask says their install scripts run. A failed
