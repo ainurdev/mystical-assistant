@@ -121,7 +121,7 @@ export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
             <div style={{ minWidth: 0, flex: 1 }}>
               {person ? (
                 <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                  <Avatar id={person.id} name={person.name} size={26} state={person.online ? "on" : "away"} />
+                  <Avatar id={person.id} name={person.name} src={person.avatarUrl} size={26} state={person.online ? "on" : "away"} />
                   <div style={{ minWidth: 0 }}>
                     <div style={{ fontFamily: UI, fontSize: "var(--t125)", fontWeight: 500, color: "var(--txh)" }}>{person.name}</div>
                     <div style={{ marginTop: 2, fontFamily: MONO, fontSize: "var(--t9)", color: person.online ? "var(--ok)" : "var(--txl)" }}>
@@ -137,7 +137,7 @@ export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
                       appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 8px 3px 4px",
                       borderRadius: 999, fontFamily: UI, fontSize: "var(--t105)", color: t.id === to ? "var(--txh)" : "var(--txm)",
                       border: `1px solid ${t.id === to ? mix("var(--acc)", 55) : "var(--line2)"}`, background: t.id === to ? mix("var(--acc)", 10) : "transparent",
-                    }}><Avatar id={t.id} name={t.name} size={16} state={t.online ? "on" : "away"} />{t.name.split(" ")[0]}</button>
+                    }}><Avatar id={t.id} name={t.name} src={t.avatarUrl} size={16} state={t.online ? "on" : "away"} />{t.name.split(" ")[0]}</button>
                   ))}
                 </div>
               )}

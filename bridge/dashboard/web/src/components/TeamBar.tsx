@@ -13,7 +13,7 @@ export function TeamTile() {
  *  what they asked, and offers the two ways on: DISMISS, or CONTINUE HERE, which
  *  starts a session of your own with their work attached and the prompt unsent.
  *  Styled with JobBar's classes. */
-export function TeamBar({ s, onContinue, onDismiss }: { s: SessionBrief; onContinue: () => void; onDismiss: () => void }) {
+export function TeamBar({ s, src, onContinue, onDismiss }: { s: SessionBrief; src?: string | null; onContinue: () => void; onDismiss: () => void }) {
   const t = s.team;
   if (!t) return null;
   const first = t.from.name.split(" ")[0] || t.from.name;
@@ -25,7 +25,7 @@ export function TeamBar({ s, onContinue, onDismiss }: { s: SessionBrief; onConti
       flexWrap: "nowrap", gap: 12,
       borderColor: "color-mix(in srgb, var(--purple) 32%, transparent)", background: "color-mix(in srgb, var(--purple) 4%, var(--panel2))",
     }}>
-      <Avatar id={t.from.id || t.from.name} name={t.from.name} size={30} />
+      <Avatar id={t.from.id || t.from.name} name={t.from.name} src={src} size={30} />
       <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 10, minWidth: 0 }}>
           <span className="jobbar-w1" style={{ color: "var(--purple)" }}>FROM {t.from.name.toUpperCase()}</span>

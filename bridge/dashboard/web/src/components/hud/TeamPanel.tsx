@@ -15,10 +15,14 @@ const toolBtn = {
   border: `1px solid ${mix("var(--acc)", 20)}`, fontFamily: "inherit", fontSize: "var(--t95)", lineHeight: 1.3, padding: "2px 6px",
 } as const;
 
-/** A teammate's initials in their colour, with a presence dot when it is known. */
-export function Avatar({ id, name, size = 26, state }: { id: string; name: string; size?: number; state?: "on" | "away" }) {
+/** A teammate's picture from Rivendell (their photo or a Middle-earth one), else
+ *  their initials in their colour, with a presence dot when it is known. A
+ *  picture that fails to load falls back to the initials. */
+export function Avatar({ id, name, src, size = 26, state }: { id: string; name: string; src?: string | null; size?: number; state?: "on" | "away" }) {
   const c = personTint(id);
   const dot = size >= 24 ? 9 : 7;
+  const [broken, setBroken] = useState<string | null>(null);
+  const pic = src && src !== broken ? src : null;
   return (
     <span aria-hidden style={{
       position: "relative", flex: "none", width: size, height: size, borderRadius: "50%", display: "grid", placeItems: "center",
@@ -26,7 +30,9 @@ export function Avatar({ id, name, size = 26, state }: { id: string; name: strin
       color: c, fontFamily: UI, fontSize: size >= 26 ? "var(--t95)" : size >= 20 ? "var(--t8)" : "var(--t7)", fontWeight: 600,
       opacity: state === "away" ? 0.75 : 1,
     }}>
-      {initials(name)}
+      {pic ? <img src={pic} alt="" onError={() => setBroken(pic)} style={{
+        position: "absolute", inset: 0, width: "100%", height: "100%", borderRadius: "50%", objectFit: "cover",
+      }} /> : initials(name)}
       {state && <i style={{
         position: "absolute", right: -2, bottom: -2, width: dot, height: dot, borderRadius: "50%", boxSizing: "border-box",
         boxShadow: "0 0 0 2px var(--panel)",
@@ -74,13 +80,14 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
   const roster = [...(data?.roster ?? [])].sort(byPresence);
   const on = roster.filter((t) => t.online);
   const away = roster.filter((t) => !t.online);
+  const face = (id: string) => roster.find((t) => t.id === id)?.avatarUrl;
 
   const mate = (t: Teammate) => (
     <div key={t.id} onMouseEnter={() => setHov(t.id)} onMouseLeave={() => setHov(null)} style={{
       display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", margin: "0 6px", borderRadius: 8,
       background: hov === t.id ? mix("var(--acc)", 7) : "transparent",
     }}>
-      <Avatar id={t.id} name={t.name} size={28} state={t.online ? "on" : "away"} />
+      <Avatar id={t.id} name={t.name} src={t.avatarUrl} size={28} state={t.online ? "on" : "away"} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: UI, fontSize: "var(--t12)", fontWeight: 500, color: t.online ? "var(--txh)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.name}</div>
         <div style={{ marginTop: 2, fontFamily: MONO, fontSize: "var(--t9)", color: t.online ? "var(--ok)" : "var(--txl)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{presence(t, now, h12)}</div>
@@ -105,7 +112,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
         border: `1px solid ${mix("var(--acc)", r.opened ? 18 : 30)}`, background: `color-mix(in srgb, var(--acc) ${r.opened ? 2 : 5}%, var(--panel2))`,
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-          <Avatar id={r.from.id || r.from.name} name={r.from.name} size={22} />
+          <Avatar id={r.from.id || r.from.name} name={r.from.name} src={face(r.from.id)} size={22} />
           <span style={{ fontFamily: UI, fontSize: "var(--t115)", fontWeight: 500, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.from.name}</span>
           <span style={{ fontFamily: MONO, fontSize: "var(--t9)", color: "var(--txl)", whiteSpace: "nowrap" }}>{sentAgo(r.sent, now) || ""}</span>
           <span style={{ flex: 1 }} />
@@ -153,7 +160,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
       <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", minWidth: 0 }} title={`${s.title} → ${s.to.name}`}>
         <span style={{ flex: "none", color: "var(--txl)", display: "flex" }}><Send size={11} strokeWidth={2} /></span>
         <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: UI, fontSize: "var(--t11)", color: "var(--txm)" }}>{s.title}</span>
-        <Avatar id={s.to.id} name={s.to.name} size={16} />
+        <Avatar id={s.to.id} name={s.to.name} src={face(s.to.id)} size={16} />
         <span style={{ flex: "none", minWidth: 72, textAlign: "right", fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 0.8, color: TONE[st.tone] }}>{st.text}</span>
       </div>
     );
