@@ -44,7 +44,6 @@ _KEY = "notify_prefs"
 CATALOG = {
     "approve": ("ask", "needs", "session"),
     "question": ("ask", "needs", "session"),
-    "asking": ("asked", "needs", "session"),
     "login": ("account", "needs", "session"),
     "limit_choice": ("account", "needs", "session"),
     "rv_offer": ("rv_offer", "needs", "rivendell"),
@@ -77,7 +76,7 @@ CATALOG = {
 
 # The one place the copy lives: the dashboard and the Mac app render `verb`.
 VERBS = {
-    "approve": "APPROVE", "question": "QUESTION", "asking": "ASKS", "login": "SIGN IN",
+    "approve": "APPROVE", "question": "QUESTION", "login": "SIGN IN",
     "limit_choice": "LIMIT", "rv_offer": "OFFERED", "done": "DONE", "failed": "FAILED",
     "parked": "PARKED", "resumed": "RESUMED", "retrying": "RETRYING", "waiting": "WAITING",
     "started": "STARTED", "rv_started": "STARTED", "rv_ended": "ENDED",
@@ -98,7 +97,6 @@ _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED"}
 # its meeting, so Telegram gets it whether or not you are at a dashboard.
 DEFAULTS = {
     "ask": {"pop": True, "sound": "ping", "tg": "away"},
-    "asked": {"pop": True, "sound": "ping", "tg": "away"},
     "rv_offer": {"pop": True, "sound": "ping", "tg": "away"},
     "account": {"pop": True, "sound": "knock", "tg": "always"},
     "done": {"pop": True, "sound": "chime", "tg": "away"},
@@ -318,7 +316,7 @@ def needs(status: dict) -> list:
     for sid, st in (status or {}).items():
         if st.get("state") != "awaiting":
             continue
-        kind = _STATUS_KIND.get(st.get("kind"), "asking")
+        kind = _STATUS_KIND.get(st.get("kind"), "question")
         r = of_kind.get((sid, kind))
         sess = store.get_session(sid) or {}
         out.append(_need(kind, sid, sid, sess.get("title") or "",

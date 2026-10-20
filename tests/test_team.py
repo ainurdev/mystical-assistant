@@ -171,9 +171,10 @@ def test_no_relevance_check_reads_a_team_session(monkeypatch):
 
 
 def test_runs_are_refused_on_team_sessions(monkeypatch):
-    from bridge import learn, tailstate, titler
-    for mod in (titler, learn, tailstate):                            # no model calls
+    from bridge import learn, titler
+    for mod in (titler, learn):                                       # no model calls
         monkeypatch.setattr(mod, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_announce_end", lambda job: None)              # no end-of-turn ping thread
     monkeypatch.setattr(runner, "_jobs", {})
     monkeypatch.setattr(runner, "_notify", lambda *a, **k: None)
     monkeypatch.setattr(runner, "_ensure_journal_thread", lambda: None)

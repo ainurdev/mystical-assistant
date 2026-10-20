@@ -37,13 +37,12 @@ def test_bridge_awaiting_takes_precedence_over_running():
     assert status["b1"]["kind"] == "question"
 
 
-def _finished_job(sid: str, result: str, *, needs: str | None = None,
-                  status: str = "done", ago: float = 0.0):
+def _finished_job(sid: str, result: str, *, status: str = "done", ago: float = 0.0):
     """A finished job in the registry, as _build_status sees it. `ago` backdates
     when the turn ended, for the ASK time-out."""
     job = runner.Job.__new__(runner.Job)
     job.store_session_id, job.result, job.texts = sid, result, []
-    job.status, job.started, job.tail_needs = status, time.time() - ago, needs
+    job.status, job.started = status, time.time() - ago
     job.last_at, job.ask_dismissed = time.time() - ago, False
     runner._jobs[sid + "-job"] = job
 
@@ -61,11 +60,13 @@ def test_turn_that_ended_on_a_question_is_asking():
 def test_asking_never_outranks_a_live_turn_or_a_real_block():
     runner._jobs.clear()
     _finished_job("q2", "Done. Want the docs too?")
-    _finished_job("q3", "Which branch should this land on?", needs="pick a branch")
-    status = runner._build_status(bridge_running=["q2"], awaiting=[], jobs=[],
-                                  external=[], native_snap={})
+    _finished_job("q3", "Which branch should this land on?")
+    # A card only counts while its turn runs, so q3 is running and holding one.
+    status = runner._build_status(bridge_running=["q2", "q3"],
+                                  awaiting=[{"session_id": "q3", "kind": "question"}],
+                                  jobs=[], external=[], native_snap={})
     assert status["q2"]["state"] == "working"     # a new turn is already going
-    assert status["q3"]["state"] == "awaiting"    # blocked beats merely asking
+    assert status["q3"]["state"] == "awaiting"    # a card beats merely asking
     runner._jobs.clear()
 
 

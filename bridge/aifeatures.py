@@ -103,18 +103,6 @@ FEATURES = (
               "project map), so the bridge stops starting from zero every "
               "morning. Off, no pass runs and nothing is injected; the file "
               "stays on disk."},
-    {"key": "tailstate", "env": "TAIL_STATE_AI", "label": "ENDED-ON-A-QUESTION",
-     "hint": "flags a turn that finished needing you, instead of calling it done",
-     "cost": "1 haiku call per turn ending in a question",
-     "tokens": "~36k tokens",
-     "about": "A turn that stops mid-run on a question already says WAIT. One "
-              "that ENDS on a question — 'apply this fix or just report it?' — "
-              "reads DONE, and the ping says finished. Auth failures, usage "
-              "limits and 'reply go' closings are caught for free either way; "
-              "this decides whether the rest may fall through to a model call "
-              "that tells a real gate from a passing offer to do more. Off, only "
-              "the free markers count.",
-     },
     {"key": "ponytail", "env": "PONYTAIL_ENABLE", "label": "PONYTAIL",
      "hint": "answers as a lazy senior dev — least code that works",
      "cost": "no extra call, a system prompt per run",
