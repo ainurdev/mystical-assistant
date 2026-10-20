@@ -40,7 +40,9 @@ GHOST_FLOOR = 3.25
 # below `panel`, so clearing this clears every surface.
 CANVAS = {"claude": "#efede5", "flint": "#ebebed", "pebble": "#eef0f4",
           # MIDDLE-EARTH: each of Rivendell's schemes is a ground of its own
-          "rivendell": "#f6f5f0", "havens": "#f1f5f5", "edoras": "#f1e1a6"}
+          "rivendell": "#f6f5f0", "havens": "#f1f5f5", "edoras": "#f1e1a6",
+          "slack": "#fcfcfc", "linear": "#fafafc", "gmail": "#f6f8fc", "github": "#fafcfc",
+          "notion": "#fbfaf9", "solarized": "#fdf6e3", "rosepine": "#faf4ed"}
 
 # The light ground has to stay a GROUND, not a spotlight: `panel` is the raised
 # card and `canvas` sits below it, so the biggest surface is never the brightest.
@@ -130,7 +132,7 @@ def main():
 
     pals = palettes(src)
     light_keys = [k for k in pals if is_light(k)]
-    assert len(light_keys) == 21, f"expected CLAUDE's 6 + FLINT's 7 + PEBBLE's 5 + MIDDLE-EARTH's 3 light colourings: {light_keys}"
+    assert len(light_keys) == 28, f"expected CLAUDE's 6 + FLINT's 7 + PEBBLE's 5 + MIDDLE-EARTH's 10 light colourings: {light_keys}"
 
     css = open(INDEX_CSS, encoding="utf-8").read()
     edges = light_edges(css)

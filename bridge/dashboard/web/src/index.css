@@ -3851,6 +3851,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ftcard[data-pv="middle-earth"] .ftprev .bx { border-radius: 6px; background: var(--g2); }
 .ftcard[data-pv="middle-earth"] .ftprev .bx u { border-radius: 2px; }
 .ftcard[data-pv="middle-earth"] .ftmeta b { font-family: 'Source Serif 4', Georgia, serif; }
+/* ten a ground, in rows of five as Rivendell's own picker lays them (wrapping split them eight and two) */
+.ftcard[data-pv="middle-earth"] .ftsq { display: grid; grid-template-columns: repeat(5, 22px); }
 .ftmeta { display: flex; align-items: center; gap: 9px; padding: 10px 12px 11px; border-top: 1px solid var(--line); }
 .ftmeta .d { width: 10px; height: 10px; border-radius: 50%; background: var(--a); flex: none; }
 .ftmeta b { display: block; font: 600 13.5px var(--ui-font); color: var(--txb); }
@@ -5518,12 +5520,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* === THE FAMILIES · MIDDLE-EARTH ===========================================
    Rivendell's own dashboard (.mystical/design-drafts/rivendell-theme) and the
-   schemes it ships: RIVENDELL, GREY HAVENS, EDORAS, MORIA, MORDOR (lib/theme
-   MIDDLE_EARTH_ROWS). The sidebar's colour is the frame (--side): the sessions
-   column and the rail stand on it; the transcript and the right panel are one
-   sheet set into it, 14px round, as Rivendell's pages sit in its sidebar. In
-   RIVENDELL's daylight the frame is the forest, so what stands on it reads
-   cream on forest with the gold as its mark. Source Sans for the UI, Source
+   schemes it ships: RIVENDELL, GREY HAVENS, EDORAS, MORIA, MORDOR, and the apps
+   it dresses as, SLACK to CATPPUCCIN MOCHA (lib/theme MIDDLE_EARTH_ROWS). The
+   sidebar's colour is the frame (--side): the sessions column and the rail
+   stand on it; the transcript and the right panel are one sheet set into it,
+   14px round, as Rivendell's pages sit in its sidebar. In RIVENDELL's daylight
+   the frame is the forest, so what stands on it reads cream on forest with the
+   gold as its mark; in SLACK's, white on aubergine. Source Sans for the UI, Source
    Serif for titles and big figures, Source Code Pro for code; sentence case,
    nothing tracked; 8px controls, 10px rows, 14px cards; one soft shadow, for
    floating things only. Kept last in the file, after PEBBLE · STANDARD, for
@@ -5548,21 +5551,41 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 }
 :root[data-light] [data-theme="havens-light"], :root[data-light][data-theme="havens-light"] { --line: #d5e1e2; --line2: #c6d5d7; }
 :root[data-light] [data-theme="edoras-light"], :root[data-light][data-theme="edoras-light"] { --line: #dcc47a; --line2: #cfb466; }
+:root[data-light] [data-theme="slack-light"], :root[data-light][data-theme="slack-light"] { --line: #dddddd; --line2: #c9c9c9; }
+:root[data-light] [data-theme="linear-light"], :root[data-light][data-theme="linear-light"] { --line: #e6e7eb; --line2: #dcdde3; }
+:root[data-light] [data-theme="gmail-light"], :root[data-light][data-theme="gmail-light"] { --line: #dde3ea; --line2: #c4c7c5; }
+:root[data-light] [data-theme="github-light"], :root[data-light][data-theme="github-light"] { --line: #d1d9e0; --line2: #d1d9e0; }
+:root[data-light] [data-theme="notion-light"], :root[data-light][data-theme="notion-light"] { --line: #e9e9e7; --line2: #e0dfdc; }
+:root[data-light] [data-theme="solarized-light"], :root[data-light][data-theme="solarized-light"] { --line: #e3dcc6; --line2: #d9d2bb; }
+:root[data-light] [data-theme="rosepine-light"], :root[data-light][data-theme="rosepine-light"] { --line: #dfdad9; --line2: #cecacd; }
 
-/* ── RIVENDELL by day: the frame is the forest, and what stands on it reads
-   cream on forest with the gold as its mark (Rivendell's .app-sidebar block,
-   as tokens). The other schemes' frames sit on their own ground's side. ── */
-[data-theme="rivendell-light"] :is(.hudgrid > .shellcol:first-child, .hudgrid > div:last-child > div:last-child > div:last-child, .rcap > div:last-child) {
+/* ── RIVENDELL and SLACK by day: the frame is the forest or the aubergine, and
+   what stands on it reads light on it with a mark of its own (Rivendell's
+   .app-sidebar blocks, as tokens): RIVENDELL cream with the gold, SLACK white
+   with its yellow, the semantics their night's. The other schemes' frames sit
+   on their own ground's side. ── */
+:is([data-theme="rivendell-light"], [data-theme="slack-light"]) :is(.hudgrid > .shellcol:first-child, .hudgrid > div:last-child > div:last-child > div:last-child, .rcap > div:last-child) {
   color-scheme: dark;
-  --canvas: var(--side); --panel3: #34503f; --panel2: #3a5548; --panel: #455e54;
-  --txb: #fbf8ef; --txh: #f1eee5; --tx: #e4e2d8; --txm: #cbccc1; --txd: #b1b6ab; --txf: #a4aa9f; --txl: #97a095; --txg: #6c7b70;
-  --acc: #d4b483; --accent-rgb: 212 180 131; --acc-on: #0f2a24; --ask: #e9c27a;
-  --ok: #6ccb8e; --warn: #e9c27a; --err: #e88b8b; --info: #8ab4ee; --purple: #c6a6e3;
-  --line: rgb(255 255 255 / 10%); --line2: rgb(255 255 255 / 16%);
+  --canvas: var(--side);
   --border: var(--line); --border-bright: var(--line2); --input: var(--line2);
   --ac-03: rgba(255,255,255,.025); --ac-06: rgba(255,255,255,.05); --ac-08: rgba(255,255,255,.065);
   --ac-12: rgba(255,255,255,.09); --ac-16: rgba(255,255,255,.11); --ac-20: rgba(255,255,255,.13); --ac-22: rgba(255,255,255,.15);
   --muted: var(--txl); --muted-2: var(--txm);
+}
+[data-theme="rivendell-light"] :is(.hudgrid > .shellcol:first-child, .hudgrid > div:last-child > div:last-child > div:last-child, .rcap > div:last-child) {
+  --panel3: #34503f; --panel2: #3a5548; --panel: #455e54;
+  --txb: #fbf8ef; --txh: #f1eee5; --tx: #e4e2d8; --txm: #cbccc1; --txd: #b1b6ab; --txf: #a4aa9f; --txl: #97a095; --txg: #6c7b70;
+  --acc: #d4b483; --accent-rgb: 212 180 131; --acc-on: #0f2a24; --ask: #e9c27a;
+  --ok: #6ccb8e; --warn: #e9c27a; --err: #e88b8b; --info: #8ab4ee; --purple: #c6a6e3;
+  --line: rgb(255 255 255 / 10%); --line2: rgb(255 255 255 / 16%);
+}
+/* SLACK's ink: white, then its night's ladder solved onto the aubergine at its lavender (_schemes.py) */
+[data-theme="slack-light"] :is(.hudgrid > .shellcol:first-child, .hudgrid > div:last-child > div:last-child > div:last-child, .rcap > div:last-child) {
+  --panel3: #471848; --panel2: #4c1f4d; --panel: #562b57;
+  --txb: #ffffff; --txh: #e5d6e6; --tx: #d6c8d7; --txm: #c7b9c8; --txd: #b8aab8; --txf: #a99caa; --txl: #9c8e9d; --txg: #6d616e;
+  --acc: #ecb22e; --accent-rgb: 236 178 46; --acc-on: #3f0e40; --ask: #36c5f0;
+  --ok: #2bac76; --warn: #ecb22e; --err: #f2547d; --info: #36c5f0; --purple: #d9bcd9;
+  --line: rgb(255 255 255 / 14%); --line2: rgb(255 255 255 / 20%);
 }
 /* the frame and the sheet */
 [data-fam="middle-earth"] .hudgrid { background: var(--side); padding: 8px 0; }
@@ -5626,7 +5649,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="middle-earth"] .projhead > span:nth-of-type(2) { font-size: var(--t13) !important; font-weight: 600 !important; color: var(--txb) !important; }
 [data-fam="middle-earth"] .projrail { border-left-color: transparent !important; margin-left: 4px !important; }
 [data-fam="middle-earth"] .ptile { border-radius: 6px; }
-:is(:root:not([data-light]), [data-theme="rivendell-light"]) [data-fam="middle-earth"] .hudgrid > .shellcol:first-child .ptile:not([data-kind="logo"]) {
+:is(:root:not([data-light]), [data-theme="rivendell-light"], [data-theme="slack-light"]) [data-fam="middle-earth"] .hudgrid > .shellcol:first-child .ptile:not([data-kind="logo"]) {
   color: color-mix(in oklab, var(--pc) 35%, white); background: color-mix(in oklab, var(--pc) 34%, var(--side));
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 40%, transparent);
 }

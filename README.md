@@ -217,7 +217,7 @@ on any other. The run never leaves your machine, and there's no app to install.
 Five themes, each in its own voice: AURORA, a phosphor CRT with its scanlines
 on their own switches; CLAUDE, the app's own warm greys; FLINT, a graphite
 editor; PEBBLE, a river stone worn round; MIDDLE-EARTH, Rivendell's own
-dashboard in its five schemes. Thirty colours between them, and daylight
+dashboard in its fifteen schemes. Forty colours between them, and daylight
 grounds for CLAUDE, FLINT, PEBBLE and MIDDLE-EARTH.
 You'll stare at it all day. It may as well look like something you chose.
 
