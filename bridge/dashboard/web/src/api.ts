@@ -852,8 +852,12 @@ export type AgentInfo = {
   tool_use_id: string;
   spawn_depth: number;
   status: "running" | "done";
+  /** Its first and last record (bridge/agents._summary), not the file's clock. */
   started_at: number;
   updated_at: number;
+  /** "opus" / "sonnet" / "haiku", null until its first reply. */
+  model: string | null;
+  tools: number;
 };
 export type WorkflowAgentInfo = {
   agent_id: string;
@@ -863,6 +867,8 @@ export type WorkflowAgentInfo = {
   status: "running" | "done";
   started_at: number;
   updated_at: number;
+  model: string | null;
+  tools: number;
 };
 export type WorkflowInfo = {
   run_id: string;
@@ -881,11 +887,11 @@ export type AgentsInfo = {
   agents: AgentInfo[];
   workflows: WorkflowInfo[];
 };
-export type AgentActivityEvent =
-  | { type: "text"; text: string }
-  | { type: "tool"; name: string; summary: string };
+/** One agent's run in the transcript's own shape (bridge/agents.agent_activity):
+ *  its brief is the turn's prompt, so the modal draws it with RunStream. */
 export type AgentActivity = {
-  events: AgentActivityEvent[];
+  turns: StoreTurn[];
+  events: StoreEvent[];
   next_cursor: number;
   status: "running" | "done";
   description: string;

@@ -1352,6 +1352,81 @@ input {
 /* Not `blink`: that goes to opacity 0, and a running mark flicking out reads as
    the row breaking rather than as a run still out. */
 @keyframes agbpulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.32; } }
+/* a plate's way into its run (RunStream AgentStat) */
+.agb-open {
+  appearance: none; margin-left: 10px; padding: 1px 8px; border: 1px solid var(--line2);
+  background: transparent; color: var(--txm); font: inherit; font-size: var(--t105); cursor: pointer;
+}
+.agb-open:hover { color: var(--acc); border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
+
+/* === THE AGENTS MODAL ======================================================
+   AgentsModal: the roster on the left, the picked agent's run on the right,
+   drawn by RunStream exactly as the chat draws a turn. It hosts a transcript,
+   so the families' small-dialog dress ([role=dialog] above) leaves it alone
+   and it wears its own, the Settings dialog's. */
+.agm-scrim { position: fixed; inset: 0; z-index: 96; display: grid; place-items: center;
+  background: var(--f-scrim); animation: backdropIn .2s ease both; }
+.agm { width: min(1240px, 94vw); height: min(860px, 92vh); display: flex; flex-direction: column;
+  background: var(--panel); border: 1px solid var(--line2); border-radius: calc(var(--f-rad-l) + 2px);
+  box-shadow: var(--f-modal-shadow); overflow: hidden; font-family: var(--ui-font); animation: mslide .2s ease both; }
+.agm-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 11px 12px 11px 18px; border-bottom: 1px solid var(--line); }
+.agm-title { font-size: var(--t13); font-weight: 600; color: var(--txb); letter-spacing: .01em; }
+[data-fam="aurora"] .agm-title { font-weight: 400; text-transform: uppercase; letter-spacing: .14em; }
+.agm-chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border: 1px solid var(--line2);
+  border-radius: 999px; color: var(--txm); font-size: var(--t105); font-variant-numeric: tabular-nums; flex: none; }
+.agm-chip[data-live] { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 38%, transparent);
+  background: color-mix(in srgb, var(--ok) 8%, transparent); }
+.agm-spin { font-family: var(--mono); width: 9px; text-align: center; }
+.agm-bar { flex: none; width: 96px; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.agm-bar > i { display: block; height: 100%; border-radius: 2px; background: var(--ok); transition: width .4s ease; }
+.agm-span { color: var(--txd); font-size: var(--t105); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.agm-esc { appearance: none; border: 1px solid var(--line2); background: transparent; color: var(--txm);
+  font: inherit; font-size: var(--t105); padding: 5px 10px; cursor: pointer; }
+.agm-esc:hover { background: var(--ac-08); }
+.agm-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 324px minmax(0, 1fr); }
+.agm-roster { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+.agm-filter { margin: 10px 10px 4px; display: flex; align-items: center; gap: 8px; padding: 0 9px;
+  border: 1px solid var(--line2); border-radius: var(--f-rad-s); background: var(--panel2); }
+.agm-filter input { flex: 1; min-width: 0; padding: 6px 0; border: 0; outline: 0; background: transparent;
+  color: var(--txb); font: inherit; font-size: var(--t115); }
+.agm-filter input::placeholder { color: var(--txd); }
+.agm-filter:focus-within { border-color: color-mix(in srgb, var(--acc) 55%, var(--line2)); }
+.agm-kbd { font-family: var(--mono); font-size: var(--t95); color: var(--txl); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; }
+.agm-list { flex: 1; min-height: 0; overflow: auto; padding: 0 6px 8px; }
+.agm-sec { display: flex; justify-content: space-between; padding: 12px 10px 5px; font-size: var(--t95);
+  letter-spacing: .07em; text-transform: uppercase; color: var(--txd); }
+.agm-row { appearance: none; display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 3px;
+  align-items: baseline; width: 100%; padding: 7px 10px 8px; border: 0; border-radius: var(--f-rad-s);
+  background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.agm-row:hover { background: var(--ac-08); }
+.agm-row[aria-selected="true"] { background: var(--f-you); box-shadow: inset 2px 0 0 var(--acc); }
+.agm-g { font-family: var(--mono); font-size: var(--t11); color: var(--ok); text-align: center; flex: none; width: 12px; }
+.agm-ring { display: inline-block; width: 7px; height: 7px; border-radius: 50%; border: 1.5px solid var(--txl); transform: translateY(-1px); }
+.agm-t { font-size: var(--t12); color: var(--tx); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agm-row:is([data-live], [aria-selected="true"]) .agm-t { color: var(--txh); }
+.agm-dur { font-size: var(--t105); color: var(--txd); font-variant-numeric: tabular-nums; }
+.agm-row[data-live] .agm-dur { color: var(--ok); }
+.agm-m { grid-column: 2 / 4; font-size: var(--t105); color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agm-none { padding: 14px 10px; font-size: var(--t11); font-style: italic; color: var(--txd); }
+.agm-keys { flex: none; display: flex; gap: 12px; padding: 8px 16px 10px; border-top: 1px solid var(--line);
+  font-size: var(--t95); color: var(--txl); }
+.agm-keys kbd { font-family: var(--mono); color: var(--txd); margin-right: 4px; }
+.agm-run { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.agm-rhead { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 20px 11px; border-bottom: 1px solid var(--line); }
+.agm-rt { font-size: var(--t13); font-weight: 600; color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agm-facts { flex: none; color: var(--txd); font-size: var(--t11); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.agm-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 22px 22px; }
+.agm-brief { margin: 0 0 14px; padding: 10px 14px 9px; border: 1px solid var(--line); border-radius: var(--f-rad); background: var(--panel); }
+.agm-bl { display: flex; gap: 8px; align-items: baseline; margin-bottom: 5px; font-family: var(--ui-font);
+  font-size: var(--t95); letter-spacing: .07em; text-transform: uppercase; color: var(--txd); }
+.agm-bl em { font-style: normal; text-transform: none; letter-spacing: 0; color: var(--txl); }
+/* the AGENT plate's voice (.agb-brief): a brief is an instruction spoken into a machine */
+.agm-bt { font-family: var(--d-face, var(--mono)); font-size: var(--t115); line-height: 1.55; font-style: italic;
+  color: var(--txm); white-space: pre-wrap; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.agm-brief[data-open] .agm-bt { display: block; }
+.agm-more { appearance: none; margin-top: 6px; padding: 0; border: 0; background: none; cursor: pointer;
+  font-family: var(--ui-font); font-size: var(--t105); color: var(--txd); }
+.agm-more:hover { color: var(--acc); }
 
 /* ── TOOL WIDGET ───────────────────────────────────────────────────────────
    A result's own structure, surfacing in the stream: the pages a search
@@ -3559,18 +3634,18 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    Popover exists), and all of them name --shadow-pop in their inline style —
    so that string is the selector. A new popover that follows the recipe is
    themed for free; one that doesn't is themed by nothing, and shows it. ── */
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]):not(.isle):not(.sessrow) {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)):not(.isle):not(.sessrow) {
   border: 1px solid var(--line2) !important; border-radius: var(--f-rad) !important;
   background: var(--panel) !important; box-shadow: var(--f-pop-shadow) !important;
   overflow: hidden; font-family: var(--ui-font);
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri):not(.nt-act) {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.nt-act) {
   border-bottom-color: transparent !important; font-family: var(--ui-font) !important; letter-spacing: 0 !important;
 }
-[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]) button:not(.drop-btn):not(.act-pri):not(.nt-act):hover {
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.nt-act):hover {
   background: var(--ac-08) !important;
 }
-[data-fam] :is([style*="--shadow-pop"], [role="dialog"]) [style*="acc) 10%"] { background: var(--f-you) !important; }
+[data-fam] :is([style*="--shadow-pop"], [role="dialog"]:not(.agm)) [style*="acc) 10%"] { background: var(--f-you) !important; }
 /* dialogs and modals: one step bigger, a scrim behind them */
 [data-fam] [style*="--shadow-modal"] {
   border: 1px solid var(--line2) !important; border-radius: calc(var(--f-rad-l) + 2px) !important; background: var(--panel) !important;

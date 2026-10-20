@@ -21,6 +21,53 @@ _completed_lock = threading.Lock()
 # its task id, and a SendMessage resume answers with the id it restarted.
 _TASK_DONE_RE = re.compile(r"<task-id>([A-Za-z0-9_]+)</task-id>")
 _RESUMED_RE = re.compile(r'"resumedAgentId"\s*:\s*"([A-Za-z0-9_]+)"')
+# Each agent's own file is read once per change for the roster's numbers; a
+# finished agent's file never changes again, so its poll is a stat.
+_summary_cache: "dict[str, tuple]" = {}     # jsonl path -> ((mtime, size), summary)
+_summary_lock = threading.Lock()
+
+
+def _summary(path: str) -> dict:
+    """What the roster says about one agent, off its own records: when it started
+    and last wrote — the records' timestamps, since st_ctime is the inode-change
+    time (= mtime) on macOS and Linux alike — its model, and how many tools it
+    called."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return {"started_at": 0.0, "updated_at": 0.0, "model": None, "tools": 0}
+    key = (st.st_mtime, st.st_size)
+    with _summary_lock:
+        ent = _summary_cache.get(path)
+        if ent and ent[0] == key:
+            return ent[1]
+    first = last = 0.0
+    model, tools = None, 0
+    try:
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(rec, dict):
+                    continue
+                if ts := transcript_jsonl._ts(rec):
+                    first, last = first or ts, ts
+                msg = rec.get("message")
+                if rec.get("type") == "assistant" and isinstance(msg, dict):
+                    m = msg.get("model") or ""
+                    if not model and m and not m.startswith("<"):   # "<synthetic>": an API error, no model
+                        model = transcript_jsonl._short_model(m)
+                    tools += sum(1 for b in msg.get("content") or []
+                                 if isinstance(b, dict) and b.get("type") == "tool_use")
+    except OSError:
+        pass
+    out = {"started_at": first or st.st_mtime, "updated_at": last or st.st_mtime,
+           "model": model, "tools": tools}
+    with _summary_lock:
+        _summary_cache[path] = (key, out)
+    return out
 
 
 def _texts(content) -> list[str]:
@@ -163,17 +210,12 @@ def _session_workflows(subagents_dir: str, alive: bool = True) -> list[dict]:
                     meta = json.load(fh)
             except (OSError, json.JSONDecodeError):
                 meta = {}
-            try:
-                st = os.stat(os.path.join(run_dir, agent_id + ".jsonl"))
-                started, updated = st.st_ctime, st.st_mtime
-            except OSError:
-                started = updated = 0.0
             sub.append({"agent_id": agent_id,
                         "agent_type": meta.get("agentType") or "workflow-subagent",
                         "description": meta.get("description") or "",
                         "run_id": run_id,
                         "status": status,          # sub-agents mirror the run
-                        "started_at": started, "updated_at": updated})
+                        **_summary(os.path.join(run_dir, agent_id + ".jsonl"))})
         sub.sort(key=lambda a: a["started_at"])
         out.append({"run_id": run_id,
                     "name": rec.get("workflowName") or run_id,
@@ -204,18 +246,13 @@ def session_agents(session: dict) -> dict:
         agent_id = os.path.basename(meta_path)[:-len(".meta.json")]
         tool_use_id = meta.get("toolUseId") or ""
         status = "done" if _finished(meta, agent_id, marks) or not alive else "running"
-        try:
-            st = os.stat(os.path.join(d, agent_id + ".jsonl"))
-            started, updated = st.st_ctime, st.st_mtime
-        except OSError:
-            started = updated = 0.0
         out.append({"agent_id": agent_id,
                     "agent_type": meta.get("agentType") or "agent",
                     "description": meta.get("description") or "",
                     "tool_use_id": tool_use_id,
                     "spawn_depth": meta.get("spawnDepth") or 1,
                     "status": status,
-                    "started_at": started, "updated_at": updated})
+                    **_summary(os.path.join(d, agent_id + ".jsonl"))})
     out.sort(key=lambda a: a["started_at"])
     workflows = _session_workflows(d, alive)
     wf_agents = [a for w in workflows for a in w["agents"]]
@@ -227,7 +264,11 @@ def session_agents(session: dict) -> dict:
 
 def agent_activity(session: dict, agent_id: str, cursor: int = 0,
                    workflow_id: str | None = None) -> dict:
-    empty = {"events": [], "next_cursor": cursor, "status": "done",
+    """One agent's run in the transcript's own shape ({turns, events, next_cursor},
+    transcript_jsonl.parse_jsonl over its sidechain file): its brief is the turn's
+    prompt and its calls carry their results, so the dashboard draws it with the
+    chat's renderer. `cursor` is the event seq, as for a session."""
+    empty = {"turns": [], "events": [], "next_cursor": cursor, "status": "done",
              "description": "", "agent_type": ""}
     if not _AGENT_ID_RE.match(agent_id or ""):
         return empty
@@ -243,51 +284,21 @@ def agent_activity(session: dict, agent_id: str, cursor: int = 0,
     jsonl = os.path.join(base, agent_id + ".jsonl")
     if os.path.dirname(os.path.realpath(jsonl)) != os.path.realpath(base):
         return empty                                      # traversal guard
+    if not os.path.isfile(jsonl):
+        return empty
     meta = {}
     try:
         with open(os.path.join(base, agent_id + ".meta.json"), encoding="utf-8") as fh:
             meta = json.load(fh)
     except (OSError, json.JSONDecodeError):
         pass
-    events: list[dict] = []
-    idx = 0
-    try:
-        with open(jsonl, encoding="utf-8", errors="replace") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                if idx < cursor:
-                    idx += 1
-                    continue
-                idx += 1
-                try:
-                    rec = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(rec, dict) or rec.get("type") != "assistant":
-                    continue
-                msg = rec.get("message") if isinstance(rec.get("message"), dict) else {}
-                for b in msg.get("content") or []:
-                    if not isinstance(b, dict):
-                        continue
-                    if b.get("type") == "text":
-                        txt = (b.get("text") or "").strip()
-                        if txt:
-                            events.append({"type": "text", "text": txt})
-                    elif b.get("type") == "tool_use":
-                        name = b.get("name", "tool")
-                        events.append({"type": "tool", "name": name,
-                                       "summary": transcript_jsonl._summarize_tool(
-                                           name, b.get("input", {}))})
-    except OSError:
-        return empty
+    run = transcript_jsonl.parse_jsonl(jsonl, cursor, sidechain=True)
     alive = _session_alive(session)
     if workflow_id:                                       # status follows the run
         status = _run_status(_workflow_records(d).get(workflow_id, {}), alive)
     else:
         status = ("done" if _finished(meta, agent_id, _finished_marks(session)) or not alive
                   else "running")
-    return {"events": events, "next_cursor": idx, "status": status,
+    return {**run, "status": status,
             "description": meta.get("description") or "",
             "agent_type": meta.get("agentType") or "agent"}
