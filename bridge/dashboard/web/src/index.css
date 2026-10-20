@@ -3968,7 +3968,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   .pb-tabs .np-tile, .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run), .pb-tabs > .ctrl-ctx, .pb-paused > button, .pb-place, .ctrl-ctx .seg i,
   .aim-fold, .aim-card, .aim-editor, .aim-f input, .aim-f select, .aim-sel, .aim-field, .aim-x, .aim-xic, .aim-xbtn, .aim-xaside, .aim-chip,
   .aim-chipbtn, .aim-note, .aim-search, .aim-hero, .aim-vfield, .aim-pills em, .aim-prof, .aim-addrow, .aim-segwrap > div, .aim-segwrap > div button,
-  .set-mini, .ps-rows, .ps-btn, .ps-pick, .ps-menu, .ps-opt, .ps-chip, .ps-av, .ps-name input) { border-radius: 0 !important; }
+  .set-mini, .ps-rows, .ps-btn, .ps-pick, .ps-menu, .ps-opt, .ps-chip, .ps-av, .ps-name input,
+  .prj-search, .prj-search kbd, .prj-clr, .prj-list, .prj-det, .prj-stats, .prj-input, .prj-rename input, .prj-bigtile, .prj-foldact) { border-radius: 0 !important; }
 [data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::before,
 [data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::after {
   content: ""; position: absolute; z-index: 1; width: 9px; height: 9px; pointer-events: none;
@@ -4023,7 +4024,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    multi-line button as a pill reads as a blob. ── */
 [data-fam="pebble"] :is(.sessrow, .sess-search, .projhead, .set-search, .set-close, .setrail button, .set-seg, .set-seg button,
   .set-seg2, .set-seg2 button, .setpane select, .act-glyph, .act-alt, .act-pri, .pb-plus,
-  .tp-pick, .tp-step, .tp-step button, .tp-row) { border-radius: 999px !important; }
+  .tp-pick, .tp-step, .tp-step button, .tp-row, .prj-search, .prj-input) { border-radius: 999px !important; }
 [data-fam="pebble"] .projgrp .sessrow { border-radius: 999px; }
 [data-fam="pebble"] .sessrow::before { display: none; }
 [data-fam="pebble"] .sessrow[data-on="true"] { background: color-mix(in oklab, var(--acc) 14%, var(--panel)) !important; box-shadow: none; }
@@ -4593,6 +4594,120 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ps-optname { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ps-k { margin-left: auto; font: 11px var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 45%; }
 .ps-lbl { font-size: 12.5px; color: var(--txd); white-space: nowrap; }
+
+/* ── SETTINGS ▸ Projects (ProjectsSettings): a list of every repo and, beside
+   it, the one you picked (.mystical/design-drafts/projects-tab, variant B).
+   Above 860px the page fills the pane and the two halves scroll on their own,
+   so a long list never pushes the picked project out of view (.prj-fill, set
+   by SettingsModal); narrower, they stack and the pane scrolls as usual. ── */
+.prj { --l: var(--line, var(--border)); --l2: var(--line2, var(--border-bright)); --f: var(--ui-font, inherit); font-family: var(--f); }
+.prj-tools { display: flex; align-items: center; gap: 10px; margin: 18px 0 12px; }
+.prj-search { flex: 1; min-width: 0; height: 34px; display: flex; align-items: center; gap: 9px; padding: 0 6px 0 11px; border-radius: 8px;
+  background: var(--panel2); border: 1px solid var(--l); color: var(--txl); cursor: text; }
+.prj-search:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--l)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
+.prj-search input { flex: 1; min-width: 0; height: 100%; border: 0; outline: none; background: none; padding: 0; font: 13px var(--f); color: var(--txb); }
+.prj-search input::placeholder { color: var(--txl); }
+.prj-search kbd { font: 11px var(--mono); color: var(--txl); border: 1px solid var(--l2); border-radius: 5px; padding: 0 5px; line-height: 17px; margin-right: 2px; }
+.prj-clr { appearance: none; cursor: pointer; border: 0; width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; color: var(--txd); background: var(--panel); }
+.prj-clr:hover { color: var(--txb); }
+.prj-show { display: flex; flex: none; height: 34px; }
+.prj-show button { appearance: none; cursor: pointer; border: 0; display: flex; align-items: center; gap: 6px; padding: 0 10px; white-space: nowrap; }
+.prj-show small { font: 11px var(--mono); color: var(--txl); }
+.prj-show button[data-on] small { color: var(--txm); }
+.prj .ps-riv { margin-bottom: 12px; }
+.prj-split { display: grid; grid-template-columns: 286px minmax(0, 1fr); gap: 12px; align-items: start; }
+.prj-list, .prj-det { border: 1px solid var(--l); border-radius: 12px; background: var(--panel); min-width: 0; }
+.prj-list { overflow: hidden auto; }
+.prj-grp + .prj-grp .prj-fold { border-top: 1px solid var(--l); }
+.prj-fold { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 4px; height: 30px; padding: 0 12px 0 6px;
+  background: color-mix(in oklab, var(--panel2) 55%, var(--panel)); }
+.prj-foldbtn { appearance: none; cursor: pointer; border: 0; background: none; color: inherit; font: 12px var(--f); text-align: left;
+  display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; height: 100%; padding: 0 4px; }
+.prj-foldbtn:disabled { cursor: default; }
+.prj-chev { color: var(--txd); flex: none; transition: transform .18s ease; }
+.prj-chev[data-open] { transform: rotate(90deg); }
+.prj-path { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--txl); }
+.prj-path i { font-style: normal; }
+.prj-path b { color: var(--txh); font-weight: 600; }
+.prj-n { font: 11px var(--mono); color: var(--txl); min-width: 16px; text-align: right; flex: none; }
+.prj-foldact { appearance: none; cursor: pointer; border: 0; background: none; padding: 2px 6px; border-radius: 6px; font: 500 11.5px var(--f); color: var(--txl); flex: none; opacity: 0; }
+.prj-fold:hover .prj-foldact, .prj-foldact:focus-visible { opacity: 1; }
+.prj-foldact:hover { color: var(--txb); background: var(--ac-06); }
+.prj-row { appearance: none; cursor: pointer; border: 0; background: none; color: inherit; width: 100%; text-align: left; user-select: none;
+  display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 12px 0 14px; font: 13px var(--f);
+  border-top: 1px solid color-mix(in oklab, var(--l) 60%, transparent); }
+.prj-row:hover { background: var(--ac-06); }
+.prj-row[data-on] { background: color-mix(in oklab, var(--acc) 13%, var(--panel)); box-shadow: inset 2px 0 0 var(--acc); }
+.prj-row .ptile { width: 20px; height: 20px; margin: 0; border-radius: 5px; font-size: 8.5px; }
+.prj-nm { font-weight: 500; color: var(--txh); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.prj-row[data-on] .prj-nm { color: var(--txb); }
+.prj-row[data-hidden] .prj-nm { color: var(--txl); font-weight: 400; }
+.prj-row[data-hidden] .ptile { opacity: .42; filter: grayscale(.6); }
+.prj-end { margin-left: auto; display: flex; align-items: center; flex: none; font: 11px var(--mono); color: var(--txl); }
+.prj-dot { display: inline-block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--ok); }
+.prj-dot[data-k="warn"] { background: var(--warn); }
+.prj-empty { padding: 16px 14px; font-size: 12.5px; line-height: 1.5; color: var(--txl); }
+.prj-empty button { appearance: none; cursor: pointer; border: 0; background: none; padding: 0; font: inherit; color: var(--acc); }
+/* the picked project */
+.prj-det { padding: 18px 20px 12px; }
+.prj-id { display: flex; align-items: center; gap: 14px; }
+.prj-bigtile { appearance: none; cursor: pointer; border: 0; background: none; padding: 2px; margin: -2px; border-radius: 13px; flex: none; display: grid; }
+.prj-bigtile:not(:disabled):hover { box-shadow: 0 0 0 1.5px var(--acc); }
+.prj-bigtile:disabled { cursor: default; }
+.prj-bigtile .ptile { width: 46px; height: 46px; margin: 0; border-radius: 11px; font-size: 16px; }
+.prj-idtext { min-width: 0; flex: 1; }
+.prj-name { appearance: none; cursor: text; border: 0; background: none; padding: 0; color: var(--txb); display: inline-flex; align-items: center; gap: 8px; max-width: 100%; }
+.prj-name:disabled { cursor: default; }
+.prj-name b { font: 600 18px var(--f); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.prj-name svg { color: var(--txl); flex: none; }
+.prj-name:hover svg { color: var(--acc); }
+.prj-rename { display: flex; align-items: center; gap: 8px; }
+.prj-rename input { font: 600 16px var(--f); color: var(--txb); background: var(--panel2); border: 1px solid var(--acc); border-radius: 7px; padding: 2px 8px;
+  min-width: 0; flex: 1; outline: none; box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 16%, transparent); }
+.prj-sub { display: flex; align-items: center; gap: 6px; margin-top: 2px; min-width: 0; overflow: hidden; font: 11.5px var(--mono); color: var(--txl); white-space: nowrap; }
+.prj-sub > span { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.prj-sub a { display: inline-flex; align-items: center; gap: 3px; color: var(--txd); text-decoration: none; min-width: 0; flex: 0 1 auto; overflow: hidden; }
+.prj-sub a:hover { color: var(--acc); }
+.prj-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); margin: 14px 0 4px; border: 1px solid var(--l); border-radius: 10px; background: var(--panel2); }
+.prj-stats > div { padding: 6px 12px 7px; min-width: 0; }
+.prj-stats > div + div { border-left: 1px solid var(--l); }
+.prj-stats small { display: block; font: 600 9.5px var(--f); letter-spacing: .1em; text-transform: uppercase; color: var(--txl); }
+.prj-stats b { display: flex; align-items: center; gap: 6px; font: 500 13.5px/20px var(--mono); color: var(--txh); white-space: nowrap; overflow: hidden; }
+.prj-stats b svg { color: var(--txl); flex: none; }
+.prj-field { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 4px 0; border-top: 1px solid color-mix(in oklab, var(--l) 70%, transparent); }
+.prj-stats + .prj-field { border-top: 0; }
+.prj-field > svg { color: var(--txl); }
+.prj-lbl { flex: 1; min-width: 0; }
+.prj-lbl b { display: block; font: 500 13px/18px var(--f); color: var(--txh); }
+.prj-lbl small { display: block; font-size: 11.5px; line-height: 16px; color: var(--txl); }
+.prj-field code { font: 11px var(--mono); color: var(--txd); }
+.prj-field .ps-pick { width: 214px; }
+.prj-input { width: 214px; height: 28px; flex: none; padding: 0 9px; border-radius: 7px; border: 1px solid var(--l); background: var(--panel2); outline: none;
+  font: 11.5px var(--mono); color: var(--txh); }
+.prj-input:focus { border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
+.prj-input::placeholder { color: var(--txl); }
+.prj-field .ps-tog:disabled { opacity: .4; cursor: default; }
+.prj-acts { display: flex; gap: 6px; flex: none; }
+.prj-err { margin-top: 8px; font-size: 12px; color: var(--err); }
+.prj-tip { margin-top: 6px; padding-top: 8px; border-top: 1px solid color-mix(in oklab, var(--l) 70%, transparent); font-size: 11.5px; color: var(--txl); }
+.prj-bulkhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.prj-bulkhead b { font: 600 18px var(--f); color: var(--txb); }
+.prj-tiles { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 8px; }
+.prj-tiles .ptile { width: 24px; height: 24px; margin: 0; border-radius: 6px; font-size: 9px; }
+@media (min-width: 861px) {
+  .setpane.prj-fill { display: flex; flex-direction: column; overflow: hidden !important; }
+  .prj-fill > .setpage { flex: 1; min-height: 0; width: 100%; display: flex; flex-direction: column; }
+  .prj-fill .set-head { flex: none; }
+  .prj-fill .prj { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .prj-fill .prj-split { flex: 1; min-height: 0; align-items: stretch; }
+  .prj-fill .prj-det { overflow: hidden auto; }
+}
+@media (max-width: 860px) {
+  .prj-split { grid-template-columns: minmax(0, 1fr); }
+  .prj-list { max-height: 45vh; }
+  .prj-tools { flex-wrap: wrap; }
+  .prj-field { flex-wrap: wrap; }
+}
 
 /* the composer's PROFILE menu (Composer ProfileRows; drafts/profile-menu): two
    lines a profile, the login's tile from the picker above, and the default

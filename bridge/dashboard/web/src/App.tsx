@@ -129,7 +129,8 @@ const railCount = (n: number) => (n > 99 ? "99+" : String(n));
 // Manage-projects choices survive a reload / bridge restart. HIDE is owned by
 // the bridge (project_config.json, GET/POST /local/project*), so it syncs across
 // browsers; the localStorage copy is only a cache for the pre-first-poll paint.
-// ponytail: remove/import stay per-browser — no bridge endpoint for them yet.
+// `removed` is what the retired ✕ REMOVE kept in this browser: read once, to
+// turn it into a hide, and no longer written.
 const MANAGE_KEY = "hud-project-manage";
 type ManagePrefs = { hidden: Record<string, boolean>; removed: Record<string, boolean> };
 
@@ -297,10 +298,9 @@ export function App() {
   }, []);
   const [toolsFor, setToolsFor] = useState<string | null>(null); // session id
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  // Manage-projects bookkeeping. TODO(phase2-data): the bridge has no
-  // remove/import endpoints, so those two persist client-side.
+  // Manage-projects bookkeeping (see MANAGE_KEY).
   const [hiddenProjects, setHiddenProjects] = useState<Record<string, boolean>>(() => loadManage().hidden);
-  const [removedProjects, setRemovedProjects] = useState<Record<string, boolean>>(() => loadManage().removed);
+  const [legacyRemoved] = useState(() => { const r = loadManage().removed; return Object.keys(r).filter((rel) => r[rel]); });
   // Git repos discovered on disk (org-folder nesting included) — so sessionless
   // projects still show up in the PROJECTS panel.
   const [discovered, setDiscovered] = useState<string[]>([]);
@@ -686,9 +686,12 @@ export function App() {
   }, [markBoot]);
 
   useEffect(() => {
-    try { localStorage.setItem(MANAGE_KEY, JSON.stringify({ hidden: hiddenProjects, removed: removedProjects })); }
+    try { localStorage.setItem(MANAGE_KEY, JSON.stringify({ hidden: hiddenProjects })); }
     catch { /* ignore */ }
-  }, [hiddenProjects, removedProjects]);
+  }, [hiddenProjects]);
+  // ✕ REMOVE is gone (SETTINGS ▸ Projects): what this browser removed is hidden
+  // instead, by the bridge, once. The write above already dropped the old list.
+  useEffect(() => { if (legacyRemoved.length) setHidden(legacyRemoved, true); }, [legacyRemoved]);
 
   // Disk discovery polls like the session list, so a repo cloned or created
   // after load appears on its own — no rescan button, no reload.
@@ -1785,11 +1788,10 @@ export function App() {
     return groups;
   }, [sessions, gitBadges, statusMap, activeProject, discovered, labelVersion, selected]);
 
-  // HIDE keeps a project out of the sidebar; REMOVE detaches it (design manage modal).
-  const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && !removedProjects[g.rel]);
+  // HIDE keeps a project out of the sidebar…
+  const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel]);
   // …and out of the left session list, whose RECENT tab reads the flat list.
-  const visibleSessions = sessions.filter(
-    (s) => !hiddenProjects[s.project] && !removedProjects[s.project]);
+  const visibleSessions = sessions.filter((s) => !hiddenProjects[s.project]);
 
   // Prompt state the session list flags, so work you left mid-flight is visible
   // from anywhere: a check still running, a card waiting on you, unsent text.
@@ -2738,14 +2740,14 @@ export function App() {
                 onOpenInspector={() => { setSettingsOpen(false); setInspectorOpen(true); }}
                 project={sessionProject}
                 projects={{
-                  groups: projectGroups.filter((g) => !removedProjects[g.rel]),
+                  groups: projectGroups,
                   hidden: hiddenProjects,
                   remotes: projectRemotes,
                   onSetHidden: setHidden,
-                  onRemove: (rel) => setRemovedProjects((p) => ({ ...p, [rel]: true })),
                   onRename: renameProject,
                   profiles: profilesAvailable ? profiles ?? undefined : undefined,
                   onSetProfile: setProjectProfile,
+                  onOpenDesign: (rel) => { setSettingsOpen(false); setSettingsTab(undefined); openAnalyze(rel, undefined, "design"); },
                 }}
                 onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
             )}

@@ -11,7 +11,7 @@ import {
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, type LucideIcon,
-  ChevronDown, ChevronRight, FileArchive, HardDriveDownload, HardDriveUpload, 
+  ChevronDown, ChevronRight, FileArchive, FolderGit2, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin,
 } from "lucide-react";
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
@@ -132,7 +132,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 export type Tab = "appearance" | "transcript" | "notifications"
-  | "aimgmt"
+  | "projects" | "aimgmt"
   | "integrations" | "system" | "move"
   | "mac";
 
@@ -140,7 +140,7 @@ export type Tab = "appearance" | "transcript" | "notifications"
  *  that still names one (a bookmark, an older bridge's bot button) opens the
  *  page on that fold rather than on nothing. PLUGINS became INTEGRATIONS:
  *  openSettings("plugins", id) still opens the Rivendell card on that instance. */
-const LEGACY_TAB: Record<string, string> = { projects: "PROJECTS", session: "PROFILES", accounts: "ACCOUNTS", mcp: "MCP SERVERS", ai: "MODEL-SPENDING EXTRAS" };
+const LEGACY_TAB: Record<string, string> = { session: "PROFILES", accounts: "ACCOUNTS", mcp: "MCP SERVERS", ai: "MODEL-SPENDING EXTRAS" };
 export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec: string | null } {
   if (t === "plugins") return { tab: "integrations", sec: "RIVENDELL" };
   if (t && t in LEGACY_TAB) return { tab: "aimgmt", sec: LEGACY_TAB[t] };
@@ -174,11 +174,15 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: isWinApp()
       ? "What only the Windows app can do: the window's title, the floating WAITING ON YOU panel, the Win+Ctrl+A summon, and rebuilding the app after an update."
       : "What only the Mac app can do: the window's title, the Dock icon, the floating WAITING ON YOU panel, and rebuilding the app after an update." },
-  // First under THE WORK: who runs a session and where. One page, five folds —
-  // it was five tabs (PROJECTS, SESSION, MCP, ACCOUNTS, AI) that each held a
-  // piece of the same question, and the sidebar's SKILLS panel besides.
-  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · skills · mcp · profile · projects", icon: KeyRound, group: "THE WORK",
-    about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills, extras and MCP servers they can reach, the default profile, and which one each project starts with." },
+  // First under THE WORK: where the work happens. It was the last fold of AI
+  // MANAGEMENT, where a long list of repos had to share a page with logins.
+  { key: "projects", label: "PROJECTS", hint: "names · marks · sidebar", icon: FolderGit2, group: "THE WORK",
+    about: "Every repo the bridge can run in, and what each keeps for itself: its name and mark, the profile its sessions start on, whether the sidebar lists it, its run command, design link and lessons." },
+  // Who runs a session. One page, four folds — it was tabs (SESSION, MCP,
+  // ACCOUNTS, AI) that each held a piece of the same question, and the
+  // sidebar's SKILLS panel besides.
+  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · skills · mcp · profile", icon: KeyRound, group: "THE WORK",
+    about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills, extras and MCP servers they can reach, and the default profile." },
   { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", icon: Waypoints, group: "THE WORK",
     about: "Other systems the bridge does work for. Each one ships with Mystical but stays silent until you install it: no tab, no card, no rows, no worker." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
@@ -224,7 +228,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "aimgmt", sec: "SKILLS", terms: "skills skill catalog install plugin marketplace SKILL.md system project" },
-  { tab: "aimgmt", sec: "PROJECTS", terms: "manage projects hide remove import repository repo detach sidebar name rename label default profile" },
+  { tab: "projects", sec: "PROJECTS", terms: "manage projects hide show sidebar repository repo folder name rename label mark logo icon default profile starts with run command design system lessons" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
   { tab: "move", sec: "WHAT GOES", terms: "move export import migrate new machine laptop transfer backup restore tar file" },
@@ -2861,10 +2865,10 @@ function MiniBtn({
 // ---- AI MANAGEMENT ----------------------------------------------------------
 // One page for who runs a session and where: ACCOUNTS (the logins, each with
 // the profiles bound to it, and the other agents), SKILLS (with the extras
-// that spend model calls), MCP, DEFAULT PROFILE (and what a session gets
-// without one) and PROJECTS — five folds, all shut until you open one, each
-// remembered per browser. It replaced five tabs that each held a piece of the
-// same question, and the sidebar's SKILLS panel.
+// that spend model calls), MCP and DEFAULT PROFILE (and what a session gets
+// without one) — four folds, all shut until you open one, each remembered per
+// browser. It replaced tabs that each held a piece of the same question, and
+// the sidebar's SKILLS panel. PROJECTS was a fifth fold; it is its own tab now.
 
 /** The login list and its actions, shared by the ACCOUNTS fold and the
  *  profile editor's LOGIN picker. */
@@ -3125,8 +3129,18 @@ function AimFold({ id, title, hint, count, right, secs, defaultOpen = false, ope
   );
 }
 
+/** SETTINGS ▸ Projects, with the logins its profile pickers name. */
+function ProjectsPage({ projects, current, onAccountsChanged }: {
+  projects: ProjectsSettingsProps;
+  current: string | null;
+  onAccountsChanged: () => void;
+}) {
+  const acc = useAccounts(onAccountsChanged);
+  return <ProjectsSettings {...projects} logins={acc.rows ?? []} current={current} />;
+}
+
 function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, profilesAvailable, profilesError,
-  onProfilesChanged, onAccountsChanged, projects, project, openSec }: {
+  onProfilesChanged, onAccountsChanged, project, openSec }: {
   settings: HudSettings;
   onPatch: (patch: Partial<HudSettings>) => void;
   models: { id: string; label: string }[];
@@ -3136,7 +3150,6 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   profilesError: string | null;
   onProfilesChanged: () => void;
   onAccountsChanged: () => void;
-  projects: ProjectsSettingsProps;
   project: string | null;
   openSec: string | null;
 }) {
@@ -3391,10 +3404,6 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
       <AimFold id="defprofile" title="Default profile" secs={["PROFILES", "RUN DEFAULTS"]} openSec={openSec}
         count={defaultName ?? (profilesAvailable ? "the first login's" : null)} hint="what a session gets unless its project names one">
         {profilesBody}
-      </AimFold>
-      <AimFold id="projects" title="Projects" secs={["PROJECTS"]} openSec={openSec}
-        count={`${projects.groups.length} repo${projects.groups.length === 1 ? "" : "s"}`} hint="which profile each starts with · rename, hide, import">
-        <ProjectsSettings {...projects} logins={acc.rows ?? []} />
       </AimFold>
     </div>
   );
@@ -4171,7 +4180,7 @@ export function SettingsModal(props: SettingsModalProps) {
             ))}
           </div>
 
-          <div ref={pane} className="mscroll mcol setpane" style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
+          <div ref={pane} className={`mscroll mcol setpane${shown === "projects" ? " prj-fill" : ""}`} style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
             {/* Keyed on the page, so a new category remounts and its entrance
                 runs again (.setpage in index.css). Search is a page too. */}
             <div key={shown} className="setpage">
@@ -4425,11 +4434,13 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "notifications" && <NotifyPanel settings={settings} onPatch={onPatch} />}
 
+            {shown === "projects" && <ProjectsPage projects={projects} current={project} onAccountsChanged={onAccountsChanged} />}
+
             {shown === "aimgmt" && (
               <AiManagementPanel settings={settings} onPatch={onPatch} models={models} sessionTools={sessionTools}
                 profiles={profiles} profilesAvailable={profilesAvailable} profilesError={profilesError}
                 onProfilesChanged={onProfilesChanged} onAccountsChanged={onAccountsChanged}
-                projects={projects} project={project} openSec={jump?.sec ?? startSec} />
+                project={project} openSec={jump?.sec ?? startSec} />
             )}
             {shown === "integrations" && <IntegrationsPanel />}
             {shown === "move" && <MovePanel />}
