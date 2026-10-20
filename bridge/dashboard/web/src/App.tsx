@@ -2584,7 +2584,7 @@ export function App() {
                     ended={turns.find((t) => t.id === selected.id)?.events.at(-1)?.at} />
                 ) : selected && isTeam(selected.origin) ? (
                   // A session a teammate sent: read only, so the bar stands where the composer would.
-                  <TeamBar key={selected.id} s={selected}
+                  <TeamBar key={selected.id} s={selected} src={team?.roster.find((p) => p.id === selected.team?.from.id)?.avatarUrl}
                     onContinue={() => { if (selected.team) void continueShare(selected.team.share); }}
                     onDismiss={() => { if (selected.team) void dismissShare(selected.team.share, true); }} />
                 ) : (
