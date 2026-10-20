@@ -2224,6 +2224,11 @@ input {
 [data-style="dossier"] .dwork-row-thumbs figcaption {
   font-size: var(--t85); color: var(--txf); max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+/* a mouse drags the row (ShotRow): an open hand between the tiles, a closed one
+   while it moves (over a tile's zoom-in too), and no name gets selected on the way */
+[data-style="dossier"] .dwork-row-thumbs { cursor: grab; user-select: none; }
+[data-style="dossier"] .dwork-row-thumbs[data-drag],
+[data-style="dossier"] .dwork-row-thumbs[data-drag] * { cursor: grabbing !important; }
 /* The lightbox's strip (ImageLightbox Filmstrip): the open picture wears an
    accent ring off a 2px gap, with a glow; the rest sit back at 55% and come up
    on hover, and both ease. Corners are the family's button corners. */

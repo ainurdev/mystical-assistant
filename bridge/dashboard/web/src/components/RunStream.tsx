@@ -1021,7 +1021,8 @@ function WorkChapter({ n, at, title, steps, span, failed, pics, live, rows }: {
 /** The shut plate's pictures, one row of equal tiles (index.css .dwork-row).
  *  It opens on the newest and glides to each picture that lands, even when you
  *  had scrolled back. A side holding pictures out of view fades under their
- *  count, which wears the accent while one of them is unseen; a tap pages that way. */
+ *  count, which wears the accent while one of them is unseen; a tap pages that way.
+ *  A mouse drags it sideways, and let go while moving it flies on, slowing. */
 function ShotRow({ pics, shut, label, onOpen }: {
   pics: Pic[];
   /** The zone is shut, so the row is the part on screen. */
@@ -1045,6 +1046,30 @@ function ShotRow({ pics, shut, label, onOpen }: {
     }
     setEdge((o) => (o.l === l && o.r === r ? o : { l, r }));
   };
+  // One glide moves the row for the wheel, a fling, a pill and a picture
+  // landing, so a wheel notch eases over instead of jumping 40px: it closes on
+  // its goal, most of the way in about `tau` ms, and a new aim moves the goal.
+  const g = useRef({ goal: 0, pos: 0, t: 0, tau: 120, raf: 0 });
+  const stop = () => { cancelAnimationFrame(g.current.raf); g.current.raf = 0; };
+  const aim = () => (g.current.raf ? g.current.goal : row.current?.scrollLeft ?? 0);
+  const glide = (left: number, tau = 120) => {
+    const el = row.current, s = g.current;
+    if (!el) return;
+    s.goal = Math.max(0, Math.min(left, el.scrollWidth - el.clientWidth));
+    s.tau = tau;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { stop(); el.scrollLeft = s.goal; return; }
+    if (s.raf) return;
+    s.pos = el.scrollLeft;
+    s.t = performance.now();
+    const step = (now: number) => {
+      s.pos += (s.goal - s.pos) * (1 - Math.exp(-Math.max(0, now - s.t) / s.tau));
+      s.t = now;
+      const done = Math.abs(s.goal - s.pos) < 0.5;
+      el.scrollLeft = done ? s.goal : s.pos;
+      s.raf = done ? 0 : requestAnimationFrame(step);
+    };
+    s.raf = requestAnimationFrame(step);
+  };
   // Drawn (mounted, or the zone shut again) it jumps to its end; a picture
   // landing while it shows glides it there.
   const was = useRef({ n: 0, shut: false });
@@ -1052,8 +1077,8 @@ function ShotRow({ pics, shut, label, onOpen }: {
     const el = row.current, w = was.current;
     was.current = { n: pics.length, shut };
     if (!el || !shut) return;
-    const glide = w.shut && pics.length > w.n && !matchMedia("(prefers-reduced-motion: reduce)").matches;
-    el.scrollTo({ left: el.scrollWidth, behavior: glide ? "smooth" : "auto" });
+    if (w.shut && pics.length > w.n) glide(el.scrollWidth);
+    else { stop(); el.scrollLeft = el.scrollWidth; }
     measure();
   }, [pics.length, shut]);
   useEffect(() => {
@@ -1064,10 +1089,12 @@ function ShotRow({ pics, shut, label, onOpen }: {
     // A vertical wheel moves the row while it has room that way, and at either
     // end goes on to the transcript. By hand: React's wheel listener is passive.
     const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
-      if (e.deltaY < 0 ? el.scrollLeft <= 0 : el.scrollLeft >= el.scrollWidth - el.clientWidth - 1) return;
+      // a sideways swipe scrolls it natively
+      if (e.ctrlKey || Math.abs(e.deltaX) >= Math.abs(e.deltaY)) { stop(); return; }
+      const at = aim();
+      if (e.deltaY < 0 ? at <= 0 : at >= el.scrollWidth - el.clientWidth - 1) return;
       e.preventDefault();
-      el.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+      glide(at + e.deltaY * (e.deltaMode === 1 ? 16 : 1));
     };
     const ro = new ResizeObserver(onScroll);
     ro.observe(el);
@@ -1076,20 +1103,59 @@ function ShotRow({ pics, shut, label, onOpen }: {
     return () => {
       ro.disconnect();
       cancelAnimationFrame(raf);
+      stop();
       el.removeEventListener("scroll", onScroll);
       el.removeEventListener("wheel", onWheel);
     };
   }, []);
+  // A mouse drags the row: a press that moves 5px is a drag, not a tap, and
+  // the click its release makes opens nothing. Touch and pens pan it natively.
+  const drag = useRef<{ id: number; x: number; left: number; t: number; v: number } | null>(null);
+  const dragged = useRef(false);
+  const [grabbing, setGrabbing] = useState(false);
+  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    const el = e.currentTarget;
+    // the scrollbar under the tiles keeps its own drag
+    if (e.pointerType !== "mouse" || e.button !== 0 || e.clientY > el.getBoundingClientRect().top + el.clientTop + el.clientHeight) return;
+    stop();
+    dragged.current = false;
+    drag.current = { id: e.pointerId, x: e.clientX, left: el.scrollLeft, t: e.timeStamp, v: 0 };
+  };
+  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current, el = e.currentTarget;
+    if (d?.id !== e.pointerId) return;
+    if (!dragged.current) {
+      if (Math.abs(e.clientX - d.x) < 5) return;
+      dragged.current = true;
+      el.setPointerCapture(e.pointerId);
+      setGrabbing(true);
+    }
+    stop();
+    const from = el.scrollLeft;
+    el.scrollLeft = d.left - (e.clientX - d.x);
+    // its speed in px/ms, smoothed over the last few moves, for the fling
+    if (e.timeStamp > d.t) d.v = 0.7 * ((el.scrollLeft - from) / (e.timeStamp - d.t)) + 0.3 * d.v;
+    d.t = e.timeStamp;
+  };
+  const onUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (d?.id !== e.pointerId) return;
+    drag.current = null;
+    if (!dragged.current) return;
+    setGrabbing(false);
+    setTimeout(() => { dragged.current = false; });
+    // Let go while moving, it flies on, slowing: starting at the hand's speed,
+    // it covers speed × tau. Reduced motion stops where you let go.
+    if (e.type === "pointerup" && e.timeStamp - d.t < 60 && !matchMedia("(prefers-reduced-motion: reduce)").matches)
+      glide(e.currentTarget.scrollLeft + d.v * 325, 325);
+  };
   const more = (side: "l" | "r") => {
     const n = edge[side];
     if (!n) return null;
     const fresh = (side === "l" ? pics.slice(0, n) : pics.slice(-n)).filter((p) => p.unseen).length;
     const words = `${n} more picture${n === 1 ? "" : "s"} to the ${side === "l" ? "left" : "right"}${fresh ? `, ${fresh} not seen yet` : ""}`;
     // A rowful, less one tile (96px and its 10px gap), so you keep your place.
-    const page = () => row.current?.scrollBy({
-      left: (side === "l" ? -1 : 1) * (row.current.clientWidth - 106),
-      behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
-    });
+    const page = () => glide(aim() + (side === "l" ? -1 : 1) * ((row.current?.clientWidth ?? 0) - 106));
     return (
       <button type="button" className="dwork-more" data-side={side} data-lit={fresh ? "" : undefined} onClick={page} title={words} aria-label={words}>
         {side === "l" ? <><ChevronLeft size={11} strokeWidth={2.4} aria-hidden />{n}</> : <>{n}<ChevronRight size={11} strokeWidth={2.4} aria-hidden /></>}
@@ -1098,7 +1164,10 @@ function ShotRow({ pics, shut, label, onOpen }: {
   };
   return (
     <div className="dwork-row">
-      <div ref={row} className="dwork-row-thumbs" role="group" aria-label={label}>
+      <div ref={row} className="dwork-row-thumbs" role="group" aria-label={label} data-drag={grabbing ? "" : undefined}
+        onPointerDown={onDown} onPointerMove={onMove} onPointerUp={onUp} onPointerCancel={onUp} onLostPointerCapture={onUp}
+        onClickCapture={(e) => { if (dragged.current) { e.stopPropagation(); e.preventDefault(); } }}
+        onDragStart={(e) => e.preventDefault()}>
         {pics.map((p) => {
           const src = api.attachmentUrl(p.path);
           return (
