@@ -897,3 +897,124 @@ def test_a_run_that_picks_nothing_keeps_the_last_undo(base, offline):
     assert len(projectmarks.pick_all()["picked"]) == 1
     assert projectmarks.pick_all() == {"picked": [], "none": []}          # pressed again: nothing left to pick
     assert projectmarks.undo_picks() == {"undone": 1} and project_config.mark(rel) is None
+
+
+# --- the logo stylist (bridge/logostyle.py runs it) ----------------------------
+
+def _cands(rel):
+    return next(p for p in projectmarks.style_candidates()["projects"] if p["rel"] == rel)
+
+
+def test_style_candidates_offer_what_it_wears_its_frontend_and_its_pictures_once(base):
+    front = repo(base, "mono/unideck", {"public/icon.svg": svg(1), "src/logo-text.svg": svg(2)})
+    back = repo(base, "mono/unideck-api", {"README.md": b"# Unideck API\n\nThe deck's backend.\n"})
+    app = repo(base, "app", {"public/favicon.svg": svg(3), "web/public/favicon.svg": svg(3), "src/logo.svg": svg(4)})
+    mine = repo(base, "mine", {"public/icon.svg": svg(5)})
+    projectmarks.set_mark(mine, {"kind": "icon", "icon": "receipt"})
+    got = projectmarks.style_candidates()
+    assert got["yours"] == [mine] and {p["rel"] for p in got["projects"]} == {front, back, app}
+    assert _cands(app)["cands"] == [
+        {"id": "c1", "logo": named(svg(3)), "src": "now", "path": "public/favicon.svg"},
+        {"id": "c2", "logo": named(svg(4)), "src": "repo", "path": "src/logo.svg"}]       # the copy counts once
+    assert _cands(back)["cands"] == [{"id": "c1", "logo": named(svg(1)), "src": "frontend", "from": front}]
+    assert _cands(back)["about"] == "Unideck API — The deck's backend." and _cands(back)["wears"] == "letters"
+    assert _cands(front)["wears"] == "auto" and _cands(front)["name"] == "unideck"
+    assert got["sig"] == projectmarks.style_candidates()["sig"]                          # stable while nothing moves
+
+
+def test_style_candidates_stop_at_eight(base):
+    repo(base, "big", {f"public/icon-{n}.png": png(n) for n in range(1, 13)})
+    assert len(projectmarks.style_candidates()["projects"][0]["cands"]) == projectmarks.STYLE_CANDS == 8
+
+
+def test_the_stylist_wears_a_repo_icon_over_rivendells_wordmark_and_refresh_leaves_it(base, riv):
+    rel = repo(base, "ib", {"apps/mobile/assets/icon.png": png(1)})
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "repositories": ["acme/ib"],
+                        "client": client("ib", logo="https://s3/ib.svg", color="#000000")}]
+    riv["local"] = {rel: {"acme/ib"}}
+    riv["logos"] = {"https://s3/ib.svg": SVG}
+    projectmarks.import_all()
+    wordmark = project_config.mark(rel)["logo"]
+    projectmarks.set_mark(rel, {"kind": "logo", "logo": wordmark, "color": "#000000", "plate": "light"})
+    p = _cands(rel)
+    assert p["wears"] == "rivendell" and [c["src"] for c in p["cands"]] == ["now", "repo"]
+    got = projectmarks.apply_style(rel, p["cands"][1], plate="auto", color="#3168d0", why="its own app icon", run="r1")
+    assert got["how"] == ["logo", "background", "colour"] and got["before"]["logo"] == wordmark
+    assert project_config.mark(rel) == {"kind": "logo", "repo": "apps/mobile/assets/icon.png", "color": "#3168d0",
+                                         "source": "style", "styled": "its own app icon"}
+    assert projectmarks.logo(wordmark) is not None                    # the wordmark waits for Undo
+    projectmarks.refresh()
+    assert project_config.mark(rel)["source"] == "style"               # Rivendell's refresh leaves the pick
+    assert _cands(rel)["wears"] == "style"                              # and the next run may redo it
+    assert projectmarks.undo_style() == {"undone": 1}
+    back = project_config.mark(rel)
+    assert back["source"] == "rivendell" and back["logo"] == wordmark and back["plate"] == "light"
+
+
+def test_keeping_rivendells_logo_keeps_following_and_its_colour_rides_over_refresh(base, riv):
+    rel = repo(base, "efas", {"public/favicon.svg": svg(1)})
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "repositories": ["acme/efas"],
+                        "client": client("efas", logo="https://s3/e.svg", color="#234b3f")}]
+    riv["local"] = {rel: {"acme/efas"}}
+    riv["logos"] = {"https://s3/e.svg": SVG}
+    projectmarks.import_all()
+    now = _cands(rel)["cands"][0]
+    got = projectmarks.apply_style(rel, now, plate="none", color="#3f8f75", why="its own mark", run="r1")
+    assert got["how"] == ["background", "colour"]
+    for _ in range(2):                                                  # as written, then after a refresh
+        m = project_config.mark(rel)
+        assert (m["source"], m["color"], m["plate"], m["styled"]) == ("rivendell", "#3f8f75", "none", "its own mark")
+        projectmarks.refresh()
+    # a background changed by hand on it is still only a background: it keeps following
+    projectmarks.set_mark(rel, {"kind": "logo", "logo": m["logo"], "color": "#3f8f75", "plate": "light"})
+    assert project_config.mark(rel)["source"] == "rivendell"
+
+
+def test_the_stylist_names_an_icon_when_nothing_is_the_projects_own(base):
+    rel = repo(base, "yggdrasil", {"raw/brand/elvou/elvou-app-icon.png": png(1)})
+    got = projectmarks.apply_style(rel, None, icon="tree-deciduous", color="#57ab5a", why="a world tree", run="r1")
+    assert got["how"] == ["icon", "colour"]
+    assert project_config.mark(rel) == {"kind": "icon", "icon": "tree-deciduous", "color": "#57ab5a",
+                                         "source": "style", "styled": "a world tree"}
+
+
+def test_keeping_its_own_icon_stores_it_by_path_with_its_colour(base):
+    rel = repo(base, "osanwe", {"apps/web/public/favicon.svg": svg(1)})
+    got = projectmarks.apply_style(rel, _cands(rel)["cands"][0], plate="auto", color="#0b57d0", why="blue", run="r1")
+    assert got["how"] == ["colour"]
+    assert project_config.mark(rel) == {"kind": "logo", "repo": "apps/web/public/favicon.svg", "color": "#0b57d0",
+                                         "source": "style", "styled": "blue"}
+    assert projectmarks.marks([rel])[rel]["logo"] == named(svg(1))
+
+
+def test_an_answer_that_changes_nothing_writes_nothing(base):
+    rel = repo(base, "app", {"public/icon.svg": svg(1)})
+    assert projectmarks.apply_style(rel, _cands(rel)["cands"][0], plate="auto", why="right", run="r1")["how"] == []
+    assert project_config.mark(rel) is None
+
+
+def test_a_backend_takes_a_copy_of_its_frontends_logo(base):
+    repo(base, "mono/unideck", {"public/icon.svg": svg(1)})
+    back = repo(base, "mono/unideck-api", {"README.md": b"x"})
+    got = projectmarks.apply_style(back, _cands(back)["cands"][0], color="#3757f9", why="its frontend's", run="r1")
+    assert got["how"] == ["logo", "colour"]
+    m = project_config.mark(back)
+    assert m["source"] == "style" and projectmarks.logo(m["logo"]) == (svg(1), "image/svg+xml")
+
+
+def test_undo_style_puts_back_only_what_is_still_as_styled(base):
+    a, b = repo(base, "a", {"public/icon.svg": svg(1)}), repo(base, "b", {"public/icon.svg": svg(2)})
+    for rel in (a, b):
+        projectmarks.apply_style(rel, _cands(rel)["cands"][0], color="#112233", why="x", run="r1")
+    projectmarks.set_mark(b, {"kind": "icon", "icon": "car"})           # changed by hand since: yours
+    assert projectmarks.style_candidates()["yours"] == [b]
+    assert projectmarks.undo_style(a) == {"undone": 1} and project_config.mark(a) is None
+    assert projectmarks.undo_style() == {"undone": 0} and project_config.mark(b) == {"kind": "icon", "icon": "car"}
+
+
+def test_a_new_run_starts_a_new_undo(base):
+    a = repo(base, "a", {"public/icon.svg": svg(1)})
+    projectmarks.apply_style(a, _cands(a)["cands"][0], color="#112233", why="x", run="r1")
+    projectmarks.apply_style(a, _cands(a)["cands"][0], color="#445566", why="y", run="r2")
+    projectmarks.undo_style()
+    assert project_config.mark(a)["color"] == "#112233"                  # what r2 found, not what r1 did

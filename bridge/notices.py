@@ -69,6 +69,8 @@ CATALOG = {
     "pr_changes": ("pr", "news", "pr"),
     "move_done": ("bridge", "news", "bridge"),
     "move_failed": ("bridge", "news", "bridge"),
+    "styled": ("bridge", "news", "bridge"),         # STYLE WITH AI finished (logostyle.py)
+    "style_failed": ("bridge", "news", "bridge"),
     "weekly": ("weekly", "fyi", "bridge"),
     "updated": ("updates", "news", "bridge"),
     "note": ("updates", "news", "bridge"),
@@ -84,7 +86,7 @@ VERBS = {
     "rv_refused": "REFUSED", "rv_link": "LINK DOWN", "rv_link_back": "LINK BACK",
     "rv_brief": "BRIEF READY", "team_in": "SENT YOU",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
-    "move_failed": "MOVE FAILED", "weekly": "WEEKLY REPORT",
+    "move_failed": "MOVE FAILED", "styled": "STYLED", "style_failed": "STYLE FAILED", "weekly": "WEEKLY REPORT",
     "updated": "UPDATED", "note": "NOTE",
 }
 _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED"}

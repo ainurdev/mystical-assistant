@@ -35,7 +35,7 @@ import re
 from bridge import (acp_agents, agents, attribution, browser, config,
                     device_ask, device_setup, device_share, device_side, device_view,
                     devserver, fmt, git,
-                    github, graphmap, httpgz, integrations,
+                    github, graphmap, httpgz, integrations, logostyle,
                     models, native, notices, preview_detect, profiles, project_config, projectmarks,
                     prstatus,
                     pubsub, queue_manager, relevance, report, rivendell,
@@ -447,6 +447,12 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json({"images": projectmarks.repo_images(browser.rel(abs_p))})
+        if path == "/local/project-mark/style":
+            # STYLE WITH AI's run: its answers so far, for the Projects page and the bell.
+            return self._json(logostyle.state())
+        if path == "/local/project-mark/style/candidates":
+            # What the page draws on the contact sheet (bridge/projectmarks.py).
+            return self._json(projectmarks.style_candidates())
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
@@ -461,7 +467,9 @@ class Handler(BaseHTTPRequestHandler):
                 pass
             snap = runner.running_snapshot(chat)
             return self._json({**snap, "watched": _watched(qs),
-                               "needs": notices.needs(snap.get("status") or {})})
+                               "needs": notices.needs(snap.get("status") or {}),
+                               # STYLE WITH AI while it runs: the bell's live row.
+                               "styling": logostyle.live()})
         if path == "/local/notices":
             return self._json({"notices": notices.feed(), "prefs": notices.prefs(),
                                "quiet": notices.quiet(),
@@ -1637,6 +1645,27 @@ class Handler(BaseHTTPRequestHandler):
             if act == "undo":
                 return self._json(projectmarks.undo_picks())
             return self._json({"error": "action must be pick or undo"}, 400)
+        if path == "/local/project-mark/style":
+            # STYLE WITH AI: start a run over the page's contact sheet, stop it, or undo it (bridge/logostyle.py).
+            act = body.get("action")
+            if act == "start":
+                try:
+                    return self._json(logostyle.start(body.get("sheet") or "", str(body.get("sig") or "")))
+                except ValueError as e:
+                    return self._json({"error": str(e)}, 400)
+                except RuntimeError as e:
+                    return self._json({"error": str(e)}, 409)
+            if act == "stop":
+                return self._json(logostyle.stop())
+            if act == "undo":
+                rel = None
+                if body.get("project"):
+                    abs_p = _abs_project(body.get("project"))
+                    if abs_p is None:
+                        return self._json({"error": "invalid project"}, 400)
+                    rel = browser.rel(abs_p)
+                return self._json(projectmarks.undo_style(rel))
+            return self._json({"error": "action must be start, stop or undo"}, 400)
         if path == "/local/rivendell/marks":
             act = body.get("action")
             if act == "import":

@@ -75,7 +75,7 @@ def test_the_registry_covers_every_model_call_the_bridge_makes():
     don't delete this line."""
     assert set(KEYS) == {"title", "relevance", "nextup", "preview", "commitmsg",
                          "learn", "dream", "ponytail", "graph",
-                         "tasks", "rvtrack", "changelog"}
+                         "tasks", "rvtrack", "changelog", "logostyle"}
 
 
 def test_shipped_defaults_are_off_for_anything_automatic():
@@ -93,7 +93,8 @@ def test_shipped_defaults_are_off_for_anything_automatic():
                "PREVIEW_DETECT_AI": "0", "COMMIT_MSG_AI": "1", "LEARN_ENABLE": "0",
                "DREAM_ENABLE": "0",
                "PONYTAIL_ENABLE": "1", "GRAPH_ENABLE": "1",
-               "TASKS_DIGEST": "1", "RIVENDELL_TRACK": "1", "CHANGELOG_ENABLE": "1"}
+               "TASKS_DIGEST": "1", "RIVENDELL_TRACK": "1", "CHANGELOG_ENABLE": "1",
+               "LOGO_STYLE_AI": "1"}
     assert set(shipped) == {f["env"] for f in aifeatures.FEATURES}
     for var, default in shipped.items():
         assert f'os.environ.get("{var}", "{default}")' in src, f"{var} ships wrong"

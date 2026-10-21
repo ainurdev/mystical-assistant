@@ -47,6 +47,16 @@ gains later. Spec: docs/superpowers/specs/logo-picker.md.
 A logo with no stored background is AUTO: the browser plates it only where it
 would vanish into the ground (lib/logoinfo.ts). "none" pins it bare.
 
+STYLE WITH AI (bridge/logostyle.py) asks a model instead, over every project
+but a mark you set: style_candidates() lists what each could wear (what it
+wears now, its frontend's logo, its repo's pictures) and apply_style() writes
+each answer, with a background and a colour. A pick it makes is "style": the
+next run may redo it, Rivendell's refresh leaves it alone (it weighed
+Rivendell's logo and chose another), and a change by hand makes it yours. Where
+it kept Rivendell's logo the mark still follows Rivendell, and its colour and
+background ride over each refresh ("styled"). Spec:
+docs/superpowers/specs/logo-stylist.md.
+
 A repo no Rivendell project names has nothing to match: a copy under another
 owner (ainurdev/elvou beside Elvou/elvou), or one newer than Rivendell's last
 GitHub sync. The editor's LINK links it to a project in Rivendell itself, as
@@ -149,8 +159,8 @@ def _put_logo(d: dict, data: bytes, cap: int = LOGO_MAX) -> str:
 def _gc(d: dict) -> None:
     """Drop logos nothing points at: no mark, and not the UNDO snapshot."""
     keep = {m.get("logo") for m in project_config.marks().values()}
-    snap = (d.get("rivendell") or {}).get("undo") or {}
-    keep |= {m.get("logo") for m in snap.values() if isinstance(m, dict)}
+    for snap in ((d.get("rivendell") or {}).get("undo") or {}, (d.get("style") or {}).get("undo") or {}):
+        keep |= {m.get("logo") for m in snap.values() if isinstance(m, dict)}
     d["logos"] = {k: v for k, v in (d.get("logos") or {}).items() if k in keep}
 
 
@@ -221,7 +231,7 @@ def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
         # A background alone is how a logo shows here, not a new mark: one that
         # follows Rivendell keeps following (IB Groups' black logo on LIGHT).
         if (cur and cur.get("source") == "rivendell" and out and out["kind"] == "logo"
-                and _sans(out, "plate") == _sans(cur, "plate", "source", "rv")):
+                and _sans(out, "plate") == _sans(cur, "plate", "source", "rv", "styled")):
             out = {**_sans(cur, "plate"), **({"plate": out["plate"]} if out.get("plate") else {})}
         # Back to plain letters from a mark is still your choice: kept as one,
         # or following Rivendell (or the repo's own icon) would dress it again.
@@ -523,6 +533,158 @@ def undo_picks() -> dict:
     return {"undone": undone}
 
 
+# --- STYLE WITH AI ---------------------------------------------------------------
+
+STYLE_CANDS = 8         # a project's candidates on the stylist's sheet: what it wears and the likeliest
+
+
+def _about(rel: str) -> str:
+    """The README's first two lines, for the stylist: what the project is."""
+    for name in ("README.md", "readme.md", "README"):
+        try:
+            with open(os.path.join(_root(rel), name), encoding="utf-8", errors="replace") as f:
+                head = f.read(4000)
+        except OSError:
+            continue
+        lines = [t for t in (ln.strip().lstrip("#>*").strip() for ln in head.splitlines()) if t]
+        return " — ".join(lines[:2])[:200]
+    return ""
+
+
+def _wears(m) -> str:
+    if not m:
+        return "letters"
+    if m.get("auto"):
+        return "auto"
+    return m.get("source") or m.get("kind") or "letters"
+
+
+def style_candidates() -> dict:
+    """What the stylist may choose from, per listed project but a mark you set:
+    what it wears now, its frontend's logo, then its repo's pictures (best
+    first), each logo once and at most STYLE_CANDS, with ids c1..cN for the
+    contact sheet. `sig` lets a run check that the sheet it is handed was drawn
+    from this very list."""
+    from bridge import browser, github
+    rels = browser.list_projects()
+    shown = marks(rels)
+    names = project_config.names()
+    projects, yours = [], []
+    for rel in rels:
+        m = shown.get(rel)
+        if isinstance(m, dict) and not m.get("auto") and m.get("source") not in ("rivendell", "pick", "style"):
+            yours.append(rel)
+            continue
+        cands: list = []
+
+        def add(logo_name, **kw):
+            if logo_name and len(cands) < STYLE_CANDS and all(c["logo"] != logo_name for c in cands):
+                cands.append({"id": f"c{len(cands) + 1}", "logo": logo_name, **kw})
+        if m and m.get("kind") == "logo":
+            add(m.get("logo"), src="now", **({"path": m["repo"]} if m.get("repo") else {}))
+        front = _frontend(rel, rels, shown)
+        if front:
+            add(shown[front]["logo"], src="frontend", **{"from": front})
+        for img in repo_images(rel):
+            add(img["logo"], src="repo", path=img["path"])
+        projects.append({"rel": rel, "name": names.get(rel) or rel.rpartition("/")[2],
+                         "remote": github.origin_slug(_root(rel)) or "", "about": _about(rel),
+                         "wears": _wears(m), "cands": cands})
+    sig = hashlib.sha256(json.dumps([[p["rel"], p["cands"]] for p in projects], sort_keys=True).encode()).hexdigest()
+    return {"projects": projects, "yours": yours, "sig": sig[:16]}
+
+
+def _how(before, after) -> list:
+    """What an answer changed, most telling first."""
+    b, a = before or {"kind": "letters"}, after or {"kind": "letters"}
+    out = []
+    if a.get("kind") == "icon" and (b.get("kind"), b.get("icon")) != ("icon", a.get("icon")):
+        out.append("icon")
+    elif a.get("kind") == "logo" and (b.get("kind"), b.get("logo")) != ("logo", a.get("logo")):
+        out.append("logo")
+    if (b.get("plate") or "auto") != (a.get("plate") or "auto"):
+        out.append("background")
+    if b.get("color") != a.get("color"):
+        out.append("colour")
+    return out
+
+
+def apply_style(rel: str, cand: "dict | None" = None, *, icon: "str | None" = None, plate: "str | None" = None,
+                color: "str | None" = None, why: str = "", run: str = "") -> dict:
+    """One answer of the stylist's, written. `cand` is one of the project's
+    style_candidates() (None, or what it wears now: keep it), or `icon` a
+    lucide name for a project with nothing of its own. `plate` is "auto" (drop
+    it), "none", "light" or "dark"; None leaves it, as a None `color` does.
+    What it replaced is kept for undo_style(), per run. An answer that changes
+    nothing writes nothing."""
+    with _lock:
+        d = _load()
+        before = marks([rel]).get(rel)
+        cur = project_config.mark(rel)
+        # Rivendell's logo, kept: it goes on following, and only its colour and background are the stylist's.
+        keep_rv = (isinstance(cur, dict) and cur.get("source") == "rivendell" and cur.get("kind") == "logo"
+                   and not icon and (cand is None or cand.get("src") == "now"))
+        if icon:
+            base = {"kind": "icon", "icon": icon}
+        elif cand and cand.get("src") == "repo":
+            base = {"kind": "logo", "repo": cand["path"]}
+        elif cand and cand.get("src") == "frontend":
+            got = logo(cand["logo"])
+            if not got:
+                raise ValueError("its frontend's logo is gone")
+            base = {"kind": "logo", "logo": _put_logo(d, got[0], RV_LOGO_MAX)}
+        elif keep_rv:
+            base = dict(cur)
+        elif before and before.get("auto"):
+            base = {"kind": "logo", "repo": before["repo"]}
+        elif cur:
+            base = _sans(cur, "source", "pick", "styled")
+        else:
+            base = {"kind": "letters"}
+        mark = _sans(base, "plate", "color", "styled", "source")
+        if base.get("kind") == "logo" and plate in PLATES:
+            mark["plate"] = plate
+        elif base.get("kind") == "logo" and plate is None and base.get("plate"):
+            mark["plate"] = base["plate"]
+        if _hex(color) or base.get("color"):
+            mark["color"] = _hex(color) or base["color"]
+        mark["source"] = "rivendell" if keep_rv else "style"
+        mark["styled"] = (why or "")[:160]
+        shown = {**_sans(mark, "source", "styled", "rv"),
+                 **({"logo": _name(_root(rel), mark["repo"])} if mark.get("repo") else {})}
+        how = _how(before, shown)
+        if not how:
+            return {"rel": rel, "how": [], "before": before, "after": before}
+        st = d.get("style") if isinstance(d.get("style"), dict) else {}
+        if st.get("run") != run:
+            st = {"run": run, "undo": {}}
+        st["undo"].setdefault(rel, cur)
+        d["style"] = st
+        project_config.set_mark(rel, mark)
+        _gc(d)
+        _save(d)
+        return {"rel": rel, "how": how, "before": before, "after": marks([rel]).get(rel)}
+
+
+def undo_style(rel: "str | None" = None) -> dict:
+    """Undo the last run, or one project of it: what it replaced comes back,
+    except where you changed the mark since (a change by hand drops "styled")."""
+    with _lock:
+        d = _load()
+        snap = (d.get("style") or {}).get("undo") or {}
+        undone = 0
+        for r in ([rel] if rel else list(snap)):
+            if r not in snap:
+                continue
+            if "styled" in (project_config.mark(r) or {}):
+                project_config.set_mark(r, snap[r])
+                undone += 1
+            del snap[r]
+        _gc(d)
+        _save(d)
+    return {"undone": undone}
+
+
 # --- Rivendell ---------------------------------------------------------------
 
 _seen: dict = {"at": 0.0, "matches": {}, "errors": [], "listed": 0, "asked": False, "answered": False,
@@ -684,6 +846,10 @@ def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
             mark["plate"] = cur["plate"]
     if _hex(c.get("brandColor")):
         mark["color"] = c["brandColor"]
+    if "styled" in cur:                  # the stylist's colour rides over a refresh too
+        mark["styled"] = cur["styled"]
+        if cur.get("color"):
+            mark["color"] = cur["color"]
     if mark != cur:
         project_config.set_mark(rel, mark)
     return mark
