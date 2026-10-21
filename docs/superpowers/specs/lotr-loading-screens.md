@@ -16,10 +16,11 @@ MYSTICAL//ASSISTANT, and the boot log.
 
 **The setting.** A new block at the end of SETTINGS ▸ Appearance, **Loading
 screen**, has one row, **Scene**. It is a `Segmented` control with
-`MYSTICAL` · `KHAZAD-DÛM` · `DURIN'S DOOR` · `SHUFFLE`, and MYSTICAL, today's
-screen, is the default. The pick is stored in `hud-settings` as `intro` and
-validated by `toIntro` (`lib/intro.ts`). SHUFFLE draws one of the three once
-per page load.
+`MYSTICAL` · `KHAZAD-DÛM` · `DURIN'S DOOR` · `SHUFFLE`. SHUFFLE is the default,
+and it draws one of the three once per page load; the user asked for that
+after the first ship, which kept MYSTICAL. The pick is stored in `hud-settings`
+as `intro` and validated by `toIntro` (`lib/intro.ts`). Nothing stored, or a
+scene that no longer exists, reads as SHUFFLE.
 
 **The shell stays.** A scene swaps only the art and the words. The log, the
 bar, the footer and every timing are unchanged: the 1.6 s floor, the 8 s

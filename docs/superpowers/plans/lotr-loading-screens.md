@@ -15,7 +15,7 @@ their CSS sits in index.css next to the intro keyframes. The setting is
 
 - [x] `lib/intro.ts` holds `INTROS`, `toIntro`, `shuffleScene` and `BOOT_SCENE`,
   with `lib/intro.check.ts` as its check. `HudSettings.intro` defaults to
-  `mystical`. `nightOf` goes in `lib/theme.ts`.
+  `shuffle` (it was `mystical` in the first ship). `nightOf` goes in `lib/theme.ts`.
 - [x] `BootScenes.tsx` gets `KhazadDum` and `DurinsDoor`, ported from the
   approved drafts. Every glow is an SVG filter.
 - [x] `BootIntro`: the old field and emblem move unchanged into `Mystical()`. The
