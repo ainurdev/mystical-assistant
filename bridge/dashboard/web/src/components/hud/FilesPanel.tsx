@@ -153,7 +153,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
         hint: untracked ? "never committed — this deletes it" : undefined,
         onClick: () => void askConfirm(untracked
           ? `Delete ${t.path}? It was never committed, so there is nothing to restore.`
-          : `Discard your changes to ${t.path}? This can't be undone.`)
+          : `Discard your changes to ${t.path}? This can't be undone.`, { ok: untracked ? "Delete" : "Discard", danger: true })
           .then((yes) => { if (yes) void gitOp("discard", [t.path]); }),
       });
     }
@@ -164,7 +164,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
     items.push({ icon: "⧉", label: "Copy Path", onClick: () => copyPath(t.path) });
     items.push({
       icon: "✕", label: "Delete File", danger: true,
-      onClick: () => void askConfirm(`Delete ${t.path} from disk?`)
+      onClick: () => void askConfirm(`Delete ${t.path} from disk?`, { ok: "Delete", danger: true })
         .then((yes) => { if (yes) void del(t.path); }),
     });
     return items;

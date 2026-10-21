@@ -649,7 +649,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
   };
 
   async function closeTab(path: string) {
-    if (isDirty(path) && !(await askConfirm(`${path} has unsaved changes — close it anyway?`))) return;
+    if (isDirty(path) && !(await askConfirm(`${path} has unsaved changes — close it anyway?`, { ok: "Close", danger: true }))) return;
     bufs.current.delete(path);
     const rest = tabs.filter((p) => p !== path);
     setTabs(rest);
@@ -659,7 +659,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
 
   async function closeAll() {
     const unsaved = tabs.filter(isDirty).length;
-    if (unsaved && !(await askConfirm(`${unsaved} open file${unsaved === 1 ? " has" : "s have"} unsaved changes — close anyway?`))) return;
+    if (unsaved && !(await askConfirm(`${unsaved} open file${unsaved === 1 ? " has" : "s have"} unsaved changes — close anyway?`, { ok: "Close", danger: true }))) return;
     bufs.current.clear();
     setTabs([]); setPeek(null); setOpen(null);
   }
@@ -929,7 +929,7 @@ export function EditorTab({ project, branch, branchOpts, onPickBranch, initialFi
       { divider: true },
       {
         icon: "✕", label: "Delete", danger: true, hint: target.dir ? "DIR" : undefined,
-        onClick: () => void askConfirm(`Delete ${target.path}${target.dir ? " and everything in it" : ""}?`)
+        onClick: () => void askConfirm(`Delete ${target.path}${target.dir ? " and everything in it" : ""}?`, { ok: "Delete", danger: true })
           .then((yes) => { if (yes) void runOp("delete", target.path); }),
       },
     ];

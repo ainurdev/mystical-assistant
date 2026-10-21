@@ -51,7 +51,7 @@ export function RivendellQueue({ active }: { active: boolean }) {
       : it.offered
         ? `Dismiss this offered ${what}? It stays available to the other bridges.`
         : `Reject this ${what}? Rivendell asks its requester what to do next.`;
-    if (ask && !(await askConfirm(ask))) return;
+    if (ask && !(await askConfirm(ask, { ok: accept ? "Run" : it.offered ? "Dismiss" : "Reject" }))) return;
     const id = rid(it);
     setBusy((b) => new Set(b).add(id));
     try {

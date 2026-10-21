@@ -1206,7 +1206,7 @@ export function Composer({
       onPaste={(e) => { const imgs = imagesFrom(e.clipboardData?.items); if (imgs.length) { e.preventDefault(); addFiles(imgs); } }}
       onAttach={() => fileRef.current?.click()}
       onClear={() => {
-        if (text.includes("\n")) void askConfirm("Clear the draft?").then((yes) => { if (yes) setText(""); });
+        if (text.includes("\n")) void askConfirm("Clear the draft?", { ok: "Clear", danger: true }).then((yes) => { if (yes) setText(""); });
         else setText("");
       }}
       placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : placeholder ?? "message claude — describe a change, paste an error…"}

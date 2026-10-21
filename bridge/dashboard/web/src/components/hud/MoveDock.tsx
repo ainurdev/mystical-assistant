@@ -154,7 +154,7 @@ export function nextAction(n: MoveNext): [string, () => void, boolean?] {
     mcp: ["OPEN MCP ▸", () => openSettings("mcp")] as [string, () => void],
     rivendell: ["OPEN INTEGRATIONS ▸", () => openSettings("plugins")] as [string, () => void],
     delete: ["DELETE", () => {
-      void askConfirm(`Delete ${n.path}? It holds your .env files and tokens; this can't be undone.`)
+      void askConfirm(`Delete ${n.path}? It holds your .env files and tokens; this can't be undone.`, { ok: "Delete", danger: true })
         .then((ok) => ok && api.moveDelete(n.path ?? "").then(() => window.dispatchEvent(new Event(MOVE_EVENT)),
           (e: Error) => notify("error", `Couldn't delete the move file — ${e.message}`)));
     }, true] as [string, () => void, boolean],

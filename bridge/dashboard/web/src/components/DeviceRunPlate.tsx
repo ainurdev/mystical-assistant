@@ -33,7 +33,7 @@ export function DeviceRunPlate({ s, working, ended }: { s: SessionBrief; working
   const status = plateStatus(working, outcome, Math.round((end - (s.created ?? s.updated)) / 60));
   const over = outcome && endedLine(outcome, by, d?.by ? d.by.split(" ")[0] : "them", hhmm(end, h12));
   const stop = async () => {
-    if (!(await askConfirm(`Stop ${by}'s run on this device? ${by} gets it back as failed.`))) return;
+    if (!(await askConfirm(`Stop ${by}'s run on this device? ${by} gets it back as failed.`, { ok: "Stop run", danger: true }))) return;
     setStopping(true);   // the helper's stop takes up to a minute: one press is enough
     try {
       await api.stopDeviceRun(s.id);

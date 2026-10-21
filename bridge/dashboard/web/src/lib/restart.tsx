@@ -79,6 +79,7 @@ export async function restartBridge() {
   const ok = await askConfirm(
     "Restart the bridge? The dashboard drops for a few seconds and reloads itself; " +
     "running turns resume where they left off.",
+    { ok: "Restart" },
   );
   if (!ok) return;
   try {
@@ -97,6 +98,7 @@ export async function updateClaude() {
   const ok = await askConfirm(
     "Update Claude Code and restart the bridge? Running turns stop while it installs " +
     "and resume after; the dashboard reloads itself when it's back.",
+    { ok: "Update" },
   );
   if (!ok) return;
   try {

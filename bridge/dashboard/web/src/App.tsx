@@ -1652,7 +1652,7 @@ export function App() {
         ? `install it with ${plan.from}'s changes (that runs their install scripts), and continue their session there?`
         : `install it, and continue ${plan.from}'s session there?`;
       if (!plan.project && plan.repo && plan.clone && await askConfirm(
-        `${plan.repo} isn't cloned here. Clone it into ${plan.clone}, ${then}`, { yes: "CLONE & INSTALL", no: "NOT NOW" })) {
+        `Clone ${plan.repo} into ${plan.clone}, ${then} It isn't cloned here.`, { ok: "Clone & install" })) {
         setContStep({ id, text: "CLONING…" });
         try {
           cwd = (await api.teamClone(id)).path;
@@ -1665,7 +1665,7 @@ export function App() {
       let branch = plan.branch ?? undefined;
       if (!project) {
         if (!activeProject) { notify("error", "Pick a project to continue it in first."); return; }
-        if (plan.repo && !(await askConfirm(`${plan.repo} isn't cloned here. Continue in ${projectName(activeProject)} without their code?`))) return;
+        if (plan.repo && !(await askConfirm(`Continue in ${projectName(activeProject)} without their code? ${plan.repo} isn't cloned here.`, { ok: "Continue" }))) return;
         project = activeProject;
         branch = undefined;
       }
@@ -2367,7 +2367,7 @@ export function App() {
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
-    const next = (await askPrompt("Name this session", current))?.trim();
+    const next = (await askPrompt("Name this session", current, "Rename"))?.trim();
     if (!next || next === current) return;
     try {
       await api.retitle(id, next);

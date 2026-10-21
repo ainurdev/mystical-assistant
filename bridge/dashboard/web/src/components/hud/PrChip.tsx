@@ -102,14 +102,14 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
   function send(text: string) { onSend(text); setOpen(false); }
 
   async function archive() {
-    if (await askConfirm(`Archive “${title || "this session"}”? It leaves the sessions list. HISTORY keeps it.`)) onArchive();
+    if (await askConfirm(`Archive “${title || "this session"}”? It leaves the sessions list. HISTORY keeps it.`, { ok: "Archive" })) onArchive();
   }
 
   async function removeWorktree() {
     const wts = await api.worktrees(project).catch(() => null);
     const w = wts?.worktrees.find((x) => x.branch === branch && !x.is_main);
     if (!w) { notify("info", `No linked worktree holds ${branch}.`); return; }
-    if (!(await askConfirm(`Remove the worktree at ${w.path}? Uncommitted changes in it are deleted. The branch stays.`))) return;
+    if (!(await askConfirm(`Remove the worktree at ${w.path}? Uncommitted changes in it are deleted. The branch stays.`, { ok: "Remove", danger: true }))) return;
     const r = await api.worktreeRemove(project, w.path, branch, false)
       .catch((e: Error) => ({ ok: false, output: e.message }));
     notify(r.ok ? "info" : "error", r.ok ? `Removed the ${branch} worktree.` : `Remove failed: ${r.output}`);
