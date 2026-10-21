@@ -1,6 +1,8 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { themeCanvas, type ThemeKey } from "../../lib/theme";
+import { useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
+import { nightOf, themeCanvas, themeVars, type ThemeKey } from "../../lib/theme";
 import { BOOT_CONTINUE, bootProgress, bootReady, type BootStep } from "../../lib/bootsteps";
+import { BOOT_SCENE, shuffleScene, type Intro, type IntroScene } from "../../lib/intro";
+import { DurinsDoor, KhazadDum } from "./BootScenes";
 
 const FADE_MS = 650; // the crtoff wipe, after which the dashboard owns the screen
 // Mount-to-paint, spent behind an intro that is still fully opaque. Having the
@@ -15,6 +17,18 @@ const WARM_MS = 400;
 // flag is spent on read, so a later reload of your own gets the whole entrance.
 const CONTINUED = sessionStorage.getItem(BOOT_CONTINUE) === "1";
 sessionStorage.removeItem(BOOT_CONTINUE);
+// SHUFFLE's scene for this document, kept for the tab: a restart's overlay and
+// the boot that continues it after the reload are one intro, so one scene.
+const SHUFFLED = shuffleScene(CONTINUED ? sessionStorage.getItem(BOOT_SCENE) : null);
+sessionStorage.setItem(BOOT_SCENE, SHUFFLED);
+
+// What each scene says: the wordmark's two lines, the footer once every step
+// has answered, and the skip hint.
+const WORDS: Record<IntroScene, { title: string; sub: string; ready: string; skip: string }> = {
+  mystical: { title: "MYSTICAL//ASSISTANT", sub: "REMOTE DEV BRIDGE · CLAUDE CODE", ready: "WORKSPACE READY", skip: "CLICK TO SKIP" },
+  bridge: { title: "YOU SHALL NOT PASS", sub: "THE BRIDGE OF KHAZAD-DÛM · MYSTICAL//ASSISTANT", ready: "FLY, YOU FOOLS", skip: "CLICK TO PASS" },
+  door: { title: "SPEAK, FRIEND, AND ENTER", sub: "THE DOORS OF DURIN · MYSTICAL//ASSISTANT", ready: "MELLON", skip: "CLICK TO ENTER" },
+};
 
 /** A line that hasn't answered yet. Three dots, so waiting reads as waiting. */
 function Ellipsis() {
@@ -34,15 +48,22 @@ export function BootIntro(props: {
   onDone: () => void;
   theme: ThemeKey;
   scanlines: boolean;
+  intro: Intro;
   steps: BootStep[];
   /** Never leave on its own. The restart sets it: what ends that intro is the
       reload into the next one, and uncovering a dashboard whose bridge is still
       re-execing would be worse than waiting. */
   hold?: boolean;
 }) {
-  const { onReveal, onDone, theme, scanlines, steps, hold } = props;
+  const { onReveal, onDone, theme, scanlines, intro, steps, hold } = props;
   const [fade, setFade] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const progress = bootProgress(steps);
+  const scene: IntroScene = intro === "shuffle" ? SHUFFLED : intro;
+  const words = WORDS[scene];
+  // KHAZAD-DÛM is light against fire and only reads at night: on a light theme
+  // it plays on that theme's dark twin, its tokens scoped to the intro.
+  const ground = scene === "bridge" ? nightOf(theme) : theme;
   // Skipping only makes sense once there's a loaded dashboard to skip to —
   // before that the click just swaps the boot log for an empty HUD.
   const loaded = progress === 1;
@@ -59,6 +80,7 @@ export function BootIntro(props: {
   // Mount the dashboard first and only wipe once it has had WARM_MS to lay
   // itself out — the intro is opaque until `fade`, so this is all off-screen.
   const leave = useCallback((reveal: () => void, finish: () => void) => {
+    setLeaving(true); // a scene's exit flourish plays inside the warm-up and the wipe
     reveal();
     warm.current = window.setTimeout(() => {
       setFade(true);
@@ -87,13 +109,14 @@ export function BootIntro(props: {
 
   return (
     <div
-      className={CONTINUED ? "bootcontinue" : undefined}
+      className={[CONTINUED && "bootcontinue", leaving && "bootleaving"].filter(Boolean).join(" ") || undefined}
       onClick={loaded && !hold ? dismissBoot : undefined}
       style={{
+        ...(ground !== theme ? (themeVars(ground) as CSSProperties) : null),
         position: "fixed",
         inset: 0,
         zIndex: 95,
-        background: themeCanvas(theme),
+        background: themeCanvas(ground),
         display: "flex",
         flexDirection: "column",
         alignItems: "center",
@@ -107,6 +130,128 @@ export function BootIntro(props: {
     >
       {scanlines && <div className="crt" style={{ zIndex: 4 }}></div>}
 
+      {scene === "bridge" ? <KhazadDum progress={progress} />
+        : scene === "door" ? <DurinsDoor progress={progress} />
+        : <Mystical />}
+
+      {/* wordmark */}
+      <div
+        style={{
+          textAlign: "center",
+          animation: "tickfade .5s ease both .9s",
+          position: "relative",
+          zIndex: 2,
+        }}
+      >
+        <div
+          className="glow"
+          style={{
+            fontSize: "var(--t34)",
+            letterSpacing: "10px",
+            color: "var(--txb)",
+            animation: "wordflick 1.4s steps(1) both .9s",
+          }}
+        >
+          {words.title}
+        </div>
+        <div style={{ fontSize: "var(--t11)", letterSpacing: "6px", color: "var(--txl)", marginTop: "8px" }}>
+          {words.sub}
+        </div>
+      </div>
+
+      {/* boot log */}
+      <div
+        style={{
+          width: "520px",
+          maxWidth: "88vw",
+          zIndex: 2,
+          position: "relative",
+          marginTop: "6px",
+          fontFamily: "'JetBrains Mono',monospace",
+          fontSize: "var(--t115)",
+          lineHeight: 1.9,
+          color: "var(--txd)",
+        }}
+      >
+        {/* Six rows whatever the log is: the restart's three would sit shorter
+            and slide the emblem up the moment the reload swaps one for the other. */}
+        <div style={{ minHeight: "calc(var(--t115) * 1.9 * 6)" }}>
+          {steps.map((b, i) => (
+            <div
+              key={b.key}
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "12px",
+                animation: "bootline .4s ease both",
+                animationDelay: `${700 + i * 90}ms`,
+                opacity: b.phase === "wait" ? 0.7 : 1,
+                transition: "opacity .3s ease",
+              }}
+            >
+              <span style={{ whiteSpace: "nowrap" }}>
+                <span style={{ color: b.phase === "wait" ? "var(--txl)" : "var(--acc)" }}>›</span> {b.label}
+              </span>
+              <span
+                style={{
+                  color: b.phase === "fail" ? "var(--err)" : b.phase === "ok" ? "var(--ok)" : "var(--txd)",
+                  letterSpacing: "1px",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {b.phase === "wait" ? <Ellipsis /> : b.detail}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div
+          style={{
+            height: "3px",
+            background: "color-mix(in srgb, var(--acc) 12%, transparent)",
+            marginTop: "14px",
+            overflow: "hidden",
+          }}
+        >
+          {/* Width is answered-fetches / total. The transition is only there so
+              a step landing doesn't teleport the bar — nothing here is a timer. */}
+          <div
+            style={{
+              height: "100%",
+              background: "linear-gradient(90deg,var(--acc),var(--purple))",
+              width: `${Math.round(progress * 100)}%`,
+              transition: "width .45s cubic-bezier(.4,0,.2,1)",
+            }}
+          ></div>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginTop: "9px",
+            fontSize: "var(--t10)",
+            letterSpacing: "2px",
+            color: "var(--txl)",
+            animation: "tickfade .5s ease both 1.4s",
+          }}
+        >
+          <span>
+            {steps.find((s) => s.phase === "wait")?.label ?? words.ready}
+            <span style={{ animation: "caret 1s steps(1) infinite" }}>_</span>
+          </span>
+          <span>{loaded && !hold ? words.skip : ""}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** MYSTICAL, the scene the intro always had: the perspective grid, the aura,
+ *  the radar rings and drifting motes behind the brand emblem. */
+function Mystical() {
+  return (
+    <>
       {/* animated field */}
       <div
         style={{
@@ -359,116 +504,6 @@ export function BootIntro(props: {
           style={{ animation: "tickfade .4s ease both 1.15s" }}
         />
       </svg>
-
-      {/* wordmark */}
-      <div
-        style={{
-          textAlign: "center",
-          animation: "tickfade .5s ease both .9s",
-          position: "relative",
-          zIndex: 2,
-        }}
-      >
-        <div
-          className="glow"
-          style={{
-            fontSize: "var(--t34)",
-            letterSpacing: "10px",
-            color: "var(--txb)",
-            animation: "wordflick 1.4s steps(1) both .9s",
-          }}
-        >
-          MYSTICAL//ASSISTANT
-        </div>
-        <div style={{ fontSize: "var(--t11)", letterSpacing: "6px", color: "var(--txl)", marginTop: "8px" }}>
-          REMOTE DEV BRIDGE · CLAUDE CODE
-        </div>
-      </div>
-
-      {/* boot log */}
-      <div
-        style={{
-          width: "520px",
-          maxWidth: "88vw",
-          zIndex: 2,
-          position: "relative",
-          marginTop: "6px",
-          fontFamily: "'JetBrains Mono',monospace",
-          fontSize: "var(--t115)",
-          lineHeight: 1.9,
-          color: "var(--txd)",
-        }}
-      >
-        {/* Six rows whatever the log is: the restart's three would sit shorter
-            and slide the emblem up the moment the reload swaps one for the other. */}
-        <div style={{ minHeight: "calc(var(--t115) * 1.9 * 6)" }}>
-          {steps.map((b, i) => (
-            <div
-              key={b.key}
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: "12px",
-                animation: "bootline .4s ease both",
-                animationDelay: `${700 + i * 90}ms`,
-                opacity: b.phase === "wait" ? 0.7 : 1,
-                transition: "opacity .3s ease",
-              }}
-            >
-              <span style={{ whiteSpace: "nowrap" }}>
-                <span style={{ color: b.phase === "wait" ? "var(--txl)" : "var(--acc)" }}>›</span> {b.label}
-              </span>
-              <span
-                style={{
-                  color: b.phase === "fail" ? "var(--err)" : b.phase === "ok" ? "var(--ok)" : "var(--txd)",
-                  letterSpacing: "1px",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {b.phase === "wait" ? <Ellipsis /> : b.detail}
-              </span>
-            </div>
-          ))}
-        </div>
-        <div
-          style={{
-            height: "3px",
-            background: "color-mix(in srgb, var(--acc) 12%, transparent)",
-            marginTop: "14px",
-            overflow: "hidden",
-          }}
-        >
-          {/* Width is answered-fetches / total. The transition is only there so
-              a step landing doesn't teleport the bar — nothing here is a timer. */}
-          <div
-            style={{
-              height: "100%",
-              background: "linear-gradient(90deg,var(--acc),var(--purple))",
-              width: `${Math.round(progress * 100)}%`,
-              transition: "width .45s cubic-bezier(.4,0,.2,1)",
-            }}
-          ></div>
-        </div>
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            marginTop: "9px",
-            fontSize: "var(--t10)",
-            letterSpacing: "2px",
-            color: "var(--txl)",
-            animation: "tickfade .5s ease both 1.4s",
-          }}
-        >
-          <span>
-            {steps.find((s) => s.phase === "wait")?.label ?? "WORKSPACE READY"}
-            <span style={{ animation: "caret 1s steps(1) infinite" }}>_</span>
-          </span>
-          <span>{loaded && !hold ? "CLICK TO SKIP" : ""}</span>
-        </div>
-      </div>
-    </div>
+    </>
   );
 }

@@ -2811,12 +2811,12 @@ export function App() {
                   void loadTeam();
                 }} />
             )}
-            <RestartIntro theme={settings.theme} scanlines={settings.scanlines} />
+            <RestartIntro theme={settings.theme} scanlines={settings.scanlines} intro={settings.intro} />
         </div>
       )}
 
       {booting && (
-        <BootIntro theme={settings.theme} scanlines={settings.scanlines} steps={bootSteps} onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
+        <BootIntro theme={settings.theme} scanlines={settings.scanlines} intro={settings.intro} steps={bootSteps} onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
       )}
     </div>
   );

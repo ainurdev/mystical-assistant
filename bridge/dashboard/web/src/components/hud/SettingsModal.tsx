@@ -6,7 +6,7 @@ import {
   Activity, AudioLines, Bell, Bookmark, Boxes, Cable, CircleCheck, 
   FolderTree, Gauge, GitBranch, 
   Globe,
-  Handshake, KeyRound, ListMusic, ListTree, LoaderCircle, Lock,
+  Handshake, Hourglass, KeyRound, ListMusic, ListTree, LoaderCircle, Lock,
   Monitor, Moon, Network, Palette, Play, Plug,
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
@@ -204,6 +204,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "HEADER", terms: "header island frost veil tuck glass readouts" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base preview" },
+  { tab: "appearance", sec: "LOADING SCREEN", terms: "loading screen boot intro splash startup restart scene emblem gandalf balrog you shall not pass khazad-dum bridge durin door moria mellon speak friend enter shuffle random lord of the rings lotr middle-earth" },
   { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat orbit" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
   { tab: "transcript", sec: "COMPOSER", terms: "send key enter ctrl+enter cmd newline shift submit message keyboard shortcut" },
@@ -348,6 +349,7 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "WHILE IT WORKS": AudioLines,
   "CRT EFFECTS": ScanLine,
   TYPE: Type,
+  "LOADING SCREEN": Hourglass,
   "WORKING INDICATOR": AudioLines,
   RESULTS: ListTree,
   "WHAT INTERRUPTS YOU": Bell,
@@ -388,6 +390,7 @@ const SEC_DESC: Record<string, string> = {
   HEADER: "How the session header sits over the transcript.",
   "CRT EFFECTS": "The tube laid over the screen: raster lines, a roaming glow, bloom on headings.",
   TYPE: "The typeface the HUD is set in, and the base size every other size scales from.",
+  "LOADING SCREEN": "What fills the screen while the dashboard starts, and while it restarts.",
   "THE GROUND": "The texture the transcript sits on.",
   RESULTS: "Whether command output and diffs start open or folded.",
   "WORKING INDICATOR": "The tab you pick is the one the dashboard shows while it works.",
@@ -4270,6 +4273,31 @@ export function SettingsModal(props: SettingsModalProps) {
                   }
                 >
                   <TypePicker settings={settings} autoBase={autoBase} onPatch={onPatch} />
+                </Section>
+
+                {/* lib/intro, drawn by BootIntro + BootScenes. The boot is the
+                    only place it shows, so the caption says when it will. */}
+                <Section title="LOADING SCREEN" top>
+                  <div style={CARD}>
+                    <Row
+                      first
+                      label="SCENE"
+                      desc="MYSTICAL is the emblem. KHAZAD-DÛM: Gandalf holds the bridge until the dashboard is ready, then strikes. DURIN'S DOOR: the door's lines wake one step at a time, then it opens. SHUFFLE picks one each load. Plays from the next load."
+                    >
+                      <div style={{ width: 440 }}>
+                        <Segmented
+                          options={[
+                            { label: "MYSTICAL", value: "mystical" },
+                            { label: "KHAZAD-DÛM", value: "bridge" },
+                            { label: "DURIN'S DOOR", value: "door" },
+                            { label: "SHUFFLE", value: "shuffle" },
+                          ]}
+                          value={settings.intro}
+                          onPick={(intro) => onPatch({ intro })}
+                        />
+                      </div>
+                    </Row>
+                  </div>
                 </Section>
 
               </>
