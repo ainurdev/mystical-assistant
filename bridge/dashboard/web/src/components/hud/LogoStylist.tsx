@@ -83,7 +83,7 @@ export function StyleStrip({ reviewing, onReview }: { reviewing: boolean; onRevi
     [c.colours, "colour", "colours"]] as const).filter(([n]) => n > 0);
   const title = all.changed > 0 && c.changed === 0 ? "Undone: every project wears what it wore before"
     : r.state === "stopped" ? `Stopped after ${items.length} of ${r.total}: ${plural(c.changed, "project", "projects")} restyled`
-    : r.state === "failed" ? `Style with AI stopped: ${plural(c.changed, "project", "projects")} restyled`
+    : r.state === "failed" ? `Style with AI stopped${c.changed ? `: ${plural(c.changed, "project", "projects")} restyled first` : ""}`
     : `Styled ${plural(c.changed, "project", "projects")}`;
   const sub = r.state === "failed" ? r.error ?? "" : [all.kept ? `${all.kept} already right` : "",
     (r.yours ?? []).length ? `${r.yours!.length} you set, left as they are` : ""].filter(Boolean).join(" · ");
@@ -92,6 +92,7 @@ export function StyleStrip({ reviewing, onReview }: { reviewing: boolean; onRevi
       <div><b>{title}</b>{sub && <small>{sub}</small>}
         {chips.length > 0 && <div className="st-sum">{chips.map(([n, one, many]) => <span key={one}><b>{n}</b> {n === 1 ? one : many}</span>)}</div>}
       </div>
+      {r.state === "failed" && <button type="button" className="ps-btn" onClick={() => void startStyle()}>Try again</button>}
       {!reviewing && <button type="button" className="ps-btn" onClick={onReview}>Review</button>}
       {c.changed > 0 && <button type="button" className="ps-btn" onClick={() => void undoStyle()}><Undo2 size={13} aria-hidden />Undo all</button>}
       {close}
@@ -220,7 +221,7 @@ function Ledger({ r, undone, onPick }: { r: StyleRun; undone: string[]; onPick: 
     ? <em key={h}><i style={{ ["--c" as string]: c ?? "var(--acc)" }} />colour</em> : <em key={h}>{h}</em>;
   return (
     <div className="st-led">
-      <header><div><b>{changed.length ? "What the stylist changed" : "Nothing to change"}</b>
+      <header><div><b>{changed.length ? "What the stylist changed" : r.state === "done" ? "Nothing to change" : "Nothing changed"}</b>
         <small>{secs ? `in ${secs} s, ` : ""}one AI call over {pictures(r)} pictures · pick a project to change it by hand</small></div></header>
       {changed.map((i) => (
         <div key={i.rel} className="st-item" role="button" tabIndex={0} onClick={() => onPick(i.rel)}
