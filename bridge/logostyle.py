@@ -5,9 +5,11 @@ colour (docs/superpowers/specs/logo-stylist.md).
 The bridge can't draw a logo (stdlib only, no SVG renderer), so the dashboard
 draws the contact sheet: each project's candidates from
 projectmarks.style_candidates(), numbered, on a dark ground and a light one.
-That picture goes inline to one haiku call over stream-json, with no tools, MCP
-servers, hooks or saved session, so a run costs a few thousand tokens where a
-session one-shot costs tens of thousands. The model answers one JSON line per
+That picture goes inline to one sonnet call over stream-json, with no tools,
+MCP servers, hooks or saved session: about 12k tokens, a cent or two. Sonnet,
+not haiku: on this machine's real sheet haiku thought for ~27 s before its
+first line (it thinks at any effort) and once took SvelteKit's default favicon
+for Elvou's; sonnet answered from ~14 s and kept Elvou's own monogram. The model answers one JSON line per
 project; each line is checked and applied (projectmarks.apply_style) the moment
 it is complete, so the page and the bell show real progress rather than an
 animation over a finished answer.
@@ -34,10 +36,12 @@ import uuid
 
 from bridge import aifeatures, notices, projectmarks, runner
 
-MODEL = "haiku"
-TIMEOUT_S = 180          # the call, start to last line: a sheet of 23 projects answers in ~15 s
+MODEL = "sonnet"
+TIMEOUT_S = 180          # the call, start to last line: a sheet of 21 projects answers in ~20 s
 SHEET_MAX = 6 * 1024 * 1024
-BGS = ("auto", "none", "light", "dark")
+# The model's "none" means no plate needed, which is AUTO's call to make: AUTO measures where a logo
+# would vanish (lib/logoinfo.ts), so a pinned NONE would only hide a black wordmark on a dark theme.
+BGS = {"auto": "auto", "none": "auto", "light": "light", "dark": "dark"}
 # shortcut: any lucide-shaped name passes, and a name lucide lacks shows the initials
 # (DynamicIcon's fallback); check against lucide's list if the model starts inventing them.
 _ICON = re.compile(r"^[a-z0-9-]{1,48}$")
@@ -57,8 +61,8 @@ For every project choose:
 - pick: the candidate that reads best as that project's own mark at 20 px, by its id ("c2"); "keep" for what it \
 wears now; or, only when no candidate is the project's own, an icon as "icon:<lucide icon name>" that fits what \
 the project is.
-- bg: the background behind a logo: "auto" (a plate only where the logo would vanish into the ground), "none", \
-"light" or "dark".
+- bg: the background behind a logo. "auto" leaves it bare and adds a plate only on a ground it would vanish \
+into; "light" or "dark" always puts that plate behind it. Almost always "auto".
 - color: one #rrggbb accent, taken from the mark it will wear (for an icon, one that suits the project).
 - why: at most 12 words, lowercase, why this one.
 
@@ -72,7 +76,8 @@ not the project's.
 - Repos of one client or product wear the same mark.
 
 Answer with one JSON object per line, in the order of the projects, and nothing else:
-{"p":"P1","pick":"c2","bg":"none","color":"#3168d0","why":"its own app icon reads at a glance"}"""
+{"p":"P1","pick":"c2","bg":"auto","color":"#3168d0","why":"its own app icon reads at a glance"}
+Then, if you passed over a framework's default or another company's logo, one last line naming them in at most 25 words: {"p":"note","why":"react's logo in elvou is a framework's"}"""
 
 _WEARS = {"letters": "its initials", "auto": "its own icon, from the repo", "rivendell": "the logo Rivendell lends it",
           "pick": "a logo picked earlier", "style": "your last pick", "icon": "an icon", "logo": "a logo"}
@@ -169,7 +174,7 @@ def _ask(sheet: bytes, prompt: str, on_line, on_part) -> "str | None":
                                      "data": base64.b64encode(sheet).decode()}},
         {"type": "text", "text": prompt}]}}
     cmd = [runner.claude_bin(), "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
-           "--include-partial-messages", "--model", MODEL, "--no-session-persistence", "--tools", "",
+           "--include-partial-messages", "--model", MODEL, "--effort", "low", "--no-session-persistence", "--tools", "",
            "--strict-mcp-config", "--settings", '{"disableAllHooks":true}']
     tmp = tempfile.mkdtemp(prefix="logostyle-")
     try:
@@ -230,6 +235,11 @@ def _take(rid: str, by_key: dict, line: str) -> None:
     except ValueError:
         return
     p = by_key.get(str(v.get("p") or "").strip()) if isinstance(v, dict) else None
+    if isinstance(v, dict) and v.get("p") == "note":
+        with _lock:
+            if _run.get("id") == rid:
+                _run["note"] = " ".join(str(v.get("why") or "").split())[:300]
+        return
     with _lock:
         if not p or _run.get("id") != rid or _run.get("stopping") or any(i["rel"] == p["rel"] for i in _run["items"]):
             return
@@ -239,8 +249,8 @@ def _take(rid: str, by_key: dict, line: str) -> None:
     color = v.get("color") if isinstance(v.get("color"), str) and _HEX.match(v["color"]) else None
     why = " ".join(str(v.get("why") or "").split())[:160]
     try:
-        got = projectmarks.apply_style(p["rel"], cand, icon=icon, plate=v.get("bg") if v.get("bg") in BGS else None,
-                                       color=color, why=why, run=rid)
+        got = projectmarks.apply_style(p["rel"], cand, icon=icon, plate=BGS.get(str(v.get("bg"))), color=color,
+                                       why=why, run=rid)
     except (ValueError, OSError) as e:
         got = {"rel": p["rel"], "how": [], "error": str(e)}
     with _lock:
@@ -252,6 +262,7 @@ def _part(rid: str, text: str) -> None:
     with _lock:
         if _run.get("id") == rid:
             _run["current"] = text[-600:]
+
 
 
 def summary(items: list) -> str:

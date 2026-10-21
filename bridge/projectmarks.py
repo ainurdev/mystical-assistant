@@ -594,6 +594,13 @@ def style_candidates() -> dict:
     return {"projects": projects, "yours": yours, "sig": sig[:16]}
 
 
+def _near(a, b) -> bool:
+    """Two hex colours a glance can't tell apart (the model's #e8562a for NR's #ea5b13)."""
+    if not (_hex(a) and _hex(b)):
+        return False
+    return sum((int(a[i:i + 2], 16) - int(b[i:i + 2], 16)) ** 2 for i in (1, 3, 5)) < 40 ** 2
+
+
 def _how(before, after) -> list:
     """What an answer changed, most telling first."""
     b, a = before or {"kind": "letters"}, after or {"kind": "letters"}
@@ -646,8 +653,10 @@ def apply_style(rel: str, cand: "dict | None" = None, *, icon: "str | None" = No
             mark["plate"] = plate
         elif base.get("kind") == "logo" and plate is None and base.get("plate"):
             mark["plate"] = base["plate"]
-        if _hex(color) or base.get("color"):
-            mark["color"] = _hex(color) or base["color"]
+        if _hex(color) and not _near(color, base.get("color")):
+            mark["color"] = color
+        elif base.get("color"):
+            mark["color"] = base["color"]         # a near miss of the colour it wears isn't a change
         mark["source"] = "rivendell" if keep_rv else "style"
         mark["styled"] = (why or "")[:160]
         shown = {**_sans(mark, "source", "styled", "rv"),

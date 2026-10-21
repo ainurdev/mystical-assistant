@@ -1018,3 +1018,16 @@ def test_a_new_run_starts_a_new_undo(base):
     projectmarks.apply_style(a, _cands(a)["cands"][0], color="#445566", why="y", run="r2")
     projectmarks.undo_style()
     assert project_config.mark(a)["color"] == "#112233"                  # what r2 found, not what r1 did
+
+
+def test_a_colour_a_glance_cant_tell_apart_is_no_change(base, riv):
+    rel = repo(base, "apex", {"README.md": b"x"})
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "repositories": ["acme/apex"],
+                        "client": client("nr", logo="https://s3/nr.svg", color="#ea5b13")}]
+    riv["local"] = {rel: {"acme/apex"}}
+    riv["logos"] = {"https://s3/nr.svg": SVG}
+    projectmarks.import_all()
+    got = projectmarks.apply_style(rel, _cands(rel)["cands"][0], plate="auto", color="#e8562a", why="the lion", run="r1")
+    assert got["how"] == [] and project_config.mark(rel)["color"] == "#ea5b13" and "styled" not in project_config.mark(rel)
+    got = projectmarks.apply_style(rel, _cands(rel)["cands"][0], plate="auto", color="#5a7d6a", why="greener", run="r1")
+    assert got["how"] == ["colour"] and project_config.mark(rel)["color"] == "#5a7d6a"

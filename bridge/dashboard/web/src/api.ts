@@ -322,7 +322,8 @@ export interface ProjectMark {
   repo?: string;              // a picture in the repo itself, by its path: logo is then that file as it is now
   auto?: boolean;             // the repo's own icon, worn because nothing else is set; never stored
   plate?: "light" | "dark" | "none"; // a pinned background; absent = AUTO, plated only where it would vanish
-  source?: "rivendell" | "pick";     // absent = yours: set here, never changes on its own
+  source?: "rivendell" | "pick" | "style"; // absent = yours: set here, never changes on its own
+  styled?: string;            // STYLE WITH AI chose it, and why (bridge/logostyle.py)
   pick?: { how: "frontend" | "brand" | "org"; from?: string }; // what PICK LOGOS found: its frontend's, a brand file, its org's picture
   // own: the project's own logo, not its client's; name is then the project's.
   rv?: { instance?: string; client?: string; name?: string; logo_id?: string | null; own?: boolean };
@@ -357,6 +358,32 @@ export interface PickResult {
   picked: { rel: string; how: "frontend" | "brand" | "org"; from?: string }[];
   none: string[];
 }
+
+/** STYLE WITH AI (bridge/projectmarks.style_candidates): what each project could
+ *  wear, numbered for the contact sheet the page draws. `sig` names this list. */
+export interface StyleCandidate { id: string; logo: string; src: "now" | "frontend" | "repo"; path?: string; from?: string }
+export interface StyleCandidates {
+  projects: { rel: string; name: string; remote: string; about: string; wears: string; cands: StyleCandidate[] }[];
+  yours: string[];
+  sig: string;
+}
+/** One answer of a STYLE WITH AI run (bridge/logostyle.py), as worn. `how` is empty when it was already right. */
+export interface StyleItem {
+  rel: string; key: string; pick: string; why: string;
+  how: ("logo" | "icon" | "background" | "colour")[];
+  before: ProjectMark | null; after: ProjectMark | null; error?: string;
+}
+export interface StyleRun {
+  state: "idle" | "running" | "done" | "failed" | "stopped";
+  id?: string; started?: number; ended?: number | null; total?: number;
+  projects?: { rel: string; key: string; name: string; cands: StyleCandidate[] }[];
+  yours?: string[]; items?: StyleItem[];
+  current?: string;           // the answer's line still being written
+  note?: string;              // what it passed over: a framework's default, another company's logo
+  error?: string | null;
+}
+/** The bell's live row while a run is on (/local/running's `styling`). */
+export interface StyleLive { id: string; total: number; decided: number; changed: number; started: number }
 
 /** The pictures a repo tracks that are named for an icon, a logo or a brand, best first. */
 export interface RepoImages {
@@ -985,6 +1012,7 @@ export interface RunningInfo {
   awaiting: AwaitingSession[]; // sessions blocked on your answer/approval
   status: Record<string, SessionStatus>; // unified per-session status (working/awaiting only)
   needs?: Need[]; // everything waiting on you (bridge/notices.py); absent on an older bridge
+  styling?: StyleLive | null; // STYLE WITH AI while it runs
 }
 
 /** A Rivendell teammate (bridge/team.py, from GET /plugin/teammates). `online` is
@@ -2056,6 +2084,13 @@ export const api = {
     }),
   pickLogos: (action: "pick" | "undo") =>
     req<PickResult & { undone?: number }>("/local/project-mark/pick", { method: "POST", body: { action } }),
+  styleCandidates: () => req<StyleCandidates>("/local/project-mark/style/candidates"),
+  styleRun: () => req<StyleRun>("/local/project-mark/style"),
+  styleStart: (sheet: string, sig: string) =>
+    req<StyleRun>("/local/project-mark/style", { method: "POST", body: { action: "start", sheet, sig } }),
+  styleStop: () => req<StyleRun>("/local/project-mark/style", { method: "POST", body: { action: "stop" } }),
+  styleUndo: (project?: string) =>
+    req<{ undone: number }>("/local/project-mark/style", { method: "POST", body: { action: "undo", ...(project ? { project } : {}) } }),
   repoImages: (project: string) =>
     req<RepoImages>(`/local/project-mark/repo?project=${encodeURIComponent(project)}`),
   rivendellGallery: (project: string) =>

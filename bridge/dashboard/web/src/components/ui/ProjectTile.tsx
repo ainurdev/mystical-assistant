@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { DynamicIcon } from "lucide-react/dynamic";
-import { projectLogoUrl } from "../../api";
+import { projectLogoUrl, type ProjectMark } from "../../api";
+import { inkCss } from "../../lib/ink";
 import { useLogoInfo } from "../../lib/logoinfo";
-import { isSelfProject, projectInitials, projectMark, projectTint } from "../../lib/surfaces";
+import { hashTint, isSelfProject, projectInitials, projectMark, projectTint } from "../../lib/surfaces";
 
 // Each icon's drawing loads on first use, one tiny file per icon. A file a
 // rebuild has since replaced fails inside DynamicIcon, which keeps the
@@ -13,10 +14,12 @@ import { isSelfProject, projectInitials, projectMark, projectTint } from "../../
 /** A project's tile: its mark (bridge/projectmarks.py) on a square of its own
  *  tint. That is its logo, its icon, or its initials (the default). The tint
  *  rides in as --pc and the stylesheet owns everything else: the AURORA
- *  silhouette, paper. An icon shows the initials until it has loaded. */
-export function ProjectTile({ project }: { project: string | null | undefined }) {
-  const mark = projectMark(project);
-  const pc = projectTint(project).color;
+ *  silhouette, paper. An icon shows the initials until it has loaded.
+ *  `mark` draws another mark for the project: what it wore before, or one it
+ *  could wear (STYLE WITH AI's list of changes). */
+export function ProjectTile({ project, mark: other }: { project: string | null | undefined; mark?: ProjectMark | null }) {
+  const mark = other === undefined ? projectMark(project) : other;
+  const pc = other === undefined ? projectTint(project).color : inkCss(other?.color || hashTint(project));
   const letters = projectInitials(project);
   if (mark?.kind === "logo" && mark.logo) return <LogoTile key={mark.logo} name={mark.logo} pc={pc} letters={letters} plate={mark.plate} self={isSelfProject(project)} />;
   return (

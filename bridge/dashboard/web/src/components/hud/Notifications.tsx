@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
-import { GitPullRequest, Moon, Settings, Truck, CalendarDays, Users } from "lucide-react";
+import { GitPullRequest, Moon, Settings, Sparkles, Truck, CalendarDays, Users } from "lucide-react";
 import { api, type Need, type Notice, type NoticePrefs, type PendingCard, type RivendellInstance } from "../../api";
 import { chime, push, pushGranted, type ToneKey } from "../../lib/push";
 import { bannerActions, bannerAnswer } from "../../lib/banner";
@@ -11,6 +11,7 @@ import {
 } from "../../lib/notices";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useIntegrations } from "../../lib/integrations";
+import { useStyle } from "../../lib/stylerun";
 
 /* The bell, its toasts and the pills (docs/superpowers/specs/notifications.md).
  *
@@ -126,8 +127,8 @@ const subscribe = (fn: () => void) => { subs.add(fn); return () => { subs.delete
 // ---- copy and colour ------------------------------------------------------------
 
 const TONE: Record<string, "ok" | "err" | "ask" | "warn" | "acc" | "dim"> = {
-  done: "ok", rv_done: "ok", move_done: "ok", resumed: "ok", rv_link_back: "dim",
-  failed: "err", rv_failed: "err", rv_refused: "err", rv_link: "err", pr_failing: "err", move_failed: "err",
+  done: "ok", rv_done: "ok", move_done: "ok", styled: "ok", resumed: "ok", rv_link_back: "dim",
+  failed: "err", rv_failed: "err", rv_refused: "err", rv_link: "err", pr_failing: "err", move_failed: "err", style_failed: "err",
   approve: "ask", question: "ask", login: "ask", limit_choice: "ask", rv_offer: "ask",
   parked: "warn", pr_changes: "warn", started: "acc", rv_started: "acc", team_in: "acc",
   rv_held: "dim", rv_dismissed: "dim", weekly: "dim", retrying: "dim",
@@ -144,6 +145,7 @@ function Source({ kind, source, project }: { kind: string; source: string; proje
     : source === "team" ? <Users size={13} strokeWidth={1.8} />
     : source === "pr" ? <GitPullRequest size={13} strokeWidth={1.8} />
     : kind === "weekly" ? <CalendarDays size={13} strokeWidth={1.8} />
+    : kind === "styled" || kind === "style_failed" ? <Sparkles size={13} strokeWidth={1.8} />
     : source === "bridge" ? <Truck size={13} strokeWidth={1.8} /> : null;
   return (
     <span className={`ntf-src s-${source}`}>
@@ -166,6 +168,8 @@ function openRow(n: { id?: number; kind: string; subject: string; source: string
   // A picture or a file a teammate sent: it waits in the TEAM tab.
   if (n.source === "team") return void window.dispatchEvent(new CustomEvent("hud:team"));
   if (n.kind.startsWith("move_")) return openSettings("move");
+  // STYLE WITH AI: its run, the list of changes and Undo wait on the Projects page.
+  if (n.kind === "styled" || n.kind === "style_failed") return openSettings("projects", "style");
 }
 
 /** A NEEDS row's click: the session that waits, or the offered job's page. */
@@ -296,6 +300,38 @@ function NeedRow({ n, now, done, onOpen }: { n: Need; now: number; done: () => v
   );
 }
 
+/** STYLE WITH AI while it runs: how far it has got. Tap it and the Projects page shows the run. */
+function StylingRow({ onOpen, now }: { onOpen: () => void; now: number }) {
+  const s = useStyle();
+  const r = s.run?.state === "running" ? s.run : null;
+  const total = r?.total ?? s.live?.total ?? 0;
+  const decided = r ? r.items?.length ?? 0 : s.live?.decided ?? 0;
+  const changed = r ? (r.items ?? []).filter((i) => i.how.length).length : s.live?.changed ?? 0;
+  if (!s.drawing && !r && !s.live) return null;
+  return (
+    <div className="ntf-row ntf-styling" onClick={onOpen}>
+      <span className="ntf-src s-bridge"><Sparkles size={13} strokeWidth={1.8} /></span>
+      <div className="ntf-mid">
+        <div className="ntf-ttl"><span className="ntf-verb ntf-v-acc">STYLING</span>
+          <span className="ntf-s">{s.drawing ? "reading every project's pictures" : `${decided} of ${total} projects`}</span></div>
+        <div className="ntf-body">{s.drawing ? "Style with AI is starting" : `${changed} restyled so far · tap to watch it in Projects`}</div>
+        <span className="ntf-prog"><i style={{ width: `${s.drawing ? 4 : total ? Math.max(4, (decided / total) * 100) : 4}%` }} /></span>
+      </div>
+      <span className="ntf-when">{(r?.started ?? s.live?.started) ? ago((r?.started ?? s.live?.started)!, now) : ""}</span>
+    </div>
+  );
+}
+
+/** The bell's ring while STYLE WITH AI runs: the same progress, at a glance. */
+function useStylingProgress(): number | null {
+  const s = useStyle();
+  if (s.drawing) return 0.04;
+  const r = s.run?.state === "running" ? s.run : null;
+  const total = r?.total ?? s.live?.total ?? 0;
+  if (!r && !s.live) return null;
+  return total ? Math.max(0.04, (r ? r.items?.length ?? 0 : s.live?.decided ?? 0) / total) : 0.04;
+}
+
 // ---- the bell ------------------------------------------------------------------
 
 const CURSOR_KEY = "hud-notice-cursor";
@@ -339,6 +375,7 @@ export function NotificationCenter() {
   const plugins = useIntegrations();   // no Rivendell installed: no Rivendell filter
   const liveNeeds = useSyncExternalStore(subscribe, () => needs);
   const liveLinks = useSyncExternalStore(subscribe, () => links);
+  const styling = useStylingProgress();
   const openSid = useSyncExternalStore(subscribe, () => env.openSessionId);
   const [feed, setFeed] = useState<Notice[]>([]);
   const [prefs, setPrefs] = useState<NoticePrefs | null>(null);
@@ -469,6 +506,10 @@ export function NotificationCenter() {
         {b.kind === "count" && <span className="ntf-badge">{b.n > 9 ? "9+" : b.n}</span>}
         {b.kind === "dot" && <span className="ntf-dot" />}
         {b.kind === "moon" && <span className="ntf-moon"><Moon size={8} fill="currentColor" strokeWidth={0} /></span>}
+        {styling !== null && (
+          <svg className="ntf-ring" viewBox="0 0 36 36" aria-hidden><circle cx="18" cy="18" r="16" pathLength="100"
+            style={{ strokeDasharray: `${Math.round(styling * 100)} 100` }} /></svg>
+        )}
       </button>
 
       {open && (
@@ -499,6 +540,7 @@ export function NotificationCenter() {
           )}
           <div className="ntf-list mscroll">
             {stale && <div className="ntf-stale">This page is newer than the bridge. Restart it to see the feed.</div>}
+            {filter === "all" && <StylingRow now={now} onOpen={() => { close(); openSettings("projects", "style"); }} />}
             {fNeeds.length > 0 && (
               <>
                 <div className="ntf-sec ask caps">Needs you<span className="ln" />{fNeeds.length}</div>

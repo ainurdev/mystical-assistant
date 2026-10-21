@@ -158,14 +158,14 @@ FEATURES = (
               "and SHIP commits with a plain list of what changed."},
     {"key": "logostyle", "env": "LOGO_STYLE_AI", "label": "STYLE WITH AI",
      "hint": "picks each project's logo, background and colour",
-     "cost": "1 haiku call per press",
-     "tokens": "~10k tokens",
+     "cost": "1 sonnet call per press",
+     "tokens": "~12k tokens",
      "about": "SETTINGS ▸ Projects' Style with AI shows one model a contact sheet of every "
               "project's logos and favicons, Rivendell's logo for it and its frontend's, and "
               "each project wears what it picks, with a background and a colour; a mark you "
               "set stays yours, and Undo takes a run back. No tools, hooks or session ride "
-              "along, which is why it costs a fraction of a title. It only runs when you "
-              "press it, so it ships ON. Off, the button is Pick logos again: its rules, "
+              "along, so a press costs a cent or two. It only runs when you press it, so "
+              "it ships ON. Off, the button is Pick logos again: its rules, "
               "no model, letters only."},
     {"key": "changelog", "env": "CHANGELOG_ENABLE", "label": "UPDATE NOTES",
      "hint": "sums up what an update changed, in the changelog",

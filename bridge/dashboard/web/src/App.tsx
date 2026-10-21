@@ -35,6 +35,7 @@ import { useTelemetry } from "./lib/telemetry";
 import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
 import { ago, forgetLegacyTints, legacyTints, projectMark, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
          useProjectTints } from "./lib/surfaces";
+import { noteStyling } from "./lib/stylerun";
 import { offerRivendellMarks } from "./components/hud/RivendellMarks";
 import {
   autoBaseFont,
@@ -1043,6 +1044,7 @@ export function App() {
         if (!live) return;
         setStatusMap(new Map(Object.entries(r.status ?? {})));
         setNeeds(r.needs);
+        noteStyling(r.styling);
       } catch { /* ignore */ }
     };
     void tick();

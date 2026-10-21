@@ -104,11 +104,16 @@ and the clients' logos in ainurhq.cloud and yggdrasil.
 
 ## AI
 
-- **A switch in the AI tab.** It gains LOGO STYLIST, "1 haiku call per press", about 45k tokens with one
-  image. It ships ON, since it only runs when you press it.
+- **A switch in the AI tab.** It gains STYLE WITH AI, "1 sonnet call per press", about 12k tokens with
+  one image (measured: $0.013 for this Mac's 21 projects and 83 pictures). It ships ON, since it only runs
+  when you press it.
 - **With the switch off**, the button says Pick logos and runs today's rules: letters only, no colours.
-- **One call.** It is a haiku vision call for every project at once, streamed. That's about 10–20 s for
-  23 projects. Haiku is a builder's call; switch to sonnet if its picks are poor.
+- **One call.** It is a sonnet vision call for every project at once, at effort low, streamed: the first
+  line lands after ~14 s of reading, the rest over the next ~6 s. Haiku was tried first and dropped: it
+  thinks ~27 s before its first line at any effort, and once took SvelteKit's default favicon for Elvou's.
+- **The model's background "none"** counts as AUTO (no plate unless the logo would vanish), and a colour a
+  glance can't tell from the one it wears (NR's #ea5b13 against #e8562a) is no change, so a project the
+  model only re-described stays "already right".
 - **When it fails** (a timeout, an error, no login), nothing changes. The strip says why and offers Retry.
 
 ## Not in it

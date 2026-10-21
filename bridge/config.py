@@ -237,7 +237,7 @@ RIVENDELL_TRACK = os.environ.get("RIVENDELL_TRACK", "1").lower() \
 # visible and stoppable.
 COMMIT_MSG_AI = os.environ.get("COMMIT_MSG_AI", "1").lower() \
     not in ("0", "false", "no", "")
-# STYLE WITH AI (SETTINGS ▸ Projects): one haiku call, with a picture, per press.
+# STYLE WITH AI (SETTINGS ▸ Projects): one sonnet call, with a picture, per press.
 LOGO_STYLE_AI = os.environ.get("LOGO_STYLE_AI", "1").lower() \
     not in ("0", "false", "no", "")
 # The bell's UPDATE NOTES: a haiku summary of what a pull changed, at boot.

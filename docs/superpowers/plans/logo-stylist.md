@@ -14,7 +14,7 @@ Spec: `docs/superpowers/specs/logo-stylist.md`. Branch `feat/logo-stylist`.
 2. **logostyle.py: the run** (tests in `tests/test_logostyle.py`, a fake claude)
    - `start(sheet_b64, table)`: AI switch on, nothing running, a PNG under 4 MB, every candidate id one
      the bridge offers now; then a thread.
-   - One haiku call, the sheet inline over stream-json, no tools or hooks; text deltas split into lines,
+   - One sonnet call (effort low), the sheet inline over stream-json, no tools or hooks; text deltas split into lines,
      each line checked and applied as it lands. A 120 s ceiling; `stop()` kills it.
    - `state()` for the page and the bell (the partial line too, for the pane's typing why). A STYLED or
      STYLE FAILED notice at the end.

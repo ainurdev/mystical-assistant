@@ -46,6 +46,7 @@ pause = float(os.environ.get("FAKE_PAUSE", "0"))
 def say(e):
     sys.stdout.write(json.dumps(e) + "\n"); sys.stdout.flush()
 say({{"type": "system", "subtype": "init"}})
+say({{"type": "stream_event", "event": {{"type": "content_block_delta", "delta": {{"type": "thinking_delta", "thinking": ""}}}}}})
 for i in range(0, len(out), 7):                      # small cuts: lines arrive in pieces
     say({{"type": "stream_event", "event": {{"type": "content_block_delta", "delta": {{"type": "text_delta", "text": out[i:i + 7]}}}}}})
     if pause and "\n" in out[i:i + 7]:
@@ -101,17 +102,19 @@ def test_a_run_applies_each_line_as_it_streams_and_tells_the_bell(world):
     keep = repo(world["base"], "keepme", {"public/icon.svg": svg(3)})
     k = keys()
     answer(world, "here you go:",
-           {"p": k[shop], "pick": "c2", "bg": "none", "color": "#3168d0", "why": "the  brand's own mark"},
+           {"p": k[shop], "pick": "c2", "bg": "dark", "color": "#3168d0", "why": "the  brand's own mark"},
            {"p": k[tree], "pick": "icon:tree-deciduous", "bg": "auto", "color": "#57ab5a", "why": "a world tree"},
            {"p": "P99", "pick": "c1", "why": "no such project"},
-           {"p": k[keep], "pick": "c9", "color": "#ac8de7", "why": "keeps its icon"})          # c9: no such candidate
+           {"p": k[keep], "pick": "c9", "color": "#ac8de7", "why": "keeps its icon"},          # c9: no such candidate
+           {"p": "note", "why": "react's logo in shop is a framework's"})
     logostyle.start(SHEET, projectmarks.style_candidates()["sig"])
     s = wait()
     assert s["state"] == "done" and s["error"] is None and s["total"] == 3
     assert {i["rel"]: i["how"] for i in s["items"]} == {shop: ["logo", "background", "colour"],
                                                         tree: ["icon", "colour"], keep: ["colour"]}
     assert next(i for i in s["items"] if i["rel"] == shop)["why"] == "the brand's own mark"
-    assert project_config.mark(shop) == {"kind": "logo", "repo": "src/brand/shop-logo.svg", "plate": "none",
+    assert s["note"] == "react's logo in shop is a framework's"
+    assert project_config.mark(shop) == {"kind": "logo", "repo": "src/brand/shop-logo.svg", "plate": "dark",
                                           "color": "#3168d0", "source": "style", "styled": "the brand's own mark"}
     assert project_config.mark(tree)["icon"] == "tree-deciduous"
     assert project_config.mark(keep)["repo"] == "public/icon.svg"                       # a bad pick keeps what it wears
@@ -186,3 +189,13 @@ def test_stop_ends_the_run_and_drops_what_comes_after(world):
     assert s["state"] == "stopped" and s["error"] is None
     assert [i["rel"] for i in s["items"]] == [a] and project_config.mark(b) is None
     assert world["sent"] == []                                        # you stopped it: nothing to tell you
+
+
+def test_the_model_s_none_is_auto(world):
+    shop = repo(world["base"], "shop", {"public/favicon.svg": svg(1)})
+    answer(world, {"p": "P1", "pick": "keep", "bg": "none", "why": "already right"})
+    logostyle.start(SHEET, projectmarks.style_candidates()["sig"])
+    s = wait()
+    assert s["items"][0]["how"] == [] and project_config.mark(shop) is None      # "none" asked for no plate: AUTO
+    argv = json.loads((world["dir"] / "argv.json").read_text())
+    assert argv[argv.index("--effort") + 1] == "low"

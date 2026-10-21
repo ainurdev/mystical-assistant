@@ -12,6 +12,10 @@ import { ProjectTile } from "../ui/ProjectTile";
 import type { ProjectGroup } from "./ProjectsPanel";
 import MarkEditor, { poss } from "./MarkEditor";
 import { RivendellStrip } from "./RivendellMarks";
+import { StyleButton, StylePane, StyleScan, StyleStrip, useStyleRows } from "./LogoStylist";
+import { useAiFeatures } from "../../lib/ai";
+import { takeSettingsFocus } from "../../lib/opensettings";
+import { showStyle, useStyle } from "../../lib/stylerun";
 
 /* SETTINGS ▸ Projects: every repo the bridge can run in, as a list on the left
    and the one you picked on the right (.mystical/design-drafts/projects-tab, B).
@@ -142,6 +146,7 @@ function Field({ icon: Icon, label, hint, children }: { icon: LucideIcon; label:
 /** What the picked project's mark is, and where it comes from. */
 function markHint(rel: string): string {
   const m = projectMark(rel);
+  if (m?.styled !== undefined) return `styled by AI${m.styled ? `: ${m.styled}` : ""}`;
   if (m?.auto) return "its own icon, read from the repo";
   if (m?.source === "pick") return m.pick?.how === "frontend" ? `picked: ${projectName(m.pick.from)}'s logo, its frontend`
     : m.pick?.how === "org" ? `picked: ${m.pick.from}'s GitHub picture` : "picked: a brand file in the repo, read afresh";
@@ -218,11 +223,21 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
   const [picked, setPicked] = useState<string[]>([]);
   const [pickRes, setPickRes] = useState<PickResult | string | null>(null);   // PICK LOGOS' strip, or its error
   const [picking, setPicking] = useState(false);
+  // STYLE WITH AI (LogoStylist.tsx) replaces PICK LOGOS while its AI switch is on. Its run
+  // takes the right side until a project is picked; the bell's row (focus "style") brings it back.
+  const styleOn = !!useAiFeatures().logostyle;
+  const style = useStyle();
+  const styleRow = useStyleRows();
+  const [reviewing, setReviewing] = useState(true);
+  useEffect(() => { if (takeSettingsFocus() === "style") { showStyle(); setReviewing(true); } }, []);
+  useEffect(() => { if (style.drawing) setReviewing(true); }, [style.drawing]);
+  const paneRun = styleOn && reviewing && (style.drawing || (!!style.run && style.run.state !== "idle" && !style.dismissed));
   // A filter or a search never swaps the project on the right; only a click does.
   const focus = sel && all.some((r) => r.rel === sel) ? sel : order[0] ?? rows[0]?.rel ?? null;
   const chosen = picked.filter((rel) => rows.some((r) => r.rel === rel));
   const many = chosen.length > 1;
   function pick(rel: string, e: React.MouseEvent) {
+    setReviewing(false);
     let next: string[];
     if (e.metaKey || e.ctrlKey) {
       const base = chosen.length ? chosen : focus ? [focus] : [];
@@ -337,14 +352,18 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
             </button>
           ))}
         </div>
-        <button type="button" className="ps-btn prj-pickbtn" disabled={picking} data-on={(pickRes && typeof pickRes !== "string") || undefined}
-          title="Each project still on letters gets its frontend's logo, a brand file of its own, or its GitHub organization's picture"
-          onClick={() => void pickLogos("pick")}><WandSparkles size={15} aria-hidden />Pick logos</button>
+        {styleOn ? <StyleButton /> : (
+          <button type="button" className="ps-btn prj-pickbtn" disabled={picking} data-on={(pickRes && typeof pickRes !== "string") || undefined}
+            title="Each project still on letters gets its frontend's logo, a brand file of its own, or its GitHub organization's picture"
+            onClick={() => void pickLogos("pick")}><WandSparkles size={15} aria-hidden />Pick logos</button>
+        )}
       </div>
-      {pickRes && <PickStrip res={pickRes} busy={picking} onUndo={() => void pickLogos("undo")} onClose={() => setPickRes(null)} />}
+      {styleOn ? <StyleStrip reviewing={paneRun} onReview={() => setReviewing(true)} />
+        : pickRes && <PickStrip res={pickRes} busy={picking} onUndo={() => void pickLogos("undo")} onClose={() => setPickRes(null)} />}
       <RivendellStrip />
       <div className="prj-split">
         <div className="prj-list" aria-label="projects">
+          {styleOn && <StyleScan />}
           {secs.length === 0 && <div className="prj-empty">{empty}</div>}
           {secs.map(({ parent, rows: srows }) => {
             const key = parent || "~";
@@ -372,13 +391,16 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                 {open && srows.map((r) => {
                   const on = many ? chosen.includes(r.rel) : r.rel === focus;
                   const dot = r.running ? "ok" : (r.badge?.dirty ?? 0) > 0 ? "warn" : null;
+                  const sr = styleOn ? styleRow(r.rel) : null;
                   return (
-                    <button key={r.rel} type="button" aria-current={on || undefined} className="prj-row" data-on={on || undefined}
-                      data-hidden={r.hidden || undefined} title={r.rel} onClick={(e) => pick(r.rel, e)}>
+                    <button key={r.rel} type="button" aria-current={on || undefined} className="prj-row" data-on={(on && !paneRun) || undefined}
+                      data-hidden={r.hidden || undefined} data-st={sr?.st} data-landed={sr?.landed || undefined}
+                      title={r.rel} onClick={(e) => pick(r.rel, e)}>
                       <ProjectTile project={r.rel} />
                       <span className="prj-nm">{r.name}</span>
                       {dot && <i className="prj-dot" data-k={dot} title={dot === "ok" ? "running" : "uncommitted changes"} />}
                       <span className="prj-end">{r.hidden ? <EyeOff size={13} aria-label="hidden" /> : r.sessionCount || ""}</span>
+                      {sr?.end}
                     </button>
                   );
                 })}
@@ -388,7 +410,9 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
         </div>
 
         <div className="prj-det">
-          {many ? (
+          {paneRun ? (
+            <StylePane onPick={(rel) => { setReviewing(false); setPicked([]); setSel(rel); }} />
+          ) : many ? (
             <>
               <div className="prj-bulkhead">
                 <b>{chosen.length} projects</b>
