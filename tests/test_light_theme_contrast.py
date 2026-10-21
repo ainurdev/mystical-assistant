@@ -41,8 +41,8 @@ GHOST_FLOOR = 3.25
 CANVAS = {"claude": "#efede5", "flint": "#ebebed", "pebble": "#eef0f4",
           # MIDDLE-EARTH: each of Rivendell's schemes is a ground of its own
           "rivendell": "#f6f5f0", "havens": "#f1f5f5", "edoras": "#f1e1a6",
-          "slack": "#fcfcfc", "linear": "#fafafc", "gmail": "#f6f8fc", "github": "#fafcfc",
-          "notion": "#fbfaf9", "solarized": "#fdf6e3", "rosepine": "#faf4ed"}
+          "mirkwood": "#fcfcfc", "osgiliath": "#fafafc", "amroth": "#f6f8fc", "shire": "#fafcfc",
+          "tirith": "#fbfaf9", "anorien": "#fdf6e3", "ithilien": "#faf4ed"}
 
 # The light ground has to stay a GROUND, not a spotlight: `panel` is the raised
 # card and `canvas` sits below it, so the biggest surface is never the brightest.

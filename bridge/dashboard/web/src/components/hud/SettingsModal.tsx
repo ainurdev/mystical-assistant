@@ -688,6 +688,12 @@ function swatchFill(k: ThemeKey): string {
   return `linear-gradient(135deg, ${p.acc} 0 58%, ${p.ask} 58%)`;
 }
 
+/** A colouring's name in the dialog's voice, except MIDDLE-EARTH's: those are
+ *  places, so every word keeps its capital ("Minas Tirith", not "Minas tirith"). */
+function colourName(k: ThemeKey, name: string): string {
+  return family(k) === "middle-earth" ? name.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : sentence(name);
+}
+
 /** The theme picker: one card per family, each previewing the UI in its own
  *  skin (data-pv), with its colourings on the chosen ground as swatches. A
  *  family's card wears your colouring if it is yours, or that colouring's twin
@@ -729,13 +735,13 @@ function ThemeGrid({ light, settings, onTheme }: {
               <span className="d" />
               <div style={{ minWidth: 0 }}>
                 <b>{FAMILY_NAME[fam]}</b>
-                <span>{keys.length ? [colour && sentence(colour), FAMILY_TAG[fam]].filter(Boolean).join(" · ") : "a tube has no daylight."}</span>
+                <span>{keys.length ? [colour && colourName(live, colour), FAMILY_TAG[fam]].filter(Boolean).join(" · ") : "a tube has no daylight."}</span>
               </div>
               {on && <em>Active</em>}
             </div>
             <div className="ftsq">
               {shown.map((k) => (
-                <button key={k} title={sentence(themeDef(k).name)} data-on={cur === k || undefined} disabled={!keys.length}
+                <button key={k} title={colourName(k, themeDef(k).name)} data-on={cur === k || undefined} disabled={!keys.length}
                   style={{ background: swatchFill(k) }}
                   onClick={(e) => { e.stopPropagation(); onTheme(k); }} />
               ))}

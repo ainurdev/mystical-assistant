@@ -27,7 +27,7 @@ MINI = os.path.join(ROOT, "bridge/miniapp/web/src/lib/theme.ts")
 # (index.css, THE FAMILIES) that the Mini App does not carry, so their colourings
 # stay off the phone. MIDDLE-EARTH's keys are its schemes' names.
 DASHBOARD_ONLY = ("flint-", "pebble-", "rivendell", "moria", "mordor",
-                  "slack", "linear", "gmail", "github", "dracula", "nord", "catppuccin")
+                  "mirkwood", "osgiliath", "amroth", "shire", "guldur", "caradhras", "valinor")
 
 
 def tokens(body):
