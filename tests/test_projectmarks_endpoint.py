@@ -167,3 +167,13 @@ def test_the_listing_wears_a_repos_icon_and_the_strip_lists_its_images(tmp_path,
     assert dget(f"/local/project-mark/repo?project={rel}")["obj"] == {
         "images": [{"path": "public/favicon.svg", "logo": m["logo"]}]}
     assert dget("/local/project-mark/repo?project=../../etc")["code"] == 400
+
+
+def test_the_pick_route_reaches_projectmarks(monkeypatch):
+    calls = []
+    monkeypatch.setattr(projectmarks, "pick_all", lambda: calls.append("pick") or {"picked": [], "none": []})
+    monkeypatch.setattr(projectmarks, "undo_picks", lambda: calls.append("undo") or {"undone": 0})
+    assert dpost("/local/project-mark/pick", {"action": "pick"})["obj"] == {"picked": [], "none": []}
+    assert dpost("/local/project-mark/pick", {"action": "undo"})["obj"] == {"undone": 0}
+    assert dpost("/local/project-mark/pick", {"action": "explode"})["code"] == 400
+    assert calls == ["pick", "undo"]

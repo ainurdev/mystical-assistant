@@ -9,6 +9,7 @@ Run: python -m pytest tests/test_projectmarks.py -v"""
 import base64
 import hashlib
 import io
+import struct
 import subprocess
 
 import pytest
@@ -759,3 +760,111 @@ def test_a_name_git_cant_decode_or_a_bad_stored_path_never_sinks_the_listing(bas
     monkeypatch.setattr(git, "_run", undecodable)
     got = projectmarks.marks([rel, other])
     assert rel not in got and got[other] == {"kind": "logo", "repo": "public/\x00icon.svg"}
+
+
+
+# --- PICK LOGOS and the AUTO background ---------------------------------------
+
+def _ihdr(w, h):
+    return b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + struct.pack(">II", w, h) + b"\x08\x02\x00\x00\x00"
+
+
+@pytest.fixture
+def offline(monkeypatch):
+    """No GitHub here: the organization source finds nothing."""
+    monkeypatch.setattr(projectmarks, "_org", lambda rel, seen: None)
+
+
+def test_pick_gives_a_backend_its_frontends_logo(base, offline):
+    front = repo(base, "mono/unideck", {"public/icon.svg": svg(1)})
+    back = repo(base, "mono/unideck-api", {"README.md": b"# api"})
+    assert projectmarks.pick_all() == {"picked": [{"rel": back, "how": "frontend", "from": front}], "none": []}
+    m = project_config.mark(back)
+    assert m["source"] == "pick" and m["pick"] == {"how": "frontend", "from": front}
+    assert projectmarks.logo(m["logo"]) == (svg(1), "image/svg+xml")        # a copy, kept in the store
+
+
+def test_pick_takes_a_brand_file_named_for_the_repo_but_not_a_clients(base, offline):
+    own = repo(base, "kantoor", {"public/brand/kantoor-logo-dark.svg": svg(1)})
+    plain = repo(base, "shop", {"src/assets/logo.svg": svg(2)})
+    hub = repo(base, "hub", {"raw/brand/elvou/elvou-logo.svg": svg(3), "assets/logo/unideck-logo-primary.svg": svg(4)})
+    got = projectmarks.pick_all()
+    assert {p["rel"]: p["how"] for p in got["picked"]} == {own: "brand", plain: "brand"} and got["none"] == [hub]
+    assert project_config.mark(own) == {"kind": "logo", "repo": "public/brand/kantoor-logo-dark.svg",
+                                         "source": "pick", "pick": {"how": "brand"}}
+    assert projectmarks.marks([own])[own]["logo"] == named(svg(1))           # kept by path, read afresh
+
+
+def test_pick_takes_an_organizations_picture_but_not_a_person_or_githubs_default(base, monkeypatch):
+    users = {"acme": ("Organization", "https://avatars.example/u/1?v=4"),
+             "jane": ("User", "https://avatars.example/u/2?v=4"),
+             "fresh": ("Organization", "https://avatars.example/u/3?v=4")}
+    pics = {"https://avatars.example/u/1?v=4&s=256": _ihdr(256, 256),
+            "https://avatars.example/u/2?v=4&s=256": _ihdr(256, 256),
+            "https://avatars.example/u/3?v=4&s=256": _ihdr(420, 420)}     # GitHub's generated default ignores s=
+    a, b, c = (repo(base, n, {"README.md": b"x"}) for n in ("a", "b", "c"))
+    monkeypatch.setattr(projectmarks, "_owner", lambda rel: {a: "acme", b: "jane", c: "fresh"}.get(rel))
+    monkeypatch.setattr(projectmarks, "_github_user", lambda owner: users.get(owner))
+    monkeypatch.setattr(projectmarks, "_download", lambda url: pics.get(url))
+    got = projectmarks.pick_all()
+    assert got == {"picked": [{"rel": a, "how": "org", "from": "acme"}], "none": [b, c]}
+    assert projectmarks.logo(project_config.mark(a)["logo"])[0] == _ihdr(256, 256)
+
+
+def test_pick_leaves_yours_rivendells_and_auto_icons_alone(base, offline):
+    files = {"src/assets/logo.svg": svg(1)}
+    yours, back, riv = (repo(base, n, files) for n in ("yours", "back", "riv"))
+    auto = repo(base, "auto", {"public/icon.svg": svg(2), **files})
+    project_config.set_mark(yours, {"kind": "icon", "icon": "receipt"})
+    project_config.set_mark(back, {"kind": "letters"})                       # BACK TO LETTERS
+    project_config.set_mark(riv, {"kind": "letters", "source": "rivendell", "color": "#112233"})
+    assert projectmarks.pick_all() == {"picked": [], "none": []}
+    assert project_config.mark(auto) is None and project_config.mark(back) == {"kind": "letters"}
+
+
+def test_a_pick_made_while_you_set_a_mark_is_dropped(base, offline, monkeypatch):
+    rel = repo(base, "shop", {"src/assets/logo.svg": svg(1)})
+    real = projectmarks._brand
+
+    def brand_then_you(r):
+        project_config.set_mark(rel, {"kind": "icon", "icon": "receipt"})   # set while the pick looked
+        return real(r)
+    monkeypatch.setattr(projectmarks, "_brand", brand_then_you)
+    assert projectmarks.pick_all()["picked"] == []
+    assert project_config.mark(rel) == {"kind": "icon", "icon": "receipt"}
+
+
+def test_undo_takes_back_only_picks_still_as_picked(base, offline):
+    a, b = (repo(base, n, {"src/assets/logo.svg": svg(i)}) for i, n in enumerate(("a", "b")))
+    projectmarks.pick_all()
+    projectmarks.set_mark(b, {"kind": "icon", "icon": "receipt"})          # you changed one since
+    assert projectmarks.undo_picks() == {"undone": 1}
+    assert project_config.mark(a) is None and project_config.mark(b) == {"kind": "icon", "icon": "receipt"}
+    assert projectmarks.undo_picks() == {"undone": 0}
+
+
+def test_rivendell_wins_over_a_pick(base, riv, offline):
+    rel = repo(base, "app", {"src/assets/logo.svg": svg(1)})
+    projectmarks.pick_all()
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "name": "P", "repositories": ["acme/app"],
+                        "client": client("c", logo="https://s3/c.png")}]
+    riv["local"] = {rel: {"acme/app"}}
+    riv["logos"] = {"https://s3/c.png": PNG}
+    assert projectmarks.state()["offer"]["count"] == 1                       # the offer counts it too
+    assert projectmarks.import_all()["following"] == 1
+    assert project_config.mark(rel)["source"] == "rivendell"
+
+
+def test_a_repo_icon_beats_an_earlier_pick(base, offline):
+    rel = repo(base, "app", {"src/assets/logo.svg": svg(1)})
+    projectmarks.pick_all()
+    (base / "app" / "public").mkdir()
+    (base / "app" / "public" / "icon.svg").write_bytes(svg(2))
+    subprocess.run(["git", "-C", str(base / "app"), "add", "-A"], check=True)
+    assert projectmarks.marks([rel])[rel] == {"kind": "logo", "logo": named(svg(2)), "repo": "public/icon.svg", "auto": True}
+
+
+def test_none_pins_no_background_and_auto_stores_nothing():
+    m = projectmarks.set_mark("/r", {"kind": "logo", "plate": "none"}, logo_data=base64.b64encode(PNG).decode())
+    assert m["plate"] == "none"
+    assert "plate" not in projectmarks.set_mark("/r", {"kind": "logo", "logo": m["logo"]})   # AUTO: nothing stored

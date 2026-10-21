@@ -1629,6 +1629,14 @@ class Handler(BaseHTTPRequestHandler):
             # store and starts/stops/rewires to match.
             rivendell.reconfigure()
             return self._json({"ok": True, "instance": inst})
+        if path == "/local/project-mark/pick":
+            # PICK LOGOS on the Projects page, and its Undo (bridge/projectmarks.py).
+            act = body.get("action")
+            if act == "pick":
+                return self._json(projectmarks.pick_all())
+            if act == "undo":
+                return self._json(projectmarks.undo_picks())
+            return self._json({"error": "action must be pick or undo"}, 400)
         if path == "/local/rivendell/marks":
             act = body.get("action")
             if act == "import":

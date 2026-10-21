@@ -5,7 +5,7 @@ import { DynamicIcon, iconNames } from "lucide-react/dynamic";
 import { api, projectLogoUrl, type ProjectMark, type RepoImages, type RivendellGallery, type RivendellMarks } from "../../api";
 import { inkCss, liftInk } from "../../lib/ink";
 import { readLogo, shrinkLogo, useLogoInfo, type LogoInfo } from "../../lib/logoinfo";
-import { hashTint, projectInitials, projectMark, putProjectMark, setProjectMarks } from "../../lib/surfaces";
+import { hashTint, projectInitials, projectMark, projectName, putProjectMark, setProjectMarks } from "../../lib/surfaces";
 import { synced } from "./RivendellMarks";
 
 /* The mark editor: what a project's tile shows (its initials, an icon, or a
@@ -47,7 +47,7 @@ const COMMON = [
 interface Logo { name?: string; data?: string; url: string; label: string; repo?: string }
 
 /** "IB Groups' logo", "Elvou's logo". */
-const poss = (who: string) => (who.endsWith("s") ? `${who}'` : `${who}'s`);
+export const poss = (who: string) => (who.endsWith("s") ? `${who}'` : `${who}'s`);
 
 export default function MarkEditor({ project, name, anchor, onClose }: {
   project: string;
@@ -64,7 +64,9 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const [hex, setHex] = useState(cur?.color && HEX.test(cur.color) ? cur.color : "");
   const [logo, setLogo] = useState<Logo | null>(cur?.logo
     ? { name: cur.logo, url: projectLogoUrl(cur.logo), repo: cur.repo,
-        label: cur.repo ? `${cur.repo} · from the repo` : following ? `${poss(cur.rv?.name ?? "The client")} logo` : "Your logo" }
+        label: cur.repo ? `${cur.repo} · from the repo` : following ? `${poss(cur.rv?.name ?? "The client")} logo`
+          : cur.pick?.how === "frontend" ? `${poss(projectName(cur.pick.from))} logo, its frontend`
+          : cur.pick?.how === "org" ? `${poss(cur.pick.from ?? "Its organization")} GitHub picture` : "Your logo" }
     : null);
   const [dropped, setDropped] = useState<LogoInfo | null>(null);
   const stored = useLogoInfo(logo?.name, logo?.url ?? "");
@@ -264,7 +266,9 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const swatches = info?.colors ?? [];
   const preview = (
     <b className="ptile mk-tile" data-kind={kind === "letters" ? undefined : kind} style={{ ["--pc" as string]: tint }}
-      data-logo={kind === "logo" && info?.fill ? "fill" : undefined} data-plate={kind === "logo" && plate ? plate : undefined}>
+      data-logo={kind === "logo" && info?.fill ? "fill" : undefined}
+      data-plate={kind === "logo" && (plate === "light" || plate === "dark") ? plate : undefined}
+      data-auto-n={(kind === "logo" && !plate && info?.night) || undefined} data-auto-d={(kind === "logo" && !plate && info?.day) || undefined}>
       {kind === "logo" && logo ? <img src={logo.url} alt="" />
         : kind === "icon" && icon ? <DynamicIcon name={icon as never} />
         : projectInitials(project)}
@@ -346,9 +350,11 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
                 </div>
               )}
               <div className="mk-bgrow">
-                <div className="mk-lbl">Background</div>
+                {/* AUTO (nothing stored) says what it chose on this ground. */}
+                <div className="mk-lbl mk-bglbl">Background
+                  {!plate && <small>{(light ? info?.day : info?.night) ? `${light ? "dark" : "light"} here` : "none here"}</small>}</div>
                 <div className="mk-mini" role="radiogroup" aria-label="Background">
-                  {([[null, "NONE"], ["light", "LIGHT"], ["dark", "DARK"]] as const).map(([v, l]) => (
+                  {([[null, "AUTO"], ["none", "NONE"], ["light", "LIGHT"], ["dark", "DARK"]] as const).map(([v, l]) => (
                     <button key={l} type="button" role="radio" aria-checked={plate === v} data-on={plate === v || undefined}
                       onClick={() => setPlate(v)}>{l}</button>
                   ))}

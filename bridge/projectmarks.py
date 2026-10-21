@@ -38,6 +38,15 @@ from Rivendell beats it. A pick from the strip is stored as the file's path
 ("repo"), so it follows the file as well. Both are served by their bytes' hash,
 like a stored logo.
 
+PICK LOGOS (pick_all) goes further for a project that still wears letters: its
+frontend's logo (unideck-api wears unideck's), then a brand file of its own,
+then its GitHub organization's picture. A pick counts like the repo's own icon
+(source "pick"): Rivendell's logo wins over it, and so does an icon the repo
+gains later. Spec: docs/superpowers/specs/logo-picker.md.
+
+A logo with no stored background is AUTO: the browser plates it only where it
+would vanish into the ground (lib/logoinfo.ts). "none" pins it bare.
+
 A repo no Rivendell project names has nothing to match: a copy under another
 owner (ainurdev/elvou beside Elvou/elvou), or one newer than Rivendell's last
 GitHub sync. The editor's LINK links it to a project in Rivendell itself, as
@@ -88,7 +97,7 @@ _ICON_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 _COLOR_RE = re.compile(r"^(#[0-9a-fA-F]{6}|var\(--[a-z0-9-]{1,24}\))$")
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 KINDS = ("letters", "icon", "logo")
-PLATES = ("light", "dark")      # a background behind a logo; none is the default
+PLATES = ("light", "dark", "none")   # a background pinned behind a logo; none stored is AUTO
 REFRESH_S = 6 * 3600
 _CACHE_S = 600          # how long one look at Rivendell answers for the dashboard
 
@@ -373,11 +382,137 @@ def marks(rels) -> dict:
                 m["logo"] = name
     for rel in rels:
         m = out.get(rel)
-        if m is None or (m.get("source") == "rivendell" and m.get("kind") == "letters"):
+        picked = (m or {}).get("source") == "pick"       # an icon of its own beats a pick
+        if m is None or picked or (m.get("source") == "rivendell" and m.get("kind") == "letters"):
             got = repo_icon(rel)
             if got:
-                out[rel] = {**(m or {}), "kind": "logo", "logo": got["logo"], "repo": got["path"], "auto": True}
+                out[rel] = {**(m if m and not picked else {}), "kind": "logo", "logo": got["logo"],
+                            "repo": got["path"], "auto": True}
     return out
+
+
+# --- PICK LOGOS ----------------------------------------------------------------
+
+# A backend's name points at its frontend: unideck-api -> unideck (or unideck-app...).
+_BACKEND = re.compile(r"^(?P<stem>.+?)[-_](api|server|backend|worker|service)$")
+_FRONTS = ("", "-app", "-web", "-frontend", "-ui", "-portal", "-client")
+
+
+def _frontend(rel: str, rels: list, shown: dict) -> "str | None":
+    """The project a backend's name points at as its frontend, if it wears a
+    logo: one in the same folder first."""
+    folder, _, base = rel.rpartition("/")
+    m = _BACKEND.match(base.lower())
+    if not m:
+        return None
+    names = {m["stem"] + f for f in _FRONTS}
+    hits = [r for r in rels if r != rel and r.rpartition("/")[2].lower() in names and (shown.get(r) or {}).get("logo")]
+    return min(hits, key=lambda r: (r.rpartition("/")[0] != folder, r), default=None)
+
+
+def _brand(rel: str) -> "str | None":
+    """A logo or brand file of the repo's own: a logo.* anywhere, or a picture
+    named for the repo (kantoor-logo.svg in kantoor). A brand folder full of
+    clients' logos (a knowledge hub's) names none of them for the repo."""
+    root = _root(rel)
+    token = re.split(r"[-_.]", rel.rpartition("/")[2].lower())[0]
+    for p in _paths(rel):
+        stem = p.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        flat = re.sub(r"[^a-z0-9]", "", stem)
+        if (stem == "logo" or flat.startswith(token) or (len(token) >= 3 and token in flat)) and _name(root, p):
+            return p
+    return None
+
+
+def _owner(rel: str) -> "str | None":
+    from bridge import github
+    slug = github.origin_slug(_root(rel))
+    return slug.split("/")[0] if slug else None
+
+
+def _github_user(owner: str) -> "tuple[str, str] | None":
+    """(type, avatar_url) of a GitHub account, through the gh login. None when
+    gh is missing, signed out or offline."""
+    from bridge import github
+    rc, out, _ = github._run("gh", "api", f"users/{owner}", "--jq", "[.type, .avatar_url] | @tsv")
+    kind, _, url = out.strip().partition("\t")
+    return (kind, url) if rc == 0 and url else None
+
+
+def _org(rel: str, seen: dict) -> "tuple[str, bytes] | None":
+    """Its GitHub organization's picture: never a person's (a face), never
+    GitHub's generated default. `seen` holds each owner's answer for one pass."""
+    owner = _owner(rel)
+    if not owner:
+        return None
+    if owner not in seen:
+        user = _github_user(owner)
+        data = _download(f"{user[1]}&s=256") if user and user[0] == "Organization" else None
+        # ponytail: GitHub's generated default comes back 420x420 whatever s= asks for, and an
+        # uploaded picture at the size asked; if GitHub changes that, look at its pixels instead.
+        if data and data[:8] == b"\x89PNG\r\n\x1a\n" and data[16:24] == (420).to_bytes(4, "big") * 2:
+            data = None
+        seen[owner] = data
+    return (owner, seen[owner]) if seen[owner] else None
+
+
+def pick_all() -> dict:
+    """PICK LOGOS: every listed project still wearing letters gets the best
+    logo found for it: its frontend's (copied), a brand file of its own (by
+    path, so it follows the file), or its organization's picture (copied).
+    Never a mark you set, Rivendell's, or a repo's own icon. The picks are
+    kept for undo_picks."""
+    from bridge import browser
+    rels = browser.list_projects()
+    shown = marks(rels)
+    todo = [r for r in rels if r not in shown]
+    found: dict = {}                      # rel -> (mark, bytes to store or None)
+    seen: dict = {}
+    for rel in todo:
+        front = _frontend(rel, rels, shown)
+        got = logo(shown[front]["logo"]) if front else None
+        if got:
+            color = {"color": shown[front]["color"]} if shown[front].get("color") else {}
+            found[rel] = ({"kind": "logo", **color, "source": "pick", "pick": {"how": "frontend", "from": front}}, got[0])
+            continue
+        path = _brand(rel)
+        if path:
+            found[rel] = ({"kind": "logo", "repo": path, "source": "pick", "pick": {"how": "brand"}}, None)
+            continue
+        org = _org(rel, seen)
+        if org:
+            found[rel] = ({"kind": "logo", "source": "pick", "pick": {"how": "org", "from": org[0]}}, org[1])
+    with _lock:
+        d = _load()
+        cur = project_config.marks()      # again: a mark set while it looked stands
+        picked = []
+        for rel, (mark, data) in found.items():
+            if rel in cur:
+                continue
+            if data:
+                mark = {**mark, "logo": _put_logo(d, data, RV_LOGO_MAX)}
+            project_config.set_mark(rel, mark)
+            picked.append(rel)
+        d["pick"] = {"undo": picked}
+        _gc(d)
+        _save(d)
+    return {"picked": [{"rel": r, **found[r][0]["pick"]} for r in picked],
+            "none": [r for r in todo if r not in found]}
+
+
+def undo_picks() -> dict:
+    """Undo the last PICK LOGOS: letters again, except where you changed it since."""
+    with _lock:
+        d = _load()
+        undone = 0
+        for rel in (d.get("pick") or {}).get("undo") or []:
+            if (project_config.mark(rel) or {}).get("source") == "pick":
+                project_config.set_mark(rel, None)
+                undone += 1
+        d["pick"] = {"undo": []}
+        _gc(d)
+        _save(d)
+    return {"undone": undone}
 
 
 # --- Rivendell ---------------------------------------------------------------
@@ -547,7 +682,7 @@ def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
 
 
 def _yours(m) -> bool:
-    return isinstance(m, dict) and m.get("source") != "rivendell"
+    return isinstance(m, dict) and m.get("source") not in ("rivendell", "pick")
 
 
 def import_all(only: "str | None" = None) -> dict:
@@ -682,8 +817,8 @@ def undo() -> dict:
 
 
 def _offer_rels(seen: dict, marks: dict) -> list:
-    """Matched repos still wearing plain letters: what IMPORT would change."""
-    return sorted(r for r in seen["matches"] if r not in marks)
+    """Matched repos still wearing plain letters, or a pick: what IMPORT would change."""
+    return sorted(r for r in seen["matches"] if r not in marks or marks[r].get("source") == "pick")
 
 
 def dismiss() -> dict:

@@ -1,16 +1,16 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUpRight, ChevronRight, Diamond, EyeOff, GitBranch, GraduationCap, PanelLeft, Pencil, Search, Shapes,
-  SquareTerminal, UserRound, X, type LucideIcon,
+  SquareTerminal, UserRound, WandSparkles, X, type LucideIcon,
 } from "lucide-react";
-import { api, type AccountInfo } from "../../api";
+import { api, type AccountInfo, type PickResult } from "../../api";
 import { slotHue, type ProfilesInfo } from "../../lib/profiles";
 import { agentLabel } from "../../lib/agents";
-import { ago, projectGivenName, projectMark } from "../../lib/surfaces";
+import { ago, projectGivenName, projectMark, projectName, setProjectMarks } from "../../lib/surfaces";
 import { filterRows, folders, parentOf, span, type Show } from "../../lib/projectlist";
 import { ProjectTile } from "../ui/ProjectTile";
 import type { ProjectGroup } from "./ProjectsPanel";
-import MarkEditor from "./MarkEditor";
+import MarkEditor, { poss } from "./MarkEditor";
 import { RivendellStrip } from "./RivendellMarks";
 
 /* SETTINGS ▸ Projects: every repo the bridge can run in, as a list on the left
@@ -144,8 +144,47 @@ function markHint(rel: string): string {
   const m = projectMark(rel);
   if (m?.auto) return "its own icon, read from the repo";
   if (m?.repo) return "set here: a picture in the repo, read afresh";
+  if (m?.source === "pick") return m.pick?.how === "frontend" ? `picked: ${projectName(m.pick.from)}'s logo, its frontend`
+    : m.pick?.how === "org" ? `picked: ${m.pick.from}'s GitHub picture` : "picked: a brand file in the repo, read afresh";
   if (m?.source === "rivendell") return m.rv?.own ? "its own logo, from Rivendell" : `${m.rv?.name ?? "its client"}'s logo, from Rivendell`;
   return m && !(m.kind === "letters" && !m.color) ? "set here: it never changes on its own" : "its initials";
+}
+
+/** "a and b", "a, b and c", "a, b, c and 2 more". */
+function names(rels: string[]): string {
+  const n = rels.map((r) => projectName(r));
+  const shown = n.length > 4 ? [...n.slice(0, 3), `${n.length - 3} more`] : n;
+  return shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : shown[0] ?? "";
+}
+
+/** What PICK LOGOS did, under the toolbar until it's closed: what each project
+ *  now wears, what found nothing, and Undo. Inline, not a notice: a notice sits
+ *  under the SETTINGS modal and would never be seen. */
+function PickStrip({ res, busy, onUndo, onClose }: { res: PickResult | string; busy: boolean; onUndo: () => void; onClose: () => void }) {
+  if (typeof res === "string") {
+    return (
+      <div className="ps-riv prj-picked"><i><WandSparkles size={16} aria-hidden /></i>
+        <div><b>Pick logos didn't run</b><small>{res}</small></div>
+        <button type="button" className="ps-btn ps-i" title="close" onClick={onClose}><X size={14} /></button>
+      </div>
+    );
+  }
+  const { picked, none } = res;
+  const wears = picked.slice(0, 3).map((p) => `${projectName(p.rel)} wears ${p.how === "frontend" ? `${poss(projectName(p.from))}, its frontend`
+    : p.how === "org" ? `${poss(p.from ?? "its organization")} GitHub picture` : "its brand file"}`);
+  if (picked.length > 3) wears.push(`${picked.length - 3} more found one`);
+  const lines = [...wears, ...(none.length ? [`${names(none)} ${none.length === 1 ? "has" : "have"} none to wear`] : [])];
+  return (
+    <div className="ps-riv prj-picked"><i><WandSparkles size={16} aria-hidden /></i>
+      <div>
+        <b>{picked.length ? `Picked a logo for ${picked.length} project${picked.length === 1 ? "" : "s"}`
+          : none.length ? "No logo to pick" : "Every project wears a logo already"}</b>
+        <small>{[...lines, "a mark you set stays yours"].join(" · ")}</small>
+      </div>
+      {picked.length > 0 && <button type="button" className="ps-btn" disabled={busy} onClick={onUndo}>Undo</button>}
+      <button type="button" className="ps-btn ps-i" title="close" onClick={onClose}><X size={14} /></button>
+    </div>
+  );
 }
 
 /** The picked project's settings that live in its own config, not in the listing. */
@@ -177,6 +216,8 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
   // more, and the right side acts on all of them instead.
   const [sel, setSel] = useState<string | null>(() => (current && groups.some((g) => g.rel === current) ? current : null));
   const [picked, setPicked] = useState<string[]>([]);
+  const [pickRes, setPickRes] = useState<PickResult | string | null>(null);   // PICK LOGOS' strip, or its error
+  const [picking, setPicking] = useState(false);
   // A filter or a search never swaps the project on the right; only a click does.
   const focus = sel && all.some((r) => r.rel === sel) ? sel : order[0] ?? rows[0]?.rel ?? null;
   const chosen = picked.filter((rel) => rows.some((r) => r.rel === rel));
@@ -251,6 +292,21 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
       .then((r) => setCfg((c) => (c?.rel === rel ? { ...c, lessons: r.repo_enabled } : c)))
       .catch((e: Error) => { setCfg((c) => (c?.rel === rel ? { ...c, lessons: !on } : c)); setErr(`Lessons didn't change: ${e.message}`); });
   }
+  // PICK LOGOS and its Undo: the bridge picks (bridge/projectmarks.pick_all),
+  // the tiles take the new marks at once, the strip says what happened.
+  const pickLogos = async (action: "pick" | "undo") => {
+    setPicking(true);
+    try {
+      const res = await api.pickLogos(action);
+      setProjectMarks((await api.projects()).marks);
+      setPickRes(action === "pick" ? res : null);
+    } catch (e) {
+      setPickRes(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPicking(false);
+    }
+  };
+
   const openMark = (rel: string) => {
     const tile = bigTile.current;
     if (tile) setMarkFor((m) => (m?.rel === rel ? null : { rel, tile }));
@@ -279,7 +335,11 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
             </button>
           ))}
         </div>
+        <button type="button" className="ps-btn prj-pickbtn" disabled={picking} data-on={(pickRes && typeof pickRes !== "string") || undefined}
+          title="Each project still on letters gets its frontend's logo, a brand file of its own, or its GitHub organization's picture"
+          onClick={() => void pickLogos("pick")}><WandSparkles size={15} aria-hidden />Pick logos</button>
       </div>
+      {pickRes && <PickStrip res={pickRes} busy={picking} onUndo={() => void pickLogos("undo")} onClose={() => setPickRes(null)} />}
       <RivendellStrip />
       <div className="prj-split">
         <div className="prj-list" aria-label="projects">

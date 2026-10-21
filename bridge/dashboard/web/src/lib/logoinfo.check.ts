@@ -39,4 +39,17 @@ console.assert(mono.colors.length > 0, "a black-and-white logo still offers a co
 // Fully transparent: no colours, not dark, not a fill.
 const empty = analyse(img(S, S, () => [0, 0, 0, 0]), S, S);
 console.assert(!empty.fill && empty.colors.length === 0, "an empty image reads as nothing");
+console.assert(!empty.night && !empty.day, "an empty image needs no background");
+
+// AUTO's readings: a background only on the ground the logo would vanish into.
+const ink = (rgb: number[]) => analyse(img(S, S, (x, y) => (x < 3 || y < 5 || x > 12 || y > 10 ? [0, 0, 0, 0] : [...rgb, 255])), S, S);
+const black = ink([10, 10, 10]), white = ink([250, 250, 250]), orange = ink([255, 91, 31]);
+console.assert(black.night && !black.day, "a black wordmark needs light behind it on a dark ground only", black);
+console.assert(!white.night && white.day, "a white wordmark needs dark behind it on a light ground only", white);
+console.assert(!orange.night && !orange.day, "an orange mark reads on both", orange);
+console.assert(!navy.day && navy.night, "navy lettering vanishes at night, not by day", navy);
+console.assert(!site.night && !site.day && !square.night && !square.day, "an app icon fills its square: never a background");
+// A dark app icon with see-through rounded corners still fills its square for AUTO.
+const rounded = analyse(img(S, S, (x, y) => ((x < 2 || x > 13) && (y < 2 || y > 13) ? [0, 0, 0, 0] : [20, 30, 25, 255])), S, S);
+console.assert(!rounded.night && !rounded.day, "rounded corners don't make an app icon see-through", rounded);
 console.log("logoinfo.check ok");

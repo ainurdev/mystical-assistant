@@ -4628,6 +4628,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .prj-show small { font: 11px var(--mono); color: var(--txl); }
 .prj-show button[data-on] small { color: var(--txm); }
 .prj .ps-riv { margin-bottom: 12px; }
+/* PICK LOGOS: the button ends the toolbar, and its strip wears the accent where Rivendell's wears purple. */
+.prj-pickbtn { height: 34px; padding: 0 13px; flex: none; font-size: 13px; color: var(--txb); }
+.prj-pickbtn svg { color: var(--acc); }
+.prj-pickbtn[data-on] { border-color: color-mix(in oklab, var(--acc) 55%, var(--l2)); background: color-mix(in oklab, var(--acc) 10%, transparent); }
+.prj .ps-riv.prj-picked { border-color: color-mix(in oklab, var(--acc) 32%, var(--l)); background: color-mix(in oklab, var(--acc) 6%, var(--panel)); }
+.prj .ps-riv.prj-picked > i { background: color-mix(in oklab, var(--acc) 16%, var(--panel2)); color: var(--acc); }
+.prj .ps-riv.prj-picked > i::after { content: none; }
 .prj-split { display: grid; grid-template-columns: 286px minmax(0, 1fr); gap: 12px; align-items: start; }
 .prj-list, .prj-det { border: 1px solid var(--l); border-radius: 12px; background: var(--panel); min-width: 0; }
 .prj-list { overflow: hidden auto; }
@@ -4820,6 +4827,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ptile[data-kind="logo"][data-plate] img { width: 80%; height: 80%; visibility: visible; }
 [data-fam="aurora"] .ptile[data-kind="logo"][data-plate] { filter: none; }
 [data-fam="aurora"] .ptile[data-kind="logo"][data-plate]::after { content: none; }
+/* AUTO, the default: the same plates, only on the ground the logo would vanish
+   into (lib/logoinfo's night/day). AURORA keeps its silhouette, and our own tile
+   the emblem a family may draw in its place. */
+html:not([data-light]):not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-n]:not([data-self]) { background: #eef0f6 !important; }
+html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:not([data-self]) { background: #1c1c22 !important; }
+html:not([data-light]):not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-n]:not([data-self]) img,
+html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:not([data-self]) img { width: 80%; height: 80%; visibility: visible; }
 
 /* ── the mark editor (components/hud/MarkEditor) and its two homes: a tile in
    SETTINGS ▸ Projects and the ANALYZE header (.mkwrap holds the popover) ── */
@@ -4866,6 +4880,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .mk-gal-row img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .mk-gal-row .mk-sep { flex: none; align-self: center; height: 28px; }
 .mk-bgrow .mk-lbl { margin: 0; }
+.mk-bgrow .mk-bglbl { display: block; flex: none; }
+.mk-bglbl small { display: block; margin-top: 3px; font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--txd); }
 .mk-bgrow .mk-mini { margin-left: auto; }
 .mk-ph { width: 64px; height: 64px; flex: none; display: grid; place-items: center; border: 1px dashed var(--line2); border-radius: var(--f-rad-l, 0); color: var(--txl); }
 .mk-search { display: flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0); background: var(--panel3); color: var(--txl); }
