@@ -4375,16 +4375,18 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── PEBBLE's prompt box (after FLINT's rules above, which it outranks only by order): TABS' folder tabs hung over the card's 20px corner and left a
    notch, so in PEBBLE the lead is a row of chips hovering over the card (the
-   tile and the title still one chip), the card lifts with the pop shadow and
+   tile and the title still one chip), the card lifts on a short shadow and
    every control is a pill; CONSOLE's line rounds its free end and its place
-   line is one segmented pill. */
+   line is one segmented pill. The shadow is MIDDLE-EARTH's short cut: the pop
+   shadow reached past the 16px under the card, so the sheet's edge cut it off in a band. */
 [data-fam="pebble"] .pb-tabs { align-items: center; gap: 6px; padding: 0 4px 7px; }
 [data-fam="pebble"] .pb-tabs :is(.np-tile, .np-title-btn, .np-branch, .np-pr, .np-run, .np-task), [data-fam="pebble"] .pb-tabs > .ctrl-ctx {
   margin-bottom: 0; height: 26px !important; border: 1px solid var(--line) !important; border-radius: 999px !important; background: var(--panel2) !important;
 }
 [data-fam="pebble"] .pb-tabs .np-tile { border-radius: 999px 0 0 999px !important; border-right: 0 !important; padding: 0 3px 0 8px !important; }
 [data-fam="pebble"] .pb-tabs .np-tile + .np-title-btn { border-radius: 0 999px 999px 0 !important; border-left: 0 !important; }
-[data-fam="pebble"] .cmdbox { box-shadow: var(--f-pop-shadow) !important; }
+[data-fam="pebble"] .cmdbox { --pb-sh: rgb(0 0 0 / 22%); box-shadow: 0 1px 1px -.5px var(--pb-sh), 0 3px 3px -1.5px var(--pb-sh), 0 6px 6px -3px var(--pb-sh), 0 12px 12px -6px var(--pb-sh) !important; }
+:root[data-light] [data-fam="pebble"] .cmdbox { --pb-sh: color-mix(in srgb, var(--txb) 6%, transparent); }
 [data-fam="pebble"] :is(.drop-btn, .run-trigger) { border-radius: 999px !important; }
 [data-fam="pebble"] .pb-cmd, [data-fam="pebble"] .pb-cmd:focus-within { border-radius: 0 18px 18px 0 !important; }
 [data-fam="pebble"] .pb-place { border-radius: 999px; }
@@ -5496,6 +5498,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 18px; pointer-events: none;
   background: linear-gradient(transparent, var(--col, var(--panel2)));
 }
+/* TABS runs the transcript on under its tab row, so no fade: it stopped at the tabs' top in a hard line */
+[data-fam="pebble"] .swapwrap + .composer[data-pb="tabs"]::before { content: none; }
 
 /* modal and palette heads ruled in the accent (the HUD's tint): a neutral line, like every other rule here */
 [data-fam="pebble"] [style*="--shadow-modal"] [style*="border-bottom: 1px solid color-mix(in srgb, var(--acc)"] { border-bottom-color: var(--line) !important; }
