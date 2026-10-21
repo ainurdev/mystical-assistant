@@ -28,6 +28,25 @@ or mirroring one (rivendell.projects()). A local repo matches on any of its
 remotes (github.remote_slugs), because a fork of a mirror tracks the upstream
 under another name.
 
+A repo can lend its own picture too. The files it tracks that are named for
+an icon, a logo or a brand are what the editor's From this repo strip offers
+(repo_images). A repo with no mark wears the best icon among them by itself
+(repo_icon): a favicon or an app icon, square by convention, never a logo.*,
+which is often a wordmark. That one is never stored. marks() adds it to the
+projects listing, so it changes with the file, and a mark you set or a logo
+from Rivendell beats it. A pick from the strip is stored as the file's path
+("repo"), so it follows the file as well. Both are served by their bytes' hash,
+like a stored logo.
+
+PICK LOGOS (pick_all) goes further for a project that still wears letters: its
+frontend's logo (unideck-api wears unideck's), then a brand file of its own,
+then its GitHub organization's picture. A pick counts like the repo's own icon
+(source "pick"): Rivendell's logo wins over it, and so does an icon the repo
+gains later. Spec: docs/superpowers/specs/logo-picker.md.
+
+A logo with no stored background is AUTO: the browser plates it only where it
+would vanish into the ground (lib/logoinfo.ts). "none" pins it bare.
+
 A repo no Rivendell project names has nothing to match: a copy under another
 owner (ainurdev/elvou beside Elvou/elvou), or one newer than Rivendell's last
 GitHub sync. The editor's LINK links it to a project in Rivendell itself, as
@@ -78,7 +97,7 @@ _ICON_RE = re.compile(r"^[a-z0-9-]{1,48}$")
 _COLOR_RE = re.compile(r"^(#[0-9a-fA-F]{6}|var\(--[a-z0-9-]{1,24}\))$")
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 KINDS = ("letters", "icon", "logo")
-PLATES = ("light", "dark")      # a background behind a logo; none is the default
+PLATES = ("light", "dark", "none")   # a background pinned behind a logo; none stored is AUTO
 REFRESH_S = 6 * 3600
 _CACHE_S = 600          # how long one look at Rivendell answers for the dashboard
 
@@ -141,7 +160,7 @@ def logo(name: str) -> "tuple[bytes, str] | None":
         return None
     b64 = (_load().get("logos") or {}).get(name)
     if not b64:
-        return None
+        return _repo_logo(name)
     return base64.b64decode(b64), CTYPES[name.rsplit(".", 1)[1]]
 
 
@@ -163,9 +182,12 @@ def clean(m, logos: dict) -> "dict | None":
             raise ValueError("unknown icon")
         out["icon"] = m["icon"]
     if out["kind"] == "logo":
-        if m.get("logo") not in logos:
+        if isinstance(m.get("repo"), str) and m["repo"]:
+            out["repo"] = m["repo"]        # a file in the repo, read afresh; set_mark checks it's one
+        elif m.get("logo") in logos:
+            out["logo"] = m["logo"]
+        else:
             raise ValueError("that logo isn't stored here")
-        out["logo"] = m["logo"]
     if m.get("plate"):
         if out["kind"] != "logo" or m["plate"] not in PLATES:
             raise ValueError("a background is light or dark, behind a logo")
@@ -191,21 +213,314 @@ def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
                 raw = base64.b64decode(logo_data, validate=True)
             except (ValueError, TypeError):
                 raise ValueError("the logo isn't base64") from None
-            mark = {**(mark or {}), "kind": "logo", "logo": _put_logo(d, raw)}
+            mark = {**_sans(mark or {}, "repo"), "kind": "logo", "logo": _put_logo(d, raw)}
         out = clean(mark, d.get("logos") or {})
+        if out and out.get("repo") and not (out["repo"] in _paths(rel) and _name(_root(rel), out["repo"])):
+            raise ValueError("that isn't one of this repo's pictures")
         cur = project_config.mark(rel)
         # A background alone is how a logo shows here, not a new mark: one that
         # follows Rivendell keeps following (IB Groups' black logo on LIGHT).
-        if cur and cur.get("source") == "rivendell" and out and _sans(out, "plate") == _sans(cur, "plate", "source", "rv"):
+        if (cur and cur.get("source") == "rivendell" and out and out["kind"] == "logo"
+                and _sans(out, "plate") == _sans(cur, "plate", "source", "rv")):
             out = {**_sans(cur, "plate"), **({"plate": out["plate"]} if out.get("plate") else {})}
         # Back to plain letters from a mark is still your choice: kept as one,
-        # or following Rivendell would dress the repo again on its next pass.
-        if out is None and cur is not None:
+        # or following Rivendell (or the repo's own icon) would dress it again.
+        if out is None and (cur is not None or repo_icon(rel)):
             out = {"kind": "letters"}
         project_config.set_mark(rel, out)
         _gc(d)
         _save(d)
+    if out and out.get("repo"):
+        return {**out, "logo": _name(_root(rel), out["repo"])}    # as the listing shows it
     return out
+
+
+# --- the repo's own picture --------------------------------------------------
+
+# A repo's icon, best first: a vector icon, then an app icon, then a raster
+# favicon. Square by convention, so it fits a tile. A logo.* is often a
+# wordmark, so _LOGOISH offers it in the editor and it is never worn by itself.
+# ponytail: a framework's own icon left in a new repo (SvelteKit's favicon,
+# Expo's icon.png) is worn as if it were the project's; BACK TO LETTERS sticks.
+# Keep a list of those icons' hashes if one turns up on a real repo.
+_ICONS = [re.compile(p) for p in (
+    r"(fav)?icon\.svg",
+    r"(apple-touch-icon|apple-icon|android-chrome|ic_launcher|icon)([-_]?\d+(x\d+)?)?(-maskable)?\.(png|webp)",
+    r"favicon([-_]?\d+(x\d+)?)?\.(png|ico)",
+)]
+_WORDS = ("icon", "logo", "brand", "android-chrome", "ic_launcher")     # what a picture's name holds
+_LOGOISH = re.compile(rf"({'|'.join(_WORDS)})[^/]*\.(svg|png|jpe?g|webp|ico)$")
+# Folders whose pictures are a test's or a dependency's. A build's output is
+# rarely tracked, and a tracked build/ is where Electron keeps its app icon.
+_NOT_OURS = {"test", "tests", "__tests__", "fixtures", "e2e", "screenshots", "__snapshots__",
+             "node_modules", "vendor", "coverage"}
+REPO_SHOWN = 24         # the most the strip offers
+
+_found: dict = {}       # rel -> (its git index's mtime, its pictures best first)
+_read: dict = {}        # a file's real path -> ((mtime, size), its name in the store's form, or None)
+
+
+def _root(rel: str) -> str:
+    return os.path.join(config.BASE_PATH, rel.lstrip("/"))
+
+
+def _rank(path: str) -> tuple:
+    """An icon before anything else, then the biggest by the size in its name,
+    then the shallowest."""
+    base = path.rsplit("/", 1)[-1].lower()
+    tier = next((i for i, r in enumerate(_ICONS) if r.fullmatch(base)), len(_ICONS))
+    return tier, -max((int(n) for n in re.findall(r"\d+", base)), default=0), path.count("/"), path
+
+
+def _paths(rel: str) -> list:
+    """The pictures the repo tracks that are named for an icon, a logo or a
+    brand, best first. Tracked only, so a build's output or a dependency's
+    isn't taken for the project's. git runs again only when the index changes:
+    the projects listing asks every ten seconds."""
+    from bridge import git
+    root = _root(rel)
+    try:
+        stamp = os.stat(os.path.join(root, ".git", "index")).st_mtime_ns
+    except OSError:
+        stamp = 0
+    hit = _found.get(rel)
+    if hit and hit[0] == stamp:
+        return hit[1]
+    try:
+        rc, out, _ = git._run(root, "-c", "core.quotePath=false", "ls-files", "-z", "--",
+                              *(f":(icase)*{w}*" for w in _WORDS))
+    except ValueError:                  # a tracked name that isn't UTF-8 must not sink the listing
+        rc, out = 1, ""
+    paths = [] if rc else sorted(
+        (p for p in git._ztokens(out)
+         if _LOGOISH.search(p.rsplit("/", 1)[-1].lower()) and _NOT_OURS.isdisjoint(p.lower().split("/")[:-1])),
+        key=_rank)
+    _found[rel] = (stamp, paths)
+    return paths
+
+
+def _name(root: str, path: str) -> "str | None":
+    """A repo file's name in the store's form (<sha256>.<ext>), or None for one
+    that isn't an image under the cap or leads out of the repo. Read again only
+    when the file changes."""
+    try:
+        real = os.path.realpath(root)
+        full = os.path.realpath(os.path.join(real, path))
+        st = os.stat(full)
+    except (OSError, ValueError):       # gone, or a path the filesystem refuses (a NUL)
+        return None
+    if not full.startswith(real + os.sep):
+        return None                     # ../, an absolute path, or a symlink out
+    key = (st.st_mtime_ns, st.st_size)
+    hit = _read.get(full)
+    if hit and hit[0] == key:
+        return hit[1]
+    name = None
+    try:
+        with open(full, "rb") as f:
+            data = f.read(RV_LOGO_MAX + 1)
+        ext = sniff(data) if len(data) <= RV_LOGO_MAX else None
+        name = f"{hashlib.sha256(data).hexdigest()}.{ext}" if ext else None
+    except OSError:
+        pass
+    _read[full] = (key, name)
+    return name
+
+
+def _repo_logo(name: str) -> "tuple[bytes, str] | None":
+    """A repo file the listing or the strip named, served only while its bytes
+    still hash to that name."""
+    for full, (_key, n) in list(_read.items()):
+        if n != name:
+            continue
+        try:
+            with open(full, "rb") as f:
+                data = f.read(RV_LOGO_MAX + 1)
+        except OSError:
+            continue
+        if f"{hashlib.sha256(data).hexdigest()}.{sniff(data)}" == name:
+            return data, CTYPES[name.rsplit(".", 1)[1]]
+    return None
+
+
+def repo_images(rel: str) -> list:
+    """What the editor's From this repo strip offers: each picture once (a
+    monorepo copies one favicon into every app), best first."""
+    root, out, seen = _root(rel), [], set()
+    for p in _paths(rel):
+        name = _name(root, p)
+        if name and name not in seen:
+            seen.add(name)
+            out.append({"path": p, "logo": name})
+            if len(out) == REPO_SHOWN:
+                break
+    return out
+
+
+def repo_icon(rel: str) -> "dict | None":
+    """The icon a repo wears when nothing else is set: its best _ICONS file."""
+    root = _root(rel)
+    for p in _paths(rel):
+        if _rank(p)[0] == len(_ICONS):
+            return None                 # the rest are logos and such: offered, never worn
+        name = _name(root, p)
+        if name:
+            return {"path": p, "logo": name}
+    return None
+
+
+def marks(rels) -> dict:
+    """Every mark as the projects listing sends it. A mark on a repo file
+    carries that file's logo as it is now. A listed repo with no mark wears its
+    own icon (auto), and so does one following a client that lends Rivendell
+    only a colour."""
+    out = project_config.marks()
+    for rel, m in out.items():
+        if isinstance(m.get("repo"), str):
+            name = _name(_root(rel), m["repo"])
+            if name:
+                m["logo"] = name
+    for rel in rels:
+        m = out.get(rel)
+        picked = (m or {}).get("source") == "pick"       # an icon of its own beats a pick
+        if m is None or picked or (m.get("source") == "rivendell" and m.get("kind") == "letters"):
+            got = repo_icon(rel)
+            if got:
+                out[rel] = {**(m if m and not picked else {}), "kind": "logo", "logo": got["logo"],
+                            "repo": got["path"], "auto": True}
+    return out
+
+
+# --- PICK LOGOS ----------------------------------------------------------------
+
+# A backend's name points at its frontend: unideck-api -> unideck (or unideck-app...).
+_BACKEND = re.compile(r"^(?P<stem>.+?)[-_](api|server|backend|worker|service)$")
+_FRONTS = ("", "-app", "-web", "-frontend", "-ui", "-portal", "-client")
+
+
+def _frontend(rel: str, rels: list, shown: dict) -> "str | None":
+    """The project a backend's name points at as its frontend, beside it in
+    the same folder, if it wears a logo. A same-named one elsewhere is another
+    client's portal, not this one's."""
+    folder, _, base = rel.rpartition("/")
+    m = _BACKEND.match(base.lower())
+    if not m:
+        return None
+    names = {m["stem"] + f for f in _FRONTS}
+    return min((r for r in rels if r != rel and r.rpartition("/")[0] == folder
+                and r.rpartition("/")[2].lower() in names and (shown.get(r) or {}).get("logo")), default=None)
+
+
+def _brand(rel: str) -> "str | None":
+    """A logo or brand file of the repo's own: one with the first word of the
+    repo's name among its words (NR-rgb_logo_default.svg in nr-kantoor, never
+    apple-logo.svg in app), else its logo.* if it has only one. A hub's folder
+    of clients' logos names none for the repo, and holds more than one logo.*."""
+    root = _root(rel)
+    token = next((t for t in re.split(r"[-_.]+", rel.rpartition("/")[2].lower()) if t), "")
+    bare: dict = {}                       # logo.* by content: one file copied about counts once
+    for p in _paths(rel):
+        stem = p.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
+        name = _name(root, p)
+        if not name:
+            continue
+        if token and token in re.split(r"[-_. ]+", stem):
+            return p
+        if stem == "logo":
+            bare.setdefault(name, p)
+    return next(iter(bare.values())) if len(bare) == 1 else None
+
+
+def _owner(rel: str) -> "str | None":
+    from bridge import github
+    slug = github.origin_slug(_root(rel))
+    return slug.split("/")[0] if slug else None
+
+
+def _github_user(owner: str) -> "tuple[str, str] | None":
+    """(type, avatar_url) of a GitHub account, through the gh login. None when
+    gh is missing, signed out or offline."""
+    from bridge import github
+    rc, out, _ = github._run("gh", "api", f"users/{owner}", "--jq", "[.type, .avatar_url] | @tsv")
+    kind, _, url = out.strip().partition("\t")
+    return (kind, url) if rc == 0 and url else None
+
+
+def _org(rel: str, seen: dict) -> "tuple[str, bytes] | None":
+    """Its GitHub organization's picture: never a person's (a face), never
+    GitHub's generated default. `seen` holds each owner's answer for one pass."""
+    owner = _owner(rel)
+    if not owner:
+        return None
+    if owner not in seen:
+        user = _github_user(owner)
+        data = _download(f"{user[1]}&s=256") if user and user[0] == "Organization" else None
+        # ponytail: GitHub's generated default comes back 420x420 whatever s= asks for, and an
+        # uploaded picture at the size asked; if GitHub changes that, look at its pixels instead.
+        if data and data[:8] == b"\x89PNG\r\n\x1a\n" and data[16:24] == (420).to_bytes(4, "big") * 2:
+            data = None
+        seen[owner] = data
+    return (owner, seen[owner]) if seen[owner] else None
+
+
+def pick_all() -> dict:
+    """PICK LOGOS: every listed project still wearing letters gets the best
+    logo found for it: its frontend's (copied), a brand file of its own (by
+    path, so it follows the file), or its organization's picture (copied).
+    Never a mark you set, Rivendell's, or a repo's own icon. The picks are
+    kept for undo_picks."""
+    from bridge import browser
+    rels = browser.list_projects()
+    shown = marks(rels)
+    todo = [r for r in rels if r not in shown]
+    found: dict = {}                      # rel -> (mark, bytes to store or None)
+    seen: dict = {}
+    for rel in todo:
+        front = _frontend(rel, rels, shown)
+        got = logo(shown[front]["logo"]) if front else None
+        if got:
+            color = {"color": shown[front]["color"]} if shown[front].get("color") else {}
+            found[rel] = ({"kind": "logo", **color, "source": "pick", "pick": {"how": "frontend", "from": front}}, got[0])
+            continue
+        path = _brand(rel)
+        if path:
+            found[rel] = ({"kind": "logo", "repo": path, "source": "pick", "pick": {"how": "brand"}}, None)
+            continue
+        org = _org(rel, seen)
+        if org:
+            found[rel] = ({"kind": "logo", "source": "pick", "pick": {"how": "org", "from": org[0]}}, org[1])
+    with _lock:
+        d = _load()
+        cur = project_config.marks()      # again: a mark set while it looked stands
+        picked = []
+        for rel, (mark, data) in found.items():
+            if rel in cur:
+                continue
+            if data:
+                mark = {**mark, "logo": _put_logo(d, data, RV_LOGO_MAX)}
+            project_config.set_mark(rel, mark)
+            picked.append(rel)
+        if picked:                        # a run that found nothing new keeps the last one's undo
+            d["pick"] = {"undo": picked}
+        _gc(d)
+        _save(d)
+    return {"picked": [{"rel": r, **found[r][0]["pick"]} for r in picked],
+            "none": [r for r in todo if r not in found]}
+
+
+def undo_picks() -> dict:
+    """Undo the last PICK LOGOS: letters again, except where you changed it since."""
+    with _lock:
+        d = _load()
+        undone = 0
+        for rel in (d.get("pick") or {}).get("undo") or []:
+            if (project_config.mark(rel) or {}).get("source") == "pick":
+                project_config.set_mark(rel, None)
+                undone += 1
+        d["pick"] = {"undo": []}
+        _gc(d)
+        _save(d)
+    return {"undone": undone}
 
 
 # --- Rivendell ---------------------------------------------------------------
@@ -375,7 +690,7 @@ def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
 
 
 def _yours(m) -> bool:
-    return isinstance(m, dict) and m.get("source") != "rivendell"
+    return isinstance(m, dict) and m.get("source") not in ("rivendell", "pick")
 
 
 def import_all(only: "str | None" = None) -> dict:
@@ -510,8 +825,8 @@ def undo() -> dict:
 
 
 def _offer_rels(seen: dict, marks: dict) -> list:
-    """Matched repos still wearing plain letters: what IMPORT would change."""
-    return sorted(r for r in seen["matches"] if r not in marks)
+    """Matched repos still wearing plain letters, or a pick: what IMPORT would change."""
+    return sorted(r for r in seen["matches"] if r not in marks or marks[r].get("source") == "pick")
 
 
 def dismiss() -> dict:

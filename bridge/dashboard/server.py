@@ -430,7 +430,7 @@ class Handler(BaseHTTPRequestHandler):
                                                os.path.join(config.BASE_PATH, r.lstrip("/"))))},
                                "hidden": project_config.hidden_projects(),
                                "names": project_config.names(),
-                               "marks": project_config.marks(),
+                               "marks": projectmarks.marks(projects),
                                # The bridge's own checkout, so the dashboard
                                # knows which project's logo is ours.
                                "self": _self_rel()})
@@ -440,6 +440,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "no such logo"}, 404)
             # The name is the bytes' hash, so a logo never changes under it.
             return self._send_image(*got, "public, max-age=31536000, immutable")
+        if path == "/local/project-mark/repo":
+            # The mark editor's From this repo strip: the pictures the repo
+            # tracks, each served by its hash like a stored logo.
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json({"images": projectmarks.repo_images(browser.rel(abs_p))})
         if path == "/local/history":
             native.refresh(chat)           # surface VSCode sessions in the history view
             archived = qs.get("archived", ["0"])[0] == "1"
@@ -1622,6 +1629,14 @@ class Handler(BaseHTTPRequestHandler):
             # store and starts/stops/rewires to match.
             rivendell.reconfigure()
             return self._json({"ok": True, "instance": inst})
+        if path == "/local/project-mark/pick":
+            # PICK LOGOS on the Projects page, and its Undo (bridge/projectmarks.py).
+            act = body.get("action")
+            if act == "pick":
+                return self._json(projectmarks.pick_all())
+            if act == "undo":
+                return self._json(projectmarks.undo_picks())
+            return self._json({"error": "action must be pick or undo"}, 400)
         if path == "/local/rivendell/marks":
             act = body.get("action")
             if act == "import":

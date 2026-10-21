@@ -17,6 +17,7 @@ from bridge import config, project_config, projectmarks, rivendell
 from bridge.dashboard import server as dash
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
+SVG = b'<svg xmlns="http://www.w3.org/2000/svg"></svg>'
 
 
 @pytest.fixture(autouse=True)
@@ -147,3 +148,32 @@ def test_listing_names_the_bridges_own_checkout(tmp_path, monkeypatch):
     assert dash._self_rel() == "/mystical-assistant"
     monkeypatch.setattr(selfupdate, "REPO", str(tmp_path / "elsewhere"))
     assert dash._self_rel() is None
+
+
+def test_the_listing_wears_a_repos_icon_and_the_strip_lists_its_images(tmp_path, monkeypatch):
+    monkeypatch.setattr(projectmarks, "_found", {})
+    monkeypatch.setattr(projectmarks, "_read", {})
+    rel = _repo(tmp_path)
+    d = os.path.join(config.BASE_PATH, rel.lstrip("/"))
+    os.makedirs(os.path.join(d, "public"))
+    with open(os.path.join(d, "public", "favicon.svg"), "wb") as f:
+        f.write(SVG)
+    subprocess.run(["git", "-C", d, "add", "-A"], check=True)
+    m = dget("/local/projects")["obj"]["marks"][rel]
+    assert m["auto"] and m["repo"] == "public/favicon.svg"
+    r = dget(f"/local/project-mark/logo/{m['logo']}")
+    assert r["code"] == 200 and r["wfile"].getvalue() == SVG
+    assert "sandbox" in r["headers"]["Content-Security-Policy"] and r["headers"]["Content-Type"] == "image/svg+xml"
+    assert dget(f"/local/project-mark/repo?project={rel}")["obj"] == {
+        "images": [{"path": "public/favicon.svg", "logo": m["logo"]}]}
+    assert dget("/local/project-mark/repo?project=../../etc")["code"] == 400
+
+
+def test_the_pick_route_reaches_projectmarks(monkeypatch):
+    calls = []
+    monkeypatch.setattr(projectmarks, "pick_all", lambda: calls.append("pick") or {"picked": [], "none": []})
+    monkeypatch.setattr(projectmarks, "undo_picks", lambda: calls.append("undo") or {"undone": 0})
+    assert dpost("/local/project-mark/pick", {"action": "pick"})["obj"] == {"picked": [], "none": []}
+    assert dpost("/local/project-mark/pick", {"action": "undo"})["obj"] == {"undone": 0}
+    assert dpost("/local/project-mark/pick", {"action": "explode"})["code"] == 400
+    assert calls == ["pick", "undo"]

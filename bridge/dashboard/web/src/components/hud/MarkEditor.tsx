@@ -2,10 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Image as ImageIcon, Search, Shapes, Type, X } from "lucide-react";
 import { DynamicIcon, iconNames } from "lucide-react/dynamic";
-import { api, projectLogoUrl, type ProjectMark, type RivendellGallery, type RivendellMarks } from "../../api";
+import { api, projectLogoUrl, type ProjectMark, type RepoImages, type RivendellGallery, type RivendellMarks } from "../../api";
 import { inkCss, liftInk } from "../../lib/ink";
 import { readLogo, shrinkLogo, useLogoInfo, type LogoInfo } from "../../lib/logoinfo";
-import { hashTint, projectInitials, projectMark, putProjectMark, setProjectMarks } from "../../lib/surfaces";
+import { hashTint, projectInitials, projectMark, projectName, putProjectMark, setProjectMarks } from "../../lib/surfaces";
 import { synced } from "./RivendellMarks";
 
 /* The mark editor: what a project's tile shows (its initials, an icon, or a
@@ -13,8 +13,10 @@ import { synced } from "./RivendellMarks";
    ▸ Projects and from the ANALYZE header, where it replaced the old colour dot.
    Design: docs/superpowers/specs/project-marks.md (the mockups' 02-editor).
 
-   A mark that follows Rivendell says so. Any change here makes it yours, and a
-   project Rivendell has a client logo for offers USE RIVENDELL'S. A repo no
+   A repo with no mark wears its own icon (bridge/projectmarks.repo_icon), and
+   From this repo offers every picture it tracks, kept by path so the mark
+   follows the file. A mark that follows Rivendell says so. Any change here
+   makes it yours, and a project Rivendell has a client logo for offers USE RIVENDELL'S. A repo no
    Rivendell project names offers LINK, which links it to one in Rivendell
    itself, so every Mystical on that Rivendell gets the logo. A dropped logo
    travels with SAVE in one request (bridge/projectmarks.set_mark), so a
@@ -42,10 +44,10 @@ const COMMON = [
   "mountain-snow", "trees", "sprout", "leaf", "flame", "sun", "moon", "anchor",
 ];
 
-interface Logo { name?: string; data?: string; url: string; label: string }
+interface Logo { name?: string; data?: string; url: string; label: string; repo?: string }
 
 /** "IB Groups' logo", "Elvou's logo". */
-const poss = (who: string) => (who.endsWith("s") ? `${who}'` : `${who}'s`);
+export const poss = (who: string) => (who.endsWith("s") ? `${who}'` : `${who}'s`);
 
 export default function MarkEditor({ project, name, anchor, onClose }: {
   project: string;
@@ -61,7 +63,10 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const [plate, setPlate] = useState<ProjectMark["plate"] | null>(cur?.plate ?? null);
   const [hex, setHex] = useState(cur?.color && HEX.test(cur.color) ? cur.color : "");
   const [logo, setLogo] = useState<Logo | null>(cur?.logo
-    ? { name: cur.logo, url: projectLogoUrl(cur.logo), label: following ? `${poss(cur.rv?.name ?? "The client")} logo` : "Your logo" }
+    ? { name: cur.logo, url: projectLogoUrl(cur.logo), repo: cur.repo,
+        label: cur.repo ? `${cur.repo} · from the repo` : following ? `${poss(cur.rv?.name ?? "The client")} logo`
+          : cur.pick?.how === "frontend" ? `${poss(projectName(cur.pick.from))} logo, its frontend`
+          : cur.pick?.how === "org" ? `${poss(cur.pick.from ?? "Its organization")} GitHub picture` : "Your logo" }
     : null);
   const [dropped, setDropped] = useState<LogoInfo | null>(null);
   const stored = useLogoInfo(logo?.name, logo?.url ?? "");
@@ -69,12 +74,14 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const [query, setQuery] = useState("");
   const [riv, setRiv] = useState<RivendellMarks | null>(null);
   const [gal, setGal] = useState<RivendellGallery | null>(null);
+  const [mine, setMine] = useState<RepoImages["images"]>([]);   // From this repo
   const [picked, setPicked] = useState<string | null>(null);   // the gallery image now in the drop zone
   const [pick, setPick] = useState(-1);          // LINK's project, an index into riv.projects
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const light = document.documentElement.hasAttribute("data-light");
+  const aurora = document.documentElement.dataset.fam === "aurora";   // AURORA draws logos as phosphor, never plated
 
   // Which client Rivendell has for this repo, for USE RIVENDELL'S and the
   // follow line. A bridge without the route just leaves both out.
@@ -82,6 +89,8 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   // From Rivendell: the client's images. No plugin, no Rivendell or no client
   // project all answer empty (or 404), and the strip just isn't there.
   useEffect(() => { api.rivendellGallery(project).then(setGal).catch(() => setGal(null)); }, [project]);
+  // From this repo: the pictures it tracks. A bridge older than the route 404s.
+  useEffect(() => { api.repoImages(project).then((r) => setMine(r.images ?? [])).catch(() => setMine([])); }, [project]);
   const match = riv?.matches?.[project] ?? null;
   const target = riv?.projects?.[pick];
 
@@ -160,7 +169,8 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
 
   const next: ProjectMark | null =
     kind === "icon" ? (icon ? { kind, icon, ...(color ? { color } : {}) } : null)
-    : kind === "logo" ? (logo ? { kind, ...(logo.name ? { logo: logo.name } : {}), ...(color ? { color } : {}),
+    : kind === "logo" ? (logo ? { kind, ...(logo.name ? { logo: logo.name } : {}), ...(logo.repo ? { repo: logo.repo } : {}),
+        ...(color ? { color } : {}),
         ...(plate ? { plate } : {}) } : null)
     : color ? { kind: "letters", color } : null;
   const incomplete = (kind === "icon" && !icon) || (kind === "logo" && !logo);
@@ -172,9 +182,10 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   // (a refresh puts plate before color), leaving out what isn't asked.
   const key = (m: ProjectMark | null, skip: string[]) =>
     JSON.stringify(Object.entries(m ?? {}).filter(([k]) => !skip.includes(k)).sort());
-  const unchanged = !dropping && key(next, ["source", "rv"]) === key(shown(cur), ["source", "rv"]);
-  // Only the background changed: the bridge keeps a followed mark following.
-  const plateOnly = !dropping && (plate ?? null) !== (cur?.plate ?? null)
+  const unchanged = !dropping && key(next, ["source", "rv", "auto", "pick"]) === key(shown(cur), ["source", "rv", "auto", "pick"]);
+  // Only the background changed: the bridge keeps a followed mark following,
+  // but not one wearing the repo's icon, which a background makes yours.
+  const plateOnly = !dropping && !cur?.auto && (plate ?? null) !== (cur?.plate ?? null)
     && key(next, ["source", "rv", "plate"]) === key(shown(cur), ["source", "rv", "plate"]);
 
   async function save(mark: ProjectMark | null, logoData?: string) {
@@ -219,6 +230,19 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
     }
   }
 
+  // A picture from the repo is kept by its path, so the mark follows the file.
+  function fromRepo(g: RepoImages["images"][number]) {
+    const url = projectLogoUrl(g.logo);
+    setLogo({ name: g.logo, url, repo: g.path, label: `${g.path} · from the repo` });
+    setPicked(null);
+    setKind("logo");
+    setErr("");
+    // Its colour, as a dropped logo brings, unless you picked one by hand.
+    void readLogo(url).then((read) => {
+      if (read?.colors[0] && (!color || !PALETTE.includes(color))) { setColor(read.colors[0]); setHex(read.colors[0]); }
+    }).catch(() => {});
+  }
+
   async function link() {
     if (!target) return;
     setBusy(true);
@@ -243,7 +267,9 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const swatches = info?.colors ?? [];
   const preview = (
     <b className="ptile mk-tile" data-kind={kind === "letters" ? undefined : kind} style={{ ["--pc" as string]: tint }}
-      data-logo={kind === "logo" && info?.fill ? "fill" : undefined} data-plate={kind === "logo" && plate ? plate : undefined}>
+      data-logo={kind === "logo" && info?.fill ? "fill" : undefined}
+      data-plate={kind === "logo" && (plate === "light" || plate === "dark") ? plate : undefined}
+      data-auto-n={(kind === "logo" && !plate && info?.night) || undefined} data-auto-d={(kind === "logo" && !plate && info?.day) || undefined}>
       {kind === "logo" && logo ? <img src={logo.url} alt="" />
         : kind === "icon" && icon ? <DynamicIcon name={icon as never} />
         : projectInitials(project)}
@@ -303,21 +329,33 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
               </button>
               <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp,image/svg+xml"
                 onChange={(e) => { void take(e.target.files?.[0]); e.target.value = ""; }} />
-              {!!gal?.images.length && (
+              {/* One strip for both sources, so the LOGO tab keeps its height: Rivendell's
+                  images first, as they're picked for the client, then whatever the repo tracks. */}
+              {(!!gal?.images.length || !!mine.length) && (
                 <div className="mk-gal">
-                  <div className="mk-lbl">From Rivendell<span>{gal.client} · {gal.images.length} image{gal.images.length === 1 ? "" : "s"}</span></div>
+                  <div className="mk-lbl">From {[gal?.images.length && "Rivendell", mine.length && "this repo"].filter(Boolean).join(" and ")}
+                    <span>{[gal?.images.length && `${gal.client} · ${gal.images.length} image${gal.images.length === 1 ? "" : "s"}`,
+                      mine.length && `${mine.length} file${mine.length === 1 ? "" : "s"}`]
+                      .filter(Boolean).join(" · ")}</span></div>
                   <div className="mk-gal-row">
-                    {gal.images.map((g) => (
+                    {gal?.images.map((g) => (
                       <button key={g.id} type="button" title={g.name} data-on={picked === g.id || undefined} disabled={busy}
                         onClick={() => void fromGallery(g)}><img src={g.url} alt={g.name} /></button>
+                    ))}
+                    {!!gal?.images.length && !!mine.length && <span className="mk-sep" />}
+                    {mine.map((g) => (
+                      <button key={g.path} type="button" title={g.path} data-on={logo?.repo === g.path || undefined} disabled={busy}
+                        onClick={() => fromRepo(g)}><img src={projectLogoUrl(g.logo)} alt={g.path} /></button>
                     ))}
                   </div>
                 </div>
               )}
               <div className="mk-bgrow">
-                <div className="mk-lbl">Background</div>
+                {/* AUTO (nothing stored) says what it chose on this ground. */}
+                <div className="mk-lbl mk-bglbl">Background
+                  {!plate && <small>{!aurora && (light ? info?.day : info?.night) ? `${light ? "dark" : "light"} here` : "none here"}</small>}</div>
                 <div className="mk-mini" role="radiogroup" aria-label="Background">
-                  {([[null, "NONE"], ["light", "LIGHT"], ["dark", "DARK"]] as const).map(([v, l]) => (
+                  {([[null, "AUTO"], ["none", "NONE"], ["light", "LIGHT"], ["dark", "DARK"]] as const).map(([v, l]) => (
                     <button key={l} type="button" role="radio" aria-checked={plate === v} data-on={plate === v || undefined}
                       onClick={() => setPlate(v)}>{l}</button>
                   ))}

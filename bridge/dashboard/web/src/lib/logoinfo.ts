@@ -1,7 +1,9 @@
 /* What a project's logo looks like, read off its pixels in a canvas:
    - whether it fills its square (opaque edges, an app icon), which AURORA's
      phosphor silhouette reads by lightness instead of by outline;
-   - its strongest colours, the editor's FROM LOGO swatches.
+   - its strongest colours, the editor's FROM LOGO swatches;
+   - whether it would vanish into a dark ground or a light one: AUTO, the
+     default background, plates it only there (ProjectTile, index.css).
 
    This runs here because the bridge can't decode images (stdlib only, and no
    SVG renderer). A stored logo's name is the hash of its bytes, so its reading
@@ -13,19 +15,33 @@ import { rgbToOklch, oklchToHex } from "./ink.ts";
 export interface LogoInfo {
   fill: boolean;     // opaque to its edges: an app icon, not a see-through mark
   colors: string[];  // up to 3 hex, strongest first
+  night: boolean;    // vanishes on a dark ground: AUTO puts light behind it there
+  day: boolean;      // vanishes on a light ground: AUTO puts dark behind it there
 }
+
+// The grounds AUTO reads a logo against (relative luminance): a dark theme's
+// panel and a light one's. Two fixed readings, so a theme switch is pure CSS.
+const NIGHT = 0.03, DAY = 0.9;
+const lin = (c: number) => { c /= 255; return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+const stands = (L: number, ground: number) => (Math.max(L, ground) + 0.05) / (Math.min(L, ground) + 0.05) >= 2;
 
 /** The reading itself, on raw RGBA pixels. Pure, for the check. */
 export function analyse(px: ArrayLike<number>, w: number, h: number): LogoInfo {
-  let edge = 0, edgeSolid = 0;
+  let edge = 0, edgeSolid = 0, mid = 0, midSolid = 0, ink = 0, seenN = 0, seenD = 0;
   const bins = new Map<number, { n: number; r: number; g: number; b: number }>();
   for (let y = 0; y < h; y++) {
     for (let x = 0; x < w; x++) {
       const i = (y * w + x) * 4;
       const a = px[i + 3];
       if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { edge++; if (a > 240) edgeSolid++; }
+      // AUTO's own fill test skips the corners: an app icon's rounded ones are see-through.
+      if (((x === 0 || x === w - 1) && y > h * 0.2 && y < h * 0.8) || ((y === 0 || y === h - 1) && x > w * 0.2 && x < w * 0.8)) {
+        mid++; if (a > 240) midSolid++;
+      }
       if (a < 128) continue;
       const [r, g, b] = [px[i], px[i + 1], px[i + 2]];
+      const L = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+      ink++; if (stands(L, NIGHT)) seenN++; if (stands(L, DAY)) seenD++;
       const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
       const e = bins.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
       e.n++; e.r += r; e.g += g; e.b += b;
@@ -52,9 +68,14 @@ export function analyse(px: ArrayLike<number>, w: number, h: number): LogoInfo {
     });
     if (apart) picked.push(c);
   }
+  // A background where under half of the ink stands out (2:1) from the ground;
+  // never behind an icon that fills its square.
+  const plated = (seen: number) => ink > 0 && !(mid > 0 && midSolid / mid > 0.9) && seen / ink < 0.5;
   return {
     fill: edge > 0 && edgeSolid / edge > 0.9,
     colors: picked.map((c) => oklchToHex(c.L, c.C, c.H)),
+    night: plated(seenN),
+    day: plated(seenD),
   };
 }
 
@@ -86,7 +107,8 @@ let version = 0;
 export function useLogoInfo(name: string | null | undefined, src: string): LogoInfo | null {
   useSyncExternalStore((fn) => { subs.add(fn); return () => { subs.delete(fn); }; }, () => version);
   if (!name) return null;
-  if (!cache[name] && !pending.has(name)) {
+  // A reading cached before AUTO lacks night/day: read it again.
+  if ((!cache[name] || cache[name].night === undefined) && !pending.has(name)) {
     pending.add(name);
     readLogo(src).then((info) => {
       cache = { ...cache, [name]: info };

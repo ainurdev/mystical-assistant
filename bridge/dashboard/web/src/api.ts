@@ -319,8 +319,11 @@ export interface ProjectMark {
   color?: string;             // "#rrggbb", or a theme ink like "var(--acc)"
   icon?: string;              // a lucide icon name
   logo?: string;              // "<sha256>.<ext>", served at projectLogoUrl()
-  plate?: "light" | "dark";   // a background behind the logo; absent = none
-  source?: "rivendell";       // absent = yours: set here, never changes on its own
+  repo?: string;              // a picture in the repo itself, by its path: logo is then that file as it is now
+  auto?: boolean;             // the repo's own icon, worn because nothing else is set; never stored
+  plate?: "light" | "dark" | "none"; // a pinned background; absent = AUTO, plated only where it would vanish
+  source?: "rivendell" | "pick";     // absent = yours: set here, never changes on its own
+  pick?: { how: "frontend" | "brand" | "org"; from?: string }; // what PICK LOGOS found: its frontend's, a brand file, its org's picture
   // own: the project's own logo, not its client's; name is then the project's.
   rv?: { instance?: string; client?: string; name?: string; logo_id?: string | null; own?: boolean };
 }
@@ -349,6 +352,17 @@ export interface RivendellMarks {
 
 /** The mark editor's From Rivendell strip: the images among the documents of
  *  the client whose project names a repo (bridge/projectmarks.gallery). */
+/** PICK LOGOS (bridge/projectmarks.pick_all): what each project still on letters got, and which found nothing. */
+export interface PickResult {
+  picked: { rel: string; how: "frontend" | "brand" | "org"; from?: string }[];
+  none: string[];
+}
+
+/** The pictures a repo tracks that are named for an icon, a logo or a brand, best first. */
+export interface RepoImages {
+  images: { path: string; logo: string }[];
+}
+
 export interface RivendellGallery {
   client: string | null;
   images: { id: string; name: string; url: string }[];
@@ -2040,6 +2054,10 @@ export const api = {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
+  pickLogos: (action: "pick" | "undo") =>
+    req<PickResult & { undone?: number }>("/local/project-mark/pick", { method: "POST", body: { action } }),
+  repoImages: (project: string) =>
+    req<RepoImages>(`/local/project-mark/repo?project=${encodeURIComponent(project)}`),
   rivendellGallery: (project: string) =>
     req<RivendellGallery>(`/local/rivendell/gallery?project=${encodeURIComponent(project)}`),
   // One gallery image through the bridge, same-origin, so it can become a File.
