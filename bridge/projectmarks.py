@@ -211,7 +211,8 @@ def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
         cur = project_config.mark(rel)
         # A background alone is how a logo shows here, not a new mark: one that
         # follows Rivendell keeps following (IB Groups' black logo on LIGHT).
-        if cur and cur.get("source") == "rivendell" and out and _sans(out, "plate") == _sans(cur, "plate", "source", "rv"):
+        if (cur and cur.get("source") == "rivendell" and out and out["kind"] == "logo"
+                and _sans(out, "plate") == _sans(cur, "plate", "source", "rv")):
             out = {**_sans(cur, "plate"), **({"plate": out["plate"]} if out.get("plate") else {})}
         # Back to plain letters from a mark is still your choice: kept as one,
         # or following Rivendell (or the repo's own icon) would dress it again.
@@ -238,7 +239,8 @@ _ICONS = [re.compile(p) for p in (
     r"(apple-touch-icon|apple-icon|android-chrome|ic_launcher|icon)([-_]?\d+(x\d+)?)?(-maskable)?\.(png|webp)",
     r"favicon([-_]?\d+(x\d+)?)?\.(png|ico)",
 )]
-_LOGOISH = re.compile(r"(icon|logo|brand)[^/]*\.(svg|png|jpe?g|webp|ico)$")
+_WORDS = ("icon", "logo", "brand", "android-chrome", "ic_launcher")     # what a picture's name holds
+_LOGOISH = re.compile(rf"({'|'.join(_WORDS)})[^/]*\.(svg|png|jpe?g|webp|ico)$")
 # Folders whose pictures are a test's or a dependency's. A build's output is
 # rarely tracked, and a tracked build/ is where Electron keeps its app icon.
 _NOT_OURS = {"test", "tests", "__tests__", "fixtures", "e2e", "screenshots", "__snapshots__",
@@ -275,8 +277,11 @@ def _paths(rel: str) -> list:
     hit = _found.get(rel)
     if hit and hit[0] == stamp:
         return hit[1]
-    rc, out, _ = git._run(root, "-c", "core.quotePath=false", "ls-files", "-z", "--",
-                          ":(icase)*icon*", ":(icase)*logo*", ":(icase)*brand*")
+    try:
+        rc, out, _ = git._run(root, "-c", "core.quotePath=false", "ls-files", "-z", "--",
+                              *(f":(icase)*{w}*" for w in _WORDS))
+    except ValueError:                  # a tracked name that isn't UTF-8 must not sink the listing
+        rc, out = 1, ""
     paths = [] if rc else sorted(
         (p for p in git._ztokens(out)
          if _LOGOISH.search(p.rsplit("/", 1)[-1].lower()) and _NOT_OURS.isdisjoint(p.lower().split("/")[:-1])),
@@ -289,14 +294,14 @@ def _name(root: str, path: str) -> "str | None":
     """A repo file's name in the store's form (<sha256>.<ext>), or None for one
     that isn't an image under the cap or leads out of the repo. Read again only
     when the file changes."""
-    real = os.path.realpath(root)
-    full = os.path.realpath(os.path.join(real, path))
+    try:
+        real = os.path.realpath(root)
+        full = os.path.realpath(os.path.join(real, path))
+        st = os.stat(full)
+    except (OSError, ValueError):       # gone, or a path the filesystem refuses (a NUL)
+        return None
     if not full.startswith(real + os.sep):
         return None                     # ../, an absolute path, or a symlink out
-    try:
-        st = os.stat(full)
-    except OSError:
-        return None
     key = (st.st_mtime_ns, st.st_size)
     hit = _read.get(full)
     if hit and hit[0] == key:

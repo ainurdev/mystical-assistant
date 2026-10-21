@@ -33,7 +33,7 @@ import { ckId, type Mark } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
 import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
-import { ago, forgetLegacyTints, legacyTints, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
+import { ago, forgetLegacyTints, legacyTints, projectMark, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
          useProjectTints } from "./lib/surfaces";
 import { offerRivendellMarks } from "./components/hud/RivendellMarks";
 import {
@@ -713,9 +713,11 @@ export function App() {
       if (p.marks && !marksMoved.current) {
         marksMoved.current = true;
         const legacy = legacyTints(p.projects ?? []);
-        void Promise.all(Object.entries(legacy).map(([rel, color]) =>
-          api.setProjectSettings({ project: rel }, { mark: { kind: "letters", color } })
-            .then((r) => { if (r.mark !== undefined) putProjectMark(rel, r.mark); })))
+        void Promise.all(Object.entries(legacy).map(([rel, color]) => {
+          const own = projectMark(rel)?.repo;   // the repo's own icon it wears: kept, in that colour
+          return api.setProjectSettings({ project: rel }, { mark: own ? { kind: "logo", repo: own, color } : { kind: "letters", color } })
+            .then((r) => { if (r.mark !== undefined) putProjectMark(rel, r.mark); });
+        }))
           .then(forgetLegacyTints)
           .catch(() => { /* they stand as overrides; the next load tries again */ });
         window.setTimeout(() => void offerRivendellMarks(

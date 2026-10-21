@@ -730,3 +730,32 @@ def test_the_listing_asks_git_again_only_when_the_index_changes(base, monkeypatc
     (base / "app" / "public" / "apple-touch-icon.png").write_bytes(png(1))
     subprocess.run(["git", "-C", str(base / "app"), "add", "-A"], check=True)
     assert len(projectmarks.repo_images(rel)) == 2 and len(calls) == 2
+
+
+def test_letters_on_a_colour_only_follow_wearing_the_repos_icon_is_yours(base):
+    # LETTERS keeps the client's colour but drops the repo's icon: a change, so it stops following
+    rel = repo(base, "app", {"public/icon.svg": svg(1)})
+    project_config.set_mark(rel, {"kind": "letters", "source": "rivendell", "color": "#336699", "rv": {"name": "ACME"}})
+    assert projectmarks.marks([rel])[rel]["auto"]
+    assert projectmarks.set_mark(rel, {"kind": "letters", "color": "#336699"}) == {"kind": "letters", "color": "#336699"}
+    assert projectmarks.marks([rel])[rel] == {"kind": "letters", "color": "#336699"}
+
+
+def test_an_android_launcher_icon_counts_as_an_icon(base):
+    rel = repo(base, "app", {"public/android-chrome-512x512.png": png(1),
+                             "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png": png(2)})
+    assert projectmarks.marks([rel])[rel]["repo"] == "public/android-chrome-512x512.png"
+    assert [i["path"] for i in projectmarks.repo_images(rel)] == [
+        "public/android-chrome-512x512.png", "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"]
+
+
+def test_a_name_git_cant_decode_or_a_bad_stored_path_never_sinks_the_listing(base, monkeypatch):
+    rel = repo(base, "app", {"public/icon.svg": svg(1)})
+    other = repo(base, "other", {"public/icon.svg": svg(2)})
+    project_config.set_mark(other, {"kind": "logo", "repo": "public/\x00icon.svg"})     # a hand-edited config
+
+    def undecodable(*a, **k):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")       # a tracked name that isn't UTF-8
+    monkeypatch.setattr(git, "_run", undecodable)
+    got = projectmarks.marks([rel, other])
+    assert rel not in got and got[other] == {"kind": "logo", "repo": "public/\x00icon.svg"}

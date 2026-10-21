@@ -210,7 +210,9 @@ export function legacyTints(rels: Iterable<string>): Record<string, string> {
   const out: Record<string, string> = {};
   for (const rel of rels) {
     const c = tintOverrides[dirName(rel)]?.color;
-    if (c && /^(#[0-9a-fA-F]{6}|var\(--[a-z0-9-]{1,24}\))$/.test(c) && !projectMarks[rel]) out[rel] = c;
+    const m = projectMarks[rel];
+    // A repo wearing its own icon has no mark of its own yet: App moves the colour onto that icon.
+    if (c && /^(#[0-9a-fA-F]{6}|var\(--[a-z0-9-]{1,24}\))$/.test(c) && (!m || (m.auto && !m.source))) out[rel] = c;
   }
   return out;
 }
