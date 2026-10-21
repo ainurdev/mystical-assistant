@@ -941,7 +941,7 @@ def test_the_stylist_wears_a_repo_icon_over_rivendells_wordmark_and_refresh_leav
     got = projectmarks.apply_style(rel, p["cands"][1], plate="auto", color="#3168d0", why="its own app icon", run="r1")
     assert got["how"] == ["logo", "background", "colour"] and got["before"]["logo"] == wordmark
     assert project_config.mark(rel) == {"kind": "logo", "repo": "apps/mobile/assets/icon.png", "color": "#3168d0",
-                                         "source": "style", "styled": "its own app icon"}
+                                         "source": "style", "styled": "its own app icon", "weighed_rv": True}
     assert projectmarks.logo(wordmark) is not None                    # the wordmark waits for Undo
     projectmarks.refresh()
     assert project_config.mark(rel)["source"] == "style"               # Rivendell's refresh leaves the pick
@@ -1031,3 +1031,38 @@ def test_a_colour_a_glance_cant_tell_apart_is_no_change(base, riv):
     assert got["how"] == [] and project_config.mark(rel)["color"] == "#ea5b13" and "styled" not in project_config.mark(rel)
     got = projectmarks.apply_style(rel, _cands(rel)["cands"][0], plate="auto", color="#5a7d6a", why="greener", run="r1")
     assert got["how"] == ["colour"] and project_config.mark(rel)["color"] == "#5a7d6a"
+
+
+
+def test_a_mark_you_set_while_a_run_looks_stands(base):
+    rel = repo(base, "app", {"public/icon.svg": svg(1), "src/logo.svg": svg(2)})
+    c2 = _cands(rel)["cands"][1]                                        # offered: it wore its own icon then
+    projectmarks.set_mark(rel, {"kind": "icon", "icon": "car"})          # then you set one by hand
+    assert projectmarks.apply_style(rel, c2, color="#112233", why="x", run="r1")["how"] == []
+    assert project_config.mark(rel) == {"kind": "icon", "icon": "car"}
+
+
+def test_following_rivendell_again_drops_the_stylists_colour(base, riv):
+    rel = repo(base, "ib", {"apps/mobile/assets/icon.png": png(1)})
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "repositories": ["acme/ib"],
+                        "client": client("ib", logo="https://s3/ib.svg", color="#000000")}]
+    riv["local"] = {rel: {"acme/ib"}}
+    riv["logos"] = {"https://s3/ib.svg": SVG}
+    projectmarks.import_all()
+    projectmarks.apply_style(rel, None, icon="building", color="#3168d0", why="an icon", run="r1")
+    projectmarks.import_all(only=rel)                                    # the editor's FOLLOW RIVENDELL
+    m = project_config.mark(rel)
+    assert m["source"] == "rivendell" and m["color"] == "#000000" and "styled" not in m
+
+
+def test_a_new_clone_styled_before_rivendell_dresses_it_gives_way_to_rivendell(base, riv):
+    rel = repo(base, "fresh", {"public/icon.svg": svg(1)})
+    projectmarks.apply_style(rel, _cands(rel)["cands"][0], color="#112233", why="its own icon", run="r1")
+    assert project_config.mark(rel)["source"] == "style" and "weighed_rv" not in project_config.mark(rel)
+    riv["projects"] = [{"id": "p1", "instance_id": "prod", "repositories": ["acme/fresh"],
+                        "client": client("nr", logo="https://s3/nr.svg", color="#ea5b13")}]
+    riv["local"] = {rel: {"acme/fresh"}}
+    riv["logos"] = {"https://s3/nr.svg": SVG}
+    assert projectmarks.state(force=True)["offer"]["count"] == 1           # the offer counts it, like a pick
+    projectmarks.import_all()
+    assert project_config.mark(rel)["source"] == "rivendell"             # Rivendell's logo was never weighed

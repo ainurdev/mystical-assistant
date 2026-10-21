@@ -182,11 +182,13 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   // (a refresh puts plate before color), leaving out what isn't asked.
   const key = (m: ProjectMark | null, skip: string[]) =>
     JSON.stringify(Object.entries(m ?? {}).filter(([k]) => !skip.includes(k)).sort());
-  const unchanged = !dropping && key(next, ["source", "rv", "auto", "pick"]) === key(shown(cur), ["source", "rv", "auto", "pick"]);
+  // styled/weighed_rv: STYLE WITH AI's notes on a mark (bridge/logostyle.py), never something you edit.
+  const notes = ["styled", "weighed_rv"];
+  const unchanged = !dropping && key(next, ["source", "rv", "auto", "pick", ...notes]) === key(shown(cur), ["source", "rv", "auto", "pick", ...notes]);
   // Only the background changed: the bridge keeps a followed mark following,
   // but not one wearing the repo's icon, which a background makes yours.
   const plateOnly = !dropping && !cur?.auto && (plate ?? null) !== (cur?.plate ?? null)
-    && key(next, ["source", "rv", "plate"]) === key(shown(cur), ["source", "rv", "plate"]);
+    && key(next, ["source", "rv", "plate", ...notes]) === key(shown(cur), ["source", "rv", "plate", ...notes]);
 
   async function save(mark: ProjectMark | null, logoData?: string) {
     setBusy(true);

@@ -112,9 +112,18 @@ def _prompt(projects: list) -> str:
 
 
 def state() -> dict:
-    """The run as the page draws it: its answers so far, and the line being written."""
+    """The run as the page draws it: its answers so far, the line being written,
+    and once it's over which changes Undo took back. The last finished run is
+    kept beside its Undo (projectmarks.save_style_run), so a restart loses neither."""
     with _lock:
-        return copy.deepcopy(_run)
+        run = copy.deepcopy(_run)
+    if run.get("state") == "idle":
+        run = projectmarks.style_last() or run
+    if run.get("state") in ("done", "failed", "stopped"):
+        left = projectmarks.style_left(run.get("id"))
+        for i in run.get("items") or []:
+            i["undone"] = bool(i["how"]) and i["rel"] not in left
+    return run
 
 
 def live() -> "dict | None":
@@ -144,8 +153,10 @@ def start(sheet_b64: str, sig: str, hashes: "dict | None" = None) -> dict:
     if got["sig"] != sig:
         raise ValueError("the projects changed while the sheet was drawn; try again")
     projects = [{**p, "key": f"P{i + 1}"} for i, p in enumerate(got["projects"])]
+    if not projects:
+        raise ValueError("nothing to style: every project wears a mark you set")
     hashes = {k: v for k, v in (hashes if isinstance(hashes, dict) else {}).items()
-              if isinstance(k, str) and isinstance(v, str) and _LOGO.match(k) and _HASH.match(v)}
+              if isinstance(k, str) and isinstance(v, str) and _LOGO.fullmatch(k) and _HASH.fullmatch(v)}
     with _lock:
         if _run.get("state") == "running":
             raise RuntimeError("Style with AI is already running")
@@ -201,7 +212,8 @@ def _ask(sheet: bytes, prompt: str, on_line, on_part) -> "str | None":
                 _proc = p
                 if _run.get("stopping"):
                     p.kill()
-            timer = threading.Timer(TIMEOUT_S, p.kill)
+            late: list = []
+            timer = threading.Timer(TIMEOUT_S, lambda: (late.append(True), p.kill()))
             timer.start()
             buf, result = "", None
             try:
@@ -232,6 +244,8 @@ def _ask(sheet: bytes, prompt: str, on_line, on_part) -> "str | None":
                     _proc = None
             if result is not None and not result.get("is_error"):
                 return None
+            if late:
+                return f"it took longer than {TIMEOUT_S // 60} minutes"
             err.seek(0)
             return (str((result or {}).get("result") or "") or err.read().strip()[-300:]
                     or f"claude stopped ({p.returncode})")[:300]
@@ -262,12 +276,12 @@ def _take(rid: str, by_key: dict, line: str, hashes: "dict | None" = None) -> No
         if not p or _run.get("id") != rid or _run.get("stopping") or any(i["rel"] == p["rel"] for i in _run["items"]):
             return
     pick = str(v.get("pick") or "keep").strip()
-    icon = pick[5:] if pick.startswith("icon:") and _ICON.match(pick[5:]) else None
+    icon = pick[5:] if pick.startswith("icon:") and _ICON.fullmatch(pick[5:]) else None
     cand = next((c for c in p["cands"] if c["id"] == pick), None)
     now = next((c for c in p["cands"] if c["src"] == "now"), None)
     if cand and now and cand is not now and _same((hashes or {}).get(cand["logo"]), (hashes or {}).get(now["logo"])):
         cand = None
-    color = v.get("color") if isinstance(v.get("color"), str) and _HEX.match(v["color"]) else None
+    color = v.get("color") if isinstance(v.get("color"), str) and _HEX.fullmatch(v["color"]) else None
     why = " ".join(str(v.get("why") or "").split())[:160]
     try:
         got = projectmarks.apply_style(p["rel"], cand, icon=icon, plate=BGS.get(str(v.get("bg"))), color=color,
@@ -305,6 +319,10 @@ def _finish(rid: str, err: "str | None") -> None:
         _run.update(state="stopped" if stopped else "failed" if err else "done", ended=time.time(), current="",
                     error=None if stopped else err)
         run = copy.deepcopy(_run)
+    try:
+        projectmarks.save_style_run({k: v for k, v in run.items() if k != "current"})
+    except (OSError, ValueError) as e:      # the list and Undo just won't outlive a restart
+        print(f"logostyle: run not kept: {e}")
     if stopped:
         return                              # you stopped it: nothing to tell you
     changed = sum(1 for i in run["items"] if i["how"])

@@ -372,6 +372,7 @@ export interface StyleItem {
   rel: string; key: string; pick: string; why: string;
   how: ("logo" | "icon" | "background" | "colour")[];
   before: ProjectMark | null; after: ProjectMark | null; error?: string;
+  undone?: boolean;           // Undo took it back (once the run is over)
 }
 export interface StyleRun {
   state: "idle" | "running" | "done" | "failed" | "stopped";

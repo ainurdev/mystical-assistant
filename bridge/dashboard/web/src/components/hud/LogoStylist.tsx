@@ -76,7 +76,7 @@ export function StyleStrip({ reviewing, onReview }: { reviewing: boolean; onRevi
       </div>
     );
   }
-  const live = items.filter((i) => !s.undone.includes(i.rel));
+  const live = items.filter((i) => !i.undone);
   const c = styleCounts(live);
   const all = styleCounts(items);
   const chips = ([[c.logos, "new logo", "new logos"], [c.icons, "new icon", "new icons"], [c.backgrounds, "background", "backgrounds"],
@@ -120,7 +120,7 @@ export function useStyleRows(): (rel: string) => StyleRow {
     const it = items.get(rel);
     if (it) {
       const landed = now - (s.landed[rel] ?? 0) < 1200;
-      if (s.undone.includes(rel)) return { st: "done", end: <span className="st-end">undone</span>, landed: false };
+      if (it.undone) return { st: "done", end: <span className="st-end">undone</span>, landed: false };
       const top = it.how[0];
       const end = !top ? <span className="st-end"><Check size={13} strokeWidth={2.2} aria-label="already right" /></span>
         : top === "colour" ? <span className="st-end"><span className="st-chip"><i style={{ ["--c" as string]: it.after?.color ?? "var(--acc)" }} />colour</span></span>
@@ -158,7 +158,7 @@ export function StylePane({ onPick }: { onPick: (rel: string) => void }) {
     );
   }
   if (r.state === "running") return <Looking r={r} />;
-  return <Ledger r={r} undone={s.undone} onPick={onPick} />;
+  return <Ledger r={r} onPick={onPick} />;
 }
 
 function Looking({ r }: { r: StyleRun }) {
@@ -212,7 +212,7 @@ function Looking({ r }: { r: StyleRun }) {
   );
 }
 
-function Ledger({ r, undone, onPick }: { r: StyleRun; undone: string[]; onPick: (rel: string) => void }) {
+function Ledger({ r, onPick }: { r: StyleRun; onPick: (rel: string) => void }) {
   const items = r.items ?? [];
   const changed = items.filter((i) => i.how.length);
   const kept = items.filter((i) => !i.how.length);
@@ -225,12 +225,12 @@ function Ledger({ r, undone, onPick }: { r: StyleRun; undone: string[]; onPick: 
         <small>{secs ? `in ${secs} s, ` : ""}one AI call over {pictures(r)} pictures · pick a project to change it by hand</small></div></header>
       {changed.map((i) => (
         <div key={i.rel} className="st-item" role="button" tabIndex={0} onClick={() => onPick(i.rel)}
-          onKeyDown={(e) => { if (e.key === "Enter") onPick(i.rel); }} data-undone={undone.includes(i.rel) || undefined}>
+          onKeyDown={(e) => { if (e.key === "Enter") onPick(i.rel); }} data-undone={i.undone || undefined}>
           <span className="st-ba"><ProjectTile project={i.rel} mark={i.before} /><ArrowRight size={11} aria-hidden /><ProjectTile project={i.rel} mark={i.after} /></span>
           <div><div className="st-nm"><span style={{ color: projectTint(i.rel).color }}>{projectName(i.rel)}</span>
             <span className="st-tags">{i.how.map((h) => tag(h, i.after?.color))}</span></div>
             {i.why && <small>{i.why}</small>}</div>
-          {undone.includes(i.rel) ? <span className="st-end">undone</span>
+          {i.undone ? <span className="st-end">undone</span>
             : <button type="button" className="ps-btn" onClick={(e) => { e.stopPropagation(); void undoStyle(i.rel); }}><Undo2 size={12} aria-hidden />Undo</button>}
         </div>
       ))}

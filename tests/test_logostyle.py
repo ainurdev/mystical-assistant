@@ -215,3 +215,38 @@ def test_a_pick_that_is_a_copy_of_what_it_wears_keeps_it(world):
     answer(world, {"p": "P1", "pick": other["id"], "color": "#112233", "why": "its brand"})
     logostyle.start(SHEET, projectmarks.style_candidates()["sig"], hashes)
     assert wait()["items"][0]["how"][0] == "logo" and project_config.mark(shop)["repo"] == "src/brand/shop-logo.svg"
+
+
+def test_the_last_run_and_its_undo_outlive_a_restart(world, monkeypatch):
+    a = repo(world["base"], "a", {"public/icon.svg": svg(1)})
+    b = repo(world["base"], "b", {"public/icon.svg": svg(2)})
+    k = keys()
+    answer(world, {"p": k[a], "pick": "keep", "color": "#112233", "why": "x"}, {"p": k[b], "pick": "keep", "color": "#445566", "why": "y"})
+    logostyle.start(SHEET, projectmarks.style_candidates()["sig"])
+    rid = wait()["id"]
+    monkeypatch.setattr(logostyle, "_run", {"state": "idle"})          # the bridge restarted
+    s = logostyle.state()
+    assert s["id"] == rid and s["state"] == "done" and [i["undone"] for i in s["items"]] == [False, False]
+    projectmarks.undo_style(a)
+    assert {i["rel"]: i["undone"] for i in logostyle.state()["items"]} == {a: True, b: False}
+
+
+def test_nothing_to_style_costs_nothing(world):
+    rel = repo(world["base"], "mine", {"public/icon.svg": svg(1)})
+    projectmarks.set_mark(rel, {"kind": "icon", "icon": "car"})
+    with pytest.raises(ValueError, match="nothing to style"):
+        logostyle.start(SHEET, projectmarks.style_candidates()["sig"])
+    assert not (world["dir"] / "got.json").exists()
+
+
+def test_a_call_that_runs_too_long_says_so(world, monkeypatch):
+    repo(world["base"], "shop", {"public/favicon.svg": svg(1)})
+    answer(world, {"p": "P1", "pick": "keep", "why": "x"})
+    monkeypatch.setattr(logostyle, "TIMEOUT_S", 1)
+    os.environ["FAKE_PAUSE"] = "3"
+    try:
+        logostyle.start(SHEET, projectmarks.style_candidates()["sig"])
+        s = wait()
+    finally:
+        os.environ.pop("FAKE_PAUSE")
+    assert s["state"] == "failed" and "longer than" in s["error"]

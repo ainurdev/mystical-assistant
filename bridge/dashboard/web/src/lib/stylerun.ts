@@ -17,13 +17,12 @@ export interface StyleState {
   live: StyleLive | null;          // the bell's view of a run on
   drawing: boolean;                // the page is drawing the sheet
   error: string;                   // the page's own failure: the sheet, or a start the bridge refused
-  undone: string[];                // projects undone here since the run
   dismissed: boolean;              // the strip was closed on this run
   landed: Record<string, number>;  // project -> when its answer landed, for the flip
 }
 
 const SEEN_KEY = "hud-style-seen";   // the last run whose strip was closed, so a reload keeps it closed
-let state: StyleState = { run: null, live: null, drawing: false, error: "", undone: [], dismissed: false, landed: {} };
+let state: StyleState = { run: null, live: null, drawing: false, error: "", dismissed: false, landed: {} };
 const subs = new Set<() => void>();
 const set = (patch: Partial<StyleState>) => { state = { ...state, ...patch }; subs.forEach((fn) => fn()); };
 let asked = false;
@@ -82,7 +81,7 @@ function follow(): void {
 /** The toolbar's button: draw the sheet, start the run, follow it. */
 export async function startStyle(): Promise<void> {
   if (state.drawing || state.run?.state === "running") return;
-  set({ drawing: true, error: "", dismissed: false, undone: [], landed: {} });
+  set({ drawing: true, error: "", dismissed: false, landed: {} });
   try {
     const c = await api.styleCandidates();
     const { sheet, hashes } = await drawSheet(c);
@@ -98,12 +97,11 @@ export async function stopStyle(): Promise<void> {
   try { set({ run: await api.styleStop() }); } catch (e) { set({ error: e instanceof Error ? e.message : String(e) }); }
 }
 
-/** Undo the run, or one project of it. */
+/** Undo the run, or one project of it. The bridge says what's undone, so a reload or a restart agrees. */
 export async function undoStyle(rel?: string): Promise<void> {
   try {
     await api.styleUndo(rel);
-    const all = (state.run?.items ?? []).filter((i) => i.how.length).map((i) => i.rel);
-    set({ undone: rel ? [...state.undone, rel] : all });
+    set({ run: await api.styleRun() });
     await refreshMarks();
   } catch (e) {
     set({ error: e instanceof Error ? e.message : String(e) });
@@ -126,7 +124,9 @@ export function showStyle(): void {
 const TILE = 32;                          // one candidate on one ground
 const BOX = TILE * 2 + 4 + 12;            // a candidate's framed box: its id on top, both grounds below
 const STEP = BOX + 8;
-const ROW = 96, COLW = 716, COLS = 2;     // two columns of projects keep the sheet under the model's 1568px
+// shortcut: two columns stay under the API's 1568px edge up to ~32 projects; past that the image is
+// scaled down and the ids shrink. Split the sheet into two calls if a bridge lists more.
+const ROW = 96, COLW = 716, COLS = 2;
 
 /** A picture's 16x16 average hash, as 64 hex digits: the bridge takes a pick
  *  within a few bits of what a project wears for a copy of it (bridge/logostyle.py). */

@@ -559,6 +559,11 @@ def _wears(m) -> str:
     return m.get("source") or m.get("kind") or "letters"
 
 
+def _mine(m) -> bool:
+    """A mark you set by hand (no source): the stylist never touches it."""
+    return isinstance(m, dict) and not m.get("auto") and m.get("source") not in ("rivendell", "pick", "style")
+
+
 def style_candidates() -> dict:
     """What the stylist may choose from, per listed project but a mark you set:
     what it wears now, its frontend's logo, then its repo's pictures (best
@@ -572,7 +577,7 @@ def style_candidates() -> dict:
     projects, yours = [], []
     for rel in rels:
         m = shown.get(rel)
-        if isinstance(m, dict) and not m.get("auto") and m.get("source") not in ("rivendell", "pick", "style"):
+        if _mine(m):
             yours.append(rel)
             continue
         cands: list = []
@@ -628,6 +633,8 @@ def apply_style(rel: str, cand: "dict | None" = None, *, icon: "str | None" = No
         d = _load()
         before = marks([rel]).get(rel)
         cur = project_config.mark(rel)
+        if _mine(cur):                    # set by hand while the run looked: yours stands
+            return {"rel": rel, "how": [], "before": before, "after": before}
         # Rivendell's logo, kept: it goes on following, and only its colour and background are the stylist's.
         keep_rv = (isinstance(cur, dict) and cur.get("source") == "rivendell" and cur.get("kind") == "logo"
                    and not icon and (cand is None or cand.get("src") == "now"))
@@ -658,21 +665,43 @@ def apply_style(rel: str, cand: "dict | None" = None, *, icon: "str | None" = No
         elif base.get("color"):
             mark["color"] = base["color"]         # a near miss of the colour it wears isn't a change
         mark["source"] = "rivendell" if keep_rv else "style"
+        if not keep_rv and isinstance(cur, dict) and cur.get("source") == "rivendell":
+            mark["weighed_rv"] = True     # chosen over Rivendell's mark: its import and refresh leave it be
         mark["styled"] = (why or "")[:160]
-        shown = {**_sans(mark, "source", "styled", "rv"),
+        shown = {**_sans(mark, "source", "styled", "rv", "weighed_rv"),
                  **({"logo": _name(_root(rel), mark["repo"])} if mark.get("repo") else {})}
         how = _how(before, shown)
         if not how:
             return {"rel": rel, "how": [], "before": before, "after": before}
         st = d.get("style") if isinstance(d.get("style"), dict) else {}
         if st.get("run") != run:
-            st = {"run": run, "undo": {}}
+            st = {"run": run, "undo": {}}     # a new run: the last one's list and Undo are over
         st["undo"].setdefault(rel, cur)
         d["style"] = st
         project_config.set_mark(rel, mark)
         _gc(d)
         _save(d)
         return {"rel": rel, "how": how, "before": before, "after": marks([rel]).get(rel)}
+
+
+def save_style_run(run: dict) -> None:
+    """A finished run, kept beside its Undo so both outlive a restart (logostyle.state)."""
+    with _lock:
+        d = _load()
+        st = d.get("style") if isinstance(d.get("style"), dict) else {}
+        d["style"] = {**st, "last": run}
+        _save(d)
+
+
+def style_last() -> "dict | None":
+    last = (_load().get("style") or {}).get("last")
+    return last if isinstance(last, dict) else None
+
+
+def style_left(run: "str | None") -> set:
+    """The projects run `run`'s Undo can still take back."""
+    st = _load().get("style") or {}
+    return set(st.get("undo") or {}) if run and st.get("run") == run else set()
 
 
 def undo_style(rel: "str | None" = None) -> dict:
@@ -855,7 +884,7 @@ def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
             mark["plate"] = cur["plate"]
     if _hex(c.get("brandColor")):
         mark["color"] = c["brandColor"]
-    if "styled" in cur:                  # the stylist's colour rides over a refresh too
+    if "styled" in cur and cur.get("source") == "rivendell":   # the stylist's colour rides over a refresh too
         mark["styled"] = cur["styled"]
         if cur.get("color"):
             mark["color"] = cur["color"]
@@ -865,6 +894,11 @@ def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
 
 
 def _yours(m) -> bool:
+    """A mark Rivendell's import and refresh leave alone: one you set, or the
+    stylist's where it was chosen over Rivendell's. A stylist's pick made with no
+    Rivendell mark in sight (a new clone) gives way to Rivendell, like a pick."""
+    if isinstance(m, dict) and m.get("source") == "style":
+        return bool(m.get("weighed_rv"))
     return isinstance(m, dict) and m.get("source") not in ("rivendell", "pick")
 
 
@@ -1001,7 +1035,8 @@ def undo() -> dict:
 
 def _offer_rels(seen: dict, marks: dict) -> list:
     """Matched repos still wearing plain letters, or a pick: what IMPORT would change."""
-    return sorted(r for r in seen["matches"] if r not in marks or marks[r].get("source") == "pick")
+    return sorted(r for r in seen["matches"] if r not in marks or marks[r].get("source") == "pick"
+                  or (marks[r].get("source") == "style" and not marks[r].get("weighed_rv")))
 
 
 def dismiss() -> dict:
