@@ -4834,6 +4834,12 @@ html:not([data-light]):not([data-fam="aurora"]) .ptile[data-kind="logo"][data-au
 html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:not([data-self]) { background: #1c1c22 !important; }
 html:not([data-light]):not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-n]:not([data-self]) img,
 html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:not([data-self]) img { width: 80%; height: 80%; visibility: visible; }
+/* RIVENDELL and MIRKWOOD by day keep a dark sidebar (--side): a night ground on a
+   light theme, so its tiles take the night reading and drop the day one. */
+:is([data-theme="rivendell-light"], [data-theme="mirkwood-light"]) .hudgrid > .shellcol:first-child .ptile[data-kind="logo"][data-auto-n]:not([data-self]) { background: #eef0f6 !important; }
+:is([data-theme="rivendell-light"], [data-theme="mirkwood-light"]) .hudgrid > .shellcol:first-child .ptile[data-kind="logo"][data-auto-n]:not([data-self]) img { width: 80%; height: 80%; visibility: visible; }
+:is([data-theme="rivendell-light"], [data-theme="mirkwood-light"]) .hudgrid > .shellcol:first-child .ptile[data-kind="logo"][data-auto-d]:not([data-auto-n]):not([data-self]) { background: none !important; }
+:is([data-theme="rivendell-light"], [data-theme="mirkwood-light"]) .hudgrid > .shellcol:first-child .ptile[data-kind="logo"][data-auto-d]:not([data-auto-n]):not([data-self]) img { width: 100%; height: 100%; }
 
 /* ── the mark editor (components/hud/MarkEditor) and its two homes: a tile in
    SETTINGS ▸ Projects and the ANALYZE header (.mkwrap holds the popover) ── */

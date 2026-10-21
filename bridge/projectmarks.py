@@ -399,29 +399,36 @@ _FRONTS = ("", "-app", "-web", "-frontend", "-ui", "-portal", "-client")
 
 
 def _frontend(rel: str, rels: list, shown: dict) -> "str | None":
-    """The project a backend's name points at as its frontend, if it wears a
-    logo: one in the same folder first."""
+    """The project a backend's name points at as its frontend, beside it in
+    the same folder, if it wears a logo. A same-named one elsewhere is another
+    client's portal, not this one's."""
     folder, _, base = rel.rpartition("/")
     m = _BACKEND.match(base.lower())
     if not m:
         return None
     names = {m["stem"] + f for f in _FRONTS}
-    hits = [r for r in rels if r != rel and r.rpartition("/")[2].lower() in names and (shown.get(r) or {}).get("logo")]
-    return min(hits, key=lambda r: (r.rpartition("/")[0] != folder, r), default=None)
+    return min((r for r in rels if r != rel and r.rpartition("/")[0] == folder
+                and r.rpartition("/")[2].lower() in names and (shown.get(r) or {}).get("logo")), default=None)
 
 
 def _brand(rel: str) -> "str | None":
-    """A logo or brand file of the repo's own: a logo.* anywhere, or a picture
-    named for the repo (kantoor-logo.svg in kantoor). A brand folder full of
-    clients' logos (a knowledge hub's) names none of them for the repo."""
+    """A logo or brand file of the repo's own: one with the first word of the
+    repo's name among its words (NR-rgb_logo_default.svg in nr-kantoor, never
+    apple-logo.svg in app), else its logo.* if it has only one. A hub's folder
+    of clients' logos names none for the repo, and holds more than one logo.*."""
     root = _root(rel)
-    token = re.split(r"[-_.]", rel.rpartition("/")[2].lower())[0]
+    token = next((t for t in re.split(r"[-_.]+", rel.rpartition("/")[2].lower()) if t), "")
+    bare: dict = {}                       # logo.* by content: one file copied about counts once
     for p in _paths(rel):
         stem = p.rsplit("/", 1)[-1].lower().rsplit(".", 1)[0]
-        flat = re.sub(r"[^a-z0-9]", "", stem)
-        if (stem == "logo" or flat.startswith(token) or (len(token) >= 3 and token in flat)) and _name(root, p):
+        name = _name(root, p)
+        if not name:
+            continue
+        if token and token in re.split(r"[-_. ]+", stem):
             return p
-    return None
+        if stem == "logo":
+            bare.setdefault(name, p)
+    return next(iter(bare.values())) if len(bare) == 1 else None
 
 
 def _owner(rel: str) -> "str | None":
@@ -493,7 +500,8 @@ def pick_all() -> dict:
                 mark = {**mark, "logo": _put_logo(d, data, RV_LOGO_MAX)}
             project_config.set_mark(rel, mark)
             picked.append(rel)
-        d["pick"] = {"undo": picked}
+        if picked:                        # a run that found nothing new keeps the last one's undo
+            d["pick"] = {"undo": picked}
         _gc(d)
         _save(d)
     return {"picked": [{"rel": r, **found[r][0]["pick"]} for r in picked],

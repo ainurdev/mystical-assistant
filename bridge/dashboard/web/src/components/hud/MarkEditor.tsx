@@ -81,6 +81,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const light = document.documentElement.hasAttribute("data-light");
+  const aurora = document.documentElement.dataset.fam === "aurora";   // AURORA draws logos as phosphor, never plated
 
   // Which client Rivendell has for this repo, for USE RIVENDELL'S and the
   // follow line. A bridge without the route just leaves both out.
@@ -181,7 +182,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   // (a refresh puts plate before color), leaving out what isn't asked.
   const key = (m: ProjectMark | null, skip: string[]) =>
     JSON.stringify(Object.entries(m ?? {}).filter(([k]) => !skip.includes(k)).sort());
-  const unchanged = !dropping && key(next, ["source", "rv", "auto"]) === key(shown(cur), ["source", "rv", "auto"]);
+  const unchanged = !dropping && key(next, ["source", "rv", "auto", "pick"]) === key(shown(cur), ["source", "rv", "auto", "pick"]);
   // Only the background changed: the bridge keeps a followed mark following,
   // but not one wearing the repo's icon, which a background makes yours.
   const plateOnly = !dropping && !cur?.auto && (plate ?? null) !== (cur?.plate ?? null)
@@ -352,7 +353,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
               <div className="mk-bgrow">
                 {/* AUTO (nothing stored) says what it chose on this ground. */}
                 <div className="mk-lbl mk-bglbl">Background
-                  {!plate && <small>{(light ? info?.day : info?.night) ? `${light ? "dark" : "light"} here` : "none here"}</small>}</div>
+                  {!plate && <small>{!aurora && (light ? info?.day : info?.night) ? `${light ? "dark" : "light"} here` : "none here"}</small>}</div>
                 <div className="mk-mini" role="radiogroup" aria-label="Background">
                   {([[null, "AUTO"], ["none", "NONE"], ["light", "LIGHT"], ["dark", "DARK"]] as const).map(([v, l]) => (
                     <button key={l} type="button" role="radio" aria-checked={plate === v} data-on={plate === v || undefined}

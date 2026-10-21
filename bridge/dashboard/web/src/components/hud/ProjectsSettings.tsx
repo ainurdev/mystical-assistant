@@ -143,9 +143,9 @@ function Field({ icon: Icon, label, hint, children }: { icon: LucideIcon; label:
 function markHint(rel: string): string {
   const m = projectMark(rel);
   if (m?.auto) return "its own icon, read from the repo";
-  if (m?.repo) return "set here: a picture in the repo, read afresh";
   if (m?.source === "pick") return m.pick?.how === "frontend" ? `picked: ${projectName(m.pick.from)}'s logo, its frontend`
     : m.pick?.how === "org" ? `picked: ${m.pick.from}'s GitHub picture` : "picked: a brand file in the repo, read afresh";
+  if (m?.repo) return "set here: a picture in the repo, read afresh";
   if (m?.source === "rivendell") return m.rv?.own ? "its own logo, from Rivendell" : `${m.rv?.name ?? "its client"}'s logo, from Rivendell`;
   return m && !(m.kind === "letters" && !m.color) ? "set here: it never changes on its own" : "its initials";
 }
@@ -299,7 +299,9 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
     try {
       const res = await api.pickLogos(action);
       setProjectMarks((await api.projects()).marks);
-      setPickRes(action === "pick" ? res : null);
+      // Pressed again with nothing new to pick: the last run's strip, and its Undo, stay.
+      setPickRes((prev) => action === "undo" ? null
+        : !res.picked.length && prev && typeof prev !== "string" && prev.picked.length ? prev : res);
     } catch (e) {
       setPickRes(e instanceof Error ? e.message : String(e));
     } finally {

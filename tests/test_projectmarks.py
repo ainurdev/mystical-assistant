@@ -868,3 +868,32 @@ def test_none_pins_no_background_and_auto_stores_nothing():
     m = projectmarks.set_mark("/r", {"kind": "logo", "plate": "none"}, logo_data=base64.b64encode(PNG).decode())
     assert m["plate"] == "none"
     assert "plate" not in projectmarks.set_mark("/r", {"kind": "logo", "logo": m["logo"]})   # AUTO: nothing stored
+
+
+def test_pick_matches_the_repos_name_as_a_word_never_a_lookalike(base, offline):
+    app = repo(base, "app", {"src/assets/auth/apple-logo.svg": svg(1)})            # "app" isn't apple
+    notes = repo(base, "ai-notes", {"docs/airtable-logo.svg": svg(2)})            # "ai" isn't airtable
+    scratch = repo(base, "_scratch", {"x/brand/acme-logo.svg": svg(3)})           # no name to match: nothing
+    nr = repo(base, "nr-kantoor", {"public/brand/NR-rgb_logo_default.svg": svg(4)})  # the word nr, as NR's file says
+    got = projectmarks.pick_all()
+    assert [p["rel"] for p in got["picked"]] == [nr] and sorted(got["none"]) == sorted([app, notes, scratch])
+
+
+def test_a_bare_logo_counts_only_when_it_is_the_repos_one(base, offline):
+    hub = repo(base, "hub", {"clients/acme/logo.svg": svg(1), "clients/zeta/logo.svg": svg(2)})
+    shop = repo(base, "shop", {"src/assets/logo.svg": svg(3), "public/logo.svg": svg(3)})   # the same file twice
+    got = projectmarks.pick_all()
+    assert [p["rel"] for p in got["picked"]] == [shop] and got["none"] == [hub]
+
+
+def test_a_frontend_counts_only_in_the_same_folder(base, offline):
+    repo(base, "client-b/portal", {"public/icon.svg": svg(1)})
+    api = repo(base, "client-a/portal-api", {"README.md": b"x"})
+    assert projectmarks.pick_all() == {"picked": [], "none": [api]}
+
+
+def test_a_run_that_picks_nothing_keeps_the_last_undo(base, offline):
+    rel = repo(base, "shop", {"src/assets/logo.svg": svg(1)})
+    assert len(projectmarks.pick_all()["picked"]) == 1
+    assert projectmarks.pick_all() == {"picked": [], "none": []}          # pressed again: nothing left to pick
+    assert projectmarks.undo_picks() == {"undone": 1} and project_config.mark(rel) is None
