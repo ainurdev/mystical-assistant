@@ -199,3 +199,19 @@ def test_the_model_s_none_is_auto(world):
     assert s["items"][0]["how"] == [] and project_config.mark(shop) is None      # "none" asked for no plate: AUTO
     argv = json.loads((world["dir"] / "argv.json").read_text())
     assert argv[argv.index("--effort") + 1] == "low"
+
+
+def test_a_pick_that_is_a_copy_of_what_it_wears_keeps_it(world):
+    shop = repo(world["base"], "shop", {"public/favicon.svg": svg(1), "public/icon-512.png": b"\x89PNG\r\n\x1a\n" + b"\x01" * 24,
+                                        "src/brand/shop-logo.svg": svg(2)})
+    cands = projectmarks.style_candidates()["projects"][0]["cands"]
+    now, copy, other = (next(c for c in cands if c["path"] == p) for p in
+                        ("public/favicon.svg", "public/icon-512.png", "src/brand/shop-logo.svg"))
+    near = "f" * 63 + "0"                                             # 4 bits from all-f: the same picture
+    hashes = {now["logo"]: "f" * 64, copy["logo"]: near, other["logo"]: "0" * 64, "nonsense": "zz"}
+    answer(world, {"p": "P1", "pick": copy["id"], "color": "#112233", "why": "the bigger copy"})
+    logostyle.start(SHEET, projectmarks.style_candidates()["sig"], hashes)
+    assert wait()["items"][0]["how"] == ["colour"] and project_config.mark(shop)["repo"] == "public/favicon.svg"
+    answer(world, {"p": "P1", "pick": other["id"], "color": "#112233", "why": "its brand"})
+    logostyle.start(SHEET, projectmarks.style_candidates()["sig"], hashes)
+    assert wait()["items"][0]["how"][0] == "logo" and project_config.mark(shop)["repo"] == "src/brand/shop-logo.svg"

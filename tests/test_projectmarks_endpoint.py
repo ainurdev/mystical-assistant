@@ -182,7 +182,7 @@ def test_the_pick_route_reaches_projectmarks(monkeypatch):
 def test_the_style_routes_reach_the_stylist(monkeypatch, tmp_path):
     from bridge import logostyle
     calls = []
-    monkeypatch.setattr(logostyle, "start", lambda sheet, sig: calls.append(("start", sheet, sig)) or {"state": "running"})
+    monkeypatch.setattr(logostyle, "start", lambda sheet, sig, hashes: calls.append(("start", sheet, sig)) or {"state": "running"})
     monkeypatch.setattr(logostyle, "stop", lambda: calls.append(("stop",)) or {"state": "stopped"})
     monkeypatch.setattr(logostyle, "state", lambda: {"state": "idle"})
     monkeypatch.setattr(projectmarks, "undo_style", lambda rel=None: calls.append(("undo", rel)) or {"undone": 1})
@@ -202,12 +202,12 @@ def test_the_style_routes_reach_the_stylist(monkeypatch, tmp_path):
 def test_a_refused_start_says_why(monkeypatch):
     from bridge import logostyle
 
-    def busy(sheet, sig):
+    def busy(sheet, sig, hashes):
         raise RuntimeError("Style with AI is already running")
     monkeypatch.setattr(logostyle, "start", busy)
     assert dpost("/local/project-mark/style", {"action": "start"})["code"] == 409
 
-    def stale(sheet, sig):
+    def stale(sheet, sig, hashes):
         raise ValueError("the projects changed while the sheet was drawn; try again")
     monkeypatch.setattr(logostyle, "start", stale)
     got = dpost("/local/project-mark/style", {"action": "start"})

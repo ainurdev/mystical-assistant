@@ -46,6 +46,13 @@ BGS = {"auto": "auto", "none": "auto", "light": "light", "dark": "dark"}
 # (DynamicIcon's fallback); check against lucide's list if the model starts inventing them.
 _ICON = re.compile(r"^[a-z0-9-]{1,48}$")
 _HEX = re.compile(r"^#[0-9a-fA-F]{6}$")
+# The page's 16x16 average hash of each picture (lib/stylerun.ts). A pick within SAME_BITS of what the
+# project wears is a copy of it (an icon-512.png of Rivendell's emblem): the model sometimes "switches"
+# to one, which changes nothing you can see and quietly stops the project following Rivendell. Measured
+# here: copies 0-12 bits, the same lion cropped differently 51, different logos 66 and up.
+SAME_BITS = 24
+_HASH = re.compile(r"^[0-9a-f]{64}$")
+_LOGO = re.compile(r"^[0-9a-f]{64}\.(png|jpg|webp|svg)$")
 
 _lock = threading.Lock()
 _run: dict = {"state": "idle"}
@@ -73,7 +80,8 @@ not the project's.
 - Never a framework's leftover default: React, Vite, Next.js, Svelte, Vue, Angular, Expo, Electron and the like.
 - A symbol or a square app icon beats a wide wordmark: words vanish at 20 px.
 - One layer of an icon (an Android foreground, background or monochrome) is not a whole icon.
-- When what it wears is already the best, "keep" it.
+- When what it wears is already the best, "keep" it. A logo Rivendell lends is the client's own choice: keep it \
+unless another candidate is clearly better at 20 px, and never swap it for a copy of the same picture.
 - Repos of one client or product wear the same mark.
 
 Answer with one JSON object per line, in the order of the projects, and nothing else:
@@ -118,9 +126,11 @@ def live() -> "dict | None":
                 "changed": sum(1 for i in _run["items"] if i["how"]), "started": _run["started"]}
 
 
-def start(sheet_b64: str, sig: str) -> dict:
-    """Start a run over the sheet the page drew from style_candidates() `sig`.
-    ValueError for a sheet that can't be used, RuntimeError while one runs."""
+def start(sheet_b64: str, sig: str, hashes: "dict | None" = None) -> dict:
+    """Start a run over the sheet the page drew from style_candidates() `sig`,
+    with each picture's average hash (`hashes`, logo name -> hex) when the page
+    sent them. ValueError for a sheet that can't be used, RuntimeError while one
+    runs."""
     global _run
     if not aifeatures.enabled("logostyle"):
         raise ValueError("Style with AI is off in Settings ▸ AI")
@@ -134,6 +144,8 @@ def start(sheet_b64: str, sig: str) -> dict:
     if got["sig"] != sig:
         raise ValueError("the projects changed while the sheet was drawn; try again")
     projects = [{**p, "key": f"P{i + 1}"} for i, p in enumerate(got["projects"])]
+    hashes = {k: v for k, v in (hashes if isinstance(hashes, dict) else {}).items()
+              if isinstance(k, str) and isinstance(v, str) and _LOGO.match(k) and _HASH.match(v)}
     with _lock:
         if _run.get("state") == "running":
             raise RuntimeError("Style with AI is already running")
@@ -141,7 +153,7 @@ def start(sheet_b64: str, sig: str) -> dict:
         _run = {"id": rid, "state": "running", "started": time.time(), "ended": None, "total": len(projects),
                 "projects": [{"rel": p["rel"], "key": p["key"], "name": p["name"], "cands": p["cands"]} for p in projects],
                 "yours": got["yours"], "items": [], "current": "", "error": None}
-    threading.Thread(target=_work, args=(rid, sheet, projects), daemon=True, name="logostyle").start()
+    threading.Thread(target=_work, args=(rid, sheet, projects, hashes), daemon=True, name="logostyle").start()
     return state()
 
 
@@ -156,10 +168,10 @@ def stop() -> dict:
     return state()
 
 
-def _work(rid: str, sheet: bytes, projects: list) -> None:
+def _work(rid: str, sheet: bytes, projects: list, hashes: dict) -> None:
     by_key = {p["key"]: p for p in projects}
     try:
-        err = _ask(sheet, _prompt(projects), lambda line: _take(rid, by_key, line), lambda part: _part(rid, part))
+        err = _ask(sheet, _prompt(projects), lambda line: _take(rid, by_key, line, hashes), lambda part: _part(rid, part))
     except Exception as e:  # noqa: BLE001 — a run must end, whatever broke
         err = str(e) or type(e).__name__
     _finish(rid, err)
@@ -227,10 +239,15 @@ def _ask(sheet: bytes, prompt: str, on_line, on_part) -> "str | None":
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _take(rid: str, by_key: dict, line: str) -> None:
+def _same(a: "str | None", b: "str | None") -> bool:
+    return bool(a and b) and bin(int(a, 16) ^ int(b, 16)).count("1") <= SAME_BITS
+
+
+def _take(rid: str, by_key: dict, line: str, hashes: "dict | None" = None) -> None:
     """One line of the answer: checked, then worn. A line that isn't an answer,
     names no project of this run or answers one twice changes nothing; a pick
-    that isn't one of the project's candidates keeps what it wears."""
+    that isn't one of the project's candidates, or is a copy of what it wears,
+    keeps what it wears."""
     try:
         v = json.loads(line.strip())
     except ValueError:
@@ -247,6 +264,9 @@ def _take(rid: str, by_key: dict, line: str) -> None:
     pick = str(v.get("pick") or "keep").strip()
     icon = pick[5:] if pick.startswith("icon:") and _ICON.match(pick[5:]) else None
     cand = next((c for c in p["cands"] if c["id"] == pick), None)
+    now = next((c for c in p["cands"] if c["src"] == "now"), None)
+    if cand and now and cand is not now and _same((hashes or {}).get(cand["logo"]), (hashes or {}).get(now["logo"])):
+        cand = None
     color = v.get("color") if isinstance(v.get("color"), str) and _HEX.match(v["color"]) else None
     why = " ".join(str(v.get("why") or "").split())[:160]
     try:

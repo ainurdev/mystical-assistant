@@ -85,8 +85,8 @@ export async function startStyle(): Promise<void> {
   set({ drawing: true, error: "", dismissed: false, undone: [], landed: {} });
   try {
     const c = await api.styleCandidates();
-    const sheet = await drawSheet(c);
-    const run = await api.styleStart(sheet, c.sig);
+    const { sheet, hashes } = await drawSheet(c);
+    const run = await api.styleStart(sheet, c.sig, hashes);
     set({ run, drawing: false, live: liveOf(run) });
     follow();
   } catch (e) {
@@ -128,12 +128,30 @@ const BOX = TILE * 2 + 4 + 12;            // a candidate's framed box: its id on
 const STEP = BOX + 8;
 const ROW = 96, COLW = 716, COLS = 2;     // two columns of projects keep the sheet under the model's 1568px
 
+/** A picture's 16x16 average hash, as 64 hex digits: the bridge takes a pick
+ *  within a few bits of what a project wears for a copy of it (bridge/logostyle.py). */
+function averageHash(img: HTMLImageElement): string {
+  const S = 16, cv = document.createElement("canvas");
+  cv.width = cv.height = S;
+  const g = cv.getContext("2d", { willReadFrequently: true })!;
+  g.fillStyle = "#808080";
+  g.fillRect(0, 0, S, S);
+  const w = img.naturalWidth || S, h = img.naturalHeight || S, k = Math.min(S / w, S / h);
+  g.drawImage(img, (S - w * k) / 2, (S - h * k) / 2, w * k, h * k);
+  const px = g.getImageData(0, 0, S, S).data, lum: number[] = [];
+  for (let i = 0; i < px.length; i += 4) lum.push(0.2126 * px[i] + 0.7152 * px[i + 1] + 0.0722 * px[i + 2]);
+  const mean = lum.reduce((a, b) => a + b, 0) / lum.length;
+  let hex = "";
+  for (let i = 0; i < lum.length; i += 4) hex += ((lum[i] > mean ? 8 : 0) | (lum[i + 1] > mean ? 4 : 0) | (lum[i + 2] > mean ? 2 : 0) | (lum[i + 3] > mean ? 1 : 0)).toString(16);
+  return hex;
+}
+
 /** Every project's candidates, numbered as the bridge numbered them (P1.., c1..),
  *  each in a box of its own with its id at the top, drawn on a dark ground and
  *  a light one. The box is what ties an id to its picture: with the id loose
  *  under the tiles, the model once named the "a" and gave the wordmark's id.
- *  A PNG, base64. */
-export async function drawSheet(c: StyleCandidates): Promise<string> {
+ *  A PNG, base64, and each picture's average hash. */
+export async function drawSheet(c: StyleCandidates): Promise<{ sheet: string; hashes: Record<string, string> }> {
   const imgs = new Map<string, HTMLImageElement | null>();
   await Promise.all(c.projects.flatMap((p) => p.cands).map(async (k) => {
     if (imgs.has(k.logo)) return;
@@ -181,5 +199,7 @@ export async function drawSheet(c: StyleCandidates): Promise<string> {
       }
     });
   });
-  return cv.toDataURL("image/png").split(",")[1];
+  const hashes: Record<string, string> = {};
+  for (const [name, img] of imgs) if (img) hashes[name] = averageHash(img);
+  return { sheet: cv.toDataURL("image/png").split(",")[1], hashes };
 }

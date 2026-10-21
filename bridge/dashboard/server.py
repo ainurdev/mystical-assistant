@@ -1650,7 +1650,8 @@ class Handler(BaseHTTPRequestHandler):
             act = body.get("action")
             if act == "start":
                 try:
-                    return self._json(logostyle.start(body.get("sheet") or "", str(body.get("sig") or "")))
+                    return self._json(logostyle.start(body.get("sheet") or "", str(body.get("sig") or ""),
+                                                      body.get("hashes")))
                 except ValueError as e:
                     return self._json({"error": str(e)}, 400)
                 except RuntimeError as e:

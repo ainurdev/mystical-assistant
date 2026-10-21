@@ -2086,8 +2086,8 @@ export const api = {
     req<PickResult & { undone?: number }>("/local/project-mark/pick", { method: "POST", body: { action } }),
   styleCandidates: () => req<StyleCandidates>("/local/project-mark/style/candidates"),
   styleRun: () => req<StyleRun>("/local/project-mark/style"),
-  styleStart: (sheet: string, sig: string) =>
-    req<StyleRun>("/local/project-mark/style", { method: "POST", body: { action: "start", sheet, sig } }),
+  styleStart: (sheet: string, sig: string, hashes: Record<string, string>) =>
+    req<StyleRun>("/local/project-mark/style", { method: "POST", body: { action: "start", sheet, sig, hashes } }),
   styleStop: () => req<StyleRun>("/local/project-mark/style", { method: "POST", body: { action: "stop" } }),
   styleUndo: (project?: string) =>
     req<{ undone: number }>("/local/project-mark/style", { method: "POST", body: { action: "undo", ...(project ? { project } : {}) } }),
