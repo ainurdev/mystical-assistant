@@ -2950,15 +2950,32 @@ def _repo_slugs(path: str) -> list:
 
 
 def _slug_answer(path: str) -> "tuple[str | None, dict | None]":
-    """The first of the checkout's slugs whose tasks() answer names a project,
-    with that answer; else the first slug's, which says why there is none."""
-    first = (None, None)
+    """The checkout's slugs whose tasks() answers name a project ("a, b" when
+    several), with those answers merged; else the first slug's, which says why
+    there is none. Every slug counts, not just the first to hit: an NR apex
+    checkout's origin (nationalerijschool/apex) is on NR exam automation and
+    its `ainur` remote (ainurdev/apex) on Apex, so stopping at origin filed
+    Apex work on the other board without asking which."""
+    first, hits = (None, None), []
     for slug in _repo_slugs(path):
         d = tasks(slug)
         if d.get("projects"):
-            return slug, d
+            hits.append((slug, d))
         first = first if first[0] else (slug, d)
-    return first
+    if len(hits) < 2:
+        return hits[0] if hits else first
+    merged: dict = {"instances": hits[0][1]["instances"], "links": hits[0][1].get("links") or [],
+                    "projects": [], "tasks": [], "errors": []}
+    seen: set = set()
+    for _, d in hits:
+        for kind in ("projects", "tasks"):
+            for row in d.get(kind) or []:
+                ref = (kind, row.get("instance_id"), row.get("id"))
+                if ref not in seen:
+                    seen.add(ref)
+                    merged[kind].append(row)
+        merged["errors"] += [e for e in d.get("errors") or [] if e not in merged["errors"]]
+    return ", ".join(s for s, _ in hits), merged
 
 
 def on_board(path: str, wait: float = 2.0) -> bool:
