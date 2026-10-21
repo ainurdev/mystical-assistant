@@ -2,15 +2,22 @@
    DOOR. BootIntro keeps the shell (the log, the bar, the CRT wipe, every
    timing) and mounts one of these where the emblem goes: an absolute field
    behind, one SVG in the flow. `progress` is the log's answered share; it
-   drives the drawing (the staff's light, the door's lines). `.bootleaving` on
-   the intro plays the exit inside the existing warm-up and wipe, so a scene
-   costs no time.
+   drives the drawing (the staff's light and its runes, the door's lines).
+   `.bootleaving` on the intro plays the exit inside the existing warm-up and
+   wipe, so a scene costs no time.
 
    Glows are SVG filters (filter="url(#…)"), never CSS `filter` on an SVG
-   child: WebKit, Mystical.app's engine, ignores the latter. `.bx` marks an exit
-   flourish, which `.bootcontinue` must not fast-forward (index.css). The ids
-   are fixed because only one intro is ever mounted: the boot, or after it the
-   restart's overlay. Drafts: .mystical/design-drafts/lotr-boot/. */
+   child: WebKit, Mystical.app's engine, ignores the latter. WebKit also
+   re-runs a filter or a mask every frame when anything under it moves, so
+   KHAZAD-DÛM keeps its filters on still shapes, gets the moving glows from a
+   wide faint stroke under a thin one, and fades by gradient fills, not masks
+   (measured: 30 fps that way, 10 fps the other). The Balrog's group only
+   fades in for the same reason: moving it would re-run all its rims. `.bx` marks an
+   animation that answers the boot rather than opens it (an exit flourish, a
+   step's pulse), which `.bootcontinue` must not fast-forward (index.css). The
+   ids are fixed because only one intro is ever mounted: the boot, or after it
+   the restart's overlay. Drafts: .mystical/design-drafts/lotr-boot/ and
+   khazad-dum-v2/. */
 import type { CSSProperties, ReactNode } from "react";
 
 type Flame = [x: number, y: number, rot: number, scale: number, delay: number, dur?: number];
@@ -26,180 +33,350 @@ function F({ f: [x, y, rot, scale, delay, dur] }: { f: Flame }) {
 }
 
 // The Balrog's fire, in its own frame (feet at 0,0, facing the wizard).
-const SOFT: Flame[] = [[-54, -256, 34, 2.2, 0], [-24, -238, 44, 2.8, -0.4], [12, -232, 52, 2.6, -0.8], [40, -214, 64, 2, -0.2], [-90, -196, -22, 1.4, -0.6]];
 const MANE: Flame[] = [
-  [-60, -256, 28, 0.9, 0], [-48, -258, 34, 1.4, -0.3], [-40, -250, 40, 1.2, -0.7, 0.9], [-30, -238, 44, 1.8, -0.15],
-  [-14, -234, 46, 1.5, -0.5, 1.3], [2, -234, 50, 1.9, -0.9], [20, -230, 56, 1.4, -0.4, 0.95], [34, -220, 62, 1.3, -0.65],
-  [42, -202, 74, 1.1, -0.25, 0.85], [-22, -240, 30, 0.8, -0.2, 0.8], [10, -240, 40, 0.9, -0.75, 0.85],
-  // down the sword arm
-  [-62, -188, -12, 1, -0.35, 1.05], [-84, -188, -20, 0.85, -0.1, 0.9], [-104, -194, -26, 0.8, -0.6, 1],
+  [-108, -316, 20, 1.3, 0], [-96, -314, 28, 1.9, -0.3], [-82, -314, 34, 2.4, -0.7, 0.9], [-66, -318, 40, 2.8, -0.15],
+  [-50, -326, 44, 2.6, -0.5, 1.3], [-36, -334, 48, 3, -0.9], [-20, -324, 52, 2.7, -0.4, 0.95], [-4, -330, 56, 2.9, -0.65],
+  [10, -336, 60, 2.6, -0.25, 0.85], [26, -322, 64, 2.4, -0.2, 0.8], [42, -328, 70, 2.1, -0.75, 0.85], [56, -306, 78, 1.8, -0.35, 1.05], [66, -284, 86, 1.4, -0.55, 0.9],
+  [-102, -318, 22, 1, -0.1, 0.8], [-72, -316, 36, 1.2, -0.45, 0.9], [-44, -330, 46, 1.3, -0.6, 0.85], [-12, -328, 54, 1.2, -0.3, 0.95], [18, -330, 62, 1.1, -0.5, 0.9],
+  // the wings' leading edges
+  [62, -372, 50, 1.1, -0.2, 0.9], [128, -424, 58, 1.2, -0.6, 1], [180, -436, 64, 1, -0.35, 0.85], [236, -444, 70, 0.9, -0.8, 0.95],
+  [-30, -370, 24, 1, -0.4, 0.9], [-60, -412, 30, 1.1, -0.1, 1], [-104, -428, 34, 0.9, -0.7, 0.85], [-150, -437, 38, 0.8, -0.25, 0.9],
+  // the sword
+  [-246, -225, 30, 0.9, -0.2, 0.8], [-278, -235, 34, 1, -0.5, 0.9], [-309, -244, 38, 0.9, -0.8, 0.85], [-340, -254, 42, 0.7, -0.15, 0.9],
   // the bridge burns where it treads
-  [-58, 0, -6, 0.9, -0.3, 0.9], [-44, 0, 8, 0.6, -0.6, 0.8], [38, 0, 6, 0.8, -0.1, 1], [54, 0, -8, 0.55, -0.45, 0.85],
+  [-128, 0, -6, 1.1, -0.3, 0.9], [-104, 0, 8, 0.8, -0.6, 0.8], [-80, 0, -4, 0.7, -0.2, 0.9], [84, 0, 6, 1, -0.1, 1], [106, 0, -8, 0.8, -0.45, 0.85], [126, 0, 4, 0.7, -0.7, 0.9],
 ];
 const SPARKS: [cx: number, cy: number, r: number, delay: number, dur: number][] = [
-  [-40, -262, 1.4, 0, 3.4], [-10, -266, 1.1, -1.1, 2.8], [20, -256, 1.6, -2.2, 4], [-64, -262, 1, -0.6, 3.1],
-  [40, -236, 1.2, -1.8, 3.7], [-90, -250, 1.2, -2.6, 3.3], [60, -210, 1, -0.3, 2.9],
+  [-90, -330, 1.4, 0, 3.4], [-60, -338, 1.1, -1.1, 2.8], [-20, -334, 1.6, -2.2, 4], [-110, -326, 1, -0.6, 3.1],
+  [20, -330, 1.2, -1.8, 3.7], [-140, -316, 1.2, -2.6, 3.3], [50, -306, 1, -0.3, 2.9], [-40, -350, 1.3, -1.5, 3.6], [90, -420, 1.1, -2, 3.2],
+];
+// Smoke over the fire behind it, in the scene's frame: cx, cy, rx, ry, delay, duration.
+const SMOKE: [number, number, number, number, number, number][] = [
+  [120, -20, 150, 80, 0, 7], [260, -50, 170, 90, -2, 8], [380, 60, 150, 100, -4, 6.5], [40, 130, 110, 70, -1, 7.5],
+  [240, 170, 140, 80, -3, 8.5], [420, 190, 120, 70, -5, 7], [60, -80, 130, 60, -2.5, 9], [460, -60, 150, 70, -1.5, 8], [-40, 20, 90, 60, -3.5, 7.8],
 ];
 // Embers rising out of the deep, across the whole screen: left %, bottom %, delay, duration.
 const EMBERS: [number, number, number, number][] = [
   [58, 6, -0.4, 6], [64, 2, -2.1, 7], [47, 4, -3.6, 8], [71, 9, -1.2, 5.4], [39, 1, -4.8, 6], [55, 12, -5.5, 6.6], [78, 5, -2.9, 7.4],
+  [30, 8, -1.6, 7.2], [86, 3, -3.3, 6.2], [22, 2, -4.1, 8.4], [67, 14, -0.8, 5.8], [50, 18, -2.6, 6.9],
 ];
-// The Dwarrowdelf's pillars, nearest at the edges: opacity, x positions (% of the screen).
-const PILLARS: [number, number[]][] = [[0.16, [3, 7.5, 92.5, 97]], [0.1, [16, 18.6, 81.4, 84]], [0.06, [25.5, 27, 73, 74.5]]];
+// ...and a few motes nearer than everything: cx, cy, r, delay, duration.
+const MOTES: [number, number, number, number, number][] = [[-420, 560, 5, -1, 7], [380, 600, 7, -3.5, 8], [620, 520, 4, -5, 6.5], [-660, 600, 6, -2.2, 9]];
+// The Dwarrowdelf's pillars on both shores, the far ones fainter: x, width, far.
+const PILLARS: [number, number, boolean?][] = [
+  [-840, 40, true], [-1110, 46, true], [900, 40, true], [1180, 46, true], [-700, 64], [-980, 76], [-1260, 84], [760, 64], [1040, 76], [1320, 84],
+];
+// The light at the staff's head (index.css kd- transform-origins repeat it), and
+// its six runes, one per answered step: Cirth-like strokes, for the look.
+const LX = -206, LY = 53;
+const RUNES = [
+  "M0 -7 V7 M0 -7 L5 -3 M0 -2 L5 2", "M0 -7 V7 M-4.5 -2.5 L0 -7 L4.5 -2.5", "M0 -7 V7 M0 -4.5 L3.5 -1 L0 2.5 L-3.5 -1 Z",
+  "M-3 -7 V7 M3 -7 V7 M-3 -3 L3 3", "M0 -7 V7 M0 -1 L-4.5 3.5 M0 -5 L4.5 -0.5", "M0 -7 V7 M0 -7 L4.5 -3.5 L0 0 M0 2 L-4.5 5.5",
+];
 
-// The deck: one arch between the cliffs. The strike breaks out x 40..262.
+// The deck: one slender arch between the shores, thin at the crown. Drawn here
+// once, then as the part that stays and the three pieces that fall.
 const DECK = (
   <>
-    <path className="kd-deckfill" d="M -560 331 Q 20 325 600 331 L 600 380 Q 20 300 -560 380 Z" />
-    <path className="kd-deckline" d="M -560 331 Q 20 325 600 331" />
-    <path className="kd-deckunder" d="M 600 380 Q 20 300 -560 380" />
+    <path className="kd-spandrel" d="M -545 338 Q 40 306 625 338 L 625 362 Q 40 288 -545 362 Z" />
+    <path className="kd-face" d="M -545 331 Q 40 299 625 331 L 625 338 Q 40 306 -545 338 Z" />
+    <path className="kd-joints" d="M -500 328.6 V 335.6 M -440 325.8 V 332.8 M -380 323.2 V 330.2 M -320 321.1 V 328.1 M -260 319.2 V 326.2 M -200 317.7 V 324.7 M -140 316.5 V 323.5 M -80 315.7 V 322.7 M -20 315.2 V 322.2 M 40 315 V 322 M 100 315.2 V 322.2 M 160 315.7 V 322.7 M 220 316.5 V 323.5 M 280 317.7 V 324.7 M 340 319.2 V 326.2 M 400 321.1 V 328.1 M 460 323.2 V 330.2 M 520 325.8 V 332.8 M 580 328.6 V 335.6" />
+    <path className="kd-joints" d="M -470 328 L -480.2 353.1 M -400 325.6 L -408.8 345.9 M -330 323.5 L -337.4 339.8 M -260 321.8 L -266 334.7 M -190 320.4 L -194.6 330.7 M 270 320.4 L 274.6 330.7 M 340 321.8 L 346 334.7 M 410 323.5 L 417.4 339.8 M 480 325.6 L 488.8 345.9 M 550 328 L 560.2 353.1" />
+    <path className="kd-intrados" d="M -545 362 Q 40 288 625 362" />
+    <path className="kd-walk" d="M -545 331 Q 40 299 625 331" />
   </>
 );
 
-/** KHAZAD-DÛM: "You shall not pass." Gandalf holds the bridge while the
- *  dashboard loads, his light growing with each answered step; leaving, he
- *  strikes and the span under the Balrog falls. Always drawn at night: the
- *  intro hands this scene a dark ground (lib/theme nightOf). */
+// The Balrog's trunk: legs, hips, chest and spined back in one outline.
+const TRUNK = "M -132 0 L -124 -8 L -104 -14 L -94 -26 L -100 -60 L -110 -96 L -100 -112 L -76 -140 L -62 -170 L -84 -196 L -112 -226 L -118 -246 L -110 -262 L -104 -276 L -96 -298 L -78 -310 L -56 -318 L -40 -332 L -30 -318 L -8 -326 L 6 -340 L 14 -320 L 34 -318 L 44 -330 L 52 -310 L 62 -296 L 68 -280 L 66 -240 L 56 -208 L 48 -186 L 64 -166 L 82 -140 L 98 -108 L 116 -82 L 132 -58 L 128 -30 L 124 0 L 78 0 L 86 -16 L 94 -40 L 90 -52 L 66 -74 L 48 -100 L 16 -138 L -20 -140 L -56 -122 L -80 -92 L -80 -60 L -72 -26 L -72 0 Z";
+// Its body, once: drawn rimmed in its own fire, and again under the wizard's light.
+const BODY = (
+  <>
+    <path className="kd-bk" d={TRUNK} />
+    {/* head, low and forward, the jaw dropped on the fire inside */}
+    <path className="kd-bk" d="M -94 -310 L -112 -316 L -140 -308 L -148 -300 L -144 -296 L -154 -288 L -156 -278 L -150 -272 L -146 -276 L -132 -272 L -150 -258 L -148 -252 L -140 -246 L -116 -250 L -102 -262 L -90 -280 Z" />
+    {/* horns: the far one swept back, the near one forward like a bull's */}
+    <path className="kd-bk" d="M -104 -314 L -90 -312 L -80 -334 L -66 -356 L -48 -376 L -52 -382 L -72 -366 L -90 -344 Z" />
+    <path className="kd-bk" d="M -112 -310 L -112 -330 L -120 -348 L -136 -362 L -158 -372 L -176 -374 L -160 -364 L -146 -352 L -138 -336 L -136 -306 Z" />
+    {/* the sword arm, out and low, the fist up */}
+    <path className="kd-bk" d="M -101 -286 L -133 -222 L -160 -233 L -196 -228 L -200 -235 L -214 -237 L -225 -225 L -225 -208 L -214 -198 L -198 -200 L -160 -197 L -122 -202 L -106 -194 L -108 -210 L -75 -274 Z" />
+  </>
+);
+
+function Pillar({ x, w, far }: { x: number; w: number; far?: boolean }) {
+  const l = x - w / 2, r = x + w / 2, cap = w * 0.9, edge = x < 0 ? r : l;
+  return (
+    <>
+      <path className={far ? "kd-pillar kd-far" : "kd-pillar"} d={`M ${l} 331 L ${l} 20 C ${l} -20 ${l - cap} -60 ${l - cap} -120 L ${r + cap} -120 C ${r + cap} -60 ${r} -20 ${r} 20 L ${r} 331 Z`} />
+      {/* the edge that faces the chasm catches a little light */}
+      {!far && <path className="kd-pillar-edge" d={`M ${edge} 331 V 20`} />}
+    </>
+  );
+}
+
+/** KHAZAD-DÛM: "You shall not pass." Gandalf holds a slender bridge over the
+ *  chasm while the dashboard loads. Each answered step kindles one rune of the
+ *  six round his staff's light, pulses it and makes the shadow's fire flinch;
+ *  leaving, he strikes, white flame stands up off the deck, a crack runs to
+ *  the Balrog's feet and the span under it breaks in three and falls. Always
+ *  drawn at night: the intro hands this scene a dark ground (lib/theme nightOf). */
 export function KhazadDum({ progress }: { progress: number }) {
+  const lit = Math.floor(progress * 6 + 1e-9);
+  // the step's pulse and flinch restart by swapping between twin keyframes, so nothing remounts
+  const beat = lit ? (lit % 2 ? "a" : "b") : "";
   return (
     <>
       <div className="kd-field" aria-hidden>
-        <svg className="kd-pillars" viewBox="0 0 100 100" preserveAspectRatio="none">
-          {PILLARS.map(([o, xs]) => (
-            <g key={o} style={{ opacity: o }}>{xs.map((x) => <line key={x} x1={x} y1={0} x2={x} y2={100} />)}</g>
-          ))}
-        </svg>
         <div className="kd-deep" />
         {EMBERS.map(([l, b, d, t], i) => (
-          <i key={i} className="kd-ember" style={{ left: `${l}%`, bottom: `${b}%`, animationDelay: `${d}s`, animationDuration: `${t}s` }} />
+          <i key={i} className={i % 4 === 3 ? "kd-ember kd-big" : "kd-ember"} style={{ left: `${l}%`, bottom: `${b}%`, animationDelay: `${d}s`, animationDuration: `${t}s` }} />
         ))}
       </div>
       <div className="kd-flash bx" aria-hidden />
 
-      <svg className="kd-scene" viewBox="-1400 0 2800 440" style={{ "--p": progress } as CSSProperties} aria-hidden>
+      <svg className="kd-scene bx" viewBox="-1400 -120 2800 760" style={{ "--p": progress } as CSSProperties} aria-hidden>
         <defs>
           <radialGradient id="kd-back">
-            <stop offset="0" style={{ stopColor: "var(--err)", stopOpacity: 0.46 }} />
-            <stop offset=".45" style={{ stopColor: "var(--warn)", stopOpacity: 0.1 }} />
+            <stop offset="0" style={{ stopColor: "var(--err)", stopOpacity: 0.5 }} />
+            <stop offset=".42" style={{ stopColor: "var(--warn)", stopOpacity: 0.12 }} />
             <stop offset="1" style={{ stopColor: "var(--warn)", stopOpacity: 0 }} />
+          </radialGradient>
+          <radialGradient id="kd-hot">
+            <stop offset="0" style={{ stopColor: "var(--warn)", stopOpacity: 0.4 }} />
+            <stop offset=".5" style={{ stopColor: "var(--err)", stopOpacity: 0.14 }} />
+            <stop offset="1" style={{ stopColor: "var(--err)", stopOpacity: 0 }} />
+          </radialGradient>
+          <radialGradient id="kd-smk">
+            <stop offset="0" style={{ stopColor: "var(--void)", stopOpacity: 0.9 }} />
+            <stop offset=".55" style={{ stopColor: "var(--void)", stopOpacity: 0.5 }} />
+            <stop offset="1" style={{ stopColor: "var(--void)", stopOpacity: 0 }} />
           </radialGradient>
           <radialGradient id="kd-white">
             <stop offset="0" style={{ stopColor: "var(--txb)", stopOpacity: 0.95 }} />
-            <stop offset=".35" style={{ stopColor: "var(--txb)", stopOpacity: 0.22 }} />
+            <stop offset=".22" style={{ stopColor: "var(--txb)", stopOpacity: 0.34 }} />
+            <stop offset=".55" style={{ stopColor: "var(--info)", stopOpacity: 0.07 }} />
+            <stop offset="1" style={{ stopColor: "var(--info)", stopOpacity: 0 }} />
+          </radialGradient>
+          <radialGradient id="kd-pool-g">
+            <stop offset="0" style={{ stopColor: "var(--txb)", stopOpacity: 0.42 }} />
+            <stop offset=".5" style={{ stopColor: "var(--txb)", stopOpacity: 0.1 }} />
             <stop offset="1" style={{ stopColor: "var(--txb)", stopOpacity: 0 }} />
           </radialGradient>
+          <radialGradient id="kd-core-g">
+            <stop offset="0" style={{ stopColor: "var(--warn)", stopOpacity: 0.8 }} />
+            <stop offset=".45" style={{ stopColor: "var(--err)", stopOpacity: 0.32 }} />
+            <stop offset="1" style={{ stopColor: "var(--err)", stopOpacity: 0 }} />
+          </radialGradient>
+          <radialGradient id="kd-mote-g">
+            <stop offset="0" style={{ stopColor: "var(--warn)", stopOpacity: 0.9 }} />
+            <stop offset=".4" style={{ stopColor: "var(--err)", stopOpacity: 0.35 }} />
+            <stop offset="1" style={{ stopColor: "var(--err)", stopOpacity: 0 }} />
+          </radialGradient>
+          <linearGradient id="kd-streak-g" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0" style={{ stopColor: "var(--info)", stopOpacity: 0 }} />
+            <stop offset=".5" style={{ stopColor: "var(--txb)", stopOpacity: 0.9 }} />
+            <stop offset="1" style={{ stopColor: "var(--info)", stopOpacity: 0 }} />
+          </linearGradient>
           <linearGradient id="kd-fire" x1="0" y1="1" x2="0" y2="0">
             <stop offset="0" style={{ stopColor: "var(--warn)" }} />
             <stop offset=".5" style={{ stopColor: "var(--err)", stopOpacity: 0.9 }} />
             <stop offset="1" style={{ stopColor: "var(--err)", stopOpacity: 0 }} />
           </linearGradient>
-          <linearGradient id="kd-blade" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" style={{ stopColor: "var(--warn)", stopOpacity: 0.95 }} />
-            <stop offset=".7" style={{ stopColor: "var(--err)", stopOpacity: 0.8 }} />
+          <linearGradient id="kd-blade" gradientUnits="userSpaceOnUse" x1="-214" y1="-216" x2="-372" y2="-263">
+            <stop offset="0" style={{ stopColor: "var(--warn)" }} />
+            <stop offset=".65" style={{ stopColor: "var(--err)", stopOpacity: 0.9 }} />
+            <stop offset="1" style={{ stopColor: "var(--err)", stopOpacity: 0.15 }} />
+          </linearGradient>
+          <linearGradient id="kd-sheet-g" x1="0" y1="1" x2="0" y2="0">
+            <stop offset="0" style={{ stopColor: "var(--txb)" }} />
+            <stop offset=".55" style={{ stopColor: "var(--txb)", stopOpacity: 0.55 }} />
+            <stop offset="1" style={{ stopColor: "var(--info)", stopOpacity: 0 }} />
+          </linearGradient>
+          {/* the deck's walking line: fire where the shadow stands... */}
+          <linearGradient id="kd-walk" gradientUnits="userSpaceOnUse" x1="-545" y1="0" x2="625" y2="0">
+            <stop offset="0" style={{ stopColor: "var(--acc)", stopOpacity: 0.7 }} />
+            <stop offset=".5" style={{ stopColor: "var(--acc)", stopOpacity: 0.8 }} />
+            <stop offset=".7" style={{ stopColor: "var(--warn)", stopOpacity: 0.9 }} />
+            <stop offset="1" style={{ stopColor: "var(--acc)", stopOpacity: 0.6 }} />
+          </linearGradient>
+          {/* ...and white where the wizard's light falls */}
+          <linearGradient id="kd-walklit" gradientUnits="userSpaceOnUse" x1="-545" y1="0" x2="80" y2="0">
+            <stop offset="0" style={{ stopColor: "var(--txb)", stopOpacity: 0 }} />
+            <stop offset=".48" style={{ stopColor: "var(--txb)", stopOpacity: 0.95 }} />
+            <stop offset="1" style={{ stopColor: "var(--txb)", stopOpacity: 0 }} />
+          </linearGradient>
+          {/* the chasm: everything under the deck fades into the deep by its own fill */}
+          <linearGradient id="kd-pit" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" style={{ stopColor: "var(--err)", stopOpacity: 0 }} />
+            <stop offset=".4" style={{ stopColor: "var(--err)", stopOpacity: 0.1 }} />
+            <stop offset=".72" style={{ stopColor: "var(--warn)", stopOpacity: 0.2 }} />
+            <stop offset="1" style={{ stopColor: "var(--warn)", stopOpacity: 0 }} />
+          </linearGradient>
+          <linearGradient id="kd-cliffedge" gradientUnits="userSpaceOnUse" x1="0" y1="331" x2="0" y2="640">
+            <stop offset="0" style={{ stopColor: "var(--acc)", stopOpacity: 0.45 }} />
+            <stop offset=".35" style={{ stopColor: "var(--err)", stopOpacity: 0.4 }} />
+            <stop offset=".6" style={{ stopColor: "var(--warn)", stopOpacity: 0.5 }} />
+            <stop offset="1" style={{ stopColor: "var(--warn)", stopOpacity: 0 }} />
+          </linearGradient>
+          <linearGradient id="kd-voiddn" gradientUnits="userSpaceOnUse" x1="0" y1="331" x2="0" y2="640">
+            <stop offset=".5" style={{ stopColor: "var(--void)" }} />
+            <stop offset="1" style={{ stopColor: "var(--void)", stopOpacity: 0 }} />
+          </linearGradient>
+          <linearGradient id="kd-deepdn" gradientUnits="userSpaceOnUse" x1="0" y1="331" x2="0" y2="640">
+            <stop offset=".5" style={{ stopColor: "color-mix(in srgb, var(--err) 5%, var(--void))" }} />
+            <stop offset="1" style={{ stopColor: "color-mix(in srgb, var(--err) 5%, var(--void))", stopOpacity: 0 }} />
+          </linearGradient>
+          <linearGradient id="kd-redge" gradientUnits="userSpaceOnUse" x1="0" y1="331" x2="0" y2="640">
+            <stop offset="0" style={{ stopColor: "var(--err)", stopOpacity: 0.22 }} />
+            <stop offset=".6" style={{ stopColor: "var(--err)", stopOpacity: 0.18 }} />
             <stop offset="1" style={{ stopColor: "var(--err)", stopOpacity: 0 }} />
           </linearGradient>
-          <linearGradient id="kd-fade" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0" stopColor="#fff" stopOpacity="0" />
-            <stop offset=".3" stopColor="#fff" />
-            <stop offset=".7" stopColor="#fff" />
-            <stop offset="1" stopColor="#fff" stopOpacity="0" />
+          {/* the hall's pillars rise out of sight */}
+          <linearGradient id="kd-pillar-g" gradientUnits="userSpaceOnUse" x1="0" y1="-120" x2="0" y2="331">
+            <stop offset="0" style={{ stopColor: "color-mix(in srgb, var(--txb) 3.5%, var(--canvas))", stopOpacity: 0 }} />
+            <stop offset=".45" style={{ stopColor: "color-mix(in srgb, var(--txb) 3.5%, var(--canvas))" }} />
           </linearGradient>
-          <linearGradient id="kd-dn" x1="0" y1="0" x2="0" y2="1">
-            <stop offset=".72" stopColor="#fff" />
-            <stop offset="1" stopColor="#fff" stopOpacity="0" />
+          <linearGradient id="kd-pedge" gradientUnits="userSpaceOnUse" x1="0" y1="-120" x2="0" y2="331">
+            <stop offset=".1" style={{ stopColor: "var(--acc)", stopOpacity: 0 }} />
+            <stop offset=".6" style={{ stopColor: "var(--acc)", stopOpacity: 0.18 }} />
           </linearGradient>
-          <mask id="kd-ends" maskUnits="userSpaceOnUse" x="-1400" y="0" width="2800" height="440">
-            <rect x="-1400" y="0" width="2800" height="440" fill="url(#kd-fade)" />
-          </mask>
-          <mask id="kd-down" maskUnits="userSpaceOnUse" x="-1400" y="0" width="2800" height="440">
-            <rect x="-1400" y="0" width="2800" height="440" fill="url(#kd-dn)" />
-          </mask>
-          {/* a 1.3px rim round the union of the group, then its glow */}
+          {/* fire all round the shadow, hottest on its top and back edges */}
           <filter id="kd-rim-fire" x="-30%" y="-30%" width="160%" height="160%">
-            <feMorphology in="SourceAlpha" operator="dilate" radius="1.3" result="d" />
+            <feMorphology in="SourceAlpha" operator="dilate" radius="1.1" result="d" />
             <feComposite in="d" in2="SourceAlpha" operator="out" result="ring" />
             <feFlood className="kd-ff-err" result="c" />
             <feComposite in="c" in2="ring" operator="in" result="rim" />
-            <feGaussianBlur in="rim" stdDeviation="3.5" result="glow" />
-            <feMerge><feMergeNode in="glow" /><feMergeNode in="glow" /><feMergeNode in="SourceGraphic" /><feMergeNode in="rim" /></feMerge>
+            <feGaussianBlur in="rim" stdDeviation="4" result="glow" />
+            <feOffset in="SourceAlpha" dx="-1.6" dy="1.6" result="o" />
+            <feComposite in="SourceAlpha" in2="o" operator="out" result="edge" />
+            <feFlood className="kd-ff-warn" floodOpacity=".75" result="w" />
+            <feComposite in="w" in2="edge" operator="in" result="hot" />
+            <feMerge><feMergeNode in="glow" /><feMergeNode in="SourceGraphic" /><feMergeNode in="rim" /><feMergeNode in="hot" /></feMerge>
           </filter>
-          <filter id="kd-rim-white" x="-30%" y="-30%" width="160%" height="160%">
-            <feMorphology in="SourceAlpha" operator="dilate" radius="1.1" result="d" />
-            <feComposite in="d" in2="SourceAlpha" operator="out" result="ring" />
+          {/* the wizard's light on the shadow's front: its left and top edges, in white */}
+          <filter id="kd-lit" x="-10%" y="-10%" width="120%" height="120%">
+            <feOffset in="SourceAlpha" dx="3" dy="2" result="o" />
+            <feComposite in="SourceAlpha" in2="o" operator="out" result="edge" />
             <feFlood className="kd-ff-txb" result="c" />
+            <feComposite in="c" in2="edge" operator="in" result="rim" />
+            <feGaussianBlur in="rim" stdDeviation="1.6" result="b" />
+            <feMerge><feMergeNode in="b" /><feMergeNode in="rim" /></feMerge>
+          </filter>
+          {/* Gandalf: a faint white rim, his own light on top, the fire on his front */}
+          <filter id="kd-rim-gf" x="-40%" y="-30%" width="180%" height="160%">
+            <feMorphology in="SourceAlpha" operator="dilate" radius=".9" result="d" />
+            <feComposite in="d" in2="SourceAlpha" operator="out" result="ring" />
+            <feFlood className="kd-ff-txb" floodOpacity=".55" result="c" />
             <feComposite in="c" in2="ring" operator="in" result="rim" />
-            <feGaussianBlur in="rim" stdDeviation="2.5" result="glow" />
-            <feMerge><feMergeNode in="glow" /><feMergeNode in="SourceGraphic" /><feMergeNode in="rim" /></feMerge>
+            <feGaussianBlur in="rim" stdDeviation="2.4" result="glow" />
+            <feOffset in="SourceAlpha" dx="0" dy="2.2" result="o1" />
+            <feComposite in="SourceAlpha" in2="o1" operator="out" result="top" />
+            <feFlood className="kd-ff-txb" result="w" />
+            <feComposite in="w" in2="top" operator="in" result="lit" />
+            <feOffset in="SourceAlpha" dx="-2" dy="0" result="o2" />
+            <feComposite in="SourceAlpha" in2="o2" operator="out" result="front" />
+            <feFlood className="kd-ff-warn" floodOpacity=".85" result="f" />
+            <feComposite in="f" in2="front" operator="in" result="fire" />
+            <feMerge><feMergeNode in="glow" /><feMergeNode in="SourceGraphic" /><feMergeNode in="rim" /><feMergeNode in="fire" /><feMergeNode in="lit" /></feMerge>
           </filter>
           {/* the bbox-relative region is wide on purpose: thin strokes have thin boxes */}
           <filter id="kd-glow" x="-200%" y="-200%" width="500%" height="500%">
             <feGaussianBlur stdDeviation="3" result="b" />
             <feMerge><feMergeNode in="b" /><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
-          <filter id="kd-soft" x="-100%" y="-100%" width="300%" height="300%"><feGaussianBlur stdDeviation="5" /></filter>
-          <filter id="kd-smoke" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="7" /></filter>
           <path id="kd-flame" d="M0 0 C -5 -3 -6 -10 -3 -17 C -2 -12 0 -11 1 -14 C 1 -20 3 -25 2 -30 C 7 -23 8 -14 6 -7 C 5 -3 3 0 0 0 Z" />
-          <clipPath id="kd-mid"><path d="M 40 0 H 262 V 329 L 268 334 L 259 339 L 266 345 L 262 440 H 40 L 41 352 L 37 343 L 43 338 L 34 334 L 40 329 Z" /></clipPath>
-          <clipPath id="kd-sides"><path d="M -1400 0 H 40 V 329 L 34 334 L 43 338 L 37 343 L 41 352 L 40 440 H -1400 Z M 262 0 H 1400 V 440 H 262 L 266 345 L 259 339 L 268 334 L 262 329 Z" /></clipPath>
+          {/* where the strike breaks the deck: three pieces under the Balrog, and the rest */}
+          <clipPath id="kd-cut-a"><path d="M 50 290 L 150 290 L 146 318 L 154 323 L 147 329 L 150 420 L 50 420 L 50 331 L 53 327 L 47 322 L 54 318 Z" /></clipPath>
+          <clipPath id="kd-cut-b"><path d="M 150 290 L 262 290 L 258 318 L 266 324 L 259 331 L 262 420 L 150 420 L 147 329 L 154 323 L 146 318 Z" /></clipPath>
+          <clipPath id="kd-cut-c"><path d="M 262 290 L 372 290 L 368 322 L 376 328 L 369 334 L 373 420 L 262 420 L 259 331 L 266 324 L 258 318 Z" /></clipPath>
+          <clipPath id="kd-cut-rest"><path d="M -1400 -120 H 50 V 312 L 54 318 L 47 322 L 53 327 L 50 331 L 50 640 H -1400 Z M 372 -120 H 1400 V 640 H 373 L 373 340 L 369 334 L 376 328 L 368 322 L 372 315 Z" /></clipPath>
+          <clipPath id="kd-trunk"><path d={TRUNK} /></clipPath>
         </defs>
 
-        {/* fire behind the shadow */}
-        <ellipse className="kd-backlight bx" cx="130" cy="150" rx="330" ry="250" fill="url(#kd-back)" />
+        {/* the hall: the Dwarrowdelf's pillars on both shores */}
+        <g className="kd-hall">
+          {PILLARS.map(([x, w, far]) => <Pillar key={x} x={x} w={w} far={far} />)}
+        </g>
+        {/* the chasm and the deep */}
+        <g className="kd-abyss">
+          <rect x="-560" y="331" width="1200" height="309" fill="url(#kd-pit)" />
+          <path className="kd-deepr kd-far" d="M -545 420 L -500 430 L -510 452 L -470 470 L -484 496 L -436 520 L -452 548 L -400 572 L -420 600 L -370 640 L -560 640 Z" />
+          <path className="kd-deepr kd-far" d="M 625 424 L 584 440 L 596 466 L 552 488 L 566 516 L 520 544 L 538 574 L 486 604 L 500 640 L 640 640 Z" />
+          <g>
+            <ellipse cx="-60" cy="476" rx="440" ry="22" fill="url(#kd-smk)" opacity=".55" />
+            <ellipse cx="240" cy="548" rx="400" ry="26" fill="url(#kd-smk)" opacity=".5" />
+          </g>
+          <path className="kd-deepr" d="M -545 372 L -486 384 L -498 410 L -452 428 L -466 452 L -420 470 L -434 498 L -388 520 L -404 552 L -356 580 L -374 610 L -330 640 L -560 640 Z" />
+          <path className="kd-deepr" d="M 625 376 L 566 394 L 580 420 L 534 440 L 548 466 L 500 488 L 516 518 L 466 544 L 484 576 L 436 604 L 452 640 L 640 640 Z" />
+        </g>
+        {/* the shores the bridge springs from */}
+        <g className="kd-abyss">
+          <path className="kd-floor" d="M -1400 331 L -545 331 L -545 640 L -1400 640 Z" />
+          <path className="kd-floor" d="M 1400 331 L 625 331 L 625 640 L 1400 640 Z" />
+          <path className="kd-rock" d="M -1400 331 L -545 331 L -552 356 L -543 384 L -560 414 L -549 448 L -566 488 L -552 530 L -570 580 L -558 640 L -1400 640 Z" />
+          <path className="kd-rock" d="M 1400 331 L 625 331 L 633 358 L 621 388 L 640 420 L 627 458 L 645 500 L 630 546 L 648 600 L 636 640 L 1400 640 Z" />
+          <path className="kd-strata" d="M -600 372 L -760 368 M -580 420 L -700 424 M -610 470 L -820 466 M 680 380 L 820 384 M 660 436 L 760 432 M 690 492 L 900 496" />
+        </g>
+
+        {/* fire behind the shadow, and the smoke it stands in */}
+        <g className="kd-backlight bx">
+          <ellipse cx="200" cy="80" rx="540" ry="410" fill="url(#kd-back)" />
+          <ellipse cx="170" cy="30" rx="240" ry="200" fill="url(#kd-hot)" />
+        </g>
+        <g>
+          {SMOKE.map(([cx, cy, rx, ry, d, t]) => (
+            <ellipse key={`${cx},${cy}`} className="kd-smoke" cx={cx} cy={cy} rx={rx} ry={ry} fill="url(#kd-smk)" style={{ animationDelay: `${d}s`, animationDuration: `${t}s` }} />
+          ))}
+        </g>
+        {/* the light on the deck round the wizard */}
+        <ellipse className="kd-pool" cx="-240" cy="319" rx="300" ry="18" fill="url(#kd-pool-g)" />
 
         <g className="kd-falls bx">
           <g className="kd-balrog">
-            <g transform="translate(120 330)">
-              <g filter="url(#kd-smoke)" opacity=".9">
-                <ellipse className="kd-bk" cx="0" cy="-226" rx="140" ry="64" />
-                <ellipse className="kd-bk" cx="-6" cy="-140" rx="74" ry="100" />
-              </g>
+            <g transform="translate(190 316.5) scale(.92)">
+              {/* the fire behind its back, breathing; it flinches at each step */}
+              <g className={beat && `kd-flinch-${beat} bx`}><g className="kd-fireback">
+                <ellipse cx="-60" cy="-336" rx="96" ry="74" fill="url(#kd-hot)" />
+                <ellipse cx="24" cy="-340" rx="120" ry="86" fill="url(#kd-hot)" style={{ animationDelay: "-1.1s", animationDuration: "2.3s" }} />
+                <ellipse cx="84" cy="-286" rx="76" ry="64" fill="url(#kd-hot)" style={{ animationDelay: "-0.6s", animationDuration: "1.9s" }} />
+              </g></g>
               {/* wings of shadow, ragged, with their bones */}
-              <g filter="url(#kd-rim-fire)" opacity=".8">
-                <path className="kd-wing kd-far" d="M -6 -226 C -50 -270 -140 -298 -252 -304 C -234 -292 -230 -276 -236 -260 C -216 -268 -196 -262 -190 -248 C -174 -258 -154 -254 -148 -240 C -130 -250 -110 -246 -100 -234 C -80 -240 -56 -236 -30 -218 Z" />
-                <path className="kd-wing" d="M 8 -222 C 56 -268 136 -302 262 -308 C 238 -290 234 -270 248 -250 C 222 -254 206 -240 210 -220 C 186 -228 166 -216 166 -196 C 144 -204 124 -194 120 -174 C 100 -184 78 -180 64 -162 C 52 -170 34 -172 22 -168 Z" />
+              <g filter="url(#kd-rim-fire)" opacity=".95">
+                <path className="kd-bk" d="M -10 -312 L -30 -370 L -60 -412 L -140 -436 L -232 -446 L -222 -418 L -244 -396 L -208 -380 L -214 -352 L -176 -356 L -166 -330 L -134 -340 L -116 -316 L -80 -326 L -50 -300 Z" />
               </g>
-              <path className="kd-bones" d="M 8 -214 L 262 -308 M 120 -262 L 248 -250 M 104 -252 L 210 -220 M 88 -240 L 166 -196 M 72 -228 L 120 -174 M -6 -226 L -252 -304 M -120 -268 L -236 -260 M -104 -262 L -190 -248 M -86 -254 L -148 -240" />
-              {/* the far arm, low, with the whip */}
+              <path className="kd-bones" d="M -10 -312 L -60 -412 L -232 -446 M -60 -412 L -244 -396 M -60 -412 L -214 -352 M -60 -412 L -166 -330 M -60 -412 L -116 -316" />
+              <g filter="url(#kd-rim-fire)" opacity=".97">
+                <path className="kd-bk" d="M 24 -306 L 62 -372 L 128 -424 L 230 -444 L 334 -450 L 306 -412 L 318 -372 L 276 -352 L 262 -310 L 222 -304 L 204 -268 L 170 -272 L 146 -246 L 100 -276 L 58 -276 Z" />
+              </g>
+              <path className="kd-bones" d="M 24 -306 L 128 -424 L 334 -450 M 128 -424 L 318 -372 M 128 -424 L 262 -310 M 128 -424 L 204 -268 M 128 -424 L 146 -246" />
+              {/* the far arm, hanging back, the whip of many thongs in its fist */}
               <g filter="url(#kd-rim-fire)">
-                <line className="kd-limb" x1="16" y1="-208" x2="40" y2="-166" strokeWidth="26" />
-                <line className="kd-limb" x1="40" y1="-166" x2="50" y2="-128" strokeWidth="20" />
-                <circle className="kd-bk" cx="51" cy="-122" r="11" />
+                <path className="kd-bk" d="M 34 -296 L 64 -282 L 96 -246 L 104 -226 L 108 -196 L 106 -166 L 110 -150 L 96 -140 L 82 -146 L 84 -168 L 82 -200 L 74 -226 L 50 -262 L 28 -270 Z" />
               </g>
               <g className="kd-whipg">
-                <path className="kd-whip" filter="url(#kd-glow)" d="M 54 -116 C 92 -104 112 -64 96 -38 C 84 -18 114 -4 152 -10 C 180 -14 200 0 222 -6" />
+                <path className="kd-whip-glow" d="M 98 -146 C 134 -128 150 -88 136 -58 C 124 -34 154 -18 196 -24 C 224 -28 242 -12 266 -18 M 98 -146 C 128 -116 140 -78 128 -52 C 118 -30 140 -14 180 -10 M 98 -146 C 144 -136 172 -100 168 -70 C 164 -44 192 -40 222 -46" />
+                <path className="kd-whip" d="M 98 -146 C 134 -128 150 -88 136 -58 C 124 -34 154 -18 196 -24 C 224 -28 242 -12 266 -18" />
+                <path className="kd-whip kd-thong" d="M 98 -146 C 128 -116 140 -78 128 -52 C 118 -30 140 -14 180 -10" />
+                <path className="kd-whip kd-thong" d="M 98 -146 C 144 -136 172 -100 168 -70 C 164 -44 192 -40 222 -46" />
               </g>
-              {/* the body: one silhouette, rimmed in fire */}
-              <g filter="url(#kd-rim-fire)">
-                <line className="kd-limb" x1="14" y1="-118" x2="30" y2="-66" strokeWidth="38" />
-                <line className="kd-limb" x1="30" y1="-66" x2="46" y2="-14" strokeWidth="26" />
-                <path className="kd-bk" d="M 34 -20 L 60 -10 L 64 0 L 30 0 Z" />
-                <line className="kd-limb" x1="-14" y1="-118" x2="-40" y2="-66" strokeWidth="40" />
-                <line className="kd-limb" x1="-40" y1="-66" x2="-50" y2="-14" strokeWidth="27" />
-                <path className="kd-bk" d="M -38 -20 L -66 -8 L -74 0 L -36 0 Z" />
-                <ellipse className="kd-bk" cx="0" cy="-122" rx="28" ry="18" />
-                <path className="kd-bk" d="M -46 -204 C -48 -222 -20 -234 12 -232 C 34 -230 44 -216 42 -198 C 40 -170 26 -146 18 -126 C 6 -114 -14 -114 -24 -126 C -34 -148 -44 -178 -46 -204 Z" />
-                <ellipse className="kd-bk" cx="-36" cy="-212" rx="20" ry="16" />
-                {/* neck and head: heavy brow, jaw open on the fire inside */}
-                <path className="kd-bk" d="M -30 -226 L -58 -236 L -64 -212 L -36 -202 Z" />
-                <path className="kd-bk" d="M -42 -238 C -44 -252 -56 -258 -66 -254 C -72 -252 -78 -246 -80 -240 L -88 -230 L -84 -226 L -66 -224 L -62 -220 L -84 -214 L -82 -208 C -70 -204 -52 -206 -44 -214 C -38 -220 -38 -230 -42 -238 Z" />
-                {/* horns, out and forward like a bull's */}
-                <path className="kd-bk" d="M -48 -250 C -50 -270 -60 -286 -82 -294 C -70 -282 -64 -268 -60 -250 Z" />
-                <path className="kd-bk" d="M -60 -250 C -68 -268 -84 -280 -108 -280 C -92 -272 -82 -262 -74 -246 Z" />
-                {/* the sword arm, raised at the light */}
-                <line className="kd-limb" x1="-44" y1="-206" x2="-70" y2="-172" strokeWidth="28" />
-                <line className="kd-limb" x1="-70" y1="-172" x2="-112" y2="-184" strokeWidth="22" />
-                <circle className="kd-bk" cx="-118" cy="-186" r="12" />
-              </g>
+              {/* the shadow itself, rimmed in its own fire, with the fire in its chest */}
+              <g filter="url(#kd-rim-fire)">{BODY}</g>
+              <ellipse className="kd-core" cx="-44" cy="-244" rx="58" ry="70" fill="url(#kd-core-g)" clipPath="url(#kd-trunk)" />
+              <path className="kd-vein-glow" d="M -98 -236 L -86 -218 L -92 -200 L -80 -184 M -62 -296 L -52 -276 L -60 -258 M -22 -306 L -14 -286 L -22 -268 L -12 -246 M 28 -296 L 34 -274 L 28 -254 M 50 -252 L 56 -232 L 50 -212 M -86 -218 L -70 -212 M -60 -258 L -44 -250 L -36 -254 M -14 -286 L 0 -280 M -28 -200 L -20 -184 M -92 -100 L -88 -80 L -92 -60 M 104 -84 L 112 -66 L 108 -48 M -140 -214 L -170 -217 M 92 -230 L 98 -206" />
+              <path className="kd-vein" d="M -98 -236 L -86 -218 L -92 -200 L -80 -184 M -62 -296 L -52 -276 L -60 -258 M -22 -306 L -14 -286 L -22 -268 L -12 -246 M 28 -296 L 34 -274 L 28 -254 M 50 -252 L 56 -232 L 50 -212" />
+              <path className="kd-vein kd-v2" d="M -86 -218 L -70 -212 M -60 -258 L -44 -250 L -36 -254 M -14 -286 L 0 -280 M -28 -200 L -20 -184 M -92 -100 L -88 -80 L -92 -60 M 104 -84 L 112 -66 L 108 -48 M -140 -214 L -170 -217 M 92 -230 L 98 -206" />
+              <ellipse cx="-142" cy="-270" rx="16" ry="10" fill="url(#kd-core-g)" />
+              <path className="kd-maw" d="M -150 -272 L -132 -271 L -146 -262 Z" />
+              <ellipse className="kd-eye" cx="-140" cy="-292" rx="4.6" ry="1.8" transform="rotate(-12 -140 -292)" />
+              {/* the flame sword, raised at the light */}
               <g filter="url(#kd-glow)">
-                <path className="kd-maw" d="M -84 -224 L -64 -222 L -80 -216 Z" />
-                <path className="kd-crack" d="M -30 -196 L -20 -178 L -24 -160 M 6 -210 L 14 -192 M 20 -170 L 26 -152 M -12 -150 L -6 -134 M -44 -70 L -42 -52 M 30 -78 L 34 -62 M -76 -180 L -96 -182" />
-                <ellipse className="kd-eye" cx="-68" cy="-243" rx="3.4" ry="1.7" transform="rotate(-12 -68 -243)" />
-                {/* the flame sword, at the light */}
-                <path className="kd-sword" d="M -124 -194 L -270 -252 L -260 -237 L -120 -180 Z" />
+                <path className="kd-sword" d="M -212.7 -220.3 L -372 -262.7 L -215.3 -211.7 Z" />
+                <path className="kd-hilt" d="M -210 -227 L -206 -228 L -214 -205 L -218 -204 Z" />
               </g>
-              {/* the mane: soft fire behind, tongues in front, streaming back */}
-              <g filter="url(#kd-soft)" opacity=".55">{SOFT.map((f, i) => <F key={i} f={f} />)}</g>
-              <g>{MANE.map((f, i) => <F key={i} f={f} />)}</g>
+              {/* the wizard's light on its front, growing as the steps answer */}
+              <g className="kd-litby" filter="url(#kd-lit)">{BODY}</g>
+              {/* the mane streaming back; fire on the wings, the sword, and where it treads */}
+              <g className="kd-ignite">{MANE.map((f, i) => <F key={i} f={f} />)}</g>
               <g>
                 {SPARKS.map(([cx, cy, r, d, t], i) => (
                   <circle key={i} className="kd-spark" cx={cx} cy={cy} r={r} style={{ animationDelay: `${d}s`, animationDuration: `${t}s` }} />
@@ -207,56 +384,81 @@ export function KhazadDum({ progress }: { progress: number }) {
               </g>
             </g>
           </g>
-          <g clipPath="url(#kd-mid)" mask="url(#kd-ends)" className="kd-deck">{DECK}</g>
+          <g clipPath="url(#kd-cut-a)" className="kd-deck"><g className="kd-frag kd-frag-a">{DECK}</g></g>
+          <g clipPath="url(#kd-cut-b)" className="kd-deck"><g className="kd-frag kd-frag-b">{DECK}</g></g>
+          <g clipPath="url(#kd-cut-c)" className="kd-deck"><g className="kd-frag kd-frag-c">{DECK}</g></g>
         </g>
-        <g clipPath="url(#kd-sides)" mask="url(#kd-ends)" className="kd-deck">{DECK}</g>
-        {/* the chasm's two cliffs, and the hall's floor beyond them */}
-        <g className="kd-cliffs" mask="url(#kd-down)">
-          <path className="kd-cliff" d="M -1400 331 L -560 331 L -566 352 L -556 378 L -572 404 L -561 440 L -1400 440 Z" />
-          <path className="kd-cliff" d="M 1400 331 L 600 331 L 607 356 L 596 382 L 611 410 L 601 440 L 1400 440 Z" />
-        </g>
-        <path className="kd-split bx" filter="url(#kd-glow)" d="M 40 329 L 34 334 L 43 338 L 37 343 L 41 352 M 262 329 L 268 334 L 259 339 L 266 345 L 262 357" />
+        <g clipPath="url(#kd-cut-rest)" className="kd-deck">{DECK}</g>
+        <path className="kd-litwalk" d="M -545 331 Q 40 299 625 331" />
+        <path className="kd-split bx" filter="url(#kd-glow)" d="M 50 312 L 54 318 L 47 322 L 53 327 L 50 331 M 372 315 L 368 322 L 376 328 L 369 334 L 373 340" />
+        <path className="kd-crack bx" pathLength={1} filter="url(#kd-glow)" d="M -238 318.6 L -214 317.4 L -208 320.3 L -170 315.5 L -150 318.2 L -110 314.9 L -84 317.5 L -40 314.1 L -6 316.7 L 30 314 L 52 315.8" />
+        <path className="kd-crack kd-twig bx" pathLength={1} filter="url(#kd-glow)" d="M -208 320.3 L -196 325.6 M -150 318.2 L -142 324.5 L -146 328.6 M -84 317.5 L -76 324.6 M -6 316.7 L 4 324.1 L 0 328.1" />
 
-        {/* Gandalf, facing the shadow */}
+        {/* Gandalf, on the deck, facing the shadow */}
         <g className="kd-wizard">
-          <g transform="translate(-240 330) scale(1.1)">
-            <g filter="url(#kd-rim-white)">
-              <path className="kd-gf" d="M 4 -96 C 10 -84 12 -60 14 -40 C 16 -20 20 -8 26 0 L -18 0 C -28 0 -40 -2 -54 -8 C -46 -22 -40 -30 -42 -40 C -32 -58 -24 -76 -14 -90 C -8 -96 -2 -98 4 -96 Z" />
-              <path className="kd-gf" d="M -3 -118 C -14 -119 -24 -113 -29 -102 C -33 -94 -36 -86 -41 -77 C -33 -84 -27 -92 -20 -98 C -15 -101 -10 -103 -6 -103 Z" />
-              <path className="kd-gf" d="M -6 -110 C -15 -108 -20 -100 -23 -91 C -25 -84 -27 -78 -30 -71 C -23 -79 -17 -88 -9 -96 Z" />
-              <path className="kd-gf" d="M -6 -108 C -7 -115 -3 -119 2 -119 C 6 -118 8 -115 7 -110 L 9.5 -104 L 6.5 -103 C 6 -101 6 -100 5 -99 C 0 -98 -5 -101 -6 -108 Z" />
-              <path className="kd-gf" d="M 5 -100 C 9 -96 9 -90 6 -84 C 3 -78 -2 -74 -8 -70 C -6 -78 -4 -86 -2 -96 Z" />
-              <path className="kd-gf" d="M 6 -90 C 14 -86 24 -80 32 -74 L 30 -68 C 22 -73 12 -78 2 -82 Z" />
+          <g transform="translate(-250 319)">
+            <g filter="url(#kd-rim-gf)">
+              {/* the cloak, streaming back in the fire's wind */}
+              <path className="kd-gf kd-cloak" d="M -8 -124 C -30 -126 -58 -122 -86 -112 C -98 -108 -110 -104 -122 -104 C -114 -96 -110 -90 -112 -82 C -104 -78 -100 -72 -100 -64 C -94 -58 -90 -50 -92 -42 C -82 -36 -76 -26 -76 -16 C -62 -8 -48 -2 -36 0 C -30 -40 -22 -84 -8 -124 Z" />
+              <path className="kd-gf" d="M 30 0 C 24 -24 18 -60 15 -96 C 14 -108 12 -116 7 -122 L 0 -126 C -8 -126 -14 -122 -17 -116 C -22 -90 -28 -46 -36 0 Z" />
+              {/* the sword arm, Glamdring low at the shadow */}
+              <path className="kd-gf" d="M 2 -121 C 14 -114 26 -106 37 -100 L 35 -93 C 24 -98 13 -102 0 -108 Z" />
+              <path className="kd-gf" d="M 6 -110 C 14 -100 22 -92 28 -86 C 18 -88 10 -94 3 -102 Z" />
+              {/* head, hair and beard streaming back */}
+              <path className="kd-gf" d="M -4 -134 C -5 -142 -1 -147 5 -147 C 10 -147 13 -143 13 -139 L 15.5 -135 L 12.5 -134 C 12 -131 11 -130 9 -129 Z" />
+              <path className="kd-gf kd-hair" d="M 4 -148 C -4 -149.5 -12 -147 -19 -142 C -26 -138 -34 -136 -44 -136 C -38 -133 -33 -131 -30 -129 C -36 -127 -42 -126 -48 -126 C -40 -121 -31 -120 -24 -122 C -28 -118 -32 -115 -37 -113 C -26 -112 -16 -117 -10 -124 C -7 -128 -5 -131 -4 -134 Z" />
+              <path className="kd-gf kd-hair" d="M 12.5 -131 C 14 -124 13 -114 9 -105 C 6 -98 1 -93 -6 -89 C -3 -98 -1 -110 0 -126 Z" />
             </g>
             {/* Glamdring, cold and white */}
-            <line className="kd-blade" filter="url(#kd-glow)" x1="34" y1="-72" x2="84" y2="-92" />
-            <line className="kd-guard" x1="31.5" y1="-77.5" x2="36.5" y2="-66.5" />
+            <line className="kd-blade" filter="url(#kd-glow)" x1="37" y1="-97" x2="100" y2="-118" />
+            <line className="kd-guard" x1="34.5" y1="-102" x2="39.5" y2="-91" />
           </g>
         </g>
-        {/* the staff arm, raised; leaving, it comes down */}
+        {/* the staff arm, raised; the light it holds; leaving, it comes down */}
         <g className="kd-staffin">
           <g className="kd-staffarm bx">
-            <g transform="translate(-240 330) scale(1.1)">
-              <g filter="url(#kd-rim-white)">
-                <path className="kd-gf" d="M -1 -96 L 10 -112 L 18 -128 L 22 -125 L 15 -110 L 7 -93 Z" />
-                <path className="kd-gf" d="M 16 -122 C 10 -116 4 -106 -1 -94 C 3 -94 6 -96 8 -100 C 10 -106 13 -112 18 -117 Z" />
+            <g transform="translate(-250 319)">
+              <g filter="url(#kd-rim-gf)">
+                <path className="kd-gf" d="M 0 -124 L 10 -128 C 18 -140 26 -156 32 -170 L 38 -168 C 34 -152 28 -138 22 -128 C 20 -122 14 -116 6 -114 Z" />
+                <path className="kd-gf" d="M 6 -114 C 2 -124 8 -140 20 -150 C 18 -138 16 -128 14 -118 Z" />
+                <path className="kd-gf" d="M 30 -172 L 36 -177 L 40 -171 L 35 -166 Z" />
               </g>
-              <line className="kd-staff" x1="6" y1="-40" x2="30" y2="-188" />
-              <path className="kd-staff" strokeWidth="1.6" d="M 30 -188 C 32 -194 26 -198 23 -193" />
+              <path className="kd-staff" d="M 26 -80 L 44 -262 M 44 -262 C 49 -270 41 -277 36 -272 M 44 -262 C 39 -269 48 -276 51 -269" />
             </g>
+            {/* what gathers at its head */}
+            <ellipse className="kd-streak" cx={LX} cy={LY} rx="300" ry="2.4" fill="url(#kd-streak-g)" />
             <g className="kd-light">
-              <circle className="kd-halo" cx="-207" cy="123" r="96" fill="url(#kd-white)" />
-              <g className="kd-rays">
-                <line x1="-207" y1="91" x2="-207" y2="155" /><line x1="-239" y1="123" x2="-175" y2="123" />
-                <line x1="-220" y1="110" x2="-194" y2="136" /><line x1="-220" y1="136" x2="-194" y2="110" />
-              </g>
-              <circle className="kd-ring" cx="-207" cy="123" r="34" />
-              <circle className="kd-ring kd-r2" cx="-207" cy="123" r="34" />
-              <circle className="kd-tip" cx="-207" cy="123" r="3.4" filter="url(#kd-glow)" />
+              <circle className="kd-halo" cx={LX} cy={LY} r="140" fill="url(#kd-white)" />
+              <path className="kd-spikes" d="M -206 7 L -204.6 51.6 L -162 53 L -204.6 54.4 L -206 99 L -207.4 54.4 L -250 53 L -207.4 51.6 Z M -221 38 L -206 51.8 L -191 38 L -204.8 53 L -191 68 L -206 54.2 L -221 68 L -207.2 53 Z" />
+              <circle className="kd-tip" cx={LX} cy={LY} r="4.6" filter="url(#kd-glow)" />
             </g>
+            <g className="kd-runes"><g>
+              {/* the circle breaks under each rune: 20° gaps every 60° */}
+              <circle className="kd-ring" cx={LX} cy={LY} r="47" strokeDasharray="32.8 16.4" strokeDashoffset="16.4" />
+              <circle className="kd-ring kd-ticks" cx={LX} cy={LY} r="58" />
+              {RUNES.map((d, i) => {
+                const a = 30 + i * 60, rad = (a * Math.PI) / 180;
+                return (
+                  <g key={i} className={i < lit ? "kd-rune kd-on" : "kd-rune"} transform={`translate(${(LX + 47 * Math.sin(rad)).toFixed(1)} ${(LY - 47 * Math.cos(rad)).toFixed(1)}) rotate(${a})`}>
+                    <path d={d} />
+                    <circle className="kd-flare bx" r="7" />
+                  </g>
+                );
+              })}
+            </g></g>
+            <circle className={beat ? `kd-pulse kd-go-${beat} bx` : "kd-pulse"} cx={LX} cy={LY} r="24" />
           </g>
         </g>
-        <ellipse className="kd-shock bx" cx="-233" cy="331" rx="460" ry="28" fill="url(#kd-white)" />
+
+        {/* the strike: a sheet of white flame off the deck, and the shock along it */}
+        <path className="kd-sheet bx" filter="url(#kd-glow)" fill="url(#kd-sheet-g)" d="M -246 319 C -262 293 -258 233 -244 163 C -240 213 -236 243 -232 229 C -230 183 -226 133 -218 89 C -212 153 -214 213 -206 243 C -200 223 -196 207 -192 189 C -188 243 -200 293 -214 319 Z" />
+        <ellipse className="kd-shock bx" cx="-226" cy="320" rx="520" ry="30" fill="url(#kd-white)" />
+        {/* motes of fire drifting past, nearer than everything */}
+        <g>
+          {MOTES.map(([cx, cy, r, d, t]) => (
+            <circle key={cx} className="kd-mote" cx={cx} cy={cy} r={r} fill="url(#kd-mote-g)" style={{ animationDelay: `${d}s`, animationDuration: `${t}s` }} />
+          ))}
+        </g>
       </svg>
     </>
   );

@@ -28,17 +28,31 @@ ceiling, the 400 ms warm-up and the 650 ms CRT wipe. A scene's exit plays
 inside that warm-up and wipe, so a scene adds no time to the boot.
 
 **KHAZAD-DÛM** ("YOU SHALL NOT PASS"; sub `THE BRIDGE OF KHAZAD-DÛM ·
-MYSTICAL//ASSISTANT`). Gandalf stands on the bridge over the chasm with his
-staff raised. The Balrog faces him: a shadow with fire in it, with horns, wings,
-a flame sword aimed at the light, and a whip.
-- **Progress:** the staff's light grows with every answered step, and the
-  Balrog's fire-glow dims as it does.
+MYSTICAL//ASSISTANT`). Redrawn as v2 after `/design-first "make the gandalf
+loading screen cooler"` (draft: `.mystical/design-drafts/khazad-dum-v2/`).
+Gandalf stands on a slender arch over the chasm, cloak and hair streaming
+back, his staff raised with a star at its head. The chasm drops away under the
+deck: cliffs lit red from below, rock walls stepping into the deep, and the
+deep's glow behind the wordmark and the log. The Balrog is an angular shadow
+with fire in it. It has bull's horns, a burning mane, ragged wings with fire
+on their leading edges, magma cracks over a glowing chest, a flame sword raised
+at the light, and a whip of three thongs. Behind it are smoke and breathing fire.
+- **Progress:** six runes circle the staff's light, and each answered step
+  kindles one (the restart's three steps kindle two each). The step also
+  sends a pulse out of the light and makes the fire behind the Balrog flinch.
+  With each step the light, its pool on the deck and the white edge it casts
+  on the Balrog all grow, and the Balrog's backlight dims.
 - **Ready:** the footer reads `FLY, YOU FOOLS` and `CLICK TO PASS`.
-- **Exit:** the staff comes down and a flash runs along the deck. The span
-  under the Balrog cracks at both ends and falls with it.
+- **Exit:** the staff comes down. White flame stands up off the deck and the
+  frame shakes, a crack runs to the Balrog's feet, and the span under it breaks
+  in three and falls with it. All of this happens inside the warm-up and the
+  wipe.
 - **Ground:** this scene is light against fire, so on a light theme it plays on
   that theme's dark twin (`nightOf` in `lib/theme.ts`). The twin's tokens are
   scoped to the intro.
+- **Size:** the SVG is 2800×760, but its flow height stays the old 400px. It
+  has 120px of headroom for the wings and 240px of chasm behind the wordmark.
+  On a window shorter than about 880px, the wing tips bleed off the top.
 
 **DURIN'S DOOR** ("SPEAK, FRIEND, AND ENTER"; sub `THE DOORS OF DURIN ·
 MYSTICAL//ASSISTANT`). This is the West-gate of Moria as line art: the arch
@@ -59,10 +73,19 @@ moon in the sky, and the door's reflection lies under the threshold.
   therefore an SVG filter referenced with `filter="url(#…)"`. The door's swing
   is 2D (`scaleX` + `skewY`), because WebKit does not draw a 3D rotation on an
   SVG group.
+- **WebKit re-runs a filter or a mask every frame when anything under it
+  moves.** Still shapes keep their filters, because their results are cached.
+  The first KHAZAD-DÛM v2 ran at about 10 fps in Mystical.app, because it had
+  breathing wings, twinkling veins, blurred flames, masks and a Balrog that
+  rose and recoiled. So the moving glows (veins, whip) are now a wide faint
+  stroke under a thin one, the chasm fades by gradient fills, and the
+  Balrog's group only fades in. Measured in a WKWebView during a real boot,
+  the median frame is now 33 ms, against 85–108 ms for v1.
 - **Restart handover.** `.bootcontinue *` pulls every animation-delay back to
   -3s, so that a boot continued from a restart skips its entrance. That would
-  also skip an exit. The rule now spares `.bx`, which marks an exit flourish.
-  The flourishes sit on wrappers that carry no entrance of their own.
+  also skip an exit. The rule now spares `.bx`, which marks anything that
+  answers the boot rather than opens it: an exit flourish, or a step's pulse.
+  These sit on wrappers that carry no entrance of their own.
 - **SHUFFLE across a restart.** The restart's overlay and the boot that
   continues it after the reload are one intro, so they draw one scene. The draw
   is kept in sessionStorage (`BOOT_SCENE`) and read back when the boot

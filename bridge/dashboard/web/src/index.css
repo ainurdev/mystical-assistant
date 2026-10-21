@@ -538,8 +538,9 @@ body {
    wordmark and the log already drawn — the new document picks the intro up
    where the old one left it instead of booting a second time. The infinite
    ambient loops (grid, radar, drift) just start at a different phase. The
-   container is excluded: its crtoff exit still has to play, and so is a
-   scene's exit flourish (`.bx`, components/hud/BootScenes). */
+   container is excluded: its crtoff exit still has to play, and so is
+   anything in a scene that answers the boot rather than opens it, an exit
+   flourish or a step's pulse (`.bx`, components/hud/BootScenes). */
 .bootcontinue *:not(.bx) { animation-delay: -3s !important; }
 
 @keyframes introdraw { from { stroke-dashoffset: 280; } to { stroke-dashoffset: 0; } }
@@ -557,79 +558,153 @@ body {
 .kd-scene, .dd-scene { position: relative; z-index: 2; flex: none; overflow: visible; }
 
 /* KHAZAD-DÛM. Always on a dark ground (lib/theme nightOf), so the shadow the
-   Balrog and the deep are made of is the canvas sunk toward black. */
-.kd-scene { width: 2800px; height: 440px; margin-bottom: -40px; --void: color-mix(in srgb, var(--canvas) 40%, #000); }
+   Balrog and the deep are made of is the canvas sunk toward black. The SVG is
+   taller than its slot (120px of headroom for the wings, 240px of chasm behind
+   the wordmark and the log), but its flow height stays 400px. The light sits
+   at -206,53: the transform-origins below repeat it. */
+.kd-scene { width: 2800px; height: 760px; margin: -120px 0 -240px; --void: color-mix(in srgb, var(--canvas) 40%, #000); }
 .kd-ff-err { flood-color: var(--err); }
+.kd-ff-warn { flood-color: var(--warn); }
 .kd-ff-txb { flood-color: var(--txb); }
-.kd-deck { animation: tickfade .9s ease both .15s; }
-.kd-deckfill { fill: color-mix(in srgb, var(--acc) 9%, var(--void)); }
-.kd-deckline { fill: none; stroke: var(--acc); stroke-width: 1.4; }
-.kd-deckunder { fill: none; stroke: color-mix(in srgb, var(--acc) 38%, transparent); stroke-width: 1; }
-.kd-cliffs { animation: tickfade .9s ease both .1s; }
-.kd-cliff { fill: var(--void); stroke: color-mix(in srgb, var(--acc) 45%, transparent); stroke-width: 1.2; stroke-linejoin: round; }
-.kd-gf { fill: color-mix(in srgb, var(--txb) 10%, var(--void)); }
-.kd-staff { fill: none; stroke: var(--txb); stroke-width: 2.1; stroke-linecap: round; }
-.kd-blade { stroke: color-mix(in srgb, var(--info) 55%, var(--txb)); stroke-width: 1.6; stroke-linecap: round; }
-.kd-guard { stroke: var(--txb); stroke-width: 1.4; stroke-linecap: round; }
-.kd-wizard { animation: intropop .9s cubic-bezier(.2,.8,.2,1) both .35s; transform-box: fill-box; transform-origin: 50% 100%; }
-.kd-staffin { animation: tickfade .5s ease both .45s; }
-.kd-light { transform-box: view-box; transform-origin: -207px 123px; transform: scale(calc(.62 + .55 * var(--p, 0)));
-  transition: transform .45s cubic-bezier(.4,0,.2,1); animation: tickfade .8s ease both .9s; }
-.kd-halo { transform-box: view-box; transform-origin: -207px 123px; animation: kdhalo 2.6s ease-in-out infinite; }
-.kd-rays { transform-box: view-box; transform-origin: -207px 123px; animation: introspin 14s linear infinite; }
-.kd-rays line { stroke: var(--txb); stroke-width: .9; stroke-linecap: round; opacity: .75; }
-.kd-ring { fill: none; stroke: color-mix(in srgb, var(--txb) 55%, transparent); stroke-width: 1;
-  transform-box: fill-box; transform-origin: center; animation: radar 3.4s ease-out infinite; }
-.kd-r2 { animation-delay: 1.7s; }
-.kd-tip { fill: var(--txb); }
-.kd-balrog { animation: kdrise 1.4s cubic-bezier(.2,.8,.2,1) both .2s; }
-.kd-bk { fill: var(--void); }
-.kd-limb { stroke: var(--void); stroke-linecap: round; }
-.kd-wing { fill: var(--void); transform-box: view-box; transform-origin: -6px -200px; animation: kdwing 5.5s ease-in-out infinite; }
-.kd-far { animation-delay: -2.2s; }
-.kd-bones { fill: none; stroke: color-mix(in srgb, var(--err) 30%, transparent); stroke-width: .8; }
-.kd-whip { fill: none; stroke: var(--warn); stroke-width: 2; stroke-linecap: round; }
-.kd-whipg { transform-box: view-box; transform-origin: 54px -116px; animation: kdlash 4.2s ease-in-out infinite; }
-.kd-maw, .kd-eye { fill: var(--warn); animation: twinkle 2.4s ease-in-out infinite; }
-.kd-crack { fill: none; stroke: color-mix(in srgb, var(--warn) 80%, transparent); stroke-width: .9; stroke-linecap: round; animation: twinkle 2.8s ease-in-out infinite; }
-.kd-sword { fill: url(#kd-blade); animation: twinkle 1.3s ease-in-out infinite; }
-.kd-flame { fill: url(#kd-fire); transform-box: fill-box; transform-origin: 50% 100%; animation: kdflick 1.1s ease-in-out infinite alternate; }
-.kd-spark { fill: var(--warn); animation: kdspark 3.4s linear infinite; }
-.kd-backlight { opacity: calc(1 - .38 * var(--p, 0)); transition: opacity .45s ease; }
-.kd-pillars { position: absolute; inset: 0; width: 100%; height: 100%;
-  -webkit-mask-image: linear-gradient(to bottom, transparent 2%, #000 35%, #000 60%, transparent 98%);
-  mask-image: linear-gradient(to bottom, transparent 2%, #000 35%, #000 60%, transparent 98%); }
-.kd-pillars line { stroke: var(--acc); vector-effect: non-scaling-stroke; }
-.kd-deep { position: absolute; left: -10%; right: -10%; bottom: -30%; height: 70%; animation: kdglow 4s ease-in-out infinite;
-  background: radial-gradient(50% 50% at 54% 70%, color-mix(in srgb, var(--err) 16%, transparent), color-mix(in srgb, var(--warn) 5%, transparent) 50%, transparent 72%); }
+/* the hall, the chasm, the deep */
+.kd-hall, .kd-abyss { animation: tickfade 1.2s ease both; }
+.kd-pillar { fill: url(#kd-pillar-g); }
+.kd-pillar.kd-far { opacity: .55; }
+.kd-pillar-edge { fill: none; stroke: url(#kd-pedge); stroke-width: 1; }
+.kd-floor { fill: url(#kd-voiddn); }
+.kd-rock { fill: url(#kd-voiddn); stroke: url(#kd-cliffedge); stroke-width: 1.3; stroke-linejoin: round; }
+.kd-deepr { fill: url(#kd-deepdn); stroke: url(#kd-redge); stroke-width: 1; stroke-linejoin: round; }
+.kd-deepr.kd-far { opacity: .8; }
+.kd-strata { fill: none; stroke: color-mix(in srgb, var(--warn) 12%, transparent); stroke-width: .8; }
+.kd-deep { position: absolute; left: -10%; right: -10%; bottom: -30%; height: 75%; animation: kdglow 4s ease-in-out infinite;
+  background: radial-gradient(50% 50% at 54% 70%, color-mix(in srgb, var(--err) 18%, transparent), color-mix(in srgb, var(--warn) 6%, transparent) 50%, transparent 72%); }
 .kd-ember { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 6px var(--err);
   animation: kdember 6s linear infinite; }
-.kd-flash { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0;
-  background: radial-gradient(60% 45% at 50% 30%, color-mix(in srgb, var(--txb) 40%, transparent), transparent 70%); }
-/* The strike: the staff comes down, a flash runs along the deck, the span
-   under the Balrog cracks at both ends and falls with it. */
-.kd-staffarm { transform-box: view-box; transform-origin: -236px 227px; }
-.bootleaving .kd-staffarm { animation: kdslam .14s cubic-bezier(.6,0,.9,.4) forwards; }
+.kd-ember.kd-big { width: 3px; height: 3px; box-shadow: 0 0 10px var(--err), 0 0 3px var(--warn); }
+.kd-mote { animation: kdmote 7s linear infinite; }
+/* the bridge: one slender arch, no kerb or rail */
+.kd-deck { animation: tickfade .9s ease both .15s; }
+.kd-spandrel { fill: color-mix(in srgb, var(--txb) 4%, var(--void)); }
+.kd-face { fill: color-mix(in srgb, var(--txb) 8%, var(--void)); }
+.kd-walk { fill: none; stroke: url(#kd-walk); stroke-width: 1.6; }
+.kd-intrados { fill: none; stroke: color-mix(in srgb, var(--err) 60%, transparent); stroke-width: 1.1; }
+.kd-joints { fill: none; stroke: color-mix(in srgb, var(--acc) 26%, transparent); stroke-width: .8; }
+.kd-litwalk { fill: none; stroke: url(#kd-walklit); stroke-width: 2.2; opacity: calc(.15 + .85 * var(--p, 0)); transition: opacity .45s ease; }
+/* the Balrog: a shadow with a fire in it */
+.kd-balrog { animation: tickfade 1.4s ease both .2s; }
+.kd-bk { fill: var(--void); }
+.kd-bones { fill: none; stroke: color-mix(in srgb, var(--err) 45%, transparent); stroke-width: 1.1; stroke-linecap: round; }
+.kd-whip { fill: none; stroke: var(--warn); stroke-width: 1.8; stroke-linecap: round; }
+.kd-whip-glow { fill: none; stroke: color-mix(in srgb, var(--warn) 25%, transparent); stroke-width: 6; stroke-linecap: round; }
+.kd-whip.kd-thong { stroke-width: 1.3; stroke: color-mix(in srgb, var(--warn) 70%, var(--err)); }
+.kd-whipg { transform-box: view-box; transform-origin: 98px -146px; animation: kdlash 4.2s ease-in-out infinite; }
+.kd-maw { fill: var(--warn); animation: twinkle 2.4s ease-in-out infinite; }
+.kd-eye { fill: color-mix(in srgb, var(--warn) 50%, #fff); animation: twinkle 2.4s ease-in-out infinite; }
+.kd-vein { fill: none; stroke: color-mix(in srgb, var(--warn) 85%, transparent); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; animation: kdvein 2.8s ease-in-out infinite; }
+.kd-vein.kd-v2 { animation-delay: -1.3s; stroke-width: .8; }
+.kd-vein-glow { fill: none; stroke: color-mix(in srgb, var(--warn) 22%, transparent); stroke-width: 4.5; stroke-linecap: round; stroke-linejoin: round; }
+.kd-core { opacity: calc(.8 - .35 * var(--p, 0)); transition: opacity .45s ease; }
+.kd-sword { fill: url(#kd-blade); }
+.kd-hilt { fill: var(--warn); }
+.kd-flame { fill: url(#kd-fire); transform-box: fill-box; transform-origin: 50% 100%; animation: kdflick 1.1s ease-in-out infinite alternate; }
+.kd-spark { fill: var(--warn); animation: kdspark 3.4s linear infinite; }
+.kd-fireback ellipse { transform-box: fill-box; transform-origin: 50% 80%; animation: kdbreathe 2.7s ease-in-out infinite alternate; }
+.kd-ignite { transform-box: view-box; transform-origin: -20px -320px; animation: kdignite .9s cubic-bezier(.2,.8,.2,1) both .55s; }
+.kd-backlight { opacity: calc(1 - .4 * var(--p, 0)); transition: opacity .45s ease; animation: tickfade 1.2s ease both .2s; }
+.kd-smoke { transform-box: fill-box; transform-origin: center; animation: kdsmoke 7s ease-in-out infinite alternate; }
+.kd-litby { opacity: calc(.05 + .6 * var(--p, 0)); }
+/* each answered step: the light pulses and the fire behind the shadow flinches.
+   Twin keyframes, so swapping a/b restarts the animation without a remount. */
+.kd-flinch-a { animation: kdflincha .6s ease-out; }
+.kd-flinch-b { animation: kdflinchb .6s ease-out; }
+/* Gandalf: grey against the dark, lit by his own light above and the fire in front */
+.kd-gf { fill: color-mix(in srgb, var(--txb) 14%, var(--void)); }
+.kd-gf.kd-cloak { fill: color-mix(in srgb, var(--txb) 9%, var(--void)); }
+.kd-gf.kd-hair { fill: color-mix(in srgb, var(--txb) 65%, var(--void)); }
+.kd-staff { fill: none; stroke: color-mix(in srgb, var(--txb) 75%, var(--warn)); stroke-width: 2.3; stroke-linecap: round; stroke-linejoin: round; }
+.kd-blade { stroke: color-mix(in srgb, var(--info) 50%, var(--txb)); stroke-width: 1.8; stroke-linecap: round; }
+.kd-guard { stroke: var(--txb); stroke-width: 1.5; stroke-linecap: round; }
+.kd-wizard { animation: intropop .9s cubic-bezier(.2,.8,.2,1) both .35s; transform-box: fill-box; transform-origin: 50% 100%; }
+.kd-staffin { animation: tickfade .5s ease both .45s; }
+/* the light: it gathers with each answered step */
+.kd-light { transform-box: view-box; transform-origin: -206px 53px; transform: scale(calc(.6 + .55 * var(--p, 0)));
+  transition: transform .45s cubic-bezier(.4,0,.2,1); animation: tickfade .8s ease both .9s; }
+.kd-halo { transform-box: view-box; transform-origin: -206px 53px; animation: kdhalo 2.6s ease-in-out infinite; }
+.kd-spikes { fill: var(--txb); transform-box: view-box; transform-origin: -206px 53px; animation: kdspikes 3.2s ease-in-out infinite; }
+.kd-tip { fill: var(--txb); }
+.kd-pool { opacity: calc(.18 + .82 * var(--p, 0)); transition: opacity .45s ease; animation: tickfade .8s ease both .9s; }
+.kd-streak { opacity: calc(.25 + .75 * var(--p, 0)); transition: opacity .45s ease; }
+/* the circle of runes: one kindles per answered step */
+.kd-runes { animation: tickfade .8s ease both 1s; }
+.kd-runes > g { transform-box: view-box; transform-origin: -206px 53px; animation: introspin 30s linear infinite; }
+.kd-ring { fill: none; stroke: color-mix(in srgb, var(--txb) 28%, transparent); stroke-width: .9; }
+.kd-ring.kd-ticks { stroke-dasharray: 1 5.2; stroke-width: 3; stroke: color-mix(in srgb, var(--txb) 16%, transparent); }
+.kd-rune { fill: none; stroke: color-mix(in srgb, var(--txb) 24%, transparent); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: stroke .3s ease; }
+.kd-rune.kd-on { stroke: var(--txb); }
+.kd-flare { fill: var(--txb); stroke: none; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.kd-on .kd-flare { animation: kdrune .7s ease-out both; }
+.kd-pulse { fill: none; stroke: var(--txb); stroke-width: 1.4; opacity: 0; transform-box: view-box; transform-origin: -206px 53px; }
+.kd-go-a { animation: kdpulsea .8s cubic-bezier(.2,.7,.3,1); }
+.kd-go-b { animation: kdpulseb .8s cubic-bezier(.2,.7,.3,1); }
+/* The strike, inside the 400ms warm-up and the 650ms wipe: the staff comes
+   down (130ms), white flame stands up off the deck, the frame shakes, a crack
+   runs to the Balrog's feet and the span under it breaks in three and falls. */
+.kd-staffarm { transform-box: view-box; transform-origin: -215px 147px; }
+.bootleaving .kd-staffarm { animation: kdslam .13s cubic-bezier(.6,0,.9,.4) forwards; }
+.bootleaving .kd-runes { animation: kdgather .13s ease-in forwards; }
+.bootleaving .kd-light { animation: kdblaze .5s ease-out .1s forwards; }
+.kd-sheet { opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; }
+.bootleaving .kd-sheet { animation: kdsheet .55s cubic-bezier(.2,.8,.3,1) .12s forwards; }
 .kd-shock { opacity: 0; transform-box: fill-box; transform-origin: center; }
 .bootleaving .kd-shock { animation: kdshock .6s ease-out .12s forwards; }
-.kd-split { opacity: 0; fill: none; stroke: var(--txb); stroke-width: 1.4; }
-.bootleaving .kd-split { animation: tickfade .06s linear .13s forwards; }
-.kd-falls { transform-box: view-box; transform-origin: 150px 340px; }
-.bootleaving .kd-falls { animation: kdfall .7s cubic-bezier(.5,0,.9,.4) .15s forwards; }
-.bootleaving .kd-backlight { animation: kdout .6s ease .2s forwards; }
-.bootleaving .kd-flash { animation: kdflash .45s ease-out .12s; }
-@keyframes kdrise { from { transform: translateY(26px); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes kdhalo { 0%, 100% { opacity: .82; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
-@keyframes kdwing { 0%, 100% { transform: none; } 50% { transform: scale(1.025, 1.04); } }
-@keyframes kdflick { 0% { transform: scale(.86, .82) skewX(-4deg); opacity: .78; } 100% { transform: scale(1.06, 1.16) skewX(5deg); opacity: 1; } }
-@keyframes kdlash { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-7deg); } }
-@keyframes kdglow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.22); } }
-@keyframes kdspark { 0% { transform: translate(0, 0); opacity: 0; } 12% { opacity: 1; } 100% { transform: translate(-22px, -150px); opacity: 0; } }
-@keyframes kdember { 0% { transform: translate(0, 0); opacity: 0; } 10% { opacity: .9; } 100% { transform: translate(-30px, -260px); opacity: 0; } }
-@keyframes kdslam { to { transform: translateY(42px) rotate(4deg); } }
+.bootleaving .kd-scene { animation: kdshake .38s linear .12s; }
+.kd-flash { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0;
+  background: radial-gradient(70% 55% at 34% 46%, color-mix(in srgb, var(--txb) 55%, transparent), transparent 70%); }
+.bootleaving .kd-flash { animation: kdflash .5s ease-out .12s; }
+.kd-crack { fill: none; stroke: var(--txb); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 2; stroke-dashoffset: 1; opacity: 0; }
+.kd-crack.kd-twig { stroke-width: 1.1; }
+.bootleaving .kd-crack { animation: kdcrack .16s linear .13s forwards; }
+.kd-split { opacity: 0; fill: none; stroke: var(--txb); stroke-width: 1.5; }
+.bootleaving .kd-split { animation: tickfade .05s linear .26s forwards; }
+.kd-frag { transform-box: view-box; }
+.kd-frag-a { transform-origin: 100px 325px; }
+.kd-frag-b { transform-origin: 205px 325px; }
+.kd-frag-c { transform-origin: 310px 330px; }
+.bootleaving .kd-frag-a { animation: kdfalla .6s cubic-bezier(.55,0,1,.45) .2s forwards; }
+.bootleaving .kd-frag-b { animation: kdfallb .6s cubic-bezier(.55,0,1,.45) .22s forwards; }
+.bootleaving .kd-frag-c { animation: kdfallc .6s cubic-bezier(.55,0,1,.45) .24s forwards; }
+.kd-falls { transform-box: view-box; transform-origin: 200px 322px; }
+.bootleaving .kd-falls { animation: kdfall .65s cubic-bezier(.55,0,1,.45) .22s forwards; }
+.bootleaving .kd-backlight { animation: kdout .5s ease .25s forwards; }
+@keyframes kdignite { 0% { transform: scale(.2); opacity: 0; } 40% { opacity: 1; } 100% { transform: none; opacity: 1; } }
+@keyframes kdflick { 0% { transform: scale(.86, .82) skewX(-4deg); opacity: .78; } 100% { transform: scale(1.06, 1.18) skewX(5deg); opacity: 1; } }
+@keyframes kdlash { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-6deg); } }
+@keyframes kdglow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
+@keyframes kdspark { 0% { transform: translate(0, 0); opacity: 0; } 12% { opacity: 1; } 100% { transform: translate(30px, -170px); opacity: 0; } }
+@keyframes kdember { 0% { transform: translate(0, 0); opacity: 0; } 10% { opacity: .9; } 100% { transform: translate(-30px, -300px); opacity: 0; } }
+@keyframes kdmote { 0% { transform: translate(0, 0); opacity: 0; } 15% { opacity: .9; } 100% { transform: translate(-40px, -420px); opacity: 0; } }
+@keyframes kdsmoke { from { transform: translate(0, 0) scale(1); } to { transform: translate(-14px, -18px) scale(1.08); } }
+@keyframes kdvein { 0%, 100% { opacity: .55; } 50% { opacity: 1; } }
+@keyframes kdbreathe { from { opacity: .55; transform: scale(.94); } to { opacity: 1; transform: scale(1.06); } }
+@keyframes kdhalo { 0%, 100% { opacity: .85; transform: scale(1); } 50% { opacity: 1; transform: scale(1.07); } }
+@keyframes kdspikes { 0%, 100% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(8deg) scale(1.12); } }
+@keyframes kdrune { 0% { opacity: .9; transform: scale(.4); } 100% { opacity: 0; transform: scale(2.6); } }
+@keyframes kdpulsea { 0% { opacity: .9; transform: scale(.4); } 100% { opacity: 0; transform: scale(5.5); } }
+@keyframes kdpulseb { 0% { opacity: .9; transform: scale(.4); } 100% { opacity: 0; transform: scale(5.5); } }
+@keyframes kdflincha { 0% { opacity: 1; } 25% { opacity: .35; } 100% { opacity: 1; } }
+@keyframes kdflinchb { 0% { opacity: 1; } 25% { opacity: .35; } 100% { opacity: 1; } }
+@keyframes kdslam { to { transform: translate(2px, 80px) rotate(3deg); } }
+@keyframes kdgather { to { transform: scale(.2); opacity: 0; } }
+@keyframes kdblaze { 0%, 30% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes kdsheet { 0% { opacity: 1; transform: scale(.4, .05); } 35% { opacity: 1; transform: scale(1, 1); } 100% { opacity: 0; transform: scale(1.3, 1.25); } }
 @keyframes kdshock { 0% { opacity: 1; transform: scale(.05, .3); } 100% { opacity: 0; transform: none; } }
-@keyframes kdfall { 0% { transform: none; opacity: 1; } 25% { opacity: 1; } 100% { transform: translate(30px, 300px) rotate(14deg); opacity: 0; } }
-@keyframes kdflash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes kdshake { 0%, 100% { transform: none; } 15% { transform: translate(-7px, 5px); } 30% { transform: translate(6px, -4px); } 45% { transform: translate(-5px, 3px); } 60% { transform: translate(3px, -2px); } 80% { transform: translate(-1px, 1px); } }
+@keyframes kdflash { 0% { opacity: 0; } 22% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes kdcrack { 0% { opacity: 1; stroke-dashoffset: 1; } 100% { opacity: 1; stroke-dashoffset: 0; } }
+@keyframes kdfalla { 0% { transform: none; opacity: 1; } 100% { transform: translate(-30px, 330px) rotate(-24deg); opacity: 0; } }
+@keyframes kdfallb { 0% { transform: none; opacity: 1; } 100% { transform: translate(10px, 380px) rotate(10deg); opacity: 0; } }
+@keyframes kdfallc { 0% { transform: none; opacity: 1; } 100% { transform: translate(40px, 300px) rotate(30deg); opacity: 0; } }
+@keyframes kdfall { 0% { transform: none; opacity: 1; } 15% { transform: translateY(8px) rotate(-3deg); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(50px, 420px) rotate(18deg); opacity: 0; } }
 @keyframes kdout { to { opacity: 0; } }
 
 /* DURIN'S DOOR, in its theme's ink on its theme's ground: the stone layer is
@@ -670,7 +745,7 @@ body {
 @keyframes ddswingl { to { transform: scaleX(.14) skewY(6deg); opacity: .25; } }
 @keyframes ddswingr { to { transform: scaleX(.14) skewY(-6deg); opacity: .25; } }
 @media (prefers-reduced-motion: reduce) {
-  .kd-field *, .kd-scene *, .kd-flash, .dd-field *, .dd-scene * { animation: none !important; transition: none !important; }
+  .kd-field *, .kd-scene, .kd-scene *, .kd-flash, .dd-field *, .dd-scene * { animation: none !important; transition: none !important; }
 }
 @keyframes eqbar { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
 /* nyan.cat, plain: two parallax star layers scrolling past a static cat. */
