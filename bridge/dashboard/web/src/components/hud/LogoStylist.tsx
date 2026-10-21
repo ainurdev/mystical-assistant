@@ -110,7 +110,9 @@ export function useStyleRows(): (rel: string) => StyleRow {
   const items = new Map((r.items ?? []).map((i) => [i.rel, i]));
   const inRun = new Set((r.projects ?? []).map((p) => p.rel));
   const yours = new Set(r.yours ?? []);
-  const { p: cur, part } = r.state === "running" ? current(r) : { p: undefined, part: {} as ReturnType<typeof partialAnswer> };
+  // A row is "now" only once the answer has begun: before that the model reads the whole sheet.
+  const answering = r.state === "running" && (!!r.current || (r.items ?? []).length > 0);
+  const { p: cur, part } = answering ? current(r) : { p: undefined, part: {} as ReturnType<typeof partialAnswer> };
   const now = Date.now();
   return (rel) => {
     if (yours.has(rel)) return { st: "done", end: <span className="st-end">yours</span>, landed: false };
