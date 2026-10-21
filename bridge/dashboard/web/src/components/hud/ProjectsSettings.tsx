@@ -142,6 +142,8 @@ function Field({ icon: Icon, label, hint, children }: { icon: LucideIcon; label:
 /** What the picked project's mark is, and where it comes from. */
 function markHint(rel: string): string {
   const m = projectMark(rel);
+  if (m?.auto) return "its own icon, read from the repo";
+  if (m?.repo) return "set here: a picture in the repo, read afresh";
   if (m?.source === "rivendell") return m.rv?.own ? "its own logo, from Rivendell" : `${m.rv?.name ?? "its client"}'s logo, from Rivendell`;
   return m && !(m.kind === "letters" && !m.color) ? "set here: it never changes on its own" : "its initials";
 }
