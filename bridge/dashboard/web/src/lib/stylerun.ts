@@ -123,12 +123,16 @@ export function showStyle(): void {
 
 // ---- the contact sheet ------------------------------------------------------------
 
-const TILE = 36;                          // one candidate on one ground
-const CELL = TILE * 2 + 4 + 12;           // both grounds and a gap
-const ROW = 92, COLW = 716, COLS = 2;     // two columns of projects keep the sheet under the model's 1568px
+const TILE = 32;                          // one candidate on one ground
+const BOX = TILE * 2 + 4 + 12;            // a candidate's framed box: its id on top, both grounds below
+const STEP = BOX + 8;
+const ROW = 96, COLW = 716, COLS = 2;     // two columns of projects keep the sheet under the model's 1568px
 
 /** Every project's candidates, numbered as the bridge numbered them (P1.., c1..),
- *  each drawn on a dark ground and a light one. A PNG, base64. */
+ *  each in a box of its own with its id at the top, drawn on a dark ground and
+ *  a light one. The box is what ties an id to its picture: with the id loose
+ *  under the tiles, the model once named the "a" and gave the wordmark's id.
+ *  A PNG, base64. */
 export async function drawSheet(c: StyleCandidates): Promise<string> {
   const imgs = new Map<string, HTMLImageElement | null>();
   await Promise.all(c.projects.flatMap((p) => p.cands).map(async (k) => {
@@ -156,18 +160,25 @@ export async function drawSheet(c: StyleCandidates): Promise<string> {
       g.fillText("no pictures", x0, y0 + 30);
     }
     p.cands.forEach((k, j) => {
-      const x = x0 + j * CELL, y = y0 + 22;
+      const x = x0 + j * STEP, y = y0 + 22;
+      g.fillStyle = "#30363f";
+      g.strokeStyle = "#5b6470";
+      g.lineWidth = 1;
+      g.beginPath();
+      g.roundRect(x + 0.5, y + 0.5, BOX - 1, TILE + 26, 6);
+      g.fill();
+      g.stroke();
+      g.fillStyle = "#ffffff";
+      g.font = "700 13px system-ui, sans-serif";
+      g.fillText(k.id, x + 6, y + 4);
       const img = imgs.get(k.logo);
-      for (const [dx, ground] of [[0, "#0d1117"], [TILE + 4, "#ffffff"]] as const) {
+      for (const [dx, ground] of [[6, "#0d1117"], [6 + TILE + 4, "#ffffff"]] as const) {
         g.fillStyle = ground;
-        g.fillRect(x + dx, y, TILE, TILE);
+        g.fillRect(x + dx, y + 20, TILE, TILE);
         if (!img) continue;
-        const w = img.naturalWidth || TILE, h = img.naturalHeight || TILE, k2 = Math.min((TILE - 6) / w, (TILE - 6) / h);
-        g.drawImage(img, x + dx + (TILE - w * k2) / 2, y + (TILE - h * k2) / 2, w * k2, h * k2);
+        const w = img.naturalWidth || TILE, h = img.naturalHeight || TILE, k2 = Math.min((TILE - 4) / w, (TILE - 4) / h);
+        g.drawImage(img, x + dx + (TILE - w * k2) / 2, y + 20 + (TILE - h * k2) / 2, w * k2, h * k2);
       }
-      g.fillStyle = "#d6dde4";
-      g.font = "600 12px system-ui, sans-serif";
-      g.fillText(k.id, x + TILE - 7, y + TILE + 4);
     });
   });
   return cv.toDataURL("image/png").split(",")[1];

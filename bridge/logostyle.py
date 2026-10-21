@@ -55,7 +55,8 @@ _RULES = """You choose each project's mark for a developer dashboard. A mark is 
 the project's name, on dark themes and light ones.
 
 The picture is a contact sheet. Each project starts with its key and name (P1 shop). Its candidates follow, \
-each drawn twice, on a dark ground and on a light ground, with its id under it (c1, c2, ...).
+each in a framed box of its own: the id at the top of the box (c1, c2, ...), and below it the candidate drawn \
+twice, on a dark ground and on a light ground. An id belongs to the pictures in its own box only.
 
 For every project choose:
 - pick: the candidate that reads best as that project's own mark at 20 px, by its id ("c2"); "keep" for what it \
