@@ -16,6 +16,7 @@
 // (scanlines / sweep / glow) belong to AURORA and default on when you pick it.
 
 import { toIndicator, type Indicator } from "./indicator";
+import { toIntro, type Intro } from "./intro";
 import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
 import { TONES, type ToneKey } from "./push";
 import { toChatBg, type ChatBg } from "./toolwidget";
@@ -266,6 +267,12 @@ export function twin(t: ThemeKey): ThemeKey | null {
   return THEMES.includes(k) ? k : null;
 }
 
+/** The ground for a scene that is light against the dark (the KHAZAD-DÛM
+ *  loading screen): a light ground's dark twin, or its family's first night. */
+export function nightOf(t: ThemeKey): ThemeKey {
+  return isLight(t) ? twin(t) ?? colourings(family(t), false)[0] ?? t : t;
+}
+
 /** A family's colourings on one ground, in picker order. */
 export function colourings(fam: Family, light: boolean): ThemeKey[] {
   return THEME_DEFS.filter((d) => d.fam === fam && isLight(d.key) === light).map((d) => d.key);
@@ -357,6 +364,7 @@ export interface HudSettings {
   nyanSound: NyanSound; // "match" = the picked cat's own track
   nyanVolume: number; // 0..1
   nyanExtra: boolean; // fly the cat + draw nyan.cat's CSS rainbow and pixel stars
+  intro: Intro; // the loading screen's scene (lib/intro)
   font: string; // FONTS key; "" = the theme's own voice
   baseFont: number; // BASE FONT SIZE in px — the whole type scale is derived
                     // from it (index.css --fs); 0 = AUTO (from the viewport)
@@ -433,7 +441,7 @@ function urlLayout(): ChatLayout | null {
 const KEY = "hud-settings";
 const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "files",
-  indicator: "orbit", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true,
+  indicator: "orbit", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true, intro: "shuffle",
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   push: false, pushSound: true,
@@ -501,6 +509,7 @@ export function loadSettings(): HudSettings {
             : "match",
         nyanVolume: clamp01(p.nyanVolume, 0.4),
         nyanExtra: p.nyanExtra ?? true,
+        intro: toIntro(p.intro),
         font: FONTS.some((f) => f.key === p.font) ? (p.font as string) : "",
         // `textScale` was the old whole-HUD zoom factor; a stored one carries
         // over as the base font size it was effectively rendering at.

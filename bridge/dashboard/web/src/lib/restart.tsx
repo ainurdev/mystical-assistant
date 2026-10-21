@@ -15,6 +15,7 @@ import { notify } from "../components/hud/Notifications";
 import { BootIntro } from "../components/hud/BootIntro";
 import { BOOT_CONTINUE, type BootStep } from "./bootsteps";
 import type { ThemeKey } from "./theme";
+import type { Intro } from "./intro";
 
 // Three real events, same as the startup log: nothing here is on a timer.
 // BRIDGE DOWN is the odd one — it stays on dots if the process blinked back
@@ -28,7 +29,7 @@ const STEPS = [
 let host: ((steps: BootStep[] | null) => void) | null = null;
 
 /** Mounted once by App — the overlay restartBridge() draws into. */
-export function RestartIntro(props: { theme: ThemeKey; scanlines: boolean }) {
+export function RestartIntro(props: { theme: ThemeKey; scanlines: boolean; intro: Intro }) {
   const [steps, setSteps] = useState<BootStep[] | null>(null);
   useEffect(() => {
     host = setSteps;
@@ -39,7 +40,7 @@ export function RestartIntro(props: { theme: ThemeKey; scanlines: boolean }) {
   // itself off would uncover a dashboard talking to a port that isn't there —
   // and the reload is about to draw this same intro again anyway.
   return (
-    <BootIntro theme={props.theme} scanlines={props.scanlines} steps={steps} hold
+    <BootIntro theme={props.theme} scanlines={props.scanlines} intro={props.intro} steps={steps} hold
       onReveal={() => {}} onDone={() => setSteps(null)} />
   );
 }

@@ -538,8 +538,9 @@ body {
    wordmark and the log already drawn — the new document picks the intro up
    where the old one left it instead of booting a second time. The infinite
    ambient loops (grid, radar, drift) just start at a different phase. The
-   container is excluded: its crtoff exit still has to play. */
-.bootcontinue * { animation-delay: -3s !important; }
+   container is excluded: its crtoff exit still has to play, and so is a
+   scene's exit flourish (`.bx`, components/hud/BootScenes). */
+.bootcontinue *:not(.bx) { animation-delay: -3s !important; }
 
 @keyframes introdraw { from { stroke-dashoffset: 280; } to { stroke-dashoffset: 0; } }
 @keyframes intropop { 0% { transform: scale(0.55); filter: brightness(3.4); opacity: 0; } 55% { opacity: 1; } 100% { transform: none; filter: none; opacity: 1; } }
@@ -547,6 +548,130 @@ body {
 @keyframes wordflick { 0% { filter: brightness(0.15); } 7% { filter: brightness(2.6); } 11% { filter: brightness(0.4); } 19% { filter: brightness(1.9); } 28% { filter: brightness(0.7); } 36% { filter: none; } 100% { filter: none; } }
 @keyframes bootline { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: none; } }
 @keyframes tickfade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- THE LOADING SCREEN'S MIDDLE-EARTH SCENES (components/hud/BootScenes) ----
+   KHAZAD-DÛM (kd-) and DURIN'S DOOR (dd-), picked in SETTINGS ▸ Appearance ▸
+   LOADING SCREEN (lib/intro). Each exit hangs off .bootleaving, which BootIntro
+   sets as it leaves, and plays inside the warm-up and the crtoff wipe. */
+.kd-field, .dd-field { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.kd-scene, .dd-scene { position: relative; z-index: 2; flex: none; overflow: visible; }
+
+/* KHAZAD-DÛM. Always on a dark ground (lib/theme nightOf), so the shadow the
+   Balrog and the deep are made of is the canvas sunk toward black. */
+.kd-scene { width: 2800px; height: 440px; margin-bottom: -40px; --void: color-mix(in srgb, var(--canvas) 40%, #000); }
+.kd-ff-err { flood-color: var(--err); }
+.kd-ff-txb { flood-color: var(--txb); }
+.kd-deck { animation: tickfade .9s ease both .15s; }
+.kd-deckfill { fill: color-mix(in srgb, var(--acc) 9%, var(--void)); }
+.kd-deckline { fill: none; stroke: var(--acc); stroke-width: 1.4; }
+.kd-deckunder { fill: none; stroke: color-mix(in srgb, var(--acc) 38%, transparent); stroke-width: 1; }
+.kd-cliffs { animation: tickfade .9s ease both .1s; }
+.kd-cliff { fill: var(--void); stroke: color-mix(in srgb, var(--acc) 45%, transparent); stroke-width: 1.2; stroke-linejoin: round; }
+.kd-gf { fill: color-mix(in srgb, var(--txb) 10%, var(--void)); }
+.kd-staff { fill: none; stroke: var(--txb); stroke-width: 2.1; stroke-linecap: round; }
+.kd-blade { stroke: color-mix(in srgb, var(--info) 55%, var(--txb)); stroke-width: 1.6; stroke-linecap: round; }
+.kd-guard { stroke: var(--txb); stroke-width: 1.4; stroke-linecap: round; }
+.kd-wizard { animation: intropop .9s cubic-bezier(.2,.8,.2,1) both .35s; transform-box: fill-box; transform-origin: 50% 100%; }
+.kd-staffin { animation: tickfade .5s ease both .45s; }
+.kd-light { transform-box: view-box; transform-origin: -207px 123px; transform: scale(calc(.62 + .55 * var(--p, 0)));
+  transition: transform .45s cubic-bezier(.4,0,.2,1); animation: tickfade .8s ease both .9s; }
+.kd-halo { transform-box: view-box; transform-origin: -207px 123px; animation: kdhalo 2.6s ease-in-out infinite; }
+.kd-rays { transform-box: view-box; transform-origin: -207px 123px; animation: introspin 14s linear infinite; }
+.kd-rays line { stroke: var(--txb); stroke-width: .9; stroke-linecap: round; opacity: .75; }
+.kd-ring { fill: none; stroke: color-mix(in srgb, var(--txb) 55%, transparent); stroke-width: 1;
+  transform-box: fill-box; transform-origin: center; animation: radar 3.4s ease-out infinite; }
+.kd-r2 { animation-delay: 1.7s; }
+.kd-tip { fill: var(--txb); }
+.kd-balrog { animation: kdrise 1.4s cubic-bezier(.2,.8,.2,1) both .2s; }
+.kd-bk { fill: var(--void); }
+.kd-limb { stroke: var(--void); stroke-linecap: round; }
+.kd-wing { fill: var(--void); transform-box: view-box; transform-origin: -6px -200px; animation: kdwing 5.5s ease-in-out infinite; }
+.kd-far { animation-delay: -2.2s; }
+.kd-bones { fill: none; stroke: color-mix(in srgb, var(--err) 30%, transparent); stroke-width: .8; }
+.kd-whip { fill: none; stroke: var(--warn); stroke-width: 2; stroke-linecap: round; }
+.kd-whipg { transform-box: view-box; transform-origin: 54px -116px; animation: kdlash 4.2s ease-in-out infinite; }
+.kd-maw, .kd-eye { fill: var(--warn); animation: twinkle 2.4s ease-in-out infinite; }
+.kd-crack { fill: none; stroke: color-mix(in srgb, var(--warn) 80%, transparent); stroke-width: .9; stroke-linecap: round; animation: twinkle 2.8s ease-in-out infinite; }
+.kd-sword { fill: url(#kd-blade); animation: twinkle 1.3s ease-in-out infinite; }
+.kd-flame { fill: url(#kd-fire); transform-box: fill-box; transform-origin: 50% 100%; animation: kdflick 1.1s ease-in-out infinite alternate; }
+.kd-spark { fill: var(--warn); animation: kdspark 3.4s linear infinite; }
+.kd-backlight { opacity: calc(1 - .38 * var(--p, 0)); transition: opacity .45s ease; }
+.kd-pillars { position: absolute; inset: 0; width: 100%; height: 100%;
+  -webkit-mask-image: linear-gradient(to bottom, transparent 2%, #000 35%, #000 60%, transparent 98%);
+  mask-image: linear-gradient(to bottom, transparent 2%, #000 35%, #000 60%, transparent 98%); }
+.kd-pillars line { stroke: var(--acc); vector-effect: non-scaling-stroke; }
+.kd-deep { position: absolute; left: -10%; right: -10%; bottom: -30%; height: 70%; animation: kdglow 4s ease-in-out infinite;
+  background: radial-gradient(50% 50% at 54% 70%, color-mix(in srgb, var(--err) 16%, transparent), color-mix(in srgb, var(--warn) 5%, transparent) 50%, transparent 72%); }
+.kd-ember { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 6px var(--err);
+  animation: kdember 6s linear infinite; }
+.kd-flash { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0;
+  background: radial-gradient(60% 45% at 50% 30%, color-mix(in srgb, var(--txb) 40%, transparent), transparent 70%); }
+/* The strike: the staff comes down, a flash runs along the deck, the span
+   under the Balrog cracks at both ends and falls with it. */
+.kd-staffarm { transform-box: view-box; transform-origin: -236px 227px; }
+.bootleaving .kd-staffarm { animation: kdslam .14s cubic-bezier(.6,0,.9,.4) forwards; }
+.kd-shock { opacity: 0; transform-box: fill-box; transform-origin: center; }
+.bootleaving .kd-shock { animation: kdshock .6s ease-out .12s forwards; }
+.kd-split { opacity: 0; fill: none; stroke: var(--txb); stroke-width: 1.4; }
+.bootleaving .kd-split { animation: tickfade .06s linear .13s forwards; }
+.kd-falls { transform-box: view-box; transform-origin: 150px 340px; }
+.bootleaving .kd-falls { animation: kdfall .7s cubic-bezier(.5,0,.9,.4) .15s forwards; }
+.bootleaving .kd-backlight { animation: kdout .6s ease .2s forwards; }
+.bootleaving .kd-flash { animation: kdflash .45s ease-out .12s; }
+@keyframes kdrise { from { transform: translateY(26px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes kdhalo { 0%, 100% { opacity: .82; transform: scale(1); } 50% { opacity: 1; transform: scale(1.08); } }
+@keyframes kdwing { 0%, 100% { transform: none; } 50% { transform: scale(1.025, 1.04); } }
+@keyframes kdflick { 0% { transform: scale(.86, .82) skewX(-4deg); opacity: .78; } 100% { transform: scale(1.06, 1.16) skewX(5deg); opacity: 1; } }
+@keyframes kdlash { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-7deg); } }
+@keyframes kdglow { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.22); } }
+@keyframes kdspark { 0% { transform: translate(0, 0); opacity: 0; } 12% { opacity: 1; } 100% { transform: translate(-22px, -150px); opacity: 0; } }
+@keyframes kdember { 0% { transform: translate(0, 0); opacity: 0; } 10% { opacity: .9; } 100% { transform: translate(-30px, -260px); opacity: 0; } }
+@keyframes kdslam { to { transform: translateY(42px) rotate(4deg); } }
+@keyframes kdshock { 0% { opacity: 1; transform: scale(.05, .3); } 100% { opacity: 0; transform: none; } }
+@keyframes kdfall { 0% { transform: none; opacity: 1; } 25% { opacity: 1; } 100% { transform: translate(30px, 300px) rotate(14deg); opacity: 0; } }
+@keyframes kdflash { 0% { opacity: 0; } 25% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes kdout { to { opacity: 0; } }
+
+/* DURIN'S DOOR, in its theme's ink on its theme's ground: the stone layer is
+   the whole door, faint, from the start; the ithildin layer traces each group
+   in as its step answers (every path is pathLength 1, so a dash of 1). */
+.dd-scene { width: 368px; height: 540px; margin-bottom: -62px; }
+.dd-scene text { font-family: 'Share Tech Mono', monospace; letter-spacing: 1.2px; }
+.dd-stone, .dd-ith { animation: tickfade 1s ease both .1s; }
+.dd-stone { fill: none; stroke: color-mix(in srgb, var(--acc) 22%, transparent); stroke-width: 1.1; stroke-linecap: round; stroke-linejoin: round; }
+.dd-stone text { fill: color-mix(in srgb, var(--acc) 26%, transparent); stroke: none; }
+.dd-ith { fill: none; stroke: var(--acc); stroke-width: 1.25; stroke-linecap: round; stroke-linejoin: round; }
+.dd-ith text { fill: var(--acc); stroke: none; }
+.dd-ith .dd-g path { stroke-dasharray: 1 2; stroke-dashoffset: 1; opacity: 0;
+  transition: stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1), opacity .3s ease; }
+.dd-ith .dd-g text { opacity: 0; transition: opacity 1.4s ease; }
+.dd-ith .dd-lit path { stroke-dashoffset: 0; opacity: 1; }
+.dd-ith .dd-lit text { opacity: 1; }
+.dd-ith .dd-lit .dd-star { animation: twinkle 2.4s ease-in-out infinite; }
+.dd-gstar { transform-box: view-box; transform-origin: 160px 252px; }
+.dd-ith .dd-gstar path { stroke-width: 1.5; }
+.dd-ith .dd-lit .dd-gstar { animation: ddbeat 3.6s ease-in-out infinite 1.2s; }
+.dd-moon { position: absolute; left: 17%; top: 11%; width: 46px; height: 46px; border-radius: 50%; transform: rotate(-18deg);
+  box-shadow: 9px -6px 0 0 color-mix(in srgb, var(--txb) 88%, transparent);
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--acc) 55%, transparent)); animation: tickfade 1.6s ease both .2s; }
+:root[data-light] .dd-moon { filter: none; }
+.dd-skystar { position: absolute; width: 2px; height: 2px; border-radius: 50%; background: var(--txb); box-shadow: 0 0 5px var(--acc);
+  animation: twinkle 3.6s ease-in-out infinite; }
+/* The opening: the leaves fold in to their hinges onto the light behind. 2D on
+   purpose: WebKit does not draw an SVG group's 3D rotation. */
+.dd-leaf { transform-box: view-box; }
+.dd-l { transform-origin: 58px 250px; }
+.dd-r { transform-origin: 262px 250px; }
+.bootleaving .dd-l { animation: ddswingl .55s cubic-bezier(.5,0,.3,1) .05s forwards; }
+.bootleaving .dd-r { animation: ddswingr .55s cubic-bezier(.5,0,.3,1) .05s forwards; }
+.dd-within { opacity: 0; }
+.bootleaving .dd-within { animation: tickfade .45s ease .1s forwards; }
+@keyframes ddbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
+@keyframes ddswingl { to { transform: scaleX(.14) skewY(6deg); opacity: .25; } }
+@keyframes ddswingr { to { transform: scaleX(.14) skewY(-6deg); opacity: .25; } }
+@media (prefers-reduced-motion: reduce) {
+  .kd-field *, .kd-scene *, .kd-flash, .dd-field *, .dd-scene * { animation: none !important; transition: none !important; }
+}
 @keyframes eqbar { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
 /* nyan.cat, plain: two parallax star layers scrolling past a static cat. */
 .nyan-sky {
