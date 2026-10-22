@@ -87,7 +87,7 @@ It opens a small sheet, built the way `TeamSendSheet` is:
   is at that path already. The repository then shows up like any other project.
 - **Their code**, on by default when you can get it. Their exact commit, plus their uncommitted
   changes when they sent code, go on a new branch `from-<first name>/<title>` in a worktree of its
-  own, as today. Their commit is fetched from GitHub first when your checkout doesn't have it.
+  own, as today; `-2`, `-3`… when that branch is taken, as it is when they send the same session again. Their commit is fetched from GitHub first when your checkout doesn't have it.
 - **Warnings** (below), each with **TELL <NAME>**.
 - **CONTINUE** always works, with or without their code. Without it, Claude still remembers
   everything and works on whatever code is in the folder it runs in: your checkout at its current

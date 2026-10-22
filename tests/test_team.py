@@ -300,10 +300,31 @@ def test_a_failed_send_says_what_rivendell_said_and_logs_it(riv, tmp_path, monke
         raise urllib.error.HTTPError(INST["api_url"] + path, 500, "Internal Server Error", {},
                                      io.BytesIO(b'{"statusCode":500,"message":"Internal server error"}'))
     monkeypatch.setattr(rivendell.Worker, "_api", boom)
-    with pytest.raises(team.TeamError, match="^Internal server error$"):
+    said = "Rivendell hit an error on its side (HTTP 500). Try again in a moment."
+    with pytest.raises(team.TeamError, match=f"^{re.escape(said)}$"):
         team.send("session", ERFAN, session_id=sid)
-    assert "[team] sending a session failed: <HTTPError 500: 'Internal Server Error'> (Internal server error)" \
+    assert f"[team] sending a session failed: <HTTPError 500: 'Internal Server Error'> ({said})" \
         in capsys.readouterr().err
+
+
+def test_why_says_when_rivendell_failed_on_its_side_or_was_slow():
+    """Nest answers any crash of its own (a storage hiccup, a redeploy) as "Internal server
+    error", which read in the send sheet as if the share itself were wrong."""
+    def err(code, body):
+        return urllib.error.HTTPError(INST["api_url"], code, "x", {}, io.BytesIO(body))
+    assert team._why(err(502, b"<html>Bad gateway</html>")) == \
+        "Rivendell hit an error on its side (HTTP 502). Try again in a moment."
+    assert team._why(err(503, b'{"message":"File storage is not configured"}')) == \
+        "Rivendell hit an error on its side (HTTP 503: File storage is not configured). Try again in a moment."
+    assert team._why(err(400, b'{"message":["note must be shorter"]}')) == "note must be shorter"
+    assert team._why(TimeoutError("The read operation timed out")) == "Rivendell didn't answer in time. Try again in a moment."
+
+
+def test_a_note_is_blanked_whole_then_kept_within_rivendells_cap(riv, tmp_path):
+    sid = _my_session(tmp_path)
+    team.send("session", ERFAN, "x" * 1975 + " GITHUB=ghp_" + "a" * 36, session_id=sid)
+    note = riv.calls[0][2]["note"]
+    assert len(note) <= 2000 and "ghp_" not in note and note.endswith("[redacted]")
 
 
 def test_only_your_own_sessions_go(riv):
@@ -519,6 +540,31 @@ def test_continue_finds_your_checkout_and_names_the_branch(riv):
                                     "transcript first, then look at their code on this branch.")
 
 
+def test_each_continue_with_code_gets_a_branch_of_its_own(riv):
+    """The same session sent again has the same title: on the first one's branch, unpack finds
+    that worktree holding the first code and refuses, so the newer code went nowhere."""
+    repo = _checkout("/ainurhq/acme", "ainurhq/acme")
+    g = lambda *a: subprocess.run(["git", "-C", repo, *a], check=True, capture_output=True)  # noqa: E731
+    g("-c", "user.email=t@example.com", "-c", "user.name=T", "commit", "-q", "--allow-empty", "-m", "init")
+    first, again, third = (_session_share(riv, {"repo": "ainurhq/acme", "code": True}) for _ in range(3))
+    branch = team.continue_plan(first)["branch"]
+    assert branch == "from-erfan/done-tasks-still-show-due-alerts"
+    g("branch", branch)
+    assert team.continue_plan(again)["branch"] == branch + "-2"
+    g("branch", branch + "-2")
+    assert team.continue_plan(third)["branch"] == branch + "-3"
+
+
+def test_continue_attaches_each_picture_once(riv):
+    """A picture that was a turn's attachment is also linked into that turn's folder."""
+    doc = {"v": 1, "title": "t", "turns": [{"prompt": "p", "attachments": ["pic-1.png"],
+                                             "events": [{"type": "tool_done", "id": "t1", "images": ["pic-2.png"]}]}]}
+    share = riv.offer("session", [("transcript", "transcript.json.gz", _transcript(doc)),
+                                  ("picture", "pic-1.png", PNG), ("picture", "pic-2.png", PNG)])
+    team.on_share(riv.worker, riv.row(share))
+    assert [a["name"] for a in team.continue_plan(share)["attachments"]] == ["transcript.md", "tp-1.png", "tp-2.png"]
+
+
 def _git_dir(path: str) -> str:
     os.makedirs(path, exist_ok=True)
     subprocess.run(["git", "-C", path, "init", "-q"], check=True, capture_output=True)
@@ -588,6 +634,17 @@ def _code_share(riv, code: bytes) -> str:
                       meta={"code": True})
     team.on_share(riv.worker, riv.row(share))
     return share
+
+
+def test_code_gone_from_storage_says_so_not_that_rivendell_is_old(riv, monkeypatch):
+    share = _code_share(riv, _tgz([("app.py", "file", b"theirs")]))
+
+    def gone(url, timeout=None):
+        raise urllib.error.HTTPError(url, 404, "Not Found", {}, io.BytesIO(b"<Error><Code>NoSuchKey</Code></Error>"))
+    monkeypatch.setattr(team.urllib.request, "urlopen", gone)
+    with pytest.raises(team.TeamError, match=r"^Their code couldn't be unpacked: Rivendell's storage answered 404 "
+                                             r"for code\.tar\.gz$"):
+        team.unpack(share, _git_dir(os.path.join(config.BASE_PATH, ".worktrees", "acme", "gone")))
 
 
 def test_unpack_goes_only_into_a_worktree_under_worktrees(riv, monkeypatch):

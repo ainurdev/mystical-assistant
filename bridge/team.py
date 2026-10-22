@@ -176,9 +176,14 @@ def _why(e: Exception) -> str:
             return "Rivendell refused this bridge's token."
         if e.code == 413:
             return "That's too big for Rivendell: 9 MB a file."
+        if e.code >= 500:     # its own failure (storage, a redeploy): Nest says only "Internal server error"
+            said = f": {msg}" if msg and msg != "Internal server error" else ""
+            return f"Rivendell hit an error on its side (HTTP {e.code}{said}). Try again in a moment."
         return msg or f"Rivendell answered {e.code}."
     if isinstance(e, urllib.error.URLError):
         return "Rivendell can't be reached right now."
+    if isinstance(e, TimeoutError):
+        return "Rivendell didn't answer in time. Try again in a moment."
     return "Rivendell's answer didn't make sense."
 
 
@@ -382,7 +387,8 @@ def send(kind: str, to: str, note: str = "", *, session_id: "str | None" = None,
         raise TeamError("Nothing to send.")
     if not isinstance(to, str) or not _UUID.fullmatch(to):
         raise TeamError("Pick a teammate to send it to.")
-    note, _ = redact(str(note or "").strip()[:_NOTE_MAX])
+    # Blanked whole, then cut: a cut first can halve a token past matching, and blanking can lengthen it.
+    note = redact(str(note or "").strip())[0][:_NOTE_MAX]
     w = _client()
     if kind == "session":
         packed = pack_session(session_id, pictures)
@@ -596,8 +602,11 @@ def _download(worker, share_id: str, f: dict, cap: int) -> bytes:
     url = got.get("url") if isinstance(got, dict) else None
     if not isinstance(url, str) or not url.startswith(("https://", "http://")):
         raise ValueError("no download link")
-    with urllib.request.urlopen(url, timeout=60) as r:
-        data = r.read(cap + 1)
+    try:
+        with urllib.request.urlopen(url, timeout=60) as r:
+            data = r.read(cap + 1)
+    except urllib.error.HTTPError as e:     # the bucket's answer: _why would read its 404 as a Rivendell without shares
+        raise ValueError(f"Rivendell's storage answered {e.code} for {f['name']}") from None
     if len(data) > cap:
         raise ValueError(f"{f['name']} is over its cap")
     return data
@@ -902,13 +911,20 @@ def continue_plan(share_id: str) -> dict:
     attach = [{"name": "transcript.md", "url": f"/local/rivendell/team/transcript.md?id={share_id}"}]
     attach += [{"name": os.path.basename(p), "url": "/local/attachment?path=" + urllib.parse.quote(p)}
                for p in _session_pictures(rec)[:_ATTACH - 1]]
+    branch = f"from-{first}/{_slug(rec['title'], 40)}" if code else None
+    if branch:
+        # A branch of its own each time: the same session sent again has the same title, and on the
+        # last one's branch unpack finds its worktree holding their older code and refuses.
+        root, stem, n = os.path.join(config.BASE_PATH, project.lstrip("/")), branch, 2
+        while git._run(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")[0] == 0:
+            branch, n = f"{stem}-{n}", n + 1
     to = _clone_to(meta) if project is None else None
     to = to and os.path.join(config.BASE_PATH, to.lstrip("/"))
     home = os.path.realpath(os.path.expanduser("~"))   # BASE_PATH is a realpath too
     return {"project": project, "repo": meta.get("repo"), "title": rec["title"], "from": name,
             "clone": "~" + to[len(home):] if to and to.startswith(home + os.sep) else to,
             "code": meta.get("code") is True,
-            "branch": f"from-{first}/{_slug(rec['title'], 40)}" if code else None, "base": base,
+            "branch": branch, "base": base,
             "draft": f"{name} sent me this session to pick up. Read the attached transcript first"
                      + (", then look at their code on this branch." if code else ".") + said + " "
                      + _AS_DATA.format(name=name),
@@ -916,18 +932,17 @@ def continue_plan(share_id: str) -> dict:
 
 
 def _session_pictures(rec: dict) -> list:
-    """The received session's pictures, in the order they were taken in."""
+    """The received session's pictures, in the order they were taken in. Each was written once,
+    in the session's folder; a turn's folder only links to the ones it had attached."""
     if not rec.get("session"):
         return []
-    found = []
-    for folder in [os.path.join(config.UPLOAD_DIR, rec["session"])] + \
-            [os.path.join(config.UPLOAD_DIR, t) for t in rec.get("turns") or []]:
-        try:
-            found += sorted((os.path.join(folder, n) for n in os.listdir(folder) if n.startswith("tp-")),
-                            key=lambda p: int(re.sub(r"\D", "", os.path.basename(p)) or 0))
-        except OSError:
-            continue
-    return found
+    folder = os.path.join(config.UPLOAD_DIR, rec["session"])
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return []
+    return sorted((os.path.join(folder, n) for n in names if n.startswith("tp-")),
+                  key=lambda p: int(re.sub(r"\D", "", os.path.basename(p)) or 0))
 
 
 def unpack(share_id: str, cwd: str) -> int:
