@@ -1,5 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/jobs.check.ts
 import { canRunAgain, dayLabel, dayOf, isJob, jobGroup, jobLabel, jobTarget, JOBS_REL, oneShot, parsePaper } from "./jobs.ts";
+import { SHARED_REL } from "./team.ts";
 
 console.assert(isJob({ origin: "rivendell:fd495085", project: "/" }), "an instance-tagged origin is a job");
 console.assert(isJob({ origin: "rivendell", project: "/x" }), "a bare origin is a job");
@@ -12,6 +13,8 @@ console.assert(isJob({ origin: "terminal", project: "/", job: { kind: "news" } }
 console.assert(!isJob({ origin: "terminal", project: "/", job: null }), "a terminal session with none is not");
 console.assert(jobGroup({ origin: "rivendell:a", project: "/ainurhq/efas/app" }) === JOBS_REL, "a review files under the group");
 console.assert(jobGroup({ origin: "dashboard", project: "/mystical-assistant" }) === "/mystical-assistant", "yours stays in its folder");
+console.assert(jobGroup({ origin: "team:prod", project: "/" }) === SHARED_REL, "a session a teammate sent files under Shared");
+console.assert(jobGroup({ origin: "device-run:prod", project: "/" }) === "/", "a teammate's device run doesn't");
 
 console.assert(jobLabel({ kind: "news" }) === "NEWSPAPER", "the queue's word");
 console.assert(jobLabel({ kind: "project-summary" }) === "SUMMARY", "a project summary reads SUMMARY");

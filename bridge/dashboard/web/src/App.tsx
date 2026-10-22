@@ -22,6 +22,7 @@ import {
   type AcpAgentsInfo,
   type RivendellInstance,
   type Received,
+  type ShareKind,
   type TeamOverview,
   type InstallStep,
 } from "./api";
@@ -99,7 +100,7 @@ import { notify, PillHost, setLinks, setNeeds, setNoticeEnv, setNoticeSound } fr
 import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
 import { isDeviceRun } from "./lib/devicerun";
-import { isTeam, readOnly as isReadOnly } from "./lib/team";
+import { isTeam, readOnly as isReadOnly, seen, SHARED_NAME, SHARED_REL } from "./lib/team";
 import { RivendellIcon } from "./lib/rivendellicon";
 import { BootIntro } from "./components/hud/BootIntro";
 import { count as bootCount, initialBootSteps, markStep, type BootKey } from "./lib/bootsteps";
@@ -1641,10 +1642,12 @@ export function App() {
    *  their code on a branch of its own when it came, their transcript and pictures
    *  in the composer, and the opening prompt left unsent. When the repository isn't
    *  cloned here, CLONE & INSTALL clones it first and installs it in the folder the
-   *  session runs in; a failed clone falls back to continuing without their code. */
+   *  session runs in. A session continues under their project or not at all: the
+   *  project you have open is other work (Erfan's osanwe session once landed in
+   *  rivendell that way). A picture or a file has no project, so it goes in the open one. */
   const continuing = useRef(new Set<string>());
   const [contStep, setContStep] = useState<{ id: string; text: string } | null>(null);   // on the button pressed
-  async function continueShare(id: string) {
+  async function continueShare(id: string, kind: ShareKind = "session") {
     if (continuing.current.has(id)) return;      // a second click while the first sets up
     continuing.current.add(id);
     try {
@@ -1664,12 +1667,15 @@ export function App() {
         setContStep(null);
       }
       let project = plan.project;
-      let branch = plan.branch ?? undefined;
+      const branch = plan.branch ?? undefined;
+      if (!project && kind === "session") {
+        notify("info", plan.repo ? `${plan.repo} isn't cloned here, so nothing was continued.`
+          : "Their project isn't on this machine, so nothing was continued.");
+        return;
+      }
       if (!project) {
         if (!activeProject) { notify("error", "Pick a project to continue it in first."); return; }
-        if (plan.repo && !(await askConfirm(`Continue in ${projectName(activeProject)} without their code? ${plan.repo} isn't cloned here.`, { ok: "Continue" }))) return;
         project = activeProject;
-        branch = undefined;
       }
       if (branch) {
         const wt = await api.worktreeAdd(project, branch, plan.base ?? undefined);
@@ -1788,9 +1794,10 @@ export function App() {
   const projectGroups = useMemo<ProjectGroup[]>(() => {
     const byProj = new Map<string, SessionBrief[]>();
     // Every session a Rivendell job started lists under one group, wherever it
-    // ran (lib/jobs), so a folder that only ever held jobs is no project.
+    // ran (lib/jobs), so a folder that only ever held jobs is no project. Every
+    // session a teammate sent lists under Shared the same way.
     for (const s of sessions) {
-      if (isReadOnly(s.origin)) continue;   // a teammate's run or share, in "/": no project of yours
+      if (isDeviceRun(s.origin)) continue;   // a teammate's run, in "/": no project of yours
       const key = jobGroup(s);
       const arr = byProj.get(key) ?? [];
       arr.push(s);
@@ -1811,7 +1818,7 @@ export function App() {
         // The name you gave the project, else its basename — the PROJECTS panel
         // groups rows under a parent-path header, so the org context lives on
         // the group, not the row.
-        rel, name: rel === JOBS_REL ? JOBS_NAME : projectName(rel),
+        rel, name: rel === JOBS_REL ? JOBS_NAME : rel === SHARED_REL ? SHARED_NAME : projectName(rel),
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
       });
     }
@@ -1948,6 +1955,7 @@ export function App() {
     return () => clearInterval(id);
   }, [rivendellOn, loadTeam]);
   const teammates = team && !team.error ? team.roster : [];
+  const teamNew = team?.inbox.filter((r) => !seen(r)).length ?? 0;     // what SENT TO YOU shows
   // The lightbox's SEND, and a bell row for a picture or a file, reach here.
   useEffect(() => {
     setLightboxSend(teammates.length ? (p) => setSendWhat({ what: { kind: "picture", ...p } }) : null);
@@ -2034,14 +2042,14 @@ export function App() {
       ),
     }] : []),
     ...(rivendellOn ? [{
-      id: "team", label: team?.unread ? `Team (${team.unread} new)` : "Team",
-      icon: <Users {...RAIL} />, ownScroll: true, badge: team?.unread ? railCount(team.unread) : null,
+      id: "team", label: teamNew ? `Team (${teamNew} new)` : "Team",
+      icon: <Users {...RAIL} />, ownScroll: true, badge: teamNew ? railCount(teamNew) : null,
       render: () => (
         <TeamPanel data={team} fail={teamFail}
           sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}
           onRefresh={() => void loadTeam()}
           onSendTo={(t) => { if (selected) setSendWhat({ what: { kind: "session", session: selected.id, title: selected.title || "session" }, to: t.id }); }}
-          onOpen={openReceived} onContinue={(r) => void continueShare(r.id)} step={contStep}
+          onOpen={openReceived} onContinue={(r) => void continueShare(r.id, r.kind)} step={contStep}
           onDismiss={(r) => void dismissShare(r.id, !!r.session && r.session === sessionId)} />
       ),
     }] : []),

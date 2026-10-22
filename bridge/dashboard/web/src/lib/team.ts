@@ -2,7 +2,7 @@
 // sent each other. Drawn by components/hud/TeamPanel.tsx, the send sheet
 // (components/TeamSendSheet.tsx) and the received bar (components/TeamBar.tsx).
 // Checked by team.check.ts.
-import type { Share, Teammate } from "../api";
+import type { Received, Share, Teammate } from "../api";
 import { isDeviceRun } from "./devicerun.ts";
 import { ago, hhmm } from "./surfaces.ts";
 
@@ -11,6 +11,15 @@ export const isTeam = (origin?: string | null): boolean => !!origin?.startsWith(
 
 /** Someone else's session: a teammate's device run, or one a teammate sent. Read only here. */
 export const readOnly = (origin?: string | null): boolean => isDeviceRun(origin) || isTeam(origin);
+
+/** The PROJECTS group the sessions teammates sent list under (lib/jobs jobGroup).
+ *  Not a path, so it can't collide with a folder. */
+export const SHARED_REL = "team:shared";
+export const SHARED_NAME = "Shared";
+
+/** A share you opened or continued: it leaves SENT TO YOU (and the rail's count)
+ *  for SEEN, where it stays until you remove it or it expires. */
+export const seen = (r: Pick<Received, "opened" | "continued">): boolean => r.opened || r.continued;
 
 export const KIND_LABEL = { session: "SESSION", picture: "PICTURE", file: "FILE" } as const;
 

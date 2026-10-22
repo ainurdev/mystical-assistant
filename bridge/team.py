@@ -763,7 +763,7 @@ def inbox() -> list:
 
 
 def overview() -> dict:
-    """The TEAM tab: the roster, what you were sent, what you sent, and the unread count."""
+    """The TEAM tab: the roster, what you were sent, and what you sent."""
     out = {"roster": [], "outbox": [], "inbox": inbox(), "error": None}
     try:
         out["roster"] = _cached("roster", "/plugin/teammates")
@@ -772,7 +772,6 @@ def overview() -> dict:
         out["error"] = str(e)
     except (urllib.error.URLError, OSError, ValueError) as e:
         out["error"] = _why(e)
-    out["unread"] = sum(1 for r in out["inbox"] if not r["opened"])
     return out
 
 

@@ -7,7 +7,7 @@
 // linked Mystical shown as "last on Jan 1, 1970", and a share that never arrived
 // reading DELIVERED.
 import type { Teammate } from "../api.ts";
-import { byPresence, isTeam, personTint, presence, readOnly, sentStatus, shareFacts, size } from "./team.ts";
+import { byPresence, isTeam, personTint, presence, readOnly, seen, sentStatus, shareFacts, size } from "./team.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -48,3 +48,8 @@ eq(shareFacts("session", { repo: "ainurhq/rivendell", branch: "main", turns: 1, 
 eq(shareFacts("session", { project: "/ainurhq/apex", turns: 3 }), { project: "apex", bits: ["3 turns"] }, "no repo: the folder");
 eq(shareFacts("file", { bytes: 1887436 }), { bits: ["1.8 MB"] }, "a file's size");
 eq([size(512), size(4096), size(-1), size("x")], ["512 B", "4 KB", "", ""], "sizes");
+
+// SENT TO YOU keeps a share until you open or continue it; SEEN (and the rail's count) take it after.
+ok(!seen({ opened: false, continued: false }), "a share nobody touched is new");
+ok(seen({ opened: true, continued: false }), "opened, it's seen");
+ok(seen({ opened: false, continued: true }), "continued straight from its card, it's seen too");

@@ -580,7 +580,6 @@ def test_overview_without_a_link_still_lists_what_came(monkeypatch, riv):
     monkeypatch.setattr(rivendell_instances, "raw_instances", lambda: [])
     o = team.overview()
     assert o["error"] == team.NO_LINK and o["roster"] == [] and [r["id"] for r in o["inbox"]] == [share]
-    assert o["unread"] == 1
 
 
 def _code_share(riv, code: bytes) -> str:

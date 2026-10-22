@@ -67,9 +67,8 @@ def _raw():
 
 
 def test_the_tab_reads_the_overview(monkeypatch):
-    monkeypatch.setattr(team, "overview", lambda: {"roster": [], "inbox": [], "outbox": [], "unread": 0, "error": None})
-    assert dget("/local/rivendell/team") == {"obj": {"roster": [], "inbox": [], "outbox": [], "unread": 0,
-                                                     "error": None}, "code": 200}
+    monkeypatch.setattr(team, "overview", lambda: {"roster": [], "inbox": [], "outbox": [], "error": None})
+    assert dget("/local/rivendell/team") == {"obj": {"roster": [], "inbox": [], "outbox": [], "error": None}, "code": 200}
 
 
 def test_send_hands_each_kind_through(monkeypatch, tmp_path):

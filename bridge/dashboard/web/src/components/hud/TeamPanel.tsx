@@ -1,15 +1,17 @@
 import { useState, type ReactNode } from "react";
-import { Download, Eye, Forward, Image as ImageIcon, Laptop, Send, Users, X } from "lucide-react";
+import { Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Laptop, MessageSquare, Send, Users, X } from "lucide-react";
 import type { Received, Share, TeamOverview, Teammate } from "../../api";
 import { initials } from "../../lib/rivendelltasks";
 import { useClock12 } from "../../lib/surfaces";
-import { KIND_LABEL, byPresence, personTint, presence, sentAgo, sentStatus, shareFacts, type SentTone } from "../../lib/team";
+import { KIND_LABEL, byPresence, personTint, presence, seen, sentAgo, sentStatus, shareFacts, type SentTone } from "../../lib/team";
 import { ImageLightbox } from "../ImageLightbox";
 
 const UI = "var(--ui-font, inherit)";
 const MONO = "var(--mono)";
 const mix = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
 const TONE: Record<SentTone, string> = { ok: "var(--ok)", purple: "var(--purple)", warn: "var(--warn)", dim: "var(--txl)" };
+const KIND_ICON = { session: MessageSquare, picture: ImageIcon, file: FileIcon } as const;
+const SEEN_ROWS = 3;       // SEEN shows this many, the rest behind "N more"
 const toolBtn = {
   appearance: "none", cursor: "pointer", background: "transparent", color: "var(--txm)",
   border: `1px solid ${mix("var(--acc)", 20)}`, fontFamily: "inherit", fontSize: "var(--t95)", lineHeight: 1.3, padding: "2px 6px",
@@ -60,9 +62,11 @@ const Sect = ({ label, right, top = 12 }: { label: string; right?: ReactNode; to
 );
 
 /** The TEAM tab (bridge/team.py): what teammates sent you, who has Mystical on,
- *  who's away, and how far your own sends got. App owns the data (it polls, and
- *  the rail badge and the session menu read it too). SEND on a teammate sends the
- *  session you have open: `sessionTitle` is null when it isn't yours to send. */
+ *  who's away, how far your own sends got, and SEEN: what was sent to you that you
+ *  opened or continued, one quiet line each until you remove it or it expires.
+ *  App owns the data (it polls, and the rail badge and the session menu read it
+ *  too). SEND on a teammate sends the session you have open: `sessionTitle` is
+ *  null when it isn't yours to send. */
 export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onDismiss, step }: {
   data: TeamOverview | null;
   fail: string | null;
@@ -78,10 +82,13 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
   const now = Date.now() / 1000;
   const [hov, setHov] = useState<string | null>(null);
   const [zoom, setZoom] = useState<string | null>(null);
+  const [allSeen, setAllSeen] = useState(false);
   const roster = [...(data?.roster ?? [])].sort(byPresence);
   const on = roster.filter((t) => t.online);
   const away = roster.filter((t) => !t.online);
   const face = (id: string) => roster.find((t) => t.id === id)?.avatarUrl;
+  const fresh = (data?.inbox ?? []).filter((r) => !seen(r));
+  const old = (data?.inbox ?? []).filter(seen);
 
   const mate = (t: Teammate) => (
     <div key={t.id} onMouseEnter={() => setHov(t.id)} onMouseLeave={() => setHov(null)} style={{
@@ -110,14 +117,14 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     return (
       <div key={r.id} style={{
         margin: "0 10px 8px", padding: "10px 10px 10px 11px", borderRadius: 10,
-        border: `1px solid ${mix("var(--acc)", r.opened ? 18 : 30)}`, background: `color-mix(in srgb, var(--acc) ${r.opened ? 2 : 5}%, var(--panel2))`,
+        border: `1px solid ${mix("var(--acc)", 30)}`, background: "color-mix(in srgb, var(--acc) 5%, var(--panel2))",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <Avatar id={r.from.id || r.from.name} name={r.from.name} src={face(r.from.id)} size={22} />
           <span style={{ fontFamily: UI, fontSize: "var(--t115)", fontWeight: 500, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.from.name}</span>
           <span style={{ fontFamily: MONO, fontSize: "var(--t9)", color: "var(--txl)", whiteSpace: "nowrap" }}>{sentAgo(r.sent, now) || ""}</span>
           <span style={{ flex: 1 }} />
-          {!r.opened && <i title="new" style={{ flex: "none", width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", boxShadow: `0 0 8px ${mix("var(--acc)", 60)}` }} />}
+          <i title="new" style={{ flex: "none", width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", boxShadow: `0 0 8px ${mix("var(--acc)", 60)}` }} />
           <button type="button" title="Dismiss — it leaves your list; nothing ran" onClick={() => onDismiss(r)} style={{
             appearance: "none", cursor: "pointer", display: "grid", placeItems: "center", width: 22, height: 22, flex: "none", border: 0, borderRadius: 6,
             background: "transparent", color: "var(--txl)", padding: 0,
@@ -167,6 +174,47 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     );
   };
 
+  /** A SEEN row opens what it was again: the session read only, the picture large, the file downloaded. */
+  const reopen = (r: Received) => {
+    if (r.kind === "picture" && r.url) setZoom(r.url);
+    if (r.kind === "file" && r.url) Object.assign(document.createElement("a"), { href: r.url, download: r.file || "" }).click();
+    onOpen(r);
+  };
+
+  // One quiet line, as YOU SENT's are. Hovered or focused, its stamp gives way to
+  // CONTINUE HERE and remove (dismiss: your copy goes).
+  const seenRow = (r: Received) => {
+    const Icon = KIND_ICON[r.kind];
+    const key = `seen:${r.id}`;
+    const busy = step?.id === r.id ? step.text : null;
+    const ago = sentAgo(r.sent, now);
+    return (
+      <div key={r.id} onClick={() => reopen(r)} onMouseEnter={() => setHov(key)} onMouseLeave={() => setHov(null)}
+        onFocus={() => setHov(key)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHov(null); }}
+        title={`${r.title} · from ${r.from.name}${ago ? ` · sent ${ago === "now" ? "just now" : `${ago} ago`}` : ""}`}
+        style={{ display: "flex", alignItems: "center", gap: 8, padding: 6, margin: "0 6px", minWidth: 0, borderRadius: 8, cursor: "pointer",
+                 background: hov === key ? mix("var(--acc)", 7) : "transparent" }}>
+        <span style={{ flex: "none", color: "var(--txl)", display: "flex" }}><Icon size={11} strokeWidth={2} /></span>
+        <button type="button" style={{
+          flex: 1, minWidth: 0, appearance: "none", border: 0, padding: 0, background: "transparent", cursor: "pointer", textAlign: "left",
+          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: UI, fontSize: "var(--t11)", color: hov === key ? "var(--txh)" : "var(--txm)",
+        }}>{r.title}</button>
+        <Avatar id={r.from.id || r.from.name} name={r.from.name} src={face(r.from.id)} size={16} />
+        {hov === key && !busy ? (
+          <span style={{ flex: "none", minWidth: 72, display: "flex", justifyContent: "flex-end", gap: 2 }}>
+            <RowBtn label="Continue here" color="var(--acc)" onClick={() => onContinue(r)}><Forward size={12} strokeWidth={2} /></RowBtn>
+            <RowBtn label="Remove: your copy goes" color="var(--txl)" onClick={() => onDismiss(r)}><X size={12} strokeWidth={2} /></RowBtn>
+          </span>
+        ) : (
+          <span style={{ flex: "none", minWidth: 72, textAlign: "right", fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 0.8,
+                         color: busy ? "var(--txm)" : r.continued ? "var(--purple)" : "var(--ok)" }}>
+            {busy ?? (r.continued ? "CONTINUED" : "OPENED")}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   const body = (): ReactNode => {
     // A dashboard newer than the running bridge: the route is missing (see SpendPanel).
     if (fail === "not found") return <Empty title="The bridge needs a restart" text="This dashboard is newer than the running bridge, which can't show the team yet." />;
@@ -174,12 +222,12 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     if (!data) return [100, 100, 60].map((w, i) => <div key={i} style={{ height: 30, margin: "8px 12px", width: `calc(${w}% - 24px)`, background: mix("var(--acc)", 7) }} />);
     return (
       <>
-        {data.inbox.length > 0 && <><Sect label="SENT TO YOU" right={data.inbox.length} top={10} />{data.inbox.map(card)}</>}
+        {fresh.length > 0 && <><Sect label="SENT TO YOU" right={fresh.length} top={10} />{fresh.map(card)}</>}
         {data.error ? (
           <Empty title="No roster right now" text={data.error} />
         ) : (
           <>
-            <Sect label="ON NOW" right={on.length} top={data.inbox.length ? 12 : 10} />
+            <Sect label="ON NOW" right={on.length} top={fresh.length ? 12 : 10} />
             {on.length ? on.map(mate) : (
               <>
                 <div style={{ padding: "4px 12px 2px", fontFamily: UI, fontSize: "var(--t115)", color: "var(--txm)" }}>Nobody else is on right now.</div>
@@ -191,6 +239,18 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
             {away.length > 0 && <><Sect label="AWAY" right={away.length} />{away.map(mate)}</>}
             {data.outbox.length > 0 && <><Sect label="YOU SENT" top={14} />{data.outbox.slice(0, 3).map(sent)}</>}
             {!roster.length && <Empty title="No teammates yet" text="Everyone on your Rivendell shows here once they're added to it." />}
+          </>
+        )}
+        {old.length > 0 && (
+          <>
+            <Sect label="SEEN" right={old.length} top={16} />
+            {(allSeen ? old : old.slice(0, SEEN_ROWS)).map(seenRow)}
+            {old.length > SEEN_ROWS && (
+              <button type="button" onClick={() => setAllSeen((v) => !v)} style={{
+                display: "block", width: "100%", textAlign: "left", padding: "7px 12px", border: 0, background: "transparent", cursor: "pointer",
+                fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: ".1em", color: "var(--txl)",
+              }}>{allSeen ? "show less ↑" : `${old.length - SEEN_ROWS} more ↓`}</button>
+            )}
           </>
         )}
       </>
@@ -214,6 +274,15 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "4px 0 10px" }}>{body()}</div>
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
     </div>
+  );
+}
+
+function RowBtn({ label, color, onClick, children }: { label: string; color: string; onClick: () => void; children: ReactNode }) {
+  return (
+    <button type="button" title={label} aria-label={label} onClick={(e) => { e.stopPropagation(); onClick(); }} style={{
+      appearance: "none", cursor: "pointer", display: "grid", placeItems: "center", width: 22, height: 22, flex: "none", border: 0, borderRadius: 6,
+      background: "transparent", color, padding: 0,
+    }}>{children}</button>
   );
 }
 

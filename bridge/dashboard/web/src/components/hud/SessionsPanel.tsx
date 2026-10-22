@@ -13,7 +13,9 @@ import { orderBranches } from "../../lib/branchorder";
 import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
 import { isDeviceRun, rowAge } from "../../lib/devicerun";
-import { isTeam, readOnly } from "../../lib/team";
+import { isTeam, readOnly, shareFacts, SHARED_REL } from "../../lib/team";
+import { TeamTile } from "../TeamBar";
+import { Avatar } from "./TeamPanel";
 import { DeviceTile } from "../DeviceRunPlate";
 import type { ProjectGroup } from "./ProjectsPanel";
 import { RivendellQueue } from "./RivendellQueue";
@@ -213,7 +215,10 @@ function SessionRow({
   const job = isJob(s);
   // A teammate's device run: no project of yours, so it wears the device-run blue.
   const dev = isDeviceRun(s.origin) ? s.device : null;
-  const tint = job ? JOB_TINT : { ...projectTint(s.project), ...(dev && { color: "var(--info)", dim: "var(--info)" }) };
+  // A session a teammate sent: theirs, so it wears Shared's purple and says whose it is.
+  const team = isTeam(s.origin) ? s.team : null;
+  const theirProj = team ? shareFacts("session", team.meta).project : undefined;
+  const tint = job || team ? JOB_TINT : { ...projectTint(s.project), ...(dev && { color: "var(--info)", dim: "var(--info)" }) };
   const age = dev ? rowAge(s, pulse, Date.now() / 1000) : null;
   const fv = flag ? FLAG_VIEW[flag] : null;
   // A sidebar has no room for a full ref, so a row prints the branch's last
@@ -236,6 +241,7 @@ function SessionRow({
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       data-ctx-type="session" data-ctx-id={s.id} data-ctx-label={s.title || "session"}
       title={job ? `${s.title || "untitled session"} · ${jobLabel(s.job).toLowerCase()}${target ? ` ${target}` : ""} · from Rivendell · ${v.t}`
+        : team ? `${s.title || "untitled session"} · from ${team.from.name}${theirProj ? ` · ${theirProj}` : ""} · read only`
         : `${s.title || "untitled session"} · ${projectName(s.project)} · ${branch} · ${v.t}`}
       style={{
         display: "grid", gridTemplateColumns: showDot ? "8px 1fr auto" : "1fr auto", columnGap: 10,
@@ -278,6 +284,19 @@ function SessionRow({
               {dev.repo.split("/").pop()}
             </span>
             {dev.pr != null && <span style={{ flex: "none", marginLeft: -2, fontFamily: "var(--mono)", color: "var(--txl)" }}>#{dev.pr}</span>}
+          </div>
+        ) : team ? (
+          // Who sent it, then their project: a session of theirs is in no folder of yours.
+          <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
+            <Avatar id={team.from.id || team.from.name} name={team.from.name} size={16} />
+            <span className="sessproj" style={{ flex: "0 0 auto", maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--purple)" }}>
+              {team.from.name}
+            </span>
+            {theirProj && (
+              <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--mono)", color: "var(--txl)" }}>
+                {theirProj}
+              </span>
+            )}
           </div>
         ) : metaShow && (
           <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
@@ -621,7 +640,8 @@ export function SessionsPanel(props: Props) {
   const drilled = !sq && open.size > 0;
   const tree = mode !== "projects" ? [] : ps.flatMap((g) => {
     if (drilled && !open.has(g.rel)) return [];
-    const f = mine.filter((s) => jobGroup(s) === g.rel);
+    // Shared lists what teammates sent, which `mine` keeps out of every other group.
+    const f = (g.rel === SHARED_REL ? sorted : mine).filter((s) => jobGroup(s) === g.rel);
     if (sq && f.length === 0) return [];
     // Nothing to show is nothing to expand — an empty project is collapsed,
     // whatever the header was last clicked to.
@@ -1238,12 +1258,13 @@ export function SessionsPanel(props: Props) {
           <>
             {tree.map(({ g, f, isShut, vis, rest }) => {
               const jobs = g.rel === JOBS_REL;
-              const tint = jobs ? JOB_TINT : projectTint(g.rel);
+              const shared = g.rel === SHARED_REL;    // no folder of yours: no project menu, no New
+              const tint = jobs || shared ? JOB_TINT : projectTint(g.rel);
               return (
                 <div
                   key={g.rel}
                   className="projgrp"
-                  data-ctx-type={jobs ? undefined : "project"} data-ctx-id={g.rel} data-ctx-label={g.name}
+                  data-ctx-type={jobs || shared ? undefined : "project"} data-ctx-id={g.rel} data-ctx-label={g.name}
                   onDragOver={dragRel ? (e) => { e.preventDefault(); setOverRel(g.rel); } : undefined}
                   onDrop={dragRel ? (e) => { e.preventDefault(); dropOn(g.rel); } : undefined}
                   style={{ marginBottom: isShut ? 4 : 13, opacity: dragRel === g.rel ? 0.4 : 1,
@@ -1272,13 +1293,13 @@ export function SessionsPanel(props: Props) {
                              cursor: order === "custom" && !sq ? "grab" : "pointer" }}
                   >
                     <span className="pdot" style={{ flex: "none", width: 6, height: 6, background: tint.color }} />
-                    {jobs ? <JobsTile /> : <ProjectTile project={g.rel} />}
+                    {jobs ? <JobsTile /> : shared ? <TeamTile /> : <ProjectTile project={g.rel} />}
                     {/* A label, not a destination — a tier under the session titles so they read first. */}
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
                     <span style={{ flex: 1, minWidth: 6 }} />
-                    {/* Rivendell starts these; there is no session of its to start here. */}
-                    {!jobs && <button
+                    {/* Rivendell or a teammate started these; there is no session of yours to start here. */}
+                    {!jobs && !shared && <button
                       onClick={(e) => { e.stopPropagation(); openFor(g.rel); }}
                       title={`New session in ${g.rel}`}
                       draggable={false} onDragStart={(e) => e.preventDefault()}

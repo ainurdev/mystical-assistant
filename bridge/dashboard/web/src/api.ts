@@ -1069,7 +1069,6 @@ export interface TeamOverview {
   roster: Teammate[];
   inbox: Received[];
   outbox: Share[];
-  unread: number;
   error: string | null;     // why the roster couldn't be read (no link, Rivendell down)
 }
 

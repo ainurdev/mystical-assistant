@@ -91,7 +91,9 @@ It opens a small sheet, built the way `TeamSendSheet` is:
 - **Warnings** (below), each with **TELL <NAME>**.
 - **CONTINUE** always works, with or without their code. Without it, Claude still remembers
   everything and works on whatever code is in the folder it runs in: your checkout at its current
-  branch, or your active project when the repository isn't here.
+  branch. When the repository isn't here and you don't clone it, nothing is continued (changed
+  2026-10-22, [team-seen-shared](team-seen-shared.md): a session continues under their project or
+  not at all).
 
 ### 3. When you can't get their code
 
@@ -132,8 +134,8 @@ first." It is a hint: Send still works.
 
 ### 6. The continued session
 
-- **It is yours:** your origin, your Claude account, your settings. It runs in the checkout, the new
-  worktree, or your active project.
+- **It is yours:** your origin, your Claude account, your settings. It runs in the checkout or the
+  new worktree (never your active project, since 2026-10-22).
 - **It starts on their model and effort,** from their last turn, so a conversation that only fits a
   big window (180 of this Mac's 944 sessions end above 200k tokens) resumes as it was. You can change
   them like in any session. If your account can't run it, the first turn fails with Claude's own
@@ -214,8 +216,9 @@ install step this spec didn't have (`team.clone`, `team.install`):
   the top and one folder down. That means pnpm, yarn, bun or npm (the first match), then composer and
   uv. When their code came, it goes in first and the ask says their install scripts run. A failed
   install still opens the session, and the error quotes the installer's own first error line.
-- **A failed clone** leaves no folder it made behind, and falls back to today's "continue without
-  their code".
+- **A failed clone** leaves no folder it made behind. Since 2026-10-22 it, or a "no" to the clone,
+  continues nothing: the old "Continue in <your project> without their code?" is gone
+  ([team-seen-shared](team-seen-shared.md)).
 - **Still unbuilt:** the rest of this spec. That covers Claude's memory file, the access and push
   warnings, TELL, Rivendell's `ask` route, and the sheet.
 
