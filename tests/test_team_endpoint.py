@@ -106,6 +106,23 @@ def test_a_refused_send_says_why(monkeypatch):
     assert r == {"obj": {"error": "Rivendell can't be reached right now."}, "code": 400}
 
 
+def test_a_send_that_crashes_the_route_is_logged_but_a_hang_up_isnt(capsys):
+    h, box = _dash()
+    h.command, h.path = "POST", "/local/rivendell/team/send?token=secret"
+    try:
+        raise FileNotFoundError(2, "No such file or directory", "pic-1.png")
+    except FileNotFoundError as e:
+        h._safe500(e)
+    err = capsys.readouterr().err
+    assert box["code"] == 500 and box["obj"]["error"].startswith("FileNotFoundError:")
+    assert "[dashboard] POST /local/rivendell/team/send failed:" in err and "Traceback" in err and "secret" not in err
+    try:
+        raise BrokenPipeError()
+    except BrokenPipeError as e:
+        h._safe500(e)
+    assert capsys.readouterr().err == ""
+
+
 def test_continue_unpack_and_state(monkeypatch):
     monkeypatch.setattr(team, "continue_plan", lambda sid: {"project": None, "id": sid})
     monkeypatch.setattr(team, "unpack", lambda sid, cwd: 3)

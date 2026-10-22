@@ -412,7 +412,9 @@ def send(kind: str, to: str, note: str = "", *, session_id: "str | None" = None,
                              data, "application/octet-stream")
         share = w._api(f"/plugin/shares/{share_id}/send", {})
     except (urllib.error.URLError, OSError, ValueError, KeyError, TypeError) as e:
-        raise TeamError(_why(e)) from None
+        why = _why(e)
+        print(f"[team] sending a {kind} failed: {e!r} ({why})", file=sys.stderr)   # the sheet's line is gone once it closes
+        raise TeamError(why) from None
     with _lock:
         _cache.pop("outbox", None)
     return share

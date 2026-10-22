@@ -22,8 +22,10 @@ import queue
 import shutil
 import socket
 import subprocess
+import sys
 import threading
 import time
+import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -391,6 +393,10 @@ class Handler(BaseHTTPRequestHandler):
             self._safe500(e)
 
     def _safe500(self, e):
+        if not isinstance(e, (BrokenPipeError, ConnectionResetError)):   # a page that hung up isn't a fault
+            # Otherwise only the page sees it, and it's gone once that closes.
+            print(f"[dashboard] {self.command} {urlparse(self.path).path} failed:", file=sys.stderr)
+            traceback.print_exc()
         try:
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)
         except Exception:  # noqa: BLE001

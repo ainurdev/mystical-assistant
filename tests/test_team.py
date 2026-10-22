@@ -12,6 +12,7 @@ import subprocess
 import tarfile
 import threading
 import time
+import urllib.error
 import urllib.parse
 import uuid
 
@@ -289,6 +290,20 @@ def test_send_session_uploads_then_sends(riv, tmp_path):
                     f"/plugin/shares/{share['id']}/files/pic-1.png?role=picture",
                     f"/plugin/shares/{share['id']}/files/pic-2.png?role=picture"]
     assert share["sentAt"] and {f["role"] for f in share["files"]} == {"transcript", "picture"}
+
+
+def test_a_failed_send_says_what_rivendell_said_and_logs_it(riv, tmp_path, monkeypatch, capsys):
+    """The sheet's red line is gone once it closes, so the log keeps it."""
+    sid = _my_session(tmp_path)
+
+    def boom(self, path, payload=None, headers=None):
+        raise urllib.error.HTTPError(INST["api_url"] + path, 500, "Internal Server Error", {},
+                                     io.BytesIO(b'{"statusCode":500,"message":"Internal server error"}'))
+    monkeypatch.setattr(rivendell.Worker, "_api", boom)
+    with pytest.raises(team.TeamError, match="^Internal server error$"):
+        team.send("session", ERFAN, session_id=sid)
+    assert "[team] sending a session failed: <HTTPError 500: 'Internal Server Error'> (Internal server error)" \
+        in capsys.readouterr().err
 
 
 def test_only_your_own_sessions_go(riv):
