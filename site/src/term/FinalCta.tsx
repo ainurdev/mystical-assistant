@@ -27,7 +27,7 @@ export function FinalCta() {
             <div className="col-span-12 lg:col-span-5">
               <p className="body max-w-[42ch]">
                 Six questions, then it reads the sessions you already have. MIT licensed, no
-                account, no telemetry, and nothing to migrate.
+                account, and nothing to migrate.
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <a href={REPO_URL} target="_blank" rel="noreferrer" className="btn btn-ghost">

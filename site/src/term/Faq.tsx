@@ -6,7 +6,7 @@ import { Reveal } from "@/components/Reveal";
 const QA = [
   [
     "Does my code or my prompts leave the machine?",
-    "The bridge binds to 127.0.0.1 and is never published. Your repos, transcripts and the claude process all stay put. The only traffic off the machine is Claude Code's own — plus Telegram's, and only if you use the phone surfaces.",
+    "The bridge binds to 127.0.0.1 and is never published. Your repos, transcripts and the claude process all stay put. Your code and prompts leave the machine only in Claude Code's own traffic — plus Telegram's, and only if you use the phone surfaces.",
   ],
   [
     "Do I need an API key?",
