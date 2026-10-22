@@ -553,7 +553,8 @@ body {
 /* ---- THE LOADING SCREEN'S MIDDLE-EARTH SCENES (components/hud/BootScenes) ----
    KHAZAD-DÛM (kd-) and DURIN'S DOOR (dd-), picked in SETTINGS ▸ Appearance ▸
    LOADING SCREEN (lib/intro). Each exit hangs off .bootleaving, which BootIntro
-   sets as it leaves, and plays inside the warm-up and the crtoff wipe. */
+   sets as it leaves, and plays inside the warm-up and the scene's own wipe
+   (kdplunge, ddenter: BootIntro's EXIT; MYSTICAL keeps crtoff). */
 .kd-field, .dd-field { position: absolute; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
 .kd-scene, .dd-scene { position: relative; z-index: 2; flex: none; overflow: visible; }
 
@@ -673,8 +674,6 @@ body {
 .bootleaving .kd-frag-a { animation: kdfalla .6s cubic-bezier(.55,0,1,.45) .2s forwards; }
 .bootleaving .kd-frag-b { animation: kdfallb .6s cubic-bezier(.55,0,1,.45) .22s forwards; }
 .bootleaving .kd-frag-c { animation: kdfallc .6s cubic-bezier(.55,0,1,.45) .24s forwards; }
-.kd-falls { transform-box: view-box; transform-origin: 200px 322px; }
-.bootleaving .kd-falls { animation: kdfall .65s cubic-bezier(.55,0,1,.45) .22s forwards; }
 .bootleaving .kd-backlight { animation: kdout .5s ease .25s forwards; }
 @keyframes kdignite { 0% { transform: scale(.2); opacity: 0; } 40% { opacity: 1; } 100% { transform: none; opacity: 1; } }
 @keyframes kdflick { 0% { transform: scale(.86, .82) skewX(-4deg); opacity: .78; } 100% { transform: scale(1.06, 1.18) skewX(5deg); opacity: 1; } }
@@ -704,8 +703,17 @@ body {
 @keyframes kdfalla { 0% { transform: none; opacity: 1; } 100% { transform: translate(-30px, 330px) rotate(-24deg); opacity: 0; } }
 @keyframes kdfallb { 0% { transform: none; opacity: 1; } 100% { transform: translate(10px, 380px) rotate(10deg); opacity: 0; } }
 @keyframes kdfallc { 0% { transform: none; opacity: 1; } 100% { transform: translate(40px, 300px) rotate(30deg); opacity: 0; } }
-@keyframes kdfall { 0% { transform: none; opacity: 1; } 15% { transform: translateY(8px) rotate(-3deg); opacity: 1; } 70% { opacity: 1; } 100% { transform: translate(50px, 420px) rotate(18deg); opacity: 0; } }
 @keyframes kdout { to { opacity: 0; } }
+/* The wipe, on the whole intro: the frame gives under the Balrog, hangs a beat
+   from its top-left corner (Gandalf's side), then drops into the deep. The
+   translate pair moves the rotation's pivot from the centre to that corner.
+   The frame carries the Balrog down: its own fall moved a group full of rim
+   filters, which WebKit re-ran every frame (9 fps in the wipe, 30 without). */
+@keyframes kdplunge {
+  0% { transform: translateY(0) translate(-50vw, -50vh) rotate(0deg) translate(50vw, 50vh); filter: brightness(1); animation-timing-function: cubic-bezier(.25, .6, .35, 1); }
+  24% { transform: translateY(0) translate(-50vw, -50vh) rotate(3deg) translate(50vw, 50vh); filter: brightness(1); animation-timing-function: cubic-bezier(.55, 0, 1, .45); }
+  100% { transform: translateY(110vh) translate(-50vw, -50vh) rotate(11deg) translate(50vw, 50vh); filter: brightness(.3); }
+}
 
 /* DURIN'S DOOR, in its theme's ink on its theme's ground: the stone layer is
    the whole door, faint, from the start; the ithildin layer traces each group
@@ -744,6 +752,17 @@ body {
 @keyframes ddbeat { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.06); } }
 @keyframes ddswingl { to { transform: scaleX(.14) skewY(6deg); opacity: .25; } }
 @keyframes ddswingr { to { transform: scaleX(.14) skewY(-6deg); opacity: .25; } }
+/* The wipe, on the whole intro: in through the opened leaves. BootIntro zooms
+   on the doorway (data-exit-origin), so its light fills the screen and the
+   dashboard comes through it. */
+@keyframes ddenter {
+  0% { transform: scale(1); filter: brightness(1); opacity: 1; }
+  25% { transform: scale(1.15); }
+  50% { transform: scale(1.75); }
+  70% { opacity: 1; }
+  75% { transform: scale(3.4); }
+  100% { transform: scale(9); filter: brightness(1.8); opacity: 0; }
+}
 @media (prefers-reduced-motion: reduce) {
   .kd-field *, .kd-scene, .kd-scene *, .kd-flash, .dd-field *, .dd-scene * { animation: none !important; transition: none !important; }
 }

@@ -4,7 +4,7 @@ import { BOOT_CONTINUE, bootProgress, bootReady, type BootStep } from "../../lib
 import { BOOT_SCENE, shuffleScene, type Intro, type IntroScene } from "../../lib/intro";
 import { DurinsDoor, KhazadDum } from "./BootScenes";
 
-const FADE_MS = 650; // the crtoff wipe, after which the dashboard owns the screen
+const FADE_MS = 650; // the scene's wipe (EXIT), after which the dashboard owns the screen
 // Mount-to-paint, spent behind an intro that is still fully opaque. Having the
 // data is not having a screen: the transcript virtualizer estimates row heights,
 // re-measures, and only then scrolls to the bottom — measured at ~370ms on a
@@ -28,6 +28,15 @@ const WORDS: Record<IntroScene, { title: string; sub: string; ready: string; ski
   mystical: { title: "MYSTICAL//ASSISTANT", sub: "REMOTE DEV BRIDGE · CLAUDE CODE", ready: "WORKSPACE READY", skip: "CLICK TO SKIP" },
   bridge: { title: "YOU SHALL NOT PASS", sub: "THE BRIDGE OF KHAZAD-DÛM · MYSTICAL//ASSISTANT", ready: "FLY, YOU FOOLS", skip: "CLICK TO PASS" },
   door: { title: "SPEAK, FRIEND, AND ENTER", sub: "THE DOORS OF DURIN · MYSTICAL//ASSISTANT", ready: "MELLON", skip: "CLICK TO ENTER" },
+};
+
+// How each scene leaves in the wipe (keyframes in index.css): MYSTICAL powers
+// off like the CRT it is, KHAZAD-DÛM's frame gives under the Balrog and drops
+// into the chasm, and DURIN'S DOOR takes you in through its opened leaves.
+const EXIT: Record<IntroScene, string> = {
+  mystical: "crtoff .62s cubic-bezier(.7,0,.3,1) forwards",
+  bridge: "kdplunge .62s linear forwards",
+  door: "ddenter .62s linear forwards",
 };
 
 /** A line that hasn't answered yet. Three dots, so waiting reads as waiting. */
@@ -58,6 +67,8 @@ export function BootIntro(props: {
   const { onReveal, onDone, theme, scanlines, intro, steps, hold } = props;
   const [fade, setFade] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [origin, setOrigin] = useState("center");
+  const box = useRef<HTMLDivElement>(null);
   const progress = bootProgress(steps);
   const scene: IntroScene = intro === "shuffle" ? SHUFFLED : intro;
   const words = WORDS[scene];
@@ -83,6 +94,9 @@ export function BootIntro(props: {
     setLeaving(true); // a scene's exit flourish plays inside the warm-up and the wipe
     reveal();
     warm.current = window.setTimeout(() => {
+      // DURIN'S DOOR zooms in on its doorway, wherever the layout put it.
+      const r = box.current?.querySelector("[data-exit-origin]")?.getBoundingClientRect();
+      if (r) setOrigin(`${r.left + r.width / 2}px ${r.top + r.height / 2}px`);
       setFade(true);
       done.current = window.setTimeout(finish, FADE_MS);
     }, WARM_MS);
@@ -109,6 +123,7 @@ export function BootIntro(props: {
 
   return (
     <div
+      ref={box}
       className={[CONTINUED && "bootcontinue", leaving && "bootleaving"].filter(Boolean).join(" ") || undefined}
       onClick={loaded && !hold ? dismissBoot : undefined}
       style={{
@@ -124,8 +139,10 @@ export function BootIntro(props: {
         gap: "26px",
         cursor: loaded && !hold ? "pointer" : "default",
         overflow: "hidden",
-        transformOrigin: "center",
-        animation: fade ? "crtoff .62s cubic-bezier(.7,0,.3,1) forwards" : "none",
+        transformOrigin: origin,
+        animation: !fade ? "none"
+          : matchMedia("(prefers-reduced-motion: reduce)").matches ? "tickfade .62s ease reverse forwards"
+          : EXIT[scene],
       }}
     >
       {scanlines && <div className="crt" style={{ zIndex: 4 }}></div>}

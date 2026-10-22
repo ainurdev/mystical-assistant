@@ -22,10 +22,15 @@ after the first ship, which kept MYSTICAL. The pick is stored in `hud-settings`
 as `intro` and validated by `toIntro` (`lib/intro.ts`). Nothing stored, or a
 scene that no longer exists, reads as SHUFFLE.
 
-**The shell stays.** A scene swaps only the art and the words. The log, the
-bar, the footer and every timing are unchanged: the 1.6 s floor, the 8 s
-ceiling, the 400 ms warm-up and the 650 ms CRT wipe. A scene's exit plays
-inside that warm-up and wipe, so a scene adds no time to the boot.
+**The shell stays.** A scene swaps the art, the words and its wipe. The log,
+the bar, the footer and every timing are shared: the 2.6 s floor (1.6 s until
+the user asked for a second more), the 8 s ceiling, the 400 ms warm-up and the
+650 ms wipe. A scene's exit plays inside that warm-up and wipe, so a scene adds
+no time to the boot. Each scene leaves its own way (`/design-first "out
+transition unique for each intro animation"`, draft
+`.mystical/design-drafts/intro-exits/`): MYSTICAL keeps the CRT power-off
+(`crtoff`), which was its own, and the other two get the wipes below
+(BootIntro's `EXIT`).
 
 **KHAZAD-DÛM** ("YOU SHALL NOT PASS"; sub `THE BRIDGE OF KHAZAD-DÛM ·
 MYSTICAL//ASSISTANT`). Redrawn as v2 after `/design-first "make the gandalf
@@ -45,8 +50,11 @@ at the light, and a whip of three thongs. Behind it are smoke and breathing fire
 - **Ready:** the footer reads `FLY, YOU FOOLS` and `CLICK TO PASS`.
 - **Exit:** the staff comes down. White flame stands up off the deck and the
   frame shakes, a crack runs to the Balrog's feet, and the span under it breaks
-  in three and falls with it. All of this happens inside the warm-up and the
-  wipe.
+  in three and falls. Then the wipe (`kdplunge`): the whole frame gives on the
+  Balrog's side, hangs a beat from its top-left corner, and drops into the deep,
+  darkening, with the Balrog on it. The Balrog used to fall on its own as well.
+  That moved a group full of glow filters, which WebKit re-ran every frame: the
+  wipe ran at 9 fps in a WKWebView, and at 30 without it.
 - **Ground:** this scene is light against fire, so on a light theme it plays on
   that theme's dark twin (`nightOf` in `lib/theme.ts`). The twin's tokens are
   scoped to the intro.
@@ -66,6 +74,11 @@ moon in the sky, and the door's reflection lies under the threshold.
   restart's three steps trace two groups each.
 - **Ready:** `MELLON` and `CLICK TO ENTER`.
 - **Exit:** the two leaves fold in to their hinges, onto the theme's light.
+  Then the wipe (`ddenter`): the view walks in, zooming 9× into the doorway
+  while its light fills the screen and fades into the dashboard. BootIntro
+  zooms on the rect marked `data-exit-origin`, measured as the wipe starts,
+  because the doorway's place on screen depends on the window and the type
+  size.
 
 ## Constraints found on the way
 
@@ -91,5 +104,5 @@ moon in the sky, and the door's reflection lies under the threshold.
   is kept in sessionStorage (`BOOT_SCENE`) and read back when the boot
   continues.
 - **Reduced motion:** the scenes draw in their settled state, with no loops and
-  no transitions.
+  no transitions, and every scene's wipe is a plain fade.
 - **Not included:** the Mini App, which has no boot screen.

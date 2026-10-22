@@ -46,7 +46,7 @@ export function bootProgress(steps: BootStep[]): number {
   return steps.filter((s) => s.phase !== "wait").length / steps.length;
 }
 
-export const BOOT_FLOOR_MS = 1600; // the emblem finishes drawing and the last log line lands at ~1.5s
+export const BOOT_FLOOR_MS = 2600; // the emblem finishes drawing and the last log line lands at ~1.5s; a second more to watch the scene
 export const BOOT_CEIL_MS = 8000; // a bridge that hangs must not trap you here
 
 /** Whether the intro should start its exit: everything answered and the opening

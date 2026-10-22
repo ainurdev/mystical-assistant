@@ -118,7 +118,8 @@ function Pillar({ x, w, far }: { x: number; w: number; far?: boolean }) {
  *  chasm while the dashboard loads. Each answered step kindles one rune of the
  *  six round his staff's light, pulses it and makes the shadow's fire flinch;
  *  leaving, he strikes, white flame stands up off the deck, a crack runs to
- *  the Balrog's feet and the span under it breaks in three and falls. Always
+ *  the Balrog's feet, the span under it breaks in three and falls, and the
+ *  wipe (kdplunge) drops the whole frame, Balrog and all, into the deep. Always
  *  drawn at night: the intro hands this scene a dark ground (lib/theme nightOf). */
 export function KhazadDum({ progress }: { progress: number }) {
   const lit = Math.floor(progress * 6 + 1e-9);
@@ -331,7 +332,7 @@ export function KhazadDum({ progress }: { progress: number }) {
         {/* the light on the deck round the wizard */}
         <ellipse className="kd-pool" cx="-240" cy="319" rx="300" ry="18" fill="url(#kd-pool-g)" />
 
-        <g className="kd-falls bx">
+        <g>
           <g className="kd-balrog">
             <g transform="translate(190 316.5) scale(.92)">
               {/* the fire behind its back, breathing; it flinches at each step */}
@@ -583,7 +584,7 @@ export function DurinsDoor({ progress }: { progress: number }) {
           </filter>
         </defs>
         {/* what is behind the door: the dashboard's light */}
-        <rect className="dd-within bx" x="58" y="98" width="204" height="292" fill="url(#dd-in)" clipPath="url(#dd-way)" />
+        <rect className="dd-within bx" data-exit-origin x="58" y="98" width="204" height="292" fill="url(#dd-in)" clipPath="url(#dd-way)" />
         <g className="dd-stone"><Door lit={6} /></g>
         <g className="dd-ith" filter="url(#dd-glow)"><Door lit={lit} /></g>
         {/* the door in the water under the threshold */}
