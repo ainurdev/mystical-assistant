@@ -12,7 +12,9 @@ it to run() here:
      The run gets its view: a read-only session the owner can watch
      (bridge/device_view.py).
   3. Stage it in /Users/Shared/Mystical Runs/<id>/, the owner's own 0700 folder:
-     job.json, the code snapshot, and the asker's Claude token (0600) last.
+     job.json, the code snapshot, and last the access token of this device's
+     own Claude login (0600): the asker's never comes, and an older asker's
+     that still does is dropped as the claim arrives.
   4. Start the root helper (bridge/device_setup/mystical_run_helper.py) with
      sudo -n, in a session of its own, so a bridge restart doesn't kill it
      before its clean-up. It takes the token off the disk as soon as it has read
@@ -59,18 +61,20 @@ result only then). Every other view still RUNNING ends failed
 """
 
 import json
+import math
 import os
 import re
 import shutil
 import stat
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
 
-from bridge import device_share, device_view, notices
+from bridge import accounts, credentials, device_share, device_view, notices
 
 STAGE_ROOT = "/Users/Shared/Mystical Runs"    # test seam: tests point it at a temp dir
 _RUN_ID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
@@ -78,6 +82,13 @@ _SNAPSHOT_MAX = 9 * 1024 * 1024     # a run's code, gzipped
 _SCREEN_MAX = 5 * 1024 * 1024       # one screen; Rivendell takes no more
 _SCREENS_MAX = 20
 _READ_MAX = 16 * 1024 * 1024        # what is read of the run's claude.json
+_FRESH = 20 * 60              # seconds a Claude login needs left to go with a run
+_CLI_RENEWS = 5 * 60          # Claude Code renews a login only this close to its end
+# One word from the cheapest model, with no tools, MCP servers, hooks or saved session.
+_RENEW = ("-p", "ok", "--model", "haiku", "--no-session-persistence", "--tools", "", "--strict-mcp-config",
+          "--settings", '{"disableAllHooks":true}')
+GONE = ("This device's Claude account for runs isn't in its Mystical anymore. Its owner picks one in "
+        "Settings › Integrations › Rivendell.")
 _RESULT_MAX, _ERROR_MAX, _CAPTION_MAX = 20000, 5000, 200   # Rivendell's lengths: longer is a 400
 _BEAT = 2.0          # seconds between looks at a cancel while the helper runs
 _SLACK = 120         # seconds the helper gets past the run's own timeout before it is stopped
@@ -282,6 +293,7 @@ def _run(worker, request_id, popen, call):
         print(f"rivendell[{worker.name}]: device run {request_id}: the claim failed: {e}")
         _post(worker, base, head, {"status": "FAILED", "error": f"The claim failed: {e}"[:_ERROR_MAX], "screens": []})
         return
+    claim.pop("claudeToken", None)    # an older asker still sends its own: this device never runs on it
     stage = stage_dir(request_id)
     timeout = int(worker.inst.get("impl_timeout", 10800))
     view = began = body = None
@@ -289,13 +301,14 @@ def _run(worker, request_id, popen, call):
         try:
             if not _root_is_ours():
                 raise ValueError("this device's runs folder isn't its owner's own, so nothing was staged")
+            token = _claude_token(worker.inst)    # before anyone is told it runs: a login it can't use fails it here
             said = f"{claim['requester']['name']} is testing {claim['repository']} on this device."
             worker._note("rv_started", request_id, claim["repository"], said, job_kind="device-run")
             if notices.telegram_ok("rv_started"):
                 worker._deliver_telegram(said, None)
             began = time.time()
             view = _view(device_view.Run, "open", worker.inst["id"], request_id, claim)
-            _write_stage(stage, claim, timeout, worker.inst["id"])
+            _write_stage(stage, claim, timeout, worker.inst["id"], token)
             if request_id in _cancelled:
                 return
             rc, err, late = _start(request_id, timeout, popen, call, view)
@@ -340,16 +353,15 @@ def _ended(worker, request_id, name, began, view, body):
         worker._deliver_telegram(f"{title}. {said}", None)
 
 
-def _write_stage(stage, claim, timeout, instance):
+def _write_stage(stage, claim, timeout, instance, token):
     """The stage the helper checks: the owner's 0700 folder with job.json, the
-    code and, last, the token. The code comes from the web only: a file:// URL
-    would hand the run one of the owner's own files as its code. job.json also
-    names the Rivendell instance, the asker, the task and the repository (none a
-    secret), for sweep(), resume() and the worker's RUNNING row after a restart
-    (staged_job). The claim lets go of the token here:
-    from now on only the stage holds it, until the helper reads it and takes it
-    off the disk."""
-    token = claim.pop("claudeToken")
+    code and, last, `token`, this device's own Claude login (_claude_token). The
+    code comes from the web only: a file:// URL would hand the run one of the
+    owner's own files as its code. job.json also names the Rivendell instance,
+    the asker, the task and the repository (none a secret), for sweep(),
+    resume() and the worker's RUNNING row after a restart (staged_job). Only
+    the stage holds the token, until the helper reads it and takes it off the
+    disk."""
     os.mkdir(stage, 0o700)
     os.chmod(stage, 0o700)    # exactly, whatever the umask
     _write(os.path.join(stage, "job.json"), json.dumps({
@@ -366,6 +378,67 @@ def _write_stage(stage, claim, timeout, instance):
         raise ValueError("the code is over 9 MB")
     _write(os.path.join(stage, "code.tar.gz"), code)
     _write(os.path.join(stage, "token"), token.encode())
+
+
+# --- the Claude login this device's runs go with --------------------------------------------------
+
+def _claude_token(inst: dict) -> str:
+    """The access token of the Claude account this device's runs use (`inst`'s
+    device_account, an accounts.py slot; None is the default login), with 20
+    minutes or more left. A run never goes with the asker's login: a teammate's
+    Claude token stays on their machine, and the device's owner lends theirs
+    for the run. Only the access token goes to the run: the refresh token stays
+    here, so a run can use the login for a few hours at most. A login that has
+    ended, or is in the last 5 minutes in which Claude Code renews one, is
+    renewed by Claude Code (_renew); one with 5 to 20 minutes left can't be
+    renewed yet. Raises ValueError, in words for the asker."""
+    listed = {a["slot"]: a for a in accounts.list_accounts()}
+    slot = inst.get("device_account")
+    if slot is None:
+        slot = next((s for s, a in listed.items() if a["default"]), accounts.DEFAULT_SLOT)
+    a = listed.get(slot)
+    if a is None or a["disabled"]:
+        raise ValueError(GONE)
+    token, left = _login(slot)
+    if _CLI_RENEWS < left < _FRESH:
+        raise ValueError(f"This device's Claude login renews in {math.ceil((left - _CLI_RENEWS) / 60)} min. "
+                         "Ask again then.")
+    if left < _FRESH:
+        _renew(slot)
+        token, left = _login(slot)
+        if left < _FRESH:
+            raise ValueError("This device's Claude login couldn't be renewed. Its owner signs in to it again "
+                             "in Settings › AI management › Accounts.")
+    return token
+
+
+def _login(slot: int) -> "tuple[str | None, float]":
+    """A slot's access token and the seconds it has left, read where Claude Code
+    keeps it. A login with no end never runs out; one with no token has nothing left."""
+    oauth = credentials.load(accounts.credentials_path(slot)).get("claudeAiOauth") or {}
+    token, ends = oauth.get("accessToken"), oauth.get("expiresAt")      # ends in ms
+    if not token:
+        return None, 0.0
+    return token, (ends / 1000 - time.time() if isinstance(ends, (int, float)) else math.inf)
+
+
+def _renew(slot: int, run=subprocess.run) -> None:
+    """Have Claude Code renew a slot's login: any `claude` run on it does, in
+    the login's last 5 minutes or after its end, under the CLI's own lock (it
+    rotates the refresh token as it goes). Mystical never renews one itself:
+    racing the CLI can log the account out. `run` is the tests' seam."""
+    from bridge import runner          # lazy: runner imports the world
+    # Slot 1 is the ambient ~/.claude: an inherited CLAUDE_CONFIG_DIR would point it at another login.
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CONFIG_DIR"} | accounts.env_for(slot)
+    with tempfile.TemporaryDirectory(prefix="device-run-renew-") as cwd:
+        try:
+            r = run([runner.claude_bin(), *_RENEW], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
+                    capture_output=True, timeout=60)
+        except (OSError, subprocess.SubprocessError) as e:
+            print(f"device runs: account {slot}'s login wasn't renewed: {e}")
+            return
+    if r.returncode:
+        print(f"device runs: account {slot}'s login wasn't renewed: claude exited {r.returncode}")
 
 
 def _write(path, data):

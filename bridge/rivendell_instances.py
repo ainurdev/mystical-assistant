@@ -253,7 +253,8 @@ def update_instance(iid: str, **fields) -> dict:
 
 def update_device(iid: str, **fields) -> None:
     """Settings › Integrations' DEVICE RUNS rows, on their own: Share this
-    device (``share_device``) and the Claude account the runs you send use
+    device (``share_device``) and the Claude account teammates' runs on this
+    device use
     (``device_account``: an accounts.py slot, None for the default login). A
     field left out keeps its value; the caller has checked the values."""
     with _lock:

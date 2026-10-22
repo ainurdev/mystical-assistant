@@ -22,14 +22,24 @@ import urllib.error
 
 import pytest
 
-from bridge import config, device_share, device_side as ds, device_view, store
+from bridge import accounts, config, credentials, device_share, device_side as ds, device_view, store
 
 store.init()
 RID = "0f8e7d6c-5b4a-4392-8170-6e5d4c3b2a19"
 OTHER = "1a2b3c4d-5e6f-4a1b-9c2d-3e4f5a6b7c8d"
 HEAD = {"X-Mystical-Device-Id": "7c50be1739dfacbb"}
 HELPER = "/usr/local/libexec/mystical-run-helper"
-TOKEN = "sk-ant-oat01-a-teammates-token"
+TOKEN = "sk-ant-oat01-a-teammates-token"      # what an older asker still sends
+HOST = "sk-ant-oat01-this-devices-own-token"   # this device's own login, which its runs go with
+# This Mystical's Claude accounts, as accounts.list_accounts() has them.
+LOGINS = [{"slot": 1, "email": "mahdi@example.com", "alias": None, "disabled": False, "default": True},
+          {"slot": 2, "email": "mahdi@work.example", "alias": "Work", "disabled": False, "default": False},
+          {"slot": 3, "email": "old@example.com", "alias": None, "disabled": True, "default": False}]
+ACCESS1, ACCESS2 = "sk-ant-oat01-mahdis-access-token", "sk-ant-oat01-works-access-token"
+RENEWED = "sk-ant-oat01-renewed-access-token"
+REFRESH = "sk-ant-ort01-never-leaves-this-machine"
+RENEW_ARGV = ["-p", "ok", "--model", "haiku", "--no-session-persistence", "--tools", "", "--strict-mcp-config",
+              "--settings", '{"disableAllHooks":true}']
 CODE = b"\x1f\x8b a snapshot"
 DEV = "/Applications/Xcode.app/Contents/Developer"
 CLAIM = {"requestId": RID, "prompt": "Test the login screen on the iOS simulator.",
@@ -166,6 +176,7 @@ def device(tmp_path, monkeypatch):
     root.chmod(0o755)                  # as Set up makes it, whatever the umask
     monkeypatch.setattr(ds, "STAGE_ROOT", str(root))
     monkeypatch.setattr(ds, "headers", lambda inst: dict(HEAD))
+    monkeypatch.setattr(ds, "_claude_token", lambda inst: HOST)
     monkeypatch.setattr(device_share, "developer_dir", lambda *a, **k: DEV)
     d = types.SimpleNamespace(root=root, fetched=[], code=CODE, on_fetch=None)
 
@@ -296,7 +307,7 @@ def test_a_run_uploads_its_screens_and_posts_the_report_with_captions_in_index_o
         "job": {"prompt": CLAIM["prompt"], "gitAuthorName": "Mahdi", "gitAuthorEmail": "mahdi@example.com",
                 "developerDir": DEV, "timeoutSeconds": 600, "instance": "t1", "requester": "Mahdi",
                 "task": "RIV-42", "repository": "ainurhq/app"},
-        "token": TOKEN, "code": CODE, "names": ["code.tar.gz", "job.json", "token"],
+        "token": HOST, "code": CODE, "names": ["code.tar.gz", "job.json", "token"],
         "stage_mode": 0o700, "token_mode": 0o600}
     assert device.fetched == [(CLAIM["snapshotUrl"], 60)]
     assert w.notes[0] == ("rv_started", RID, "ainurhq/app", "Mahdi is testing ainurhq/app on this device.",
@@ -322,13 +333,29 @@ def test_who_is_testing_reaches_telegram_only_where_notify_routes_it(device, mon
     assert last["by"] == "Mahdi" and last["task"] == "RIV-42" and abs(last["at"] - time.time()) < 60
 
 
-def test_the_claim_lets_go_of_the_token_once_it_is_staged(device):
-    """From then on only the stage holds it, and the helper takes it from there."""
+def test_an_older_askers_token_is_dropped_and_the_device_stages_its_own(device):
+    """An asker from before device runs went on the device's login still sends
+    its own token: the claim lets go of it unused, and the stage holds the
+    device's login, which the helper takes from there."""
     w = Worker()
     held = []
     helper = FakeHelper(on_start=lambda: held.append("claudeToken" in w.claimed))
     _run(w, helper)
-    assert held == [False] and helper.saw["token"] == TOKEN
+    assert held == [False] and helper.saw["token"] == HOST
+    assert TOKEN not in repr((w.api, w.puts, w.notes)), "the asker's token goes nowhere"
+
+
+def test_a_login_the_device_cant_use_fails_the_run_before_anyone_is_told(device, monkeypatch):
+    """No stage, no helper and no "is testing" row: the asker reads why."""
+    def renews_soon(inst):
+        raise ValueError("This device's Claude login renews in 7 min. Ask again then.")
+    monkeypatch.setattr(ds, "_claude_token", renews_soon)
+    w, helper = Worker(), FakeHelper()
+    _run(w, helper)
+    assert w.results() == [{"status": "FAILED", "screens": [],
+                            "error": "bridge error: This device's Claude login renews in 7 min. Ask again then."}]
+    assert helper.argv is None and w.notes == [] and w.telegram == []
+    assert os.listdir(device.root) == [], "nothing was staged"
 
 
 def test_unlisted_pngs_follow_the_listed_screens_by_name(device):
@@ -410,11 +437,11 @@ def test_the_helpers_refusal_is_the_error(device):
     assert w.results()[0]["error"] == "The code snapshot didn't unpack."
 
 
-def test_a_run_cannot_post_the_askers_token(device):
+def test_a_run_cannot_post_the_devices_token(device):
     """A prompt-injected run can write the token it runs under into its report:
     the summary and every caption go out with token-shaped text redacted."""
-    leak = f"{TOKEN} and CLAUDE_CODE_OAUTH_TOKEN={TOKEN}"
-    helper = FakeHelper(claude=_claude(f"It works. {leak}", [{"file": "1.png", "caption": f"Home {TOKEN}"}]),
+    leak = f"{HOST} and CLAUDE_CODE_OAUTH_TOKEN={HOST}"
+    helper = FakeHelper(claude=_claude(f"It works. {leak}", [{"file": "1.png", "caption": f"Home {HOST}"}]),
                         screens={"1.png": PNG})
     w = Worker()
     _run(w, helper)
@@ -422,9 +449,9 @@ def test_a_run_cannot_post_the_askers_token(device):
                             "screens": [{"index": 1, "caption": "Home [redacted]"}]}]
 
 
-def test_a_failed_run_cannot_post_the_askers_token_in_its_error(device):
+def test_a_failed_run_cannot_post_the_devices_token_in_its_error(device):
     w = Worker()
-    _run(w, FakeHelper(rc=1, stderr=f"mystical-run-helper: CLAUDE_CODE_OAUTH_TOKEN={TOKEN} was refused\n"))
+    _run(w, FakeHelper(rc=1, stderr=f"mystical-run-helper: CLAUDE_CODE_OAUTH_TOKEN={HOST} was refused\n"))
     assert w.results() == [{"status": "FAILED", "error": "[redacted] was refused", "screens": []}]
 
 
@@ -1082,3 +1109,129 @@ def test_a_view_that_fails_never_fails_the_run(device, monkeypatch):
     ds.resume(w, ds.take_adopted("t1")[0], call=_no_helper, alive=_gone)
     assert w.results()[-1]["error"] == "The run ended before it handed back its results."
     assert os.listdir(device.root) == []
+
+
+def _login(access, minutes):
+    """A login as Claude Code keeps it, with `minutes` left (less than 0: it ended that long ago)."""
+    return {"claudeAiOauth": {"accessToken": access, "refreshToken": REFRESH, "subscriptionType": "max",
+                              "expiresAt": int((time.time() + minutes * 60) * 1000)}}
+
+
+@pytest.fixture
+def logins(monkeypatch):
+    """This Mystical's Claude accounts (LOGINS: 1 the default, 2 another, 3
+    disabled) and their logins, by slot in `creds`, read through
+    credentials.load at the slot's own path; both start with 8 hours left. A
+    slot's profile is /accounts/<slot> (slot 1 is the ambient login: none)."""
+    box = types.SimpleNamespace(creds={1: _login(ACCESS1, 480), 2: _login(ACCESS2, 480)})
+    slots = {accounts.credentials_path(s): s for s in (1, 2, 3)}
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [dict(a) for a in LOGINS])
+    monkeypatch.setattr(credentials, "load", lambda path: json.loads(json.dumps(box.creds.get(slots.get(path), {}))))
+    monkeypatch.setattr(accounts, "env_for",
+                        lambda slot: {} if slot == 1 else {"CLAUDE_CONFIG_DIR": f"/accounts/{slot}"})
+    return box
+
+
+class Claude:
+    """`claude` as _renew runs it, in place of the guard's refusing one: the
+    login it runs as (its CLAUDE_CONFIG_DIR's slot, else slot 1) comes back
+    renewed for 8 hours, unless `renews` is off, then it exits `code`; `raises`
+    is raised instead. Each call is kept as (argv, the rest)."""
+
+    def __init__(self, logins, renews=True, code=0, raises=None):
+        self.logins, self.renews, self.code, self.raises, self.calls = logins, renews, code, raises, []
+
+    def __call__(self, argv, **kw):
+        self.calls.append((argv, kw))
+        assert os.listdir(kw["cwd"]) == [], "it runs in an empty folder of its own"
+        if self.raises:
+            raise self.raises
+        if self.renews:
+            config_dir = kw["env"].get("CLAUDE_CONFIG_DIR")
+            self.logins.creds[int(config_dir.rsplit("/", 1)[1]) if config_dir else 1] = _login(RENEWED, 480)
+        return subprocess.CompletedProcess(argv, self.code, b"", b"")
+
+
+# --- the Claude login this device's runs go with ------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def no_claude(monkeypatch):
+    """The `claude` that renews a login refuses unless a test hands in a fake."""
+    def refuse(*a, **kw):
+        raise AssertionError("reached the real claude: %r" % (a,))
+    monkeypatch.setattr(ds._renew, "__defaults__", (refuse,))
+
+
+def _inst(slot):
+    """The instance as Settings saved it: device_account is the account this device's runs use (None: the default login)."""
+    return {"id": "t1", "name": "test", "device_account": slot}
+
+
+def _refused(inst) -> str:
+    with pytest.raises(ValueError) as e:
+        ds._claude_token(inst)
+    return str(e.value)
+
+
+@pytest.mark.parametrize("slot, sent", [(None, ACCESS1), (1, ACCESS1), (2, ACCESS2)])
+def test_a_run_goes_with_the_access_token_of_the_account_picked(logins, slot, sent):
+    assert ds._claude_token(_inst(slot)) == sent
+
+
+@pytest.mark.parametrize("slot", [3, 7], ids=["disabled", "removed"])
+def test_an_account_no_longer_in_this_mystical_fails_the_run(logins, slot):
+    assert _refused(_inst(slot)) == ds.GONE == (
+        "This device's Claude account for runs isn't in its Mystical anymore. "
+        "Its owner picks one in Settings › Integrations › Rivendell.")
+
+
+def test_with_no_login_on_this_machine_the_default_is_gone_too(logins, monkeypatch):
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [dict(LOGINS[1])])     # no ambient ~/.claude login
+    assert _refused(_inst(None)) == ds.GONE
+
+
+@pytest.mark.parametrize("left", [-90, 0, 4.9], ids=["ended", "ending", "in-the-clis-5-minutes"])
+@pytest.mark.parametrize("slot, profile", [(None, None), (2, "/accounts/2")])
+def test_a_login_that_has_ended_or_is_ending_is_renewed_by_claude_code_first(logins, monkeypatch, left, slot, profile):
+    """Claude Code renews a login under its own lock; Mystical only runs it on that
+    account. Slot 1 is the ambient login, so an inherited CLAUDE_CONFIG_DIR goes."""
+    monkeypatch.setenv("CLAUDE_CONFIG_DIR", "/a/login/the/bridge/inherited")
+    logins.creds[slot or 1] = _login("sk-ant-oat01-stale", left)
+    claude = Claude(logins)
+    monkeypatch.setattr(ds._renew, "__defaults__", (claude,))
+    assert ds._claude_token(_inst(slot)) == RENEWED
+    (argv, kw), = claude.calls
+    assert argv[1:] == RENEW_ARGV and kw["timeout"] == 60 and kw["stdin"] is subprocess.DEVNULL
+    assert kw["env"].get("CLAUDE_CONFIG_DIR") == profile
+    assert not os.path.exists(kw["cwd"]), "its folder goes when it's done"
+
+
+@pytest.mark.parametrize("left, wait", [(19.5, 15), (12, 7), (5.2, 1)])
+def test_a_login_with_5_to_20_minutes_left_says_when_to_ask_again(logins, left, wait):
+    """Too short for a run, and too early for Claude Code to renew: the refusing
+    `claude` is never run."""
+    logins.creds[2] = _login(ACCESS2, left)
+    assert _refused(_inst(2)) == f"This device's Claude login renews in {wait} min. Ask again then."
+
+
+def test_20_minutes_left_is_enough(logins):
+    logins.creds[1] = _login(ACCESS1, 20.1)
+    assert ds._claude_token(_inst(None)) == ACCESS1
+
+
+@pytest.mark.parametrize("claude", [
+    dict(renews=False, code=1), dict(renews=False, raises=subprocess.TimeoutExpired("claude", 60)),
+    dict(renews=False, raises=FileNotFoundError("claude"))], ids=["refused", "timed-out", "missing"])
+def test_a_login_claude_code_cant_renew_says_its_owner_signs_in_again(logins, monkeypatch, claude):
+    logins.creds[1] = _login(ACCESS1, -30)
+    fake = Claude(logins, **claude)
+    monkeypatch.setattr(ds._renew, "__defaults__", (fake,))
+    assert _refused(_inst(None)) == ("This device's Claude login couldn't be renewed. Its owner signs in to it "
+                                     "again in Settings › AI management › Accounts.")
+    assert len(fake.calls) == 1
+
+
+def test_a_login_with_no_token_left_is_renewed_too(logins, monkeypatch):
+    logins.creds[1] = {}
+    monkeypatch.setattr(ds._renew, "__defaults__", (Claude(logins),))
+    assert ds._claude_token(_inst(None)) == RENEWED
