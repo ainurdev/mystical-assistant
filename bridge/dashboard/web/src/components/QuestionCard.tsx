@@ -79,7 +79,7 @@ export function QuestionCard({
   const task = isTask(questions);
   const [sel, setSel] = useState<Record<string, string[]>>(() => {
     const rec = task && !Object.keys(restored.sel).length && questions[0].options.find((o) => REC.test(o.label));
-    return rec ? { [questions[0].header]: [rec.label] } : restored.sel;
+    return rec ? { 0: [rec.label] } : restored.sel;
   });
   const [notes, setNotes] = useState<Record<string, string>>(restored.notes);
   // The free-text fold per question. A restored note opens it by default (or the
@@ -105,11 +105,12 @@ export function QuestionCard({
     // chosen one(s) highlighted (matches Claude Code's answered-question look).
     return (
       <Card className={`chatcard qcard${task ? " tcard" : ""} space-y-3 border border-[var(--tg-button)]/30`}>
-        {questions.map((q) => {
-          const given = answered?.find((x) => x.header === q.header);
+        {questions.map((q, qi) => {
+          // Headers can repeat (one "Task" question per repo), so pair by position first.
+          const given = answered?.[qi]?.header === q.header ? answered[qi] : answered?.find((x) => x.header === q.header);
           const chosen = given?.labels ?? [];
           return (
-            <div key={q.header} className="space-y-1.5">
+            <div key={qi} className="space-y-1.5">
               {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
               <div className="flex flex-col gap-1.5">
                 {q.options.map((o) => {
@@ -148,24 +149,25 @@ export function QuestionCard({
     );
   }
 
-  function toggle(q: Question, label: string) {
+  // Picks and notes are keyed by the question's position: headers can repeat.
+  function toggle(q: Question, qi: number, label: string) {
     setSel((prev) => {
-      const cur = prev[q.header] ?? [];
+      const cur = prev[qi] ?? [];
       if (q.multiSelect) {
         return {
           ...prev,
-          [q.header]: cur.includes(label)
+          [qi]: cur.includes(label)
             ? cur.filter((l) => l !== label)
             : [...cur, label],
         };
       }
-      return { ...prev, [q.header]: [label] };
+      return { ...prev, [qi]: [label] };
     });
   }
 
   // The options are Claude's guesses; when none fits, free text counts as the answer.
   const ready = questions.every(
-    (q) => (sel[q.header]?.length ?? 0) > 0 || (notes[q.header] ?? "").trim() !== "",
+    (_, qi) => (sel[qi]?.length ?? 0) > 0 || (notes[qi] ?? "").trim() !== "",
   );
   const multi = questions.some((q) => q.multiSelect);
 
@@ -173,10 +175,10 @@ export function QuestionCard({
     if (sending) return;
     setSending(true);
     const ok = await onSubmit(
-      questions.map((q) => ({
+      questions.map((q, qi) => ({
         header: q.header,
-        labels: sel[q.header] ?? [],
-        notes: (notes[q.header] ?? "").trim() || undefined,
+        labels: sel[qi] ?? [],
+        notes: (notes[qi] ?? "").trim() || undefined,
       })),
     );
     // Delivered: stay disabled until the poll swaps in the answered card. Failed:
@@ -186,22 +188,22 @@ export function QuestionCard({
 
   return (
     <Card className={`chatcard qcard qcard-live${task ? " tcard" : ""} space-y-3 border border-[var(--tg-button)]/30`}>
-      {questions.map((q) => {
-        const open = openNotes[q.header] ?? (restored.notes[q.header] ?? "") !== "";
+      {questions.map((q, qi) => {
+        const open = openNotes[qi] ?? (restored.notes[qi] ?? "") !== "";
         // Typed text counts as the answer (see `ready`), so the frame says so.
-        const frame = (notes[q.header] ?? "").trim()
+        const frame = (notes[qi] ?? "").trim()
           ? "border-[var(--tg-button)]"
           : "border-[var(--tg-hint)]/40";
         return (
-        <div key={q.header} className="space-y-1.5">
+        <div key={qi} className="space-y-1.5">
           {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
           <div className="flex flex-col gap-1.5">
             {q.options.map((o) => {
-              const picked = (sel[q.header] ?? []).includes(o.label);
+              const picked = (sel[qi] ?? []).includes(o.label);
               return (
                 <button
                   key={o.label}
-                  onClick={() => toggle(q, o.label)}
+                  onClick={() => toggle(q, qi, o.label)}
                   disabled={sending}
                   className={`qopt${picked ? " qopt-on" : ""} rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
                     picked
@@ -235,8 +237,8 @@ export function QuestionCard({
                   // flushSync: the textarea is inert while closed, so the open render
                   // has to commit before focus() — and focus has to stay inside this
                   // tap's task or iOS won't raise the keyboard.
-                  flushSync(() => setOpenNotes((prev) => ({ ...prev, [q.header]: !open })));
-                  if (!open) noteRefs.current[q.header]?.focus({ preventScroll: true });
+                  flushSync(() => setOpenNotes((prev) => ({ ...prev, [qi]: !open })));
+                  if (!open) noteRefs.current[qi]?.focus({ preventScroll: true });
                 }}
                 className="w-full px-3 py-2 text-left text-sm active:opacity-70"
               >
@@ -259,10 +261,10 @@ export function QuestionCard({
               >
                 <div className="min-h-0 overflow-hidden" inert={!open}>
                   <textarea
-                    ref={(el) => { noteRefs.current[q.header] = el; }}
+                    ref={(el) => { noteRefs.current[qi] = el; }}
                     rows={2}
-                    value={notes[q.header] ?? ""}
-                    onChange={(e) => setNotes((prev) => ({ ...prev, [q.header]: e.target.value }))}
+                    value={notes[qi] ?? ""}
+                    onChange={(e) => setNotes((prev) => ({ ...prev, [qi]: e.target.value }))}
                     // Enter sends (same as the composer); shift+Enter for a newline.
                     onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && ready && !sending) { e.preventDefault(); void submit(); } }}
                     placeholder="Your own answer, or extra context for this question"
@@ -280,7 +282,7 @@ export function QuestionCard({
           <span className="inline-flex items-center gap-1.5">
             <Spinner className="h-3 w-3 border" /> Sending…
           </span>
-        ) : (task && taskVerb(questions[0], sel[questions[0].header]?.[0])) || (multi ? "Submit" : "Send answer")}
+        ) : (task && taskVerb(questions[0], sel[0]?.[0])) || (multi ? "Submit" : "Send answer")}
       </Button>
     </Card>
   );

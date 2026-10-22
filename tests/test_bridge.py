@@ -419,6 +419,14 @@ def test_format_answers_free_text():
     assert "do C instead" in only and "did not select" not in only
 
 
+def test_format_answers_repeated_header():
+    # One "Task" question per repo in a single card: each takes its own answer, in order.
+    qs = [{"header": "Task", "question": "app?"}, {"header": "Task", "question": "report?"}]
+    msg = runner._format_answers(qs, [{"header": "Task", "labels": ["Create A"]},
+                                      {"header": "Task", "labels": ["Not a task"]}])
+    assert msg == 'The user answered. For "Task": Create A; For "Task": Not a task'
+
+
 def test_interactive_base_cmd():
     cmd = runner._base_cmd("hello-prompt", 555, stream=True, interactive=True)
     assert "--input-format" in cmd and "stream-json" in cmd

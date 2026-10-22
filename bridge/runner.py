@@ -1902,11 +1902,17 @@ def _format_answers(questions: list, answers: list) -> str:
     the tool result (we feed it via a `deny` whose message is the answer).
     An answer may carry free-text `notes` instead of / alongside its labels —
     the escape hatch for when none of the prepared options fit."""
-    by_header = {a.get("header"): a for a in answers if isinstance(a, dict)}
+    # Headers can repeat (one "Task" question per repo), so each question takes
+    # the next unused answer under its header; the surfaces send them in order.
+    by_header: dict = {}
+    for a in answers:
+        if isinstance(a, dict):
+            by_header.setdefault(a.get("header"), []).append(a)
     parts: list[str] = []
     for q in questions:
         header = q.get("header") or q.get("question") or ""
-        a = by_header.get(header)
+        same = by_header.get(header)
+        a = same.pop(0) if same else None
         if a is None and len(answers) == 1 and len(questions) == 1:
             a = answers[0] if isinstance(answers[0], dict) else None
         labels = (a or {}).get("labels") or []
