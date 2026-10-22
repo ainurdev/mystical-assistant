@@ -297,7 +297,7 @@ function knobs(p: Profile): string {
 /** One usage window on a PROFILE row: tag, gauge, what's left, when it refills.
  *  A spent window prints its refill bright: when the login works again is the
  *  number that matters. The exact time stays on hover. */
-function Fuel({ w }: { w: Window }) {
+export function Fuel({ w }: { w: Window }) {
   return (
     <span className="pm-w" data-spent={w.left === 0 || undefined} style={{ ["--c" as string]: sevColor(w.severity) }}
       title={`${w.name}: ${w.left}% left${w.resets}`}>

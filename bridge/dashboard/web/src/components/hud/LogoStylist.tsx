@@ -4,13 +4,16 @@
    changed and why once it's done. The run itself is lib/stylerun's; the bell
    draws the same run (Notifications.tsx). */
 
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ArrowRight, Check, ScanEye, Sparkles, Undo2, X } from "lucide-react";
-import type { ProjectMark, StyleCandidate, StyleRun } from "../../api";
+import type { AccountInfo, ProjectMark, StyleCandidate, StyleRun } from "../../api";
+import { loginWindows } from "../../models";
+import { slotHue } from "../../lib/profiles";
 import { projectName, projectTint } from "../../lib/surfaces";
 import { partialAnswer, styleCounts } from "../../lib/styleparse";
 import { dismissStyle, startStyle, stopStyle, undoStyle, useStyle } from "../../lib/stylerun";
 import { ProjectTile } from "../ui/ProjectTile";
+import { Fuel } from "../Composer";
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const pictures = (r: StyleRun) => (r.projects ?? []).reduce((n, p) => n + p.cands.length, 0);
@@ -28,17 +31,52 @@ function current(r: StyleRun) {
   return { p, part };
 }
 
-export function StyleButton() {
+/** The toolbar's button. With more than one Claude login a press asks which one
+ *  runs it, each with what it has left (the PROFILE menu's rows), and a row
+ *  starts the run on it; with one, the press runs. */
+export function StyleButton({ logins }: { logins: AccountInfo[] }) {
   const s = useStyle();
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [open]);
   const running = s.drawing || s.run?.state === "running";
+  const usable = logins.filter((a) => !a.disabled);
+  const ask = usable.length > 1;
+  const run = (slot: number | null) => { setOpen(false); void startStyle(slot); };
   return (
-    <button type="button" className="ps-btn prj-pickbtn st-btn" disabled={running} data-run={running || undefined}
-      data-on={(!running && !!s.run && s.run.state !== "idle" && !s.dismissed) || undefined}
-      title="AI looks at every repo's logos and favicons, Rivendell's logo and a frontend's mark; each project wears the one that reads best here, with its background and colour. A mark you set stays yours."
-      onClick={() => void startStyle()}>
-      {running ? <i className="st-spin" aria-hidden /> : <Sparkles size={15} aria-hidden />}
-      {running ? "Styling…" : "Style with AI"}
-    </button>
+    <div ref={ref} className="ps-pickwrap">
+      <button type="button" className="ps-btn prj-pickbtn st-btn" disabled={running} data-run={running || undefined}
+        data-on={(open || (!running && !!s.run && s.run.state !== "idle" && !s.dismissed)) || undefined}
+        aria-expanded={ask ? open : undefined}
+        title="AI looks at every repo's logos and favicons, Rivendell's logo and a frontend's mark; each project wears the one that reads best here, with its background and colour. A mark you set stays yours."
+        onClick={() => (ask ? setOpen((o) => !o) : run(null))}>
+        {running ? <i className="st-spin" aria-hidden /> : <Sparkles size={15} aria-hidden />}
+        {running ? "Styling…" : "Style with AI"}
+      </button>
+      {open && (
+        <div className="ps-menu st-logins">
+          <div className="ps-grp">Style with which login?</div>
+          {usable.map((a) => (
+            <button key={a.slot} type="button" className="pm-row" disabled={!a.logged_in} data-dead={!a.logged_in || undefined}
+              onClick={() => run(a.slot)}>
+              <span className="ps-av" style={{ background: slotHue(String(a.slot)), color: "var(--acc-on)" }}>A{a.slot}</span>
+              <span className="pm-main">
+                <span className="pm-l1"><span className="pm-name">{a.alias || a.email || `Account ${a.slot}`}</span>
+                  {a.plan && <span className="pm-knobs">{a.plan}</span>}</span>
+                {a.logged_in ? <span className="pm-fuel">{loginWindows(a).map((w) => <Fuel key={w.tag} w={w} />)}</span>
+                  : <span className="pm-exp">LOGIN EXPIRED · sign in again under Accounts</span>}
+              </span>
+              {a.default && <span className="pm-tail"><span className="pm-tag">DEFAULT</span></span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

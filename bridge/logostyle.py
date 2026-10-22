@@ -20,6 +20,9 @@ give one client's repos one mark, and read a hub's clients' logos as clients'.
 The run is the bridge's, not the page's: closing SETTINGS doesn't stop it, the
 bell draws it from /local/running (`live()`), and it ends in a notice. One runs
 at a time; the last one's answers stay readable until the next one starts.
+
+It runs on the login the press picked (the button asks when there is more than
+one), pointed at it the way a turn is: that login's CLAUDE_CONFIG_DIR.
 """
 
 import base64
@@ -34,7 +37,7 @@ import threading
 import time
 import uuid
 
-from bridge import aifeatures, notices, projectmarks, runner
+from bridge import accounts, aifeatures, notices, projectmarks, runner
 
 MODEL = "sonnet"
 TIMEOUT_S = 180          # the call, start to last line: a sheet of 21 projects answers in ~20 s
@@ -135,14 +138,18 @@ def live() -> "dict | None":
                 "changed": sum(1 for i in _run["items"] if i["how"]), "started": _run["started"]}
 
 
-def start(sheet_b64: str, sig: str, hashes: "dict | None" = None) -> dict:
+def start(sheet_b64: str, sig: str, hashes: "dict | None" = None, account: "int | None" = None) -> dict:
     """Start a run over the sheet the page drew from style_candidates() `sig`,
     with each picture's average hash (`hashes`, logo name -> hex) when the page
-    sent them. ValueError for a sheet that can't be used, RuntimeError while one
+    sent them, on the Claude login `account` (a slot; None = the default login).
+    ValueError for a sheet or a login that can't be used, RuntimeError while one
     runs."""
     global _run
     if not aifeatures.enabled("logostyle"):
         raise ValueError("Style with AI is off in Settings ▸ AI")
+    if account is not None and (type(account) is not int
+                                or account not in {a["slot"] for a in accounts.list_accounts() if not a["disabled"]}):
+        raise ValueError("that login isn't one of this Mystical's, or it's switched off")
     try:
         sheet = base64.b64decode(sheet_b64 or "", validate=True)
     except (ValueError, TypeError):
@@ -164,7 +171,7 @@ def start(sheet_b64: str, sig: str, hashes: "dict | None" = None) -> dict:
         _run = {"id": rid, "state": "running", "started": time.time(), "ended": None, "total": len(projects),
                 "projects": [{"rel": p["rel"], "key": p["key"], "name": p["name"], "cands": p["cands"]} for p in projects],
                 "yours": got["yours"], "items": [], "current": "", "error": None}
-    threading.Thread(target=_work, args=(rid, sheet, projects, hashes), daemon=True, name="logostyle").start()
+    threading.Thread(target=_work, args=(rid, sheet, projects, hashes, account), daemon=True, name="logostyle").start()
     return state()
 
 
@@ -179,19 +186,20 @@ def stop() -> dict:
     return state()
 
 
-def _work(rid: str, sheet: bytes, projects: list, hashes: dict) -> None:
+def _work(rid: str, sheet: bytes, projects: list, hashes: dict, account: "int | None" = None) -> None:
     by_key = {p["key"]: p for p in projects}
     try:
-        err = _ask(sheet, _prompt(projects), lambda line: _take(rid, by_key, line, hashes), lambda part: _part(rid, part))
+        err = _ask(sheet, _prompt(projects), lambda line: _take(rid, by_key, line, hashes), lambda part: _part(rid, part),
+                   account)
     except Exception as e:  # noqa: BLE001 — a run must end, whatever broke
         err = str(e) or type(e).__name__
     _finish(rid, err)
 
 
-def _ask(sheet: bytes, prompt: str, on_line, on_part) -> "str | None":
-    """One call with the sheet inline. Each complete line of the answer goes to
-    on_line as it streams in, the line still being written to on_part. Returns
-    what went wrong, or None."""
+def _ask(sheet: bytes, prompt: str, on_line, on_part, account: "int | None" = None) -> "str | None":
+    """One call with the sheet inline, on login `account`. Each complete line of
+    the answer goes to on_line as it streams in, the line still being written to
+    on_part. Returns what went wrong, or None."""
     global _proc
     msg = {"type": "user", "message": {"role": "user", "content": [
         {"type": "image", "source": {"type": "base64", "media_type": "image/png",
@@ -205,7 +213,7 @@ def _ask(sheet: bytes, prompt: str, on_line, on_part) -> "str | None":
         with open(os.path.join(tmp, "stderr"), "w+") as err:
             try:
                 p = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=err, text=True,
-                                     cwd=tmp, env=runner._run_env("off"))
+                                     cwd=tmp, env=runner._run_env("off", account))
             except OSError as e:
                 return f"claude didn't start: {e}"
             with _lock:

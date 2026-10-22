@@ -15,7 +15,7 @@ import time
 
 import pytest
 
-from bridge import aifeatures, config, logostyle, notices, project_config, projectmarks, runner
+from bridge import accounts, aifeatures, config, logostyle, notices, project_config, projectmarks, runner
 
 SHEET = base64.b64encode(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64).decode()
 
@@ -250,3 +250,21 @@ def test_a_call_that_runs_too_long_says_so(world, monkeypatch):
     finally:
         os.environ.pop("FAKE_PAUSE")
     assert s["state"] == "failed" and "longer than" in s["error"]
+
+
+def test_a_run_goes_out_on_the_login_you_picked(world, monkeypatch):
+    repo(world["base"], "shop", {"public/favicon.svg": svg(1)})
+    sig = projectmarks.style_candidates()["sig"]
+    monkeypatch.setattr(accounts, "list_accounts", lambda: [{"slot": 1, "disabled": False}, {"slot": 2, "disabled": False},
+                                                           {"slot": 3, "disabled": True}])
+    slots = []
+    monkeypatch.setattr(runner, "_run_env", lambda ponytail, slot=None: slots.append(slot) or {**os.environ, "FAKE_DIR": str(world["dir"])})
+    for bad in (3, 9, "2", True):                       # switched off, unknown, not a slot
+        with pytest.raises(ValueError, match="login"):
+            logostyle.start(SHEET, sig, account=bad)
+    answer(world, {"p": "P1", "pick": "keep", "why": "x"})
+    logostyle.start(SHEET, sig, account=2)
+    wait()
+    logostyle.start(SHEET, sig)                         # none named: the default login, as before
+    wait()
+    assert slots == [2, None]

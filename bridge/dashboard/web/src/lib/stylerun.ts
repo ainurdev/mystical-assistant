@@ -78,14 +78,20 @@ function follow(): void {
   void tick();
 }
 
-/** The toolbar's button: draw the sheet, start the run, follow it. */
-export async function startStyle(): Promise<void> {
+// The login the last press picked (undefined: the default one), so Try again runs on it too.
+// shortcut: a reload forgets it and Try again runs on the default login; keep it on the bridge's run if that bites.
+let lastAccount: number | undefined;
+
+/** The toolbar's button: draw the sheet, start the run on login `account` (a
+ *  slot; null: the default login; left out, as Try again does: the last press's), follow it. */
+export async function startStyle(account?: number | null): Promise<void> {
   if (state.drawing || state.run?.state === "running") return;
+  if (account !== undefined) lastAccount = account ?? undefined;
   set({ drawing: true, error: "", dismissed: false, landed: {} });
   try {
     const c = await api.styleCandidates();
     const { sheet, hashes } = await drawSheet(c);
-    const run = await api.styleStart(sheet, c.sig, hashes);
+    const run = await api.styleStart(sheet, c.sig, hashes, lastAccount);
     set({ run, drawing: false, live: liveOf(run) });
     follow();
   } catch (e) {

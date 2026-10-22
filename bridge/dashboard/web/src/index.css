@@ -4931,6 +4931,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 @keyframes st-fade { from { opacity: 0; transform: translateY(4px); } }
 @keyframes st-caret { 50% { opacity: 0; } }
 .st-btn { gap: 7px; }
+/* A press with more than one login asks which (StyleButton): SETTINGS' popover around the PROFILE menu's login rows. */
+.prj-tools > .ps-pickwrap { flex: none; }
+.st-logins { top: 40px; width: 448px; }
+.st-logins .pm-row { border-radius: 7px; }
+.st-logins .pm-row:disabled { cursor: default; background: none; }
 .st-btn[data-run] { color: var(--txm); opacity: 1; border-color: transparent; animation: st-turn 1.6s linear infinite;
   background: linear-gradient(var(--panel2), var(--panel2)) padding-box,
     conic-gradient(from var(--st-a), color-mix(in oklab, var(--acc) 8%, transparent), var(--acc) 18%, color-mix(in oklab, var(--acc) 30%, white) 24%, color-mix(in oklab, var(--acc) 8%, transparent) 48%) border-box; }

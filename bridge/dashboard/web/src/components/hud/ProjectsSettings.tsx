@@ -352,7 +352,7 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
             </button>
           ))}
         </div>
-        {styleOn ? <StyleButton /> : (
+        {styleOn ? <StyleButton logins={logins} /> : (
           <button type="button" className="ps-btn prj-pickbtn" disabled={picking} data-on={(pickRes && typeof pickRes !== "string") || undefined}
             title="Each project still on letters gets its frontend's logo, a brand file of its own, or its GitHub organization's picture"
             onClick={() => void pickLogos("pick")}><WandSparkles size={15} aria-hidden />Pick logos</button>
