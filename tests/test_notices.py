@@ -564,6 +564,27 @@ def test_a_ready_meeting_brief_has_its_own_group_and_reaches_telegram_by_default
     assert notices.telegram_ok("rv_brief") is False
 
 
+def test_a_teammates_share_reaches_telegram_at_once_by_default():
+    """A share is sent to you, not news to check later: SENT YOU goes to Telegram
+    whether or not a dashboard is open, so a teammate who looks away still hears of it."""
+    assert notices.prefs()["events"]["team"] == {"pop": True, "sound": "blip", "tg": "always"}
+    notices.seen(time.time())                                  # someone is at a dashboard right now
+    assert notices.telegram_ok("team_in") is True and notices.telegram_ok("done") is False
+    notices.set_prefs({"events": {"team": {"tg": "away"}}})
+    assert notices.telegram_ok("team_in") is False             # chosen since, so kept
+
+
+def test_prefs_saved_before_teammates_went_always_move_to_always():
+    """A save wrote every group, so "away" for From teammates in prefs saved before
+    it defaulted to "always" is the old default, not a choice. "off" was one."""
+    store.set_setting("notify_prefs", '{"events": {"team": {"pop": true, "sound": "blip", "tg": "away"},'
+                                      ' "done": {"tg": "off"}}}')
+    p = notices.prefs()
+    assert p["events"]["team"]["tg"] == "always" and p["events"]["done"]["tg"] == "off"
+    store.set_setting("notify_prefs", '{"events": {"team": {"tg": "off"}}}')
+    assert notices.prefs()["events"]["team"]["tg"] == "off"
+
+
 def test_changelog_outlives_the_week_and_the_cap():
     """The rail's changelog reads updates and notes however old, past the feed's
     200 rows; the week's prune spares them and only them."""

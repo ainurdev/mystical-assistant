@@ -96,7 +96,9 @@ _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED"}
 # and what the bridge got past by itself (a resume, an API retry, a link back,
 # your own Wait) only lands in the bell: the run's DONE or FAILED is the news. A
 # meeting's brief that is ready is the exception to waiting: it is wanted before
-# its meeting, so Telegram gets it whether or not you are at a dashboard.
+# its meeting, so Telegram gets it whether or not you are at a dashboard. So does
+# what a teammate sent you: it is meant for you, and a toast on a dashboard you
+# weren't looking at let one sit unseen.
 DEFAULTS = {
     "ask": {"pop": True, "sound": "ping", "tg": "away"},
     "rv_offer": {"pop": True, "sound": "ping", "tg": "away"},
@@ -111,7 +113,7 @@ DEFAULTS = {
     "rv_brief": {"pop": True, "sound": "chime", "tg": "always"},
     "rv_failed": {"pop": True, "sound": "knock", "tg": "away"},
     "rv_link": {"pop": True, "sound": "none", "tg": "always"},
-    "team": {"pop": True, "sound": "blip", "tg": "away"},
+    "team": {"pop": True, "sound": "blip", "tg": "always"},
     "pr": {"pop": True, "sound": "blip", "tg": "away"},
     "bridge": {"pop": True, "sound": "none", "tg": "off"},
     "weekly": {"pop": False, "sound": "none", "tg": "always"},
@@ -223,12 +225,17 @@ def prefs() -> dict:
         raw = json.loads(store.get_setting(_KEY) or "{}")
     except (ValueError, TypeError):
         raw = {}
-    return _merge(_defaults(), raw if isinstance(raw, dict) else {})
+    raw = raw if isinstance(raw, dict) else {}
+    p = _merge(_defaults(), raw)
+    # A save writes every group, so one from before "v" holds From teammates' old default, not a choice.
+    if "v" not in raw and p["events"]["team"]["tg"] == "away":
+        p["events"]["team"]["tg"] = "always"
+    return p
 
 
 def set_prefs(patch: dict) -> dict:
     p = _merge(prefs(), patch if isinstance(patch, dict) else {})
-    store.set_setting(_KEY, json.dumps(p))
+    store.set_setting(_KEY, json.dumps({**p, "v": 2}))
     return p
 
 

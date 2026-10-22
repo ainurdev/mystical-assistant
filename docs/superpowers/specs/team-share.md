@@ -36,7 +36,8 @@ this machine, because the dashboard binds 127.0.0.1. Pictures and files have no 
   line counts the token-shaped strings that were blanked out, and says .env files never go.
   Footer: "Nothing runs on their side until they choose to continue it."
 - **Receiving.**
-  - A bell row, plus Telegram where Settings ▸ NOTIFY routes "From teammates" (on by default).
+  - A bell row, plus Telegram where Settings ▸ NOTIFY routes "From teammates" (at once by default,
+    not only when you're away from the dashboard).
   - OPEN on a session shows it read-only. A bar replaces the composer, styled with JobBar's classes:
     FROM <NAME>, how long ago, "read-only · it ran on <name>'s machine", the note, DISMISS and
     CONTINUE HERE. Each prompt's tag starts with the sender's name.
