@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback, type CSSProperties } from "react";
 import { nightOf, themeCanvas, themeVars, type ThemeKey } from "../../lib/theme";
-import { BOOT_CONTINUE, bootProgress, bootReady, type BootStep } from "../../lib/bootsteps";
+import { BOOT_CONTINUE, BOOT_SETTLE_MS, bootProgress, bootReady, bootReveal, type BootStep } from "../../lib/bootsteps";
 import { BOOT_SCENE, shuffleScene, type Intro, type IntroScene } from "../../lib/intro";
 import { DurinsDoor, KhazadDum } from "./BootScenes";
 
@@ -88,11 +88,15 @@ export function BootIntro(props: {
 
   const warm = useRef(0);
   const done = useRef(0);
+  const revealed = useRef(0); // when the dashboard mounted behind the scene (lib/bootsteps bootReveal); 0 = not yet
   // Mount the dashboard first and only wipe once it has had WARM_MS to lay
   // itself out — the intro is opaque until `fade`, so this is all off-screen.
   const leave = useCallback((reveal: () => void, finish: () => void) => {
     setLeaving(true); // a scene's exit flourish plays inside the warm-up and the wipe
-    reveal();
+    if (!revealed.current) {
+      revealed.current = Date.now();
+      reveal();
+    }
     warm.current = window.setTimeout(() => {
       // DURIN'S DOOR zooms in on its doorway, wherever the layout put it.
       const r = box.current?.querySelector("[data-exit-origin]")?.getBoundingClientRect();
@@ -108,7 +112,15 @@ export function BootIntro(props: {
     // elapsed time — the last fetch can land before the floor, and a bridge
     // that never answers has to hit the ceiling with no step change at all.
     const id = window.setInterval(() => {
-      if (cb.current.hold || !bootReady(cb.current.steps, Date.now() - started)) return;
+      const { hold, steps } = cb.current;
+      const elapsed = Date.now() - started;
+      if (hold) return;
+      if (!revealed.current && bootReveal(steps, elapsed)) {
+        revealed.current = Date.now();
+        cb.current.onReveal();
+      }
+      // A bridge that never answers mounts nothing until the ceiling, then leaves at once.
+      if (!bootReady(steps, elapsed) || Date.now() - revealed.current < BOOT_SETTLE_MS) return;
       window.clearInterval(id);
       leave(cb.current.onReveal, () => cb.current.onDone());
     }, 100);

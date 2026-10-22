@@ -564,7 +564,6 @@ body {
    the wordmark and the log), but its flow height stays 400px. The light sits
    at -206,53: the transform-origins below repeat it. */
 .kd-scene { width: 2800px; height: 760px; margin: -120px 0 -240px; --void: color-mix(in srgb, var(--canvas) 40%, #000); }
-.kd-ff-err { flood-color: var(--err); }
 .kd-ff-warn { flood-color: var(--warn); }
 .kd-ff-txb { flood-color: var(--txb); }
 /* the hall, the chasm, the deep */
@@ -594,6 +593,17 @@ body {
 /* the Balrog: a shadow with a fire in it */
 .kd-balrog { animation: tickfade 1.4s ease both .2s; }
 .kd-bk { fill: var(--void); }
+/* its fire rim (BootScenes FireRim): a glow and a rim stroked under the shape,
+   whose fill covers their inner halves, and its top and back edges hot */
+.kd-rimglow1, .kd-rimglow2, .kd-rimglow3, .kd-rim { fill: none; stroke: var(--err); stroke-linejoin: round; }
+.kd-rimglow1 { stroke-opacity: .03; stroke-width: 16; }
+.kd-rimglow2 { stroke-opacity: .04; stroke-width: 10; }
+.kd-rimglow3 { stroke-opacity: .05; stroke-width: 5; }
+.kd-rim { stroke-width: 2.2; }
+.kd-hot { fill: color-mix(in srgb, var(--warn) 75%, var(--void)); }
+/* the wizard's light on its front edges, a little over them */
+.kd-lit { fill: var(--txb); }
+.kd-litedge { fill: none; stroke: var(--txb); stroke-opacity: .35; stroke-width: 3; stroke-linejoin: round; }
 .kd-bones { fill: none; stroke: color-mix(in srgb, var(--err) 45%, transparent); stroke-width: 1.1; stroke-linecap: round; }
 .kd-whip { fill: none; stroke: var(--warn); stroke-width: 1.8; stroke-linecap: round; }
 .kd-whip-glow { fill: none; stroke: color-mix(in srgb, var(--warn) 25%, transparent); stroke-width: 6; stroke-linecap: round; }

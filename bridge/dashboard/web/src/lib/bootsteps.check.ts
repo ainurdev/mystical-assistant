@@ -2,8 +2,11 @@
 import {
   BOOT_CEIL_MS,
   BOOT_FLOOR_MS,
+  BOOT_REVEAL_MS,
+  BOOT_SETTLE_MS,
   bootProgress,
   bootReady,
+  bootReveal,
   count,
   initialBootSteps,
   markStep,
@@ -46,6 +49,12 @@ ok(bootReady(all, BOOT_FLOOR_MS), "past the floor with everything in, the intro 
 ok(!bootReady(one, BOOT_CEIL_MS - 1), "a slow bridge holds the intro open");
 ok(bootReady(one, BOOT_CEIL_MS), "…but only to the ceiling — a hang can't trap you");
 ok(bootReady(fresh, BOOT_CEIL_MS), "even with nothing answered at all");
+
+// The dashboard mounts behind the scene before it leaves, never during its entrance.
+ok(!bootReveal(all, BOOT_REVEAL_MS - 1), "everything in early still waits out the entrance");
+ok(bootReveal(all, BOOT_REVEAL_MS), "after it, everything in mounts the dashboard");
+ok(!bootReveal(one, BOOT_CEIL_MS), "a bridge still answering mounts nothing early");
+ok(BOOT_REVEAL_MS + BOOT_SETTLE_MS <= BOOT_FLOOR_MS, "a fast bridge's mount settles before the floor, so it leaves on time");
 
 ok(count(0, "REPO") === "NONE", "zero says NONE, not 0 REPOS");
 ok(count(1, "REPO") === "1 REPO", "one is singular");

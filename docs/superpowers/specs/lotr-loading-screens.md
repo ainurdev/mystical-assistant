@@ -94,6 +94,24 @@ moon in the sky, and the door's reflection lies under the threshold.
   stroke under a thin one, the chasm fades by gradient fills, and the
   Balrog's group only fades in. Measured in a WKWebView during a real boot,
   the median frame is now 33 ms, against 85–108 ms for v1.
+- **The median hid the hitches.** WebKit caches a still filter only until
+  something invalidates it, then runs it again: an inherited style change
+  (each step's `--p` on the SVG, the skip cursor on the intro), an ancestor's
+  opacity reaching 1 (the Balrog's fade-in ending), a transform on the SVG
+  root (the strike's shake), and a first paint, which runs it twice. The
+  Balrog's fire rims and the light on its front cost about 80 ms a run, so the
+  boot froze for 4–6 frames at the start, at every step and twice in the
+  strike. They are drawn now (`FireRim`: a three-band glow and a rim stroked
+  under the shape, the hot back edge cut out by a clip; the light's edge by
+  five clips), and all of those moments hold 60 fps in a WKWebView. Gandalf's
+  rims and the small glows stay filters: they cost too little to show.
+- **The dashboard mounts in the hold.** Mounting it is about 350 ms of main
+  thread, and a scene's SVG only moves on the main thread, so mounting it at
+  the exit froze the strike. It now mounts once every step has answered and
+  the scene is 1.9 s in, and the exit waits until the mount has had 500 ms
+  (`bootReveal` and `BOOT_SETTLE_MS` in `lib/bootsteps.ts`). The flames pause
+  for that beat in the hold instead. A bridge that answers after 2.1 s leaves
+  up to 0.5 s later than it did.
 - **Restart handover.** `.bootcontinue *` pulls every animation-delay back to
   -3s, so that a boot continued from a restart skips its entrance. That would
   also skip an exit. The rule now spares `.bx`, which marks anything that

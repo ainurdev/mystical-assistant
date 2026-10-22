@@ -56,6 +56,19 @@ export function bootReady(steps: BootStep[], elapsedMs: number): boolean {
   return bootProgress(steps) === 1 && elapsedMs >= BOOT_FLOOR_MS;
 }
 
+// Mounting the dashboard is a few hundred ms of main thread (~350 measured in a
+// WKWebView, Mystical.app's engine), and a scene's SVG only moves on the main thread:
+// mounted as the scene left, it froze the strike. So it mounts behind the scene
+// once every step has answered and the entrance is over, and the exit waits
+// until that mount has had BOOT_SETTLE_MS, to play on an idle thread.
+export const BOOT_REVEAL_MS = 1900;
+export const BOOT_SETTLE_MS = 500;
+
+/** Whether to mount the dashboard behind the intro now: everything answered and the entrance over. */
+export function bootReveal(steps: BootStep[], elapsedMs: number): boolean {
+  return bootProgress(steps) === 1 && elapsedMs >= BOOT_REVEAL_MS;
+}
+
 /** Set by the restart just before it reloads: the intro is already on screen in
  *  the outgoing document, so the next one continues it instead of replaying. */
 export const BOOT_CONTINUE = "boot-continue";

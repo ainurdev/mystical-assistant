@@ -11,8 +11,12 @@
    re-runs a filter or a mask every frame when anything under it moves, so
    KHAZAD-DÛM keeps its filters on still shapes, gets the moving glows from a
    wide faint stroke under a thin one, and fades by gradient fills, not masks
-   (measured: 30 fps that way, 10 fps the other). The Balrog's group only
-   fades in for the same reason: moving it would re-run all its rims. `.bx` marks an
+   (measured: 30 fps that way, 10 fps the other). A still filter re-runs too
+   whenever its shape is invalidated: an inherited style change (a step's --p,
+   the skip cursor), an ancestor's opacity reaching 1, a transform on the root,
+   its first paint (twice over). The Balrog's rims cost ~80 ms a run there, a
+   visible hitch at every step and at the strike, so they are drawn (FireRim,
+   the lit clips) rather than filtered; the filters left are small. `.bx` marks an
    animation that answers the boot rather than opens it (an exit flourish, a
    step's pulse), which `.bootcontinue` must not fast-forward (index.css). The
    ids are fixed because only one intro is ever mounted: the boot, or after it
@@ -87,21 +91,42 @@ const DECK = (
   </>
 );
 
+// An outline of absolute "x y" pairs moved by dx,dy; and an M/L outline wound the other way round.
+const shift = (d: string, dx: number, dy: number) => d.replace(/(-?[\d.]+) (-?[\d.]+)/g, (_, x, y) => `${+x + dx} ${+y + dy}`);
+const rev = (d: string) => `M ${d.match(/-?[\d.]+ -?[\d.]+/g)!.reverse().join(" L ")} Z`;
+
 // The Balrog's trunk: legs, hips, chest and spined back in one outline.
 const TRUNK = "M -132 0 L -124 -8 L -104 -14 L -94 -26 L -100 -60 L -110 -96 L -100 -112 L -76 -140 L -62 -170 L -84 -196 L -112 -226 L -118 -246 L -110 -262 L -104 -276 L -96 -298 L -78 -310 L -56 -318 L -40 -332 L -30 -318 L -8 -326 L 6 -340 L 14 -320 L 34 -318 L 44 -330 L 52 -310 L 62 -296 L 68 -280 L 66 -240 L 56 -208 L 48 -186 L 64 -166 L 82 -140 L 98 -108 L 116 -82 L 132 -58 L 128 -30 L 124 0 L 78 0 L 86 -16 L 94 -40 L 90 -52 L 66 -74 L 48 -100 L 16 -138 L -20 -140 L -56 -122 L -80 -92 L -80 -60 L -72 -26 L -72 0 Z";
-// Its body, once: drawn rimmed in its own fire, and again under the wizard's light.
-const BODY = (
-  <>
-    <path className="kd-bk" d={TRUNK} />
-    {/* head, low and forward, the jaw dropped on the fire inside */}
-    <path className="kd-bk" d="M -94 -310 L -112 -316 L -140 -308 L -148 -300 L -144 -296 L -154 -288 L -156 -278 L -150 -272 L -146 -276 L -132 -272 L -150 -258 L -148 -252 L -140 -246 L -116 -250 L -102 -262 L -90 -280 Z" />
-    {/* horns: the far one swept back, the near one forward like a bull's */}
-    <path className="kd-bk" d="M -104 -314 L -90 -312 L -80 -334 L -66 -356 L -48 -376 L -52 -382 L -72 -366 L -90 -344 Z" />
-    <path className="kd-bk" d="M -112 -310 L -112 -330 L -120 -348 L -136 -362 L -158 -372 L -176 -374 L -160 -364 L -146 -352 L -138 -336 L -136 -306 Z" />
-    {/* the sword arm, out and low, the fist up */}
-    <path className="kd-bk" d="M -101 -286 L -133 -222 L -160 -233 L -196 -228 L -200 -235 L -214 -237 L -225 -225 L -225 -208 L -214 -198 L -198 -200 L -160 -197 L -122 -202 L -106 -194 L -108 -210 L -75 -274 Z" />
-  </>
-);
+// Its body, once: drawn rimmed in its own fire, and again under the wizard's
+// light. The trunk goes in reversed, wound like its limbs, so a clip of all five
+// outlines is their union.
+const BODY = [
+  rev(TRUNK),
+  // head, low and forward, the jaw dropped on the fire inside
+  "M -94 -310 L -112 -316 L -140 -308 L -148 -300 L -144 -296 L -154 -288 L -156 -278 L -150 -272 L -146 -276 L -132 -272 L -150 -258 L -148 -252 L -140 -246 L -116 -250 L -102 -262 L -90 -280 Z",
+  // horns: the far one swept back, the near one forward like a bull's
+  "M -104 -314 L -90 -312 L -80 -334 L -66 -356 L -48 -376 L -52 -382 L -72 -366 L -90 -344 Z",
+  "M -112 -310 L -112 -330 L -120 -348 L -136 -362 L -158 -372 L -176 -374 L -160 -364 L -146 -352 L -138 -336 L -136 -306 Z",
+  // the sword arm, out and low, the fist up
+  "M -101 -286 L -133 -222 L -160 -233 L -196 -228 L -200 -235 L -214 -237 L -225 -225 L -225 -208 L -214 -198 L -198 -200 L -160 -197 L -122 -202 L -106 -194 L -108 -210 L -75 -274 Z",
+];
+
+/** Shadow rimmed in its own fire: a soft glow and a thin rim stroked under the
+ *  shape, and inside it the top and back edges hot, where the shape covers its
+ *  own copy moved down and forward least. Drawn, not filtered (the module
+ *  comment says why). `ds` must all wind one way: the clip unions them. */
+function FireRim({ id, ds }: { id: string; ds: string[] }) {
+  return (
+    <>
+      <clipPath id={id}><path d={ds.join(" ")} /></clipPath>
+      {["kd-rimglow1", "kd-rimglow2", "kd-rimglow3", "kd-rim"].map((c) => ds.map((d, i) => <path key={c + i} className={c} d={d} />))}
+      <g clipPath={`url(#${id})`}>
+        {ds.map((d, i) => <path key={i} className="kd-hot" d={d} />)}
+        <g transform="translate(-1.6 1.6)">{ds.map((d, i) => <path key={i} className="kd-bk" d={d} />)}</g>
+      </g>
+    </>
+  );
+}
 
 function Pillar({ x, w, far }: { x: number; w: number; far?: boolean }) {
   const l = x - w / 2, r = x + w / 2, cap = w * 0.9, edge = x < 0 ? r : l;
@@ -241,28 +266,9 @@ export function KhazadDum({ progress }: { progress: number }) {
             <stop offset=".1" style={{ stopColor: "var(--acc)", stopOpacity: 0 }} />
             <stop offset=".6" style={{ stopColor: "var(--acc)", stopOpacity: 0.18 }} />
           </linearGradient>
-          {/* fire all round the shadow, hottest on its top and back edges */}
-          <filter id="kd-rim-fire" x="-30%" y="-30%" width="160%" height="160%">
-            <feMorphology in="SourceAlpha" operator="dilate" radius="1.1" result="d" />
-            <feComposite in="d" in2="SourceAlpha" operator="out" result="ring" />
-            <feFlood className="kd-ff-err" result="c" />
-            <feComposite in="c" in2="ring" operator="in" result="rim" />
-            <feGaussianBlur in="rim" stdDeviation="4" result="glow" />
-            <feOffset in="SourceAlpha" dx="-1.6" dy="1.6" result="o" />
-            <feComposite in="SourceAlpha" in2="o" operator="out" result="edge" />
-            <feFlood className="kd-ff-warn" floodOpacity=".75" result="w" />
-            <feComposite in="w" in2="edge" operator="in" result="hot" />
-            <feMerge><feMergeNode in="glow" /><feMergeNode in="SourceGraphic" /><feMergeNode in="rim" /><feMergeNode in="hot" /></feMerge>
-          </filter>
-          {/* the wizard's light on the shadow's front: its left and top edges, in white */}
-          <filter id="kd-lit" x="-10%" y="-10%" width="120%" height="120%">
-            <feOffset in="SourceAlpha" dx="3" dy="2" result="o" />
-            <feComposite in="SourceAlpha" in2="o" operator="out" result="edge" />
-            <feFlood className="kd-ff-txb" result="c" />
-            <feComposite in="c" in2="edge" operator="in" result="rim" />
-            <feGaussianBlur in="rim" stdDeviation="1.6" result="b" />
-            <feMerge><feMergeNode in="b" /><feMergeNode in="rim" /></feMerge>
-          </filter>
+          {/* the wizard's light on the shadow's front: what is not under its body
+              moved away from the light, one clip per outline, as they overlap */}
+          {BODY.map((d, i) => <clipPath key={i} id={`kd-unlit${i}`}><path clipRule="evenodd" d={`M -240 -400 H 150 V 20 H -240 Z ${shift(d, 3, 2)}`} /></clipPath>)}
           {/* Gandalf: a faint white rim, his own light on top, the fire on his front */}
           <filter id="kd-rim-gf" x="-40%" y="-30%" width="180%" height="160%">
             <feMorphology in="SourceAlpha" operator="dilate" radius=".9" result="d" />
@@ -342,18 +348,16 @@ export function KhazadDum({ progress }: { progress: number }) {
                 <ellipse cx="84" cy="-286" rx="76" ry="64" fill="url(#kd-hot)" style={{ animationDelay: "-0.6s", animationDuration: "1.9s" }} />
               </g></g>
               {/* wings of shadow, ragged, with their bones */}
-              <g filter="url(#kd-rim-fire)" opacity=".95">
-                <path className="kd-bk" d="M -10 -312 L -30 -370 L -60 -412 L -140 -436 L -232 -446 L -222 -418 L -244 -396 L -208 -380 L -214 -352 L -176 -356 L -166 -330 L -134 -340 L -116 -316 L -80 -326 L -50 -300 Z" />
+              <g opacity=".95">
+                <FireRim id="kd-wing-l" ds={["M -10 -312 L -30 -370 L -60 -412 L -140 -436 L -232 -446 L -222 -418 L -244 -396 L -208 -380 L -214 -352 L -176 -356 L -166 -330 L -134 -340 L -116 -316 L -80 -326 L -50 -300 Z"]} />
               </g>
               <path className="kd-bones" d="M -10 -312 L -60 -412 L -232 -446 M -60 -412 L -244 -396 M -60 -412 L -214 -352 M -60 -412 L -166 -330 M -60 -412 L -116 -316" />
-              <g filter="url(#kd-rim-fire)" opacity=".97">
-                <path className="kd-bk" d="M 24 -306 L 62 -372 L 128 -424 L 230 -444 L 334 -450 L 306 -412 L 318 -372 L 276 -352 L 262 -310 L 222 -304 L 204 -268 L 170 -272 L 146 -246 L 100 -276 L 58 -276 Z" />
+              <g opacity=".97">
+                <FireRim id="kd-wing-r" ds={["M 24 -306 L 62 -372 L 128 -424 L 230 -444 L 334 -450 L 306 -412 L 318 -372 L 276 -352 L 262 -310 L 222 -304 L 204 -268 L 170 -272 L 146 -246 L 100 -276 L 58 -276 Z"]} />
               </g>
               <path className="kd-bones" d="M 24 -306 L 128 -424 L 334 -450 M 128 -424 L 318 -372 M 128 -424 L 262 -310 M 128 -424 L 204 -268 M 128 -424 L 146 -246" />
               {/* the far arm, hanging back, the whip of many thongs in its fist */}
-              <g filter="url(#kd-rim-fire)">
-                <path className="kd-bk" d="M 34 -296 L 64 -282 L 96 -246 L 104 -226 L 108 -196 L 106 -166 L 110 -150 L 96 -140 L 82 -146 L 84 -168 L 82 -200 L 74 -226 L 50 -262 L 28 -270 Z" />
-              </g>
+              <FireRim id="kd-arm" ds={["M 34 -296 L 64 -282 L 96 -246 L 104 -226 L 108 -196 L 106 -166 L 110 -150 L 96 -140 L 82 -146 L 84 -168 L 82 -200 L 74 -226 L 50 -262 L 28 -270 Z"]} />
               <g className="kd-whipg">
                 <path className="kd-whip-glow" d="M 98 -146 C 134 -128 150 -88 136 -58 C 124 -34 154 -18 196 -24 C 224 -28 242 -12 266 -18 M 98 -146 C 128 -116 140 -78 128 -52 C 118 -30 140 -14 180 -10 M 98 -146 C 144 -136 172 -100 168 -70 C 164 -44 192 -40 222 -46" />
                 <path className="kd-whip" d="M 98 -146 C 134 -128 150 -88 136 -58 C 124 -34 154 -18 196 -24 C 224 -28 242 -12 266 -18" />
@@ -361,7 +365,7 @@ export function KhazadDum({ progress }: { progress: number }) {
                 <path className="kd-whip kd-thong" d="M 98 -146 C 144 -136 172 -100 168 -70 C 164 -44 192 -40 222 -46" />
               </g>
               {/* the shadow itself, rimmed in its own fire, with the fire in its chest */}
-              <g filter="url(#kd-rim-fire)">{BODY}</g>
+              <FireRim id="kd-body" ds={BODY} />
               <ellipse className="kd-core" cx="-44" cy="-244" rx="58" ry="70" fill="url(#kd-core-g)" clipPath="url(#kd-trunk)" />
               <path className="kd-vein-glow" d="M -98 -236 L -86 -218 L -92 -200 L -80 -184 M -62 -296 L -52 -276 L -60 -258 M -22 -306 L -14 -286 L -22 -268 L -12 -246 M 28 -296 L 34 -274 L 28 -254 M 50 -252 L 56 -232 L 50 -212 M -86 -218 L -70 -212 M -60 -258 L -44 -250 L -36 -254 M -14 -286 L 0 -280 M -28 -200 L -20 -184 M -92 -100 L -88 -80 L -92 -60 M 104 -84 L 112 -66 L 108 -48 M -140 -214 L -170 -217 M 92 -230 L 98 -206" />
               <path className="kd-vein" d="M -98 -236 L -86 -218 L -92 -200 L -80 -184 M -62 -296 L -52 -276 L -60 -258 M -22 -306 L -14 -286 L -22 -268 L -12 -246 M 28 -296 L 34 -274 L 28 -254 M 50 -252 L 56 -232 L 50 -212" />
@@ -375,7 +379,10 @@ export function KhazadDum({ progress }: { progress: number }) {
                 <path className="kd-hilt" d="M -210 -227 L -206 -228 L -214 -205 L -218 -204 Z" />
               </g>
               {/* the wizard's light on its front, growing as the steps answer */}
-              <g className="kd-litby" filter="url(#kd-lit)">{BODY}</g>
+              <g className="kd-litby">
+                {BODY.reduce<ReactNode>((lit, _, i) => <g clipPath={`url(#kd-unlit${i})`}>{lit}</g>,
+                  ["kd-lit", "kd-litedge"].map((c) => BODY.map((d, i) => <path key={c + i} className={c} d={d} />)))}
+              </g>
               {/* the mane streaming back; fire on the wings, the sword, and where it treads */}
               <g className="kd-ignite">{MANE.map((f, i) => <F key={i} f={f} />)}</g>
               <g>
