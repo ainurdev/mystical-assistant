@@ -696,11 +696,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/rivendell/team/file":
             got = team.file_path((qs.get("id", [""])[0] or "").strip())
             return self._download(*got) if got else self._json({"error": "not found"}, 404)
-        if path == "/local/rivendell/team/transcript.md":
-            md = team.transcript_md((qs.get("id", [""])[0] or "").strip())
+        if path in ("/local/rivendell/team/transcript.md", "/local/rivendell/team/update.md"):
+            # The whole session for CONTINUE HERE, or only what's new for CONTINUE IN YOURS.
+            md = (team.transcript_md if path.endswith("/transcript.md") else team.update_md)(
+                (qs.get("id", [""])[0] or "").strip())
             if md is None:
                 return self._json({"error": "not found"}, 404)
             return self._send(md.encode(), 200, "text/markdown; charset=utf-8", "no-store")
+        if path == "/local/rivendell/team/earlier":
+            got = team.earlier((qs.get("id", [""])[0] or "").strip())
+            return self._json(got) if got else self._json({"error": "not found"}, 404)
         if path in ("/local/rivendell/gallery", "/local/rivendell/gallery/image"):
             # The mark editor's From Rivendell strip, and one of its images
             # through the bridge so the editor can take it like a dropped file.
@@ -1777,7 +1782,9 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 share = team.send(kind, body.get("to"), body.get("note") or "", session_id=body.get("session"),
                                   pictures=body.get("pictures") is not False, code=body.get("code") is True,
-                                  path=where if kind in ("picture", "file") else None)
+                                  path=where if kind in ("picture", "file") else None,
+                                  title=body.get("title") if isinstance(body.get("title"), str) else None,
+                                  when="end" if body.get("when") == "end" else None)
             except team.TeamError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "share": share})
@@ -1786,7 +1793,8 @@ class Handler(BaseHTTPRequestHandler):
             share_id = str(body.get("id") or "")
             try:
                 if path.endswith("/continue"):
-                    return self._json(team.continue_plan(share_id))
+                    return self._json(team.continue_plan(share_id, into="yours" if body.get("into") == "yours" else None,
+                                                          project=body.get("project") if isinstance(body.get("project"), str) else None))
                 if path.endswith("/clone"):      # CLONE & INSTALL: minutes on a big repository, answered when done
                     rel = team.clone(share_id)
                     return self._json({"ok": True, "project": rel, "path": os.path.join(config.BASE_PATH, rel.lstrip("/"))})
@@ -1794,7 +1802,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"ok": True, "steps": team.install(share_id, str(body.get("cwd") or ""))})
                 if path.endswith("/unpack"):
                     return self._json({"ok": True, "files": team.unpack(share_id, str(body.get("cwd") or ""))})
-                team.mark(share_id, str(body.get("state") or ""))
+                team.mark(share_id, str(body.get("state") or ""),
+                          session=body.get("session") if isinstance(body.get("session"), str) else None)
                 return self._json({"ok": True})
             except team.TeamError as e:
                 return self._json({"error": str(e)}, 400)

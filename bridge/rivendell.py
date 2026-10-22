@@ -3502,6 +3502,10 @@ def start() -> None:
             print(f"rivendell: filed the job of {n} older session(s)")
     except Exception as e:  # noqa: BLE001 — never keeps the workers from dialling
         print(f"rivendell: backfill failed: {e}")
+    try:
+        team.resume_queue()      # TEAM sends that were waiting for their turn to end
+    except Exception as e:  # noqa: BLE001 — never keeps the workers from dialling
+        print(f"rivendell: the TEAM send queue didn't resume: {e}")
     reconfigure()
 
 

@@ -82,11 +82,17 @@ def test_send_hands_each_kind_through(monkeypatch, tmp_path):
     assert r == {"obj": {"ok": True, "share": {"id": "s-1"}}, "code": 200}
     r = dpost("/local/rivendell/team/send", {"kind": "file", "to": "u", "project": "/proj", "file": "docs/a.md"})
     assert r["code"] == 200
-    r = dpost("/local/rivendell/team/send", {"kind": "picture", "to": "u", "path": "/x/shot.png", "pictures": False})
-    assert got == [("session", "u", "n", {"session_id": "sid", "pictures": True, "code": True, "path": None}),
+    r = dpost("/local/rivendell/team/send", {"kind": "picture", "to": "u", "path": "/x/shot.png", "pictures": False,
+                                             "title": "Board · screenshot"})
+    r = dpost("/local/rivendell/team/send", {"kind": "session", "to": "u", "session": "sid", "when": "end"})
+    plain = {"title": None, "when": None}
+    assert got == [("session", "u", "n", {"session_id": "sid", "pictures": True, "code": True, "path": None, **plain}),
                    ("file", "u", "", {"session_id": None, "pictures": True, "code": False,
-                                      "path": os.path.realpath(proj / "docs" / "a.md")}),
-                   ("picture", "u", "", {"session_id": None, "pictures": False, "code": False, "path": "/x/shot.png"})]
+                                      "path": os.path.realpath(proj / "docs" / "a.md"), **plain}),
+                   ("picture", "u", "", {"session_id": None, "pictures": False, "code": False, "path": "/x/shot.png",
+                                         "title": "Board · screenshot", "when": None}),
+                   ("session", "u", "", {"session_id": "sid", "pictures": True, "code": False, "path": None,
+                                         "title": None, "when": "end"})]
 
 
 def test_send_refuses_a_file_outside_its_project(monkeypatch, tmp_path):
@@ -123,16 +129,20 @@ def test_a_send_that_crashes_the_route_is_logged_but_a_hang_up_isnt(capsys):
 
 
 def test_continue_unpack_and_state(monkeypatch):
-    monkeypatch.setattr(team, "continue_plan", lambda sid: {"project": None, "id": sid})
+    monkeypatch.setattr(team, "continue_plan", lambda sid, into=None, project=None: {"id": sid, "into": into, "project": project})
     monkeypatch.setattr(team, "unpack", lambda sid, cwd: 3)
     marked = []
-    monkeypatch.setattr(team, "mark", lambda sid, state: marked.append((sid, state)))
-    assert dpost("/local/rivendell/team/continue", {"id": "s-1"})["obj"] == {"project": None, "id": "s-1"}
+    monkeypatch.setattr(team, "mark", lambda sid, state, session=None: marked.append((sid, state, session)))
+    assert dpost("/local/rivendell/team/continue", {"id": "s-1"})["obj"] == {"id": "s-1", "into": None, "project": None}
+    assert dpost("/local/rivendell/team/continue", {"id": "s-1", "into": "yours"})["obj"]["into"] == "yours"
+    assert dpost("/local/rivendell/team/continue", {"id": "s-1", "into": "x", "project": "/acme"})["obj"] == {
+        "id": "s-1", "into": None, "project": "/acme"}
     assert dpost("/local/rivendell/team/unpack", {"id": "s-1", "cwd": "/w"})["obj"] == {"ok": True, "files": 3}
     assert dpost("/local/rivendell/team/state", {"id": "s-1", "state": "opened"})["obj"] == {"ok": True}
-    assert marked == [("s-1", "opened")]
+    assert dpost("/local/rivendell/team/state", {"id": "s-1", "state": "continued", "session": "mine"})["obj"] == {"ok": True}
+    assert marked == [("s-1", "opened", None), ("s-1", "continued", "mine")]
 
-    def gone(*a):
+    def gone(*a, **k):
         raise team.TeamError("That share is gone.")
     monkeypatch.setattr(team, "continue_plan", gone)
     assert dpost("/local/rivendell/team/continue", {"id": "nope"}) == {"obj": {"error": "That share is gone."},
@@ -158,6 +168,17 @@ def test_the_transcript_comes_as_markdown(monkeypatch):
     h._get_api("/local/rivendell/team/transcript.md", {"id": ["s-1"]})
     assert box["body"].getvalue() == b"# t\n" and box["headers"]["Content-Type"] == "text/markdown; charset=utf-8"
     assert dget("/local/rivendell/team/transcript.md", {"id": ["x"]})["code"] == 404
+
+
+def test_the_update_comes_as_markdown_and_the_earlier_hop_as_json(monkeypatch):
+    monkeypatch.setattr(team, "update_md", lambda sid: "# new\n" if sid == "s-1" else None)
+    monkeypatch.setattr(team, "earlier", lambda sid: {"from": {"id": "e", "name": "Erfan"}, "turns": []} if sid == "s-1" else None)
+    h, box = _raw()
+    h._get_api("/local/rivendell/team/update.md", {"id": ["s-1"]})
+    assert box["body"].getvalue() == b"# new\n" and box["headers"]["Content-Type"] == "text/markdown; charset=utf-8"
+    assert dget("/local/rivendell/team/update.md", {"id": ["x"]})["code"] == 404
+    assert dget("/local/rivendell/team/earlier", {"id": ["s-1"]})["obj"]["from"]["name"] == "Erfan"
+    assert dget("/local/rivendell/team/earlier", {"id": ["x"]}) == {"obj": {"error": "not found"}, "code": 404}
 
 
 def test_clone_and_install_answer_with_what_happened_or_why_not(monkeypatch):
