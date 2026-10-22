@@ -1734,10 +1734,6 @@ export function App() {
     const plan = await api.teamContinue(id, { into: "yours" });
     const sid = plan.session;
     if (!sid) { notify("error", "There's no session of yours in this thread any more."); return; }
-    const row = team?.inbox.find((r) => r.id === id);
-    const n = row?.new_turns ?? 0;
-    setCameBack((m) => ({ ...m, [sid]: `${row?.relation === "back" ? "back from" : "update from"} ${(plan.from ?? "a teammate").split(" ")[0]}`
-      + ` · ${n} turn${n === 1 ? "" : "s"}` }));
     if (plan.branch && plan.project) {
       const wt = await api.worktreeAdd(plan.project, plan.branch, plan.base ?? undefined);
       if (!wt.ok || !wt.path) {
@@ -1746,6 +1742,10 @@ export function App() {
       }
       await api.teamUnpack(id, wt.path).catch((e: Error) => notify("info", e.message));
     }
+    const row = team?.inbox.find((r) => r.id === id);
+    const n = row?.new_turns ?? 0;
+    setCameBack((m) => ({ ...m, [sid]: `${row?.relation === "back" ? "back from" : "update from"} ${(plan.from ?? "a teammate").split(" ")[0]}`
+      + ` · ${n} turn${n === 1 ? "" : "s"}` }));
     setDrafts((d) => ({ ...d, [sid]: [plan.draft, d[sid]].filter(Boolean).join("\n\n") }));
     openSession(sid);
     toChat();
