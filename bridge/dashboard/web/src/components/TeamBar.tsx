@@ -81,7 +81,7 @@ export function EarlierPlate({ share, facts, by, me }: {
   share: string;
   facts: NonNullable<NonNullable<SessionBrief["team"]>["earlier"]>;
   by: string;                    // who picked it up after them: the sender of this share
-  me?: string | null;            // your Rivendell id: the turns were yours
+  me?: string | null;            // your Rivendell id, only on a session sent back to you: the turns were yours
 }) {
   const [open, setOpen] = useState(false);
   const [got, setGot] = useState<TeamEarlier | null>(null);
@@ -110,7 +110,9 @@ export function EarlierPlate({ share, facts, by, me }: {
         </span>
       </button>
       {open && (
-        <div style={{ padding: "0 14px 12px 40px", display: "flex", flexDirection: "column", gap: 10, opacity: 0.8 }}>
+        // Its own scroll: the transcript under it is windowed, and a long unfolded hop above the
+        // list would push its window out of step.
+        <div style={{ padding: "0 14px 12px 40px", display: "flex", flexDirection: "column", gap: 10, opacity: 0.8, maxHeight: "40vh", overflowY: "auto" }}>
           {fail ? <span style={{ fontFamily: UI, fontSize: "var(--t11)", color: "var(--txl)" }}>{fail}</span>
             : !got ? <span style={{ fontFamily: UI, fontSize: "var(--t11)", color: "var(--txl)" }}>Loading…</span>
             : got.turns.map((t, i) => (

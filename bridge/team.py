@@ -355,18 +355,21 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
     cwd = _session_dir(s)
     meta = {"project": s.get("project"), "repo": github.remote_slug(cwd) if cwd else None,
             "branch": (git.current_branch_cached(cwd) or None) if cwd else None, "turns": len(turns),
-            "pictures": len(pics), "code": False, "commitSha": None, "redacted": redacted, "thread": thread}
-    return {"payload": payload, "pictures": pics, "meta": meta, "title": title}
+            "pictures": len(pics), "code": False, "commitSha": None, "redacted": redacted, "thread": thread,
+            "unfinished": sum(1 for x in turns if x["status"] == "running")}
+    return {"payload": payload, "pictures": pics, "meta": meta, "title": title,
+            "earlier": {"from": earlier["from"].get("name"), "turns": len(earlier["turns"])} if earlier else None}
 
 
 def _pack_turns(t: dict, picture, home: "str | None", budget: list) -> "tuple[list, int]":
     """A transcript's turns as a share carries them: each prompt redacted, each event through
-    the whitelist, at most _EVENTS_MAX events across everything packed (`budget`)."""
+    the whitelist, at most _EVENTS_MAX events across everything packed (`budget`), the newest
+    turns first: in a long session they are what an update is about."""
     by_turn: dict = {}
     for ev in t["events"]:
         by_turn.setdefault(ev.get("turn_id"), []).append(ev)
     turns, redacted = [], 0
-    for turn in t["turns"][-_TURNS_MAX:]:
+    for turn in reversed(t["turns"][-_TURNS_MAX:]):
         events, ids = [], {}
         for ev in by_turn.get(turn["id"], []):
             if budget[0] >= _EVENTS_MAX:
@@ -382,7 +385,7 @@ def _pack_turns(t: dict, picture, home: "str | None", budget: list) -> "tuple[li
                       "effort": turn.get("effort"), "status": turn.get("status"),
                       "attachments": [p for p in (picture(a) for a in turn.get("attachments") or []) if p],
                       "events": events})
-    return turns, redacted
+    return turns[::-1], redacted
 
 
 def _thread_hash(session_id: str) -> str:
@@ -391,13 +394,11 @@ def _thread_hash(session_id: str) -> str:
 
 def thread_of(session_id: str) -> str:
     """The thread a session of yours belongs to: the thread of the share CONTINUE HERE made it
-    from, else its own (a hash of its id, which says nothing about it)."""
+    from (team_out.json, so it outlives the share), else its own (a hash of its id, which says
+    nothing about it)."""
     with _lock:
-        shares = _load()
-    for r in shares.values():
-        if r.get("continued_session") == session_id and _THREAD.fullmatch(str(r.get("thread") or "")):
-            return r["thread"]
-    return _thread_hash(session_id or "")
+        got = _out()["continued"].get(session_id)
+    return got if isinstance(got, str) and _THREAD.fullmatch(got) else _thread_hash(session_id or "")
 
 
 def _earlier_hop(session_id: str, thread: str, home: str, budget: list) -> "dict | None":
@@ -408,8 +409,6 @@ def _earlier_hop(session_id: str, thread: str, home: str, budget: list) -> "dict
         return None          # the thread's own first session: nothing came before it, whatever came back into it
     with _lock:
         shares = _load()
-    if not any(r.get("continued_session") == session_id for r in shares.values()):
-        return None
     recs = sorted((r for r in shares.values() if r.get("thread") == thread and r.get("kind") == "session"
                    and r.get("session") and store.get_session(r["session"])), key=lambda r: r.get("at") or 0)
     if not recs:
@@ -425,7 +424,8 @@ def preview(session_id: str) -> dict:
     m = p["meta"]
     return {"title": p["title"], "project": m["project"], "repo": m["repo"], "branch": m["branch"],
             "turns": m["turns"], "pictures": m["pictures"], "redacted": m["redacted"],
-            "thread": m["thread"], "running": _running(session_id)}
+            "thread": m["thread"], "running": _running(session_id), "unfinished": m["unfinished"],
+            "earlier": p["earlier"]}
 
 
 def _running(session_id: "str | None") -> bool:
@@ -521,7 +521,8 @@ def send(kind: str, to: str, note: str = "", *, session_id: "str | None" = None,
 
 
 # --- what this bridge sent: team_out.json beside team.json (0600) -----------------------------------
-# threads: thread -> your session it is; queue: sends waiting for their session's turn to end.
+# threads: thread -> your session it is; continued: your session -> the thread CONTINUE HERE (or IN
+# YOURS) put it in; queue: sends waiting for their session's turn to end.
 
 def _out_path() -> str:
     return os.path.join(os.path.dirname(config.BRIDGE_DB), "team_out.json")
@@ -535,6 +536,7 @@ def _out() -> dict:
         got = {}
     got = got if isinstance(got, dict) else {}
     return {"threads": got["threads"] if isinstance(got.get("threads"), dict) else {},
+            "continued": got["continued"] if isinstance(got.get("continued"), dict) else {},
             "queue": got["queue"] if isinstance(got.get("queue"), list) else []}
 
 
@@ -762,8 +764,10 @@ def _receive(worker, row: dict) -> None:
             rec["thread"] = rec["meta"]["thread"]
             with _lock:
                 same = [(k, r) for k, r in _load().items() if r.get("thread") == rec["thread"] and r.get("kind") == "session"]
-            # What you had of this thread before it came: its new turns are the ones after that.
-            rec["seen_at"] = max((r.get("last_at") or 0 for _, r in same), default=0)
+            # What you saw of this thread before it came (a version you opened or continued, never one
+            # that folded unopened): its new turns are the ones after that.
+            rec["seen_at"] = max((r.get("last_at") or 0 for _, r in same if r.get("opened") or r.get("continued")),
+                                 default=0)
             # A catch-up can bring an older version after a newer one: it folds in at once.
             newer = next((k for k, r in same if r["from"]["id"] == rec["from"]["id"] and not r.get("dismissed")
                           and str(r.get("sent") or "") > rec["sent"]), None)
@@ -777,8 +781,7 @@ def _receive(worker, row: dict) -> None:
         except Exception:
             _drop_local(share_id, rec)
             raise
-        _put_and_fold(share_id, rec)
-        if not newer:
+        if not _put_and_fold(share_id, rec):
             _announce(worker, share_id, rec)
         _stamp(worker, share_id, "delivered")
     finally:
@@ -786,20 +789,25 @@ def _receive(worker, row: dict) -> None:
             _busy.discard(share_id)
 
 
-def _put_and_fold(share_id: str, rec: dict) -> None:
+def _put_and_fold(share_id: str, rec: dict) -> bool:
     """File a share; the older versions of its thread from the same person fold into it. Their
     read-only copies go (this one carries all their turns); their records stay, with what you
-    did with them and the session you continued them in."""
+    did with them and the session you continued them in. Decided here, under the lock, by when
+    each was sent: two taken in at once never fold the newer into the older. True when this
+    one folded into a newer one itself."""
     with _lock:
         shares = _load()
-        shares[share_id] = rec
         if rec.get("thread") and not rec.get("folded_into"):
-            for k, r in shares.items():
-                if (k != share_id and r.get("thread") == rec["thread"] and r.get("kind") == "session"
-                        and r["from"]["id"] == rec["from"]["id"] and not r.get("folded_into") and not r.get("dismissed")):
-                    _drop_local(k, r)
-                    r.update(folded_into=share_id, session=None, turns=[])
+            same = [(k, r) for k, r in shares.items() if k != share_id and r.get("thread") == rec["thread"]
+                    and r.get("kind") == "session" and r["from"]["id"] == rec["from"]["id"]
+                    and not r.get("folded_into") and not r.get("dismissed")]
+            newer = next((k for k, r in same if str(r.get("sent") or "") > str(rec.get("sent") or "")), None)
+            for k, r in [(share_id, rec)] if newer else same:
+                _drop_local(k, r)
+                r.update(folded_into=newer or share_id, session=None, turns=[])
+        shares[share_id] = rec
         _save(shares)
+    return bool(rec.get("folded_into"))
 
 
 def _clear_leftovers(share_id: str) -> None:
@@ -921,7 +929,7 @@ def _materialize(worker, share_id: str, rec: dict) -> None:
         turns.append({"id": tid, "seq": len(turns), "prompt": redact(str(t.get("prompt") or "")[:_TEXT_MAX])[0],
                       "attachments": atts, "status": t.get("status") if t.get("status") in ("done", "error") else "done",
                       "started": at, "model": model[:80] if isinstance(model, str) else None})
-    rec["last_at"] = max((x["started"] for x in turns), default=0)
+    rec["last_at"] = max((x["started"] for x in turns if x["id"] not in unfinished), default=0)   # finished, it's new
     rec["new_turns"] = sum(1 for x in turns if x["started"] > seen_at)
     rec["new_pictures"] = new_pics
     facts = {"share": share_id, "instance": worker.id, "kind": "session", "from": rec["from"],
@@ -1046,10 +1054,13 @@ def inbox() -> list:
             row["version"] = 1 + len(theirs)
             row["yours"] = _yours(r["thread"], shares, threads)
             row["relation"] = _relation(r, theirs, threads, row["yours"])
-            if before:
-                b = before[-1]
-                state = "continued" if b.get("continued") else "opened" if b.get("opened") else None
-                row["prev"] = {"state": state, "at": b.get(f"{state}_at") if state else None}
+            saw = [x for x in before if x.get("continued") or x.get("opened")]
+            if saw:           # the newest version you opened or continued: what's new counts from there
+                b = saw[-1]
+                state = "continued" if b.get("continued") else "opened"
+                row["prev"] = {"state": state, "at": b.get(f"{state}_at"),
+                               "version": 1 + sum(1 for x in theirs if (x.get("at") or 0) < (b.get("at") or 0))
+                               if b in theirs else None}
         rows.append(row)
     return sorted(rows, key=lambda r: r["at"], reverse=True)
 
@@ -1072,7 +1083,10 @@ def _yours(thread: str, shares: dict, threads: dict) -> "dict | None":
     """Your session in a thread, the newest of them: the one you sent it from, or one you
     continued a version of it in. None when it's gone."""
     best = None
-    for sid in {threads.get(thread)} | {r.get("continued_session") for r in shares.values() if r.get("thread") == thread}:
+    with _lock:
+        continued = _out()["continued"]
+    for sid in {threads.get(thread)} | {r.get("continued_session") for r in shares.values() if r.get("thread") == thread} \
+            | {s for s, t in continued.items() if t == thread}:
         s = store.get_session(sid) if isinstance(sid, str) else None
         if s and not refusal(s.get("origin")) and (best is None or (s.get("updated") or 0) > (best.get("updated") or 0)):
             best = s
@@ -1130,6 +1144,10 @@ def mark(share_id: str, state: str, session: "str | None" = None) -> dict:
         rec.setdefault(f"{state}_at", time.time())
         if mine:
             rec["continued_session"] = session
+            if rec.get("thread"):
+                out = _out()
+                out["continued"][session] = rec["thread"]
+                _write(_out_path(), out)
         if state == "dismissed":
             _drop_local(share_id, rec)
             rec.update(session=None, file=None, turns=[])
@@ -1232,6 +1250,8 @@ def continue_plan(share_id: str, into: "str | None" = None, project: "str | None
     rec = _get(share_id or "")
     if not rec or rec.get("dismissed"):
         raise TeamError("That share is gone.")
+    if rec.get("folded_into"):
+        raise TeamError("A newer version of it came since: it's in your TEAM tab.")
     name, note, meta = rec["from"]["name"], rec["note"], rec["meta"]
     said = f" Their note: “{note}”" if note else ""
     if rec["kind"] != "session":

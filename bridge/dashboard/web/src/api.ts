@@ -1075,7 +1075,7 @@ export interface Received {
   relation?: "update" | "back" | null;
   version?: number;
   new_turns?: number | null;
-  prev?: { state: "continued" | "opened" | null; at: number | null } | null;
+  prev?: { state: "continued" | "opened" | null; at: number | null; version?: number | null } | null;
   yours?: { id: string; title: string } | null;
 }
 
@@ -1091,6 +1091,8 @@ export interface TeamPreview {
   turns: number; pictures: number; redacted: number;
   thread?: string;     // ties its sends together (absent from an older bridge)
   running?: boolean;   // a turn is going in it now
+  unfinished?: number; // turns of it that are running (they'd reach them unfinished)
+  earlier?: { from: string; turns: number } | null;   // the session it was continued from goes with it
 }
 
 /** The hop a received session was continued from: whose turns, each prompt with its answer. */

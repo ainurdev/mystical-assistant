@@ -87,16 +87,20 @@ export function TeamSendSheet({ what, teammates, outbox = [], to: first, onClose
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const person = roster.find((t) => t.id === to);
 
+  // Once, on open: App hands a new onClose every render, and focusing again on each one
+  // pulled the caret out of the picture's title into NOTE mid-word.
+  const close = useRef(onClose);
+  close.current = onClose;
   useEffect(() => {
     noteRef.current?.focus();
     const key = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       e.stopImmediatePropagation();     // the lightbox under it listens for Esc too
-      onClose();
+      close.current();
     };
     window.addEventListener("keydown", key, true);
     return () => window.removeEventListener("keydown", key, true);
-  }, [onClose]);
+  }, []);
 
   useEffect(() => {
     if (what.kind !== "session") return;
@@ -128,7 +132,8 @@ export function TeamSendSheet({ what, teammates, outbox = [], to: first, onClose
   // What they already have of this session (YOU SENT, by its thread): it goes as the next version.
   const had = what.kind === "session" && person ? sentBefore(outbox, preview?.thread, person.id) : null;
   const num = (v: unknown) => (typeof v === "number" ? v : 0);
-  const newTurns = had && preview ? preview.turns - num(had.last.meta.turns) : 0;
+  // A turn that was still running when it went is new to them again now it has an answer.
+  const newTurns = had && preview ? preview.turns - num(had.last.meta.turns) + num(had.last.meta.unfinished) : 0;
   const newPics = had && preview ? preview.pictures - num(had.last.meta.pictures) : 0;
   const waits = what.kind === "session" && !!preview?.running && when === "end";
   const label = waits ? "SEND WHEN IT ENDS" : had ? (newTurns > 0 || newPics > 0 ? "SEND UPDATE" : "SEND AGAIN") : "SEND";
@@ -174,7 +179,7 @@ export function TeamSendSheet({ what, teammates, outbox = [], to: first, onClose
                   }}>
                     <span style={{ flex: "none", marginTop: 2, color: "var(--info)", display: "flex" }}><History size={12} strokeWidth={2} /></span>
                     <span>
-                      {firstName} has {bits.length ? "this session" : "this exact version"}: sent {ago(sentAt, nowSec)} ago,{" "}
+                      {firstName} has {bits.length ? "this session" : "this exact version"}: sent {ago(sentAt, nowSec) === "now" ? "just now" : `${ago(sentAt, nowSec)} ago`},{" "}
                       <b style={{ color: TONE[st.tone], fontWeight: 600 }}>{st.text}</b>.
                       {bits.length > 0 && <><br />Since then <b style={{ color: "var(--txh)", fontWeight: 600 }}>+{bits.join(", ")}</b>. It goes as v{had.count + 1}: {firstName} gets the new part on top of what they have, not a second copy.</>}
                     </span>
@@ -237,6 +242,10 @@ export function TeamSendSheet({ what, teammates, outbox = [], to: first, onClose
                   title={`Pictures · ${preview?.pictures ?? 0}`} hint="the screenshots in its WORK zones" />
                 <Box on={code} onToggle={() => setCode((v) => !v)} title="The code"
                   hint="this checkout with its uncommitted changes; it opens on a branch of its own" />
+                {preview?.earlier && (
+                  <Box on locked title={`Where it started · ${preview.earlier.turns} turn${preview.earlier.turns === 1 ? "" : "s"} from ${preview.earlier.from.split(" ")[0]}`}
+                    hint={`the session you continued this from goes with it, words only, so ${person ? person.name.split(" ")[0] : "they"} can read where it began`} />
+                )}
                 <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 7, fontFamily: UI, fontSize: "var(--t105)", color: "var(--txd)" }}>
                   <span style={{ color: "var(--ok)", display: "flex" }}><ShieldCheck size={12} strokeWidth={2} /></span>
                   {preview?.redacted ? `${preview.redacted} token-shaped string${preview.redacted === 1 ? "" : "s"} blanked out` : "Token-shaped text is blanked out"} · your home folder shows as ~ · .env files never go

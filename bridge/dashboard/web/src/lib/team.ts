@@ -137,7 +137,8 @@ export function relationLine(
     const first = r.from.name.split(" ")[0] || r.from.name;
     return { strong: `${turns} on top of yours`, rest: at ? ` · you sent it to ${first} ${ago(at, now)} ago` : "" };
   }
-  const since = (r.version ?? 1) > 1 ? `v${(r.version ?? 2) - 1}` : "yours";
+  // From the version you last opened or continued, never one that folded in unseen.
+  const since = r.prev?.version ? `v${r.prev.version}` : r.prev ? "yours" : (r.version ?? 1) > 1 ? `v${(r.version ?? 2) - 1}` : "yours";
   const at = r.prev?.at ?? null;
   const when = at ? (sameDay(at, now) ? `at ${hhmm(at, h12)}` : `${ago(at, now)} ago`) : "";
   const rest = r.prev?.state === "continued" ? `, which you continued${when ? ` ${when}` : ""}`

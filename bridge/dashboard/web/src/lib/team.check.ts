@@ -76,11 +76,13 @@ const card = (r: Partial<Received>) => ({ relation: null, version: 1, new_turns:
 eq(relationLine(card({ relation: "back", new_turns: 3 }), now, out("x", "e", "t", 5 * 3600)),
   { strong: "3 turns on top of yours", rest: " · you sent it to Erfan 5h ago" }, "sent back: their turns on top of yours");
 eq(relationLine(card({ relation: "back", new_turns: 1 }), now), { strong: "1 turn on top of yours", rest: "" }, "sent back, the send itself out of reach");
-eq(relationLine(card({ relation: "update", version: 2, new_turns: 3, prev: { state: "continued", at: now - 3600 } }), now, null, false),
+eq(relationLine(card({ relation: "update", version: 2, new_turns: 3, prev: { state: "continued", at: now - 3600, version: 1 } }), now, null, false),
   { strong: "+3 turns since v1", rest: `, which you continued at ${new Date((now - 3600) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}` },
   "an update to one you continued today");
-eq(relationLine(card({ relation: "update", version: 3, new_turns: 1, prev: { state: "opened", at: now - 60 } }), now),
+eq(relationLine(card({ relation: "update", version: 3, new_turns: 1, prev: { state: "opened", at: now - 60, version: 2 } }), now),
   { strong: "+1 turn since v2", rest: ", which you opened" }, "an update to one you only opened");
 eq(relationLine(card({ relation: "update", version: 1, new_turns: 2 }), now), { strong: "+2 turns since yours", rest: "" },
   "someone else's send in a thread you have");
 eq(relationLine(card({}), now), null, "no thread you have: no line");
+eq(relationLine(card({ relation: "update", version: 3, new_turns: 4, prev: { state: "continued", at: now - 60, version: 1 } }), now)?.strong,
+  "+4 turns since v1", "counted from the version you saw, not one that folded in unseen");

@@ -2627,7 +2627,9 @@ export function App() {
               {/* CENTER */}
               <Terminal
                 view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
-                teamMe={team?.outbox.find((o) => !o.queued)?.from.id ?? null}
+                // "Your N turns" only on your own session sent back: anywhere else the hop's `from` is the sender's word.
+                teamMe={team?.inbox.find((r) => r.id === selected?.team?.share)?.relation === "back"
+                  ? team?.outbox.find((o) => !o.queued)?.from.id ?? null : null}
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
                 activeId={active?.id ?? null} onRespond={respond}
                 scrollRef={scrollRef} contentRef={contentRef}

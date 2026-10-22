@@ -970,7 +970,8 @@ T = "0123456789abcdef"
 PAYAM = "33333333-3333-4333-8333-333333333333"
 
 
-def _thread_share(riv, turns, *, thread=T, frm=ERFAN, note="can you take it from here?", pictures=(), earlier=None):
+def _thread_share(riv, turns, *, thread=T, frm=ERFAN, note="can you take it from here?", pictures=(), earlier=None,
+                  sent=None, take=True):
     """A session share in a thread: turns are (prompt, at) or (prompt, at, status, events)."""
     doc = {"v": 1, "title": "Done Tasks Still Show Due Alerts",
            "turns": [{"prompt": t[0], "at": t[1], "status": t[2] if len(t) > 2 else "done",
@@ -980,7 +981,10 @@ def _thread_share(riv, turns, *, thread=T, frm=ERFAN, note="can you take it from
     share = riv.offer("session", [("transcript", "transcript.json.gz", _transcript(doc))] + list(pictures), note=note,
                       meta={"repo": "ainurhq/rivendell", "project": "/ainurhq/rivendell", "turns": len(turns), "thread": thread},
                       frm=frm)
-    team.on_share(riv.worker, riv.row(share))
+    if sent:
+        riv.shares[share]["sentAt"] = sent
+    if take:
+        team.on_share(riv.worker, riv.row(share))
     return share
 
 
@@ -1018,8 +1022,10 @@ def test_an_update_folds_the_older_version_in_and_says_whats_new(riv, tmp_path):
     (row,) = team.inbox()
     assert row["id"] == v2 and row["relation"] == "update" and row["version"] == 2 and row["new_turns"] == 2
     assert row["yours"] == {"id": mine, "title": store.get_session(mine)["title"] or "Session"}
-    assert row["prev"]["state"] == "continued" and row["prev"]["at"]
+    assert row["prev"]["state"] == "continued" and row["prev"]["at"] and row["prev"]["version"] == 1
     assert team.owned_uploads() >= {team._get(v2)["session"]} and old_copy not in team.owned_uploads()
+    with pytest.raises(team.TeamError, match="newer version"):        # a card the tab still shows for a moment
+        team.continue_plan(v1)
     other = _thread_share(riv, [("x", 1.0)], thread="fedcba9876543210", frm=PAYAM)    # another thread stays its own card
     assert {r["id"] for r in team.inbox()} == {v2, other} and team._get(v2)["folded_into"] is None
 
@@ -1094,6 +1100,7 @@ def test_a_turn_still_running_when_sent_arrives_unfinished(riv, tmp_path):
     tid = uuid.uuid4().hex
     store.start_turn(sid, tid, "still going", None)
     assert [x["status"] for x in _gunzip_json(team.pack_session(sid)["payload"])["turns"]] == ["done", "running"]
+    assert team.pack_session(sid)["meta"]["unfinished"] == 1
 
 
 def test_your_home_folder_leaves_as_a_tilde(riv, tmp_path, monkeypatch):
@@ -1178,3 +1185,72 @@ def test_the_send_sheet_learns_the_thread_and_a_running_turn(riv, tmp_path):
     assert p["thread"] == team.thread_of(sid) and p["running"] is False
     store.start_turn(sid, uuid.uuid4().hex, "again", None)
     assert team.preview(sid)["running"] is True
+
+
+def test_whats_new_counts_from_the_version_you_saw_not_one_that_folded_unopened(riv, tmp_path):
+    v1 = _thread_share(riv, [("p1", 100.0), ("p2", 200.0)], sent="2026-10-20T01:00:00Z")
+    team.mark(v1, "continued", session=_mine(tmp_path))
+    _thread_share(riv, [("p1", 100.0), ("p2", 200.0), ("p3", 300.0), ("p4", 400.0)], sent="2026-10-20T02:00:00Z")
+    v3 = _thread_share(riv, [("p1", 100.0), ("p2", 200.0), ("p3", 300.0), ("p4", 400.0), ("p5", 500.0), ("p6", 600.0)],
+                       sent="2026-10-20T03:00:00Z")
+    (row,) = team.inbox()
+    assert row["id"] == v3 and row["version"] == 3 and row["new_turns"] == 4
+    assert row["prev"]["state"] == "continued" and row["prev"]["version"] == 1
+    md = team.update_md(v3)
+    assert all(f"answer to p{i}" in md for i in (3, 4, 5, 6)) and "answer to p2" not in md
+
+
+def test_a_turn_sent_unfinished_counts_as_new_once_it_finishes(riv, tmp_path):
+    v1 = _thread_share(riv, [("p1", 100.0), ("p2", 200.0, "running", [{"type": "text", "text": "building…"}])],
+                       sent="2026-10-20T01:00:00Z")
+    team.mark(v1, "continued", session=_mine(tmp_path))
+    v2 = _thread_share(riv, [("p1", 100.0), ("p2", 200.0)], sent="2026-10-20T02:00:00Z")
+    (row,) = team.inbox()
+    assert row["new_turns"] == 1 and "answer to p2" in team.update_md(v2)
+
+
+def test_an_older_version_stored_last_never_folds_the_newer(riv, monkeypatch):
+    """Two frames taken in at once: the older one's download finishes after the newer is filed."""
+    v1 = _thread_share(riv, [("p1", 100.0)], sent="2026-10-20T01:00:00Z", take=False)
+    v2 = _thread_share(riv, [("p1", 100.0), ("p2", 200.0)], sent="2026-10-20T02:00:00Z", take=False)
+    real = team._materialize
+
+    def slow(worker, share_id, rec):
+        real(worker, share_id, rec)
+        if share_id == v1:
+            team.on_share(riv.worker, riv.row(v2))           # the newer one lands meanwhile
+    monkeypatch.setattr(team, "_materialize", slow)
+    team.on_share(riv.worker, riv.row(v1))
+    assert [r["id"] for r in team.inbox()] == [v2] and team._get(v1)["folded_into"] == v2
+    assert store.get_session(team._get(v2)["session"]) and team._get(v1)["session"] is None
+
+
+def test_a_continued_session_keeps_its_thread_after_the_share_expires(riv, tmp_path):
+    share = _thread_share(riv, [("p1", 100.0)], sent="2026-10-20T01:00:00Z")
+    mine = _mine(tmp_path)
+    team.mark(share, "continued", session=mine)
+    team._prune(4200000000.0)                               # 14 days on, the share and its record are gone
+    assert team._get(share) is None and team.thread_of(mine) == T
+    later = _thread_share(riv, [("p1", 100.0), ("p2", 200.0)], sent="2026-11-20T01:00:00Z")
+    (row,) = [r for r in team.inbox() if r["id"] == later]
+    assert row["yours"]["id"] == mine
+
+
+def test_the_sheet_says_whose_earlier_turns_go_with_it(riv, tmp_path):
+    first = _thread_share(riv, [("their first", 100.0)])
+    mine = _mine(tmp_path, "my follow up")
+    team.mark(first, "continued", session=mine)
+    assert team.preview(mine)["earlier"] == {"from": "Erfan Besharat", "turns": 1}
+    assert team.preview(_my_session(tmp_path))["earlier"] is None
+
+
+def test_a_big_session_keeps_its_newest_turns_whole(riv, tmp_path, monkeypatch):
+    monkeypatch.setattr(team, "_EVENTS_MAX", 3)
+    sid = _mine(tmp_path)
+    for i in range(4):
+        tid = uuid.uuid4().hex
+        store.start_turn(sid, tid, f"p{i}", None)
+        store.append_event(sid, tid, {"type": "text", "text": f"a{i}"})
+        store.finish_turn(tid, "done", 0.1, 1.0)
+    turns = _gunzip_json(team.pack_session(sid)["payload"])["turns"]
+    assert [t["prompt"] for t in turns] == ["p0", "p1", "p2", "p3"] and [len(t["events"]) for t in turns] == [0, 1, 1, 1]
