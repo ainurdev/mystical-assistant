@@ -580,10 +580,12 @@ def _drain_queue() -> None:
 
 
 def _start_queue() -> None:
-    """One thread drains the queue while anything waits in it."""
+    """One thread drains the queue while anything waits in it. It stops, and a start
+    starts another, under the same lock: a send queued as it stops is never left waiting."""
     global _queue_thread
 
     def loop():
+        global _queue_thread
         while True:
             time.sleep(_QUEUE_EVERY)
             try:
@@ -592,9 +594,10 @@ def _start_queue() -> None:
                 print(f"[team] the send queue stalled: {e}", file=sys.stderr)
             with _lock:
                 if not any(not q.get("error") for q in _out()["queue"]):
+                    _queue_thread = None
                     return
     with _lock:
-        if _queue_thread and _queue_thread.is_alive():
+        if _queue_thread is not None:
             return
         _queue_thread = threading.Thread(target=loop, name="team-queue", daemon=True)
         _queue_thread.start()

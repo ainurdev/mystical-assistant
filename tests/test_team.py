@@ -125,6 +125,7 @@ def riv(monkeypatch, tmp_path):
     monkeypatch.setattr(team, "_path", lambda: str(tmp_path / "team.json"))
     monkeypatch.setattr(team, "_files_dir", lambda share_id: str(tmp_path / "state" / "team" / share_id))
     monkeypatch.setattr(team, "_out_path", lambda: str(tmp_path / "team_out.json"))
+    monkeypatch.setattr(team, "_start_queue", lambda: None)      # the tests drain the send queue themselves
     team._cache.clear()
     team._busy.clear()
     store.init()
