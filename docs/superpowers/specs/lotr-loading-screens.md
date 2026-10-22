@@ -48,9 +48,11 @@ at the light, and a whip of three thongs. Behind it are smoke and breathing fire
   With each step the light, its pool on the deck and the white edge it casts
   on the Balrog all grow, and the Balrog's backlight dims.
 - **Ready:** the footer reads `FLY, YOU FOOLS` and `CLICK TO PASS`.
-- **Exit:** the staff comes down. White flame stands up off the deck and the
-  frame shakes, a crack runs to the Balrog's feet, and the span under it breaks
-  in three and falls. Then the wipe (`kdplunge`): the whole frame gives on the
+- **Exit:** he lifts the staff over his head while the runes gather into its
+  light, holds it, then swings it down from the shoulder and plants its foot on
+  the deck at 300 ms, with a small rebound. White flame stands up where it lands
+  and the frame shakes, a crack runs to the Balrog's feet, and the span under it
+  breaks in three and falls. Then the wipe (`kdplunge`): the whole frame gives on the
   Balrog's side, hangs a beat from its top-left corner, and drops into the deep,
   darkening, with the Balrog on it. The Balrog used to fall on its own as well.
   That moved a group full of glow filters, which WebKit re-ran every frame: the
@@ -116,7 +118,23 @@ moon in the sky, and the door's reflection lies under the threshold.
   -3s, so that a boot continued from a restart skips its entrance. That would
   also skip an exit. The rule now spares `.bx`, which marks anything that
   answers the boot rather than opens it: an exit flourish, or a step's pulse.
-  These sit on wrappers that carry no entrance of their own.
+  These sit on wrappers that carry no entrance of their own. The runes and the
+  staff's light do carry one, so their exits keep their delays through a
+  `.bootcontinue.bootleaving` rule. Until then a restarted boot's strike began
+  with the light and the runes already gone and the span under the Balrog
+  already fallen (the fragments lacked `.bx`).
+- **The strike read as a fall** (`work on movement of gandalf hand, its like his
+  hand falling currently`; draft `.mystical/design-drafts/kd-strike/`, also in
+  Claude Design under `drafts/kd-strike/`). It moved the whole staff arm 80 px
+  straight down in 130 ms, speeding up all the way, so the sleeve slid off his
+  shoulder to his hip. Now the arm turns about the shoulder and the staff turns
+  back about the fist (`kdarm`, `kdheld`, and `kdlevel` for the streak, all on
+  one timing), after a lift and a hold. Everything the blow sets off moved
+  from 120 ms to 300 ms, and the wipe still starts at 400 ms. The approved
+  draft also leaned his whole body 3°. That was cut, because it moved Gandalf's
+  rim filter and WebKit re-ran the filter every frame: 1–3 late frames in the
+  lift. Without the lean, the lift and the swing hold 60 fps in a WKWebView,
+  and the landing costs one late frame, as the old one did.
 - **SHUFFLE across a restart.** The restart's overlay and the boot that
   continues it after the reload are one intro, so they draw one scene. The draw
   is kept in sessionStorage (`BOOT_SCENE`) and read back when the boot

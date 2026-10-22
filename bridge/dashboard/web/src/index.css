@@ -657,34 +657,53 @@ body {
 .kd-pulse { fill: none; stroke: var(--txb); stroke-width: 1.4; opacity: 0; transform-box: view-box; transform-origin: -206px 53px; }
 .kd-go-a { animation: kdpulsea .8s cubic-bezier(.2,.7,.3,1); }
 .kd-go-b { animation: kdpulseb .8s cubic-bezier(.2,.7,.3,1); }
-/* The strike, inside the 400ms warm-up and the 650ms wipe: the staff comes
-   down (130ms), white flame stands up off the deck, the frame shakes, a crack
-   runs to the Balrog's feet and the span under it breaks in three and falls. */
-.kd-staffarm { transform-box: view-box; transform-origin: -215px 147px; }
-.bootleaving .kd-staffarm { animation: kdslam .13s cubic-bezier(.6,0,.9,.4) forwards; }
-.bootleaving .kd-runes { animation: kdgather .13s ease-in forwards; }
-.bootleaving .kd-light { animation: kdblaze .5s ease-out .1s forwards; }
+/* The strike, inside the 400ms warm-up and the 650ms wipe: he lifts the staff
+   over his head while the runes gather into its light, holds, then swings it
+   down and plants its foot on the deck at 300ms, with a small rebound.
+   Everything the blow sets off starts there: white flame stands up off the
+   deck, the frame shakes, a crack runs to the Balrog's feet and the span under
+   it breaks in three and falls. The arm turns about the shoulder (-246,199);
+   the staff turns back about the fist (-215,147.5) as far, plus its own tilt,
+   so it stays upright; the streak turns back that tilt about the light, so it
+   stays level. kdarm, kdheld and kdlevel share their keyframes' times
+   (47/58/79/87% of .38s = 180/220/300/330ms) and curves, so the turns cancel
+   on every frame. Planted, the staff's foot is where the sheet and the crack
+   start. His body stays still: leaning it moved its rim filter, which WebKit
+   re-ran every frame (1-3 late frames in the lift). */
+.kd-staffarm { transform-box: view-box; transform-origin: -246px 199px; }
+.kd-staffheld { transform-box: view-box; transform-origin: -215px 147.5px; }
+.bootleaving .kd-staffarm { animation: kdarm .38s linear forwards; }
+.bootleaving .kd-staffheld { animation: kdheld .38s linear forwards; }
+.kd-streak { transform-box: view-box; transform-origin: -206px 53px; }
+.bootleaving .kd-streak { animation: kdlevel .38s linear forwards; }
+.kd-runes { transform-box: view-box; transform-origin: -206px 53px; }
+.bootleaving .kd-runes { animation: kdgather .18s ease-in forwards; }
+.bootleaving .kd-light { animation: kdblaze .5s ease-out .28s forwards; }
+/* a restart's boot pulls every delay back 3s (.bootcontinue); the runes and the
+   light have an entrance too, so they can't be .bx: their exits keep their delays */
+.bootcontinue.bootleaving .kd-runes { animation-delay: 0s !important; }
+.bootcontinue.bootleaving .kd-light { animation-delay: .28s !important; }
 .kd-sheet { opacity: 0; transform-box: fill-box; transform-origin: 50% 100%; }
-.bootleaving .kd-sheet { animation: kdsheet .55s cubic-bezier(.2,.8,.3,1) .12s forwards; }
+.bootleaving .kd-sheet { animation: kdsheet .55s cubic-bezier(.2,.8,.3,1) .3s forwards; }
 .kd-shock { opacity: 0; transform-box: fill-box; transform-origin: center; }
-.bootleaving .kd-shock { animation: kdshock .6s ease-out .12s forwards; }
-.bootleaving .kd-scene { animation: kdshake .38s linear .12s; }
+.bootleaving .kd-shock { animation: kdshock .6s ease-out .3s forwards; }
+.bootleaving .kd-scene { animation: kdshake .38s linear .3s; }
 .kd-flash { position: absolute; inset: 0; z-index: 3; pointer-events: none; opacity: 0;
   background: radial-gradient(70% 55% at 34% 46%, color-mix(in srgb, var(--txb) 55%, transparent), transparent 70%); }
-.bootleaving .kd-flash { animation: kdflash .5s ease-out .12s; }
+.bootleaving .kd-flash { animation: kdflash .5s ease-out .3s; }
 .kd-crack { fill: none; stroke: var(--txb); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1 2; stroke-dashoffset: 1; opacity: 0; }
 .kd-crack.kd-twig { stroke-width: 1.1; }
-.bootleaving .kd-crack { animation: kdcrack .16s linear .13s forwards; }
+.bootleaving .kd-crack { animation: kdcrack .16s linear .31s forwards; }
 .kd-split { opacity: 0; fill: none; stroke: var(--txb); stroke-width: 1.5; }
-.bootleaving .kd-split { animation: tickfade .05s linear .26s forwards; }
+.bootleaving .kd-split { animation: tickfade .05s linear .44s forwards; }
 .kd-frag { transform-box: view-box; }
 .kd-frag-a { transform-origin: 100px 325px; }
 .kd-frag-b { transform-origin: 205px 325px; }
 .kd-frag-c { transform-origin: 310px 330px; }
-.bootleaving .kd-frag-a { animation: kdfalla .6s cubic-bezier(.55,0,1,.45) .2s forwards; }
-.bootleaving .kd-frag-b { animation: kdfallb .6s cubic-bezier(.55,0,1,.45) .22s forwards; }
-.bootleaving .kd-frag-c { animation: kdfallc .6s cubic-bezier(.55,0,1,.45) .24s forwards; }
-.bootleaving .kd-backlight { animation: kdout .5s ease .25s forwards; }
+.bootleaving .kd-frag-a { animation: kdfalla .6s cubic-bezier(.55,0,1,.45) .38s forwards; }
+.bootleaving .kd-frag-b { animation: kdfallb .6s cubic-bezier(.55,0,1,.45) .4s forwards; }
+.bootleaving .kd-frag-c { animation: kdfallc .6s cubic-bezier(.55,0,1,.45) .42s forwards; }
+.bootleaving .kd-backlight { animation: kdout .5s ease .43s forwards; }
 @keyframes kdignite { 0% { transform: scale(.2); opacity: 0; } 40% { opacity: 1; } 100% { transform: none; opacity: 1; } }
 @keyframes kdflick { 0% { transform: scale(.86, .82) skewX(-4deg); opacity: .78; } 100% { transform: scale(1.06, 1.18) skewX(5deg); opacity: 1; } }
 @keyframes kdlash { 0%, 100% { transform: rotate(0deg); } 50% { transform: rotate(-6deg); } }
@@ -702,7 +721,27 @@ body {
 @keyframes kdpulseb { 0% { opacity: .9; transform: scale(.4); } 100% { opacity: 0; transform: scale(5.5); } }
 @keyframes kdflincha { 0% { opacity: 1; } 25% { opacity: .35; } 100% { opacity: 1; } }
 @keyframes kdflinchb { 0% { opacity: 1; } 25% { opacity: .35; } 100% { opacity: 1; } }
-@keyframes kdslam { to { transform: translate(2px, 80px) rotate(3deg); } }
+@keyframes kdarm {
+  0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(.3,.7,.4,1); }
+  47%, 58% { transform: rotate(-28deg); animation-timing-function: cubic-bezier(.55,0,.95,.55); }
+  79% { transform: rotate(91.78deg); animation-timing-function: cubic-bezier(.2,.8,.4,1); }
+  87% { transform: rotate(89deg); animation-timing-function: ease-in-out; }
+  100% { transform: rotate(91.78deg); }
+}
+@keyframes kdheld {
+  0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(.3,.7,.4,1); }
+  47%, 58% { transform: rotate(20deg); animation-timing-function: cubic-bezier(.55,0,.95,.55); }
+  79% { transform: rotate(-78.04deg); animation-timing-function: cubic-bezier(.2,.8,.4,1); }
+  87% { transform: rotate(-76deg); animation-timing-function: ease-in-out; }
+  100% { transform: rotate(-78.04deg); }
+}
+@keyframes kdlevel {
+  0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(.3,.7,.4,1); }
+  47%, 58% { transform: rotate(8deg); animation-timing-function: cubic-bezier(.55,0,.95,.55); }
+  79% { transform: rotate(-13.74deg); animation-timing-function: cubic-bezier(.2,.8,.4,1); }
+  87% { transform: rotate(-13deg); animation-timing-function: ease-in-out; }
+  100% { transform: rotate(-13.74deg); }
+}
 @keyframes kdgather { to { transform: scale(.2); opacity: 0; } }
 @keyframes kdblaze { 0%, 30% { opacity: 1; } 100% { opacity: 0; } }
 @keyframes kdsheet { 0% { opacity: 1; transform: scale(.4, .05); } 35% { opacity: 1; transform: scale(1, 1); } 100% { opacity: 0; transform: scale(1.3, 1.25); } }

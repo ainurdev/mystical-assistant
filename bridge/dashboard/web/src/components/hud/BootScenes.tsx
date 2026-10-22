@@ -142,10 +142,11 @@ function Pillar({ x, w, far }: { x: number; w: number; far?: boolean }) {
 /** KHAZAD-DÛM: "You shall not pass." Gandalf holds a slender bridge over the
  *  chasm while the dashboard loads. Each answered step kindles one rune of the
  *  six round his staff's light, pulses it and makes the shadow's fire flinch;
- *  leaving, he strikes, white flame stands up off the deck, a crack runs to
- *  the Balrog's feet, the span under it breaks in three and falls, and the
- *  wipe (kdplunge) drops the whole frame, Balrog and all, into the deep. Always
- *  drawn at night: the intro hands this scene a dark ground (lib/theme nightOf). */
+ *  leaving, he lifts the staff over his head and plants it on the deck, white
+ *  flame stands up where it lands, a crack runs to the Balrog's feet, the span
+ *  under it breaks in three and falls, and the wipe (kdplunge) drops the whole
+ *  frame, Balrog and all, into the deep. Always drawn at night: the intro
+ *  hands this scene a dark ground (lib/theme nightOf). */
 export function KhazadDum({ progress }: { progress: number }) {
   const lit = Math.floor(progress * 6 + 1e-9);
   // the step's pulse and flinch restart by swapping between twin keyframes, so nothing remounts
@@ -392,9 +393,9 @@ export function KhazadDum({ progress }: { progress: number }) {
               </g>
             </g>
           </g>
-          <g clipPath="url(#kd-cut-a)" className="kd-deck"><g className="kd-frag kd-frag-a">{DECK}</g></g>
-          <g clipPath="url(#kd-cut-b)" className="kd-deck"><g className="kd-frag kd-frag-b">{DECK}</g></g>
-          <g clipPath="url(#kd-cut-c)" className="kd-deck"><g className="kd-frag kd-frag-c">{DECK}</g></g>
+          <g clipPath="url(#kd-cut-a)" className="kd-deck"><g className="kd-frag kd-frag-a bx">{DECK}</g></g>
+          <g clipPath="url(#kd-cut-b)" className="kd-deck"><g className="kd-frag kd-frag-b bx">{DECK}</g></g>
+          <g clipPath="url(#kd-cut-c)" className="kd-deck"><g className="kd-frag kd-frag-c bx">{DECK}</g></g>
         </g>
         <g clipPath="url(#kd-cut-rest)" className="kd-deck">{DECK}</g>
         <path className="kd-litwalk" d="M -545 331 Q 40 299 625 331" />
@@ -422,39 +423,41 @@ export function KhazadDum({ progress }: { progress: number }) {
             <line className="kd-guard" x1="34.5" y1="-102" x2="39.5" y2="-91" />
           </g>
         </g>
-        {/* the staff arm, raised; the light it holds; leaving, it comes down */}
+        {/* the staff arm, raised; the light it holds. Leaving, he lifts it over his
+            head and brings it down: the arm swings from the shoulder, and the staff,
+            turned back about the fist as far, stays upright and plants its foot */}
         <g className="kd-staffin">
           <g className="kd-staffarm bx">
-            <g transform="translate(-250 319)">
-              <g filter="url(#kd-rim-gf)">
-                <path className="kd-gf" d="M 0 -124 L 10 -128 C 18 -140 26 -156 32 -170 L 38 -168 C 34 -152 28 -138 22 -128 C 20 -122 14 -116 6 -114 Z" />
-                <path className="kd-gf" d="M 6 -114 C 2 -124 8 -140 20 -150 C 18 -138 16 -128 14 -118 Z" />
-                <path className="kd-gf" d="M 30 -172 L 36 -177 L 40 -171 L 35 -166 Z" />
+            <g transform="translate(-250 319)" filter="url(#kd-rim-gf)">
+              <path className="kd-gf" d="M 0 -124 L 10 -128 C 18 -140 26 -156 32 -170 L 38 -168 C 34 -152 28 -138 22 -128 C 20 -122 14 -116 6 -114 Z" />
+              <path className="kd-gf" d="M 6 -114 C 2 -124 8 -140 20 -150 C 18 -138 16 -128 14 -118 Z" />
+              <path className="kd-gf" d="M 30 -172 L 36 -177 L 40 -171 L 35 -166 Z" />
+            </g>
+            <g className="kd-staffheld bx">
+              <path className="kd-staff" transform="translate(-250 319)" d="M 26 -80 L 44 -262 M 44 -262 C 49 -270 41 -277 36 -272 M 44 -262 C 39 -269 48 -276 51 -269" />
+              {/* what gathers at its head */}
+              <ellipse className="kd-streak bx" cx={LX} cy={LY} rx="300" ry="2.4" fill="url(#kd-streak-g)" />
+              <g className="kd-light">
+                <circle className="kd-halo" cx={LX} cy={LY} r="140" fill="url(#kd-white)" />
+                <path className="kd-spikes" d="M -206 7 L -204.6 51.6 L -162 53 L -204.6 54.4 L -206 99 L -207.4 54.4 L -250 53 L -207.4 51.6 Z M -221 38 L -206 51.8 L -191 38 L -204.8 53 L -191 68 L -206 54.2 L -221 68 L -207.2 53 Z" />
+                <circle className="kd-tip" cx={LX} cy={LY} r="4.6" filter="url(#kd-glow)" />
               </g>
-              <path className="kd-staff" d="M 26 -80 L 44 -262 M 44 -262 C 49 -270 41 -277 36 -272 M 44 -262 C 39 -269 48 -276 51 -269" />
+              <g className="kd-runes"><g>
+                {/* the circle breaks under each rune: 20° gaps every 60° */}
+                <circle className="kd-ring" cx={LX} cy={LY} r="47" strokeDasharray="32.8 16.4" strokeDashoffset="16.4" />
+                <circle className="kd-ring kd-ticks" cx={LX} cy={LY} r="58" />
+                {RUNES.map((d, i) => {
+                  const a = 30 + i * 60, rad = (a * Math.PI) / 180;
+                  return (
+                    <g key={i} className={i < lit ? "kd-rune kd-on" : "kd-rune"} transform={`translate(${(LX + 47 * Math.sin(rad)).toFixed(1)} ${(LY - 47 * Math.cos(rad)).toFixed(1)}) rotate(${a})`}>
+                      <path d={d} />
+                      <circle className="kd-flare bx" r="7" />
+                    </g>
+                  );
+                })}
+              </g></g>
+              <circle className={beat ? `kd-pulse kd-go-${beat} bx` : "kd-pulse"} cx={LX} cy={LY} r="24" />
             </g>
-            {/* what gathers at its head */}
-            <ellipse className="kd-streak" cx={LX} cy={LY} rx="300" ry="2.4" fill="url(#kd-streak-g)" />
-            <g className="kd-light">
-              <circle className="kd-halo" cx={LX} cy={LY} r="140" fill="url(#kd-white)" />
-              <path className="kd-spikes" d="M -206 7 L -204.6 51.6 L -162 53 L -204.6 54.4 L -206 99 L -207.4 54.4 L -250 53 L -207.4 51.6 Z M -221 38 L -206 51.8 L -191 38 L -204.8 53 L -191 68 L -206 54.2 L -221 68 L -207.2 53 Z" />
-              <circle className="kd-tip" cx={LX} cy={LY} r="4.6" filter="url(#kd-glow)" />
-            </g>
-            <g className="kd-runes"><g>
-              {/* the circle breaks under each rune: 20° gaps every 60° */}
-              <circle className="kd-ring" cx={LX} cy={LY} r="47" strokeDasharray="32.8 16.4" strokeDashoffset="16.4" />
-              <circle className="kd-ring kd-ticks" cx={LX} cy={LY} r="58" />
-              {RUNES.map((d, i) => {
-                const a = 30 + i * 60, rad = (a * Math.PI) / 180;
-                return (
-                  <g key={i} className={i < lit ? "kd-rune kd-on" : "kd-rune"} transform={`translate(${(LX + 47 * Math.sin(rad)).toFixed(1)} ${(LY - 47 * Math.cos(rad)).toFixed(1)}) rotate(${a})`}>
-                    <path d={d} />
-                    <circle className="kd-flare bx" r="7" />
-                  </g>
-                );
-              })}
-            </g></g>
-            <circle className={beat ? `kd-pulse kd-go-${beat} bx` : "kd-pulse"} cx={LX} cy={LY} r="24" />
           </g>
         </g>
 
