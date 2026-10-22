@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Send } from "lucide-react";
+import { Check, Send } from "lucide-react";
 import { FIT, clampPan, zoomAt, type View } from "../lib/imgzoom";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 
@@ -118,7 +118,9 @@ export type Clip = {
  *  that produced it is out of sight; a clip rides only on the video it was
  *  stamped onto. `path` and `at` (its upload path and its call's clock) are a
  *  tool shot's, for lib/seenshots: shown, it counts as seen. */
-export type Shown = { src: string; name?: string; clip?: Clip; path?: string; at?: number };
+export type Shown = { src: string; name?: string; clip?: Clip; path?: string; at?: number;
+  /** A short badge on its filmstrip thumb: a question option's key. */
+  tag?: string };
 
 const hasPanel = (c?: Clip) =>
   !!(c && (c.notes || c.chapters?.length || c.todos?.length));
@@ -136,7 +138,11 @@ const uploadPath = (s: Shown): string | null =>
  *  `all` makes it a gallery: ‹ › and ←/→ step through it, the rest of the set
  *  stays visible as a strip along the bottom, and a title under the open one
  *  names it. Paging to a shot sees it, the same as tapping it open. */
-export function ImageLightbox({ src, all, onClose }: { src: string; all?: Shown[]; onClose: () => void }) {
+export function ImageLightbox({ src, all, onClose, action }: {
+  src: string; all?: Shown[]; onClose: () => void;
+  /** A button for the open picture, or null for none: a question card's PICK. */
+  action?: (i: number) => { label: string; onClick: () => void } | null;
+}) {
   const list: Shown[] = all?.length ? all : [{ src }];
   const [i, setI] = useState(() => Math.max(0, list.findIndex((m) => m.src === src)));
   const cur = list[i] ?? { src };
@@ -144,6 +150,7 @@ export function ImageLightbox({ src, all, onClose }: { src: string; all?: Shown[
   const go = (d: number) => setI((n) => (n + d + list.length) % list.length);
   useEffect(() => { if (cur.path && shotUnseen(cur.path, cur.at)) markShotSeen(cur.path); }, [cur.path, cur.at]);
   const title = [many ? `${i + 1}/${list.length}` : "", cur.name ?? ""].filter(Boolean).join(" · ");
+  const act = action?.(i);
 
   useEffect(() => {
     if (!many) return;
@@ -170,6 +177,14 @@ export function ImageLightbox({ src, all, onClose }: { src: string; all?: Shown[
           onClick={() => { const p = uploadPath(cur); if (p) sendPicture?.({ path: p, url: cur.src, name: cur.name || p.split("/").pop() || "picture" }); }}
           style={{ position: "fixed", top: 12, right: 96, zIndex: 96, appearance: "none", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 7, border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "color-mix(in srgb, var(--panel3) 70%, transparent)", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "6px 12px" }}>
           <Send size={11} strokeWidth={2} aria-hidden />SEND
+        </button>, document.body)}
+      {/* Top centre: clear of the picture, the strip, SEND and the close. */}
+      {act && createPortal(
+        <button type="button" onClick={act.onClick}
+          style={{ position: "fixed", top: 12, left: "50%", transform: "translateX(-50%)", zIndex: 96, appearance: "none", cursor: "pointer",
+            display: "inline-flex", alignItems: "center", gap: 7, border: 0, borderRadius: 8, background: "var(--tg-button)",
+            color: "var(--tg-button-text)", fontFamily: "inherit", fontSize: "var(--t12)", fontWeight: 700, letterSpacing: 1, padding: "8px 14px" }}>
+          <Check size={13} strokeWidth={3} aria-hidden />{act.label}
         </button>, document.body)}
     </>
   );
@@ -254,6 +269,7 @@ function Filmstrip(
               className="lbx-th"
             >
               <MediaThumb src={s.src} style={{ height: 56, width: 84, objectFit: "cover", display: "block", borderRadius: "inherit" }} />
+              {s.tag && <span aria-hidden className="qkey qkey-chip rounded" style={{ position: "absolute", top: 4, left: 4 }}>{s.tag}</span>}
               {unseen && <i aria-hidden style={{ position: "absolute", top: 4, right: 4, width: 7, height: 7, borderRadius: "50%",
                 background: "var(--acc)", boxShadow: "0 0 0 2px var(--panel3)" }} />}
             </button>

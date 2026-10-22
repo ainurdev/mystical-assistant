@@ -37,6 +37,14 @@ Screenshot each mockup with the bridge-eyes skill and include the images in
 your reply. The user reviews from a phone: the pictures are the review, the
 HTML is the backup.
 
+**Choices ride in the question, not loose in the transcript.** Directions to
+pick between (A · TOKEN, B · HEADER…) don't get Attached one by one — that
+pile is what made the user match file names to letters. The crops go in step 5's
+question: each direction's crops in its option's `preview`, one markdown image
+per state, `![In the box](/abs/path/a1.png)`. The card shows them on a stage
+beside the options, tabbed by state. Attach only what isn't a choice: the one
+design up for approval, a before shot.
+
 ## 4. Push the draft to Claude Design
 
 DesignSync: `finalize_plan` with the projectId, `writes: ["drafts/<slug>/**"]`,
@@ -46,8 +54,11 @@ plan card; afterwards the draft is viewable in the claude.ai design project.
 
 ## 5. Stop for approval
 
-AskUserQuestion: **Approve & implement** / **Revise** (they say what) /
-**Park it**. Do not touch repo code before an approve. On revise, loop back to
+AskUserQuestion. Several directions: one option per direction (up to three),
+lettered (`A · TOKEN`, the one you recommend first), its crops in `preview`,
+plus **Park it**; revising is the card's own free-text answer. One design:
+**Approve & implement** (its crops in that option's `preview`) / **Revise**
+(they say what) / **Park it**. Do not touch repo code before an approve. On revise, loop back to
 step 2. On approve, implement with the mockups and `SPEC.md` as source of
 truth, normal workflow. After it ships, offer once to promote the draft into
 the design system proper or delete `drafts/<slug>/` remotely — never do

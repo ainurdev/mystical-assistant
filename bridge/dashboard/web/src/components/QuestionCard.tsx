@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { Check, Maximize2 } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
-import type { AnswerSelection, Question } from "../api";
+import { api, type AnswerSelection, type Question } from "../api";
+import { ImageLightbox } from "./ImageLightbox";
+import { optionKey, parsePreview, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { RivendellIcon } from "../lib/rivendellicon";
 
@@ -54,6 +57,112 @@ function taskVerb(q: Question, picked?: string): string | null {
   if (/^it[’']?s\b/i.test(picked) && key) return push ? `Link ${key} & push` : `Link ${key}`;
   if (/^not a task/i.test(picked)) return push ? "Push without a task" : "Not a task";
   return null;
+}
+
+/** A question whose options carry pictures (their `preview`, lib/qpreview): the
+ *  options down the left and the shown one's shots on a stage beside them, the
+ *  CLI terminal's own preview layout. Chosen over side-by-side tiles because a
+ *  design direction usually brings several shots
+ *  (.mystical/design-drafts/picture-choices). The tabs page the shown option's
+ *  shots and keep their place when you switch options, so A·2 → B·2 compares one
+ *  state across them. A narrow card stacks it, stage first (index.css .qstage).
+ *  Without `onPick` it is the answered record: rows still switch the stage. */
+function Stage({ q, chosen, onPick, sending }: {
+  q: Question;
+  chosen: string[];
+  onPick?: (label: string) => void;
+  sending?: boolean;
+}) {
+  const opts = q.options.map((o, i) => ({ o, ...optionKey(o.label, i), pv: parsePreview(o.preview) }));
+  const at = opts.findIndex((x) => chosen.includes(x.o.label));
+  const [shown, setShown] = useState(at >= 0 ? at : 0);
+  const [tab, setTab] = useState(0);
+  const [zoom, setZoom] = useState<number | null>(null);
+  const [gone, setGone] = useState<Set<string>>(() => new Set());
+  const cur = opts[shown] ?? opts[0];
+  const t = Math.min(tab, Math.max(cur.pv.shots.length - 1, 0));
+  const shot = cur.pv.shots[t];
+  // Every option's shots in order (A1 A2 B1 …), named, for the viewer.
+  const all = opts.flatMap((x, oi) => x.pv.shots.map((s, k) => ({
+    oi, k, src: api.attachmentUrl(s.path), tag: x.key,
+    name: [`${x.key} · ${x.name}`, x.pv.shots.length > 1 ? `${k + 1}/${x.pv.shots.length}` : "", s.alt].filter(Boolean).join(" · "),
+  })));
+  const open = () => setZoom(all.findIndex((a) => a.oi === shown && a.k === t));
+  const pick = (oi: number) => { setShown(oi); onPick?.(opts[oi].o.label); };
+  return (
+    <div className="qstage-wrap">
+      <div className="qstage">
+        <div className="qstage-list">
+          {opts.map((x, oi) => {
+            const on = chosen.includes(x.o.label);
+            return (
+              <button
+                key={x.o.label}
+                type="button"
+                disabled={sending}
+                onClick={() => (onPick ? pick(oi) : setShown(oi))}
+                aria-pressed={on}
+                className={`qopt${on ? " qopt-on" : ""} rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
+                  on ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
+                     : `bg-[var(--tg-bg)]${onPick ? "" : " opacity-60"}`
+                }${oi === shown && !on ? " qopt-shown" : ""}`}
+              >
+                <span className="flex min-w-0 items-center gap-2 font-medium">
+                  <span className={`qkey rounded-md${on ? " qkey-on" : ""}`}>{on ? <Check size={12} strokeWidth={3} aria-hidden /> : x.key}</span>
+                  <span className="min-w-0 truncate">{x.name}</span>
+                  {on && !onPick ? <span className="qsug rounded-full">YOUR PICK</span> : x.rec && <span className="qsug rounded-full">SUGGESTED</span>}
+                </span>
+                {x.o.description && (
+                  <span className={`mt-0.5 block text-xs ${on ? "opacity-80" : "text-[var(--tg-hint)]"}`}>{x.o.description}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="qstage-view rounded-lg">
+          <div className="qstage-head">
+            <span className="qkey qkey-on rounded-md">{cur.key}</span>
+            <b className="min-w-0 truncate">{cur.name}</b>
+            {cur.pv.shots.length > 1 && (
+              <span className="qstage-tabs" role="tablist" aria-label={`${cur.name} shots`}>
+                {cur.pv.shots.map((s, k) => (
+                  <button key={k} type="button" role="tab" aria-selected={k === t} onClick={() => setTab(k)} className="qstage-tab rounded-full">
+                    <i>{k + 1}</i>{s.alt || `Shot ${k + 1}`}
+                  </button>
+                ))}
+              </span>
+            )}
+            {shot && (
+              <button type="button" title="Open full size" aria-label="Open full size" onClick={open}
+                className={`qstage-zoom rounded-md${cur.pv.shots.length > 1 ? "" : " ml-auto"}`}>
+                <Maximize2 size={11} aria-hidden />
+              </button>
+            )}
+          </div>
+          {shot && (gone.has(shot.path)
+            ? <p className="qstage-text">{shot.alt || "This picture is gone."}</p>
+            : (
+              <button type="button" className="qstage-pic" title="Open full size" onClick={open}>
+                <img src={api.attachmentUrl(shot.path)} alt={`${cur.key} · ${cur.name}${shot.alt ? ` · ${shot.alt}` : ""}`}
+                  onError={() => setGone((g) => new Set(g).add(shot.path))} />
+              </button>
+            ))}
+          {cur.pv.text && <pre className="qstage-text">{cur.pv.text}</pre>}
+        </div>
+      </div>
+      {zoom !== null && all[zoom] && (
+        <ImageLightbox
+          src={all[zoom].src}
+          all={all}
+          onClose={() => setZoom(null)}
+          action={onPick ? (i) => {
+            const a = all[i];
+            return a ? { label: `PICK ${opts[a.oi].key}`, onClick: () => { pick(a.oi); setTab(a.k); setZoom(null); } } : null;
+          } : undefined}
+        />
+      )}
+    </div>
+  );
 }
 
 // Mirrors bridge/miniapp/web/src/components/QuestionCard.tsx (shared design):
@@ -112,7 +221,7 @@ export function QuestionCard({
           return (
             <div key={qi} className="space-y-1.5">
               {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
-              <div className="flex flex-col gap-1.5">
+              {staged(q) ? <Stage q={q} chosen={chosen} /> : <div className="flex flex-col gap-1.5">
                 {q.options.map((o) => {
                   const picked = chosen.includes(o.label);
                   return (
@@ -133,7 +242,7 @@ export function QuestionCard({
                     </div>
                   );
                 })}
-              </div>
+              </div>}
               {given?.notes && (
                 <div className="text-xs text-[var(--tg-hint)]">Note: {given.notes}</div>
               )}
@@ -170,6 +279,10 @@ export function QuestionCard({
     (_, qi) => (sel[qi]?.length ?? 0) > 0 || (notes[qi] ?? "").trim() !== "",
   );
   const multi = questions.some((q) => q.multiSelect);
+  // One staged question: the button names what goes back ("Send · B HEADER").
+  const solo = questions.length === 1 && staged(questions[0]) && sel[0]?.[0];
+  const soloIx = solo ? questions[0].options.findIndex((o) => o.label === solo) : -1;
+  const soloKey = soloIx >= 0 ? optionKey(questions[0].options[soloIx].label, soloIx) : null;
 
   async function submit() {
     if (sending) return;
@@ -198,7 +311,8 @@ export function QuestionCard({
         <div key={qi} className="space-y-1.5">
           {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
           <div className="flex flex-col gap-1.5">
-            {q.options.map((o) => {
+            {staged(q) && <Stage q={q} chosen={sel[qi] ?? []} onPick={(l) => toggle(q, qi, l)} sending={sending} />}
+            {!staged(q) && q.options.map((o) => {
               const picked = (sel[qi] ?? []).includes(o.label);
               return (
                 <button
@@ -282,7 +396,8 @@ export function QuestionCard({
           <span className="inline-flex items-center gap-1.5">
             <Spinner className="h-3 w-3 border" /> Sending…
           </span>
-        ) : (task && taskVerb(questions[0], sel[0]?.[0])) || (multi ? "Submit" : "Send answer")}
+        ) : (task && taskVerb(questions[0], sel[0]?.[0]))
+          || (soloKey ? `Send · ${soloKey.key} ${soloKey.name}` : multi ? "Submit" : "Send answer")}
       </Button>
     </Card>
   );

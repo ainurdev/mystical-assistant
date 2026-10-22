@@ -212,7 +212,9 @@ def test_update_turn_argv_has_manual_mode_the_ask_rule_and_the_server(repo, monk
     runner._run_streaming(job, "post it", [], repo, None, None, "manual", None)
     cmd = seen["cmd"]
     assert cmd[cmd.index("--permission-mode") + 1] == "manual"
-    assert json.loads(cmd[cmd.index("--settings") + 1]) == {"permissions": {"ask": ["mcp__teamwork"]}}
+    settings = json.loads(cmd[cmd.index("--settings") + 1])   # one --settings: claude keeps only the last
+    assert cmd.count("--settings") == 1 and settings["permissions"] == {"ask": ["mcp__teamwork"]}
+    assert "Stop" in settings["hooks"]                  # the run's own hook survives the ask rule
     assert "teamwork" in seen["mcp"]["mcpServers"]
     assert "--strict-mcp-config" in cmd
     assert job.status == "error"                       # the fake spawn, not the argv

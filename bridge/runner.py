@@ -249,8 +249,8 @@ def _rivendell_note_for(chat_id: int, claude_session_id: str, cwd: "str | None")
     return _RIVENDELL_NOTE if _rivendell_notes[claude_session_id] else ""
 
 
-def _push_gate(cwd: str) -> "str | None":
-    """--settings for a run that carries the Rivendell note: bridge/taskcheck.py
+def _push_gate(cwd: str) -> "dict | None":
+    """--settings hooks for a run that carries the Rivendell note: bridge/taskcheck.py
     as a PreToolUse hook on Bash, which holds back a push from this repo that
     names no task, once per branch. Inline JSON: it holds paths and key prefixes,
     no secret. None when `cwd` isn't in a git repo, since there is nothing to gate."""
@@ -264,8 +264,31 @@ def _push_gate(cwd: str) -> "str | None":
         return None
     hook = " ".join(shlex.quote(a) for a in (
         sys.executable, "-I", os.path.join(_REPO_ROOT, "bridge", "taskcheck.py"), home, prefixes))
-    return json.dumps({"hooks": {"PreToolUse": [
-        {"matcher": "Bash", "hooks": [{"type": "command", "command": hook}]}]}})
+    return {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": hook}]}]}
+
+
+def _one_settings(cmd: list[str]) -> list[str]:
+    """claude keeps only the last --settings it is given, so every one a run
+    collects (the Stop hook, a push gate, a tracker's ask rule in extra_args)
+    goes in as one: objects merged key by key, lists joined."""
+    def merge(a, b):
+        if isinstance(a, dict) and isinstance(b, dict):
+            return {**a, **{k: merge(a[k], v) if k in a else v for k, v in b.items()}}
+        return a + b if isinstance(a, list) and isinstance(b, list) else b
+    out, merged, i = [], None, 0
+    while i < len(cmd):
+        if cmd[i] == "--settings" and i + 1 < len(cmd):
+            try:
+                val = json.loads(cmd[i + 1])
+            except ValueError:          # a settings *file*: not ours to fold, pass it on
+                val = None
+            if isinstance(val, dict):
+                merged = val if merged is None else merge(merged, val)
+                i += 2
+                continue
+        out.append(cmd[i])
+        i += 1
+    return out if merged is None else out + ["--settings", json.dumps(merged)]
 
 
 # --- ponytail (per-run code-minimalism intensity) ----------------------------
@@ -293,6 +316,10 @@ def _run_env(ponytail: "str | None",
     # for never arrives. Without the ceiling it also waits forever for a
     # background shell (a dev server): _watchdog ends those turns.
     over["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
+    # The host flag that tells the model AskUserQuestion options can carry a
+    # `preview`; under -p it's off unless set. The cards draw an option's
+    # preview images as that option's pictures (_adopt_preview_images).
+    over["CLAUDE_CODE_QUESTION_PREVIEW_FORMAT"] = "markdown"
     # Switched off in the AI tab, the level is not just skipped but overridden:
     # an absent PONYTAIL_DEFAULT_MODE means the plugin's own default (full), so
     # "off" is the only way to actually not get ponytail.
@@ -592,9 +619,18 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     rv_note = (_rivendell_note_for(chat_id, claude_session_id, cwd)
                if interactive and claude_session_id and not skip_pack else "")
     cmd += ["--append-system-prompt", _compose_system_prompt(graph, rv_note)]
-    gate = _push_gate(cwd or state.project_dir(chat_id)) if rv_note else None
-    if gate:
-        cmd += ["--settings", gate]
+    hooks = {}
+    if interactive and not skip_pack:
+        # bridge/askhook.py: options offered in prose go back once to be asked
+        # as a card. Only where AskUserQuestion can be answered: the bot's
+        # plain-text path has no permission host, and internal one-shots ask nobody.
+        ask = " ".join(shlex.quote(a) for a in (
+            sys.executable, "-I", os.path.join(_REPO_ROOT, "bridge", "askhook.py")))
+        hooks["Stop"] = [{"hooks": [{"type": "command", "command": ask}]}]
+    if rv_note:
+        hooks.update(_push_gate(cwd or state.project_dir(chat_id)) or {})
+    if hooks:
+        cmd += ["--settings", json.dumps({"hooks": hooks})]
     if skip_pack and not (permission_mode and not interactive):
         # Internal one-shots (titler/commit-msg) are pure text transforms
         # whose prompts embed untrusted conversation text. No tools and no
@@ -1996,7 +2032,7 @@ def _handle_control_request(job: Job, obj: dict):
     rid = obj.get("request_id")
     tool = req.get("tool_name", "tool")
     if tool == "AskUserQuestion":
-        questions = (req.get("input") or {}).get("questions", [])
+        questions = _adopt_preview_images(job.id, rid, (req.get("input") or {}).get("questions", []))
         job.add_pending({"request_id": rid, "kind": "question",
                          "tool_name": tool, "questions": questions,
                          "at": time.time()})    # since when: the card's "ASKS · 3m ago"
@@ -2401,6 +2437,58 @@ def _save_result_file(job_id: str, rid: str, name: "str | None",
     return None
 
 
+# A picture in an AskUserQuestion option's preview: ![alt](/absolute/path), the
+# shape config.ASK_SYSTEM_PROMPT asks for.
+_PREVIEW_IMG = re.compile(r"!\[([^\]\n]*)\]\(\s*<?(/[^)\s>]+)>?\s*\)")
+
+
+def _adopt_preview_images(job_id: str, rid: "str | None", questions):
+    """Copy the local images a question's option previews point at into the
+    run's uploads, and point the previews at the copies.
+
+    /local/attachment and the Mini App's /api/attachment serve UPLOAD_DIR and
+    nothing else, on purpose, so a preview naming ~/x/.mystical/shot.png would
+    draw nothing. Same contract as Attach (_save_result_file): images only, the
+    same size cap, copied rather than moved because the file is whoever made
+    it. Anything else in a preview (text, a path that isn't an image file)
+    stays as written. Never raises: the question has to reach the human even
+    when its pictures can't."""
+    if not isinstance(questions, list):
+        return questions
+    tag = re.sub(r"[^\w-]", "", rid or "")[:40] or "q"
+    n = 0
+
+    def adopt(m: "re.Match") -> str:
+        nonlocal n
+        src = m.group(2)
+        try:
+            if (not os.path.isfile(src)
+                    or not (mimetypes.guess_type(src)[0] or "").startswith("image/")
+                    or os.path.getsize(src) > _MCP_FILE_BYTES):
+                return m.group(0)
+            d = os.path.join(config.UPLOAD_DIR, job_id)
+            os.makedirs(d, exist_ok=True)
+            n += 1
+            # The request id keeps two questions in one turn from overwriting
+            # each other's a.png; the real name keeps the extension.
+            fp = os.path.join(d, f"{tag}-{n}-{os.path.basename(src)}")
+            shutil.copy2(src, fp)
+            return f"![{m.group(1)}]({fp})"
+        except OSError as e:
+            print(f"[runner] preview image not copied: {e}", file=sys.stderr)
+            return m.group(0)
+
+    out = []
+    for q in questions:
+        if isinstance(q, dict) and isinstance(q.get("options"), list):
+            q = {**q, "options": [
+                {**o, "preview": _PREVIEW_IMG.sub(adopt, o["preview"])}
+                if isinstance(o, dict) and isinstance(o.get("preview"), str) else o
+                for o in q["options"]]}
+        out.append(q)
+    return out
+
+
 def _cleanup_uploads(job_id: str):
     d = os.path.join(config.UPLOAD_DIR, job_id)
     shutil.rmtree(d, ignore_errors=True)
@@ -2540,7 +2628,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if "--mcp-config" in cmd:
             # Its file holds tokens (see _mcp_config); it goes with the child.
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
-        cmd += job.extra_args
+        cmd = _one_settings(cmd + job.extra_args)
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
