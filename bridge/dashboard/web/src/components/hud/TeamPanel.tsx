@@ -1,15 +1,15 @@
 import { useState, type ReactNode } from "react";
-import { Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Laptop, MessageSquare, Send, Users, X } from "lucide-react";
+import { CornerUpLeft, Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Laptop, Layers, MessageSquare, Send, Users, X } from "lucide-react";
 import type { Received, Share, TeamOverview, Teammate } from "../../api";
 import { initials } from "../../lib/rivendelltasks";
 import { useClock12 } from "../../lib/surfaces";
-import { KIND_LABEL, byPresence, personTint, presence, seen, sentAgo, sentStatus, shareFacts, type SentTone } from "../../lib/team";
+import { KIND_LABEL, byPresence, foldSent, personTint, presence, relationLine, seen, sentAgo, sentBefore, sentStatus, shareFacts, type SentTone } from "../../lib/team";
 import { ImageLightbox } from "../ImageLightbox";
 
 const UI = "var(--ui-font, inherit)";
 const MONO = "var(--mono)";
 const mix = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
-const TONE: Record<SentTone, string> = { ok: "var(--ok)", purple: "var(--purple)", warn: "var(--warn)", dim: "var(--txl)" };
+const TONE: Record<SentTone, string> = { ok: "var(--ok)", purple: "var(--purple)", warn: "var(--warn)", dim: "var(--txl)", err: "var(--err)" };
 const KIND_ICON = { session: MessageSquare, picture: ImageIcon, file: FileIcon } as const;
 const SEEN_ROWS = 3;       // SEEN shows this many, the rest behind "N more"
 const toolBtn = {
@@ -55,6 +55,14 @@ function Btn({ icon, label, pri, onClick, title }: { icon: ReactNode; label: str
   return <button type="button" onClick={onClick} title={title} style={btnStyle(pri)}>{icon}{label}</button>;
 }
 
+/** A small rounded tag beside a card's kind, or on a SEEN row: SENT BACK, UPDATE · V2, V3. */
+export const Pill = ({ children, c }: { children: ReactNode; c: string }) => (
+  <span style={{
+    flex: "none", display: "inline-flex", alignItems: "center", gap: 4, padding: "1px 6px", borderRadius: 999, whiteSpace: "nowrap",
+    border: `1px solid ${mix(c, 45)}`, background: mix(c, 10), color: c, fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 1,
+  }}>{children}</span>
+);
+
 const Sect = ({ label, right, top = 12 }: { label: string; right?: ReactNode; top?: number }) => (
   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", padding: `${top}px 12px 6px` }}>
     {label}<span style={{ letterSpacing: 0.5, fontFamily: MONO }}>{right}</span>
@@ -67,7 +75,7 @@ const Sect = ({ label, right, top = 12 }: { label: string; right?: ReactNode; to
  *  App owns the data (it polls, and the rail badge and the session menu read it
  *  too). SEND on a teammate sends the session you have open: `sessionTitle` is
  *  null when it isn't yours to send. */
-export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onDismiss, step }: {
+export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onContinueYours, onDismiss, step }: {
   data: TeamOverview | null;
   fail: string | null;
   sessionTitle: string | null;
@@ -75,6 +83,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
   onSendTo: (t: Teammate) => void;
   onOpen: (r: Received) => void;
   onContinue: (r: Received) => void;
+  onContinueYours: (r: Received) => void;     // a newer state of a thread you have: into your session in it
   onDismiss: (r: Received) => void;
   step?: { id: string; text: string } | null;    // CLONE & INSTALL's progress, on the share it is for
 }) {
@@ -114,6 +123,8 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
   const card = (r: Received) => {
     const f = shareFacts(r.kind, r.meta);
     const c = personTint(r.from.id || r.from.name);
+    const thread = typeof r.meta.thread === "string" ? r.meta.thread : undefined;
+    const rel = relationLine(r, now, r.relation === "back" ? sentBefore(data?.outbox ?? [], thread, r.from.id)?.last : null, h12);
     return (
       <div key={r.id} style={{
         margin: "0 10px 8px", padding: "10px 10px 10px 11px", borderRadius: 10,
@@ -130,8 +141,10 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
             background: "transparent", color: "var(--txl)", padding: 0,
           }}><X size={11} strokeWidth={2} /></button>
         </div>
-        <div style={{ marginTop: 8, display: "flex", alignItems: "baseline", gap: 7, minWidth: 0 }}>
+        <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: 7, minWidth: 0 }}>
           <span style={{ flex: "none", fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 1, color: "var(--acc)" }}>{KIND_LABEL[r.kind]}</span>
+          {r.relation === "back" && <Pill c="var(--purple)"><CornerUpLeft size={9} strokeWidth={2} />SENT BACK</Pill>}
+          {r.relation === "update" && <Pill c="var(--acc)"><Layers size={9} strokeWidth={2} />UPDATE{(r.version ?? 1) > 1 ? ` · V${r.version}` : ""}</Pill>}
           <span style={{ minWidth: 0, fontFamily: UI, fontSize: "var(--t12)", fontWeight: 600, color: "var(--txh)", lineHeight: 1.3, overflowWrap: "anywhere" }}>{r.title}</span>
         </div>
         {r.kind === "picture" && r.url && (
@@ -145,8 +158,17 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
         <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", alignItems: "center", gap: "4px 10px", fontFamily: MONO, fontSize: "var(--t9)", color: "var(--txl)" }}>
           {f.project && <span style={{ color: "var(--info)", fontFamily: UI }}>{f.project}</span>}
           {f.branch && <span>⎇ {f.branch}</span>}
+          {r.kind !== "session" && r.file && r.file !== r.title && <span style={{ minWidth: 0, overflowWrap: "anywhere" }}>{r.file}</span>}
           {f.bits.map((b) => <span key={b}>{b}</span>)}
         </div>
+        {rel && (
+          <div style={{ marginTop: 7, display: "flex", gap: 7, alignItems: "flex-start", fontFamily: UI, fontSize: "var(--t105)", lineHeight: 1.45, color: "var(--txm)" }}>
+            <span style={{ flex: "none", marginTop: 2, color: "var(--purple)", display: "flex" }}>
+              {r.relation === "back" ? <CornerUpLeft size={11} strokeWidth={2} /> : <Layers size={11} strokeWidth={2} />}
+            </span>
+            <span><b style={{ color: "var(--txh)", fontWeight: 600 }}>{rel.strong}</b>{rel.rest}</span>
+          </div>
+        )}
         <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
           {r.kind === "session" && r.session && <Btn icon={<Eye size={11} strokeWidth={2} />} label="OPEN" onClick={() => onOpen(r)} />}
           {r.kind === "picture" && r.url && <Btn icon={<ImageIcon size={11} strokeWidth={2} />} label="OPEN" onClick={() => { setZoom(r.url); onOpen(r); }} />}
@@ -155,9 +177,20 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
               <Download size={11} strokeWidth={2} />DOWNLOAD
             </a>
           )}
-          <Btn icon={<Forward size={11} strokeWidth={2} />} label={step?.id === r.id ? step.text : "CONTINUE HERE"} pri onClick={() => onContinue(r)}
-            title="Your own session: their work attached, the prompt left for you to send" />
+          {r.yours ? (
+            <Btn icon={<CornerUpLeft size={11} strokeWidth={2} />} label={step?.id === r.id ? step.text : "CONTINUE IN YOURS"} pri onClick={() => onContinueYours(r)}
+              title={`Your session “${r.yours.title}”: what's new attached, the prompt left for you to send`} />
+          ) : (
+            <Btn icon={<Forward size={11} strokeWidth={2} />} label={step?.id === r.id ? step.text : "CONTINUE HERE"} pri onClick={() => onContinue(r)}
+              title="Your own session: their work attached, the prompt left for you to send" />
+          )}
         </div>
+        {r.yours && (
+          <button type="button" onClick={() => onContinue(r)} style={{
+            appearance: "none", border: 0, background: "transparent", padding: "6px 0 0", cursor: "pointer", fontFamily: UI, fontSize: "var(--t105)",
+            color: "var(--txl)", textDecoration: "underline", textDecorationColor: mix("var(--txl)", 40), textUnderlineOffset: 3,
+          }}>or start a new session with it</button>
+        )}
       </div>
     );
   };
@@ -165,7 +198,8 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
   const sent = (s: Share) => {
     const st = sentStatus(s, now);
     return (
-      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", minWidth: 0 }} title={`${s.title} → ${s.to.name}`}>
+      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", minWidth: 0 }}
+        title={`${s.title} → ${s.to.name}${s.queued ? (s.error ? ` · not sent: ${s.error}` : " · goes when its running turn ends") : ""}`}>
         <span style={{ flex: "none", color: "var(--txl)", display: "flex" }}><Send size={11} strokeWidth={2} /></span>
         <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: UI, fontSize: "var(--t11)", color: "var(--txm)" }}>{s.title}</span>
         <Avatar id={s.to.id} name={s.to.name} src={face(s.to.id)} size={16} />
@@ -199,10 +233,13 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
           flex: 1, minWidth: 0, appearance: "none", border: 0, padding: 0, background: "transparent", cursor: "pointer", textAlign: "left",
           whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: UI, fontSize: "var(--t11)", color: hov === key ? "var(--txh)" : "var(--txm)",
         }}>{r.title}</button>
+        {(r.version ?? 1) > 1 && <Pill c="var(--txl)">V{r.version}</Pill>}
         <Avatar id={r.from.id || r.from.name} name={r.from.name} src={face(r.from.id)} size={16} />
         {hov === key && !busy ? (
           <span style={{ flex: "none", minWidth: 72, display: "flex", justifyContent: "flex-end", gap: 2 }}>
-            <RowBtn label="Continue here" color="var(--acc)" onClick={() => onContinue(r)}><Forward size={12} strokeWidth={2} /></RowBtn>
+            {r.yours
+              ? <RowBtn label={`Continue in yours: “${r.yours.title}”`} color="var(--acc)" onClick={() => onContinueYours(r)}><CornerUpLeft size={12} strokeWidth={2} /></RowBtn>
+              : <RowBtn label="Continue here" color="var(--acc)" onClick={() => onContinue(r)}><Forward size={12} strokeWidth={2} /></RowBtn>}
             <RowBtn label="Remove: your copy goes" color="var(--txl)" onClick={() => onDismiss(r)}><X size={12} strokeWidth={2} /></RowBtn>
           </span>
         ) : (
@@ -237,7 +274,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
               </>
             )}
             {away.length > 0 && <><Sect label="AWAY" right={away.length} />{away.map(mate)}</>}
-            {data.outbox.length > 0 && <><Sect label="YOU SENT" top={14} />{data.outbox.slice(0, 3).map(sent)}</>}
+            {data.outbox.length > 0 && <><Sect label="YOU SENT" top={14} />{foldSent(data.outbox).slice(0, 3).map(sent)}</>}
             {!roster.length && <Empty title="No teammates yet" text="Everyone on your Rivendell shows here once they're added to it." />}
           </>
         )}

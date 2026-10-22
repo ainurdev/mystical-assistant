@@ -2021,6 +2021,7 @@ export const RunStream = memo(function RunStream({
   onOpenFile,
   onAnswer,
   ended = false,
+  unfinished = false,
   readOnly = false,
   working = false,
   hud,
@@ -2053,6 +2054,8 @@ export const RunStream = memo(function RunStream({
    *  turn gets one — an old question is history, not something to answer. */
   onAnswer?: (text: string) => void;
   ended?: boolean;
+  /** Sent by a teammate while it still ran: its last words are where it was, not its answer. */
+  unfinished?: boolean;
   /** Someone else's turn, a teammate's device run: nothing in it is yours to continue. */
   readOnly?: boolean;
   /** Running and waiting on nothing (Transcript's working): the last WORK zone
@@ -2180,7 +2183,7 @@ export const RunStream = memo(function RunStream({
   // tier 1 — so in a finished turn with no result, the last text that nothing
   // but bookkeeping follows is it.
   const finalText = (() => {
-    if (!dossier || !ended || resultText) return -1;
+    if (!dossier || !ended || resultText || unfinished) return -1;
     for (let j = events.length - 1; j >= 0; j--) {
       const t = events[j].type;
       if (t === "text") return (events[j] as { text?: string }).text ? j : -1;

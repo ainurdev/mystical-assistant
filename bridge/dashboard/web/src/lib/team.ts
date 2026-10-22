@@ -56,11 +56,13 @@ export function presence(t: Pick<Teammate, "online" | "lastSeenAt">, now: number
 export const byPresence = (a: Teammate, b: Teammate): number =>
   Number(b.online) - Number(a.online) || a.name.localeCompare(b.name);
 
-export type SentTone = "ok" | "purple" | "warn" | "dim";
+export type SentTone = "ok" | "purple" | "warn" | "dim" | "err";
 
-/** How far a share you sent got, as YOU SENT says it. */
-export function sentStatus(s: Pick<Share, "deliveredAt" | "openedAt" | "continuedAt" | "dismissedAt">, now: number):
+/** How far a share you sent got, as YOU SENT says it. A send waiting for its turn to end
+ *  reads AFTER ITS TURN, and NOT SENT when it was tried and failed. */
+export function sentStatus(s: Pick<Share, "deliveredAt" | "openedAt" | "continuedAt" | "dismissedAt" | "queued" | "error">, now: number):
   { text: string; tone: SentTone } {
+  if (s.queued) return s.error ? { text: "NOT SENT", tone: "err" } : { text: "AFTER ITS TURN", tone: "warn" };
   if (s.continuedAt) return { text: "CONTINUED", tone: "purple" };
   const opened = epoch(s.openedAt);
   if (opened) {
@@ -94,4 +96,51 @@ export function shareFacts(kind: string, meta: Record<string, unknown>): { proje
   if (typeof meta.pictures === "number" && meta.pictures > 0) bits.push(`${meta.pictures} picture${meta.pictures === 1 ? "" : "s"}`);
   if (meta.code === true) bits.push("code");
   return { project: project || undefined, branch: typeof meta.branch === "string" ? meta.branch : undefined, bits };
+}
+
+/** A share's thread: what ties the sends of one session together (bridge/team.py). */
+const threadOf = (s: { meta?: Record<string, unknown> }): string => (typeof s.meta?.thread === "string" ? s.meta.thread : "");
+
+/** YOU SENT: a session sent to someone again shows once, as its newest send. Waiting
+ *  sends and sends from an older bridge (no thread) show as they are. Rows come newest first. */
+export function foldSent(rows: Share[]): Share[] {
+  const shown = new Set<string>();
+  return rows.filter((s) => {
+    const key = !s.queued && threadOf(s) ? `${threadOf(s)} ${s.to.id}` : "";
+    if (!key) return true;
+    if (shown.has(key)) return false;
+    shown.add(key);
+    return true;
+  });
+}
+
+/** What `to` already has of a session, by its thread: your newest send of it to them and
+ *  how many sends there were. null when it never went to them (or YOU SENT's last 20 don't
+ *  reach back that far). */
+export function sentBefore(rows: Share[], thread: string | undefined, to: string): { last: Share; count: number } | null {
+  if (!thread) return null;
+  const sent = rows.filter((s) => !s.queued && s.to.id === to && threadOf(s) === thread);
+  return sent.length ? { last: sent[0], count: sent.length } : null;
+}
+
+/** The line a card gets when it is a newer state of a thread you have: what's new (`strong`)
+ *  and against what (`rest`). `sentBack` is your newest send of it to its sender. */
+export function relationLine(
+  r: Pick<Received, "relation" | "version" | "new_turns" | "prev" | "from">,
+  now: number, sentBack?: Share | null, h12?: boolean,
+): { strong: string; rest: string } | null {
+  const n = r.new_turns;
+  if (!r.relation || typeof n !== "number") return null;
+  const turns = `${n} turn${n === 1 ? "" : "s"}`;
+  if (r.relation === "back") {
+    const at = epoch(sentBack?.sentAt);
+    const first = r.from.name.split(" ")[0] || r.from.name;
+    return { strong: `${turns} on top of yours`, rest: at ? ` · you sent it to ${first} ${ago(at, now)} ago` : "" };
+  }
+  const since = (r.version ?? 1) > 1 ? `v${(r.version ?? 2) - 1}` : "yours";
+  const at = r.prev?.at ?? null;
+  const when = at ? (sameDay(at, now) ? `at ${hhmm(at, h12)}` : `${ago(at, now)} ago`) : "";
+  const rest = r.prev?.state === "continued" ? `, which you continued${when ? ` ${when}` : ""}`
+    : r.prev?.state === "opened" ? ", which you opened" : "";
+  return { strong: `+${turns} since ${since}`, rest };
 }

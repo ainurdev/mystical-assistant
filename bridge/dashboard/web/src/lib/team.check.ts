@@ -6,8 +6,8 @@
 // run no longer read only, "since" shown for a day long gone, someone who never
 // linked Mystical shown as "last on Jan 1, 1970", and a share that never arrived
 // reading DELIVERED.
-import type { Teammate } from "../api.ts";
-import { byPresence, isTeam, personTint, presence, readOnly, seen, sentStatus, shareFacts, size } from "./team.ts";
+import type { Received, Share, Teammate } from "../api.ts";
+import { byPresence, foldSent, isTeam, personTint, presence, readOnly, relationLine, seen, sentBefore, sentStatus, shareFacts, size } from "./team.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -53,3 +53,34 @@ eq([size(512), size(4096), size(-1), size("x")], ["512 B", "4 KB", "", ""], "siz
 ok(!seen({ opened: false, continued: false }), "a share nobody touched is new");
 ok(seen({ opened: true, continued: false }), "opened, it's seen");
 ok(seen({ opened: false, continued: true }), "continued straight from its card, it's seen too");
+
+// Threads (bridge/team.py): a session sent to someone again shows once in YOU SENT, the
+// send sheet knows what they have, a send waiting for its turn says so, and a card in a
+// thread you have says what's new against what.
+const out = (id: string, to: string, thread: string, secAgo: number, st: Partial<Share> = {}): Share => ({
+  id, kind: "session", title: "t", note: null, meta: thread ? { thread, turns: 4, pictures: 1 } : {}, from: { id: "me", name: "Me" },
+  to: { id: to, name: to }, sentAt: iso(secAgo), deliveredAt: null, openedAt: null, continuedAt: null, dismissedAt: null,
+  expiresAt: null, ...st,
+});
+const rows = [out("q1", "erfan", "", 10, { queued: true }), out("b", "erfan", "t1", 60), out("a", "erfan", "t1", 3600),
+  out("c", "mahdi", "t1", 7200), out("old", "erfan", "", 9000), out("old2", "erfan", "", 9500)];
+eq(foldSent(rows).map((s) => s.id), ["q1", "b", "c", "old", "old2"], "YOU SENT folds a resend to the same person, keeps the rest");
+eq(sentBefore(rows, "t1", "erfan")?.last.id, "b", "what they have is your newest send of that thread to them");
+eq(sentBefore(rows, "t1", "erfan")?.count, 2, "and how many sends that was");
+eq(sentBefore(rows, "t1", "payam"), null, "never sent to them");
+eq(sentBefore(rows, undefined, "erfan"), null, "an older bridge's preview has no thread");
+eq(sentStatus({ ...rows[0] }, now), { text: "AFTER ITS TURN", tone: "warn" }, "a send waiting for its turn");
+eq(sentStatus({ ...rows[0], error: "Rivendell can't be reached right now." }, now), { text: "NOT SENT", tone: "err" }, "and one that failed");
+
+const card = (r: Partial<Received>) => ({ relation: null, version: 1, new_turns: 2, prev: null, from: { id: "e", name: "Erfan Besharat" }, ...r });
+eq(relationLine(card({ relation: "back", new_turns: 3 }), now, out("x", "e", "t", 5 * 3600)),
+  { strong: "3 turns on top of yours", rest: " · you sent it to Erfan 5h ago" }, "sent back: their turns on top of yours");
+eq(relationLine(card({ relation: "back", new_turns: 1 }), now), { strong: "1 turn on top of yours", rest: "" }, "sent back, the send itself out of reach");
+eq(relationLine(card({ relation: "update", version: 2, new_turns: 3, prev: { state: "continued", at: now - 3600 } }), now, null, false),
+  { strong: "+3 turns since v1", rest: `, which you continued at ${new Date((now - 3600) * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}` },
+  "an update to one you continued today");
+eq(relationLine(card({ relation: "update", version: 3, new_turns: 1, prev: { state: "opened", at: now - 60 } }), now),
+  { strong: "+1 turn since v2", rest: ", which you opened" }, "an update to one you only opened");
+eq(relationLine(card({ relation: "update", version: 1, new_turns: 2 }), now), { strong: "+2 turns since yours", rest: "" },
+  "someone else's send in a thread you have");
+eq(relationLine(card({}), now), null, "no thread you have: no line");

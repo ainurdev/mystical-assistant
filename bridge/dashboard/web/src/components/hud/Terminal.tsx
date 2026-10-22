@@ -23,7 +23,7 @@ import { ChatChromeContext } from "../../lib/chatchrome";
 import { isDeviceRun } from "../../lib/devicerun";
 import { readOnly } from "../../lib/team";
 import { DeviceTile } from "../DeviceRunPlate";
-import { TeamTile } from "../TeamBar";
+import { EarlierPlate, TeamTile } from "../TeamBar";
 
 /** The header is an island this far in from the chat column's top and sides;
  *  16 clears the ScrollRail on the right edge. */
@@ -210,11 +210,13 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef, onJumpMark,
-  onOpenProject, run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere,
+  onOpenProject, run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
 }: {
   view: View;
   onView: (v: View) => void;
   selected: SessionBrief | null;
+  /** Your Rivendell id (TEAM): the earlier turns of a session sent back to you read as yours. */
+  teamMe?: string | null;
   activeProject?: string | null;
   branch?: string | null;
   model: string;
@@ -436,7 +438,10 @@ export function Terminal({
             <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} onStartNext={onStartNext} />
           ) : (
             <Transcript turns={turns} activeId={activeId} boot={boot} who={who} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={theirs ? undefined : onRunCommand} onQuote={theirs ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={theirs ? undefined : onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
-              job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject} />
+              job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject}
+              top={theirs && selected?.team?.earlier
+                ? <EarlierPlate share={selected.team.share} facts={selected.team.earlier} by={selected.team.from.name} me={teamMe} /> : undefined}
+              unfinished={theirs && selected?.team?.unfinished?.length ? { turns: selected.team.unfinished, by: selected.team.from.name } : null} />
           )}
         </div>
       </div>

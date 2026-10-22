@@ -1,20 +1,21 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Check, Send, ShieldCheck } from "lucide-react";
+import { Check, Clock, History, Send, ShieldCheck } from "lucide-react";
 import { api, type Share, type Teammate, type TeamPreview } from "../api";
-import { useClock12 } from "../lib/surfaces";
-import { byPresence, presence } from "../lib/team";
+import { ago, useClock12 } from "../lib/surfaces";
+import { byPresence, presence, sentBefore, sentStatus } from "../lib/team";
 import { Avatar } from "./hud/TeamPanel";
 
 /** What is being sent: a session of yours, a picture this bridge holds (its upload
  *  folder), or a file picked in the Files tab (relative to its project). */
 export type SendWhat =
   | { kind: "session"; session: string; title: string }
-  | { kind: "picture"; path: string; url: string; name: string }
+  | { kind: "picture"; path: string; url: string; name: string; title?: string }
   | { kind: "file"; project: string; branch?: string; file: string };
 
 const UI = "var(--ui-font, inherit)";
 const MONO = "var(--mono)";
 const mix = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
+const TONE = { ok: "var(--ok)", purple: "var(--purple)", warn: "var(--warn)", dim: "var(--txm)", err: "var(--err)" } as const;
 const BTN = { appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "7px 16px" } as const;
 
 const Label = ({ children }: { children: ReactNode }) => (
@@ -42,12 +43,32 @@ function Box({ on, locked, onToggle, title, hint }: { on: boolean; locked?: bool
   );
 }
 
+function Radio({ on, onPick, title, hint }: { on: boolean; onPick: () => void; title: string; hint: string }) {
+  return (
+    <button type="button" role="radio" aria-checked={on} onClick={onPick} style={{
+      appearance: "none", display: "flex", alignItems: "flex-start", gap: 9, padding: "5px 0 1px", width: "100%", textAlign: "left",
+      border: 0, background: "transparent", cursor: "pointer", fontFamily: "inherit",
+    }}>
+      <span style={{
+        flex: "none", marginTop: 2, width: 14, height: 14, borderRadius: "50%", boxSizing: "border-box", display: "grid", placeItems: "center",
+        border: `1px solid ${on ? "var(--acc)" : "var(--line2)"}`,
+      }}>{on && <i style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--acc)" }} />}</span>
+      <span style={{ minWidth: 0 }}>
+        <span style={{ display: "block", fontFamily: UI, fontSize: "var(--t115)", color: on ? "var(--txh)" : "var(--txm)" }}>{title}</span>
+        <span style={{ display: "block", marginTop: 1, fontFamily: UI, fontSize: "var(--t105)", color: "var(--txl)", lineHeight: 1.4 }}>{hint}</span>
+      </span>
+    </button>
+  );
+}
+
 /** SEND SESSION / PICTURE / FILE (bridge/team.py): who it goes to, what goes with
  *  it, a note, and the promise that nothing runs on their side until they continue
- *  it. Above the lightbox (z 97), with an Esc of its own. */
-export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
+ *  it. A session that already went to them says so, and goes as an update; one with a
+ *  turn running waits for it by default. Above the lightbox (z 97), with an Esc of its own. */
+export function TeamSendSheet({ what, teammates, outbox = [], to: first, onClose, onSent }: {
   what: SendWhat;
   teammates: Teammate[];
+  outbox?: Share[];          // YOU SENT: what each teammate already has
   to?: string;
   onClose: () => void;
   onSent: (share: Share, to: Teammate) => void;
@@ -58,6 +79,8 @@ export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
   const [note, setNote] = useState("");
   const [pictures, setPictures] = useState(true);
   const [code, setCode] = useState(false);
+  const [when, setWhen] = useState<"end" | "now">("end");
+  const [picTitle, setPicTitle] = useState(what.kind === "picture" ? what.title ?? what.name : "");
   const [preview, setPreview] = useState<TeamPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -88,8 +111,9 @@ export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
     setBusy(true);
     setError("");
     try {
-      const body = what.kind === "session" ? { kind: what.kind, session: what.session, pictures, code }
-        : what.kind === "picture" ? { kind: what.kind, path: what.path }
+      const body = what.kind === "session"
+        ? { kind: what.kind, session: what.session, pictures, code, ...(preview?.running && when === "end" ? { when: "end" as const } : {}) }
+        : what.kind === "picture" ? { kind: what.kind, path: what.path, ...(picTitle.trim() ? { title: picTitle.trim() } : {}) }
         : { kind: what.kind, project: what.project, branch: what.branch, file: what.file };
       const r = await api.teamSend({ ...body, to: person.id, note });
       onSent(r.share, person);
@@ -101,6 +125,14 @@ export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
   }
 
   const title = what.kind === "session" ? what.title : what.kind === "picture" ? what.name : what.file.split("/").pop() || what.file;
+  // What they already have of this session (YOU SENT, by its thread): it goes as the next version.
+  const had = what.kind === "session" && person ? sentBefore(outbox, preview?.thread, person.id) : null;
+  const num = (v: unknown) => (typeof v === "number" ? v : 0);
+  const newTurns = had && preview ? preview.turns - num(had.last.meta.turns) : 0;
+  const newPics = had && preview ? preview.pictures - num(had.last.meta.pictures) : 0;
+  const waits = what.kind === "session" && !!preview?.running && when === "end";
+  const label = waits ? "SEND WHEN IT ENDS" : had ? (newTurns > 0 || newPics > 0 ? "SEND UPDATE" : "SEND AGAIN") : "SEND";
+  const nowSec = Date.now() / 1000;
   return (
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 74%, transparent)", zIndex: 97,
@@ -130,6 +162,25 @@ export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
                   </div>
                 </div>
               ) : <div style={{ fontFamily: UI, fontSize: "var(--t115)", color: "var(--txl)" }}>No teammates to send to.</div>}
+              {had && person && (() => {
+                const st = sentStatus(had.last, nowSec);
+                const firstName = person.name.split(" ")[0] || person.name;
+                const sentAt = Date.parse(had.last.sentAt) / 1000;
+                const bits = [newTurns > 0 && `${newTurns} turn${newTurns === 1 ? "" : "s"}`, newPics > 0 && `${newPics} picture${newPics === 1 ? "" : "s"}`].filter(Boolean);
+                return (
+                  <div style={{
+                    marginTop: 9, padding: "8px 10px", borderRadius: 7, border: `1px solid ${mix("var(--info)", 32)}`, background: mix("var(--info)", 6),
+                    display: "flex", gap: 8, fontFamily: UI, fontSize: "var(--t105)", lineHeight: 1.5, color: "var(--txm)",
+                  }}>
+                    <span style={{ flex: "none", marginTop: 2, color: "var(--info)", display: "flex" }}><History size={12} strokeWidth={2} /></span>
+                    <span>
+                      {firstName} has {bits.length ? "this session" : "this exact version"}: sent {ago(sentAt, nowSec)} ago,{" "}
+                      <b style={{ color: TONE[st.tone], fontWeight: 600 }}>{st.text}</b>.
+                      {bits.length > 0 && <><br />Since then <b style={{ color: "var(--txh)", fontWeight: 600 }}>+{bits.join(", ")}</b>. It goes as v{had.count + 1}: {firstName} gets the new part on top of what they have, not a second copy.</>}
+                    </span>
+                  </div>
+                );
+              })()}
               {roster.length > 1 && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9 }}>
                   {roster.map((t) => (
@@ -156,8 +207,27 @@ export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
                 </div>
               )}
               {what.kind === "file" && <div style={{ marginTop: 4, fontFamily: MONO, fontSize: "var(--t9)", color: "var(--txl)" }}>{what.file}</div>}
+              {what.kind === "picture" && (
+                <input value={picTitle} onChange={(e) => setPicTitle(e.target.value.slice(0, 200))} aria-label="Its title" placeholder="a title for it"
+                  style={{
+                    marginTop: 6, width: "100%", boxSizing: "border-box", border: `1px solid ${mix("var(--acc)", 30)}`, background: "color-mix(in srgb, var(--panel3) 60%, transparent)",
+                    borderRadius: 7, padding: "6px 10px", fontFamily: UI, fontSize: "var(--t115)", color: "var(--txh)", outline: "none",
+                  }} />
+              )}
             </div>
           </div>
+          {what.kind === "session" && preview?.running && (
+            <div style={{ display: "flex", gap: 12 }}>
+              <Label>WHEN</Label>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: UI, fontSize: "var(--t115)", color: "var(--warn)" }}>
+                  <Clock size={12} strokeWidth={2} />A turn is still running in this session.
+                </div>
+                <Radio on={when === "end"} onPick={() => setWhen("end")} title="When it ends" hint="they get its answer too; nothing to wait for on your side" />
+                <Radio on={when === "now"} onPick={() => setWhen("now")} title="Now" hint="up to here: the running turn reaches them unfinished, marked so" />
+              </div>
+            </div>
+          )}
           {what.kind === "session" && (
             <div style={{ display: "flex", gap: 12 }}>
               <Label>SENDS</Label>
@@ -169,7 +239,7 @@ export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
                   hint="this checkout with its uncommitted changes; it opens on a branch of its own" />
                 <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 7, fontFamily: UI, fontSize: "var(--t105)", color: "var(--txd)" }}>
                   <span style={{ color: "var(--ok)", display: "flex" }}><ShieldCheck size={12} strokeWidth={2} /></span>
-                  {preview?.redacted ? `${preview.redacted} token-shaped string${preview.redacted === 1 ? "" : "s"} blanked out` : "Token-shaped text is blanked out"} · .env files never go
+                  {preview?.redacted ? `${preview.redacted} token-shaped string${preview.redacted === 1 ? "" : "s"} blanked out` : "Token-shaped text is blanked out"} · your home folder shows as ~ · .env files never go
                 </div>
               </div>
             </div>
@@ -192,7 +262,7 @@ export function TeamSendSheet({ what, teammates, to: first, onClose, onSent }: {
           <button type="button" disabled={!person || busy} onClick={() => void send()} style={{
             ...BTN, display: "inline-flex", alignItems: "center", gap: 7, border: `1px solid ${mix("var(--acc)", 45)}`,
             background: mix("var(--acc)", 20), color: "var(--txh)", opacity: !person || busy ? 0.6 : 1,
-          }}><Send size={11} strokeWidth={2} />{busy ? "SENDING…" : "SEND"}</button>
+          }}><Send size={11} strokeWidth={2} />{busy ? "SENDING…" : label}</button>
         </div>
       </div>
     </div>

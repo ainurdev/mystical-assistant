@@ -85,7 +85,8 @@ import { ChangelogButton } from "./components/hud/ChangelogButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import { TeamPanel } from "./components/hud/TeamPanel";
 import { TeamSendSheet, type SendWhat } from "./components/TeamSendSheet";
-import { TeamBar } from "./components/TeamBar";
+import { BackPill, TeamBar } from "./components/TeamBar";
+import { ProjectPick } from "./components/ProjectPick";
 import { setLightboxSend } from "./components/ImageLightbox";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel } from "./components/hud/FilesPanel";
@@ -1314,6 +1315,7 @@ export function App() {
     // A teammate's device run is read only: whoever calls, no prompt starts a
     // turn in it (the bridge refuses one, but still records it in their view).
     if (isReadOnly(sessions.find((x) => x.id === sid)?.origin)) return false;
+    setCameBack((m) => { if (!(sid in m)) return m; const next = { ...m }; delete next[sid]; return next; });
     const pk = opts?.picks ?? { model, perm: permMode, effort };
     // `/goal <objective>` sets the session's objective instead of prompting; a
     // bare `/goal` clears it. The loop itself is the bridge's (bridge/goals.py) —
@@ -1647,10 +1649,15 @@ export function App() {
    *  rivendell that way). A picture or a file has no project, so it goes in the open one. */
   const continuing = useRef(new Set<string>());
   const [contStep, setContStep] = useState<{ id: string; text: string } | null>(null);   // on the button pressed
-  async function continueShare(id: string, kind: ShareKind = "session") {
+  // Where a session that came from no repository goes: the picker's question, answered by onDone.
+  const [pick, setPick] = useState<{ title: string; text: string; done: (rel: string | null) => void } | null>(null);
+  const pickProject = (title: string, text: string) =>
+    new Promise<string | null>((done) => setPick({ title, text, done: (rel) => { setPick(null); done(rel); } }));
+  async function continueShare(id: string, kind: ShareKind = "session", into?: "yours") {
     if (continuing.current.has(id)) return;      // a second click while the first sets up
     continuing.current.add(id);
     try {
+      if (into === "yours") { await continueInYours(id); return; }
       let plan = await api.teamContinue(id);
       let cwd: string | null = null;             // where to install: the new checkout, or the worktree their code goes into
       const then = plan.code     // their changes go in first, so the tap is consent to their install scripts too
@@ -1665,6 +1672,16 @@ export function App() {
           plan = await api.teamContinue(id);
         } catch (e) { notify("error", (e as Error).message); }
         setContStep(null);
+      }
+      if (!plan.project && kind === "session" && !plan.repo) {
+        // No repository at all (a plain folder): it goes where you say, never silently into the open one.
+        const where = team?.inbox.find((r) => r.id === id)?.meta.project;
+        const who = (plan.from ?? "A teammate").split(" ")[0];
+        const rel = await pickProject(`Where should ${who}'s session continue?`,
+          `It ran in ${typeof where === "string" && where ? where : "a folder"} on ${who}'s machine, a folder with no git repository, `
+          + "so there's no checkout of it here to find. Pick one of your projects; it continues there as a new session.");
+        if (!rel) { notify("info", "Nothing was continued."); return; }
+        plan = await api.teamContinue(id, { project: rel });
       }
       let project = plan.project;
       const branch = plan.branch ?? undefined;
@@ -1698,7 +1715,7 @@ export function App() {
       const sid = await newSession(project, plan.draft, branch, plan.title ?? undefined);
       if (!sid) { notify("error", "Couldn't start the session; nothing was marked continued."); return; }
       setAttachFor({ sid, files: plan.attachments });
-      void api.teamState(id, "continued").then(() => void loadTeam(), () => { /* best effort */ });
+      void api.teamState(id, "continued", sid).then(() => void loadTeam(), () => { /* best effort */ });
     } catch (e) {
       const m = (e as Error).message;
       notify("error", m === "not found" ? "Restart the bridge to continue shares here." : m);
@@ -1706,6 +1723,34 @@ export function App() {
       continuing.current.delete(id);
       setContStep(null);
     }
+  }
+
+  /** CONTINUE IN YOURS: a newer state of a thread you have (an update to one you continued,
+   *  or your own session sent back) goes into your session in it: only what's new attached
+   *  (update.md and its pictures), their code on a branch of its own named in the draft, and
+   *  the prompt left unsent, ahead of any draft you had there. */
+  const [cameBack, setCameBack] = useState<Record<string, string>>({});    // session -> its BackPill, until you send
+  async function continueInYours(id: string) {
+    const plan = await api.teamContinue(id, { into: "yours" });
+    const sid = plan.session;
+    if (!sid) { notify("error", "There's no session of yours in this thread any more."); return; }
+    const row = team?.inbox.find((r) => r.id === id);
+    const n = row?.new_turns ?? 0;
+    setCameBack((m) => ({ ...m, [sid]: `${row?.relation === "back" ? "back from" : "update from"} ${(plan.from ?? "a teammate").split(" ")[0]}`
+      + ` · ${n} turn${n === 1 ? "" : "s"}` }));
+    if (plan.branch && plan.project) {
+      const wt = await api.worktreeAdd(plan.project, plan.branch, plan.base ?? undefined);
+      if (!wt.ok || !wt.path) {
+        notify("error", `Couldn't make the ${plan.branch} worktree: ${wt.output?.trim() || "git refused"}`);
+        return;
+      }
+      await api.teamUnpack(id, wt.path).catch((e: Error) => notify("info", e.message));
+    }
+    setDrafts((d) => ({ ...d, [sid]: [plan.draft, d[sid]].filter(Boolean).join("\n\n") }));
+    openSession(sid);
+    toChat();
+    setAttachFor({ sid, files: plan.attachments });
+    void api.teamState(id, "continued", sid).then(() => void loadTeam(), () => { /* best effort */ });
   }
 
   /** The GIT tab's HANDLE IN A NEW SESSION: a session on that tree, the draft
@@ -1957,8 +2002,10 @@ export function App() {
   const teammates = team && !team.error ? team.roster : [];
   const teamNew = team?.inbox.filter((r) => !seen(r)).length ?? 0;     // what SENT TO YOU shows
   // The lightbox's SEND, and a bell row for a picture or a file, reach here.
+  const picTitle = useRef<string | null>(null);     // a picture sent from the lightbox is named after the open session
+  picTitle.current = selected && !isReadOnly(selected.origin) && selected.title ? `${selected.title} · screenshot` : null;
   useEffect(() => {
-    setLightboxSend(teammates.length ? (p) => setSendWhat({ what: { kind: "picture", ...p } }) : null);
+    setLightboxSend(teammates.length ? (p) => setSendWhat({ what: { kind: "picture", ...p, title: picTitle.current ?? undefined } }) : null);
     const show = () => patchSettings({ rightTab: "team", rightOpen: true });
     window.addEventListener("hud:team", show);
     return () => { window.removeEventListener("hud:team", show); setLightboxSend(null); };
@@ -2050,6 +2097,7 @@ export function App() {
           onRefresh={() => void loadTeam()}
           onSendTo={(t) => { if (selected) setSendWhat({ what: { kind: "session", session: selected.id, title: selected.title || "session" }, to: t.id }); }}
           onOpen={openReceived} onContinue={(r) => void continueShare(r.id, r.kind)} step={contStep}
+          onContinueYours={(r) => void continueShare(r.id, r.kind, "yours")}
           onDismiss={(r) => void dismissShare(r.id, !!r.session && r.session === sessionId)} />
       ),
     }] : []),
@@ -2579,6 +2627,7 @@ export function App() {
               {/* CENTER */}
               <Terminal
                 view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
+                teamMe={team?.outbox.find((o) => !o.queued)?.from.id ?? null}
                 branch={selected?.branch} model={model} turnCount={turns.length} turns={turns}
                 activeId={active?.id ?? null} onRespond={respond}
                 scrollRef={scrollRef} contentRef={contentRef}
@@ -2630,6 +2679,8 @@ export function App() {
                 ) : selected && isTeam(selected.origin) ? (
                   // A session a teammate sent: read only, so the bar stands where the composer would.
                   <TeamBar key={selected.id} s={selected} src={team?.roster.find((p) => p.id === selected.team?.from.id)?.avatarUrl}
+                    row={team?.inbox.find((r) => r.id === selected.team?.share) ?? null}
+                    onContinueYours={() => { if (selected.team) void continueShare(selected.team.share, "session", "yours"); }}
                     onContinue={() => { if (selected.team) void continueShare(selected.team.share); }}
                     step={contStep && contStep.id === selected.team?.share ? contStep.text : null}
                     onDismiss={() => { if (selected.team) void dismissShare(selected.team.share, true); }} />
@@ -2664,6 +2715,7 @@ export function App() {
                         // Inside the composer's box, not on the bare panel above
                         // it: a lone pill on its own strip read as a layout slip.
                         <div className="pillstrip">
+                          {sessionId && cameBack[sessionId] && <BackPill text={cameBack[sessionId]} />}
                           <AgentsPill sessionId={sessionId} running={running} hud={settings} />
                           <GoalPill
                             goal={sessions.find((s) => s.id === sessionId)?.goal}
@@ -2813,13 +2865,18 @@ export function App() {
             <NativeTips />
             <AskDialog />
             {sendWhat && (
-              <TeamSendSheet what={sendWhat.what} to={sendWhat.to} teammates={teammates}
+              <TeamSendSheet what={sendWhat.what} to={sendWhat.to} teammates={teammates} outbox={team?.outbox ?? []}
                 onClose={() => setSendWhat(null)}
-                onSent={(_share, t) => {
+                onSent={(share, t) => {
                   setSendWhat(null);
-                  notify("info", t.online ? `Sent to ${t.name}.` : `Sent. It waits in Rivendell until ${t.name} is back.`);
+                  notify("info", share.queued ? `It goes to ${t.name} when this turn ends.`
+                    : t.online ? `Sent to ${t.name}.` : `Sent. It waits in Rivendell until ${t.name} is back.`);
                   void loadTeam();
                 }} />
+            )}
+            {pick && (
+              <ProjectPick title={pick.title} text={pick.text} open={activeProject}
+                projects={discovered.filter((rel) => !hiddenProjects[rel])} onDone={pick.done} />
             )}
             <RestartIntro theme={settings.theme} scanlines={settings.scanlines} intro={settings.intro} />
         </div>

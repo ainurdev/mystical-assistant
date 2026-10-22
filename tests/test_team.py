@@ -1065,6 +1065,12 @@ def test_the_session_it_was_continued_from_travels_one_hop_back(riv, tmp_path):
     assert [t["prompt"] for t in doc["earlier"]["turns"]] == ["their first"]
     assert doc["earlier"]["turns"][0]["events"] == [{"type": "text", "text": "answer to their first"}]
     assert "earlier" not in _gunzip_json(team.pack_session(_my_session(tmp_path))["payload"])     # a session of your own has none
+    root = _my_session(tmp_path)                       # nor does one that took its own thread back (CONTINUE IN YOURS)
+    team.send("session", ERFAN, session_id=root)
+    back = _thread_share(riv, [("their turn", 500.0)], thread=team.thread_of(root))
+    team.mark(back, "continued", session=root)
+    assert team.thread_of(root) == team._thread_hash(root)
+    assert "earlier" not in _gunzip_json(team.pack_session(root)["payload"])
     # Payam gets it: the plate's facts on the session, its turns behind a route, transcript.md with them first.
     there = _thread_share(riv, [("my follow up", 300.0)], thread="fedcba9876543210", frm=PAYAM, earlier=doc["earlier"])
     rec = team._get(there)

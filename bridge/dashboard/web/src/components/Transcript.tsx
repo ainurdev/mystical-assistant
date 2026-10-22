@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MutableRefObject, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { api, type AnswerSelection, type RivendellJob, type SlashCommand, type TurnOutcome } from "../api";
@@ -16,6 +16,7 @@ import { anchorAt, type Anchor, type Rows } from "../lib/scrollmem";
 import { hhmm, useClock12 } from "../lib/surfaces";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { RuneSpirit } from "./hud/RuneSpirit";
+import { UnfinishedPlate } from "./TeamBar";
 
 // The plates draw a prompt that ran a /command as one (PromptBubble, lib/slash
 // leadCommand), checked against the project's command list: read once per
@@ -149,7 +150,7 @@ type Respond = (
  *  unmounts these whole; RunStream's own content-visibility cards keep the
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
-  turn, prev, isActive, isLast, promptIdx, hud, liveTurns, boot, who,
+  turn, prev, isActive, isLast, promptIdx, hud, liveTurns, boot, who, unfinishedBy,
   onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, job, jobTitle, cmds,
 }: {
   turn: Turn;
@@ -160,6 +161,8 @@ function TurnBlock({
   /** The teammate whose device run this turn is: their name signs the prompt,
    *  in the device-run blue. */
   who?: string;
+  /** Who sent this session while this turn was still running: it says so where its answer would be. */
+  unfinishedBy?: string;
   isActive: boolean;
   /** What the live turn is waiting on before its first token, or null. */
   boot?: string | null;
@@ -228,6 +231,7 @@ function TurnBlock({
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
               ended={turn.status !== "running"}
+              unfinished={!!unfinishedBy}
               readOnly={!!who}
               working={working}
               hud={hud}
@@ -237,6 +241,7 @@ function TurnBlock({
         </div>
       )}
       {turn.outcome && <OutcomeBadge outcome={turn.outcome} />}
+      {unfinishedBy && <UnfinishedPlate who={unfinishedBy} />}
     </div>
   );
 }
@@ -282,6 +287,8 @@ export function Transcript({
   job,
   jobTitle,
   project,
+  top,
+  unfinished,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -318,6 +325,10 @@ export function Transcript({
   jobTitle?: string | null;
   /** The session's project, whose command list the plates read. */
   project?: string | null;
+  /** Above the first turn: a session a teammate sent shows the hop before theirs here. */
+  top?: ReactNode;
+  /** Turns still running when a teammate sent the session, and who sent it. */
+  unfinished?: { turns: string[]; by: string } | null;
 }) {
   const cmds = useCommands(project);
   // Tail loading: turns always ship whole but only the last few carry events.
@@ -519,6 +530,7 @@ export function Transcript({
         jobTitle={jobTitle}
         cmds={cmds}
         who={row.turn.id === turns[0]?.id ? who : undefined}
+        unfinishedBy={unfinished?.turns.includes(row.turn.id) ? unfinished.by : undefined}
         hud={hud}
         liveTurns={liveTurns}
         onRespond={onRespond}
@@ -549,6 +561,7 @@ export function Transcript({
   if (fullMount || !scrollRef) {
     return (
       <div className="flex flex-col gap-3">
+        {top}
         {olderButton}
         {rows.map((row, i) => (
           <div key={keyOf(row)} data-key={keyOf(row)}>{blockFor(row, i)}</div>
@@ -565,6 +578,7 @@ export function Transcript({
   // measureElement counts the spacing a row owns.
   return (
     <>
+      {top}
       {olderButton}
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((vi) => {

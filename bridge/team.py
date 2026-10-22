@@ -404,6 +404,8 @@ def _earlier_hop(session_id: str, thread: str, home: str, budget: list) -> "dict
     """One hop back, for a session CONTINUE HERE made: the turns of the teammate's session it was
     continued from (the newest version of it here), so whoever gets it next reads where it
     started. Without its pictures: the plate shows words. None for a session of your own."""
+    if thread == _thread_hash(session_id):
+        return None          # the thread's own first session: nothing came before it, whatever came back into it
     with _lock:
         shares = _load()
     if not any(r.get("continued_session") == session_id for r in shares.values()):

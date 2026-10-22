@@ -102,6 +102,9 @@ export interface SessionBrief {
     note: string;
     sent: string;          // ISO
     meta: Record<string, unknown>;
+    // The hop it was continued from, when that came with it (EARLIER IN THIS THREAD).
+    earlier?: { from: { id: string; name: string }; turns: number; sent: string };
+    unfinished?: string[];  // turns still running when they sent it
   } | null;
 }
 
@@ -1044,7 +1047,11 @@ export interface Share {
   openedAt: string | null;
   continuedAt: string | null;
   dismissedAt: string | null;
-  expiresAt: string;
+  expiresAt: string | null;
+  // Waiting here for its session's turn to end (never reached Rivendell yet); `error`
+  // when it was tried and failed.
+  queued?: boolean;
+  error?: string | null;
 }
 
 /** Something a teammate sent this bridge, as it keeps it (team.json): a session it
@@ -1063,6 +1070,13 @@ export interface Received {
   opened: boolean;
   continued: boolean;
   at: number;
+  // A session in a thread you have (absent from an older bridge): "update" is a newer
+  // version, "back" your own session sent back; `yours` is your session in it.
+  relation?: "update" | "back" | null;
+  version?: number;
+  new_turns?: number | null;
+  prev?: { state: "continued" | "opened" | null; at: number | null } | null;
+  yours?: { id: string; title: string } | null;
 }
 
 export interface TeamOverview {
@@ -1075,6 +1089,16 @@ export interface TeamOverview {
 export interface TeamPreview {
   title: string; project: string; repo: string | null; branch: string | null;
   turns: number; pictures: number; redacted: number;
+  thread?: string;     // ties its sends together (absent from an older bridge)
+  running?: boolean;   // a turn is going in it now
+}
+
+/** The hop a received session was continued from: whose turns, each prompt with its answer. */
+export interface TeamEarlier {
+  from: { id: string; name: string };
+  title: string;
+  sent: string;
+  turns: { prompt: string; answer: string }[];
 }
 
 /** What CONTINUE HERE sets up: `project` null when the repository isn't cloned
@@ -1085,6 +1109,7 @@ export interface ContinuePlan {
   branch: string | null;     // a new worktree branch for their code
   base: string | null;       // the commit to cut it from, when it is here
   title: string | null;      // a session's, for yours: it carries their session on
+  session?: string | null;   // CONTINUE IN YOURS: your session it goes into
   from?: string;             // the sender's name (absent from an older bridge)
   clone?: string | null;     // not cloned: the folder CLONE & INSTALL would make (~/…), null when it can't
   code?: boolean;            // their uncommitted changes came with it, so installing runs their scripts too
@@ -1098,6 +1123,8 @@ export interface InstallStep { dir: string; cmd: string; ok: boolean; why: strin
 export interface TeamSend {
   kind: ShareKind; to: string; note?: string;
   session?: string; pictures?: boolean; code?: boolean;     // a session
+  when?: "end";                                              // after its running turn
+  title?: string;                                            // a picture's
   path?: string;                                            // a picture, in the upload folder
   project?: string; branch?: string; file?: string;         // a file, relative to its project
 }
@@ -2189,16 +2216,18 @@ export const api = {
     req<TeamPreview>(`/local/rivendell/team/preview?session=${encodeURIComponent(session)}`),
   teamSend: (body: TeamSend) =>
     req<{ ok: boolean; share: Share }>("/local/rivendell/team/send", { method: "POST", body }),
-  teamContinue: (id: string) =>
-    req<ContinuePlan>("/local/rivendell/team/continue", { method: "POST", body: { id } }),
+  teamContinue: (id: string, opts?: { into?: "yours"; project?: string }) =>
+    req<ContinuePlan>("/local/rivendell/team/continue", { method: "POST", body: { id, ...opts } }),
+  teamEarlier: (id: string) =>
+    req<TeamEarlier>(`/local/rivendell/team/earlier?id=${encodeURIComponent(id)}`),
   teamClone: (id: string) =>
     req<{ ok: boolean; project: string; path: string }>("/local/rivendell/team/clone", { method: "POST", body: { id } }),
   teamInstall: (id: string, cwd: string) =>
     req<{ ok: boolean; steps: InstallStep[] }>("/local/rivendell/team/install", { method: "POST", body: { id, cwd } }),
   teamUnpack: (id: string, cwd: string) =>
     req<{ ok: boolean; files: number }>("/local/rivendell/team/unpack", { method: "POST", body: { id, cwd } }),
-  teamState: (id: string, state: "opened" | "continued" | "dismissed") =>
-    req<{ ok: boolean }>("/local/rivendell/team/state", { method: "POST", body: { id, state } }),
+  teamState: (id: string, state: "opened" | "continued" | "dismissed", session?: string) =>
+    req<{ ok: boolean }>("/local/rivendell/team/state", { method: "POST", body: { id, state, ...(session ? { session } : {}) } }),
   // STOP RUN on the teammate's run going on this device (its session's id). 404
   // when it isn't the run going here, or from an older bridge that has no route.
   stopDeviceRun: (session: string) =>
