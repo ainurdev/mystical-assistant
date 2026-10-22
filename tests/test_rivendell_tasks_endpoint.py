@@ -1,7 +1,7 @@
 """The RIVENDELL tab's two dashboard routes.
 
 Socket-free via Handler.__new__ (the test_tracker_endpoints.py pattern). What is
-under test is the wiring: a project resolves to its checkout's origin slug
+under test is the wiring: a project resolves to its checkout's remotes' slugs
 before Rivendell is asked, a checkout without one never reaches Rivendell, and
 IMPLEMENT's failures come back as the one line req() throws.
 Run: python -m pytest tests/test_rivendell_tasks_endpoint.py -v"""
@@ -66,6 +66,19 @@ def test_tasks_asks_rivendell_for_the_checkouts_origin(tmp_path, asked):
     assert r["code"] == 200
     assert asked == ["Acme/App"]
     assert r["obj"]["slug"] == "Acme/App" and r["obj"]["tasks"] == [{"id": "t1"}]
+
+
+def test_tasks_asks_every_remote_not_just_origin(tmp_path, monkeypatch):
+    # An NR checkout: origin is the ainurdev copy no board links; the nr remote names the one that is.
+    rel = _repo(tmp_path, "git@github.com:ainurdev/apex-app.git")
+    subprocess.run(["git", "-C", os.path.join(config.BASE_PATH, rel), "remote", "add", "nr",
+                    "git@github.com:nationalerijschool/app.git"], check=True)
+    answers = {"ainurdev/apex-app": {"instances": 1, "projects": [], "tasks": [], "errors": []},
+               "nationalerijschool/app": {"instances": 1, "projects": [{"id": "nr"}],
+                                          "tasks": [{"id": "t1"}], "errors": []}}
+    monkeypatch.setattr(rivendell, "tasks", lambda slug: answers[slug])
+    r = dget(f"/local/rivendell/tasks?project={rel}")
+    assert r["obj"]["slug"] == "nationalerijschool/app" and r["obj"]["tasks"] == [{"id": "t1"}]
 
 
 def test_tasks_without_a_github_origin_never_reaches_rivendell(tmp_path, asked):

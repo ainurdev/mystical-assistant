@@ -775,7 +775,7 @@ export interface RivendellRun {
   } | null;
 }
 export interface RivendellTasks {
-  slug: string | null;       // the checkout's origin; null = no GitHub origin, nothing asked
+  slug: string | null;       // the remote(s) on a board ("a, b"), else origin; null = no GitHub remote, nothing asked
   instances: number | null;  // running connections asked
   projects: { id: string; name: string; url: string; instance_id: string }[];
   tasks: RivendellTask[];

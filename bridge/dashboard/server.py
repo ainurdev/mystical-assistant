@@ -736,16 +736,18 @@ class Handler(BaseHTTPRequestHandler):
             rows.sort(key=lambda r: r["created_at"])
             return self._json({"queue": rows})
         if path == "/local/rivendell/tasks":
-            # The RIVENDELL tab: open tasks for the repo this checkout's origin
-            # names. No GitHub origin -> nothing to ask Rivendell about.
+            # The RIVENDELL tab: open tasks for the repos this checkout's remotes
+            # name — every remote, as the task check asks (an NR checkout's
+            # board links its `nr` remote, not origin). No GitHub remote ->
+            # nothing to ask Rivendell about.
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
-            slug = github.origin_slug(abs_p) or github.remote_slug(abs_p)
+            slug, answer = rivendell._slug_answer(abs_p)
             if slug is None:
                 return self._json({"slug": None, "instances": None,
                                    "projects": [], "tasks": [], "errors": []})
-            return self._json({"slug": slug, **rivendell.tasks(slug)})
+            return self._json({"slug": slug, **answer})
         if path == "/local/rivendell/taskstate":
             # The task tab (docs/superpowers/specs/rivendell-task-check.md): the
             # branch's Rivendell task, beside the branch in the prompt box and
