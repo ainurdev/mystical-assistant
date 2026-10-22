@@ -47,4 +47,16 @@ const para = askBack("First line.\n\nSecond thing done.\n\nShould I push?")!;
 console.assert(para.question === "Should I push?", `para: ${JSON.stringify(para.question)}`);
 console.assert(para.body.endsWith("Second thing done."), `para body: ${JSON.stringify(para.body)}`);
 
+// Lettered options in prose above a "Which…?" become its chips.
+const dirs = askBack(
+  "Drew three directions.\n\n- **A · TOKEN** (recommended): one chip.\n- **B · HEADER**: a band on top.\n" +
+  "- **C · SEGMENT**: a solid segment.\n\nWhich direction do you want?",
+)!;
+console.assert(dirs.options.join("|") === "A · TOKEN|B · HEADER|C · SEGMENT", `lettered: ${JSON.stringify(dirs.options)}`);
+const plain = askBack("Two ways:\n\nA) Redis, fast\nB) SQLite — simple\n**Option 3:** neither\n\nWhich one?")!;
+console.assert(plain.options.join("|") === "A · Redis, fast|B · SQLite|3 · neither", `plain: ${JSON.stringify(plain.options)}`);
+console.assert(askBack("A) only one\n\nWhich one?")!.options.length === 0, "one option is not a choice");
+console.assert(askBack("Done.\n\nWhat should I call it?")!.options.length === 0, "an open question stays open");
+console.assert(askBack("- **A · x**: y\n- **B · z**: w\n\nWant me to go with A?")!.options.join() === "Yes,No", "yes/no wins over a list");
+
 console.log("askback ok");

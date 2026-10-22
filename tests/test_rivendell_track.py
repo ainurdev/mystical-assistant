@@ -174,8 +174,11 @@ def checkout(tmp_path):
 
 
 def _gated(cwd, csid):
+    """The run's push gate, or None. Every interactive run also carries the
+    Stop hook (bridge/askhook.py) in the same --settings, so look for the gate."""
     cmd = runner._base_cmd("hi", 555, stream=True, cwd=cwd, interactive=True, claude_session_id=csid)
-    return json.loads(cmd[cmd.index("--settings") + 1]) if "--settings" in cmd else None
+    hooks = json.loads(cmd[cmd.index("--settings") + 1])["hooks"] if "--settings" in cmd else {}
+    return {"hooks": hooks} if "PreToolUse" in hooks else None
 
 
 def test_a_session_with_the_note_gets_the_push_gate(note, checkout, monkeypatch):

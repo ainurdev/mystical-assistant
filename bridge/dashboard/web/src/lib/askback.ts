@@ -51,6 +51,27 @@ function optionsFor(question: string): string[] {
   return OPEN.test(core) ? [] : ["Yes", "No"];
 }
 
+// "- **A · TOKEN** (recommended): …", "B) Redis, fast", "**Option 2:** …": the
+// lettered lines right above a "Which…?" are the replies it is waiting for. Same
+// reading as the Stop hook that sends such a turn back for a card (bridge/askhook.py);
+// these chips are for what still gets through, and for agents it can't reach.
+const KEYED = /^\s*(?:[-*+]\s+)?(?:\*\*|__)?(?:option\s+)?([A-D]|[1-4])(?:\*\*|__)?\s*[·.):—–-]\s*(.*)$/i;
+
+function lettered(body: string): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const line of body.split("\n").slice(-16)) {
+    const m = KEYED.exec(line);
+    if (!m || seen.has(m[1].toUpperCase())) continue;
+    // The name: a bold run, or up to the first ":", " — " or " (".
+    const name = alt(m[2].replace(/^[*_\s]+/, "").split(/\*\*|__|:|\s+[—–-]\s+|\s+\(/)[0]).slice(0, 40).trim();
+    if (!name) continue;
+    seen.add(m[1].toUpperCase());
+    out.push(`${m[1].toUpperCase()} · ${name}`);
+  }
+  return out.length >= 2 ? out : [];
+}
+
 export function askBack(text: string): AskBack | null {
   const t = text.replace(/\s+$/, "");
   if (!t.endsWith("?")) return null;
@@ -59,5 +80,7 @@ export function askBack(text: string): AskBack | null {
   const question = t.slice(cut).replace(/^[-*>\s]+/, "").trim();
   // A whole paragraph ending in "?" is rhetorical or a heading, not an ask.
   if (!question.endsWith("?") || question.length > 240) return null;
-  return { body: t.slice(0, cut).replace(/\s+$/, ""), question, options: optionsFor(question) };
+  const body = t.slice(0, cut).replace(/\s+$/, "");
+  const options = optionsFor(question);
+  return { body, question, options: options.length ? options : lettered(body) };
 }

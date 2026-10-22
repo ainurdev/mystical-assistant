@@ -170,6 +170,8 @@ export interface Transcript {
 export interface QuestionOption {
   label: string;
   description?: string;
+  /** Markdown: its images are this option's pictures (lib/qpreview). */
+  preview?: string;
 }
 
 export interface Question {

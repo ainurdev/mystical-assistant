@@ -5946,6 +5946,45 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
   background: color-mix(in oklab, var(--acc) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 30%, transparent); }
 .tcard .tc-tag { font-family: var(--mono); font-size: .95em; padding: 0 4px; border-radius: 4px; background: color-mix(in oklab, var(--txl) 22%, transparent); }
 
+/* A question whose options carry pictures (QuestionCard Stage,
+   .mystical/design-drafts/picture-choices): the options down the left, the shown
+   one's shots on a stage beside them. A narrow card (the Mini App's width, a
+   split window) stacks it, stage first, so a tapped row swaps the picture right
+   above it. Radii come from the Tailwind classes, so a square theme stays square. */
+.qstage-wrap { container-type: inline-size; }
+.qstage { display: grid; grid-template-columns: minmax(0, 230px) minmax(0, 1fr); gap: 10px; align-items: start; }
+@container (max-width: 560px) {
+  .qstage { grid-template-columns: minmax(0, 1fr); }
+  .qstage-view { order: -1; }
+}
+.qstage-list { display: flex; flex-direction: column; gap: 6px; }
+.qstage-list .qopt-shown { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--d-ask, var(--acc)) 45%, transparent); }
+.qkey { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 21px; height: 21px;
+  border: 1px solid color-mix(in oklab, var(--txl) 45%, transparent); background: var(--panel); color: var(--txh);
+  font: 700 11px/1 var(--mono); }
+.qkey-on { background: var(--d-ask, var(--acc)); border-color: var(--d-ask, var(--acc)); color: var(--tg-button-text); }
+.qkey-chip { width: 17px; height: 17px; font-size: 10px; }
+.qsug { flex: none; margin-left: auto; padding: 2px 6px; font-size: var(--t85); font-weight: 700; letter-spacing: 1.2px; line-height: 1.2;
+  color: var(--d-ask, var(--ask, var(--acc))); background: color-mix(in oklab, var(--d-ask, var(--ask, var(--acc))) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--d-ask, var(--ask, var(--acc))) 40%, transparent); }
+.qopt-on .qsug { color: inherit; }
+.qstage-view { overflow: hidden; border: 1px solid var(--d-hair, var(--border)); background: color-mix(in oklab, var(--tg-bg) 70%, #000); }
+.qstage-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; color: var(--txh);
+  border-bottom: 1px solid var(--d-hair, var(--border)); }
+.qstage-tabs { margin-left: auto; display: flex; gap: 4px; min-width: 0; overflow-x: auto; }
+.qstage-tab { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; font-size: var(--t11, 11px); line-height: 1.3;
+  color: var(--txm); border: 1px solid color-mix(in oklab, var(--txl) 35%, transparent); }
+.qstage-tab i { font: 700 10px/1 var(--mono); font-style: normal; color: var(--txl); }
+.qstage-tab[aria-selected="true"] { color: var(--txh); border-color: var(--d-ask, var(--acc));
+  background: color-mix(in oklab, var(--d-ask, var(--acc)) 14%, transparent); }
+.qstage-tab[aria-selected="true"] i { color: var(--d-ask, var(--acc)); }
+.qstage-zoom { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; cursor: zoom-in;
+  color: var(--txm); border: 1px solid color-mix(in oklab, var(--txl) 35%, transparent); }
+.qstage-pic { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.qstage-pic img { display: block; width: 100%; height: auto; }
+.qstage-text { margin: 0; padding: 10px 12px; max-height: 320px; overflow: auto; white-space: pre-wrap;
+  font: var(--t12, 12px)/1.5 var(--mono); color: var(--txm); }
+
 /* === THE FAMILIES · MIDDLE-EARTH ===========================================
    Rivendell's own dashboard (.mystical/design-drafts/rivendell-theme) and the
    schemes it ships: RIVENDELL, GREY HAVENS, EDORAS, MORIA, MORDOR, and the apps

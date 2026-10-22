@@ -1,8 +1,72 @@
 import { useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
+import { Maximize2 } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
 import type { AnswerSelection, Question } from "../lib/api";
+import { optionKey, parsePreview, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
+import { ImageLightbox } from "./ImageLightbox";
+import { ToolImage } from "./RunStream";
+
+/** The pictures of the option on show, above the option rows: the phone's half
+ *  of the dashboard's Stage (QuestionCard.tsx there), stacked, so a tapped row
+ *  swaps the picture right above it. The tabs page that option's shots and keep
+ *  their place when you switch options. Its viewer has no PICK: closing it puts
+ *  the rows back under your thumb. */
+function StageView({ q, shown }: { q: Question; shown: number }) {
+  const [tab, setTab] = useState(0);
+  const [zoom, setZoom] = useState<string | null>(null);
+  const [srcs, setSrcs] = useState<Record<string, string>>({});
+  const opts = q.options.map((o, i) => ({ ...optionKey(o.label, i), pv: parsePreview(o.preview) }));
+  const cur = opts[shown] ?? opts[0];
+  const t = Math.min(tab, Math.max(cur.pv.shots.length - 1, 0));
+  const shot = cur.pv.shots[t];
+  return (
+    <div className="border border-border bg-[var(--tg-bg)]">
+      <div className="flex flex-wrap items-center gap-2 border-b border-border px-2.5 py-2">
+        <span className="inline-flex h-[21px] w-[21px] shrink-0 items-center justify-center bg-[var(--brand-soft)] font-mono text-[11px] font-bold text-[var(--tg-bg)]">{cur.key}</span>
+        <span className="min-w-0 truncate text-sm font-medium text-foreground-bright">{cur.name}</span>
+        <span className="ml-auto flex min-w-0 gap-1 overflow-x-auto">
+          {cur.pv.shots.length > 1 && cur.pv.shots.map((s, k) => (
+            <button key={k} type="button" role="tab" aria-selected={k === t} onClick={() => setTab(k)}
+              className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] ${k === t
+                ? "border-[var(--brand-soft)] bg-[var(--ac-12)] text-foreground-bright" : "border-border text-[var(--tg-hint)]"}`}>
+              {k + 1} {s.alt || `Shot ${k + 1}`}
+            </button>
+          ))}
+          {shot && srcs[shot.path] && (
+            <button type="button" aria-label="Open full size" onClick={() => setZoom(srcs[shot.path])}
+              className="shrink-0 border border-border px-1.5 text-[var(--tg-hint)]">
+              <Maximize2 size={11} aria-hidden />
+            </button>
+          )}
+        </span>
+      </div>
+      {shot && (
+        <ToolImage
+          key={shot.path}
+          path={shot.path}
+          alt={`${cur.key} · ${cur.name}${shot.alt ? ` · ${shot.alt}` : ""}`}
+          className="block h-auto w-full"
+          fallback={<p className="px-3 py-2 text-xs text-[var(--tg-hint)]">{shot.alt || "This picture is gone."}</p>}
+          onZoom={(src) => setZoom(src)}
+          onSrc={(src) => setSrcs((m) => ({ ...m, [shot.path]: src }))}
+        />
+      )}
+      {cur.pv.text && (
+        <pre className="m-0 max-h-80 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs text-[var(--tg-hint)]">{cur.pv.text}</pre>
+      )}
+      {zoom && (
+        <ImageLightbox
+          src={zoom}
+          alt={`${cur.key} · ${cur.name}`}
+          all={cur.pv.shots.flatMap((s) => (srcs[s.path] ? [{ src: srcs[s.path] }] : []))}
+          onClose={() => setZoom(null)}
+        />
+      )}
+    </div>
+  );
+}
 
 export function QuestionCard({
   questions,
@@ -32,6 +96,8 @@ export function QuestionCard({
   // poll, so without this the card sits there looking untouched — the click
   // reads as dropped and people press it again.
   const [sending, setSending] = useState(false);
+  // Which option's pictures are on show, per staged question: the last one tapped.
+  const [shownAt, setShownAt] = useState<Record<string, number>>({});
 
   // Hold the draft while the question is still open, so leaving the session (or
   // closing the webview) doesn't cost the answers already picked. Cleared on
@@ -54,6 +120,7 @@ export function QuestionCard({
           return (
             <div key={qi} className="space-y-1.5">
               <div className="text-sm font-medium">{q.question}</div>
+              {staged(q) && <StageView q={q} shown={Math.max(0, q.options.findIndex((o) => chosen.includes(o.label)))} />}
               <div className="flex flex-col gap-1.5">
                 {q.options.map((o) => {
                   const picked = chosen.includes(o.label);
@@ -135,16 +202,21 @@ export function QuestionCard({
         const open = openNotes[qi] ?? (restored.notes[qi] ?? "") !== "";
         // Typed text counts as the answer (see `ready`), so the frame says so.
         const frame = (notes[qi] ?? "").trim() ? "border-[var(--brand-soft)]" : "border-border";
+        const stage = staged(q);
         return (
         <div key={qi} className="space-y-1.5">
           <div className="text-sm font-medium text-foreground-bright">{q.question}</div>
+          {stage && (
+            <StageView q={q} shown={shownAt[qi] ?? Math.max(0, q.options.findIndex((o) => (sel[qi] ?? []).includes(o.label)))} />
+          )}
           <div className="flex flex-col gap-1.5">
             {q.options.map((o, i) => {
               const picked = (sel[qi] ?? []).includes(o.label);
+              const k = optionKey(o.label, i);
               return (
                 <button
                   key={o.label}
-                  onClick={() => toggle(q, qi, o.label)}
+                  onClick={() => { toggle(q, qi, o.label); setShownAt((m) => ({ ...m, [qi]: i })); }}
                   disabled={sending}
                   className={`border px-3 py-2.5 text-left text-sm active:opacity-70 ${
                     picked
@@ -158,9 +230,10 @@ export function QuestionCard({
                         picked ? "text-[var(--brand-soft)]" : "text-[var(--tg-hint)]"
                       }`}
                     >
-                      {i + 1}
+                      {stage ? k.key : i + 1}
                     </span>
-                    <span className="font-medium">{o.label}</span>
+                    <span className="font-medium">{stage ? k.name : o.label}</span>
+                    {stage && k.rec && <span className="ml-auto text-[9.5px] tracking-[1.5px] text-[var(--brand-soft)]">SUGGESTED</span>}
                   </div>
                   {o.description && (
                     <div className={`pl-[17px] text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}>

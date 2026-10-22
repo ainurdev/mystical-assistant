@@ -2712,6 +2712,13 @@ export const RunStream = memo(function RunStream({
   );
 });
 
+/** "A · TOKEN" (lib/askback's lettered options) wears its key as a badge, the
+ *  same one the question card's rows carry. */
+function chipLabel(o: string) {
+  const k = /^([A-D1-4]) · (.+)$/.exec(o);
+  return k ? <span className="inline-flex items-center gap-1.5"><span className="qkey qkey-chip rounded">{k[1]}</span>{k[2]}</span> : o;
+}
+
 /** The question a result ended on, lifted out of its body: highlighted the way a
  *  question card is, with the replies it was waiting for as one-tap chips. The
  *  chips send their own label as the next prompt — nothing is answered for you,
@@ -2753,7 +2760,7 @@ function AskBackBar({
               sent === o ? "border-[var(--acc)]" : ""
             }`}
           >
-            {o}
+            {chipLabel(o)}
           </button>
         ))}
         {onQuote && (
