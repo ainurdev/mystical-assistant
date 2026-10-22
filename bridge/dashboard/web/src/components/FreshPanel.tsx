@@ -1,120 +1,73 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type DevServerInfo, type GitCommit, type GitStatus,
-         type NextBoard, type NextItem, type NextKind } from "../api";
+         type SessionBrief, type SessionStatus } from "../api";
+import { localRows, mergeable, mergeClause } from "../lib/freshlocal";
 import { hairline } from "../lib/shell";
 import { ago } from "../lib/surfaces";
+import { LANE_WORD, resolve } from "./hud/SessionsPanel";
 
 /** The fresh-session screen's one instrument: where this project stands, and
- *  four questions the bridge can answer about it.
+ *  what is open off its default branch.
  *
- *  Scope is the point. The board behind it is machine-wide, but nothing on this
- *  screen is about another repo, so every read and every refresh names this
- *  project — one scout per press instead of one per repo touched this week.
+ *  It used to end in a NEXT / REVIEW / RESEARCH / POLISH board that a scout
+ *  filled. No session was ever started from it (0 of 346 by 2026-10-23), while
+ *  about one first prompt in nine was "clean up local, then …" or "merge the
+ *  idle branches into main". So the board became LOCAL — each branch off the
+ *  default one with the state of its newest session, in the sessions panel's
+ *  own words and colours — and two starters that write those prompts for you.
+ *  A starter never sends: it goes in front of the prompt box's draft.
  *
  *  The status line reads git directly rather than taking the same numbers out
- *  of the board's facts: they must be there before anything has been scouted,
- *  and whether or not the NEXT-UP BOARD switch is on. */
-
-const TABS: { id: NextKind; label: string; blurb: string }[] = [
-  { id: "next", label: "Next", blurb: "what is worth finishing here" },
-  { id: "review", label: "Review", blurb: "what is wrong in what changed" },
-  { id: "research", label: "Research", blurb: "what has not been decided yet" },
-  { id: "polish", label: "Polish", blurb: "where the UI drifts from the system" },
-];
-const EFFORT: Record<NextItem["effort"], string> = { small: "·", medium: "··", large: "···" };
+ *  of any board: they must be there the moment the screen opens. */
 
 /** The panel's own rules, at the weights lib/shell.ts fixes for every theme:
- *  22% accent is the floor a light ground (FLINT's daylight) still shows. The separator
- *  between folded items is half that — present, but subordinate to the rules
- *  that divide the panel's sections, which is the hierarchy it has to read as. */
+ *  22% accent is the floor a light ground (FLINT's daylight) still shows. */
 const RULE = "color-mix(in srgb, var(--acc) 22%, transparent)";
-const ITEM_RULE = "color-mix(in srgb, var(--acc) 14%, transparent)";
+/** Past this many rows the rest is a count: a repo can hold hundreds of branches. */
+const MAX_ROWS = 8;
 
-export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
+/** What App hands the panel: the sessions and their states it already holds,
+ *  and the two things a row or a starter can do. */
+export interface FreshLocal {
+  sessions: SessionBrief[];
+  status: Map<string, SessionStatus>;
+  done: Set<string>;
+  /** Put a starter in front of the prompt box's draft (lib/freshlocal startWith). */
+  onStart: (clause: string, open: boolean) => void;
+  onOpen: (sessionId: string) => void;
+}
+
+export function FreshPanel({ project, branch, run, onOpenRun, local }: {
   project: string;
   branch?: string | null;
   run?: DevServerInfo | null;
   onOpenRun?: () => void;
-  onStart: (item: NextItem) => void;
+  local: FreshLocal;
 }) {
-  const [kind, setKind] = useState<NextKind>("next");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [commit, setCommit] = useState<GitCommit | null>(null);
-  const [board, setBoard] = useState<NextBoard | null>(null);
-  /** Which (project, kind) a scout is running for, or null. Scoped rather than a
-   *  bare boolean so switching tabs mid-scout doesn't show SCOUTING… on a tab
-   *  nothing is scouting — and so the flag can still be cleared by the poll that
-   *  set it, whichever tab happens to be on screen when it finishes. */
-  const [busyScope, setBusyScope] = useState<string | null>(null);
+  const [tree, setTree] = useState<{ branches: string[]; def: string; held: Set<string>; merged: Set<string> } | null>(null);
   const [runCmd, setRunCmd] = useState<string | null | undefined>(undefined);
   const [starting, setStarting] = useState(false);
   const [runErr, setRunErr] = useState("");
-  const poll = useRef<number | null>(null);
-
-  const scope = `${project}|${kind}`;
-  const busy = busyScope === scope;
-  // Always the scope on screen right now. A ref, not state: an in-flight poll
-  // must compare against the CURRENT value, not the one it captured at click.
-  const scopeRef = useRef(scope);
-  scopeRef.current = scope;
 
   useEffect(() => {
     let live = true;
-    setGit(null); setCommit(null); setRunCmd(undefined);
+    setGit(null); setCommit(null); setRunCmd(undefined); setTree(null);
     api.git(project, branch || undefined).then((g) => live && setGit(g)).catch(() => {});
     api.gitLog(project, 1, branch || undefined)
       .then((r) => live && setCommit(r.commits[0] ?? null)).catch(() => {});
     api.projectSettings({ project })
       .then((s) => live && setRunCmd(s.run_cmd)).catch(() => {});
+    Promise.all([api.branches(project), api.worktrees(project)])
+      .then(([b, w]) => live && setTree({
+        branches: b.branches, def: b.default, merged: new Set(w.merged),
+        held: new Set(w.worktrees.filter((t) => !t.is_main).map((t) => t.branch)),
+      })).catch(() => {});
     return () => { live = false; };
   }, [project, branch]);
 
-  useEffect(() => {
-    let live = true;
-    setBoard(null);
-    api.nextBoard({ project, kind }).then((b) => live && setBoard(b)).catch(() => {});
-    return () => { live = false; };
-  }, [project, kind]);
-
-  // The poll outlives a tab switch on purpose: it is the only thing that can
-  // clear its own busy scope, and its writes are already scope-guarded. Only
-  // unmounting stops it.
-  useEffect(() => () => { if (poll.current) window.clearInterval(poll.current); }, []);
-
   useEffect(() => { setStarting(false); }, [run?.status, run?.pid]);
-
-  async function refresh() {
-    const mine = { project, kind }, mineScope = scope;
-    setBusyScope(mineScope);
-    await api.refreshNext(mine).catch(() => null);
-    if (poll.current) window.clearInterval(poll.current);
-    // The callback clears its OWN id, and only releases the shared ref if it is
-    // still the owner — a later refresh may already have taken it, and clearing
-    // `poll.current` blindly would kill that one instead.
-    const id = window.setInterval(async () => {
-      const b = await api.nextBoard(mine).catch(() => null);
-      // Clearing the interval stops future ticks, never one already in flight —
-      // so a late answer is dropped here rather than landing on another tab.
-      if (b && scopeRef.current === mineScope) setBoard(b);
-      if (b && !b.refreshing) {
-        window.clearInterval(id);
-        if (poll.current === id) poll.current = null;
-        setBusyScope((cur) => (cur === mineScope ? null : cur));
-      }
-    }, 3000);
-    poll.current = id;
-  }
-
-  async function dismiss(id: string) {
-    const mineScope = scope;
-    setBoard((b) => (b ? { ...b, items: b.items.filter((i) => i.id !== id) } : b));
-    // The server answers with the board the dismissal left behind. Take it — the
-    // optimistic removal above is a guess, and a dismiss that failed should stop
-    // looking exactly like one that worked. Scope-guarded like the poll: a slow
-    // answer must not land on whichever tab is open by the time it arrives.
-    const b = await api.dismissNext(id, { project, kind }).catch(() => null);
-    if (b && scopeRef.current === mineScope) setBoard(b);
-  }
 
   async function startRun() {
     if (starting) return;
@@ -131,8 +84,15 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
 
   const runSlot = run?.status === "running" ? null
     : runCmd ? "run" : runCmd === null && onOpenRun ? "setup" : null;
-  const items = board?.items ?? [];
-  const [lead, ...rest] = items;
+  const view = (id: string) => resolve(local.status.get(id), local.done.has(id));
+  const rows = tree ? localRows(tree.branches, tree.def, tree.held, tree.merged,
+    local.sessions.filter((s) => s.project === project),
+    (id) => !["done", "idle"].includes(view(id).lane)) : [];
+  const busy = rows.filter((r) => r.busy).length;
+  const merged = rows.filter((r) => !r.busy && r.merged).length;
+  const merge = mergeable(rows);
+  // Every branch name in one column width, so the states line up down the list.
+  const brw = Math.min(28, Math.max(0, ...rows.slice(0, MAX_ROWS).map((r) => r.branch.length)));
 
   return (
     <div style={{ width: "min(560px, 100%)", textAlign: "left",
@@ -167,9 +127,9 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
         )}
       </div>
       {commit && (
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "0 12px 9px",
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "9px 12px",
                       fontFamily: "var(--mono)", fontSize: "var(--t9)", color: "var(--txd)",
-                      borderBottom: `1px solid ${RULE}` }}
+                      borderBottom: tree ? `1px solid ${RULE}` : undefined }}
              title={`${commit.sha.slice(0, 7)} · ${commit.author}`}>
           <span className="caps" style={{ letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>Last</span>
           <span style={{ color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden",
@@ -178,95 +138,74 @@ export function FreshPanel({ project, branch, run, onOpenRun, onStart }: {
         </div>
       )}
 
-      {/* the four questions */}
-      <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "8px 12px 0" }}>
-        {TABS.map((t) => (
-          <button key={t.id} type="button" className="caps" onClick={() => setKind(t.id)} title={t.blurb}
-            style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent",
-                     fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
-                     padding: "4px 8px", color: kind === t.id ? "var(--acc)" : "var(--txd)",
-                     borderBottom: `1px solid ${kind === t.id ? "var(--acc)" : "transparent"}` }}>
-            {t.label}
-          </button>
-        ))}
-        <span style={{ flex: 1 }} />
-        {board?.enabled !== false && (
-          <button type="button" onClick={() => void refresh()} disabled={busy}
-            title="Scouts this repo, for this question only. Nothing moved since last time, nothing spent."
-            style={{ appearance: "none", cursor: busy ? "default" : "pointer",
-                     border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
-                     background: "transparent", color: busy ? "var(--txd)" : "var(--txm)",
-                     fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
-                     padding: "3px 9px" }}>
-            {busy ? "SCOUTING…" : "↻"}
-          </button>
-        )}
-      </div>
+      {/* LOCAL — what is open off the default branch */}
+      {tree && (
+        <div style={{ fontFamily: "var(--mono)", fontSize: "var(--t9)", color: "var(--txd)",
+                      padding: rows.length ? "10px 0 7px" : "10px 0",
+                      borderBottom: rows.length ? `1px solid ${RULE}` : undefined }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "0 12px 5px" }}>
+            <span className="caps" style={{ letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>Local</span>
+            <span>{rows.length
+              ? [`${rows.length} branch${rows.length === 1 ? "" : "es"} off ${tree.def}`, busy && `${busy} working`,
+                 merged && `${merged} merged`, rows.length - busy - merged && `${rows.length - busy - merged} idle`]
+                .filter(Boolean).join(" · ")
+              : `only ${tree.def} · nothing to merge or clean`}</span>
+          </div>
+          {rows.slice(0, MAX_ROWS).map((r) => {
+            const v = r.session && view(r.session.id);
+            const [glyph, word, c] = r.busy && v ? ["●", LANE_WORD[v.lane], v.c]
+              : r.merged ? ["✓", "merged", "var(--txl)"]
+              : r.session ? ["◆", `done ${ago(r.session.updated)}`, "var(--ask)"]
+              : ["○", "no session", "var(--txl)"];
+            const s = r.session;
+            const cells = <>
+              <span style={{ color: c }}>{glyph}</span>
+              <span style={{ color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.branch}</span>
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <span style={{ color: c }}>{word}</span>{s && ` · ${s.title || "untitled session"}`}
+              </span>
+            </>;
+            const row = { display: "grid", gridTemplateColumns: `12px ${brw}ch minmax(0, 1fr)`, columnGap: 10,
+                          alignItems: "baseline", padding: "3px 12px", fontSize: "var(--t95)", color: "var(--txd)" };
+            return s ? (
+              <button key={r.branch} type="button" className="fresh-row" onClick={() => local.onOpen(s.id)}
+                title={`open “${s.title || "untitled session"}”`}
+                style={{ ...row, appearance: "none", width: "100%", border: 0, background: "transparent",
+                         textAlign: "left", fontFamily: "inherit", cursor: "pointer" }}>{cells}</button>
+            ) : (
+              <div key={r.branch} style={row} title={r.held ? "checked out in a worktree, no session yet" : undefined}>{cells}</div>
+            );
+          })}
+          {rows.length > MAX_ROWS && (
+            <div style={{ padding: "3px 12px 0 34px", color: "var(--txl)" }}>+{rows.length - MAX_ROWS} more</div>
+          )}
+        </div>
+      )}
 
-      <div style={{ padding: "12px" }}>
-        {board?.enabled === false && (
-          <div style={{ fontSize: "var(--t95)", color: "var(--txl)", lineHeight: 1.7, marginBottom: 12 }}>
-            Scouting is off, so this is the plain heuristic order and costs nothing.
-            Switch NEXT-UP BOARD on in Settings → AI to have a scout read this repo.
-          </div>
-        )}
-        {!items.length && (
-          <div style={{ fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.8 }}>
-            {board === null ? "Reading…"
-              : `Nothing yet — ↻ asks this repo ${TABS.find((t) => t.id === kind)!.blurb}.`}
-          </div>
-        )}
-        {lead && (
-          <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: "var(--t12)", color: "var(--txb)", overflowWrap: "anywhere" }}>
-                {lead.title}
-              </div>
-              <div style={{ fontSize: "var(--t95)", color: "var(--txl)", marginTop: 4, lineHeight: 1.7 }}>
-                {lead.why}
-              </div>
-              <div style={{ fontSize: "var(--t9)", color: "var(--txd)", marginTop: 5, letterSpacing: 0.5 }}>
-                {EFFORT[lead.effort] ?? "··"}{lead.evidence ? ` · ${lead.evidence}` : ""}
-              </div>
-            </div>
-            <button type="button" onClick={() => onStart(lead)}
-              style={{ appearance: "none", cursor: "pointer", flex: "none",
-                       border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
-                       background: "transparent", color: "var(--txm)", fontFamily: "inherit",
-                       fontSize: "var(--t9)", letterSpacing: 1.5, padding: "4px 10px" }}>
-              ▸ START
+      {/* the openers you type most, as starters — shown only when there is something to do */}
+      {rows.length > 0 && tree && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "10px 12px 12px",
+                      fontFamily: "var(--mono)", fontSize: "var(--t9)" }}>
+          <span className="caps" style={{ letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>Start with</span>
+          <button type="button" style={STARTER} onClick={() => local.onStart("clean up local", true)}
+            title="puts “clean up local, then” in front of your prompt">
+            clean up local, then …
+          </button>
+          {merge.length > 0 && (
+            <button type="button" style={STARTER} onClick={() => local.onStart(mergeClause(merge, tree.def), false)}
+              title={`puts “${mergeClause(merge, tree.def)}” in front of your prompt`}>
+              merge {merge.length} branch{merge.length === 1 ? "" : "es"} into {tree.def}
             </button>
-            <button type="button" onClick={() => void dismiss(lead.id)} title="Not this — until the repo moves"
-              style={{ appearance: "none", cursor: "pointer", flex: "none", border: 0,
-                       background: "transparent", color: "var(--txd)", fontFamily: "inherit",
-                       fontSize: "var(--t9)", padding: "4px 2px" }}>
-              ✕
-            </button>
-          </div>
-        )}
-        {rest.map((it) => (
-          <div key={it.id} style={{ display: "flex", gap: 10, alignItems: "baseline", marginTop: 10,
-                                    borderTop: `1px solid ${ITEM_RULE}`,
-                                    paddingTop: 10 }}>
-            <span style={{ minWidth: 0, flex: 1, fontSize: "var(--t10)", color: "var(--txm)",
-                           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {it.title}
-            </span>
-            <button type="button" onClick={() => onStart(it)}
-              style={{ appearance: "none", cursor: "pointer", flex: "none", border: 0,
-                       background: "transparent", color: "var(--txd)", fontFamily: "inherit",
-                       fontSize: "var(--t9)", letterSpacing: 1.5, padding: 0 }}>
-              ▸ START
-            </button>
-            <button type="button" onClick={() => void dismiss(it.id)} title="Not this — until the repo moves"
-              style={{ appearance: "none", cursor: "pointer", flex: "none", border: 0,
-                       background: "transparent", color: "var(--txd)", fontFamily: "inherit",
-                       fontSize: "var(--t9)", padding: "0 2px" }}>
-              ✕
-            </button>
-          </div>
-        ))}
-      </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
+
+const STARTER = {
+  appearance: "none", cursor: "pointer", flex: "none", whiteSpace: "nowrap",
+  border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)",
+  background: "transparent", color: "var(--txm)", fontFamily: "inherit",
+  fontSize: "var(--t9)", letterSpacing: 0.5, padding: "4px 10px",
+} as const;

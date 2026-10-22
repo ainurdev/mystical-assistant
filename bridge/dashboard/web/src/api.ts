@@ -1920,11 +1920,6 @@ export const api = {
       method: "POST",
       body: { project: opts?.project, kind: opts?.kind ?? "next" },
     }),
-  dismissNext: (id: string, opts?: { project?: string; kind?: NextKind }) =>
-    req<NextBoard & { ok: boolean }>("/local/next/dismiss", {
-      method: "POST",
-      body: { id, project: opts?.project, kind: opts?.kind ?? "next" },
-    }),
   setDefaultPolicy: (policy: string) =>
     req<{ ok: boolean; policy: string }>("/local/policy/default", {
       method: "POST",

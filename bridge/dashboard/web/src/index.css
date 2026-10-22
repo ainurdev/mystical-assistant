@@ -449,6 +449,8 @@ body {
 .projgrp:focus-within .projhead .rowact {
   opacity: 1;
 }
+/* the fresh screen's LOCAL rows that open a session (FreshPanel) */
+.fresh-row:hover { background: var(--ac-06) !important; }
 /* Only WORK gets motion. Every other busy state (WAIT, ASK, CHECK) is waiting
    on you and already shouts with colour — a pulse there would be four things
    blinking at once. This one says "churning, leave it alone". */
@@ -5900,11 +5902,11 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
   background: color-mix(in oklab, var(--acc) 14%, transparent) !important;
 }
 [data-fam="pebble"] [style*="--shadow-modal"] .mscroll > button { border-radius: 12px !important; border-left-color: transparent !important; }
-/* tabs underlined in the accent (Analyze, the fresh board) become tinted pills */
-[data-fam="pebble"] button[style*="border-bottom: 2px solid"], [data-fam="pebble"] [style*="min(560px, 100%)"] button[style*="border-bottom: 1px solid"] {
+/* tabs underlined in the accent (Analyze) become tinted pills */
+[data-fam="pebble"] button[style*="border-bottom: 2px solid"] {
   border-bottom-color: transparent !important; border-radius: 999px !important; padding-left: 10px !important; padding-right: 10px !important;
 }
-[data-fam="pebble"] button[style*="border-bottom: 2px solid var(--acc)"], [data-fam="pebble"] [style*="min(560px, 100%)"] button[style*="border-bottom: 1px solid var(--acc)"] {
+[data-fam="pebble"] button[style*="border-bottom: 2px solid var(--acc)"] {
   background: color-mix(in oklab, var(--acc) 14%, transparent) !important; color: var(--txb) !important;
 }
 /* the rail's foot (changelog, update, ⌘K) wears the rail's circles */

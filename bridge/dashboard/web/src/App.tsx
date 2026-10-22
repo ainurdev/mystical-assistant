@@ -102,6 +102,7 @@ import { notify, PillHost, setLinks, setNeeds, setNoticeEnv, setNoticeSound } fr
 import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
 import { isDeviceRun } from "./lib/devicerun";
+import { startWith } from "./lib/freshlocal";
 import { isTeam, readOnly as isReadOnly, seen, SHARED_NAME, SHARED_REL } from "./lib/team";
 import { RivendellIcon } from "./lib/rivendellicon";
 import { BootIntro } from "./components/hud/BootIntro";
@@ -2645,6 +2646,10 @@ export function App() {
                 onOpenFromHistory={(s) => void openFromHistory(s)}
                 onStartNext={(it) => void startIn(it.project, it.prompt,
                   { title: it.title, cwd: it.cwd, force: true })}
+                // The fresh screen's LOCAL rows open their session; a starter goes in
+                // front of the draft and focuses the box — it never sends.
+                freshLocal={{ sessions, status: statusMap, done: doneIds, onOpen: openSession,
+                              onStart: (clause, open) => feed([startWith(clause, open, draft)]) }}
                 liveTurns={liveTurns.current}
                 trailingWorking={openWorking && !running} loading={loadingSession || !booted} hud={settings}
                 boot={boot}

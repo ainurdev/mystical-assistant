@@ -13,7 +13,7 @@ import { Transcript, type TranscriptNav } from "../Transcript";
 import type { OpenFile } from "../Markdown";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
-import { FreshPanel } from "../FreshPanel";
+import { FreshPanel, type FreshLocal } from "../FreshPanel";
 import { ViewTabs, type View } from "./ViewTabs";
 import { Checkpoints, ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
@@ -90,14 +90,14 @@ const FACES: { eyeL: EyeV; eyeR: EyeV; mouth: MouthV }[] = [
 
 /** The empty-session intro: the mystical assistant face, a rotating quote and
  *  a blinking "awaiting your command" caret, then FreshPanel — where the
- *  project stands and what to start next. Mounted whenever a project is
- *  known; unlike the strips it replaced, it does not wait on an AI switch. */
-function FreshState({ project, branch, run, onOpenRun, onStartNext }: {
+ *  project stands and what is open off its default branch. Mounted whenever a
+ *  project is known; unlike the strips it replaced, it does not wait on an AI switch. */
+function FreshState({ project, branch, run, onOpenRun, local }: {
   project: string | null;
   branch?: string | null;
   run?: DevServerInfo | null;
   onOpenRun?: () => void;
-  onStartNext: (item: NextItem) => void;
+  local: FreshLocal;
 }) {
   const [qi, setQi] = useState(0);
   const [face, setFace] = useState(0);
@@ -156,7 +156,7 @@ function FreshState({ project, branch, run, onOpenRun, onStartNext }: {
       </div>
       {project && (
         <FreshPanel project={project} branch={branch} run={run}
-                    onOpenRun={onOpenRun} onStart={onStartNext} />
+                    onOpenRun={onOpenRun} local={local} />
       )}
     </div>
   );
@@ -206,7 +206,7 @@ function RunChip({ run, onClick }: { run: DevServerInfo; onClick?: () => void })
 
 export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
-  scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext,
+  scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext, freshLocal,
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef, onJumpMark,
@@ -231,6 +231,8 @@ export function Terminal({
   composer: ReactNode;
   onOpenFromHistory: (s: EnrichedSession) => void;
   onStartNext: (item: NextItem) => void;
+  /** The fresh screen's LOCAL readout: sessions, their states, and its two actions. */
+  freshLocal: FreshLocal;
   liveTurns?: Set<string>;
   trailingWorking?: boolean;
   /** What the live turn is waiting on before its first token, or null. */
@@ -435,7 +437,7 @@ export function Terminal({
           {empty && slowLoad ? (
             <ChannelTuning step={boot} />
           ) : empty && loading ? null : empty ? (
-            <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} onStartNext={onStartNext} />
+            <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} local={freshLocal} />
           ) : (
             <Transcript turns={turns} activeId={activeId} boot={boot} who={who} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={theirs ? undefined : onRunCommand} onQuote={theirs ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={theirs ? undefined : onAnswer} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
               job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject}
