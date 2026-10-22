@@ -201,7 +201,7 @@ _TOOLS = [
         "name": "RunOnDevice",
         "description": (
             "Send a test to a shared device: it builds and runs this checkout's app in the iOS Simulator "
-            "as an isolated user, under your own Claude account, and posts the report and screenshots on "
+            "as an isolated user, under that device's own Claude account, and posts the report and screenshots on "
             "the task, the PR and back in this chat. Needs a task key (like NR-31) or a pull request; ask "
             "the user when they named neither."),
         "inputSchema": {

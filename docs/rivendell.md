@@ -10,8 +10,9 @@ on **Share this device**. Everything is in
 
 Share this device lets teammates who are allowed device runs in Rivendell (the
 `devices` section in Users › Access) test their apps here. A run
-executes as `mysticalruns`, a hidden macOS user, with the asker's own code and
-Claude account. It never runs as you.
+executes as `mysticalruns`, a hidden macOS user, with the asker's code and this
+device's own Claude account. It never runs as you, and the asker's Claude login
+never leaves their machine.
 
 Rivendell is offered the device only while it is READY: Share this device is on,
 Xcode and an iOS Simulator runtime are installed, and Set up is done, its wall on
@@ -97,28 +98,32 @@ iOS Simulator runtime is gone, or OFF if Share this device is off.
 
 ### The Claude account for device runs
 
-The runs you send go out under one of the Claude accounts in this Mystical, so
-the usage is that account's. Pick it under **CLAUDE ACCOUNT FOR DEVICE RUNS**;
-until you do, it is Mystical's default login. There is no token to paste.
+Teammates' runs on this device go under one of the Claude accounts in this
+Mystical, so the usage is that account's. Pick it under **CLAUDE ACCOUNT FOR
+DEVICE RUNS**; until you do, it is Mystical's default login. The runs you send
+carry no Claude token: the device that takes one runs it on its own account. An
+older Mystical still sends its asker's token; this device drops it as the claim
+arrives.
 
-Each run carries only the account's current login (its access token), never its
-refresh token, so a device can use it for a few hours at most. Claude Code
-renews a login for about 8 hours at a time, and a run goes only while the login
-has 20 minutes or more left:
+Each run gets only the account's current login (its access token), never its
+refresh token, so a run can use it for a few hours at most. Claude Code renews
+a login for about 8 hours at a time, and a run starts only while the login has
+20 minutes or more left:
 
 - A login that has ended, or is in its last 5 minutes, is renewed first:
   Mystical runs Claude Code once on that account (one word from Haiku, no
   tools), and Claude Code renews it as it always does, under its own lock.
   Mystical never renews a login itself, since racing Claude Code can sign the
-  account out. If the renewal fails, sign in to the account again in
-  **Settings › AI management › Accounts**.
-- With 5 to 20 minutes left, Claude Code won't renew it yet: nothing is sent,
-  and you are told when to ask again, or you can pick another account.
+  account out. If the renewal fails, the run fails saying so, and the account
+  needs signing in again in **Settings › AI management › Accounts**.
+- With 5 to 20 minutes left, Claude Code won't renew it yet: the run fails,
+  telling the asker when to ask again.
 
-Rivendell keeps the token encrypted until a device claims the run, then erases
-it, and that device deletes it from disk before the run starts. A token you
-pasted here before accounts replaced it is deleted from this machine when
-Mystical next starts.
+The run's code can read the login it runs under, as any program Claude starts
+there can, for as long as the run lasts. Share this device with teammates whose
+code you would run yourself. The device deletes the token from disk before the
+run starts. A token you pasted here before accounts replaced it is deleted from
+this machine when Mystical next starts.
 
-Off macOS the panel shows only this side: how many shared devices are on and free
-right now, and the account.
+Off macOS the panel shows only how many shared devices are on and free right
+now.

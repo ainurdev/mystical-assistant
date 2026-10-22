@@ -21,7 +21,7 @@ LIST = ('List the shared devices (Macs for now) your team can run a test on, wit
         'description from this list; devices that are off are not options. With none on, offer '
         '"Queue it for the next device (Recommended)" and "Don\'t send it".')
 RUN = ("Send a test to a shared device: it builds and runs this checkout's app in the iOS Simulator as "
-       "an isolated user, under your own Claude account, and posts the report and screenshots on the "
+       "an isolated user, under that device's own Claude account, and posts the report and screenshots on the "
        "task, the PR and back in this chat. Needs a task key (like NR-31) or a pull request; ask the user "
        "when they named neither.")
 CANCEL = "Stop a device run you sent. Without an id, stops the newest one this chat sent."

@@ -10,10 +10,10 @@ with a token:
   - start(): snapshot() packs the checkout (`git archive` of `git stash create`,
     else HEAD, plus its untracked files that aren't ignored and the .env* files
     at its root, at most 9 MB gzipped). The run is filed as this bridge's token
-    owner, with the access token of the Claude account the instance's device
-    runs use (_claude_token; never the refresh token), and then the code goes
-    up, which announces it. An upload that fails calls the run off, so no run
-    waits with the token.
+    owner, and then the code goes up, which announces it. No Claude login goes
+    with it: the device that takes it runs Claude on its own
+    (device_side._claude_token). An upload that fails calls the run off, so no
+    run waits for code that never comes.
   - cancel(): calls one off; without an id, this chat's newest.
 Each run sent is noted in device_runs.json beside the DB (0600): its instance,
 the chat's session, the task and PR named, the device picked and the one that
@@ -38,7 +38,6 @@ import gzip
 import html
 import io
 import json
-import math
 import os
 import re
 import stat
@@ -46,12 +45,11 @@ import subprocess
 import tarfile
 import tempfile
 import threading
-import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from bridge import (accounts, config, credentials, device_side, github, integrations, queue_manager,
+from bridge import (config, device_side, github, integrations, queue_manager,
                     rivendell_instances, store, telegram)
 
 _SNAPSHOT_MAX = 9 * 1024 * 1024     # gzipped, as the device side takes it
@@ -66,11 +64,6 @@ _REPO = re.compile(r"[A-Za-z0-9][\w.-]*/[\w.-]+")           # what gh's -R is ev
 _SCREEN_URL = re.compile(r"https?://[^\s()<>\"']+")
 _START, _END = "<!-- mystical:device-run -->", "<!-- /mystical:device-run -->"
 _ENDED = {"COMPLETED": "Done", "FAILED": "Failed", "CANCELLED": "Cancelled"}
-_FRESH = 20 * 60              # seconds a Claude login needs left to go with a run
-_CLI_RENEWS = 5 * 60          # Claude Code renews a login only this close to its end
-# One word from the cheapest model, with no tools, MCP servers, hooks or saved session.
-_RENEW = ("-p", "ok", "--model", "haiku", "--no-session-persistence", "--tools", "", "--strict-mcp-config",
-          "--settings", '{"disableAllHooks":true}')
 _lock = threading.Lock()      # device_runs.json and _busy
 _busy: set = set()            # run ids being handed back now: a frame and a catch-up can bring the same one
 
@@ -79,7 +72,6 @@ _BRIDGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 NO_RIVENDELL = "Connect a Rivendell in Settings › Integrations first."
 MYSTICAL = "That's this Mystical's own checkout, and its .env holds this bridge's tokens, so it never goes to a device."
-GONE = "That Claude account isn't in this Mystical anymore. Pick one in Settings › Integrations › Rivendell."
 NOT_A_CHECKOUT = "This folder isn't a git checkout."
 NOT_GITHUB = "Its origin isn't a GitHub repository."
 UNSEEN = "Rivendell refused: you can't see that task or pull request, or it doesn't exist."
@@ -346,7 +338,6 @@ def _start(csid, request, task, pull_request, device, folder):
         raise DeviceAskError(f"{pull_request} isn't a pull request (owner/repo#57, #57 or its link).")
     if device and not _DEVICE_ID.fullmatch(device):
         raise DeviceAskError(f"{device} isn't a device id from ListDevices.")
-    token = _claude_token(inst)
     # The session's folder is the worktree its shell moved into (runner._note_work_cwd),
     # unless that has been removed since; a relative folder is the session's too,
     # never the bridge's own working folder.
@@ -356,7 +347,7 @@ def _start(csid, request, task, pull_request, device, folder):
     snap = snapshot(os.path.normpath(folder) if folder else "")
     body = {"request": request, "repositoryFullName": snap["repository"], "commitSha": snap["commitSha"],
             "dirty": snap["dirty"], "gitAuthorName": snap["gitAuthorName"],
-            "gitAuthorEmail": snap["gitAuthorEmail"], "claudeToken": token}
+            "gitAuthorEmail": snap["gitAuthorEmail"]}
     if task:
         body["taskKey"] = task
     if pr:
@@ -378,7 +369,7 @@ def _start(csid, request, task, pull_request, device, folder):
                     "pr": ref and f"{ref['repository']}#{ref['number']}", "device": name, "started_on": None})
     try:
         api._api_put_bytes(f"/plugin/device-run-requests/{rid}/code", snap["tar_gz"], "application/octet-stream")
-    except Exception as e:  # noqa: BLE001 — called off, so no run waits with the token
+    except Exception as e:  # noqa: BLE001 — called off, so no run waits for code that never comes
         _drop_run(rid)      # first: the CANCELLED frame the cancel brings finds nothing to hand back
         _call_off(api, rid)
         raise DeviceAskError(f"The code didn't upload ({e}), so the run is called off.") from None
@@ -400,66 +391,6 @@ def _call_off(api, rid: str) -> None:
             api._api(f"/plugin/device-run-requests/{rid}/{step}", {})
         except Exception as e:  # noqa: BLE001 — Rivendell ends a run without code after 15 minutes anyway
             print(f"device run {rid}: the {step} POST failed: {e}")
-
-
-# --- the Claude login a run goes with -------------------------------------------------------------
-
-def _claude_token(inst: dict) -> str:
-    """The access token of the Claude account `inst`'s device runs use
-    (device_account, an accounts.py slot; None is the default login), with 20
-    minutes or more left. Only the access token ever goes: the refresh token
-    stays here, so a device can use the login for a few hours at most. A login
-    that has ended, or is in the last 5 minutes in which Claude Code renews one,
-    is renewed by Claude Code (_renew); one with 5 to 20 minutes left can't be
-    renewed yet. Raises DeviceAskError."""
-    listed = {a["slot"]: a for a in accounts.list_accounts()}
-    slot = inst.get("device_account")
-    if slot is None:
-        slot = next((s for s, a in listed.items() if a["default"]), accounts.DEFAULT_SLOT)
-    a = listed.get(slot)
-    if a is None or a["disabled"]:
-        raise DeviceAskError(GONE)
-    who = a.get("alias") or a.get("email") or f"Account {slot}"
-    token, left = _login(slot)
-    if _CLI_RENEWS < left < _FRESH:
-        raise DeviceAskError(f"{who}'s Claude login renews in {math.ceil((left - _CLI_RENEWS) / 60)} min. "
-                             "Ask again then, or pick another account in Settings › Integrations › Rivendell.")
-    if left < _FRESH:
-        _renew(slot)
-        token, left = _login(slot)
-        if left < _FRESH:
-            raise DeviceAskError(f"{who}'s Claude login couldn't be renewed. "
-                                 "Sign in to it again in Settings › AI management › Accounts.")
-    return token
-
-
-def _login(slot: int) -> "tuple[str | None, float]":
-    """A slot's access token and the seconds it has left, read where Claude Code
-    keeps it. A login with no end never runs out; one with no token has nothing left."""
-    oauth = credentials.load(accounts.credentials_path(slot)).get("claudeAiOauth") or {}
-    token, ends = oauth.get("accessToken"), oauth.get("expiresAt")      # ends in ms
-    if not token:
-        return None, 0.0
-    return token, (ends / 1000 - time.time() if isinstance(ends, (int, float)) else math.inf)
-
-
-def _renew(slot: int, run=subprocess.run) -> None:
-    """Have Claude Code renew a slot's login: any `claude` run on it does, in
-    the login's last 5 minutes or after its end, under the CLI's own lock (it
-    rotates the refresh token as it goes). Mystical never renews one itself:
-    racing the CLI can log the account out. `run` is the tests' seam."""
-    from bridge import runner          # lazy: runner imports the world
-    # Slot 1 is the ambient ~/.claude: an inherited CLAUDE_CONFIG_DIR would point it at another login.
-    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CONFIG_DIR"} | accounts.env_for(slot)
-    with tempfile.TemporaryDirectory(prefix="device-run-renew-") as cwd:
-        try:
-            r = run([runner.claude_bin(), *_RENEW], cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                    capture_output=True, timeout=60)
-        except (OSError, subprocess.SubprocessError) as e:
-            print(f"device runs: account {slot}'s login wasn't renewed: {e}")
-            return
-    if r.returncode:
-        print(f"device runs: account {slot}'s login wasn't renewed: claude exited {r.returncode}")
 
 
 def cancel(run_id: "str | None", claude_session_id: str) -> dict:

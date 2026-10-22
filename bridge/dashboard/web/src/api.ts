@@ -648,7 +648,7 @@ export interface RivendellInstance {
   origin: string;      // "rivendell:<name>" — its runs' session origin
   token: string;       // masked: "…" + last 4, or "set"/"" ; never sent back to keep
   share_device: boolean;    // Share this device: this Rivendell may send it device runs, once it is ready
-  device_account: number | null;   // the Claude account (slot) the device runs you send use; null: the default login
+  device_account: number | null;   // the Claude account (slot) teammates' runs on this device use; null: the default login
   status: RivendellStatus;  // live; merged in by the GET route, not stored
 }
 /** A create/edit payload. token blank on edit keeps the stored one, and so does
@@ -673,7 +673,7 @@ export interface RivendellDevice {
   enable: boolean;
   status: RivendellStatus;
   share_device: boolean;
-  device_account: number | null;   // the Claude account (slot) the runs you send use; null: the default login
+  device_account: number | null;   // the Claude account (slot) teammates' runs on this device use; null: the default login
   /** Where this device stands for this instance (bridge/device_share.py share_state). */
   share: {
     state: "NOT_MAC" | "OFF" | "XCODE_MISSING" | "NEEDS_SETUP" | "READY";

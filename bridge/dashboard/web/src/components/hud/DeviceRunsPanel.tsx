@@ -94,8 +94,8 @@ function Head({ d }: { d: RivendellDevice }) {
   );
 }
 
-/** The account the runs you send go out under: one of this Mystical's logins
- *  (null until they are read), the default one unless another is picked. */
+/** The account teammates' runs on this device go under: one of this Mystical's
+ *  logins (null until they are read), the default one unless another is picked. */
 function AccountRow({ d, logins, first, busy, onSave }: {
   d: RivendellDevice;
   logins: AccountInfo[] | null;
@@ -108,7 +108,7 @@ function AccountRow({ d, logins, first, busy, onSave }: {
     <Row first={first} label="CLAUDE ACCOUNT FOR DEVICE RUNS"
       desc={<>
         {logins && c.gone && <span style={{ color: "var(--warn)" }}>That account isn't in this Mystical anymore; pick another. </span>}
-        Runs use that account's current login, never its refresh token, so a device can use it for a few hours at most.
+        Teammates' runs on this device use that account's current login, never its refresh token, so a run can use it for a few hours at most. The usage is that account's.
       </>}>
       {logins && (
         <select value={c.slot} disabled={busy} aria-label="Claude account for device runs"
@@ -180,10 +180,6 @@ export function DeviceRunsPanel() {
   return (
     <>
       {shown.map((d) => {
-        const account = (first: boolean) => (
-          <AccountRow d={d} logins={logins} first={first} busy={!!busy}
-            onSave={(device_account) => void act(d.id, `${d.id}:account`, () => api.updateRivendellDevice({ id: d.id, device_account }))} />
-        );
         if (d.share.state === "NOT_MAC") {
           return (
             <div key={d.id} style={{ marginTop: 34 }}>
@@ -196,9 +192,7 @@ export function DeviceRunsPanel() {
                       <span style={NOW}>{d.shared_on.on} on · {d.shared_on.free} free</span>
                     </Row>
                   )}
-                  {account(false)}
                 </div>
-                {errLine(`${d.id}:account`)}
               </Section>
             </div>
           );
@@ -214,7 +208,7 @@ export function DeviceRunsPanel() {
               desc="teammates allowed in Rivendell can test iOS apps on this device.">
               <div style={CARD}>
                 <Row first label="SHARE THIS DEVICE"
-                  desc={<>Runs execute as the hidden user <code style={CODE}>mysticalruns</code>, with the asker's own code and Claude account. They can't see your files, keychain or logins.</>}>
+                  desc={<>Runs execute as the hidden user <code style={CODE}>mysticalruns</code>, with the asker's code and this device's Claude account. They can't see your files or keychain; a run holds only that account's current login, for the run.</>}>
                   <Switch on={d.share_device}
                     onClick={() => void act(d.id, `${d.id}:device`, () => api.updateRivendellDevice({ id: d.id, share_device: !d.share_device }))} />
                 </Row>
@@ -253,8 +247,11 @@ export function DeviceRunsPanel() {
               </div>
               {errLine(`${d.id}:device`)}
             </Section>
-            <Section top title="DEVICE RUNS · YOUR ACCOUNT" icon={Key} desc="for the runs you send to a shared device.">
-              <div style={CARD}>{account(true)}</div>
+            <Section top title="DEVICE RUNS · CLAUDE ACCOUNT" icon={Key} desc="for teammates' runs on this device.">
+              <div style={CARD}>
+                <AccountRow d={d} logins={logins} first busy={!!busy}
+                  onSave={(device_account) => void act(d.id, `${d.id}:account`, () => api.updateRivendellDevice({ id: d.id, device_account }))} />
+              </div>
               {errLine(`${d.id}:account`)}
             </Section>
           </div>
