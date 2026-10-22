@@ -4533,6 +4533,14 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   border: 1px solid var(--pb-edge) !important; border-bottom: 0 !important; background: var(--pb-ground) !important; }
 /* the PR tab keeps its state's ink: tone border, tone tint over the ground (PrChip's --tone-bg) */
 .pb-tabs .np-pr { background: linear-gradient(var(--tone-bg, transparent), var(--tone-bg, transparent)), var(--pb-ground) !important; }
+/* READY is a green fill under dark ink. Where the PR item wears someone else's ground (TABS in MIDDLE-EARTH and
+   PEBBLE, CONSOLE's place line in every family) the fill went and the ink stayed, dark on dark: there READY is a
+   tint, green ink over a green wash with the ⇡ #n in --txh, and PEBBLE's pill takes the green edge too. The ink
+   leans a fifth toward --txb: plain --ok over its own wash fell under 4.5:1 (4.1 on MIDDLE-EARTH's daylight) */
+:is([data-fam="middle-earth"] .pb-tabs, [data-fam="pebble"] .pb-tabs, .pb-place) .np-pr[data-status="ready"] {
+  color: color-mix(in srgb, var(--ok) 80%, var(--txb)) !important; background-image: linear-gradient(color-mix(in srgb, var(--ok) 16%, transparent), color-mix(in srgb, var(--ok) 16%, transparent)) !important; }
+:is([data-fam="middle-earth"] .pb-tabs, [data-fam="pebble"] .pb-tabs, .pb-place) .np-pr[data-status="ready"] > span:first-child { color: var(--txh) !important; }
+[data-fam="pebble"] .pb-tabs .np-pr[data-status="ready"] { border-color: var(--ok) !important; }
 .pb-tabs .np-proj { display: none !important; }   /* the tile (or the HUD's dot) stands for it */
 .pb-tabs .np-tile { padding: 0 2px 0 7px !important; border-right: 0 !important; }
 .pb-tabs .np-tile + .np-title-btn { margin-left: -4px; padding-left: 6px !important; border-left: 0 !important; }

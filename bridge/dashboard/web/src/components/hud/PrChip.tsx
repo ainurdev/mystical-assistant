@@ -135,7 +135,7 @@ export function PrChip({ project, branch, sessionId, title, inWorktree, busy, on
   return (
     <>
       <span className="np-sep" style={hairline(9)} />
-      <button ref={chipRef} className="np-pr" onClick={() => setOpen((o) => !o)} title={`PR #${pr.number}: checks and review`} {...hp("chip")}
+      <button ref={chipRef} className="np-pr" data-status={pr.status} onClick={() => setOpen((o) => !o)} title={`PR #${pr.number}: checks and review`} {...hp("chip")}
         style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "none", height: 12, boxSizing: "border-box", padding: "0 5px", appearance: "none", cursor: "pointer", border: `1px solid ${tone.border}`, background: tone.bg, ["--tone-bg" as string]: tone.bg, color: tone.fg, fontFamily: "var(--mono)", fontSize: "var(--t9)", letterSpacing: ".6px", lineHeight: 1, filter: hov === "chip" || open ? "brightness(1.2)" : undefined }}>
         <span style={{ color: tone.num }}>⇡ #{pr.number}</span>
         {lab.spin && <span aria-hidden style={spin(7)} />}
