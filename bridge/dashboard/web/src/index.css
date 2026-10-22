@@ -1695,7 +1695,11 @@ input {
 .agm-rhead { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 20px 11px; border-bottom: 1px solid var(--line); }
 .agm-rt { font-size: var(--t13); font-weight: 600; color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agm-facts { flex: none; color: var(--txd); font-size: var(--t11); white-space: nowrap; font-variant-numeric: tabular-nums; }
-.agm-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 22px 22px; }
+/* No top padding on the scroller: sticky insets count from inside it, so the
+   open WORK header pinned 16px under the run head, rows showing through the
+   gap. The first turn keeps the space. */
+.agm-scroll { flex: 1; min-height: 0; overflow: auto; padding: 0 22px 22px; }
+.agm-scroll > :first-child { margin-top: 16px; }
 .agm-brief { margin: 0 0 14px; padding: 10px 14px 9px; border: 1px solid var(--line); border-radius: var(--f-rad); background: var(--panel); }
 .agm-bl { display: flex; gap: 8px; align-items: baseline; margin-bottom: 5px; font-family: var(--ui-font);
   font-size: var(--t95); letter-spacing: .07em; text-transform: uppercase; color: var(--txd); }
