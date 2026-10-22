@@ -219,7 +219,7 @@ export function TeamSendSheet({ what, teammates, outbox = [], to: first, onClose
           {what.kind === "session" && preview?.running && (
             <div style={{ display: "flex", gap: 12 }}>
               <Label>WHEN</Label>
-              <div style={{ minWidth: 0, flex: 1 }}>
+              <div role="radiogroup" aria-label="When it goes" style={{ minWidth: 0, flex: 1 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 7, fontFamily: UI, fontSize: "var(--t115)", color: "var(--warn)" }}>
                   <Clock size={12} strokeWidth={2} />A turn is still running in this session.
                 </div>
