@@ -514,6 +514,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/envsettings":
             from bridge import envsettings
             return self._json({"settings": envsettings.state()})
+        if path == "/local/usage-sharing":
+            from bridge import usagesharing
+            return self._json({"share": usagesharing.answer()})
         if path == "/local/startup":
             from bridge import startup
             return self._json(startup.state())
@@ -1202,6 +1205,12 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "settings": envsettings.state()})
+        if path == "/local/usage-sharing":
+            from bridge import usagesharing
+            share = body.get("share")
+            if not isinstance(share, bool):
+                return self._json({"error": "share must be true or false"}, 400)
+            return self._json({"share": usagesharing.set_answer(share)})
         if path == "/local/startup":
             from bridge import startup
             try:

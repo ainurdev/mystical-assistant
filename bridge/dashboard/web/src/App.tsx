@@ -38,6 +38,7 @@ import { ago, forgetLegacyTints, legacyTints, projectMark, projectName, putProje
          useProjectTints } from "./lib/surfaces";
 import { noteStyling } from "./lib/stylerun";
 import { offerRivendellMarks } from "./components/hud/RivendellMarks";
+import { offerUsageSharing } from "./components/hud/UsageSharing";
 import {
   autoBaseFont,
   fontStack,
@@ -1091,6 +1092,13 @@ export function App() {
       chime(settings.pushTone, settings.pushVolume);
     });
   }, [settings.pushSound, settings.pushVolume, settings.pushTone]);
+
+  // Usage sharing starts here once this install said yes, and asks while it
+  // never answered — after the boot screen, like the Rivendell offer.
+  useEffect(() => {
+    const t = window.setTimeout(() => void offerUsageSharing(), 4000);
+    return () => window.clearTimeout(t);
+  }, []);
 
   // Closing the tab costs the server nothing — runs are local processes, not
   // browser ones, and a working session keeps working. Only a live card is

@@ -22,7 +22,7 @@ const LEDGER = [
   { n: "12", unit: "panes", what: "editor, git, terminal, issues, map, skills." },
 ];
 
-const PROOF = ["MIT licensed", "No API key", "No account", "No telemetry", "macOS · Linux · WSL"];
+const PROOF = ["MIT licensed", "No API key", "No account", "Opt-in usage sharing", "macOS · Linux · WSL"];
 
 export function Hero() {
   return (

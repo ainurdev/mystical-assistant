@@ -20,6 +20,7 @@ import { toolAccent } from "../../lib/tools";
 import { ago, hhmm, projectName, useClock12, windowLabels } from "../../lib/surfaces";
 import { SkillsFold } from "./SkillsFold";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
+import { UsageSharingSection } from "./UsageSharing";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import {
   api,
@@ -228,6 +229,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "integrations", sec: "AVAILABLE", terms: "install integration plugin add rivendell teamwork jira claude design" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
+  { tab: "system", sec: "USAGE SHARING", terms: "share usage telemetry analytics posthog privacy tracking anonymous opt in out replay recording" },
   { tab: "aimgmt", sec: "SKILLS", terms: "skills skill catalog install plugin marketplace SKILL.md system project" },
   { tab: "projects", sec: "PROJECTS", terms: "manage projects hide show sidebar repository repo folder name rename label mark logo icon default profile starts with run command design system lessons" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
@@ -4497,6 +4499,8 @@ export function SettingsModal(props: SettingsModalProps) {
                 </Section>
 
                 <StartupSection />
+
+                <UsageSharingSection />
 
                 <Section title="HTTP INSPECTOR" top>
                   <div style={CARD}>

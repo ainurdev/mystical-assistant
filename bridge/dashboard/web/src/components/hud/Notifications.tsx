@@ -26,7 +26,7 @@ import { useStyle } from "../../lib/stylerun";
 
 // ---- pills ------------------------------------------------------------------
 
-export type NoticeKind = "error" | "info" | "rivendell";
+export type NoticeKind = "error" | "info" | "rivendell" | "ask";
 /** A button on a pill. Pressing one answers it, so the pill goes. */
 export interface NoticeAction { label: string; primary?: boolean; run: () => void }
 interface PillExtra {
@@ -73,7 +73,7 @@ export function PillHost() {
   return (
     <div className="ntf-pillhost" role="status" aria-live="polite">
       <div key={p.id} className={`ntf-pill${p.kind === "error" ? " err" : ""}${p.kind === "rivendell" ? " rv" : ""}${rich ? " rich" : ""}`}>
-        <span className="ntf-pill-k">{p.kind === "error" ? "✕" : p.kind === "rivendell" ? <RivendellIcon size={10} strokeWidth={2} /> : "✓"}</span>
+        <span className="ntf-pill-k">{p.kind === "error" ? "✕" : p.kind === "rivendell" ? <RivendellIcon size={10} strokeWidth={2} /> : p.kind === "ask" ? "?" : "✓"}</span>
         <span className="ntf-pill-t">{p.text}
           {p.sub && <small>{p.sub}</small>}
           {!!p.logos?.length && (

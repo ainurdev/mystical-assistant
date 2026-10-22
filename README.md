@@ -40,7 +40,7 @@ your repos.
 | **3** ways on | when a limit lands, before the work is lost. |
 | **12** panes | editor, git, terminal, issues, map, skills. |
 
-**MIT licensed** · **no API key** · **no account** · **no telemetry** ·
+**MIT licensed** · **no API key** · **no account** · **opt-in usage sharing** ·
 **macOS, Windows (WSL), Linux**
 
 ```bash
@@ -455,7 +455,7 @@ or a closed tab loses nothing.
 ## ✦ 05 · The honest part
 
 **A thing on your machine that runs commands.** Worth knowing what you're
-installing. No telemetry, no account, and the whole server is a few thousand
+installing. No account, no usage sharing unless you say yes, and the whole server is a few thousand
 lines of standard-library Python you can read yourself.
 
 Whoever is in `ALLOWED_CHAT_IDS` can run Claude Code and start dev servers on
@@ -473,6 +473,12 @@ past you runs as you too.
   It lives in `.env`, which is git-ignored. Keep it `chmod 600`.
 - **The Mini App server binds `127.0.0.1`** and is reachable only through the
   tunnel. Unauthenticated requests get 401 (signed `initData` required).
+- **Usage sharing is opt-in.** The dashboard asks once whether to share anonymous
+  usage with Mystical's PostHog project (EU). Nothing loads or sends until you say
+  yes. A yes shares clicks and screen recordings with every letter, picture and the
+  login token blanked out, under a random id: never your code, chats or files, and
+  nothing from the bot or the Mini App. Change it in Settings › System. What gets
+  scrubbed is in `bridge/dashboard/web/src/lib/usage.ts`.
 - **Read-only where it counts.** The parts that watch your existing sessions only
   read. Subagent views derive from files Claude Code already wrote, and never
   touch a live run.
@@ -481,7 +487,7 @@ past you runs as you too.
   long as it takes. The session auto-resumes afterwards, so the brake on a runaway
   is the resume cap (5 consecutive dead turns), not the clock.
 
-Your code stays on your machine and there's no telemetry. One caveat: the
+Your code stays on your machine. One caveat: the
 auto-title and new-session-relevance checks each run a cheap Haiku pass
 through your CLI after a turn, so they send that turn's output to Anthropic in a
 second call. Small, but not free on your quota. Each is one env var away from off:

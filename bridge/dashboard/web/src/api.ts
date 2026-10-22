@@ -1891,6 +1891,10 @@ export const api = {
       method: "POST",
       body: { key, value },
     }),
+  /** This install's answer to "share anonymous usage?" — null = never asked. */
+  usageSharing: () => req<{ share: boolean | null }>("/local/usage-sharing"),
+  setUsageSharing: (share: boolean) =>
+    req<{ share: boolean }>("/local/usage-sharing", { method: "POST", body: { share } }),
   /** Does the bridge come up at login, and the window with it? */
   startup: () => req<StartupState>("/local/startup"),
   /** Send the whole desired state each time — the server rewrites both files.
