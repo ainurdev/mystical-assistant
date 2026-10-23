@@ -339,13 +339,14 @@ function RunPage() {
             data-key={turn.id}
             ref={virtualizer.measureElement}
             className="pb-3"
+            data-last={i === visibleTurns.length - 1 ? "" : undefined}
             style={{ position: "absolute", top: 0, left: 0, width: "100%",
                      transform: `translateY(${vi.start - virtualizer.options.scrollMargin}px)` }}
           >
           {/* id: what a checkpoint scrolls to (CheckpointsSheet). */}
-          <div id={`turn-${turn.id}`} className="space-y-2">
+          <div id={`turn-${turn.id}`} className="turnbox space-y-2">
             {/* user message */}
-            <div className="flex justify-end">
+            <div className="pbub-row flex justify-end">
               <div className="max-w-[85%] space-y-1">
                 {turn.attachments.length > 0 && (
                   <div className="flex flex-wrap justify-end gap-1.5">
@@ -396,10 +397,10 @@ function RunPage() {
                 not a gradient: a turn runs to thousands of pixels, so anything
                 that fades is invisible for most of its own length. */}
             {(turn.events.length > 0 || turn.status === "running" || turn.runtime) && (
-              <div className="relative space-y-2 pl-3">
+              <div className="tturn relative space-y-2 pl-3">
                 <span
                   aria-hidden
-                  className="pointer-events-none absolute bottom-0 left-[2px] top-[11px] w-px"
+                  className="trail pointer-events-none absolute bottom-0 left-[2px] top-[11px] w-px"
                   style={{ background: "color-mix(in srgb, var(--brand-soft) 22%, transparent)" }}
                 />
                 {turn.runtime && (

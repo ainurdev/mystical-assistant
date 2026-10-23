@@ -128,7 +128,7 @@ function describeProfile(p: Profile): string {
 }
 
 const chipClass =
-  "inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/60 px-2.5 py-1.5 text-xs font-medium text-foreground outline-none transition-colors active:opacity-70 focus-visible:ring-2 focus-visible:ring-ring";
+  "mcomp-chip inline-flex items-center gap-1.5 rounded-lg border border-border bg-secondary/60 px-2.5 py-1.5 text-xs font-medium text-foreground outline-none transition-colors active:opacity-70 focus-visible:ring-2 focus-visible:ring-ring";
 
 export function Composer() {
   const {
@@ -259,7 +259,7 @@ export function Composer() {
   return (
     <div
       ref={barRef}
-      className="fixed inset-x-0 z-10 mx-auto max-w-screen-sm border-t border-border bg-[var(--tg-bg)] px-3 pb-3 pt-2"
+      className="mcomp fixed inset-x-0 z-10 mx-auto max-w-screen-sm border-t border-border bg-[var(--tg-bg)] px-3 pb-3 pt-2"
       style={{ bottom: "var(--tabbar-h)" }}
     >
       <UsageStrip slot={sessionSlot} />
@@ -469,7 +469,7 @@ export function Composer() {
           <Button
             type="button"
             size="icon"
-            className="h-10 w-10 rounded-full shadow-[0_0_18px_var(--brand-glow)] disabled:shadow-none"
+            className="mcomp-send h-10 w-10 rounded-full shadow-[0_0_18px_var(--brand-glow)] disabled:shadow-none"
             disabled={sendDisabled}
             onClick={() => void send()}
             aria-label="Send"

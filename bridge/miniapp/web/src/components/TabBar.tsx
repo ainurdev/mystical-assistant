@@ -39,7 +39,7 @@ export function TabBar() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-screen-sm border-t border-border bg-[var(--tg-bg)]/97 px-2 pt-1.5"
+      className="tabbar fixed inset-x-0 bottom-0 z-20 mx-auto flex max-w-screen-sm border-t border-border bg-[var(--tg-bg)]/97 px-2 pt-1.5"
       style={{ height: "var(--tabbar-h)", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
       {TABS.map((t) => {
@@ -57,7 +57,7 @@ export function TabBar() {
             }`}
           >
             {on && (
-              <span className="absolute -top-1.5 h-0.5 w-6 bg-[var(--brand-soft)] shadow-[0_0_8px_var(--brand-glow)]" />
+              <span className="tabbar-on absolute -top-1.5 h-0.5 w-6 bg-[var(--brand-soft)] shadow-[0_0_8px_var(--brand-glow)]" />
             )}
             {badge > 0 && (
               <span

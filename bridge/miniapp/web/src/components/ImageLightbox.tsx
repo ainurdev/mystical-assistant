@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { FIT, clampPan, zoomAt, type View } from "../lib/imgzoom";
 
@@ -80,6 +80,23 @@ export function MediaThumb(
  *  beside it: the extension is gone by then. */
 export type Shown = { src: string; video?: boolean };
 
+/** After the viewer closes, eat the next click for a moment. A phone fires
+ *  pointerdown → pointerup → click; anything that unmounts the viewer before
+ *  that click lands sends it to whatever was under the finger — the header's
+ *  NEW CHAT button sits right under the ✕, so closing an image opened a new
+ *  chat about half the time. The viewer now closes on click, which consumes the
+ *  tap itself; this catches the stray synthetic click some webviews still send. */
+function swallowGhostClick(ms = 450) {
+  const until = Date.now() + ms;
+  const eat = (e: Event) => {
+    if (Date.now() > until) { document.removeEventListener("click", eat, true); return; }
+    e.preventDefault();
+    e.stopPropagation();
+  };
+  document.addEventListener("click", eat, true);
+  setTimeout(() => document.removeEventListener("click", eat, true), ms + 50);
+}
+
 /** Full-size view of one attachment. Video gets its own component rather than
  *  a branch inside the still viewer: pinch-to-zoom fights the scrubber, and the
  *  still's tap-to-close would fire on the play button.
@@ -94,6 +111,7 @@ export function ImageLightbox(
   const cur = list[i] ?? { src, video };
   const many = list.length > 1;
   const go = (d: number) => setI((n) => (n + d + list.length) % list.length);
+  const close = useCallback(() => { onClose(); swallowGhostClick(); }, [onClose]);
 
   useEffect(() => {
     if (!many) return;
@@ -112,8 +130,8 @@ export function ImageLightbox(
       {/* Only the video carries the sheet — stepping the gallery to a still
           must not leave a clip's chapters sitting under a screenshot. */}
       {(cur.video ?? isVideo(cur.src))
-        ? <VideoLightbox key={cur.src} src={cur.src} alt={alt} strip={many} clip={clip} onClose={onClose} />
-        : <StillLightbox key={cur.src} src={cur.src} alt={alt} strip={many} onClose={onClose} />}
+        ? <VideoLightbox key={cur.src} src={cur.src} alt={alt} strip={many} clip={clip} onClose={close} />
+        : <StillLightbox key={cur.src} src={cur.src} alt={alt} strip={many} onClose={close} />}
       {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go}
                           high={hasPanel(clip) && (cur.video ?? isVideo(cur.src))} />}
     </>
@@ -199,7 +217,9 @@ function VideoLightbox({ src, alt, strip, clip, onClose }: { src: string; alt?: 
 
   return createPortal(
     <div
-      onPointerDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      // On click, not pointerdown: closing mid-tap sent the rest of it (the
+      // pointerup and click) to the page underneath (see swallowGhostClick).
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
       role="dialog"
       aria-modal="true"
       aria-label={alt || "Attachment"}
@@ -234,9 +254,9 @@ function VideoLightbox({ src, alt, strip, clip, onClose }: { src: string; alt?: 
         type="button"
         onClick={onClose}
         aria-label="Close"
-        className="absolute right-3 top-3 rounded-full bg-black/60 p-2 text-white/90"
+        className="lb-close"
       >
-        <X size={18} />
+        <X size={20} />
       </button>
     </div>,
     document.body,
@@ -401,6 +421,7 @@ function StillLightbox({ src, alt, strip, onClose }: { src: string; alt?: string
   const spread = useRef(0);   // the previous two-finger distance, 0 = not pinching
   const down = useRef({ x: 0, y: 0 });
   const dragged = useRef(false);
+  const armed = useRef(false);   // a backdrop tap, waiting for its click
 
   // Every change goes through here, so no gesture can leave the image outside
   // its own overflow — a clamp needs the laid-out sizes, which only the DOM has.
@@ -439,7 +460,10 @@ function StillLightbox({ src, alt, strip, onClose }: { src: string; alt?: string
   }, []);
 
   const onDown = (e: React.PointerEvent) => {
-    (e.target as Element).setPointerCapture?.(e.pointerId);
+    armed.current = false;
+    // Not on a control: captured, the ✕'s pointerup came back retargeted to the
+    // box and its click went with it.
+    if (!(e.target as Element).closest?.("button")) (e.target as Element).setPointerCapture?.(e.pointerId);
     ptrs.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (ptrs.current.size === 1) { down.current = { x: e.clientX, y: e.clientY }; dragged.current = false; }
     spread.current = 0;
@@ -477,7 +501,12 @@ function StillLightbox({ src, alt, strip, onClose }: { src: string; alt?: string
     // The image never dismisses: a tap or click on it toggles fit ↔ 2.5x at
     // that point, the same as the old double-tap. Only the backdrop, the ✕ and
     // Esc close.
-    if (!img.current?.contains(e.target as Node)) { onClose(); return; }
+    // A control (the ✕) handles its own tap. It used to fall through to here
+    // and close the viewer on pointerup, before its click.
+    if ((e.target as Element).closest?.("button")) return;
+    // The backdrop closes on the click that follows, so the whole tap lands on
+    // the viewer and none of it on the page under it.
+    if (!img.current?.contains(e.target as Node)) { armed.current = true; return; }
     const p = rel(e);
     move((cur) => (cur.s > 1 ? FIT : zoomAt(FIT, p.x, p.y, 2.5)));
   };
@@ -488,6 +517,7 @@ function StillLightbox({ src, alt, strip, onClose }: { src: string; alt?: string
       onPointerDown={onDown}
       onPointerMove={onMove}
       onPointerUp={onUp}
+      onClick={() => { if (armed.current) { armed.current = false; onClose(); } }}
       onPointerCancel={(e) => { ptrs.current.delete(e.pointerId); spread.current = 0; }}
       role="dialog"
       aria-modal="true"
@@ -508,9 +538,9 @@ function StillLightbox({ src, alt, strip, onClose }: { src: string; alt?: string
         type="button"
         onClick={onClose}
         aria-label="Close"
-        className="absolute right-3 top-3 rounded-full bg-black/60 p-2 text-white/90"
+        className="lb-close"
       >
-        <X size={18} />
+        <X size={20} />
       </button>
     </div>,
     document.body,

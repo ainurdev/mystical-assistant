@@ -1,3 +1,8 @@
+/* The families' type voices that @fontsource doesn't carry here: PEBBLE's
+   Nunito, MIDDLE-EARTH's Source Sans 3 / Source Serif 4, CLAUDE's Spectral
+   titles. One request; every stack names a system fallback, so a webview that
+   can't reach Google still reads. */
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700&family=Source+Sans+3:wght@400;500;600;700&family=Source+Serif+4:wght@400;600&family=Spectral:wght@400;500;600&display=swap");
 @import "tailwindcss";
 
 :root {
@@ -82,7 +87,44 @@
   /* The bottom tab bar owns this much of the screen — the fixed composer sits
      on top of it and every page pads by it, so one number moves them all. */
   --tabbar-h: calc(54px + env(safe-area-inset-bottom, 0px));
+  /* The chat header floats over the transcript (routes/root); the scroller
+     pads its top by this much so the first turn starts below it. */
+  --chead-h: 56px;
 }
+
+/* === LIGHT GROUNDS ==========================================================
+   The dashboard's own re-derivation (its index.css, LIGHT GROUNDS), set when
+   applyTheme picks a `-light` colouring. Every token above that tints with an
+   alpha wash over `transparent` is re-derived, because alpha does not carry
+   over from a dark ground to a light one: an 8% accent veil over near-black is
+   a 1.6x luminance step, the same veil over white is 1.02x. So on paper the
+   surfaces go OPAQUE (depth is the palette's own ladder), washes mix into
+   --panel at 1.5–2.5x strength, and borders get real presence. */
+:root[data-light] {
+  --panel-surface: var(--panel);
+  --card: var(--panel2);
+  --popover: var(--panel);
+  --code-bg: var(--panel3);
+  --secondary: color-mix(in srgb, var(--acc) 12%, var(--panel));
+  --muted: color-mix(in srgb, var(--acc) 7%, var(--panel));
+  --accent: color-mix(in srgb, var(--acc) 12%, var(--panel));
+  --ac-03: color-mix(in srgb, var(--acc) 5%, var(--panel));
+  --ac-06: color-mix(in srgb, var(--acc) 9%, var(--panel));
+  --ac-08: color-mix(in srgb, var(--acc) 12%, var(--panel));
+  --ac-12: color-mix(in srgb, var(--acc) 17%, var(--panel));
+  --ac-22: color-mix(in srgb, var(--acc) 30%, var(--panel));
+  --brand-glow: color-mix(in srgb, var(--acc) 18%, transparent);
+  --border: color-mix(in srgb, var(--acc) 30%, var(--panel3));
+  --border-bright: color-mix(in srgb, var(--acc) 60%, var(--panel3));
+  --input: color-mix(in srgb, var(--acc) 40%, var(--panel3));
+  --surface-vs-bg: color-mix(in srgb, var(--acc) 13%, var(--panel));
+  --surface-tg-bg: color-mix(in srgb, var(--info) 13%, var(--panel));
+  --surface-ma-bg: color-mix(in srgb, var(--purple) 13%, var(--panel));
+  --surface-web-bg: color-mix(in srgb, var(--ok) 13%, var(--panel));
+}
+:root[data-light] ::-webkit-scrollbar-thumb { background: rgb(var(--accent-rgb) / 0.38); }
+:root[data-light] * { scrollbar-color: rgb(var(--accent-rgb) / 0.38) transparent; }
+:root[data-light] ::selection { background: rgb(var(--accent-rgb) / 0.24); color: var(--txb); }
 
 @theme inline {
   /* Corner radius is part of a theme's identity (the dashboard calls it `prad`):
@@ -410,9 +452,12 @@ input {
    four invisible grounds under one language. So both go through custom
    properties and are composed once, here: the ground over the wash, the order
    they would sit in on paper. */
-[data-style] { background-image: var(--ground, none), var(--wash, none); }
+[data-bg] { background-image: var(--ground, none), var(--wash, none); background-size: var(--gsize, auto); }
 
 [data-bg] { --gnd: color-mix(in srgb, var(--txg) 70%, transparent); }
+/* Light grounds need less of it: `--txg` is a ghost on near-black and a
+   mid-grey on cream, so the same 70% would be a printed grid on paper. */
+:root[data-light] [data-bg] { --gnd: color-mix(in srgb, var(--txg) 34%, transparent); }
 
 /* GRAPH — the drafting sheet. 26px, both axes, quieter for the crossing. */
 [data-bg="grid"] {
@@ -425,7 +470,7 @@ input {
    The sparsest of the four, so the loudest single mark. */
 [data-bg="dots"] {
   --ground: radial-gradient(circle at 1px 1px, var(--gnd) 1px, transparent 1.6px);
-  background-size: 22px 22px;
+  --gsize: 22px 22px;
 }
 /* RULED — the pitch is the transcript's own line box (13px × 1.6 ≈ 21px), so
    the rules sit between lines of prose rather than through them. */
@@ -440,78 +485,351 @@ input {
   --gnd: color-mix(in srgb, var(--txg) 20%, transparent);
   --ground: repeating-linear-gradient(135deg, var(--gnd) 0 1px, transparent 1px 9px);
 }
+/* The three below are TONES, not patterns: nothing in them has an edge, so
+   nothing in them can cross a word (the dashboard's, verbatim). GRAIN is an SVG
+   turbulence tile — a data URI can't read --gnd, so its ink is baked in, white
+   on dark grounds and black on paper. */
+[data-bg="grain"] {
+  --ground: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .09 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  --gsize: 200px 200px;
+}
+:root[data-light] [data-bg="grain"] { --ground: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .06 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+/* LAMP — a pool of light at the top of the column, where the reading is. */
+[data-bg="lamp"] {
+  --ground: radial-gradient(ellipse 90% 40% at 50% 12%, color-mix(in srgb, var(--txg) 52%, transparent), transparent 72%);
+}
+:root[data-light] [data-bg="lamp"] {
+  --ground: radial-gradient(ellipse 90% 40% at 50% 12%, rgb(255 255 255 / .75), transparent 72%);
+}
+/* HAZE — two soft washes of the theme's own hues in opposite corners. */
+[data-bg="haze"] {
+  --ground:
+    radial-gradient(ellipse 70% 30% at 8% 10%, color-mix(in srgb, var(--acc) 11%, transparent), transparent 72%),
+    radial-gradient(ellipse 70% 30% at 96% 70%, color-mix(in srgb, var(--think) 9%, transparent), transparent 72%);
+}
+:root[data-light] [data-bg="haze"] {
+  --ground:
+    radial-gradient(ellipse 70% 30% at 8% 10%, color-mix(in srgb, var(--acc) 7%, transparent), transparent 72%),
+    radial-gradient(ellipse 70% 30% at 96% 70%, color-mix(in srgb, var(--think) 5%, transparent), transparent 72%);
+}
+:root[data-light] [data-bg="grid"] { --gnd: color-mix(in srgb, var(--txg) 21%, transparent); }
+:root[data-light] [data-bg="rule"] { --gnd: color-mix(in srgb, var(--txg) 28%, transparent); }
+:root[data-light] [data-bg="tooth"] { --gnd: color-mix(in srgb, var(--txg) 10%, transparent); }
 /* A pattern is a decoration, and a reader who has asked for less motion and
    less noise has already said what to do with it. */
 @media (prefers-contrast: more) {
   [data-bg] { --ground: none; }
 }
 
-/* ══ 1B · CONTROL PLATE ══ chrome is the signal ════════════════════════════
-   A stamped plate: a 1.5px edge, a hard offset shadow that does not blur, and
-   a header bar with the label knocked out of it. The phone rounds panels, so
-   this is the one place the two idioms argue — and the plate wins, because a
-   soft plate is not one. */
-[data-style="stamp"] {
-  --plate-edge: color-mix(in srgb, var(--acc) 34%, transparent);
-  --plate-cast: color-mix(in srgb, var(--acc) 16%, transparent);
+/* === THE FAMILIES =========================================================
+   The dashboard's five themes, one structure (its index.css, THE FAMILIES):
+   FLINT drew it — an editor, not a HUD; nothing glows, every surface is a
+   grey step and a 1px line, and colour is spent on exactly two roles:
+     --acc  you          your prompt, the open chat, SEND, focus
+     --ask  waits on you a question, a permission
+   CLAUDE, PEBBLE and MIDDLE-EARTH wear it in their own type and corners;
+   AURORA wears it as the tube — mono, tracked capitals, hard edges, its lines
+   in phosphor, and the glow and scanlines that are its voice.
+
+   The derived tokens are re-pointed first: the HUD's hairlines and washes are
+   accent-at-alpha, which would draw an orange grid over FLINT. Here they are
+   neutral, and the accent is applied by name where it means something.
+   Everything below reads `data-fam` / `data-light` / `data-hdr` / `data-layout`
+   off :root (lib/theme applyTheme and friends). */
+:root[data-fam] {
+  --line: color-mix(in oklab, var(--txl) 26%, var(--canvas));
+  --line2: color-mix(in oklab, var(--txl) 40%, var(--canvas));
+  --border: var(--line); --border-bright: var(--line2); --input: var(--line2);
+  --ac-03: rgba(255,255,255,.025); --ac-06: rgba(255,255,255,.045); --ac-08: rgba(255,255,255,.06);
+  --ac-12: rgba(255,255,255,.085); --ac-22: rgba(255,255,255,.15);
+  --card: var(--panel2); --popover: var(--panel); --code-bg: var(--panel3);
+  --brand-glow: transparent;
+  --f-glass-edge: rgba(255,255,255,.06);
+  --f-rad: 10px; --f-rad-s: 7px; --f-rad-l: 14px; --f-d-rad: 12px;
+  --f-you: color-mix(in oklab, var(--acc) 10%, var(--panel));
+  --ui-font: 'Geist', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-disp: var(--ui-font);
 }
-/* When you sent it, inside your bubble — the twin of the clock on the answer's
-   meta line. Opacity, not a colour: every language fills the bubble its own
-   way, and inherited ink is legible on all of them. */
+:root[data-fam="claude"] {
+  --line: color-mix(in oklab, var(--txl) 22%, var(--canvas));
+  --line2: color-mix(in oklab, var(--txl) 34%, var(--canvas));
+  --f-rad: 12px; --f-rad-s: 8px; --f-rad-l: 16px; --f-d-rad: 16px;
+  --f-you: color-mix(in oklab, var(--acc) 7%, var(--panel));
+  --ui-font: ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --f-disp: 'Spectral', Georgia, serif;
+}
+:root[data-fam="aurora"] {
+  --line: color-mix(in oklab, var(--acc) 15%, var(--canvas));
+  --line2: color-mix(in oklab, var(--acc) 30%, var(--canvas));
+  --ac-03: color-mix(in srgb, var(--acc) 3%, transparent); --ac-06: color-mix(in srgb, var(--acc) 6%, transparent);
+  --ac-08: color-mix(in srgb, var(--acc) 8%, transparent); --ac-12: color-mix(in srgb, var(--acc) 12%, transparent);
+  --ac-22: color-mix(in srgb, var(--acc) 22%, transparent);
+  --brand-glow: rgb(var(--accent-rgb) / 0.25);
+  --f-glass-edge: color-mix(in srgb, var(--acc) 22%, transparent);
+  --f-rad: 0px; --f-rad-s: 0px; --f-rad-l: 0px; --f-d-rad: 0px;
+  --f-you: color-mix(in oklab, var(--acc) 7%, var(--panel));
+  --ui-font: 'Share Tech Mono', 'JetBrains Mono', ui-monospace, monospace;
+  --f-glow: 0 0 10px color-mix(in srgb, var(--acc) 55%, transparent);
+}
+:root[data-fam="pebble"] {
+  --line: color-mix(in oklab, var(--txl) 18%, var(--canvas));
+  --line2: color-mix(in oklab, var(--txl) 30%, var(--canvas));
+  --f-rad: 20px; --f-rad-s: 12px; --f-rad-l: 26px; --f-d-rad: 20px;
+  --f-you: color-mix(in oklab, var(--acc) 12%, var(--panel));
+  --ui-font: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+:root[data-fam="middle-earth"] {
+  --line: color-mix(in oklab, var(--txl) 20%, var(--canvas));
+  --line2: color-mix(in oklab, var(--txl) 32%, var(--canvas));
+  --f-rad: 10px; --f-rad-s: 8px; --f-rad-l: 14px; --f-d-rad: 14px;
+  --f-you: color-mix(in oklab, var(--acc) 9%, var(--panel));
+  --ui-font: 'Source Sans 3', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --f-disp: 'Source Serif 4', Georgia, serif;
+}
+/* Daylight: washes darken instead of lighten. */
+:root[data-light][data-fam] {
+  --ac-03: rgba(20,18,12,.025); --ac-06: rgba(20,18,12,.045); --ac-08: rgba(20,18,12,.06);
+  --ac-12: rgba(20,18,12,.08); --ac-22: rgba(20,18,12,.14);
+  --f-glass-edge: var(--line);
+}
+/* MIDDLE-EARTH by day draws each scheme's own hairline (the dashboard's table). */
+:root[data-light][data-fam="middle-earth"] { --line: #e2ded3; --line2: #d5d0c3; }
+:root[data-light][data-theme="havens-light"] { --line: #d5e1e2; --line2: #c6d5d7; }
+:root[data-light][data-theme="edoras-light"] { --line: #dcc47a; --line2: #cfb466; }
+:root[data-light][data-theme="mirkwood-light"] { --line: #dddddd; --line2: #c9c9c9; }
+:root[data-light][data-theme="osgiliath-light"] { --line: #e6e7eb; --line2: #dcdde3; }
+:root[data-light][data-theme="amroth-light"] { --line: #dde3ea; --line2: #c4c7c5; }
+:root[data-light][data-theme="shire-light"] { --line: #d1d9e0; --line2: #d1d9e0; }
+:root[data-light][data-theme="tirith-light"] { --line: #e9e9e7; --line2: #e0dfdc; }
+:root[data-light][data-theme="anorien-light"] { --line: #e3dcc6; --line2: #d9d2bb; }
+:root[data-light][data-theme="ithilien-light"] { --line: #dfdad9; --line2: #cecacd; }
+
+/* The UI reads in the family's voice; code and logs keep their mono through
+   their own classes (.md code, .flc-*, var(--mono)). */
+:root[data-fam] body { font-family: var(--ui-font); }
+/* The HUD tracks every uppercase label 1–3px wide. The editor families keep the
+   capitals but set them the way an editor does: a hair of tracking.
+   ponytail: matched on the Tailwind class text, like the dashboard matches its
+   inline styles — a label that sets letter-spacing some other way keeps it. */
+:root[data-fam]:not([data-fam="aurora"]) [class*="tracking-"] { letter-spacing: .04em; }
+:root[data-fam]:not([data-fam="aurora"]) .glow { text-shadow: none; }
+:root[data-fam]:not([data-fam="aurora"]) .panel::before,
+:root[data-fam]:not([data-fam="aurora"]) .panel::after { display: none; }
+:root[data-fam="aurora"] .glow { text-shadow: var(--f-glow); }
+
+/* ── THE CHAT HEADER: the island over the transcript, in the style picked
+   under SYSTEM ▸ HEADER (data-hdr). It floats over the chat's scroller
+   (routes/root), so the transcript runs under it. ── */
+.chead {
+  position: absolute; left: 0; right: 0; top: 0; z-index: 30;
+  background: var(--tg-bg); border-bottom: 1px solid var(--border);
+}
+.chead > div > * { transition: opacity .2s ease; }
+.chead .chead-title { font-family: var(--ui-font); }
+:root[data-fam]:not([data-fam="aurora"]) .chead .chead-title { font-weight: 600; letter-spacing: -.005em; }
+:root[data-fam="claude"] .chead .chead-title { font-family: var(--f-disp); font-weight: 500; font-size: 15px; }
+:root[data-fam="aurora"] .chead .chead-title { text-shadow: var(--f-glow); }
+/* FROST: glass the transcript blurs through, its buttons at half ink */
+:root:is([data-hdr="frost"], [data-hdr="tuck"]) .chead {
+  border-bottom-color: var(--f-glass-edge, var(--border));
+  background: none;
+}
+/* The glass is a layer behind the bar, never the bar itself: backdrop-filter
+   makes its element the containing block for position:fixed descendants, and
+   the chat switcher's full-screen sheet renders inside this header — on the
+   bar, the sheet was trapped in a 56px strip. */
+:root:is([data-hdr="frost"], [data-hdr="tuck"]) .chead::before {
+  content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+  background: color-mix(in srgb, var(--panel) 52%, transparent);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2); backdrop-filter: blur(14px) saturate(1.2);
+}
+:root[data-hdr="frost"] .chead:not(:focus-within) .chead-aux { opacity: .6; }
+/* VEIL: no object — the top of the screen fades the transcript out under the
+   title, which sits in the fade like a status line */
+:root[data-hdr="veil"] .chead {
+  border-bottom-color: transparent;
+  background: linear-gradient(var(--canvas) 62%, color-mix(in oklab, var(--canvas) 75%, transparent) 80%, transparent);
+  padding-bottom: 26px !important;
+}
+:root[data-hdr="veil"] .chead:not(:focus-within) .chead-aux { opacity: .5; }
+/* TUCK: frost folded to the title — an island off the edges, the marks and the
+   spend unfolding only while you're touching it */
+:root[data-hdr="tuck"] { --chead-h: 62px; }
+:root[data-hdr="tuck"] .chead {
+  left: 8px; right: 8px; top: 6px; border: 1px solid var(--f-glass-edge, var(--border));
+  border-radius: var(--f-rad-l, 0);
+}
+:root[data-hdr="tuck"] .chead:not(:focus-within) .chead-fold { display: none; }
+/* the strip above the island fades the transcript out, so what scrolls past
+   reads as passing behind it rather than as a stray edge over it */
+:root[data-hdr="tuck"] .chead::after {
+  content: ""; position: absolute; left: -8px; right: -8px; top: -7px; height: 20px; z-index: -2;
+  background: linear-gradient(var(--canvas) 30%, transparent); pointer-events: none;
+}
+:root[data-hdr="tuck"] .chead:not(:focus-within) .chead-aux { opacity: .7; }
+
+/* ── THE TAB BAR ── */
+:root[data-fam] .tabbar { border-top-color: var(--line); background: var(--canvas); }
+:root[data-fam]:not([data-fam="aurora"]) .tabbar-on { box-shadow: none; border-radius: 2px; }
+:root[data-fam]:not([data-fam="aurora"]) .tabbar a > span:last-child { font-family: var(--ui-font); font-weight: 500; }
+
+/* ── THE COMPOSER: it sits on the transcript's own ground — no band of a
+   different grey under it — with the box as the one raised object ── */
+:root[data-fam] .mcomp {
+  border-top: 0;
+  background: linear-gradient(transparent, var(--canvas) 14px);
+  padding-top: 14px;
+}
+:root[data-fam] .mcomp textarea {
+  border: 1px solid var(--line2); border-radius: var(--f-rad-l); background: var(--panel);
+  font-family: var(--ui-font);
+}
+:root[data-fam] .mcomp textarea:focus-visible {
+  border-color: color-mix(in oklab, var(--acc) 55%, var(--line2));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent);
+}
+:root[data-fam] .mcomp-chip {
+  border-color: var(--line); background: var(--panel2); border-radius: var(--f-rad-s);
+  font-family: var(--ui-font);
+}
+:root[data-fam]:not([data-fam="aurora"]) .mcomp-send { box-shadow: none; }
+
+/* ── THE TRANSCRIPT, the way the dashboard's families draw it: no turn card.
+   Your prompt is the one raised block in a turn, the work a bordered strip,
+   and the answer sits flush on the ground. ── */
+/* When you sent it, inside your prompt — the twin of the clock on the answer's
+   meta line. Opacity, not a colour, so it reads on every fill. */
 .pstamp {
   display: block; margin-top: 2px; text-align: right;
   font-size: 10px; opacity: .65; font-variant-numeric: tabular-nums;
 }
+[data-style] .pbub {
+  background: var(--f-you); color: var(--txb);
+  border: 1px solid var(--line2); border-radius: var(--f-d-rad);
+  box-shadow: inset 3px 0 0 var(--acc);
+  padding: 9px 12px 7px 14px;
+}
+:root[data-fam="claude"] [data-style] .pbub { box-shadow: none; border-color: var(--line); }
+[data-style] .abub {
+  border: 0; border-radius: 0; background: none; padding: 0 2px; max-width: 100%;
+  color: var(--tx);
+}
+/* DEFAULT: your prompt spans the column, over the reply. COMPACT reads as a
+   chat: your prompt a bubble on the right, the reply one on the left. */
+:root:not([data-layout="compact"]) .pbub-row > div { max-width: 100%; width: 100%; }
+:root[data-layout="compact"] [data-style] .pbub {
+  box-shadow: none; border-color: var(--line);
+  border-bottom-right-radius: max(var(--f-rad-s) - 4px, 0px);
+}
+:root[data-layout="compact"] [data-style] .abub {
+  max-width: 85%; padding: 8px 12px;
+  background: var(--panel2); border: 1px solid var(--line);
+  border-radius: var(--f-d-rad); border-bottom-left-radius: max(var(--f-rad-s) - 4px, 0px);
+}
+:root[data-layout="compact"] [data-style] .res { max-width: 85%; }
+/* The rail and its diamonds are the HUD's way of tying a turn together; the
+   editor families let the hairline between turns do it. */
+:root[data-fam]:not([data-fam="aurora"]) .trail,
+:root[data-fam]:not([data-fam="aurora"]) .rnode { display: none; }
+:root[data-fam]:not([data-fam="aurora"]) .tturn { padding-left: 0; }
+/* the hairline that ends a turn another follows */
+[data-style] .turnbox { border-bottom: 1px solid var(--line); padding-bottom: 14px; }
+[data-style] [data-last] > .turnbox { border-bottom: 0; }
 
-[data-style="stamp"] .pbub {
-  border: 1.5px solid var(--plate-edge); border-radius: 0;
-  background: var(--panel2); color: var(--txb); padding: 0 0 9px 0;
-  box-shadow: 3px 3px 0 var(--plate-cast);
+/* THE WORK: the STEPS row and a thought as a bordered strip */
+[data-style] .fold[data-kind="steps"] > .thk {
+  border: 1px solid var(--line); border-radius: var(--f-rad); background: var(--panel2);
+  padding: 5px 10px;
 }
-[data-style="stamp"] .pbub::before {
-  content: "YOU"; display: block; margin-bottom: 8px; padding: 2px 9px;
-  background: var(--tg-button); color: var(--tg-button-text);
-  font-family: var(--ui); font-size: 8px; letter-spacing: 2.6px;
-}
-[data-style="stamp"] .abub {
-  border: 1.5px solid var(--plate-edge); border-left: 5px solid var(--acc);
-  border-radius: 0; background: var(--panel2);
-  box-shadow: 3px 3px 0 var(--plate-cast);
-}
-[data-style="stamp"] .thk {
-  border: 1px solid var(--ac-12); padding: 3px 9px;
-  background: repeating-linear-gradient(135deg, var(--ac-06) 0 5px, transparent 5px 10px);
-}
-[data-style="stamp"] .thk-lab { font-weight: 600; letter-spacing: 2.2px; }
-[data-style="stamp"] .agb,
-[data-style="stamp"] .flc { border-radius: 0; border-width: 1.5px; box-shadow: 3px 3px 0 var(--plate-cast); }
-[data-style="stamp"] .agb-type { border-radius: 0; }
-[data-style="stamp"] .tw[data-tw="stamp"] { border-radius: 0; box-shadow: 3px 3px 0 var(--plate-cast); }
-[data-style="stamp"] .flc-chip,
-[data-style="stamp"] .flc-btn,
-[data-style="stamp"] .flc-verd,
-[data-style="stamp"] .flc-node,
-[data-style="stamp"] .flc-lamp,
-[data-style="stamp"] .flc-dot,
-[data-style="stamp"] .flc-shots img { border-radius: 0; }
-/* the answer, and the cards the app asks on: a stamped plate, hard edge and
-   the one shadow in the app that does not blur */
-/* the nested turn's head is the stamp, and its cells are cut, not drawn */
-[data-style="stamp"] .agb-head {
-  padding: 4px 8px; border-bottom: 1.5px solid var(--ac-12);
-  background-image: repeating-linear-gradient(135deg, var(--ac-06) 0 5px, transparent 5px 10px);
-}
-[data-style="stamp"] .agb-kind { font-weight: 700; letter-spacing: 2px; }
-[data-style="stamp"] .agb-nums { letter-spacing: 1.4px; }
-[data-style="stamp"] .flc-glyph { font-size: 10.5px; }
-[data-style="stamp"] .flc-cmd { letter-spacing: .2px; }
-[data-style="stamp"] .flc-stat { letter-spacing: 1px; }
+[data-style] .fold[data-open] > .thk { border-bottom-left-radius: var(--f-rad-s); border-bottom-right-radius: var(--f-rad-s); }
+[data-style] .thought { border-left: 2px solid var(--line2); padding: 1px 0 1px 10px; }
+[data-style] :is(.thk-lab, .thk-ms) { font-family: var(--ui-font); letter-spacing: .08em; }
+:root[data-fam="aurora"] [data-style] .thk-lab { letter-spacing: .18em; }
 
-[data-style="stamp"] .chatcard {
-  border-width: 1.5px; border-radius: 0;
-  box-shadow: 3px 3px 0 var(--plate-cast, color-mix(in srgb, var(--acc) 16%, transparent));
-  background: var(--panel2);
+/* THE ANSWER: flush on the ground, under a quiet label — no box, no bar */
+[data-style] .res {
+  border: 0 !important; background: none; padding: 0 2px; border-radius: 0; box-shadow: none;
 }
+[data-style] .res::before {
+  content: "ANSWER"; display: block; margin-bottom: 4px;
+  font-family: var(--ui-font); font-size: 9.5px; font-weight: 600; letter-spacing: .08em; color: var(--txl);
+}
+:root[data-fam="aurora"] [data-style] .res::before { font-weight: 400; letter-spacing: .24em; color: var(--acc); text-shadow: var(--f-glow); }
+:root[data-fam="claude"] [data-style] .res::before,
+:root[data-fam="middle-earth"] [data-style] .res::before { content: "Answer"; letter-spacing: 0; font-size: 11px; }
+/* THE MAT: under a hairline ground the answer sits on a mat the colour of the
+   column, feathered so the pattern fades out around the words instead of
+   stopping at a rectangle. The tones (GRAIN, LAMP, HAZE) have no edge to keep
+   off a word, so they go on under it unmatted. */
+:is([data-bg="grid"], [data-bg="dots"], [data-bg="rule"], [data-bg="tooth"]) .res,
+:is([data-bg="grid"], [data-bg="dots"], [data-bg="rule"], [data-bg="tooth"]) .abub {
+  --mat: var(--canvas);
+  background: var(--mat); box-shadow: 0 0 0 8px var(--mat), 0 0 16px 14px var(--mat);
+}
+:root[data-layout="compact"] :is([data-bg="grid"], [data-bg="dots"], [data-bg="rule"], [data-bg="tooth"]) .abub { box-shadow: none; background: var(--panel2); }
+
+/* A card that waits on you (a question, a permission, a held prompt): the one
+   raised surface besides your prompt, edged in the colour that means "you". */
+[data-style] .chatcard:not(.res), .chatcard:not(.res) {
+  border: 1px solid color-mix(in oklab, var(--ask) 45%, var(--line2)) !important;
+  border-radius: var(--f-rad-l); background: var(--panel);
+  box-shadow: inset 3px 0 0 var(--ask);
+}
+:root[data-fam="aurora"] .chatcard:not(.res) { box-shadow: inset 3px 0 0 var(--ask), 0 0 18px color-mix(in srgb, var(--ask) 10%, transparent); }
+
+/* The nested and tool blocks below take the family's corners and lines. */
+:root[data-fam] :is(.agb, .flc) { border-radius: var(--f-rad); border-color: var(--line); }
+:root[data-fam] .tw[data-tw="stamp"] { border-radius: var(--f-rad); }
+:root[data-fam]:not([data-fam="aurora"]) .tw[data-tw="stamp"] > .tw-rail { box-shadow: none; }
+:root[data-fam]:not([data-fam="aurora"]) .tw[data-tw="stamp"] > .tw-body::after { content: none; }
+:root[data-fam]:not([data-fam="aurora"]) :is(.agb-mark, .flc-mark) { text-shadow: none; }
+:root[data-fam]:not([data-fam="aurora"]) :is(.agb-kind, .agb-type, .agb-state, .agb-nums, .tw-name, .flc-stage) { letter-spacing: .06em; font-family: var(--ui-font); }
+
+/* Markdown in the editor families: bold is weight, not a wash; headings in
+   the family's display face. AURORA keeps the HUD's highlight. */
+:root[data-fam]:not([data-fam="aurora"]) .md strong { background: none; padding: 0; color: var(--txb); }
+:root[data-fam]:not([data-fam="aurora"]) .md :is(h1, h2, h3) { font-family: var(--f-disp); letter-spacing: -.01em; color: var(--txb); }
+:root[data-fam]:not([data-fam="aurora"]) .md pre { border-color: var(--line); border-radius: var(--f-rad-s); background: var(--code-bg); }
+:root[data-fam] .md code { border-radius: max(var(--f-rad-s) - 3px, 0px); }
+
+/* ── SYSTEM ▸ the settings rows, in the family's voice ── */
+.sset { border: 1px solid var(--border); background: var(--card); border-radius: var(--f-rad-l, 0); overflow: hidden; }
+.sset > * + * { border-top: 1px solid var(--border); }
+.sset-key { font-size: 13px; color: var(--txb); }
+:root[data-fam="aurora"] .sset-key { font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+.sset-desc { font-size: 11px; line-height: 1.4; color: var(--tg-hint); }
+.sset-head { font-family: var(--ui-font); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--txl); }
+:root[data-fam="aurora"] .sset-head { font-weight: 400; letter-spacing: .22em; color: var(--acc); }
+.sseg { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: calc(var(--f-rad-s, 0px) + 2px); background: var(--panel3); }
+.sseg > button {
+  flex: 1; min-width: 0; padding: 6px 4px; border-radius: max(var(--f-rad-s, 0px) - 1px, 0px);
+  font: 12px var(--ui-font); color: var(--txd); background: transparent;
+}
+:root[data-fam="aurora"] .sseg > button { font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; }
+.sseg > button[aria-pressed="true"] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line2, var(--border)); }
+:root[data-fam="aurora"] .sseg > button[aria-pressed="true"] { background: color-mix(in oklab, var(--acc) 14%, var(--panel3)); color: var(--acc); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 45%, transparent); }
+.stoggle { position: relative; flex: none; width: 36px; height: 21px; border-radius: 999px; background: var(--line2, var(--border)); transition: background .18s ease; }
+.stoggle > i { position: absolute; top: 3px; left: 3px; width: 15px; height: 15px; border-radius: 50%; background: var(--txd); transition: left .18s ease, background .18s ease; }
+.stoggle[data-on] { background: var(--acc); }
+.stoggle[data-on] > i { left: 18px; background: var(--acc-on); }
+:root[data-fam="aurora"] .stoggle, :root[data-fam="aurora"] .stoggle > i { border-radius: 0; }
+
+/* THE THEME PICKER: a card per family, the live ground's colourings under it */
+.ftcard { border: 1px solid var(--border); border-radius: var(--f-rad-l, 0); background: var(--card); overflow: hidden; }
+.ftcard[data-on] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2, var(--border))); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
+.ftcard[data-off] { opacity: .5; }
+.ftprev { height: 64px; padding: 9px 10px; display: grid; grid-template-columns: 1fr; gap: 6px; align-content: center; background: var(--g); }
+.ftprev .p { justify-self: end; width: 62%; height: 14px; border-radius: var(--r); background: color-mix(in oklab, var(--a) 16%, var(--g2)); box-shadow: inset 2px 0 0 var(--a); }
+.ftprev i { display: block; height: 4px; border-radius: 2px; background: var(--g3); }
+.ftprev i:nth-of-type(2) { width: 70%; }
+.ftprev .bx { height: 13px; border: 1px solid var(--g3); border-radius: var(--r); position: relative; }
+.ftprev .bx u { position: absolute; right: 2px; top: 2px; bottom: 2px; width: 9px; border-radius: max(var(--r) - 2px, 0px); background: var(--a); }
+.ftsw { display: flex; flex-wrap: wrap; gap: 7px; padding: 9px 10px 11px; }
+.ftsw > button {
+  width: 26px; height: 26px; border-radius: var(--sr, 50%); background: var(--s);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / .25);
+}
+.ftsw > button[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--card), 0 0 0 4px var(--txb); }
 
 /* === THE AGENT BLOCK ======================================================
    A delegated run — Task, Agent, Skill. The one card that keeps a frame,
@@ -1196,5 +1514,88 @@ a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid 
    HALO pads as a bubble — here the row is the surface, so it sits flush. */
 .thought { max-width: 85%; }
 [data-style] .thought-text { color: var(--txm); padding: 0; }
-[data-style="stamp"] .fold[data-kind="steps"] .thk,
-[data-style="stamp"] .thought { background: var(--panel2); }
+
+/* THE GROUND's tiles: the real ground on the canvas, its name on a mat. */
+.gtile {
+  position: relative; height: 46px; border: 1px solid var(--border); border-radius: var(--f-rad-s, 0);
+  background-color: var(--canvas); overflow: hidden;
+}
+.gtile > span {
+  position: absolute; left: 4px; right: 4px; bottom: 4px; padding: 1px 0; border-radius: 3px;
+  background: color-mix(in srgb, var(--canvas) 80%, transparent);
+  font-size: 9px; letter-spacing: .08em; color: var(--txd); text-align: center;
+}
+.gtile[aria-pressed="true"] { border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
+.gtile[aria-pressed="true"] > span { color: var(--acc); }
+
+/* A fence is one box: .md-code draws the frame, so the <pre> inside it (which
+   .md pre would frame again) sits flush in it. */
+.md-code > pre { border: 0; border-radius: 0; background: none; margin: 0; }
+:root[data-fam] .md-code { border-color: var(--line); border-radius: var(--f-rad-s); overflow: hidden; }
+:root[data-fam] .md-code-lang { border-bottom-color: var(--line); }
+/* the header's bordered buttons take the family's corners */
+:root[data-fam] .chead button { border-radius: var(--f-rad-s); }
+:root[data-fam]:not([data-fam="aurora"]) .chead .chead-aux button { border-color: var(--line); }
+
+/* ── THE CHAT SWITCHER (components/ChatSwitcher): search, the repos as chips,
+   the chats, and NEW CHAT IN … pinned where the thumb is. ── */
+.sw-search {
+  height: 40px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: var(--f-rad-s, 0); background: var(--panel2);
+}
+.sw-search:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--border)); }
+.sw-close {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px;
+  border: 1px solid var(--border); border-radius: var(--f-rad-s, 0); color: var(--txm);
+}
+.sw-repos {
+  scrollbar-width: none;
+  /* the row runs off the right edge: fade it there so it reads as more, not cut */
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  padding-right: 28px;
+}
+.sw-repos::-webkit-scrollbar { display: none; }
+.sw-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 180px;
+  height: 32px; padding: 0 11px; border: 1px solid var(--border);
+  border-radius: var(--f-rad-s, 0); background: var(--panel2);
+  font-size: 12.5px; color: var(--txm);
+}
+:root[data-fam="pebble"] .sw-chip { border-radius: 999px; }
+.sw-chip[aria-pressed="true"] { border-color: var(--acc); background: color-mix(in oklab, var(--acc) 14%, var(--panel2)); color: var(--txb); }
+.sw-chip-ghost { border-style: dashed; background: none; color: var(--txd); }
+.sw-here { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); }
+.sw-badge {
+  flex: none; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--warn); color: var(--acc-on); font-size: 10px; line-height: 16px; text-align: center;
+}
+.sw-label { font-family: var(--ui-font, inherit); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--txl); padding: 0 2px; }
+:root[data-fam="aurora"] .sw-label { font-weight: 400; letter-spacing: .22em; }
+.sw-row { border: 1px solid var(--border); border-radius: var(--f-rad, 0); background: var(--card); }
+.sw-row:active { background: var(--ac-06); }
+.sw-row[data-on] { border-color: color-mix(in oklab, var(--acc) 55%, var(--border)); box-shadow: inset 3px 0 0 var(--acc); }
+.sw-row[data-wait] { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.sw-proj { color: var(--txd); }
+.sw-tag { flex: none; font-size: 9.5px; letter-spacing: .1em; color: var(--acc); }
+.sw-tag-warn { padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); border-radius: var(--f-rad-s, 0); color: var(--warn); }
+.sw-more { width: 100%; padding: 8px; font-size: 12px; color: var(--txd); }
+.sw-empty { padding: 28px 12px; text-align: center; font-size: 13px; color: var(--tg-hint); }
+.sw-empty b { font-weight: 600; color: var(--txh); }
+.sw-foot { border-top: 1px solid var(--border); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.sw-new {
+  display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px;
+  height: 46px; padding: 0 14px; border-radius: var(--f-rad-l, 0);
+  background: var(--acc); color: var(--acc-on); font-size: 14px; font-weight: 600;
+}
+:root[data-fam="aurora"] .sw-new { font-weight: 400; letter-spacing: .12em; text-transform: uppercase; font-size: 12px; box-shadow: 0 0 18px color-mix(in srgb, var(--acc) 25%, transparent); }
+.sw-new:active { opacity: .8; }
+
+/* The image viewer's ✕: a full thumb target, clear of Telegram's own top bar. */
+.lb-close {
+  position: absolute; z-index: 1; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 12px);
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+  background: rgb(0 0 0 / .6); color: rgb(255 255 255 / .92);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / .14);
+}
+.lb-close:active { background: rgb(0 0 0 / .8); }

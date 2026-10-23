@@ -254,6 +254,9 @@ export interface ChatContextValue {
   /** Jump to a turn, auto-loading older pages until it exists. */
   jumpToTurn: (turnId: string) => Promise<void>;
   newChat: () => Promise<void>;
+  /** A new chat in another repo: minted there, then opened with the repo made
+   *  active (the switcher's NEW CHAT IN …). The active repo just calls newChat. */
+  newChatIn: (project: string) => Promise<void>;
   held: HeldPrompt | null;
   heldBusy: boolean;
   checking: boolean;
@@ -793,6 +796,26 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function newChatIn(proj: string) {
+    if (proj === project) return newChat();
+    setSendError(null);
+    sessionIdRef.current = null;
+    setSessionId(null);
+    setTurns([]);
+    setResolving(true);
+    try {
+      // Minted before the switch, so when the resolver sees the new repo's list
+      // the open session is already on it and it keeps it.
+      const { session } = await api.createSession(proj);
+      setSessions((prev) => [session, ...prev]);
+      await openSessionInProject(proj, session.id);
+    } catch {
+      /* ignore */
+    } finally {
+      setResolving(false);
+    }
+  }
+
   function selectSession(id: string) {
     if (id === sessionId) return;
     openSession(id);
@@ -842,6 +865,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     respond,
     loadingSession,
     newChat,
+    newChatIn,
     held,
     heldBusy,
     checking,

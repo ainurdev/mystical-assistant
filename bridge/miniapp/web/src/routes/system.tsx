@@ -4,14 +4,20 @@ import { rootRoute } from "./root";
 import { api } from "../lib/api";
 import { useSpentUsage } from "../lib/accounts";
 import { useChat } from "../lib/chat";
+import { useState, type ReactNode } from "react";
 import { ThemeCards } from "../components/ThemePicker";
 import { useFoldsOpen } from "../lib/folds";
 import { CHAT_BGS, useChatBg } from "../lib/toolwidget";
+import {
+  applyHeaderStyle, applyLayout, loadHeaderStyle, loadLayout,
+  type ChatLayout, type HeaderStyle,
+} from "../lib/theme";
 
-/* SYSTEM — the controls that belong to the app rather than to one chat: the
-   palette, and what's left of the Claude limits this phone is spending — the
-   login the open chat runs on, which a profile pick or a fallback handover
-   changes. */
+/* SYSTEM — the controls that belong to the app rather than to one chat: what's
+   left of the Claude limits this phone is spending (the login the open chat
+   runs on, which a profile pick or a fallback handover changes), then the
+   dashboard's appearance and transcript picks, phone-sized: the theme, how the
+   header sits over the chat, and how the chat reads. */
 
 function fmtReset(iso: string | null | undefined): string {
   if (!iso) return "";
@@ -61,17 +67,17 @@ function SystemPage() {
   const { data: state } = useQuery({ queryKey: ["state"], queryFn: () => api.getState() });
 
   return (
-    <div className="space-y-4 pb-6">
+    <div className="space-y-5 pb-6">
       <div className="flex items-baseline gap-2.5">
-        <span className="text-[13px] tracking-[3px] text-foreground-bright">SYSTEM</span>
-        <span className="text-[10px] tracking-wider text-[var(--tg-hint)]">THEME · LIMITS</span>
+        <span className="glow text-[13px] tracking-[3px] text-foreground-bright">SYSTEM</span>
+        <span className="text-[10px] tracking-wider text-[var(--tg-hint)]">LIMITS · THEME · TRANSCRIPT</span>
       </div>
 
       <div className="space-y-2">
-        <div className="flex min-w-0 items-baseline gap-2 text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">
-          LIMITS
+        <div className="flex min-w-0 items-baseline gap-2">
+          <span className="sset-head">Limits</span>
           {tag && (
-            <span className="truncate tracking-wider text-[var(--tg-hint)]">
+            <span className="truncate text-[10px] tracking-wider text-[var(--tg-hint)]">
               {[tag, who].filter(Boolean).join(" · ")}
             </span>
           )}
@@ -89,14 +95,22 @@ function SystemPage() {
       </div>
 
       <div className="space-y-2">
-        <div className="text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">TRANSCRIPT</div>
-        <FoldsRow />
-        <GroundRow />
+        <div className="sset-head">Theme</div>
+        <ThemeCards />
       </div>
 
       <div className="space-y-2">
-        <div className="text-[9.5px] tracking-[2px] text-[var(--brand-soft)]">THEME</div>
-        <ThemeCards />
+        <div className="sset-head">Header</div>
+        <HeaderRow />
+      </div>
+
+      <div className="space-y-2">
+        <div className="sset-head">Transcript</div>
+        <div className="sset">
+          <LayoutRow />
+          <FoldsRow />
+        </div>
+        <GroundPicker />
       </div>
 
       <div className="space-y-1 text-[10px] tracking-wider text-[var(--muted-2)]">
@@ -113,6 +127,68 @@ export const systemRoute = createRoute({
   component: SystemPage,
 });
 
+/** One settings row: the name and what the current pick does, the control
+ *  under it — a phone is too narrow to put a three-way switch beside prose. */
+function Row({ name, desc, children, inline }: { name: string; desc: ReactNode; children: ReactNode; inline?: boolean }) {
+  return (
+    <div className={`px-3 py-2.5 ${inline ? "flex items-center gap-3" : "space-y-2"}`}>
+      <div className="min-w-0 flex-1">
+        <div className="sset-key">{name}</div>
+        <div className="sset-desc">{desc}</div>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Seg<T extends string>({ label, options, value, onPick }: {
+  label: string; options: { value: T; label: string }[]; value: T; onPick: (v: T) => void;
+}) {
+  return (
+    <div className="sseg" role="group" aria-label={label}>
+      {options.map((o) => (
+        <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onPick(o.value)}>
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+const HEADER_DESC: Record<HeaderStyle, string> = {
+  frost: "Glass the transcript blurs through; its buttons at half ink until you touch it.",
+  veil: "No bar at all: the top of the screen fades the transcript out under the title.",
+  tuck: "An island folded to the title; the marks and the spend unfold while you touch it.",
+};
+
+/** How the chat's header sits over the transcript — the dashboard's HEADER. */
+function HeaderRow() {
+  const [h, setH] = useState<HeaderStyle>(loadHeaderStyle);
+  return (
+    <div className="sset">
+      <Row name="Header" desc={HEADER_DESC[h]}>
+        <Seg label="Header" value={h}
+          options={[{ value: "frost", label: "Frost" }, { value: "veil", label: "Veil" }, { value: "tuck", label: "Tuck" }]}
+          onPick={(v) => { applyHeaderStyle(v); setH(v); }} />
+      </Row>
+    </div>
+  );
+}
+
+/** DEFAULT or COMPACT — the dashboard's CHAT LAYOUT. */
+function LayoutRow() {
+  const [l, setL] = useState<ChatLayout>(loadLayout);
+  return (
+    <Row name="Chat layout" desc={l === "compact"
+      ? "Reads as a chat: your prompt a bubble on the right, the reply one on the left."
+      : "Your prompt is a plate across the column; the reply sits flush under it."}>
+      <Seg label="Chat layout" value={l}
+        options={[{ value: "default", label: "Default" }, { value: "compact", label: "Compact" }]}
+        onPick={(v) => { applyLayout(v); setL(v); }} />
+    </Row>
+  );
+}
+
 /** Between two things the agent says or thinks, its steps sit under one row.
  *  On (the default) that row mounts shut, so the words are what you see; off,
  *  it mounts open and a turn reads as the whole ledger. A tap on any one row
@@ -121,54 +197,32 @@ function FoldsRow() {
   const [open, setOpen] = useFoldsOpen();
   const on = !open;
   return (
-    <button
-      type="button"
-      onClick={() => setOpen(!open)}
-      aria-pressed={on}
-      className="flex w-full items-center gap-2.5 bg-[var(--tg-secondary-bg)] px-3 py-2.5 text-left active:opacity-70"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] tracking-[1.5px]">COLLAPSE STEPS</div>
-        <div className="text-[10px] leading-snug text-[var(--tg-hint)]">
-          {on ? "The work sits under one row until you open it." : "Every step mounts open."}
-        </div>
-      </div>
-      <span
-        className="flex flex-none border p-[2px] text-[9px] tracking-[1px]"
-        style={{ borderColor: "color-mix(in srgb, var(--acc) 25%, transparent)" }}
-        aria-hidden
-      >
-        <span className="px-2 py-[3px]" style={{ background: on ? "var(--acc)" : "transparent", color: on ? "var(--acc-on)" : "var(--muted-2)" }}>ON</span>
-        <span className="px-2 py-[3px]" style={{ background: on ? "transparent" : "var(--ac-12)", color: on ? "var(--muted-2)" : "var(--foreground-bright)" }}>OFF</span>
-      </span>
-    </button>
+    <Row inline name="Collapse steps" desc={on ? "The work sits under one row until you open it." : "Every step mounts open."}>
+      <button type="button" onClick={() => setOpen(!open)} aria-pressed={on} aria-label="Collapse steps"
+        className="stoggle" data-on={on ? "" : undefined}>
+        <i />
+      </button>
+    </Row>
   );
 }
 
-/** THE GROUND — the texture under the words. Its tiles shared the /output page
- *  with the retired output styles; this row keeps a phone able to pick one or
- *  clear it, since the stored pick keeps applying either way. */
-function GroundRow() {
+/** THE GROUND — the texture under the words. Each tile is drawn with the real
+ *  ground (data-bg) on the live theme, so what you pick is what you get. */
+function GroundPicker() {
   const [bg, setBg] = useChatBg();
   const cur = CHAT_BGS.find((b) => b.key === bg) ?? CHAT_BGS[0];
   return (
-    <div className="flex w-full items-center gap-2.5 bg-[var(--tg-secondary-bg)] px-3 py-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[11px] tracking-[1.5px]">THE GROUND</div>
-        <div className="text-[10px] leading-snug text-[var(--tg-hint)]">{cur.hint}</div>
-      </div>
-      <span
-        className="flex flex-none border p-[2px] text-[9px] tracking-[1px]"
-        style={{ borderColor: "color-mix(in srgb, var(--acc) 25%, transparent)" }}
-      >
-        {CHAT_BGS.map((b) => (
-          <button key={b.key} type="button" onClick={() => setBg(b.key)} aria-pressed={bg === b.key}
-            className="px-1.5 py-[3px] active:opacity-70"
-            style={{ background: bg === b.key ? "var(--acc)" : "transparent", color: bg === b.key ? "var(--acc-on)" : "var(--muted-2)" }}>
-            {b.label}
-          </button>
-        ))}
-      </span>
+    <div className="sset">
+      <Row name="The ground" desc={cur.hint}>
+        <div className="grid grid-cols-4 gap-1.5">
+          {CHAT_BGS.map((b) => (
+            <button key={b.key} type="button" onClick={() => setBg(b.key)} aria-pressed={bg === b.key}
+              className="gtile" data-bg={b.key}>
+              <span>{b.label}</span>
+            </button>
+          ))}
+        </div>
+      </Row>
     </div>
   );
 }
