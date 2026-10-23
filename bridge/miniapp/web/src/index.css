@@ -1536,3 +1536,66 @@ a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid 
 /* the header's bordered buttons take the family's corners */
 :root[data-fam] .chead button { border-radius: var(--f-rad-s); }
 :root[data-fam]:not([data-fam="aurora"]) .chead .chead-aux button { border-color: var(--line); }
+
+/* ── THE CHAT SWITCHER (components/ChatSwitcher): search, the repos as chips,
+   the chats, and NEW CHAT IN … pinned where the thumb is. ── */
+.sw-search {
+  height: 40px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: var(--f-rad-s, 0); background: var(--panel2);
+}
+.sw-search:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--border)); }
+.sw-close {
+  flex: none; display: grid; place-items: center; width: 40px; height: 40px;
+  border: 1px solid var(--border); border-radius: var(--f-rad-s, 0); color: var(--txm);
+}
+.sw-repos {
+  scrollbar-width: none;
+  /* the row runs off the right edge: fade it there so it reads as more, not cut */
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
+  padding-right: 28px;
+}
+.sw-repos::-webkit-scrollbar { display: none; }
+.sw-chip {
+  flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 180px;
+  height: 32px; padding: 0 11px; border: 1px solid var(--border);
+  border-radius: var(--f-rad-s, 0); background: var(--panel2);
+  font-size: 12.5px; color: var(--txm);
+}
+:root[data-fam="pebble"] .sw-chip { border-radius: 999px; }
+.sw-chip[aria-pressed="true"] { border-color: var(--acc); background: color-mix(in oklab, var(--acc) 14%, var(--panel2)); color: var(--txb); }
+.sw-chip-ghost { border-style: dashed; background: none; color: var(--txd); }
+.sw-here { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); }
+.sw-badge {
+  flex: none; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
+  background: var(--warn); color: var(--acc-on); font-size: 10px; line-height: 16px; text-align: center;
+}
+.sw-label { font-family: var(--ui-font, inherit); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--txl); padding: 0 2px; }
+:root[data-fam="aurora"] .sw-label { font-weight: 400; letter-spacing: .22em; }
+.sw-row { border: 1px solid var(--border); border-radius: var(--f-rad, 0); background: var(--card); }
+.sw-row:active { background: var(--ac-06); }
+.sw-row[data-on] { border-color: color-mix(in oklab, var(--acc) 55%, var(--border)); box-shadow: inset 3px 0 0 var(--acc); }
+.sw-row[data-wait] { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.sw-proj { color: var(--txd); }
+.sw-tag { flex: none; font-size: 9.5px; letter-spacing: .1em; color: var(--acc); }
+.sw-tag-warn { padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); border-radius: var(--f-rad-s, 0); color: var(--warn); }
+.sw-more { width: 100%; padding: 8px; font-size: 12px; color: var(--txd); }
+.sw-empty { padding: 28px 12px; text-align: center; font-size: 13px; color: var(--tg-hint); }
+.sw-empty b { font-weight: 600; color: var(--txh); }
+.sw-foot { border-top: 1px solid var(--border); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+.sw-new {
+  display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px;
+  height: 46px; padding: 0 14px; border-radius: var(--f-rad-l, 0);
+  background: var(--acc); color: var(--acc-on); font-size: 14px; font-weight: 600;
+}
+:root[data-fam="aurora"] .sw-new { font-weight: 400; letter-spacing: .12em; text-transform: uppercase; font-size: 12px; box-shadow: 0 0 18px color-mix(in srgb, var(--acc) 25%, transparent); }
+.sw-new:active { opacity: .8; }
+
+/* The image viewer's ✕: a full thumb target, clear of Telegram's own top bar. */
+.lb-close {
+  position: absolute; z-index: 1; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 12px);
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
+  background: rgb(0 0 0 / .6); color: rgb(255 255 255 / .92);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / .14);
+}
+.lb-close:active { background: rgb(0 0 0 / .8); }
