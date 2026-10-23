@@ -152,6 +152,8 @@ function openRow(n: { id?: number; kind: string; subject: string; source: string
   // Mystical's own updates and notes live in the rail's changelog (ChangelogButton), not the bell;
   // it opens on this row, unfolded even though the click that got here just marked it read.
   if (n.kind === "updated" || n.kind === "note") return void window.dispatchEvent(new CustomEvent("hud:changelog", { detail: n.id }));
+  // An update not taken yet opens where it is taken: UPDATE's popover, on its release notes.
+  if (n.kind === "coming") return void window.dispatchEvent(new CustomEvent("hud:update"));
   if (n.source === "session" || sid) return env.openSession(sid || n.subject);
   if (n.source === "pr") return openUrl(n.meta.url);
   if (n.source === "rivendell") return openSettings("plugins", str(n.meta.instance_id) || undefined);
@@ -400,8 +402,9 @@ export function NotificationCenter() {
         if (!d.pop) continue;
         // One place at a time: the toast while you're in this window, else the OS banner.
         if (!document.hasFocus() && env.push && pushGranted()) osBanner(n, () => { read(n.id); openRow(n); });
-        // An update or a note pops out of the rail's changelog (ChangelogButton), where UPDATE was pressed.
-        else if (n.group === "updates") window.dispatchEvent(new CustomEvent("hud:changelog-pop", { detail: n }));
+        // An update or a note pops out of the rail's changelog (ChangelogButton), where UPDATE was pressed;
+        // one waiting upstream pops out of UPDATE itself.
+        else if (n.group === "updates") window.dispatchEvent(new CustomEvent(n.kind === "coming" ? "hud:update-pop" : "hud:changelog-pop", { detail: n }));
         else fresh.push(n);
       }
       // One sound per tone per batch: five sessions finishing together is one chime.

@@ -784,6 +784,19 @@ def mark_notices_read(ids: "list[int] | None") -> int:
                          (time.time(), *ids)).rowcount
 
 
+def update_notice(nid: int, title: str, body: str, meta: dict) -> bool:
+    """Rewrite a row's words in place: its id, time and read mark stay, so it is
+    not news again. False when the row is gone."""
+    with closing(_connect()) as c:
+        return c.execute("UPDATE notices SET title=?, body=?, meta=? WHERE id=?",
+                         (title, body, json.dumps(meta), nid)).rowcount > 0
+
+
+def delete_notice(nid: int) -> None:
+    with closing(_connect()) as c:
+        c.execute("DELETE FROM notices WHERE id=?", (nid,))
+
+
 def prune_notices(before_ts: float, keep: tuple = ()) -> None:
     """Drop rows older than before_ts, except those of the `keep` kinds."""
     spare = f" AND kind NOT IN ({','.join('?' * len(keep))})" if keep else ""

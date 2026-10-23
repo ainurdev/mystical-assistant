@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/notices.check.ts
 import type { Need, Notice, NoticePrefs } from "../api.ts";
-import { ago, badge, cardFor, chipCount, freshSince, groupBySubject, isQuiet, matches, needMatches, popFor, safeUrl, sectionOf, stamp } from "./notices.ts";
+import { ago, badge, cardFor, chipCount, freshSince, groupBySubject, isQuiet, matches, needMatches, notesOf, popFor, safeUrl, sectionOf, stamp } from "./notices.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -85,5 +85,10 @@ ok(cardFor(pend, "r2") === pend[1] && cardFor(pend, "r9") === undefined && cardF
 const now = 10_000_000;
 ok(ago(now - 20, now) === "now" && ago(now - 120, now) === "2m" && ago(now - 3 * 3600, now) === "3h", "now / minutes / hours");
 ok(ago(now - 30 * 3600, now) === "yest." && ago(now - 3 * 86400, now) === "3d", "yesterday and days");
+
+const waiting = n(9, "coming", { kind: "coming", meta: { notes: [{ heading: "h", title: "T", body: "b", author: "A" }, "junk", { body: "no title" }, { title: "Bare" }] } });
+ok(JSON.stringify(notesOf(waiting)) === '[{"heading":"h","title":"T","body":"b","author":"A"},{"heading":"Bare","title":"Bare","body":"","author":""}]',
+  "a waiting update's notes: shaped, a titleless one or junk dropped");
+ok(notesOf(n(1, "a")).length === 0 && notesOf(n(2, "b", { meta: { notes: "x" } })).length === 0, "no notes, or not a list: none");
 
 console.log("\nall notices checks passed");

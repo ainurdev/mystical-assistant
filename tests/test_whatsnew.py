@@ -325,3 +325,104 @@ def test_changelog_skips_merge_commits(repo, origin):
     whatsnew.boot().join(10)
     row = notices.feed()[0]
     assert row["title"] == "1 commit pulled" and row["body"] == "feat: topic work" and row["meta"]["commits"] == 1
+
+
+# --- preview: what the update waiting upstream brings, before it is taken ------------
+
+def _note(origin, title="Re-enter the token", body="Paste it once."):
+    _write(origin, "docs/notes.md", whatsnew.NOTES_HEADER + f"\n## 2026-10-23 · {title} — Mahziyar\n\n{body}\n")
+    _run(origin, "add", "-A")
+    _run(origin, "commit", "-qm", f"note: {title}")
+
+
+def _sha(repo, rev="HEAD"):
+    return subprocess.run(["git", "-C", repo, "rev-parse", rev], capture_output=True, text=True,
+                          check=True).stdout.strip()
+
+
+def test_preview_writes_one_coming_row_and_tells_telegram_once(repo, origin, monkeypatch):
+    _commit(origin, "two\n", "feat: two — why")
+    _note(origin)
+    notices.set_prefs({"events": {"updates": {"tg": "always"}}})
+    monkeypatch.setattr(config, "ALLOWED_CHAT_IDS", [555])
+    sent = []
+    monkeypatch.setattr("bridge.telegram.send", lambda chat, text, *a, **k: sent.append(text))
+    whatsnew.preview(selfupdate.check()).join(10)
+    [row] = notices.changelog()
+    assert row["kind"] == "coming" and row["verb"] == "UPDATE READY" and row["read"] is False
+    assert row["title"] == "2 commits waiting" and row["body"].splitlines() == ["note: Re-enter the token", "feat: two"]
+    m = row["meta"]
+    assert m["from"] == g.head_sha(repo) and m["to"] == _sha(origin) and m["commits"] == 2 and m["rest"] == 0
+    assert m["notes"] == [{"heading": "2026-10-23 · Re-enter the token — Mahziyar", "title": "Re-enter the token",
+                           "body": "Paste it once.", "author": "Mahziyar"}]
+    assert sent == ["UPDATE READY · 2 commits waiting\n• note: Re-enter the token\n• feat: two\n"
+                    "NOTE · Re-enter the token\n↓ UPDATE on the dashboard pulls it"]
+    assert whatsnew.preview(selfupdate.check()) is None           # the same range: nothing to write
+    assert len(notices.changelog()) == 1 and len(sent) == 1
+
+
+def test_preview_rewrites_the_row_in_place_at_most_hourly(repo, origin, monkeypatch):
+    _commit(origin, "two\n", "feat: two")
+    whatsnew.preview(selfupdate.check()).join(10)
+    [first] = notices.changelog()
+    _commit(origin, "three\n", "feat: three")
+    assert whatsnew.preview(selfupdate.check()) is None           # written under an hour ago
+    monkeypatch.setattr(whatsnew, "_COMING_EVERY", 0)
+    whatsnew.preview(selfupdate.check()).join(10)
+    [row] = notices.changelog()
+    assert row["id"] == first["id"] and row["title"] == "2 commits waiting"
+    assert row["meta"]["to"] == _sha(origin) and row["body"].splitlines() == ["feat: three", "feat: two"]
+
+
+def test_preview_keeps_a_pulled_row_for_the_boot_and_drops_a_rewound_one(repo, origin):
+    _commit(origin, "two\n", "feat: two")
+    whatsnew.preview(selfupdate.check()).join(10)
+    assert g.pull(repo)[0]                                         # pulled, its restart still to come
+    assert whatsnew.preview(selfupdate.check()) is None
+    assert [r["kind"] for r in notices.changelog()] == ["coming"]
+    _run(repo, "reset", "-q", "--hard", "HEAD~1")
+    _run(origin, "reset", "-q", "--hard", "HEAD~1")                # upstream took it back
+    assert whatsnew.preview(selfupdate.check()) is None
+    assert notices.changelog() == []
+
+
+def test_preview_says_nothing_when_nothing_waits(repo):
+    assert whatsnew.preview(selfupdate.check()) is None
+    assert whatsnew.preview({"repo": False}) is None
+    assert notices.changelog() == []
+
+
+def test_boot_reuses_the_preview_and_quiets_the_note_it_showed(repo, origin, monkeypatch):
+    whatsnew.boot()
+    _commit(origin, "two\n", "feat: two")
+    _note(origin)
+    notices.set_prefs({"events": {"updates": {"tg": "always"}}})
+    monkeypatch.setattr(config, "ALLOWED_CHAT_IDS", [555])
+    sent = []
+    monkeypatch.setattr("bridge.telegram.send", lambda chat, text, *a, **k: sent.append(text))
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k == "changelog")
+    reply = json.dumps({"headline": "Threads", "bullets": ["Threads — stack into one"], "rest": 1})
+    calls = []
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: calls.append(1) or (reply, None, 0, False))
+    whatsnew.preview(selfupdate.check()).join(10)
+    assert g.pull(repo)[0]
+    whatsnew.boot().join(10)
+    assert len(calls) == 1                                         # the boot took the preview's words
+    upd, note = notices.changelog()                                # and the coming row is gone
+    assert upd["kind"] == "updated" and upd["title"] == "Threads" and upd["body"] == "Threads — stack into one"
+    assert upd["meta"]["rest"] == 1 and upd["meta"]["commits"] == 2 and upd["meta"]["to"] == g.head_sha(repo)
+    assert note["kind"] == "note" and note["meta"]["quiet"] is True   # shown before the pull: no second pop
+    assert [s.split(" · ")[0] for s in sent] == ["UPDATE READY", "UPDATED"]
+
+
+def test_update_endpoint_carries_the_waiting_row(repo, origin, monkeypatch):
+    from bridge.dashboard import server as dash
+    _commit(origin, "two\n", "feat: two")
+    real = whatsnew.preview
+    monkeypatch.setattr(whatsnew, "preview", lambda info: (t := real(info)) and t.join(10))
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    h._get_api("/local/update", {})
+    assert box["obj"]["behind"] == 1 and box["obj"]["coming"]["title"] == "1 commit waiting"
+    assert box["obj"]["coming"]["kind"] == "coming"

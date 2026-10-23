@@ -37,7 +37,7 @@ LIMIT = 200
 # Mystical's own changelog (bridge/whatsnew.py): read by the right rail's changelog,
 # not the bell, and kept past the week — a few rows a day, so never pruned.
 # shortcut: unbounded, fine at a few rows a day; prune by count if it ever reaches thousands
-CHANGELOG = ("updated", "note")
+CHANGELOG = ("updated", "note", "coming")
 _KEY = "notify_prefs"
 
 # kind -> (group, tier, source). The group is the row on Settings ▸ NOTIFY.
@@ -73,6 +73,7 @@ CATALOG = {
     "style_failed": ("bridge", "news", "bridge"),
     "weekly": ("weekly", "fyi", "bridge"),
     "updated": ("updates", "news", "bridge"),
+    "coming": ("updates", "news", "bridge"),       # an update waiting upstream, before it is taken
     "note": ("updates", "news", "bridge"),
 }
 
@@ -87,7 +88,7 @@ VERBS = {
     "rv_brief": "BRIEF READY", "team_in": "SENT YOU",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
     "move_failed": "MOVE FAILED", "styled": "STYLED", "style_failed": "STYLE FAILED", "weekly": "WEEKLY REPORT",
-    "updated": "UPDATED", "note": "NOTE",
+    "updated": "UPDATED", "note": "NOTE", "coming": "UPDATE READY",
 }
 _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED"}
 
@@ -176,6 +177,28 @@ def changelog() -> list:
     """The newest 50 updates and notes, however old: the feed's week and its 200
     rows (a busy day fills them) would lose this morning's update by tonight."""
     return [_row(r, {}) for r in store.list_notices(0, 50, CHANGELOG)]
+
+
+def coming() -> "dict | None":
+    """The update waiting upstream, as the changelog shows it; whatsnew keeps one."""
+    rows = store.list_notices(0, 1, ("coming",))
+    return _row(rows[0], {}) if rows else None
+
+
+def revise(nid: int, *, title: str = "", body: str = "", meta: "dict | None" = None) -> bool:
+    """emit()'s words over an existing row, which stays read or unread: not news again."""
+    try:
+        return store.update_notice(nid, str(title or "")[:200], str(body or "")[:600], dict(meta or {}))
+    except Exception as e:  # noqa: BLE001
+        print(f"[notices] {nid} not revised: {e}", file=sys.stderr)
+        return False
+
+
+def drop(nid: int) -> None:
+    try:
+        store.delete_notice(nid)
+    except Exception as e:  # noqa: BLE001
+        print(f"[notices] {nid} not dropped: {e}", file=sys.stderr)
 
 
 def mark_read(ids: "list | None") -> int:

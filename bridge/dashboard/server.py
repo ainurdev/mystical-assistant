@@ -967,8 +967,13 @@ class Handler(BaseHTTPRequestHandler):
             from bridge import commands
             return self._json({"commands": commands.available(_abs_project(qs.get("project", [None])[0]))})
         if path == "/local/update":
-            # the platform's own checkout — new commits waiting upstream?
-            return self._json(selfupdate.check())
+            # the platform's own checkout — new commits waiting upstream? and, once
+            # whatsnew has written it, what they bring (bridge/whatsnew.py preview)
+            from bridge import whatsnew
+            info = selfupdate.check()
+            whatsnew.preview(info)
+            info["coming"] = notices.coming()
+            return self._json(info)
         if path.startswith("/local/move/"):
             # MOVE: export/import this bridge (bridge/movejob.py). The plan runs
             # a few git reads per repo, so the panel asks for it on open only.

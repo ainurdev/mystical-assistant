@@ -1195,7 +1195,7 @@ const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?
     ["team", "From teammates", "a session, a picture or a file a teammate sent you"]] },
   { head: "PRs", rows: [["pr", "Checks failing · changes requested"]] },
   { head: "THE BRIDGE", rows: [["bridge", "MOVE finished"], ["weekly", "Weekly report"],
-    ["updates", "Mystical updated · a note for every install", "what changed after a pull, and notes the maintainers wrote — kept in the changelog over UPDATE"]] },
+    ["updates", "Mystical updates · what's coming, what changed", "an update waiting upstream before you pull it, what it changed after, and notes the maintainers wrote — kept in the changelog over UPDATE"]] },
 ];
 const SOUND_OPTS = ["none", ...Object.keys(TONES)] as ("none" | ToneKey)[];
 const ROUTE_OPTS = ["off", "away", "always"] as const;

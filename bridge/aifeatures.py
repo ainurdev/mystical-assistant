@@ -168,14 +168,18 @@ FEATURES = (
               "it ships ON. Off, the button is Pick logos again: its rules, "
               "no model, letters only."},
     {"key": "changelog", "env": "CHANGELOG_ENABLE", "label": "UPDATE NOTES",
-     "hint": "sums up what an update changed, in the changelog",
-     "cost": "1 haiku call per restart with new commits",
+     "hint": "sums up what an update brings, before and after you take it",
+     "cost": "1 haiku call per waiting update (hourly at most while more lands), "
+             "1 per restart whose commits it didn't cover",
      "tokens": "~32k tokens",
-     "about": "After a PULL & RESTART the changelog (the scroll above UPDATE) gets a row with a "
-              "headline and a few bullets of what changed, written from the "
-              "commits that landed. Fires at a restart that found new commits — "
-              "pulled, or on a dev checkout committed here — one haiku call each; "
-              "off, the row lists the commit subjects instead."},
+     "about": "When commits land upstream, UPDATE pops a headline and a few bullets of what "
+              "they bring, and its popover leads with them; after the PULL & RESTART the "
+              "changelog (the scroll above UPDATE) keeps the same words. The one exception "
+              "to this tab's rule: it runs without a press, once when the update appears and "
+              "at most hourly while more commits land, and the restart reuses those words "
+              "instead of paying again. A restart whose commits it didn't cover (a dev "
+              "checkout's own work) still pays one call. Off, the bullets are the commit "
+              "subjects instead."},
 )
 
 _KEYS = {f["key"] for f in FEATURES}

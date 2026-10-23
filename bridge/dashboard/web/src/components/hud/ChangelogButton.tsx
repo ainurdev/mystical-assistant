@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowUpRight, ChevronRight, MessageSquareText, Pencil, ScrollText } from "lucide-react";
+import { ArrowDownToLine, ArrowUpRight, ChevronRight, MessageSquareText, Pencil, ScrollText } from "lucide-react";
 import { api, type Notice } from "../../api";
 import { popPlace } from "../../lib/prchip";
-import { ago, safeUrl, stamp } from "../../lib/notices";
+import { ago, notesOf, safeUrl, stamp } from "../../lib/notices";
 import { NoteComposer } from "./NoteComposer";
 
 // The right rail's changelog, over UPDATE: what each update changed (a headline and
@@ -16,11 +16,13 @@ import { NoteComposer } from "./NoteComposer";
 // (hud:changelog-pop) and it pops out of this icon, next to where UPDATE was pressed,
 // not under the bell; its click, or an OS banner's (hud:changelog), opens the
 // changelog on it. A dot while any is unread; closing marks what it showed read.
+// An update waiting upstream (bridge/whatsnew.py preview) sits on top as COMING,
+// and Update now hands it to UPDATE (hud:update), where pulling and its errors live.
 // Self-contained (polls, owns its popover) like UpdateButton.
 const POLL_MS = 60_000; // rows land at a boot or a SEND NOTE; a fresh one comes by event, not by this
 
 /** An update's bullets: the lead bold, split at the first " — ". */
-function Bullets({ body }: { body: string }) {
+export function Bullets({ body }: { body: string }) {
   return (
     <ul className="ntf-ul">
       {body.split("\n").filter(Boolean).map((line, i) => {
@@ -32,7 +34,7 @@ function Bullets({ body }: { body: string }) {
 }
 
 /** "+80 smaller fixes · 106 commits ↗" — the commits are the compare link. */
-function Meta({ r }: { r: Notice }) {
+export function Meta({ r }: { r: Notice }) {
   const c = typeof r.meta.commits === "number" ? r.meta.commits : 0;
   const rest = typeof r.meta.rest === "number" ? r.meta.rest : 0;
   const url = safeUrl(r.meta.url);
@@ -109,8 +111,11 @@ export function ChangelogButton() {
   const now = Date.now() / 1000;
   const today = new Date();
   const toggle = (id: number) => setUnfolded((p) => { const s = new Set(p); if (!s.delete(id)) s.add(id); return s; });
-  const cards = rows.filter((r, i) => i === 0 || !r.read);
-  const older = rows.filter((r) => !cards.includes(r));
+  const next = rows.find((r) => r.kind === "coming");
+  const nc = next && typeof next.meta.commits === "number" ? next.meta.commits : 0;
+  const taken = rows.filter((r) => r !== next);
+  const cards = taken.filter((r, i) => i === 0 || !r.read);
+  const older = taken.filter((r) => !cards.includes(r));
   // Above the button (the rail's foot is low), right edges flush, capped like the bell.
   const rect = btnRef.current?.getBoundingClientRect();
   const place = open && rect && popPlace(rect, window.innerHeight);
@@ -172,6 +177,28 @@ export function ChangelogButton() {
             {unread > 0 && <span className="n">{unread} new</span>}
           </div>
           <div className="ntf-list mscroll">
+            {next && (
+              <div className={`clg-card next${flash === next.id ? " clg-flash" : ""}`}>
+                <div className="clg-hm">
+                  <span className="clg-tag ok">COMING</span>
+                  <span>not installed yet</span>
+                  <span style={{ flex: 1 }} />
+                  <Meta r={next} />
+                </div>
+                <div className="clg-ht">{next.title}</div>
+                <Bullets body={next.body} />
+                {notesOf(next).map((n) => (
+                  <div key={n.heading} className="clg-cnote"><MessageSquareText size={12} strokeWidth={1.8} />
+                    <span><b>{n.title}</b>{n.author && <i> — note from {n.author}</i>}</span></div>
+                ))}
+                <div className="clg-cf">
+                  <span>{`${nc} commit${nc === 1 ? "" : "s"} waiting`}{typeof next.meta.branch === "string" && next.meta.branch ? ` on ⎇ ${next.meta.branch}` : ""}</span>
+                  <span style={{ flex: 1 }} />
+                  <button className="clg-go" onClick={() => { close(); window.dispatchEvent(new CustomEvent("hud:update")); }}>
+                    <ArrowDownToLine size={12} strokeWidth={1.8} />Update now</button>
+                </div>
+              </div>
+            )}
             {cards.map((r) => {
               const s = stamp(r.at, today);
               return (

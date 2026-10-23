@@ -1610,6 +1610,9 @@ export interface UpdateInfo {
   commits: { sha: string; subject: string }[];
   outgoing?: { sha: string; subject: string }[]; // unpushed, newest first; absent on an older bridge
   files: { path: string; status: string; add: number; del: number }[];
+  // What the commits upstream bring, once bridge/whatsnew.py has written it: null
+  // while it is being written (or nothing waits); absent on a bridge older than this.
+  coming?: Notice | null;
 }
 
 // --- MOVE: export / import this bridge (bridge/movejob.py) ---------------------

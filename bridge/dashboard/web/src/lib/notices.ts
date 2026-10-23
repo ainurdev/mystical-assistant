@@ -111,3 +111,14 @@ export function cardFor(pending: PendingCard[] | undefined, requestId: string): 
 export function safeUrl(u: unknown): string | null {
   return typeof u === "string" && /^https?:\/\//i.test(u.trim()) ? u.trim() : null;
 }
+
+/** The maintainers' notes an update waiting upstream carries (bridge/whatsnew.py
+ *  preview, `meta.notes`), shaped or dropped: a row's meta is free JSON. */
+export function notesOf(n: Notice): { heading: string; title: string; body: string; author: string }[] {
+  const raw = Array.isArray(n.meta.notes) ? n.meta.notes : [];
+  return raw.flatMap((x) => {
+    const o = x && typeof x === "object" ? (x as Record<string, unknown>) : {};
+    const s = (k: string) => (typeof o[k] === "string" ? (o[k] as string) : "");
+    return s("title") ? [{ heading: s("heading") || s("title"), title: s("title"), body: s("body"), author: s("author") }] : [];
+  });
+}

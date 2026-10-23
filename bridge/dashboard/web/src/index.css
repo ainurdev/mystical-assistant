@@ -3931,7 +3931,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   overflow: hidden; font-family: var(--ui-font);
 }
 [data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act) {
-  border-bottom-color: transparent !important; font-family: var(--ui-font) !important; letter-spacing: 0 !important;
+  font-family: var(--ui-font) !important; letter-spacing: 0 !important;
+}
+/* a row loses its rule; a boxed button (UPDATE's footer, .upd-btn) keeps its whole border */
+[data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):not(.upd-btn) {
+  border-bottom-color: transparent !important;
 }
 [data-fam] :is([style*="--shadow-pop"], [data-ctxmenu], [role="dialog"]:not(.agm)) button:not(.drop-btn):not(.act-pri):not(.act-alt):not(.nt-act):hover {
   background: var(--ac-08) !important;
@@ -5511,6 +5515,37 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .clg-lit::before { content: ""; position: absolute; inset: 4px 7px; border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--acc) 14%, transparent);
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--acc) 40%, transparent); }
 .clg-lit svg { position: relative; }
+/* an update not taken yet (bridge/whatsnew.py preview): COMING on top of the changelog,
+   dashed in the update's green, and what it brings at the head of UPDATE's popover */
+.clg-card.next { border-style: dashed; border-color: color-mix(in oklab, var(--ok) 55%, var(--line, var(--border)));
+  background: color-mix(in oklab, var(--ok) 5%, var(--panel2)); }
+.clg-tag.ok { color: var(--ok); background: color-mix(in oklab, var(--ok) 16%, transparent); }
+.clg-cnote { margin-top: 10px; display: flex; gap: 7px; align-items: baseline; font: 400 var(--t115)/1.45 var(--ui-font); color: var(--tx); }
+.clg-cnote svg { flex: none; color: var(--ask); position: relative; top: 2px; }
+.clg-cnote b { color: var(--txb); font-weight: 600; }
+.clg-cnote i { font-style: normal; color: var(--txl); }
+.clg-cf { margin-top: 12px; display: flex; align-items: center; gap: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-go { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 11px;
+  border: 1px solid var(--ok); border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--ok) 16%, transparent);
+  color: var(--ok); font: 600 var(--t11) var(--ui-font); letter-spacing: .02em; }
+.clg-go:hover { background: color-mix(in oklab, var(--ok) 26%, transparent); }
+.upd-lab { font: 600 var(--t85) var(--ui-font); letter-spacing: .16em; color: var(--ok); }
+.upd-pv .clg-ht { margin-top: 6px; }
+.upd-pv .ntf-ul { margin-top: 8px; gap: 5px; }
+.upd-pv .ntf-ul li { font-size: var(--t12); }
+.upd-note { margin-top: 14px; padding: 10px 12px 11px; border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--ask) 9%, var(--panel2));
+  border: 1px solid color-mix(in oklab, var(--ask) 32%, var(--line, var(--border))); }
+.upd-note-h { display: flex; align-items: center; gap: 7px; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.upd-note-h svg { flex: none; color: var(--ask); }
+.upd-note-h .v { font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--ask); }
+.upd-note-t { margin-top: 5px; font: 600 var(--t125)/1.35 var(--ui-font); color: var(--txb); }
+.upd-note-b { margin-top: 3px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; }
+.upd-row { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
+.upd-fold { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: transparent;
+  font: 500 var(--t10) var(--mono); color: var(--txd); }
+.upd-fold:hover { color: var(--acc); }
+.upd-fold svg { transition: transform .15s; }
+.upd-how { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t11)/1.5 var(--ui-font); color: var(--txl); }
 @media (prefers-reduced-motion: reduce) { .clg-co, .clg-flash { animation: none; } .clg-hist svg { transition: none; } }
 .ntf-compose { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line, var(--border)); background: var(--panel2); }
 .ntf-compose .lbl { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--txl); margin-bottom: 2px; }
@@ -5825,11 +5860,11 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
    label carrying an acronym) the markup says it and wears .caps. */
 [data-fam="pebble"] .caps { text-transform: none !important; letter-spacing: 0 !important; }
 [data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
-  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d) {
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d, .upd-lab) {
   text-transform: lowercase !important; letter-spacing: 0 !important;
 }
 [data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
-  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d)::first-letter { text-transform: uppercase; }
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d, .upd-lab)::first-letter { text-transform: uppercase; }
 [data-fam="pebble"] :is(.dwork-ms, .res-meta > span, .ctrl-meter > span, .pm-wtag, .pm-reset, .pm-pct, .pm-tag, .ntf-when,
   .isle-reads button, .isle-reads span, .gg-ago, .pstamp,
   [data-ctxmenu] .mscroll button > span:last-child[style*="letter-spacing"], .hudgrid > div:last-child span[style*="border: 1px solid"],
@@ -6159,11 +6194,11 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 [data-fam="middle-earth"] .jump-latest { font-family: var(--ui-font) !important; letter-spacing: 0 !important; }
 [data-fam="middle-earth"] .caps { text-transform: none !important; letter-spacing: 0 !important; }
 [data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
-  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d) {
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d, .upd-lab) {
   text-transform: lowercase !important; letter-spacing: 0 !important;
 }
 [data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
-  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d)::first-letter { text-transform: uppercase; }
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d, .upd-lab)::first-letter { text-transform: uppercase; }
 [data-fam="middle-earth"] :is(.dwork-ms, .res-meta > span, .ctrl-meter > span, .pm-wtag, .pm-reset, .pm-pct, .pm-tag, .ntf-when,
   .isle-reads button, .isle-reads span, .gg-ago, .pstamp,
   [data-ctxmenu] .mscroll button > span:last-child[style*="letter-spacing"], .hudgrid > div:last-child span[style*="border: 1px solid"],

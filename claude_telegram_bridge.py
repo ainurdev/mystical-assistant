@@ -186,6 +186,7 @@ def main():
             report.boot()              # Monday-morning weekly report (catches up a dark Monday)
         dream.boot()                   # nightly per-repo digest (catches up a night asleep)
         whatsnew.boot()                # what the last update changed, and new notes, into the changelog
+        whatsnew.watch()               # hourly look upstream: what a waiting update brings, before it's taken
         # Always reconcile: the enabled set lives per-instance in the instances
         # store (dashboard PLUGINS tab), not in the RIVENDELL_ENABLE env flag —
         # which now only seeds the migrated "production" instance. start()

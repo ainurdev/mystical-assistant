@@ -15,6 +15,16 @@ new HEAD, so an edit to a note's body tells nobody again and a changed heading i
 a new note. `notes_seen` remembers what this install already showed, because the
 feed forgets after a week.
 
+Why the waiting update is told too (`preview`): the summary above lands only after
+PULL & RESTART, so nobody could see what an update brought before taking it, and a
+note could warn no one. So the bridge looks upstream (each dashboard's UPDATE poll,
+plus an hourly `watch` of its own so an install with no dashboard open hears it on
+Telegram) and writes `HEAD..@{u}` into one `coming` row, with the notes added in that
+range. It is news once; as more commits land it is rewritten in place at most hourly,
+so a busy upstream costs a call an hour, not one a push. The boot after the pull takes
+that row's words for its UPDATED row when the ranges match: the one-shot moved earlier
+instead of doubling, and a note the preview showed lands without a second pop.
+
 Why SEND NOTE pushes: a local commit on master would make every later PULL &
 RESTART (`--ff-only`) fail on an install that cannot push, so a refused push is
 rolled back and nothing is left behind.
@@ -42,13 +52,17 @@ _LAST_HEAD = "last_head"
 _SEEN = "notes_seen"
 _SEEN_MAX = 200
 _BULLET = 140   # the prompt asks for under 100; haiku overshoots a little, so keep those whole
+_COMING_EVERY = 3600   # a waiting update that grows is written again at most hourly
+_WATCH_S = 3600        # the bridge's own look upstream, for an install with no dashboard open
+_lock = threading.Lock()
+_writing = False       # one preview at a time: two polls must not write two rows
 
 # Tagged so the throwaway session stays out of the sessions list (native.scan).
 _PROMPT = (
     native.INTERNAL_ONESHOT_TAG + "\n"
     "Below are the commit subjects of an update to Mystical, a tool that runs Claude Code "
-    "from a dashboard, a Telegram bot and a Mini App. Write release notes for the person who "
-    "just received the update — not a developer. Respond with ONLY compact JSON, no markdown "
+    "from a dashboard, a Telegram bot and a Mini App. Write release notes for the person getting "
+    "the update — not a developer. Respond with ONLY compact JSON, no markdown "
     "and no prose: {\"headline\": str, \"bullets\": [str], \"rest\": int}. headline: at most "
     "40 characters naming the two or three biggest things, no trailing period. bullets: up to "
     "five, biggest first, each `Lead — what it does for them`, the lead at most three words "
@@ -85,20 +99,30 @@ def boot() -> "threading.Thread | None":
 
 
 def _announce(old: str, head: str) -> None:
-    """Notes first (cheap), then the changelog (a one-shot, ~30 s)."""
+    """Notes first (cheap), then the changelog: a one-shot, ~30 s, unless the preview
+    of this very range already wrote it."""
     repo = selfupdate.REPO
     try:
+        row = notices.coming()
+        m = row["meta"] if row else {}
+        shown = {n.get("heading") for n in m.get("notes") or [] if isinstance(n, dict)}
         seen = _seen()
         before = {e["heading"] for e in notes_in(git.file_at(repo, old, NOTES_PATH))}
         for e in notes_in(git.file_at(repo, head, NOTES_PATH)):
             if e["heading"] in before or e["heading"] in seen:
                 continue
+            quiet = e["heading"] in shown   # read before the pull, in the preview: no second pop
             notices.emit("note", f"note:{e['heading']}", title=e["title"], body=e["body"],
-                         meta={"author": e["author"], "date": e["date"]})
+                         meta={"author": e["author"], "date": e["date"], **({"quiet": True} if quiet else {})})
             seen.append(e["heading"])
-            _telegram("note", f"NOTE · {e['title']}\n{e['body']}".rstrip())
+            if not quiet:
+                _telegram("note", f"NOTE · {e['title']}\n{e['body']}".rstrip())
         _remember(seen)
-        cl = _changelog(old, head)
+        if row and _holds(head, m.get("to")):
+            notices.drop(row["id"])
+        cl = (_changelog(old, head) if (m.get("from"), m.get("to")) != (old, head) else
+              {"headline": row["title"], "bullets": row["body"].split("\n"), "rest": m.get("rest", 0),
+               "commits": m.get("commits", 0), "branch": m.get("branch", ""), "url": m.get("url")})
         if cl:
             notices.emit("updated", f"update:{head}", title=cl["headline"],
                          body="\n".join(cl["bullets"]),
@@ -108,6 +132,94 @@ def _announce(old: str, head: str) -> None:
                                            + [f"• {b}" for b in cl["bullets"]]))
     except Exception as e:  # noqa: BLE001 — a changelog must never take the bridge down
         print(f"[whatsnew] {e}", file=sys.stderr)
+
+
+# --- preview: the update waiting upstream, before it is taken -------------------------
+
+def preview(info: dict) -> "threading.Thread | None":
+    """What the update waiting upstream brings (selfupdate.check()'s answer in: its
+    fetch is the one this reads). One `coming` row at a time: written when the bridge
+    first sees commits upstream, so it pops; rewritten in place at most hourly as more
+    land; dropped once nothing waits, unless HEAD already holds it (pulled, its restart
+    still to come, whose boot turns it into the UPDATED row). The summary runs off-thread,
+    returned so a test can join it; None when there is nothing to write."""
+    try:
+        return _preview(info)
+    except Exception as e:  # noqa: BLE001 — UPDATE's poll answers whatever this does
+        print(f"[whatsnew] preview: {e}", file=sys.stderr)
+        return None
+
+
+def _preview(info: dict) -> "threading.Thread | None":
+    global _writing
+    if not info.get("repo"):
+        return None
+    repo = selfupdate.REPO
+    head = git.head_sha(repo)
+    rc, out, _ = git._run(repo, "rev-parse", "-q", "--verify", "@{u}")
+    up = out.strip() if rc == 0 else ""
+    row = notices.coming()
+    m = row["meta"] if row else {}
+    if not head or not up or not info.get("behind"):
+        if row and not _holds(head, m.get("to")):
+            notices.drop(row["id"])
+        return None
+    if row and ((m.get("from"), m.get("to")) == (head, up)
+                or time.time() - float(m.get("written") or 0) < _COMING_EVERY):
+        return None
+    with _lock:
+        if _writing:
+            return None
+        _writing = True
+    t = threading.Thread(target=_write_coming, args=(head, up, row["id"] if row else None), daemon=True)
+    t.start()
+    return t
+
+
+def _write_coming(head: str, up: str, nid: "int | None") -> None:
+    global _writing
+    repo = selfupdate.REPO
+    try:
+        cl = _changelog(head, up, "waiting")
+        if not cl:
+            return
+        before = {e["heading"] for e in notes_in(git.file_at(repo, head, NOTES_PATH))} | set(_seen())
+        notes = [{k: e[k] for k in ("heading", "title", "body", "author")}
+                 for e in notes_in(git.file_at(repo, up, NOTES_PATH)) if e["heading"] not in before][:3]
+        body = "\n".join(cl["bullets"])
+        meta = {"from": head, "to": up, "commits": cl["commits"], "branch": cl["branch"], "rest": cl["rest"],
+                "url": cl["url"], "notes": notes, "written": time.time()}
+        if nid and notices.revise(nid, title=cl["headline"], body=body, meta=meta):
+            return
+        notices.emit("coming", "coming", title=cl["headline"], body=body, meta=meta)
+        _telegram("coming", "\n".join([f"UPDATE READY · {cl['headline']}"] + [f"• {b}" for b in cl["bullets"]]
+                                      + [f"NOTE · {n['title']}" for n in notes]
+                                      + ["↓ UPDATE on the dashboard pulls it"]))
+    except Exception as e:  # noqa: BLE001 — a preview must never take the bridge down
+        print(f"[whatsnew] preview: {e}", file=sys.stderr)
+    finally:
+        with _lock:
+            _writing = False
+
+
+def _holds(head: str, sha: "str | None") -> bool:
+    """HEAD already has this commit: pulled, the restart still to come."""
+    return bool(head and sha) and git._run(selfupdate.REPO, "merge-base", "--is-ancestor", sha, head)[0] == 0
+
+
+def watch() -> None:
+    """The bridge's own look upstream: a dashboard's UPDATE poll does the same every
+    5 min, but an install with no dashboard open would never hear of an update."""
+    def loop() -> None:
+        wait = 300   # soon after boot first: what waited while the bridge was down
+        while True:
+            time.sleep(wait)
+            wait = _WATCH_S
+            try:
+                preview(selfupdate.check())
+            except Exception as e:  # noqa: BLE001 — the next hour tries again
+                print(f"[whatsnew] watch: {e}", file=sys.stderr)
+    threading.Thread(target=loop, daemon=True, name="whatsnew-watch").start()
 
 
 def _seen() -> list:
@@ -122,7 +234,7 @@ def _remember(seen: list) -> None:
     store.set_setting(_SEEN, json.dumps(seen[-_SEEN_MAX:]))
 
 
-def _changelog(old: str, head: str) -> "dict | None":
+def _changelog(old: str, head: str, word: str = "pulled") -> "dict | None":
     repo = selfupdate.REPO
     rc, out, _ = git._run(repo, "rev-list", "--count", "--no-merges", f"{old}..{head}")
     n = int(out.strip() or 0) if rc == 0 else 0
@@ -130,16 +242,16 @@ def _changelog(old: str, head: str) -> "dict | None":
         return None
     _rc, log, _ = git._run(repo, "log", "-80", "--no-merges", "--format=%s", f"{old}..{head}")
     subjects = [s for s in log.splitlines() if s.strip()]
-    d = (_summarise(subjects, n) if aifeatures.enabled("changelog") else None) or _fallback(subjects, n)
+    d = (_summarise(subjects, n) if aifeatures.enabled("changelog") else None) or _fallback(subjects, n, word)
     d.update(commits=n, branch=git.current_branch(repo), url=_compare_url(old, head))
     return d
 
 
-def _fallback(subjects: list, n: int) -> dict:
+def _fallback(subjects: list, n: int, word: str = "pulled") -> dict:
     """Off, or the one-shot failed: the first clause of up to five subjects. The one
     path that does echo commits — nothing is lost, only shorter."""
     bullets = [_cut(s.split(" — ", 1)[0], _BULLET) for s in subjects[:5]]
-    return {"headline": f"{n} commit{'' if n == 1 else 's'} pulled",
+    return {"headline": f"{n} commit{'' if n == 1 else 's'} {word}",
             "bullets": bullets, "rest": n - len(bullets)}
 
 

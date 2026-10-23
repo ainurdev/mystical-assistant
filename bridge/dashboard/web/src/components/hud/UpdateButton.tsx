@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownToLine } from "lucide-react";
-import { api, type UpdateInfo } from "../../api";
+import { ArrowDownToLine, ChevronRight, MessageSquareText } from "lucide-react";
+import { api, type Notice, type UpdateInfo } from "../../api";
 import { notify } from "./Notifications";
+import { Bullets, Meta } from "./ChangelogButton";
+import { ago, notesOf } from "../../lib/notices";
 import { watchRestart } from "../../lib/restart";
 import { popPlace } from "../../lib/prchip";
 
@@ -12,7 +14,9 @@ import { popPlace } from "../../lib/prchip";
 // `rail` is the right rail's UPDATE icon above ⌘K, always present — quiet when
 // there is nothing to do, a count of incoming commits when there is (an amber
 // dot for unshipped local work alone); `badge` is the labelled chip SETTINGS
-// shows when an update is waiting.
+// shows when an update is waiting. Before an update is taken, its popover leads
+// with what it brings (bridge/whatsnew.py preview: a headline, bullets, the
+// maintainers' notes), and the rail's button is where that news pops out.
 // ponytail: self-contained (polls + owns its popover) like NotificationCenter, so
 // the Strip stays a dumb header.
 const POLL_MS = 300_000; // 5 min — new commits are not a live-tail concern
@@ -27,6 +31,8 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
   const [err, setErr] = useState("");
   const [failed, setFailed] = useState<"pull" | "ship">("pull");
   const [hov, setHov] = useState("");
+  const [fresh, setFresh] = useState<Notice | null>(null);   // the waiting update, popped out of the rail button
+  const [commitsOpen, setCommitsOpen] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
   const busy = phase !== "";
@@ -40,6 +46,23 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
     const id = setInterval(tick, POLL_MS);
     return () => { live = false; clearInterval(id); };
   }, []);
+
+  // The rail's button is where a waiting update pops out (hud:update-pop, from the
+  // bell's poll) and what the changelog's Update now and an OS banner open (hud:update).
+  useEffect(() => {
+    if (variant !== "rail") return;
+    const pop = (e: Event) => { setFresh((e as CustomEvent<Notice>).detail); void load(); };
+    const show = () => { setFresh(null); void load().then(() => setOpen(true)); };
+    window.addEventListener("hud:update-pop", pop);
+    window.addEventListener("hud:update", show);
+    return () => { window.removeEventListener("hud:update-pop", pop); window.removeEventListener("hud:update", show); };
+  }, [variant]);
+
+  // Release notes you opened are read: the changelog's dot needn't keep them.
+  const comingId = open && info?.coming && !info.coming.read ? info.coming.id : null;
+  useEffect(() => {
+    if (comingId !== null) void api.noticesRead([comingId]).catch(() => { /* next poll */ });
+  }, [comingId]);
 
   // Closes the way the PR chip's popover does: a press outside it, or Escape —
   // unless a pull or push is mid-flight, when it stays until that lands.
@@ -168,6 +191,19 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
   const rect = open ? btnRef.current?.getBoundingClientRect() : undefined;
   const pop = rect && { ...popPlace(rect, window.innerHeight),
                         right: Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - 428)) };
+  // The pop sits left of the rail, its notch on the button, like the changelog's.
+  const at = fresh && !open && variant === "rail" ? btnRef.current?.getBoundingClientRect() : undefined;
+  const out = at && { right: window.innerWidth - at.left + 10, bottom: Math.max(8, window.innerHeight - at.bottom - 4) };
+  const coming = info.coming ?? null;
+  const commitList = (
+    <div style={{ marginTop: 10, maxHeight: 150, overflowY: "auto", borderLeft: "2px solid color-mix(in srgb, var(--acc) 30%, transparent)", padding: "2px 0 2px 10px" }}>
+      {(info.commits ?? []).map((c) => (
+        <div key={c.sha} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", color: "var(--txm)", padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          <span style={{ color: "var(--acc)" }}>{c.sha}</span> {c.subject}
+        </div>
+      ))}
+    </div>
+  );
   // Sized and lit like the rail's tab buttons, so it reads as one more of them;
   // the count is the same filled pill a tab's badge is, in the update's green.
   const railBtn = (
@@ -177,7 +213,7 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
       title={phase === "checking" ? "Checking for updates…" : `Update — ${title}`}
       aria-label="Update the platform"
       {...hp("btn")}
-      className="relative flex h-[38px] items-center justify-center border-l-2 border-transparent hover:bg-accent"
+      className={`relative flex h-[38px] items-center justify-center border-l-2 border-transparent hover:bg-accent${out ? " clg-lit" : ""}`}
       style={{
         appearance: "none", cursor: "pointer",
         color: incoming ? "var(--ok)" : local ? "var(--warn)" : hov === "btn" ? "var(--acc)" : "var(--muted-2)",
@@ -229,16 +265,41 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
         </span>
       </button>}
 
+      {/* What a waiting update brings, out of the rail button: the changelog's own
+          callout, 8 s (its bar's animation is the clock, so hover holds it). */}
+      {fresh && out && createPortal(
+        <div key={fresh.id} className="clg-co" style={out} role="status" onClick={() => { setFresh(null); setOpen(true); }}>
+          <div className="in">
+            <div className="clg-co-h">
+              <ArrowDownToLine size={13} strokeWidth={1.8} className="clg-ic" />
+              <span className="v">{fresh.verb}</span>
+              <span className="w">{ago(fresh.at, Date.now() / 1000)}</span>
+            </div>
+            <div className="clg-co-t">{fresh.title}</div>
+            <div className="clg-co-b">{fresh.body.split("\n").filter(Boolean).map((l) => l.split(" — ")[0]).join(" · ")}</div>
+            <div className="clg-co-f">
+              <span>{`${Number(fresh.meta.commits) || 0} commit${fresh.meta.commits === 1 ? "" : "s"}`}
+                {notesOf(fresh).length > 0 && ` · ${notesOf(fresh).length} note${notesOf(fresh).length === 1 ? "" : "s"}`}</span>
+              <span style={{ flex: 1 }} />
+              <span className="go">See what's coming ›</span>
+            </div>
+            <span className="bar" onAnimationEnd={(e) => { if (e.animationName === "clg-bar") setFresh(null); }} />
+          </div>
+          <button className="x" title="dismiss" aria-label="dismiss" onClick={(e) => { e.stopPropagation(); setFresh(null); }}>×</button>
+        </div>,
+        document.querySelector("[data-theme]") ?? document.body,
+      )}
+
       {/* A popover off the button, the way the PR chip's opens — not a modal in
           the middle of the screen, so the mouse stays where it clicked. Portalled
           into the themed container so position:fixed escapes any animated
           ancestor, and so it stacks over SETTINGS when the badge opens it. */}
-      {open && pop && createPortal(
+      {open && pop && (incoming > 0 || local > 0) && createPortal(
         <div ref={popRef} className="mscroll"
           style={{ position: "fixed", ...pop, width: 420, maxWidth: "92vw", overflowY: "auto", zIndex: 96, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "15px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>
             <span style={{ fontSize: "var(--t13)", color: "var(--txb)", letterSpacing: ".5px" }}>
-              {incoming && local ? "Sync platform" : incoming ? "Update platform" : "Ship your changes"}
+              {incoming && local ? "Sync platform" : incoming ? "Update ready" : "Ship your changes"}
             </span>
             <span style={{ flex: 1 }} />
             <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", color: "var(--txf)" }}>⎇ {info.branch}</span>
@@ -277,7 +338,30 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
                 </div>
               </>
             )}
-            {incoming > 0 && (
+            {incoming > 0 && (coming ? (
+              <div className="upd-pv" style={{ marginTop: local > 0 ? 18 : 0 }}>
+                <div className="upd-lab">WHAT'S COMING</div>
+                <div className="clg-ht">{coming.title}</div>
+                <Bullets body={coming.body} />
+                {notesOf(coming).map((n) => (
+                  <div key={n.heading} className="upd-note">
+                    <div className="upd-note-h"><MessageSquareText size={12} strokeWidth={1.8} /><span className="v">NOTE</span>{n.author && <span>from {n.author}</span>}</div>
+                    <div className="upd-note-t">{n.title}</div>
+                    {n.body && <div className="upd-note-b">{n.body}</div>}
+                  </div>
+                ))}
+                <div className="upd-row">
+                  <Meta r={coming} />
+                  <span style={{ flex: 1 }} />
+                  <button className="upd-fold" aria-expanded={commitsOpen} onClick={() => setCommitsOpen((v) => !v)}>
+                    {commitsOpen ? "Hide" : "Show"} the commits
+                    <ChevronRight size={11} strokeWidth={1.8} style={{ transform: commitsOpen ? "rotate(90deg)" : undefined }} />
+                  </button>
+                </div>
+                {commitsOpen && commitList}
+                <div className="upd-how">PULL &amp; RESTART pulls them, rebuilds the dashboard and restarts the bridge. Running turns pick up where they were.</div>
+              </div>
+            ) : (
               <>
                 <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--ok)", marginTop: local > 0 ? 18 : 0, marginBottom: 7 }}>THEIRS ↓</div>
                 <div style={{ fontSize: "var(--t125)", color: "var(--txh)", lineHeight: 1.6 }}>
@@ -285,15 +369,9 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
                   bridge. Running turns are resumed automatically; dev servers and the tunnel come
                   back with it.
                 </div>
-                <div style={{ marginTop: 10, maxHeight: 150, overflowY: "auto", borderLeft: "2px solid color-mix(in srgb, var(--acc) 30%, transparent)", padding: "2px 0 2px 10px" }}>
-                  {(info.commits ?? []).map((c) => (
-                    <div key={c.sha} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", color: "var(--txm)", padding: "2px 0", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                      <span style={{ color: "var(--acc)" }}>{c.sha}</span> {c.subject}
-                    </div>
-                  ))}
-                </div>
+                {commitList}
               </>
-            )}
+            ))}
             {incoming > 0 && info.dirty > 0 && (
               <div style={{ marginTop: 12, border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)", background: "color-mix(in srgb, var(--warn) 6%, transparent)", color: "var(--warn)", fontSize: "var(--t105)", letterSpacing: ".3px", padding: "8px 11px", display: "flex", alignItems: "center", gap: 8 }}>
                 <span style={{ flex: "none" }}>⚠</span>
@@ -308,21 +386,21 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
             )}
           </div>
           <div style={{ display: "flex", gap: 9, padding: "0 18px 16px" }}>
-            <button onClick={() => setOpen(false)} disabled={busy} {...hp("cancel")}
-              style={{ flex: 1, appearance: "none", cursor: busy ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "cancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, opacity: busy ? 0.5 : 1 }}>CANCEL</button>
+            <button className="upd-btn" onClick={() => setOpen(false)} disabled={busy} {...hp("cancel")}
+              style={{ flex: 1, appearance: "none", cursor: busy ? "not-allowed" : "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "cancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, opacity: busy ? 0.5 : 1 }}>{incoming > 0 ? "LATER" : "CANCEL"}</button>
             {err ? (
-              <button onClick={fixWithClaude} {...hp("fix")}
+              <button className="upd-btn" onClick={fixWithClaude} {...hp("fix")}
                 style={{ flex: 1.4, appearance: "none", cursor: "pointer", border: "1px solid var(--acc)", background: hov === "fix" ? "color-mix(in srgb, var(--acc) 28%, transparent)" : "color-mix(in srgb, var(--acc) 16%, transparent)", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10 }}>
                 ▸ FIX WITH CLAUDE</button>
             ) : (
               <>
                 {local > 0 && (
-                  <button onClick={() => void ship()} disabled={busy} {...hp("ship")}
+                  <button className="upd-btn" onClick={() => void ship()} disabled={busy} {...hp("ship")}
                     style={{ flex: 1.3, appearance: "none", cursor: busy ? "wait" : "pointer", border: "1px solid var(--warn)", background: hov === "ship" ? "color-mix(in srgb, var(--warn) 28%, transparent)" : "color-mix(in srgb, var(--warn) 16%, transparent)", color: "var(--warn)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, opacity: busy ? 0.7 : 1 }}>
                     {phase === "shipping" ? "COMMITTING…" : info.dirty > 0 ? "COMMIT & PUSH" : "PUSH"}</button>
                 )}
                 {incoming > 0 && (
-                  <button onClick={() => void apply()} disabled={busy} {...hp("go")}
+                  <button className="upd-btn" onClick={() => void apply()} disabled={busy} {...hp("go")}
                     style={{ flex: 1.3, appearance: "none", cursor: busy ? "wait" : "pointer", border: "1px solid var(--ok)", background: hov === "go" ? "color-mix(in srgb, var(--ok) 28%, transparent)" : "color-mix(in srgb, var(--ok) 16%, transparent)", color: "var(--ok)", fontFamily: "inherit", fontSize: "var(--t105)", letterSpacing: 1.5, padding: 10, opacity: busy ? 0.7 : 1 }}>
                     {phase === "updating" ? "UPDATING…" : phase === "restarting" ? "RESTARTING…" : "PULL & RESTART"}</button>
                 )}
