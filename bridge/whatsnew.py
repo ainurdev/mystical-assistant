@@ -120,7 +120,8 @@ def _announce(old: str, head: str) -> None:
         _remember(seen)
         if row and _holds(head, m.get("to")):
             notices.drop(row["id"])
-        cl = (_changelog(old, head) if (m.get("from"), m.get("to")) != (old, head) else
+        # the model's words for this very range, written before the pull; a fallback says "waiting"
+        cl = (_changelog(old, head) if not m.get("ai") or (m.get("from"), m.get("to")) != (old, head) else
               {"headline": row["title"], "bullets": row["body"].split("\n"), "rest": m.get("rest", 0),
                "commits": m.get("commits", 0), "branch": m.get("branch", ""), "url": m.get("url")})
         if cl:
@@ -158,13 +159,21 @@ def _preview(info: dict) -> "threading.Thread | None":
     head = git.head_sha(repo)
     rc, out, _ = git._run(repo, "rev-parse", "-q", "--verify", "@{u}")
     up = out.strip() if rc == 0 else ""
+    # counted here, not taken from check(): a read that failed must not pass for "nothing waits"
+    rc, out, _ = git._run(repo, "rev-list", "--count", "--no-merges", f"{head}..{up}") if head and up else (1, "", "")
+    if rc != 0:
+        return None   # no upstream, or git didn't answer: nothing to say, nothing dropped on a guess
+    n = int(out.strip() or 0)
     row = notices.coming()
     m = row["meta"] if row else {}
-    if not head or not up or not info.get("behind"):
-        if row and not _holds(head, m.get("to")):
+    if not n:
+        # done, unless pulled with the code running still older: that restart's boot takes its words
+        running = store.get_setting(_LAST_HEAD) or ""
+        if row and not (_holds(head, m.get("to")) and not _holds(running, m.get("to"))):
             notices.drop(row["id"])
         return None
-    if row and ((m.get("from"), m.get("to")) == (head, up)
+    # what waits, not HEAD: a dev checkout's own commits move HEAD and change nothing incoming
+    if row and ((m.get("to"), m.get("commits")) == (up, n)
                 or time.time() - float(m.get("written") or 0) < _COMING_EVERY):
         return None
     with _lock:
@@ -188,7 +197,7 @@ def _write_coming(head: str, up: str, nid: "int | None") -> None:
                  for e in notes_in(git.file_at(repo, up, NOTES_PATH)) if e["heading"] not in before][:3]
         body = "\n".join(cl["bullets"])
         meta = {"from": head, "to": up, "commits": cl["commits"], "branch": cl["branch"], "rest": cl["rest"],
-                "url": cl["url"], "notes": notes, "written": time.time()}
+                "url": cl["url"], "notes": notes, "ai": cl["ai"], "written": time.time()}
         if nid and notices.revise(nid, title=cl["headline"], body=body, meta=meta):
             return
         notices.emit("coming", "coming", title=cl["headline"], body=body, meta=meta)
@@ -242,8 +251,9 @@ def _changelog(old: str, head: str, word: str = "pulled") -> "dict | None":
         return None
     _rc, log, _ = git._run(repo, "log", "-80", "--no-merges", "--format=%s", f"{old}..{head}")
     subjects = [s for s in log.splitlines() if s.strip()]
-    d = (_summarise(subjects, n) if aifeatures.enabled("changelog") else None) or _fallback(subjects, n, word)
-    d.update(commits=n, branch=git.current_branch(repo), url=_compare_url(old, head))
+    said = _summarise(subjects, n) if aifeatures.enabled("changelog") else None
+    d = said or _fallback(subjects, n, word)
+    d.update(commits=n, branch=git.current_branch(repo), url=_compare_url(old, head), ai=bool(said))
     return d
 
 

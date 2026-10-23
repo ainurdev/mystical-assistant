@@ -58,6 +58,9 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
     return () => { window.removeEventListener("hud:update-pop", pop); window.removeEventListener("hud:update", show); };
   }, [variant]);
 
+  // However the popover opened, the pop has done its job: it doesn't come back when it shuts.
+  useEffect(() => { if (open) setFresh(null); }, [open]);
+
   // Release notes you opened are read: the changelog's dot needn't keep them.
   const comingId = open && info?.coming && !info.coming.read ? info.coming.id : null;
   useEffect(() => {
@@ -294,7 +297,7 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
           the middle of the screen, so the mouse stays where it clicked. Portalled
           into the themed container so position:fixed escapes any animated
           ancestor, and so it stacks over SETTINGS when the badge opens it. */}
-      {open && pop && (incoming > 0 || local > 0) && createPortal(
+      {open && pop && (incoming > 0 || local > 0 || err !== "" || busy) && createPortal(
         <div ref={popRef} className="mscroll"
           style={{ position: "fixed", ...pop, width: 420, maxWidth: "92vw", overflowY: "auto", zIndex: 96, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", animation: "mslide .16s ease both" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "15px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>

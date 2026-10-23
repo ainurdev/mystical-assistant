@@ -426,3 +426,45 @@ def test_update_endpoint_carries_the_waiting_row(repo, origin, monkeypatch):
     h._get_api("/local/update", {})
     assert box["obj"]["behind"] == 1 and box["obj"]["coming"]["title"] == "1 commit waiting"
     assert box["obj"]["coming"]["kind"] == "coming"
+
+
+# --- the review's findings (2026-10-23) ------------------------------------------------
+
+def test_reuse_takes_only_the_models_words_not_the_waiting_fallback(repo, origin):
+    whatsnew.boot()
+    _commit(origin, "two\n", "feat: two")
+    whatsnew.preview(selfupdate.check()).join(10)                  # UPDATE NOTES off: the fallback
+    assert notices.coming()["title"] == "1 commit waiting"
+    assert g.pull(repo)[0]
+    whatsnew.boot().join(10)
+    [upd] = notices.changelog()
+    assert upd["kind"] == "updated" and upd["title"] == "1 commit pulled"
+
+
+def test_a_git_read_that_fails_drops_nothing(repo, origin, monkeypatch):
+    _commit(origin, "two\n", "feat: two")
+    whatsnew.preview(selfupdate.check()).join(10)
+    monkeypatch.setattr(whatsnew.git, "head_sha", lambda repo: "")
+    assert whatsnew.preview({"repo": True, "behind": 0}) is None
+    assert [r["kind"] for r in notices.changelog()] == ["coming"]
+
+
+def test_a_pulled_row_goes_once_the_running_code_holds_it(repo, origin):
+    """The boot that would turn it into UPDATED may never come (a rebase, a branch
+    switch): once the code running (last_head) holds it, the row is done."""
+    _commit(origin, "two\n", "feat: two")
+    whatsnew.preview(selfupdate.check()).join(10)
+    assert g.pull(repo)[0]
+    store.set_setting("last_head", g.head_sha(repo))
+    assert whatsnew.preview(selfupdate.check()) is None
+    assert notices.changelog() == []
+
+
+def test_a_local_commit_does_not_rewrite_the_same_incoming(repo, origin, monkeypatch):
+    _commit(origin, "two\n", "feat: two")
+    whatsnew.preview(selfupdate.check()).join(10)
+    _write(repo, "b.txt", "mine\n")
+    _run(repo, "add", "-A")
+    _run(repo, "commit", "-qm", "my own work")                     # HEAD moves, what waits doesn't
+    monkeypatch.setattr(whatsnew, "_COMING_EVERY", 0)
+    assert whatsnew.preview(selfupdate.check()) is None
