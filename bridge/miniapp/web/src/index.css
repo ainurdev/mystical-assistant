@@ -1537,59 +1537,94 @@ a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid 
 :root[data-fam] .chead button { border-radius: var(--f-rad-s); }
 :root[data-fam]:not([data-fam="aurora"]) .chead .chead-aux button { border-color: var(--line); }
 
-/* ── THE CHAT SWITCHER (components/ChatSwitcher): search, the repos as chips,
-   the chats, and NEW CHAT IN … pinned where the thumb is. ── */
-.sw-search {
-  height: 40px; padding: 0 10px; border: 1px solid var(--border);
-  border-radius: var(--f-rad-s, 0); background: var(--panel2);
+/* ── CHATS (routes/chats): the dashboard's sidebar as a screen — the same
+   tabs, search, project groups and rows (its SessionsPanel), sized for a thumb. ── */
+.sb-top { display: flex; align-items: center; gap: 10px; margin: -2px 0 12px; }
+.sb-back {
+  display: inline-flex; align-items: center; gap: 2px; height: 34px; padding: 0 10px 0 4px;
+  border: 1px solid var(--border); border-radius: var(--f-rad-s, 0); color: var(--txm); font-size: 13px;
 }
-.sw-search:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--border)); }
-.sw-close {
-  flex: none; display: grid; place-items: center; width: 40px; height: 40px;
-  border: 1px solid var(--border); border-radius: var(--f-rad-s, 0); color: var(--txm);
+.sb-back:active { background: var(--ac-06); }
+.sb-word { margin-left: auto; font-family: var(--f-disp, var(--ui-font)); font-size: 17px; color: var(--txd); letter-spacing: -.01em; }
+.sb-word b { color: var(--txb); font-weight: 600; }
+:root[data-fam="aurora"] .sb-word { font-family: var(--ui-font); font-size: 13px; letter-spacing: .2em; text-transform: uppercase; color: var(--acc); }
+:root[data-fam="aurora"] .sb-word b { color: var(--acc); font-weight: 400; }
+:root[data-fam="claude"] .sb-word { font-weight: 500; }
+
+.sb-tabs {
+  display: flex; gap: 2px; padding: 3px; margin-bottom: 10px;
+  border: 1px solid var(--border); border-radius: calc(var(--f-rad-s, 0px) + 3px); background: var(--panel2);
 }
-.sw-repos {
-  scrollbar-width: none;
-  /* the row runs off the right edge: fade it there so it reads as more, not cut */
-  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(90deg, #000 calc(100% - 28px), transparent);
-  padding-right: 28px;
+.sb-tabs > button {
+  flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px;
+  border-radius: var(--f-rad-s, 0); color: var(--txl);
 }
-.sw-repos::-webkit-scrollbar { display: none; }
-.sw-chip {
-  flex: none; display: inline-flex; align-items: center; gap: 6px; max-width: 180px;
-  height: 32px; padding: 0 11px; border: 1px solid var(--border);
-  border-radius: var(--f-rad-s, 0); background: var(--panel2);
-  font-size: 12.5px; color: var(--txm);
+.sb-tabs > button[aria-selected="true"] { background: var(--panel); color: var(--acc); box-shadow: inset 0 0 0 1px var(--line2, var(--border)); }
+:root[data-fam="aurora"] .sb-tabs > button[aria-selected="true"] { background: color-mix(in oklab, var(--acc) 12%, var(--panel2)); }
+.sb-n { font-size: 11px; font-variant-numeric: tabular-nums; color: var(--txd); }
+.sb-tabs > button[aria-selected="true"] .sb-n { color: inherit; }
+
+.sb-search {
+  display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 10px; margin-bottom: 14px;
+  border: 1px solid var(--border); border-radius: var(--f-rad-s, 0); background: var(--panel2); color: var(--txl);
 }
-:root[data-fam="pebble"] .sw-chip { border-radius: 999px; }
-.sw-chip[aria-pressed="true"] { border-color: var(--acc); background: color-mix(in oklab, var(--acc) 14%, var(--panel2)); color: var(--txb); }
-.sw-chip-ghost { border-style: dashed; background: none; color: var(--txd); }
-.sw-here { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); }
-.sw-badge {
-  flex: none; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px;
-  background: var(--warn); color: var(--acc-on); font-size: 10px; line-height: 16px; text-align: center;
+.sb-search:focus-within { border-color: color-mix(in oklab, var(--acc) 55%, var(--border)); }
+.sb-search input { flex: 1; min-width: 0; background: none; outline: none; font-size: 14px; color: var(--txb); }
+.sb-search input::placeholder { color: var(--txl); }
+
+.sb-add { display: flex; align-items: center; gap: 8px; padding: 4px 4px; font-size: 14px; color: var(--txh); }
+.sb-add svg { color: var(--acc); }
+.sb-addbox { border: 1px solid var(--border); border-radius: var(--f-rad, 0); background: var(--card); padding: 6px; }
+.sb-arow { display: flex; width: 100%; align-items: center; gap: 10px; padding: 8px 6px; border-radius: var(--f-rad-s, 0); font-size: 13.5px; color: var(--txh); text-align: left; }
+.sb-arow:active { background: var(--ac-06); }
+
+/* a project: its tile and name, its chats hanging off a rail under the tile */
+.sb-phead { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 2px; }
+.sb-tile {
+  display: inline-grid; place-items: center; flex: none; width: 22px; height: 22px; overflow: hidden;
+  border-radius: 6px; font: 600 9.5px/1 var(--ui-font, inherit); letter-spacing: .02em; font-style: normal;
+  color: color-mix(in oklab, var(--pc) 30%, white);
+  background: color-mix(in oklab, var(--pc) 26%, var(--panel));
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 45%, transparent);
 }
-.sw-label { font-family: var(--ui-font, inherit); font-size: 10px; font-weight: 600; letter-spacing: .1em; color: var(--txl); padding: 0 2px; }
-:root[data-fam="aurora"] .sw-label { font-weight: 400; letter-spacing: .22em; }
-.sw-row { border: 1px solid var(--border); border-radius: var(--f-rad, 0); background: var(--card); }
-.sw-row:active { background: var(--ac-06); }
-.sw-row[data-on] { border-color: color-mix(in oklab, var(--acc) 55%, var(--border)); box-shadow: inset 3px 0 0 var(--acc); }
-.sw-row[data-wait] { border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
-.sw-proj { color: var(--txd); }
-.sw-tag { flex: none; font-size: 9.5px; letter-spacing: .1em; color: var(--acc); }
-.sw-tag-warn { padding: 3px 7px; border: 1px solid color-mix(in srgb, var(--warn) 50%, transparent); border-radius: var(--f-rad-s, 0); color: var(--warn); }
-.sw-more { width: 100%; padding: 8px; font-size: 12px; color: var(--txd); }
-.sw-empty { padding: 28px 12px; text-align: center; font-size: 13px; color: var(--tg-hint); }
-.sw-empty b { font-weight: 600; color: var(--txh); }
-.sw-foot { border-top: 1px solid var(--border); padding-bottom: max(12px, env(safe-area-inset-bottom)); }
-.sw-new {
-  display: flex; width: 100%; align-items: center; justify-content: center; gap: 8px;
-  height: 46px; padding: 0 14px; border-radius: var(--f-rad-l, 0);
-  background: var(--acc); color: var(--acc-on); font-size: 14px; font-weight: 600;
+:root[data-light] .sb-tile { color: color-mix(in oklab, var(--pc) 70%, black); background: color-mix(in oklab, var(--pc) 16%, var(--panel)); }
+.sb-tile[data-logo] { background: var(--panel); box-shadow: inset 0 0 0 1px var(--border); }
+.sb-tile img { width: 100%; height: 100%; object-fit: contain; }
+:root[data-fam="aurora"] .sb-tile { border-radius: 0; }
+:root[data-fam="pebble"] .sb-tile { border-radius: 50%; }
+.sb-pname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 14px var(--ui-font, inherit); color: var(--txb); }
+:root[data-fam="aurora"] .sb-pname { font-weight: 400; font-size: 12.5px; letter-spacing: .12em; text-transform: uppercase; }
+.sb-active { flex: none; font-size: 10px; padding: 1px 6px; border-radius: 999px; color: var(--acc); background: color-mix(in oklab, var(--acc) 12%, transparent); }
+.sb-pnew { margin-left: auto; flex: none; display: grid; place-items: center; width: 34px; height: 34px; border-radius: var(--f-rad-s, 0); color: var(--txd); }
+.sb-pnew:active { background: var(--ac-08); color: var(--acc); }
+.sb-rail { margin-left: 12px; padding-left: 8px; border-left: 1px solid var(--line2, var(--border)); }
+
+.sb-lane { display: flex; gap: 8px; align-items: baseline; padding: 0 2px 6px; font: 600 10.5px var(--ui-font, inherit); letter-spacing: .1em; color: var(--lt); }
+.sb-lane span { color: var(--txl); font-weight: 400; }
+:root[data-fam="aurora"] .sb-lane { font-weight: 400; letter-spacing: .22em; }
+
+.sb-row {
+  position: relative; display: flex; width: 100%; align-items: flex-start; gap: 10px;
+  padding: 9px 8px 10px; border-radius: var(--f-rad-s, 0); text-align: left;
 }
-:root[data-fam="aurora"] .sw-new { font-weight: 400; letter-spacing: .12em; text-transform: uppercase; font-size: 12px; box-shadow: 0 0 18px color-mix(in srgb, var(--acc) 25%, transparent); }
-.sw-new:active { opacity: .8; }
+.sb-row:active { background: var(--ac-06); }
+.sb-row[data-on] { background: color-mix(in oklab, var(--pc) 9%, transparent); box-shadow: inset 2px 0 0 color-mix(in oklab, var(--pc) 70%, var(--txd)); }
+.sb-dot { flex: none; width: 9px; height: 9px; margin-top: 4px; border-radius: 50%; border: 1.5px solid; box-sizing: border-box; }
+.sb-dot[data-work] { animation: mpulse 1.6s ease-out infinite; }
+.sb-title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 14px var(--ui-font, inherit); color: var(--txb); }
+:root[data-fam="aurora"] .sb-title { font-weight: 400; font-size: 13px; }
+.sb-meta { display: flex; flex-wrap: wrap; gap: 0 9px; margin-top: 2px; font-size: 11.5px; color: var(--txl); }
+.sb-meta > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.sb-mproj { color: color-mix(in oklab, var(--pc) 60%, var(--txd)); font-weight: 500; }
+.sb-mlabel { color: var(--txd); }
+.sb-ago { flex: none; margin-top: 2px; font-size: 11px; color: var(--txl); font-variant-numeric: tabular-nums; }
+.sb-row[data-on] .sb-ago { color: var(--acc); }
+.sb-more { display: inline-flex; align-items: center; gap: 4px; padding: 6px 8px; font-size: 12px; color: var(--txd); }
+.sb-none { padding: 8px; font-size: 12.5px; color: var(--txl); }
+.sb-empty { padding: 24px 8px; text-align: center; font-size: 13px; color: var(--tg-hint); }
+.sb-seg { display: flex; gap: 2px; padding: 3px; border: 1px solid var(--border); border-radius: calc(var(--f-rad-s, 0px) + 2px); background: var(--panel3); }
+.sb-seg > button { flex: 1; padding: 6px; border-radius: max(var(--f-rad-s, 0px) - 1px, 0px); font-size: 12.5px; color: var(--txd); }
+.sb-seg > button[aria-pressed="true"] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line2, var(--border)); }
 
 /* The image viewer's ✕: a full thumb target, clear of Telegram's own top bar. */
 .lb-close {

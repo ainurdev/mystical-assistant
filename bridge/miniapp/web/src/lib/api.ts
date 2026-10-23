@@ -31,6 +31,18 @@ export interface ProjectsListing {
   can_up: boolean;
   dirs: string[];
   projects?: string[]; // git repos under BASE_PATH, org-folder nesting included
+  names?: Record<string, string>; // rel -> the display name set on the dashboard
+  marks?: Record<string, ProjectMark>; // rel -> its tile (bridge/projectmarks.py)
+  hidden?: string[]; // rels hidden from the lists on the dashboard
+}
+
+/** What a project's tile shows and the colour it wears (bridge/projectmarks.py);
+ *  the fields the phone draws of the dashboard's ProjectMark. No mark = its
+ *  initials on a hashed colour. */
+export interface ProjectMark {
+  kind: "letters" | "icon" | "logo";
+  color?: string; // "#rrggbb", or a theme ink like "var(--acc)"
+  logo?: string; // "<sha256>.<ext>", fetched with api.projectLogo
 }
 
 export interface SelectResponse {
@@ -598,6 +610,8 @@ export class ApiError extends Error {
 // Core fetch wrapper — same-origin, relative URLs, injects init data header.
 // ---------------------------------------------------------------------------
 
+const logoCache = new Map<string, Promise<string>>();
+
 async function request<T>(
   path: string,
   options: { method?: string; body?: unknown } = {},
@@ -655,6 +669,24 @@ export const api = {
     return URL.createObjectURL(await res.blob());
   },
 
+  /** A project logo as an object URL — fetched, not linked, because an <img
+   *  src> can't carry the init-data header. Its name is the bytes' hash, so
+   *  one fetch per logo per launch is enough. */
+  projectLogo: (name: string) => {
+    let p = logoCache.get(name);
+    if (!p) {
+      p = fetch(`/api/project-mark/logo/${encodeURIComponent(name)}`, {
+        headers: { "X-Telegram-Init-Data": getInitData() },
+      }).then(async (res) => {
+        if (!res.ok) throw new ApiError(res.status, "no logo");
+        return URL.createObjectURL(await res.blob());
+      });
+      logoCache.set(name, p);
+      p.catch(() => logoCache.delete(name));
+    }
+    return p;
+  },
+
   getProjects: (dir?: string) => {
     const qs = dir ? `?dir=${encodeURIComponent(dir)}` : "";
     return request<ProjectsListing>(`/api/projects${qs}`);
@@ -709,6 +741,10 @@ export const api = {
     request<{ sessions: EnrichedSession[] }>(
       `/api/history${archived ? "?archived=1" : ""}`,
     ),
+
+  /** Every session on the machine (the CHATS screen's source), with branch and
+   *  worktree — /api/history has neither. */
+  listAllSessions: () => request<{ sessions: SessionBrief[] }>("/api/sessions"),
 
   listSessions: (project: string) =>
     request<{ sessions: SessionBrief[] }>(
