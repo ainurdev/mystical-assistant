@@ -2693,38 +2693,6 @@ def _routes(answers, calls):
     return api
 
 
-_SYNCED = ("read_route", "/source-control/repositories")
-
-
-def test_link_repo_links_the_first_synced_remote_to_the_project(workers):
-    calls = []
-    w = _worker(id="a")
-    w._api = _routes({_SYNCED: [{"id": "r1", "fullName": "ainurdev/Elvou"}, {"id": "r2", "fullName": "Elvou/elvou"}],
-                      ("write_route", "/projects/p1/links"): {"id": "p1"}}, calls)
-    workers["a"] = w
-    assert rivendell.link_repo("a", "p1", {"ainurdev/elvou", "nobody/elvou"}) == "ainurdev/Elvou"
-    assert calls == [("read_route", "GET", "/source-control/repositories", None),
-                     ("write_route", "POST", "/projects/p1/links", {"type": "REPOSITORY", "refId": "r1"})]
-
-
-def test_link_repo_counts_already_linked_as_done_and_says_what_else_went_wrong(workers):
-    w = _worker(id="a")
-    workers["a"] = w
-    for answer, ok in (("POST /projects/p1/links answered 409: That resource is already linked.", True),
-                       ("POST /projects/p1/links answered 403: Forbidden resource", False)):
-        w._api = _routes({_SYNCED: [{"id": "r1", "fullName": "acme/app"}],
-                          ("write_route", "/projects/p1/links"): answer}, [])
-        if ok:
-            assert rivendell.link_repo("a", "p1", {"acme/app"}) == "acme/app"
-        else:
-            with pytest.raises(rivendell.TasksError) as e:
-                rivendell.link_repo("a", "p1", {"acme/app"})
-            assert "403" in str(e.value)
-    with pytest.raises(rivendell.TasksError) as e:
-        rivendell.link_repo("a", "p1", {"acme/new"})          # newer than Rivendell's last GitHub sync
-    assert "hasn't synced acme/new" in str(e.value)
-
-
 _TODO = {
     "generatedAt": "2026-09-27T20:55:29.611Z", "progress": {"total": 3, "done": 1},
     "items": [
@@ -3322,22 +3290,6 @@ def test_the_oldest_waiting_device_run_goes_next_whichever_worker_holds_it(monke
     prod._run_device_run({"request_id": "d0", "slug": "ainurhq/app"})
     _wait_until(lambda: started == [("local", "older")])
     assert rivendell._device_run == "older" and [r["request_id"] for r in prod.queue_snapshot()] == ["newer"]
-
-
-def test_client_images_keeps_the_images_the_editor_takes_with_their_preview_urls(workers):
-    calls = []
-    w = _worker(id="a")
-    w._api = _routes({("read_route", "/clients/c1/documents"): {"documents": [
-        {"id": "d1", "name": "lion.svg", "mimeType": "image/svg+xml", "previewUrl": "https://s/1"},
-        {"id": "d2", "name": "scope.pdf", "mimeType": "application/pdf", "previewUrl": "https://s/2"},
-        {"id": "d3", "name": "icon.png", "mimeType": "image/png", "previewUrl": "https://s/3"},
-        {"id": "d4", "name": "anim.gif", "mimeType": "image/gif", "previewUrl": "https://s/4"}]},
-        ("read_route", "/clients/c1/documents/d1/download"): {"url": "https://s/dl1"}}, calls)
-    workers["a"] = w
-    assert rivendell.client_images("a", "c1") == [{"id": "d1", "name": "lion.svg", "url": "https://s/1"},
-                                                  {"id": "d3", "name": "icon.png", "url": "https://s/3"}]
-    assert rivendell.client_image_url("a", "c1", "d1") == "https://s/dl1"
-    assert calls[-1] == ("read_route", "GET", "/clients/c1/documents/d1/download", None)
 
 
 # --- a task for every piece of work (ListRivendellTasks / CreateRivendellTask) --

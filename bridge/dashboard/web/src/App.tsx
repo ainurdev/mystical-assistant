@@ -37,7 +37,6 @@ import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
 import { ago, forgetLegacyTints, legacyTints, projectMark, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
          useProjectTints } from "./lib/surfaces";
 import { noteStyling } from "./lib/stylerun";
-import { offerRivendellMarks } from "./components/hud/RivendellMarks";
 import { offerUsageSharing } from "./components/hud/UsageSharing";
 import {
   autoBaseFont,
@@ -713,8 +712,7 @@ export function App() {
       setSelfProject(p.self);
       setProjectMarks(p.marks);
       // First listing from a bridge with marks: the colours this browser
-      // picked before marks existed move onto the bridge, once; then the
-      // Rivendell offer, after the boot screen has had its moment.
+      // picked before marks existed move onto the bridge, once.
       if (p.marks && !marksMoved.current) {
         marksMoved.current = true;
         const legacy = legacyTints(p.projects ?? []);
@@ -725,8 +723,6 @@ export function App() {
         }))
           .then(forgetLegacyTints)
           .catch(() => { /* they stand as overrides; the next load tries again */ });
-        window.setTimeout(() => void offerRivendellMarks(
-          () => void api.projects().then((q) => setProjectMarks(q.marks)).catch(() => { /* the poll catches up */ })), 4000);
       }
       setProjectRemotes(p.remotes ?? {});
       markBoot("projects", "ok", bootCount((p.projects ?? []).length, "REPO"));
@@ -1095,7 +1091,7 @@ export function App() {
   }, [settings.pushSound, settings.pushVolume, settings.pushTone]);
 
   // Usage sharing starts here once this install said yes, and asks while it
-  // never answered — after the boot screen, like the Rivendell offer.
+  // never answered — after the boot screen has had its moment.
   useEffect(() => {
     const t = window.setTimeout(() => void offerUsageSharing(), 4000);
     return () => window.clearTimeout(t);
@@ -1883,10 +1879,9 @@ export function App() {
     return groups;
   }, [sessions, gitBadges, statusMap, activeProject, discovered, labelVersion, selected]);
 
-  // HIDE keeps a project out of the sidebar…
+  // HIDE keeps a project out of the sidebar. SessionsPanel drops its sessions
+  // itself, as PLUGINS still lists the runs of a hidden folder or group.
   const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel]);
-  // …and out of the left session list, whose RECENT tab reads the flat list.
-  const visibleSessions = sessions.filter((s) => !hiddenProjects[s.project]);
 
   // Prompt state the session list flags, so work you left mid-flight is visible
   // from anywhere: a check still running, a card waiting on you, unsent text.
@@ -2620,7 +2615,7 @@ export function App() {
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
                 <Brand />
                 <SessionsPanel
-                  sessions={visibleSessions} groups={visibleGroups} status={statusMap} done={doneIds}
+                  sessions={sessions} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
                   selectedSessionId={sessionId} booting={!booted}
                   activeProject={activeProject}

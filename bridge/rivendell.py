@@ -209,11 +209,10 @@ YOU — is docs/superpowers/specs/rivendell-channel.md.
 
 A session in a repo on a Rivendell board finds the task that covers its work,
 or files one tagged `unplanned` once the user says yes on a card (on_board /
-work_list / work_create, after link_repo). The goals MCP's two tools only relay
-here through the dashboard, because the token and tasks() live here. It rides
-Rivendell's MCP read_route/write_route as the token's owner, the way link_repo
-does, so Rivendell needed no new route. Why and what was left out:
-docs/superpowers/specs/rivendell-unplanned-tasks.md.
+work_list / work_create). The goals MCP's two tools only relay here through the
+dashboard, because the token and tasks() live here. It rides Rivendell's MCP
+read_route/write_route as the token's owner, so Rivendell needed no new route.
+Why and what was left out: docs/superpowers/specs/rivendell-unplanned-tasks.md.
 """
 
 import base64
@@ -2813,32 +2812,6 @@ def tasks(slug: str) -> dict:
     return out
 
 
-def projects() -> tuple:
-    """Every project each running instance lists on /plugin/projects (its client's
-    logo and brand colour, and the fullName of every repo linked to it or
-    mirroring one), tagged with its instance. Also returns one error entry for
-    each instance that couldn't answer. For bridge/projectmarks.py, which puts a
-    client's mark on the local repos of its projects. Workers parked on a
-    rejected token or a dead link are skipped, the same way tasks() skips them."""
-    with _manager_lock:
-        running = list(_workers.values())
-    rows: list = []
-    errors: list = []
-    for w in running:
-        try:
-            if w.status == "auth_error":
-                raise TasksError("token_rejected", w.status_detail or "token rejected")
-            if w.status == "error":
-                raise TasksError("unreachable", f"unreachable: {w.status_detail or 'link down'}")
-            got = _ask(w, "/plugin/projects")
-        except TasksError as e:
-            errors.append({"instance_id": w.id, "instance": w.name, "error": e.code, "detail": str(e)})
-            continue
-        rows += [{**p, "instance_id": w.id} for p in (got if isinstance(got, list) else [])
-                 if isinstance(p, dict)]
-    return rows, errors
-
-
 def _worker(instance_id: str) -> Worker:
     with _manager_lock:
         w = _workers.get(instance_id)
@@ -2900,33 +2873,6 @@ def todolist(instance_id: str, project_id: str) -> "dict | None":
                       for i in d.get("items") or [] if not i.get("done")]}
 
 
-def link_repo(instance_id: str, project_id: str, slugs) -> str:
-    """The mark editor's LINK: link a repo here to a Rivendell project the way
-    the project page's repository link does (POST /projects/:id/links, through
-    the MCP's write_route as the token's owner, so Rivendell checks that owner
-    may change the project). The link is Rivendell's, so every bridge on it
-    matches the repo from then on (/plugin/projects lists it). Takes the first
-    of the repo's remotes Rivendell has synced and returns its fullName; a repo
-    already linked there counts as done. Raises TasksError."""
-    w = _worker(instance_id)
-    synced = {(r.get("fullName") or "").lower(): r
-              for r in _tool(w, "read_route", {"path": "/source-control/repositories"}) or []
-              if isinstance(r, dict)}
-    repo = next((synced[s] for s in sorted(slugs) if s in synced), None)
-    if repo is None:
-        # Rivendell brings new repos in only on a full GitHub sync.
-        raise TasksError("refused", f"Rivendell hasn't synced {' or '.join(sorted(slugs))} from GitHub yet: "
-                                    "SYNC on its Source Control page brings new repos in")
-    try:
-        _tool(w, "write_route", {"method": "POST", "path": f"/projects/{project_id}/links",
-                                 "body": {"type": "REPOSITORY", "refId": repo["id"]}})
-    except TasksError as e:
-        if " answered 409" not in str(e):        # write_route's words for "already linked"
-            raise
-    return repo["fullName"]
-
-
-
 # --- a task for every piece of work (the goals MCP's two Rivendell tools) -------
 
 UNPLANNED_TAG = "unplanned"
@@ -2941,7 +2887,7 @@ def _repo_slugs(path: str) -> list:
     """Every slug a checkout's remotes name, origin's first. Rivendell matches a
     repo or its registered mirror, but an NR checkout's origin is the ainurdev
     copy it doesn't know, and only the `nr` remote names the upstream the
-    project links (the same reason projectmarks matches on every remote).
+    project links.
     origin_slug reads .git/config, which a linked worktree doesn't have (its
     .git is a file), so remote_slug's git call is the fallback."""
     from bridge import github                    # local import: subprocess-heavy
@@ -3231,28 +3177,6 @@ def work_create(path: str, title: str, description: str = "", board: str = "") -
                 + f"\nPut {key} in the branch name and the PR title, so Rivendell links the PR to it.")
     except TasksError as e:
         return f"Rivendell couldn't answer: {e}"
-
-# What the mark editor's drop path takes (projectmarks.sniff's four types).
-_IMAGE_TYPES = ("image/png", "image/jpeg", "image/webp", "image/svg+xml")
-
-
-def client_images(instance_id: str, client_id: str) -> list:
-    """The mark editor's From Rivendell strip: the images among a client's
-    documents (its Documents & assets, every category the token's owner may
-    read), each with the signed previewUrl it comes with. Not
-    /public-sites/project-assets: that drops SVGs, and NR's lions are SVG.
-    Raises TasksError."""
-    d = _tool(_worker(instance_id), "read_route", {"path": f"/clients/{client_id}/documents"}) or {}
-    return [{"id": x["id"], "name": x.get("name"), "url": x.get("previewUrl")}
-            for x in d.get("documents") or []
-            if isinstance(x, dict) and x.get("id") and x.get("mimeType") in _IMAGE_TYPES]
-
-
-def client_image_url(instance_id: str, client_id: str, document_id: str) -> str:
-    """A five-minute download URL for one of a client's documents. Raises TasksError."""
-    d = _tool(_worker(instance_id), "read_route",
-              {"path": f"/clients/{client_id}/documents/{document_id}/download"}) or {}
-    return d.get("url") or ""
 
 
 _NOTE_HEAD = "\n\n---\nA note from the operator who started this run:\n\n"

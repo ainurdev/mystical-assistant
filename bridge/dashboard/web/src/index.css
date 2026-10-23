@@ -4923,13 +4923,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .prj-show small { font: 11px var(--mono); color: var(--txl); }
 .prj-show button[data-on] small { color: var(--txm); }
 .prj .ps-riv { margin-bottom: 12px; }
-/* PICK LOGOS: the button ends the toolbar, and its strip wears the accent where Rivendell's wears purple. */
+/* PICK LOGOS: the button ends the toolbar, and its strip wears the accent. */
 .prj-pickbtn { height: 34px; padding: 0 13px; flex: none; font-size: 13px; color: var(--txb); }
 .prj-pickbtn svg { color: var(--acc); }
 .prj-pickbtn[data-on] { border-color: color-mix(in oklab, var(--acc) 55%, var(--l2)); background: color-mix(in oklab, var(--acc) 10%, transparent); }
 .prj .ps-riv.prj-picked { border-color: color-mix(in oklab, var(--acc) 32%, var(--l)); background: color-mix(in oklab, var(--acc) 6%, var(--panel)); }
 .prj .ps-riv.prj-picked > i { background: color-mix(in oklab, var(--acc) 16%, var(--panel2)); color: var(--acc); }
-.prj .ps-riv.prj-picked > i::after { content: none; }
 /* STYLE WITH AI (LogoStylist.tsx): the button runs a turning accent ring while it works, the strip
    grows a progress line, and each row of the list waits, is weighed (its candidates fanned, a lens on
    one) or lands (its tile flips to the new mark, a ring in its new colour). */
@@ -5294,7 +5293,7 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .mk-pane { display: flex; flex-direction: column; gap: 13px; min-height: 251px; }
 .mk-pane > .mk-drop { flex: 1; }
 .mk-bgrow { display: flex; align-items: center; gap: 10px; }
-/* From Rivendell: the client's images, on a checkerboard so black and white logos both show */
+/* From this repo: its pictures, on a checkerboard so black and white logos both show */
 .mk-gal { display: flex; flex-direction: column; gap: 8px; }
 .mk-gal .mk-lbl { margin: 0; }
 .mk-gal-row { display: flex; gap: 6px; overflow-x: auto; }
@@ -5303,7 +5302,6 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
   background: repeating-conic-gradient(#3a3d46 0% 25%, #5b5f6a 0% 50%) 50% / 10px 10px; }
 .mk-gal-row button[data-on] { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); }
 .mk-gal-row img { max-width: 100%; max-height: 100%; object-fit: contain; }
-.mk-gal-row .mk-sep { flex: none; align-self: center; height: 28px; }
 .mk-bgrow .mk-lbl { margin: 0; }
 .mk-bgrow .mk-bglbl { display: block; flex: none; }
 .mk-bglbl small { display: block; margin-top: 3px; font-size: 11.5px; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--txd); }
@@ -5319,13 +5317,6 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--pc) 60%, transparent); }
 .mk-grid svg { width: 16px; height: 16px; stroke-width: 1.8; }
 .mk-none { grid-column: 1 / -1; font-size: 11.5px; color: var(--txl); padding: 8px 2px; }
-.mk-from { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid color-mix(in oklab, var(--purple) 30%, var(--line));
-  border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--purple) 6%, var(--panel2)); font-size: 11.5px; color: var(--txm); }
-.mk-from b { color: var(--txb); font-weight: 500; }
-.mk-from .mk-btn { margin-left: auto; }
-.mk-from select { flex: 1; min-width: 0; padding: 3px 6px; border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0);
-  background: var(--panel3); color: var(--txb); font: 11.5px var(--ui-font); }
-.mk-gem { width: 7px; height: 7px; flex: none; margin: 0 2px; transform: rotate(45deg); background: var(--purple); border-radius: 1px; }
 .mk-lbl { display: flex; align-items: center; gap: 8px; margin-bottom: -5px; font: 600 10px var(--ui-font); letter-spacing: .12em; text-transform: uppercase; color: var(--txl); }
 .mk-lbl span { margin-left: auto; font: 500 10.5px var(--ui-font); letter-spacing: .02em; text-transform: none; color: var(--txd); }
 .mk-mini { display: flex; gap: 2px; padding: 2px; align-self: flex-start; border: 1px solid var(--line); border-radius: var(--f-rad-s, 0); background: var(--panel3); }
@@ -5354,10 +5345,8 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .mk-btn:disabled { opacity: .4; cursor: default; }
 .mk-pri { background: var(--acc); border-color: var(--acc); color: var(--acc-on); }
 .mk-ghostbtn { border-color: transparent; color: var(--txd); padding-left: 6px; padding-right: 6px; }
-.mk-from .mk-ghostbtn { border-color: var(--line2); color: var(--txm); padding: 3px 9px; }
-.mk-note { font-size: 11px; color: var(--txd); }
 
-/* SETTINGS ▸ Projects: where each mark comes from, and the Rivendell strip */
+/* SETTINGS ▸ Projects: where each mark comes from, and the strips atop the list */
 .ps-via { display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px; border: 1px solid color-mix(in oklab, var(--purple) 35%, transparent);
   border-radius: 999px; font: 500 9.5px var(--f); letter-spacing: .08em; color: var(--purple); white-space: nowrap; }
 .ps-via i { width: 5px; height: 5px; transform: rotate(45deg); background: var(--purple); border-radius: 1px; }
@@ -5365,22 +5354,15 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .ps-riv { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; padding: 11px 13px; border-radius: 12px;
   border: 1px solid color-mix(in oklab, var(--purple) 30%, var(--l)); background: color-mix(in oklab, var(--purple) 5%, var(--panel)); }
 .ps-riv > i { width: 30px; height: 30px; flex: none; display: grid; place-items: center; border-radius: 8px; background: color-mix(in oklab, var(--purple) 14%, var(--panel2)); }
-.ps-riv > i::after { content: ""; width: 9px; height: 9px; transform: rotate(45deg); border: 1.5px solid var(--purple); border-radius: 1px; }
 .ps-riv > div { flex: 1; min-width: 0; }
 .ps-riv b { display: block; font: 500 13px var(--f); color: var(--txb); }
 .ps-riv small { display: block; margin-top: 2px; font-size: 11.5px; color: var(--txd); }
-.ps-riv.ps-riv-dim { border-color: var(--l); background: transparent; }
-.ps-riv.ps-riv-dim > i { display: none; }
 .ps-pri { background: var(--acc) !important; border-color: var(--acc) !important; color: var(--acc-on) !important; }
 .ps-tog { position: relative; width: 30px; height: 18px; flex: none; border: 0; padding: 0; border-radius: 999px; background: var(--l2); cursor: pointer; }
 .ps-tog::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: var(--txd); transition: left .15s ease; }
 .ps-tog[data-on] { background: var(--acc); }
 .ps-tog[data-on]::after { left: 15px; background: #fff; }
 
-/* the Rivendell notice's client logos (Notifications.tsx) */
-.nt-logos { display: flex; gap: 6px; margin-top: 10px; }
-.nt-logos span { width: 26px; height: 26px; display: grid; place-items: center; overflow: hidden; border-radius: 7px; }
-.nt-logos img { width: 100%; height: 100%; object-fit: contain; }
 .nt-acts { display: flex; gap: 8px; margin-top: 11px; }
 .nt-act { padding: 6px 12px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 30%, transparent)); border-radius: var(--f-rad-s, 0);
   background: transparent; font: 600 10.5px var(--ui-font, inherit); letter-spacing: .06em; color: var(--txm); cursor: pointer; }
@@ -5604,14 +5586,12 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .ntf-tg.off { opacity: .45; } .ntf-tg button:disabled { cursor: not-allowed; }
 .ntf-mxnote { padding: 9px 14px 11px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t95, var(--t9))/1.6 var(--ui-font); color: var(--txl); }
 .ntf-mxnote b { color: var(--txd); font-weight: 500; }
-/* A pill that asks (Rivendell's logo offer, an UNDO): it wraps, carries its
-   sub line, logos and buttons, and waits for an answer. */
+/* A pill that asks (an UNDO): it wraps, carries its sub line and buttons,
+   and waits for an answer. */
 .ntf-pill.rich { height: auto; align-items: flex-start; white-space: normal; max-width: min(480px, calc(100vw - 40px)); padding: 10px 8px 12px 12px; }
 .ntf-pill.rich .ntf-pill-k { margin-top: 1px; }
 .ntf-pill-t small { display: block; margin-top: 3px; font: 400 var(--t105, var(--t10)) / 1.45 var(--ui-font); color: var(--txd); }
-.ntf-pill .nt-logos { margin-top: 8px; }
 .ntf-pill .ntf-acts { margin-top: 10px; }
-.ntf-pill.rv .ntf-pill-k { background: color-mix(in oklab, var(--purple) 20%, var(--panel)); color: var(--purple); }
 .ntf-btn.pri { background: var(--acc); border-color: transparent; color: var(--acc-on, #111); }
 .ntf-btn.pri:hover { background: var(--acc); filter: brightness(1.08); }
 

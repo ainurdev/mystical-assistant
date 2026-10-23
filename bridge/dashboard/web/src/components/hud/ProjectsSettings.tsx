@@ -11,7 +11,6 @@ import { filterRows, folders, parentOf, span, type Show } from "../../lib/projec
 import { ProjectTile } from "../ui/ProjectTile";
 import type { ProjectGroup } from "./ProjectsPanel";
 import MarkEditor, { poss } from "./MarkEditor";
-import { RivendellStrip } from "./RivendellMarks";
 import { StyleButton, StylePane, StyleScan, StyleStrip, useStyleRows } from "./LogoStylist";
 import { useAiFeatures } from "../../lib/ai";
 import { takeSettingsFocus } from "../../lib/opensettings";
@@ -360,7 +359,6 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
       </div>
       {styleOn ? <StyleStrip reviewing={paneRun} onReview={() => setReviewing(true)} />
         : pickRes && <PickStrip res={pickRes} busy={picking} onUndo={() => void pickLogos("undo")} onClose={() => setPickRes(null)} />}
-      <RivendellStrip />
       <div className="prj-split">
         <div className="prj-list" aria-label="projects">
           {styleOn && <StyleScan />}

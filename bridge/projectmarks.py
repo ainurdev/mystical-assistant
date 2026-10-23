@@ -13,36 +13,24 @@ served as immutable. It is one JSON file rather than a folder because MOVE
 carries bridge state as JSON files it merges by key (move._STATE_FILES), and a
 folder would need its own export and import path. Logos are small: one you
 drop is at most 512 KB, and the dashboard shrinks large rasters to 256px before
-upload. A client's logo from Rivendell is kept as it is served, up to 4 MB
-(RV_LOGO_MAX). A logo that no mark (and no UNDO) points at is dropped on the
-next save.
-
-Rivendell keeps a logo and a brand colour per client (Client.logoDocument,
-Client.brandColor), and its projects hang off clients. So a local repo linked to
-a client's project can wear that client's mark. A project can also carry a logo
-of its own (Project.logoKey), which internal projects need because they have no
-client: it wins over the client's (_lent), and the client's is the fallback for
-one the bridge can't keep. GET /plugin/projects (with the
-bridge token) lists each project, with the fullName of every repo linked to it
-or mirroring one (rivendell.projects()). A local repo matches on any of its
-remotes (github.remote_slugs), because a fork of a mirror tracks the upstream
-under another name.
+upload. A picture the bridge reads or fetches itself is kept as it comes, up
+to 4 MB (RAW_MAX). A logo that no mark (and no UNDO) points at is dropped on
+the next save.
 
 A repo can lend its own picture too. The files it tracks that are named for
 an icon, a logo or a brand are what the editor's From this repo strip offers
 (repo_images). A repo with no mark wears the best icon among them by itself
 (repo_icon): a favicon or an app icon, square by convention, never a logo.*,
 which is often a wordmark. That one is never stored. marks() adds it to the
-projects listing, so it changes with the file, and a mark you set or a logo
-from Rivendell beats it. A pick from the strip is stored as the file's path
-("repo"), so it follows the file as well. Both are served by their bytes' hash,
-like a stored logo.
+projects listing, so it changes with the file, and a stored mark beats it. A
+pick from the strip is stored as the file's path ("repo"), so it follows the
+file as well. Both are served by their bytes' hash, like a stored logo.
 
 PICK LOGOS (pick_all) goes further for a project that still wears letters: its
 frontend's logo (unideck-api wears unideck's), then a brand file of its own,
 then its GitHub organization's picture. A pick counts like the repo's own icon
-(source "pick"): Rivendell's logo wins over it, and so does an icon the repo
-gains later. Spec: docs/superpowers/specs/logo-picker.md.
+(source "pick"): an icon the repo gains later wins over it. Spec:
+docs/superpowers/specs/logo-picker.md.
 
 A logo with no stored background is AUTO: the browser plates it only where it
 would vanish into the ground (lib/logoinfo.ts). "none" pins it bare.
@@ -51,32 +39,19 @@ STYLE WITH AI (bridge/logostyle.py) asks a model instead, over every project
 but a mark you set: style_candidates() lists what each could wear (what it
 wears now, its frontend's logo, its repo's pictures) and apply_style() writes
 each answer, with a background and a colour. A pick it makes is "style": the
-next run may redo it, Rivendell's refresh leaves it alone (it weighed
-Rivendell's logo and chose another), and a change by hand makes it yours. Where
-it kept Rivendell's logo the mark still follows Rivendell, and its colour and
-background ride over each refresh ("styled"). Spec:
+next run may redo it, and a change by hand makes it yours. Spec:
 docs/superpowers/specs/logo-stylist.md.
 
-A repo no Rivendell project names has nothing to match: a copy under another
-owner (ainurdev/elvou beside Elvou/elvou), or one newer than Rivendell's last
-GitHub sync. The editor's LINK links it to a project in Rivendell itself, as
-the project page does (link()), instead of keeping the link here: kept here it
-would reach this bridge only, while Rivendell's reaches every bridge on it,
-through the same offer.
+Marks used to follow Rivendell as well: its clients' logos and brand colours,
+imported, refreshed and LINKed from here (docs/superpowers/specs/
+project-marks.md, project-logos-v2.md). STYLE WITH AI made that redundant, so
+it went on 2026-10-23. The marks it set stay as they were (source
+"rivendell", "rv" naming who lent them): machine-set like a pick, so the
+stylist may restyle them and a change by hand makes them yours.
 
-import_all() takes every match except a mark you set yourself (no "source").
-It keeps what it replaced for UNDO and turns following on. While following is
-on, refresh() runs at boot and then every 6h, without a notice: it pulls changed
-logos and colours and takes new matches.
-
-What it doesn't do:
-- Decode images. The stdlib can't render SVG, and a PNG or JPEG decoder isn't
-  worth carrying here. Sampling colours and reading a logo's shape happen in the
-  browser (lib/logoinfo.ts), which already has a canvas.
-- Rename projects after Rivendell. Names stay yours.
-
-Best effort throughout. A Rivendell that is down, refuses the token, or predates
-/plugin/projects means no offer, never an error in the listing.
+What it doesn't do: decode images. The stdlib can't render SVG, and a PNG or
+JPEG decoder isn't worth carrying here. Sampling colours and reading a logo's
+shape happen in the browser (lib/logoinfo.ts), which already has a canvas.
 """
 
 import base64
@@ -85,7 +60,6 @@ import json
 import os
 import re
 import threading
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -96,10 +70,11 @@ _lock = threading.RLock()
 _PATH = os.path.join(os.path.dirname(config.BRIDGE_DB), "project_marks.json")
 
 LOGO_MAX = 512 * 1024
-# ponytail: a client logo is kept as Rivendell serves it, because the bridge
-# can't shrink an image (no decoder), so Elvou's 1024px PNG costs its 1.9 MB
-# here. One over 4 MB stays colour-only. Shrink on import if bigger ones turn up.
-RV_LOGO_MAX = 4 * 1024 * 1024
+# ponytail: a repo's file, an organization's picture or a copy of a frontend's
+# logo is kept as it comes, because the bridge can't shrink an image (no
+# decoder), so a 1024px PNG costs its 1.9 MB here. One over 4 MB isn't kept.
+# Shrink on the way in if bigger ones turn up.
+RAW_MAX = 4 * 1024 * 1024
 CTYPES = {"png": "image/png", "jpg": "image/jpeg", "webp": "image/webp", "svg": "image/svg+xml"}
 _LOGO_RE = re.compile(r"^[0-9a-f]{64}\.(png|jpg|webp|svg)$")
 _ICON_RE = re.compile(r"^[a-z0-9-]{1,48}$")
@@ -108,8 +83,6 @@ _COLOR_RE = re.compile(r"^(#[0-9a-fA-F]{6}|var\(--[a-z0-9-]{1,24}\))$")
 _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 KINDS = ("letters", "icon", "logo")
 PLATES = ("light", "dark", "none")   # a background pinned behind a logo; none stored is AUTO
-REFRESH_S = 6 * 3600
-_CACHE_S = 600          # how long one look at Rivendell answers for the dashboard
 
 
 # --- the store ---------------------------------------------------------------
@@ -157,10 +130,10 @@ def _put_logo(d: dict, data: bytes, cap: int = LOGO_MAX) -> str:
 
 
 def _gc(d: dict) -> None:
-    """Drop logos nothing points at: no mark, and not the UNDO snapshot."""
+    """Drop logos nothing points at: no mark, and not the stylist's UNDO."""
+    d.pop("rivendell", None)          # the retired Rivendell sync's state, its UNDO with it
     keep = {m.get("logo") for m in project_config.marks().values()}
-    for snap in ((d.get("rivendell") or {}).get("undo") or {}, (d.get("style") or {}).get("undo") or {}):
-        keep |= {m.get("logo") for m in snap.values() if isinstance(m, dict)}
+    keep |= {m.get("logo") for m in ((d.get("style") or {}).get("undo") or {}).values() if isinstance(m, dict)}
     d["logos"] = {k: v for k, v in (d.get("logos") or {}).items() if k in keep}
 
 
@@ -212,10 +185,9 @@ def _sans(m: dict, *keys) -> dict:
 
 
 def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
-    """Your mark for a project: it never follows Rivendell again until you ask,
-    unless all that changed is the background (plate) behind a followed logo.
-    `logo_data` is a new logo's bytes, base64, stored with the mark in one go
-    so a logo is never kept for an edit that was cancelled."""
+    """Your mark for a project. `logo_data` is a new logo's bytes, base64,
+    stored with the mark in one go so a logo is never kept for an edit that
+    was cancelled."""
     with _lock:
         d = _load()
         if logo_data:
@@ -228,13 +200,8 @@ def set_mark(rel: str, mark, logo_data: "str | None" = None) -> "dict | None":
         if out and out.get("repo") and not (out["repo"] in _paths(rel) and _name(_root(rel), out["repo"])):
             raise ValueError("that isn't one of this repo's pictures")
         cur = project_config.mark(rel)
-        # A background alone is how a logo shows here, not a new mark: one that
-        # follows Rivendell keeps following (IB Groups' black logo on LIGHT).
-        if (cur and cur.get("source") == "rivendell" and out and out["kind"] == "logo"
-                and _sans(out, "plate") == _sans(cur, "plate", "source", "rv", "styled")):
-            out = {**_sans(cur, "plate"), **({"plate": out["plate"]} if out.get("plate") else {})}
         # Back to plain letters from a mark is still your choice: kept as one,
-        # or following Rivendell (or the repo's own icon) would dress it again.
+        # or the repo's own icon (or PICK LOGOS) would dress it again.
         if out is None and (cur is not None or repo_icon(rel)):
             out = {"kind": "letters"}
         project_config.set_mark(rel, out)
@@ -328,8 +295,8 @@ def _name(root: str, path: str) -> "str | None":
     name = None
     try:
         with open(full, "rb") as f:
-            data = f.read(RV_LOGO_MAX + 1)
-        ext = sniff(data) if len(data) <= RV_LOGO_MAX else None
+            data = f.read(RAW_MAX + 1)
+        ext = sniff(data) if len(data) <= RAW_MAX else None
         name = f"{hashlib.sha256(data).hexdigest()}.{ext}" if ext else None
     except OSError:
         pass
@@ -345,7 +312,7 @@ def _repo_logo(name: str) -> "tuple[bytes, str] | None":
             continue
         try:
             with open(full, "rb") as f:
-                data = f.read(RV_LOGO_MAX + 1)
+                data = f.read(RAW_MAX + 1)
         except OSError:
             continue
         if f"{hashlib.sha256(data).hexdigest()}.{sniff(data)}" == name:
@@ -382,8 +349,8 @@ def repo_icon(rel: str) -> "dict | None":
 def marks(rels) -> dict:
     """Every mark as the projects listing sends it. A mark on a repo file
     carries that file's logo as it is now. A listed repo with no mark wears its
-    own icon (auto), and so does one following a client that lends Rivendell
-    only a colour."""
+    own icon (auto), and so does a colour-only mark the Rivendell sync left (its
+    client lent no logo)."""
     out = project_config.marks()
     for rel, m in out.items():
         if isinstance(m.get("repo"), str):
@@ -507,7 +474,7 @@ def pick_all() -> dict:
             if rel in cur:
                 continue
             if data:
-                mark = {**mark, "logo": _put_logo(d, data, RV_LOGO_MAX)}
+                mark = {**mark, "logo": _put_logo(d, data, RAW_MAX)}
             project_config.set_mark(rel, mark)
             picked.append(rel)
         if picked:                        # a run that found nothing new keeps the last one's undo
@@ -599,6 +566,10 @@ def style_candidates() -> dict:
     return {"projects": projects, "yours": yours, "sig": sig[:16]}
 
 
+def _hex(v) -> "str | None":
+    return v if isinstance(v, str) and _HEX_RE.match(v) else None
+
+
 def _near(a, b) -> bool:
     """Two hex colours a glance can't tell apart (the model's #e8562a for NR's #ea5b13)."""
     if not (_hex(a) and _hex(b)):
@@ -635,9 +606,6 @@ def apply_style(rel: str, cand: "dict | None" = None, *, icon: "str | None" = No
         cur = project_config.mark(rel)
         if _mine(cur):                    # set by hand while the run looked: yours stands
             return {"rel": rel, "how": [], "before": before, "after": before}
-        # Rivendell's logo, kept: it goes on following, and only its colour and background are the stylist's.
-        keep_rv = (isinstance(cur, dict) and cur.get("source") == "rivendell" and cur.get("kind") == "logo"
-                   and not icon and (cand is None or cand.get("src") == "now"))
         if icon:
             base = {"kind": "icon", "icon": icon}
         elif cand and cand.get("src") == "repo":
@@ -646,13 +614,11 @@ def apply_style(rel: str, cand: "dict | None" = None, *, icon: "str | None" = No
             got = logo(cand["logo"])
             if not got:
                 raise ValueError("its frontend's logo is gone")
-            base = {"kind": "logo", "logo": _put_logo(d, got[0], RV_LOGO_MAX)}
-        elif keep_rv:
-            base = dict(cur)
+            base = {"kind": "logo", "logo": _put_logo(d, got[0], RAW_MAX)}
         elif before and before.get("auto"):
             base = {"kind": "logo", "repo": before["repo"]}
         elif cur:
-            base = _sans(cur, "source", "pick", "styled")
+            base = _sans(cur, "source", "pick", "styled", "rv", "weighed_rv")
         else:
             base = {"kind": "letters"}
         mark = _sans(base, "plate", "color", "styled", "source")
@@ -664,11 +630,9 @@ def apply_style(rel: str, cand: "dict | None" = None, *, icon: "str | None" = No
             mark["color"] = color
         elif base.get("color"):
             mark["color"] = base["color"]         # a near miss of the colour it wears isn't a change
-        mark["source"] = "rivendell" if keep_rv else "style"
-        if not keep_rv and isinstance(cur, dict) and cur.get("source") == "rivendell":
-            mark["weighed_rv"] = True     # chosen over Rivendell's mark: its import and refresh leave it be
+        mark["source"] = "style"
         mark["styled"] = (why or "")[:160]
-        shown = {**_sans(mark, "source", "styled", "rv", "weighed_rv"),
+        shown = {**_sans(mark, "source", "styled"),
                  **({"logo": _name(_root(rel), mark["repo"])} if mark.get("repo") else {})}
         how = _how(before, shown)
         if not how:
@@ -723,81 +687,7 @@ def undo_style(rel: "str | None" = None) -> dict:
     return {"undone": undone}
 
 
-# --- Rivendell ---------------------------------------------------------------
-
-_seen: dict = {"at": 0.0, "matches": {}, "errors": [], "listed": 0, "asked": False, "answered": False,
-               "projects": [], "unlinked": [], "named_by": {}}
-
-
-def _hex(v) -> "str | None":
-    return v if isinstance(v, str) and _HEX_RE.match(v) else None
-
-
-def _local_slugs() -> dict:
-    """rel -> every remote's owner/repo (lowercased), for each listed repo."""
-    from bridge import browser, github
-    out = {}
-    for rel in browser.list_projects():
-        slugs = {s.lower() for s in github.remote_slugs(os.path.join(config.BASE_PATH, rel.lstrip("/")))}
-        if slugs:
-            out[rel] = slugs
-    return out
-
-
-def _lent(p: dict) -> list:
-    """The (logo id, url) a project lends, best first: its own logo, then its
-    client's. An older Rivendell sends no project logo; that is just the client's."""
-    c = p.get("client") or {}
-    return [(lid, url) for lid, url in ((p.get("logoId"), p.get("logoUrl")), (c.get("logoId"), c.get("logoUrl")))
-            if lid and url]
-
-
-def _own(p: dict) -> bool:
-    """Whether a project lends a logo of its own, not its client's."""
-    return bool(p.get("logoId") and p.get("logoUrl"))
-
-
-def match(projects: list, local: dict, lends: bool = True) -> dict:
-    """rel -> the Rivendell project that has a mark for that repo: a logo of its
-    own, or its client's logo or colour (with lends=False, any project naming
-    it). Pure. The first project to name a repo wins, and a repo found under
-    several of its own remotes takes the alphabetically first."""
-    by_slug: dict = {}
-    for p in projects:
-        c = p.get("client") or {}
-        if lends and not (_lent(p) or _hex(c.get("brandColor"))):
-            continue
-        for full in p.get("repositories") or []:
-            if isinstance(full, str):
-                by_slug.setdefault(full.lower(), p)
-    out = {}
-    for rel, slugs in local.items():
-        hit = next((by_slug[s] for s in sorted(slugs) if s in by_slug), None)
-        if hit is not None:
-            out[rel] = hit
-    return out
-
-
-def _look(force: bool = False) -> dict:
-    """What Rivendell says, matched against the repos here: cached for
-    _CACHE_S, because the dashboard asks on every load."""
-    from bridge import rivendell
-    with _lock:
-        if not force and time.time() - _seen["at"] < _CACHE_S:
-            return _seen
-    projects, errors = rivendell.projects()
-    local = _local_slugs() if projects else {}
-    # Every repo some project names, internal ones too: a repo outside them all is LINK's.
-    named = {s.lower() for p in projects for s in p.get("repositories") or [] if isinstance(s, str)}
-    with _lock:
-        # asked: some Rivendell is connected at all. answered: one listed projects.
-        _seen.update(at=time.time(), matches=match(projects, local), errors=errors,
-                     listed=len(local), asked=bool(projects) or bool(errors),
-                     answered=bool(projects), projects=projects,
-                     unlinked=sorted(r for r, slugs in local.items() if not slugs & named),
-                     named_by=match(projects, local, lends=False))
-        return _seen
-
+# --- fetching a picture (PICK LOGOS' organization pictures) -----------------
 
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *args, **kwargs):
@@ -808,328 +698,15 @@ _opener = urllib.request.build_opener(_NoRedirect)
 
 
 def _download(url) -> "bytes | None":
-    """A Rivendell logo (a client's, a project's own, or a gallery image) off its signed URL. Over https, or plain http to a local
-    Rivendell; never following a redirect (a signed object-store URL doesn't,
-    and one could send the bridge anywhere); only an image, under the cap.
-    Never raises: one client's bad URL must not sink an import or a refresh."""
+    """A picture off its URL: over https only, never following a redirect (one
+    could send the bridge anywhere), and only an image under the cap. Never
+    raises: one owner's bad URL must not sink a PICK LOGOS pass."""
     try:
-        u = urllib.parse.urlparse(url)
-        if u.scheme != "https" and not (u.scheme == "http" and u.hostname in ("localhost", "127.0.0.1", "::1")):
+        if urllib.parse.urlparse(url).scheme != "https":
             return None
         req = urllib.request.Request(url, headers={"User-Agent": "mystical-bridge"})
         with _opener.open(req, timeout=15) as r:
-            data = r.read(RV_LOGO_MAX + 1)
-        return data if len(data) <= RV_LOGO_MAX and sniff(data) else None
+            data = r.read(RAW_MAX + 1)
+        return data if len(data) <= RAW_MAX and sniff(data) else None
     except Exception:  # noqa: BLE001 — urllib raises a zoo (InvalidURL, IncompleteRead, …)
         return None
-
-
-def _known(marks: dict, logos: dict) -> dict:
-    """logo id (a client's logo document, or a project's own upload) -> the
-    stored logo already wearing it: one client's eight repos share one
-    download, and a refresh downloads only what changed."""
-    return {(m.get("rv") or {}).get("logo_id"): m["logo"] for m in marks.values()
-            if m.get("source") == "rivendell" and (m.get("rv") or {}).get("logo_id")
-            and m.get("logo") in logos}
-
-
-def _fetch_logos(matches: dict, known: dict) -> dict:
-    """logo id -> bytes for every logo the store doesn't hold yet: per match, the
-    best one it lends (_lent) that can be had, trying the next when a download
-    fails. This is the network part of an import, done before the lock is taken."""
-    out: dict = {}
-    failed: set = set()             # once per pass: a project's eight repos share one dead or oversized logo
-    for p in matches.values():
-        for lid, url in _lent(p):
-            if lid in known or lid in out:
-                break
-            if lid in failed:
-                continue
-            data = _download(url)
-            if data is not None:
-                out[lid] = data
-                break
-            failed.add(lid)
-    return out
-
-
-def _follow(rel: str, p: dict, d: dict, known: dict, fetched: dict) -> dict:
-    """The mark a matched repo wears while it follows Rivendell. A logo that
-    couldn't be fetched leaves logo_id unset, so the next refresh tries again."""
-    c = p.get("client") or {}
-    cur = project_config.mark(rel) or {}
-    lid = name = None
-    for cand, _url in _lent(p):              # the best logo the store holds or just fetched
-        if known.get(cand) in (d.get("logos") or {}):
-            lid, name = cand, known[cand]
-        elif cand in fetched:
-            lid, name = cand, _put_logo(d, fetched[cand], RV_LOGO_MAX)
-            known[cand] = name
-        if name:
-            break
-    if not name and _lent(p) and cur.get("source") == "rivendell" and cur.get("logo") in (d.get("logos") or {}):
-        # Rivendell offers a logo this pass couldn't fetch: keep wearing the last
-        # one (and its background) rather than flash to letters; the next pass
-        # tries the new one again, as its id isn't known yet.
-        return cur
-    own = bool(name) and lid == p.get("logoId")
-    mark: dict = {"kind": "logo" if name else "letters", "source": "rivendell",
-                  "rv": {"instance": p.get("instance_id"), "client": c.get("id"),
-                         "name": p.get("name") if own else c.get("name"), "logo_id": lid}}
-    if own:
-        mark["rv"]["own"] = True
-    if name:
-        mark["logo"] = name
-        if cur.get("plate"):             # a background you chose rides over every refresh
-            mark["plate"] = cur["plate"]
-    if _hex(c.get("brandColor")):
-        mark["color"] = c["brandColor"]
-    if "styled" in cur and cur.get("source") == "rivendell":   # the stylist's colour rides over a refresh too
-        mark["styled"] = cur["styled"]
-        if cur.get("color"):
-            mark["color"] = cur["color"]
-    if mark != cur:
-        project_config.set_mark(rel, mark)
-    return mark
-
-
-def _yours(m) -> bool:
-    """A mark Rivendell's import and refresh leave alone: one you set, or the
-    stylist's where it was chosen over Rivendell's. A stylist's pick made with no
-    Rivendell mark in sight (a new clone) gives way to Rivendell, like a pick."""
-    if isinstance(m, dict) and m.get("source") == "style":
-        return bool(m.get("weighed_rv"))
-    return isinstance(m, dict) and m.get("source") not in ("rivendell", "pick")
-
-
-def import_all(only: "str | None" = None) -> dict:
-    """Every match follows Rivendell from now on, except marks you set. With
-    `only`, just that one project, even if you set its mark (the editor's
-    FOLLOW RIVENDELL)."""
-    seen = _look(force=True)
-    matches = {r: p for r, p in seen["matches"].items() if only is None or r == only}
-    marks = project_config.marks()
-    known = _known(marks, _load().get("logos") or {})
-    fetched = _fetch_logos(matches, known)
-    with _lock:
-        d = _load()
-        rv = d.setdefault("rivendell", {})
-        undo = {} if only is None else dict(rv.get("undo") or {})
-        kept = []
-        marks = project_config.marks()   # again: an edit may have landed during the downloads
-        for rel, p in sorted(matches.items()):
-            cur = marks.get(rel)
-            if only is None and _yours(cur):
-                kept.append(rel)
-                continue
-            undo.setdefault(rel, cur)
-            _follow(rel, p, d, known, fetched)
-        if only is None:
-            rv.update(sync=True, dismissed=[])
-        rv.update(undo=undo, synced_at=time.time())
-        _gc(d)
-        _save(d)
-    return {"following": len(matches) - len(kept), "kept": kept,
-            "clients": len({(p.get("client") or {}).get("id") for p in matches.values()})}
-
-
-def refresh() -> dict:
-    """While following: re-read Rivendell, re-dress every repo that follows it,
-    and take new matches. A mark you set is never touched. Quiet by design:
-    no notice for a refreshed logo."""
-    with _lock:
-        if not (_load().get("rivendell") or {}).get("sync"):
-            return {"following": 0, "skipped": "off"}
-    seen = _look(force=True)
-    marks = project_config.marks()
-    todo = {r: p for r, p in seen["matches"].items() if not _yours(marks.get(r))}
-    known = _known(marks, _load().get("logos") or {})
-    fetched = _fetch_logos(todo, known)
-    with _lock:
-        d = _load()
-        rv = d.setdefault("rivendell", {})
-        if not rv.get("sync"):           # switched off, or undone, while it downloaded
-            return {"following": 0, "skipped": "off"}
-        undo = rv.get("undo") if isinstance(rv.get("undo"), dict) else {}
-        marks = project_config.marks()   # again: an edit may have landed during the downloads
-        for rel, p in todo.items():
-            if _yours(marks.get(rel)):
-                continue
-            undo.setdefault(rel, marks.get(rel))
-            _follow(rel, p, d, known, fetched)
-        rv.update(undo=undo, synced_at=time.time())
-        _gc(d)
-        _save(d)
-    return {"following": len(todo)}
-
-
-def link(rel: str, instance: str, project_id: str) -> dict:
-    """LINK in the editor, for a repo no Rivendell project names: link it to one
-    in Rivendell itself (rivendell.link_repo), so the link reaches every bridge
-    on that Rivendell and their offer, then follow that client here at once.
-    Only a project the last look listed: the id lands in a Rivendell path."""
-    from bridge import rivendell
-    if not any(p.get("id") == project_id and p.get("instance_id") == instance for p in _look()["projects"]):
-        raise ValueError("that isn't one of Rivendell's projects")
-    slugs = _local_slugs().get(rel)
-    if not slugs:
-        raise ValueError("this repo has no remote to link")
-    linked = rivendell.link_repo(instance, project_id, slugs)
-    return {**import_all(only=rel), "linked": linked}
-
-
-def gallery(rel: str) -> dict:
-    """From Rivendell: the images among the documents of the client whose project
-    names this repo, matched or not, for the editor to take like a dropped file.
-    Empty without a Rivendell, for a repo no client project names (an internal
-    one has no client documents), and on any failure: the strip just hides."""
-    from bridge import rivendell
-    try:
-        p = _look()["named_by"].get(rel) or {}
-        c = p.get("client") or {}
-        if c.get("id"):
-            return {"client": c.get("name"), "images": rivendell.client_images(p.get("instance_id"), c["id"])}
-    except Exception:  # noqa: BLE001 — Rivendell down or refusing only hides the strip
-        pass
-    return {"client": None, "images": []}
-
-
-def gallery_image(rel: str, document_id: str) -> "tuple[bytes, str] | None":
-    """One gallery image's bytes and type, through the bridge: the storage's
-    signed URL is another origin, which the editor can't read into a file. Only
-    an image the strip lists for that repo's own client, never any other id."""
-    from bridge import rivendell
-    try:
-        p = _look()["named_by"].get(rel) or {}
-        c = p.get("client") or {}
-        inst = p.get("instance_id")
-        if not c.get("id") or not any(i["id"] == document_id for i in rivendell.client_images(inst, c["id"])):
-            return None
-        data = _download(rivendell.client_image_url(inst, c["id"], document_id))
-    except Exception:  # noqa: BLE001 — best effort, like every Rivendell read here
-        return None
-    ext = sniff(data) if data else None
-    return (data, CTYPES[ext]) if ext else None
-
-
-def undo() -> dict:
-    """Put back every mark the last import replaced, and stop following. Those
-    repos count as seen, so the offer doesn't come straight back."""
-    with _lock:
-        d = _load()
-        rv = d.setdefault("rivendell", {})
-        snap = rv.get("undo")
-        if not isinstance(snap, dict):
-            return {"undone": 0}
-        undone = 0
-        for rel, m in snap.items():
-            if _yours(project_config.mark(rel)):
-                continue                  # you changed it since: yours stands
-            project_config.set_mark(rel, m if isinstance(m, dict) else None)
-            undone += 1
-        rv.update(sync=False, undo=None, dismissed=sorted(snap))
-        _gc(d)
-        _save(d)
-    return {"undone": undone}
-
-
-def _offer_rels(seen: dict, marks: dict) -> list:
-    """Matched repos still wearing plain letters, or a pick: what IMPORT would change."""
-    return sorted(r for r in seen["matches"] if r not in marks or marks[r].get("source") == "pick"
-                  or (marks[r].get("source") == "style" and not marks[r].get("weighed_rv")))
-
-
-def dismiss() -> dict:
-    """NOT NOW: these repos are seen; the offer waits for one it hasn't shown."""
-    rels = _offer_rels(_look(), project_config.marks())
-    with _lock:
-        d = _load()
-        rv = d.setdefault("rivendell", {})
-        rv["dismissed"] = sorted(set(rv.get("dismissed") or []) | set(rels))
-        _save(d)
-    return {"dismissed": len(rels)}
-
-
-def set_sync(on: bool) -> dict:
-    """The Settings switch. Off freezes every mark as it is; on catches up now."""
-    with _lock:
-        d = _load()
-        d.setdefault("rivendell", {})["sync"] = bool(on)
-        _save(d)
-    return refresh() if on else {"following": 0}
-
-
-def state(force: bool = False) -> dict:
-    """What the dashboard shows: the offer (only while not following, and only
-    for a repo it hasn't shown), the follow switch, and per repo which client
-    matched, for the editor's FOLLOW RIVENDELL."""
-    seen = _look(force)
-    marks = project_config.marks()
-    rv = _load().get("rivendell") or {}
-    sync = bool(rv.get("sync"))
-    offer_rels = _offer_rels(seen, marks)
-    unseen = set(offer_rels) - set(rv.get("dismissed") or [])
-    clients: dict = {}
-    for rel in offer_rels:
-        p = seen["matches"][rel]
-        c = p.get("client") or {}
-        lent = _lent(p)
-        own = _own(p)
-        e = clients.setdefault(p.get("id") if own else c.get("id"),
-                               {"name": (p.get("name") if own else c.get("name")) or "?", "repos": 0,
-                                "logo": lent[0][1] if lent else None, "color": _hex(c.get("brandColor"))})
-        e["repos"] += 1
-    ranked = sorted(clients.values(), key=lambda e: (-e["repos"], e["name"].lower()))
-    # What LINK offers: the projects whose client has a mark to lend.
-    lenders = []
-    for p in seen["projects"]:
-        c = p.get("client") or {}
-        if _lent(p) or _hex(c.get("brandColor")):
-            lenders.append({"instance": p.get("instance_id"), "id": p.get("id"), "name": p.get("name") or "?",
-                            "client": c.get("name"), "logo": bool(_lent(p)),
-                            "color": _hex(c.get("brandColor"))})
-    return {
-        "available": seen["answered"],
-        "asked": seen["asked"],
-        "sync": sync,
-        "synced_at": rv.get("synced_at") or None,
-        "following": sum(1 for m in marks.values() if m.get("source") == "rivendell"),
-        "unmatched": max(0, seen["listed"] - len(seen["matches"])),
-        "offer": ({"count": len(offer_rels), "clients": [e["name"] for e in ranked],
-                   "logos": [{"url": e["logo"], "color": e["color"]} for e in ranked][:6]}
-                  if offer_rels and unseen and not sync else None),
-        "can_undo": isinstance(rv.get("undo"), dict) and bool(rv.get("undo")),
-        # client: who lends the mark, as the editor names it (the project, for its own logo).
-        "matches": {r: {"client": p.get("name") if _own(p)
-                                  else (p.get("client") or {}).get("name"),
-                        "logo": bool(_lent(p)),
-                        "color": _hex((p.get("client") or {}).get("brandColor")),
-                        "own": _own(p)}
-                    for r, p in seen["matches"].items()},
-        "projects": sorted(lenders, key=lambda e: ((e["client"] or e["name"]).lower(), e["name"].lower())),
-        "unlinked": seen["unlinked"],
-        "errors": seen["errors"],
-    }
-
-
-_timer: "threading.Timer | None" = None
-
-
-def _tick() -> None:
-    global _timer
-    try:
-        refresh()
-    except Exception as e:  # noqa: BLE001 — a background follow must never crash the bridge
-        print(f"projectmarks: refresh failed: {e}")
-    _timer = threading.Timer(REFRESH_S, _tick)
-    _timer.daemon = True
-    _timer.start()
-
-
-def boot() -> None:
-    """Follow Rivendell in the background: once the workers have had time to
-    dial (90s), then every 6h. A no-op while following is off."""
-    global _timer
-    _timer = threading.Timer(90, _tick)
-    _timer.daemon = True
-    _timer.start()

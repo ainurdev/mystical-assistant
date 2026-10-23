@@ -36,6 +36,7 @@ const FLAG_VIEW: Record<PromptFlag, { c: string; l: string; t: string }> = {
 interface Props {
   sessions: SessionBrief[]; // full list — RECENT and expanded projects need more than the capped group slices
   groups: ProjectGroup[];
+  hidden: Record<string, boolean>; // HIDE's picks, folders and groups: their sessions list in PLUGINS only
   status: Map<string, SessionStatus>;
   done: Set<string>; // finished a turn, not opened since
   flags: Map<string, PromptFlag>; // prompts of yours that haven't run yet
@@ -418,7 +419,7 @@ type LaneItem =
 
 export function SessionsPanel(props: Props) {
   const {
-    sessions, groups, status, done, flags, pins, selectedSessionId, activeProject, booting,
+    sessions, groups, hidden, status, done, flags, pins, selectedSessionId, activeProject, booting,
     onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject,
   } = props;
 
@@ -559,9 +560,13 @@ export function SessionsPanel(props: Props) {
   // read this map so they can never disagree.
   const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
   const laneOf = (s: SessionBrief) => views.get(s.id)?.lane ?? "idle";
-  // A teammate's device run or share is never yours to attend to: it lives in
-  // PLUGINS only, out of every other tab and the ATTENTION count.
-  const mine = sorted.filter((s) => !readOnly(s.origin));
+  // What HIDE leaves in the sidebar: a session whose folder and group (Rivendell
+  // jobs, Shared) are both shown.
+  const listed = (s: SessionBrief) => !hidden[s.project] && !hidden[jobGroup(s)];
+  // A teammate's device run or share is never yours to attend to, and what you
+  // hid is out of your way: both live in PLUGINS only, out of every other tab
+  // and the ATTENTION count.
+  const mine = sorted.filter((s) => !readOnly(s.origin) && listed(s));
 
   // ATTENTION: the four lanes. Idle is the long tail, so it folds to four rows
   // and nothing else is capped. Searching drops the fold — a search is already
@@ -641,7 +646,7 @@ export function SessionsPanel(props: Props) {
   const tree = mode !== "projects" ? [] : ps.flatMap((g) => {
     if (drilled && !open.has(g.rel)) return [];
     // Shared lists what teammates sent, which `mine` keeps out of every other group.
-    const f = (g.rel === SHARED_REL ? sorted : mine).filter((s) => jobGroup(s) === g.rel);
+    const f = (g.rel === SHARED_REL ? sorted.filter(listed) : mine).filter((s) => jobGroup(s) === g.rel);
     if (sq && f.length === 0) return [];
     // Nothing to show is nothing to expand — an empty project is collapsed,
     // whatever the header was last clicked to.

@@ -709,22 +709,6 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/rivendell/team/earlier":
             got = team.earlier((qs.get("id", [""])[0] or "").strip())
             return self._json(got) if got else self._json({"error": "not found"}, 404)
-        if path in ("/local/rivendell/gallery", "/local/rivendell/gallery/image"):
-            # The mark editor's From Rivendell strip, and one of its images
-            # through the bridge so the editor can take it like a dropped file.
-            abs_p = _abs_project(qs.get("project", [None])[0])
-            if abs_p is None:
-                return self._json({"error": "invalid project"}, 400)
-            if path.endswith("/gallery"):
-                return self._json(projectmarks.gallery(browser.rel(abs_p)))
-            got = projectmarks.gallery_image(browser.rel(abs_p), (qs.get("document", [""])[0] or "").strip())
-            if got is None:
-                return self._json({"error": "no such image"}, 404)
-            return self._send_image(*got, "no-store")
-        if path == "/local/rivendell/marks":
-            # Client logos and colours Rivendell could lend the repos here, and
-            # whether they follow it (bridge/projectmarks.py).
-            return self._json(projectmarks.state(force=qs.get("force", ["0"])[0] == "1"))
         if path == "/local/rivendell/queue":
             # One flat, oldest-first stream across every instance — the rows
             # held for a decision and the runs in flight, each with its
@@ -1582,6 +1566,11 @@ class Handler(BaseHTTPRequestHandler):
             ok, output = github.create_issue(abs_p, title, body_text)
             return self._json({"ok": ok, "output": output})
         if path == "/local/project/settings":
+            # The sidebar's virtual groups (lib/jobs JOBS_REL, lib/team SHARED_REL)
+            # have no folder: HIDE is the one setting they take.
+            if body.get("project") in ("rivendell:jobs", "team:shared") and "hidden" in body:
+                return self._json({"ok": True, "hidden": project_config.set_hidden(
+                    body["project"], bool(body.get("hidden")))})
             abs_p = (_abs_within((body.get("cwd") or "").strip())
                      or _abs_project(body.get("cwd_rel") or body.get("project")))
             if abs_p is None:
@@ -1689,34 +1678,6 @@ class Handler(BaseHTTPRequestHandler):
                     rel = browser.rel(abs_p)
                 return self._json(projectmarks.undo_style(rel))
             return self._json({"error": "action must be start, stop or undo"}, 400)
-        if path == "/local/rivendell/marks":
-            act = body.get("action")
-            if act == "import":
-                return self._json(projectmarks.import_all())
-            if act == "follow":
-                abs_p = _abs_project(body.get("project"))
-                if abs_p is None:
-                    return self._json({"error": "invalid project"}, 400)
-                return self._json(projectmarks.import_all(only=browser.rel(abs_p)))
-            if act == "link":
-                abs_p = _abs_project(body.get("project"))
-                if abs_p is None:
-                    return self._json({"error": "invalid project"}, 400)
-                try:
-                    return self._json(projectmarks.link(browser.rel(abs_p), str(body.get("instance") or ""),
-                                                        str(body.get("rv_project") or "")))
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
-                except rivendell.TasksError as e:
-                    return self._json({"error": str(e), "code": e.code},
-                                      502 if e.code == "unreachable" else 400)
-            if act == "dismiss":
-                return self._json(projectmarks.dismiss())
-            if act == "undo":
-                return self._json(projectmarks.undo())
-            if act == "sync":
-                return self._json(projectmarks.set_sync(bool(body.get("on"))))
-            return self._json({"error": "action must be import, follow, link, dismiss, undo or sync"}, 400)
         if path == "/local/rivendell/queue":
             # Accept/reject one pending request. A stale click (already
             # accepted/rejected, or the worker gone) simply returns ok:false.

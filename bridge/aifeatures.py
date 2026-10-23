@@ -161,7 +161,7 @@ FEATURES = (
      "cost": "1 sonnet call per press",
      "tokens": "~12k tokens",
      "about": "SETTINGS ▸ Projects' Style with AI shows one model a contact sheet of every "
-              "project's logos and favicons, Rivendell's logo for it and its frontend's, and "
+              "project's logos and favicons and its frontend's, and "
               "each project wears what it picks, with a background and a colour; a mark you "
               "set stays yours, and Undo takes a run back. No tools, hooks or session ride "
               "along, so a press costs a cent or two. It only runs when you press it, so "

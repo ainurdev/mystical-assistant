@@ -327,7 +327,7 @@ export interface ProjectMark {
   repo?: string;              // a picture in the repo itself, by its path: logo is then that file as it is now
   auto?: boolean;             // the repo's own icon, worn because nothing else is set; never stored
   plate?: "light" | "dark" | "none"; // a pinned background; absent = AUTO, plated only where it would vanish
-  source?: "rivendell" | "pick" | "style"; // absent = yours: set here, never changes on its own
+  source?: "rivendell" | "pick" | "style"; // absent = yours: set here, never changes on its own; rivendell = the retired sync left it
   styled?: string;            // STYLE WITH AI chose it, and why (bridge/logostyle.py)
   pick?: { how: "frontend" | "brand" | "org"; from?: string }; // what PICK LOGOS found: its frontend's, a brand file, its org's picture
   // own: the project's own logo, not its client's; name is then the project's.
@@ -337,27 +337,6 @@ export interface ProjectMark {
 /** Where a stored logo is served. Its name is the bytes' hash, so it caches forever. */
 export const projectLogoUrl = (name: string) => `/local/project-mark/logo/${encodeURIComponent(name)}`;
 
-/** What Rivendell could lend the repos here, and whether they follow it. */
-export interface RivendellMarks {
-  available: boolean;          // a Rivendell answered /plugin/projects
-  asked: boolean;              // a Rivendell is connected at all
-  sync: boolean;               // FOLLOW is on
-  synced_at: number | null;
-  following: number;           // repos whose mark follows Rivendell
-  unmatched: number;           // listed repos with no client mark in Rivendell
-  can_undo: boolean;
-  offer: { count: number; clients: string[]; logos: { url: string | null; color: string | null }[] } | null;
-  // client: who lends the mark (the project itself when own).
-  matches: Record<string, { client: string | null; logo: boolean; color: string | null; own?: boolean }>;
-  // The mark editor's LINK: the projects whose client lends a mark, and the
-  // repos no Rivendell project names. Absent on a bridge older than LINK.
-  projects?: { instance: string; id: string; name: string; client: string | null; logo: boolean; color: string | null }[];
-  unlinked?: string[];
-  errors: { instance_id: string; instance: string; error: string; detail: string }[];
-}
-
-/** The mark editor's From Rivendell strip: the images among the documents of
- *  the client whose project names a repo (bridge/projectmarks.gallery). */
 /** PICK LOGOS (bridge/projectmarks.pick_all): what each project still on letters got, and which found nothing. */
 export interface PickResult {
   picked: { rel: string; how: "frontend" | "brand" | "org"; from?: string }[];
@@ -394,11 +373,6 @@ export interface StyleLive { id: string; total: number; decided: number; changed
 /** The pictures a repo tracks that are named for an icon, a logo or a brand, best first. */
 export interface RepoImages {
   images: { path: string; logo: string }[];
-}
-
-export interface RivendellGallery {
-  client: string | null;
-  images: { id: string; name: string; url: string }[];
 }
 
 export interface GitFile {
@@ -2124,17 +2098,6 @@ export const api = {
     req<{ undone: number }>("/local/project-mark/style", { method: "POST", body: { action: "undo", ...(project ? { project } : {}) } }),
   repoImages: (project: string) =>
     req<RepoImages>(`/local/project-mark/repo?project=${encodeURIComponent(project)}`),
-  rivendellGallery: (project: string) =>
-    req<RivendellGallery>(`/local/rivendell/gallery?project=${encodeURIComponent(project)}`),
-  // One gallery image through the bridge, same-origin, so it can become a File.
-  rivendellGalleryImageUrl: (project: string, document: string) =>
-    `/local/rivendell/gallery/image?project=${encodeURIComponent(project)}&document=${encodeURIComponent(document)}`,
-  rivendellMarks: (force = false) =>
-    req<RivendellMarks>(`/local/rivendell/marks${force ? "?force=1" : ""}`),
-  rivendellMarksAction: (action: "import" | "follow" | "link" | "dismiss" | "undo" | "sync",
-                         extra: { project?: string; on?: boolean; instance?: string; rv_project?: string } = {}) =>
-    req<{ following?: number; kept?: string[]; clients?: number; undone?: number; dismissed?: number; linked?: string }>(
-      "/local/rivendell/marks", { method: "POST", body: { action, ...extra } }),
   designPrompt: (ctx: RunCtx, kind: "link" | "pull" | "push", name?: string) =>
     req<{ prompt?: string; error?: string }>(
       `/local/design/prompt?kind=${kind}&${ctxQuery(ctx)}${name ? `&name=${encodeURIComponent(name)}` : ""}`),

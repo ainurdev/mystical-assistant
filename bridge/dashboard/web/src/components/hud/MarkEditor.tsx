@@ -2,11 +2,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Image as ImageIcon, Search, Shapes, Type, X } from "lucide-react";
 import { DynamicIcon, iconNames } from "lucide-react/dynamic";
-import { api, projectLogoUrl, type ProjectMark, type RepoImages, type RivendellGallery, type RivendellMarks } from "../../api";
+import { api, projectLogoUrl, type ProjectMark, type RepoImages } from "../../api";
 import { inkCss, liftInk } from "../../lib/ink";
 import { readLogo, shrinkLogo, useLogoInfo, type LogoInfo } from "../../lib/logoinfo";
-import { hashTint, projectInitials, projectMark, projectName, putProjectMark, setProjectMarks } from "../../lib/surfaces";
-import { synced } from "./RivendellMarks";
+import { hashTint, projectInitials, projectMark, projectName, putProjectMark } from "../../lib/surfaces";
 
 /* The mark editor: what a project's tile shows (its initials, an icon, or a
    logo) and the colour it wears. Opened from a tile in SETTINGS ▸ AI MANAGEMENT
@@ -15,10 +14,7 @@ import { synced } from "./RivendellMarks";
 
    A repo with no mark wears its own icon (bridge/projectmarks.repo_icon), and
    From this repo offers every picture it tracks, kept by path so the mark
-   follows the file. A mark that follows Rivendell says so. Any change here
-   makes it yours, and a project Rivendell has a client logo for offers USE RIVENDELL'S. A repo no
-   Rivendell project names offers LINK, which links it to one in Rivendell
-   itself, so every Mystical on that Rivendell gets the logo. A dropped logo
+   follows the file. Any change here makes the mark yours. A dropped logo
    travels with SAVE in one request (bridge/projectmarks.set_mark), so a
    cancelled edit never leaves a file behind. It ships in the main bundle,
    not as a lazy chunk: a chunk that a rebuild had replaced under an open page
@@ -56,7 +52,6 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   onClose: () => void;
 }) {
   const cur = projectMark(project);
-  const following = cur?.source === "rivendell";
   const [kind, setKind] = useState<Kind>(cur?.kind ?? "letters");
   const [icon, setIcon] = useState<string | null>(cur?.icon ?? null);
   const [color, setColor] = useState<string | null>(cur?.color ?? null);
@@ -64,7 +59,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const [hex, setHex] = useState(cur?.color && HEX.test(cur.color) ? cur.color : "");
   const [logo, setLogo] = useState<Logo | null>(cur?.logo
     ? { name: cur.logo, url: projectLogoUrl(cur.logo), repo: cur.repo,
-        label: cur.repo ? `${cur.repo} · from the repo` : following ? `${poss(cur.rv?.name ?? "The client")} logo`
+        label: cur.repo ? `${cur.repo} · from the repo` : cur.rv ? `${poss(cur.rv.name ?? "The client")} logo`
           : cur.pick?.how === "frontend" ? `${poss(projectName(cur.pick.from))} logo, its frontend`
           : cur.pick?.how === "org" ? `${poss(cur.pick.from ?? "Its organization")} GitHub picture` : "Your logo" }
     : null);
@@ -72,27 +67,15 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   const stored = useLogoInfo(logo?.name, logo?.url ?? "");
   const info = logo?.data ? dropped : stored;
   const [query, setQuery] = useState("");
-  const [riv, setRiv] = useState<RivendellMarks | null>(null);
-  const [gal, setGal] = useState<RivendellGallery | null>(null);
   const [mine, setMine] = useState<RepoImages["images"]>([]);   // From this repo
-  const [picked, setPicked] = useState<string | null>(null);   // the gallery image now in the drop zone
-  const [pick, setPick] = useState(-1);          // LINK's project, an index into riv.projects
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const light = document.documentElement.hasAttribute("data-light");
   const aurora = document.documentElement.dataset.fam === "aurora";   // AURORA draws logos as phosphor, never plated
 
-  // Which client Rivendell has for this repo, for USE RIVENDELL'S and the
-  // follow line. A bridge without the route just leaves both out.
-  useEffect(() => { api.rivendellMarks().then(setRiv).catch(() => setRiv(null)); }, []);
-  // From Rivendell: the client's images. No plugin, no Rivendell or no client
-  // project all answer empty (or 404), and the strip just isn't there.
-  useEffect(() => { api.rivendellGallery(project).then(setGal).catch(() => setGal(null)); }, [project]);
   // From this repo: the pictures it tracks. A bridge older than the route 404s.
   useEffect(() => { api.repoImages(project).then((r) => setMine(r.images ?? [])).catch(() => setMine([])); }, [project]);
-  const match = riv?.matches?.[project] ?? null;
-  const target = riv?.projects?.[pick];
 
   // Esc, a click outside, or scrolling what's under it closes it. The tile
   // counts as inside, so its own click can toggle it shut. Esc listens in the
@@ -185,10 +168,6 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
   // styled/weighed_rv: STYLE WITH AI's notes on a mark (bridge/logostyle.py), never something you edit.
   const notes = ["styled", "weighed_rv"];
   const unchanged = !dropping && key(next, ["source", "rv", "auto", "pick", ...notes]) === key(shown(cur), ["source", "rv", "auto", "pick", ...notes]);
-  // Only the background changed: the bridge keeps a followed mark following,
-  // but not one wearing the repo's icon, which a background makes yours.
-  const plateOnly = !dropping && !cur?.auto && (plate ?? null) !== (cur?.plate ?? null)
-    && key(next, ["source", "rv", "plate", ...notes]) === key(shown(cur), ["source", "rv", "plate", ...notes]);
 
   async function save(mark: ProjectMark | null, logoData?: string) {
     setBusy(true);
@@ -205,59 +184,16 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
     }
   }
 
-  async function follow() {
-    setBusy(true);
-    try {
-      await api.rivendellMarksAction("follow", { project });
-      setProjectMarks((await api.projects()).marks);
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // A gallery image goes the way of a dropped file: fetched through the bridge
-  // (the storage is another origin), shrunk if it's a big raster, kept on SAVE.
-  async function fromGallery(g: RivendellGallery["images"][number]) {
-    try {
-      const r = await fetch(api.rivendellGalleryImageUrl(project, g.id));
-      if (!r.ok) throw new Error(String(r.status));
-      const blob = await r.blob();
-      await take(new File([blob], g.name, { type: blob.type }));
-      setPicked(g.id);
-    } catch {
-      setErr("That image couldn't be fetched from Rivendell.");
-    }
-  }
-
   // A picture from the repo is kept by its path, so the mark follows the file.
   function fromRepo(g: RepoImages["images"][number]) {
     const url = projectLogoUrl(g.logo);
     setLogo({ name: g.logo, url, repo: g.path, label: `${g.path} · from the repo` });
-    setPicked(null);
     setKind("logo");
     setErr("");
     // Its colour, as a dropped logo brings, unless you picked one by hand.
     void readLogo(url).then((read) => {
       if (read?.colors[0] && (!color || !PALETTE.includes(color))) { setColor(read.colors[0]); setHex(read.colors[0]); }
     }).catch(() => {});
-  }
-
-  async function link() {
-    if (!target) return;
-    setBusy(true);
-    setErr("");
-    try {
-      await api.rivendellMarksAction("link", { project, instance: target.instance, rv_project: target.id });
-      setProjectMarks((await api.projects()).marks);
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
   }
 
   // What the tile and the name print in: the chosen colour, readable on this
@@ -325,26 +261,16 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
                 {logo ? preview : <span className="mk-ph"><ImageIcon size={20} aria-hidden /></span>}
                 <div>
                   <b>{logo ? logo.label : "Drop a logo here"}</b>
-                  <small>{logo ? <>drop, paste or <u>choose a file</u> to {following ? "use your own instead" : "replace it"}</>
+                  <small>{logo ? <>drop, paste or <u>choose a file</u> to replace it</>
                     : <>or paste one, or <u>choose a file</u> · PNG, SVG, JPG or WEBP up to 512 KB</>}</small>
                 </div>
               </button>
               <input ref={fileRef} type="file" hidden accept="image/png,image/jpeg,image/webp,image/svg+xml"
                 onChange={(e) => { void take(e.target.files?.[0]); e.target.value = ""; }} />
-              {/* One strip for both sources, so the LOGO tab keeps its height: Rivendell's
-                  images first, as they're picked for the client, then whatever the repo tracks. */}
-              {(!!gal?.images.length || !!mine.length) && (
+              {!!mine.length && (
                 <div className="mk-gal">
-                  <div className="mk-lbl">From {[gal?.images.length && "Rivendell", mine.length && "this repo"].filter(Boolean).join(" and ")}
-                    <span>{[gal?.images.length && `${gal.client} · ${gal.images.length} image${gal.images.length === 1 ? "" : "s"}`,
-                      mine.length && `${mine.length} file${mine.length === 1 ? "" : "s"}`]
-                      .filter(Boolean).join(" · ")}</span></div>
+                  <div className="mk-lbl">From this repo<span>{mine.length} file{mine.length === 1 ? "" : "s"}</span></div>
                   <div className="mk-gal-row">
-                    {gal?.images.map((g) => (
-                      <button key={g.id} type="button" title={g.name} data-on={picked === g.id || undefined} disabled={busy}
-                        onClick={() => void fromGallery(g)}><img src={g.url} alt={g.name} /></button>
-                    ))}
-                    {!!gal?.images.length && !!mine.length && <span className="mk-sep" />}
                     {mine.map((g) => (
                       <button key={g.path} type="button" title={g.path} data-on={logo?.repo === g.path || undefined} disabled={busy}
                         onClick={() => fromRepo(g)}><img src={projectLogoUrl(g.logo)} alt={g.path} /></button>
@@ -367,37 +293,10 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
           )}
         </div>
 
-        {following && (
-          <div className="mk-from"><i className="mk-gem" />
-            <span><b>Follows Rivendell</b> · {cur?.rv?.own ? `${poss(cur.rv.name ?? "its")} own logo` : `client ${cur?.rv?.name ?? "?"}`}{riv?.synced_at ? ` · ${synced(riv.synced_at)}` : ""}</span>
-          </div>
-        )}
-        {!following && match && (match.logo || match.color) && (
-          <div className="mk-from"><i className="mk-gem" />
-            <span>Rivendell has <b>{poss(match.client ?? "its client")}</b> {match.logo ? "logo" : "colour"}</span>
-            <button type="button" className="mk-btn mk-ghostbtn" disabled={busy} onClick={() => void follow()}>USE IT</button>
-          </div>
-        )}
-        {!following && riv?.unlinked?.includes(project) && !!riv.projects?.length && (
-          <div className="mk-from"><i className="mk-gem" />
-            <select value={pick} onChange={(e) => setPick(Number(e.target.value))} aria-label="Rivendell project"
-              title="Links this repo to that project in Rivendell itself, so every Mystical on that Rivendell gets its client's logo">
-              <option value={-1}>Link to a Rivendell project…</option>
-              {riv.projects.map((p, i) => <option key={`${p.instance}:${p.id}`} value={i}>{p.client ? `${p.client} · ${p.name}` : p.name}</option>)}
-            </select>
-            <button type="button" className="mk-btn mk-ghostbtn" disabled={busy || !target} onClick={() => void link()}>LINK</button>
-          </div>
-        )}
-
-        <div className="mk-lbl">Colour<span>{following && color === cur?.color ? `${poss(cur?.rv?.name ?? "the client")} brand colour`
-          : swatches.length ? "read from the logo" : "yours to pick"}</span></div>
+        <div className="mk-lbl">Colour<span>{swatches.length ? "read from the logo" : "yours to pick"}</span></div>
         <div className="mk-sws">
           <button type="button" className="mk-sw mk-auto" title="the default for this name" data-on={!color || undefined}
             style={{ ["--c" as string]: hashTint(project) }} onClick={() => { setColor(null); setHex(""); }} />
-          {following && cur?.color && !swatches.includes(cur.color) && (
-            <button type="button" className="mk-sw mk-big" data-on={color === cur.color || undefined} style={{ background: cur.color }}
-              title={`${poss(cur.rv?.name ?? "the client")} brand colour`} onClick={() => { setColor(cur.color!); setHex(cur.color!); }} />
-          )}
           {swatches.map((c) => (
             <button key={c} type="button" className="mk-sw mk-big" data-on={color === c || undefined} style={{ background: c }}
               title={c} onClick={() => { setColor(c); setHex(c); }} />
@@ -430,8 +329,7 @@ export default function MarkEditor({ project, name, anchor, onClose }: {
           onClick={() => void save(next, dropping ? logo?.data : undefined)}>SAVE</button>
         <button type="button" className="mk-btn mk-ghostbtn" onClick={onClose}>CANCEL</button>
         <span style={{ flex: 1 }} />
-        {following ? (!plateOnly && <span className="mk-note">a change here stops it following</span>)
-          : shown(cur) && <button type="button" className="mk-btn mk-ghostbtn" disabled={busy} onClick={() => void save(null)}>BACK TO LETTERS</button>}
+        {shown(cur) && <button type="button" className="mk-btn mk-ghostbtn" disabled={busy} onClick={() => void save(null)}>BACK TO LETTERS</button>}
       </div>
     </div>,
     document.body,

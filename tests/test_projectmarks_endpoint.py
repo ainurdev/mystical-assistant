@@ -1,6 +1,6 @@
 """The dashboard routes for project marks: the listing carries them, the
 project-settings POST saves one, a logo is served safe to open on its own, and
-the Rivendell offer's actions reach bridge/projectmarks.py.
+PICK LOGOS and the stylist's actions reach bridge/projectmarks.py.
 
 Socket-free via Handler.__new__ (the test_rivendell_tasks_endpoint.py pattern).
 Run: python -m pytest tests/test_projectmarks_endpoint.py -v"""
@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlparse
 
 import pytest
 
-from bridge import config, project_config, projectmarks, rivendell
+from bridge import config, project_config, projectmarks
 from bridge.dashboard import server as dash
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 24
@@ -66,7 +66,7 @@ def test_a_saved_mark_comes_back_in_the_projects_listing(tmp_path):
     listing = dget("/local/projects")["obj"]
     assert listing["marks"][rel]["icon"] == "receipt"
     r = dpost("/local/project/settings", {"project": rel, "mark": None})       # BACK TO LETTERS
-    # kept as your choice, so following Rivendell can't dress it again
+    # kept as your choice, so the repo's icon or PICK LOGOS can't dress it again
     assert r["obj"]["mark"] == {"kind": "letters"} and dget("/local/projects")["obj"]["marks"][rel] == {"kind": "letters"}
 
 
@@ -88,54 +88,6 @@ def test_a_logo_is_served_immutable_and_never_as_a_page(tmp_path):
     assert "sandbox" in h["Content-Security-Policy"] and "immutable" in h["Cache-Control"]
     assert dget("/local/project-mark/logo/" + "0" * 64 + ".png")["code"] == 404
     assert dget("/local/project-mark/logo/..%2Fproject_config.json")["code"] == 404
-
-
-def test_the_rivendell_marks_routes_reach_projectmarks(tmp_path, monkeypatch):
-    rel = _repo(tmp_path)
-    calls = []
-    monkeypatch.setattr(projectmarks, "state", lambda force=False: calls.append(("state", force)) or {"ok": 1})
-    monkeypatch.setattr(projectmarks, "import_all", lambda only=None: calls.append(("import", only)) or {})
-    monkeypatch.setattr(projectmarks, "dismiss", lambda: calls.append(("dismiss",)) or {})
-    monkeypatch.setattr(projectmarks, "undo", lambda: calls.append(("undo",)) or {})
-    monkeypatch.setattr(projectmarks, "set_sync", lambda on: calls.append(("sync", on)) or {})
-    monkeypatch.setattr(projectmarks, "link", lambda r, inst, pid: calls.append(("link", r, inst, pid)) or {})
-    assert dget("/local/rivendell/marks?force=1")["obj"] == {"ok": 1}
-    for body in ({"action": "import"}, {"action": "follow", "project": rel}, {"action": "dismiss"},
-                 {"action": "undo"}, {"action": "sync", "on": False},
-                 {"action": "link", "project": rel, "instance": "prod", "rv_project": "p1"}):
-        assert dpost("/local/rivendell/marks", body)["code"] == 200
-    assert calls == [("state", True), ("import", None), ("import", rel), ("dismiss",), ("undo",),
-                     ("sync", False), ("link", rel, "prod", "p1")]
-    assert dpost("/local/rivendell/marks", {"action": "follow", "project": "../../etc"})["code"] == 400
-    assert dpost("/local/rivendell/marks", {"action": "link", "project": "../../etc"})["code"] == 400
-    assert dpost("/local/rivendell/marks", {"action": "explode"})["code"] == 400
-
-
-def test_link_says_what_went_wrong(tmp_path, monkeypatch):
-    rel = _repo(tmp_path)
-    for err, code in ((ValueError("that isn't one of Rivendell's projects"), 400),
-                      (rivendell.TasksError("refused", "Rivendell hasn't synced acme/x from GitHub yet"), 400),
-                      (rivendell.TasksError("unreachable", "unreachable: timed out"), 502)):
-        def boom(r, inst, pid, err=err):
-            raise err
-        monkeypatch.setattr(projectmarks, "link", boom)
-        r = dpost("/local/rivendell/marks", {"action": "link", "project": rel, "instance": "prod", "rv_project": "p1"})
-        assert (r["code"], r["obj"]["error"]) == (code, str(err))
-
-
-def test_the_gallery_routes_reach_projectmarks_and_send_an_image_safely(tmp_path, monkeypatch):
-    rel = _repo(tmp_path)
-    monkeypatch.setattr(projectmarks, "gallery", lambda r: {"client": "C", "images": [{"id": "d1"}]})
-    assert dget(f"/local/rivendell/gallery?project={rel}")["obj"] == {"client": "C", "images": [{"id": "d1"}]}
-    assert dget("/local/rivendell/gallery?project=../../etc")["code"] == 400
-    monkeypatch.setattr(projectmarks, "gallery_image", lambda r, doc: (PNG, "image/png") if (r, doc) == (rel, "d1") else None)
-    r = dget(f"/local/rivendell/gallery/image?project={rel}&document=d1")
-    assert r["code"] == 200 and r["wfile"].getvalue() == PNG
-    h = r["headers"]
-    assert h["Content-Type"] == "image/png" and h["X-Content-Type-Options"] == "nosniff"
-    assert "sandbox" in h["Content-Security-Policy"]
-    assert dget(f"/local/rivendell/gallery/image?project={rel}&document=d9")["code"] == 404
-    assert dget("/local/rivendell/gallery/image?project=../../etc&document=d1")["code"] == 400
 
 
 def test_listing_names_the_bridges_own_checkout(tmp_path, monkeypatch):

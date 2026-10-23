@@ -26,12 +26,11 @@ import { useStyle } from "../../lib/stylerun";
 
 // ---- pills ------------------------------------------------------------------
 
-export type NoticeKind = "error" | "info" | "rivendell" | "ask";
+export type NoticeKind = "error" | "info" | "ask";
 /** A button on a pill. Pressing one answers it, so the pill goes. */
 export interface NoticeAction { label: string; primary?: boolean; run: () => void }
 interface PillExtra {
   sub?: string;                                              // a quieter second line
-  logos?: { url: string | null; color: string | null }[];   // a row of logos
   actions?: NoticeAction[];                                  // buttons: the pill waits for one
 }
 interface Pill extends PillExtra { id: number; kind: NoticeKind; text: string; onClick?: () => void }
@@ -49,8 +48,8 @@ export function setNoticeSound(fn: ((kind: NoticeKind) => void) | null) { onNoti
 
 /** Feedback for something you just did: a pill, bottom centre, one at a time.
  *  Never stored — you already know it happened. `onClick` makes it a "Show".
- *  `extra.actions` make it a question (Rivendell's IMPORT & SYNC, an UNDO): it
- *  stays until one is pressed or it's closed, with its `sub` line and `logos`. */
+ *  `extra.actions` make it a question (an UNDO): it stays until one is pressed
+ *  or it's closed, with its `sub` line. */
 export function notify(kind: NoticeKind, text: string, onClick?: () => void, extra?: PillExtra): number {
   const id = nextPill++;
   pills = [...pills.slice(-4), { id, kind, text: text || "unknown error", onClick, ...extra }];
@@ -69,22 +68,13 @@ export function PillHost() {
     return () => window.clearTimeout(t);
   }, [p]);
   if (!p) return null;
-  const rich = !!(p.sub || p.logos?.length || p.actions?.length);
+  const rich = !!(p.sub || p.actions?.length);
   return (
     <div className="ntf-pillhost" role="status" aria-live="polite">
-      <div key={p.id} className={`ntf-pill${p.kind === "error" ? " err" : ""}${p.kind === "rivendell" ? " rv" : ""}${rich ? " rich" : ""}`}>
-        <span className="ntf-pill-k">{p.kind === "error" ? "✕" : p.kind === "rivendell" ? <RivendellIcon size={10} strokeWidth={2} /> : p.kind === "ask" ? "?" : "✓"}</span>
+      <div key={p.id} className={`ntf-pill${p.kind === "error" ? " err" : ""}${rich ? " rich" : ""}`}>
+        <span className="ntf-pill-k">{p.kind === "error" ? "✕" : p.kind === "ask" ? "?" : "✓"}</span>
         <span className="ntf-pill-t">{p.text}
           {p.sub && <small>{p.sub}</small>}
-          {!!p.logos?.length && (
-            <span className="nt-logos">
-              {p.logos.map((l, i) => (
-                <span key={i} style={l.url ? undefined : { background: l.color ?? "var(--acc)" }}>
-                  {l.url && <img src={l.url} alt="" />}
-                </span>
-              ))}
-            </span>
-          )}
           {!!p.actions?.length && (
             <span className="ntf-acts">
               {p.actions.map((a) => (

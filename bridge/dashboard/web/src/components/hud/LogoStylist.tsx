@@ -53,7 +53,7 @@ export function StyleButton({ logins }: { logins: AccountInfo[] }) {
       <button type="button" className="ps-btn prj-pickbtn st-btn" disabled={running} data-run={running || undefined}
         data-on={(open || (!running && !!s.run && s.run.state !== "idle" && !s.dismissed)) || undefined}
         aria-expanded={ask ? open : undefined}
-        title="AI looks at every repo's logos and favicons, Rivendell's logo and a frontend's mark; each project wears the one that reads best here, with its background and colour. A mark you set stays yours."
+        title="AI looks at every repo's logos and favicons and a frontend's mark; each project wears the one that reads best here, with its background and colour. A mark you set stays yours."
         onClick={() => (ask ? setOpen((o) => !o) : run(null))}>
         {running ? <i className="st-spin" aria-hidden /> : <Sparkles size={15} aria-hidden />}
         {running ? "Styling…" : "Style with AI"}
@@ -88,7 +88,7 @@ export function StyleStrip({ reviewing, onReview }: { reviewing: boolean; onRevi
   if (s.drawing) {
     return (
       <div className="ps-riv prj-picked st-strip"><i><Sparkles size={16} aria-hidden /></i>
-        <div><b>Reading every project's pictures</b><small>its logos and favicons, Rivendell's logo, a frontend's mark, each on a dark ground and a light one</small></div>
+        <div><b>Reading every project's pictures</b><small>its logos and favicons and a frontend's mark, each on a dark ground and a light one</small></div>
         <span className="st-bar st-bar-run"><i /></span>
       </div>
     );
@@ -108,7 +108,7 @@ export function StyleStrip({ reviewing, onReview }: { reviewing: boolean; onRevi
     return (
       <div className="ps-riv prj-picked st-strip"><i><Sparkles size={16} aria-hidden /></i>
         <div><b>Styling {plural(r.total ?? 0, "project", "projects")}</b>
-          <small>Read <b>{pictures(r)} pictures</b>: logos and favicons in the repos, Rivendell's logos, a frontend's mark · <b>{items.length} of {r.total}</b> decided</small></div>
+          <small>Read <b>{pictures(r)} pictures</b>: logos and favicons in the repos and a frontend's mark · <b>{items.length} of {r.total}</b> decided</small></div>
         <button type="button" className="ps-btn" onClick={() => void stopStyle()}>Stop</button>
         {items.length ? <span className="st-bar"><i style={{ width: `${Math.max(3, pct)}%` }} /></span> : <span className="st-bar st-bar-run"><i /></span>}
       </div>
