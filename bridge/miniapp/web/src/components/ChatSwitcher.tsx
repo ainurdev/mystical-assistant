@@ -190,7 +190,7 @@ export function ChatSwitcher() {
       >
         <Dot state={current?.state ?? "idle"} />
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[13px] font-semibold text-foreground-bright">
+          <span className="chead-title truncate text-[13px] font-semibold text-foreground-bright">
             {current?.title ?? "New chat"}
           </span>
           <span className="truncate text-[10px] tracking-wider text-[var(--tg-hint)]">

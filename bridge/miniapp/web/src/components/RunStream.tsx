@@ -888,12 +888,12 @@ function RailNode() {
     <>
       <span
         aria-hidden
-        className="pointer-events-none absolute left-0 top-[15px] h-[6px] w-[6px] rotate-45 border"
+        className="rnode pointer-events-none absolute left-0 top-[15px] h-[6px] w-[6px] rotate-45 border"
         style={{ borderColor: "var(--brand-soft)", background: "var(--tg-bg)" }}
       />
       <span
         aria-hidden
-        className="pointer-events-none absolute left-[7px] top-[18px] h-px w-[5px]"
+        className="rnode pointer-events-none absolute left-[7px] top-[18px] h-px w-[5px]"
         style={{ background: "color-mix(in srgb, var(--brand-soft) 40%, transparent)" }}
       />
     </>
