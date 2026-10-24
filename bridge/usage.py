@@ -18,7 +18,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 
 from bridge import credentials
 
@@ -27,6 +27,8 @@ USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 CACHE_TTL = 60.0
 RETRY_TTL = 15.0    # fetch failed and there's nothing to show: probe again sooner
 STALE_MAX = 900.0   # how long a last-good payload may stand in for a live one
+PACE_SPAN = 3600.0  # pace() reads the last hour of 5-hour readings
+PACE_MIN = 600.0    # under ten minutes of readings is noise, not a pace
 
 _lock = threading.Lock()
 # creds path -> last *successful* fetch for that account. Keyed by path because
@@ -114,6 +116,43 @@ def _normalize(payload: dict) -> dict:
     }
 
 
+def _remember(e: dict, now: float, payload: dict) -> None:
+    """Keep this login's 5-hour reading for pace(): the last hour of it, and only
+    this window's. A reading above the new one means the window rolled since."""
+    b = payload.get("five_hour")
+    u = b.get("utilization") if isinstance(b, dict) else None
+    refill = resets_epoch(b.get("resets_at")) if isinstance(b, dict) else None
+    if u is None or refill is None:
+        return
+    e["hist"] = [h for h in e.get("hist", ())
+                 if now - h[0] <= PACE_SPAN and abs(h[2] - refill) < 300 and h[1] <= u]
+    e["hist"].append((now, float(u), refill))
+
+
+def _pace(hist: list, now: float) -> "str | None":
+    """When the window runs out at the rate since the oldest reading, or None:
+    too little to tell, not climbing, or it refills first. First and last
+    reading, not a fitted line: use comes in bursts, and where the hour began
+    to where it is now is the rate a person would quote."""
+    hist = [h for h in hist if now - h[0] <= PACE_SPAN]
+    if len(hist) < 2:
+        return None
+    (t0, u0, _), (t1, u1, refill) = hist[0], hist[-1]
+    if t1 - t0 < PACE_MIN or u1 <= u0 or u1 >= 100:
+        return None
+    out = t1 + (100.0 - u1) * (t1 - t0) / (u1 - u0)
+    return None if out >= refill else datetime.fromtimestamp(out, timezone.utc).isoformat()
+
+
+def pace(creds_path: str | None = None) -> "str | None":
+    """When this login's 5-hour window runs out at the last hour's rate (ISO-8601),
+    if that comes before it refills. Readings are the ones get_usage() made, so
+    there is a pace only while something polls the meter (an open dashboard)."""
+    with _lock:
+        hist = list(_entry(creds_path or CREDENTIALS_FILE).get("hist", ()))
+    return _pace(hist, time.time())
+
+
 def _last_good(data: "dict | None", age: float) -> dict:
     """The previous payload, while it's recent enough to still be true."""
     return data if data is not None and age < STALE_MAX else {"available": False}
@@ -136,6 +175,7 @@ def get_usage(creds_path: str | None = None) -> dict:
         fresh = _normalize(payload)
         with _lock:
             _entry(path).update(ts=now, data=fresh, next_try=0.0)
+            _remember(_entry(path), now, payload)
         return fresh
     with _lock:
         # A value still on screen buys a full cycle before we try again; an

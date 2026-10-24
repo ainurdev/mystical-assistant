@@ -8,6 +8,7 @@ fetch keeps serving the last good payload instead of blanking the meters.
 import os
 import sys
 import time
+from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -203,6 +204,45 @@ def test_one_accounts_failure_does_not_blank_another():
         assert usage.get_usage(a)["five_hour"]["percent"] == 11
     finally:
         restore()
+
+
+REFILL = 10_000.0 + 3 * 3600   # the 5-hour window refills three hours after t=10000
+
+
+def _read(e: dict, t: float, u: float, refill: float = REFILL) -> None:
+    iso = datetime.fromtimestamp(refill, timezone.utc).isoformat()
+    usage._remember(e, t, {"five_hour": {"utilization": u, "resets_at": iso}})
+
+
+def test_pace_projects_the_hours_rate_to_the_limit():
+    e = {}
+    _read(e, 10_000, 40)
+    _read(e, 10_600, 45)
+    _read(e, 11_200, 50)               # 10 points in 20 minutes: 50 more take 100
+    out = usage._pace(e["hist"], 11_200)
+    assert datetime.fromisoformat(out).timestamp() == 11_200 + 100 * 60
+
+
+def test_no_pace_when_it_refills_first_or_there_is_too_little_to_tell():
+    e = {}
+    _read(e, 10_000, 40)
+    _read(e, 10_300, 41)
+    assert usage._pace(e["hist"], 10_300) is None       # five minutes is noise
+    _read(e, 11_200, 42)                                # 2 points in 20 min: 9h away
+    assert usage._pace(e["hist"], 11_200) is None       # it refills long before
+    flat = {}
+    _read(flat, 10_000, 40)
+    _read(flat, 11_200, 40)
+    assert usage._pace(flat["hist"], 11_200) is None    # not climbing
+
+
+def test_pace_forgets_another_window_and_the_hour_before():
+    e = {}
+    _read(e, 10_000, 90, refill=10_500)                  # the window before
+    _read(e, 11_000, 5)                                  # it rolled: 90 is gone
+    assert [h[1] for h in e["hist"]] == [5.0]
+    _read(e, 11_000 + 3700, 30)                          # over an hour on
+    assert [h[1] for h in e["hist"]] == [30.0]
 
 
 if __name__ == "__main__":

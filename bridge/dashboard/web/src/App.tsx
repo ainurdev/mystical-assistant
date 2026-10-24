@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FolderTree, GitBranch, GraduationCap, Users,
+  FolderTree, Gauge, GitBranch, GraduationCap, Users,
 } from "lucide-react";
 import {
   api,
@@ -84,6 +84,7 @@ import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import { TeamPanel } from "./components/hud/TeamPanel";
+import { UsagePanel } from "./components/hud/UsagePanel";
 import { TeamSendSheet, type SendWhat } from "./components/TeamSendSheet";
 import { BackPill, TeamBar } from "./components/TeamBar";
 import { ProjectPick } from "./components/ProjectPick";
@@ -268,6 +269,7 @@ export function App() {
   const [gitNonce, setGitNonce] = useState(0);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
+  const [limitPolicy, setLimitPolicy] = useState("ask"); // what a session with no policy of its own does on a limit
   // Non-Claude agents: their labels and the options each last advertised,
   // which an agent session's pickers offer. null = not loaded, or a bridge
   // older than them (404) — an agent session then shows no pickers.
@@ -493,7 +495,6 @@ export function App() {
   const host = useHostVitals();
   const { weather, setCity, setUnit } = useWeather();
   const [wxSettings, setWxSettings] = useState(0); // nonce — opens the weather settings editor from the context menu
-  const [weekNonce, setWeekNonce] = useState(0); // nonce — opens the week report, from the same menu
   // Server-side per-session prompt queue: lets a new prompt be queued while a
   // turn is in flight (runs after it) instead of forcing a STOP first.
   const queue = useSessionQueue(sessionId);
@@ -1147,6 +1148,7 @@ export function App() {
   const loadAccounts = useCallback(() => api.accounts()
     .then((a) => {
       setAccounts(a.accounts);
+      setLimitPolicy(a.default_policy);
       markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
     })
     .catch(() => markBoot("auth", "fail", "NO LOGIN")), [markBoot]);
@@ -2105,6 +2107,13 @@ export function App() {
           onDismiss={(r) => void dismissShare(r.id, !!r.session && r.session === sessionId)} />
       ),
     }] : []),
+    {
+      id: "usage", label: "Usage", icon: <Gauge {...RAIL} />, ownScroll: true,
+      render: () => (
+        <UsagePanel accounts={accounts} spend={spendSlot} policy={selected?.fallback_policy ?? limitPolicy}
+          onOpenProject={(rel) => openAnalyze(rel)} />
+      ),
+    },
   ];
 
   // The login the open session spends: its turn in flight's, else the one its
@@ -2354,10 +2363,10 @@ export function App() {
       items.push({ divider: true });
     } else if (ctxMenu.type === "weather") {
       // The clock's menu — a plain click on the clock opens it too — so it
-      // carries what used to sit around the clock in the strip: the week
-      // report, the clock & weather settings.
+      // carries what used to sit around the clock in the strip: usage (the
+      // rail's USAGE tab), the clock & weather settings.
       const other = weather.unit === "F" ? "C" : "F";
-      items.push({ icon: "▤", label: "Weekly report", onClick: () => setWeekNonce((n) => n + 1) });
+      items.push({ icon: "▤", label: "Usage", onClick: () => patchSettings({ rightTab: "usage", rightOpen: true }) });
       items.push({ icon: "✎", label: "Clock & weather…", onClick: () => setWxSettings((n) => n + 1) });
       items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
       items.push({ divider: true });
@@ -2565,7 +2574,6 @@ export function App() {
       onSetCity={setCity}
       onSetUnit={setUnit}
       openSettings={wxSettings}
-      openReport={weekNonce}
     />
   );
 
