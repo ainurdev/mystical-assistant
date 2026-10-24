@@ -83,7 +83,7 @@ def guard(monkeypatch, tmp_path):
     monkeypatch.setattr(rivendell.Worker, "_api_put_bytes", refuse)
     monkeypatch.setattr(urllib.request, "urlopen", refuse)
     sent = types.SimpleNamespace(telegram=[], turns=[])
-    monkeypatch.setattr(telegram, "send", lambda chat, text, reply_markup=None: sent.telegram.append((chat, text)))
+    monkeypatch.setattr(telegram, "send", lambda chat, text, reply_markup=None, **k: sent.telegram.append((chat, text)))
     monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: sent.turns.append((sid, kw)) or "q1")
     monkeypatch.setattr(da, "_path", lambda: str(tmp_path / "device_runs.json"))
     monkeypatch.setattr(config, "UPLOAD_DIR", str(tmp_path / "uploads"))
@@ -719,10 +719,11 @@ def test_a_device_name_is_inert_in_the_pr_heading(riv, chat, guard, web, monkeyp
     assert span and span[1] == name.replace("`", "'")
 
 
-def test_a_device_name_is_inert_in_the_running_notice(riv, chat, guard):
+def test_a_device_name_is_inert_in_the_running_notice(riv, chat, guard, monkeypatch):
     """telegram._md_to_html makes [x](https://…) a link and **x** bold, but reads
     nothing in a code span."""
     da._save_run(RID, _record(chat.id))
+    monkeypatch.setattr(da.notices, "telegram_ok", lambda kind, now=None: True)   # STARTED on
     name = "[Open](https://evil.example) **now**\n`x`"
     da.on_update(rivendell.Worker(INST), {**FRAME, "status": "RUNNING", "device": {"id": DEVICE, "name": name},
                                           "result": None, "screens": [], "minutes": None})
@@ -805,13 +806,23 @@ def test_a_run_whose_chat_is_gone_is_told_on_telegram_and_still_lands_in_the_pr(
     assert riv.paths() == [f"{FILE}/{RID}/delivered"] and da._runs() == {}
 
 
-def test_running_is_a_telegram_notice_and_no_turn(riv, chat, guard):
+def test_running_is_a_telegram_notice_and_no_turn(riv, chat, guard, monkeypatch):
     da._save_run(RID, _record(chat.id))
+    monkeypatch.setattr(da.notices, "telegram_ok", lambda kind, now=None: kind == "rv_started")
     da.on_update(rivendell.Worker(INST), {**FRAME, "status": "RUNNING", "result": None, "screens": [],
                                           "minutes": None})
     assert guard.telegram == [(config.DASH_CHAT_ID, f"Started on `{MAC}`: NR-31.")]
     assert guard.turns == [] and riv.calls == []
     assert da._runs()[RID]["started_on"] == MAC
+
+
+def test_running_says_nothing_while_the_started_route_is_off(riv, chat, guard, monkeypatch):
+    """STARTED is off on Telegram unless you turn it on (notices.DEFAULTS)."""
+    da._save_run(RID, _record(chat.id))
+    monkeypatch.setattr(da.notices, "telegram_ok", lambda kind, now=None: False)
+    da.on_update(rivendell.Worker(INST), {**FRAME, "status": "RUNNING", "result": None, "screens": [],
+                                          "minutes": None})
+    assert guard.telegram == [] and da._runs()[RID]["started_on"] == MAC
 
 
 @pytest.mark.parametrize("record", [None, _record("s", instance="another")])

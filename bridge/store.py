@@ -44,7 +44,8 @@ CREATE TABLE IF NOT EXISTS sessions (
   agent_session_id  TEXT,
   job               TEXT,
   device            TEXT,
-  team              TEXT
+  team              TEXT,
+  tg_thread         INTEGER
 );
 CREATE INDEX IF NOT EXISTS ix_sessions_proj
   ON sessions(chat_id, project, archived, updated);
@@ -239,6 +240,12 @@ def init() -> None:
         # {share, instance, kind, from, note, sent, meta}. NULL = not one.
         if "team" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN team TEXT")
+        # Its topic in a Telegram private chat with threads (bridge/tgtopics.py):
+        # what the session sends goes there, what is written there runs in it.
+        # NULL = none (threads off, or nothing sent about it yet).
+        if "tg_thread" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN tg_thread INTEGER")
+        c.execute("CREATE INDEX IF NOT EXISTS ix_sessions_tg_thread ON sessions(chat_id, tg_thread)")
         # Which runtime produced a turn (NULL = the default Claude account,
         # else 'claude:<slot>' or 'acp:<agent>').
         if "runtime" not in cols:
@@ -437,7 +444,7 @@ def set_permission_mode(session_id: str, mode: str | None) -> None:
 def set_run_settings(session_id: str, model: "str | None" = None,
                      permission_mode: "str | None" = None) -> None:
     """Save a model and/or permission-mode pick to the session — the row every
-    surface's next run reads (runner.start_streaming_job, handle_task). None
+    surface's next run reads (runner.start_streaming_job). None
     leaves that half alone; there is no clearing a pick. Only people's picks
     land here (the /run and settings routes): internal callers run their own
     values without writing them. Validated by the servers'
@@ -459,6 +466,19 @@ def set_session_field(session_id: str, field: str, value: "str | None") -> None:
         raise ValueError(f"not a settable session field: {field}")
     with closing(_connect()) as c:
         c.execute(f"UPDATE sessions SET {field}=? WHERE id=?", (value, session_id))
+
+
+def set_tg_thread(session_id: str, thread: "int | None") -> None:
+    """The session's Telegram topic (bridge/tgtopics.py); None forgets it."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET tg_thread=? WHERE id=?", (thread, session_id))
+
+
+def session_by_thread(chat_id: int, thread: int) -> "dict | None":
+    """The session a Telegram topic belongs to, the newest if two ever share it."""
+    with closing(_connect()) as c:
+        return _row(c.execute("SELECT * FROM sessions WHERE chat_id=? AND tg_thread=? "
+                              "ORDER BY updated DESC LIMIT 1", (chat_id, thread)).fetchone())
 
 
 def count_turns(session_id: str) -> int:

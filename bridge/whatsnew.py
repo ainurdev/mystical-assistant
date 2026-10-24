@@ -316,7 +316,7 @@ def _telegram(kind: str, text: str) -> None:
             return
         from bridge.telegram import send   # lazy: the bot is the heavy half
         for chat in config.ALLOWED_CHAT_IDS:
-            send(chat, text)
+            send(chat, text, silent=True)   # news, not an ask: no ring
     except Exception as e:  # noqa: BLE001
         print(f"[whatsnew] telegram: {e}", file=sys.stderr)
 

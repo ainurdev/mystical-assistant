@@ -587,24 +587,6 @@ def test_dashboard_server_starts_in_requested_project_dir():
     assert captured["cwd"] != config.BASE_PATH             # …not the BASE_PATH fallback
 
 
-def test_handle_task_journals_bot_turn():
-    from bridge import state
-    state.active[777] = "/tmp"                       # BASE_PATH=/tmp -> project_key "/"
-    orig = (runner.send, runner.typing, runner.run_blocking)
-    runner.send = lambda *a, **k: None
-    runner.typing = lambda *a, **k: None
-    runner.run_blocking = lambda chat_id, prompt, resume_id=None, **kw: ("answer", "claude-sid", 0.01, False)
-    session = store.ensure_session(777, state.project_key(777))
-    state.acquire_run(session["id"], 777)            # handle_task assumes caller holds the slot
-    try:
-        runner.handle_task(777, "do the thing", session)
-    finally:
-        runner.send, runner.typing, runner.run_blocking = orig
-    s = store.latest_session(777, state.project_key(777))
-    assert s and s["claude_session_id"] == "claude-sid"
-    assert "result" in [e["type"] for e in store.transcript(s["id"])["events"]]
-
-
 # --- interrupt --------------------------------------------------------------
 
 def test_interrupt_writes_control_request_and_marks_job():

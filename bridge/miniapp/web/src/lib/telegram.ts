@@ -9,6 +9,12 @@ export interface TelegramWebApp {
   setBackgroundColor?: (color: string) => void;
   /** Telegram's own back arrow in its top bar (Bot API 6.1+). */
   BackButton?: { show: () => void; hide: () => void; onClick: (cb: () => void) => void; offClick: (cb: () => void) => void };
+  platform?: string;
+  isVersionAtLeast?: (version: string) => boolean;
+  /** Bot API 8.0: the whole screen, and a home-screen shortcut ("missed" = not added yet). */
+  requestFullscreen?: () => void;
+  checkHomeScreenStatus?: (cb: (status: string) => void) => void;
+  addToHomeScreen?: () => void;
 }
 
 declare global {
@@ -36,7 +42,21 @@ export function initTelegram() {
   if (!wa) return;
   wa.ready();
   wa.expand();
+  if (!wa.isVersionAtLeast?.("8.0")) return;
+  // Phones get the whole screen; #root keeps clear of Telegram's own buttons (index.css).
+  if (wa.platform === "ios" || wa.platform === "android") wa.requestFullscreen?.();
+  // The home-screen shortcut is offered once: a "not now" is not asked again.
+  try {
+    if (localStorage.getItem(HOME_ASKED)) return;
+    wa.checkHomeScreenStatus?.((status) => {
+      if (status !== "missed") return;
+      try { localStorage.setItem(HOME_ASKED, "1"); } catch { /* asked again next time */ }
+      wa.addToHomeScreen?.();
+    });
+  } catch { /* no localStorage: no offer */ }
 }
+
+const HOME_ASKED = "tg-home-asked";
 
 /** Show Telegram's back arrow while `cb` is the way back; returns the undo. A
  *  client too old for BackButton just keeps the in-app one. */

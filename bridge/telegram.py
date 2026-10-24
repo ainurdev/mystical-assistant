@@ -11,6 +11,7 @@ import html as _html
 import json
 import re
 import sys
+import threading
 import time
 from urllib.error import HTTPError
 from urllib.parse import urlencode
@@ -32,16 +33,24 @@ def _api(url: str, params: dict | None = None, timeout: int = 30):
         return json.loads(e.read() or b"{}")
 
 
+_last = threading.local()     # the last refusal's description, per thread (send's topic fallback)
+# Topics Telegram says are gone (deleted or closed): bridge/tgtopics.py makes the session a new one.
+gone_threads: "set[tuple[int, int]]" = set()
+_THREAD_GONE = re.compile(r"thread not found|TOPIC_(DELETED|CLOSED)", re.I)
+
+
 def tg(method: str, **params):
     # A Telegram-free install still runs everything else, and every caller here
     # (runner, limits, devserver, ladder) sends unconditionally — so the no-op
     # belongs in the one place they all route through.
     if not config.TOKEN:
         return None
+    _last.error = ""
     try:
         data = _api(f"{config.API}/{method}", params,
                     timeout=config.POLL_TIMEOUT + 15)
         if not data.get("ok"):
+            _last.error = str(data.get("description") or "")
             print(f"[telegram] {method} error: {data}", file=sys.stderr)
             return None
         return data.get("result")
@@ -64,6 +73,9 @@ _LINK = re.compile(r"\[([^\]\n]+)\]\((https?://[^)\s]+)\)")
 _HEADING = re.compile(r"^#{1,6}\s+(.+)$", re.M)
 _BULLET = re.compile(r"^(\s*)[-*]\s+", re.M)
 _HELD = re.compile("\x00(\\d+)\x00")
+# A date entity (limits.when_tg): shown in the reader's own clock. Kept whole
+# through the markdown pass; a plain-text fallback shows only its text.
+_TG_TIME = re.compile(r'<tg-time unix="\d+" format="w?t">([^<>\n]{1,32})</tg-time>')
 
 
 def _esc(s: str) -> str:
@@ -88,6 +100,7 @@ def _md_to_html(md: str) -> str:
 
     md = _FENCE.sub(fence, md)
     md = _INLINE_CODE.sub(lambda m: hold(f"<code>{_esc(m[1])}</code>"), md)
+    md = _TG_TIME.sub(lambda m: hold(m[0]), md)
     out = _esc(md)
     out = _HEADING.sub(r"<b>\1</b>", out)
     out = _BOLD.sub(r"<b>\1</b>", out)
@@ -161,6 +174,16 @@ def _plain(html_text: str) -> str:
 def send(chat_id: int, text: str, reply_markup: dict | None = None, markdown: bool = True,
          *, silent: bool = False, thread: "int | None" = None, rich: bool = False,
          html: bool = False):
+    sent = _send(chat_id, text, reply_markup, markdown, silent=silent, thread=thread, rich=rich, html=html)
+    if not sent and thread and _THREAD_GONE.search(getattr(_last, "error", "")):
+        gone_threads.add((chat_id, thread))   # its topic is gone: the main chat instead
+        sent = _send(chat_id, text, reply_markup, markdown, silent=silent, rich=rich, html=html)
+    return sent
+
+
+def _send(chat_id: int, text: str, reply_markup: dict | None = None, markdown: bool = True,
+          *, silent: bool = False, thread: "int | None" = None, rich: bool = False,
+          html: bool = False):
     """Send `text` (split on lines past TG_MAX), buttons on the last chunk.
     Returns the last message Telegram accepted — the one carrying the buttons,
     which a later reply or edit refers to — or None. markdown=False sends text
@@ -198,7 +221,7 @@ def send(chat_id: int, text: str, reply_markup: dict | None = None, markdown: bo
         # unformatted is a worse message, dropped is a lost one.
         sent = ((len(html_text) <= config.TG_MAX
                  and tg("sendMessage", text=html_text, parse_mode="HTML", **params))
-                or tg("sendMessage", text=raw[:config.TG_MAX], **params))
+                or tg("sendMessage", text=_TG_TIME.sub(r"\1", raw)[:config.TG_MAX], **params))
     return sent
 
 
@@ -225,7 +248,7 @@ def draft(chat_id: int, draft_id: int, text: str, *, thread: "int | None" = None
     keeps it 30 seconds unless it is sent again, and drops it when the bot sends
     a message. "" shows Telegram's "Thinking…". False when refused."""
     base = dict(chat_id=chat_id, draft_id=draft_id, can_stop="true",
-                **({"message_thread_id": thread} if thread else {}))
+                **({"message_thread_id": thread} if thread and (chat_id, thread) not in gone_threads else {}))
     if text and config.TG_RICH and tg("sendRichMessageDraft",
                                       rich_message=json.dumps({"markdown": text[:config.TG_RICH_MAX]}),
                                       **base):

@@ -243,21 +243,6 @@ def test_awaiting_never_blocks_the_agents_reader(monkeypatch):
     assert _wait(lambda: seen) and seen == [(CHAT, "s-acp-await", "permission")]
 
 
-def test_the_bot_hands_an_agent_session_back(monkeypatch):
-    sid = _session()
-    sent = []
-    monkeypatch.setattr(runner, "send", lambda chat_id, text, *a, **k: sent.append(text))
-    monkeypatch.setattr(runner, "typing", lambda *a, **k: None)
-    monkeypatch.setattr(runner, "run_blocking", lambda *a, **k: pytest.fail("ran on claude"))
-    assert state.acquire_run(sid, CHAT)                  # what the bot holds before it calls
-    runner.handle_task(CHAT, "hi", store.get_session(sid))
-    assert sent == [("This session runs on another agent — continue it in the Mini App "
-                     "or the dashboard.")]
-    assert store.count_turns(sid) == 0
-    assert state.acquire_run(sid, CHAT)                  # released on the way out
-    state.release_run(sid)
-
-
 def _handler(mod):
     h, box = mod.Handler.__new__(mod.Handler), {}
     h._json = lambda obj, code=200: box.update(obj=obj, code=code)

@@ -1455,7 +1455,7 @@ def test_notify_queued_pings_when_pending(monkeypatch):
     w._enqueue("impl", "i1", "acme/app")
     sent = []
     monkeypatch.setattr(w, "_deliver_telegram",
-                        lambda text, kb: sent.append((text, kb)))
+                        lambda text, kb, kind="": sent.append((text, kb)))
     w._notify_queued("impl:i1")
     _wait_until(lambda: len(sent) == 1)             # delivery is off-thread
     text, kb = sent[0]
@@ -1467,7 +1467,7 @@ def test_notify_queued_noop_when_already_decided(monkeypatch):
     """A ping fired for a request that was decided in the meantime sends nothing."""
     w = _worker()
     calls = []
-    monkeypatch.setattr(w, "_deliver_telegram", lambda text, kb: calls.append(1))
+    monkeypatch.setattr(w, "_deliver_telegram", lambda *a: calls.append(1))
     w._notify_queued("review:gone")                 # never queued
     time.sleep(0.05)
     assert calls == []
@@ -1478,12 +1478,15 @@ def test_deliver_telegram_sends_to_dash_chat_without_markdown(monkeypatch):
     goes as typed: no markdown turns into a link."""
     import bridge.telegram as tg_mod
     sent = []
-    monkeypatch.setattr(tg_mod, "send", lambda chat, text, kb, markdown=True: sent.append((chat, text, kb, markdown)))
+    monkeypatch.setattr(tg_mod, "send", lambda chat, text, kb, markdown=True, silent=False:
+                        sent.append((chat, text, kb, markdown, silent)))
     monkeypatch.setattr(rivendell.config, "NOTIFY_ENABLE", True)
     monkeypatch.setattr(rivendell.config, "TOKEN", "x")
     monkeypatch.setattr(rivendell.config, "DASH_CHAT_ID", 555)
     _worker()._deliver_telegram("hi", {"inline_keyboard": []})
-    assert sent == [(555, "hi", {"inline_keyboard": []}, False)]
+    _worker()._deliver_telegram("offer", None, "rv_offer")
+    # Only what needs you rings: a job offered to you does, the rest arrive silent.
+    assert sent == [(555, "hi", {"inline_keyboard": []}, False, True), (555, "offer", None, False, False)]
 
 
 def test_deliver_telegram_silent_without_telegram(monkeypatch):

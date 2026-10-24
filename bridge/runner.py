@@ -1,8 +1,9 @@
 """Claude Code runner.
 
 Two entry points share the same auth/session/permission setup:
-  - run_blocking()  -> one-shot JSON result (the bot's plain-text prompt path)
-  - start_streaming_job() -> a Job whose events stream in live (the Mini App path)
+  - run_blocking()  -> one-shot JSON result (internal one-shots: titles, cards, digests)
+  - start_streaming_job() -> a Job whose events stream in live (every surface's turns:
+    Mini App, dashboard, and the bot chat through bridge/tglive.py)
 
 Each run claims its session's slot in state's per-session run registry, so two
 turns never hit the same Claude session at once, but different sessions run
@@ -31,9 +32,10 @@ import uuid
 
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver,
                     git, inspector, integrations, ladder, limits, machine, native_activity, notices,
-                    profiles, pubsub, relevance, state, store, team, transcript_jsonl, waits)
+                    profiles, pubsub, relevance, state, store, team, tgask, tgtopics,
+                    transcript_jsonl, waits)
 from bridge.browser import rel
-from bridge.telegram import panel_kb, send, typing
+from bridge.telegram import panel_kb, send
 
 
 # ---------------------------------------------------------------------------
@@ -538,10 +540,10 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     interactive=True (Mini App chat) drives Claude over the stream-json control
     protocol: the prompt is delivered on stdin (not as an arg), permissions are
     routed back to us via `--permission-prompt-tool stdio`, and we run in an
-    asking permission mode so tool use surfaces Allow/Deny cards. The bot's
-    plain-text path stays non-interactive and keeps EXTRA_CLAUDE_ARGS — with its
-    session's mode, when it carries one, in place of their permission flag
-    (handle_task, _with_mode).
+    asking permission mode so tool use surfaces Allow/Deny cards. A one-shot
+    stays non-interactive and keeps EXTRA_CLAUDE_ARGS — with the caller's mode,
+    when it brings one, in place of their permission flag (_with_mode). The bot
+    chat's turns are interactive and bring EXTRA_CLAUDE_ARGS' own (bridge/tglive.py).
 
     model/effort (interactive only) map to `--model`/`--effort`; the server
     validates them before they reach here.
@@ -647,9 +649,9 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         # internal one-shot, so it skips MCP for the same second it saves above.
         cmd += ["--permission-mode", permission_mode, "--strict-mcp-config"]
     elif not interactive:
-        # The bot chat: EXTRA_CLAUDE_ARGS, with its session's mode, when it has
-        # one (handle_task), in place of the permission flag those carry; the
-        # rest (--add-dir, --allowedTools...) is still the user's.
+        # A one-shot with tools: EXTRA_CLAUDE_ARGS, with the caller's mode, when
+        # it brings one, in place of the permission flag those carry; the rest
+        # (--add-dir, --allowedTools...) is still the user's.
         cmd += _with_mode(shlex.split(config.EXTRA_CLAUDE_ARGS), permission_mode)
     if disabled_tools is None and "--strict-mcp-config" not in cmd:
         # No per-session choice on this run (a Telegram one-shot, a sessionless
@@ -669,7 +671,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
 
 
 # ---------------------------------------------------------------------------
-# Blocking run (Telegram plain-text prompt)
+# Blocking run (internal one-shots)
 # ---------------------------------------------------------------------------
 
 def _claim_session_id(store_session_id: str,
@@ -748,101 +750,6 @@ def adopt_uploads(job_id: str, paths: list[str] | None) -> list[str]:
     return out
 
 
-def handle_task(chat_id: int, prompt: str, session: dict,
-                attachments: list[str] | None = None):
-    """Runs in a thread; the caller already claimed `session`'s run slot.
-    `attachments` are files sent to the bot (bridge/tgfiles.py), handed to the
-    model as the Mini App's are.
-
-    Runs on the session's effective model and mode (its own picks, else its
-    bound profile's). A mode replaces EXTRA_CLAUDE_ARGS (_base_cmd), so a
-    session created as bypassPermissions (the dashboard and Mini App default)
-    runs unattended here too: the same allow-listed user can already do that
-    from the Mini App. An asking mode can't show a card in a chat, so the
-    tools it would ask about are denied, as under acceptEdits. A session the
-    bot started has no mode and keeps EXTRA_CLAUDE_ARGS. A profile bound to a
-    dead account slot refuses instead of running on another login. A session on
-    another agent is handed back: this path only runs claude, and an agent's
-    cards need a panel."""
-    try:
-        eff = profiles.effective(session)
-        if eff["agent"] != profiles.CLAUDE:
-            send(chat_id, "This session runs on another agent — continue it in the "
-                          "Mini App or the dashboard.")
-            return
-        refusal = profiles.refusal(eff, chat_id)
-        if refusal:
-            send(chat_id, "⚠️ " + refusal)
-            return
-        typing(chat_id)
-        send(chat_id, f"🤖 On it… ({rel(state.project_dir(chat_id))})")
-        notices.emit("started", session["id"], body="from Telegram")
-        started = time.time()
-        job_id = uuid.uuid4().hex
-        files = adopt_uploads(job_id, attachments)
-        # run_blocking passes no --effort: the CLI's own, so the turn says auto.
-        store.start_turn(session["id"], job_id, prompt, files, model=eff["model"],
-                         sha=git.head_sha(state.project_dir(chat_id)), effort="auto",
-                         permission_mode=eff["permission_mode"])
-        from bridge import titler  # local import: runner<->* cycle
-        titler.kick(chat_id, session, job_id)
-        claude_sid, is_new, fork = _claim_session_id(
-            session["id"], session["claude_session_id"])
-        result, sid, cost, is_error = run_blocking(
-            chat_id, _with_images(prompt, files), resume_id=claude_sid, new_session=is_new,
-            fork=fork,
-            model=eff["model"], permission_mode=eff["permission_mode"],
-            account_slot=profiles.claude_slot(eff))
-        # Journal (persist + publish) so SSE subscribers see bot-driven turns
-        # live, exactly like streaming-path events.
-        _journal_one((session["id"], job_id,
-                      {"type": "result", "result": result, "cost": cost}))
-        if sid:
-            store.set_claude_session_id(session["id"], sid)
-        if is_error and state.shutting_down:
-            return   # restart killed the run: stay 'running' for boot recovery
-        store.finish_turn(job_id, "error" if is_error else "done", cost,
-                          int(time.time() - started))
-        if (is_error and config.AUTO_RESUME and limits.is_limit_error(result)
-                and (sid or session["claude_session_id"])):
-            d = limits.defer(session["id"], chat_id, None)
-            if d is not None:
-                # Parked. Same order as the streaming path: escalate second, and
-                # stay quiet when a ladder rung takes the work (it announces itself).
-                if ladder.escalate(store.get_session(session["id"]) or session,
-                                   chat_id):
-                    return
-                send(chat_id, "⏳ Claude usage limit hit — this session will auto-"
-                              f"resume when the limit resets (~{limits.when_str(d[0])}).",
-                     _session_kb(chat_id, session["id"]))
-                return
-        if (is_error and config.AUTO_RESUME and limits.is_server_error(result)
-                and (sid or session["claude_session_id"])):
-            d = limits.defer_server(session["id"], chat_id, None)
-            if d is not None:
-                send(chat_id, f"⚠️ Claude API error — retrying {limits.wait_str(d[0])} "
-                              f"(attempt {d[1]}/{len(limits.SERVER_BACKOFF)}).")
-                return
-        if is_error and limits.is_auth_error(result):
-            _auth_stop(chat_id, session["id"], None, reply=True)
-            return
-        if not is_error:
-            _graph_refresh_after_turn(chat_id, None)
-        footer = f"\n\n— {int(time.time() - started)}s"
-        answer = ("⚠️ " if is_error else "") + (result or "(no result)") + footer
-        # A button under every reply would be noise; under one that errored or is
-        # too long to read in a chat bubble, it's the way out.
-        kb = (_session_kb(chat_id, session["id"], "🛠 Open session")
-              if is_error or len(answer) > config.TG_MAX - 512 else None)
-        send(chat_id, answer, kb)
-        if not is_error:
-            titler.kick(chat_id, session, job_id)   # retry if the start call missed
-            from bridge import learn  # local import: runner<->* cycle
-            learn.kick(chat_id, session, job_id)
-    finally:
-        state.release_run(session["id"])
-
-
 # ---------------------------------------------------------------------------
 # Streaming jobs (Mini App)
 # ---------------------------------------------------------------------------
@@ -879,6 +786,10 @@ class Job:
         self.proc = None                 # subprocess.Popen, for control responses
         self.pending: list[dict] = []    # unresolved can_use_tool requests
         self.interrupted = False         # user pressed Stop
+        # A prompt sent from Telegram (bridge/tglive.py): its answer is the
+        # message there, so _announce_end sends no DONE/FAILED ping for it.
+        self.tg_live = False
+        self.told = False         # an end notice of its own already reached the chat (_maybe_auto_resume)
         self.timed_out = False           # watchdog killed the run
         # How long this run may stay silent before the watchdog kills it as
         # hung; None means config.RUN_TIMEOUT. A Rivendell run sets its own
@@ -1542,18 +1453,27 @@ def running_snapshot(chat_id: int) -> dict:
 
 def _notify(chat_id: int | None, text: str, kb: dict | None = None, *,
             kind: "str | None" = None, sid: "str | None" = None, body: str = "",
-            meta: "dict | None" = None) -> None:
+            meta: "dict | None" = None, ask=None, always: bool = False) -> None:
     """Best-effort push (never raises into the run loop). With a `kind` and a
     `sid` the event goes in the feed (bridge/notices.py) first; with a `kind`,
     Telegram gets it only when that event's route allows it. An ask's own echo
-    (notices.echo) is marked quiet: the bell keeps it, nothing knocks twice."""
+    (notices.echo) is marked quiet: the bell keeps it, nothing knocks twice.
+    Only what needs you rings: the rest arrives silent. It goes in the
+    session's topic when the chat has threads (bridge/tgtopics.py). `ask`, when
+    given, sends instead and says whether it did (bridge/tgask.py). always=True
+    is a turn the chat started (bridge/tglive.py): its ping goes whatever the
+    routes say, as no other surface would show it."""
     quiet = bool(kind and sid and notices.echo(kind, sid))
     if kind and sid:
         notices.emit(kind, sid, body=body, meta={**(meta or {}), "quiet": True} if quiet else meta)
-    if quiet or not config.NOTIFY_ENABLE or not chat_id or (kind and not notices.telegram_ok(kind)):
+    if quiet or not chat_id or (not always and (not config.NOTIFY_ENABLE
+                                                or (kind and not notices.telegram_ok(kind)))):
         return
     try:
-        send(chat_id, text, kb)
+        if ask and ask():
+            return
+        send(chat_id, text, kb, silent=notices.tier(kind) != "needs",
+             thread=tgtopics.thread_for(chat_id, sid))
     except Exception:  # noqa: BLE001
         pass
 
@@ -1593,11 +1513,15 @@ def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str,
     """Ping when a streaming run blocks on you (a question or an approval).
     `body` is what it asks — the command, or the question — for the bell, and
     `request_id` the card it belongs to, so a button answers that card only."""
-    what = "a question" if kind == "question" else "your approval"
-    _notify(chat_id, f"❓ Claude needs {what} — {_session_label(session_id)}",
+    what = "has a question" if kind == "question" else "needs your approval"
+    job = get_job(job_id) if job_id else None
+    _notify(chat_id, f"❓ Claude {what} — {_session_label(session_id)}",
             _session_kb(chat_id, session_id, "❓ Answer in Panel"),
             kind="question" if kind == "question" else "approve", sid=session_id,
-            body=body, meta={"job_id": job_id, "request_id": request_id} if job_id else None)
+            body=body, meta={"job_id": job_id, "request_id": request_id} if job_id else None,
+            # The ask itself, answerable from the chat; the generic ping when it can't go.
+            ask=lambda: tgask.ping(chat_id, session_id, job_id, request_id),
+            always=bool(job and job.tg_live))
 
 
 def _first_line(text: str) -> str:
@@ -1647,10 +1571,11 @@ def notify_woken(chat_id: int | None, session_id: str | None, body: str) -> None
 def _announce_end(job) -> None:
     """A turn that ended by itself: WAITING when it ended on WaitForSession (it
     wakes on its own), else DONE or FAILED; then wake whoever waited on it."""
+    chat = None if job.tg_live else job.chat_id     # None: the bell only (_notify)
     if w := waits.get(job.store_session_id or ""):
-        notify_waiting(job.chat_id, job.store_session_id, w["title"])
+        notify_waiting(chat, job.store_session_id, w["title"])
     else:
-        notify_turn_done(job.chat_id, job.store_session_id, job.status == "error",
+        notify_turn_done(chat, job.store_session_id, job.status == "error",
                          body=(job.error_msg or "") if job.status == "error" else
                          (job.result or (job.texts[-1] if job.texts else "")))
     waits.target_ended(job)
@@ -1773,9 +1698,11 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         if first:
             _notify(job.chat_id,
                     f"⏳ Claude usage limit hit — {_session_label(sid)} is paused and "
-                    f"will auto-resume when the limit resets (~{limits.when_str(when)}).",
+                    f"will auto-resume when the limit resets (~{limits.when_tg(when)}).",
                     _session_kb(job.chat_id, sid), kind="parked", sid=sid,
-                    body=f"Hit the usage limit. It resumes on its own around {limits.when_str(when)}.")
+                    body=f"Hit the usage limit. It resumes on its own around {limits.when_str(when)}.",
+                    always=job.tg_live)
+            job.told = True
         return True
     if limits.is_server_error(job.result or job.error_msg):
         # Anthropic's side blew up: retry, but spaced out along the ladder.
@@ -1792,13 +1719,15 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                 f"{limits.wait_str(when)} "
                 f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).", kind="retrying", sid=sid,
                 body=f"API error. Retrying {limits.wait_str(when)} "
-                     f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).")
+                     f"(attempt {attempt}/{len(limits.SERVER_BACKOFF)}).", always=job.tg_live)
+        job.told = True
         return True
     if limits.is_auth_error(job.result or job.error_msg):
         # The login behind this turn is dead. Resuming would re-send the same
         # prompt to the same expired token and fail identically, five times
         # over, so stop and hand back the way back in instead.
-        _auth_stop(job.chat_id, sid, job.account_slot, cwd, model, effort)
+        _auth_stop(job.chat_id, sid, job.account_slot, cwd, model, effort, reply=job.tg_live)
+        job.told = True
         return False
     if limits.is_outdated_error(job.result or job.error_msg):
         # The API refused this CLI for the model. A resume runs the same CLI and

@@ -152,6 +152,13 @@ def when_str(epoch: float) -> str:
     return time.strftime(fmt, time.localtime(epoch))
 
 
+def when_tg(epoch: float) -> str:
+    """when_str for a Telegram message: a date entity, so the phone shows it in
+    its own clock (it may not be where the bridge is)."""
+    fmt = "wt" if epoch - time.time() > 86400 else "t"
+    return f'<tg-time unix="{int(epoch)}" format="{fmt}">{when_str(epoch)}</tg-time>'
+
+
 _lock = threading.Lock()
 _pending: dict = {}       # session_id -> {chat_id, cwd, model, effort, tries, since, at, kind}
 _last_tries: dict = {}    # session_id -> tries carried across a fire (episode memory)
@@ -331,7 +338,7 @@ def _fire(run=None, notify=None) -> None:
             notices.emit("resumed", sid, body="The usage limit reset. Resuming.")
             try:
                 if notices.telegram_ok("resumed"):
-                    notify(e["chat_id"], "🔄 Usage limit reset — resuming your session.")
+                    notify(e["chat_id"], "🔄 Usage limit reset — resuming your session.", silent=True)
             except Exception:  # noqa: BLE001
                 pass
 

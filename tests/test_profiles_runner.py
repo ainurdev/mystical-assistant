@@ -137,24 +137,6 @@ def test_run_streaming_refuses_before_spawning_when_job_carries_one(monkeypatch)
     assert {"type": "error", "message": "nope"} in job.events
 
 
-def test_handle_task_refuses_a_dead_slot_without_running(monkeypatch):
-    """The bot's plain-text path (handle_task) must refuse exactly like the
-    streaming path: no run_blocking call, just the warning."""
-    p = _profile()
-    s = store.create_session(CHAT, "/pr-bot-dead", cwd=config.BASE_PATH, profile_id=p["id"])
-    monkeypatch.setattr(accounts, "list_accounts", lambda: [{"slot": 1, "disabled": False}])
-    sent = []
-    monkeypatch.setattr(runner, "send", lambda chat_id, text, *a, **k: sent.append(text))
-    monkeypatch.setattr(runner, "typing", lambda *a, **k: None)
-
-    def boom(*a, **k):
-        raise AssertionError("must not run")
-    monkeypatch.setattr(runner, "run_blocking", boom)
-    runner.handle_task(CHAT, "hi", s)
-    assert len(sent) == 1
-    assert sent[0].startswith("⚠️") and "account 2" in sent[0]
-
-
 # Every session the bridge makes is bound, so its PROFILE picker never reads
 # NO PROFILE while a profile's login runs it.
 

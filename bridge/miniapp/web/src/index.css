@@ -193,6 +193,8 @@ body {
 #root {
   position: relative;
   z-index: 1;
+  /* Full screen (lib/telegram): under the status bar and Telegram's close and menu buttons. 0 otherwise. */
+  padding-top: calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px));
 }
 
 ::selection {

@@ -37,9 +37,9 @@ def uploads(tmp_path, monkeypatch):
 def bot(uploads, monkeypatch):
     """on_message with the network and the run stubbed, threads run inline."""
     sent, runs = [], []
-    monkeypatch.setattr(dispatch, "send", lambda chat, text, kb=None: sent.append(text))
-    monkeypatch.setattr(dispatch, "handle_task",
-                        lambda chat, text, session, files=None: runs.append((text, files)))
+    monkeypatch.setattr(dispatch, "send", lambda chat, text, kb=None, **k: sent.append(text))
+    monkeypatch.setattr(dispatch.tglive, "start",
+                        lambda chat, session, text, files=None, **k: runs.append((text, files)))
 
     class Inline:
         def __init__(self, target, args=(), daemon=None):
@@ -49,7 +49,6 @@ def bot(uploads, monkeypatch):
             self.target(*self.args)
 
     monkeypatch.setattr(dispatch.threading, "Thread", Inline)
-    monkeypatch.setattr(dispatch.state, "acquire_run", lambda sid, chat: True)
     monkeypatch.setattr(tgfiles, "tg", lambda method, **kw: {"file_path": "docs/f.bin"})
     monkeypatch.setattr(tgfiles, "urlopen", lambda req, timeout=0: _Resp(b"payload"))
     store.init()

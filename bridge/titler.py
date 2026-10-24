@@ -141,6 +141,8 @@ def generate_after_turn(chat_id: int, session: dict, turn_id: str) -> None:
         subject = _generate(chat_id, fresh.get("cwd"), prompt, reply)
         if subject:
             store.set_subject_title(sid, subject)
+            from bridge import tgtopics  # local import: telegram pulls state
+            tgtopics.rename(sid)        # its Telegram topic, when it has one
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[titler] generate failed: {e}", file=sys.stderr)
     finally:

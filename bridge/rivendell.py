@@ -397,6 +397,7 @@ class Worker:
         # (_recovered). attempt/retry_at drive the tab's "RETRY n · 20s" chip.
         self.down_since: float | None = None
         self.alert_at: float | None = None
+        self._link_msg: "int | None" = None     # the break's Telegram message, edited to "back" (_recovered)
         self.attempt = 0
         self.retry_at: float | None = None
         # The last good /plugin/tasks answer per repo slug: an instance that
@@ -436,7 +437,7 @@ class Worker:
         # it. Switching off closes it silently: an instance you turned off never
         # pings.
         if state == "off":
-            self.down_since = self.alert_at = None
+            self.down_since = self.alert_at = self._link_msg = None
         elif state in ("error", "auth_error") and self.down_since is None:
             self.down_since = self.status_at
         # Only a failure alerts, never a re-dial: the message quotes the status
@@ -473,10 +474,14 @@ class Worker:
         token would end one break and open the next."""
         if self.alert_at is not None:          # a flagged break ends: once, here
             hm = lambda t: time.strftime("%H:%M", time.localtime(t))  # noqa: E731
+            body = f"Down {hm(self.down_since or self.alert_at)} → back {hm(time.time())}."
             notices.emit("rv_link_back", f"rv-link:{self.id}", title=self.name,
-                         body=f"Down {hm(self.down_since or self.alert_at)} → back {hm(time.time())}.",
-                         meta={"instance_id": self.id})
-        self.down_since = self.alert_at = None
+                         body=body, meta={"instance_id": self.id})
+            if self._link_msg:                 # the break's own message says it is over
+                threading.Thread(target=self._edit_telegram,
+                                 args=(self._link_msg, f"✓ Rivendell link back — {self.name}\n{body}"),
+                                 name=f"rivendell-tg-{self.id}", daemon=True).start()
+        self.down_since = self.alert_at = self._link_msg = None
 
     def test_link(self, timeout: float = _TEST_TIMEOUT) -> dict:
         """TEST LINK: one WebSocket ping/pong round trip on the live socket. The
@@ -554,8 +559,13 @@ class Worker:
             if auth else f"Can't reach Rivendell since {at}. The bridge keeps retrying."),
             meta={"instance_id": self.id, "auth": auth})
         if notices.telegram_ok("rv_link"):
-            threading.Thread(target=self._deliver_telegram, args=(text, None),
+            threading.Thread(target=self._send_link_down, args=(text,),
                              name=f"rivendell-tg-{self.id}", daemon=True).start()
+
+    def _send_link_down(self, text: str) -> None:
+        sent = self._deliver_telegram(text, None)
+        if self.alert_at is not None:          # still down: _recovered edits it to "back"
+            self._link_msg = (sent or {}).get("message_id")
 
     # -- config accessors (read live off self.inst) --
     @property
@@ -2113,7 +2123,7 @@ class Worker:
             return
         token = _register_token(self.id, key)
         text, kb = self._queued_message(item, token)
-        threading.Thread(target=self._deliver_telegram, args=(text, kb),
+        threading.Thread(target=self._deliver_telegram, args=(text, kb, kind),
                          name=f"rivendell-tg-{self.id}", daemon=True).start()
 
     @staticmethod
@@ -2126,19 +2136,29 @@ class Worker:
         notices.emit(kind, f"rv:{self.id}:{request_id}", title=title, body=body,
                      meta={"instance_id": self.id, "instance": self.name, **meta})
 
-    def _deliver_telegram(self, text: str, kb: dict) -> None:
+    def _deliver_telegram(self, text: str, kb: dict, kind: str = "") -> "dict | None":
         """Send one ping (a held request, a broken link, a finished job) to the
-        bridge owner's chat. Silent when
+        bridge owner's chat: the message sent, ringing only when its `kind` needs
+        you (notices.tier). Nothing when
         Telegram is not configured ("if available"): the request still shows in
         the dashboard's PLUGINS queue regardless."""
         if not config.NOTIFY_ENABLE or not config.TOKEN or not config.DASH_CHAT_ID:
-            return
+            return None
         try:
             from bridge import telegram   # local import: telegram pulls state/config
             # Titles, meeting names and a model's lead come from outside: a markdown link there must not become a disguised link.
-            telegram.send(config.DASH_CHAT_ID, text, kb, markdown=False)
+            return telegram.send(config.DASH_CHAT_ID, text, kb, markdown=False,
+                                 silent=notices.tier(kind) != "needs")
         except Exception as e:  # noqa: BLE001 — a ping failure must never crash a worker
             print(f"rivendell[{self.name}]: queue Telegram ping failed: {e}")
+            return None
+
+    def _edit_telegram(self, message_id: int, text: str) -> None:
+        try:
+            from bridge import telegram   # local import: telegram pulls state/config
+            telegram.edit(config.DASH_CHAT_ID, message_id, text)   # as typed, like the ping
+        except Exception as e:  # noqa: BLE001 — an edit failure must never crash a worker
+            print(f"rivendell[{self.name}]: Telegram edit failed: {e}")
 
     # -- accept/reject gate --
     def queue_snapshot(self) -> list:

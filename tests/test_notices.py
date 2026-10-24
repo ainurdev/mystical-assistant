@@ -330,7 +330,7 @@ def _rv(monkeypatch):
                           "api_url": "http://api.example:3001", "token": "rvd_t", "ws_url": "",
                           "model": "opus", "workdir": "", "review_timeout": 3600,
                           "impl_timeout": 10800})
-    monkeypatch.setattr(w, "_deliver_telegram", lambda text, kb: None)
+    monkeypatch.setattr(w, "_deliver_telegram", lambda *a: None)
     return w
 
 

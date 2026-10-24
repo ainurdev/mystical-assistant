@@ -60,7 +60,7 @@ def recover(*, run=None, notify=None) -> int:
         try:
             if notices.telegram_ok("resumed"):
                 notify(t["chat_id"],
-                       "🔄 A restart interrupted this session — resuming where it left off.")
+                       "🔄 A restart interrupted this session — resuming where it left off.", silent=True)
         except Exception:  # noqa: BLE001
             pass
     return count

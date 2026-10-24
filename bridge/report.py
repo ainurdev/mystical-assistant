@@ -248,7 +248,7 @@ def _push_due() -> None:
         return
     if not never:
         for chat in config.ALLOWED_CHAT_IDS:
-            send(chat, render(weekly(chat, back=1)))
+            send(chat, render(weekly(chat, back=1)), silent=True)   # news, not an ask: no ring
     notices.emit("weekly", f"weekly:{int(due)}", title="Weekly report",
                  body="Last week's sessions, turns and spend are ready." if never else
                       "Last week's sessions, turns and spend, sent to Telegram.")

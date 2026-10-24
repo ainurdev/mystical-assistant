@@ -436,6 +436,36 @@ def test_red_pings_telegram_once_even_across_a_restart(monkeypatch, sent):
     assert len(sent) == 1
 
 
+def test_a_red_ping_is_silent_copies_the_branch_and_turns_green_in_place(monkeypatch):
+    now = _clock(monkeypatch)
+    store.set_setting("pr_pinged:acme/rivendell:feat/ping", None)   # the restart test's ping, same branch
+    calls = []
+    monkeypatch.setattr(prstatus.telegram, "tg",
+                        lambda method, **p: calls.append((method, p)) or {"message_id": 42})
+    _fake_gh(monkeypatch, [
+        (("pr", "view"), (0, json.dumps(_raw(headRefOid="r1", statusCheckRollup=[
+            _run("backend", conclusion="FAILURE", job=8)])), "")),
+        (("run", "view"), (0, LOG, "")),
+    ])
+    prstatus.snapshot("/r", "feat/ping", session="sid")
+    [(method, p)] = calls
+    assert method == "sendMessage" and p["disable_notification"] == "true"
+    assert json.loads(p["reply_markup"])["inline_keyboard"][-1][-1] == {
+        "text": "⎘ Copy branch", "copy_text": {"text": "feat/inbox-grouping"}}
+    _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw(headRefOid="r2", statusCheckRollup=[])), ""))])
+    now[0] += prstatus.TTL
+    prstatus.snapshot("/r", "feat/ping", session="sid")             # a fresh push: no checks yet
+    assert len(calls) == 1
+    _fake_gh(monkeypatch, [(("pr", "view"), (0, json.dumps(_raw(headRefOid="r2", statusCheckRollup=[
+        _run("backend")])), ""))])
+    now[0] += prstatus.TTL
+    prstatus.snapshot("/r", "feat/ping", session="sid")
+    method, p = calls[-1]
+    assert (method, p["message_id"]) == ("editMessageText", 42) and len(calls) == 2
+    assert p["text"].startswith("✓ PR #131 checks passing\nInbox: group action items by client")
+    assert store.get_setting("pr_msg:https://github.com/acme/rivendell/pull/131") is None
+
+
 def test_an_all_digit_branch_gets_no_chip_rather_than_pr_number_59(monkeypatch):
     calls = _fake_gh(monkeypatch, [])
     assert prstatus.snapshot("/r", "59")["pr"] is None

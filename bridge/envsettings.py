@@ -163,6 +163,11 @@ SETTINGS = (
      "about": "Lets you walk away from the dashboard or Mini App and still get told. "
               "The bot's own plain-text turns are never notified — they already reply "
               "in the chat."},
+    {"key": "TG_RICH", "type": "bool", "live": True,
+     "group": "RUNS", "label": "RICH ANSWERS", "hint": "the bot sends answers as rich messages",
+     "about": "Telegram's rich messages (Bot API 10.1) show an answer's Markdown as it "
+              "was written: tables, headings, task lists, long code folded. Off, answers "
+              "go as the plain HTML they always did. One Telegram refuses goes that way anyway."},
 
     # --- browser ------------------------------------------------------------
     {"key": "AI_BROWSER_HEADLESS", "type": "bool", "live": True,

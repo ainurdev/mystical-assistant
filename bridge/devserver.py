@@ -20,7 +20,7 @@ from collections import deque
 
 from bridge import config, pubsub, state
 from bridge.browser import rel
-from bridge.telegram import send
+from bridge.telegram import _esc, send
 
 # Dev-server logs are also teed to this file *inside the project* so a Claude
 # session running in the same cwd can simply read it (e.g. `tail .mystical/dev.log`).
@@ -317,4 +317,6 @@ def handle_logs(chat_id: int, arg: str):
         n = 40
     lines = _tail(state.project_dir(chat_id), n)
     body = "\n".join(lines) if lines else "(no server output yet)"
-    send(chat_id, f"📄 Last {len(lines)} log line(s):\n\n{body}")
+    # Folded until tapped, and as typed: log lines are data, not markdown. The tail that fits one message.
+    send(chat_id, f"📄 Last {len(lines)} log line(s):\n<blockquote expandable>{_esc(body[-3000:])}</blockquote>",
+         html=True)

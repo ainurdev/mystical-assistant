@@ -41,7 +41,9 @@ review decision. Why it is shaped like this:
   changes-requested review pings once per review, so pushing a fix doesn't
   ping again. Pings are remembered in the settings table, so a bridge restart
   doesn't repeat them. An all-green read clears the failing ping, so a later
-  red on the same commit pings again. The dashboard bell mirrors `pinged`.
+  red on the same commit pings again, and rewrites its Telegram message to say
+  the checks pass. The pings arrive silent (news, not an ask) with a button
+  that copies the branch. The dashboard bell mirrors `pinged`.
 
 Not built: merging (it stays on GitHub), PR state on session rows, the Mini App.
 """
@@ -239,11 +241,15 @@ def next_pings(pinged: "set[str]", pr: dict) -> "tuple[set[str], list[str]]":
     return keep, sorted(cur - pinged)
 
 
+def _where(pr: dict) -> str:
+    title = pr["title"] if len(pr["title"]) <= 120 else pr["title"][:119] + "…"
+    return f"{title} · ⎇ {pr['head']}\n{pr['url']}"
+
+
 def ping_text(pr: dict, key: str) -> str:
     """Plain text for Telegram: the title capped at 120 characters and at most
     five check names, so a ping stays a glance."""
-    title = pr["title"] if len(pr["title"]) <= 120 else pr["title"][:119] + "…"
-    where = f"{title} · ⎇ {pr['head']}\n{pr['url']}"
+    where = _where(pr)
     if key.startswith("failing:"):
         red = [c["name"] for c in pr["checks"] if c["state"] == "fail" and not c.get("cancelled")]
         names = ", ".join(red[:5]) + (f" +{len(red) - 5} more" if len(red) > 5 else "")
@@ -329,20 +335,46 @@ def _spawn(fn, *args) -> None:
     threading.Thread(target=fn, args=args, daemon=True).start()
 
 
+def _kb(project: str, session: str, pr: dict) -> dict:
+    """The panel button, and one that copies the branch name."""
+    rows = (telegram.panel_kb(config.DASH_CHAT_ID, session or None, project) or {}).get("inline_keyboard") or [[]]
+    return {"inline_keyboard": rows[:-1] + [rows[-1] + [
+        {"text": "⎘ Copy branch", "copy_text": {"text": pr["head"][:256]}}]]}
+
+
 def _telegram(project: str, session: str, pr: dict, keys: "list[str]") -> None:
     """Best effort, like runner._notify: a failed ping is only a missed ping."""
     if not (config.NOTIFY_ENABLE and config.TOKEN and config.DASH_CHAT_ID):
         return
     try:
-        kb = telegram.panel_kb(config.DASH_CHAT_ID, session or None, project)
+        kb = _kb(project, session, pr)
         for k in keys:
             # Plain text, not send()'s markdown → HTML: a PR title is anyone's
             # words, and a [label](url) in one must not turn into a link.
-            telegram.tg("sendMessage", chat_id=config.DASH_CHAT_ID, text=ping_text(pr, k),
-                        disable_web_page_preview="true",
-                        reply_markup=json.dumps(kb) if kb else None)
+            sent = telegram.tg("sendMessage", chat_id=config.DASH_CHAT_ID, text=ping_text(pr, k),
+                               disable_web_page_preview="true", disable_notification="true",
+                               reply_markup=json.dumps(kb))
+            if k.startswith("failing:") and isinstance(sent, dict) and sent.get("message_id"):
+                store.set_setting(f"pr_msg:{pr['url']}", str(sent["message_id"]))
     except Exception as e:  # noqa: BLE001: a ping must never break a read
         print(f"prstatus: Telegram ping failed: {e}")
+
+
+def _passing(project: str, session: str, pr: dict) -> None:
+    """The failing ping, rewritten once the checks are green again."""
+    key = f"pr_msg:{pr['url']}"
+    mid = store.get_setting(key)
+    if not mid:
+        return
+    store.set_setting(key, None)
+    if not (pr["state"] == "OPEN" and config.TOKEN and config.DASH_CHAT_ID):
+        return    # merged or closed: the old message stays what it said
+    try:
+        telegram.tg("editMessageText", chat_id=config.DASH_CHAT_ID, message_id=int(mid),
+                    text=f"✓ PR #{pr['number']} checks passing\n{_where(pr)}",
+                    disable_web_page_preview="true", reply_markup=json.dumps(_kb(project, session, pr)))
+    except Exception as e:  # noqa: BLE001: an edit must never break a read
+        print(f"prstatus: Telegram edit failed: {e}")
 
 
 def _pings(repo_dir: str, slug: str, branch: str, pr: dict, session: str) -> "list[str]":
@@ -354,6 +386,10 @@ def _pings(repo_dir: str, slug: str, branch: str, pr: dict, session: str) -> "li
     new, fresh = next_pings(old, pr)
     if new != old:
         store.set_setting(key, json.dumps(sorted(new)) if new else None)
+    # Green means checks ran and passed: right after a push the rollup can be empty.
+    if store.get_setting(f"pr_msg:{pr['url']}") and (
+            pr["state"] != "OPEN" or (pr["total"] and not pr["failed"] and not pr["running"])):
+        _spawn(_passing, browser.rel(repo_dir), session, pr)
     for k in fresh:
         failing = k.startswith("failing:")
         red = [c["name"] for c in pr["checks"] if c["state"] == "fail" and not c.get("cancelled")]

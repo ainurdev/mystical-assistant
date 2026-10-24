@@ -206,7 +206,7 @@ def take(session: dict, chat_id: int, rung: dict, *, run=None, notify=None,
     notices.emit("resumed", session["id"], body=f"Continuing on {rung['label']}.")
     try:
         if notices.telegram_ok("resumed"):
-            notify(chat_id, f"↪ Continuing on {rung['label']}.")
+            notify(chat_id, f"↪ Continuing on {rung['label']}.", silent=True)
     except Exception:  # noqa: BLE001
         pass
     return rung

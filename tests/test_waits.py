@@ -39,7 +39,8 @@ def fresh(monkeypatch, tmp_path):
 
 def _job(sid, status="done", result="", error=None, elapsed=840):
     return types.SimpleNamespace(store_session_id=sid, chat_id=CHAT, status=status, result=result,
-                                 texts=[], error_msg=error, elapsed=elapsed, ask_dismissed=False)
+                                 texts=[], error_msg=error, elapsed=elapsed, ask_dismissed=False,
+                                 tg_live=False)
 
 
 def test_add_resolves_a_busy_session_by_title_words(fresh):

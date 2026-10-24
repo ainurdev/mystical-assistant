@@ -11,6 +11,8 @@ import os
 import sqlite3
 import subprocess
 import tempfile
+import threading
+import time
 
 from bridge import config, runner, state, store
 
@@ -431,23 +433,43 @@ def test_a_refused_control_request_leaves_an_error_row():
 # --- the bot chat ------------------------------------------------------------------
 
 def _bot_argv(monkeypatch, sid, extra="--permission-mode acceptEdits"):
-    """The claude argv handle_task builds for `sid`, Telegram and side calls
-    stubbed; `extra` is EXTRA_CLAUDE_ARGS."""
-    from bridge import learn, titler
-    seen = {}
+    """The claude argv a Telegram prompt runs for `sid` (bridge/tglive.py), the
+    child and side calls stubbed; `extra` is EXTRA_CLAUDE_ARGS."""
+    from bridge import goals, learn, tglive, titler, toolsets
+    seen, spawned = {}, threading.Event()
 
-    def run(cmd, **kw):
-        seen["cmd"] = cmd
-        return subprocess.CompletedProcess(cmd, 0, stdout=json.dumps(
-            {"result": "ok", "session_id": "c-bot", "total_cost_usd": 0}), stderr="")
-    monkeypatch.setattr(runner.subprocess, "run", run)
-    for name in ("send", "typing", "_graph_pack_for", "_tasks_digest_for",
-                 "_dream_pack_for", "_graph_refresh_after_turn"):
+    class Popen:                                 # a child that says nothing and exits
+        returncode = 0
+        stderr = None
+
+        def __init__(self, cmd, **kw):
+            seen["cmd"] = cmd
+            self.stdin, self.stdout = _Stdin(), iter(())
+            spawned.set()
+
+        def poll(self):
+            return 0
+
+        def wait(self, timeout=None):
+            return 0
+    monkeypatch.setattr(runner.subprocess, "Popen", Popen)
+    monkeypatch.setattr(runner.git, "head_sha", lambda cwd: None)   # it would spawn through Popen
+    for name in ("_graph_pack_for", "_tasks_digest_for", "_dream_pack_for",
+                 "_graph_refresh_after_turn", "_announce_end"):
         monkeypatch.setattr(runner, name, lambda *a, **k: "")
+    monkeypatch.setattr(runner, "_maybe_auto_resume", lambda *a, **k: False)
+    monkeypatch.setattr(goals, "continue_after_turn", lambda *a, **k: False)
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+    monkeypatch.setattr(store, "default_disabled_tools", lambda: [])   # no `claude mcp list`
     monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
     monkeypatch.setattr(learn, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(tglive, "_watch", lambda *a, **k: None)
     monkeypatch.setattr(config, "EXTRA_CLAUDE_ARGS", extra)
-    runner.handle_task(CHAT, "hi", store.get_session(sid))
+    assert tglive.start(CHAT, store.get_session(sid), "hi")
+    assert spawned.wait(5)
+    deadline = time.time() + 5
+    while state.is_running(sid) and time.time() < deadline:   # the slot frees as the turn ends
+        time.sleep(0.02)
     return seen["cmd"]
 
 
@@ -483,6 +505,10 @@ def test_a_session_the_bot_started_keeps_extra_claude_args(monkeypatch):
     cmd = _bot_argv(monkeypatch, s["id"])
     assert "--model" not in cmd
     assert cmd[cmd.index("--permission-mode") + 1] == "acceptEdits"
+    s = store.create_session(CHAT, "/srs-bot-skip", origin="bot")
+    cmd = _bot_argv(monkeypatch, s["id"], extra="--dangerously-skip-permissions --add-dir /srv")
+    assert cmd[cmd.index("--permission-mode") + 1] == "bypassPermissions"   # Bypass by another name
+    assert "--dangerously-skip-permissions" not in cmd and cmd[cmd.index("--add-dir") + 1] == "/srv"
 
 
 def test_a_goal_nudge_runs_on_the_sessions_picks_when_it_starts(monkeypatch):

@@ -51,14 +51,15 @@ def no_real_helper(monkeypatch):
 @pytest.fixture(autouse=True)
 def quiet(monkeypatch):
     """Every Telegram message a worker or a hook would send, recorded instead of
-    sent: {"chat", "text", "kb", "mid"}. The generic run pings (runner._notify)
+    sent: {"chat", "text", "kb", "mid", "silent"}. The generic run pings (runner._notify)
     are silenced too. NOTIFY_ENABLE and the Mini App URL are pinned here: the
     bridge exports .env into the shells it hosts, and conftest pins neither."""
     from bridge import telegram
     sent = []
 
-    def send(chat_id, text, reply_markup=None, markdown=True):
-        sent.append({"chat": chat_id, "text": text, "kb": reply_markup, "mid": next(_mids)})
+    def send(chat_id, text, reply_markup=None, markdown=True, silent=False):
+        sent.append({"chat": chat_id, "text": text, "kb": reply_markup, "mid": next(_mids),
+                     "silent": silent})
         return {"message_id": sent[-1]["mid"]}
     monkeypatch.setattr(telegram, "send", send)
     monkeypatch.setattr(runner, "_notify", lambda *a, **k: None)
@@ -445,6 +446,26 @@ def test_an_outage_alerts_only_after_the_grace(quiet):
     assert "Can't reach" in _alerts(quiet)[0]
 
 
+def test_the_break_message_is_edited_to_back_and_never_rings(quiet, monkeypatch):
+    """One message per break: it arrives silent (the link is news, not an ask),
+    and coming back rewrites it rather than sending a second one."""
+    from bridge import telegram
+    edits = []
+    monkeypatch.setattr(telegram, "edit", lambda chat, mid, text, *a, **k: edits.append((mid, text)))
+    w = _worker()
+    w._set_status("auth_error", "token rejected (4401)")
+    _wait_until(lambda: w._link_msg is not None)
+    [msg] = [m for m in quiet if m["text"].startswith("✕ Rivendell link broken")]
+    assert msg["silent"] is True
+    w._recovered()
+    _wait_until(lambda: edits)
+    assert edits[0][0] == msg["mid"] and edits[0][1].startswith("✓ Rivendell link back — ")
+    assert "→ back" in edits[0][1] and w._link_msg is None
+    w._recovered()                                   # proving itself again edits nothing
+    time.sleep(0.05)
+    assert len(edits) == 1
+
+
 def test_coming_back_inside_the_grace_sends_nothing(quiet):
     w = _worker()
     w._set_status("error", "connection refused")
@@ -695,7 +716,7 @@ def test_the_option_button_answers_and_edits_the_ping(monkeypatch):
 def test_a_reply_to_a_ping_never_becomes_a_prompt(monkeypatch):
     from bridge import dispatch
     started, edits = [], []
-    monkeypatch.setattr(dispatch, "handle_task", lambda *a: started.append(a))
+    monkeypatch.setattr(dispatch.tglive, "start", lambda *a, **k: started.append(a))
     monkeypatch.setattr(dispatch, "send", lambda *a, **k: None)
     monkeypatch.setattr(dispatch, "edit", lambda chat, mid, text, kb=None: edits.append((mid, text)))
     monkeypatch.setattr(rivendell, "answer_reply",
@@ -711,17 +732,15 @@ def test_a_reply_to_a_ping_never_becomes_a_prompt(monkeypatch):
 
 def test_a_reply_to_any_other_message_is_still_a_prompt(monkeypatch):
     """Review focus 4: replying to an ordinary bot message keeps meaning "do this"."""
-    from bridge import dispatch, state
+    from bridge import dispatch
     started = []
-    monkeypatch.setattr(dispatch, "handle_task", lambda *a: started.append(a))
+    monkeypatch.setattr(dispatch.tglive, "start", lambda *a, **k: started.append(a))
     monkeypatch.setattr(dispatch, "send", lambda *a, **k: None)
     monkeypatch.setattr(rivendell, "answer_reply", lambda mid, text: None)
     store.init()
     dispatch.on_message({"chat": {"id": 555}, "text": "fix the header",
                          "reply_to_message": {"message_id": 42, "text": "✅ Claude finished"}})
-    _wait_until(lambda: started)
-    state.release_run(started[0][2]["id"])
-    assert started[0][1] == "fix the header"
+    assert started[0][2] == "fix the header"
 
 
 def test_a_tap_on_an_old_ping_after_remove_does_nothing(monkeypatch):
@@ -741,18 +760,16 @@ def test_a_tap_on_an_old_ping_after_remove_does_nothing(monkeypatch):
 
 
 def test_a_reply_to_an_old_ping_after_remove_is_a_prompt(monkeypatch):
-    from bridge import dispatch, integrations, state
+    from bridge import dispatch, integrations
     monkeypatch.setattr(integrations, "_cache", {"rivendell": False, "trackers": True, "design": True})
     started, asked = [], []
-    monkeypatch.setattr(dispatch, "handle_task", lambda *a: started.append(a))
+    monkeypatch.setattr(dispatch.tglive, "start", lambda *a, **k: started.append(a))
     monkeypatch.setattr(dispatch, "send", lambda *a, **k: None)
     monkeypatch.setattr(rivendell, "answer_reply", lambda mid, text: asked.append(mid))
     store.init()
     dispatch.on_message({"chat": {"id": 555}, "from": {"id": 555}, "text": "only last week",
                          "reply_to_message": {"message_id": 41, "text": "◆ Rivendell job needs you"}})
-    _wait_until(lambda: started)
-    state.release_run(started[0][2]["id"])
-    assert asked == [] and started[0][1] == "only last week"
+    assert asked == [] and started[0][2] == "only last week"
 
 
 # --- Task 8: one "job done" ping per job ----------------------------------------
@@ -1249,7 +1266,7 @@ def test_only_the_owner_can_answer_by_reply(monkeypatch):
     what any message there is, a prompt."""
     from bridge import dispatch
     started, answered = [], []
-    monkeypatch.setattr(dispatch, "handle_task", lambda *a: started.append(a))
+    monkeypatch.setattr(dispatch.tglive, "start", lambda *a, **k: started.append(a))
     monkeypatch.setattr(dispatch, "send", lambda *a, **k: None)
     monkeypatch.setattr(dispatch, "edit", lambda *a, **k: None)
     monkeypatch.setattr(rivendell, "answer_reply", lambda mid, text: answered.append(mid) or "ok")
@@ -1257,9 +1274,7 @@ def test_only_the_owner_can_answer_by_reply(monkeypatch):
     dispatch.on_message({"chat": {"id": config.DASH_CHAT_ID}, "from": {"id": 424242},
                          "text": "leave them out",
                          "reply_to_message": {"message_id": 41, "text": "◆ Rivendell job needs you"}})
-    assert answered == []
-    _wait_until(lambda: started)
-    state.release_run(started[0][2]["id"])
+    assert answered == [] and started[0][2] == "leave them out"
 
 
 def test_a_group_chat_is_never_the_owner(tmp_path):

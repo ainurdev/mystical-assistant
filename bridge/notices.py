@@ -27,8 +27,9 @@ routing read never raises into a run, a worker or a request.
 import json
 import re
 import sys
+import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from bridge import config, store
 
@@ -128,6 +129,12 @@ _HHMM = re.compile(r"([01]\d|2[0-3]):[0-5]\d")
 
 # The newest click or keypress any dashboard page reported (/local/running?seen=).
 _last_seen = float("-inf")
+
+
+def tier(kind: "str | None") -> str:
+    """needs | news | fyi: what a notice of this kind asks of you. Only needs
+    rings on Telegram (runner._notify); anything without a kind is fyi."""
+    return CATALOG.get(kind or "", ("", "fyi", ""))[1]
 
 
 def verb(kind: str, meta: "dict | None" = None) -> str:
@@ -302,6 +309,65 @@ def telegram_ok(kind: str, now: "float | None" = None) -> bool:
     except Exception as e:  # noqa: BLE001
         print(f"[notices] routing read failed, pinging: {e}", file=sys.stderr)
         return True
+
+
+# --- quiet hours: what they held, in one message when they end ---------------------
+
+def held(since: float, until: float, p: "dict | None" = None) -> list:
+    """The feed rows quiet hours kept off Telegram, oldest first: the kinds
+    whose route would have sent them. A NEEDS YOU they let through was sent,
+    and an ask's own echo never is."""
+    p = p or prefs()
+    out = []
+    for r in reversed(store.list_notices(since, LIMIT)):
+        group, tier, _ = CATALOG.get(r["kind"], (None, "", ""))
+        if (group and r["at"] <= until and p["events"][group]["tg"] != "off"
+                and not r["meta"].get("quiet") and not (tier == "needs" and p["quiet"]["needs"])):
+            out.append(r)
+    return out
+
+
+def held_text(rows: list, most: int = 12) -> str:
+    """One plain-text message for them (titles are outside words: no markdown)."""
+    sessions: dict = {}
+    lines = []
+    for r in rows[-most:]:
+        v = _row(r, sessions)
+        lines.append(f"• {v['verb']} · {v['title'] or 'Mystical'}" + (f": {v['body'][:140]}" if v["body"] else ""))
+    more = f"\n…and {len(rows) - most} more in the bell." if len(rows) > most else ""
+    return "🌙 While it was quiet\n" + "\n".join(lines) + more
+
+
+def _quiet_began(now: datetime, start: str) -> float:
+    h, m = map(int, start.split(":"))
+    began = now.replace(hour=h, minute=m, second=0, microsecond=0)
+    return (began - timedelta(days=1) if began > now else began).timestamp()
+
+
+def _send_held(p: dict) -> None:
+    rows = held(_quiet_began(datetime.now(), p["quiet"]["from"]), time.time(), p)
+    if rows and config.NOTIFY_ENABLE and config.TOKEN and config.DASH_CHAT_ID:
+        from bridge import telegram   # lazy: the bot is the heavy half
+        telegram.send(config.DASH_CHAT_ID, held_text(rows), markdown=False,
+                      silent=not any(CATALOG[r["kind"]][1] == "needs" for r in rows))
+
+
+def watch_quiet() -> None:
+    """When quiet hours end, what they held comes as one message.
+    shortcut: a bridge that is down as they end sends none; keep the last end sent in settings if that matters."""
+    def loop():
+        was = quiet()
+        while True:
+            time.sleep(60)
+            try:
+                p = prefs()
+                now = quiet(None, p)
+                if was and not now:
+                    _send_held(p)
+                was = now
+            except Exception as e:  # noqa: BLE001 — a missed digest is only a missed digest
+                print(f"[notices] quiet-hours digest failed: {e}", file=sys.stderr)
+    threading.Thread(target=loop, name="quiet-digest", daemon=True).start()
 
 
 def echo(kind: str, subject: str, within: float = 60) -> bool:

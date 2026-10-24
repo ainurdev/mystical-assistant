@@ -41,11 +41,11 @@ import signal
 import sys
 
 from bridge import (config, devserver, dream, envsettings, landing, limits,
-                    native_activity, onboard, profiles, pubsub, recovery,
+                    native_activity, notices, onboard, profiles, pubsub, recovery,
                     report, rivendell, runner, selfupdate, state, store,
-                    toolsets, tunnel, whatsnew)
-from bridge.dispatch import handle_callback, on_message
-from bridge.telegram import get_updates, tg
+                    tgtopics, toolsets, tunnel, whatsnew)
+from bridge.dispatch import handle_callback, menu, on_message, on_stop
+from bridge.telegram import get_updates, set_commands, tg
 
 
 def _setup_miniapp():
@@ -184,6 +184,7 @@ def main():
         limits.boot()                  # re-arm sessions parked on a usage-limit reset
         if config.TOKEN:
             report.boot()              # Monday-morning weekly report (catches up a dark Monday)
+            notices.watch_quiet()      # what quiet hours held, in one message as they end
         dream.boot()                   # nightly per-repo digest (catches up a night asleep)
         whatsnew.boot()                # what the last update changed, and new notes, into the changelog
         whatsnew.watch()               # hourly look upstream: what a waiting update brings, before it's taken
@@ -203,6 +204,8 @@ def main():
             if me:
                 print(f"Bridge online as @{me.get('username')}  base={config.BASE_PATH}")
                 onboard.ensure_profile(config.TOKEN)   # picture + description, if still blank
+                tgtopics.boot(me)              # a thread per session, when BotFather has topics on
+                set_commands(menu())           # the "/" menu, from /help
             else:
                 print("⚠️  Telegram unreachable at start — check token/network; "
                       "retrying via long-poll.", file=sys.stderr)
@@ -221,6 +224,8 @@ def main():
                         handle_callback(upd["callback_query"])
                     elif "message" in upd:
                         on_message(upd["message"])
+                    elif "stopped_message_generation" in upd:
+                        on_stop(upd["stopped_message_generation"])   # Stop under a live answer
                 except Exception as e:  # noqa: BLE001
                     print(f"[handler] {e}", file=sys.stderr)
     except KeyboardInterrupt:

@@ -20,6 +20,9 @@ _run_guard = threading.Lock()
 _run_chats: dict[str, int] = {}            # session id -> chat that owns the in-flight turn
 
 miniapp_url: str | None = None             # current public Mini App URL
+# The bot has topics in private chats (getMe has_topics_enabled, switched on in
+# @BotFather): each session talks in its own thread (bridge/tgtopics.py).
+tg_topics = False
 miniapp_tunnel_proc = None                 # subprocess.Popen for the Mini App tunnel
 
 # True once the bridge is stopping (SIGINT/SIGTERM/shutdown). Runner threads that

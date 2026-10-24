@@ -5,11 +5,10 @@ import sys
 import threading
 
 from bridge import (accounts, config, graphmap, integrations, ladder, limits, notices, profiles,
-                    report, state, store, tgfiles, usage)
+                    report, state, store, tgask, tgfiles, tglive, tgtopics, usage)
 from bridge.browser import browser_view, list_dirs, open_browser, rel, within_base
 from bridge.devserver import handle_logs, handle_server, server_status
-from bridge.runner import handle_task
-from bridge.telegram import answer_cb, edit, panel_kb, send
+from bridge.telegram import answer_cb, edit, edit_markup, panel_kb, send
 
 HELP = (
     "Claude Code remote bridge.\n\n"
@@ -31,6 +30,12 @@ HELP = (
     "/help — this message\n\n"
     "Send a file or photo too (20 MB max): its caption is the prompt, or it goes "
     "with your next message.")
+
+
+def menu() -> "list[tuple[str, str]]":
+    """The menu "/" opens (telegram.set_commands): HELP's command lines."""
+    return [(ln.split()[0][1:], ln.split(" — ", 1)[1]) for ln in HELP.splitlines()
+            if ln.startswith("/") and " — " in ln]
 
 
 def _open_app(chat_id: int):
@@ -128,13 +133,10 @@ def _next_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
                                    cwd=item["cwd"],
                                    profile_id=profiles.project_default(rel(item["cwd"])))
     store.set_subject_title(session["id"], item["title"])
-    if not state.acquire_run(session["id"], chat_id):
-        answer_cb(cb["id"], "That session is busy.")
-        return
     answer_cb(cb["id"], "Starting…")
     edit(chat_id, msg_id, f"▸ {item['title']}\n{rel(item['cwd'])}")
-    threading.Thread(target=handle_task,
-                     args=(chat_id, item["prompt"], session), daemon=True).start()
+    tglive.start(chat_id, store.get_session(session["id"]) or session, item["prompt"],
+                 thread=tgtopics.thread_for(chat_id, session["id"]))
 
 
 def _rivendell_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
@@ -197,6 +199,32 @@ def _question_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     edit(chat_id, msg_id, f"{text}\n\n✓ You answered: {said}. The run continues.")
 
 
+def _ask_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
+    """A button on a question or an approval (bridge/tgask.py): answer the turn
+    held on it, and turn the ping into the record of the answer. A stale tap
+    (answered elsewhere, or the turn ended) loses the buttons; one from anyone
+    not allowed here answers nothing."""
+    parts = data.split(":")
+    if len(parts) != 3 or (cb.get("from") or {}).get("id") not in config.ALLOWED_CHAT_IDS:
+        answer_cb(cb["id"])
+        return
+    said, ask = tgask.tap(chat_id, parts[1], parts[2])
+    if said is None:
+        answer_cb(cb["id"], "Already answered.")
+        edit_markup(chat_id, msg_id, None)
+        return
+    answer_cb(cb["id"], "Answered. The turn goes on.")
+    html, kb = tgask.answered(ask, said)
+    edit(chat_id, msg_id, html, kb, html=True)
+
+
+def on_stop(update: dict) -> None:
+    """Telegram's Stop under a live answer (stopped_message_generation)."""
+    chat_id = (update.get("chat") or {}).get("id")
+    if chat_id in config.ALLOWED_CHAT_IDS:
+        tglive.stop(chat_id, update.get("draft_id"))
+
+
 def on_message(msg: dict):
     chat_id = msg["chat"]["id"]
     text = (msg.get("text") or "").strip()
@@ -211,18 +239,44 @@ def on_message(msg: dict):
     if chat_id not in config.ALLOWED_CHAT_IDS:
         print(f"[blocked] unauthorized chat_id={chat_id}", file=sys.stderr)
         return
+    # A topic of a private chat with threads (bridge/tgtopics.py): its session.
+    made_topic = msg.get("forum_topic_created")
+    thread = msg.get("message_thread_id") if (msg.get("is_topic_message") or made_topic) else None
+    if thread and msg["chat"].get("type") == "private":
+        state.tg_topics = True     # the bot has topics, whatever boot's getMe said
+    if thread and made_topic:
+        # The user's new topic is a new session; one the bridge made already has its own.
+        if not (msg.get("from") or {}).get("is_bot") and not store.session_by_thread(chat_id, thread):
+            name = "" if made_topic.get("is_name_implicit") else made_topic.get("name") or ""   # "" = the titler's
+            made = tgtopics.adopt(chat_id, thread, name, state.project_key(chat_id))
+            send(chat_id, f"New session in {made['project']}. Write here to talk to it.", thread=thread)
+        return
     if sent:
         # A file is never a command: its caption is the prompt, or it waits.
-        _on_file(chat_id, sent, (msg.get("caption") or "").strip())
+        _on_file(chat_id, sent, (msg.get("caption") or "").strip(), thread=thread,
+                 msg_id=msg.get("message_id"))
         return
     if not text:
-        send(chat_id, "Send a text prompt, or /help.")
+        if thread is None and not made_topic:
+            send(chat_id, "Send a text prompt, or /help.")
         return
+    replied = msg.get("reply_to_message") or {}
+    # A text reply to a question or an approval (bridge/tgask.py) answers it in
+    # those words; it is not a prompt.
+    if (replied.get("message_id") and not text.startswith("/")
+            and (msg.get("from") or {}).get("id") in config.ALLOWED_CHAT_IDS):
+        said, ask = tgask.reply(chat_id, replied["message_id"], text)
+        if said is False:
+            send(chat_id, "That was already answered, or its turn ended.", thread=thread)
+            return
+        if said:
+            html, kb = tgask.answered(ask, said)
+            edit(chat_id, replied["message_id"], html, kb, html=True)
+            return
     # A text reply to a Rivendell NEEDS YOU ping answers its question (free text,
     # for when none of the options fit). It is not a prompt. Only the owner's
     # (_owner), and only while Rivendell is installed: anyone else's reply, and
     # any reply once it is removed, stays what any message here is.
-    replied = msg.get("reply_to_message") or {}
     if (_owner(chat_id, (msg.get("from") or {}).get("id")) and replied.get("message_id")
             and not text.startswith("/") and integrations.installed("rivendell")):
         from bridge import rivendell
@@ -253,7 +307,9 @@ def on_message(msg: dict):
     if text == "/new":
         key = state.project_key(chat_id)
         s = store.create_session(chat_id, key, profile_id=profiles.project_default(key))
-        send(chat_id, "🆕 Fresh Claude session.", panel_kb(chat_id, s["id"], key))
+        # With threads, the new session gets its own topic, and the words go there.
+        send(chat_id, "🆕 Fresh Claude session." + (" Write in its topic to talk to it." if tgtopics.on() else ""),
+             panel_kb(chat_id, s["id"], key), thread=tgtopics.thread_for(chat_id, s["id"]))
         return
     if cmd0 == "/server":
         threading.Thread(target=handle_server,
@@ -299,46 +355,50 @@ def on_message(msg: dict):
              panel_kb(chat_id, s["id"] if s else None, key))
         return
 
-    _run_prompt(chat_id, text)
+    _run_prompt(chat_id, text, thread=thread, msg_id=msg.get("message_id"))
 
 
-def _run_prompt(chat_id: int, text: str, files: list[str] | None = None) -> None:
-    """Plain text -> prompt to Claude in the active project, with any files sent
-    before it. Claim this session's run slot; a run in another project/session
-    is unaffected. A busy session keeps the files waiting for the next try."""
-    key = state.project_key(chat_id)
-    session = store.ensure_session(chat_id, key, profile_id=profiles.project_default(key))
-    if not state.acquire_run(session["id"], chat_id):
-        for p in files or []:
-            tgfiles.hold(chat_id, p)
-        send(chat_id, "⏳ Still working on this session — please wait.")
-        return
+def _run_prompt(chat_id: int, text: str, files: list[str] | None = None, *,
+                thread: "int | None" = None, msg_id: "int | None" = None) -> None:
+    """Plain text -> prompt to Claude, run live (bridge/tglive.py), with any
+    files sent before it: in a topic, its session; else the active project's.
+    A run in another project/session is unaffected; a busy session keeps the
+    files waiting for the next try."""
+    if thread:
+        session = (store.session_by_thread(chat_id, thread)
+                   or tgtopics.adopt(chat_id, thread, "", state.project_key(chat_id)))
+    else:
+        key = state.project_key(chat_id)
+        session = store.ensure_session(chat_id, key, profile_id=profiles.project_default(key))
     files = (files or []) + tgfiles.take(chat_id)
-    threading.Thread(target=handle_task, args=(chat_id, text, session, files),
-                     daemon=True).start()
+    # With threads, the answer goes to the session's topic, wherever the prompt was typed.
+    tglive.start(chat_id, session, text, files, msg_id=msg_id,
+                 thread=thread or tgtopics.thread_for(chat_id, session["id"]))
 
 
-def _on_file(chat_id: int, sent: dict, caption: str) -> None:
+def _on_file(chat_id: int, sent: dict, caption: str, *, thread: "int | None" = None,
+             msg_id: "int | None" = None) -> None:
     """Download off the poll thread (up to 20 MB), then run the caption with it,
     or hold it for the next message when there's no caption."""
     why = tgfiles.too_big(sent)
     if why:
-        send(chat_id, why)
+        send(chat_id, why, thread=thread)
         return
 
     def work():
         try:
             path = tgfiles.save(sent)
         except ValueError as e:
-            send(chat_id, str(e))
+            send(chat_id, str(e), thread=thread)
             return
         if caption:
-            _run_prompt(chat_id, caption, [path])
+            _run_prompt(chat_id, caption, [path], thread=thread, msg_id=msg_id)
         else:
+            # shortcut: held files wait per chat, not per topic; key them by thread if two topics' files ever mix.
             n = tgfiles.hold(chat_id, path)
             send(chat_id, f"📎 Got {os.path.basename(path)}. "
                           + ("It goes" if n == 1 else f"These {n} files go")
-                          + " with your next message.")
+                          + " with your next message.", thread=thread)
 
     threading.Thread(target=work, daemon=True).start()
 
@@ -420,7 +480,7 @@ def _accounts_text() -> str:
                 continue
             at = usage.resets_epoch(b.get("resets_at"))
             parts.append(f"{tag} {max(0, 100 - round(b['percent']))}% left"
-                         + (f", resets {limits.when_str(at)}" if at else ""))
+                         + (f", resets {limits.when_tg(at)}" if at else ""))
         meter = " · ".join(parts) or (
             "usage unknown" if m["logged_in"] else "login expired — /accounts login")
         tags = " (default)" if a["default"] else ""
@@ -595,6 +655,10 @@ def handle_callback(cb: dict):
 
     elif data.startswith("rq:"):
         threading.Thread(target=_question_callback,
+                         args=(cb, chat_id, msg_id, data), daemon=True).start()
+
+    elif data.startswith("ta:"):
+        threading.Thread(target=_ask_callback,
                          args=(cb, chat_id, msg_id, data), daemon=True).start()
 
     else:

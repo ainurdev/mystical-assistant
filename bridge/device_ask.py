@@ -49,7 +49,7 @@ import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-from bridge import (config, device_side, github, integrations, queue_manager,
+from bridge import (config, device_side, github, integrations, notices, queue_manager,
                     rivendell_instances, store, telegram)
 
 _SNAPSHOT_MAX = 9 * 1024 * 1024     # gzipped, as the device side takes it
@@ -505,7 +505,9 @@ def _on_update(worker, frame):
             _busy.add(rid)
     if status == "RUNNING":
         what = device_side._dig(frame, "task", "key") or rec.get("task") or rec.get("pr")
-        telegram.send(config.DASH_CHAT_ID, f"Started on {_label(device) if device else 'a shared device'}: {what}.")
+        if notices.telegram_ok("rv_started"):    # its STARTED route, and no ring: nothing to do
+            telegram.send(config.DASH_CHAT_ID, f"Started on {_label(device) if device else 'a shared device'}: {what}.",
+                          silent=True)
         return
     try:
         _hand_back(worker, rid, rec, frame)
@@ -563,7 +565,7 @@ def _tell(rid, rec, frame):
                               permission_mode=None, width=None, sel=[], surface="rivendell",
                               chat_id=sess["chat_id"], project=sess["project"])
     else:
-        telegram.send(config.DASH_CHAT_ID, head)
+        telegram.send(config.DASH_CHAT_ID, head, silent=True)
 
 
 def _fenced(report: str) -> str:
