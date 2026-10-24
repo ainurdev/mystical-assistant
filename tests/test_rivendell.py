@@ -3306,7 +3306,6 @@ _BOARD = {
         {"teamworkProjectId": "b0", "name": "Old", "missing": True}]},
     ("read_route", "/task-management/projects/b1/tasklists"): [
         {"id": "l-fu", "name": "Follow-ups"}, {"id": "l-in", "name": "Inbox"}],
-    ("read_route", "/task-management/tags"): [{"externalId": "tag-1", "name": "Unplanned"}],
     ("write_route", "/task-management/tasks"): {"id": "t74", "key": "NRA-74", "name": "Add audit log"},
 }
 
@@ -3428,13 +3427,13 @@ def test_landing_list_prefers_inbox_then_unorganized_then_first():
     assert pick([{"name": "Inbox"}]) is None and pick([]) is None
 
 
-def test_work_create_files_a_tagged_task_on_the_inbox(workers, monkeypatch):
+def test_work_create_files_an_untagged_task_on_the_inbox(workers, monkeypatch):
     calls = _on_board(workers, monkeypatch)
     text = rivendell.work_create("/x", "Add audit log", "Why.")
     assert calls[-1] == ("write_route", "POST", "/task-management/tasks",
-                         {"tasklistId": "l-in", "name": "Add audit log", "description": "Why.",
-                          "tagExternalIds": ["tag-1"]})
-    assert "Created NRA-74" in text and "tagged unplanned" in text
+                         {"tasklistId": "l-in", "name": "Add audit log", "description": "Why."})
+    assert not [c for c in calls if "/task-management/tags" in c]
+    assert "Created NRA-74" in text and "tagged" not in text
     assert "https://rv/task-management/projects/b1?task=t74" in text
 
 
@@ -3508,25 +3507,6 @@ def test_work_create_needs_a_title(workers, monkeypatch):
     calls = _on_board(workers, monkeypatch)
     assert rivendell.work_create("/x", "  ") == "title is required."
     assert calls == []
-
-
-def test_work_create_makes_the_tag_once_when_missing(workers, monkeypatch):
-    calls = _on_board(workers, monkeypatch, routes={
-        ("read_route", "/task-management/tags"): [{"externalId": "x", "name": "Review"}],
-        ("write_route", "/task-management/tags"): {"externalId": "tag-new", "name": "unplanned"}})
-    rivendell.work_create("/x", "Add audit log")
-    assert ("write_route", "POST", "/task-management/tags", {"name": "unplanned"}) in calls
-    assert calls[-1][3] == {"tasklistId": "l-in", "name": "Add audit log", "tagExternalIds": ["tag-new"]}
-
-
-def test_work_create_files_untagged_when_no_tag_can_be_had(workers, monkeypatch):
-    calls = _on_board(workers, monkeypatch, routes={
-        ("read_route", "/task-management/tags"): [],
-        ("write_route", "/task-management/tags"): "POST /task-management/tags answered 403: Forbidden resource"})
-    text = rivendell.work_create("/x", "Add audit log")
-    assert calls[-1][3] == {"tasklistId": "l-in", "name": "Add audit log"}
-    assert len([c for c in calls if c[:3] == ("read_route", "GET", "/task-management/tags")]) == 2
-    assert "Created NRA-74" in text and "untagged" in text
 
 
 def test_work_create_on_two_boards_needs_board(workers, monkeypatch):

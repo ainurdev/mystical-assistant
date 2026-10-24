@@ -236,7 +236,7 @@ export function QuestionCard({
                       <div className="font-medium">{task ? taskLabel(o.label) : o.label}</div>
                       {o.description && (
                         <div className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}>
-                          {task ? chips(o.description, /(\bunplanned\b)/, "tc-tag") : o.description}
+                          {o.description}
                         </div>
                       )}
                     </div>
@@ -330,7 +330,7 @@ export function QuestionCard({
                     <div
                       className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}
                     >
-                      {task ? chips(o.description, /(\bunplanned\b)/, "tc-tag") : o.description}
+                      {o.description}
                     </div>
                   )}
                 </button>

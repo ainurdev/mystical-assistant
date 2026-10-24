@@ -14,6 +14,11 @@ keyless push, and the card and the branch's state are dressed in the dashboard:
 see [rivendell-task-check](rivendell-task-check.md). The rest of this spec still
 describes the tools, the boards and the tag.
 
+**Since 2026-10-24 created tasks carry no tag.** Rivendell's board tags were
+cut to bug / feature / chore / follow-up / waiting-on-client / cancelled, and
+`unplanned` was dropped: nothing read it, and it landed on planned work too.
+The tag parts below are history.
+
 ## What the user decided
 
 - **Ask first.** When no open task covers the work, the session asks with one

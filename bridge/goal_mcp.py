@@ -110,7 +110,7 @@ _RV_TOOLS = [
     {
         "name": "CreateRivendellTask",
         "description": (
-            "File a Rivendell task, tagged unplanned, for work no open task covers. Call "
+            "File a Rivendell task for work no open task covers. Call "
             "it only after the user said yes on a card. It answers with the task's key: "
             "put that in the branch name and the PR title."),
         "inputSchema": {
