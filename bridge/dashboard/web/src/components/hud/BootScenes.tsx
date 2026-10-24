@@ -20,9 +20,12 @@
    animation that answers the boot rather than opens it (an exit flourish, a
    step's pulse), which `.bootcontinue` must not fast-forward (index.css). The
    ids are fixed because only one intro is ever mounted: the boot, or after it
-   the restart's overlay. Drafts: .mystical/design-drafts/lotr-boot/ and
-   khazad-dum-v2/. */
-import type { CSSProperties, ReactNode } from "react";
+   the restart's overlay. KHAZAD-DÛM's fire, smoke, light, Balrog and Gandalf
+   are drawn on a WebGL canvas under its SVG (BootFire), which then hides its own
+   (.kd-scene[data-gl]); without WebGL the SVG draws them. Drafts:
+   .mystical/design-drafts/lotr-boot/, khazad-dum-v2/ and khazad-dum-v3/. */
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { startFire } from "./BootFire";
 
 type Flame = [x: number, y: number, rot: number, scale: number, delay: number, dur?: number];
 
@@ -139,29 +142,47 @@ function Pillar({ x, w, far }: { x: number; w: number; far?: boolean }) {
   );
 }
 
+// How long the scene's exit runs before the wipe may start: the whip's ending
+// (BootFire, kdyank), which BootIntro waits for through data-exit-ms.
+const KD_EXIT_MS = 1300;
+
 /** KHAZAD-DÛM: "You shall not pass." Gandalf holds a slender bridge over the
  *  chasm while the dashboard loads. Each answered step kindles one rune of the
  *  six round his staff's light, pulses it and makes the shadow's fire flinch;
  *  leaving, he lifts the staff over his head and plants it on the deck, white
- *  flame stands up where it lands, a crack runs to the Balrog's feet, the span
- *  under it breaks in three and falls, and the wipe (kdplunge) drops the whole
- *  frame, Balrog and all, into the deep. Always drawn at night: the intro
- *  hands this scene a dark ground (lib/theme nightOf). */
+ *  flame stands up where it lands, a crack runs to the Balrog's feet and the
+ *  span under it breaks in three. The Balrog drops through it, its whip cracks
+ *  up out of the deep and drags Gandalf over the edge (FLY, YOU FOOLS), and the
+ *  wipe (kdplunge) drops the whole frame after them. The fire, the Balrog and
+ *  Gandalf are drawn on a canvas under the SVG (BootFire); the whip's ending
+ *  needs it, so without WebGL the scene leaves as it did before. Always drawn
+ *  at night: the intro hands this scene a dark ground (lib/theme nightOf). */
 export function KhazadDum({ progress }: { progress: number }) {
   const lit = Math.floor(progress * 6 + 1e-9);
   // the step's pulse and flinch restart by swapping between twin keyframes, so nothing remounts
   const beat = lit ? (lit % 2 ? "a" : "b") : "";
+  const [gl, setGl] = useState(() => typeof WebGLRenderingContext !== "undefined");
+  const canvas = useRef<HTMLCanvasElement>(null), svg = useRef<SVGSVGElement>(null);
+  useEffect(() => {
+    if (!gl) return;
+    const stop = startFire(canvas.current!, svg.current!, () => setGl(false));
+    if (!stop) setGl(false);
+    return stop ?? undefined;
+  }, [gl]);
   return (
     <>
-      <div className="kd-field" aria-hidden>
-        <div className="kd-deep" />
-        {EMBERS.map(([l, b, d, t], i) => (
-          <i key={i} className={i % 4 === 3 ? "kd-ember kd-big" : "kd-ember"} style={{ left: `${l}%`, bottom: `${b}%`, animationDelay: `${d}s`, animationDuration: `${t}s` }} />
-        ))}
-      </div>
+      {gl ? <canvas ref={canvas} className="kd-gl" aria-hidden /> : (
+        <div className="kd-field" aria-hidden>
+          <div className="kd-deep" />
+          {EMBERS.map(([l, b, d, t], i) => (
+            <i key={i} className={i % 4 === 3 ? "kd-ember kd-big" : "kd-ember"} style={{ left: `${l}%`, bottom: `${b}%`, animationDelay: `${d}s`, animationDuration: `${t}s` }} />
+          ))}
+        </div>
+      )}
       <div className="kd-flash bx" aria-hidden />
 
-      <svg className="kd-scene bx" viewBox="-1400 -120 2800 760" style={{ "--p": progress } as CSSProperties} aria-hidden>
+      <svg ref={svg} className="kd-scene bx" viewBox="-1400 -120 2800 760" style={{ "--p": progress } as CSSProperties}
+        data-gl={gl || undefined} data-exit-ms={gl ? KD_EXIT_MS : undefined} aria-hidden>
         <defs>
           <radialGradient id="kd-back">
             <stop offset="0" style={{ stopColor: "var(--err)", stopOpacity: 0.5 }} />
@@ -403,60 +424,64 @@ export function KhazadDum({ progress }: { progress: number }) {
         <path className="kd-crack bx" pathLength={1} filter="url(#kd-glow)" d="M -238 318.6 L -214 317.4 L -208 320.3 L -170 315.5 L -150 318.2 L -110 314.9 L -84 317.5 L -40 314.1 L -6 316.7 L 30 314 L 52 315.8" />
         <path className="kd-crack kd-twig bx" pathLength={1} filter="url(#kd-glow)" d="M -208 320.3 L -196 325.6 M -150 318.2 L -142 324.5 L -146 328.6 M -84 317.5 L -76 324.6 M -6 316.7 L 4 324.1 L 0 328.1" />
 
-        {/* Gandalf, on the deck, facing the shadow */}
-        <g className="kd-wizard">
-          <g transform="translate(-250 319)">
-            <g filter="url(#kd-rim-gf)">
-              {/* the cloak, streaming back in the fire's wind */}
-              <path className="kd-gf kd-cloak" d="M -8 -124 C -30 -126 -58 -122 -86 -112 C -98 -108 -110 -104 -122 -104 C -114 -96 -110 -90 -112 -82 C -104 -78 -100 -72 -100 -64 C -94 -58 -90 -50 -92 -42 C -82 -36 -76 -26 -76 -16 C -62 -8 -48 -2 -36 0 C -30 -40 -22 -84 -8 -124 Z" />
-              <path className="kd-gf" d="M 30 0 C 24 -24 18 -60 15 -96 C 14 -108 12 -116 7 -122 L 0 -126 C -8 -126 -14 -122 -17 -116 C -22 -90 -28 -46 -36 0 Z" />
-              {/* the sword arm, Glamdring low at the shadow */}
-              <path className="kd-gf" d="M 2 -121 C 14 -114 26 -106 37 -100 L 35 -93 C 24 -98 13 -102 0 -108 Z" />
-              <path className="kd-gf" d="M 6 -110 C 14 -100 22 -92 28 -86 C 18 -88 10 -94 3 -102 Z" />
-              {/* head, hair and beard streaming back */}
-              <path className="kd-gf" d="M -4 -134 C -5 -142 -1 -147 5 -147 C 10 -147 13 -143 13 -139 L 15.5 -135 L 12.5 -134 C 12 -131 11 -130 9 -129 Z" />
-              <path className="kd-gf kd-hair" d="M 4 -148 C -4 -149.5 -12 -147 -19 -142 C -26 -138 -34 -136 -44 -136 C -38 -133 -33 -131 -30 -129 C -36 -127 -42 -126 -48 -126 C -40 -121 -31 -120 -24 -122 C -28 -118 -32 -115 -37 -113 C -26 -112 -16 -117 -10 -124 C -7 -128 -5 -131 -4 -134 Z" />
-              <path className="kd-gf kd-hair" d="M 12.5 -131 C 14 -124 13 -114 9 -105 C 6 -98 1 -93 -6 -89 C -3 -98 -1 -110 0 -126 Z" />
-            </g>
-            {/* Glamdring, cold and white */}
-            <line className="kd-blade" filter="url(#kd-glow)" x1="37" y1="-97" x2="100" y2="-118" />
-            <line className="kd-guard" x1="34.5" y1="-102" x2="39.5" y2="-91" />
-          </g>
-        </g>
-        {/* the staff arm, raised; the light it holds. Leaving, he lifts it over his
-            head and brings it down: the arm swings from the shoulder, and the staff,
-            turned back about the fist as far, stays upright and plants its foot */}
-        <g className="kd-staffin">
-          <g className="kd-staffarm bx">
-            <g transform="translate(-250 319)" filter="url(#kd-rim-gf)">
-              <path className="kd-gf" d="M 0 -124 L 10 -128 C 18 -140 26 -156 32 -170 L 38 -168 C 34 -152 28 -138 22 -128 C 20 -122 14 -116 6 -114 Z" />
-              <path className="kd-gf" d="M 6 -114 C 2 -124 8 -140 20 -150 C 18 -138 16 -128 14 -118 Z" />
-              <path className="kd-gf" d="M 30 -172 L 36 -177 L 40 -171 L 35 -166 Z" />
-            </g>
-            <g className="kd-staffheld bx">
-              <path className="kd-staff" transform="translate(-250 319)" d="M 26 -80 L 44 -262 M 44 -262 C 49 -270 41 -277 36 -272 M 44 -262 C 39 -269 48 -276 51 -269" />
-              {/* what gathers at its head */}
-              <ellipse className="kd-streak bx" cx={LX} cy={LY} rx="300" ry="2.4" fill="url(#kd-streak-g)" />
-              <g className="kd-light">
-                <circle className="kd-halo" cx={LX} cy={LY} r="140" fill="url(#kd-white)" />
-                <path className="kd-spikes" d="M -206 7 L -204.6 51.6 L -162 53 L -204.6 54.4 L -206 99 L -207.4 54.4 L -250 53 L -207.4 51.6 Z M -221 38 L -206 51.8 L -191 38 L -204.8 53 L -191 68 L -206 54.2 L -221 68 L -207.2 53 Z" />
-                <circle className="kd-tip" cx={LX} cy={LY} r="4.6" filter="url(#kd-glow)" />
+        {/* Gandalf and his staff; .kd-gandalf carries them off at the end, when the whip
+            drags him over the edge (kdyank), and the canvas draws his body where it goes */}
+        <g className="kd-gandalf bx">
+          {/* Gandalf, on the deck, facing the shadow */}
+          <g className="kd-wizard">
+            <g transform="translate(-250 319)">
+              <g className="kd-gfbody" filter="url(#kd-rim-gf)">
+                {/* the cloak, streaming back in the fire's wind */}
+                <path className="kd-gf kd-cloak" d="M -8 -124 C -30 -126 -58 -122 -86 -112 C -98 -108 -110 -104 -122 -104 C -114 -96 -110 -90 -112 -82 C -104 -78 -100 -72 -100 -64 C -94 -58 -90 -50 -92 -42 C -82 -36 -76 -26 -76 -16 C -62 -8 -48 -2 -36 0 C -30 -40 -22 -84 -8 -124 Z" />
+                <path className="kd-gf" d="M 30 0 C 24 -24 18 -60 15 -96 C 14 -108 12 -116 7 -122 L 0 -126 C -8 -126 -14 -122 -17 -116 C -22 -90 -28 -46 -36 0 Z" />
+                {/* the sword arm, Glamdring low at the shadow */}
+                <path className="kd-gf" d="M 2 -121 C 14 -114 26 -106 37 -100 L 35 -93 C 24 -98 13 -102 0 -108 Z" />
+                <path className="kd-gf" d="M 6 -110 C 14 -100 22 -92 28 -86 C 18 -88 10 -94 3 -102 Z" />
+                {/* head, hair and beard streaming back */}
+                <path className="kd-gf" d="M -4 -134 C -5 -142 -1 -147 5 -147 C 10 -147 13 -143 13 -139 L 15.5 -135 L 12.5 -134 C 12 -131 11 -130 9 -129 Z" />
+                <path className="kd-gf kd-hair" d="M 4 -148 C -4 -149.5 -12 -147 -19 -142 C -26 -138 -34 -136 -44 -136 C -38 -133 -33 -131 -30 -129 C -36 -127 -42 -126 -48 -126 C -40 -121 -31 -120 -24 -122 C -28 -118 -32 -115 -37 -113 C -26 -112 -16 -117 -10 -124 C -7 -128 -5 -131 -4 -134 Z" />
+                <path className="kd-gf kd-hair" d="M 12.5 -131 C 14 -124 13 -114 9 -105 C 6 -98 1 -93 -6 -89 C -3 -98 -1 -110 0 -126 Z" />
               </g>
-              <g className="kd-runes"><g>
-                {/* the circle breaks under each rune: 20° gaps every 60° */}
-                <circle className="kd-ring" cx={LX} cy={LY} r="47" strokeDasharray="32.8 16.4" strokeDashoffset="16.4" />
-                <circle className="kd-ring kd-ticks" cx={LX} cy={LY} r="58" />
-                {RUNES.map((d, i) => {
-                  const a = 30 + i * 60, rad = (a * Math.PI) / 180;
-                  return (
-                    <g key={i} className={i < lit ? "kd-rune kd-on" : "kd-rune"} transform={`translate(${(LX + 47 * Math.sin(rad)).toFixed(1)} ${(LY - 47 * Math.cos(rad)).toFixed(1)}) rotate(${a})`}>
-                      <path d={d} />
-                      <circle className="kd-flare bx" r="7" />
-                    </g>
-                  );
-                })}
-              </g></g>
-              <circle className={beat ? `kd-pulse kd-go-${beat} bx` : "kd-pulse"} cx={LX} cy={LY} r="24" />
+              {/* Glamdring, cold and white */}
+              <line className="kd-blade" filter="url(#kd-glow)" x1="37" y1="-97" x2="100" y2="-118" />
+              <line className="kd-guard" x1="34.5" y1="-102" x2="39.5" y2="-91" />
+            </g>
+          </g>
+          {/* the staff arm, raised; the light it holds. Leaving, he lifts it over his
+              head and brings it down: the arm swings from the shoulder, and the staff,
+              turned back about the fist as far, stays upright and plants its foot */}
+          <g className="kd-staffin">
+            <g className="kd-staffarm bx">
+              <g transform="translate(-250 319)" filter="url(#kd-rim-gf)">
+                <path className="kd-gf" d="M 0 -124 L 10 -128 C 18 -140 26 -156 32 -170 L 38 -168 C 34 -152 28 -138 22 -128 C 20 -122 14 -116 6 -114 Z" />
+                <path className="kd-gf" d="M 6 -114 C 2 -124 8 -140 20 -150 C 18 -138 16 -128 14 -118 Z" />
+                <path className="kd-gf" d="M 30 -172 L 36 -177 L 40 -171 L 35 -166 Z" />
+              </g>
+              <g className="kd-staffheld bx">
+                <path className="kd-staff" transform="translate(-250 319)" d="M 26 -80 L 44 -262 M 44 -262 C 49 -270 41 -277 36 -272 M 44 -262 C 39 -269 48 -276 51 -269" />
+                {/* what gathers at its head */}
+                <ellipse className="kd-streak bx" cx={LX} cy={LY} rx="300" ry="2.4" fill="url(#kd-streak-g)" />
+                <g className="kd-light">
+                  <circle className="kd-halo" cx={LX} cy={LY} r="140" fill="url(#kd-white)" />
+                  <path className="kd-spikes" d="M -206 7 L -204.6 51.6 L -162 53 L -204.6 54.4 L -206 99 L -207.4 54.4 L -250 53 L -207.4 51.6 Z M -221 38 L -206 51.8 L -191 38 L -204.8 53 L -191 68 L -206 54.2 L -221 68 L -207.2 53 Z" />
+                  <circle className="kd-tip" cx={LX} cy={LY} r="4.6" filter="url(#kd-glow)" />
+                </g>
+                <g className="kd-runes"><g>
+                  {/* the circle breaks under each rune: 20° gaps every 60° */}
+                  <circle className="kd-ring" cx={LX} cy={LY} r="47" strokeDasharray="32.8 16.4" strokeDashoffset="16.4" />
+                  <circle className="kd-ring kd-ticks" cx={LX} cy={LY} r="58" />
+                  {RUNES.map((d, i) => {
+                    const a = 30 + i * 60, rad = (a * Math.PI) / 180;
+                    return (
+                      <g key={i} className={i < lit ? "kd-rune kd-on" : "kd-rune"} transform={`translate(${(LX + 47 * Math.sin(rad)).toFixed(1)} ${(LY - 47 * Math.cos(rad)).toFixed(1)}) rotate(${a})`}>
+                        <path d={d} />
+                        <circle className="kd-flare bx" r="7" />
+                      </g>
+                    );
+                  })}
+                </g></g>
+                <circle className={beat ? `kd-pulse kd-go-${beat} bx` : "kd-pulse"} cx={LX} cy={LY} r="24" />
+              </g>
             </g>
           </g>
         </g>

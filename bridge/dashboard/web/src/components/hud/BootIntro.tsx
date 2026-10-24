@@ -9,7 +9,9 @@ const FADE_MS = 650; // the scene's wipe (EXIT), after which the dashboard owns 
 // data is not having a screen: the transcript virtualizer estimates row heights,
 // re-measures, and only then scrolls to the bottom — measured at ~370ms on a
 // session whose turns were already in state. Wipe at reveal and that lands in
-// the open, as an empty chat panel that fills in after you can see it.
+// the open, as an empty chat panel that fills in after you can see it. A scene
+// whose exit runs longer says how long on data-exit-ms (KHAZAD-DÛM's whip), and
+// the wipe waits for that instead.
 const WARM_MS = 400;
 
 // Read once per document, not per mount: a restart hands the intro over across a
@@ -23,10 +25,10 @@ const SHUFFLED = shuffleScene(CONTINUED ? sessionStorage.getItem(BOOT_SCENE) : n
 sessionStorage.setItem(BOOT_SCENE, SHUFFLED);
 
 // What each scene says: the wordmark's two lines, the footer once every step
-// has answered, and the skip hint.
-const WORDS: Record<IntroScene, { title: string; sub: string; ready: string; skip: string }> = {
+// has answered, the skip hint, and what the title turns to as the scene ends.
+const WORDS: Record<IntroScene, { title: string; sub: string; ready: string; skip: string; after?: string }> = {
   mystical: { title: "MYSTICAL//ASSISTANT", sub: "REMOTE DEV BRIDGE · CLAUDE CODE", ready: "WORKSPACE READY", skip: "CLICK TO SKIP" },
-  bridge: { title: "YOU SHALL NOT PASS", sub: "THE BRIDGE OF KHAZAD-DÛM · MYSTICAL//ASSISTANT", ready: "FLY, YOU FOOLS", skip: "CLICK TO PASS" },
+  bridge: { title: "YOU SHALL NOT PASS", sub: "THE BRIDGE OF KHAZAD-DÛM · MYSTICAL//ASSISTANT", ready: "FLY, YOU FOOLS", skip: "CLICK TO PASS", after: "FLY, YOU FOOLS" },
   door: { title: "SPEAK, FRIEND, AND ENTER", sub: "THE DOORS OF DURIN · MYSTICAL//ASSISTANT", ready: "MELLON", skip: "CLICK TO ENTER" },
 };
 
@@ -103,7 +105,8 @@ export function BootIntro(props: {
       if (r) setOrigin(`${r.left + r.width / 2}px ${r.top + r.height / 2}px`);
       setFade(true);
       done.current = window.setTimeout(finish, FADE_MS);
-    }, WARM_MS);
+    }, matchMedia("(prefers-reduced-motion: reduce)").matches ? WARM_MS
+      : Math.max(WARM_MS, Number(box.current?.querySelector("[data-exit-ms]")?.getAttribute("data-exit-ms")) || 0));
   }, []);
 
   useEffect(() => {
@@ -172,17 +175,25 @@ export function BootIntro(props: {
           zIndex: 2,
         }}
       >
-        <div
-          className="glow"
-          style={{
-            fontSize: "var(--t34)",
-            letterSpacing: "10px",
-            color: "var(--txb)",
-            animation: "wordflick 1.4s steps(1) both .9s",
-          }}
-        >
-          {words.title}
+        {/* .bx: the title's swap answers the boot, so a continued one keeps its delays */}
+        <div className={words.after ? "boot-before bx" : undefined}>
+          <div
+            className="glow"
+            style={{
+              fontSize: "var(--t34)",
+              letterSpacing: "10px",
+              color: "var(--txb)",
+              animation: "wordflick 1.4s steps(1) both .9s",
+            }}
+          >
+            {words.title}
+          </div>
         </div>
+        {words.after && (
+          <div className="glow boot-after bx" style={{ fontSize: "var(--t34)", letterSpacing: "10px", color: "var(--txb)" }}>
+            {words.after}
+          </div>
+        )}
         <div style={{ fontSize: "var(--t11)", letterSpacing: "6px", color: "var(--txl)", marginTop: "8px" }}>
           {words.sub}
         </div>
