@@ -1,5 +1,13 @@
-"""Telegram Bot API helpers (HTTP long-polling client)."""
+"""Telegram Bot API helpers (HTTP long-polling client).
 
+Beyond plain messages: rich messages (Telegram renders the model's Markdown
+itself), drafts (a live preview while a turn runs, with Telegram's own Stop
+button), reactions (a receipt on the user's own message), silent sends, the
+topics of a private chat with threads, and the bot's command menu. Every one
+of them is best effort: tg() returns None on any refusal and the caller falls
+back to what worked before."""
+
+import html as _html
 import json
 import re
 import sys
@@ -128,34 +136,125 @@ def panel_kb(chat_id: int, session_id: str | None = None,
         {"text": label, "web_app": {"url": state.miniapp_url + (f"?{q}" if q else "")}}]]}
 
 
-def send(chat_id: int, text: str, reply_markup: dict | None = None, markdown: bool = True):
+# A code block longer than this folds in a rich message: a log or a diff is
+# there to be opened, not scrolled past.
+FOLD_LINES = 15
+_FENCED = re.compile(r"^```(\w*)\n(.*?)\n```[ \t]*$", re.S | re.M)
+
+
+def _fold_code(md: str) -> str:
+    """Long fenced blocks wrapped in <details>, which a rich message shows shut
+    with its summary; Telegram parses the Markdown inside it."""
+    def fold(m: "re.Match") -> str:
+        n = m[2].count("\n") + 1
+        if n <= FOLD_LINES:
+            return m[0]
+        return f"<details><summary>{m[1] or 'output'}, {n} lines</summary>\n\n{m[0]}\n\n</details>"
+    return _FENCED.sub(fold, md)
+
+
+def _plain(html_text: str) -> str:
+    """Telegram HTML as the text it shows: what a refused message falls back to."""
+    return _html.unescape(re.sub(r"<[^>]+>", "", html_text))
+
+
+def send(chat_id: int, text: str, reply_markup: dict | None = None, markdown: bool = True,
+         *, silent: bool = False, thread: "int | None" = None, rich: bool = False,
+         html: bool = False):
     """Send `text` (split on lines past TG_MAX), buttons on the last chunk.
     Returns the last message Telegram accepted — the one carrying the buttons,
     which a later reply or edit refers to — or None. markdown=False sends text
-    from outside as typed (only escaped), so none of it becomes a link."""
+    from outside as typed (only escaped), so none of it becomes a link.
+
+    rich=True (a model's answer) sends it as one rich message when TG_RICH is on
+    and it fits; one Telegram refuses goes the HTML way. html=True sends text
+    that is already Telegram HTML, its outside words escaped by the caller (a
+    date entity, a folded quote), in one message, as plain text if refused.
+    silent: no sound or vibration. thread: the topic, in a private chat with
+    threads (bridge/tgtopics.py)."""
     text = text or "(empty)"
+    base = {**({"disable_notification": "true"} if silent else {}),
+            **({"message_thread_id": thread} if thread else {})}
     extra = {"reply_markup": json.dumps(reply_markup)} if reply_markup else {}
+    if rich and config.TG_RICH and len(text) <= config.TG_RICH_MAX:
+        sent = tg("sendRichMessage", chat_id=chat_id,
+                  rich_message=json.dumps({"markdown": _fold_code(text)}), **base, **extra)
+        if sent:
+            return sent
+    if html:
+        one = dict(chat_id=chat_id, disable_web_page_preview="true", **base, **extra)
+        return (tg("sendMessage", text=text, parse_mode="HTML", **one)
+                or tg("sendMessage", text=_plain(text)[:config.TG_MAX], **one))
     # Margin under TG_MAX: escaping and tags only ever grow the text.
     chunks = _chunks(text, config.TG_MAX - 512) or [text]
     sent = None
     for i, raw in enumerate(chunks):
-        html = _md_to_html(raw) if markdown else _esc(raw)
-        params = dict(chat_id=chat_id, disable_web_page_preview="true",
+        html_text = _md_to_html(raw) if markdown else _esc(raw)
+        params = dict(chat_id=chat_id, disable_web_page_preview="true", **base,
                       # Buttons ride the LAST chunk: that's where reading ends.
                       **(extra if i == len(chunks) - 1 else {}))
         # Whatever outgrew the hard limit, or that Telegram rejects as malformed
         # HTML, goes as the plain markdown it sent before parse_mode existed:
         # unformatted is a worse message, dropped is a lost one.
-        sent = ((len(html) <= config.TG_MAX
-                 and tg("sendMessage", text=html, parse_mode="HTML", **params))
+        sent = ((len(html_text) <= config.TG_MAX
+                 and tg("sendMessage", text=html_text, parse_mode="HTML", **params))
                 or tg("sendMessage", text=raw[:config.TG_MAX], **params))
     return sent
 
 
-def edit(chat_id: int, message_id: int, text: str, reply_markup: dict | None = None):
+def edit(chat_id: int, message_id: int, text: str, reply_markup: dict | None = None,
+         *, html: bool = False):
+    """Rewrite a message the bot sent. html=True: `text` is Telegram HTML (its
+    outside words escaped by the caller); otherwise it shows as typed."""
     tg("editMessageText", chat_id=chat_id, message_id=message_id, text=text,
+       parse_mode="HTML" if html else None,
        reply_markup=json.dumps(reply_markup) if reply_markup else None,
        disable_web_page_preview="true")
+
+
+def edit_markup(chat_id: int, message_id: int, reply_markup: "dict | None"):
+    """Change only a message's buttons (none: take them all away)."""
+    tg("editMessageReplyMarkup", chat_id=chat_id, message_id=message_id,
+       reply_markup=json.dumps(reply_markup or {"inline_keyboard": []}))
+
+
+def draft(chat_id: int, draft_id: int, text: str, *, thread: "int | None" = None) -> bool:
+    """A live preview of the message a turn is writing (sendMessageDraft, all
+    bots since Bot API 9.5; rich since 10.1), with Telegram's own Stop button
+    (10.3), which comes back as a stopped_message_generation update. Telegram
+    keeps it 30 seconds unless it is sent again, and drops it when the bot sends
+    a message. "" shows Telegram's "Thinking…". False when refused."""
+    base = dict(chat_id=chat_id, draft_id=draft_id, can_stop="true",
+                **({"message_thread_id": thread} if thread else {}))
+    if text and config.TG_RICH and tg("sendRichMessageDraft",
+                                      rich_message=json.dumps({"markdown": text[:config.TG_RICH_MAX]}),
+                                      **base):
+        return True
+    return bool(tg("sendMessageDraft", text=text[:config.TG_MAX], **base))
+
+
+def react(chat_id: int, message_id: int, emoji: "str | None") -> bool:
+    """One reaction on a message, or none (None): a receipt on the user's own
+    message instead of a message of its own. Only Telegram's reaction emoji take."""
+    return bool(tg("setMessageReaction", chat_id=chat_id, message_id=message_id,
+                   reaction=json.dumps([{"type": "emoji", "emoji": emoji}] if emoji else [])))
+
+
+def set_commands(commands: "list[tuple[str, str]]") -> bool:
+    """The menu "/" opens in every private chat with the bot."""
+    return bool(tg("setMyCommands",
+                   commands=json.dumps([{"command": c, "description": d} for c, d in commands]),
+                   scope=json.dumps({"type": "all_private_chats"})))
+
+
+def create_topic(chat_id: int, name: str, color: "int | None" = None) -> "int | None":
+    """A topic of a private chat with threads (Bot API 9.4): its thread id."""
+    got = tg("createForumTopic", chat_id=chat_id, name=(name or "Session")[:128], icon_color=color)
+    return got.get("message_thread_id") if isinstance(got, dict) else None
+
+
+def rename_topic(chat_id: int, thread: int, name: str) -> None:
+    tg("editForumTopic", chat_id=chat_id, message_thread_id=thread, name=(name or "Session")[:128])
 
 
 def answer_cb(cb_id: str, text: str = ""):
@@ -170,7 +269,7 @@ def get_updates(offset: int):
     try:
         url = f"{config.API}/getUpdates?" + urlencode({
             "offset": offset, "timeout": config.POLL_TIMEOUT,
-            "allowed_updates": '["message","callback_query"]',
+            "allowed_updates": '["message","callback_query","stopped_message_generation"]',
         })
         data = _api(url, timeout=config.POLL_TIMEOUT + 15)
         return data.get("result", []) if data.get("ok") else []

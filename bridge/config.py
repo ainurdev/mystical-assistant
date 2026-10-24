@@ -145,6 +145,12 @@ TUNNEL_CONFIG_FILE = os.path.expanduser(os.environ.get("TUNNEL_CONFIG_FILE", "")
 POLL_TIMEOUT = 30
 API = f"https://api.telegram.org/bot{TOKEN}"
 TG_MAX = 4000
+# Answers go as Telegram's rich messages (Bot API 10.1, June 2026): Telegram renders
+# the Markdown itself (tables, headings, task lists, folds), up to TG_RICH_MAX
+# characters in one message. Off, or for an app that shows them as unsupported:
+# the small HTML subset telegram._md_to_html makes, split into TG_MAX chunks.
+TG_RICH = os.environ.get("TG_RICH", "1").lower() not in ("0", "false", "no", "")
+TG_RICH_MAX = 32768
 MAX_BTNS = 40                     # folder buttons per browser screen
 SKIP_DIRS = {"node_modules", "__pycache__", ".git", ".venv", "venv",
              "dist", "build", ".next", "target", ".cache"}

@@ -4,6 +4,7 @@ import io
 import json
 import os
 import urllib.error
+import urllib.parse
 
 import pytest
 
@@ -190,3 +191,122 @@ def test_send_returns_the_message_that_carries_the_buttons():
     finally:
         telegram.tg = real
     assert len(sent) > 1 and got == {"message_id": len(sent)}
+
+
+# --- rich messages, drafts, reactions, threads, the menu ----------------------------
+
+def _capture(monkeypatch, answer=lambda method, params: {"message_id": 7}):
+    """Every Bot API call as (method, params); `answer` decides what Telegram says."""
+    calls = []
+
+    def fake_tg(method, **params):
+        calls.append((method, params))
+        return answer(method, params)
+    monkeypatch.setattr(telegram, "tg", fake_tg)
+    return calls
+
+
+def test_an_answer_goes_as_one_rich_message_with_its_markdown(monkeypatch):
+    calls = _capture(monkeypatch)
+    monkeypatch.setattr(telegram.config, "TG_RICH", True)
+
+    got = telegram.send(1, "| a | b |\n|---|---|\n| 1 | 2 |", {"inline_keyboard": []}, rich=True,
+                        silent=True, thread=9)
+
+    assert got == {"message_id": 7}
+    ((method, params),) = calls
+    assert method == "sendRichMessage"
+    assert json.loads(params["rich_message"]) == {"markdown": "| a | b |\n|---|---|\n| 1 | 2 |"}
+    assert params["disable_notification"] == "true" and params["message_thread_id"] == 9
+    assert "reply_markup" in params
+
+
+def test_a_rich_message_telegram_refuses_goes_the_html_way(monkeypatch):
+    calls = _capture(monkeypatch, lambda m, p: None if m == "sendRichMessage" else {"message_id": 8})
+    monkeypatch.setattr(telegram.config, "TG_RICH", True)
+
+    assert telegram.send(1, "**hi**", rich=True) == {"message_id": 8}
+    assert [m for m, _ in calls] == ["sendRichMessage", "sendMessage"]
+    assert calls[1][1]["parse_mode"] == "HTML" and calls[1][1]["text"] == "<b>hi</b>"
+
+
+def test_rich_messages_off_or_too_long_go_the_html_way(monkeypatch):
+    calls = _capture(monkeypatch)
+    monkeypatch.setattr(telegram.config, "TG_RICH", False)
+    telegram.send(1, "hi", rich=True)
+    monkeypatch.setattr(telegram.config, "TG_RICH", True)
+    telegram.send(1, "x" * (telegram.config.TG_RICH_MAX + 1), rich=True)
+    assert "sendRichMessage" not in [m for m, _ in calls]
+
+
+def test_long_code_folds_in_a_rich_message_and_short_code_stays():
+    short = "```py\nprint(1)\n```"
+    long_ = "```log\n" + "\n".join(f"line {i}" for i in range(20)) + "\n```"
+    folded = telegram._fold_code(f"Look:\n{short}\n\nAnd:\n{long_}")   # noqa: SLF001
+    assert short in folded and "<details>" in folded
+    assert "<summary>log, 20 lines</summary>" in folded
+    assert folded.count("<details>") == 1
+
+
+def test_html_goes_as_it_is_and_as_plain_text_when_refused(monkeypatch):
+    calls = _capture(monkeypatch, lambda m, p: None if p.get("parse_mode") else {"message_id": 3})
+    telegram.send(1, 'Back at <tg-time unix="1" format="t">10:00</tg-time> &amp; on', html=True, silent=True)
+    assert calls[0][1]["parse_mode"] == "HTML"
+    assert calls[1][1]["text"] == "Back at 10:00 & on" and calls[1][1]["disable_notification"] == "true"
+
+
+def test_plain_sends_carry_silence_and_the_thread(monkeypatch):
+    calls = _capture(monkeypatch)
+    telegram.send(1, "hi", silent=True, thread=5)
+    telegram.send(1, "hi")
+    assert calls[0][1]["disable_notification"] == "true" and calls[0][1]["message_thread_id"] == 5
+    assert "disable_notification" not in calls[1][1] and "message_thread_id" not in calls[1][1]
+
+
+def test_a_draft_streams_rich_markdown_with_a_stop_button_and_thinking_when_empty(monkeypatch):
+    calls = _capture(monkeypatch, lambda m, p: True)
+    monkeypatch.setattr(telegram.config, "TG_RICH", True)
+
+    assert telegram.draft(1, 42, "## Half an answer", thread=3)
+    assert telegram.draft(1, 42, "")
+
+    (m1, p1), (m2, p2) = calls
+    assert m1 == "sendRichMessageDraft" and json.loads(p1["rich_message"]) == {"markdown": "## Half an answer"}
+    assert p1["can_stop"] == "true" and p1["draft_id"] == 42 and p1["message_thread_id"] == 3
+    assert m2 == "sendMessageDraft" and p2["text"] == ""      # Telegram's "Thinking…"
+
+
+def test_a_refused_rich_draft_tries_a_plain_one(monkeypatch):
+    calls = _capture(monkeypatch, lambda m, p: None if m == "sendRichMessageDraft" else True)
+    monkeypatch.setattr(telegram.config, "TG_RICH", True)
+    assert telegram.draft(1, 42, "text")
+    assert [m for m, _ in calls] == ["sendRichMessageDraft", "sendMessageDraft"]
+
+
+def test_reactions_menu_topics_and_edits_speak_the_bot_api(monkeypatch):
+    calls = _capture(monkeypatch, lambda m, p: {"message_thread_id": 11} if m == "createForumTopic" else True)
+
+    telegram.react(1, 5, "👀")
+    telegram.react(1, 5, None)
+    telegram.set_commands([("today", "Your day")])
+    assert telegram.create_topic(1, "Fix the login", 0x6FB9F0) == 11
+    telegram.rename_topic(1, 11, "Login fixed")
+    telegram.edit(1, 5, "<b>x</b>", html=True)
+    telegram.edit_markup(1, 5, None)
+
+    by = {m: p for m, p in calls}
+    assert [json.loads(p["reaction"]) for m, p in calls if m == "setMessageReaction"] == [
+        [{"type": "emoji", "emoji": "👀"}], []]
+    assert json.loads(by["setMyCommands"]["commands"]) == [{"command": "today", "description": "Your day"}]
+    assert json.loads(by["setMyCommands"]["scope"]) == {"type": "all_private_chats"}
+    assert by["createForumTopic"]["name"] == "Fix the login" and by["createForumTopic"]["icon_color"] == 0x6FB9F0
+    assert by["editForumTopic"] == {"chat_id": 1, "message_thread_id": 11, "name": "Login fixed"}
+    assert by["editMessageText"]["parse_mode"] == "HTML"
+    assert json.loads(by["editMessageReplyMarkup"]["reply_markup"]) == {"inline_keyboard": []}
+
+
+def test_the_poll_asks_for_stop_presses_too(monkeypatch):
+    cap = {}
+    monkeypatch.setattr(telegram, "urlopen", _fake_urlopen(cap, b'{"ok": true, "result": []}'))
+    telegram.get_updates(0)
+    assert "stopped_message_generation" in urllib.parse.unquote(cap["req"].full_url)
