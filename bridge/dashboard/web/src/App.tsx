@@ -2062,6 +2062,10 @@ export function App() {
   // The open session waiting on another one (bridge/waits.py): its pill in the composer.
   const openWait = sessionId && statusMap.get(sessionId)?.state === "waiting" ? statusMap.get(sessionId) : undefined;
   const waitView = openWait?.on ? resolve(statusMap.get(openWait.on), false) : null;
+  // The open session parked on a usage limit: the transcript's live card (LimitCard).
+  const openStatus = sessionId ? statusMap.get(sessionId) : undefined;
+  const limitLive = useMemo(() => (sessionId && openStatus?.state === "parked" && openStatus.kind === "limit"
+    ? { session: sessionId, status: openStatus } : null), [sessionId, openStatus]);
   const waitAction = async (action: "resume" | "cancel") => {
     if (!sessionId) return;
     try {
@@ -2713,6 +2717,7 @@ export function App() {
                 // Folded to the rail, the right column can't carry the cluster —
                 // the chat header takes it.
                 chrome={settings.rightOpen ? undefined : strip}
+                limit={limitLive} logins={accounts}
                 composer={selected && isDeviceRun(selected.origin) ? (
                   // A teammate's device run: read only, so the plate stands where
                   // the composer would. `ended` is its one turn's last event (the

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { ProjectTile } from "../ui/ProjectTile";
-import { type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
+import { type AccountInfo, type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
@@ -10,6 +10,7 @@ import { chatPad, hairline } from "../../lib/shell";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import type { HudSettings } from "../../lib/theme";
 import { Transcript, type TranscriptNav } from "../Transcript";
+import type { LimitLive } from "../LimitCard";
 import type { OpenFile } from "../Markdown";
 import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
@@ -211,6 +212,7 @@ export function Terminal({
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef, onJumpMark,
   onOpenProject, run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
+  limit, logins,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -277,6 +279,10 @@ export function Terminal({
   onStartHere?: (text: string) => void;
   /** The PR chip's ARCHIVE SESSION, after a merge. */
   onArchive?: () => void;
+  /** The open session, parked on a usage limit: the transcript's live card. */
+  limit?: LimitLive | null;
+  /** The Claude logins, for the limit's names. */
+  logins?: AccountInfo[];
 }) {
   const sessionProject = selected?.project ?? activeProject ?? null;
   // A teammate's device run (lib/devicerun) or a session a teammate sent (lib/team):
@@ -443,7 +449,8 @@ export function Terminal({
               job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject}
               top={theirs && selected?.team?.earlier
                 ? <EarlierPlate share={selected.team.share} facts={selected.team.earlier} by={selected.team.from.name} me={teamMe} /> : undefined}
-              unfinished={theirs && selected?.team?.unfinished?.length ? { turns: selected.team.unfinished, by: selected.team.from.name } : null} />
+              unfinished={theirs && selected?.team?.unfinished?.length ? { turns: selected.team.unfinished, by: selected.team.from.name } : null}
+              limit={theirs ? null : limit} logins={logins} />
           )}
         </div>
       </div>

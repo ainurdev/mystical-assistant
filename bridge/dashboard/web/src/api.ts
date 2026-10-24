@@ -971,6 +971,13 @@ export interface SessionStatus {
   on?: string;
   then?: string;
   since?: number;
+  // `parked` only (bridge/limits.py), with `since` = when it stopped: when it
+  // resumes (epoch s), the login it waits on (null = the default one), and the
+  // logins an ASK offered (null once answered). A bridge older than these sends
+  // only the label.
+  at?: number;
+  slot?: number | null;
+  offer?: { slot: number; label: string }[] | null;
 }
 export interface JobActivity {
   state: "tool" | "awaiting" | "thinking";
@@ -1966,6 +1973,9 @@ export const api = {
   // The bell's LIMIT row: no slot = wait for the reset; a slot = continue on that login.
   noticeLimit: (session: string, slot?: number) =>
     req<{ ok: boolean }>("/local/notices", { method: "POST", body: { op: "limit", session, ...(slot === undefined ? {} : { slot }) } }),
+  // The chat card's DON'T RESUME: drop a limit park, the session goes idle.
+  unpark: (session: string) =>
+    req<{ ok: boolean }>("/local/notices", { method: "POST", body: { op: "unpark", session } }),
   noticePrefs: (patch: NoticePrefsPatch) =>
     req<{ prefs: NoticePrefs }>("/local/notices", { method: "POST", body: { op: "prefs", patch } }),
   usage: () => req<UsageInfo>("/local/usage"),

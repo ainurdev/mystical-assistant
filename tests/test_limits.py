@@ -775,6 +775,52 @@ def test_cancel_ends_the_failure_episode():
         restore()
 
 
+def test_parked_says_when_it_resumes_since_when_and_on_which_login():
+    """The chat's paused card draws a clock, a countdown and a bar from these:
+    the status label alone ("resuming ~00:31") has neither a date nor a start."""
+    _reset_limits()
+    reset = time.time() + 3600
+    restore = _usage(100, reset)
+    try:
+        before = time.time()
+        limits.defer("s-info", CHAT, "/tmp/info", slot=1)
+        p = limits.parked()["s-info"]
+        assert p["kind"] == "limit"
+        assert p["at"] >= reset, "the reset, plus its buffer"
+        assert before <= p["since"] <= time.time()
+        assert p["slot"] == 1
+        assert p["offer"] is None
+    finally:
+        _reset_limits()
+        restore()
+
+
+def test_an_offer_rides_the_park_until_it_is_answered():
+    """ASK: the ladder offers other logins, and the chat asks what the bell asks.
+    Waiting answers it: the card stops asking and the park stays."""
+    _reset_limits()
+    restore = _usage(100, time.time() + 3600)
+    try:
+        limits.defer("s-ask", CHAT, "/tmp/ask")
+        rungs = [{"slot": 2, "label": "Account 2 (85% left)"}]
+        assert limits.offer("s-ask", rungs) is True
+        assert limits.parked()["s-ask"]["offer"] == rungs
+        with open(limits._path()) as f:
+            assert json.load(f)["s-ask"]["offer"] == rungs, "a restart keeps the question"
+        assert limits.offer("s-ask", None) is True
+        assert limits.parked()["s-ask"]["offer"] is None
+        assert "s-ask" in limits.parked(), "waiting is still parked"
+    finally:
+        _reset_limits()
+        restore()
+
+
+def test_an_offer_on_a_session_that_is_not_parked_is_dropped():
+    _reset_limits()
+    assert limits.offer("never-parked", [{"slot": 2, "label": "x"}]) is False
+    assert "never-parked" not in limits.parked()
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]

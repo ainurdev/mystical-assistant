@@ -79,14 +79,17 @@ def test_wait_button_takes_no_rung_and_leaves_the_session_parked():
     take = _Rec()
     edit = _Rec()
     restore = _patch(answer_cb=_Rec(), edit=edit, send=_Rec())
-    saved_take = dispatch.ladder.take
+    saved_take, saved_offer, answered = dispatch.ladder.take, dispatch.limits.offer, []
     dispatch.ladder.take = take
+    dispatch.limits.offer = lambda sid, rungs: answered.append((sid, rungs)) or True
     try:
         dispatch.handle_callback(_cb(f"fb:w:{s['id']}"))
         assert take.calls == []
         assert len(edit.calls) == 1, "the card should resolve to a final state"
+        assert answered == [(s["id"], None)], "the chat's card stops asking too"
     finally:
         dispatch.ladder.take = saved_take
+        dispatch.limits.offer = saved_offer
         restore()
 
 

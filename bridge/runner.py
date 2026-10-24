@@ -1374,11 +1374,14 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
     # A limit- or error-parked turn (bridge/limits.py) has no process, but it is
     # coming back on its own — reported as idle it reads as finished, and every
     # surface would announce a DONE that never happened.
-    for sid, (pkind, at) in limits.parked().items():
+    # The rest is the chat's paused card: its clock, countdown and bar, the login
+    # it waits on, and the logins an ASK offered.
+    for sid, p in limits.parked().items():
         status.setdefault(sid, {
-            "state": "parked", "kind": pkind, "source": "bridge",
-            "label": (f"usage limit — resuming ~{limits.when_str(at)}" if pkind == "limit"
-                      else f"API error — retrying {limits.wait_str(at)}")})
+            "state": "parked", "kind": p["kind"], "source": "bridge",
+            "label": (f"usage limit — resuming ~{limits.when_str(p['at'])}" if p["kind"] == "limit"
+                      else f"API error — retrying {limits.wait_str(p['at'])}"),
+            "at": p["at"], "since": p["since"], "slot": p["slot"], "offer": p["offer"]})
     # A turn that signed off with a question — the ASK card in the transcript —
     # is finished, not blocked: the work landed and nothing is parked. But the
     # next move is yours, and reported as idle it looks like nobody is waiting.

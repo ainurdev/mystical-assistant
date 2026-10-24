@@ -419,7 +419,9 @@ def _fallback_callback(cb: dict, chat_id: int, msg_id: int, data: str) -> None:
     if kind == "w":
         answer_cb(cb["id"], "Waiting for reset")
         edit(chat_id, msg_id, "⏳ Waiting for the usage limit to reset.")
-        # The card's answer, so the bell stops asking (bridge/notices.py needs()).
+        # The card's answer, so the bell stops asking (bridge/notices.py needs()),
+        # and so does the dashboard chat's card (the parked status's offer).
+        limits.offer(sid, None)
         notices.emit("waiting", sid, body="You chose to wait for the usage limit to reset.")
         return
     if kind == "a" and len(parts) == 4 and parts[3].isdigit():

@@ -204,12 +204,29 @@ def note_ok(session_id: str) -> None:
 
 
 def parked() -> dict:
-    """{session_id: (kind, fire_at)} for every session waiting on a reset or a
-    backoff step. Read-only view for the status map — a parked session is alive
-    and coming back, which is neither 'working' nor 'idle'."""
+    """{session_id: {kind, at, since, slot, offer}} for every session waiting on
+    a reset or a backoff step. Read-only view for the status map — a parked
+    session is alive and coming back, which is neither 'working' nor 'idle' —
+    and for the chat's paused card: when it resumes, since when, on which login,
+    and the other logins the ladder offered (None once answered, or never asked)."""
     with _lock:
-        return {sid: (e.get("kind", "limit"), e.get("at", 0.0))
+        return {sid: {"kind": e.get("kind", "limit"), "at": e.get("at", 0.0),
+                      "since": e.get("since"), "slot": e.get("slot"),
+                      "offer": e.get("offer")}
                 for sid, e in _pending.items()}
+
+
+def offer(session_id: str, rungs: "list | None") -> bool:
+    """Record the logins the ladder offered a parked session (bridge/ladder.py,
+    ASK), or clear them once you chose to wait. Returns whether it was parked:
+    a session that isn't has nothing left to ask about."""
+    with _lock:
+        e = _pending.get(session_id)
+        if e is None:
+            return False
+        e["offer"] = rungs or None
+        _save_locked()
+    return True
 
 
 def _tries_locked(session_id: str) -> int:

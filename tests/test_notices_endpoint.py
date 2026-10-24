@@ -89,6 +89,27 @@ def test_post_limit_wait_and_switch(monkeypatch):
     assert _call("POST", "/local/notices", {"op": "limit", "session": "nope"})[0] == 404
 
 
+def test_post_unpark_drops_the_park(monkeypatch):
+    """The chat card's DON'T RESUME: the session goes idle instead of resuming."""
+    from bridge import limits
+    sid = store.create_session(555, "/repo", origin="dashboard")["id"]
+    gone = []
+    monkeypatch.setattr(limits, "cancel", lambda s: gone.append(s) or True)
+    assert _call("POST", "/local/notices", {"op": "unpark", "session": sid}) == (200, {"ok": True})
+    assert gone == [sid]
+    assert _call("POST", "/local/notices", {"op": "unpark", "session": "nope"})[0] == 404
+
+
+def test_post_limit_wait_answers_the_offer(monkeypatch):
+    """Waiting answers the ASK: the chat's card stops asking, the park stays."""
+    from bridge import limits
+    sid = store.create_session(555, "/repo", origin="dashboard")["id"]
+    answered = []
+    monkeypatch.setattr(limits, "offer", lambda s, rungs: answered.append((s, rungs)) or True)
+    assert _call("POST", "/local/notices", {"op": "limit", "session": sid}) == (200, {"ok": True})
+    assert answered == [(sid, None)]
+
+
 def test_get_changelog_is_updates_and_notes_only():
     notices.emit("pr_failing", "pr:o/r:x", title="#9 · x", body="lint")
     nid = notices.emit("updated", "update:abc", title="Changelog moves", body="a\nb")
