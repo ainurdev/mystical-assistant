@@ -209,7 +209,7 @@ on any other. The run never leaves your machine, and there's no app to install.
 |---|---|---|
 | **Desktop dashboard** | `127.0.0.1:8790` | Where the work happens. Localhost only, never published. |
 | **Telegram Mini App** | bot menu → 🛠 Open Panel | The same panel, off your machine. Prompts, screenshots, live stream, answer cards. |
-| **Telegram bot** | DM your bot | Quick plain-text prompts when a full panel is more than you need. |
+| **Telegram bot** | DM your bot | Prompts answered live, with Stop. Questions and approvals are answered right in the chat. With topics on, each session gets its own thread. |
 | **Native Claude Code** | the `claude` you already run | Found on its own, and resumable from the three above. |
 
 ![The Appearance tab: three theme cards, Aurora, Claude and Flint, each with its row of colours, above the CRT effects and header styles.](site/public/shots/themes.png)
