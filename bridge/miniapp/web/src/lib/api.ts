@@ -67,6 +67,7 @@ export interface SessionBrief {
   id: string;
   title: string | null;
   project: string;
+  created?: number; // epoch seconds it was started (CHATS sorts by this)
   updated: number;
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null

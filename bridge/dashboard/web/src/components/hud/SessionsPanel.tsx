@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { BellRing, FolderTree, History, Hourglass, Puzzle } from "lucide-react";
+import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, Puzzle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
@@ -14,6 +14,7 @@ import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
 import { isDeviceRun, rowAge } from "../../lib/devicerun";
 import { isTeam, readOnly, shareFacts, SHARED_REL } from "../../lib/team";
+import { shotUnseen, useSeenShots } from "../../lib/seenshots";
 import { TeamTile } from "../TeamBar";
 import { Avatar } from "./TeamPanel";
 import { DeviceTile } from "../DeviceRunPlate";
@@ -60,13 +61,15 @@ type Mode = "attention" | "projects" | "plugins" | "recent";
  *  presets this replaced could not express the obvious wants — a sidebar that
  *  names the project but not the branch was simply not on the menu. */
 type Detail = { proj: boolean; branch: boolean; wt: boolean };
+// "recent" is the saved key for newest-started; it was last-used once, and
+// keeping the key keeps everyone's saved pick.
 type OrderMode = "recent" | "alpha" | "biggest" | "custom";
 
 const PROJ_CAP = 10; // project chips shown before "SHOW ALL"
 const BRANCH_CAP = 8; // branch chips shown before "SHOW ALL"
 
 const ORDER_LABEL: Record<OrderMode, string> = {
-  recent: "recently used", alpha: "a → z", biggest: "biggest", custom: "custom",
+  recent: "newest started", alpha: "a → z", biggest: "biggest", custom: "custom",
 };
 const ORDERS: OrderMode[] = ["recent", "alpha", "biggest", "custom"];
 
@@ -109,9 +112,9 @@ const PLUGINS: { label: string; sub?: string; tint: string; match: (s: SessionBr
   { label: "FROM TEAMMATES", sub: "sessions sent to you", tint: "var(--purple)", match: (s) => isTeam(s.origin) },
   { label: "RIVENDELL", tint: "var(--purple)", match: isJob },
 ];
-/** The PLUGINS tab orders by when a session was created, not last touched — a
- *  plugin run is a job you triaged, read newest-first. `created` is optional on
- *  older payloads, so fall back to `updated`. */
+/** Newest-started first: when a session was created, not last touched, so a
+ *  turn starting or ending never moves its row. Every tab but RECENT reads it.
+ *  `created` is optional on older payloads, so fall back to `updated`. */
 const byCreated = (a: SessionBrief, b: SessionBrief) =>
   (b.created ?? b.updated) - (a.created ?? a.updated);
 
@@ -195,10 +198,11 @@ export function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: P
 type WaitLine = { title: string; c: string; needs: boolean };
 
 function SessionRow({
-  s, i, on, v, flag, wait, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
+  s, i, on, v, flag, wait, shots, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
 }: {
   s: SessionBrief;
   wait?: WaitLine;
+  shots: number;     // its pictures you haven't opened (lib/seenshots)
   i?: number;        // place in a non-virtualised list — its entrance stagger
   on: boolean;
   v: StateView;
@@ -235,6 +239,22 @@ function SessionRow({
   const branchShown = !job && detail.branch && !!branch;
   const wtShown = !job && detail.wt && inWorktree;
   const metaShow = !!(job || projShown || branchShown || wtShown || fv || s.goal);
+  // Unseen pictures: the WORK plate's NEW badge in miniature, under the time
+  // where Telegram puts an unread count. Out of flow, so a tag coming or going
+  // moves no row; a one-line row carries it beside the time instead.
+  const second = !!(dev || team || metaShow || wait);
+  const shotTag = shots > 0 && (
+    <span
+      role="img" aria-label={`${shots} new picture${shots === 1 ? "" : "s"}`}
+      title={`${shots} new picture${shots === 1 ? "" : "s"} you haven't opened`}
+      style={{ ...(second ? { position: "absolute", right: 0, top: 18 } : { flex: "none" }),
+               display: "inline-flex", alignItems: "center", gap: 3, height: 15, padding: "0 5px 0 4px", borderRadius: 4,
+               background: "var(--acc)", color: "var(--acc-on, var(--canvas))", fontSize: "var(--t85)", fontWeight: 800,
+               lineHeight: 1, boxShadow: "0 0 8px color-mix(in oklab, var(--acc) 35%, transparent)" }}
+    >
+      <ImageIcon size={10} strokeWidth={2.4} aria-hidden style={{ flex: "none" }} />{shots > 99 ? "99+" : shots}
+    </span>
+  );
   return (
     <div
       onClick={onAttach}
@@ -350,7 +370,7 @@ function SessionRow({
           </div>
         )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, height: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, height: 16, position: "relative" }}>
         <button
           onClick={(e) => { e.stopPropagation(); onPin(); }}
           title={pinned ? "unpin — stops holding the top of the list" : "pin to the top of the list"}
@@ -359,6 +379,7 @@ function SessionRow({
                    padding: 0, fontFamily: "inherit", fontSize: "var(--t10)", lineHeight: 1, textAlign: "center",
                    color: pinned ? "var(--warn)" : "var(--txl)" }}
         >{pinned ? "★" : "☆"}</button>
+        {shotTag}
         <span style={{ flex: "none", minWidth: 26, textAlign: "right", fontSize: "var(--t95)",
                        color: age?.tone === "run" ? "var(--info)" : pulse ? "var(--ok)" : "var(--txl)" }}>
           {age && (age.tone === "ok" || age.tone === "bad")
@@ -514,6 +535,20 @@ export function SessionsPanel(props: Props) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // Each session's pictures from the last day, counted against what you have
+  // had on screen: the WORK plate's own rule, so the tag and the plate agree.
+  // A bridge older than GET /local/shots answers 404, and no tag shows.
+  const [pics, setPics] = useState<Record<string, [string, number][]>>({});
+  useEffect(() => {
+    let live = true;
+    const load = () => api.shots(Date.now() / 1000 - 86400).then((r) => { if (live) setPics(r); }, () => {});
+    void load();
+    const t = setInterval(load, 15000);
+    return () => { live = false; clearInterval(t); };
+  }, []);
+  useSeenShots(); // a picture marked seen re-counts its tag
+  const unseen = new Map(Object.entries(pics).map(([id, ps]) => [id, ps.filter(([p, at]) => shotUnseen(p, at)).length]));
+
   // Branches power the WORKTREE chips + parent cycle — load per selected project
   // while the form is open (same endpoint the old inline picker used).
   useEffect(() => {
@@ -548,13 +583,13 @@ export function SessionsPanel(props: Props) {
   const branchFor = (s: SessionBrief) => s.branch || branchOf.get(s.project) || "main";
 
   const sq = sessionQ.trim().toLowerCase();
-  // Pinned first, then newest-first. Every list below slices this one, so a pin
-  // holds the top of its lane, its bucket, and its project's rows alike — and
-  // the search applied here reaches every mode from one place.
+  // Pinned first, then newest-started first: a row holds its place while its
+  // turns start and end, and the dot says what changed. Every list below slices
+  // this one, so a pin holds the top of its lane, its bucket, and its project's
+  // rows alike — and the search applied here reaches every mode from one place.
   const sorted = [...sessions]
     .filter((s) => !sq || `${s.title ?? ""} ${branchFor(s)}`.toLowerCase().includes(sq))
-    .sort((a, b) =>
-      Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
+    .sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || byCreated(a, b));
 
   // One state resolution per session per render — lanes, dots and counts all
   // read this map so they can never disagree.
@@ -597,12 +632,14 @@ export function SessionsPanel(props: Props) {
     });
   } else if (mode === "recent") {
     // RECENT is one flat stream, cut into time buckets — no project grouping.
+    // The one tab that follows the last touch: recency is its point.
     const now = Date.now() / 1000;
     const cuts: [number, string][] = [[86400, "TODAY"], [7 * 86400, "THIS WEEK"], [Infinity, "EARLIER"]];
     lanes = cuts.flatMap(([max, label], i) => {
       const min = i === 0 ? -1 : cuts[i - 1][0];
       const age = (s: SessionBrief) => now - s.updated;
-      const rows = mine.filter((s) => age(s) > min && age(s) <= max);
+      const rows = mine.filter((s) => age(s) > min && age(s) <= max)
+        .sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
       return rows.length ? [{ label, tint: "var(--txd)", count: rows.length, pulse: false, rows, fold: "" }] : [];
     });
   }
@@ -626,18 +663,25 @@ export function SessionsPanel(props: Props) {
     });
   }
 
-  // PROJECTS: the tree. Order is a cycle — most-recently-used, name, size.
-  const byLastUsed = [...groups].sort((a, b) => (b.sessions[0]?.updated ?? 0) - (a.sessions[0]?.updated ?? 0));
+  // PROJECTS: the tree. By default a project ranks by its newest session's
+  // start, so it rises when you start one there, never because a turn ran.
+  const started = new Map<string, number>();
+  for (const s of sessions) {
+    const g = jobGroup(s), t = s.created ?? s.updated;
+    if (t > (started.get(g) ?? 0)) started.set(g, t);
+  }
+  const byStart = [...groups].sort((a, b) => (started.get(b.rel) ?? 0) - (started.get(a.rel) ?? 0));
   // CUSTOM: dragged positions first (sort is stable, so anything you never
-  // dragged keeps its last-used order behind them).
+  // dragged keeps its start order behind them).
   const rank = (rel: string) => { const i = customOrder.indexOf(rel); return i < 0 ? Infinity : i; };
   const ps =
     order === "alpha" ? [...groups].sort((a, b) => a.name.localeCompare(b.name))
       : order === "biggest" ? [...groups].sort((a, b) => b.sessionCount - a.sessionCount)
-        : order === "custom" ? [...byLastUsed].sort((a, b) => rank(a.rel) - rank(b.rel))
-          : byLastUsed;
+        : order === "custom" ? [...byStart].sort((a, b) => rank(a.rel) - rank(b.rel))
+          : byStart;
   // A capped project lists every session that is doing something (WORK/WAIT/
-  // ASK/DONE), holding a prompt of yours, pinned, or open right now — hiding the
+  // ASK/DONE), holding a prompt of yours, pinned, open right now, or holding
+  // pictures you haven't opened (a folded row's tag is no tag) — hiding the
   // chat you are looking at reads as "it's gone". Only a project with none of
   // those falls back to its newest rows.
   // Expanding is a drill-down, not a longer list: while one project is open the
@@ -658,7 +702,7 @@ export function SessionsPanel(props: Props) {
       // Opened, the jobs group reads as a log: newest job first, one kind at a time.
       ? (g.rel === JOBS_REL ? f.filter((s) => !jobKind || (s.job?.kind ?? "") === jobKind).sort(byCreated) : f)
       : f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id)
-        || laneOf(s) !== "idle" || flags.has(s.id));
+        || laneOf(s) !== "idle" || flags.has(s.id) || !!unseen.get(s.id));
     const rest = Math.max(0, g.sessionCount - vis.length);
     return [{ g, f, isShut, vis, rest }];
   });
@@ -677,7 +721,7 @@ export function SessionsPanel(props: Props) {
     <SessionRow
       key={s.id} s={s} i={i} showDot={showDot} showProj={showProj} detail={detail}
       on={s.id === selectedSessionId}
-      v={views.get(s.id) ?? SV.idle} flag={flags.get(s.id)} wait={waitOf(s)}
+      v={views.get(s.id) ?? SV.idle} flag={flags.get(s.id)} wait={waitOf(s)} shots={unseen.get(s.id) ?? 0}
       pulse={(status.get(s.id)?.state ?? "idle") === "working"}
       branch={branchFor(s)}
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
