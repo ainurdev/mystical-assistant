@@ -25,6 +25,16 @@ so a busy upstream costs a call an hour, not one a push. The boot after the pull
 that row's words for its UPDATED row when the ranges match: the one-shot moved earlier
 instead of doubling, and a note the preview showed lands without a second pop.
 
+Why a row the one-shot couldn't write is asked again (`retry`): an update that lands
+while the login is at its limit got only its commit subjects, and nothing came back for
+it (2026-10-24, twice in one night). The hourly watch asks haiku again for any such row
+of the last week and rewrites it in place, so it is not news twice. Until then the
+fallback reads like notes, `area: text` → `Area — text`, rather than as a git log.
+
+Why a bullet may name a place (`go`, from PLACES): the changelog's Open › takes you to
+the thing that changed. haiku picks from a fixed list or says null; anything else is
+dropped, so a row never links somewhere the dashboard doesn't have.
+
 Why SEND NOTE pushes: a local commit on master would make every later PULL &
 RESTART (`--ff-only`) fail on an install that cannot push, so a refused push is
 rolled back and nothing is left behind.
@@ -52,22 +62,45 @@ _LAST_HEAD = "last_head"
 _SEEN = "notes_seen"
 _SEEN_MAX = 200
 _BULLET = 140   # the prompt asks for under 100; haiku overshoots a little, so keep those whole
+_HEADLINE = 64  # the prompt asks for 40; the changelog wraps, so only a runaway is cut
+_RETRY_S = 7 * 86400   # a fallback row older than this keeps its words
+_LEGACY = re.compile(r"\d+ commits? pulled")   # a fallback written before meta["ai"]
 _COMING_EVERY = 3600   # a waiting update that grows is written again at most hourly
 _WATCH_S = 3600        # the bridge's own look upstream, for an install with no dashboard open
 _lock = threading.Lock()
 _writing = False       # one preview at a time: two polls must not write two rows
 
 # Tagged so the throwaway session stays out of the sessions list (native.scan).
+# Where a change can be seen in the dashboard: the changelog's Open › (Settings tabs and
+# right-rail tabs, lib/theme.ts RIGHT_TABS). The hints are what the prompt shows haiku.
+PLACES = {
+    "settings:appearance": "theme, colours, typeface, loading screen",
+    "settings:transcript": "chat layout, composer, working indicator",
+    "settings:notifications": "pop-ups, sounds, quiet hours",
+    "settings:projects": "repos, their names, logos and profiles",
+    "settings:aimgmt": "logins, profiles, skills, MCP servers",
+    "settings:integrations": "Rivendell, task trackers",
+    "settings:system": "the bridge itself, updates",
+    "settings:move": "export and import to another machine",
+    "rail:files": "the session's changed files",
+    "rail:git": "branches, push and pull",
+    "rail:rivendell": "Rivendell tasks and jobs",
+    "rail:team": "teammates and shared sessions",
+    "rail:usage": "usage limits",
+}
 _PROMPT = (
     native.INTERNAL_ONESHOT_TAG + "\n"
     "Below are the commit subjects of an update to Mystical, a tool that runs Claude Code "
     "from a dashboard, a Telegram bot and a Mini App. Write release notes for the person getting "
     "the update — not a developer. Respond with ONLY compact JSON, no markdown "
-    "and no prose: {\"headline\": str, \"bullets\": [str], \"rest\": int}. headline: at most "
-    "40 characters naming the two or three biggest things, no trailing period. bullets: up to "
-    "five, biggest first, each `Lead — what it does for them`, the lead at most three words "
-    "and the whole bullet under 100 characters; fold fixes and chores into rest, the count of "
-    "commits the bullets leave out. Plain words: no shas, no file names, no commit jargon."
+    "and no prose: {\"headline\": str, \"bullets\": [str], \"go\": [str or null], \"rest\": int}. "
+    "headline: at most 40 characters naming the two or three biggest things, no trailing period. "
+    "bullets: up to five, biggest first, each `Lead — what it does for them`, the lead at most "
+    "three words and the whole bullet under 100 characters; fold fixes and chores into rest, the "
+    "count of commits the bullets leave out. go: one per bullet, the place in the dashboard where "
+    "they would see that change, or null when there isn't one: "
+    + "; ".join(f"{k} ({v})" for k, v in PLACES.items()) + ". "
+    "Plain words: no shas, no file names, no commit jargon."
     "\n\nCOMMITS:\n"
 )
 _GITHUB = re.compile(r"github\.com[:/]([^/\s]+/[^/\s]+?)(?:\.git)?/?$")
@@ -123,12 +156,14 @@ def _announce(old: str, head: str) -> None:
         # the model's words for this very range, written before the pull; a fallback says "waiting"
         cl = (_changelog(old, head) if not m.get("ai") or (m.get("from"), m.get("to")) != (old, head) else
               {"headline": row["title"], "bullets": row["body"].split("\n"), "rest": m.get("rest", 0),
-               "commits": m.get("commits", 0), "branch": m.get("branch", ""), "url": m.get("url")})
+               "commits": m.get("commits", 0), "branch": m.get("branch", ""), "url": m.get("url"),
+               "go": m.get("go"), "ai": True})
         if cl:
             notices.emit("updated", f"update:{head}", title=cl["headline"],
                          body="\n".join(cl["bullets"]),
                          meta={"from": old, "to": head, "commits": cl["commits"],
-                               "branch": cl["branch"], "rest": cl["rest"], "url": cl["url"]})
+                               "branch": cl["branch"], "rest": cl["rest"], "url": cl["url"], "ai": cl["ai"],
+                               **_places(cl)})
             _telegram("updated", "\n".join([f"UPDATED · {cl['headline']}"]
                                            + [f"• {b}" for b in cl["bullets"]]))
     except Exception as e:  # noqa: BLE001 — a changelog must never take the bridge down
@@ -197,7 +232,7 @@ def _write_coming(head: str, up: str, nid: "int | None") -> None:
                  for e in notes_in(git.file_at(repo, up, NOTES_PATH)) if e["heading"] not in before][:3]
         body = "\n".join(cl["bullets"])
         meta = {"from": head, "to": up, "commits": cl["commits"], "branch": cl["branch"], "rest": cl["rest"],
-                "url": cl["url"], "notes": notes, "ai": cl["ai"], "written": time.time()}
+                "url": cl["url"], "notes": notes, "ai": cl["ai"], "written": time.time(), **_places(cl)}
         if nid and notices.revise(nid, title=cl["headline"], body=body, meta=meta):
             return
         notices.emit("coming", "coming", title=cl["headline"], body=body, meta=meta)
@@ -216,9 +251,39 @@ def _holds(head: str, sha: "str | None") -> bool:
     return bool(head and sha) and git._run(selfupdate.REPO, "merge-base", "--is-ancestor", sha, head)[0] == 0
 
 
+def _places(cl: dict) -> dict:
+    """`go` for a row's meta, only when a bullet has a place."""
+    go = cl.get("go") or []
+    return {"go": go} if any(go) else {}
+
+
+def retry() -> None:
+    """Ask haiku again for the newest UPDATED row of the last week that holds the
+    fallback (meta ai false, or a "N commits pulled" row from before that mark), and
+    rewrite it in place: same id, time and read mark. One call a tick at most, so a
+    week of rows the switch was off for doesn't spend ten at once; a refusal waits
+    for the next tick, since a login at its limit refuses them all."""
+    if not aifeatures.enabled("changelog"):
+        return
+    for row in store.list_notices(time.time() - _RETRY_S, 10, ("updated",)):
+        m = row["meta"]
+        if m.get("ai") is not False and ("ai" in m or not _LEGACY.fullmatch(row["title"] or "")):
+            continue
+        n, subjects = _subjects(m["from"], m["to"]) if m.get("from") and m.get("to") else (0, [])
+        if not n:
+            continue   # the range is gone (history rewritten): nothing to say, the next row may have one
+        said = _summarise(subjects, n)
+        if said:
+            notices.revise(row["id"], title=said["headline"], body="\n".join(said["bullets"]),
+                           meta={**{k: v for k, v in m.items() if k != "go"}, "rest": said["rest"], "ai": True,
+                                 **_places(said)})
+        return
+
+
 def watch() -> None:
     """The bridge's own look upstream: a dashboard's UPDATE poll does the same every
-    5 min, but an install with no dashboard open would never hear of an update."""
+    5 min, but an install with no dashboard open would never hear of an update. The
+    same tick asks again for any changelog row the one-shot couldn't write (`retry`)."""
     def loop() -> None:
         wait = 300   # soon after boot first: what waited while the bridge was down
         while True:
@@ -228,6 +293,10 @@ def watch() -> None:
                 preview(selfupdate.check())
             except Exception as e:  # noqa: BLE001 — the next hour tries again
                 print(f"[whatsnew] watch: {e}", file=sys.stderr)
+            try:
+                retry()
+            except Exception as e:  # noqa: BLE001 — the next hour tries again
+                print(f"[whatsnew] retry: {e}", file=sys.stderr)
     threading.Thread(target=loop, daemon=True, name="whatsnew-watch").start()
 
 
@@ -243,26 +312,67 @@ def _remember(seen: list) -> None:
     store.set_setting(_SEEN, json.dumps(seen[-_SEEN_MAX:]))
 
 
-def _changelog(old: str, head: str, word: str = "pulled") -> "dict | None":
+def _subjects(old: str, head: str) -> "tuple[int, list]":
+    """The range's commit count and up to 80 subjects, newest first, merges left out."""
     repo = selfupdate.REPO
     rc, out, _ = git._run(repo, "rev-list", "--count", "--no-merges", f"{old}..{head}")
     n = int(out.strip() or 0) if rc == 0 else 0
     if n <= 0:
-        return None
+        return 0, []
     _rc, log, _ = git._run(repo, "log", "-80", "--no-merges", "--format=%s", f"{old}..{head}")
-    subjects = [s for s in log.splitlines() if s.strip()]
+    return n, [s for s in log.splitlines() if s.strip()]
+
+
+def _changelog(old: str, head: str, word: str = "pulled") -> "dict | None":
+    repo = selfupdate.REPO
+    n, subjects = _subjects(old, head)
+    if n <= 0:
+        return None
     said = _summarise(subjects, n) if aifeatures.enabled("changelog") else None
     d = said or _fallback(subjects, n, word)
     d.update(commits=n, branch=git.current_branch(repo), url=_compare_url(old, head), ai=bool(said))
     return d
 
 
+# nothing for the person updating; a SEND NOTE commit ("note: …") lands as its own NOTE row
+_SKIP = {"docs", "doc", "test", "tests", "chore", "ci", "build", "style", "note"}
+_TYPES = {"feat", "fix", "perf", "refactor", "revert"}                       # a kind, not a place: its scope leads
+_AREA = re.compile(r"(?P<area>[A-Za-z][\w .&/-]{0,23}?)(?:\((?P<scope>[^)]{1,24})\))?!?: (?P<text>.+)")
+
+
+def _lead(subject: str) -> "tuple[str, str] | None":
+    """A subject's first clause as (lead, text): `area: text` → ("Area", "text"), a
+    conventional type gives way to its scope, and a docs/test/chore commit says nothing."""
+    s = subject.split(" — ", 1)[0].strip()
+    m = _AREA.fullmatch(s)
+    if not m:
+        return "", s[:1].upper() + s[1:]
+    area, text = m["area"].strip(), m["text"].strip()
+    if area.lower() in _SKIP:
+        return None
+    if area.lower() in _TYPES:
+        area = (m["scope"] or "").strip()
+    return area[:1].upper() + area[1:], text if area else text[:1].upper() + text[1:]
+
+
 def _fallback(subjects: list, n: int, word: str = "pulled") -> dict:
-    """Off, or the one-shot failed: the first clause of up to five subjects. The one
-    path that does echo commits — nothing is lost, only shorter."""
-    bullets = [_cut(s.split(" — ", 1)[0], _BULLET) for s in subjects[:5]]
-    return {"headline": f"{n} commit{'' if n == 1 else 's'} {word}",
-            "bullets": bullets, "rest": n - len(bullets)}
+    """Off, or the one-shot failed: up to five subjects, read like notes. One per area
+    first, so a busy area doesn't hide the rest, then the next ones in order; the headline
+    names the areas. Chores alone fall back to the bare first clauses — nothing is lost."""
+    said = [x for x in map(_lead, subjects) if x]
+    if not said:
+        bullets = [_cut(s.split(" — ", 1)[0], _BULLET) for s in subjects[:5]]
+        return {"headline": f"{n} commit{'' if n == 1 else 's'} {word}", "bullets": bullets, "rest": n - len(bullets)}
+    keys = [lead.lower() or text for lead, text in said]
+    first = [i for i, k in enumerate(keys) if k not in keys[:i]]
+    pick = sorted((first + [i for i in range(len(said)) if i not in first])[:5])
+    bullets = [_cut(f"{said[i][0]} — {said[i][1]}" if said[i][0] else said[i][1], _BULLET) for i in pick]
+    leads = list(dict.fromkeys(said[i][0] for i in pick if said[i][0]))
+    headline = (f"{n} commit{'' if n == 1 else 's'} {word}" if not leads
+                else f"{leads[0]} updates" if len(leads) == 1
+                else f"{leads[0]} and {leads[1]}" if len(leads) == 2
+                else ", ".join(leads[:3]) + (" and more" if len(leads) > 3 else ""))
+    return {"headline": _cut(headline, _HEADLINE), "bullets": bullets, "rest": n - len(bullets)}
 
 
 def _summarise(subjects: list, n: int) -> "dict | None":
@@ -281,15 +391,18 @@ def _summarise(subjects: list, n: int) -> "dict | None":
         return None
     if not isinstance(raw, dict):
         return None
-    headline = _cut(str(raw.get("headline") or ""), 40)
+    headline = _cut(str(raw.get("headline") or ""), _HEADLINE)
     items = raw.get("bullets") if isinstance(raw.get("bullets"), list) else []
-    bullets = [_cut(str(x), _BULLET) for x in items if str(x).strip()][:5]
+    go = raw.get("go") if isinstance(raw.get("go"), list) else []
+    kept = [(_cut(str(x), _BULLET), go[i] if i < len(go) and go[i] in PLACES else None)
+            for i, x in enumerate(items) if str(x).strip()][:5]
+    bullets = [b for b, _ in kept]
     if not headline or not bullets:
         return None
     rest = raw.get("rest")
     if isinstance(rest, bool) or not isinstance(rest, int) or rest < 0:
         rest = max(0, n - len(bullets))
-    return {"headline": headline, "bullets": bullets, "rest": rest}
+    return {"headline": headline, "bullets": bullets, "rest": rest, "go": [g for _, g in kept]}
 
 
 def _cut(s: str, n: int) -> str:

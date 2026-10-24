@@ -113,7 +113,8 @@ def test_post_limit_wait_answers_the_offer(monkeypatch):
 def test_get_changelog_is_updates_and_notes_only():
     notices.emit("pr_failing", "pr:o/r:x", title="#9 · x", body="lint")
     nid = notices.emit("updated", "update:abc", title="Changelog moves", body="a\nb")
-    assert _call("GET", "/local/changelog", {}) == (200, {"notices": notices.changelog()})
+    from bridge import selfupdate
+    assert _call("GET", "/local/changelog", {}) == (200, {"notices": notices.changelog(), "project": selfupdate.project()})
     assert [n["id"] for n in notices.changelog()] == [nid]
 
 

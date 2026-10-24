@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/notices.check.ts
 import type { Need, Notice, NoticePrefs } from "../api.ts";
-import { ago, badge, cardFor, chipCount, freshSince, groupBySubject, isQuiet, matches, needMatches, notesOf, popFor, safeUrl, sectionOf, stamp } from "./notices.ts";
+import { ago, askPrompt, badge, byDay, cardFor, chipCount, dayOf, findIn, freshSince, groupBySubject, iconFor, isQuiet, leadOf, matches, needMatches, nodeSize, notesMarkdown, notesOf, placesOf, popFor, safeUrl, sectionOf, stamp, weekBars } from "./notices.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -90,5 +90,38 @@ const waiting = n(9, "coming", { kind: "coming", meta: { notes: [{ heading: "h",
 ok(JSON.stringify(notesOf(waiting)) === '[{"heading":"h","title":"T","body":"b","author":"A"},{"heading":"Bare","title":"Bare","body":"","author":""}]',
   "a waiting update's notes: shaped, a titleless one or junk dropped");
 ok(notesOf(n(1, "a")).length === 0 && notesOf(n(2, "b", { meta: { notes: "x" } })).length === 0, "no notes, or not a list: none");
+
+
+// ---- the changelog's reader -----------------------------------------------------------
+{
+  const now = new Date(2026, 9, 25, 0, 20);
+  const at = (d: number, h: number, m = 0) => new Date(2026, 9, d, h, m).getTime() / 1000;
+  ok(dayOf(at(25, 0, 8), now) === "TODAY" && dayOf(at(24, 23, 50), now) === "YESTERDAY" && dayOf(at(22, 20), now) === "OCT 22",
+    "days read TODAY, YESTERDAY, then the date");
+  const u = (id: number, a: number, o: Partial<Notice> = {}) => n(id, `update:${id}`, { at: a, kind: "updated", ...o });
+  const rows = [u(4, at(25, 0, 8), { meta: { commits: 2 } }), u(3, at(24, 23, 50), { meta: { commits: 25 } }),
+                u(2, at(22, 20), { meta: { commits: 13 } }), u(1, at(22, 12), { meta: { commits: 3 } }), u(0, at(12, 9), { meta: { commits: 9 } })];
+  ok(JSON.stringify(byDay(rows, now).map((g) => [g.day, g.rows.map((r) => r.id)])) === '[["TODAY",[4]],["YESTERDAY",[3]],["OCT 22",[2,1]],["OCT 12",[0]]]',
+    "rows fall under their days in order");
+  ok(weekBars(rows, now).join() === "0,0,0,16,0,25,2", "the week's bars: commits per day, a fortnight ago left out, today last");
+  ok(nodeSize(rows[0]) === 1 && nodeSize(rows[2]) === 3 && nodeSize(u(9, 0, { meta: { commits: 12 } })) === 2 && nodeSize(u(9, 0)) === 1,
+    "a node grows with its commits");
+  ok(leadOf("Usage — limits on the rail").join("|") === "Usage|limits on the rail" && leadOf("Two").join("|") === "|Two", "a bullet's lead");
+  const t = [u(1, 1, { title: "Logo picker", body: "Logos — one tap" }), u(2, 2, { title: "Other", body: "Repo icons — without a LOGO" }), u(3, 3, { title: "x", body: "y" })];
+  ok(findIn(t, " logo ").map((r) => r.id).join() === "1,2" && findIn(t, "").length === 3, "find matches titles and bullets, any case");
+  ok(iconFor("Telegram") === "send" && iconFor("Sidebar") === "panel" && iconFor("Clone & install") === "down"
+    && iconFor("Work zone") === "layers" && iconFor("Middle-earth") === "palette" && iconFor("Rivendell") === "trees" && iconFor("Mystery") === "spark",
+    "a feature's icon comes from its lead, a spark when nothing fits");
+  const g = u(5, 5, { body: "A — a\nB — b\nC — c", meta: { go: ["rail:usage", "nowhere", 7] } });
+  ok(JSON.stringify(placesOf(g)) === '["rail:usage",null,null]' && placesOf(u(6, 6, { body: "A — a" }))[0] === null,
+    "places only from the known list, in bullet order");
+  const md = notesMarkdown(u(7, at(24, 23, 50), { title: "Usage on the rail", body: "Usage — limits\nPlain words",
+    meta: { commits: 25, rest: 20, url: "https://github.com/o/r/compare/a...b" } }), now);
+  ok(md === "**Usage on the rail** · Oct 24\n- **Usage** — limits\n- Plain words\n\n+20 smaller fixes · 25 commits: https://github.com/o/r/compare/a...b",
+    "Copy notes writes markdown");
+  const ask = askPrompt(u(8, at(24, 23, 50), { title: "Usage", body: "Usage — limits", meta: { from: "3e77cc8aa", to: "ab5fc19bb" } }));
+  ok(ask.startsWith("Tell me about this Mystical update from Oct 24 23:50 (`git log 3e77cc8..ab5fc19`)") && ask.includes("- Usage — limits"),
+    "Ask Claude carries the range and the notes");
+}
 
 console.log("\nall notices checks passed");

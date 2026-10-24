@@ -1,27 +1,37 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownToLine, ArrowUpRight, ChevronRight, MessageSquareText, Pencil, ScrollText } from "lucide-react";
+import {
+  ArrowDownToLine, ArrowRight, ArrowUpRight, Copy, Download, Flame, Gauge, GitBranch, Image, Layers, MessageSquareText,
+  Palette, PanelLeft, Pencil, ScrollText, Search, Send, Sparkles, Trees, Users, X, type LucideIcon,
+} from "lucide-react";
 import { api, type Notice } from "../../api";
 import { popPlace } from "../../lib/prchip";
-import { ago, notesOf, safeUrl, stamp } from "../../lib/notices";
+import { ago, askPrompt, byDay, findIn, iconFor, leadOf, nodeSize, notesMarkdown, notesOf, PLACES, placesOf, safeUrl, stamp,
+  weekBars, type FeatIcon } from "../../lib/notices";
 import { NoteComposer } from "./NoteComposer";
 
-// The right rail's changelog, over UPDATE: what each update changed (a headline and
-// a few bullets bridge/whatsnew.py writes at a boot that found new commits) and the
-// notes maintainers wrote for every install, with the form that writes one. It was
-// the bell's Updates tab; the bell is your sessions, this is Mystical itself.
-// The newest entry and anything unread are open cards; older ones are a dated list
-// that unfolds in place, so a changelog you've read still shows what the last update
-// did without a click. When one lands, the bell's poll hands it here
-// (hud:changelog-pop) and it pops out of this icon, next to where UPDATE was pressed,
-// not under the bell; its click, or an OS banner's (hud:changelog), opens the
-// changelog on it. A dot while any is unread; closing marks what it showed read.
-// An update waiting upstream (bridge/whatsnew.py preview) sits on top as COMING,
-// and Update now hands it to UPDATE (hud:update), where pulling and its errors live.
-// Self-contained (polls, owns its popover) like UpdateButton.
+// The right rail's changelog, over UPDATE: what each update changed (a headline and a
+// few bullets bridge/whatsnew.py writes at a boot that found new commits) and the notes
+// maintainers wrote for every install, with the form that writes one. It was the bell's
+// Updates tab; the bell is your sessions, this is Mystical itself.
+// A list and a reader (docs/superpowers/specs/changelog-v3.md): the
+// list is a spine of updates under their days, a node per update sized by its commits
+// and filled while unread; the reader is the picked one, each feature with its icon and,
+// where the model named a place for it (whatsnew PLACES), Open › to go there. ↑ ↓ step,
+// the header's bars are the week's commits and jump to a day, ⌕ finds a change across
+// the 50 kept. Ask Claude about it starts a session in this checkout on the update.
+// When one lands, the bell's poll hands it here (hud:changelog-pop) and it pops out of
+// this icon; its click, or an OS banner's (hud:changelog), opens the reader on it. A dot
+// while any is unread; closing marks what it showed read. An update waiting upstream
+// (bridge/whatsnew.py preview) sits on top as COMING, and Update now hands it to UPDATE
+// (hud:update), where pulling and its errors live. Self-contained (polls, owns its
+// popover) like UpdateButton.
 const POLL_MS = 60_000; // rows land at a boot or a SEND NOTE; a fresh one comes by event, not by this
 
-/** An update's bullets: the lead bold, split at the first " — ". */
+const ICON: Record<FeatIcon, LucideIcon> = { send: Send, panel: PanelLeft, gauge: Gauge, layers: Layers, flame: Flame,
+  trees: Trees, users: Users, image: Image, palette: Palette, down: Download, spark: Sparkles };
+
+/** An update's bullets: the lead bold, split at the first " — ". UPDATE's preview draws these. */
 export function Bullets({ body }: { body: string }) {
   return (
     <ul className="ntf-ul">
@@ -48,29 +58,40 @@ export function Meta({ r }: { r: Notice }) {
   );
 }
 
-/** What an entry says: an update's bullets, or a note's text and who wrote it. */
-function Said({ r }: { r: Notice }) {
-  if (r.kind !== "note") return <Bullets body={r.body} />;
-  const by = typeof r.meta.author === "string" ? r.meta.author : "";
-  return <>{r.body && <div className="clg-note">{r.body}</div>}{by && <div className="clg-by">by {by}</div>}</>;
+/** Every match of q in s, marked. */
+function marked(s: string, q: string): ReactNode {
+  const k = q.trim();
+  if (!k) return s;
+  return s.split(new RegExp(`(${k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")})`, "ig"))
+    .map((part, i) => (i % 2 ? <mark key={i} className="clg-m">{part}</mark> : part));
 }
 
-export function ChangelogButton() {
+/** Open ›: a Settings tab, or a right-rail tab (App's hud:rail). */
+function goTo(place: string) {
+  const [where, tab] = place.split(":");
+  window.dispatchEvent(new CustomEvent(where === "rail" ? "hud:rail" : "hud:settings", { detail: tab }));
+}
+
+export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?: string, fresh?: boolean) => void }) {
   const [rows, setRows] = useState<Notice[] | null>(null);
+  const [project, setProject] = useState("");                                 // where Ask Claude starts ("" = it can't)
   const [open, setOpen] = useState(false);
-  const [unfolded, setUnfolded] = useState<Set<number>>(() => new Set());   // history rows clicked open
-  const [flash, setFlash] = useState<number | null>(null);                   // the entry a popup or banner opened on
+  const [pick, setPick] = useState<number | null>(null);                     // the reader's row; null = the first
+  const [q, setQ] = useState<string | null>(null);                           // find: null = the field shut
   const [fresh, setFresh] = useState<Notice | null>(null);                   // the popup out of the icon
   const [composing, setComposing] = useState(false);
   const [bar, setBar] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+  const [copied, setCopied] = useState<"" | "ok" | "no">("");
   const [hov, setHov] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const stepRef = useRef<(d: number) => void>(() => {});
 
   // A bridge older than this page has no /local/changelog: no rows, so no button.
-  const load = () => api.changelog().then((r) => setRows(r.notices), () => { /* next poll */ });
+  const load = () => api.changelog().then((r) => { setRows(r.notices); setProject(r.project ?? ""); }, () => { /* next poll */ });
   const openOn = (id: number | null) => {
-    setFresh(null); setFlash(id); setUnfolded(new Set(id === null ? [] : [id]));
+    setFresh(null); setPick(id); setQ(null);
     setOpen(true); void load();
   };
   useEffect(() => {
@@ -89,41 +110,135 @@ export function ChangelogButton() {
 
   const close = () => {
     // fresh too: one that landed while this was open was read here, it doesn't pop on the way out
-    setOpen(false); setComposing(false); setBar(null); setUnfolded(new Set()); setFlash(null); setFresh(null);
+    setOpen(false); setComposing(false); setBar(null); setPick(null); setQ(null); setFresh(null); setCopied("");
     const ids = (rows ?? []).filter((r) => !r.read).map((r) => r.id);
     if (ids.length) void api.noticesRead(ids).then(load, () => { /* next poll */ });
   };
-  // Closes the way UPDATE's popover does: a press outside it, or Escape.
+  // Closes the way UPDATE's popover does: a press outside it, or Escape (which shuts find first).
+  // ↑ ↓ step through the list, unless a note is being written.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
       const t = e.target as Node;
       if (!btnRef.current?.contains(t) && !popRef.current?.contains(t)) close();
     };
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { e.stopPropagation(); if (q !== null) setQ(null); else close(); return; }
+      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !composing) { e.preventDefault(); stepRef.current(e.key === "ArrowDown" ? 1 : -1); }
+    };
     document.addEventListener("pointerdown", onDown);
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("pointerdown", onDown); document.removeEventListener("keydown", onKey); };
-  }, [open, rows]);
+  }, [open, rows, q, composing]);
+  // the picked row stays in view as ↑ ↓ move it
+  useEffect(() => { listRef.current?.querySelector('[data-on="1"]')?.scrollIntoView({ block: "nearest" }); }, [pick, q]);
 
   if (!rows) return null;
   const unread = rows.filter((r) => !r.read).length;
-  const now = Date.now() / 1000;
-  const today = new Date();
-  const toggle = (id: number) => setUnfolded((p) => { const s = new Set(p); if (!s.delete(id)) s.add(id); return s; });
+  const now = new Date();
   const next = rows.find((r) => r.kind === "coming");
-  const nc = next && typeof next.meta.commits === "number" ? next.meta.commits : 0;
   const taken = rows.filter((r) => r !== next);
-  const cards = taken.filter((r, i) => i === 0 || !r.read);
-  const older = taken.filter((r) => !cards.includes(r));
+  const list = findIn(next ? [next, ...taken] : taken, q ?? "");
+  const cur = list.find((r) => r.id === pick) ?? list[0];
+  stepRef.current = (d) => {
+    const nx = list[Math.max(0, Math.min(list.length - 1, list.indexOf(cur) + d))];
+    if (nx) setPick(nx.id);
+  };
+  const week = weekBars(taken, now);
+  const most = Math.max(...week, 1);
+  const total = week.reduce((a, b) => a + b, 0);
+  // a bar: that day's newest update
+  const jump = (i: number) => {
+    const from = new Date(now).setHours(0, 0, 0, 0) / 1000 - (6 - i) * 86400;
+    const hit = taken.find((r) => r.at >= from && r.at < from + 86400);
+    if (hit) { setQ(null); setPick(hit.id); }
+  };
+  const copy = async (r: Notice) => {
+    const text = r.kind === "note" ? `**${r.title}**\n\n${r.body}` : notesMarkdown(r, now);
+    try { await navigator.clipboard.writeText(text); setCopied("ok"); } catch { setCopied("no"); }
+    setTimeout(() => setCopied(""), 1600);
+  };
   // Above the button (the rail's foot is low), right edges flush, capped like the bell.
+  const W = 540;
   const rect = btnRef.current?.getBoundingClientRect();
   const place = open && rect && popPlace(rect, window.innerHeight);
-  const pop = rect && place && { top: "auto", ...place, maxHeight: Math.min(640, place.maxHeight),
-                                 right: Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - 472)) };
+  const pop = rect && place && { top: "auto", ...place, height: Math.min(440, place.maxHeight), maxHeight: undefined,
+                                 right: Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - W - 8)) };
   // The popup sits left of the rail, its notch (index.css) on the icon's middle.
   const out = fresh && !open && rect && { right: window.innerWidth - rect.left + 10, bottom: Math.max(8, window.innerHeight - rect.bottom - 4) };
   const theme = document.querySelector("[data-theme]") ?? document.body;
+  const qq = q ?? "";
+
+  const item = (r: Notice) => (
+    <button key={r.id} data-on={r === cur ? 1 : undefined} onClick={() => setPick(r.id)}
+      className={`clg-it${r === cur ? " on" : ""}${r.read ? "" : " new"}${r.kind === "coming" ? " next" : ""}`}>
+      <i className={`n s${r.kind === "note" ? 1 : nodeSize(r)}`} aria-hidden />
+      <span className="t">{r.kind === "coming" ? "not installed yet" : stamp(r.at, now).time}{r.kind === "note" && " · note"}</span>
+      <span className="s">{marked(r.title, qq)}</span>
+    </button>
+  );
+
+  const reader = (r: Notice) => {
+    const d = new Date(r.at * 1000);
+    const places = r.kind === "updated" ? placesOf(r) : [];
+    const branch = typeof r.meta.branch === "string" ? r.meta.branch : "";
+    const by = typeof r.meta.author === "string" ? r.meta.author : "";
+    return (
+      <div key={r.id} className="clg-read mscroll">
+        <div className="clg-when">
+          {r.kind === "coming" ? <span className="clg-tag ok">COMING</span>
+            : <span>{d.toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" })} · {stamp(r.at, now).time}</span>}
+          {r.kind === "note" && by && <span>· note from {by}</span>}
+        </div>
+        <div className="clg-h">{marked(r.title, qq)}</div>
+        {r.kind === "note" ? <div className="clg-note">{marked(r.body, qq)}</div> : (
+          <div className="clg-feats">
+            {r.body.split("\n").filter(Boolean).map((line, i) => {
+              const [lead, text] = leadOf(line);
+              const Ic = ICON[iconFor(lead || text)];
+              const to = places[i];
+              return (
+                <div key={i} className="clg-f">
+                  <span className="ic"><Ic size={13} strokeWidth={1.8} aria-hidden /></span>
+                  <span className="x">{lead && <><b>{marked(lead, qq)}</b> — </>}{marked(text, qq)}</span>
+                  {to ? <button className="go" title={`Open ${PLACES[to]}`} onClick={() => { close(); goTo(to); }}>
+                    Open<ArrowRight size={11} strokeWidth={2} aria-hidden /></button> : <span />}
+                </div>
+              );
+            })}
+          </div>
+        )}
+        {r.kind === "coming" && notesOf(r).map((n) => (
+          <div key={n.heading} className="clg-cnote"><MessageSquareText size={12} strokeWidth={1.8} />
+            <span><b>{n.title}</b>{n.author && <i> — note from {n.author}</i>}</span></div>
+        ))}
+        <div className="clg-rfoot">
+          {r.kind !== "note" && (
+            <div className="clg-mline">
+              <Meta r={r} />
+              <span style={{ flex: 1 }} />
+              {branch && <span className="br"><GitBranch size={11} strokeWidth={1.8} aria-hidden />{r.kind === "coming" ? `waiting on ${branch}` : branch}</span>}
+            </div>
+          )}
+          <div className="clg-acts">
+            {r.kind === "coming" ? (
+              <button className="ok" onClick={() => { close(); window.dispatchEvent(new CustomEvent("hud:update")); }}>
+                <ArrowDownToLine size={12} strokeWidth={1.8} />Update now</button>
+            ) : (
+              <>
+                {project && r.kind === "updated" && (
+                  <button className="pri" onClick={() => { close(); onFeed([askPrompt(r)], project, true); }}>
+                    <Sparkles size={12} strokeWidth={1.8} />Ask Claude about it</button>
+                )}
+                <button onClick={() => void copy(r)}><Copy size={12} strokeWidth={1.8} />
+                  {copied === "ok" ? "Copied" : copied === "no" ? "Couldn't copy" : r.kind === "note" ? "Copy note" : "Copy notes"}</button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <>
@@ -151,7 +266,7 @@ export function ChangelogButton() {
                   <path d="M12 3 21 12 12 21 3 12Z" /><path d="M12 9 15 12 12 15 9 12Z" fill="currentColor" stroke="none" />
                 </svg>)}
               <span className="v">{fresh.verb}</span>
-              <span className="w">{ago(fresh.at, now)}{fresh.kind === "note" && typeof fresh.meta.author === "string" ? ` · by ${fresh.meta.author}` : ""}</span>
+              <span className="w">{ago(fresh.at, now.getTime() / 1000)}{fresh.kind === "note" && typeof fresh.meta.author === "string" ? ` · by ${fresh.meta.author}` : ""}</span>
             </div>
             <div className="clg-co-t">{fresh.title}</div>
             <div className="clg-co-b">{fresh.kind === "note" ? fresh.body
@@ -171,72 +286,48 @@ export function ChangelogButton() {
       {/* Portalled into the themed container, like UPDATE's, so position:fixed
           escapes the rail's animated ancestors; the bell's frame (.ntf-pop). */}
       {pop && createPortal(
-        <div ref={popRef} className="ntf-pop" style={{ position: "fixed", zIndex: 96, ...pop }}>
+        <div ref={popRef} className="ntf-pop clg-pop" style={{ position: "fixed", zIndex: 96, width: W, ...pop }}>
           <div className="ntf-head">
             <span className="t">CHANGELOG</span>
-            {unread > 0 && <span className="n">{unread} new</span>}
-          </div>
-          <div className="ntf-list mscroll">
-            {next && (
-              <div className={`clg-card next${flash === next.id ? " clg-flash" : ""}`}>
-                <div className="clg-hm">
-                  <span className="clg-tag ok">COMING</span>
-                  <span>not installed yet</span>
-                  <span style={{ flex: 1 }} />
-                  <Meta r={next} />
-                </div>
-                <div className="clg-ht">{next.title}</div>
-                <Bullets body={next.body} />
-                {notesOf(next).map((n) => (
-                  <div key={n.heading} className="clg-cnote"><MessageSquareText size={12} strokeWidth={1.8} />
-                    <span><b>{n.title}</b>{n.author && <i> — note from {n.author}</i>}</span></div>
+            {total > 0 && (
+              <span className="clg-week" aria-label={`${total} commits this week`}>
+                {week.map((c, i) => (
+                  <button key={i} className={i === 6 ? "today" : ""} disabled={!c} onClick={() => jump(i)}
+                    title={`${new Date(now.getTime() - (6 - i) * 864e5).toLocaleDateString("en", { weekday: "short" })} · ${c} commit${c === 1 ? "" : "s"}`}
+                    style={{ height: c ? Math.max(3, Math.round(18 * c / most)) : 2 }} />
                 ))}
-                <div className="clg-cf">
-                  <span>{`${nc} commit${nc === 1 ? "" : "s"} waiting`}{typeof next.meta.branch === "string" && next.meta.branch ? ` on ⎇ ${next.meta.branch}` : ""}</span>
-                  <span style={{ flex: 1 }} />
-                  <button className="clg-go" onClick={() => { close(); window.dispatchEvent(new CustomEvent("hud:update")); }}>
-                    <ArrowDownToLine size={12} strokeWidth={1.8} />Update now</button>
-                </div>
-              </div>
+              </span>
             )}
-            {cards.map((r) => {
-              const s = stamp(r.at, today);
-              return (
-                <div key={r.id} className={`clg-card${r.read ? "" : " new"}${flash === r.id ? " clg-flash" : ""}`}>
-                  <div className="clg-hm">
-                    {!r.read && <span className="clg-tag">NEW</span>}
-                    {r.kind === "note" && <span className="clg-verb">NOTE</span>}
-                    <span>{s.day} · {s.time}</span>
-                    <span style={{ flex: 1 }} />
-                    {r.kind !== "note" && <Meta r={r} />}
-                  </div>
-                  <div className="clg-ht">{r.title}</div>
-                  <Said r={r} />
-                </div>
-              );
-            })}
-            {older.length > 0 && <div className="ntf-sec">EARLIER<span className="ln" /></div>}
-            {older.map((r) => {
-              const s = stamp(r.at, today);
-              const on = unfolded.has(r.id);
-              return (
-                <div key={r.id} className={`clg-row${flash === r.id ? " clg-flash" : ""}`}>
-                  <button className="clg-hist" aria-expanded={on} onClick={() => toggle(r.id)}>
-                    <span className="d">{s.day === "TODAY" ? s.time : s.day}</span>
-                    <span className="s">{r.kind === "note" && <i>NOTE</i>}{r.title}</span>
-                    <ChevronRight size={13} strokeWidth={1.8} aria-hidden />
-                  </button>
-                  {on && <div className="clg-fold"><Said r={r} />{r.kind !== "note" && <div className="clg-line"><Meta r={r} /></div>}</div>}
-                </div>
-              );
-            })}
-            {!rows.length && (
+            {total > 0 && <span className="clg-wcap">{total} commits this week</span>}
+            {q === null ? (
+              <button className="clg-ib" title="Find a change" aria-label="Find a change" onClick={() => setQ("")}><Search size={15} strokeWidth={1.8} /></button>
+            ) : (
+              <label className="clg-find">
+                <Search size={13} strokeWidth={1.8} aria-hidden />
+                <input autoFocus value={q} onChange={(e) => { setQ(e.target.value); setPick(null); }} placeholder="Find a change" aria-label="Find a change" />
+                <button title="Clear" aria-label="Clear" onClick={() => setQ(null)}><X size={12} strokeWidth={2} /></button>
+              </label>
+            )}
+          </div>
+          {!rows.length ? (
+            <div className="ntf-list">
               <div className="ntf-empty">
                 <div className="o">no updates yet — i am as you first summoned me.</div>
                 <div className="s">the next PULL &amp; RESTART lists what changed here</div>
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="clg-split">
+              <div className="clg-list mscroll" ref={listRef}>
+                {next && list.includes(next) && <><div className="clg-day">COMING</div>{item(next)}</>}
+                {byDay(list.filter((r) => r !== next), now).map((g) => (
+                  <Fragment key={g.day}><div className="clg-day">{g.day}</div>{g.rows.map(item)}</Fragment>
+                ))}
+                {!list.length && <div className="clg-none">Nothing about “{qq.trim()}” in the last {taken.length} updates.</div>}
+              </div>
+              {cur ? reader(cur) : <div className="clg-read" />}
+            </div>
+          )}
           {composing ? (
             <>
               {bar?.kind === "err" && <div className="clg-err">{bar.text}</div>}
@@ -249,6 +340,7 @@ export function ChangelogButton() {
             <div className="ntf-foot">
               {bar?.kind === "ok" ? <span className="clg-sent">✓ {bar.text}</span>
                 : <button className="clg-write" onClick={() => setComposing(true)}><Pencil size={12} strokeWidth={1.8} />Write a note for every install</button>}
+              {list.length > 1 && cur && <span className="clg-k">↑ ↓ · {list.indexOf(cur) + 1} of {list.length}</span>}
             </div>
           )}
         </div>,

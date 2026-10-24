@@ -122,3 +122,107 @@ export function notesOf(n: Notice): { heading: string; title: string; body: stri
     return s("title") ? [{ heading: s("heading") || s("title"), title: s("title"), body: s("body"), author: s("author") }] : [];
   });
 }
+
+// ---- the changelog's reader (components/hud/ChangelogButton.tsx) ----------------------
+
+/** A changelog day: TODAY, YESTERDAY, then the date ("OCT 22"). */
+export function dayOf(at: number, now: Date): string {
+  const d = new Date(at * 1000);
+  const back = Math.round((new Date(now).setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 864e5);
+  return back === 0 ? "TODAY" : back === 1 ? "YESTERDAY" : d.toLocaleDateString("en", { month: "short", day: "numeric" }).toUpperCase();
+}
+
+/** Rows (newest first, as they arrive) under their days. */
+export function byDay<T extends { at: number }>(rows: T[], now: Date): { day: string; rows: T[] }[] {
+  const out: { day: string; rows: T[] }[] = [];
+  for (const r of rows) {
+    const day = dayOf(r.at, now);
+    if (out.at(-1)?.day === day) out.at(-1)!.rows.push(r);
+    else out.push({ day, rows: [r] });
+  }
+  return out;
+}
+
+const commitsOf = (n: Notice) => (typeof n.meta.commits === "number" ? n.meta.commits : 0);
+
+/** Commits per day over the last 7 days, oldest first: the header's bars, today last. */
+export function weekBars(rows: Notice[], now: Date): number[] {
+  const start = new Date(now).setHours(0, 0, 0, 0) / 1000 - 6 * 86400;
+  const out = [0, 0, 0, 0, 0, 0, 0];
+  for (const r of rows) {
+    const i = Math.floor((r.at - start) / 86400);
+    if (r.kind === "updated" && i >= 0 && i < 7) out[i] += commitsOf(r);
+  }
+  return out;
+}
+
+/** A spine node's size from its update's commits: 1 (≤3), 2 (≤12), 3 (more). */
+export function nodeSize(n: Notice): 1 | 2 | 3 {
+  const c = commitsOf(n);
+  return c <= 3 ? 1 : c <= 12 ? 2 : 3;
+}
+
+/** A bullet as [lead, text], split at its first " — "; no lead, [""", line]. */
+export function leadOf(line: string): [string, string] {
+  const at = line.indexOf(" — ");
+  return at > 0 ? [line.slice(0, at), line.slice(at + 3)] : ["", line];
+}
+
+/** Find: the rows whose title or text holds q, any case. */
+export function findIn(rows: Notice[], q: string): Notice[] {
+  const k = q.trim().toLowerCase();
+  return k ? rows.filter((r) => `${r.title}\n${r.body}`.toLowerCase().includes(k)) : rows;
+}
+
+export type FeatIcon = "send" | "panel" | "gauge" | "layers" | "flame" | "trees" | "users" | "image" | "palette" | "down" | "spark";
+const ICONS: [RegExp, FeatIcon][] = [
+  [/telegram|\bbot\b/, "send"], [/sidebar|\brail\b|panel/, "panel"], [/usage|limit/, "gauge"],
+  [/work zone|\bzones?\b|tall(y|ies)/, "layers"], [/clone|install|update|pull/, "down"],
+  [/middle-earth|theme|colou?r|\blook\b/, "palette"], [/dashboard|khazad|scene|intro|loading|gandalf|boot/, "flame"],
+  [/rivendell|task|board/, "trees"], [/team|thread|shar|seen|teammate/, "users"], [/logo|picture|image|icon|background/, "image"],
+];
+/** The icon a feature gets from its lead; a spark when nothing fits. */
+export function iconFor(lead: string): FeatIcon {
+  const l = lead.toLowerCase();
+  return ICONS.find(([re]) => re.test(l))?.[1] ?? "spark";
+}
+
+/** bridge/whatsnew.py PLACES: where Open › goes, and what its tooltip names. */
+export const PLACES: Record<string, string> = {
+  "settings:appearance": "Settings ▸ Appearance", "settings:transcript": "Settings ▸ Transcript",
+  "settings:notifications": "Settings ▸ Notify", "settings:projects": "Settings ▸ Projects",
+  "settings:aimgmt": "Settings ▸ AI management", "settings:integrations": "Settings ▸ Integrations",
+  "settings:system": "Settings ▸ System", "settings:move": "Settings ▸ Move",
+  "rail:files": "the FILES tab", "rail:git": "the GIT tab", "rail:rivendell": "the RIVENDELL tab",
+  "rail:team": "the TEAM tab", "rail:usage": "the USAGE tab",
+};
+/** Each bullet's place, in bullet order; null where it has none. A row's meta is free JSON. */
+export function placesOf(n: Notice): (string | null)[] {
+  const go = Array.isArray(n.meta.go) ? n.meta.go : [];
+  return n.body.split("\n").filter(Boolean).map((_, i) => (typeof go[i] === "string" && go[i] in PLACES ? (go[i] as string) : null));
+}
+
+/** An update as markdown, for Copy notes: the headline and its day, the bullets, the rest. */
+export function notesMarkdown(n: Notice, now: Date): string {
+  const day = new Date(n.at * 1000).toLocaleDateString("en", { month: "short", day: "numeric" });
+  const lines = n.body.split("\n").filter(Boolean).map((l) => {
+    const [lead, text] = leadOf(l);
+    return lead ? `- **${lead}** — ${text}` : `- ${text}`;
+  });
+  const rest = typeof n.meta.rest === "number" && n.meta.rest > 0 ? n.meta.rest : 0;
+  const url = safeUrl(n.meta.url);
+  const tail = [rest ? `+${rest} smaller fix${rest === 1 ? "" : "es"}` : "", commitsOf(n) ? `${commitsOf(n)} commits${url ? `: ${url}` : ""}` : ""].filter(Boolean);
+  return [`**${n.title}** · ${dayOf(n.at, now) === "TODAY" ? "today" : day}`, ...lines, ...(tail.length ? ["", tail.join(" · ")] : [])].join("\n");
+}
+
+/** Ask Claude about it: the prompt a new session in Mystical's own checkout starts with. */
+export function askPrompt(n: Notice): string {
+  const d = new Date(n.at * 1000);
+  const when = `${d.toLocaleDateString("en", { month: "short", day: "numeric" })} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  const from = typeof n.meta.from === "string" ? n.meta.from.slice(0, 7) : "";
+  const to = typeof n.meta.to === "string" ? n.meta.to.slice(0, 7) : "";
+  const range = from && to ? ` (\`git log ${from}..${to}\`)` : "";
+  return `Tell me about this Mystical update from ${when}${range}:\n\n**${n.title}**\n`
+    + n.body.split("\n").filter(Boolean).map((l) => `- ${l}`).join("\n")
+    + `\n\nFor each change: what it does, where it lives in the code, and how I use it.`;
+}

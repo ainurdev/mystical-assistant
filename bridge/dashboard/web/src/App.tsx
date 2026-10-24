@@ -51,6 +51,7 @@ import {
   themeVars,
   themePrad,
   THEME_TOKEN_KEYS,
+  RIGHT_TABS,
   type HudSettings,
   type RightTab,
   type ThemeKey,
@@ -1270,6 +1271,20 @@ export function App() {
     };
     window.addEventListener("hud:settings", open);
     return () => window.removeEventListener("hud:settings", open);
+  }, []);
+
+  // "Show this right-rail tab", from anywhere: the changelog's Open › on a feature
+  // that lives there (bridge/whatsnew.py PLACES). Settings shuts so the rail shows.
+  useEffect(() => {
+    const show = (e: Event) => {
+      const tab = (e as CustomEvent<unknown>).detail;
+      if (!RIGHT_TABS.includes(tab as RightTab)) return;
+      setSettingsOpen(false);
+      patchSettings({ rightTab: tab as RightTab, rightOpen: true });
+    };
+    window.addEventListener("hud:rail", show);
+    return () => window.removeEventListener("hud:rail", show);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- patchSettings is a setter
   }, []);
 
   // "Open this session", from anywhere (lib/devicerun.ts openSession): Settings'
@@ -2809,7 +2824,7 @@ export function App() {
                   open={settings.rightOpen} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
                   railFoot={<>
-                    <ChangelogButton />
+                    <ChangelogButton onFeed={feed} />
                     <UpdateButton onFeed={feed} variant="rail" />
                     <PaletteButton onPalette={() => setPaletteOpen(true)} />
                   </>}

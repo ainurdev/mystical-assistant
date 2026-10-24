@@ -127,7 +127,7 @@ def test_first_boot_tells_the_last_day(repo):
     _commit(repo, "y\n", "today: two")
     whatsnew.boot().join(10)
     [upd] = notices.feed()
-    assert upd["title"] == "2 commits pulled" and upd["body"].splitlines() == ["today: two", "today: one"]
+    assert upd["title"] == "Today updates" and upd["body"].splitlines() == ["Today — two", "Today — one"]
     assert store.get_setting("last_head") == g.head_sha(repo)
 
 
@@ -146,11 +146,11 @@ def test_boot_announces_pulled_commits_and_new_notes(repo, origin):
     assert note["kind"] == "note" and note["subject"] == "note:2026-10-18 · Re-enter the token — Mahziyar"
     assert note["title"] == "Re-enter the token" and note["body"] == "Paste it once."
     assert note["meta"]["author"] == "Mahziyar" and note["read"] is False
-    assert upd["title"] == "3 commits pulled" and upd["subject"] == f"update:{g.head_sha(repo)}"
-    assert upd["body"].splitlines() == ["note: Re-enter the token",
-                                        "git: HANDLE IN A NEW SESSION opens on the tree whose push failed",
-                                        "notifications: the bell counts unread only"]
-    assert upd["meta"]["commits"] == 3 and upd["meta"]["rest"] == 0 and upd["meta"]["branch"] == "main"
+    assert upd["title"] == "Git and Notifications" and upd["subject"] == f"update:{g.head_sha(repo)}"
+    # the note's own commit is left out: the note is its own row
+    assert upd["body"].splitlines() == ["Git — HANDLE IN A NEW SESSION opens on the tree whose push failed",
+                                        "Notifications — the bell counts unread only"]
+    assert upd["meta"]["commits"] == 3 and upd["meta"]["rest"] == 1 and upd["meta"]["branch"] == "main"
     assert upd["meta"]["url"] is None                      # a /tmp origin is not github
     assert json.loads(store.get_setting("notes_seen")) == ["2026-10-18 · Re-enter the token — Mahziyar"]
 
@@ -170,17 +170,40 @@ def test_boot_is_silent_on_same_head_and_branch_switch(repo):
 def test_fallback_and_rest_count():
     subs = [f"area: thing {i} — because" for i in range(7)]
     d = whatsnew._fallback(subs, 9)
-    assert d["headline"] == "9 commits pulled" and d["rest"] == 4
-    assert d["bullets"] == [f"area: thing {i}" for i in range(5)]
+    assert d["headline"] == "Area updates" and d["rest"] == 4
+    assert d["bullets"] == [f"Area — thing {i}" for i in range(5)]
     assert whatsnew._fallback(["x"], 1)["headline"] == "1 commit pulled"
+    assert whatsnew._fallback(["x"], 1, "waiting")["headline"] == "1 commit waiting"
+
+
+def test_fallback_reads_like_notes():
+    """What 2026-10-24 23:50 got as raw subjects, one per area first, docs left out."""
+    subs = ["docs: the bot chat spec", "telegram: live answers — why", "telegram: rich answers",
+            "sidebar: one-line rows", "usage: right-rail USAGE tab", "sidebar: rows keep their order",
+            "work zone: tallies glide", "dashboard: KHAZAD-DÛM v3", "drop the old sync"]
+    d = whatsnew._fallback(subs, 25)
+    assert d["bullets"] == ["Telegram — live answers", "Sidebar — one-line rows", "Usage — right-rail USAGE tab",
+                            "Work zone — tallies glide", "Dashboard — KHAZAD-DÛM v3"]
+    assert d["headline"] == "Telegram, Sidebar, Usage and more" and d["rest"] == 20
+
+
+def test_fallback_fills_up_and_reads_conventional_types():
+    d = whatsnew._fallback(["rivendell: merge conflicts as a job kind", "rivendell: file tasks without the tag"], 2)
+    assert d == {"headline": "Rivendell updates", "rest": 0,
+                 "bullets": ["Rivendell — merge conflicts as a job kind", "Rivendell — file tasks without the tag"]}
+    d = whatsnew._fallback(["feat(sidebar): a rail", "fix: a crash", "chore: bump", "plain words here"], 4)
+    assert d["bullets"] == ["Sidebar — a rail", "A crash", "Plain words here"] and d["headline"] == "Sidebar updates"
+    assert whatsnew._fallback(["usage: a", "git: b"], 2)["headline"] == "Usage and Git"
+    # nothing but chores: the subjects themselves, so the row still says something
+    assert whatsnew._fallback(["docs: only docs — why"], 1) == {"headline": "1 commit pulled", "bullets": ["docs: only docs"], "rest": 0}
 
 
 def test_summarise_tolerates_wrapped_json_and_overlong(monkeypatch):
-    reply = ('Here you go:\n{"headline": "' + "H" * 60 + '", "bullets": '
+    reply = ('Here you go:\n{"headline": "' + "H" * 80 + '", "bullets": '
              + json.dumps([f"L{i} — d" for i in range(7)]) + ', "rest": "x"}')
     monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: (reply, None, 0, False))
     d = whatsnew._summarise(["s"] * 9, 9)
-    assert len(d["headline"]) == 40 and len(d["bullets"]) == 5 and d["rest"] == 4
+    assert len(d["headline"]) == 64 and len(d["bullets"]) == 5 and d["rest"] == 4 and d["go"] == [None] * 5
     monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: ("not json", None, 0, False))
     assert whatsnew._summarise(["s"], 1) is None
     monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: ("", None, 0, True))
@@ -194,6 +217,14 @@ def test_cut_ends_on_a_whole_word():
                                      "which are Status, Nyan Cat, and…")
     assert whatsnew._cut("H" * 60, 40) == "H" * 39 + "…"   # one long word: a hard cut
     assert whatsnew._cut("  short  ", 40) == "short"
+
+
+def test_summarise_tags_places_and_drops_unknown_ones(monkeypatch):
+    reply = json.dumps({"headline": "H", "bullets": ["A — a", "", "B — b", "C — c"],
+                        "go": ["rail:usage", "settings:system", "nowhere"], "rest": 0})
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: (reply, None, 0, False))
+    d = whatsnew._summarise(["s"] * 3, 3)
+    assert d["bullets"] == ["A — a", "B — b", "C — c"] and d["go"] == ["rail:usage", None, None]
 
 
 def test_summarise_keeps_a_bullet_a_little_over_the_prompts_100(monkeypatch):
@@ -213,7 +244,80 @@ def test_boot_falls_back_when_one_shot_fails(repo, origin, monkeypatch):
                         lambda *a, **k: calls.append(k) or ("garbage", None, 0, False))
     whatsnew.boot().join(10)
     assert calls and calls[0]["model"] == "haiku" and calls[0]["cwd"] == repo
-    assert notices.feed()[0]["title"] == "1 commit pulled" and notices.feed()[0]["body"] == "feat: two"
+    row = notices.feed()[0]
+    assert row["title"] == "1 commit pulled" and row["body"] == "Two" and row["meta"]["ai"] is False
+
+
+def test_boot_keeps_the_models_places_and_marks_its_words(repo, origin, monkeypatch):
+    whatsnew.boot()
+    _commit(origin, "two\n", "usage: a tab")
+    g.pull(repo)
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k == "changelog")
+    reply = json.dumps({"headline": "A tab", "bullets": ["Usage — a tab"], "go": ["rail:usage"], "rest": 0})
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: (reply, None, 0, False))
+    whatsnew.boot().join(10)
+    m = notices.feed()[0]["meta"]
+    assert m["ai"] is True and m["go"] == ["rail:usage"]
+
+
+def test_retry_rewrites_a_fallback_row_in_place(repo, origin, monkeypatch):
+    whatsnew.boot()
+    _commit(origin, "two\n", "usage: a tab")
+    g.pull(repo)
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k == "changelog")
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: ("limit", None, 0, True))
+    whatsnew.boot().join(10)
+    [row] = notices.changelog()
+    notices.mark_read([row["id"]])
+    whatsnew.retry()                                       # still refused: the row stays as it was
+    assert notices.changelog()[0]["title"] == "Usage updates"
+    reply = json.dumps({"headline": "Usage on the rail", "bullets": ["Usage — limits on the right"],
+                        "go": ["rail:usage"], "rest": 0})
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: (reply, None, 0, False))
+    whatsnew.retry()
+    [after] = notices.changelog()
+    assert (after["id"], after["title"], after["body"]) == (row["id"], "Usage on the rail", "Usage — limits on the right")
+    assert after["meta"]["ai"] is True and after["meta"]["go"] == ["rail:usage"] and after["read"] is True
+    calls = []
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: calls.append(1) or (reply, None, 0, False))
+    whatsnew.retry()                                       # the model's words now: never asked again
+    assert not calls
+
+
+def test_retry_takes_a_row_from_before_the_ai_mark_and_respects_the_switch(repo, monkeypatch):
+    old = g.head_sha(repo)
+    _commit(repo, "x\n", "rivendell: one")
+    _commit(repo, "y\n", "rivendell: two")
+    notices.emit("updated", "update:x", title="2 commits pulled", body="rivendell: two\nrivendell: one",
+                 meta={"from": old, "to": g.head_sha(repo), "commits": 2, "branch": "main", "rest": 0, "url": None})
+    calls = []
+    reply = json.dumps({"headline": "Rivendell tasks", "bullets": ["Tasks — file without a tag"], "rest": 1})
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: calls.append(a) or (reply, None, 0, False))
+    whatsnew.retry()                                       # UPDATE NOTES off: no call
+    assert not calls
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k == "changelog")
+    whatsnew.retry()
+    assert len(calls) == 1 and "rivendell: one" in calls[0][1] and notices.changelog()[0]["title"] == "Rivendell tasks"
+
+
+def test_retry_spends_one_call_a_tick_and_skips_a_range_that_is_gone(repo, monkeypatch):
+    old = g.head_sha(repo)
+    _commit(repo, "x\n", "usage: one")
+    mid = g.head_sha(repo)
+    _commit(repo, "y\n", "git: two")
+    meta = {"commits": 1, "branch": "main", "rest": 0, "url": None, "ai": False}
+    notices.emit("updated", "update:a", title="Usage updates", body="Usage — one", meta={**meta, "from": old, "to": mid})
+    notices.emit("updated", "update:b", title="Git updates", body="Git — two", meta={**meta, "from": mid, "to": g.head_sha(repo)})
+    notices.emit("updated", "update:c", title="1 commit pulled", body="x", meta={**meta, "from": "f" * 40, "to": "e" * 40})
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k == "changelog")
+    calls = []
+    reply = json.dumps({"headline": "Said", "bullets": ["S — s"], "rest": 0})
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: calls.append(a) or (reply, None, 0, False))
+    whatsnew.retry()                                       # the newest can't be read: the next one is asked, and only it
+    assert len(calls) == 1 and "git: two" in calls[0][1]
+    assert [r["title"] for r in notices.changelog()] == ["1 commit pulled", "Said", "Usage updates"]
+    whatsnew.retry()
+    assert len(calls) == 2 and [r["title"] for r in notices.changelog()] == ["1 commit pulled", "Said", "Said"]
 
 
 def test_boot_sends_telegram_when_routed(repo, origin, monkeypatch):
@@ -225,7 +329,7 @@ def test_boot_sends_telegram_when_routed(repo, origin, monkeypatch):
     sent = []
     monkeypatch.setattr("bridge.telegram.send", lambda chat, text, *a, **k: sent.append((chat, text)))
     whatsnew.boot().join(10)
-    assert sent == [(555, "UPDATED · 1 commit pulled\n• feat: two")]
+    assert sent == [(555, "UPDATED · 1 commit pulled\n• Two")]
 
 
 def test_compare_url_only_for_github(repo):
@@ -324,7 +428,7 @@ def test_changelog_skips_merge_commits(repo, origin):
     assert g.pull(repo)[0]
     whatsnew.boot().join(10)
     row = notices.feed()[0]
-    assert row["title"] == "1 commit pulled" and row["body"] == "feat: topic work" and row["meta"]["commits"] == 1
+    assert row["title"] == "1 commit pulled" and row["body"] == "Topic work" and row["meta"]["commits"] == 1
 
 
 # --- preview: what the update waiting upstream brings, before it is taken ------------
@@ -350,12 +454,12 @@ def test_preview_writes_one_coming_row_and_tells_telegram_once(repo, origin, mon
     whatsnew.preview(selfupdate.check()).join(10)
     [row] = notices.changelog()
     assert row["kind"] == "coming" and row["verb"] == "UPDATE READY" and row["read"] is False
-    assert row["title"] == "2 commits waiting" and row["body"].splitlines() == ["note: Re-enter the token", "feat: two"]
+    assert row["title"] == "2 commits waiting" and row["body"].splitlines() == ["Two"]
     m = row["meta"]
-    assert m["from"] == g.head_sha(repo) and m["to"] == _sha(origin) and m["commits"] == 2 and m["rest"] == 0
+    assert m["from"] == g.head_sha(repo) and m["to"] == _sha(origin) and m["commits"] == 2 and m["rest"] == 1
     assert m["notes"] == [{"heading": "2026-10-23 · Re-enter the token — Mahziyar", "title": "Re-enter the token",
                            "body": "Paste it once.", "author": "Mahziyar"}]
-    assert sent == ["UPDATE READY · 2 commits waiting\n• note: Re-enter the token\n• feat: two\n"
+    assert sent == ["UPDATE READY · 2 commits waiting\n• Two\n"
                     "NOTE · Re-enter the token\n↓ UPDATE on the dashboard pulls it"]
     assert whatsnew.preview(selfupdate.check()) is None           # the same range: nothing to write
     assert len(notices.changelog()) == 1 and len(sent) == 1
@@ -371,7 +475,7 @@ def test_preview_rewrites_the_row_in_place_at_most_hourly(repo, origin, monkeypa
     whatsnew.preview(selfupdate.check()).join(10)
     [row] = notices.changelog()
     assert row["id"] == first["id"] and row["title"] == "2 commits waiting"
-    assert row["meta"]["to"] == _sha(origin) and row["body"].splitlines() == ["feat: three", "feat: two"]
+    assert row["meta"]["to"] == _sha(origin) and row["body"].splitlines() == ["Three", "Two"]
 
 
 def test_preview_keeps_a_pulled_row_for_the_boot_and_drops_a_rewound_one(repo, origin):
