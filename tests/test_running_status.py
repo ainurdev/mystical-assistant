@@ -221,3 +221,22 @@ if __name__ == "__main__":
             print(f"FAIL {fn.__name__}: {type(e).__name__}: {e}")
     print(f"\n{len(fns) - failed}/{len(fns)} passed")
     raise SystemExit(1 if failed else 0)
+
+
+def test_a_parked_session_says_when_it_resumes():
+    """The chat's paused card counts down to `at` from `since`, names `slot`'s
+    login, and asks with `offer` when the ladder offered another one."""
+    from bridge import limits
+    saved = limits.parked
+    offer = [{"slot": 2, "label": "Account 2 (85% left)"}]
+    limits.parked = lambda: {"p1": {"kind": "limit", "at": 2000.0, "since": 1000.0,
+                                    "slot": 1, "offer": offer}}
+    try:
+        st = runner._build_status(bridge_running=[], awaiting=[], jobs=[],
+                                  external=[], native_snap={})["p1"]
+        assert (st["state"], st["kind"], st["at"], st["since"], st["slot"]) == (
+            "parked", "limit", 2000.0, 1000.0, 1)
+        assert st["offer"] == offer
+        assert st["label"].startswith("usage limit — resuming ~")
+    finally:
+        limits.parked = saved

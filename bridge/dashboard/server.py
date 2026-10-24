@@ -1015,13 +1015,23 @@ class Handler(BaseHTTPRequestHandler):
                     return self._json({"error": "no such session"}, 404)
                 slot = body.get("slot")
                 if slot is None:
+                    from bridge import limits
+                    limits.offer(sess["id"], None)    # answered: the chat's card stops asking
                     notices.emit("waiting", sess["id"], body="You chose to wait for the usage limit to reset.")
                     return self._json({"ok": True})
                 if isinstance(slot, int) and not isinstance(slot, bool):
                     from bridge import ladder
                     rung = {"kind": "account", "slot": slot, "label": f"account {slot}"}
                     return self._json({"ok": bool(ladder.take(sess, sess["chat_id"], rung))})
-            return self._json({"error": "op must be read (ids or all), prefs (patch) or limit (session)"}, 400)
+            if body.get("op") == "unpark" and isinstance(body.get("session"), str):
+                # The chat card's DON'T RESUME: drop the park, the session goes idle.
+                # Its own op, so an older bridge answers 400 rather than reading it
+                # as "wait" and resuming anyway.
+                if not store.get_session(body["session"]):
+                    return self._json({"error": "no such session"}, 404)
+                from bridge import limits
+                return self._json({"ok": limits.cancel(body["session"])})
+            return self._json({"error": "op must be read (ids or all), prefs (patch), limit or unpark (session)"}, 400)
         if path == "/local/run":
             return self._run(chat, body)
         if path.startswith("/local/run/") and path.endswith("/respond"):

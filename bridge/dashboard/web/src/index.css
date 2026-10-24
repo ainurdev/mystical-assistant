@@ -3303,6 +3303,64 @@ input {
 [data-style="dossier"] .resblk + .ev-stop { border-top: 1px solid var(--d-hair); margin: 0; padding: 9px 18px 11px; }
 [data-style="dossier"] .doutcome { padding: 9px 18px 11px; margin: 0; border-top: 1px solid var(--d-hair); }
 
+/* ── the usage limit (components/LimitCard; design-drafts/limit-chat, B · CARD) ──
+   The turn it cut off and the turn the bridge sent to carry the work on read as
+   one stretch of work: no hairline, no turn gap, no plate for the nudge (those
+   words aren't yours; the turn draws none, its empty .dprompt goes too). */
+:is([data-fam] [data-style="dossier"], [data-style="dossier"]) .dturn[data-limit] { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
+[data-style="dossier"] .dturn[data-cont] > .dprompt { display: none; }
+:is([data-fam] [data-style="dossier"], [data-style="dossier"]) .dturn[data-cont] .rstream > .dwork:first-child { margin-top: 2px; }
+/* Settled, it is DOSSIER's no-body answer: a receipt that says what the limit
+   did (data-limit: account, reset, or "" for neither) where "✓ done" would be,
+   and why on one ghost line under the label. */
+[data-style="dossier"] .resblk[data-limit] .res-meta::before { content: none; }
+[data-style="dossier"] .resblk[data-limit] .res-lab { display: inline-flex; align-items: center; gap: 7px; }
+[data-style="dossier"] .resblk[data-limit] .res-lab > svg { flex: none; color: var(--warn); }
+[data-style="dossier"] .resblk[data-limit="reset"] .res-lab > svg { color: var(--ok); }
+[data-style="dossier"] .resblk[data-limit=""] .res-lab > svg { color: var(--txl); }
+.dlimit-why { padding: 0 18px 10px 38px; font-size: var(--t11); line-height: 1.5; color: var(--txl); }
+[data-fam] .dlimit-why { padding: 4px 2px 2px 22px; font-family: var(--ui-font); }
+.dlimit-why b { color: var(--txm); font-weight: 600; }
+/* Live, it takes the answer's slot as a card: when it resumes, how far the wait
+   has come, and the two ways out. Paused wears info, like the sidebar's PARKED
+   lane: nothing on it is yours to answer. --f is the wait's done fraction. */
+.dlimit {
+  --lc: var(--info); margin: 12px 0 4px; padding: 13px 16px 15px; font-family: var(--ui-font);
+  border: 1px solid color-mix(in oklab, var(--lc) 42%, var(--line2)); border-radius: var(--d-rad, 0);
+  background: color-mix(in oklab, var(--lc) 5%, var(--panel));
+}
+.dlimit-head { display: flex; align-items: center; gap: 8px; font-size: var(--t12); font-weight: 700; color: var(--lc); }
+.dlimit-head > svg { flex: none; }
+.dlimit-dim { margin-left: auto; font-weight: 600; color: var(--txl); font-variant-numeric: tabular-nums; }
+.dlimit-lead { margin: 7px 0 0; font-size: var(--d-big, var(--t13)); line-height: 1.55; color: var(--txb); }
+.dlimit-lead b { font-weight: 700; }
+.dlimit-clock { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; margin-top: 14px; }
+.dlimit-big { font-family: var(--mono); font-size: 30px; font-weight: 500; line-height: 1; letter-spacing: -.02em; color: var(--txh); font-variant-numeric: tabular-nums; }
+.dlimit-sub { margin: 0; font-size: var(--t12); color: var(--txm); }
+.dlimit-sub b { color: var(--lc); font-weight: 700; }
+.dlimit-bar { position: relative; height: 5px; margin-top: 11px; border-radius: 999px; background: color-mix(in oklab, var(--lc) 14%, var(--panel2)); }
+.dlimit-bar > i { position: absolute; inset: 0 auto 0 0; width: calc(var(--f, 0) * 100%); border-radius: inherit; background: var(--lc); }
+.dlimit-ends { display: flex; justify-content: space-between; gap: 8px; margin-top: 5px; font-size: var(--t105); color: var(--txl); font-variant-numeric: tabular-nums; }
+.dlimit-acts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }
+.dlimit-btn {
+  appearance: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  font: inherit; font-size: var(--t12); font-weight: 600; line-height: 1; padding: 7px 13px;
+  border-radius: var(--f-d-rad, 999px); border: 1px solid var(--line2); background: transparent; color: var(--txm);
+}
+.dlimit-btn:hover:not(:disabled) { color: var(--txb); border-color: var(--txl); }
+.dlimit-btn:disabled { opacity: .5; cursor: default; }
+.dlimit-btn[data-strong] { color: var(--txb); border-color: color-mix(in oklab, var(--lc) 60%, var(--line2)); background: color-mix(in oklab, var(--lc) 18%, var(--panel)); }
+.dlimit-btn > svg { flex: none; }
+.dlimit-btn .dlimit-dim { margin-left: 0; color: color-mix(in oklab, var(--lc) 70%, var(--txb)); }
+/* An open ASK (fallback policy) is a question: the question card's own frame. */
+[data-style="dossier"] .qcard-live.dlimit-ask::before { content: "● YOUR CALL · USAGE LIMIT"; }
+.dlimit-q { font-family: var(--ui-font); font-size: var(--d-big, var(--t13)); line-height: 1.55; color: var(--txb); }
+.dlimit-ask .qopt { display: block; width: 100%; font-family: var(--ui-font); }
+.dlimit-ask .qopt:disabled { opacity: .5; }
+.dlimit-opt { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.dlimit-opt > svg { flex: none; }
+.dlimit-desc { margin-top: 2px; font-size: var(--t12); color: var(--txm); }
+
 /* Hooks DOSSIER reads that every other language must not see. */
 .dprompt { display: contents; }
 /* An error and a stop, in every language: off --err and the ink ladder, mixed
@@ -4648,6 +4706,16 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
                       border: 1px solid var(--warn); background: transparent; color: var(--warn); }
 .pb-queued { appearance: none; cursor: pointer; color: var(--purple-h); border-color: color-mix(in srgb, var(--purple) 30%, transparent); background: color-mix(in srgb, var(--purple) 8%, transparent); }
 .pb-queued:hover { border-color: var(--purple); }
+/* The login this chat spends is dry (Composer, design-drafts/limit-chat C): said
+   before you send, with the login that has room one tap away. */
+.pb-dry { display: inline-flex; align-items: center; gap: 7px; height: 22px; max-width: 100%; box-sizing: border-box; padding: 0 3px 0 9px;
+          border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--warn) 9%, transparent);
+          font-family: inherit; font-size: var(--t105); letter-spacing: .5px; white-space: nowrap; color: var(--txm); }
+.pb-dry > svg { flex: none; color: var(--warn); }
+.pb-dry > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pb-dry b { color: var(--txb); font-weight: 600; }
+.pb-dry > button { appearance: none; cursor: pointer; flex: none; font-family: inherit; font-size: var(--t95); font-weight: 700; letter-spacing: .3px; padding: 1px 8px;
+                   border-radius: 999px; border: 1px solid color-mix(in srgb, var(--warn) 60%, transparent); background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--txb); }
 
 /* ── TABS: the lead as folder tabs on the card's top edge, CTX the last tab ── */
 .pb-tabs { display: flex; align-items: flex-end; gap: 4px; padding: 0 12px; min-width: 0; }
@@ -4727,7 +4795,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .pb-tabs :is(.np-branch, .np-pr, .np-run, .np-task) { font-family: var(--mono) !important; }
 [data-fam] :is(.pb-tabs, .pb-place) .np-title { font-size: var(--t12) !important; }
 [data-fam] .pb-plus { border-color: var(--line); border-radius: var(--f-rad-s); }
-[data-fam] :is(.pb-queued, .pb-paused, .pb-activity) { font-family: var(--ui-font); letter-spacing: 0; }
+[data-fam] :is(.pb-queued, .pb-paused, .pb-activity, .pb-dry) { font-family: var(--ui-font); letter-spacing: 0; }
 [data-fam] .pb-paused > button { border-radius: 5px; font-family: var(--ui-font); }
 [data-fam] .pb-cmd, [data-fam] .pb-cmd:focus-within {
   border: 0 !important; border-left: 3px solid var(--acc) !important; border-radius: 0 8px 8px 0 !important; padding: 8px 8px 8px 14px !important;

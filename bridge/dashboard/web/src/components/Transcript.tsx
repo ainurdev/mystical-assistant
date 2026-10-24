@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { api, type AnswerSelection, type RivendellJob, type SlashCommand, type TurnOutcome } from "../api";
+import { api, type AccountInfo, type AnswerSelection, type RivendellJob, type SlashCommand, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
@@ -17,6 +17,8 @@ import { hhmm, useClock12 } from "../lib/surfaces";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { RuneSpirit } from "./hud/RuneSpirit";
 import { UnfinishedPlate } from "./TeamBar";
+import { LimitBlock, type LimitLive } from "./LimitCard";
+import { limitNudge } from "../lib/limit";
 
 // The plates draw a prompt that ran a /command as one (PromptBubble, lib/slash
 // leadCommand), checked against the project's command list: read once per
@@ -150,12 +152,18 @@ type Respond = (
  *  unmounts these whole; RunStream's own content-visibility cards keep the
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
-  turn, prev, isActive, isLast, promptIdx, hud, liveTurns, boot, who, unfinishedBy,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, job, jobTitle, cmds,
+  turn, prev, next, isActive, isLast, promptIdx, hud, liveTurns, boot, who, unfinishedBy,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, job, jobTitle, cmds, limit, logins,
 }: {
   turn: Turn;
   /** The turn before it, whose run your prompt's tag compares against. */
   prev?: Turn;
+  /** The turn after it: a usage limit's receipt says how the work went on. */
+  next?: Turn;
+  /** The open session parked on a usage limit — on the last turn only. */
+  limit?: LimitLive | null;
+  /** The Claude logins, so a limit can name them. */
+  logins: AccountInfo[];
   /** The project's command list, for the plate (useCommands). */
   cmds: SlashCommand[];
   /** The teammate whose device run this turn is: their name signs the prompt,
@@ -187,6 +195,20 @@ function TurnBlock({
   const jobKey = job?.kind ? JSON.stringify(job) : "";
   const view = useMemo(() => (jobKey ? { job: JSON.parse(jobKey) as RivendellJob, prompt: turn.prompt } : null), [jobKey, turn.prompt]);
   const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
+  // The usage limit (LimitCard): the turn it cut off gives its error answer and
+  // badge to the limit's card or receipt, and a turn the bridge sent to carry the
+  // work on draws no plate — those words aren't yours. The two then read as one
+  // stretch of work (data-limit / data-cont in index.css).
+  const limitHit = turn.outcome?.code === "limit";
+  const nudge = limitNudge(turn.prompt);
+  const events = useMemo(() => {
+    if (!limitHit) return turn.events;
+    // The CLI's sentence comes as the error result, and often as a text event too.
+    const said = new Set(turn.events.flatMap((e) => (e.type === "result" && e.is_error ? [e.result.trim()] : [])));
+    return turn.events.filter((e) => !(e.type === "result" && e.is_error)
+      && !(e.type === "error" && /limit/i.test(e.message))
+      && !(e.type === "text" && said.has(e.text.trim())));
+  }, [turn.events, limitHit]);
   return (
     // data-ctx-*: the dashboard's right-click menu reads the nearest one of
     // these off the target chain, so a click anywhere inside a turn resolves to
@@ -195,9 +217,10 @@ function TurnBlock({
     // on the wrapper), where they make a turn one card: prompt, work, answer.
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
+      data-limit={limitHit && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge ? "" : undefined}
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}>
-        {turn.prompt && (
+        {turn.prompt && !nudge && (
           <div data-prompt-idx={promptIdx}>
             {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
               : <PromptBubble text={turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} />}
@@ -211,9 +234,9 @@ function TurnBlock({
       {replied && (
         <div className="dreply relative space-y-1.5">
           <AgentRail />
-          {(turn.events.length > 0 || turn.status === "running") && (
+          {(events.length > 0 || turn.status === "running") && (
             <RunStream
-              events={turn.events}
+              events={events}
               boot={isActive ? boot : null}
               pending={turn.pending as PendingRequest[]}
               onRespond={isActive ? onRespond : undefined}
@@ -240,13 +263,16 @@ function TurnBlock({
           )}
         </div>
       )}
-      {turn.outcome && <OutcomeBadge outcome={turn.outcome} />}
+      {limitHit ? <LimitBlock turn={turn} next={next} live={limit} logins={logins} />
+        : turn.outcome && <OutcomeBadge outcome={turn.outcome} />}
       {unfinishedBy && <UnfinishedPlate who={unfinishedBy} />}
     </div>
   );
 }
 
 type Row = { kind: "turn"; turn: Turn } | { kind: "working" };
+
+const NO_LOGINS: AccountInfo[] = [];
 
 /** Imperative surface for checkpoint navigation — the virtualized list can't
  *  be driven by getElementById, because the target usually isn't mounted. */
@@ -289,6 +315,8 @@ export function Transcript({
   project,
   top,
   unfinished,
+  limit,
+  logins = NO_LOGINS,
 }: {
   turns: Turn[];
   activeId: string | null;
@@ -329,6 +357,10 @@ export function Transcript({
   top?: ReactNode;
   /** Turns still running when a teammate sent the session, and who sent it. */
   unfinished?: { turns: string[]; by: string } | null;
+  /** The open session, when it is parked on a usage limit: its last turn's live card. */
+  limit?: LimitLive | null;
+  /** The Claude logins (/local/accounts), so a limit can name them. */
+  logins?: AccountInfo[];
 }) {
   const cmds = useCommands(project);
   // Tail loading: turns always ship whole but only the last few carry events.
@@ -522,6 +554,9 @@ export function Transcript({
       <TurnBlock
         turn={row.turn}
         prev={turns[cut + index - 1]}
+        next={turns[cut + index + 1]}
+        limit={row.turn.id === turns[turns.length - 1]?.id ? limit : null}
+        logins={logins}
         isActive={row.turn.id === activeId}
         boot={boot}
         isLast={index === visible.length - 1}

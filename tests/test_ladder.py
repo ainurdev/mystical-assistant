@@ -266,6 +266,32 @@ def test_take_declines_a_rung_kind_it_no_longer_knows():
                        {"kind": "free", "provider": "gemini", "label": "x"}) is None
 
 
+def test_ask_policy_puts_its_offer_on_the_park():
+    """The chat's YOUR CALL card reads the offer off the parked status."""
+    from bridge import limits
+    restore = _stub(accounts_pick=lambda exclude=(), strategy="best": 2,
+                    headroom=lambda slot: 55)
+    s = _session("ask")
+    saved, got = limits.offer, []
+    limits.offer = lambda sid, rungs: got.append((sid, rungs)) or True
+    try:
+        ladder.escalate(s, CHAT, run=_Rec(), notify=_Rec())
+        assert got == [(s["id"], [{"slot": 2, "label": "Account 2 (55% left)"}])]
+    finally:
+        limits.offer = saved
+        restore()
+
+
+def test_the_nudges_say_what_the_dashboard_reads():
+    """The chat draws these turns as a receipt, not as your words, by matching
+    their wording (dashboard lib/limit.ts limitNudge). Reword one, reword both."""
+    from bridge import limits
+    for nudge in (limits.NUDGE, ladder.ACCOUNT_NUDGE):
+        assert nudge.startswith("⏮ ") and "usage limit was reached" in nudge
+    assert "resumed on another account" in ladder.ACCOUNT_NUDGE
+    assert "resumed on another account" not in limits.NUDGE
+
+
 if __name__ == "__main__":
     import traceback
     fails = 0

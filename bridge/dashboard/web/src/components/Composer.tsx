@@ -1,10 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
-import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, UserRound } from "lucide-react";
+import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type SlashCommand, type UsageInfo } from "../api";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows, type Window } from "../models";
 import { describe, slotHue, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
-import { ago, fmtReset } from "../lib/surfaces";
+import { ago, fmtReset, hhmm } from "../lib/surfaces";
+import { loginName, otherLogin } from "../lib/limit";
 import { openSettings } from "../lib/opensettings";
 import { useIntegrations } from "../lib/integrations";
 import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
@@ -1057,6 +1058,23 @@ export function Composer({
       {onTogglePause && <button onClick={onTogglePause} title="Let queued prompts and goal nudges run again">RESUME</button>}
     </span>
   );
+  // The login this chat spends is dry: a send dies in a second, then is handed
+  // over or parked (the transcript's limit card). Said here before you send,
+  // with the login that has room one tap away (design-drafts/limit-chat, C).
+  const dry = chipWins.find((w) => w.left === 0);
+  const room = dry ? otherLogin(accounts ?? [], chipSlot) : null;
+  const roomProfile = room ? profiles?.find((p) => loginSlot(p.agent, p.account) === room.slot) : undefined;
+  const dryPill = dry && (
+    <span className="pb-dry" title={`${dry.name}: used up. A prompt sent now stops at once, then moves to another login or waits for the refill.`}>
+      <TriangleAlert size={11} strokeWidth={2} aria-hidden />
+      <span><b>{loginName(chipAcct, chipSlot)}</b> is out{dry.resets_at ? ` until ${hhmm(Date.parse(dry.resets_at) / 1000)}` : ""}</span>
+      {room && roomProfile && (
+        <button type="button" onClick={() => onProfile(roomProfile.id)}>
+          Use {loginName(room, room.slot)}{room.left !== null ? ` · ${room.left}%` : ""}
+        </button>
+      )}
+    </span>
+  );
   // Not positioned itself: the list anchors to .pb-ledger's left edge, so it
   // never runs off the column when the chip sits late in a wrapped line.
   const queuedChip = queued && queued.length > 0 && (
@@ -1081,7 +1099,7 @@ export function Composer({
   // CSS hides an empty ledger and, past one live item, every pill's
   // description (.pill-desc) — busy means terse.
   const ledger = (className: string) => (
-    <div className={`pb-ledger ${className}`}>{pills}{pausedPill}{queuedChip}</div>
+    <div className={`pb-ledger ${className}`}>{dryPill}{pills}{pausedPill}{queuedChip}</div>
   );
   const attachRow = images.length > 0 && (
     <div className="pb-attach" style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -1285,6 +1303,7 @@ export function Composer({
         </>
       ) : (
       <>
+      {dryPill && <div style={{ marginBottom: 9 }}>{dryPill}</div>}
       {pills}
       {/* Paused: shown even when idle, because that's exactly when you can't tell
           from the transcript that the queue and the goal loop are being held. */}
