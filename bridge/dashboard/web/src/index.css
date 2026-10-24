@@ -2743,26 +2743,9 @@ input {
 [data-style="dossier"] .dwork-l1 { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 [data-style="dossier"] .dwork-lab { font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm); }
 [data-style="dossier"] .dwork-ms { color: var(--txf); letter-spacing: .5px; overflow: hidden; text-overflow: ellipsis; }
-/* live — the last zone of a running turn: the state word where the figure was,
-   seconds in that state after it, and the node as the instrument — a ring
+/* live — the last zone of a running turn: the node is the instrument (a ring
    ripples out of it while the model thinks, a comet orbits it while a tool
-   runs; the step that is out follows the chips with a caret */
-[data-style="dossier"] .dwork[data-ind="orbit"][data-live] .dwork-ms { color: var(--acc); }
-[data-style="dossier"] .dwork-st { font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; text-transform: uppercase; }
-[data-style="dossier"] .dwork-secs { margin-left: 8px; color: var(--txf); }
-[data-style="dossier"] .dwork-secs::before { content: "\00b7"; margin-right: 5px; color: var(--txl); }
-/* the dots keep their full width and are revealed in place, so the seconds
-   after them never move */
-[data-style="dossier"] .dwork-dots {
-  display: inline-block; width: 3ch; vertical-align: bottom; white-space: nowrap;
-  font-family: var(--mono); letter-spacing: 0; animation: dwdots 2.2s steps(1) infinite;
-}
-[data-style="dossier"] .dwork-dots::after { content: "..."; }
-/* a sibling of the step, not inside it, so a long step's ellipsis can't swallow it */
-[data-style="dossier"] .dwork-caret {
-  flex: none; width: 6px; height: 11px; margin-left: 5px;
-  background: var(--acc); animation: caret 1.05s steps(1) infinite;
-}
+   runs) and a third line says what it is doing (THE NOW LINE, below) */
 [data-style="dossier"] .dwork[data-live] .dwork-node {
   color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, var(--panel2));
   box-shadow: 0 0 0 2px var(--panel2), 0 0 0 3px color-mix(in oklab, var(--acc) 60%, var(--line2, var(--d-hair)));
@@ -2785,35 +2768,137 @@ input {
 }
 @keyframes dwripple { 0% { transform: scale(.25); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
 @keyframes dworbit { to { transform: rotate(360deg); } }
-@keyframes dwdots { 0% { clip-path: inset(0 100% 0 0); } 25% { clip-path: inset(0 66.6% 0 0); } 50% { clip-path: inset(0 33.3% 0 0); } 75%, 100% { clip-path: inset(0 0 0 0); } }
-/* the other forms, hosted by the plate: shut, under the header; open, at the foot */
+/* the cat, hosted by the plate: shut, under the header; open, at the foot */
 [data-style="dossier"] .dwork-ind { margin: 6px 2px 1px calc(var(--zn) + 12px); }
 [data-style="dossier"] .dwork[data-open] .dwork-ind { margin-top: 8px; }
 [data-style="dossier"] .dwork-ind > * { margin: 0 !important; }
 @media (prefers-reduced-motion: reduce) {
-  [data-style="dossier"] :is(.dwork-dots, .dwork-caret, .dwork[data-live] .dwork-node::before, .dwork[data-live] .dwork-node::after) { display: none; }
+  [data-style="dossier"] :is(.dwork[data-live] .dwork-node::before, .dwork[data-live] .dwork-node::after) { display: none; }
 }
 [data-style="dossier"] .dwork-l2 { grid-column: 2; grid-row: 2; display: flex; align-items: center; min-width: 0; margin-top: 7px; }
-/* the chips never clip (a sliver of a tile reads as a stray bar); the live step is what gives way */
-[data-style="dossier"] .dwork-kinds { display: flex; flex: none; gap: 14px; }
+/* the chips never clip (a sliver of a tile reads as a stray bar) */
+[data-style="dossier"] .dwork-kinds { display: flex; flex: none; gap: 13px; }
 [data-style="dossier"] .dwork-k { --m: var(--d-tool); display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--txd); }
+/* a kind's hue says what the step did: ran (the accent), looked (info), changed
+   (warn), made (ok), handed off (purple), noise (grey). The chips, the spine's
+   icons and the live line read it off their mark (data-m, MarkIcon's too); only
+   icons wear it, the words stay the work's own ink */
+[data-style="dossier"] .dwork [data-m="command"] { --m: var(--acc); }
+[data-style="dossier"] .dwork :is([data-m="read"], [data-m="search"], [data-m="fetch"]) { --m: var(--info); }
+[data-style="dossier"] .dwork [data-m="edit"] { --m: var(--warn); }
+[data-style="dossier"] .dwork [data-m="write"] { --m: var(--ok); }
+[data-style="dossier"] .dwork :is([data-m="agent"], [data-m="skill"], [data-m="call"]) { --m: var(--purple); }
+[data-style="dossier"] .dwork :is([data-m="log"], [data-m="hook"], [data-m="step"]) { --m: var(--txl); }
+[data-style="dossier"] .dwork [data-m="think"] { --m: var(--d-think); }
+/* the tile: the hue over the plate's own ground, the icon the hue lifted toward the text */
 [data-style="dossier"] .dwork-k > i {
   width: 15px; height: 15px; display: grid; place-items: center;
-  font-style: normal; font-size: var(--t85); line-height: 1; color: var(--m);
-  background: color-mix(in oklab, var(--m) var(--d-tint), var(--panel2));
+  font-style: normal; font-size: var(--t85); line-height: 1; color: color-mix(in oklab, var(--m) 84%, var(--txh));
+  background: color-mix(in oklab, var(--m) 15%, var(--zg));
   border-radius: calc(var(--d-rad) * .4);
 }
 [data-style="dossier"] .dwork-k > i > svg { width: 10px; height: 10px; }
 [data-style="dossier"] .dwork-k[data-m="note"] > i > svg { width: 7px; height: 7px; fill: currentColor; }
-[data-style="dossier"] .dwork-k[data-m="think"] { --m: var(--d-think); }
 [data-style="dossier"] .dwork-k[data-m="note"] { --m: var(--d-note); }
-[data-style="dossier"] .dwork-k:is([data-m="hook"], [data-m="log"]) { --m: var(--txl); }
 [data-style="dossier"] .dwork-k[data-m="fail"] { --m: var(--err); color: var(--err); }
+[data-style="dossier"] .dwork-k[data-m="fail"] > i { color: var(--err); }
 [data-style="dossier"] .dwork-k[data-m="shot"] { --m: var(--txf); color: var(--txf); }
-/* while it runs, the step that is out right now, after the chips so far */
-[data-style="dossier"] .dwork-live { min-width: 0; margin-left: 14px; overflow: hidden; text-overflow: ellipsis; }
-[data-style="dossier"] .dwork-live::before { content: "\2014 "; color: var(--txl); }
+/* the plate's own chips head the zone, so they are bigger: a 20px tile, a 12px
+   icon, the count in figures; a tally's stay small to fit their line */
+[data-style="dossier"] :is(.dwork-l2, .dwork-right) .dwork-k { gap: 6px; color: var(--txm); font-variant-numeric: tabular-nums; }
+[data-style="dossier"] :is(.dwork-l2, .dwork-right) .dwork-k > i {
+  width: 20px; height: 20px; border-radius: calc(var(--d-rad) * .42);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--m) 14%, transparent);
+}
+[data-style="dossier"] :is(.dwork-l2, .dwork-right) .dwork-k > i > svg { width: 12px; height: 12px; }
+[data-style="dossier"] :is(.dwork-l2, .dwork-right) .dwork-k[data-m="note"] > i > svg { width: 8px; height: 8px; }
+/* a count that grew rolls in (Roll), and its chip's tile flares once (KindChip) */
+[data-style="dossier"] .dwork .roll { display: inline-block; }
+[data-style="dossier"] .dwork-k[data-bump] > i { animation: kbump .7s cubic-bezier(.2,.8,.2,1); }
+@keyframes kbump {
+  0% { transform: scale(1); box-shadow: 0 0 0 0 color-mix(in oklab, var(--m) 70%, transparent); }
+  30% { transform: scale(1.16); }
+  100% { transform: scale(1); box-shadow: 0 0 0 7px transparent; }
+}
 [data-style="dossier"] .dwork-right { grid-column: 3; grid-row: 1 / 3; display: flex; align-items: center; gap: 14px; }
+/* THE NOW LINE (WorkZone NowLine): while the zone is live a third line says
+   what it is doing. The step's icon sits on the spine under the node, a bead
+   of light running down into it; then a verb in its kind's hue, what it is on
+   (code in the mono face), a caret, and the seconds at the figure edge.
+   Between steps: Thinking, shimmering, and the agent's latest words. A new
+   step rolls in (the words are stacked, so the leaving one can play out over
+   the new); the turn's end folds the line away. Open, it rides in the pinned
+   header under the title. */
+[data-style="dossier"] .dwork-now {
+  --m: var(--acc); --mc: color-mix(in oklab, var(--m) 84%, var(--txh));
+  grid-column: 1 / -1; grid-row: 3; position: relative;
+  display: grid; grid-template-columns: var(--zn) minmax(0, 1fr) auto; column-gap: 12px; align-items: center;
+  height: 28px; margin-top: 9px; white-space: nowrap;
+}
+[data-style="dossier"] .dwork-now[data-gone] { overflow: hidden; }
+[data-style="dossier"] .now-ic {
+  grid-column: 1; justify-self: center; position: relative; z-index: 1;
+  width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  color: var(--mc); background: color-mix(in oklab, var(--m) 17%, var(--zg));
+  box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--m) 48%, transparent), 0 0 12px color-mix(in oklab, var(--m) 32%, transparent);
+  transition: color .35s, background-color .35s, box-shadow .35s;
+}
+[data-style="dossier"] .now-ic > svg { width: 12px; height: 12px; }
+/* the spine from the node down to it, and while a step runs, the bead */
+[data-style="dossier"] .now-ic::before {
+  content: ""; position: absolute; left: 50%; bottom: 100%; width: 1px; height: var(--now-reach, 23px); translate: -.5px 0;
+  background: linear-gradient(transparent, var(--zline) 6px); z-index: -1;
+}
+/* the bead runs the spine's own length (a background in a box as tall as the
+   reach, so the keyframes need no var(), which WebKit resolves late) */
+[data-style="dossier"] .dwork-now[data-st="work"] > .now-ic::after {
+  content: ""; position: absolute; left: 50%; bottom: 100%; width: 3px; height: var(--now-reach, 23px); translate: -1.5px 0; z-index: -1;
+  background: linear-gradient(transparent, var(--mc)) 0 0 / 3px 7px no-repeat;
+  filter: drop-shadow(0 0 3px var(--mc));
+  animation: nowbead 1.5s cubic-bezier(.5,0,.75,1) infinite;
+}
+@keyframes nowbead { 0% { background-position: 0 0%; opacity: 0; } 25%, 85% { opacity: 1; } 100% { background-position: 0 100%; opacity: 0; } }
+/* thinking: the thought node's ring, breathing out */
+[data-style="dossier"] .now-ring { position: relative; width: 9px; height: 9px; border-radius: 50%; border: 1.6px solid currentColor; }
+[data-style="dossier"] .now-ring::after {
+  content: ""; position: absolute; inset: -1.6px; border-radius: 50%; border: 1.4px solid currentColor;
+  animation: nowripple 2s ease-out infinite;
+}
+@keyframes nowripple { 0% { transform: scale(1); opacity: .9; } 100% { transform: scale(2.3); opacity: 0; } }
+[data-style="dossier"] .now-tx { grid-column: 2; position: relative; min-width: 0; height: 28px; overflow: hidden; }
+[data-style="dossier"] .now-line {
+  --mc: color-mix(in oklab, var(--m) 84%, var(--txh));
+  position: absolute; inset: 0; display: flex; align-items: center; gap: 7px; min-width: 0;
+  font-family: var(--d-face); font-size: calc(var(--t12) + .5px); line-height: 28px; color: var(--txm);
+}
+[data-style="dossier"] .now-v { flex: none; font-weight: 700; color: var(--mc); }
+[data-style="dossier"] .now-o { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--txh); }
+[data-style="dossier"] .now-o code { margin-left: 6px; font-family: var(--mono); font-size: var(--t105); color: var(--txf); }
+[data-style="dossier"] .now-o code:first-child { margin-left: 0; color: var(--txm); }
+[data-style="dossier"] .now-more { flex: none; font-family: var(--mono); font-size: var(--t105); color: var(--txf); }
+[data-style="dossier"] .now-q { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-style: italic; color: var(--txd); }
+[data-style="dossier"] .now-caret { flex: none; width: 6px; height: 12px; margin-left: -2px; background: var(--mc); animation: caret 1.05s steps(1) infinite; }
+[data-style="dossier"] .now-t {
+  grid-column: 3; justify-self: end; padding-right: 2px;
+  font-family: var(--mono); font-size: var(--t105); color: var(--txf); font-variant-numeric: tabular-nums;
+}
+/* a light passes through the word while the model thinks */
+[data-style="dossier"] .now-line[data-st="think"] .now-v {
+  background: linear-gradient(100deg, var(--mc) 0 38%, color-mix(in oklab, var(--mc) 35%, #fff) 50%, var(--mc) 62% 100%) 0 0 / 280% 100%;
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  animation: nowshim 2.1s linear infinite;
+}
+@keyframes nowshim { from { background-position: 100% 0; } to { background-position: -80% 0; } }
+/* open: under the one-line title, closer to the node */
+[data-style="dossier"] .dwork[data-open][data-now] > .dwork-head { padding-bottom: 6px; }
+/* the header is that much taller, so an open chapter pins that much lower (.wzc-head) */
+[data-style="dossier"] .dwork[data-open][data-now] { --dwork-hh: 65px; }
+[data-style="dossier"] .dwork[data-open] .dwork-now { --now-reach: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  [data-style="dossier"] :is(.now-ring::after, .now-caret, .dwork-now > .now-ic::after) { animation: none; }
+  [data-style="dossier"] .dwork-now > .now-ic::after { display: none; }
+  [data-style="dossier"] .now-line[data-st="think"] .now-v { animation: none; }
+}
 /* unseen pictures: the plate lights, and the count is a badge you cannot miss
    (the family's border colour is outranked in THE FAMILIES) */
 [data-style="dossier"] .dwork[data-shots="new"] {
@@ -2960,7 +3045,7 @@ input {
 [data-style="dossier"] .wzc-n { justify-self: end; }
 [data-style="dossier"] .wzc-n > b { font-weight: 600; letter-spacing: 1.6px; color: var(--acc); }
 [data-style="dossier"] .wzc-chev { grid-column: 5; justify-self: center; color: var(--txf); }
-[data-style="dossier"] .wzc[data-open] > .wzc-head { position: sticky; top: calc(var(--isle-b, 0px) + 35px); z-index: 2; }
+[data-style="dossier"] .wzc[data-open] > .wzc-head { position: sticky; top: calc(var(--isle-b, 0px) + var(--dwork-hh, 35px)); z-index: 2; }
 [data-style="dossier"] .wzc[data-open] > .wzc-head::before {
   content: ""; position: absolute; z-index: 0; inset: 0 calc(-1 * var(--zpr)) 0 calc(-1 * var(--zpl)); pointer-events: none;
   background:
@@ -3010,6 +3095,8 @@ input {
   width: 14px; height: 14px; padding: 4px; box-sizing: content-box; border-radius: 50%;
   color: var(--m); background: var(--zg);
 }
+/* the icon carries its mark, so it wears its kind's hue (a failure keeps --err) */
+[data-style="dossier"] .dwork-body .ax-bar > svg[data-m]:not([data-m="fail"]) { color: color-mix(in oklab, var(--m) 84%, var(--txh)); }
 [data-style="dossier"] .dwork-body .actrow[data-run] > .ax-bar > svg {
   color: var(--d-you); background: color-mix(in oklab, var(--d-you) 16%, var(--zg));
   box-shadow: 0 0 0 1.5px color-mix(in oklab, var(--d-you) 45%, transparent),
@@ -4413,7 +4500,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam]:not([data-fam="aurora"]) .wordmark .bw-b { margin-left: .3em; }
 [data-fam] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
 [data-fam] .lanehead > span:nth-child(3) { background: transparent !important; }
-[data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-st, .dwork-badge, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
+[data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-badge, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
 [data-fam] .cmdbox:focus-within { box-shadow: none; border-color: color-mix(in oklab, var(--acc) 40%, var(--line2)) !important; }
 
 /* ── the settings modal's own furniture ── */
@@ -6541,9 +6628,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 }
 [data-fam="middle-earth"] :is(.gp-pb, .gg-older, .rp-sg, .prun, .setgroup) { text-transform: none !important; letter-spacing: 0 !important; }
 [data-fam="middle-earth"] :is(.dwork-lab, .res-lab) { font-weight: 600 !important; color: var(--txm) !important; }
-/* the live state, WORKING / THINKING, as a word */
-[data-fam="middle-earth"] .dwork-st { display: inline-block; text-transform: lowercase; letter-spacing: 0 !important; font-family: var(--ui-font) !important; font-weight: 600; }
-[data-fam="middle-earth"] .dwork-st::first-letter { text-transform: uppercase; }
 [data-fam="middle-earth"] .gp-fh b { font-weight: 600 !important; font-size: var(--t12) !important; color: var(--txh) !important; }
 
 /* ── titles and big numbers in the serif (Rivendell's h1 and its canopy figures) ── */

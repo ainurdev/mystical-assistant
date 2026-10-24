@@ -117,7 +117,8 @@ const PLUGINS: { label: string; sub?: string; tint: string; match: (s: SessionBr
   { label: "RIVENDELL", tint: "var(--purple)", match: isJob },
 ];
 /** Newest-started first: when a session was created, not last touched, so a
- *  turn starting or ending never moves its row. Every tab but RECENT reads it.
+ *  turn starting or ending never reshuffles the rows at rest (PROJECTS lifts the
+ *  one at work over them, `lift` below). Every tab but RECENT reads it.
  *  `created` is optional on older payloads, so fall back to `updated`. */
 const byCreated = (a: SessionBrief, b: SessionBrief) =>
   (b.created ?? b.updated) - (a.created ?? a.updated);
@@ -635,7 +636,7 @@ export function SessionsPanel(props: Props) {
   const branchFor = (s: SessionBrief) => s.branch || branchOf.get(s.project) || "main";
 
   const sq = sessionQ.trim().toLowerCase();
-  // Pinned first, then newest-started first: a row holds its place while its
+  // Pinned first, then newest-started first: a row at rest holds its place while
   // turns start and end, and the dot says what changed. Every list below slices
   // this one, so a pin holds the top of its lane, its bucket, and its project's
   // rows alike — and the search applied here reaches every mode from one place.
@@ -647,6 +648,13 @@ export function SessionsPanel(props: Props) {
   // read this map so they can never disagree.
   const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
   const laneOf = (s: SessionBrief) => views.get(s.id)?.lane ?? "idle";
+  // A turn the bridge holds is a touch happening now: its row goes over the ones
+  // at rest, so a session at work never sits under one that finished, and it
+  // rejoins them when the turn ends. Not native "working": it lasts
+  // 3 s after each write, so a terminal row lifted on it would bounce mid-turn.
+  const busy = (s: SessionBrief) => { const st = status.get(s.id); return st?.source === "bridge" && BUSY_NOW.includes(st.state); };
+  // Pins still head the list; the rest keep the order they came in (sort is stable).
+  const lift = (f: SessionBrief[]) => [...f].sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || Number(busy(b)) - Number(busy(a)));
   // What HIDE leaves in the sidebar: a session whose folder and group (Rivendell
   // jobs, Shared) are both shown.
   const listed = (s: SessionBrief) => !hidden[s.project] && !hidden[jobGroup(s)];
@@ -686,12 +694,13 @@ export function SessionsPanel(props: Props) {
     // RECENT is one flat stream, cut into time buckets — no project grouping.
     // The one tab that follows the last touch: recency is its point.
     const now = Date.now() / 1000;
+    const at = (s: SessionBrief) => (busy(s) ? now : s.updated);
     const cuts: [number, string][] = [[86400, "TODAY"], [7 * 86400, "THIS WEEK"], [Infinity, "EARLIER"]];
     lanes = cuts.flatMap(([max, label], i) => {
       const min = i === 0 ? -1 : cuts[i - 1][0];
-      const age = (s: SessionBrief) => now - s.updated;
+      const age = (s: SessionBrief) => now - at(s);
       const rows = mine.filter((s) => age(s) > min && age(s) <= max)
-        .sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || b.updated - a.updated);
+        .sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || at(b) - at(a));
       return rows.length ? [{ label, tint: "var(--txd)", count: rows.length, pulse: false, rows, fold: "" }] : [];
     });
   }
@@ -745,7 +754,7 @@ export function SessionsPanel(props: Props) {
   // an idle row made it "live" and shoved its sibling out of the list.
   const capped = (f: SessionBrief[]) => {
     const keep = new Set(f.slice(0, 2).map((s) => s.id));
-    return f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id) || laneOf(s) !== "idle" || flags.has(s.id) || !!unseen.get(s.id));
+    return lift(f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id) || laneOf(s) !== "idle" || flags.has(s.id) || !!unseen.get(s.id)));
   };
   // How many of a project's sessions sit in each lane, every session, not the
   // rows showing: a shut head's amber wash and the rail's ask badge and New dot
@@ -764,7 +773,7 @@ export function SessionsPanel(props: Props) {
     const isShut = !f.length || (shut.has(g.rel) && !sq);
     const vis = isShut ? [] : sq || open.has(g.rel)
       // Opened, the jobs group reads as a log: newest job first, one kind at a time.
-      ? (g.rel === JOBS_REL ? f.filter((s) => !jobKind || (s.job?.kind ?? "") === jobKind).sort(byCreated) : f)
+      ? (g.rel === JOBS_REL ? f.filter((s) => !jobKind || (s.job?.kind ?? "") === jobKind).sort(byCreated) : lift(f))
       : capped(f);
     const rest = Math.max(0, g.sessionCount - vis.length);
     return [{ g, f, isShut, vis, rest, n: tallyOf(f) }];

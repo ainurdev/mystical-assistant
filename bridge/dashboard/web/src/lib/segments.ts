@@ -106,12 +106,12 @@ export function segmentsOf(
  *  counts and phrases. */
 export type StepCat =
   | "command" | "edit" | "read" | "write" | "search" | "fetch" | "call"
-  | "agent" | "log" | "step";
+  | "agent" | "skill" | "log" | "step";
 
 /** The order the header lists categories in: what changed the machine first,
  *  what only looked at it last. */
 export const CAT_ORDER: StepCat[] = [
-  "command", "edit", "write", "agent", "call", "fetch", "search", "read", "log", "step",
+  "command", "edit", "write", "agent", "skill", "call", "fetch", "search", "read", "log", "step",
 ];
 
 const CAT_WORD: Record<StepCat, [string, string]> = {
@@ -119,6 +119,7 @@ const CAT_WORD: Record<StepCat, [string, string]> = {
   edit: ["edit", "edits"],
   write: ["file written", "files written"],
   agent: ["agent", "agents"],
+  skill: ["skill", "skills"],
   call: ["call", "calls"],
   fetch: ["fetch", "fetches"],
   search: ["search", "searches"],

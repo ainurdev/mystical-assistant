@@ -2,8 +2,8 @@ import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, 
 import { flushSync } from "react-dom";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, RotateCcw, ChevronDown, ChevronLeft, ChevronRight,
-  Quote, Layers, Image as ImageIcon, Terminal, FileText, Pencil, FilePlus, Search, Globe,
-  Plug, Bot, Sparkles, Webhook, ScrollText, CircleX, Wrench, Circle, type LucideIcon,
+  Quote, Layers, Image as ImageIcon, Terminal, BookOpen, PencilLine, FilePlus2, Search, Globe,
+  Plug, Bot, Sparkles, Webhook, Logs, CircleX, Wrench, Circle, type LucideIcon,
 } from "lucide-react";
 import { api, type AnswerSelection, type RunEvent, type TimedEvent } from "../api";
 import type { PendingRequest } from "../chat";
@@ -21,6 +21,7 @@ import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments"
 import { chapterStarts, kindsOf, stretchesOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
 import { PromptBubble } from "./PromptBubble";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
+import { nowOf } from "../lib/workstate";
 import type { HudSettings } from "../lib/theme";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { fmtSpan, openAgent, useAgentFor } from "../lib/subagents";
@@ -167,19 +168,25 @@ const KIND_MARK: Partial<Record<ToolKind, Mark>> = {
   mcp: "call", agent: "agent",
 };
 const kindMark = (name: string): Mark => KIND_MARK[toolKind(name)] ?? "step";
+/** A running tool's mark, for the live line: closer than its row's kind, since
+ *  the line's verb tells an edit from a new file and a skill from an agent. */
+const nowMark = (name: string): Mark =>
+  name === "Skill" ? "skill" : toolKind(name) === "write" && name !== "Write" ? "edit" : kindMark(name);
 
 /** What a mark looks like: the icon is the row's kind, so the zone needs no
  *  column of kind words (they stay in the row, for a screen reader). A note
  *  and a thought are a dot and a ring drawn by index.css; their icons serve
- *  the header's chips. */
+ *  the header's chips. Each shape differs from the others at 10px — a read was
+ *  once a page, as were a write and a log — and the icon carries its mark, so
+ *  index.css can give it the hue of what the step did. */
 const MARK_ICON: Record<Mark, LucideIcon> = {
-  command: Terminal, read: FileText, edit: Pencil, write: FilePlus, search: Search,
-  fetch: Globe, call: Plug, agent: Bot, skill: Sparkles, hook: Webhook, log: ScrollText,
+  command: Terminal, read: BookOpen, edit: PencilLine, write: FilePlus2, search: Search,
+  fetch: Globe, call: Plug, agent: Bot, skill: Sparkles, hook: Webhook, log: Logs,
   fail: CircleX, step: Wrench, note: Circle, think: Circle,
 };
 function MarkIcon({ mark, size = 14 }: { mark: Mark; size?: number }) {
   const I = MARK_ICON[mark];
-  return <I size={size} strokeWidth={size > 12 ? 1.9 : 2.2} aria-hidden />;
+  return <I size={size} strokeWidth={size > 12 ? 1.9 : 2.2} aria-hidden data-m={mark} />;
 }
 
 /** The tag a row wears — in the WORK zone it is what a screen reader hears, the
@@ -693,6 +700,112 @@ const ROW_IN: Keyframe[] = [
   { opacity: 1, transform: "none", filter: "none" },
 ];
 
+const noMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** A number that rolls in from below when it grows: a step just landed. */
+function Roll({ n }: { n: number }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const was = useRef(n);
+  useLayoutEffect(() => {
+    const grew = n > was.current;
+    was.current = n;
+    if (grew && !noMotion()) ref.current?.animate([{ transform: "translateY(55%)", opacity: 0 }, { transform: "none", opacity: 1 }],
+      { duration: 240, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }, [n]);
+  return <span ref={ref} className="roll">{n}</span>;
+}
+
+/** One of the plate's kind chips: the kind's icon on a tile, then the count.
+ *  When the count grows (a step of that kind just started) the number rolls in
+ *  and the tile flares once (index.css kbump), so the eye sees where it went. */
+function KindChip({ m, n, title }: { m: Mark; n: number; title?: string }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const was = useRef(n);
+  useLayoutEffect(() => {
+    const el = ref.current, grew = n > was.current;
+    was.current = n;
+    if (!el || !grew || noMotion()) return;
+    el.removeAttribute("data-bump");
+    void el.offsetWidth; // restart the flare when one lands mid-flare
+    el.setAttribute("data-bump", "");
+  }, [n]);
+  return (
+    <span ref={ref} className="dwork-k" data-m={m} title={title}
+      onAnimationEnd={(e) => { if (e.target !== e.currentTarget) e.currentTarget.removeAttribute("data-bump"); }}>
+      <i aria-hidden><MarkIcon mark={m} size={12} /></i><Roll n={n} />
+    </span>
+  );
+}
+
+/** What the live line says (lib/workstate nowOf): a step that is out, or, with
+ *  none, Thinking and the agent's latest words (`what`). `key` is the step, so a
+ *  new one rolls in. */
+type NowData = { key: string; mark: Mark; verb: string; what: string; code: string; more: number };
+
+const clock = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`);
+
+/** The live plate's third line: what the turn is doing right now. The step's
+ *  icon sits on the spine under the node, a bead of light running down into
+ *  it; then a verb in its kind's hue, what it is on, a caret, and the seconds
+ *  at the figure edge. Between steps it says Thinking, with the agent's latest
+ *  words. A new step rolls in: the old words leave upward as the new rise from
+ *  below, and the icon pops. When the turn ends the line folds away (`gone`;
+ *  WorkZone keeps it mounted until `onGone`). */
+function NowLine({ now, secs, gone, onGone }: { now: NowData; secs: number; gone: boolean; onGone: () => void }) {
+  const root = useRef<HTMLSpanElement>(null);
+  const tx = useRef<HTMLSpanElement>(null);
+  const ic = useRef<HTMLSpanElement>(null);
+  // the line as last drawn, to play out when the next step replaces it
+  const ghost = useRef<Element | null>(null);
+  const shown = useRef(now.key);
+  useLayoutEffect(() => {
+    if (shown.current === now.key) return;
+    shown.current = now.key;
+    const box = tx.current, line = box?.lastElementChild, old = ghost.current;
+    if (!box || !line || noMotion()) return;
+    if (old) {
+      box.insertBefore(old, line);
+      old.animate([{ transform: "none", opacity: 1 }, { transform: "translateY(-60%)", opacity: 0 }],
+        { duration: 190, easing: "cubic-bezier(.4,0,1,1)", fill: "forwards" }).onfinish = () => old.remove();
+    }
+    line.animate([{ transform: "translateY(65%)", opacity: 0 }, { transform: "none", opacity: 1 }],
+      { duration: 320, delay: 70, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" });
+    ic.current?.animate([{ transform: "scale(1)" }, { transform: "scale(.55)", offset: .4 }, { transform: "scale(1)" }],
+      { duration: 360, easing: "cubic-bezier(.2,.8,.2,1)" });
+  }, [now.key]);
+  // after every draw, the roll above included: a copy of the line as it stands
+  useLayoutEffect(() => { ghost.current = tx.current?.lastElementChild?.cloneNode(true) as Element | null ?? null; });
+  useEffect(() => {
+    const el = root.current;
+    if (!gone) return;
+    if (!el || noMotion()) { onGone(); return; }
+    const a = el.animate([{ height: `${el.offsetHeight}px`, marginTop: getComputedStyle(el).marginTop, opacity: 1 },
+      { height: "0px", marginTop: "0px", opacity: 0 }], { duration: 300, easing: "cubic-bezier(.4,0,.2,1)", fill: "forwards" });
+    a.onfinish = onGone;
+    return () => a.cancel();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gone]);
+  const think = now.mark === "think";
+  return (
+    <span ref={root} className="dwork-now" data-st={think ? "think" : "work"} data-m={now.mark} data-gone={gone ? "" : undefined}>
+      <span ref={ic} className="now-ic">{think ? <i className="now-ring" /> : <MarkIcon mark={now.mark} size={12} />}</span>
+      <span ref={tx} className="now-tx">
+        <span key={now.key} className="now-line" data-st={think ? "think" : "work"} data-m={now.mark}>
+          <b className="now-v">{now.verb}</b>
+          {think ? (now.what ? <q className="now-q">{now.what}</q> : null) : (
+            <>
+              {now.what || now.code ? <span className="now-o">{now.what ? <span>{now.what}</span> : null}{now.code ? <code>{now.code}</code> : null}</span> : null}
+              {now.more ? <span className="now-more">+{now.more}</span> : null}
+              <i className="now-caret" aria-hidden />
+            </>
+          )}
+        </span>
+      </span>
+      <span className="now-t">{clock(secs)}</span>
+    </span>
+  );
+}
+
 /** DOSSIER's tier 3: everything a turn did between what you asked and what it
  *  answered, under one header (lib/dossier) — a plate with a ringed node, WORK
  *  and the figure on one line and the kind chips under it: the marks the rows
@@ -707,14 +820,14 @@ const ROW_IN: Keyframe[] = [
  *  paging to it in the lightbox (ImageLightbox marks the one on screen), and
  *  half a thumbnail in view once the zone is open. It follows the COLLAPSE
  *  STEPS switch like a STEPS fold does. The last zone of a running turn is
- *  live and hosts the working indicator: the ORBIT form is the plate itself —
- *  THINKING or WORKING with the seconds in that state where the figure was, a
- *  ripple in the node while the model thinks, a comet on its ring while a tool
- *  runs (both inside the node's track, since the turn row's paint containment
- *  clips anything past the plate), a caret on the step that is out — and every
- *  other form (STATUS, the cat) draws as a row inside the plate
- *  instead of under the turn. */
-function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, live, span, chapters, defaultOpen, animate, children }: {
+ *  live: a third line says what it is doing right now (NowLine), open or shut,
+ *  and folds away when the turn ends. It hosts the working indicator too: the
+ *  ORBIT form is the node — a ripple while the model thinks, a comet on its
+ *  ring while a tool runs (both inside the node's track, since the turn row's
+ *  paint containment clips anything past the plate); the cat draws as a row
+ *  inside the plate instead of under the turn; STATUS would only say what the
+ *  line already does, so the line stands in for it. */
+function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, now, span, chapters, defaultOpen, animate, children }: {
   /** What the zone ran, by kind, and how often the agent spoke inside it. */
   cats: StepCat[];
   notes: number;
@@ -733,8 +846,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   hud?: HudSettings;
   events: TimedEvent[];
   started?: number;
-  /** What is out right now, named after the chips while it runs. */
-  live: string;
+  /** What the line says while the zone is live; null once it isn't. */
+  now: NowData | null;
   /** Wall time the zone covered, already formatted; "" when unknown. */
   span: string;
   /** How many chapters a long zone opens on (WorkChapter); 0 for a list of rows. */
@@ -859,23 +972,27 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   const [zoom, setZoom] = useState<string | null>(null);
   const orbit = hud?.indicator === "orbit";
   // Seconds in the state, on the store's clock (the event's `at`) so the count
-  // survives the zone remounting; ticks only while ORBIT draws it.
+  // survives the zone remounting; the live line shows them.
   const mountAt = useRef(Date.now() / 1000);
-  const [now, setNow] = useState(mountAt.current);
+  const [clockAt, setClockAt] = useState(mountAt.current);
   useEffect(() => {
-    if (!state || !orbit) return;
-    const tick = () => setNow(Date.now() / 1000);
+    if (!state) return;
+    const tick = () => setClockAt(Date.now() / 1000);
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [state, orbit, since]);
-  const secs = Math.max(0, Math.floor(now - (since ?? mountAt.current)));
-  // The step that is out is named once: after the chips while the plate is
-  // shut, unless the hosted form already says it (STATUS does; the cat
-  // doesn't) — and never while open, where the running row itself does.
-  const namesStep = open || hud?.indicator === "status";
-  // The other forms, hosted by the plate: shut, under the header; open, at the foot.
-  const ind = state && !orbit ? (
+  }, [state, since]);
+  const secs = Math.max(0, Math.floor(clockAt - (since ?? mountAt.current)));
+  // The line outlives the turn by its fold: kept, as last drawn, until it has
+  // played out (NowLine `gone`).
+  const lastNow = useRef(now);
+  if (now) lastNow.current = now;
+  const [wasLive, setWasLive] = useState(!!now);
+  const [fading, setFading] = useState(false);
+  if (wasLive !== !!now) { setWasLive(!!now); setFading(!now); }
+  const line = now ?? (fading ? lastNow.current : null);
+  // The cat, hosted by the plate: shut, under the header; open, at the foot.
+  const ind = state && hud?.indicator === "nyan" ? (
     <div className="dwork-ind"><WorkingIndicator hud={hud} events={events} started={started} /></div>
   ) : null;
   const fresh = pics.filter((p) => p.unseen);
@@ -889,6 +1006,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
       data-landed={landed ? "" : undefined}
       data-live={state ?? undefined}
       data-ind={orbit ? "orbit" : undefined}
+      data-now={line ? "" : undefined}
       data-err={failed ? "" : undefined}
       data-shots={fresh.length ? "new" : undefined}
       style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
@@ -907,32 +1025,25 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
         <span className="dwork-l1">
           <span className="dwork-lab">WORK</span>
           <span className="dwork-ms">
-            {state && orbit ? (
-              <>
-                <b className="dwork-st">{state === "work" ? "WORKING" : "THINKING"}{state === "think" ? <i className="dwork-dots" aria-hidden /> : null}</b>
-                <span className="dwork-secs">{secs}s</span>
-              </>
-            ) : [`${steps} step${steps === 1 ? "" : "s"}`, chapters ? `${chapters} chapters` : "", span].filter(Boolean).join(" · ")}
+            <Roll n={steps} />{` step${steps === 1 ? "" : "s"}`}{chapters ? ` · ${chapters} chapters` : ""}{span ? ` · ${span}` : ""}
           </span>
         </span>
         <span className="dwork-l2">
           <span className="dwork-kinds" title={words} aria-label={words}>
-            {kindsOf(cats, notes).map((k) => (
-              <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden><MarkIcon mark={k.m} size={10} /></i>{k.n}</span>
-            ))}
+            {kindsOf(cats, notes).map((k) => <KindChip key={k.m} m={k.m} n={k.n} />)}
           </span>
-          {state === "work" && live && !namesStep ? <><span className="dwork-live">{live}</span>{orbit ? <i className="dwork-caret" aria-hidden /> : null}</> : null}
         </span>
         <span className="dwork-right">
-          {failed ? <span className="dwork-k" data-m="fail" title={`${failed} failed`}><i aria-hidden><MarkIcon mark="fail" size={10} /></i>{failed}</span> : null}
+          {failed ? <KindChip m="fail" n={failed} title={`${failed} failed`} /> : null}
           {fresh.length ? (
             <span className="dwork-badge" title={`${fresh.length} of ${picsWord} not seen yet`}>
               <ImageIcon size={11} strokeWidth={2.2} aria-hidden />{fresh.length} NEW
             </span>
           ) : pics.length ? (
-            <span className="dwork-k" data-m="shot" title={picsWord}><i aria-hidden><ImageIcon size={10} strokeWidth={2.2} /></i>{pics.length}</span>
+            <span className="dwork-k" data-m="shot" title={picsWord}><i aria-hidden><ImageIcon size={12} strokeWidth={2.2} /></i>{pics.length}</span>
           ) : null}
         </span>
+        {line ? <NowLine now={line} secs={secs} gone={!now} onGone={() => setFading(false)} /> : null}
       </button>
       {zoom && <ImageLightbox src={zoom} all={gallery} onClose={() => setZoom(null)} />}
       {/* Mid-glide both parts are here, the one you left marked data-leaving.
@@ -2689,7 +2800,7 @@ export const RunStream = memo(function RunStream({
       case "search": return "search";
       case "web": return "fetch";
       case "mcp": return "call";
-      case "agent": return "agent";
+      case "agent": return e.name === "Skill" ? "skill" : "agent";
       default: return "step";
     }
   };
@@ -2745,24 +2856,26 @@ export const RunStream = memo(function RunStream({
   const tally = (zsegs: Seg[]) => {
     const cats: StepCat[] = [];
     const pics: Pic[] = [];
-    let notes = 0, steps = 0, failed = 0, running = false, live = "", openAt: number | undefined, first: number | undefined, last: number | undefined;
+    let notes = 0, steps = 0, failed = 0, out = 0, said = "", openAt: number | undefined, first: number | undefined, last: number | undefined;
+    let live: Extract<TimedEvent, { type: "tool" }> | undefined;
     for (const seg of zsegs) for (const i of seg.idx) {
       const e = events[i];
       if (e.at != null) { first ??= e.at; last = e.at; }
       if (isStep(e)) steps++;
-      if (e.type === "thinking" || e.type === "text") { if (e.text) notes++; }
+      // the agent's newest words, one line, for the live line to quote between steps
+      if (e.type === "thinking" || e.type === "text") { if (e.text) { notes++; said = e.text.trim().split("\n")[0].replace(/`|\*\*/g, ""); } }
       else if (e.type === "log") { cats.push("log"); if (e.error) failed++; }
       else if (e.type === "tool") {
         const d = doneOf(e), c = catOf(e, d);
         cats.push(c);
-        if (!d) { running = true; live = e.summary; openAt = e.at; }
+        if (!d) { out++; live = e; openAt = e.at; }
         else if (d.is_error) failed++;
         for (const p of d?.images ?? []) pics.push({ path: p, name: shotName(e.summary) || p.split("/").pop() || p, unseen: shotUnseen(p, e.at) });
         if (d?.ms && e.at != null) last = Math.max(last ?? 0, e.at + d.ms / 1000);
       }
     }
     const secs = first != null && last != null ? last - first : 0;
-    return { cats, pics, notes, steps, failed, running, live, openAt, first, last, span: secs >= 1 ? wall(secs) : "" };
+    return { cats, pics, notes, steps, failed, running: out > 0, out, live, said, openAt, first, last, span: secs >= 1 ? wall(secs) : "" };
   };
   /** A chapter's name: the note it opens on (lib/dossier cuts there), else
    *  the first words or call in it — one line, without the code ticks. */
@@ -2843,11 +2956,15 @@ export const RunStream = memo(function RunStream({
       ];
     }).filter((r) => r !== null);
   const workZone = (zsegs: Seg[], lastZone: boolean) => {
-    const { cats, pics, notes, steps, failed, running, live, openAt, last, span } = tally(zsegs);
+    const { cats, pics, notes, steps, failed, running, out, live, said, openAt, last, span } = tally(zsegs);
     // The last zone of a running turn is live: a tool out is WORKING since it
     // started, nothing out is THINKING since the last thing finished. A card
     // waiting on you is neither — the plate rests until it is answered.
     const state = working && lastZone ? (running ? "work" as const : "think" as const) : null;
+    // What its line says (NowLine): the newest step out, or the agent's newest words.
+    const now: NowData | null = !state ? null : state === "work" && live
+      ? { key: live.id ?? `${live.at}`, mark: nowMark(live.name), ...nowOf(live), more: out - 1 }
+      : { key: `t${said}`, mark: "think", verb: "Thinking", what: said, code: "", more: 0 };
     // A long zone opens on its chapters, and a chapter builds its rows only
     // while open (lib/dossier chapterStarts); a chapter opens on a note.
     const starts = chapterStarts(
@@ -2890,7 +3007,7 @@ export const RunStream = memo(function RunStream({
         hud={hud}
         events={events}
         started={turnStarted}
-        live={live}
+        now={now}
         span={span}
         chapters={starts.length}
         defaultOpen={foldsOpen}
