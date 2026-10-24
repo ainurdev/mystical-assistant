@@ -59,8 +59,9 @@ const IDLE_CAP = 8; // ATTENTION's idle tail, folded
 const PROJ_ROWS = 3; // a project's chats before "N more"
 const HIST_CAP = 40; // HISTORY rows before "show more"
 
-/** When a chat was started: rows hold their place while turns start and end
- *  (the dashboard's sidebar sorts the same way). Older payloads lack it. */
+/** When a chat was started: rows at rest hold their place while turns start and
+ *  end, and one at work goes over them (`lift`; the dashboard's sidebar sorts
+ *  the same way). Older payloads lack it. */
 const start = (s?: SessionBrief) => (s ? s.created ?? s.updated : 0);
 const byStart = (a: SessionBrief, b: SessionBrief) => start(b) - start(a);
 
@@ -148,6 +149,11 @@ function ChatsPage() {
   useEffect(() => telegramBack(back), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const view = (s: SessionBrief) => SV[status[s.id]?.state ?? "idle"] ?? SV.idle;
+  // A turn the bridge holds (a filled dot) is a touch happening now, so a chat at
+  // work never sits under one that finished. Not native "working": it lasts 3 s
+  // after each write, so a terminal chat lifted on it would bounce mid-turn.
+  const busy = (s: SessionBrief) => status[s.id]?.source === "bridge" && view(s).fill;
+  const lift = (f: SessionBrief[]) => [...f].sort((a, b) => Number(busy(b)) - Number(busy(a)));
   // A chat that never ran has no title yet: an abandoned draft is noise in
   // every list but its own (the open one, or one that's somehow live).
   const sessions = useMemo(() => (all.data?.sessions ?? []).filter((s) =>
@@ -247,7 +253,7 @@ function ChatsPage() {
             // long ago would otherwise sit behind "N more" (the dashboard's rule)
             const head = full ? list : list.filter((s, i) => i < PROJ_ROWS || view(s).lane !== "idle");
             const cur = list.find((s) => s.id === sessionId);
-            const rows = cur && !head.includes(cur) ? [...head, cur] : head;
+            const rows = lift(cur && !head.includes(cur) ? [...head, cur] : head);
             const more = list.length - rows.length;
             return (
               <section key={rel} className="sb-proj">
@@ -323,7 +329,7 @@ function ChatsPage() {
             )
           ) : (
             <div className="space-y-px">
-              {[...shown].sort((a, b) => b.updated - a.updated).slice(0, histAll || needle ? undefined : HIST_CAP).map((s) => row(s, true))}
+              {[...shown].sort((a, b) => Number(busy(b)) - Number(busy(a)) || b.updated - a.updated).slice(0, histAll || needle ? undefined : HIST_CAP).map((s) => row(s, true))}
               {!histAll && !needle && shown.length > HIST_CAP && (
                 <button type="button" className="sb-more" onClick={() => setHistAll(true)}>
                   {shown.length - HIST_CAP} more <ChevronDown size={12} aria-hidden />
