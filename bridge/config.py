@@ -227,7 +227,7 @@ TASKS_DIGEST = os.environ.get("TASKS_DIGEST", "1").lower() \
 
 # --- Rivendell tasks -----------------------------------------------------------
 # A session in a repo on a Rivendell task board is told to find the task behind
-# its work, or ask and then file one tagged `unplanned`, and gets the two goals
+# its work, or ask and then file one, and gets the two goals
 # tools that do it (bridge/rivendell.py work_list / work_create). Off, no note
 # goes out and the tools are hidden. Rivendell's own runs never get either.
 RIVENDELL_TRACK = os.environ.get("RIVENDELL_TRACK", "1").lower() \

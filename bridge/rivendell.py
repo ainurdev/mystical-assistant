@@ -208,7 +208,7 @@ answers the live run. The channel around it — link state, run views, NEEDS
 YOU — is docs/superpowers/specs/rivendell-channel.md.
 
 A session in a repo on a Rivendell board finds the task that covers its work,
-or files one tagged `unplanned` once the user says yes on a card (on_board /
+or files one once the user says yes on a card (on_board /
 work_list / work_create). The goals MCP's two tools only relay here through the
 dashboard, because the token and tasks() live here. It rides Rivendell's MCP
 read_route/write_route as the token's owner, so Rivendell needed no new route.
@@ -2875,7 +2875,6 @@ def todolist(instance_id: str, project_id: str) -> "dict | None":
 
 # --- a task for every piece of work (the goals MCP's two Rivendell tools) -------
 
-UNPLANNED_TAG = "unplanned"
 _TRACK_RULE = ("If one of these covers your work, put its key in the branch name and the PR title. "
                "If none does, do the work, and ask with the Task card before its first push.")
 _NO_REMOTE = ("This folder has no GitHub remote, so Rivendell can't know it. If you are changing "
@@ -3060,31 +3059,6 @@ def _lists(b: dict) -> list:
     return _tool(b["w"], "read_route", {"path": f"/task-management/projects/{b['id']}/tasklists"}) or []
 
 
-def _unplanned_tag(w: Worker) -> "str | None":
-    """The `unplanned` tag's id for a new task, made (account-wide) the first
-    time anyone needs it. When making it fails, another session may have just
-    made it, so it is looked up once more; failing that, None: the task is
-    still filed, untagged, because a tracked task beats a perfect one."""
-    def find():
-        rows = _tool(w, "read_route", {"path": "/task-management/tags"})
-        return next((t.get("externalId") for t in rows if isinstance(t, dict)
-                     and (t.get("name") or "").strip().lower() == UNPLANNED_TAG), None) \
-            if isinstance(rows, list) else None
-    try:
-        if tag := find():
-            return tag
-        try:
-            made = _tool(w, "write_route", {"method": "POST", "path": "/task-management/tags",
-                                            "body": {"name": UNPLANNED_TAG}})
-            if isinstance(made, dict) and made.get("externalId"):
-                return made["externalId"]
-        except TasksError:
-            pass
-        return find()
-    except TasksError:
-        return None
-
-
 def _no_board(slug: str, d: dict) -> str:
     if d.get("errors"):
         return f"Rivendell couldn't answer: {d['errors'][0]['detail']}"
@@ -3126,7 +3100,7 @@ def work_list(path: str) -> str:
 def work_create(path: str, title: str, description: str = "", board: str = "") -> str:
     """CreateRivendellTask: file a task for work no open task covers, on the
     checkout's board (the one named `board` when there are several), in the
-    list work_list names, tagged `unplanned`. A title an open task on that
+    list work_list names. A title an open task on that
     board already has is refused with that task's key: a retried call, or a
     second session on the same work, must not leave a client's board a
     duplicate. Text for Claude, failures too."""
@@ -3158,12 +3132,9 @@ def work_create(path: str, title: str, description: str = "", board: str = "") -
         lst = _landing_list(_lists(b))
         if not lst:
             return f"{b['label']} has no task list to put it in."
-        tag = _unplanned_tag(b["w"])
         body = {"tasklistId": lst["id"], "name": title[:500]}   # Rivendell's MaxLength
         if (description or "").strip():
             body["description"] = description.strip()
-        if tag:
-            body["tagExternalIds"] = [tag]
         t = _tool(b["w"], "write_route", {"method": "POST", "path": "/task-management/tasks", "body": body})
         t = t if isinstance(t, dict) else {}
         if t.get("key"):                         # the task tab shows it before the branch carries it
@@ -3171,8 +3142,7 @@ def work_create(path: str, title: str, description: str = "", board: str = "") -
             top = taskcheck.toplevel(path)
             taskcheck.record(top, taskcheck.branch(top), t["key"])
         key = t.get("key") or "the new task"
-        return (f"Created {key} \"{t.get('name') or body['name']}\" on {b['label']} ▸ {lst['name']}, "
-                + ("tagged unplanned" if tag else "untagged (Rivendell wouldn't make the unplanned tag)")
+        return (f"Created {key} \"{t.get('name') or body['name']}\" on {b['label']} ▸ {lst['name']}"
                 + f": {b['frontend']}/task-management/projects/{b['id']}?task={t.get('id')}"
                 + f"\nPut {key} in the branch name and the PR title, so Rivendell links the PR to it.")
     except TasksError as e:

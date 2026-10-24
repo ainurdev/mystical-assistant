@@ -144,8 +144,8 @@ FEATURES = (
      "about": "A session in a repo whose Rivendell project has a task board is told, before it "
               "changes code, to look up that board's open tasks. When one covers the work, the "
               "branch name and the PR title carry its key, so Rivendell links the PR to it. When "
-              "none does, a card asks you first, and on yes the session files one tagged "
-              "unplanned. Rivendell's own runs never do this. Off, no note goes out and the two "
+              "none does, a card asks you first, and on yes the session files one. "
+              "Rivendell's own runs never do this. Off, no note goes out and the two "
               "tools are hidden."},
     {"key": "commitmsg", "env": "COMMIT_MSG_AI", "label": "COMMIT MESSAGES",
      "hint": "writes a commit message from the diff you selected",

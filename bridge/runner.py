@@ -125,7 +125,7 @@ _RIVENDELL_NOTE = (
     "as a task, then on a second line: ⎇ <branch> · <n> commits · <git diff --shortstat of "
     "what the push sends>. Its options, the one you recommend first with \" (Recommended)\" at "
     "the end of its label: Create “<a title written from what the work did>” (description: "
-    "New task in <list>, tagged unplanned. Its key goes in the branch and the PR title.); "
+    "New task in <list>. Its key goes in the branch and the PR title.); "
     "It's <KEY> <its title>, only for an open task that may cover it (description: The closest "
     "open task (<column>). Its key goes in the PR title.); Not a task (description: Push as "
     "is. This branch won't ask again.). Recommend Not a task for a tiny change (a version "

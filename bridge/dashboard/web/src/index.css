@@ -5973,7 +5973,6 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
   color: var(--ask); background: color-mix(in oklab, var(--ask) 18%, transparent); }
 .tcard .tc-key { display: inline-block; margin: 0 2px; padding: 0 5px; border-radius: 5px; font-family: var(--mono); font-size: .92em; font-weight: 500; color: var(--acc);
   background: color-mix(in oklab, var(--acc) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 30%, transparent); }
-.tcard .tc-tag { font-family: var(--mono); font-size: .95em; padding: 0 4px; border-radius: 4px; background: color-mix(in oklab, var(--txl) 22%, transparent); }
 
 /* A question whose options carry pictures (QuestionCard Stage,
    .mystical/design-drafts/picture-choices): the options down the left, the shown
