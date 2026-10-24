@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from bridge import (accounts, agents, browser, config, devserver, git, github,
-                    httpgz, integrations, models, native, profiles, project_config,
+                    httpgz, integrations, models, native, profiles, project_config, projectmarks,
                     relevance, runner, state, store, trackers, transcript_jsonl,
                     transcript_page, usage)
 
@@ -377,6 +377,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_state(chat_id)
                 if path == "/api/projects":
                     return self._api_projects(qs)
+                if path.startswith("/api/project-mark/logo/"):
+                    return self._api_project_logo(path[len("/api/project-mark/logo/"):])
                 if path == "/api/history":
                     return self._api_history(chat_id, qs)
                 if path == "/api/running":
@@ -529,13 +531,29 @@ class Handler(BaseHTTPRequestHandler):
         if not browser.within_base(cur) or not os.path.isdir(cur):
             cur = config.BASE_PATH
         real = os.path.realpath(cur)
+        projects = browser.list_projects()
         self._json({
             "rel": browser.rel(cur),
             "at_base": real == config.BASE_PATH,
             "can_up": real != config.BASE_PATH,
             "dirs": browser.list_dirs(cur),
-            "projects": browser.list_projects(),
+            "projects": projects,
+            # What the dashboard's sidebar draws a project with: its display
+            # name, its tile (logo / colour), and the ones hidden from the lists.
+            "names": project_config.names(),
+            "marks": projectmarks.marks(projects),
+            "hidden": project_config.hidden_projects(),
         })
+
+    def _api_project_logo(self, name: str):
+        """A project tile's logo (bridge/projectmarks.py), for the CHATS screen.
+        Behind init-data like the rest of /api, so the phone fetches it as a
+        blob rather than an <img src>; projectmarks.logo only answers to a
+        hash-shaped name, so nothing else on disk is reachable through it."""
+        got = projectmarks.logo(name)
+        if got is None:
+            return self._json({"error": "no such logo"}, 404)
+        self._send_bytes(got[0], 200, got[1], cache="private, max-age=86400")
 
     def _api_select(self, chat_id: int, body: dict):
         d = (body.get("dir") or "").strip()

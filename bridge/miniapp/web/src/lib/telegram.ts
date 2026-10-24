@@ -7,6 +7,8 @@ export interface TelegramWebApp {
   expand: () => void;
   setHeaderColor?: (color: string) => void;
   setBackgroundColor?: (color: string) => void;
+  /** Telegram's own back arrow in its top bar (Bot API 6.1+). */
+  BackButton?: { show: () => void; hide: () => void; onClick: (cb: () => void) => void; offClick: (cb: () => void) => void };
 }
 
 declare global {
@@ -34,4 +36,14 @@ export function initTelegram() {
   if (!wa) return;
   wa.ready();
   wa.expand();
+}
+
+/** Show Telegram's back arrow while `cb` is the way back; returns the undo. A
+ *  client too old for BackButton just keeps the in-app one. */
+export function telegramBack(cb: () => void): () => void {
+  const bb = getWebApp()?.BackButton;
+  if (!bb) return () => {};
+  bb.onClick(cb);
+  bb.show();
+  return () => { bb.offClick(cb); bb.hide(); };
 }
