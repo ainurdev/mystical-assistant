@@ -170,7 +170,7 @@ FEATURES = (
     {"key": "changelog", "env": "CHANGELOG_ENABLE", "label": "UPDATE NOTES",
      "hint": "sums up what an update brings, before and after you take it",
      "cost": "1 haiku call per waiting update (hourly at most while more lands), "
-             "1 per restart whose commits it didn't cover",
+             "1 per restart whose commits it didn't cover, 1 an hour while a failed one waits",
      "tokens": "~32k tokens",
      "about": "When commits land upstream, UPDATE pops a headline and a few bullets of what "
               "they bring, and its popover leads with them; after the PULL & RESTART the "
@@ -178,8 +178,9 @@ FEATURES = (
               "to this tab's rule: it runs without a press, once when the update appears and "
               "at most hourly while more commits land, and the restart reuses those words "
               "instead of paying again. A restart whose commits it didn't cover (a dev "
-              "checkout's own work) still pays one call. Off, the bullets are the commit "
-              "subjects instead."},
+              "checkout's own work) still pays one call. A call that fails (a login at its "
+              "limit) is asked again hourly for a week, and its row is rewritten in place. "
+              "Off, the bullets are read from the commit subjects instead."},
 )
 
 _KEYS = {f["key"] for f in FEATURES}

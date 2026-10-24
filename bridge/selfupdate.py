@@ -30,6 +30,14 @@ restart_requested = False
 claude_update_requested = False
 
 
+def project() -> str:
+    """This checkout named the way sessions name projects, so FIX WITH CLAUDE and the
+    changelog's Ask Claude start their sessions here; "" outside BASE_PATH, where no
+    session can run."""
+    real = os.path.realpath(REPO)
+    return browser.rel(real) if browser.within_base(real) else ""
+
+
 def check() -> dict:
     """Fetch, then report what this checkout is out of sync on — theirs (commits
     waiting upstream) and ours (uncommitted changes, unpushed commits)."""
@@ -38,11 +46,7 @@ def check() -> dict:
                 "ahead": 0, "dirty": 0, "commits": [], "outgoing": [], "files": []}
     git.fetch(REPO)
     st = git.status(REPO)
-    # FIX WITH CLAUDE starts its session here, so name the checkout the way
-    # sessions name projects; "" outside BASE_PATH, where no session can run.
-    real = os.path.realpath(REPO)
-    return {"repo": True, "path": REPO, "branch": st["branch"],
-            "project": browser.rel(real) if browser.within_base(real) else "",
+    return {"repo": True, "path": REPO, "branch": st["branch"], "project": project(),
             "behind": st["behind"], "ahead": st["ahead"], "dirty": st["dirty"],
             "commits": git.incoming(REPO), "outgoing": git.outgoing(REPO),
             "files": st["files"][:50]}

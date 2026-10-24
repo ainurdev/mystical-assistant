@@ -5563,36 +5563,85 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .ntf-ul li b { color: var(--txb); font-weight: 500; }
 .ntf-empty .s { margin-top: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
 .ntf-btn:disabled { opacity: .45; cursor: default; filter: none; }
-/* the changelog (ChangelogButton), in the bell's frame: the newest entry and anything unread as
-   cards, older ones a dated list that unfolds in place, a footer that writes a note for every install */
-.clg-card { margin: 12px 12px 4px; padding: 12px 14px 13px; border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
-.clg-card + .clg-card { margin-top: 8px; }
-.clg-card.new { border-color: color-mix(in oklab, var(--acc) 45%, var(--line, var(--border))); }
-.clg-hm { display: flex; align-items: center; gap: 8px; min-width: 0; font: 500 var(--t10) var(--mono); color: var(--txl); }
+/* the changelog (ChangelogButton, docs/superpowers/specs/changelog-v3.md): a list and a reader in
+   the bell's frame. The list is a spine, a node per update sized by its commits, filled while unread;
+   the reader is the picked update, a feature an icon tile with Open › where it has a place. */
+.clg-pop .ntf-head { gap: 10px; padding: 10px 10px 9px 14px; border-bottom: 1px solid var(--line, var(--border)); }
+.clg-week { display: inline-flex; align-items: flex-end; gap: 3px; height: 18px; margin-left: 4px; }
+.clg-week button { appearance: none; cursor: pointer; width: 6px; padding: 0; border: 0; border-radius: 2px; background: color-mix(in oklab, var(--txl) 55%, transparent); }
+.clg-week button.today { background: var(--acc); }
+.clg-week button:hover:not(:disabled) { background: var(--txb); }
+.clg-week button:disabled { cursor: default; opacity: .45; }
+.clg-wcap { font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; }
+.clg-ib { margin-left: auto; appearance: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
+  padding: 0; border: 0; border-radius: var(--f-rad-s, 0); background: transparent; color: var(--txd); }
+.clg-ib:hover { color: var(--txb); background: var(--ac-06); }
+.clg-find { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; width: 210px; height: 26px; padding: 0 3px 0 8px; color: var(--txl);
+  border: 1px solid color-mix(in oklab, var(--acc) 55%, var(--line, var(--border))); border-radius: var(--f-rad-s, 0); background: var(--panel2); }
+.clg-find input { flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: transparent; font: 400 var(--t11) var(--ui-font); color: var(--txb); }
+.clg-find input::placeholder { color: var(--txl); }
+.clg-find button { appearance: none; cursor: pointer; display: inline-flex; padding: 3px; border: 0; border-radius: var(--f-rad-s, 0); background: transparent; color: var(--txl); }
+.clg-find button:hover { color: var(--txb); }
+.clg-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(150px, 196px) minmax(0, 1fr); }
+.clg-list { overflow-y: auto; min-height: 0; padding: 2px 0 10px; border-right: 1px solid var(--line, var(--border)); }
+/* the spine: drawn by each row, so it runs the whole scroll, not just the box */
+.clg-day, .clg-it { position: relative; }
+.clg-day::before, .clg-it::before { content: ""; position: absolute; left: 21px; top: 0; bottom: 0; width: 1px; background: color-mix(in oklab, var(--txl) 38%, transparent); }
+.clg-day { padding: 10px 12px 3px 34px; font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--txl); }
+.clg-it { appearance: none; cursor: pointer; display: block; width: calc(100% - 6px); margin: 0 6px 0 0; padding: 5px 10px 6px 34px; border: 0;
+  border-radius: 0 var(--f-rad-s, 0) var(--f-rad-s, 0) 0; background: transparent; text-align: left; font-family: var(--ui-font); }
+.clg-it:hover { background: var(--ac-03); }
+.clg-it .t { display: block; font: 500 var(--t10)/1.45 var(--mono); color: var(--txl); }
+.clg-it .s { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font: 400 var(--t115)/1.35 var(--ui-font); color: var(--txd); }
+.clg-it .n { position: absolute; z-index: 1; left: 21.5px; top: 13px; transform: translate(-50%, -50%); border-radius: 50%; background: var(--panel);
+  border: 1.5px solid color-mix(in oklab, var(--txl) 80%, transparent); }
+.clg-it .n.s1 { width: 7px; height: 7px; }
+.clg-it .n.s2 { width: 9px; height: 9px; }
+.clg-it .n.s3 { width: 12px; height: 12px; }
+.clg-it.new .n { background: var(--acc); border-color: var(--acc); }
+.clg-it.new .s { color: var(--txb); font-weight: 500; }
+.clg-it.new:not(.next) .t::after { content: "NEW"; margin-left: 6px; font: 700 var(--t75) var(--ui-font); letter-spacing: .12em; color: var(--acc); }
+.clg-it.on { background: var(--ac-06); }
+.clg-it.on .n { background: var(--acc); border-color: var(--acc); box-shadow: 0 0 0 4px color-mix(in oklab, var(--acc) 22%, transparent); }
+.clg-it.on .s { color: var(--txb); }
+.clg-it.on .t { color: var(--acc); }
+/* an update not taken yet (bridge/whatsnew.py preview): its node dashed, in the update's green */
+.clg-it.next .n { border-style: dashed; border-color: var(--ok); background: var(--panel); }
+.clg-it.next .t { color: var(--ok); }
+.clg-it.next.on .n { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in oklab, var(--ok) 22%, transparent); }
+.clg-none { padding: 14px 12px 0 34px; font: 400 var(--t11)/1.45 var(--ui-font); color: var(--txd); }
+mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var(--acc) 28%, transparent); color: var(--txb); }
+.clg-read { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; padding: 15px 20px 12px 18px; animation: clg-in .16s ease-out both; }
+@keyframes clg-in { from { opacity: 0; transform: translateY(3px); } }
+.clg-when { display: flex; align-items: center; gap: 6px; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-h { margin-top: 5px; font: 600 var(--t15)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
+.clg-feats { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+.clg-f { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+.clg-f .ic { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--f-rad-s, 0); color: var(--acc); background: color-mix(in oklab, var(--acc) 13%, transparent); }
+.clg-f .x { padding-top: 2px; font: 400 var(--t115)/1.45 var(--ui-font); color: var(--tx); overflow-wrap: anywhere; }
+.clg-f .x b { color: var(--txb); font-weight: 600; }
+.clg-f .go { appearance: none; cursor: pointer; align-self: center; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; white-space: nowrap;
+  border: 1px solid color-mix(in oklab, var(--acc) 38%, transparent); border-radius: var(--f-rad-s, 0); background: transparent; font: 500 var(--t105) var(--ui-font); color: var(--acc); }
+.clg-f .go:hover { background: color-mix(in oklab, var(--acc) 12%, transparent); }
 .clg-tag { flex: none; display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: calc(var(--f-rad-s, 0px) * .6);
   font: 600 var(--t8) var(--ui-font); letter-spacing: .14em; color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, transparent); }
-.clg-verb { flex: none; font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--acc); }
 .clg-ht { margin-top: 7px; font: 500 var(--t15)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
-.clg-note { margin-top: 6px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; }
-.clg-by { margin-top: 6px; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-note { margin-top: 10px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; }
+.clg-rfoot { margin-top: auto; padding-top: 12px; }
+.clg-mline { display: flex; align-items: center; gap: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-mline .br { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .clg-meta { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font: 500 var(--t10) var(--mono); color: var(--txl); }
 .clg-link { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: transparent; font: inherit; color: var(--txd); }
 .clg-link:hover { color: var(--acc); }
-.clg-line { margin-top: 7px; }
-.clg-row + .clg-row { border-top: 1px solid var(--line, var(--border)); }
-.clg-hist { appearance: none; cursor: pointer; display: grid; grid-template-columns: 52px minmax(0, 1fr) 13px; align-items: center; gap: 10px; width: 100%; height: 36px;
-  padding: 0 14px; border: 0; background: transparent; text-align: left; font-family: var(--ui-font); }
-.clg-hist:hover, .clg-hist[aria-expanded="true"], .clg-fold { background: var(--ac-03); }
-.clg-hist .d { font: 500 var(--t10) var(--mono); color: var(--txl); }
-.clg-hist .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t12) var(--ui-font); color: var(--txh); }
-.clg-hist .s i { margin-right: 7px; font: 600 var(--t85) var(--ui-font); font-style: normal; letter-spacing: .14em; color: var(--acc); }
-.clg-hist svg { color: var(--txl); transition: transform .15s ease; }
-.clg-hist[aria-expanded="true"] svg { transform: rotate(90deg); }
-.clg-fold { padding: 0 14px 12px 76px; }
-.clg-fold .ntf-ul { margin-top: 0; }
-/* the entry a popup or an OS banner opened the changelog on */
-.clg-flash { animation: clg-flash 1.6s ease-out both; }
-@keyframes clg-flash { from { box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--acc) 14%, transparent); } }
+.clg-acts { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.clg-acts button { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
+  border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad-s, 0); background: transparent; font: 500 var(--t105) var(--ui-font); color: var(--txd); }
+.clg-acts button:hover { color: var(--txb); background: var(--ac-06); }
+.clg-acts button.pri { color: var(--acc); border-color: color-mix(in oklab, var(--acc) 40%, transparent); background: color-mix(in oklab, var(--acc) 10%, transparent); }
+.clg-acts button.pri:hover { background: color-mix(in oklab, var(--acc) 18%, transparent); }
+.clg-acts button.ok { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 45%, transparent); background: color-mix(in oklab, var(--ok) 12%, transparent); }
+.clg-acts button.ok:hover { background: color-mix(in oklab, var(--ok) 22%, transparent); }
+.clg-k { margin-left: auto; font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; }
 .clg-write { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; margin-left: -4px; padding: 3px 6px 3px 4px; border: 0;
   border-radius: var(--f-rad-s, 0); background: transparent; font: 500 var(--t105) var(--ui-font); color: var(--txd); }
 .clg-write svg { flex: none; color: var(--acc); }
@@ -5630,20 +5679,13 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .clg-lit::before { content: ""; position: absolute; inset: 4px 7px; border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--acc) 14%, transparent);
   box-shadow: 0 0 0 1px color-mix(in oklab, var(--acc) 40%, transparent); }
 .clg-lit svg { position: relative; }
-/* an update not taken yet (bridge/whatsnew.py preview): COMING on top of the changelog,
-   dashed in the update's green, and what it brings at the head of UPDATE's popover */
-.clg-card.next { border-style: dashed; border-color: color-mix(in oklab, var(--ok) 55%, var(--line, var(--border)));
-  background: color-mix(in oklab, var(--ok) 5%, var(--panel2)); }
+/* an update not taken yet (bridge/whatsnew.py preview): COMING in the changelog's reader,
+   and what it brings at the head of UPDATE's popover */
 .clg-tag.ok { color: var(--ok); background: color-mix(in oklab, var(--ok) 16%, transparent); }
 .clg-cnote { margin-top: 10px; display: flex; gap: 7px; align-items: baseline; font: 400 var(--t115)/1.45 var(--ui-font); color: var(--tx); }
 .clg-cnote svg { flex: none; color: var(--ask); position: relative; top: 2px; }
 .clg-cnote b { color: var(--txb); font-weight: 600; }
 .clg-cnote i { font-style: normal; color: var(--txl); }
-.clg-cf { margin-top: 12px; display: flex; align-items: center; gap: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
-.clg-go { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 11px;
-  border: 1px solid var(--ok); border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--ok) 16%, transparent);
-  color: var(--ok); font: 600 var(--t11) var(--ui-font); letter-spacing: .02em; }
-.clg-go:hover { background: color-mix(in oklab, var(--ok) 26%, transparent); }
 .upd-lab { font: 600 var(--t85) var(--ui-font); letter-spacing: .16em; color: var(--ok); }
 .upd-pv .clg-ht { margin-top: 6px; }
 .upd-pv .ntf-ul { margin-top: 8px; gap: 5px; }
@@ -5661,7 +5703,7 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .upd-fold:hover { color: var(--acc); }
 .upd-fold svg { transition: transform .15s; }
 .upd-how { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t11)/1.5 var(--ui-font); color: var(--txl); }
-@media (prefers-reduced-motion: reduce) { .clg-co, .clg-flash { animation: none; } .clg-hist svg { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .clg-co, .clg-read { animation: none; } }
 .ntf-compose { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line, var(--border)); background: var(--panel2); }
 .ntf-compose .lbl { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--txl); margin-bottom: 2px; }
 .ntf-compose input, .ntf-compose textarea { width: 100%; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line2, var(--border-bright));
@@ -6082,11 +6124,11 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
    label carrying an acronym) the markup says it and wears .caps. */
 [data-fam="pebble"] .caps { text-transform: none !important; letter-spacing: 0 !important; }
 [data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
-  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d, .upd-lab) {
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .upd-lab) {
   text-transform: lowercase !important; letter-spacing: 0 !important;
 }
 [data-fam="pebble"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
-  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d, .upd-lab)::first-letter { text-transform: uppercase; }
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .upd-lab)::first-letter { text-transform: uppercase; }
 [data-fam="pebble"] :is(.dwork-ms, .res-meta > span, .ctrl-meter > span, .pm-wtag, .pm-reset, .pm-pct, .pm-tag, .ntf-when,
   .isle-reads button, .isle-reads span, .gg-ago, .pstamp,
   [data-ctxmenu] .mscroll button > span:last-child[style*="letter-spacing"], .hudgrid > div:last-child span[style*="border: 1px solid"],
@@ -6407,11 +6449,11 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 [data-fam="middle-earth"] .jump-latest { font-family: var(--ui-font) !important; letter-spacing: 0 !important; }
 [data-fam="middle-earth"] .caps { text-transform: none !important; letter-spacing: 0 !important; }
 [data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
-  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d, .upd-lab) {
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .upd-lab) {
   text-transform: lowercase !important; letter-spacing: 0 !important;
 }
 [data-fam="middle-earth"] :is(.dwork-lab, .res-lab, .ntf-head .t, .rp-hd b, .rp-list > div, .ntf-verb, .pm-knobs, .gp-roc > span, .gp-fh b,
-  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .clg-hm span, .clg-hist .d, .upd-lab)::first-letter { text-transform: uppercase; }
+  [data-ctxmenu] > div:first-child > span:nth-child(2), [style*="--shadow-modal"] .mscroll > button > span:last-child, .upd-lab)::first-letter { text-transform: uppercase; }
 [data-fam="middle-earth"] :is(.dwork-ms, .res-meta > span, .ctrl-meter > span, .pm-wtag, .pm-reset, .pm-pct, .pm-tag, .ntf-when,
   .isle-reads button, .isle-reads span, .gg-ago, .pstamp,
   [data-ctxmenu] .mscroll button > span:last-child[style*="letter-spacing"], .hudgrid > div:last-child span[style*="border: 1px solid"],

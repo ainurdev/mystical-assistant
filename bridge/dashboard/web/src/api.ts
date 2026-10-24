@@ -1959,7 +1959,7 @@ export const api = {
     req<RunningInfo>(`/local/running?${alerts ? "alerts=1&" : ""}${seen ? `seen=${seen}` : ""}`),
   notices: () => req<{ notices: Notice[]; prefs: NoticePrefs; quiet: boolean; telegram: boolean }>("/local/notices"),
   /** The rail's changelog: Mystical's updates and notes, newest first, however old. */
-  changelog: () => req<{ notices: Notice[] }>("/local/changelog"),
+  changelog: () => req<{ notices: Notice[]; project?: string }>("/local/changelog"),
   noticesRead: (ids: number[] | "all") =>
     req<{ ok: boolean; n: number }>("/local/notices", {
       method: "POST", body: ids === "all" ? { op: "read", all: true } : { op: "read", ids } }),
