@@ -41,7 +41,7 @@ import signal
 import sys
 
 from bridge import (config, devserver, dream, envsettings, landing, limits,
-                    native_activity, notices, onboard, profiles, pubsub, recovery,
+                    native_activity, notices, onboard, profiles, pubsub, queue_manager, recovery,
                     report, rivendell, runner, selfupdate, state, store,
                     tgtopics, toolsets, tunnel, whatsnew)
 from bridge.dispatch import handle_callback, menu, on_message, on_stop
@@ -182,6 +182,7 @@ def main():
         if resumed:
             print(f"↻ Auto-resumed {resumed} interrupted session(s) after restart.")
         limits.boot()                  # re-arm sessions parked on a usage-limit reset
+        queue_manager.get().kick()     # start what a restart left queued (a wake refused mid-shutdown)
         if config.TOKEN:
             report.boot()              # Monday-morning weekly report (catches up a dark Monday)
             notices.watch_quiet()      # what quiet hours held, in one message as they end

@@ -429,6 +429,27 @@ def test_a_reload_pauses_a_bucket_holding_a_batchs_steps(tmp_path):
     assert _items(again, "s1")[0]["status"] == "running" and fake.n == 1
 
 
+def test_boot_starts_what_a_restart_left_queued(tmp_path):
+    """A wake (bridge/waits.py) enqueued while the bridge was going down is
+    refused, since start_streaming_job answers None once shutting_down, and an idle
+    session has no turn to end that would advance it. 2026-10-25: a
+    WaitForSession chain stalled at 02:16 that way. Boot starts it, after
+    recovery: a session it resumed stays busy, and a batch's steps stay held."""
+    path = str(tmp_path / "q.json")
+    q = PreviewQueue(run_fn=lambda item: None, persist_path=path)   # going down: refused
+    _enq(q, sid="s1", text="wake")
+    _enq(q, sid="s2", text="next")
+    _enq(q, sid="s3", text="step", ref="w:r1")
+    fake = FakeRunner()
+    fake_busy = {"s2"}                                               # recovery resumed it
+    again = PreviewQueue(run_fn=lambda item: None if item.session_id in fake_busy else fake(item),
+                         persist_path=path)
+    again.kick()
+    assert _items(again, "s1")[0]["status"] == "running" and fake.n == 1
+    assert _items(again, "s2")[0]["status"] == "queued", "its turn's end advances it"
+    assert _items(again, "s3")[0]["status"] == "queued", "a batch waits for its worker"
+
+
 def test_owns_session_while_a_tagged_item_is_queued_or_running():
     """After a restart such a session's next turn is the queue's, not boot
     recovery's nudge (recovery.recover)."""

@@ -186,6 +186,18 @@ class PreviewQueue:
             self._advance(sid, b)
             self._touch(sid, b)
 
+    def kick(self) -> None:
+        """Boot: start what a restart left queued. A prompt enqueued while the
+        bridge was going down was refused (start_streaming_job answers None once
+        shutting_down) — a WaitForSession wake, say — and an idle session has no
+        turn to end that would advance it. Called after boot recovery, so a turn
+        it resumed goes first; a paused bucket (a batch's steps) stays held."""
+        with self._lock:
+            for sid, b in self._q.items():
+                if any(it.status == "queued" for it in b["items"]):
+                    self._advance(sid, b)
+                    self._touch(sid, b)
+
     def pause(self, sid: str) -> None:
         with self._lock:
             b = self._bucket(sid)
