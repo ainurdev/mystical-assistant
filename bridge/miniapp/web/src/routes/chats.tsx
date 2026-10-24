@@ -20,9 +20,9 @@ import { Skeleton } from "../components/ui";
    The same four views as the desktop, one tap apart:
      ATTENTION  every chat in lanes by what it needs: NEEDS YOU, WORKING,
                 WAITING, PARKED, then the idle tail
-     PROJECTS   each repo with its chats, last used first, a + to start one
+     PROJECTS   each repo with its chats, newest started first, a + to start one
      PLUGINS    Rivendell's jobs, teammates' runs and shares (when there are any)
-     HISTORY    every chat, newest first, and the archive
+     HISTORY    every chat, last used first, and the archive
    Nothing here switches the bridge until you open a chat or start one: the
    rows open in their own repo (openSessionInProject), and a project's + mints
    the chat there first (newChatIn).
@@ -58,6 +58,11 @@ const SV: Record<SessionState, { lane: Lane; c: string; fill: boolean; t: string
 const IDLE_CAP = 8; // ATTENTION's idle tail, folded
 const PROJ_ROWS = 3; // a project's chats before "N more"
 const HIST_CAP = 40; // HISTORY rows before "show more"
+
+/** When a chat was started: rows hold their place while turns start and end
+ *  (the dashboard's sidebar sorts the same way). Older payloads lack it. */
+const start = (s?: SessionBrief) => (s ? s.created ?? s.updated : 0);
+const byStart = (a: SessionBrief, b: SessionBrief) => start(b) - start(a);
 
 /** A chat a plugin or a teammate brought, not one of yours (PLUGINS). */
 const isPlugin = (s: SessionBrief) =>
@@ -175,18 +180,18 @@ function ChatsPage() {
       tint={marks[s.project]?.color || hashTint(s.project)} label={status[s.id]?.label ?? null} onOpen={openChat} />
   );
 
-  // ---- PROJECTS: each repo with its chats, last used first.
+  // ---- PROJECTS: each repo with its chats, newest started first.
   const groups = useMemo(() => {
     const by = new Map<string, SessionBrief[]>();
     for (const s of shown) {
       if (isPlugin(s) || hidden.has(s.project)) continue;
       by.set(s.project, [...(by.get(s.project) ?? []), s]);
     }
-    for (const list of by.values()) list.sort((a, b) => b.updated - a.updated);
+    for (const list of by.values()) list.sort(byStart);
     // the active repo heads the list even with nothing in it yet
     if (active && !needle && !by.has(active)) by.set(active, []);
     return [...by.entries()].sort((a, b) =>
-      (a[0] === active ? -1 : b[0] === active ? 1 : 0) || (b[1][0]?.updated ?? 0) - (a[1][0]?.updated ?? 0));
+      (a[0] === active ? -1 : b[0] === active ? 1 : 0) || start(b[1][0]) - start(a[1][0]));
   }, [shown, active, needle, hidden]);
 
   const TABS: { k: Mode; icon: typeof BellRing; label: string; n?: number }[] = [
@@ -238,7 +243,9 @@ function ChatsPage() {
           {groups.map(([rel, list]) => {
             const full = open.has(rel) || !!needle;
             // the open chat stays in view in its project, folded or not
-            const head = full ? list : list.slice(0, PROJ_ROWS);
+            // the newest few, plus any chat that isn't idle: a busy one started
+            // long ago would otherwise sit behind "N more" (the dashboard's rule)
+            const head = full ? list : list.filter((s, i) => i < PROJ_ROWS || view(s).lane !== "idle");
             const cur = list.find((s) => s.id === sessionId);
             const rows = cur && !head.includes(cur) ? [...head, cur] : head;
             const more = list.length - rows.length;
@@ -275,7 +282,7 @@ function ChatsPage() {
         <div className="space-y-4">
           {!asks && !needle && <Empty>Nothing needs you right now.</Empty>}
           {LANES.map((l) => {
-            const list = shown.filter((s) => view(s).lane === l.k).sort((a, b) => b.updated - a.updated);
+            const list = shown.filter((s) => view(s).lane === l.k).sort(byStart);
             if (!list.length) return null;
             const cap = l.k === "idle" && !idleAll && !needle ? list.slice(0, IDLE_CAP) : list;
             return (
@@ -295,7 +302,7 @@ function ChatsPage() {
         </div>
       ) : m === "plugins" ? (
         <div className="space-y-px">
-          {plugins.filter(hit).sort((a, b) => b.updated - a.updated).map((s) => row(s, true))}
+          {plugins.filter(hit).sort(byStart).map((s) => row(s, true))}
         </div>
       ) : (
         <div className="space-y-3">

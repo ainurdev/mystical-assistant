@@ -30,10 +30,10 @@ ok(!a.shotUnseen("/u/new.png", undefined), "a shot with no clock counts as seen"
 a.markShotSeen("/u/new.png");
 ok(!a.shotUnseen("/u/new.png", 2000), "marking a shot makes it seen");
 ok(JSON.parse(mem.get("hud-shots-seen")!).includes("/u/new.png"), "a mark is written to the browser");
-for (let i = 0; i < 600; i++) a.markShotSeen(`/u/s${i}.png`);
+for (let i = 0; i < 2100; i++) a.markShotSeen(`/u/s${i}.png`);
 const stored: string[] = JSON.parse(mem.get("hud-shots-seen")!);
-ok(stored.length <= 500, `the set is capped (${stored.length})`);
-ok(stored.includes("/u/s599.png") && !stored.includes("/u/kept.png"), "the cap drops the oldest marks first");
+ok(stored.length <= 2000, `the set is capped (${stored.length})`);
+ok(stored.includes("/u/s2099.png") && !stored.includes("/u/kept.png"), "the cap drops the oldest marks first");
 
 // A browser that has never seen the store: it is born now, and stamps that.
 mem.clear();

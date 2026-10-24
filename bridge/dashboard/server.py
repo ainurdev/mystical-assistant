@@ -526,6 +526,13 @@ class Handler(BaseHTTPRequestHandler):
             if kind not in nextup.KINDS:
                 return self._json({"error": f"unknown kind: {kind}"}, 400)
             return self._json(nextup.board(chat, qs.get("project", [None])[0], kind))
+        if path == "/local/shots":
+            from bridge import shots
+            try:
+                since = float(qs.get("since", ["0"])[0])
+            except ValueError:
+                return self._json({"error": "since must be epoch seconds"}, 400)
+            return self._json(shots.since(chat, since))
         if path == "/local/sessions":
             native.refresh(chat)           # surface VSCode sessions started since last poll
             project = qs.get("project", [None])[0]

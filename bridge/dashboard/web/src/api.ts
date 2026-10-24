@@ -1684,6 +1684,10 @@ export const api = {
     req<{ sessions: SessionBrief[] }>(
       `/local/sessions${project !== undefined ? `?project=${encodeURIComponent(project)}` : ""}`,
     ),
+  /** Each session's tool pictures handed back since `since` (epoch s), as
+   *  [path, at] pairs: the sidebar's unseen-picture tag (lib/seenshots). */
+  shots: (since: number) =>
+    req<Record<string, [string, number][]>>(`/local/shots?since=${Math.floor(since)}`),
   transcript: (id: string, cursor: number, opts?: { tail?: number; before?: number }) =>
     req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +
       (opts?.tail ? `&tail=${opts.tail}` : "") +
