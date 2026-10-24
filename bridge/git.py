@@ -836,6 +836,26 @@ def is_worktree_of(cwd: str, path: str) -> bool:
     return any(os.path.realpath(w["path"]) == want for w in worktrees(cwd))
 
 
+def worktree_holding(cwd: str, path: str) -> str:
+    """The worktree of the repo at `cwd` that a `cd` to `path` lands in, as git
+    lists it ("" for none): a linked worktree from any depth — `cd <wt>/web/src`
+    works on that tree's branch as much as `cd <wt>` does — and the main checkout
+    only at its root, since it holds scratch dirs (.mystical/) and even other
+    trees (Claude Code's `.claude/worktrees/`) that are not it. The deepest tree
+    wins. Same source of truth as is_worktree_of.
+
+    ponytail: paths compare as strings after realpath, so on a case-insensitive
+    Mac a `cd ~/projects/…` misses a tree git lists as ~/Projects/… (2 of 170
+    sessions, Oct 2026); compare os.stat identities if that grows."""
+    want = os.path.realpath(path) if path else ""
+    hits = []
+    for w in worktrees(cwd):
+        root = os.path.realpath(w["path"])
+        if want == root or (not w["is_main"] and want.startswith(root + os.sep)):
+            hits.append(w["path"])
+    return max(hits, key=len, default="")
+
+
 def worktree_add(cwd: str, path: str, branch: str, start: str = "",
                  create: bool = True) -> tuple[bool, str]:
     """Add a worktree at `path`. create=True makes a new branch `branch` from
