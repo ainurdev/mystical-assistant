@@ -11,6 +11,7 @@ import { Markdown, type OpenFile } from "./Markdown";
 import { selectionMd } from "../lib/selmd";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
+import { AskMarker, AskRecord } from "./AskDock";
 import { ImageLightbox, MediaThumb, ZoomButton, type Clip, type Shown } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { hhmm, useClock12, wall } from "../lib/surfaces";
@@ -2140,10 +2141,13 @@ export const RunStream = memo(function RunStream({
   foldsOpen = false,
   compact = false,
   view = null,
+  askDocked = false,
 }: {
   events: TimedEvent[];
   pending?: PendingRequest[];
   onRespond?: RespondFn;
+  /** The open ask sits on the prompt box (AskDock): a live card is a marker here. */
+  askDocked?: boolean;
   /** What this turn is waiting on before its first token, or null. */
   boot?: string | null;
   animate?: boolean;
@@ -2214,10 +2218,11 @@ export const RunStream = memo(function RunStream({
   };
   const permResolved = new Map<string, "allow" | "deny">();
   const qAnswered = new Map<string, AnswerSelection[]>();
+  const answeredAt = new Map<string, number | undefined>();
   const toolDone = new Map<string, Done>();
   for (const e of events) {
-    if (e.type === "permission_resolved") permResolved.set(e.request_id, e.behavior);
-    if (e.type === "question_answered") qAnswered.set(e.request_id, e.answers);
+    if (e.type === "permission_resolved") { permResolved.set(e.request_id, e.behavior); answeredAt.set(e.request_id, e.at); }
+    if (e.type === "question_answered") { qAnswered.set(e.request_id, e.answers); answeredAt.set(e.request_id, e.at); }
     if (e.type === "tool_done" && e.id) toolDone.set(e.id, e);
   }
   // Turns recorded before tool events carried ids can't be paired, so they read
@@ -2585,6 +2590,7 @@ export const RunStream = memo(function RunStream({
             onAnswer={onAnswer}
             onQuote={onQuote}
             view={view}
+            askDocked={askDocked}
           />
         );
       case "error":
@@ -2600,36 +2606,60 @@ export const RunStream = memo(function RunStream({
             <span>{event.message}</span>
           </div>
         );
-      case "permission":
+      case "permission": {
+        const live = !!onRespond && pendingIds.has(event.request_id);
+        const plan = event.tool_name === "ExitPlanMode";
+        if (live && askDocked) return (
+          <div key={i} className="ml-[var(--rail)]">
+            <AskMarker kind={plan ? "plan" : "permission"} topic={plan ? "ready to build"
+              : event.tool_name.startsWith("mcp__") ? mcpParts(event.tool_name).server : event.tool_name} />
+          </div>
+        );
+        if (!live) return (
+          <div key={i} className="ml-[var(--rail)]">
+            <AskRecord kind="permission" tool={event.tool_name} summary={event.summary} detail={event.detail}
+              // The run this belonged to is gone (restart, Stop, crash): nothing listens any more.
+              resolved={permResolved.get(event.request_id)} stale={ended && !permResolved.has(event.request_id)}
+              at={answeredAt.get(event.request_id) ?? event.at} />
+          </div>
+        );
         return (
           <div key={i} className="ml-[var(--rail)]">
             <PermissionCard
               toolName={event.tool_name}
               summary={event.summary}
               detail={event.detail}
-              active={!!onRespond && pendingIds.has(event.request_id)}
-              resolved={permResolved.get(event.request_id)}
-              // The run this belonged to is gone (restart, Stop, crash), so
-              // nothing is listening for an answer any more.
-              stale={ended && !permResolved.has(event.request_id)}
               onAllow={() => onRespond?.(event.request_id, { behavior: "allow" })}
               onDeny={() => onRespond?.(event.request_id, { behavior: "deny" })}
             />
           </div>
         );
-      case "question":
+      }
+      case "question": {
+        const live = !!onRespond && pendingIds.has(event.request_id);
+        if (live && askDocked) return (
+          <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
+            <AskMarker kind="question" topic={event.questions.length > 1 ? `${event.questions.length} questions`
+              : event.questions[0]?.header.trim().toLowerCase() === "task" ? "Rivendell task" : event.questions[0]?.header ?? ""} />
+          </div>
+        );
+        if (!live) return (
+          <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
+            <AskRecord kind="question" questions={event.questions}
+              answered={qAnswered.get(event.request_id)} stale={ended && !qAnswered.has(event.request_id)}
+              at={answeredAt.get(event.request_id) ?? event.at} />
+          </div>
+        );
         return (
           <div key={i} id={ckId(turnId, event.request_id)} className="ml-[var(--rail)] scroll-mt-[94px]">
             <QuestionCard
               questions={event.questions}
               requestId={event.request_id}
-              active={!!onRespond && pendingIds.has(event.request_id)}
-              answered={qAnswered.get(event.request_id)}
-              stale={ended && !qAnswered.has(event.request_id)}
               onSubmit={(answers) => onRespond?.(event.request_id, { answers })}
             />
           </div>
         );
+      }
       case "stopped":
         return (
           <div
@@ -3000,6 +3030,7 @@ export function FinalResult({
   onAnswer,
   onQuote,
   view,
+  askDocked = false,
 }: {
   result: string;
   /** Epoch seconds the answer landed, for the clock in the meta row. */
@@ -3018,6 +3049,8 @@ export function FinalResult({
   /** Set on a Rivendell job's turn: an answer its kind can read is drawn as the
    *  job's view (a brief, minutes, a review, the newspaper…) instead of as text. */
   view?: JobViewInput | null;
+  /** The ask this answer ended on sits on the prompt box (AskDock). */
+  askDocked?: boolean;
 }) {
   const h12 = useClock12();
   const flash = animate && !typedResults.has(idKey);
@@ -3074,7 +3107,9 @@ export function FinalResult({
             {!open && <div className="res-fade" aria-hidden />}
           </div>
         ))}
-        {ask && <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />}
+        {ask && (askDocked
+          ? <div className="res-askmark"><AskMarker kind="prose" topic={ask.question.replace(/[*_`]/g, "")} /></div>
+          : <AskBackBar ask={ask} onAnswer={onAnswer!} onQuote={onQuote} />)}
         {!drawn && body && lines > RESULT_FOLD_LINES && (
           <button
             type="button"

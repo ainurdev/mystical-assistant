@@ -6617,3 +6617,251 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   position: fixed; z-index: 60; width: 318px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box;
   padding: 6px; border-radius: var(--f-rad-l, 0px); animation: mslide .16s ease both;
 }
+
+/* ══ THE ASK DOCK (components/AskDock; .mystical/design-drafts/response-cards,
+   C · DOCK) ══ Every card that waits on you hangs on the prompt box's top edge,
+   and the box answers it. The transcript keeps a marker where it was asked and,
+   once answered, a one-line record. One hue says "yours to answer": the theme's
+   --ask, as the sidebar's WAITING lane and the notifications already use it.
+   Tokens only (the fallbacks are the HUD themes', which lack --line/--f-rad-*),
+   so every family draws it; the joins below fit TABS, CONSOLE and CLASSIC. */
+.askdock, .ask-mark, .ask-rec, .composer[data-docked] {
+  --rc: var(--ask, var(--purple));
+  --rc-ink: color-mix(in oklab, var(--rc) 80%, var(--txh, #fff));
+  --rc-on: color-mix(in oklab, var(--rc) 18%, #0a0a0a);
+  --rc-r: var(--f-rad-l, 0px);
+  --rc-rs: var(--f-rad-s, 0px);
+  --rc-line: var(--line, color-mix(in srgb, var(--acc) 15%, transparent));
+  --rc-line2: var(--line2, color-mix(in srgb, var(--acc) 28%, transparent));
+}
+/* By day the ask hue is the dark one, so what sits on it turns light. */
+:root[data-light] :is(.askdock, .ask-mark, .ask-rec, .composer[data-docked]) { --rc-on: #fff; --rc-ink: var(--rc); }
+.askdock {
+  position: relative; display: flex; flex-direction: column; min-height: 0; max-height: min(56vh, 560px);
+  overflow: auto; overscroll-behavior: contain; scrollbar-width: thin;
+  font-family: var(--ui-font, inherit); color: var(--txb); text-align: left;
+  background: var(--panel); border: 1px solid color-mix(in oklab, var(--rc) 60%, var(--rc-line2)); border-top: 3px solid var(--rc); border-bottom: 0;
+  border-radius: var(--rc-r) var(--rc-r) 0 0; box-shadow: 0 -18px 40px -26px rgb(0 0 0 / 55%);
+}
+:root[data-light] .askdock { box-shadow: 0 -14px 30px -22px color-mix(in srgb, var(--txb) 18%, transparent); }
+/* Bigger: the stage takes most of the column (the transcript still shows its marker above). */
+.askdock:has(.ad-stage) { max-height: min(80vh, 900px); }
+.askdock[data-flash] { animation: adflash .9s ease; }
+@keyframes adflash { 30% { box-shadow: 0 0 0 4px color-mix(in oklab, var(--rc) 40%, transparent); } }
+/* zero specificity: every button below sets its own size */
+:where(.askdock, .ask-rec) button { font: inherit; color: inherit; appearance: none; text-align: left; cursor: pointer; }
+:where(.askdock, .ask-rec) button:disabled { cursor: default; }
+.askdock code { font-family: var(--mono); font-size: .92em; padding: 0 4px; border-radius: 4px; background: color-mix(in oklab, var(--txl) 16%, transparent); }
+
+/* the joins: the dock and the box read as one card */
+.composer[data-docked]:not([data-pb="console"]) .cmdbox {
+  border-top-left-radius: 0 !important; border-top-right-radius: 0 !important;
+  border-color: color-mix(in oklab, var(--ask) 60%, var(--rc-line2)) !important; border-top-color: var(--rc-line) !important;
+}
+[data-theme] .composer[data-pb="tabs"][data-docked] .pb-card.cmdbox {
+  border-color: color-mix(in oklab, var(--ask) 60%, var(--rc-line2)) !important; border-top-color: var(--rc-line) !important; }
+.composer[data-docked]:not([data-pb="console"]) .cmdbox:focus-within { box-shadow: none !important; }
+/* CONSOLE's line has no top edge to hang on: the dock stands on its own over it,
+   and the line's accent takes the ask's colour while it answers. */
+.composer[data-pb="console"] .askdock { border-bottom: 1px solid color-mix(in oklab, var(--rc) 60%, var(--rc-line2)); border-radius: var(--rc-r); margin-bottom: 10px; }
+[data-fam] .composer[data-pb="console"][data-docked] .pb-cmd { border-left-color: var(--ask) !important;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--ask) 9%, transparent), transparent 45%) !important; }
+
+/* the box's button while it answers: the ask's colour, and what goes back */
+.composer .act-pri.ask, [data-fam] .composer .act-pri.ask {
+  display: inline-flex; align-items: center; gap: 7px; background: var(--ask) !important; color: var(--rc-on) !important;
+  border-color: transparent !important; box-shadow: none !important; max-width: 340px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.composer .act-pri.ask:disabled, [data-fam] .composer .act-pri.ask:disabled {
+  background: transparent !important; color: var(--txl) !important; opacity: 1;
+  border: 1px dashed color-mix(in oklab, var(--ask) 45%, var(--rc-line2)) !important;
+}
+/* CONSOLE draws its actions as round glyphs with the label hidden; the answer has no glyph, so it keeps its words */
+[data-pb="console"] .pb-acts .act-pri.ask { width: auto; padding: 0 13px; gap: 7px; font-size: var(--t12) !important; border-radius: calc(var(--rc-r) * 100) !important; }
+.ask-pk { display: inline-grid; place-items: center; min-width: 19px; height: 19px; padding: 0 4px; border-radius: 4px;
+  font: 800 var(--t10)/1 var(--mono); letter-spacing: 0; background: color-mix(in oklab, var(--rc-on) 14%, transparent); }
+
+/* the head: what kind of ask, about what, since when */
+.ad-h { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 9px; padding: 11px 16px 0; }
+.ad-g { flex: none; display: grid; place-items: center; width: 22px; height: 22px; border-radius: max(3px, var(--rc-rs)); background: var(--rc); color: var(--rc-on); }
+.ad-kind { font-size: var(--t105); font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--rc-ink); }
+.ad-topic { font-size: var(--t13); font-weight: 650; color: var(--txh); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad-more { font-size: var(--t11); color: var(--txl); }
+.ad-wait { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--t115); color: var(--txm); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ad-beacon { position: relative; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--rc); }
+.ad-beacon::after { content: ""; position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--rc); animation: adping 2.4s ease-out infinite; }
+@keyframes adping { 0% { transform: scale(1); opacity: .75; } 80%, 100% { transform: scale(2.6); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .ad-beacon::after, .askdock[data-flash] { animation: none; } }
+
+/* the question: the ask as a headline, context folded under it */
+.ad-b { padding: 7px 16px 13px; display: flex; flex-direction: column; min-height: 0; }
+.ad-ask { margin: 0; font-size: var(--t16); line-height: 1.35; font-weight: 750; color: var(--txh); overflow-wrap: anywhere; }
+.ad-ask .md, .ad-ask p { margin: 0; font: inherit; color: inherit; }
+.ad-ask b { font-weight: 800; }
+.ad-tail { margin: 3px 0 0; font-size: var(--t12); color: var(--txl); }
+.ad-ctx { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin: 5px 0 0; padding: 0; border: 0; background: none;
+  font-size: var(--t12); line-height: 1.5; color: var(--txl); }
+.ad-ctx[data-open] { display: block; -webkit-line-clamp: unset; }
+.ad-ctx b { color: var(--rc-ink); font-weight: 700; }
+.ad-hint, .ad-note { margin: 9px 0 0; font-size: var(--t115); color: var(--txl); }
+.ad-note { margin: 0; padding: 0 16px 12px; }
+.ad-err { margin: 9px 0 0; font-size: var(--t12); color: var(--err); }
+
+/* options: a keycap, the name, what it does */
+.ad-rows { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 7px; margin-top: 11px; }
+.ad-row { display: grid; grid-template-columns: 24px minmax(0, 1fr); column-gap: 10px; row-gap: 2px; align-items: start; padding: 9px 11px 10px 9px;
+  border-radius: max(3px, var(--rc-rs)); background: var(--panel2); border: 1px solid var(--rc-line); transition: border-color .12s ease, background-color .12s ease; }
+.ad-row:hover:not(:disabled) { border-color: color-mix(in oklab, var(--rc) 45%, var(--rc-line2)); }
+.ad-row[aria-pressed="true"] { border-color: var(--rc); background: color-mix(in oklab, var(--rc) 12%, var(--panel2)); }
+.ad-row:disabled { opacity: .55; }
+.ad-key { grid-row: span 2; display: grid; place-items: center; width: 24px; height: 24px; flex: none; border-radius: max(3px, calc(var(--rc-rs) * .7));
+  font: 700 var(--t11)/1 var(--mono); color: var(--txh); background: var(--panel3, var(--panel)); border: 1px solid var(--rc-line2);
+  box-shadow: inset 0 -2px 0 color-mix(in oklab, #000 40%, transparent); transition: transform .12s ease; }
+.ad-key[data-on] { background: var(--rc); color: var(--rc-on); border-color: var(--rc); box-shadow: none; transform: translateY(1px); }
+.ad-row[data-multi] .ad-key { border-radius: 4px; }
+.ad-lab { min-width: 0; font-size: var(--t13); font-weight: 750; line-height: 24px; color: var(--txh); overflow-wrap: anywhere; }
+.ad-desc { grid-column: 2; font-size: var(--t115); line-height: 1.45; color: var(--txm); }
+.ad-sug { margin-left: 6px; color: var(--rc-ink); font-size: var(--t11); vertical-align: 1px; }
+.askdock .tc-key { color: var(--rc-ink); }
+/* several questions: a pill per header, the answered ones carry their answer */
+.ad-steps { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 9px 16px 0; }
+.ad-back, .ad-st { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 4px; border: 1px solid var(--rc-line2); background: var(--panel2);
+  font-size: var(--t12); font-weight: 650; color: var(--txm); }
+.ad-back { padding: 3px 9px 3px 5px; border-radius: max(3px, var(--rc-rs)); }
+.ad-st { border-radius: calc(var(--rc-r) * 100); }
+.ad-st i { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font: 800 var(--t95)/1 var(--mono); font-style: normal;
+  background: var(--panel3, var(--panel)); color: var(--txl); border: 1px solid var(--rc-line2); }
+.ad-st[data-on] { color: var(--txh); border-color: color-mix(in oklab, var(--rc) 70%, var(--rc-line2)); background: color-mix(in oklab, var(--rc) 10%, var(--panel2)); }
+.ad-st[data-on] i { background: var(--rc); color: var(--rc-on); border-color: var(--rc); }
+.ad-st[data-done] i { background: color-mix(in oklab, var(--ok) 20%, var(--panel3, var(--panel))); color: var(--ok); border-color: color-mix(in oklab, var(--ok) 45%, var(--rc-line2)); }
+.ad-st em { font-style: normal; color: var(--txl); font-weight: 500; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* pictures: tiles that show the same shot, tabs that switch them all, Bigger */
+.ad-pbar { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.ad-tabs { display: flex; gap: 5px; flex-wrap: wrap; min-width: 0; }
+.ad-tab { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px 3px 6px; border-radius: calc(var(--rc-r) * 100); font-size: var(--t11); font-weight: 600;
+  color: var(--txm); border: 1px solid var(--rc-line2); background: var(--panel2); }
+.ad-tab i { font: 800 var(--t95)/1 var(--mono); font-style: normal; color: var(--txl); }
+.ad-tab[aria-selected="true"] { color: var(--txh); border-color: color-mix(in oklab, var(--rc) 70%, var(--rc-line2)); background: color-mix(in oklab, var(--rc) 10%, var(--panel2)); }
+.ad-tab[aria-selected="true"] i { color: var(--rc-ink); }
+.ad-grow { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: max(3px, var(--rc-rs));
+  border: 1px solid var(--rc-line2); background: transparent; color: var(--txm); font-size: var(--t11); font-weight: 650; }
+.ad-grow:hover { color: var(--txh); border-color: color-mix(in oklab, var(--rc) 45%, var(--rc-line2)); }
+.ad-pics { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
+.ad-tile { position: relative; min-width: 0; }
+.ad-tilebtn { display: flex; flex-direction: column; width: 100%; padding: 0; overflow: hidden; border-radius: max(3px, var(--rc-rs)); background: var(--panel2); border: 1px solid var(--rc-line2); }
+.ad-tile[data-on] .ad-tilebtn { border-color: var(--rc); box-shadow: 0 0 0 2px color-mix(in oklab, var(--rc) 25%, transparent); }
+.ad-tilebtn:hover:not(:disabled) { border-color: color-mix(in oklab, var(--rc) 45%, var(--rc-line2)); }
+.ad-th { position: relative; display: block; aspect-ratio: 16 / 10; background: color-mix(in oklab, var(--panel3, var(--panel)) 70%, #000); border-bottom: 1px solid var(--rc-line); overflow: hidden; }
+:root[data-light] .ad-th { background: var(--panel3, var(--panel)); }
+.ad-th img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.ad-pre { margin: 0; padding: 8px 10px; font: 500 var(--t105)/1.45 var(--mono); color: var(--txm); white-space: pre-wrap; overflow: hidden; }
+.ad-th .ad-pre { position: absolute; inset: 0; }
+.ad-meta { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 9px; row-gap: 2px; align-items: start; padding: 8px 10px 9px; text-align: left; }
+.ad-meta .ad-key { width: 22px; height: 22px; }
+.ad-meta .ad-lab { line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ad-meta .ad-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.ad-zm { position: absolute; right: 7px; top: 7px; display: grid; place-items: center; width: 26px; height: 24px; padding: 0; border-radius: 6px;
+  background: color-mix(in oklab, var(--panel3, var(--panel)) 85%, transparent); border: 1px solid var(--rc-line2); color: var(--txb); }
+.ad-stage { margin-top: 9px; border-radius: max(3px, var(--rc-rs)); border: 1px solid var(--rc-line2); overflow: hidden; background: color-mix(in oklab, var(--panel3, var(--panel)) 70%, #000); }
+:root[data-light] .ad-stage { background: var(--panel3, var(--panel)); }
+.ad-sh { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-bottom: 1px solid var(--rc-line); background: var(--panel2); font-size: var(--t13); }
+.ad-sh .ad-key { grid-row: auto; width: 22px; height: 22px; }
+.ad-sh b { color: var(--txh); font-weight: 800; }
+.ad-of { color: var(--txl); font-size: var(--t12); }
+.ad-full { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--rc-line2); background: transparent; color: var(--txm); font-size: var(--t11); font-weight: 650; }
+.ad-pic { position: relative; }
+.ad-img { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.ad-img img { display: block; width: 100%; max-height: 62vh; object-fit: contain; }
+.ad-nav { position: absolute; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  background: color-mix(in oklab, var(--panel) 86%, transparent); border: 1px solid var(--rc-line2); color: var(--txh); }
+.ad-nav[data-side="l"] { left: 10px; } .ad-nav[data-side="r"] { right: 10px; }
+.ad-strip { display: flex; gap: 6px; margin-top: 8px; }
+.ad-chip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 6px 10px 6px 7px; border-radius: max(3px, var(--rc-rs)); background: var(--panel2);
+  border: 1px solid var(--rc-line); font-size: var(--t13); font-weight: 750; color: var(--txh); white-space: nowrap; overflow: hidden; }
+.ad-chip .ad-key { grid-row: auto; width: 22px; height: 22px; }
+.ad-chip[data-shown]:not([aria-pressed="true"]) { border-color: color-mix(in oklab, var(--rc) 45%, var(--rc-line2)); }
+.ad-chip[aria-pressed="true"] { border-color: var(--rc); background: color-mix(in oklab, var(--rc) 12%, var(--panel2)); }
+.ad-chip small { margin-left: auto; font-size: var(--t11); font-weight: 600; color: var(--txl); }
+
+/* a permission: the command, the plan or the call, and the two ways out */
+.ad-cmd { margin: 9px 0 0; padding: 10px 13px; max-height: 220px; overflow: auto; border-radius: max(3px, var(--rc-rs)); background: var(--panel3, var(--panel));
+  border: 1px solid var(--rc-line2); font: 500 var(--t13)/1.55 var(--mono); color: var(--txh); white-space: pre-wrap; word-break: break-word;
+  /* a command is read literally: no code-font ligature may eat the space in " --fill" */
+  font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
+.ad-pr { color: var(--rc-ink); user-select: none; }
+.ad-plan { margin-top: 9px; padding: 2px 15px 10px; max-height: 300px; overflow: auto; border-radius: max(3px, var(--rc-rs)); border: 1px solid var(--rc-line2); background: var(--panel2);
+  font-size: var(--t13); line-height: 1.6; color: var(--txb); }
+.ad-kv { margin-top: 9px; display: grid; grid-template-columns: max-content minmax(0, 1fr); border-radius: max(3px, var(--rc-rs)); border: 1px solid var(--rc-line2); background: var(--panel3, var(--panel)); overflow: hidden; }
+.ad-kvr { display: contents; }
+.ad-kvr > span { padding: 6px 12px; font: 500 var(--t12)/1.5 var(--mono); border-top: 1px solid var(--rc-line); overflow-wrap: anywhere; white-space: pre-wrap; }
+.ad-kvr:first-child > span { border-top: 0; }
+.ad-kvr .k { color: var(--txl); padding-right: 16px; }
+.ad-kvr .v { color: var(--txh); }
+.ad-vchip { display: inline-block; padding: 0 6px; margin: 0 4px 2px 0; border-radius: 4px; background: color-mix(in oklab, var(--rc) 14%, transparent); color: var(--rc-ink); }
+.ad-none { color: var(--txl); font-style: italic; }
+.ad-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 11px; }
+.ad-btn { display: inline-flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 14px 0 11px; border-radius: max(3px, var(--rc-rs));
+  border: 1px solid var(--rc-line2); background: var(--panel2); font-size: var(--t13); font-weight: 750; color: var(--txb); }
+.ad-btn[data-pri] { background: var(--rc); border-color: transparent; color: var(--rc-on); font-weight: 800; }
+.ad-btn:hover:not(:disabled) { filter: brightness(1.06); }
+.ad-btn:disabled { opacity: .6; }
+.ad-aside { margin-left: auto; font-size: var(--t115); color: var(--txl); }
+/* a question asked in prose: its replies */
+.ad-replies { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.ad-reply { display: inline-flex; align-items: center; gap: 9px; min-height: 32px; padding: 0 13px 0 5px; border-radius: max(3px, var(--rc-rs));
+  background: var(--panel2); border: 1px solid var(--rc-line2); font-size: var(--t13); font-weight: 750; color: var(--txh); }
+.ad-reply:not(:has(.ad-key)) { padding-left: 13px; }
+.ad-reply .ad-key { grid-row: auto; width: 22px; height: 22px; }
+.ad-reply:hover:not(:disabled) { border-color: color-mix(in oklab, var(--rc) 50%, var(--rc-line2)); }
+.ad-reply[aria-pressed="true"] { border-color: var(--rc); }
+.ad-reply[data-quiet] { background: transparent; color: var(--txm); font-weight: 650; gap: 7px; }
+.ad-reply:disabled { opacity: .55; }
+/* narrow: one column, so a description never wraps to a word a line */
+@container (max-width: 560px) { .ad-rows, .ad-pics { grid-template-columns: minmax(0, 1fr); } .ad-aside { margin-left: 0; } }
+.composer[data-docked] { container-type: inline-size; }
+
+/* in the transcript: where it was asked … */
+.ask-mark { display: flex; align-items: center; gap: 10px; margin: 8px 0; padding: 8px 12px; border-radius: max(3px, var(--rc-rs));
+  border: 1px dashed color-mix(in oklab, var(--rc) 55%, var(--rc-line2)); background: color-mix(in oklab, var(--rc) 5%, transparent);
+  font-family: var(--ui-font, inherit); font-size: var(--t13); color: var(--txm); }
+.ask-mark .ad-g { width: 20px; height: 20px; }
+.ask-mark-t { color: var(--txh); font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 46%; }
+.ask-mark-w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-mark-w::before { content: "— "; }
+.ask-mark-go { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px; padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--t12); font-weight: 700; color: var(--rc-ink); }
+.res-askmark { padding: 0 16px 12px; }
+/* … and what it left: one line, ▸ opens the whole card */
+.ask-rec { margin: 8px 0; border-radius: max(3px, var(--rc-rs)); border: 1px solid var(--rc-line); background: color-mix(in oklab, var(--panel) 72%, transparent);
+  font-family: var(--ui-font, inherit); font-size: var(--t13); }
+.ask-rec-row { display: flex; align-items: center; gap: 9px; min-width: 0; padding: 7px 10px 7px 8px; }
+.ask-rec-row + .ask-rec-row { border-top: 1px solid var(--rc-line); }
+.ask-rec-ic { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; color: var(--ok); background: color-mix(in oklab, var(--ok) 15%, transparent); }
+.ask-rec[data-state="no"] .ask-rec-ic { color: var(--err); background: color-mix(in oklab, var(--err) 15%, transparent); }
+.ask-rec:is([data-state="gone"], [data-state="open"]) .ask-rec-ic { color: var(--txl); background: color-mix(in oklab, var(--txl) 15%, transparent); }
+.ask-rec-k { flex: none; font-size: var(--t95); font-weight: 800; letter-spacing: .15em; text-transform: uppercase; color: var(--txl); }
+.ask-rec-tp { flex: none; font-weight: 650; color: var(--txm); max-width: 30%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ask-rec-ar { flex: none; color: var(--txl); }
+.ask-rec-v { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; color: var(--txh); }
+.ask-rec-v[data-mono] { font: 500 var(--t12)/1.3 var(--mono); color: var(--txb); }
+.ask-rec-v i { font-style: normal; font-weight: 500; color: var(--txm); }
+.ask-rec-v q { font-weight: 600; }
+.ask-rec-tag, .ask-rec-note { flex: none; font-size: var(--t85); font-weight: 800; letter-spacing: .13em; color: var(--txl); padding: 1px 6px; border-radius: calc(var(--rc-r) * 100); border: 1px solid var(--rc-line2); }
+.ask-rec-note { letter-spacing: .04em; font-weight: 650; }
+.ask-rec-open { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: var(--t115); color: var(--txl); font-variant-numeric: tabular-nums; }
+.ask-rec-open:hover { color: var(--txh); }
+.ask-rec-car { transition: transform .15s ease; }
+.ask-rec-open[aria-expanded="true"] .ask-rec-car { transform: rotate(90deg); }
+.ask-rec-body { padding: 0 0 4px; border-top: 1px solid var(--rc-line); }
+.ask-rec-body .ad-b { padding: 10px 12px 10px; }
+.ask-rec-body .ad-b + .ad-b { border-top: 1px dashed var(--rc-line); }
+.ask-rec-body .ad-ask { font-size: var(--t14); }
+.ad-row[data-ro] { cursor: default; }
+.ad-row[data-ro]:not([aria-pressed="true"]) { background: transparent; }
+/* a record waits on nobody: no ask hue in it, only the green of what you picked */
+.ask-rec { --rc: color-mix(in oklab, var(--txl) 60%, var(--txh)); --rc-ink: var(--txm); --rc-on: var(--canvas, #000); }
+.ask-rec :is(.ad-tile[data-on] .ad-tilebtn, .ad-chip[aria-pressed="true"]) { border-color: color-mix(in oklab, var(--ok) 65%, var(--rc-line2)); box-shadow: none; }
+.ask-rec .ad-row[aria-pressed="true"] { border-color: color-mix(in oklab, var(--ok) 55%, var(--rc-line2)); background: color-mix(in oklab, var(--ok) 9%, var(--panel2)); }
+.ask-rec .ad-key[data-on] { background: var(--ok); border-color: var(--ok); color: var(--canvas, #000); }

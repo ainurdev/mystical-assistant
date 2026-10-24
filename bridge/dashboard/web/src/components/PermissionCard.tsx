@@ -1,15 +1,13 @@
 import { useState } from "react";
-import { Wrench, Check, X, CircleSlash } from "lucide-react";
+import { Wrench } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
 
 // Mirrors bridge/miniapp/web/src/components/PermissionCard.tsx (shared design).
+// Live only: answered, it's AskDock's AskRecord; where the box can take it, it docks (AskDock).
 export function PermissionCard({
   toolName,
   summary,
   detail,
-  active,
-  resolved,
-  stale,
   onAllow,
   onDeny,
 }: {
@@ -17,11 +15,6 @@ export function PermissionCard({
   summary?: string;
   /** The full tool input (MCP calls) — what an Allow actually posts. */
   detail?: string;
-  active: boolean;
-  resolved?: "allow" | "deny";
-  /** Asked, never answered, and the run has since ended — the process that would
-   *  receive the answer is gone, so the buttons would do nothing. */
-  stale?: boolean;
   /** Resolve when the answer has reached the bridge; `false` means it didn't. */
   onAllow: () => void | Promise<boolean | void>;
   onDeny: () => void | Promise<boolean | void>;
@@ -35,7 +28,7 @@ export function PermissionCard({
     if ((await fn()) === false) setSending(null);
   }
   return (
-    <Card className={`chatcard pcard${active ? " pcard-live" : ""} space-y-2 border border-[var(--tg-button)]/30`}>
+    <Card className="chatcard pcard pcard-live space-y-2 border border-[var(--tg-button)]/30">
       <div className="flex items-center gap-1.5 text-sm font-medium">
         <Wrench
           size={15}
@@ -54,35 +47,14 @@ export function PermissionCard({
           {detail}
         </pre>
       )}
-      {active ? (
-        <div className="flex gap-2">
-          <Button className="flex-1" disabled={!!sending} onClick={() => void answer("allow", onAllow)}>
-            {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : "Allow"}
-          </Button>
-          <Button variant="secondary" className="flex-1" disabled={!!sending} onClick={() => void answer("deny", onDeny)}>
-            {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : "Deny"}
-          </Button>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1 text-xs text-[var(--tg-hint)]">
-          {resolved === "allow" ? (
-            <>
-              <Check size={13} className="text-[var(--ok)]" aria-hidden /> Allowed
-            </>
-          ) : resolved === "deny" ? (
-            <>
-              <X size={13} className="text-[var(--err)]" aria-hidden /> Denied
-            </>
-          ) : stale ? (
-            <>
-              <CircleSlash size={13} className="text-[var(--warn)]" aria-hidden /> Never
-              answered — the run ended
-            </>
-          ) : (
-            "—"
-          )}
-        </div>
-      )}
+      <div className="flex gap-2">
+        <Button className="flex-1" disabled={!!sending} onClick={() => void answer("allow", onAllow)}>
+          {sending === "allow" ? <Spinner className="h-3 w-3 border" /> : "Allow"}
+        </Button>
+        <Button variant="secondary" className="flex-1" disabled={!!sending} onClick={() => void answer("deny", onDeny)}>
+          {sending === "deny" ? <Spinner className="h-3 w-3 border" /> : "Deny"}
+        </Button>
+      </div>
     </Card>
   );
 }

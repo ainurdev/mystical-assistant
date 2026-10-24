@@ -778,14 +778,15 @@ class Handler(BaseHTTPRequestHandler):
         if not request_id:
             return self._json({"error": "missing request_id"}, 400)
         behavior = "deny" if body.get("behavior") == "deny" else "allow"
-        ok = job.respond(request_id, behavior=behavior, answers=body.get("answers"))
+        note = (body.get("message") or "").strip()[:4000] if behavior == "deny" else ""
+        ok = job.respond(request_id, behavior=behavior, answers=body.get("answers"), message=note or None)
         if not ok:
             return self._json({"error": "no such pending request"}, 409)
         try:
             cursor = int(body.get("cursor") or 0)
         except (ValueError, TypeError):
             cursor = 0
-        self._json(job.snapshot(cursor))
+        self._json({**job.snapshot(cursor), "noted": bool(note) and job.takes_notes})
 
     def _api_run_interrupt(self, chat_id: int, job_id: str, body: dict):
         """Stop a running turn. The session is preserved, so the next message

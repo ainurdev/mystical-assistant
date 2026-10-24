@@ -921,6 +921,9 @@ class Job:
             except (OSError, ValueError):
                 pass
 
+    # A deny's `message` reaches the model as the tool's result (respond).
+    takes_notes = True
+
     def respond(self, request_id: str, *, behavior: str = "allow",
                 message: str | None = None, answers: list | None = None) -> bool:
         """Answer a pending can_use_tool request. Returns False if unknown."""
@@ -1109,6 +1112,9 @@ class AcpJob(Job):
 
     def interrupt(self):
         return acp.cancel(self, INTERRUPT_GRACE)
+
+    # ACP's permission answer is allow/deny only: a deny's note can't ride it.
+    takes_notes = False
 
     def respond(self, request_id, *, behavior="allow", message=None, answers=None):
         return acp.answer(self, request_id, behavior == "allow")
@@ -1980,10 +1986,18 @@ def _handle_control_request(job: Job, obj: dict):
                          "summary": summary, "input": req.get("input", {}),
                          **{k: req.get(k) for k in _ASK_WHY}})
         ev = {"type": "permission", "request_id": rid, "tool_name": tool, "summary": summary}
+        inp = req.get("input") or {}
         if tool.startswith("mcp__"):
             # The whole call, not 120 chars of it: an MCP write (a tracker
             # comment, a status change) is judged on its full text.
-            ev["detail"] = _mcp_detail(req.get("input", {}))
+            ev["detail"] = _mcp_detail(inp)
+        elif tool == "Bash" and len(str(inp.get("command") or "")) > len(summary):
+            # A command is allowed on all of it: the tail past 120 chars is
+            # often the `&& git push` the card exists for.
+            ev["detail"] = str(inp["command"])[:4000]
+        elif tool == "ExitPlanMode" and inp.get("plan"):
+            # The plan is what's being approved; the card renders it as markdown.
+            ev["detail"] = str(inp["plan"])[:8000]
         job.add(ev)
     ask = (((req.get("input") or {}).get("questions") or [{}])[0].get("question") or ""
            if tool == "AskUserQuestion" else f"{tool}: {summary}")

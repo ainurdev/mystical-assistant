@@ -238,8 +238,9 @@ export type RunEvent =
   // `images`: screenshots sent with the steer, as upload-dir paths (same as
   // tool_done's). Steers recorded before this landed carry none.
   | { type: "steer"; text: string; images?: string[] }
-  // `detail`: the full tool input, on MCP calls — a tracker comment is judged
-  // on its whole text, not on 120 chars of it.
+  // `detail`: what the card asks about in full — an MCP call's input (a tracker
+  // comment is judged on its whole text, not on 120 chars of it), a Bash command
+  // longer than the summary, an ExitPlanMode's plan.
   | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
@@ -1920,10 +1921,12 @@ export const api = {
     }),
   run: (body: RunBody) =>
     req<RunStarted | RunHeld>("/local/run", { method: "POST", body }),
+  // `message`: a Deny's reason, typed in the box under the docked card. `noted`
+  // says the bridge passed it to the model (an older bridge drops it).
   respond: (
     jobId: string,
-    body: { request_id: string; behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
-  ) => req(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
+    body: { request_id: string; behavior?: "allow" | "deny"; answers?: AnswerSelection[]; message?: string },
+  ) => req<{ noted?: boolean }>(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
   interrupt: (jobId: string) =>
     req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
   // A live job without its events (the cursor is past them all): the pending

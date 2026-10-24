@@ -10,6 +10,7 @@ import { openSettings } from "../lib/opensettings";
 import { useIntegrations } from "../lib/integrations";
 import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
 import { FileIcon } from "../lib/fileicon";
+import type { AskMode } from "./AskDock";
 import { ICON_BODY } from "../lib/fileicons.gen";
 import { applyMention, mentionAt, rankPaths, type Mention } from "../lib/mention";
 import { isExact, rankCommands, slashAt } from "../lib/slash";
@@ -467,6 +468,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
+  dock, ask,
 }: {
   disabled: boolean;
   running: boolean;
@@ -535,6 +537,10 @@ export function Composer({
   fileSink?: { current: ((files: FileList | File[]) => void) | null };
   /** The box's idle hint, when the session wants its own (a Rivendell job's follow-up). */
   placeholder?: string;
+  /** What the session waits on you for (AskDock), hung on the box's top edge in every layout. */
+  dock?: ReactNode;
+  /** While it waits, the box answers it: its text and its button belong to the ask. */
+  ask?: AskMode | null;
 }) {
   const text = draft;
   const setText = onDraft;
@@ -580,6 +586,12 @@ export function Composer({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [injectNonce]);
+
+  useEffect(() => {
+    const f = () => taRef.current?.focus();
+    window.addEventListener("ask:focus", f);
+    return () => window.removeEventListener("ask:focus", f);
+  }, []);
 
   // Focus the command line whenever a session is opened or switched (and on
   // first mount) so you can start typing immediately without clicking in.
@@ -792,6 +804,11 @@ export function Composer({
   }
   function submit() {
     const t = text.trim();
+    if (ask?.send) {
+      // The ask clears the box itself: a stepper hands it the next page's note.
+      if (t || (ask.ready && !ask.needsText)) ask.send(t);
+      return;
+    }
     if (!t || disabled) return;
     onSend(t, images);
     setText("");
@@ -1012,7 +1029,21 @@ export function Composer({
      tooltip. STEER is the alternate target for the same text, so it
      stays an outline. QUEUE/SEND is what Enter does, so it is the only
      filled control on the line. */
-  const actions = (withDesign: boolean) => running ? (
+  const askBtn = ask?.send && (
+    <button className="act-pri ask caps" onClick={submit}
+      disabled={!(text.trim() || (ask.ready && !ask.needsText))} title="Answer what's docked above (Enter)">
+      {ask.label}</button>
+  );
+  const actions = (withDesign: boolean) => askBtn ? (
+    <>
+      {running && (
+        <button className="act-glyph stop" onClick={onStop} aria-label="Stop" title="STOP — interrupt this turn now">
+          <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+      )}
+      <span className="act-fence" aria-hidden />
+      {askBtn}
+    </>
+  ) : running ? (
     <>
       <button className="act-glyph stop" onClick={onStop} aria-label="Stop"
         title="STOP — interrupt this turn now">
@@ -1227,7 +1258,7 @@ export function Composer({
         if (text.includes("\n")) void askConfirm("Clear the draft?", { ok: "Clear", danger: true }).then((yes) => { if (yes) setText(""); });
         else setText("");
       }}
-      placeholder={disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : placeholder ?? "message claude — describe a change, paste an error…"}
+      placeholder={ask?.placeholder ?? (disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : placeholder ?? "message claude — describe a change, paste an error…")}
     />
   );
   const pfx = <span className="pb-pfx" style={{ color: "var(--purple)", fontSize: "var(--t13)", flex: "none", marginTop: 2 }}>~ ❯</span>;
@@ -1245,7 +1276,7 @@ export function Composer({
   };
   const hint = (
     <span className="pb-hint" aria-hidden>
-      {sendKey === "ctrl-enter" ? `⌘↵ ${running ? "queue" : "send"} · ↵ newline` : `↵ ${running ? "queue" : "send"} · ⇧↵ newline`}
+      {sendKey === "ctrl-enter" ? `⌘↵ ${ask?.send ? "answer" : running ? "queue" : "send"} · ↵ newline` : `↵ ${ask?.send ? "answer" : running ? "queue" : "send"} · ⇧↵ newline`}
     </span>
   );
 
@@ -1255,6 +1286,7 @@ export function Composer({
   const shell =
     composer === "console" ? (
       <>
+        {dock}
         {attachRow}
         <div {...boxProps} className="cmdbox pb-cmd">
           {pfx}
@@ -1276,6 +1308,7 @@ export function Composer({
     ) : (
       <>
         <div className="pb-tabs pb-lead">{lead}{ctxBlock}</div>
+        {dock}
         <div {...boxProps} className="cmdbox pb-card">
           {ledger("")}
           {attachRow}
@@ -1291,7 +1324,7 @@ export function Composer({
     // Its own surface, at the island's strength: header and footer are the two
     // pieces of chrome bracketing the transcript, and a ground running under
     // them makes the chat look like it has no edges.
-    <div className="composer" data-pb={shelled ? composer : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
+    <div className="composer" data-pb={shelled ? composer : undefined} data-docked={dock ? "" : undefined} style={{ flex: "none", borderTop: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", padding: "11px 16px", background: "color-mix(in srgb, var(--panel) 88%, transparent)" }}>
       {zoom && <ImageLightbox src={zoom} all={images.map((src) => ({ src }))} onClose={() => setZoom(null)} />}
       {openDrop && <div onClick={() => setOpenDrop("")}
         onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setOpenDrop(""); }}
@@ -1429,6 +1462,7 @@ export function Composer({
       )}
 
       {/* command line */}
+      {dock}
       <div {...boxProps} className="cmdbox">
         {pfx}
         {popovers}

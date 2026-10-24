@@ -15,13 +15,13 @@ import { RivendellIcon } from "../lib/rivendellicon";
    touch anything. Display only: the labels go back exactly as asked, because
    the bridge reads the answer (taskcheck.answer_state). The Mini App and
    Telegram show it as a plain card. */
-const REC = /\s*\(Recommended\)\s*$/i;
-const KEYS = /(\b[A-Z][A-Z0-9]{1,9}-\d+\b)/;
-const isTask = (qs: Question[]) => qs.length === 1 && qs[0].header.trim().toLowerCase() === "task";
+export const REC = /\s*\(Recommended\)\s*$/i;
+export const KEYS = /(\b[A-Z][A-Z0-9]{1,9}-\d+\b)/;
+export const isTask = (qs: Question[]) => qs.length === 1 && qs[0].header.trim().toLowerCase() === "task";
 const chips = (text: string, re: RegExp, cls: string) =>
   text.split(re).map((p, i) => (i % 2 ? <span key={i} className={cls}>{p}</span> : p));
 
-function TaskQuestion({ text }: { text: string }) {
+export function TaskQuestion({ text }: { text: string }) {
   const lines = text.split("\n").map((l) => l.trim()).filter(Boolean);
   const work = lines.find((l) => l.startsWith("⎇"));
   return (
@@ -40,7 +40,7 @@ function TaskQuestion({ text }: { text: string }) {
   );
 }
 
-const taskLabel = (label: string, suggest = false) => (
+export const taskLabel = (label: string, suggest = false) => (
   <>
     {suggest && REC.test(label) && <span className="tc-sug">SUGGESTED</span>}
     {chips(label.replace(REC, ""), KEYS, "tc-key")}
@@ -49,7 +49,7 @@ const taskLabel = (label: string, suggest = false) => (
 
 /** What the send button does, said: the card comes at the push, or earlier
  *  when you asked for it from the task tab. */
-function taskVerb(q: Question, picked?: string): string | null {
+export function taskVerb(q: Question, picked?: string): string | null {
   if (!picked) return null;
   const push = /\bpush/i.test(q.question);
   const key = picked.match(KEYS)?.[1];
@@ -178,20 +178,15 @@ function Stage({ q, chosen, onPick, sending }: {
 
 // Mirrors bridge/miniapp/web/src/components/QuestionCard.tsx (shared design):
 // full-width option rows with descriptions, not cramped wrapping chips.
+// Live only: once answered (or never answered) a question is drawn as AskDock's
+// AskRecord, and where the prompt box can take it, it docks there instead (AskDock).
 export function QuestionCard({
   questions,
   requestId,
-  active,
-  answered,
-  stale,
   onSubmit,
 }: {
   questions: Question[];
   requestId: string;
-  active: boolean;
-  answered?: AnswerSelection[];
-  /** Asked, never answered, and the run has since ended (see PermissionCard). */
-  stale?: boolean;
   /** Resolves when the answer has reached the bridge; `false` means it didn't. */
   onSubmit: (answers: AnswerSelection[]) => void | Promise<boolean | void>;
 }) {
@@ -212,62 +207,9 @@ export function QuestionCard({
   const [sending, setSending] = useState(false);
 
   // Hold the draft while the question is still open, so leaving the session (or
-  // closing the tab) doesn't cost the answers already picked. Cleared on
-  // `answered` rather than on `!active`, because a read-only render of the same
-  // question — history, another surface — is inactive while the draft is live.
-  useEffect(() => {
-    if (answered) clearDraft(requestId);
-    else if (active) saveDraft(requestId, { sel, notes });
-  }, [requestId, active, answered, sel, notes]);
-
-  if (!active) {
-    // Resolved / historical: still show the prepared answers as buttons, with the
-    // chosen one(s) highlighted (matches Claude Code's answered-question look).
-    return (
-      <Card className={`chatcard qcard${task ? " tcard" : ""} space-y-3 border border-[var(--tg-button)]/30`}>
-        {questions.map((q, qi) => {
-          // Headers can repeat (one "Task" question per repo), so pair by position first.
-          const given = answered?.[qi]?.header === q.header ? answered[qi] : answered?.find((x) => x.header === q.header);
-          const chosen = given?.labels ?? [];
-          return (
-            <div key={qi} className="space-y-1.5">
-              {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
-              {staged(q) ? <Stage q={q} chosen={chosen} /> : <div className="flex flex-col gap-1.5">
-                {q.options.map((o) => {
-                  const picked = chosen.includes(o.label);
-                  return (
-                    <div
-                      key={o.label}
-                      className={`qopt${picked ? " qopt-on" : ""} rounded-lg px-3 py-2 text-left text-sm ${
-                        picked
-                          ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
-                          : "bg-[var(--tg-bg)] opacity-60"
-                      }`}
-                    >
-                      <div className="font-medium">{task ? taskLabel(o.label) : o.label}</div>
-                      {o.description && (
-                        <div className={`text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}>
-                          {o.description}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>}
-              {given?.notes && (
-                <div className="text-xs text-[var(--tg-hint)]">Note: {given.notes}</div>
-              )}
-            </div>
-          );
-        })}
-        {stale && (
-          <div className="text-xs text-[var(--warn)]">
-            Never answered — the run ended.
-          </div>
-        )}
-      </Card>
-    );
-  }
+  // closing the tab) doesn't cost the answers already picked; dropped once the
+  // answer reaches the bridge (submit).
+  useEffect(() => { saveDraft(requestId, { sel, notes }); }, [requestId, sel, notes]);
 
   // Picks and notes are keyed by the question's position: headers can repeat.
   function toggle(q: Question, qi: number, label: string) {
@@ -305,9 +247,10 @@ export function QuestionCard({
         notes: (notes[qi] ?? "").trim() || undefined,
       })),
     );
-    // Delivered: stay disabled until the poll swaps in the answered card. Failed:
+    // Delivered: stay disabled until the poll swaps in the answered record. Failed:
     // hand the button back rather than stranding them on a dead spinner.
     if (ok === false) setSending(false);
+    else clearDraft(requestId);
   }
 
   return (

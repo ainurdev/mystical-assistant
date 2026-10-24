@@ -2176,9 +2176,12 @@ class Handler(BaseHTTPRequestHandler):
         if not rid:
             return self._json({"error": "missing request_id"}, 400)
         behavior = "deny" if body.get("behavior") == "deny" else "allow"
-        if not job.respond(rid, behavior=behavior, answers=body.get("answers")):
+        # A deny can say what to do instead (the prompt box under the card);
+        # `noted` tells the client the words reached the model with it.
+        note = (body.get("message") or "").strip()[:4000] if behavior == "deny" else ""
+        if not job.respond(rid, behavior=behavior, answers=body.get("answers"), message=note or None):
             return self._json({"error": "no such pending request"}, 409)
-        self._json(job.snapshot(_cursor(body)))
+        self._json({**job.snapshot(_cursor(body)), "noted": bool(note) and job.takes_notes})
 
     def _interrupt(self, job_id, body):
         job = runner.get_job(job_id)

@@ -75,6 +75,8 @@ import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from ".
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
+import { AskDock, type AskMode } from "./components/AskDock";
+import { docked } from "./lib/askdock";
 import { JobBar } from "./components/JobBar";
 import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
@@ -508,12 +510,43 @@ export function App() {
   const [askedJobs, setAskedJobs] = useState<Set<string>>(() => new Set());
   const jobBar = !!selected && isJob(selected) && oneShot(selected.job) && turns.length <= 1 && !askedJobs.has(selected.id);
   const pendingCount = active?.pending.length ?? 0;
+  // What the open session waits on you for, docked on the prompt box
+  // (components/AskDock): the turn's open card, or the question a finished
+  // answer ended on — not a job's (its answer is for its readers) and not one
+  // you dismissed. The box answers it while it's there (askMode).
+  const [askMode, setAskMode] = useState<AskMode | null>(null);
+  const [droppedAsks, setDroppedAsks] = useState<Set<string>>(() => new Set());
+  const lastTurnId = turns[turns.length - 1]?.id;
+  const dock = useMemo(
+    () => docked(turns, !(selected && isJob(selected)) && !(lastTurnId && droppedAsks.has(lastTurnId))),
+    [turns, selected, lastTurnId, droppedAsks],
+  );
+  const dockLive = dock !== null && dock.kind !== "prose";
   const activeProject = state?.project?.rel ?? null;
   // Everything the composer shows is scoped to the open session — a check or a
   // held card belonging to another one stays with that one.
   const checking = sessionId ? checkingMap[sessionId] : undefined;
   const held = sessionId ? heldMap[sessionId] : undefined;
   const draft = (sessionId ? drafts[sessionId] : "") ?? "";
+  // A draft in the box when a card docks is a prompt you were writing, not an
+  // answer: it's set aside until the card is answered, then comes back. Only
+  // for a card that arrives while you watch — one already waiting when you open
+  // the session may be what the draft is answering.
+  const stashedDrafts = useRef<Record<string, string>>({});
+  const seenAsk = useRef<Record<string, string | null>>({});
+  const askKey = dock && dock.kind !== "prose" ? dock.requestId : null;
+  useEffect(() => {
+    if (!sessionId) return;
+    const before = seenAsk.current[sessionId];
+    seenAsk.current[sessionId] = askKey;
+    if (askKey && before === null && draft.trim()) { stashedDrafts.current[sessionId] = draft; setDraft(""); }
+    else if (!askKey && sessionId in stashedDrafts.current) {
+      const back = stashedDrafts.current[sessionId];
+      delete stashedDrafts.current[sessionId];
+      if (!draft.trim()) setDraft(back);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [askKey, sessionId]);
   const openWorking =
     (sessionId ? statusMap.get(sessionId)?.state : undefined) === "working";
 
@@ -1541,13 +1574,25 @@ export function App() {
     toChat();
   }
 
-  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] }) {
+  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[]; message?: string }): Promise<false | { noted?: boolean }> {
     if (!active) return false;
-    try { await api.respond(active.id, { request_id: requestId, ...opts }); } catch { return false; }
+    let res: { noted?: boolean };
+    try { res = await api.respond(active.id, { request_id: requestId, ...opts }); } catch { return false; }
     // Don't wait out the 1.5s poll to retire the card — the bridge has already
     // written the resolved event by the time the POST returns.
     void refetchTurns.current();
-    return true;
+    return res ?? {};
+  }
+  // Tapping a suggested reply to a question the model asked in prose sends it as
+  // the next prompt — same path as typing it yourself. Except "No": there's
+  // nothing to do, so it just drops the ASK state (and the dock) instead of
+  // paying for a turn that answers nobody.
+  function answerAsk(text: string) {
+    if (text === "No" && sessionId) {
+      setStatusMap((m) => { const n = new Map(m); n.delete(sessionId); return n; });
+      void api.dismissAsk(sessionId);
+      if (lastTurnId) setDroppedAsks((d) => new Set(d).add(lastTurnId));
+    } else void send(text, []);
   }
   async function stop() {
     if (!active) return;
@@ -2691,16 +2736,9 @@ export function App() {
                 navRef={transcriptNav} restoringRef={restoreTo} correctingRef={correctingRef} onJumpMark={(m) => void jumpToMark(m)}
                 onRunCommand={runCommand}
                 onQuote={quote}
-                // Tapping a suggested reply to a question the model asked in prose
-                // sends it as the next prompt — same path as typing it yourself.
-                // Except "No": there's nothing to do, so it just drops the ASK
-                // state instead of paying for a turn that answers nobody.
-                onAnswer={(text) => {
-                  if (text === "No" && sessionId) {
-                    setStatusMap((m) => { const n = new Map(m); n.delete(sessionId); return n; });
-                    void api.dismissAsk(sessionId);
-                  } else void send(text, []);
-                }}
+                // A reply to a question asked in prose (answerAsk); none once it's dismissed.
+                onAnswer={lastTurnId && droppedAsks.has(lastTurnId) ? undefined : answerAsk}
+                askDocked={!!dock && !(selected && (isDeviceRun(selected.origin) || isTeam(selected.origin)))}
                 onOpenFile={openFileRef}
                 onOpenProject={sessionProject ? () => openAnalyze(sessionProject) : undefined}
                 run={sessionRun}
@@ -2750,7 +2788,7 @@ export function App() {
                         onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />
                     )}
-                    {jobBar && selected?.job ? (
+                    {jobBar && !dockLive && selected?.job ? (
                       <JobBar
                         job={selected.job} turn={turns[0]}
                         onAsk={() => setAskedJobs((s) => new Set(s).add(selected.id))}
@@ -2779,7 +2817,13 @@ export function App() {
                           )}
                         </div>
                       }
-                      disabled={!sessionId || pendingCount > 0} running={running} model={model} models={composerModels} usage={spentUsage} effort={effort}
+                      disabled={!sessionId || (pendingCount > 0 && !askMode?.send)} running={running}
+                      dock={dock ? (
+                        <AskDock d={dock} draft={draft} setDraft={setDraft} onRespond={respond} onAnswer={answerAsk}
+                          onSteer={(t) => void queue.steer(t, []).then((ok) => { if (!ok) void send(t, []); })}
+                          bind={setAskMode} stashed={!!sessionId && sessionId in stashedDrafts.current} />
+                      ) : undefined}
+                      ask={dock ? askMode : null} model={model} models={composerModels} usage={spentUsage} effort={effort}
                       accounts={accounts} agentPick={agentPick} profile={selected?.profile_id ?? ""}
                       profiles={profilesAvailable ? profiles?.profiles : undefined} onProfile={(id) => void pickProfile(id)}
                       defaultProfile={profiles?.default} onDefaultProfile={(id) => void setDefaultProfile(id)}

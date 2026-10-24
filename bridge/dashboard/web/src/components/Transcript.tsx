@@ -153,7 +153,7 @@ type Respond = (
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
   turn, prev, next, isActive, isLast, promptIdx, hud, liveTurns, boot, who, unfinishedBy,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, job, jobTitle, cmds, limit, logins,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked, job, jobTitle, cmds, limit, logins,
 }: {
   turn: Turn;
   /** The turn before it, whose run your prompt's tag compares against. */
@@ -185,6 +185,7 @@ function TurnBlock({
   onQuote?: (text: string) => void;
   onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
+  askDocked?: boolean;
   /** The Rivendell job behind the session (lib/jobs), on its first turn only. */
   job?: RivendellJob | null;
   jobTitle?: string | null;
@@ -253,6 +254,7 @@ function TurnBlock({
               // Only the last finished turn can be replied to — a chip on an
               // older answer would send its question back out of order.
               onAnswer={isLast && turn.status === "done" ? onAnswer : undefined}
+              askDocked={askDocked}
               ended={turn.status !== "running"}
               unfinished={!!unfinishedBy}
               readOnly={!!who}
@@ -301,6 +303,7 @@ export function Transcript({
   onQuote,
   onOpenFile,
   onAnswer,
+  askDocked,
   hasOlder,
   olderLoading,
   onLoadOlder,
@@ -332,6 +335,8 @@ export function Transcript({
   onQuote?: (text: string) => void;
   onOpenFile?: OpenFile;
   onAnswer?: (text: string) => void;
+  /** The open ask sits on the prompt box (AskDock). */
+  askDocked?: boolean;
   hasOlder?: boolean;
   olderLoading?: boolean;
   onLoadOlder?: () => void;
@@ -573,6 +578,7 @@ export function Transcript({
         onQuote={onQuote}
         onOpenFile={onOpenFile}
         onAnswer={onAnswer}
+        askDocked={askDocked}
       />
     ) : (
       <WorkingIndicator hud={hud} />
