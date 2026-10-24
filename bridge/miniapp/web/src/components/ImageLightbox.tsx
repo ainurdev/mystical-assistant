@@ -194,7 +194,9 @@ const hasPanel = (c?: Clip) =>
  *
  *  With a `clip` the rest of the sheet below the video says what the recording
  *  claims, which plan items it answers, and its chapters. On a phone there is no
- *  room beside the clip, so the panel is simply the rest of the page. */
+ *  room beside the clip, so the panel sits under it, as tall as its words and at
+ *  most 40vh, and the clip takes the rest: a fixed 46vh share left a tall phone
+ *  recording about 150px wide under a two-line note. */
 function VideoLightbox({ src, alt, strip, clip, onClose }: { src: string; alt?: string; strip?: boolean; clip?: Clip; onClose: () => void }) {
   const vid = useRef<HTMLVideoElement>(null);
   const [at, setAt] = useState(0);
@@ -240,7 +242,7 @@ function VideoLightbox({ src, alt, strip, clip, onClose }: { src: string; alt?: 
         playsInline
         onTimeUpdate={panel ? (e) => setAt(e.currentTarget.currentTime) : undefined}
         onLoadedMetadata={panel ? (e) => setDur(e.currentTarget.duration || 0) : undefined}
-        className={panel ? "max-h-[46vh] w-full shrink-0 bg-black" : "max-h-full max-w-full rounded-lg bg-black"}
+        className={panel ? "min-h-0 w-full flex-1 bg-black object-contain" : "max-h-full max-w-full rounded-lg bg-black"}
       />
       {panel && (
         <>
@@ -345,7 +347,7 @@ function ClipSheet(
   const rule = <span aria-hidden="true" className="h-px flex-1 bg-[color-mix(in_srgb,var(--acc)_8%,transparent)]" />;
 
   return (
-    <div className="min-h-0 flex-1 touch-pan-y overflow-y-auto bg-[var(--panel2)]">
+    <div className="max-h-[40vh] shrink-0 touch-pan-y overflow-y-auto bg-[var(--panel2)]">
       {clip.notes && (
         <p className="m-0 px-3 pb-3 pt-2.5 font-[var(--mono)] text-[13px] leading-[1.55] text-[var(--tx)]">
           {clip.notes}

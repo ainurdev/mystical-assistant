@@ -766,6 +766,36 @@ body {
   100% { transform: translateY(110vh) translate(-50vw, -50vh) rotate(11deg) translate(50vw, 50vh); filter: brightness(.3); }
 }
 
+/* KHAZAD-DÛM's canvas (BootFire), under the SVG: it draws the fire, the smoke,
+   the light's haze, the Balrog and Gandalf's body, so the SVG hides its own and
+   darkens the staff arm it keeps to that body. It shakes with the SVG. */
+.kd-gl { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; }
+.kd-scene[data-gl] .kd-balrog, .kd-scene[data-gl] .kd-backlight, .kd-scene[data-gl] .kd-smoke, .kd-scene[data-gl] .kd-gfbody { display: none; }
+.kd-scene[data-gl] .kd-staffarm .kd-gf { fill: color-mix(in srgb, var(--txb) 7%, var(--void)); }
+.bootleaving .kd-gl { animation: kdshake .38s linear .3s; }
+/* The whip's ending, only with the canvas (it draws the whip): the lash takes his
+   ankle at 700ms, he goes down on the deck, is dragged to the broken edge and
+   over it, and the wipe follows at 1300ms (KD_EXIT_MS, BootIntro data-exit-ms).
+   The light he held, its streak and its pool on the deck go out first; the title
+   says his last words (BootIntro's `after`). .kd-gandalf turns about his feet. */
+.kd-gandalf { transform-box: view-box; transform-origin: -226px 319px; }
+.bootleaving .kd-scene[data-gl] .kd-gandalf { animation: kdyank 1.3s linear forwards; }
+.bootleaving .kd-scene[data-gl] .kd-streak { animation: kdlevel .38s linear forwards, kdout .4s ease .45s forwards; }
+.bootleaving .kd-scene[data-gl] .kd-pool { animation: kdout .4s ease .45s forwards; }
+.bootcontinue.bootleaving .kd-scene[data-gl] .kd-pool { animation-delay: .45s !important; }
+.boot-after { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
+/* the swap flickers, one line or the other, never both */
+.bootleaving:has(.kd-scene[data-gl]) .boot-before { animation: kdtitleout .3s steps(1) .96s forwards; }
+.bootleaving:has(.kd-scene[data-gl]) .boot-after { animation: kdtitlein .3s steps(1) .96s forwards; }
+@keyframes kdyank {
+  0%, 58% { transform: none; animation-timing-function: cubic-bezier(.5, 0, .9, .5); }
+  63% { transform: rotate(-78deg); animation-timing-function: cubic-bezier(.55, 0, .85, .4); }
+  75% { transform: translate(276px, 0) rotate(-80deg); animation-timing-function: cubic-bezier(.4, 0, 1, .6); }
+  100% { transform: translate(340px, 560px) rotate(-150deg); }
+}
+@keyframes kdtitleout { 0% { opacity: 1; } 20% { opacity: 0; } 35% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes kdtitlein { 0% { opacity: 0; } 20% { opacity: 1; } 35% { opacity: 0; } 50%, 100% { opacity: 1; } }
+
 /* DURIN'S DOOR, in its theme's ink on its theme's ground: the stone layer is
    the whole door, faint, from the start; the ithildin layer traces each group
    in as its step answers (every path is pathLength 1, so a dash of 1). */
@@ -815,7 +845,7 @@ body {
   100% { transform: scale(9); filter: brightness(1.8); opacity: 0; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .kd-field *, .kd-scene, .kd-scene *, .kd-flash, .dd-field *, .dd-scene * { animation: none !important; transition: none !important; }
+  .kd-field *, .kd-scene, .kd-scene *, .kd-flash, .kd-gl, .boot-before, .boot-after, .dd-field *, .dd-scene * { animation: none !important; transition: none !important; }
 }
 @keyframes eqbar { 0%, 100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
 /* nyan.cat, plain: two parallax star layers scrolling past a static cat. */

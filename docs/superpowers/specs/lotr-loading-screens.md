@@ -26,7 +26,10 @@ scene that no longer exists, reads as SHUFFLE.
 the bar, the footer and every timing are shared: the 2.6 s floor (1.6 s until
 the user asked for a second more), the 8 s ceiling, the 400 ms warm-up and the
 650 ms wipe. A scene's exit plays inside that warm-up and wipe, so a scene adds
-no time to the boot. Each scene leaves its own way (`/design-first "out
+no time to the boot, with one exception. KHAZAD-DÛM's whip ending runs 1.3 s
+before the wipe. The user asked for it, knowing it costs time. The scene says so
+on `data-exit-ms` and BootIntro waits that long instead of 400 ms, which makes
+that boot about 0.9 s longer. Each scene leaves its own way (`/design-first "out
 transition unique for each intro animation"`, draft
 `.mystical/design-drafts/intro-exits/`): MYSTICAL keeps the CRT power-off
 (`crtoff`), which was its own, and the other two get the wipes below
@@ -35,6 +38,29 @@ transition unique for each intro animation"`, draft
 **KHAZAD-DÛM** ("YOU SHALL NOT PASS"; sub `THE BRIDGE OF KHAZAD-DÛM ·
 MYSTICAL//ASSISTANT`). Redrawn as v2 after `/design-first "make the gandalf
 loading screen cooler"` (draft: `.mystical/design-drafts/khazad-dum-v2/`).
+Made real in v3 after `/design-first "how we can make gandalf intro more
+realistic or cooler"` (draft: `.mystical/design-drafts/khazad-dum-v3/`). The user
+took the real fire, the visible fall, Gandalf drawn the same way, and the whip
+ending, and dropped sound. One WebGL canvas under the SVG (`BootFire.ts`,
+`.kd-gl`) draws what SVG can't make real:
+- **Fire.** Flame that moves like flame rises behind the Balrog off a bed
+  beyond the deck. It is a blackbody ramp tinted 30% toward `--err` / `--warn`,
+  because the tokens alone made a salmon-pink fire.
+- **Smoke, light, embers.** Smoke rolls west off the fire. The staff's light
+  scatters in it, and the Balrog and Gandalf cut its shafts. Embers rise, and
+  the air shimmers over the heat.
+- **The Balrog** is a black shape with a boiling outline, wings that thin into
+  smoke at the tips, and a lava hide of cracked plates. It is layered back to
+  front: wings, then the mane's fire, then head, horns and trunk, so the horns
+  stand dark against the flames.
+- **Gandalf's body** is lit as his SVG filter lit him, his cloak and hair
+  rippling in the fire's wind.
+
+The shapes are painted into mask textures from the rendered SVG itself, so the
+path data lives in one place. The SVG keeps the hall, the bridge, the staff arm
+and its light, the runes and the strike, and hides what the canvas draws
+(`.kd-scene[data-gl]`). Without WebGL nothing is hidden, and the scene draws
+and leaves as v2 did.
 Gandalf stands on a slender arch over the chasm, cloak and hair streaming
 back, his staff raised with a star at its head. The chasm drops away under the
 deck: cliffs lit red from below, rock walls stepping into the deep, and the
@@ -52,11 +78,20 @@ at the light, and a whip of three thongs. Behind it are smoke and breathing fire
   light, holds it, then swings it down from the shoulder and plants its foot on
   the deck at 300 ms, with a small rebound. White flame stands up where it lands
   and the frame shakes, a crack runs to the Balrog's feet, and the span under it
-  breaks in three and falls. Then the wipe (`kdplunge`): the whole frame gives on the
-  Balrog's side, hangs a beat from its top-left corner, and drops into the deep,
-  darkening, with the Balrog on it. The Balrog used to fall on its own as well.
-  That moved a group full of glow filters, which WebKit re-ran every frame: the
-  wipe ran at 9 fps in a WKWebView, and at 30 without it.
+  breaks in three and falls. The Balrog drops through it from 380 ms, tipping
+  back, while the fire behind it dies. Its whip cracks up out of the deep from
+  520 ms and has Gandalf's ankle at 700. He goes down on the deck at 760, is
+  dragged to the broken edge by 975, and goes over it. As he goes, the title
+  flickers from YOU SHALL NOT PASS to FLY, YOU FOOLS (BootIntro's `after`, one
+  line or the other, never both). The light he held, its streak and its pool on
+  the deck have already gone out. Then, at 1300 ms, the wipe (`kdplunge`): the
+  whole frame gives on the Balrog's side, hangs a beat from its top-left corner,
+  and drops into the deep, darkening. Gandalf's fall is a CSS animation on
+  `.kd-gandalf` (`kdyank`). It carries the SVG parts he holds, and the canvas
+  reads its transform each frame to draw his body there. The Balrog's fall is a
+  uniform. In v2 the Balrog could not fall on its own: that moved a group full
+  of glow filters, which WebKit re-ran every frame, so the wipe ran at 9 fps in
+  a WKWebView.
 - **Ground:** this scene is light against fire, so on a light theme it plays on
   that theme's dark twin (`nightOf` in `lib/theme.ts`). The twin's tokens are
   scoped to the intro.
@@ -139,6 +174,22 @@ moon in the sky, and the door's reflection lies under the threshold.
   continues it after the reload are one intro, so they draw one scene. The draw
   is kept in sessionStorage (`BOOT_SCENE`) and read back when the boot
   continues.
+- **The canvas (v3).** It costs WebKit nothing to move, so the Balrog's fall
+  and Gandalf's body ride uniforms; a filtered SVG group would re-run its
+  filters every frame. Measured in a WKWebView at 60 Hz, 3 boots, the hold,
+  the strike with the whip ending, and the wipe keep a median 17 ms frame with
+  0 dropped, as v2 did. Mounting costs one ~55 ms frame (painting the masks).
+  The first boot after a fresh shader compile costs ~290 ms there, once.
+  Other notes:
+  - The canvas is one pixel per CSS pixel, half the device's on Retina. Fire
+    and smoke are soft.
+  - The intro is marked with `data-gl` on the SVG, never a class on BootIntro's
+    root: React rewrites that `className` to `bootleaving` when it leaves.
+  - The stop function keeps the GL context: StrictMode mounts twice in dev, and
+    a lost context can't start again.
+  - A context lost later hands the scene back to the SVG.
 - **Reduced motion:** the scenes draw in their settled state, with no loops and
-  no transitions, and every scene's wipe is a plain fade.
+  no transitions, and every scene's wipe is a plain fade. KHAZAD-DÛM's canvas
+  draws a still frame, redrawn only when a step answers. It has no ending,
+  and BootIntro ignores `data-exit-ms`.
 - **Not included:** the Mini App, which has no boot screen.
