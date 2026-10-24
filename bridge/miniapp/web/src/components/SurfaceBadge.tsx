@@ -15,7 +15,7 @@ const SURFACES: Record<string, { tag: string; color: string; bg: string }> = {
 const JOB_WORD: Record<string, string> = {
   review: "REVIEW", impl: "IMPLEMENT", taskdesc: "TASK DESC", todolist: "TODOLIST", changelog: "CHANGELOG",
   news: "NEWSPAPER", deck: "DECK", video: "VIDEO", "meeting-notes": "MEETING NOTES", "project-summary": "SUMMARY",
-  "meeting-brief": "BRIEF",
+  "meeting-brief": "BRIEF", conflict: "CONFLICTS",
 };
 
 export function SurfaceBadge({ origin, job }: { origin?: string | null; job?: { kind?: string; step?: string } | null }) {

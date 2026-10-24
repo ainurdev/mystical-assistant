@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type ReactElement, type ReactNode } from "react";
 import {
+  GitCommitHorizontal, GitMerge,
   ArrowRight, ArrowUpRight, CalendarClock, CircleAlert, CircleArrowUp, CircleCheck, CircleDashed, CircleMinus,
   CircleQuestionMark, Clapperboard, FileCode, GitBranch, GitPullRequest, MessageCircleQuestionMark, Minus, Stamp,
 } from "lucide-react";
@@ -8,8 +9,7 @@ import { parsePaper } from "../lib/jobs";
 import {
   clockOf, fileOf, otherSide, parseBrief, parseChangelog, parseImpl, parseNotes, parseReview, parseSummary,
   parseTaskDesc, parseVideo, questionOf, withTimecodes,
-  type Brief, type BriefItem, type Changelog, type Impl, type Notes, type Review, type Summary, type TaskDesc, type Video,
-} from "../lib/jobviews";
+  type Brief, type BriefItem, type Changelog, type Impl, type Notes, type Review, type Summary, type TaskDesc, type Video, branchesOf, parseConflict, type Conflict} from "../lib/jobviews";
 import { Markdown } from "./Markdown";
 import { Newspaper } from "./Newspaper";
 
@@ -33,6 +33,7 @@ export function jobView({ job, prompt }: JobViewInput, result: string): ReactEle
     case "meeting-notes": { const n = parseNotes(result); return n ? <NotesView n={n} job={job} /> : null; }
     case "review": { const r = parseReview(result); return r ? <ReviewView r={r} job={job} /> : null; }
     case "impl": { const m = parseImpl(result, job.repo); return m ? <ImplView m={m} job={job} /> : null; }
+    case "conflict": { const c = parseConflict(result); return c ? <ConflictView c={c} job={job} prompt={prompt} /> : null; }
     case "taskdesc": { const t = parseTaskDesc(result); return t ? <TaskDescView t={t} job={job} /> : null; }
     case "changelog": { const c = parseChangelog(result); return c ? <ChangelogView c={c} job={job} /> : null; }
     case "video": {
@@ -338,6 +339,63 @@ function ImplView({ m, job }: { m: Impl; job: RivendellJob }) {
         </div>
       )}
       <Foot links={[inRivendell(job)]}>{job.repo && <span>{job.repo}</span>}</Foot>
+    </div>
+  );
+}
+
+// ── MERGE CONFLICTS ───────────────────────────────────────────────────────────
+
+/** A conflicts job's report, as a merge slip: the base folded into the branch under a
+ *  RESOLVED (or STOPPED) stamp, each file and how it was settled, the tests that ran
+ *  and the commit it pushed. The PR opens in Rivendell first. */
+function ConflictView({ c, job, prompt }: { c: Conflict; job: RivendellJob; prompt: string }) {
+  const br = branchesOf(prompt);
+  const resolved = c.outcome === "resolved";
+  return (
+    <div className="paper jv jv-conflict">
+      <div className="jv-mast jv-rv-mast">
+        <div className="min-w-0">
+          <div className="jv-ey">Merge conflicts{job.number ? ` · PR #${job.number}` : ""}</div>
+          <div className="jv-title">{job.title || "Merge conflicts"}</div>
+          {(job.repo || br) && (
+            <div className="jv-subl">
+              {job.repo && <span><GitMerge size={12} aria-hidden />{job.repo}</span>}
+              {br && <span className="jv-cf-br"><b>{br.base}</b> into <b>{br.head}</b></span>}
+            </div>
+          )}
+        </div>
+        <div className="jv-stamp" data-tone={resolved ? undefined : "warn"}>{resolved ? "RESOLVED" : "STOPPED"}</div>
+      </div>
+      {c.summary && <div className="jv-deck"><Md>{c.summary}</Md></div>}
+      {c.files.length > 0 && (
+        <>
+          <Sec label="Files" n={c.files.length} />
+          <div className="jv-cf-files">
+            {c.files.map((f) => (
+              <div key={f.path} className="jv-cf-file">
+                <span className="jv-ref"><FileCode size={11} aria-hidden />{f.path}</span>
+                {f.how && <span className="how"><Inline text={f.how} /></span>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {c.tests && (
+        <div className="jv-cf-tests" data-ok={c.tests.passed || undefined}>
+          {c.tests.passed ? <CircleCheck size={15} aria-hidden /> : <CircleMinus size={15} aria-hidden />}
+          <span className="min-w-0"><b>{c.tests.passed ? "Tests passed" : "Tests failed"}</b>{c.tests.summary && ` · ${c.tests.summary}`}
+            {c.tests.command && <code>{c.tests.command}</code>}</span>
+        </div>
+      )}
+      {c.notes && (
+        <div className="jv-open">
+          <Sec label={resolved ? "Notes" : "Why it stopped"} tone={resolved ? undefined : "var(--warn)"} />
+          <Md>{c.notes}</Md>
+        </div>
+      )}
+      <Foot links={[{ href: job.url ?? job.html_url, label: "Open PR" }, { href: job.url ? job.html_url : undefined, label: "On GitHub" }]}>
+        {c.commit ? <span className="jv-cf-commit"><GitCommitHorizontal size={12} aria-hidden />pushed {c.commit.slice(0, 7)}</span> : <span>nothing pushed</span>}
+      </Foot>
     </div>
   );
 }

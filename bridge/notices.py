@@ -91,7 +91,7 @@ VERBS = {
     "move_failed": "MOVE FAILED", "styled": "STYLED", "style_failed": "STYLE FAILED", "weekly": "WEEKLY REPORT",
     "updated": "UPDATED", "note": "NOTE", "coming": "UPDATE READY",
 }
-_RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED"}
+_RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED", "conflict": "RESOLVED"}
 
 # group -> what interrupts you. The spec's defaults: today's behaviour, except
 # that "started elsewhere" stops popping up and Telegram waits until you're away,

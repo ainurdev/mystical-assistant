@@ -51,6 +51,11 @@ def test_rivendell_verb_follows_job_kind():
     assert [r["verb"] for r in notices.feed()] == ["DONE", "IMPLEMENTED", "REVIEWED"]
 
 
+def test_resolved_conflicts_read_resolved_in_the_bell():
+    notices.emit("rv_done", "rv:i:9", title="#87 Fix hydration error", meta={"job_kind": "conflict"})
+    assert notices.feed()[0]["verb"] == "RESOLVED"
+
+
 def test_prune_drops_week_old():
     old = notices.emit("done", "s-old", title="old")
     with closing(store._connect()) as c:

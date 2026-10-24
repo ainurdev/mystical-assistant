@@ -413,3 +413,42 @@ def test_a_reattached_batch_keeps_its_job_and_your_name_for_it(monkeypatch):
     s = store.get_session(sid)
     assert store.parse_job(s["job"]) == {"kind": "impl", "title": "Batch A", "outcome": "completed"}
     assert s["title"] == "my batch"
+
+
+# --- merge conflicts ---------------------------------------------------------
+
+CONFLICT_FRAME = {
+    "type": "pr-conflict-request", "requestId": "c1",
+    "pullRequest": {"id": "pr-87", "repositoryId": "repo-1", "number": 87, "title": "Fix hydration error",
+                    "htmlUrl": "https://github.com/ainurdev/rivendell/pull/87",
+                    "url": "https://rivendell.example/source-control/repositories/repo-1/pull-requests/87",
+                    "repositoryFullName": "ainurdev/rivendell", "headRef": "fix/x", "baseRef": "main"}}
+
+CONFLICT_PROMPT = """You are resolving a pull request's merge conflicts for the team.
+
+Pull request: Fix hydration error (#87)
+Pull request URL: https://github.com/ainurdev/rivendell/pull/87
+Repository: ainurdev/rivendell
+Branch: fix/x, which conflicts with main
+"""
+
+
+def test_facts_from_a_conflicts_event_keep_the_pr_and_its_rivendell_page():
+    job = rivendell_jobs.facts("conflict", "c1", "t1", CONFLICT_FRAME, {"prompt": "x"})
+    assert job == {"kind": "conflict", "instance": "t1", "request": "c1", "title": "Fix hydration error",
+                   "repo": "ainurdev/rivendell", "number": 87,
+                   "html_url": "https://github.com/ainurdev/rivendell/pull/87",
+                   "url": "https://rivendell.example/source-control/repositories/repo-1/pull-requests/87",
+                   "pr_id": "pr-87"}
+
+
+def test_title_names_a_conflicts_job():
+    t = rivendell_jobs.title
+    assert t({"kind": "conflict", "title": "Fix hydration error"}) == "Fix hydration error · conflicts"
+    assert t({"kind": "conflict", "repo": "a/b", "number": 3}) == "Conflicts · a/b #3"
+
+
+def test_classify_reads_a_conflicts_job_back_from_its_prompt():
+    assert rivendell_jobs.classify(CONFLICT_PROMPT) == {
+        "kind": "conflict", "title": "Fix hydration error",
+        "html_url": "https://github.com/ainurdev/rivendell/pull/87", "repo": "ainurdev/rivendell", "number": 87}

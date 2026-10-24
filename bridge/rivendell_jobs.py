@@ -36,7 +36,7 @@ import time
 
 # A kind's tag in the dashboard is the PLUGINS queue's word for it (RivendellQueue.tsx).
 KINDS = ("review", "impl", "taskdesc", "todolist", "changelog", "news", "deck", "video", "meeting-notes",
-         "project-summary", "meeting-brief")
+         "project-summary", "meeting-brief", "conflict")
 
 
 def _pick(*vals):
@@ -62,6 +62,7 @@ def facts(kind: str, request_id: str, instance_id: str,
         step = str(_pick(s.get("source"), c.get("source")) or "").lower() or None
     title = {
         "review": _pick(pr.get("title"), s.get("pullRequestTitle")),
+        "conflict": _pick(pr.get("title"), s.get("pullRequestTitle")),
         "impl": _pick(batch.get("name"), task.get("name"), s.get("taskName")),
         "taskdesc": _pick(task.get("name"), s.get("taskName"), c.get("taskName")),
         "todolist": _pick(project.get("name"), s.get("projectName"), c.get("projectName")),
@@ -78,7 +79,7 @@ def facts(kind: str, request_id: str, instance_id: str,
                       s.get("repositoryFullName"), c.get("repositoryFullName")),
         "number": _pick(pr.get("number"), s.get("pullRequestNumber")),
         "html_url": _pick(pr.get("htmlUrl"), s.get("pullRequestHtmlUrl"), task.get("htmlUrl")),
-        "url": _pick(s.get("url"), c.get("url"), batch.get("url"), meeting.get("url")),
+        "url": _pick(s.get("url"), c.get("url"), pr.get("url"), batch.get("url"), meeting.get("url")),
         # A brief's meeting start, for its view's date and countdown (JobViews).
         "starts": _pick(meeting.get("startsAt"), s.get("startsAt"), c.get("startsAt")),
         "date": _pick(s.get("editionDate"), c.get("editionDate")),
@@ -107,6 +108,10 @@ def title(job: dict) -> "str | None":
         return f"Newspaper · {_day(job['date'])}" if job.get("date") else "Newspaper"
     if kind == "review":
         return name or (f"Review · {job['repo']} #{job['number']}" if job.get("repo") and job.get("number") else None)
+    if kind == "conflict":
+        if name:
+            return f"{name} · conflicts"
+        return f"Conflicts · {job['repo']} #{job['number']}" if job.get("repo") and job.get("number") else None
     if not name or kind in ("video", "meeting-notes"):
         return None
     if kind == "todolist":
@@ -138,6 +143,7 @@ def headline(text: "str | None") -> "str | None":
 # The brief's and the summary's come first: a prompt's head can quote a meeting's or a commit's title,
 # and that can hold another template's words.
 _MARKS = (
+    ("conflict", "resolving a pull request's merge conflicts"),
     ("meeting-brief", "You are preparing a brief for the meeting"),
     ("project-summary", "You are writing a short summary of what happened in the project"),
     ("review", "performing a code review"),
@@ -166,6 +172,7 @@ _TITLE_MARKS = (
     ("meeting-notes", "You are writing the notes of a meeting"),
     ("project-summary", "You are writing a short summary of what happened"),
     ("meeting-brief", "You are preparing a brief for the meeting"),
+    ("conflict", "You are resolving a pull request's merge confl"),
     ("video", "You are given the transcript of a recording"),
 )
 
@@ -186,8 +193,8 @@ def classify(prompt: "str | None") -> "dict | None":
     if kind is None:
         return None
     job: dict = {"kind": kind}
-    if kind == "review":
-        job["title"] = _line(r"^Pull request: (.+)$", p)
+    if kind in ("review", "conflict"):
+        job["title"] = (_line(r"^Pull request: (.+?) \(#\d+\)$", p) if kind == "conflict" else None) or _line(r"^Pull request: (.+)$", p)
         url = _line(r"^Pull request URL: (\S+)", p)
         m = re.search(r"github\.com/([^/\s]+/[^/\s]+)/pull/(\d+)", url or "")
         if m:
