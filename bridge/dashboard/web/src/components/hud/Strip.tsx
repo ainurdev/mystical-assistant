@@ -4,6 +4,7 @@ import { NotificationCenter } from "./Notifications";
 import { WeekPanel } from "./WeekPanel";
 import { setClock12 } from "../../lib/surfaces";
 import { isMacApp, macWindow } from "../../lib/mac";
+import { PanelLeftClose } from "lucide-react";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -52,7 +53,7 @@ const seg = (on: boolean): CSSProperties => ({
  *  its end the week report — the readout the TODAY chip used to carry before
  *  the strip became these caps. Its popover hangs off this cap's left edge;
  *  the clock's menu still opens the same panel over on the right. */
-export function Brand() {
+export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: () => void }) {
   const [week, setWeek] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   // Mystical.app: the cap is the window's title bar, and its traffic lights
@@ -76,8 +77,12 @@ export function Brand() {
     // report draws over the panel rather than behind it.
     <div ref={ref} onMouseEnter={mac ? () => setHot(true) : undefined} onMouseLeave={mac ? () => setHot(false) : undefined} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
       {mac && <Lights show={hot} />}
-      {/* A transform, not padding: the slide composites instead of reflowing the row. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 9, transform: hot ? "translate3d(66px,0,0)" : "translate3d(0,0,0)", transition: "transform .28s cubic-bezier(.2,.8,.2,1)" }}>
+      {/* A transform, not padding: the slide composites instead of reflowing the row.
+          Folded to the rail there is nowhere to slide to, so the mark steps
+          aside by fading and the lights take the cap. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 9, margin: folded ? "0 auto" : undefined,
+                    transform: hot && !folded ? "translate3d(66px,0,0)" : "translate3d(0,0,0)", opacity: hot && folded ? 0 : 1,
+                    transition: "transform .28s cubic-bezier(.2,.8,.2,1), opacity .2s ease" }}>
       <svg
         viewBox="0 0 100 100"
         style={{ width: 19, height: 19, flex: "none", overflow: "visible" }}
@@ -111,13 +116,18 @@ export function Brand() {
           style={{ transformOrigin: "50px 50px", transform: "rotate(45deg)" }}
         />
       </svg>
-      <span className="wordmark" style={{ fontSize: "var(--t12)", letterSpacing: "2.6px", color: "var(--txb)", whiteSpace: "nowrap" }}>
-        <span className="bw-a">MYSTICAL</span><span className="bw-sep" style={{ color: "var(--acc)" }}>//</span><span className="bw-b" style={{ color: "var(--txd)" }}>ASSISTANT</span>
-      </span>
+      {!folded && (
+        <span className="wordmark" style={{ fontSize: "var(--t12)", letterSpacing: "2.6px", color: "var(--txb)", whiteSpace: "nowrap" }}>
+          <span className="bw-a">MYSTICAL</span><span className="bw-sep" style={{ color: "var(--acc)" }}>//</span><span className="bw-b" style={{ color: "var(--txd)" }}>ASSISTANT</span>
+        </span>
+      )}
       </div>
-      <span style={{ flex: 1, minWidth: 6 }} />
-      <ReportButton on={week} onClick={() => setWeek((v) => !v)} />
-      {week && <WeekPanel left />}
+      {!folded && (<>
+        <span style={{ flex: 1, minWidth: 6 }} />
+        <ReportButton on={week} onClick={() => setWeek((v) => !v)} />
+        {week && <WeekPanel left />}
+        {onFold && <FoldButton onClick={onFold} />}
+      </>)}
     </div>
   );
 }
@@ -153,6 +163,25 @@ function Lights({ show }: { show: boolean }) {
         </button>
       ))}
     </div>
+  );
+}
+
+/** Folds the sessions column to its rail — the right panel's fold, mirrored.
+ *  The rail's own foot button unfolds it. */
+function FoldButton({ onClick }: { onClick: () => void }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <button
+      onClick={onClick} aria-label="Fold the sidebar" title="Fold the sidebar to its rail"
+      onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
+      style={{
+        appearance: "none", cursor: "pointer", border: 0, background: "transparent", padding: 0,
+        flex: "none", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center",
+        color: hover ? "var(--txb)" : "var(--txd)", transition: "color .15s ease",
+      }}
+    >
+      <PanelLeftClose size={15} strokeWidth={1.9} aria-hidden />
+    </button>
   );
 }
 

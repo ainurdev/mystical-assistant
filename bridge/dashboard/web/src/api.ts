@@ -967,6 +967,7 @@ export interface SessionStatus {
   source: "bridge" | "native";
   label: string | null;
   // `waiting` only: the session it waits on, what it will do then, since when (epoch s).
+  // `since` on `working` is the turn's start, folded in by App from /running's jobs.
   on?: string;
   then?: string;
   since?: number;

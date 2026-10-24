@@ -571,6 +571,9 @@ export function App() {
   function toggleRight() {
     setSettings((s) => ({ ...s, rightOpen: !s.rightOpen }));
   }
+  function toggleLeft() {
+    setSettings((s) => ({ ...s, leftOpen: !s.leftOpen }));
+  }
   // Tab click: the active tab collapses the sidebar, any other opens on it.
   function pickRightTab(id: string) {
     setSettings((s) => ({ ...s, rightTab: id as RightTab, rightOpen: !(s.rightOpen && s.rightTab === id) }));
@@ -1042,7 +1045,13 @@ export function App() {
       try {
         const r = await api.running(alertsOn.current, lastInput.current);
         if (!live) return;
-        setStatusMap(new Map(Object.entries(r.status ?? {})));
+        // A working row says how long its turn has run: the bridge's job holds the
+        // start, so it rides along as the state's `since` (waiting already has one).
+        const started = new Map((r.jobs ?? []).map((j) => [j.session_id, j.started]));
+        setStatusMap(new Map(Object.entries(r.status ?? {}).map(([id, st]) => {
+          const t = st.state === "working" && st.since == null ? started.get(id) : null;
+          return [id, t ? { ...st, since: t } : st] as [string, SessionStatus];
+        })));
         setNeeds(r.needs);
         noteStyling(r.styling);
       } catch { /* ignore */ }
@@ -2171,6 +2180,7 @@ export function App() {
       : []),
     { id: "analyze", label: "Analyze active project", group: "Project", icon: "⊞", run: () => activeProject && openAnalyze(activeProject) },
     { id: "right-panel", label: settings.rightOpen ? "Collapse right panel" : "Expand right panel", group: "View", icon: "▥", run: toggleRight },
+    { id: "left-panel", label: settings.leftOpen ? "Fold the sidebar to its rail" : "Unfold the sidebar", group: "View", icon: "▤", run: toggleLeft },
     { id: "settings", label: "Dashboard settings…", group: "Display", icon: "⚙", run: () => setSettingsOpen(true) },
     { id: "replay-boot", label: "Replay boot intro", group: "Display", icon: "↻", run: replayBoot },
     { id: "inspector", label: "HTTP inspector…", group: "Session", icon: "◫", run: () => setInspectorOpen(true) },
@@ -2609,12 +2619,13 @@ export function App() {
                 edge, and ⌘K sits at the foot of the rail. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
-              style={{ gridTemplateColumns: shellCols(settings.rightOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0 }}
+              style={{ gridTemplateColumns: shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
-                <Brand />
+                <Brand folded={!settings.leftOpen} onFold={toggleLeft} />
                 <SessionsPanel
+                  folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })}
                   sessions={sessions} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
                   selectedSessionId={sessionId} booting={!booted}

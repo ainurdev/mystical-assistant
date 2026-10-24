@@ -8,8 +8,11 @@ import type { CSSProperties } from "react";
  *  column between the transcript and the panel's left border. */
 export const rightBodyW = "clamp(230px,20vw,340px)";
 
-export function shellCols(rightOpen: boolean): string {
-  return `clamp(260px,22vw,400px) minmax(0,1fr) ${rightOpen ? `calc(${rightBodyW} + 48px)` : "48px"}`;
+/** Folded, the sessions column is the project rail: 72px, so a tile has a
+ *  16px margin each side and the Mac app's traffic lights (13 + 3×12 + 2×8 =
+ *  65px, drawn in the cap above it) still fit across it. */
+export function shellCols(rightOpen: boolean, leftOpen = true): string {
+  return `${leftOpen ? "clamp(260px,22vw,400px)" : "72px"} minmax(0,1fr) ${rightOpen ? `calc(${rightBodyW} + 48px)` : "48px"}`;
 }
 
 /** Wide screens: the chat stops growing and the surplus becomes even gutters.

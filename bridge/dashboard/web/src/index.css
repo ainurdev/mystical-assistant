@@ -3939,6 +3939,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .sessrow[data-on="true"] { background: var(--panel) !important; box-shadow: inset 0 0 0 1px var(--line); }
 [data-fam] .sessrow:hover { background: var(--ac-06) !important; }
 [data-fam] .sessrow > div > span:first-child { font-family: var(--ui-font); letter-spacing: -.005em; }
+/* a row with nothing to say under its title (SessionRow `data-one`) sits on one line */
+[data-fam] .sessrow[data-one="true"] { padding-top: 6px !important; padding-bottom: 6px !important; }
+/* New, beside the search: the same well (it wears .sess-search), lit when touched or open */
+[data-fam] .sess-plus { color: var(--acc) !important; }
+[data-fam] .sess-plus:is(:hover, [aria-expanded="true"]) { background: var(--ac-08) !important; }
 /* PROJECTS: a project heads its sessions, which hang off a rail centred under
    its tile (18px tile, 6px row padding → rail centre at 15px) */
 [data-fam] .projhead { height: 30px !important; padding: 0 6px !important; gap: 0 !important; border-radius: var(--f-rad-s); }
@@ -4332,13 +4337,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam]:not([data-fam="aurora"]) .wordmark .bw-a { font-weight: 600; }
 [data-fam]:not([data-fam="aurora"]) .wordmark .bw-sep { display: none; }
 [data-fam]:not([data-fam="aurora"]) .wordmark .bw-b { margin-left: .3em; }
-[data-fam] .newsess {
-  justify-content: center; border: 1px solid var(--line2) !important; border-radius: var(--f-rad-s) !important;
-  background: transparent !important; color: var(--txb) !important;
-  font-family: var(--ui-font) !important; font-size: var(--t12) !important; font-weight: 500; letter-spacing: 0 !important; text-transform: none !important;
-}
-[data-fam] .newsess:hover { background: var(--ac-06) !important; }
-[data-fam] .newsess svg { color: var(--acc); }
 [data-fam] .lanehead > span:nth-child(2) { font-family: var(--ui-font); font-weight: 600; letter-spacing: .08em !important; font-size: var(--t9) !important; }
 [data-fam] .lanehead > span:nth-child(3) { background: transparent !important; }
 [data-fam] :is(.pmeta, .res-head, .dwork-lab, .dwork-st, .dwork-badge, .lab1) { font-family: var(--ui-font); letter-spacing: .08em; }
@@ -4365,8 +4363,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="claude"] .sessrow::before { display: none; }
 [data-fam="claude"] .sessrow[data-on="true"] { box-shadow: none; }
 [data-fam="claude"] .projrail { border-left-color: transparent !important; }
-[data-fam="claude"] .newsess { justify-content: flex-start; border-color: transparent !important; font-size: var(--t13) !important; }
-[data-fam="claude"] .newsess svg { box-sizing: content-box; padding: 3px; border-radius: 50%; background: var(--acc); color: var(--acc-on); }
 [data-fam="claude"] [data-style="dossier"] .dprompt { box-shadow: none; border-color: var(--line); }
 [data-fam="claude"] .cmdbox { box-shadow: 0 4px 18px color-mix(in srgb, var(--txb) 8%, transparent); }
 [data-fam="claude"] .fresh-quote { font-family: var(--f-disp) !important; font-style: normal !important; font-size: var(--t17) !important; letter-spacing: 0 !important; }
@@ -4489,12 +4485,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   border-radius: 999px !important; background: color-mix(in oklab, var(--acc) 18%, var(--panel)) !important;
 }
 [data-fam="pebble"] .shellcol > .panel > div:first-child > div:first-child > button { border-radius: 999px !important; }
-[data-fam="pebble"] .newsess {
-  height: 36px !important; justify-content: center; border-radius: 999px !important;
-  font: 700 var(--t12) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: none !important;
-  background: color-mix(in oklab, var(--acc) 16%, var(--panel)) !important; color: var(--txb) !important;
-}
-[data-fam="pebble"] .newsess svg { color: var(--acc); }
 [data-fam="pebble"] .lanehead { height: 28px !important; padding: 0 10px !important; }
 [data-fam="pebble"] .lanehead > span:nth-child(2) {
   display: inline-block; font: 700 var(--t11) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: lowercase; color: var(--txh) !important;
@@ -4553,8 +4543,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="aurora"] .projhead > span:nth-of-type(2) { font-weight: 400; letter-spacing: .16em !important; text-transform: uppercase; }
 [data-fam="aurora"] .sessrow[data-on="true"] { background: color-mix(in oklab, var(--acc) 8%, var(--canvas)) !important; box-shadow: none; text-shadow: var(--f-glow); }
 [data-fam="aurora"] .sessrow::before { border-radius: 0; box-shadow: 0 0 8px var(--acc); }
-[data-fam="aurora"] .newsess { font-weight: 400; font-size: var(--t11) !important; letter-spacing: .2em !important; text-transform: uppercase !important;
-  color: var(--acc) !important; border-color: color-mix(in oklab, var(--acc) 30%, var(--canvas)) !important; background: color-mix(in oklab, var(--acc) 5%, transparent) !important; }
 /* a title is yours, not chrome: lit, not capitalised */
 [data-fam="aurora"] .np-title { font-weight: 400; letter-spacing: .02em !important; text-shadow: var(--f-glow); }
 [data-fam="aurora"] .cmdbox :is(.cm-editor, .cm-content, .cm-line, .cm-placeholder) { font-family: var(--mono) !important; }
@@ -6243,14 +6231,6 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 }
 [data-fam="middle-earth"] .sess-search input { font-size: var(--t13) !important; color: var(--txb) !important; }
 [data-fam="middle-earth"] .sess-search input::placeholder { color: var(--txl) !important; }
-/* + Add project / New session: a nav row with a gold mark, not a box */
-[data-fam="middle-earth"] .newsess {
-  justify-content: flex-start !important; border: 0 !important; border-radius: var(--f-rad) !important; background: transparent !important;
-  font: 500 var(--t13) var(--ui-font) !important; letter-spacing: 0 !important; text-transform: none !important; color: var(--txh) !important;
-  padding: 0 10px !important;
-}
-[data-fam="middle-earth"] .newsess:hover { background: var(--side-row) !important; }
-[data-fam="middle-earth"] .newsess svg { color: var(--acc) !important; }
 /* projects head their sessions like Rivendell's nav: a tile, a name, no rail */
 [data-fam="middle-earth"] .projhead { height: 32px !important; border-radius: var(--f-rad) !important; }
 [data-fam="middle-earth"] .projhead > span:nth-of-type(2) { font-size: var(--t13) !important; font-weight: 600 !important; color: var(--txb) !important; }
@@ -6362,3 +6342,36 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .ptile-em { display: none; }
 [data-fam="middle-earth"] .ptile[data-self] > img { display: none; }
 [data-fam="middle-earth"] .ptile[data-self] > .ptile-em { display: block; width: 100%; height: 100%; }
+
+/* ── the sessions column folded to its rail (SessionsPanel `folded`): search and
+   New, one tile per project you are working in, unfold at the foot. Tokens
+   only, so every family wears it; --side-* are Middle-earth's, with fallbacks. ── */
+.srail { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0 12px; }
+.srail-btn, .srail-tile {
+  position: relative; flex: none; width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 0;
+  border-radius: var(--f-rad, 0px); background: transparent; color: var(--txd); cursor: pointer; transition: background .13s ease, color .13s ease;
+}
+.srail-btn { background: var(--side-well, color-mix(in srgb, var(--acc) 6%, transparent)); }
+.srail-btn[data-acc] { color: var(--acc); }
+.srail-btn[data-bare] { background: transparent; }
+.srail-btn:hover, .srail-tile:hover, .srail-tile[data-hot="true"] { background: color-mix(in srgb, var(--acc) 10%, transparent); color: var(--txb); }
+.srail-tile[data-on="true"] { background: var(--side-row, color-mix(in srgb, var(--acc) 12%, transparent)); }
+/* the open session's project: a bar on the rail's edge, as a chat app marks its open server */
+.srail-tile[data-on="true"]::before { content: ""; position: absolute; left: -16px; top: 10px; bottom: 10px; width: 4px; border-radius: 0 3px 3px 0; background: var(--txb); }
+.srail-tile .ptile { width: 24px !important; height: 24px !important; margin: 0 !important; }
+.srail-tiles {
+  align-self: stretch; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
+.srail-sep { flex: none; width: 24px; height: 1px; margin: 4px 0; background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.srail-bd {
+  position: absolute; right: 0; bottom: 0; min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
+  display: grid; place-items: center; font-family: var(--ui-font); font-size: 9px; font-weight: 800; line-height: 1;
+  color: var(--acc-on); background: var(--ok); box-shadow: 0 0 0 2px var(--side, var(--canvas));
+}
+.srail-bd[data-ask] { background: var(--warn); }
+.srail-new { position: absolute; right: 5px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--side, var(--canvas)); }
+.srail-fly {
+  position: fixed; z-index: 60; width: 318px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box;
+  padding: 6px; border-radius: var(--f-rad-l, 0px); animation: mslide .16s ease both;
+}

@@ -1,14 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { BellRing, FolderTree, History, Hourglass, Puzzle } from "lucide-react";
+import { BellRing, FolderTree, History, Hourglass, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
 import { ago, projectName, projectTint } from "../../lib/surfaces";
 import type { ProjectTint } from "../../lib/surfaces";
 import { dayLabel, isJob, JOB_LABEL, jobGroup, jobLabel, JOBS_REL, jobTarget } from "../../lib/jobs";
-import { JOB_ICON, JobsTile, JobTag } from "./JobTag";
+import { JOB_ICON, JobsTile } from "./JobTag";
 import { orderBranches } from "../../lib/branchorder";
 import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
@@ -25,11 +25,12 @@ import { RivendellQueue } from "./RivendellQueue";
  *  waiting on your answer. */
 export type PromptFlag = "draft" | "checking" | "held";
 
-// Flags render as quiet meta-line words, in the same voice as tags — a chip
-// would out-shout the state dot that the whole panel now leans on.
+// Flags render as quiet glyphs at the row's right edge, beside its state — a
+// chip would out-shout the state dot that the whole panel now leans on, and a
+// line of their own would make the row grow when you start typing.
 const FLAG_VIEW: Record<PromptFlag, { c: string; l: string; t: string }> = {
-  draft: { c: "var(--warn)", l: "✎ draft", t: "unsent prompt waiting in this session" },
-  checking: { c: "var(--purple)", l: "checking…", t: "checking this prompt fits this session" },
+  draft: { c: "var(--warn)", l: "✎", t: "unsent prompt waiting in this session" },
+  checking: { c: "var(--purple)", l: "⋯", t: "checking this prompt fits this session" },
   held: { c: "var(--warn)", l: "held", t: "a prompt here needs your decision" },
 };
 
@@ -53,6 +54,9 @@ interface Props {
   onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
   /** Scaffold a repo and open its first session on the given prompt. */
   onCreateProject: (name: string, prompt: string) => void;
+  /** Folded to the rail: one tile per project you are working in. */
+  folded?: boolean;
+  onUnfold?: () => void;
 }
 
 type Mode = "attention" | "projects" | "plugins" | "recent";
@@ -190,20 +194,33 @@ export function resolve(st: SessionStatus | undefined, isDone: boolean, flag?: P
   return v;
 }
 
-/** What a WAITING row's third line names: the session it waits on, that
- *  session's state colour, and whether you are the one holding it up. */
-type WaitLine = { title: string; c: string; needs: boolean };
+/** What a WAITING row knows about the session it waits on: whether you are the
+ *  one holding it up (its title is in the row's tooltip, from the state label). */
+type WaitLine = { needs: boolean };
+
+/** How long a state has held, in the width a sidebar has: seconds under a
+ *  minute, then minutes, then hours and minutes. */
+const lasted = (s: number) =>
+  s < 60 ? `${Math.max(1, s | 0)}s` : s < 3600 ? `${(s / 60) | 0}m` : `${(s / 3600) | 0}h ${String(((s % 3600) / 60) | 0).padStart(2, "0")}m`;
+
+/** The two states that are yours to act on, as chips at a row's right edge. */
+const edgeChip = (c: string, l: string) => (
+  <span style={{ display: "inline-flex", alignItems: "center", height: 18, padding: "0 7px", borderRadius: "var(--f-rad-s, 0px)",
+                 fontSize: "var(--t10)", fontWeight: 700, color: c, background: `color-mix(in srgb, ${c} 16%, transparent)` }}>{l}</span>
+);
 
 function SessionRow({
-  s, i, on, v, flag, wait, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
+  s, i, on, v, st, flag, wait, branch, home, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
 }: {
   s: SessionBrief;
+  st?: SessionStatus;
   wait?: WaitLine;
   i?: number;        // place in a non-virtualised list — its entrance stagger
   on: boolean;
   v: StateView;
   flag?: PromptFlag;
   branch: string;
+  home?: string;     // the project checkout's own branch — a row on it has nothing to say about branches
   pinned: boolean;
   showDot: boolean;  // PROJECTS rows carry the state dot; lane rows wear it as their left edge
   showProj: boolean; // lane rows name their project; PROJECTS rows sit under a header that already does
@@ -220,25 +237,45 @@ function SessionRow({
   const team = isTeam(s.origin) ? s.team : null;
   const theirProj = team ? shareFacts("session", team.meta).project : undefined;
   const tint = job || team ? JOB_TINT : { ...projectTint(s.project), ...(dev && { color: "var(--info)", dim: "var(--info)" }) };
-  const age = dev ? rowAge(s, pulse, Date.now() / 1000) : null;
+  const now = Date.now() / 1000;
+  const age = dev ? rowAge(s, pulse, now) : null;
   const fv = flag ? FLAG_VIEW[flag] : null;
   // A sidebar has no room for a full ref, so a row prints the branch's last
-  // segment; the full ref lives in the row tooltip. Compact drops the whole meta
-  // line, and ROW DETAILS ticks decide which of the rest is worth the width.
+  // segment; the full ref lives in the row tooltip. ROW DETAILS ticks decide
+  // which facts are worth the width at all.
   // `s.worktree` is empty for the main checkout (git.worktree_name), so "in a
   // worktree at all" and "not the main worktree" are the same question.
   const inWorktree = !!(s.worktree || s.work_cwd);
   const wtTitle = s.work_cwd ? `working in ${s.work_cwd}` : s.worktree ? `worktree ${s.worktree}` : "";
   // A Rivendell job says what kind it is and what it was about, not where it ran.
   const target = job ? jobTarget(s.job) : "";
-  const projShown = !job && showProj && detail.proj;
-  const branchShown = !job && detail.branch && !!branch;
-  const wtShown = !job && detail.wt && inWorktree;
-  const metaShow = !!(job || projShown || branchShown || wtShown || fv || s.goal);
+  const JobIcon = job && s.job?.kind ? JOB_ICON[s.job.kind as keyof typeof JOB_ICON] : null;
+  // A row prints what differs from its neighbours, on a second line, and only
+  // facts that hold still: the project where a tab mixes them, a branch that
+  // isn't the checkout's, a worktree. State never takes a line — it is the
+  // right edge — so a row keeps its height whatever its session does.
+  const projShown = !job && !team && showProj && detail.proj;
+  const branchShown = !job && !team && detail.branch && !!branch && branch !== home;
+  const wtShown = !job && !team && detail.wt && inWorktree;
+  const one = !dev && !projShown && !branchShown && !wtShown;
+  // The state where the age used to be: how long a turn has run or waited,
+  // the two states that are yours to act on, the age at rest.
+  const since = st?.since;
+  const edge = v.lane === "work" ? <span style={{ color: "var(--ok)" }}>{since ? lasted(now - since) : "now"}</span>
+    : v.lane === "ask" ? edgeChip("var(--warn)", "Answer")
+    : v.lane === "done" ? edgeChip("var(--ok)", "New")
+    : v.lane === "wait" ? (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: wait?.needs ? "var(--warn)" : "var(--purple)" }}>
+        <Hourglass size={10} strokeWidth={2.2} aria-hidden />{since ? lasted(now - since) : ago(s.updated)}
+      </span>
+    )
+    // the server's label says when it comes back ("usage limit — resuming ~14:00")
+    : v.lane === "parked" ? <span style={{ color: "var(--info)" }}>↻ {st?.label?.match(/\d{1,2}:\d{2}/)?.[0] ?? ago(s.updated)}</span>
+    : <span>{ago(s.updated)}</span>;
   return (
     <div
       onClick={onAttach}
-      className="sessrow" data-on={showDot && on}
+      className="sessrow" data-on={showDot && on} data-one={one}
       onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
       data-ctx-type="session" data-ctx-id={s.id} data-ctx-label={s.title || "session"}
       title={job ? `${s.title || "untitled session"} · ${jobLabel(s.job).toLowerCase()}${target ? ` ${target}` : ""} · from Rivendell · ${v.t}`
@@ -246,7 +283,7 @@ function SessionRow({
         : `${s.title || "untitled session"} · ${projectName(s.project)} · ${branch} · ${v.t}`}
       style={{
         display: "grid", gridTemplateColumns: showDot ? "8px 1fr auto" : "1fr auto", columnGap: 10,
-        alignItems: "start", padding: "8px 8px 9px", position: "relative",
+        alignItems: one ? "center" : "start", padding: one ? "6px 8px" : "8px 8px 9px", position: "relative",
         // Lane rows wear their state on the left edge; PROJECTS rows carry a
         // dot instead and the .sessrow bar (--openbar) marks the open one.
         borderLeft: showDot ? undefined : `2px solid ${on ? tint.dim : `color-mix(in srgb, ${v.c} 32%, transparent)`}`,
@@ -263,7 +300,7 @@ function SessionRow({
       {showDot && (
         <span
           className="sessdot" data-work={pulse} title={v.t}
-          style={{ width: 8, height: 8, marginTop: 3, borderRadius: "50%", boxSizing: "border-box",
+          style={{ width: 8, height: 8, marginTop: one ? 0 : 3, borderRadius: "50%", boxSizing: "border-box",
                    background: v.fill ? v.c : "transparent", border: v.fill ? 0 : `1.5px solid ${v.c}`,
                    boxShadow: v.fill ? `0 0 7px color-mix(in srgb, ${v.c} 40%, transparent)` : "none" }}
         />
@@ -286,26 +323,8 @@ function SessionRow({
             </span>
             {dev.pr != null && <span style={{ flex: "none", marginLeft: -2, fontFamily: "var(--mono)", color: "var(--txl)" }}>#{dev.pr}</span>}
           </div>
-        ) : team ? (
-          // Who sent it, then their project: a session of theirs is in no folder of yours.
+        ) : !one && (
           <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
-            <Avatar id={team.from.id || team.from.name} name={team.from.name} size={16} />
-            <span className="sessproj" style={{ flex: "0 0 auto", maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--purple)" }}>
-              {team.from.name}
-            </span>
-            {theirProj && (
-              <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--mono)", color: "var(--txl)" }}>
-                {theirProj}
-              </span>
-            )}
-          </div>
-        ) : metaShow && (
-          <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
-            {job && <JobTag job={s.job} />}
-            {target && (
-              <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                             color: "var(--txd)" }}>{target}</span>
-            )}
             {projShown && (
               <span className="sessproj" style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: tint.color }}>
                 <ProjectTile project={s.project} />{projectName(s.project)}
@@ -323,34 +342,13 @@ function SessionRow({
                 ⧉{s.worktree ? ` ${s.worktree}` : ""}
               </span>
             )}
-            {fv && (
-              <span title={fv.t} style={{ flex: "none", color: fv.c }}>{fv.l}</span>
-            )}
-            {s.goal && (
-              // Active goals pulse; a blocked one is the row that wants you.
-              <span
-                title={`goal (${s.goal.state}): ${s.goal.objective}`}
-                style={{ flex: "none", fontSize: "var(--t9)",
-                         color: s.goal.state === "blocked" ? "var(--warn)"
-                              : s.goal.state === "active" ? "var(--acc)" : "var(--txf)",
-                         animation: s.goal.state === "active" ? "mpulse 2.4s infinite" : "none" }}
-              >◎</span>
-            )}
-          </div>
-        )}
-        {wait && (
-          <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1, color: "var(--txd)" }}>
-            <Hourglass size={11} strokeWidth={2} aria-hidden style={{ flex: "none", color: "var(--purple)" }} />
-            <span style={{ flex: "none", color: "var(--purple)" }}>on</span>
-            <span style={{ flex: "none", width: 6, height: 6, borderRadius: "50%", background: wait.c,
-                           boxShadow: `0 0 6px color-mix(in srgb, ${wait.c} 45%, transparent)` }} />
-            <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                           fontFamily: "var(--ui-font, inherit)", color: "var(--txm)" }}>{wait.title}</span>
-            {wait.needs && <span style={{ flex: "none", color: "var(--warn)" }}>· needs you</span>}
           </div>
         )}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, height: 16 }}>
+      {/* The pin leads: a row's first span is its title to the theme rules
+          (`.sessrow > div > span:first-child`), and nothing here is one. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 7, height: 18, fontSize: "var(--t10)", fontWeight: 600, lineHeight: 1,
+                    color: "var(--txl)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
         <button
           onClick={(e) => { e.stopPropagation(); onPin(); }}
           title={pinned ? "unpin — stops holding the top of the list" : "pin to the top of the list"}
@@ -359,13 +357,27 @@ function SessionRow({
                    padding: 0, fontFamily: "inherit", fontSize: "var(--t10)", lineHeight: 1, textAlign: "center",
                    color: pinned ? "var(--warn)" : "var(--txl)" }}
         >{pinned ? "★" : "☆"}</button>
-        <span style={{ flex: "none", minWidth: 26, textAlign: "right", fontSize: "var(--t95)",
-                       color: age?.tone === "run" ? "var(--info)" : pulse ? "var(--ok)" : "var(--txl)" }}>
-          {age && (age.tone === "ok" || age.tone === "bad")
-            // ✓ / ✕ in their own colour, the age after it quiet like every row's
-            ? <><span style={{ color: age.tone === "ok" ? "var(--ok)" : "var(--err)" }}>{age.text.slice(0, 1)}</span>{age.text.slice(1)}</>
-            : age?.text ?? ago(s.updated)}
-        </span>
+        {fv && (flag !== "held" || v.lane !== "ask") && <span title={fv.t} style={{ color: fv.c }}>{fv.l}</span>}
+        {s.goal && (
+          // Active goals pulse; a blocked one is the row that wants you.
+          <span
+            title={`goal (${s.goal.state}): ${s.goal.objective}`}
+            style={{ fontSize: "var(--t9)",
+                     color: s.goal.state === "blocked" ? "var(--warn)"
+                          : s.goal.state === "active" ? "var(--acc)" : "var(--txf)",
+                     animation: s.goal.state === "active" ? "mpulse 2.4s infinite" : "none" }}
+          >◎</span>
+        )}
+        {JobIcon && <span title={jobLabel(s.job).toLowerCase()} style={{ display: "inline-flex", color: "var(--purple)" }}><JobIcon size={12} strokeWidth={2.1} aria-hidden /></span>}
+        {team && <Avatar id={team.from.id || team.from.name} name={team.from.name} size={16} />}
+        {age ? (
+          <span style={{ color: age.tone === "run" ? "var(--info)" : pulse ? "var(--ok)" : "var(--txl)" }}>
+            {age.tone === "ok" || age.tone === "bad"
+              // ✓ / ✕ in their own colour, the age after it quiet like every row's
+              ? <><span style={{ color: age.tone === "ok" ? "var(--ok)" : "var(--err)" }}>{age.text.slice(0, 1)}</span>{age.text.slice(1)}</>
+              : age.text}
+          </span>
+        ) : edge}
       </div>
     </div>
   );
@@ -409,6 +421,33 @@ function DayCut({ label }: { label: string }) {
   );
 }
 
+/** A project head's tally: one dot and count per lane that has any, in the
+ *  order they want you — a question first, then what's new, then what's busy. */
+const TALLY: { k: LaneKey; c: string; fill: boolean; t: string }[] = [
+  { k: "ask", c: "var(--warn)", fill: true, t: "need you" },
+  { k: "done", c: "var(--acc)", fill: false, t: "finished, not opened" },
+  { k: "wait", c: "var(--purple)", fill: true, t: "waiting" },
+  { k: "parked", c: "var(--info)", fill: true, t: "parked" },
+  { k: "work", c: "var(--ok)", fill: true, t: "working" },
+];
+function Tally({ n }: { n: Partial<Record<LaneKey, number>> }) {
+  const on = TALLY.filter((x) => n[x.k]);
+  if (!on.length) return null;
+  return (
+    <span title={on.map((x) => `${n[x.k]} ${x.t}`).join(" · ")}
+          style={{ flex: "none", display: "flex", alignItems: "center", gap: 10, marginRight: 4, fontSize: "var(--t10)",
+                   fontWeight: 700, lineHeight: 1, color: "var(--txd)", fontVariantNumeric: "tabular-nums" }}>
+      {on.map((x) => (
+        <span key={x.k} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: x.k === "ask" ? "var(--warn)" : undefined }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", boxSizing: "border-box",
+                         background: x.fill ? x.c : "transparent", border: x.fill ? 0 : `1.5px solid ${x.c}` }} />
+          {n[x.k]}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 /** One virtualised entry in a lane list: a lane header, a session row, the
  *  idle lane's fold toggle, or a PLUGINS day label. */
 type LaneItem =
@@ -420,7 +459,7 @@ type LaneItem =
 export function SessionsPanel(props: Props) {
   const {
     sessions, groups, hidden, status, done, flags, pins, selectedSessionId, activeProject, booting,
-    onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject,
+    onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
   } = props;
 
   // New-session form.
@@ -486,6 +525,10 @@ export function SessionsPanel(props: Props) {
   const [hov, setHov] = useState("");
   const [chipHov, setChipHov] = useState("");
   const [closeHov, setCloseHov] = useState(false);
+  // Folded: the project whose rows hang beside its tile, and where its tile sits.
+  const [fly, setFly] = useState<{ rel: string; top: number } | null>(null);
+  const flyT = useRef<number | undefined>(undefined);
+  const railRef = useRef<HTMLDivElement>(null);
   const [startHov, setStartHov] = useState(false);
   const [cancelHov, setCancelHov] = useState(false);
 
@@ -500,19 +543,33 @@ export function SessionsPanel(props: Props) {
     catch { /* ignore */ }
   }, [picked, order, customOrder, shut]);
 
-  // "/" jumps to the search box — the hint badge in it promises this.
+  // "/" jumps to the search box — the hint badge in it promises this. Folded,
+  // there is no box until the panel unfolds, so it unfolds first.
   const searchRef = useRef<HTMLInputElement>(null);
+  const unfoldRef = useRef(onUnfold);
+  unfoldRef.current = onUnfold;
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement | null;
       if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
       if (t?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t?.tagName ?? "")) return;
       e.preventDefault();
-      searchRef.current?.focus();
+      if (!searchRef.current) unfoldRef.current?.();
+      requestAnimationFrame(() => searchRef.current?.focus());
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // A search left in the box would filter the rail with nothing on screen to
+  // say so; a flyout outlives nothing that folds or unfolds.
+  useEffect(() => { setFly(null); if (asRail) setSessionQ(""); }, [asRail]);
+  useEffect(() => {
+    if (!fly) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFly(null); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fly]);
 
   // Branches power the WORKTREE chips + parent cycle — load per selected project
   // while the form is open (same endpoint the old inline picker used).
@@ -643,43 +700,51 @@ export function SessionsPanel(props: Props) {
   // Expanding is a drill-down, not a longer list: while one project is open the
   // others step aside, and "← All projects" is the way back.
   const drilled = !sq && open.size > 0;
+  // Shared lists what teammates sent, which `mine` keeps out of every other group.
+  const rowsOf = (g: ProjectGroup) => (g.rel === SHARED_REL ? sorted.filter(listed) : mine).filter((s) => jobGroup(s) === g.rel);
+  // Newest rows *plus* anything live — a union, not a replacement: selecting
+  // an idle row made it "live" and shoved its sibling out of the list.
+  const capped = (f: SessionBrief[]) => {
+    const keep = new Set(f.slice(0, 2).map((s) => s.id));
+    return f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id) || laneOf(s) !== "idle" || flags.has(s.id));
+  };
+  // A head's tally: how many of its sessions sit in each lane. It counts every
+  // session, not the rows showing, so a shut project still says what's inside.
+  const tallyOf = (f: SessionBrief[]) => {
+    const n: Partial<Record<LaneKey, number>> = {};
+    for (const s of f) { const k = laneOf(s); n[k] = (n[k] ?? 0) + 1; }
+    return n;
+  };
   const tree = mode !== "projects" ? [] : ps.flatMap((g) => {
     if (drilled && !open.has(g.rel)) return [];
-    // Shared lists what teammates sent, which `mine` keeps out of every other group.
-    const f = (g.rel === SHARED_REL ? sorted.filter(listed) : mine).filter((s) => jobGroup(s) === g.rel);
+    const f = rowsOf(g);
     if (sq && f.length === 0) return [];
     // Nothing to show is nothing to expand — an empty project is collapsed,
     // whatever the header was last clicked to.
     const isShut = !f.length || (shut.has(g.rel) && !sq);
-    // Newest rows *plus* anything live — a union, not a replacement: selecting
-    // an idle row made it "live" and shoved its sibling out of the list.
-    const keep = new Set(f.slice(0, 2).map((s) => s.id));
     const vis = isShut ? [] : sq || open.has(g.rel)
       // Opened, the jobs group reads as a log: newest job first, one kind at a time.
       ? (g.rel === JOBS_REL ? f.filter((s) => !jobKind || (s.job?.kind ?? "") === jobKind).sort(byCreated) : f)
-      : f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id)
-        || laneOf(s) !== "idle" || flags.has(s.id));
+      : capped(f);
     const rest = Math.max(0, g.sessionCount - vis.length);
-    return [{ g, f, isShut, vis, rest }];
+    return [{ g, f, isShut, vis, rest, n: tallyOf(f) }];
   });
 
-  // A WAITING row names the session it waits on and wears that one's state.
+  // A WAITING row's hourglass turns amber when the session it waits on waits on you.
   const waitOf = (s: SessionBrief): WaitLine | undefined => {
     const on = status.get(s.id)?.state === "waiting" ? status.get(s.id)?.on : undefined;
     if (!on) return undefined;
     const t = views.get(on) ?? resolve(status.get(on), done.has(on), flags.get(on));
-    const title = sessions.find((x) => x.id === on)?.title
-      || status.get(s.id)?.label?.replace(/^waiting on /, "") || "another session";
-    return { title, c: t.c, needs: t.lane === "ask" };
+    return { needs: t.lane === "ask" };
   };
 
   const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean, i?: number) => (
     <SessionRow
       key={s.id} s={s} i={i} showDot={showDot} showProj={showProj} detail={detail}
       on={s.id === selectedSessionId}
-      v={views.get(s.id) ?? SV.idle} flag={flags.get(s.id)} wait={waitOf(s)}
+      v={views.get(s.id) ?? SV.idle} st={status.get(s.id)} flag={flags.get(s.id)} wait={waitOf(s)}
       pulse={(status.get(s.id)?.state ?? "idle") === "working"}
-      branch={branchFor(s)}
+      branch={branchFor(s)} home={branchOf.get(s.project)}
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
       onAttach={() => onSelectSession(s)}
     />
@@ -979,10 +1044,19 @@ export function SessionsPanel(props: Props) {
           style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: cancelHov ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "9px 12px" }}
         >CANCEL</button>
       </div>
+      {/* Adding a project is rare, so it lives in here rather than taking a row of its own. */}
+      {!nsScoped && (
+        <button
+          onClick={() => { setNsOpen(false); setNpOpen(true); }}
+          onMouseEnter={() => setHov("addproj")} onMouseLeave={() => setHov("")}
+          style={{ appearance: "none", cursor: "pointer", display: "block", marginTop: 10, padding: 0, border: 0, background: "transparent",
+                   fontFamily: "inherit", fontSize: "var(--t95)", color: hov === "addproj" ? "var(--info)" : "var(--txd)" }}
+        >or add a new project ›</button>
+      )}
     </div>
   );
 
-  // PROJECTS mode's form: a repo name and the first thing to build in it. Same
+  // The new-project form: a repo name and the first thing to build in it. Same
   // shape as nsForm, one tint over — a project is not a session.
   const npForm = (
     <div style={{ border: "1px solid color-mix(in srgb, var(--info) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--info) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
@@ -1036,7 +1110,9 @@ export function SessionsPanel(props: Props) {
   // Tabs are icons only — the label survives as the tooltip and the
   // accessible name, so the bar stays narrow and never wraps.
   const modeTabs: { id: Mode; label: string; Icon: LucideIcon; count: number; tip: string }[] = [
-    { id: "attention", label: "Attention", Icon: BellRing, count: mine.filter((s) => laneOf(s) !== "idle").length, tip: "Attention — grouped by what each session wants from you" },
+    // ATTENTION counts what wants you — a question, or a finish you haven't
+    // opened — not everything that's busy: eight running turns are not eight to-dos.
+    { id: "attention", label: "Attention", Icon: BellRing, count: mine.filter((s) => laneOf(s) === "ask" || laneOf(s) === "done").length, tip: "Attention — grouped by what each session wants from you" },
     { id: "projects", label: "Projects", Icon: FolderTree, count: groups.length, tip: "Projects — grouped by project" },
     ...(plugins.rivendell ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
     { id: "recent", label: "Recent", Icon: History, count: mine.length, tip: "Recent — one flat stream, newest first" },
@@ -1056,6 +1132,105 @@ export function SessionsPanel(props: Props) {
     </div>
   );
 
+
+  // FOLDED: the column is a rail of the projects you are working in — any with
+  // a session busy or touched this week, and the open one's — each wearing its
+  // tally as a badge: a question in amber, else how many are running, and a dot
+  // for a finish you haven't opened. A tile opens its rows beside it; anything
+  // more unfolds the panel.
+  if (asRail) {
+    const cur = sessions.find((x) => x.id === selectedSessionId);
+    const openRel = cur ? jobGroup(cur) : activeProject;
+    const week = Date.now() / 1000 - 7 * 86400;
+    const peek = (rel: string, el: HTMLElement, wait = 120) => {
+      window.clearTimeout(flyT.current);
+      const top = el.getBoundingClientRect().top;
+      flyT.current = window.setTimeout(() => setFly({ rel, top }), wait);
+    };
+    const unpeek = () => {
+      window.clearTimeout(flyT.current);
+      flyT.current = window.setTimeout(() => setFly(null), 220);
+    };
+    const tile = (g: ProjectGroup) =>
+      g.rel === JOBS_REL ? <JobsTile /> : g.rel === SHARED_REL ? <TeamTile /> : <ProjectTile project={g.rel} />;
+    const flyG = fly && ps.find((g) => g.rel === fly.rel);
+    const flyRows = flyG ? rowsOf(flyG) : [];
+    const flyVis = capped(flyRows);
+    const flyRest = flyG ? Math.max(0, flyG.sessionCount - flyVis.length) : 0;
+    return (
+      <div ref={railRef} className="srail">
+        <button className="srail-btn" aria-label="Search sessions" title="Search sessions  /"
+                onClick={() => { onUnfold?.(); requestAnimationFrame(() => searchRef.current?.focus()); }}>
+          <Search size={16} strokeWidth={2} aria-hidden />
+        </button>
+        <button className="srail-btn" data-acc aria-label="New session" title="New session"
+                onClick={() => { onUnfold?.(); toggleForm(); }}>
+          <Plus size={17} strokeWidth={2.2} aria-hidden />
+        </button>
+        <span className="srail-sep" />
+        <div className="srail-tiles">
+          {ps.filter((g) => g.rel === openRel || rowsOf(g).some((x) => x.updated > week || laneOf(x) !== "idle")).map((g) => {
+            const n = tallyOf(rowsOf(g));
+            return (
+              <button
+                key={g.rel} className="srail-tile" aria-label={g.name}
+                data-on={g.rel === openRel} data-hot={fly?.rel === g.rel}
+                onMouseEnter={(e) => peek(g.rel, e.currentTarget)} onMouseLeave={unpeek}
+                onClick={(e) => (fly?.rel === g.rel ? setFly(null) : peek(g.rel, e.currentTarget, 0))}
+              >
+                {tile(g)}
+                {n.ask ? <span className="srail-bd" data-ask>{n.ask}</span> : n.work ? <span className="srail-bd">{n.work}</span> : null}
+                {!!n.done && <span className="srail-new" />}
+              </button>
+            );
+          })}
+        </div>
+        <span className="srail-sep" />
+        <button className="srail-btn" data-bare aria-label="Unfold the sidebar" title="Unfold the sidebar" onClick={onUnfold}>
+          <PanelLeftOpen size={17} strokeWidth={1.9} aria-hidden />
+        </button>
+        {flyG && fly && (
+          // A popover like the order menu (--shadow-pop), so each family dresses it as one.
+          <div
+            className="srail-fly" onMouseEnter={() => window.clearTimeout(flyT.current)} onMouseLeave={unpeek}
+            onClick={() => setFly(null)}
+            style={{ left: (railRef.current?.getBoundingClientRect().right ?? 72) + 8,
+                     top: Math.max(8, Math.min(fly.top - 8, window.innerHeight - 200)),
+                     border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
+                     boxShadow: "0 8px 22px var(--shadow-pop)" }}
+          >
+            <div className="projgrp">
+              <div className="projhead" style={{ display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", cursor: "default" }}>
+                <span className="pdot" style={{ flex: "none", width: 6, height: 6, background: projectTint(flyG.rel).color }} />
+                {tile(flyG)}
+                <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                               fontSize: "var(--t115)", letterSpacing: ".06em", color: "var(--txm)" }}>{flyG.name}</span>
+                <span style={{ flex: 1, minWidth: 6 }} />
+                <Tally n={tallyOf(flyRows)} />
+              </div>
+              <div className="projrail" style={{ margin: "1px 0 0 3px", borderLeft: `1px solid color-mix(in srgb, ${projectTint(flyG.rel).color} 20%, transparent)` }}>
+                {flyVis.map((x) => rowFor(x, true, false))}
+                {flyRest > 0 && (
+                  <button
+                    onClick={(e) => {
+                      // the rest is a drill-down in PROJECTS: unfold onto it
+                      e.stopPropagation(); setFly(null); onUnfold?.(); setPicked("projects");
+                      setShut((c) => { const n = new Set(c); n.delete(flyG.rel); return n; });
+                      setOpen(new Set([flyG.rel]));
+                    }}
+                    onMouseEnter={() => setHov("flymore")} onMouseLeave={() => setHov("")}
+                    style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 8px", border: 0, background: "transparent",
+                             fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: ".1em", cursor: "pointer",
+                             color: hov === "flymore" ? "var(--acc)" : "var(--txl)" }}
+                  >{flyRest} more →</button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ flex: "none", display: "flex", flexDirection: "column", padding: "14px 16px 0" }}>
@@ -1086,149 +1261,130 @@ export function SessionsPanel(props: Props) {
                     style={{ position: "absolute", top: 4, left: "calc(50% + 4px)", width: 6, height: 6, borderRadius: "50%", background: "var(--info)",
                              boxShadow: "0 0 0 2px var(--panel2), 0 0 8px var(--info)" }} />
                 )}
-                {/* Only ATTENTION's count is a number you act on; the other two
-                    just measure the list you are already looking at. */}
-                {m.id === "attention" && (
-                  <span style={{ flex: "none", fontSize: "var(--t9)", color: on ? "var(--acc)" : "var(--txl)" }}>{m.count}</span>
+                {/* Only ATTENTION's count is a number you act on, so it shows
+                    only while there is something to act on. */}
+                {m.id === "attention" && m.count > 0 && (
+                  <span style={{ flex: "none", fontSize: "var(--t9)", fontWeight: 700, color: "var(--warn)" }}>{m.count}</span>
                 )}
               </button>
             );
           })}
         </div>
-        <div className="sess-search" style={{ display: "flex", alignItems: "center", gap: 10, height: 38, marginTop: 11, position: "relative",
-                      borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)" }}>
-          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flex: "none" }} aria-hidden="true">
-            <circle cx="5" cy="5" r="3.6" stroke="var(--txl)" strokeWidth="1.3" />
-            <line x1="7.8" y1="7.8" x2="11" y2="11" stroke="var(--txl)" strokeWidth="1.3" strokeLinecap="round" />
-          </svg>
-          <input
-            ref={searchRef}
-            value={sessionQ} onChange={(e) => setSessionQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Escape") { setSessionQ(""); e.currentTarget.blur(); } }}
-            placeholder="Search title or branch"
-            style={{ flex: 1, minWidth: 0, height: "100%", border: 0, outline: "none", background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: "var(--txb)" }}
-          />
-          <span title="Press / to jump here" style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>/</span>
-          {/* Job rows print no project, branch or worktree, so PLUGINS has no row details to pick. */}
-          {mode !== "plugins" && <span style={{ flex: "none", width: 1, height: 14, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />}
-          {mode === "projects" && (
-            <button
-              onClick={() => { setDetailMenu(false); setOrderMenu((o) => !o); }}
-              title={`Project order — ${ORDER_LABEL[order]}`}
-              aria-expanded={orderMenu}
-              onMouseEnter={() => setHov("order")} onMouseLeave={() => setHov("")}
+        {/* New stands beside the search, in the same well: one line, where the
+            full-width NEW SESSION / ADD PROJECT rows used to take one each.
+            It wears .sess-search too, so every family draws it as that well. */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+          <div className="sess-search" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, height: 38, marginTop: 11, position: "relative",
+                        borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)" }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flex: "none" }} aria-hidden="true">
+              <circle cx="5" cy="5" r="3.6" stroke="var(--txl)" strokeWidth="1.3" />
+              <line x1="7.8" y1="7.8" x2="11" y2="11" stroke="var(--txl)" strokeWidth="1.3" strokeLinecap="round" />
+            </svg>
+            <input
+              ref={searchRef}
+              value={sessionQ} onChange={(e) => setSessionQ(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Escape") { setSessionQ(""); e.currentTarget.blur(); } }}
+              placeholder="Search title or branch"
+              style={{ flex: 1, minWidth: 0, height: "100%", border: 0, outline: "none", background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: "var(--txb)" }}
+            />
+            <span title="Press / to jump here" style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>/</span>
+            {/* Job rows print no project, branch or worktree, so PLUGINS has no row details to pick. */}
+            {mode !== "plugins" && <span style={{ flex: "none", width: 1, height: 14, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />}
+            {mode === "projects" && (
+              <button
+                onClick={() => { setDetailMenu(false); setOrderMenu((o) => !o); }}
+                title={`Project order — ${ORDER_LABEL[order]}`}
+                aria-expanded={orderMenu}
+                onMouseEnter={() => setHov("order")} onMouseLeave={() => setHov("")}
+                style={{ flex: "none", border: 0, background: "transparent", padding: "0 2px", margin: 0, cursor: "pointer", fontFamily: "inherit",
+                         fontSize: "var(--t12)", lineHeight: 1,
+                         color: orderMenu || hov === "order" ? "var(--acc)" : "var(--txl)" }}
+              >⇅</button>
+            )}
+            {orderMenu && (
+              <>
+                <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
+                <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 140,
+                              border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
+                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                  <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>PROJECT ORDER</div>
+                  {ORDERS.map((m) => (
+                    <button
+                      key={m} onClick={() => { setOrder(m); setOrderMenu(false); }}
+                      onMouseEnter={() => setHov(`ord:${m}`)} onMouseLeave={() => setHov("")}
+                      style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
+                               background: order === m ? "color-mix(in srgb, var(--acc) 14%, transparent)"
+                                 : hov === `ord:${m}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
+                               color: order === m ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
+                               fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
+                    >{order === m ? "▸ " : "   "}{ORDER_LABEL[m]}</button>
+                  ))}
+                  {order === "custom" && (
+                    <div style={{ padding: "5px 8px 4px", fontSize: "var(--t85)", color: "var(--txf)", letterSpacing: ".04em" }}>
+                      drag a project header to reorder
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+            {mode !== "plugins" && <button
+              onClick={() => { setOrderMenu(false); setDetailMenu((o) => !o); }}
+              title={`Row details in ${mode.toUpperCase()} — ${shownFields || "nothing"}`}
+              aria-expanded={detailMenu}
+              onMouseEnter={() => setHov("detail")} onMouseLeave={() => setHov("")}
               style={{ flex: "none", border: 0, background: "transparent", padding: "0 2px", margin: 0, cursor: "pointer", fontFamily: "inherit",
                        fontSize: "var(--t12)", lineHeight: 1,
-                       color: orderMenu || hov === "order" ? "var(--acc)" : "var(--txl)" }}
-            >⇅</button>
-          )}
-          {orderMenu && (
-            <>
-              <div onClick={() => setOrderMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
-              <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 140,
-                            border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
-                            boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
-                <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>PROJECT ORDER</div>
-                {ORDERS.map((m) => (
-                  <button
-                    key={m} onClick={() => { setOrder(m); setOrderMenu(false); }}
-                    onMouseEnter={() => setHov(`ord:${m}`)} onMouseLeave={() => setHov("")}
-                    style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
-                             background: order === m ? "color-mix(in srgb, var(--acc) 14%, transparent)"
-                               : hov === `ord:${m}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
-                             color: order === m ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
-                             fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
-                  >{order === m ? "▸ " : "   "}{ORDER_LABEL[m]}</button>
-                ))}
-                {order === "custom" && (
-                  <div style={{ padding: "5px 8px 4px", fontSize: "var(--t85)", color: "var(--txf)", letterSpacing: ".04em" }}>
-                    drag a project header to reorder
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-          {mode !== "plugins" && <button
-            onClick={() => { setOrderMenu(false); setDetailMenu((o) => !o); }}
-            title={`Row details in ${mode.toUpperCase()} — ${shownFields || "nothing"}`}
-            aria-expanded={detailMenu}
-            onMouseEnter={() => setHov("detail")} onMouseLeave={() => setHov("")}
-            style={{ flex: "none", border: 0, background: "transparent", padding: "0 2px", margin: 0, cursor: "pointer", fontFamily: "inherit",
-                     fontSize: "var(--t12)", lineHeight: 1,
-                     color: detailMenu || hov === "detail" ? "var(--acc)" : shownFields ? "var(--acc)" : "var(--txl)" }}
-          >⎇</button>}
-          {detailMenu && (
-            <>
-              <div onClick={() => setDetailMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
-              <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 168,
-                            border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
-                            boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
-                <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS · {mode.toUpperCase()}</div>
-                {fieldsFor(mode).map((f) => {
-                  const on = detail[f.k];
-                  return (
-                    // Ticks, not a preset list — the menu stays open so you can
-                    // set all three against the rows changing behind it.
-                    <button
-                      key={f.k} onClick={() => toggleField(f.k)} title={f.tip}
-                      role="menuitemcheckbox" aria-checked={on}
-                      onMouseEnter={() => setHov(`det:${f.k}`)} onMouseLeave={() => setHov("")}
-                      style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
-                               display: "flex", alignItems: "center", gap: 8,
-                               background: hov === `det:${f.k}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
-                               color: on ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
-                               fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
-                    >
-                      <span style={{ flex: "none", width: 12, height: 12, display: "flex", alignItems: "center", justifyContent: "center",
-                                     border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
-                                     background: on ? "var(--acc)" : "transparent", color: "var(--acc-on)",
-                                     fontSize: "var(--t9)", fontWeight: 700 }}>{on ? "✓" : ""}</span>
-                      {f.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
+                       color: detailMenu || hov === "detail" ? "var(--acc)" : shownFields ? "var(--acc)" : "var(--txl)" }}
+            >⎇</button>}
+            {detailMenu && (
+              <>
+                <div onClick={() => setDetailMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
+                <div style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, minWidth: 168,
+                              border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
+                              boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+                  <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>ROW DETAILS · {mode.toUpperCase()}</div>
+                  {fieldsFor(mode).map((f) => {
+                    const on = detail[f.k];
+                    return (
+                      // Ticks, not a preset list — the menu stays open so you can
+                      // set all three against the rows changing behind it.
+                      <button
+                        key={f.k} onClick={() => toggleField(f.k)} title={f.tip}
+                        role="menuitemcheckbox" aria-checked={on}
+                        onMouseEnter={() => setHov(`det:${f.k}`)} onMouseLeave={() => setHov("")}
+                        style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
+                                 display: "flex", alignItems: "center", gap: 8,
+                                 background: hov === `det:${f.k}` ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
+                                 color: on ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
+                                 fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
+                      >
+                        <span style={{ flex: "none", width: 12, height: 12, display: "flex", alignItems: "center", justifyContent: "center",
+                                       border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
+                                       background: on ? "var(--acc)" : "transparent", color: "var(--acc-on)",
+                                       fontSize: "var(--t9)", fontWeight: 700 }}>{on ? "✓" : ""}</span>
+                        {f.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+          {/* PLUGINS lists what plugin workers started — there's no session of yours to start there. */}
+          {mode !== "plugins" && (
+            <button
+              className="sess-search sess-plus" onClick={toggleForm} aria-label="New session" aria-expanded={nsOpen && !nsScoped}
+              title="New session — in a project's checkout or a worktree"
+              style={{ flex: "none", height: 38, aspectRatio: "1", marginTop: 11, padding: 0, display: "grid", placeItems: "center",
+                       border: 0, borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)", cursor: "pointer", color: "var(--acc)" }}
+            ><Plus size={16} strokeWidth={2.2} aria-hidden /></button>
           )}
         </div>
-
-        {mode === "projects" ? (
-          <button
-            className="newsess" onClick={() => setNpOpen((o) => !o)} title="scaffold a new repo and start its first session"
-            onMouseEnter={() => setHov("newproj")} onMouseLeave={() => setHov("")}
-            style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", height: 34, marginTop: 11, padding: "0 10px",
-                     border: 0, borderRadius: 3,
-                     background: `color-mix(in srgb, var(--info) ${hov === "newproj" || npOpen ? 14 : 7}%, transparent)`,
-                     color: "var(--info-hi)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: ".18em", textTransform: "uppercase",
-                     cursor: "pointer", transition: "background .15s ease" }}
-          >
-            <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: "none" }}>
-              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            Add project
-          </button>
-        ) : mode !== "plugins" && (
-          // PLUGINS lists what plugin workers started — there's no session of yours to start there.
-          <button
-            className="newsess" onClick={toggleForm} title="start a session — current worktree or a new one"
-            onMouseEnter={() => setHov("new")} onMouseLeave={() => setHov("")}
-            style={{ display: "flex", alignItems: "center", gap: 9, width: "100%", height: 34, marginTop: 11, padding: "0 10px",
-                     border: 0, borderRadius: 3,
-                     background: `color-mix(in srgb, var(--acc) ${hov === "new" || nsOpen ? 11 : 5.5}%, transparent)`,
-                     color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: ".18em", textTransform: "uppercase",
-                     cursor: "pointer", transition: "background .15s ease" }}
-          >
-            <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: "none" }}>
-              <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-            New session
-          </button>
-        )}
       </div>
 
       <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "16px 10px 26px" }}>
         {nsOpen && !nsScoped && mode !== "plugins" && nsForm}
-        {npOpen && mode === "projects" && npForm}
+        {npOpen && mode !== "plugins" && npForm}
         {/* Pending plugin requests sit above the sessions they become on accept. */}
         {plugins.rivendell && <RivendellQueue active={mode === "plugins"} />}
 
@@ -1261,7 +1417,7 @@ export function SessionsPanel(props: Props) {
           </div>
         ) : (
           <>
-            {tree.map(({ g, f, isShut, vis, rest }) => {
+            {tree.map(({ g, f, isShut, vis, rest, n }) => {
               const jobs = g.rel === JOBS_REL;
               const shared = g.rel === SHARED_REL;    // no folder of yours: no project menu, no New
               const tint = jobs || shared ? JOB_TINT : projectTint(g.rel);
@@ -1295,7 +1451,9 @@ export function SessionsPanel(props: Props) {
                       ? `${g.rel} — drag to reorder, click to ${isShut ? "expand" : "collapse"}`
                       : `${g.rel} · ${sq ? `${f.length} of ${g.sessionCount} match` : `${g.sessionCount} sessions`} — click to ${isShut ? "expand" : "collapse"}`}
                     style={{ display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", userSelect: "none",
-                             cursor: order === "custom" && !sq ? "grab" : "pointer" }}
+                             cursor: order === "custom" && !sq ? "grab" : "pointer",
+                             // shut on a question: the head is the only thing left to say so
+                             background: isShut && n.ask ? "color-mix(in srgb, var(--warn) 9%, transparent)" : undefined }}
                   >
                     <span className="pdot" style={{ flex: "none", width: 6, height: 6, background: tint.color }} />
                     {jobs ? <JobsTile /> : shared ? <TeamTile /> : <ProjectTile project={g.rel} />}
@@ -1303,6 +1461,7 @@ export function SessionsPanel(props: Props) {
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
                     <span style={{ flex: 1, minWidth: 6 }} />
+                    <Tally n={n} />
                     {/* Rivendell or a teammate started these; there is no session of yours to start here. */}
                     {!jobs && !shared && <button
                       onClick={(e) => { e.stopPropagation(); openFor(g.rel); }}

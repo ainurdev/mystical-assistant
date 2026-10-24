@@ -358,6 +358,7 @@ export interface HudSettings {
   sweep: boolean;
   glow: boolean;
   rightOpen: boolean; // right sidebar expanded
+  leftOpen: boolean; // sessions column expanded; folded, it is the project rail
   rightTab: RightTab; // which sidebar tab it opens on
   indicator: Indicator; // which working-indicator form is live
   nyan: NyanMode; // which cat, when indicator === "nyan"
@@ -440,7 +441,7 @@ function urlLayout(): ChatLayout | null {
 
 const KEY = "hud-settings";
 const DEFAULTS: HudSettings = {
-  theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, rightTab: "files",
+  theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, leftOpen: true, rightTab: "files",
   indicator: "orbit", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true, intro: "shuffle",
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
@@ -499,6 +500,7 @@ export function loadSettings(): HudSettings {
         sweep: p.sweep ?? true,
         glow: p.glow ?? true,
         rightOpen: p.rightOpen ?? true,
+        leftOpen: p.leftOpen ?? true,
         // "changes" was its own tab until the GIT tab took it in (2026-10-18)
         rightTab: (p.rightTab as string) === "changes" ? "git" : RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
         indicator: toIndicator(p.indicator),
