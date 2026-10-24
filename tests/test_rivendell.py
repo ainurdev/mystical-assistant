@@ -662,6 +662,7 @@ def test_catch_up_queues_meeting_notes_requests(monkeypatch):
 
 
 @pytest.mark.parametrize("kind, path, runner", [
+    ("conflict", "conflict-requests", "_run_conflict"),
     ("meeting-notes", "meeting-notes-requests", "_run_meeting_notes"),
     ("project-summary", "project-summary-requests", "_run_project_summary"),
     ("meeting-brief", "meeting-brief-requests", "_run_meeting_brief"),
@@ -3617,3 +3618,115 @@ def test_a_refused_project_read_is_reported_not_called_boardless(workers, monkey
         ("read_route", "/projects/p1"): "GET /projects/p1 answered 403: Forbidden resource"})
     text = rivendell.work_list("/x")
     assert "403" in text and "isn't on a Rivendell task board" not in text
+
+
+# --- merge conflicts: a PR's base merged into its branch, fixed, tested and pushed -------------
+
+_CONFLICT_FRAME = {
+    "type": "pr-conflict-request", "requestId": "c1",
+    "pullRequest": {"id": "pr-87", "repositoryId": "repo-1", "number": 87,
+                    "title": "Fix hydration error", "htmlUrl": "https://github.com/ainurdev/rivendell/pull/87",
+                    "url": "https://rivendell.example/source-control/repositories/repo-1/pull-requests/87",
+                    "repositoryFullName": "ainurdev/rivendell", "headRef": "fix/railway-project-hydration",
+                    "baseRef": "main"}}
+
+
+def test_handle_message_pr_conflict_requests():
+    """pr-conflict-request events queue as "conflict" under the PR's repository, once."""
+    w = _worker()
+    ev = json.dumps(_CONFLICT_FRAME).encode()
+    w._handle_message(ev)
+    w._handle_message(ev)                          # duplicate: dropped
+    assert _drain(w) == [("conflict", "c1", "ainurdev/rivendell")]
+
+
+def test_catch_up_queues_conflict_requests(monkeypatch):
+    """Catch-up lists open conflicts requests by their repository."""
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+
+    def api(path, payload=None):
+        if path == "/plugin/conflict-requests":
+            return [{"id": "c1", "pullRequestNumber": 87, "pullRequestTitle": "Fix hydration error",
+                     "repositoryFullName": "ainurdev/rivendell", "headRef": "fix/x", "baseRef": "main",
+                     "url": "https://rivendell.example/pr/87"}]
+        return []
+    monkeypatch.setattr(w, "_api", api)
+    w._catch_up()
+    assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [("conflict:c1", "ainurdev/rivendell")]
+
+
+def test_conflict_without_checkout_is_refused(monkeypatch, acks):
+    """Like an implementation: a conflicts job writes code, so with no local checkout
+    of its repository it is refused ("no-checkout") instead of claimed, and forgotten."""
+    w = _worker()
+    hits, calls = [], []
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: None)
+    monkeypatch.setattr(w, "accept", lambda key: hits.append(key) or True)
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: calls.append((path, payload)))
+    w._apply_policy(w._enqueue("conflict", "c1", "ainurdev/rivendell"))
+    assert hits == [] and acks == [] and w.queue_snapshot() == []
+    assert calls == [("/plugin/conflict-requests/c1/refuse", {"reason": "no-checkout"})]
+    assert "conflict:c1" not in w._seen
+
+
+def test_run_conflict_fails_without_checkout(monkeypatch):
+    """No local checkout for the repository -> FAILED, never a run somewhere else."""
+    w = _worker()
+    posted = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {"prompt": "merge it", "repositoryFullName": "acme/gone"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: None)
+    monkeypatch.setattr(w, "_post_result", lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    monkeypatch.setattr(w, "_start_run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
+    w._run_conflict("c1", "acme/other")
+    assert posted == [("conflict-requests", "c1", False,
+                       f"no local checkout for 'acme/gone' under {rivendell.config.BASE_PATH}")]
+
+
+def test_run_conflict_runs_in_the_checkout_and_posts_its_report(monkeypatch):
+    """It runs in the repository's checkout, with tools, on an implementation's clock,
+    tracked as a conflict, and its answer goes back to conflict-requests."""
+    w = _worker()
+    started, tracked, posted = [], [], []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {"prompt": "merge it", "repositoryFullName": "ainurdev/rivendell"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: "/co/rivendell" if slug == "ainurdev/rivendell" else None)
+    job = type("Job", (), {"store_session_id": "s1"})()
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None, **k: started.append((prompt, workdir, hang_timeout, k)) or job)
+    monkeypatch.setattr(w, "_track", lambda rid, kind, slug, sid, **k: tracked.append((rid, kind, slug, sid)))
+    monkeypatch.setattr(w, "_wait_job", lambda job, timeout: (True, "Resolved."))
+    monkeypatch.setattr(w, "_post_result", lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    w._run_conflict("c1", "ainurdev/rivendell")
+    assert started == [("merge it", "/co/rivendell", 10800, {})]
+    assert tracked == [("c1", "conflict", "ainurdev/rivendell", "s1")]
+    assert posted == [("conflict-requests", "c1", True, "Resolved.")]
+
+
+def test_queued_message_names_merge_conflicts():
+    item = {"key": "conflict:c1", "kind": "conflict", "request_id": "c1",
+            "slug": "ainurdev/rivendell", "created_at": 0.0}
+    text, _kb = _worker()._queued_message(item, "tok")
+    assert "Rivendell merge conflicts queued — ainurdev/rivendell" in text
+
+
+_RESOLVED = """Merged main in; five files conflicted over the date helpers.
+```json
+{"outcome": "resolved", "files": [{"path": "a.ts", "how": "kept both"}, {"path": "b.ts", "how": "main's"}],
+ "tests": {"command": "pnpm test", "passed": true, "summary": "1211 passed"}, "commit": "1a2b3c4d5e6f", "notes": ""}
+```"""
+
+
+def test_conflict_message_says_resolved_with_the_files_the_tests_and_the_commit():
+    meta = {"number": 87, "title": "Fix hydration error", "url": "https://rivendell.example/pr/87"}
+    text, kb = rivendell._conflict_message(meta, _RESOLVED)
+    assert text.splitlines() == ["⇄ Conflicts resolved: #87 Fix hydration error", "2 files, tests passed, pushed 1a2b3c4"]
+    assert kb == {"inline_keyboard": [[{"text": "Open PR ↗", "url": "https://rivendell.example/pr/87"}]]}
+
+
+def test_conflict_message_says_why_mystical_stopped():
+    stopped = '```json\n{"outcome": "stopped", "files": [], "tests": null, "commit": null, "notes": "Both sides rewrote formatDay: needs a person."}\n```'
+    text, _kb = rivendell._conflict_message({"number": 87, "title": "Fix x"}, stopped)
+    assert text.splitlines() == ["⇄ Conflicts not resolved: #87 Fix x", "Both sides rewrote formatDay: needs a person."]
+
+
+def test_conflict_message_is_none_for_an_answer_that_is_no_report():
+    assert rivendell._conflict_message({"number": 87}, "just prose") is None

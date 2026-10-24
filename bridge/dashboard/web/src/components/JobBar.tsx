@@ -39,8 +39,10 @@ export function JobBar({ job, turn, onAsk, onStop, onAgain }: {
     res?.elapsed ? wall(res.elapsed).toLowerCase() : "",
     typeof res?.cost === "number" ? `$${res.cost.toFixed(2)}` : "",
   ].filter(Boolean).join(" · ");
-  const link = job.kind === "review" && job.html_url
-    ? <a className="jobbar-btn" href={job.html_url} target="_blank" rel="noreferrer"><ArrowUpRight size={12} aria-hidden />OPEN PR</a>
+  // A conflicts job's PR opens in Rivendell first (its page there), GitHub when Rivendell sent none.
+  const prUrl = job.kind === "conflict" ? job.url ?? job.html_url : job.kind === "review" ? job.html_url : undefined;
+  const link = prUrl
+    ? <a className="jobbar-btn" href={prUrl} target="_blank" rel="noreferrer"><ArrowUpRight size={12} aria-hidden />OPEN PR</a>
     : job.url
       ? <a className="jobbar-btn" href={job.url} target="_blank" rel="noreferrer">
           <ArrowUpRight size={12} aria-hidden />{job.kind === "news" ? "READ IN RIVENDELL" : "IN RIVENDELL"}</a>

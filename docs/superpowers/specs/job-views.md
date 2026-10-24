@@ -12,6 +12,7 @@ on the newspaper's sheet (`.paper`), with one signature element each. Approved f
 | MEETING NOTES | JSON `{notes (## Summary/topics/## Decisions), actionItems[]}` | minutes: topics, stamped decisions, action items with owners |
 | REVIEW | free markdown | a verdict stamp only when the review states one; numbered findings with file chips and a FIX row |
 | IMPLEMENT | markdown summary | the PR as a ticket stub, a batch's tasks done/skipped, the open questions |
+| CONFLICTS | prose, then a ```json block `{outcome, files[{path, how}], tests, commit, notes}` | a merge slip: RESOLVED or STOPPED stamp, base into head, each file with how it was settled, the tests line, the pushed commit; OPEN PR goes to Rivendell's page first |
 | TASK DESC | markdown, fixed `##` sections | a ticket with the key on a punched tab; acceptance criteria as boxes |
 | CHANGELOG | markdown `## <version> — <date>`, `### Added/Changed/Fixed…` | the version set huge, colour-coded groups, BREAKING first, refs as chips |
 | VIDEO | TRANSCRIBE JSON / ASK markdown | a chapter reel with the real screens; ASK: the question as a bubble, m:ss as timecode chips |

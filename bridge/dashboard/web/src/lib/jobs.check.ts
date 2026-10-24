@@ -18,6 +18,9 @@ console.assert(jobGroup({ origin: "device-run:prod", project: "/" }) === "/", "a
 
 console.assert(jobLabel({ kind: "news" }) === "NEWSPAPER", "the queue's word");
 console.assert(jobLabel({ kind: "project-summary" }) === "SUMMARY", "a project summary reads SUMMARY");
+console.assert(jobLabel({ kind: "conflict" }) === "CONFLICTS", "merge conflicts read CONFLICTS");
+console.assert(jobTarget({ kind: "conflict", repo: "ainurdev/rivendell", number: 87 }) === "rivendell #87", "conflicts are about a PR, like a review");
+console.assert(oneShot({ kind: "conflict" }), "a conflicts job's report is the point: the job bar, not the composer");
 console.assert(jobLabel({ kind: "meeting-brief" }) === "BRIEF", "a meeting brief reads BRIEF");
 console.assert(jobLabel({ kind: "todolist", step: "recommendations" }) === "RECOMMEND", "step 1 reads as what it is");
 console.assert(jobLabel(null) === "RIVENDELL", "no kind on record");

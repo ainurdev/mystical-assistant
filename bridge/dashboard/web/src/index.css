@@ -2179,6 +2179,22 @@ input {
 .jv-task[data-skip] .nm { color: var(--txd); }
 .jv-task .why { display: block; font-size: var(--t115); color: var(--txl); }
 .jv-impl-body { margin-top: 12px; font-size: var(--t13); line-height: 1.6; color: var(--tx); }
+
+/* MERGE CONFLICTS — a merge slip: the branches, each file and how it was settled, the tests, the pushed commit. */
+.jv-cf-br { color: var(--txd); }
+.jv-cf-br b { font-family: var(--mono); font-size: var(--t10); font-weight: 600; color: var(--txh); }
+.jv-cf-files { display: grid; gap: 6px; margin-top: 2px; }
+.jv-cf-file { display: grid; grid-template-columns: minmax(0, max-content) 1fr; align-items: baseline; gap: 10px; font-size: var(--t12); line-height: 1.5; color: var(--txd); }
+.jv-cf-file .jv-ref { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jv-cf-tests { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; padding: 9px 12px; border-radius: var(--f-rad, 10px);
+  border: 1px solid color-mix(in srgb, var(--warn) 26%, var(--border)); font-size: var(--t12); line-height: 1.5; color: var(--txd); }
+.jv-cf-tests svg { flex: none; margin-top: 2px; color: var(--warn); }
+.jv-cf-tests[data-ok] { border-color: color-mix(in srgb, var(--ok) 26%, var(--border)); }
+.jv-cf-tests[data-ok] svg { color: var(--ok); }
+.jv-cf-tests b { color: var(--txb); font-weight: 600; }
+.jv-cf-tests code { display: block; margin-top: 2px; font-family: var(--mono); font-size: var(--t10); color: var(--txl); }
+.jv-cf-commit { display: inline-flex; align-items: center; gap: 5px; font-family: var(--mono); }
+@media (max-width: 640px) { .jv-cf-file { grid-template-columns: 1fr; gap: 2px; } }
 .jv-open { margin-top: 12px; border-radius: var(--f-rad, 10px); border: 1px solid color-mix(in srgb, var(--warn) 26%, var(--border));
   background: color-mix(in srgb, var(--warn) 4%, transparent); padding: 1px 14px 4px; }
 .jv-open ul { margin: 0; padding-left: 16px; list-style: disc; }

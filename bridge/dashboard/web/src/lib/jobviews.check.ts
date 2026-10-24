@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/jobviews.check.ts
-import { clockMs, clockOf, otherSide, parseBrief, parseChangelog, parseImpl, parseNotes, parseReview, parseSummary,
+import { branchesOf, clockMs, clockOf, otherSide, parseBrief, parseChangelog, parseConflict, parseImpl, parseNotes, parseReview, parseSummary,
   parseTaskDesc, parseVideo, questionOf, withTimecodes } from "./jobviews.ts";
 
 const eq = (a: unknown, b: unknown, msg: string) => console.assert(JSON.stringify(a) === JSON.stringify(b), `${msg}: ${JSON.stringify(a)}`);
@@ -137,3 +137,17 @@ eq(cl?.groups[1].entries.map((e) => [e.breaking, e.text]), [[true, "Sign-in need
 eq(parseChangelog("## Unreleased\n\n### Fixed\n- A thing.")?.version, "Unreleased", "no date");
 console.assert(parseChangelog("Here are the notes.") === null, "no version line: markdown");
 console.log("jobviews checks ran");
+
+// CONFLICTS — the report the conflicts prompt asks for: a few sentences, then a ```json block.
+const cf = parseConflict('Merged main in; two files conflicted over the date helpers.\n```json\n{"outcome": "resolved", "files": [{"path": "a.ts", "how": "kept both"}, {"path": "", "how": "x"}], "tests": {"command": "pnpm test", "passed": true, "summary": "1211 passed"}, "commit": "1a2b3c4d5e", "notes": ""}\n```');
+eq(cf?.outcome, "resolved", "a resolved report parses");
+eq(cf?.summary, "Merged main in; two files conflicted over the date helpers.", "the prose before the block is the summary");
+eq(cf?.files, [{ path: "a.ts", how: "kept both" }], "a file with no path is dropped");
+eq(cf?.tests, { command: "pnpm test", passed: true, summary: "1211 passed" }, "the tests line");
+eq(cf?.commit, "1a2b3c4d5e", "the pushed commit");
+eq(parseConflict('```json\n{"outcome": "stopped", "files": [], "tests": null, "commit": null, "notes": "Both sides rewrote formatDay."}\n```'),
+  { summary: "", outcome: "stopped", files: [], tests: null, commit: null, notes: "Both sides rewrote formatDay." }, "stopped: why, no tests, no commit");
+console.assert(parseConflict("I merged it, all good.") === null, "prose alone is no report");
+console.assert(parseConflict('{"outcome": "maybe"}') === null, "an outcome Rivendell doesn't know is no report");
+eq(branchesOf("Repository: a/b\nBranch: fix/railway-project-hydration, which conflicts with main\n"), { head: "fix/railway-project-hydration", base: "main" }, "the branches, from the prompt");
+eq(branchesOf("no branches here"), null, "no branch line, no branches");

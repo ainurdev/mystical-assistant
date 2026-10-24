@@ -26,6 +26,7 @@ by refusing it (below):
     changelog-request                  |
     project-summary-request            |
     meeting-brief-request              |
+    pr-conflict-request                |
     deck-request                       v  ACCEPT (dashboard PLUGINS tab / Telegram)
           -> GET  /plugin/<kind>-requests/<id>/prompt
           (the GET claims the request: PENDING -> IN_PROGRESS)
@@ -57,7 +58,10 @@ in markdown). The bridge runs both the same way and posts the answer verbatim �
 rivendell-api parses it by the request's kind — and only uses the step to label
 the request in the log, the Telegram ping and the dashboard queue.
 
-Reviews and implementations need a local checkout of the named repository;
+Reviews, implementations and merge conflicts need a local checkout of the named
+repository (a conflicts job merges the PR's base into its branch, fixes the
+conflicts, runs the tests and pushes; like an implementation it never falls back
+to another folder, and a bridge without the checkout refuses it);
 todolists, task descriptions, changelogs, deck drafts, project summaries and meeting
 briefs need none — the whole project/task context (for a changelog: the tasks, pull
 requests and commits the user picked; for a deck: its slides and the project's work of
@@ -372,6 +376,9 @@ class Worker:
         # Request id -> the meeting a brief is about ({name, startsAt, url}, read off its
         # event or catch-up row), until _ping_done tells it. Memory only, like the two above.
         self._briefs: "dict[str, dict]" = {}
+        # Request id -> the PR a conflicts job is about ({number, title, url}: its Rivendell
+        # page), until _ping_done tells how it went. Memory only, like the briefs.
+        self._conflicts: "dict[str, dict]" = {}
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
         self._progress_thread: threading.Thread | None = None
@@ -833,6 +840,7 @@ class Worker:
             sid = store.sessions_for_refs([ref]).get(ref)
             job_kind = next((k for k, v in self._KIND_PATH.items() if v == kind_path), None)
             meeting = self._briefs.pop(request_id, None) if job_kind == "meeting-brief" else None
+            pr_meta = self._conflicts.pop(request_id, None) if job_kind == "conflict" else None
             brief = ok and job_kind == "meeting-brief"
             kind = "rv_brief" if brief else ("rv_done" if ok else "rv_failed")
             line = (_brief_lead(text) if brief
@@ -850,7 +858,9 @@ class Worker:
                        pr_url=pr.get("url"), pr_number=pr.get("number"))
             if not notices.telegram_ok(kind):
                 return
-            msg, kb = _brief_message(meeting or {}, text) if brief else _done_message(sess, ok, text, res)
+            told = _conflict_message(pr_meta or {}, text) if ok and job_kind == "conflict" else None
+            msg, kb = (_brief_message(meeting or {}, text) if brief
+                       else told or _done_message(sess, ok, text, res))
             self._deliver_telegram(msg, kb)
         except Exception as e:  # noqa: BLE001
             print(f"rivendell[{self.name}]: done ping failed for {request_id}: {e}")
@@ -998,6 +1008,11 @@ class Worker:
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: meeting-brief catch-up failed: {e}")
         try:
+            for item in self._api("/plugin/conflict-requests"):
+                self._apply_policy(self._enqueue("conflict", item["id"], item.get("repositoryFullName"), offered=bool(item.get("offered")), src=item))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: conflict catch-up failed: {e}")
+        try:
             head = device_side.headers(self.inst)    # teammates' device runs: only on a device READY for one
             if head:
                 device_side.report_interrupted(self, head)   # runs a restart cut short, first
@@ -1048,6 +1063,11 @@ class Worker:
                 m = src.get("meeting") or src       # an event nests the meeting; a catch-up row is flat
                 self._briefs[request_id] = {"name": m.get("name") or m.get("meetingName"),
                                             "startsAt": m.get("startsAt"), "url": m.get("url")}
+            if kind == "conflict":
+                p = src.get("pullRequest") or src   # an event nests the PR; a catch-up row is flat
+                self._conflicts[request_id] = {"number": p.get("number") or p.get("pullRequestNumber"),
+                                               "title": p.get("title") or p.get("pullRequestTitle"),
+                                               "url": p.get("url")}
         with self._q_lock:
             self._pending[key] = {
                 "key": key, "kind": kind, "request_id": request_id,
@@ -1100,21 +1120,23 @@ class Worker:
             if not busy:
                 self.accept(key)
             return
-        if item.get("kind") == "impl" and self._find_checkout(item["slug"]) is None:
+        if item.get("kind") in ("impl", "conflict") and self._find_checkout(item["slug"]) is None:
+            kind = item["kind"]
             with self._q_lock:
                 self._pending.pop(key, None)
             rid = item["request_id"]
-            print(f"rivendell[{self.name}]: implementation {rid} refused: no "
+            what = "Implementation" if kind == "impl" else "Merge conflicts"
+            print(f"rivendell[{self.name}]: {what.lower()} {rid} refused: no "
                   f"local checkout for {item['slug']!r} under {config.BASE_PATH}")
             if not item.get("offered"):      # a teammate's job you never took is not your news
-                self._note("rv_refused", rid, f"Implementation · {item['slug']}",
+                self._note("rv_refused", rid, f"{what} · {item['slug']}",
                            f"No checkout of {item['slug']} under {config.BASE_PATH}, so the bridge "
-                           "told Rivendell no. Clone it to take the next one.", job_kind="impl")
+                           "told Rivendell no. Clone it to take the next one.", job_kind=kind)
             if item.get("offered"):
                 # A teammate's job: refusing is a server no-op for a non-requester,
                 # and forgetting the key would re-ping it on every reconnect.
                 return
-            if not self._refuse("impl", rid, "no-checkout"):
+            if not self._refuse(kind, rid, "no-checkout") and kind == "impl":
                 # An older rivendell-api (no refuse): pass it on the old way.
                 # ponytail: the key stays in _seen on this path, so a repo
                 # cloned later is only picked up after a bridge restart; the
@@ -1261,6 +1283,11 @@ class Worker:
             print(f"rivendell[{self.name}]: meeting brief requested for "
                   f"{meeting.get('name', '?')}")
             return self._enqueue("meeting-brief", obj["requestId"], meeting.get("name"), offered=offered, src=obj)
+        if obj.get("type") == "pr-conflict-request" and obj.get("requestId"):
+            pr = obj.get("pullRequest") or {}
+            print(f"rivendell[{self.name}]: merge conflicts sent for "
+                  f"{pr.get('repositoryFullName', '?')}#{pr.get('number', '?')}")
+            return self._enqueue("conflict", obj["requestId"], pr.get("repositoryFullName"), offered=offered, src=obj)
         if obj.get("type") == "device-run-request" and obj.get("requestId"):
             print(f"rivendell[{self.name}]: {(obj.get('requester') or {}).get('name', '?')} asks this "
                   f"device for a run of {obj.get('repository', '?')}")
@@ -1605,6 +1632,37 @@ class Worker:
         print(f"rivendell[{self.name}]: implementation {request_id} "
               f"{'completed' if ok else 'failed'}")
         self._post_result("implementation-requests", request_id, ok, text)
+
+    def _run_conflict(self, request_id: str, slug: "str | None") -> None:
+        """A PR's merge conflicts: Rivendell's prompt names both branches and says
+        how (merge, never rebase or force-push, stop when unsure); the run merges,
+        fixes, tests and pushes in the repository's checkout. Like an
+        implementation it writes code, so it never falls back to another
+        directory, and it gets an implementation's clock and tools."""
+        resp = self._claim("conflict-requests", request_id)
+        if resp is None:
+            return
+        prompt = resp["prompt"]
+        slug = resp.get("repositoryFullName") or slug
+        workdir = self._find_checkout(slug)
+        if workdir is None:
+            print(f"rivendell[{self.name}]: merge conflicts {request_id}: no checkout for {slug!r}")
+            self._post_result("conflict-requests", request_id, False,
+                              f"no local checkout for {slug!r} under {config.BASE_PATH}")
+            return
+        print(f"rivendell[{self.name}]: merge conflicts {request_id} running in {workdir}")
+        job = self._start_run(prompt, workdir, hang_timeout=self.inst.get("impl_timeout", 10800))
+        if job is None:  # can't happen for a fresh session; never hang the queue
+            self._post_result("conflict-requests", request_id, False,
+                              "could not start a Claude run (session busy)")
+            return
+        self._track(request_id, "conflict", slug, job.store_session_id, label=None, link=None)
+        try:
+            ok, text = self._wait_job(job, self.inst.get("impl_timeout", 10800))
+        finally:
+            self._untrack(request_id)
+        print(f"rivendell[{self.name}]: merge conflicts {request_id} {'completed' if ok else 'failed'}")
+        self._post_result("conflict-requests", request_id, ok, text)
 
     def _run_batch_queue(self, request_id: str, resp: dict, steps: list, workdir: str) -> None:
         """Queue mode: one queued turn per step in a fresh session, in order, and
@@ -2045,6 +2103,7 @@ class Worker:
         "project-summary": "project-summary-requests",
         "meeting-brief": "meeting-brief-requests",
         "device-run": "device-run-requests",
+        "conflict": "conflict-requests",
     }
 
     # -- Telegram ping for queued (non-auto-accepted) requests --
@@ -2061,6 +2120,7 @@ class Worker:
         "project-summary": "summary",
         "meeting-brief": "meeting brief",
         "device-run": "Device run",
+        "conflict": "merge conflicts",
     }
 
     def _label(self, item: dict) -> str:
@@ -2271,6 +2331,8 @@ class Worker:
                 self._run_meeting_brief(request_id, slug)
             elif kind == "device-run":
                 self._run_device_run(item)
+            elif kind == "conflict":
+                self._run_conflict(request_id, slug)
             else:
                 self._run_review(request_id, slug)
         except Exception as e:  # noqa: BLE001 — worker must outlive any run
@@ -3373,6 +3435,45 @@ def _brief_message(meta: dict, answer: str, now: "datetime | None" = None) -> tu
     lines += [ln for ln in (_brief_when(meta.get("startsAt"), now), _brief_lead(answer)) if ln]
     url = meta.get("url")
     return "\n".join(lines), ({"inline_keyboard": [[{"text": "Open brief ↗", "url": url}]]} if url else None)
+
+
+def _conflict_report(answer: str) -> "dict | None":
+    """The JSON report a conflicts job answers with (outcome, files, tests,
+    commit, notes), read out of its ```json fence; None for an answer that holds
+    none. Rivendell stores the answer as it is: this only shapes the message."""
+    raw = answer or ""
+    i, j = raw.find("{"), raw.rfind("}")
+    try:
+        body = json.loads(raw[i:j + 1]) if 0 <= i < j else None
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) and body.get("outcome") in ("resolved", "stopped") else None
+
+
+def _conflict_message(meta: dict, answer: str) -> "tuple | None":
+    """A conflicts job's ping: resolved (how many files, the tests, the pushed
+    commit) or not (why Mystical stopped), over OPEN PR, which opens the PR's
+    page in Rivendell. `meta` is the request's PR ({number, title, url}). None
+    when the answer holds no report: the generic done message says it then.
+    Pure, so the wording is unit-testable."""
+    report = _conflict_report(answer)
+    if report is None:
+        return None
+    pr = " ".join(b for b in (f"#{meta['number']}" if meta.get("number") else "", meta.get("title") or "") if b)
+    if report["outcome"] == "resolved":
+        files = report.get("files") or []
+        tests = report.get("tests") or {}
+        commit = str(report.get("commit") or "")[:7]
+        line = ", ".join(b for b in (
+            f"{len(files)} file{'' if len(files) == 1 else 's'}" if files else "",
+            ("tests passed" if tests.get("passed") else "tests failed") if tests else "",
+            f"pushed {commit}" if commit else "") if b)
+        lines = [f"⇄ Conflicts resolved: {pr}" if pr else "⇄ Conflicts resolved", line]
+    else:
+        lines = [f"⇄ Conflicts not resolved: {pr}" if pr else "⇄ Conflicts not resolved",
+                 str(report.get("notes") or "").strip()[:300]]
+    url = meta.get("url")
+    return "\n".join(ln for ln in lines if ln), ({"inline_keyboard": [[{"text": "Open PR ↗", "url": url}]]} if url else None)
 
 
 def _answer(token: str, labels: list, notes: str = "") -> "str | None":

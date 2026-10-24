@@ -359,3 +359,46 @@ export function parseChangelog(md: string): Changelog | null {
   for (const g of kept) g.entries.sort((a, b) => Number(b.breaking) - Number(a.breaking));
   return { version: hm ? hm[1] : head, date: hm ? hm[2] : "", summary: summary.join(" "), groups: kept };
 }
+
+// ── MERGE CONFLICTS ───────────────────────────────────────────────────────────
+
+/** A conflicts job's report (Rivendell's conflict-prompt.template.ts asks for it): the prose, then its ```json block. */
+export interface Conflict {
+  summary: string;
+  outcome: "resolved" | "stopped";
+  files: { path: string; how: string }[];
+  tests: { command: string; passed: boolean; summary: string } | null;
+  commit: string | null;
+  notes: string;
+}
+
+/** The report out of the answer; null when it holds none (the box keeps the markdown then). */
+export function parseConflict(md: string): Conflict | null {
+  const text = md ?? "";
+  const i = text.indexOf("{"), j = text.lastIndexOf("}");
+  if (i < 0 || j <= i) return null;
+  let body: Record<string, unknown>;
+  try { body = JSON.parse(text.slice(i, j + 1)); } catch { return null; }
+  if (!body || (body.outcome !== "resolved" && body.outcome !== "stopped")) return null;
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const files = Array.isArray(body.files)
+    ? body.files.flatMap((f) => (f && typeof f === "object" && str((f as { path?: unknown }).path)
+      ? [{ path: str((f as { path: unknown }).path), how: str((f as { how?: unknown }).how) }] : []))
+    : [];
+  const t = body.tests && typeof body.tests === "object" ? body.tests as Record<string, unknown> : null;
+  const fence = text.lastIndexOf("```", i);
+  return {
+    summary: text.slice(0, fence >= 0 ? fence : i).trim(),
+    outcome: body.outcome,
+    files,
+    tests: t ? { command: str(t.command), passed: t.passed === true, summary: str(t.summary) } : null,
+    commit: str(body.commit) || null,
+    notes: str(body.notes),
+  };
+}
+
+/** The two branches, from the prompt's "Branch: <head>, which conflicts with <base>" line. */
+export function branchesOf(prompt: string): { head: string; base: string } | null {
+  const m = /^Branch: (\S+), which conflicts with (\S+)\s*$/m.exec(prompt ?? "");
+  return m ? { head: m[1], base: m[2] } : null;
+}
