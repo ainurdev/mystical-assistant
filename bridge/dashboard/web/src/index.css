@@ -3120,6 +3120,69 @@ input {
 [data-style="dossier"] .dwork-body .zx .flc-shots :is(figure, figcaption) { max-width: 180px; }
 [data-style="dossier"] .dwork-body .zx .flc-shots figcaption { font-size: var(--t95); letter-spacing: 0; }
 
+/* A stretch (RunStream WorkStretch, lib/dossier stretchesOf): an open zone reads
+   as the agent's words, and the work each piece of them led to rides at the end
+   of its last line as a tally, the header's kind chips on a hairline pill with a
+   chevron. The words go inline so the tally follows their last word; words that
+   end in a list or a code block get it on the line after. A widened space, not a
+   margin, sits before it, so a tally that wraps starts flush with the text. The
+   18px pill sits 1px down from the top of the 20px line, centred on it whatever
+   the face, and never grows it. */
+[data-style="dossier"] .dwork-body :is(.abub-tail, .zo-tail) > .md,
+[data-style="dossier"] .dwork-body :is(.abub-tail, .zo-tail) > .md > p:last-child { display: inline; }
+/* the box wears the words' own face and size (it is set in the mono): its strut
+   shares their baseline, or WebKit grows every line a fraction of a pixel */
+[data-style="dossier"] .dwork-body .abub-tail { font-family: var(--d-face); }
+[data-style="dossier"] .dwork-body .zo-tail { font-family: var(--d-face); font-size: calc(var(--t12) + .5px); }
+[data-style="dossier"] .wsp { letter-spacing: 3px; }
+[data-style="dossier"] .wtally {
+  display: inline-flex; align-items: center; gap: 9px; height: 18px; padding: 0 6px 0 5px;
+  vertical-align: top; margin-top: 1px; border: 1px solid color-mix(in oklab, var(--txl) 34%, transparent); border-radius: 999px;
+  background: none; font-style: normal; line-height: 1; white-space: nowrap; cursor: pointer;
+  transition: background-color .15s ease, border-color .15s ease;
+}
+[data-style="dossier"] .wtally:hover { background: color-mix(in oklab, var(--txl) 14%, transparent); }
+[data-style="dossier"] .wtally:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+[data-style="dossier"] .wtally .dwork-k { gap: 4px; font-size: var(--t105); line-height: 1; }
+[data-style="dossier"] .wtally .dwork-k > i { width: 14px; height: 14px; background: none; }
+[data-style="dossier"] .wtally[data-err] { border-color: color-mix(in oklab, var(--err) 50%, transparent); }
+[data-style="dossier"] .wtally[aria-expanded="true"] {
+  background: color-mix(in oklab, var(--txl) 16%, transparent); border-color: color-mix(in oklab, var(--txm) 45%, transparent);
+}
+[data-style="dossier"] .wtally[data-live] { border-color: color-mix(in oklab, var(--acc) 65%, transparent); }
+[data-style="dossier"] .wtally-chev { flex: none; color: var(--txf); transform: rotate(-90deg); transition: transform .2s ease; }
+[data-style="dossier"] .wtally[aria-expanded="true"] .wtally-chev { transform: none; color: var(--txm); }
+@media (prefers-reduced-motion: reduce) {
+  [data-style="dossier"] :is(.wtally, .wtally-chev) { transition: none; }
+}
+/* work before any words: the tally on a row of its own, on a small dot */
+[data-style="dossier"] .dwork-body .zrow.wlead > .ax-bar::before {
+  content: ""; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--line2, var(--d-hair)); box-shadow: 0 0 0 4px var(--zg);
+}
+[data-style="dossier"] .dwork-body .zrow.wlead > .zo { display: flex; align-items: center; min-height: 28px; padding: 0; }
+/* the pictures it came back with never fold: one row of the shut plate's tiles
+   under the words, at the text column */
+[data-style="dossier"] :is(.dwork-body, .wzc-body) > .wstrip {
+  display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin: 8px 0 2px var(--zobj) !important;
+}
+[data-style="dossier"] .dwork-body .wstrip .zx { margin: 0 !important; }
+[data-style="dossier"] .dwork-body .wstrip .zx .tw { margin: 0; }
+[data-style="dossier"] .dwork-body .wstrip :is(.flc-shots, .zx.flex) { gap: 10px; }
+[data-style="dossier"] .dwork-body .wstrip .zx :is(img, video) {
+  width: 96px; height: 60px; max-width: none; object-fit: cover; border-radius: calc(var(--d-rad) * .4);
+}
+[data-style="dossier"] .dwork-body .wstrip .zx .flc-shots :is(figure, figcaption) { max-width: 96px; }
+/* a picture the uploads have since lost keeps its tile; the name under it says which */
+[data-style="dossier"] .dwork-body .wstrip .flc-gone {
+  display: flex; align-items: center; justify-content: center; width: 96px; height: 60px; font-size: 0;
+  border: 1px dashed var(--d-hair); border-radius: calc(var(--d-rad) * .4);
+}
+[data-style="dossier"] .dwork-body .wstrip .flc-gone::before { content: "picture gone"; font-size: var(--t85); color: var(--txg); }
+/* open: its rows under the words, as the zone's own */
+[data-style="dossier"] :is(.dwork-body, .wzc-body) > .wbody { display: flex; flex-direction: column; padding: 4px 0 2px; margin: 0 !important; }
+[data-style="dossier"] .wbody > * { margin: 0 !important; }
+
 /* ── tier 1: the answer ── */
 [data-style="dossier"] .resblk { margin: 0; }
 [data-style="dossier"] .res {

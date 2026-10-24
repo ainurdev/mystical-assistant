@@ -4386,7 +4386,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     </Row>
                     <Row
                       label="COLLAPSE STEPS"
-                      info="Between two things the agent says or thinks, everything it ran, edited or read sits under one STEPS row — the row names the count. On, it mounts shut and the words are what you see; off, it mounts open and the transcript reads as the full ledger. A click on any one row moves only that row. Thoughts are never folded."
+                      info="Between two things the agent says or thinks, everything it ran, edited or read rides at the end of the words as a tally that names the count. On, it mounts shut and the words are what you see; off, it mounts open and the transcript reads as the full ledger. A click on any one tally moves only that one. Thoughts are never folded."
                     >
                       <Switch
                         on={!settings.foldsOpen}

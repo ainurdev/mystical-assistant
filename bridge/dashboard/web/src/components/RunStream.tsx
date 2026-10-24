@@ -1,4 +1,4 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import {
   TriangleAlert, CircleStop, Copy, Check, RotateCw, RotateCcw, ChevronDown, ChevronLeft, ChevronRight,
@@ -17,7 +17,7 @@ import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
-import { chapterStarts, kindsOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
+import { chapterStarts, kindsOf, stretchesOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
 import { PromptBubble } from "./PromptBubble";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import type { HudSettings } from "../lib/theme";
@@ -1019,6 +1019,63 @@ function WorkChapter({ n, at, title, steps, span, failed, pics, live, rows }: {
   );
 }
 
+/** DOSSIER: a piece of the agent's words with the work it led to (lib/dossier
+ *  stretchesOf). An open zone reads as the words: what ran after them rides at
+ *  the end of their last line as a tally (the header's kind chips on a pill, a
+ *  failure in red) and opens under them, built only while open, like a
+ *  chapter. In a recent zone half the stretches are one call, so a row of
+ *  their own would only trade one row for another. The pictures the work came
+ *  back with never fold: they sit under the words, one row of tiles. The
+ *  working stretch of a live zone stays open and folds into its tally once the
+ *  next words land, unless you opened or shut it by hand; COLLAPSE STEPS off
+ *  mounts every stretch open. Work with no words before it gets a row of its own. */
+function WorkStretch({ words, cats, failed, live, defaultOpen, pics, rows }: {
+  /** The words, wearing the tally they're given; null draws the tally on a row of its own. */
+  words: ((tally: ReactNode) => ReactNode) | null;
+  /** What the work ran, by kind, and how much of it failed. None: words alone. */
+  cats: StepCat[];
+  failed: number;
+  /** The working stretch of a live zone. */
+  live: boolean;
+  defaultOpen: boolean;
+  /** The pictures the work came back with, each call's own gallery. */
+  pics: ReactNode[];
+  /** The work's rows, built when it opens. */
+  rows: () => ReactNode[];
+}) {
+  const [open, setOpen] = useState(defaultOpen || live);
+  const byHand = useRef(false);
+  useEffect(() => { if (!byHand.current) setOpen(defaultOpen || live); }, [defaultOpen, live]);
+  const body = useRef<HTMLDivElement>(null);
+  const toggle = () => {
+    byHand.current = true;
+    flushSync(() => setOpen(!open));
+    // opened, its rows print in the way a zone's do
+    if (open || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    Array.from(body.current?.children ?? []).slice(0, 12).forEach((el, i) =>
+      el.animate(ROW_IN, { duration: 240, delay: 40 + i * 16, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }));
+  };
+  const what = [stepsTitle(cats), failed ? `${failed} failed` : ""].filter(Boolean).join(" · ");
+  const tally = cats.length ? (
+    <button type="button" className="wtally" onClick={toggle} aria-expanded={open} aria-label={what}
+      title={`${what} · ${open ? "hide" : "show"} the steps`}
+      data-err={failed ? "" : undefined} data-live={live ? "" : undefined}>
+      {kindsOf(cats, 0).map((k) => (
+        <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden><MarkIcon mark={k.m} size={10} /></i>{k.n}</span>
+      ))}
+      {failed ? <span className="dwork-k" data-m="fail"><i aria-hidden><MarkIcon mark="fail" size={10} /></i>{failed}</span> : null}
+      <ChevronDown size={10} strokeWidth={2.4} aria-hidden className="wtally-chev" />
+    </button>
+  ) : null;
+  return (
+    <>
+      {words ? words(tally) : tally ? <div className="zrow wlead"><i className="ax-bar" aria-hidden /><span className="zo">{tally}</span></div> : null}
+      {pics.length ? <div className="wstrip">{pics}</div> : null}
+      {open && tally ? <div ref={body} className="wbody">{rows()}</div> : null}
+    </>
+  );
+}
+
 /** The shut plate's pictures, one row of equal tiles (index.css .dwork-row).
  *  It opens on the newest and glides to each picture that lands, even when you
  *  had scrolled back. A side holding pictures out of view fades under their
@@ -1192,7 +1249,7 @@ function ShotRow({ pics, shut, label, onOpen }: {
 /** A thought, in the flow where it was said (lib/segments) — the agent's own
  *  status line, often a message the CLI handed back reworded. A row on the
  *  zone's grid with the whole text in it, italic, one ink tier under a note. */
-function ThoughtRow({ ms, pause, text, animate, onOpenFile, toolStyle }: {
+function ThoughtRow({ ms, pause, text, animate, onOpenFile, toolStyle, tail }: {
   ms?: number;
   /** The pause right before it (RunStream pauseAt), worn as its figure. */
   pause?: number;
@@ -1200,6 +1257,8 @@ function ThoughtRow({ ms, pause, text, animate, onOpenFile, toolStyle }: {
   animate: boolean;
   onOpenFile?: OpenFile;
   toolStyle?: ToolStyle;
+  /** Worn after the last word (DOSSIER: the tally of the work it led to, WorkStretch). */
+  tail?: ReactNode;
 }) {
   return (
     <div
@@ -1209,7 +1268,11 @@ function ThoughtRow({ ms, pause, text, animate, onOpenFile, toolStyle }: {
     >
       <i className="ax-bar" aria-hidden />
       <span className="ax-tagcell"><span className="ax-tag">THINK</span></span>
-      <Markdown className="thought-text zo" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
+      {tail ? (
+        <div className="zo zo-tail">
+          <Markdown className="thought-text" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown><span className="wsp"> </span>{tail}
+        </div>
+      ) : <Markdown className="thought-text zo" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>}
       <span className="ax-stat" title={pause ? `${dur(pause)} before this thought` : undefined}>
         {slow(ms) ? dur(ms) : pause ? dur(pause) : null}
       </span>
@@ -1908,10 +1971,12 @@ function RailNode() {
  *  under it even unhovered. In flow they reserve their own width, so the bubble
  *  shrinks to make room instead of hiding behind them at any pane size. */
 function MessageBlock({
-  text, onQuote, children,
+  text, onQuote, tail, children,
 }: {
   text: string;
   onQuote?: (text: string) => void;
+  /** Worn after the last word (DOSSIER: the tally of the work it led to, WorkStretch). */
+  tail?: ReactNode;
   children: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
@@ -1932,9 +1997,10 @@ function MessageBlock({
         ref={ref}
         // Colours live in .abub (index.css) rather than inline: a style has to
         // be able to take the fill off, and nothing overrides an inline rule.
-        className="abub min-w-0 max-w-[78%] break-words border border-l-[3px] px-2.5 py-1.5 text-foreground-bright"
+        className={`abub min-w-0 max-w-[78%] break-words border border-l-[3px] px-2.5 py-1.5 text-foreground-bright${tail ? " abub-tail" : ""}`}
       >
         {children}
+        {tail ? <><span className="wsp"> </span>{tail}</> : null}
       </div>
       <div className="flex flex-none gap-1 pl-1 pt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/msg:opacity-100">
         <button
@@ -2221,8 +2287,11 @@ export const RunStream = memo(function RunStream({
   };
 
   /** One event as its row. Indices stay absolute: foldChips, runsOf and the
-   *  tool_done pairing all key off position in the full array. */
-  const renderEvent = (i: number): ReactNode => {
+   *  tool_done pairing all key off position in the full array. DOSSIER's
+   *  stretches (WorkStretch) ask for parts of one: `tail` is worn after a
+   *  note's or a thought's last word, "pics" is a picture call's pictures alone
+   *  (the strip under the words), "bare" its row without them (the open work). */
+  const renderEvent = (i: number, part?: "pics" | "bare", tail?: ReactNode): ReactNode => {
     const event = events[i];
     switch (event.type) {
       case "text": {
@@ -2252,7 +2321,7 @@ export const RunStream = memo(function RunStream({
                 the one thing in a turn with nothing to catch a scrolling eye —
                 and it is the part worth reading — so it gets a bubble of its
                 own (MessageBlock) and a node on the rail where it starts. */}
-            <MessageBlock text={text} onQuote={onQuote}>
+            <MessageBlock text={text} onQuote={onQuote} tail={tail}>
               <Markdown className="leading-relaxed" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
             </MessageBlock>
             {pause ? <span className="zpause" title={`${dur(pause)} before this note`}>{dur(pause)}</span> : null}
@@ -2286,11 +2355,14 @@ export const RunStream = memo(function RunStream({
         // Every style draws its widget now: PLAIN, the one that opted out
         // of them, has no column on the sheet and was replaced by a fifth
         // look (lib/toolwidget TOOL_STYLES).
-        const extra = spec ? (
+        const media = spec ? (
           <div className="zx ml-[var(--rail)]">
             <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} gallery={galleryAt(i)} />
           </div>
         ) : done?.images?.length ? <ToolImages paths={done.images} all={galleryAt(i)} at={event.at} /> : null;
+        if (part === "pics") return media ? <Fragment key={i}>{media}</Fragment> : null;
+        // In an open stretch a picture call is a plain row: its pictures stay in the strip.
+        const extra = part === "bare" && inFlow(i) ? null : media;
         const withExtra = (node: ReactNode) =>
           extra ? <div key={i}>{node}{extra}</div> : node;
         // COMPACT reads as a chat, and there the pictures are the reply: the
@@ -2422,7 +2494,7 @@ export const RunStream = memo(function RunStream({
         return (
           <ThoughtRow key={i} ms={event.ms} text={event.text} animate={animate}
             pause={dossier && !slow(event.ms) ? pauseAt(i - 1) : 0}
-            onOpenFile={onOpenFile} toolStyle={toolStyle} />
+            onOpenFile={onOpenFile} toolStyle={toolStyle} tail={tail} />
         );
       case "log":
         return (
@@ -2561,7 +2633,7 @@ export const RunStream = memo(function RunStream({
     // already is the one line the work sits under.
     // Keyed by where the stretch starts (lib/segments), not by its first row on
     // screen, which the tail window moves: a new key remounts what you opened.
-    if (dossier) return <div key={`f${seg.start}`} className="dsteps">{seg.idx.map(renderEvent)}</div>;
+    if (dossier) return <div key={`f${seg.start}`} className="dsteps">{seg.idx.map((i) => renderEvent(i))}</div>;
     return (
       <Fold
         key={`f${seg.start}`}
@@ -2574,7 +2646,7 @@ export const RunStream = memo(function RunStream({
         defaultOpen={foldsOpen}
         animate={animate}
       >
-        {seg.idx.map(renderEvent)}
+        {seg.idx.map((i) => renderEvent(i))}
       </Fold>
     );
   };
@@ -2622,7 +2694,53 @@ export const RunStream = memo(function RunStream({
     const words = !e ? "" : e.type === "tool" ? e.summary : e.type === "text" || e.type === "thinking" ? e.text ?? "" : "";
     return words.trim().split("\n")[0].replace(/`/g, "");
   };
-  const rowsOf = (zsegs: Seg[]) => zsegs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)));
+  /** What a stretch ran, for its tally (WorkStretch): the header's kinds and
+   *  what failed. A hook that ran clean is context, not work: it isn't counted,
+   *  and work that is nothing else stays where it is, a bare icon on the spine. */
+  const workOf = (zsegs: Seg[]) => {
+    const cats: StepCat[] = [];
+    let failed = 0;
+    for (const seg of zsegs) for (const i of seg.idx) {
+      const e = events[i];
+      if (e.type === "log") { if (e.src !== "hook" || e.error) { cats.push("log"); if (e.error) failed++; } }
+      else if (e.type === "tool") { const d = doneOf(e); cats.push(catOf(e, d)); if (d?.is_error) failed++; }
+    }
+    return { cats, failed };
+  };
+  const rowOf = (seg: Seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg));
+  /** A zone's rows, or a chapter's (DOSSIER only): the agent's words, each
+   *  wearing the work it led to (lib/dossier stretchesOf, WorkStretch). A
+   *  picture call is work too, but its pictures stay out, under the words.
+   *  `live`: the zone is running, so its last stretch is the one working. */
+  const rowsOf = (zsegs: Seg[], live = false) =>
+    stretchesOf(zsegs.map((s) => s.kind === "prose" && events[s.idx[0]].type !== "tool")).flatMap(({ words, work }, k, all) => {
+      const head = words < 0 ? undefined : zsegs[words];
+      const w = work.map((j) => zsegs[j]);
+      const { cats, failed } = workOf(w);
+      const i = head?.idx[0], e = i === undefined ? undefined : events[i];
+      // A note or a thought that draws wears the tally; anything else (a device
+      // run's divider, the answer's streamed copy, which draws nothing) keeps
+      // its own row, and the tally gets one of its own.
+      const wears = !!e && ((e.type === "thinking" && !!e.text)
+        || (e.type === "text" && !!e.text && !(resultText && e.text.trim() === resultText)));
+      const quiet = !cats.length;
+      return [
+        head && !wears ? rowOf(head) : null,
+        wears || !quiet ? (
+          <WorkStretch
+            key={`w${(head ?? w[0]).start}`}
+            words={wears ? (t) => renderEvent(i!, undefined, t) : null}
+            cats={cats}
+            failed={failed}
+            live={live && k === all.length - 1}
+            defaultOpen={foldsOpen}
+            pics={quiet ? [] : w.filter((s) => s.kind === "prose").map((s) => renderEvent(s.idx[0], "pics")).filter((p) => p !== null)}
+            rows={() => w.map((s) => (s.kind === "prose" ? renderEvent(s.idx[0], "bare") : stepsFold(s)))}
+          />
+        ) : null,
+        ...(quiet ? w.map(rowOf) : []),
+      ];
+    }).filter((r) => r !== null);
   const workZone = (zsegs: Seg[], lastZone: boolean) => {
     const { cats, pics, notes, steps, failed, running, live, openAt, last, span } = tally(zsegs);
     // The last zone of a running turn is live: a tool out is WORKING since it
@@ -2635,7 +2753,7 @@ export const RunStream = memo(function RunStream({
       zsegs.map((s) => s.idx.filter((i) => isStep(events[i])).length),
       zsegs.map((s) => s.kind === "prose" && events[s.idx[0]].type === "text"),
     );
-    const rows = !starts.length ? rowsOf(zsegs) : starts.map((at, k) => {
+    const rows = !starts.length ? rowsOf(zsegs, !!state) : starts.map((at, k) => {
       const segs = zsegs.slice(at, starts[k + 1]);
       const c = tally(segs);
       return (
@@ -2649,7 +2767,7 @@ export const RunStream = memo(function RunStream({
           failed={c.failed}
           pics={c.pics.length}
           live={!!state && k === starts.length - 1}
-          rows={() => rowsOf(segs)}
+          rows={() => rowsOf(segs, !!state && k === starts.length - 1)}
         />
       );
     });

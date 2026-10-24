@@ -72,6 +72,24 @@ export function workTitle(steps: string, notes: number): string {
   return [steps, n].filter(Boolean).join(" · ");
 }
 
+/** An open zone as the agent's words, each with the work it led to: the notes
+ *  and thoughts are what you read, and what ran between two of them rides on
+ *  the first as a tally (RunStream WorkStretch). A row of its own per stretch
+ *  would mostly trade one row for another: in a recent zone about half the
+ *  stretches are a single call. `words[i]` says whether segment i is words; a
+ *  stretch's `words` is that index, or -1 for work before any words, and
+ *  `work` the indices of every segment after it up to the next words. Steps
+ *  landing in a live zone only ever grow the last stretch. */
+export function stretchesOf(words: boolean[]): { words: number; work: number[] }[] {
+  const out: { words: number; work: number[] }[] = [];
+  words.forEach((w, i) => {
+    if (w) out.push({ words: i, work: [] });
+    else if (out.length) out[out.length - 1].work.push(i);
+    else out.push({ words: -1, work: [i] });
+  });
+  return out;
+}
+
 /** Where a long zone's chapters start, as indices into its segments. A zone of
  *  more than `min` steps is cut about every `size` steps, at the first note the
  *  agent writes after that many, so each chapter opens on the agent's own

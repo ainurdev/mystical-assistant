@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/dossier.check.ts
-import { chapterStarts, kindsOf, workTitle, zonesOf, TOP_TYPES } from "./dossier.ts";
+import { chapterStarts, kindsOf, stretchesOf, workTitle, zonesOf, TOP_TYPES } from "./dossier.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -71,4 +71,20 @@ ok(workTitle("1 command", 0) === "1 command", "steps only");
   ok(chapterStarts([300], [false]).join() === "", "no note to open a chapter on: one list");
   const full = chapterStarts(pairs(40), notes(40)), live = chapterStarts(pairs(30).concat(1), notes(30).concat(true));
   ok(full.slice(0, live.length).join() === live.join(), `steps landing later never move a cut: ${live} / ${full}`);
+}
+
+// An open zone as the words, each with the work after it up to the next words;
+// work before any words is a stretch of its own (-1).
+{
+  const s = (w: boolean[]) => stretchesOf(w).map((x) => `${x.words}:${x.work.join(",")}`).join(" ");
+  ok(s([]) === "", "no segments, no stretches");
+  ok(s([true, false, false, true]) === "0:1,2 3:", `a note, its two steps, a note: ${s([true, false, false, true])}`);
+  ok(s([false, false, true, false]) === "-1:0,1 2:3", `work before any words: ${s([false, false, true, false])}`);
+  ok(s([true, true]) === "0: 1:", "two notes back to back, no work between");
+  // live: steps landing later only grow the last stretch, never move one
+  const full = [true, false, true, false, false, true, false, false, false];
+  for (let n = 1; n <= full.length; n++) {
+    const a = stretchesOf(full.slice(0, n)), b = stretchesOf(full);
+    ok(a.slice(0, -1).every((x, k) => JSON.stringify(x) === JSON.stringify(b[k])), `prefix of ${n} keeps every closed stretch`);
+  }
 }
