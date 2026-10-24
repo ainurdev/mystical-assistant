@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/workstate.check.ts
-import { workState } from "./workstate.ts";
+import { nowOf, workState } from "./workstate.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -61,3 +61,23 @@ ok(workState([tool("a", "Edit", "/r/src/App.tsx", 101)], null, 100).detail === "
 
 // No events yet and no boot text: thinking since the turn started.
 ok(line(workState([], null, 100)) === "THINKING||0|100", "thinking from the start");
+
+// The live WORK plate's line: a verb for what is happening now, then what it is on.
+{
+  const say = (n: ReturnType<typeof nowOf>) => `${n.verb}|${n.what}|${n.code}`;
+  const t = (name: string, summary: string, agent?: { type?: string; title?: string }) => nowOf(tool("a", name, summary, 1, agent));
+  // a command's words lose their verb to the line's; the command stays, minus a leading cd
+  ok(say(t("Bash", "cd /r/x && python3 -m pytest tests/ -q")) === "Running|the tests|python3 -m pytest tests/ -q", `bash: ${say(t("Bash", "cd /r/x && python3 -m pytest tests/ -q"))}`);
+  ok(say(t("Bash", "git status")) === "Checking|the working tree|git status", "bash verb from cmdAbstract");
+  // words that don't open on a verb this knows are said whole; none at all leave the command
+  ok(say(t("Bash", "gh pr view 12")) === "Running|gh pr view|gh pr view 12", `bash, no known verb: ${say(t("Bash", "gh pr view 12"))}`);
+  ok(say(t("Bash", "./weird-thing --flag")) === "Running||./weird-thing --flag", "bash, no words");
+  ok(say(t("Read", "/r/src/components/RunStream.tsx")) === "Reading||…/components/RunStream.tsx", "read: the path's last two parts");
+  ok(say(t("Edit", "/r/App.tsx")) === "Editing||/r/App.tsx", "edit, a short path whole");
+  ok(t("Write", "/a/b/c.ts").verb === "Writing", "write is its own verb");
+  ok(t("Glob", "/r/src").verb === "Finding" && t("Grep", "/r/src").verb === "Searching", "search verbs");
+  ok(say(t("WebFetch", "https://docs.example.com/a")) === "Fetching|docs.example.com|", "web fetch: the host");
+  ok(say(t("Agent", "long brief…", { type: "Explore", title: "find it" })) === "Asking|Explore · find it|", "agent: who and what for");
+  ok(say(t("Skill", "", { type: "bridge-ship" })) === "Using|bridge-ship|", "skill: its name");
+  ok(say(t("mcp__verify__Screenshot", "url=x")) === "Calling|verify · Screenshot|", "mcp: server and tool");
+}
