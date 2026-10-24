@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
-import { WeekPanel } from "./WeekPanel";
 import { setClock12 } from "../../lib/surfaces";
 import { isMacApp, macWindow } from "../../lib/mac";
 import { PanelLeftClose } from "lucide-react";
@@ -20,8 +19,8 @@ import { PanelLeftClose } from "lucide-react";
  * font adds or saves, so no theme moves an edge. Every text sits on a trimmed
  * box (`.trim`, index.css) so Consolas and Courier New centre like JetBrains.
  * The clock is the handle for everything that used to sit beside it: a click
- * opens the dashboard's context menu (App builds the `weather` rows — week
- * report, clock & weather settings, next station, the dashboard rows).
+ * opens the dashboard's context menu (App builds the `weather` rows — usage,
+ * clock & weather settings, next station, the dashboard rows).
  *
  * Collapsed, the right column is the rail's 48px, too narrow for the cluster,
  * so App hands it to the chat header instead (Terminal's `chrome`). */
@@ -38,7 +37,6 @@ export interface StripProps {
   onSetCity: (city: string) => Promise<string | null>;
   onSetUnit: (unit: string) => Promise<string | null>;
   openSettings?: number; // nonce — bump to open the clock & weather popover (from the menu)
-  openReport?: number; // nonce — bump to open the week report (from the menu)
 }
 
 // Segmented-control button style for the popover's 24H/12H and °C/°F pickers.
@@ -50,32 +48,18 @@ const seg = (on: boolean): CSSProperties => ({
 });
 
 /** Left column cap: mark + wordmark, on the SESSIONS head's own gutter, and at
- *  its end the week report — the readout the TODAY chip used to carry before
- *  the strip became these caps. Its popover hangs off this cap's left edge;
- *  the clock's menu still opens the same panel over on the right. */
+ *  its end the fold. The week report that hung off its end moved to the right
+ *  rail's USAGE tab. */
 export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: () => void }) {
-  const [week, setWeek] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
   // Mystical.app: the cap is the window's title bar, and its traffic lights
   // are drawn here, not by AppKit (DashboardWindow hides the native ones): they
   // fade in while the cap is hovered and the logo slides out from under them.
   const mac = isMacApp();
   const [hot, setHot] = useState(false);
 
-  // Closes on a press anywhere outside the cap, like the clock's popovers.
-  useEffect(() => {
-    if (!week) return;
-    const onDown = (e: PointerEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setWeek(false);
-    };
-    document.addEventListener("pointerdown", onDown);
-    return () => document.removeEventListener("pointerdown", onDown);
-  }, [week]);
-
   return (
-    // Relative + a stacking context above the sessions list under it, so the
-    // report draws over the panel rather than behind it.
-    <div ref={ref} onMouseEnter={mac ? () => setHot(true) : undefined} onMouseLeave={mac ? () => setHot(false) : undefined} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    // Relative: the Mac's traffic lights sit absolute inside it.
+    <div onMouseEnter={mac ? () => setHot(true) : undefined} onMouseLeave={mac ? () => setHot(false) : undefined} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
       {mac && <Lights show={hot} />}
       {/* A transform, not padding: the slide composites instead of reflowing the row.
           Folded to the rail there is nowhere to slide to, so the mark steps
@@ -122,11 +106,9 @@ export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: (
         </span>
       )}
       </div>
-      {!folded && (<>
+      {!folded && onFold && (<>
         <span style={{ flex: 1, minWidth: 6 }} />
-        <ReportButton on={week} onClick={() => setWeek((v) => !v)} />
-        {week && <WeekPanel left />}
-        {onFold && <FoldButton onClick={onFold} />}
+        <FoldButton onClick={onFold} />
       </>)}
     </div>
   );
@@ -185,30 +167,6 @@ function FoldButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-/** The bars are the report: turns, time and tokens per project. */
-function ReportButton({ on, onClick }: { on: boolean; onClick: () => void }) {
-  const [hover, setHover] = useState(false);
-  return (
-    <button
-      onClick={onClick}
-      aria-haspopup="dialog"
-      aria-expanded={on}
-      title="week report — turns, time and tokens per project"
-      onMouseEnter={() => setHover(true)}
-      onMouseLeave={() => setHover(false)}
-      style={{
-        appearance: "none", cursor: "pointer", border: 0, background: "transparent", padding: 0,
-        flex: "none", width: 22, height: 22, display: "flex", alignItems: "center", justifyContent: "center",
-        color: on ? "var(--acc)" : hover ? "var(--txb)" : "var(--txd)", transition: "color .15s ease",
-      }}
-    >
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round">
-        <path d="M6 20v-6M12 20V4M18 20v-9" />
-      </svg>
-    </button>
-  );
-}
-
 /** Right column cap: the cluster over the panel, the gear over the rail.
  *  Collapsed there are no children — the column is the rail's 48px alone. */
 export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => void; children?: ReactNode }) {
@@ -261,10 +219,9 @@ export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => v
  *  right, as one row that sits wherever App puts it (RightCap, or the chat
  *  header while the right panel is collapsed). */
 export function Strip(props: StripProps) {
-  const { clock, weather, onSetCity, onSetUnit, openSettings, openReport } = props;
+  const { clock, weather, onSetCity, onSetUnit, openSettings } = props;
   const [clockHover, setClockHover] = useState(false);
   const [clockOpen, setClockOpen] = useState(false);
-  const [weekOpen, setWeekOpen] = useState(false);
   // Kept in localStorage: the cluster remounts every time the right panel
   // folds (it moves into the chat header), and 12H must survive the move.
   const [fmt12, setFmt12] = useState(() => localStorage.getItem("hud-clock12") === "1");
@@ -274,7 +231,7 @@ export function Strip(props: StripProps) {
   const anchorRef = useRef<HTMLSpanElement>(null);
   // The menu's nonces as they stood at mount. Compared, not truth-tested: on a
   // remount, a nonce bumped an hour ago would reopen its popover.
-  const asked = useRef({ settings: openSettings, report: openReport });
+  const asked = useRef({ settings: openSettings });
 
   // Through the store, not straight to localStorage: the turn clocks in the
   // transcript read the same switch and have to hear it flick.
@@ -283,24 +240,18 @@ export function Strip(props: StripProps) {
   useEffect(() => {
     if (openSettings === asked.current.settings) return;
     asked.current.settings = openSettings;
-    setCityInput(weather.loc); setCityErr(null); setWeekOpen(false); setClockOpen(true);
+    setCityInput(weather.loc); setCityErr(null); setClockOpen(true);
   }, [openSettings]);
 
+  // The popover closes on a press anywhere outside the clock.
   useEffect(() => {
-    if (openReport === asked.current.report) return;
-    asked.current.report = openReport;
-    setClockOpen(false); setWeekOpen(true);
-  }, [openReport]);
-
-  // Either popover closes on a press anywhere outside the clock.
-  useEffect(() => {
-    if (!clockOpen && !weekOpen) return;
+    if (!clockOpen) return;
     const onDown = (e: PointerEvent) => {
-      if (!anchorRef.current?.contains(e.target as Node)) { setClockOpen(false); setWeekOpen(false); }
+      if (!anchorRef.current?.contains(e.target as Node)) setClockOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
-  }, [clockOpen, weekOpen]);
+  }, [clockOpen]);
 
   async function submitCity() {
     if (!city.trim() || saving) return;
@@ -323,7 +274,7 @@ export function Strip(props: StripProps) {
   // as a contextmenu under the instrument and App builds the rows. A popover
   // already open just closes — one thing under the clock at a time.
   const openMenu = (el: HTMLElement) => {
-    if (clockOpen || weekOpen) { setClockOpen(false); setWeekOpen(false); return; }
+    if (clockOpen) { setClockOpen(false); return; }
     const r = (anchorRef.current ?? el).getBoundingClientRect();
     el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: r.left, clientY: r.bottom + 8 }));
   };
@@ -418,7 +369,6 @@ export function Strip(props: StripProps) {
             </div>
           </div>
         )}
-        {weekOpen && <WeekPanel />}
       </span>
 
       {/* The bell, by the gear. Git lives in the rail's GIT tab, and the

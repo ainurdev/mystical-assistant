@@ -77,6 +77,37 @@ def test_weekly_groups_sessions_turns_and_time_by_project():
     assert rep["projects"][0]["project"] == "/proj-a"
 
 
+def test_weekly_folds_a_worktree_into_its_repo():
+    chat = _fresh_chat()
+    repo = store.create_session(chat, "/team/proj-a")["id"]
+    wt = store.create_session(chat, "/.worktrees/proj-a/feat-x")["id"]
+    _turn(repo, f"{repo}:1", _at(2026, 8, 17), elapsed=100, tokens={"in": 5}, model="claude-opus-5")
+    _turn(wt, f"{wt}:1", _at(2026, 8, 18), elapsed=300, tokens={"in": 7}, model="claude-fable-5")
+
+    rep = report.weekly(chat, now=NOW)
+
+    assert [p["project"] for p in rep["projects"]] == ["/team/proj-a"]
+    p = rep["projects"][0]
+    assert (p["sessions"], p["turns"], p["elapsed"], p["tokens"]) == (2, 2, 400, 12)
+    assert p["models"] == ["claude-fable-5", "claude-opus-5"]
+    assert p["worktrees"] == [{"project": "/.worktrees/proj-a/feat-x", "branch": "feat-x",
+                               "sessions": 1, "turns": 1, "elapsed": 300}]
+    assert rep["totals"]["elapsed"] == 400
+
+
+def test_weekly_keeps_a_worktree_whose_repo_it_cannot_tell():
+    chat = _fresh_chat()
+    for rel in ("/x/app", "/y/app", "/.worktrees/app/b", "/.worktrees/gone/c"):
+        sid = store.create_session(chat, rel)["id"]
+        _turn(sid, f"{sid}:1", _at(2026, 8, 17))
+
+    rep = report.weekly(chat, now=NOW)
+
+    # two repos called "app", and a repo with no turns this week: no guessing
+    assert {p["project"] for p in rep["projects"]} == {"/x/app", "/y/app", "/.worktrees/app/b", "/.worktrees/gone/c"}
+    assert all(p["worktrees"] == [] for p in rep["projects"])
+
+
 def test_weekly_excludes_turns_outside_the_window():
     chat = _fresh_chat()
     sid = store.create_session(chat, "/proj")["id"]

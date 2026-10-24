@@ -13,8 +13,9 @@ import { useSyncExternalStore } from "react";
 
 const KEY = "hud-shots-seen";
 const SINCE_KEY = "hud-shots-since";
-/** Past this the oldest marks go — the upload dir prunes shots by age anyway. */
-const CAP = 500;
+/** Past this the oldest marks go — the upload dir prunes shots by age anyway.
+ *  500 lasted six days of real use, and the sidebar tag reads a full day back. */
+const CAP = 2000;
 
 const read = <T>(k: string, fallback: T): T => {
   try { const v = localStorage.getItem(k); return v == null ? fallback : JSON.parse(v) as T; }

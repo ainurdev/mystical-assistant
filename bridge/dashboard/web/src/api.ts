@@ -1211,6 +1211,7 @@ export interface AccountInfo {
   five_hour: UsageBucket | null; // both windows, so a row can show the near reset
   seven_day: UsageBucket | null; //   as well as the cap that's actually binding
   limits?: UsageInfo["limits"]; // a model's own caps, for the MODEL menu (absent from an older bridge)
+  runs_out_at?: string | null; // the 5-hour window at the last hour's pace, when that beats its refill
   logged_in: boolean; // false = the OAuth token is gone/expired; only a re-login fixes it
   plan: string | null; // "MAX 20x" / "TEAM 5x" / "PRO", off the login's own credentials
 }
@@ -1409,6 +1410,8 @@ export interface WeekProject {
   elapsed: number; // wall seconds
   tokens: number | null; // all four counters summed; null = never reported
   models: string[];
+  // Its worktrees (.worktrees/<repo>/<branch>), already counted in the numbers above.
+  worktrees?: { project: string; branch: string; sessions: number; turns: number; elapsed: number }[];
 }
 
 export interface WeeklyReport {
@@ -1423,6 +1426,7 @@ export interface WeeklyReport {
   };
   days: { day: string; turns: number; elapsed: number }[];
   prev: { turns: number; elapsed: number; tokens: number | null };
+  failures?: { code: string; label: string; n: number }[]; // failed turns by outcome, commonest first
 }
 
 export interface UsageInfo {
@@ -1681,6 +1685,10 @@ export const api = {
     req<{ sessions: SessionBrief[] }>(
       `/local/sessions${project !== undefined ? `?project=${encodeURIComponent(project)}` : ""}`,
     ),
+  /** Each session's tool pictures handed back since `since` (epoch s), as
+   *  [path, at] pairs: the sidebar's unseen-picture tag (lib/seenshots). */
+  shots: (since: number) =>
+    req<Record<string, [string, number][]>>(`/local/shots?since=${Math.floor(since)}`),
   transcript: (id: string, cursor: number, opts?: { tail?: number; before?: number }) =>
     req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +
       (opts?.tail ? `&tail=${opts.tail}` : "") +

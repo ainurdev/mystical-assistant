@@ -668,6 +668,7 @@ def meter(slot: int) -> dict:
     return {"left": headroom(slot), "resets_at": resets_at(slot),
             "five_hour": m.get("five_hour"), "seven_day": m.get("seven_day"),
             "limits": m.get("limits") or [],
+            "runs_out_at": usage.pace(credentials_path(slot)),
             "logged_in": usage.has_token(credentials_path(slot))
                          and int(slot) not in runner._auth_dead}
 

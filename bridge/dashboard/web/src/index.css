@@ -5915,6 +5915,113 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .gg-older:hover { color: var(--txh); background: var(--wash); }
 .gg-skel { padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
 
+/* === USAGE TAB =================================================================
+   The right rail's USAGE panel (hud/UsagePanel, drafts/usage-rail): the GIT
+   tab's bones (.gp root, .gp-ro readout, .gp-fold folds) plus these. A limit
+   cell carries a fuel line along its foot, fill = what is left. */
+.us-slot { display: inline-grid; place-items: center; width: 13px; height: 13px; flex: none; border-radius: min(3px, var(--r)); font: 600 8px/1 var(--f);
+  color: var(--acc-on, #000); }   /* background: the login's own hue (lib/profiles slotHue), as the PROFILE menu draws it */
+.us .gp-roc { position: relative; padding-bottom: 12px; }
+.us .gp-roc b small { font-size: .62em; margin-left: 1px; color: var(--txd); }
+.us .gp-roc.warn b, .us .gp-roc.warn b svg { color: var(--warn); }
+.us .gp-roc.err { background: color-mix(in srgb, var(--err) 8%, transparent); }
+.us .gp-roc.err b, .us .gp-roc.err b svg { color: var(--err); }
+.us-fuel { position: absolute; left: 10px; right: 10px; bottom: 6px; height: 3px; border-radius: min(2px, var(--r)); overflow: hidden;
+  background: color-mix(in oklab, var(--txl) 20%, transparent); }
+.us-fuel > i { display: block; height: 100%; border-radius: inherit; background: var(--acc); }
+.us .gp-roc.warn .us-fuel > i { background: var(--warn); }
+.us .gp-roc.err .us-fuel > i { background: var(--err); }
+.us-sub { display: flex; flex-direction: column; gap: 3px; margin: 8px 2px 0; font: 400 var(--t105)/1.35 var(--f); color: var(--txd); }
+.us-sub b { font: 500 var(--t105)/1 var(--m); color: var(--txh); }
+.us-sub em { font-style: normal; }
+.us-sub [data-tone="warn"] { color: var(--warn); }
+.us-sub [data-tone="err"] { color: var(--err); }
+.us-pace { display: flex; align-items: flex-start; gap: 6px; margin-top: 9px; padding: 8px 9px; border-radius: var(--r);
+  border: 1px dashed color-mix(in srgb, var(--warn) 45%, var(--l)); background: color-mix(in srgb, var(--warn) 6%, transparent);
+  font: 400 var(--t105)/1.4 var(--f); color: var(--txm); }
+.us-pace svg { flex: none; color: var(--warn); margin-top: 1px; }
+.us-pace b { color: var(--txb); font-weight: 600; }
+/* logins: one row each, a window a line */
+.us-login { display: flex; align-items: flex-start; gap: 9px; padding: 8px 12px; }
+.us-login + .us-login { border-top: 1px solid var(--l); }
+.us-login .us-slot { width: 18px; height: 18px; border-radius: min(5px, var(--r)); font-size: 9.5px; margin-top: 1px; }
+.us-lm { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
+.us-l1 { display: flex; align-items: center; gap: 6px; min-width: 0; font: 500 var(--t115)/18px var(--f); color: var(--txh); }
+.us-l1 > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.us-plan { flex: none; font: 600 var(--t85)/1 var(--f); letter-spacing: .06em; color: var(--txl); }
+.us-tag { flex: none; margin-left: auto; height: 16px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: 999px;
+  font: 600 var(--t85)/1 var(--f); letter-spacing: .06em; color: var(--purple-h); background: color-mix(in oklab, var(--purple) 16%, transparent); }
+.us-tag[data-ok] { color: var(--ok); background: color-mix(in oklab, var(--ok) 15%, transparent); }
+.us-ws { display: flex; flex-direction: column; gap: 6px; line-height: 12px; }
+.us-w { --c: var(--acc); display: grid; grid-template-columns: 18px minmax(0, 1fr) 32px 52px; align-items: center; column-gap: 7px;
+  font: var(--t95) var(--m); color: var(--c); white-space: nowrap; }
+.us-w[data-tone="warn"] { --c: var(--warn); }
+.us-w[data-tone="err"] { --c: var(--err); }
+.us-w i { font-style: normal; font-size: var(--t85); color: var(--txl); }
+.us-w b { font-weight: 500; text-align: right; }
+.us-w em { font-style: normal; color: var(--txd); text-align: right; }
+.us-bar { height: 4px; border-radius: min(2px, var(--r)); overflow: hidden; background: color-mix(in oklab, var(--txl) 22%, var(--panel)); }
+.us-bar > span { display: block; height: 100%; background: var(--c); }
+.us-why { font: 400 var(--t105)/1.35 var(--f); color: var(--txl); }
+.us-why[data-dead] { color: var(--err); }
+/* the week */
+.us-seg { display: flex; border: 1px solid var(--l2); border-radius: var(--r); overflow: hidden; }
+.us-seg button { appearance: none; border: 0; background: transparent; color: var(--txd); font: 500 var(--t10)/1 var(--f); padding: 4px 8px; cursor: pointer; }
+.us-seg button[aria-pressed="true"] { background: var(--wash); color: var(--txb); }
+.us-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; align-items: end; margin: 12px 2px 0; }
+.us-day { appearance: none; border: 0; background: none; padding: 0; color: inherit; display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  min-width: 0; cursor: pointer; }
+.us-day:disabled { cursor: default; }
+.us-day > em { font: 400 var(--t85)/1 var(--m); color: var(--txd); text-align: center; white-space: nowrap; }
+.us-day > i { display: block; border-radius: min(3px, var(--r)) min(3px, var(--r)) 0 0; background: color-mix(in oklab, var(--acc) 42%, var(--panel2)); }
+.us-day > span { font: 600 var(--t85)/1 var(--f); text-align: center; color: var(--txl); }
+.us-day:hover:not(:disabled) > i { background: color-mix(in oklab, var(--acc) 62%, var(--panel2)); }
+.us-day:is([data-today], [data-pick]) > i { background: var(--acc); }
+.us-day:is([data-today], [data-pick]) > :is(span, em) { color: var(--txb); }
+.us-day[data-pick] > i { box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc) 30%, transparent); }
+.us-day[data-future] > i { background: none; border: 1px dashed var(--l2); }
+.us-day[data-dim] > i { opacity: .45; }
+.us-today { display: flex; align-items: center; gap: 6px; margin: 10px 2px 0; font: 400 var(--t105)/1.3 var(--f); color: var(--txd); }
+.us-today b { font: 500 var(--t105)/1 var(--m); color: var(--txh); }
+/* projects */
+.us-plist { padding: 4px 0 2px; }
+.us-prow { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 3px; align-items: center; padding: 7px 12px 8px; }
+.us-prow[role="button"] { cursor: pointer; }
+.us-prow[role="button"]:hover, .us-prow:focus-visible { background: var(--wash); outline: 0; }
+.us-prow .ptile { width: 20px; height: 20px; margin: 0; border-radius: 5px; font-size: 8.5px; grid-row: span 2; align-self: start; }
+.us-pn { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--t12)/1.25 var(--f); color: var(--txh); }
+.us-pt { font: 500 var(--t115)/1 var(--m); color: var(--txb); text-align: right; }
+.us-pm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t10)/1.2 var(--f); color: var(--txl); }
+.us-ps { font: 400 var(--t10)/1 var(--m); color: var(--txl); text-align: right; }
+.us-pbar { grid-column: 2 / 4; height: 3px; margin-top: 3px; border-radius: min(2px, var(--r)); overflow: hidden; background: color-mix(in oklab, var(--txl) 14%, transparent); }
+.us-pbar > i { display: block; height: 100%; border-radius: inherit; background: color-mix(in oklab, var(--pc, var(--acc)) 80%, var(--acc)); }
+.us-wt { grid-column: 2 / 4; display: flex; flex-direction: column; gap: 4px; margin-top: 5px; padding-left: 9px; border-left: 1px solid var(--l2); }
+.us-wt > div { display: flex; align-items: center; gap: 5px; font: 400 var(--t10)/1.2 var(--m); color: var(--txd); }
+.us-wt svg { flex: none; color: var(--purple); }
+.us-wt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.us-wt em { margin-left: auto; font-style: normal; color: var(--txm); }
+.us-more { display: block; width: 100%; text-align: left; padding: 7px 12px 9px 41px; border: 0; background: transparent; cursor: pointer;
+  font: 400 var(--t105)/1 var(--f); color: var(--txl); }
+.us-more:hover { color: var(--txh); }
+/* stopped turns, tokens */
+.us-kv { display: grid; grid-template-columns: auto 1fr auto; column-gap: 10px; row-gap: 7px; align-items: center; padding: 10px 12px 12px; }
+.us-kv > div { display: contents; }
+.us-kv span { font: 400 var(--t105)/1 var(--f); color: var(--txd); white-space: nowrap; }
+.us-kv > div > i { height: 4px; border-radius: min(2px, var(--r)); overflow: hidden; background: color-mix(in oklab, var(--txl) 14%, transparent); }
+.us-kv > div > i > i { display: block; height: 100%; border-radius: inherit; background: var(--txl); }
+.us-kv > [data-code="limit"] > i > i { background: var(--warn); }
+.us-kv > [data-code="crashed"] > i > i { background: var(--err); }
+.us-kv em { font: 500 var(--t105)/1 var(--m); font-style: normal; color: var(--txh); text-align: right; }
+.us-tok { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 10px 12px 8px; border: 1px solid var(--l); border-radius: var(--r); overflow: hidden;
+  background: var(--l); }
+.us-tok > div { display: flex; flex-direction: column; gap: 5px; padding: 8px 10px; background: var(--panel); }
+.us-tok span { font: 400 var(--t10)/1 var(--f); color: var(--txl); }
+.us-tok em { font: 500 var(--t13)/1 var(--m); font-style: normal; color: var(--txh); }
+.us-note { padding: 4px 12px 12px; font: 400 var(--t10)/1.45 var(--f); color: var(--txl); }
+/* MIDDLE-EARTH reads natural case, as its PROFILE menu does (.pm-wtag, .pm-reset, .pm-tag) */
+[data-fam="middle-earth"] :is(.us-w i, .us-rst, .us-tag) { text-transform: lowercase; letter-spacing: 0; }
+[data-fam="middle-earth"] :is(.us-plan, .us-day > span) { letter-spacing: 0; }
+
 /* === THE FAMILIES · PEBBLE · STANDARD ======================================
    The roast's fixes (.mystical/design-drafts/pebble-standard). Keep this block
    last: it was drawn and checked as the last stylesheet, and several rules win

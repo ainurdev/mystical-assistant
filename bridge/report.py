@@ -17,6 +17,8 @@ threading.Timer covers the running case, the same posture as limits.py.
 """
 
 import logging
+import os
+import re
 import threading
 import time
 from datetime import datetime, time as dtime, timedelta
@@ -83,6 +85,43 @@ def _by_code(fails: list[dict]) -> list[dict]:
     return sorted(n.values(), key=lambda r: -r["n"])
 
 
+# A worktree the dashboard made: <BASE>/.worktrees/<repo folder, slugged>/<branch, slugged>
+# (dashboard/server.py _worktree_path). Most are deleted by the time a week is read,
+# so its repo is found by that name, not by asking git.
+_WORKTREE = re.compile(r"^/\.worktrees/([^/]+)/([^/]+)$")
+
+
+def _slug(s: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]+", "-", s.strip("/")).strip("-")   # server._slug's rule
+
+
+def _fold_worktrees(projects: list[dict]) -> list[dict]:
+    """Each worktree's numbers counted toward its repo, and listed under it, so a
+    week reads per repo. shortcut: a worktree folds only when exactly one of this
+    week's projects has its repo's folder name; two repos called "app", or a repo
+    with no turns of its own this week, leave it a row of its own."""
+    homes: dict = {}
+    for p in projects:
+        if not _WORKTREE.match(p["project"]):
+            homes.setdefault(_slug(os.path.basename(p["project"])), []).append(p)
+    out = []
+    for p in projects:
+        m = _WORKTREE.match(p["project"])
+        home = homes.get(m.group(1)) if m else None
+        if not home or len(home) != 1:
+            out.append(p)
+            continue
+        h = home[0]
+        h["worktrees"].append({"project": p["project"], "branch": m.group(2), "sessions": p["sessions"],
+                               "turns": p["turns"], "elapsed": p["elapsed"]})
+        for k in ("sessions", "turns", "elapsed"):
+            h[k] += p[k]
+        if p["tokens"] is not None:
+            h["tokens"] = (h["tokens"] or 0) + p["tokens"]
+        h["models"] = sorted(set(h["models"]) | set(p["models"]))
+    return sorted(out, key=lambda p: -p["elapsed"])
+
+
 def weekly(chat_id: int, now: "float | None" = None, back: int = 0) -> dict:
     """One chat's week, grouped by project, busiest first. `back=1` is the
     completed week (what the Monday push sends); default is the running one."""
@@ -93,7 +132,7 @@ def weekly(chat_id: int, now: "float | None" = None, back: int = 0) -> dict:
     return {
         "since": since,
         "until": until,
-        "projects": [{
+        "projects": _fold_worktrees([{
             "project": r["project"],
             "sessions": r["sessions"],
             "turns": r["turns"],
@@ -101,7 +140,8 @@ def weekly(chat_id: int, now: "float | None" = None, back: int = 0) -> dict:
             "models": r["models"],
             "tokens": (None if all(r[c] is None for _, c in _TOK_COLS)
                        else sum(r[c] or 0 for _, c in _TOK_COLS)),
-        } for r in rows],
+            "worktrees": [],
+        } for r in rows]),
         "totals": _totals(rows),
         "days": store.week_by_day(chat_id, since, until),
         # What went wrong, by outcome code (bridge/outcomes.py). Derived, so an

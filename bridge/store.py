@@ -467,6 +467,28 @@ def count_turns(session_id: str) -> int:
                          (session_id,)).fetchone()[0]
 
 
+def tool_images_since(chat_id: int, t: float) -> list[tuple[str, str, float]]:
+    """(session id, path, ts) for every picture a tool handed back since `t`
+    in this chat: the `images` of its tool_done events, which is what the WORK
+    zone shows. Only sessions with a turn started since `t` (or still running)
+    are read, each through its own (session_id, seq) key."""
+    with closing(_connect()) as c:
+        sids = [r[0] for r in c.execute(
+            "SELECT DISTINCT t.session_id FROM turns t JOIN sessions s ON s.id=t.session_id "
+            "WHERE s.chat_id=? AND (t.started>=? OR t.status='running')", (chat_id, t))]
+        rows = [(sid, r["payload"], r["ts"]) for sid in sids for r in c.execute(
+            "SELECT payload, ts FROM events WHERE session_id=? AND type='tool_done' AND ts>=?",
+            (sid, t))]
+    out = []
+    for sid, payload, ts in rows:
+        try:
+            images = json.loads(payload).get("images") or []
+        except (TypeError, ValueError, AttributeError):
+            continue
+        out += [(sid, p, ts) for p in images if isinstance(p, str)]
+    return out
+
+
 def profile_has_agent_session(pid: str) -> bool:
     """Has any session bound to this profile opened an agent session yet?"""
     with closing(_connect()) as c:
