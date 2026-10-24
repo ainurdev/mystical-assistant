@@ -2638,6 +2638,9 @@ input {
    the ax-* cells. */
 [data-style="dossier"] .dwork {
   --zn: 24px; --zk: 12px; --zc: 16px; --zobj: calc(var(--zn) + var(--zk));
+  /* the agent's words read at a measure, about 75 characters a line, not the
+     column's whole width; in em, so it holds at every type size */
+  --z-measure: 37em;
   /* the plate's ground: what a node or a dashed stretch paints to cut the spine */
   --zg: var(--panel2);
   --zline: color-mix(in oklab, var(--txl) 40%, var(--panel2));
@@ -3017,13 +3020,16 @@ input {
   background: repeating-linear-gradient(to bottom, var(--zg) 0 2px, transparent 2px 4px);
 }
 [data-style="dossier"] .dwork-body .thought[data-pause] > .ax-stat { color: var(--txg); }
+/* its figure shows while you hover it: at rest the right edge stays quiet */
+[data-style="dossier"] .dwork-body .thought > .ax-stat { visibility: hidden; }
+[data-style="dossier"] .dwork-body .thought:hover > .ax-stat { visibility: visible; }
 [data-style="dossier"] .dwork-body .thought-text { font-size: calc(var(--t12) + .5px); font-style: italic; color: var(--txd); }
 /* the slant leans the word before a code span into its space: give it back */
 [data-style="dossier"] .dwork-body .thought-text code { margin-left: 2px; }[data-style="dossier"] .dwork-body .thought-text p { margin: 0; }
 /* an interim note: the agent to you, mid-work — upright, a step brighter, on
    a dot. The row is the bubble's own wrapper; its node is drawn here, and a
-   pause right before it (RunStream pauseAt) is its figure, with the spine
-   dashed through the air above it. */
+   pause right before it (RunStream pauseAt) dashes the spine through the air
+   above it; its length shows with COPY and QUOTE while you hover. */
 [data-style="dossier"] .dwork-body .group\/msg {
   display: grid; align-items: start; padding: 0; margin-top: 10px !important;
   grid-template-columns: var(--zn) var(--zk) minmax(0, 1fr) max-content var(--zc);
@@ -3034,23 +3040,21 @@ input {
   position: relative; z-index: 1; width: 7px; height: 7px; border-radius: 50%;
   background: var(--d-note); box-shadow: 0 0 0 5px var(--zg);
 }
-[data-style="dossier"] .dwork-body .group\/msg:has(> .zpause)::after {
+[data-style="dossier"] .dwork-body .group\/msg[data-pause]::after {
   content: ""; position: absolute; z-index: 1; left: calc(var(--zn) / 2 - .5px); top: -10px; width: 1px; height: 10px;
   background: repeating-linear-gradient(to bottom, var(--zg) 0 2px, transparent 2px 4px);
 }
 [data-style="dossier"] .dwork-body .abub {
-  grid-column: 3; grid-row: 1; max-width: none; padding: 4px 0; border: 0; background: none;
+  grid-column: 3; grid-row: 1; max-width: var(--z-measure); padding: 4px 0; border: 0; background: none;
   font-size: var(--t13); line-height: 20px; color: var(--txh);
 }
 [data-style="dossier"] .dwork-body .abub .md { line-height: inherit; }
 [data-style="dossier"] .dwork-body .abub .md p { margin: 0; }
 [data-style="dossier"] .dwork-body .abub + * { grid-column: 4; grid-row: 1; }
 [data-style="dossier"] .dwork-body .zpause {
-  grid-column: 4; grid-row: 1; justify-self: end; padding-left: 16px;
-  font-family: var(--mono); font-size: var(--t105); line-height: 28px; font-variant-numeric: tabular-nums; color: var(--txg);
+  align-self: center; padding: 0 8px 0 4px;
+  font-family: var(--mono); font-size: var(--t105); line-height: 1; font-variant-numeric: tabular-nums; color: var(--txg);
 }
-/* the note's COPY / QUOTE take the figure's cell while you hover it */
-[data-style="dossier"] .dwork-body .group\/msg:hover > .zpause { visibility: hidden; }
 /* a file ref in a note or a thought (a box in the line) keeps its border but
    fits the 20px line it sits on */
 [data-style="dossier"] .dwork-body .md-fileref { vertical-align: middle; line-height: 1; }
@@ -3182,6 +3186,20 @@ input {
 /* open: its rows under the words, as the zone's own */
 [data-style="dossier"] :is(.dwork-body, .wzc-body) > .wbody { display: flex; flex-direction: column; padding: 4px 0 2px; margin: 0 !important; }
 [data-style="dossier"] .wbody > * { margin: 0 !important; }
+/* mid-glide (WorkStretch fold) the rows' box clips what it is not tall enough for yet */
+[data-style="dossier"] .wbody[data-moving] { overflow: clip; }
+/* a working stretch that just folded: its tally rings out once in the accent,
+   so the eye sees where the work went */
+[data-style="dossier"] .wtally[data-pulse] {
+  border-color: color-mix(in oklab, var(--acc) 65%, transparent);
+  animation: wtpulse .9s cubic-bezier(.2,.8,.2,1) 1;
+}
+@keyframes wtpulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--acc) 55%, transparent); }
+  100% { box-shadow: 0 0 0 7px transparent; }
+}
+/* a thought reads at the notes' measure */
+[data-style="dossier"] .dwork-body .thought > .zo { max-width: var(--z-measure); }
 
 /* ── tier 1: the answer ── */
 [data-style="dossier"] .resblk { margin: 0; }

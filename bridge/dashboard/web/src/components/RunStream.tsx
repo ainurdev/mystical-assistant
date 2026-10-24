@@ -1026,15 +1026,19 @@ function WorkChapter({ n, at, title, steps, span, failed, pics, live, rows }: {
  *  chapter. In a recent zone half the stretches are one call, so a row of
  *  their own would only trade one row for another. The pictures the work came
  *  back with never fold: they sit under the words, one row of tiles. The
- *  working stretch of a live zone stays open and folds into its tally once the
- *  next words land, unless you opened or shut it by hand; COLLAPSE STEPS off
- *  mounts every stretch open. Work with no words before it gets a row of its own. */
-function WorkStretch({ words, cats, failed, live, defaultOpen, pics, rows }: {
+ *  working stretch of a live zone stays open and glides shut into its tally
+ *  once the next words land, and the tally pulses once, so the eye sees where
+ *  it went; unless you opened or shut it by hand. COLLAPSE STEPS off mounts
+ *  every stretch open. Hovering the tally peeks at its steps (its title, drawn
+ *  by NativeTips). Work with no words before it gets a row of its own. */
+function WorkStretch({ words, cats, failed, peek, live, defaultOpen, pics, rows }: {
   /** The words, wearing the tally they're given; null draws the tally on a row of its own. */
   words: ((tally: ReactNode) => ReactNode) | null;
   /** What the work ran, by kind, and how much of it failed. None: words alone. */
   cats: StepCat[];
   failed: number;
+  /** A line per step, for the peek. */
+  peek: string[];
   /** The working stretch of a live zone. */
   live: boolean;
   defaultOpen: boolean;
@@ -1043,23 +1047,61 @@ function WorkStretch({ words, cats, failed, live, defaultOpen, pics, rows }: {
   /** The work's rows, built when it opens. */
   rows: () => ReactNode[];
 }) {
-  const [open, setOpen] = useState(defaultOpen || live);
+  // What the tally says, and whether the rows are built: a glide shutting them
+  // keeps them until it lands.
+  const [shown, setShown] = useState(defaultOpen || live);
+  const [built, setBuilt] = useState(shown);
+  const [pulse, setPulse] = useState(false);
   const byHand = useRef(false);
-  useEffect(() => { if (!byHand.current) setOpen(defaultOpen || live); }, [defaultOpen, live]);
   const body = useRef<HTMLDivElement>(null);
-  const toggle = () => {
-    byHand.current = true;
-    flushSync(() => setOpen(!open));
-    // opened, its rows print in the way a zone's do
-    if (open || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    Array.from(body.current?.children ?? []).slice(0, 12).forEach((el, i) =>
-      el.animate(ROW_IN, { duration: 240, delay: 40 + i * 16, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" }));
+  const glide = useRef<Animation | null>(null);
+  // Open or shut with a glide (THE FOLD's idiom): the rows' box runs from the
+  // height it has, mid-glide too, to the one it gets; rows built fresh print in.
+  const fold = (to: boolean) => {
+    const b = body.current, from = b?.getBoundingClientRect().height ?? 0;
+    glide.current?.cancel();
+    glide.current = null;
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches || (!to && !b)) { setShown(to); setBuilt(to); return; }
+    flushSync(() => { setShown(to); setBuilt(true); });
+    const n = body.current;
+    if (!n) return;
+    const end = to ? n.getBoundingClientRect().height : 0;
+    n.dataset.moving = "";
+    const a = n.animate(to ? [{ height: `${from}px` }, { height: `${end}px` }] : [{ height: `${from}px`, opacity: 1 }, { height: "0px", opacity: 0 }],
+      to ? { duration: 220, easing: "cubic-bezier(.4,0,.2,1)" } : { duration: 260, easing: "cubic-bezier(.2,.8,.2,1)", fill: "forwards" });
+    glide.current = a;
+    a.onfinish = () => { glide.current = null; delete n.dataset.moving; if (!to) setBuilt(false); };
+    const prints = to && !from ? Array.from(n.children).slice(0, 12).map((el, i) =>
+      el.animate(ROW_IN, { duration: 240, delay: 40 + i * 16, easing: "cubic-bezier(.2,.8,.2,1)", fill: "backwards" })) : [];
+    // the clocks start on the frame that first draws them, not in this task:
+    // building the rows would spend the glide before it is ever seen (WorkZone's fix)
+    requestAnimationFrame(() => { if (glide.current === a) for (const x of [a, ...prints]) x.startTime = document.timeline.currentTime; });
   };
+  const wasLive = useRef(live);
+  useEffect(() => {
+    const fell = wasLive.current && !live;
+    wasLive.current = live;
+    if (byHand.current) return;
+    if (fell && !defaultOpen) {
+      fold(false);
+      if (!matchMedia("(prefers-reduced-motion: reduce)").matches) setPulse(true);
+      return;
+    }
+    setShown(defaultOpen || live);
+    setBuilt(defaultOpen || live);
+  }, [defaultOpen, live]);
+  useEffect(() => {
+    if (!pulse) return;
+    const t = setTimeout(() => setPulse(false), 900);
+    return () => clearTimeout(t);
+  }, [pulse]);
+  useEffect(() => () => glide.current?.cancel(), []);
+  const toggle = () => { byHand.current = true; fold(!shown); };
   const what = [stepsTitle(cats), failed ? `${failed} failed` : ""].filter(Boolean).join(" · ");
   const tally = cats.length ? (
-    <button type="button" className="wtally" onClick={toggle} aria-expanded={open} aria-label={what}
-      title={`${what} · ${open ? "hide" : "show"} the steps`}
-      data-err={failed ? "" : undefined} data-live={live ? "" : undefined}>
+    <button type="button" className="wtally" onClick={toggle} aria-expanded={shown} aria-label={what}
+      title={[what, ...peek].join("\n")}
+      data-err={failed ? "" : undefined} data-live={live ? "" : undefined} data-pulse={pulse ? "" : undefined}>
       {kindsOf(cats, 0).map((k) => (
         <span key={k.m} className="dwork-k" data-m={k.m}><i aria-hidden><MarkIcon mark={k.m} size={10} /></i>{k.n}</span>
       ))}
@@ -1071,7 +1113,7 @@ function WorkStretch({ words, cats, failed, live, defaultOpen, pics, rows }: {
     <>
       {words ? words(tally) : tally ? <div className="zrow wlead"><i className="ax-bar" aria-hidden /><span className="zo">{tally}</span></div> : null}
       {pics.length ? <div className="wstrip">{pics}</div> : null}
-      {open && tally ? <div ref={body} className="wbody">{rows()}</div> : null}
+      {built && tally ? <div ref={body} className="wbody">{rows()}</div> : null}
     </>
   );
 }
@@ -1971,10 +2013,12 @@ function RailNode() {
  *  under it even unhovered. In flow they reserve their own width, so the bubble
  *  shrinks to make room instead of hiding behind them at any pane size. */
 function MessageBlock({
-  text, onQuote, tail, children,
+  text, onQuote, tail, figure, children,
 }: {
   text: string;
   onQuote?: (text: string) => void;
+  /** Shown with COPY and QUOTE while you hover the words (DOSSIER: the pause before them). */
+  figure?: ReactNode;
   /** Worn after the last word (DOSSIER: the tally of the work it led to, WorkStretch). */
   tail?: ReactNode;
   children: ReactNode;
@@ -2003,6 +2047,7 @@ function MessageBlock({
         {tail ? <><span className="wsp"> </span>{tail}</> : null}
       </div>
       <div className="flex flex-none gap-1 pl-1 pt-1 opacity-0 transition-opacity focus-within:opacity-100 group-hover/msg:opacity-100">
+        {figure}
         <button
           onClick={() => {
             try { void navigator.clipboard?.writeText(text); } catch { /* ignore */ }
@@ -2314,17 +2359,20 @@ export const RunStream = memo(function RunStream({
           <div
             key={i}
             className="group/msg relative flex items-start pl-[var(--rail)]"
+            data-pause={pause ? "" : undefined}
             style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
           >
             <RailNode />
             {/* The agent talking. Bare prose between boxed, labelled cards was
                 the one thing in a turn with nothing to catch a scrolling eye —
                 and it is the part worth reading — so it gets a bubble of its
-                own (MessageBlock) and a node on the rail where it starts. */}
-            <MessageBlock text={text} onQuote={onQuote} tail={tail}>
+                own (MessageBlock) and a node on the rail where it starts. The
+                pause before it shows while you hover it, with COPY and QUOTE:
+                at rest the right edge stays quiet. */}
+            <MessageBlock text={text} onQuote={onQuote} tail={tail}
+              figure={pause ? <span className="zpause" title={`${dur(pause)} before this note`}>{dur(pause)}</span> : undefined}>
               <Markdown className="leading-relaxed" onOpenFile={onOpenFile} toolStyle={toolStyle}>{text}</Markdown>
             </MessageBlock>
-            {pause ? <span className="zpause" title={`${dur(pause)} before this note`}>{dur(pause)}</span> : null}
           </div>
         );
       }
@@ -2707,6 +2755,28 @@ export const RunStream = memo(function RunStream({
     }
     return { cats, failed };
   };
+  /** A line per step a stretch ran, for its tally's peek: what its row would
+   *  say, a failure marked, the first eight and then how many more. */
+  const peekOf = (zsegs: Seg[]): string[] => {
+    const out: string[] = [];
+    for (const seg of zsegs) for (const i of seg.idx) {
+      const e = events[i];
+      let line = "", bad = false;
+      if (e.type === "tool") {
+        bad = !!doneOf(e)?.is_error;
+        const kind = toolKind(e.name);
+        line = e.name === "Bash" ? cmdAbstract(e.summary) || e.summary
+          : (kind === "read" || kind === "write") && e.summary ? e.summary.split("/").pop() ?? e.summary
+          : callLine(e.name, e.summary) || e.name;
+      } else if (e.type === "log" && (e.src !== "hook" || e.error)) {
+        bad = !!e.error;
+        line = e.label || e.text.split("\n")[0];
+      } else continue;
+      line = line.replace(/\s+/g, " ").trim();
+      out.push(`${bad ? "✕" : "·"} ${line.length > 46 ? `${line.slice(0, 45)}…` : line}`);
+    }
+    return out.length > 8 ? [...out.slice(0, 8), `+ ${out.length - 8} more`] : out;
+  };
   const rowOf = (seg: Seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg));
   /** A zone's rows, or a chapter's (DOSSIER only): the agent's words, each
    *  wearing the work it led to (lib/dossier stretchesOf, WorkStretch). A
@@ -2732,6 +2802,7 @@ export const RunStream = memo(function RunStream({
             words={wears ? (t) => renderEvent(i!, undefined, t) : null}
             cats={cats}
             failed={failed}
+            peek={quiet ? [] : peekOf(w)}
             live={live && k === all.length - 1}
             defaultOpen={foldsOpen}
             pics={quiet ? [] : w.filter((s) => s.kind === "prose").map((s) => renderEvent(s.idx[0], "pics")).filter((p) => p !== null)}
