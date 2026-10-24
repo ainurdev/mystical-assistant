@@ -460,7 +460,7 @@ function DayCut({ label }: { label: string }) {
 /** One virtualised entry in a lane list: a lane header, a session row, the
  *  idle lane's fold toggle, or a PLUGINS day label. */
 type LaneItem =
-  | { k: "head"; label: string; sub?: string; tint: string; count?: number; pulse: boolean; first: boolean }
+  | { k: "head"; label: string; sub?: string; tint: string; count?: number; pulse: boolean; first: boolean; fold: string }
   | { k: "row"; s: SessionBrief }
   | { k: "fold"; label: string }
   | { k: "day"; label: string };
@@ -711,7 +711,9 @@ export function SessionsPanel(props: Props) {
   const laneItems: LaneItem[] = [];
   if (mode !== "projects") {
     lanes.forEach((l, i) => {
-      laneItems.push({ k: "head", label: l.label, sub: l.sub, tint: l.tint, count: l.count, pulse: l.pulse, first: i === 0 });
+      // Open, IDLE runs to hundreds of rows — the way back sits on its head too,
+      // not only under all of them.
+      laneItems.push({ k: "head", label: l.label, sub: l.sub, tint: l.tint, count: l.count, pulse: l.pulse, first: i === 0, fold: folded ? "" : l.fold });
       let day = "";
       for (const s of l.rows) {
         // PLUGINS reads as a log, like the opened jobs group: each day gets a label.
@@ -1178,6 +1180,16 @@ export function SessionsPanel(props: Props) {
       {it.sub && <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: "var(--t9)", letterSpacing: ".04em", color: "var(--txl)" }}>· {it.sub}</span>}
       <span style={{ flex: 1, minWidth: 8, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
       {it.count !== undefined && <span style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{it.count}</span>}
+      {it.fold && (
+        <button
+          onClick={() => setFolded(true)}
+          onMouseEnter={() => setHov("headfold")} onMouseLeave={() => setHov("")}
+          // Full head height plus side padding, pulled back so nothing moves.
+          style={{ flex: "none", alignSelf: "stretch", border: 0, background: "transparent", padding: "0 6px", margin: "0 -6px",
+                   cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: ".1em",
+                   color: hov === "headfold" ? "var(--acc)" : "var(--txl)" }}
+        >{it.fold}</button>
+      )}
     </div>
   );
 
