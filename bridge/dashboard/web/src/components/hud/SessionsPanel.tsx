@@ -14,7 +14,7 @@ import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
 import { isDeviceRun, rowAge } from "../../lib/devicerun";
 import { isTeam, readOnly, shareFacts, SHARED_REL } from "../../lib/team";
-import { shotUnseen, useSeenShots } from "../../lib/seenshots";
+import { chatOpenedAt, markChatOpened, shotUnseen, useSeenShots } from "../../lib/seenshots";
 import { TeamTile } from "../TeamBar";
 import { Avatar } from "./TeamPanel";
 import { DeviceTile } from "../DeviceRunPlate";
@@ -213,7 +213,7 @@ const edgeChip = (c: string, l: string) => (
 );
 
 function SessionRow({
-  s, i, on, v, st, flag, wait, shots, branch, home, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
+  s, i, on, v, st, flag, wait, shots, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
 }: {
   s: SessionBrief;
   st?: SessionStatus;
@@ -224,7 +224,6 @@ function SessionRow({
   v: StateView;
   flag?: PromptFlag;
   branch: string;
-  home?: string;     // the project checkout's own branch — a row on it has nothing to say about branches
   pinned: boolean;
   showDot: boolean;  // PROJECTS rows carry the state dot; lane rows wear it as their left edge
   showProj: boolean; // lane rows name their project; PROJECTS rows sit under a header that already does
@@ -254,14 +253,17 @@ function SessionRow({
   // A Rivendell job says what kind it is and what it was about, not where it ran.
   const target = job ? jobTarget(s.job) : "";
   const JobIcon = job && s.job?.kind ? JOB_ICON[s.job.kind as keyof typeof JOB_ICON] : null;
-  // A row prints what differs from its neighbours, on a second line, and only
-  // facts that hold still: the project where a tab mixes them, a branch that
-  // isn't the checkout's, a worktree. State never takes a line — it is the
-  // right edge — so a row keeps its height whatever its session does.
-  const projShown = !job && !team && showProj && detail.proj;
-  const branchShown = !job && !team && detail.branch && !!branch && branch !== home;
+  // The tab sets a row's height, not the row: while ROW DETAILS prints anything,
+  // every row takes a second line, so neighbours never differ (rows on master
+  // printing nothing beside rows on a branch read as two sizes of row). It holds
+  // facts that hold still: the project where a tab mixes them, the branch, a
+  // worktree; a job's kind, a share's sender. State never takes a line — it is
+  // the right edge — so a row keeps its height whatever its session does.
+  const tiles = showProj && detail.proj;
+  const projShown = !job && !team && tiles;
+  const branchShown = !job && !team && detail.branch && !!branch;
   const wtShown = !job && !team && detail.wt && inWorktree;
-  const one = !dev && !projShown && !branchShown && !wtShown;
+  const one = !dev && !tiles && !detail.branch && !detail.wt;
   // The state where the age used to be: how long a turn has run or waited,
   // the two states that are yours to act on, the age at rest.
   const since = st?.since;
@@ -276,17 +278,18 @@ function SessionRow({
     // the server's label says when it comes back ("usage limit — resuming ~14:00")
     : v.lane === "parked" ? <span style={{ color: "var(--info)" }}>↻ {st?.label?.match(/\d{1,2}:\d{2}/)?.[0] ?? ago(s.updated)}</span>
     : <span>{ago(s.updated)}</span>;
-  // Unseen pictures: the WORK plate's NEW badge in miniature, under the time
-  // where Telegram puts an unread count. Out of flow, so a tag coming or going
-  // moves no row; a one-line row carries it beside the time instead.
+  // Unseen pictures: on line 2 under the time, where Telegram puts an unread
+  // count, the same spot on every row; a one-line row carries it beside the
+  // time. Its negative margin keeps it from growing line 2, so a tag coming or
+  // going moves no row. Grey, not the accent: news, not a state that wants you.
   const shotTag = shots > 0 && (
     <span
       role="img" aria-label={`${shots} new picture${shots === 1 ? "" : "s"}`}
       title={`${shots} new picture${shots === 1 ? "" : "s"} you haven't opened`}
-      style={{ ...(!one ? { position: "absolute", right: 0, top: 18 } : { flex: "none" }),
+      style={{ ...(!one ? { gridRow: 2, gridColumn: -2, justifySelf: "end", margin: "-4px 0" } : { flex: "none" }),
                display: "inline-flex", alignItems: "center", gap: 3, height: 15, padding: "0 5px 0 4px", borderRadius: 4,
-               background: "var(--acc)", color: "var(--acc-on, var(--canvas))", fontSize: "var(--t85)", fontWeight: 800,
-               lineHeight: 1, boxShadow: "0 0 8px color-mix(in oklab, var(--acc) 35%, transparent)" }}
+               background: "color-mix(in srgb, var(--txl) 16%, transparent)", color: "var(--txm)", fontSize: "var(--t85)",
+               fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}
     >
       <ImageIcon size={10} strokeWidth={2.4} aria-hidden style={{ flex: "none" }} />{shots > 99 ? "99+" : shots}
     </span>
@@ -301,8 +304,10 @@ function SessionRow({
         : team ? `${s.title || "untitled session"} · from ${team.from.name}${theirProj ? ` · ${theirProj}` : ""} · read only`
         : `${s.title || "untitled session"} · ${projectName(s.project)} · ${branch} · ${v.t}`}
       style={{
-        display: "grid", gridTemplateColumns: showDot ? "8px 1fr auto" : "1fr auto", columnGap: 10,
-        alignItems: one ? "center" : "start", padding: one ? "6px 8px" : "8px 8px 9px", position: "relative",
+        // Two grid rows: the dot, title and state centre on line 1, line 2 and
+        // the picture tag on line 2, so the tag sits under the time on any row.
+        display: "grid", gridTemplateColumns: showDot ? "8px 1fr auto" : "1fr auto", columnGap: 10, rowGap: 5,
+        alignItems: "center", padding: one ? "6px 8px" : "8px 8px 9px", position: "relative",
         // Lane rows wear their state on the left edge; PROJECTS rows carry a
         // dot instead and the .sessrow bar (--openbar) marks the open one.
         borderLeft: showDot ? undefined : `2px solid ${on ? tint.dim : `color-mix(in srgb, ${v.c} 32%, transparent)`}`,
@@ -319,12 +324,13 @@ function SessionRow({
       {showDot && (
         <span
           className="sessdot" data-work={pulse} title={v.t}
-          style={{ width: 8, height: 8, marginTop: one ? 0 : 3, borderRadius: "50%", boxSizing: "border-box",
+          style={{ width: 8, height: 8, borderRadius: "50%", boxSizing: "border-box",
                    background: v.fill ? v.c : "transparent", border: v.fill ? 0 : `1.5px solid ${v.c}`,
                    boxShadow: v.fill ? `0 0 7px color-mix(in srgb, ${v.c} 40%, transparent)` : "none" }}
         />
       )}
-      <div style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 5 }}>
+      {/* contents: the title and line 2 are the row grid's own cells */}
+      <div style={{ display: "contents" }}>
         <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                        fontSize: showDot ? "var(--t12)" : "var(--t125)", lineHeight: 1.3,
                        fontWeight: on ? 600 : 500, color: on ? "var(--txb)" : "var(--txh)" }}>
@@ -333,7 +339,7 @@ function SessionRow({
         {dev ? (
           // Who asked, in the run's blue, then the repo and its PR: short of
           // room the repo's name gives way first, and the PR never does.
-          <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
+          <div style={{ gridRow: 2, gridColumn: showDot ? 2 : 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
             <span className="sessproj" style={{ flex: "0 0 auto", maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--info)" }}>
               <DeviceTile />{dev.by}
             </span>
@@ -343,7 +349,14 @@ function SessionRow({
             {dev.pr != null && <span style={{ flex: "none", marginLeft: -2, fontFamily: "var(--mono)", color: "var(--txl)" }}>#{dev.pr}</span>}
           </div>
         ) : !one && (
-          <div style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
+          <div style={{ gridRow: 2, gridColumn: showDot ? 2 : 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0, fontSize: "var(--t95)", lineHeight: 1 }}>
+            {(job || team) && (
+              // a tile where the tab names projects, so this line stands as tall as theirs
+              <span className="sessproj" style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: tint.dim }}>
+                {job ? <>{tiles && <JobsTile />}{jobLabel(s.job).toLowerCase()}{target ? ` ${target}` : ""}</>
+                  : team && <>{tiles && <TeamTile />}from {team.from.name}{theirProj ? ` · ${theirProj}` : ""}</>}
+              </span>
+            )}
             {projShown && (
               <span className="sessproj" style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: tint.color }}>
                 <ProjectTile project={s.project} />{projectName(s.project)}
@@ -364,10 +377,12 @@ function SessionRow({
           </div>
         )}
       </div>
+      {/* Before the state column, which theme rules know as `div:last-child`. */}
+      {!one && shotTag}
       {/* The pin leads: a row's first span is its title to the theme rules
           (`.sessrow > div > span:first-child`), and nothing here is one. */}
       <div style={{ display: "flex", alignItems: "center", gap: 7, height: 18, fontSize: "var(--t10)", fontWeight: 600, lineHeight: 1,
-                    color: "var(--txl)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", position: "relative" }}>
+                    color: "var(--txl)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
         <button
           onClick={(e) => { e.stopPropagation(); onPin(); }}
           title={pinned ? "unpin — stops holding the top of the list" : "pin to the top of the list"}
@@ -389,7 +404,7 @@ function SessionRow({
         )}
         {JobIcon && <span title={jobLabel(s.job).toLowerCase()} style={{ display: "inline-flex", color: "var(--purple)" }}><JobIcon size={12} strokeWidth={2.1} aria-hidden /></span>}
         {team && <Avatar id={team.from.id || team.from.name} name={team.from.name} size={16} />}
-        {shotTag}
+        {one && shotTag}
         {age ? (
           <span style={{ color: age.tone === "run" ? "var(--info)" : pulse ? "var(--ok)" : "var(--txl)" }}>
             {age.tone === "ok" || age.tone === "bad"
@@ -438,33 +453,6 @@ function DayCut({ label }: { label: string }) {
                   fontSize: "var(--t85)", letterSpacing: ".14em", color: "var(--txl)" }}>
       {label}<span style={{ flex: 1, height: 1, background: "color-mix(in srgb, var(--acc) 7%, transparent)" }} />
     </div>
-  );
-}
-
-/** A project head's tally: one dot and count per lane that has any, in the
- *  order they want you — a question first, then what's new, then what's busy. */
-const TALLY: { k: LaneKey; c: string; fill: boolean; t: string }[] = [
-  { k: "ask", c: "var(--warn)", fill: true, t: "need you" },
-  { k: "done", c: "var(--acc)", fill: false, t: "finished, not opened" },
-  { k: "wait", c: "var(--purple)", fill: true, t: "waiting" },
-  { k: "parked", c: "var(--info)", fill: true, t: "parked" },
-  { k: "work", c: "var(--ok)", fill: true, t: "working" },
-];
-function Tally({ n }: { n: Partial<Record<LaneKey, number>> }) {
-  const on = TALLY.filter((x) => n[x.k]);
-  if (!on.length) return null;
-  return (
-    <span title={on.map((x) => `${n[x.k]} ${x.t}`).join(" · ")}
-          style={{ flex: "none", display: "flex", alignItems: "center", gap: 10, marginRight: 4, fontSize: "var(--t10)",
-                   fontWeight: 700, lineHeight: 1, color: "var(--txd)", fontVariantNumeric: "tabular-nums" }}>
-      {on.map((x) => (
-        <span key={x.k} style={{ display: "inline-flex", alignItems: "center", gap: 4, color: x.k === "ask" ? "var(--warn)" : undefined }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", boxSizing: "border-box",
-                         background: x.fill ? x.c : "transparent", border: x.fill ? 0 : `1.5px solid ${x.c}` }} />
-          {n[x.k]}
-        </span>
-      ))}
-    </span>
   );
 }
 
@@ -601,8 +589,17 @@ export function SessionsPanel(props: Props) {
     const t = setInterval(load, 15000);
     return () => { live = false; clearInterval(t); };
   }, []);
-  useSeenShots(); // a picture marked seen re-counts its tag
-  const unseen = new Map(Object.entries(pics).map(([id, ps]) => [id, ps.filter(([p, at]) => shotUnseen(p, at)).length]));
+  // Opening a chat clears its tag, and so does leaving it: what landed while you
+  // were in it was yours to see. Layout, so the chat you leave never paints a
+  // tag for a frame before its stamp lands.
+  useLayoutEffect(() => {
+    if (!selectedSessionId) return;
+    markChatOpened(selectedSessionId);
+    return () => markChatOpened(selectedSessionId);
+  }, [selectedSessionId]);
+  useSeenShots(); // a picture marked seen, or a chat opened, re-counts its tag
+  const unseen = new Map(Object.entries(pics).map(([id, ps]) => [id, id === selectedSessionId ? 0
+    : ps.filter(([p, at]) => at > chatOpenedAt(id) && shotUnseen(p, at)).length]));
 
   // Branches power the WORKTREE chips + parent cycle — load per selected project
   // while the form is open (same endpoint the old inline picker used).
@@ -750,8 +747,9 @@ export function SessionsPanel(props: Props) {
     const keep = new Set(f.slice(0, 2).map((s) => s.id));
     return f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id) || laneOf(s) !== "idle" || flags.has(s.id) || !!unseen.get(s.id));
   };
-  // A head's tally: how many of its sessions sit in each lane. It counts every
-  // session, not the rows showing, so a shut project still says what's inside.
+  // How many of a project's sessions sit in each lane, every session, not the
+  // rows showing: a shut head's amber wash and the rail's ask badge and New dot
+  // read it. No head prints the counts — the rows under it already say so.
   const tallyOf = (f: SessionBrief[]) => {
     const n: Partial<Record<LaneKey, number>> = {};
     for (const s of f) { const k = laneOf(s); n[k] = (n[k] ?? 0) + 1; }
@@ -786,7 +784,7 @@ export function SessionsPanel(props: Props) {
       on={s.id === selectedSessionId}
       v={views.get(s.id) ?? SV.idle} st={status.get(s.id)} flag={flags.get(s.id)} wait={waitOf(s)} shots={unseen.get(s.id) ?? 0}
       pulse={(status.get(s.id)?.state ?? "idle") === "working"}
-      branch={branchFor(s)} home={branchOf.get(s.project)}
+      branch={branchFor(s)}
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
       onAttach={() => onSelectSession(s)}
     />
@@ -1221,7 +1219,7 @@ export function SessionsPanel(props: Props) {
                 onClick={(e) => (fly?.rel === g.rel ? setFly(null) : peek(g.rel, e.currentTarget, 0))}
               >
                 {tile(g)}
-                {n.ask ? <span className="srail-bd" data-ask>{n.ask}</span> : n.work ? <span className="srail-bd">{n.work}</span> : null}
+                {!!n.ask && <span className="srail-bd">{n.ask}</span>}
                 {!!n.done && <span className="srail-new" />}
               </button>
             );
@@ -1247,8 +1245,6 @@ export function SessionsPanel(props: Props) {
                 {tile(flyG)}
                 <span style={{ flex: "0 1 auto", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                fontSize: "var(--t115)", letterSpacing: ".06em", color: "var(--txm)" }}>{flyG.name}</span>
-                <span style={{ flex: 1, minWidth: 6 }} />
-                <Tally n={tallyOf(flyRows)} />
               </div>
               <div className="projrail" style={{ margin: "1px 0 0 3px", borderLeft: `1px solid color-mix(in srgb, ${projectTint(flyG.rel).color} 20%, transparent)` }}>
                 {flyVis.map((x) => rowFor(x, true, false))}
@@ -1503,7 +1499,6 @@ export function SessionsPanel(props: Props) {
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
                     <span style={{ flex: 1, minWidth: 6 }} />
-                    <Tally n={n} />
                     {/* Rivendell or a teammate started these; there is no session of yours to start here. */}
                     {!jobs && !shared && <button
                       onClick={(e) => { e.stopPropagation(); openFor(g.rel); }}

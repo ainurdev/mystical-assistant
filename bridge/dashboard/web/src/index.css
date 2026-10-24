@@ -6287,7 +6287,9 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
   box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--d-ask, var(--ask, var(--acc))) 40%, transparent); }
 .qopt-on .qsug { color: inherit; }
 .qstage-view { overflow: hidden; border: 1px solid var(--d-hair, var(--border)); background: color-mix(in oklab, var(--tg-bg) 70%, #000); }
-.qstage-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; color: var(--txh);
+/* One line whatever the option's name or tab count, and as tall without the
+   24px zoom button as with it (24 + padding + rule), so it never changes height. */
+.qstage-head { display: flex; align-items: center; gap: 8px; padding: 7px 8px 7px 10px; color: var(--txh); min-height: 39px;
   border-bottom: 1px solid var(--d-hair, var(--border)); }
 .qstage-tabs { margin-left: auto; display: flex; gap: 4px; min-width: 0; overflow-x: auto; }
 .qstage-tab { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; font-size: var(--t11, 11px); line-height: 1.3;
@@ -6298,8 +6300,17 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .qstage-tab[aria-selected="true"] i { color: var(--d-ask, var(--acc)); }
 .qstage-zoom { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; cursor: zoom-in;
   color: var(--txm); border: 1px solid color-mix(in oklab, var(--txl) 35%, transparent); }
+/* Every option's shots stacked in one cell, the shown one on top: the cell
+   holds the tallest, so the card keeps its size whichever option is on show,
+   and a tall shot is capped and letterboxed instead of stretching the card. */
+.qstage-shots { display: grid; grid-template-columns: minmax(0, 1fr); }
+.qstage-layer { grid-area: 1 / 1; min-width: 0; display: flex; flex-direction: column; justify-content: center;
+  transition: opacity .16s ease, visibility .16s; }
+.qstage-layer[data-on="false"] { opacity: 0; visibility: hidden; }
+.qstage-none { margin: 0; padding: 12px; text-align: center; font-size: var(--t12, 12px); color: var(--txl); }
+@media (prefers-reduced-motion: reduce) { .qstage-layer { transition: none; } }
 .qstage-pic { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
-.qstage-pic img { display: block; width: 100%; height: auto; }
+.qstage-pic img { display: block; width: 100%; height: auto; max-height: min(56vh, 480px); object-fit: contain; }
 .qstage-text { margin: 0; padding: 10px 12px; max-height: 320px; overflow: auto; white-space: pre-wrap;
   font: var(--t12, 12px)/1.5 var(--mono); color: var(--txm); }
 
@@ -6557,9 +6568,8 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .srail-bd {
   position: absolute; right: 0; bottom: 0; min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
   display: grid; place-items: center; font-family: var(--ui-font); font-size: 9px; font-weight: 800; line-height: 1;
-  color: var(--acc-on); background: var(--ok); box-shadow: 0 0 0 2px var(--side, var(--canvas));
+  color: var(--acc-on); background: var(--warn); box-shadow: 0 0 0 2px var(--side, var(--canvas));
 }
-.srail-bd[data-ask] { background: var(--warn); }
 .srail-new { position: absolute; right: 5px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--side, var(--canvas)); }
 .srail-fly {
   position: fixed; z-index: 60; width: 318px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box;

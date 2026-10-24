@@ -50,6 +50,28 @@ export function markShotSeen(path: string): void {
   subs.forEach((fn) => fn());
 }
 
+// When you last had each chat open, epoch seconds. The sidebar's picture tag
+// counts only what landed after it, so opening a chat clears its row's tag
+// while the WORK plates inside keep their own NEW until each shot is on screen.
+const OPENED_KEY = "hud-shots-opened";
+let opened = read<Record<string, number>>(OPENED_KEY, {});
+
+export function chatOpenedAt(sid: string): number {
+  return opened[sid] ?? 0;
+}
+
+/** You are in this chat, or just left it. */
+export function markChatOpened(sid: string): void {
+  const now = Date.now() / 1000;
+  // The tag reads a day back (SessionsPanel's /local/shots window), so an
+  // older stamp says nothing and goes.
+  opened = Object.fromEntries(Object.entries(opened).filter(([, t]) => t > now - 86400));
+  opened[sid] = now;
+  try { localStorage.setItem(OPENED_KEY, JSON.stringify(opened)); } catch { /* ignore */ }
+  version++;
+  subs.forEach((fn) => fn());
+}
+
 /** Re-render on every mark, so a zone's chip dims the moment its shot is seen. */
 export function useSeenShots(): number {
   return useSyncExternalStore(

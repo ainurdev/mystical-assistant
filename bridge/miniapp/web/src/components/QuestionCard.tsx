@@ -23,7 +23,7 @@ function StageView({ q, shown }: { q: Question; shown: number }) {
   const shot = cur.pv.shots[t];
   return (
     <div className="border border-border bg-[var(--tg-bg)]">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-2.5 py-2">
+      <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
         <span className="inline-flex h-[21px] w-[21px] shrink-0 items-center justify-center bg-[var(--brand-soft)] font-mono text-[11px] font-bold text-[var(--tg-bg)]">{cur.key}</span>
         <span className="min-w-0 truncate text-sm font-medium text-foreground-bright">{cur.name}</span>
         <span className="ml-auto flex min-w-0 gap-1 overflow-x-auto">
@@ -42,20 +42,32 @@ function StageView({ q, shown }: { q: Question; shown: number }) {
           )}
         </span>
       </div>
-      {shot && (
-        <ToolImage
-          key={shot.path}
-          path={shot.path}
-          alt={`${cur.key} · ${cur.name}${shot.alt ? ` · ${shot.alt}` : ""}`}
-          className="block h-auto w-full"
-          fallback={<p className="px-3 py-2 text-xs text-[var(--tg-hint)]">{shot.alt || "This picture is gone."}</p>}
-          onZoom={(src) => setZoom(src)}
-          onSrc={(src) => setSrcs((m) => ({ ...m, [shot.path]: src }))}
-        />
-      )}
-      {cur.pv.text && (
-        <pre className="m-0 max-h-80 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs text-[var(--tg-hint)]">{cur.pv.text}</pre>
-      )}
+      {/* Every option's every shot stacked in one cell, the shown one fading in
+          (the dashboard Stage's way): the cell holds the tallest, each capped in
+          height, so a tap never resizes the card or waits on a fetch. */}
+      <div className="grid grid-cols-[minmax(0,1fr)]">
+        {opts.flatMap((x, oi) => (x.pv.shots.length ? x.pv.shots : [null]).map((s, k) => {
+          const on = oi === shown && k === t;
+          return (
+            <div key={`${oi}.${k}`} className={`col-start-1 row-start-1 flex min-w-0 flex-col justify-center transition-[opacity,visibility] duration-150 motion-reduce:transition-none ${on ? "" : "invisible opacity-0"}`}>
+              {s && (
+                <ToolImage
+                  path={s.path}
+                  alt={`${x.key} · ${x.name}${s.alt ? ` · ${s.alt}` : ""}`}
+                  className="block h-auto max-h-[min(56vh,440px)] w-full object-contain"
+                  fallback={<p className="px-3 py-2 text-xs text-[var(--tg-hint)]">{s.alt || "This picture is gone."}</p>}
+                  onZoom={(src) => setZoom(src)}
+                  onSrc={(src) => setSrcs((m) => ({ ...m, [s.path]: src }))}
+                />
+              )}
+              {x.pv.text && (
+                <pre className="m-0 max-h-80 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs text-[var(--tg-hint)]">{x.pv.text}</pre>
+              )}
+              {!s && !x.pv.text && <p className="px-3 py-3 text-center text-xs text-[var(--tg-hint)]">No picture for this option</p>}
+            </div>
+          );
+        }))}
+      </div>
       {zoom && (
         <ImageLightbox
           src={zoom}

@@ -139,15 +139,26 @@ function Stage({ q, chosen, onPick, sending }: {
               </button>
             )}
           </div>
-          {shot && (gone.has(shot.path)
-            ? <p className="qstage-text">{shot.alt || "This picture is gone."}</p>
-            : (
-              <button type="button" className="qstage-pic" title="Open full size" onClick={open}>
-                <img src={api.attachmentUrl(shot.path)} alt={`${cur.key} · ${cur.name}${shot.alt ? ` · ${shot.alt}` : ""}`}
-                  onError={() => setGone((g) => new Set(g).add(shot.path))} />
-              </button>
-            ))}
-          {cur.pv.text && <pre className="qstage-text">{cur.pv.text}</pre>}
+          {/* Every option's every shot sits stacked in one cell and the shown
+              one fades in: the cell holds the tallest (each capped in height),
+              so switching options or tabs never resizes the card, and nothing
+              waits on a load you asked for — they all loaded with the card. */}
+          <div className="qstage-shots">
+            {opts.flatMap((x, oi) => (x.pv.shots.length ? x.pv.shots : [null]).map((s, k) => (
+              <div key={`${oi}.${k}`} className="qstage-layer" data-on={oi === shown && k === t}>
+                {s && (gone.has(s.path)
+                  ? <p className="qstage-text">{s.alt || "This picture is gone."}</p>
+                  : (
+                    <button type="button" className="qstage-pic" title="Open full size" onClick={open}>
+                      <img src={api.attachmentUrl(s.path)} alt={`${x.key} · ${x.name}${s.alt ? ` · ${s.alt}` : ""}`}
+                        onError={() => setGone((g) => new Set(g).add(s.path))} />
+                    </button>
+                  ))}
+                {x.pv.text && <pre className="qstage-text">{x.pv.text}</pre>}
+                {!s && !x.pv.text && <p className="qstage-none">No picture for this option</p>}
+              </div>
+            )))}
+          </div>
         </div>
       </div>
       {zoom !== null && all[zoom] && (

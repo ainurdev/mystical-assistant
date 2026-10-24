@@ -43,4 +43,15 @@ const since = Number(mem.get("hud-shots-since"));
 ok(since >= before - 1 && since <= Date.now() / 1000 + 1, "first load stamps the birth in epoch seconds");
 ok(!b.shotUnseen("/u/earlier.png", before - 60), "a shot from before the first load is seen");
 ok(b.shotUnseen("/u/later.png", before + 60), "a shot from after it is unseen");
+
+// Opening a chat stamps it: the sidebar tag counts only shots after the stamp.
+mem.clear();
+mem.set("hud-shots-opened", JSON.stringify({ old: Date.now() / 1000 - 2 * 86400 }));
+const c = await fresh("c");
+ok(c.chatOpenedAt("never") === 0, "a chat never opened has no stamp");
+const t0 = Date.now() / 1000;
+c.markChatOpened("s1");
+ok(c.chatOpenedAt("s1") >= t0 - 1, "opening a chat stamps it now");
+const opened = JSON.parse(mem.get("hud-shots-opened")!);
+ok(opened.s1 >= t0 - 1 && !("old" in opened), "the stamp is written, and one older than the tag's day goes");
 console.log("seenshots: all ok");
