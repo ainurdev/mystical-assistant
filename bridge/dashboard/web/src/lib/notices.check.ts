@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/notices.check.ts
 import type { Need, Notice, NoticePrefs } from "../api.ts";
-import { ago, askPrompt, badge, byDay, cardFor, chipCount, dayOf, findIn, freshSince, groupBySubject, iconFor, isQuiet, leadOf, matches, needMatches, nodeSize, notesMarkdown, notesOf, placesOf, popFor, safeUrl, sectionOf, stamp, weekBars } from "./notices.ts";
+import { ago, askChange, badge, cardFor, changeMarkdown, changesOf, chipCount, dayOf, findChanges, freshSince, groupBySubject, iconFor, isQuiet, leadOf, matches, mediaUrl, needMatches, notesOf, popFor, safeUrl, sameArea, sectionOf, shortWhen, stamp, whenOf } from "./notices.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -92,36 +92,48 @@ ok(JSON.stringify(notesOf(waiting)) === '[{"heading":"h","title":"T","body":"b",
 ok(notesOf(n(1, "a")).length === 0 && notesOf(n(2, "b", { meta: { notes: "x" } })).length === 0, "no notes, or not a list: none");
 
 
-// ---- the changelog's reader -----------------------------------------------------------
+// ---- the changelog: one change at a time ----------------------------------------------
 {
-  const now = new Date(2026, 9, 25, 0, 20);
+  const now = new Date(2026, 9, 25, 5, 20);
   const at = (d: number, h: number, m = 0) => new Date(2026, 9, d, h, m).getTime() / 1000;
   ok(dayOf(at(25, 0, 8), now) === "TODAY" && dayOf(at(24, 23, 50), now) === "YESTERDAY" && dayOf(at(22, 20), now) === "OCT 22",
     "days read TODAY, YESTERDAY, then the date");
-  const u = (id: number, a: number, o: Partial<Notice> = {}) => n(id, `update:${id}`, { at: a, kind: "updated", ...o });
-  const rows = [u(4, at(25, 0, 8), { meta: { commits: 2 } }), u(3, at(24, 23, 50), { meta: { commits: 25 } }),
-                u(2, at(22, 20), { meta: { commits: 13 } }), u(1, at(22, 12), { meta: { commits: 3 } }), u(0, at(12, 9), { meta: { commits: 9 } })];
-  ok(JSON.stringify(byDay(rows, now).map((g) => [g.day, g.rows.map((r) => r.id)])) === '[["TODAY",[4]],["YESTERDAY",[3]],["OCT 22",[2,1]],["OCT 12",[0]]]',
-    "rows fall under their days in order");
-  ok(weekBars(rows, now).join() === "0,0,0,16,0,25,2", "the week's bars: commits per day, a fortnight ago left out, today last");
-  ok(nodeSize(rows[0]) === 1 && nodeSize(rows[2]) === 3 && nodeSize(u(9, 0, { meta: { commits: 12 } })) === 2 && nodeSize(u(9, 0)) === 1,
-    "a node grows with its commits");
+  ok(whenOf(at(25, 2, 16), now) === "Today · 02:16" && whenOf(at(24, 23, 50), now) === "Yesterday · 23:50"
+    && whenOf(at(22, 20, 53), now) === "Thu, Oct 22 · 20:53", "the reader's time names the day");
+  ok(shortWhen(at(25, 4, 59), now) === "04:59" && shortWhen(at(24, 23, 50), now) === "Oct 24", "a row's time: today's hour, else the date");
   ok(leadOf("Usage — limits on the rail").join("|") === "Usage|limits on the rail" && leadOf("Two").join("|") === "|Two", "a bullet's lead");
-  const t = [u(1, 1, { title: "Logo picker", body: "Logos — one tap" }), u(2, 2, { title: "Other", body: "Repo icons — without a LOGO" }), u(3, 3, { title: "x", body: "y" })];
-  ok(findIn(t, " logo ").map((r) => r.id).join() === "1,2" && findIn(t, "").length === 3, "find matches titles and bullets, any case");
   ok(iconFor("Telegram") === "send" && iconFor("Sidebar") === "panel" && iconFor("Clone & install") === "down"
     && iconFor("Work zone") === "layers" && iconFor("Middle-earth") === "palette" && iconFor("Rivendell") === "trees" && iconFor("Mystery") === "spark",
     "a feature's icon comes from its lead, a spark when nothing fits");
-  const g = u(5, 5, { body: "A — a\nB — b\nC — c", meta: { go: ["rail:usage", "nowhere", 7] } });
-  ok(JSON.stringify(placesOf(g)) === '["rail:usage",null,null]' && placesOf(u(6, 6, { body: "A — a" }))[0] === null,
-    "places only from the known list, in bullet order");
-  const md = notesMarkdown(u(7, at(24, 23, 50), { title: "Usage on the rail", body: "Usage — limits\nPlain words",
-    meta: { commits: 25, rest: 20, url: "https://github.com/o/r/compare/a...b" } }), now);
-  ok(md === "**Usage on the rail** · Oct 24\n- **Usage** — limits\n- Plain words\n\n+20 smaller fixes · 25 commits: https://github.com/o/r/compare/a...b",
-    "Copy notes writes markdown");
-  const ask = askPrompt(u(8, at(24, 23, 50), { title: "Usage", body: "Usage — limits", meta: { from: "3e77cc8aa", to: "ab5fc19bb" } }));
-  ok(ask.startsWith("Tell me about this Mystical update from Oct 24 23:50 (`git log 3e77cc8..ab5fc19`)") && ask.includes("- Usage — limits"),
-    "Ask Claude carries the range and the notes");
+
+  const u = (id: number, a: number, o: Partial<Notice> = {}) => n(id, `update:${id}`, { at: a, kind: "updated", ...o });
+  const upd = u(948, at(25, 2, 16), { body: "Asks dock — questions wait\nUsage limits — a card while parked\nplain clause", read: true,
+    meta: { go: [null, "rail:usage", "nowhere"], when: [null, "a login hits its limit", 7],
+            media: [{ still: "asks-dock.webp", clip: null }, { still: "../x.webp", clip: "usage-limits.mp4" }, { still: "Bad Name.png" }] } });
+  const note = n(950, "note:x", { kind: "note", at: at(25, 3), title: "Re-enter the token", body: "Paste it once.\nThen restart." });
+  const all = changesOf([note, upd]);
+  ok(all.map((c) => c.id).join() === "950,948.0,948.1,948.2", "a note is one change, an update a change per bullet, in order");
+  ok(all[0].area === "Re-enter the token" && all[0].text === "Paste it once.\nThen restart." && all[0].media === null, "a note keeps its title and body");
+  ok(all[1].area === "Asks dock" && all[1].text === "questions wait" && JSON.stringify(all[1].media) === '{"still":"asks-dock.webp","clip":null}',
+    "a bullet splits into its area and words, its picture by index");
+  ok(all[2].place === "rail:usage" && all[2].when === "a login hits its limit" && JSON.stringify(all[2].media) === '{"still":null,"clip":"usage-limits.mp4"}',
+    "place and state by index; a name with a path is no picture");
+  ok(all[3].area === "plain clause" && all[3].text === "" && all[3].place === null && all[3].when === null && all[3].media === null,
+    "a bullet without a lead is its own area; a place outside PLACES, a non-text state, a bad name: none");
+  ok(changesOf([u(1, 1, { body: "A — a", meta: { go: "x", when: {}, media: "y" } })])[0].media === null, "columns that aren't lists: nothing");
+  ok(mediaUrl("asks-dock.webp") === "/local/changelog/media/asks-dock.webp", "a picture's url");
+
+  ok(findChanges(all, " LIMIT ").map((c) => c.id).join() === "948.1" && findChanges(all, "").length === 4, "find matches areas and words, any case");
+  const more = changesOf([u(981, at(25, 4, 59), { body: "Usage — a tab\nUsage pace — a line" }), upd]);
+  ok(sameArea(more, more[3]).map((c) => c.id).join() === "981.0,981.1,948.1", "the same area by its first word, newest first");
+  ok(sameArea(all, all[0]).length === 1, "a note is its own area");
+
+  const ask = askChange({ ...all[2], row: { ...upd, meta: { ...upd.meta, from: "3e77cc8aa", to: "ab5fc19bb" } } });
+  ok(ask.startsWith("Tell me about this change to Mystical, from the update of Oct 25 02:16 (`git log 3e77cc8..ab5fc19`)")
+    && ask.includes("**Usage limits** — a card while parked") && ask.endsWith("(it shows when a login hits its limit)."),
+    "Ask Claude carries the range, the change and its state");
+  ok(changeMarkdown(all[2]) === "**Usage limits** — a card while parked\n\n_Shows when a login hits its limit._"
+    && changeMarkdown(all[0]) === "**Re-enter the token**\n\nPaste it once.\nThen restart.", "Copy writes the change as markdown");
 }
 
 console.log("\nall notices checks passed");

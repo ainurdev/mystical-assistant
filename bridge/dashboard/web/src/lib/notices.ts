@@ -123,7 +123,8 @@ export function notesOf(n: Notice): { heading: string; title: string; body: stri
   });
 }
 
-// ---- the changelog's reader (components/hud/ChangelogButton.tsx) ----------------------
+// ---- the changelog: one change at a time (components/hud/ChangelogButton.tsx,
+// docs/superpowers/specs/changelog-v4.md) ------------------------------------------------
 
 /** A changelog day: TODAY, YESTERDAY, then the date ("OCT 22"). */
 export function dayOf(at: number, now: Date): string {
@@ -132,46 +133,23 @@ export function dayOf(at: number, now: Date): string {
   return back === 0 ? "TODAY" : back === 1 ? "YESTERDAY" : d.toLocaleDateString("en", { month: "short", day: "numeric" }).toUpperCase();
 }
 
-/** Rows (newest first, as they arrive) under their days. */
-export function byDay<T extends { at: number }>(rows: T[], now: Date): { day: string; rows: T[] }[] {
-  const out: { day: string; rows: T[] }[] = [];
-  for (const r of rows) {
-    const day = dayOf(r.at, now);
-    if (out.at(-1)?.day === day) out.at(-1)!.rows.push(r);
-    else out.push({ day, rows: [r] });
-  }
-  return out;
+/** The reader's time: "Today · 02:16", "Yesterday · 23:50", "Fri, Oct 24 · 23:50". */
+export function whenOf(at: number, now: Date): string {
+  const day = dayOf(at, now), { time } = stamp(at, now);
+  return `${day === "TODAY" ? "Today" : day === "YESTERDAY" ? "Yesterday"
+    : new Date(at * 1000).toLocaleDateString("en", { weekday: "short", month: "short", day: "numeric" })} · ${time}`;
 }
 
-const commitsOf = (n: Notice) => (typeof n.meta.commits === "number" ? n.meta.commits : 0);
-
-/** Commits per day over the last 7 days, oldest first: the header's bars, today last. */
-export function weekBars(rows: Notice[], now: Date): number[] {
-  const start = new Date(now).setHours(0, 0, 0, 0) / 1000 - 6 * 86400;
-  const out = [0, 0, 0, 0, 0, 0, 0];
-  for (const r of rows) {
-    const i = Math.floor((r.at - start) / 86400);
-    if (r.kind === "updated" && i >= 0 && i < 7) out[i] += commitsOf(r);
-  }
-  return out;
-}
-
-/** A spine node's size from its update's commits: 1 (≤3), 2 (≤12), 3 (more). */
-export function nodeSize(n: Notice): 1 | 2 | 3 {
-  const c = commitsOf(n);
-  return c <= 3 ? 1 : c <= 12 ? 2 : 3;
+/** A list row's time: today's time of day, an older day's date ("Oct 24"). */
+export function shortWhen(at: number, now: Date): string {
+  const { day, time } = stamp(at, now);
+  return day === "TODAY" ? time : new Date(at * 1000).toLocaleDateString("en", { month: "short", day: "numeric" });
 }
 
 /** A bullet as [lead, text], split at its first " — "; no lead, [""", line]. */
 export function leadOf(line: string): [string, string] {
   const at = line.indexOf(" — ");
   return at > 0 ? [line.slice(0, at), line.slice(at + 3)] : ["", line];
-}
-
-/** Find: the rows whose title or text holds q, any case. */
-export function findIn(rows: Notice[], q: string): Notice[] {
-  const k = q.trim().toLowerCase();
-  return k ? rows.filter((r) => `${r.title}\n${r.body}`.toLowerCase().includes(k)) : rows;
 }
 
 export type FeatIcon = "send" | "panel" | "gauge" | "layers" | "flame" | "trees" | "users" | "image" | "palette" | "down" | "spark";
@@ -187,7 +165,7 @@ export function iconFor(lead: string): FeatIcon {
   return ICONS.find(([re]) => re.test(l))?.[1] ?? "spark";
 }
 
-/** bridge/whatsnew.py PLACES: where Open › goes, and what its tooltip names. */
+/** bridge/whatsnew.py PLACES: where Open › goes, and what its button names. */
 export const PLACES: Record<string, string> = {
   "settings:appearance": "Settings ▸ Appearance", "settings:transcript": "Settings ▸ Transcript",
   "settings:notifications": "Settings ▸ Notify", "settings:projects": "Settings ▸ Projects",
@@ -196,33 +174,62 @@ export const PLACES: Record<string, string> = {
   "rail:files": "the FILES tab", "rail:git": "the GIT tab", "rail:rivendell": "the RIVENDELL tab",
   "rail:team": "the TEAM tab", "rail:usage": "the USAGE tab",
 };
-/** Each bullet's place, in bullet order; null where it has none. A row's meta is free JSON. */
-export function placesOf(n: Notice): (string | null)[] {
-  const go = Array.isArray(n.meta.go) ? n.meta.go : [];
-  return n.body.split("\n").filter(Boolean).map((_, i) => (typeof go[i] === "string" && go[i] in PLACES ? (go[i] as string) : null));
+
+/** A change note's picture (bridge/whatsnew.py MEDIA_NAME): a still, a clip, or a clip with its still. */
+export type Media = { still: string | null; clip: string | null };
+/** One change: an update's bullet (or a waiting update's) with its place, state and picture,
+ *  or a maintainer's note whole. `area` is the lead, or the bullet itself when it has none. */
+export interface Change { id: string; row: Notice; area: string; text: string; place: string | null; when: string | null; media: Media | null }
+
+const MEDIA_NAME = /^[a-z0-9][a-z0-9-]{0,63}\.(webp|png|jpg|mp4)$/;
+const named = (x: unknown) => (typeof x === "string" && MEDIA_NAME.test(x) ? x : null);
+/** Served by /local/changelog/media: one file name, so a name that isn't one is no picture. */
+export const mediaUrl = (name: string) => `/local/changelog/media/${name}`;
+
+/** Rows (newest first) as changes. A row's meta is free JSON: go, when and media are
+ *  columns aligned with its bullets, each kept only in the shape the bridge writes. */
+export function changesOf(rows: Notice[]): Change[] {
+  return rows.flatMap((r): Change[] => {
+    if (r.kind === "note") return [{ id: `${r.id}`, row: r, area: r.title, text: r.body, place: null, when: null, media: null }];
+    const col = (k: string) => (Array.isArray(r.meta[k]) ? (r.meta[k] as unknown[]) : []);
+    const go = col("go"), when = col("when"), media = col("media");
+    return r.body.split("\n").filter(Boolean).map((line, i) => {
+      const [lead, text] = leadOf(line);
+      const m = media[i] && typeof media[i] === "object" ? (media[i] as Record<string, unknown>) : {};
+      const pic = { still: named(m.still), clip: named(m.clip) };
+      return { id: `${r.id}.${i}`, row: r, area: lead || text, text: lead ? text : "",
+               place: typeof go[i] === "string" && (go[i] as string) in PLACES ? (go[i] as string) : null,
+               when: typeof when[i] === "string" && when[i] ? (when[i] as string) : null,
+               media: pic.still || pic.clip ? pic : null };
+    });
+  });
 }
 
-/** An update as markdown, for Copy notes: the headline and its day, the bullets, the rest. */
-export function notesMarkdown(n: Notice, now: Date): string {
-  const day = new Date(n.at * 1000).toLocaleDateString("en", { month: "short", day: "numeric" });
-  const lines = n.body.split("\n").filter(Boolean).map((l) => {
-    const [lead, text] = leadOf(l);
-    return lead ? `- **${lead}** — ${text}` : `- ${text}`;
-  });
-  const rest = typeof n.meta.rest === "number" && n.meta.rest > 0 ? n.meta.rest : 0;
-  const url = safeUrl(n.meta.url);
-  const tail = [rest ? `+${rest} smaller fix${rest === 1 ? "" : "es"}` : "", commitsOf(n) ? `${commitsOf(n)} commits${url ? `: ${url}` : ""}` : ""].filter(Boolean);
-  return [`**${n.title}** · ${dayOf(n.at, now) === "TODAY" ? "today" : day}`, ...lines, ...(tail.length ? ["", tail.join(" · ")] : [])].join("\n");
+/** Find: the changes whose area or words hold q, any case. */
+export function findChanges(list: Change[], q: string): Change[] {
+  const k = q.trim().toLowerCase();
+  return k ? list.filter((c) => `${c.area}\n${c.text}`.toLowerCase().includes(k)) : list;
+}
+
+/** The changes to one area, by its first word ("Usage", "Usage limits"), in list order. */
+export function sameArea(list: Change[], c: Change): Change[] {
+  const k = (x: Change) => x.area.toLowerCase().split(/\s+/)[0];
+  return c.row.kind === "note" ? [c] : list.filter((x) => x.row.kind !== "note" && k(x) === k(c));
 }
 
 /** Ask Claude about it: the prompt a new session in Mystical's own checkout starts with. */
-export function askPrompt(n: Notice): string {
-  const d = new Date(n.at * 1000);
+export function askChange(c: Change): string {
+  const d = new Date(c.row.at * 1000);
   const when = `${d.toLocaleDateString("en", { month: "short", day: "numeric" })} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
-  const from = typeof n.meta.from === "string" ? n.meta.from.slice(0, 7) : "";
-  const to = typeof n.meta.to === "string" ? n.meta.to.slice(0, 7) : "";
-  const range = from && to ? ` (\`git log ${from}..${to}\`)` : "";
-  return `Tell me about this Mystical update from ${when}${range}:\n\n**${n.title}**\n`
-    + n.body.split("\n").filter(Boolean).map((l) => `- ${l}`).join("\n")
-    + `\n\nFor each change: what it does, where it lives in the code, and how I use it.`;
+  const from = typeof c.row.meta.from === "string" ? c.row.meta.from.slice(0, 7) : "";
+  const to = typeof c.row.meta.to === "string" ? c.row.meta.to.slice(0, 7) : "";
+  return `Tell me about this change to Mystical, from the update of ${when}${from && to ? ` (\`git log ${from}..${to}\`)` : ""}:\n\n`
+    + `**${c.area}**${c.text ? ` — ${c.text}` : ""}\n\n`
+    + `What it does, where it lives in the code, and how I use it${c.when ? ` (it shows when ${c.when})` : ""}.`;
+}
+
+/** A change as markdown, for Copy. */
+export function changeMarkdown(c: Change): string {
+  return c.row.kind === "note" ? `**${c.area}**\n\n${c.text}`
+    : `**${c.area}**${c.text ? ` — ${c.text}` : ""}${c.when ? `\n\n_Shows when ${c.when}._` : ""}`;
 }

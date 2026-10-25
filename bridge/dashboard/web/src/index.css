@@ -5740,16 +5740,13 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .ntf-ul li b { color: var(--txb); font-weight: 500; }
 .ntf-empty .s { margin-top: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
 .ntf-btn:disabled { opacity: .45; cursor: default; filter: none; }
-/* the changelog (ChangelogButton, docs/superpowers/specs/changelog-v3.md): a list and a reader in
-   the bell's frame. The list is a spine, a node per update sized by its commits, filled while unread;
-   the reader is the picked update, a feature an icon tile with Open › where it has a place. */
+/* the changelog (ChangelogButton, docs/superpowers/specs/changelog-v4.md): one change at a time in
+   the bell's frame. The list is the changes, flat and newest first; the reader is the picked one over a
+   stage of one size for every change: its picture or clip, a sketch of where it lives, or its icon. */
 .clg-pop .ntf-head { gap: 10px; padding: 10px 10px 9px 14px; border-bottom: 1px solid var(--line, var(--border)); }
-.clg-week { display: inline-flex; align-items: flex-end; gap: 3px; height: 18px; margin-left: 4px; }
-.clg-week button { appearance: none; cursor: pointer; width: 6px; padding: 0; border: 0; border-radius: 2px; background: color-mix(in oklab, var(--txl) 55%, transparent); }
-.clg-week button.today { background: var(--acc); }
-.clg-week button:hover:not(:disabled) { background: var(--txb); }
-.clg-week button:disabled { cursor: default; opacity: .45; }
-.clg-wcap { font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; }
+.clg-new { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px 0 7px; border: 0;
+  border-radius: 99px; background: color-mix(in oklab, var(--acc) 15%, transparent); font: 700 var(--t75)/1 var(--ui-font); letter-spacing: .12em; color: var(--acc); }
+.clg-new:hover, .clg-new.on { background: color-mix(in oklab, var(--acc) 26%, transparent); }
 .clg-ib { margin-left: auto; appearance: none; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px;
   padding: 0; border: 0; border-radius: var(--f-rad-s, 0); background: transparent; color: var(--txd); }
 .clg-ib:hover { color: var(--txb); background: var(--ac-06); }
@@ -5759,58 +5756,73 @@ html[data-light]:not([data-fam="aurora"]) .ptile[data-kind="logo"][data-auto-d]:
 .clg-find input::placeholder { color: var(--txl); }
 .clg-find button { appearance: none; cursor: pointer; display: inline-flex; padding: 3px; border: 0; border-radius: var(--f-rad-s, 0); background: transparent; color: var(--txl); }
 .clg-find button:hover { color: var(--txb); }
-.clg-split { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(150px, 196px) minmax(0, 1fr); }
-.clg-list { overflow-y: auto; min-height: 0; padding: 2px 0 10px; border-right: 1px solid var(--line, var(--border)); }
-/* the spine: drawn by each row, so it runs the whole scroll, not just the box */
-.clg-day, .clg-it { position: relative; }
-.clg-day::before, .clg-it::before { content: ""; position: absolute; left: 21px; top: 0; bottom: 0; width: 1px; background: color-mix(in oklab, var(--txl) 38%, transparent); }
-.clg-day { padding: 10px 12px 3px 34px; font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--txl); }
-.clg-it { appearance: none; cursor: pointer; display: block; width: calc(100% - 6px); margin: 0 6px 0 0; padding: 5px 10px 6px 34px; border: 0;
-  border-radius: 0 var(--f-rad-s, 0) var(--f-rad-s, 0) 0; background: transparent; text-align: left; font-family: var(--ui-font); }
-.clg-it:hover { background: var(--ac-03); }
-.clg-it .t { display: block; font: 500 var(--t10)/1.45 var(--mono); color: var(--txl); }
-.clg-it .s { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font: 400 var(--t115)/1.35 var(--ui-font); color: var(--txd); }
-.clg-it .n { position: absolute; z-index: 1; left: 21.5px; top: 13px; transform: translate(-50%, -50%); border-radius: 50%; background: var(--panel);
-  border: 1.5px solid color-mix(in oklab, var(--txl) 80%, transparent); }
-.clg-it .n.s1 { width: 7px; height: 7px; }
-.clg-it .n.s2 { width: 9px; height: 9px; }
-.clg-it .n.s3 { width: 12px; height: 12px; }
-.clg-it.new .n { background: var(--acc); border-color: var(--acc); }
-.clg-it.new .s { color: var(--txb); font-weight: 500; }
-.clg-it.new:not(.next) .t::after { content: "NEW"; margin-left: 6px; font: 700 var(--t75) var(--ui-font); letter-spacing: .12em; color: var(--acc); }
-.clg-it.on { background: var(--ac-06); }
-.clg-it.on .n { background: var(--acc); border-color: var(--acc); box-shadow: 0 0 0 4px color-mix(in oklab, var(--acc) 22%, transparent); }
-.clg-it.on .s { color: var(--txb); }
-.clg-it.on .t { color: var(--acc); }
-/* an update not taken yet (bridge/whatsnew.py preview): its node dashed, in the update's green */
-.clg-it.next .n { border-style: dashed; border-color: var(--ok); background: var(--panel); }
-.clg-it.next .t { color: var(--ok); }
-.clg-it.next.on .n { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in oklab, var(--ok) 22%, transparent); }
-.clg-none { padding: 14px 12px 0 34px; font: 400 var(--t11)/1.45 var(--ui-font); color: var(--txd); }
+.clg-split { flex: 1; min-height: 0; display: grid; grid-template-columns: 212px minmax(0, 1fr); }
+.clg-list { overflow-y: auto; min-height: 0; padding: 4px 0; border-right: 1px solid var(--line, var(--border)); }
+.clg-row { appearance: none; cursor: pointer; position: relative; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 9px; align-items: start;
+  width: 100%; padding: 7px 10px 7px 12px; border: 0; background: transparent; text-align: left; }
+.clg-row:hover { background: var(--ac-03); }
+.clg-row .ic { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--f-rad-s, 0); color: var(--acc);
+  background: color-mix(in oklab, var(--acc) 11%, transparent); }
+.clg-row .w { min-width: 0; }
+.clg-row b { display: flex; align-items: center; gap: 5px; min-width: 0; font: 600 var(--t115)/1.3 var(--ui-font); color: var(--txd); }
+.clg-row b svg { flex: none; color: var(--txl); }
+/* two lines for every row, a line with nothing to say included: rows never differ in height */
+.clg-row .x { display: block; height: 1.4em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t105)/1.4 var(--ui-font); color: var(--txl); }
+.clg-row .tm { font: 500 var(--t95)/1.5 var(--mono); color: var(--txl); white-space: nowrap; }
+.clg-row.new b, .clg-row.on b { color: var(--txb); }
+.clg-row.new::before { content: ""; position: absolute; left: 4px; top: 17px; width: 5px; height: 5px; border-radius: 50%; background: var(--acc); }
+.clg-row.next .tm { color: var(--ok); }
+.clg-row.on { background: var(--ac-06); }
+.clg-row.on .ic { color: var(--panel); background: var(--acc); }
+.clg-none { padding: 14px 14px 0; font: 400 var(--t11)/1.45 var(--ui-font); color: var(--txd); }
 mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var(--acc) 28%, transparent); color: var(--txb); }
-.clg-read { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; padding: 15px 20px 12px 18px; animation: clg-in .16s ease-out both; }
+.clg-read { overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 11px; padding: 12px 14px; }
+.clg-read > :is(.clg-stage, .clg-t) { animation: clg-in .16s ease-out both; }
 @keyframes clg-in { from { opacity: 0; transform: translateY(3px); } }
-.clg-when { display: flex; align-items: center; gap: 6px; font: 500 var(--t10) var(--mono); color: var(--txl); }
-.clg-h { margin-top: 5px; font: 600 var(--t15)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
-.clg-feats { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
-.clg-f { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
-.clg-f .ic { width: 24px; height: 24px; display: grid; place-items: center; border-radius: var(--f-rad-s, 0); color: var(--acc); background: color-mix(in oklab, var(--acc) 13%, transparent); }
-.clg-f .x { padding-top: 2px; font: 400 var(--t115)/1.45 var(--ui-font); color: var(--tx); overflow-wrap: anywhere; }
-.clg-f .x b { color: var(--txb); font-weight: 600; }
-.clg-f .go { appearance: none; cursor: pointer; align-self: center; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; white-space: nowrap;
-  border: 1px solid color-mix(in oklab, var(--acc) 38%, transparent); border-radius: var(--f-rad-s, 0); background: transparent; font: 500 var(--t105) var(--ui-font); color: var(--acc); }
-.clg-f .go:hover { background: color-mix(in oklab, var(--acc) 12%, transparent); }
+.clg-stage { position: relative; flex: none; aspect-ratio: 16 / 10; overflow: hidden; border-radius: calc(var(--f-rad-s, 0px) * 1.4);
+  border: 1px solid var(--line, var(--border)); background: color-mix(in oklab, var(--txl) 10%, var(--panel)); }
+.clg-stage .pic { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.clg-map { position: absolute; inset: 0; width: 100%; height: 100%; }
+.clg-map-l { fill: var(--acc); font: 700 9px var(--ui-font); letter-spacing: .14em; }
+.clg-tc { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px; padding: 0 20px; text-align: center;
+  background: radial-gradient(90% 80% at 50% 40%, color-mix(in oklab, var(--acc) 17%, transparent), transparent 64%),
+    repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in oklab, var(--txl) 8%, transparent) 23px 24px),
+    repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in oklab, var(--txl) 8%, transparent) 23px 24px); }
+.clg-tc .big { width: 66px; height: 66px; display: grid; place-items: center; border-radius: 20px; color: var(--acc); background: color-mix(in oklab, var(--acc) 15%, var(--panel));
+  box-shadow: 0 0 0 1px color-mix(in oklab, var(--acc) 38%, transparent), 0 12px 34px color-mix(in oklab, var(--acc) 26%, transparent); }
+.clg-tc .nm { margin-top: 4px; font: 600 var(--t15)/1.2 var(--ui-font); color: var(--txb); }
+.clg-tc .sub { font: 400 var(--t11)/1.3 var(--ui-font); color: var(--txd); }
+/* over a picture: dark glass and light words in every theme, the picture decides the ground */
+.clg-chip { position: absolute; left: 10px; top: 10px; display: inline-flex; align-items: center; gap: 7px; max-width: calc(100% - 60px); overflow: hidden;
+  padding: 6px 11px 6px 9px; border-radius: 99px; background: rgb(8 9 12 / .76); backdrop-filter: blur(8px); box-shadow: 0 0 0 1px rgb(255 255 255 / .08);
+  font: 500 var(--t11)/1 var(--ui-font); color: #eef0f7; white-space: nowrap; text-overflow: ellipsis; }
+.clg-chip svg { flex: none; color: color-mix(in oklab, var(--acc) 55%, white); }
+.clg-chip b { flex: none; font: 700 var(--t8)/1 var(--ui-font); letter-spacing: .14em; color: color-mix(in oklab, var(--acc) 55%, white); }
+.clg-zoom { appearance: none; cursor: pointer; position: absolute; right: 10px; top: 10px; width: 28px; height: 28px; display: grid; place-items: center; padding: 0;
+  border: 0; border-radius: 99px; background: rgb(8 9 12 / .66); backdrop-filter: blur(8px); box-shadow: 0 0 0 1px rgb(255 255 255 / .08); color: #e9ebf2; }
+.clg-zoom:hover { background: rgb(8 9 12 / .84); }
+.clg-clipbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 10px; padding: 26px 12px 10px;
+  background: linear-gradient(transparent, rgb(6 7 9 / .86)); font: 500 var(--t10)/1 var(--mono); color: #eceef5; }
+.clg-clipbar button { appearance: none; cursor: pointer; flex: none; width: 26px; height: 26px; display: grid; place-items: center; padding: 0; border: 0;
+  border-radius: 99px; background: rgb(255 255 255 / .16); color: #fff; }
+.clg-clipbar .bar { flex: 1; height: 3px; border-radius: 2px; overflow: hidden; background: rgb(255 255 255 / .22); }
+.clg-clipbar .bar i { display: block; height: 100%; background: var(--acc); }
+.clg-clipbar .tag { font: 700 var(--t75)/1 var(--ui-font); letter-spacing: .14em; color: rgb(255 255 255 / .72); }
+.clg-t .h { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.clg-t .h b { font: 600 var(--t15)/1.25 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
+.clg-t .tm { margin-left: auto; font: 500 var(--t10)/1 var(--mono); color: var(--txl); white-space: nowrap; }
+.clg-t .x { margin-top: 3px; font: 400 var(--t125)/1.45 var(--ui-font); color: var(--tx); overflow-wrap: anywhere; }
 .clg-tag { flex: none; display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: calc(var(--f-rad-s, 0px) * .6);
   font: 600 var(--t8) var(--ui-font); letter-spacing: .14em; color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, transparent); }
 .clg-ht { margin-top: 7px; font: 500 var(--t15)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
 .clg-note { margin-top: 10px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; }
-.clg-rfoot { margin-top: auto; padding-top: 12px; }
-.clg-mline { display: flex; align-items: center; gap: 8px; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.clg-mline { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line, var(--border)); display: flex; align-items: center; gap: 6px;
+  font: 500 var(--t10) var(--mono); color: var(--txl); }
 .clg-mline .br { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .clg-meta { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font: 500 var(--t10) var(--mono); color: var(--txl); }
 .clg-link { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: transparent; font: inherit; color: var(--txd); }
 .clg-link:hover { color: var(--acc); }
-.clg-acts { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+.clg-acts { display: flex; align-items: center; gap: 6px; }
 .clg-acts button { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
   border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad-s, 0); background: transparent; font: 500 var(--t105) var(--ui-font); color: var(--txd); }
 .clg-acts button:hover { color: var(--txb); background: var(--ac-06); }
@@ -5818,7 +5830,20 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .clg-acts button.pri:hover { background: color-mix(in oklab, var(--acc) 18%, transparent); }
 .clg-acts button.ok { color: var(--ok); border-color: color-mix(in oklab, var(--ok) 45%, transparent); background: color-mix(in oklab, var(--ok) 12%, transparent); }
 .clg-acts button.ok:hover { background: color-mix(in oklab, var(--ok) 22%, transparent); }
-.clg-k { margin-left: auto; font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; }
+/* one area's changes only ("Usage 1 of 2"): at the actions' end, so no change gets a line others lack */
+.clg-same { margin-left: auto; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 3px 0 9px; border-radius: 99px;
+  box-shadow: inset 0 0 0 1px var(--line2, var(--border-bright)); font: 500 var(--t105)/1 var(--ui-font); color: var(--txd); white-space: nowrap; }
+.clg-same > svg { flex: none; color: var(--acc); }
+.clg-same b { font-weight: 600; color: var(--txb); }
+.clg-acts .clg-same button { width: 20px; height: 20px; padding: 0; justify-content: center; border: 0; border-radius: 99px; background: transparent; }
+.clg-acts .clg-same button:disabled { opacity: .35; cursor: default; background: transparent; }
+.clg-pos { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font: 500 var(--t10)/1 var(--mono); color: var(--txl); white-space: nowrap; }
+.clg-pos button { appearance: none; cursor: pointer; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line, var(--border));
+  border-radius: 99px; background: transparent; color: var(--txd); }
+.clg-pos button:hover:not(:disabled) { color: var(--txb); background: var(--ac-06); }
+.clg-pos button:disabled { opacity: .35; cursor: default; }
+.clg-pos b { font-weight: 500; color: var(--txb); }
+.clg-pos span { padding: 0 3px; }
 .clg-write { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; margin-left: -4px; padding: 3px 6px 3px 4px; border: 0;
   border-radius: var(--f-rad-s, 0); background: transparent; font: 500 var(--t105) var(--ui-font); color: var(--txd); }
 .clg-write svg { flex: none; color: var(--acc); }
@@ -5835,6 +5860,11 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   border-top: 1px solid var(--line2, var(--border-bright)); border-right: 1px solid var(--line2, var(--border-bright)); }
 .clg-co .in { position: relative; overflow: hidden; padding: 11px 30px 12px 13px; border-radius: var(--f-rad, 0); }
 .clg-co-h { display: flex; align-items: center; gap: 7px; min-width: 0; }
+/* its first picture, edge to edge over the words */
+.clg-co-pic { position: relative; margin: -11px -30px 10px -13px; aspect-ratio: 16 / 9; overflow: hidden; border-bottom: 1px solid var(--line, var(--border)); }
+.clg-co-pic img { width: 100%; height: 100%; display: block; object-fit: cover; object-position: top; }
+.clg-co-pic .n { position: absolute; left: 10px; bottom: 8px; padding: 4px 7px; border-radius: 99px; background: rgb(8 9 12 / .72);
+  font: 700 var(--t75)/1 var(--ui-font); letter-spacing: .12em; color: #fff; }
 .clg-co .clg-ic { flex: none; color: var(--ok); }
 .clg-co .v { flex: none; font: 600 var(--t9) var(--ui-font); letter-spacing: .12em; color: var(--ok); }
 .clg-co.note :is(.clg-ic, .v) { color: var(--acc); }
@@ -5880,7 +5910,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .upd-fold:hover { color: var(--acc); }
 .upd-fold svg { transition: transform .15s; }
 .upd-how { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t11)/1.5 var(--ui-font); color: var(--txl); }
-@media (prefers-reduced-motion: reduce) { .clg-co, .clg-read { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .clg-co, .clg-read > :is(.clg-stage, .clg-t) { animation: none; } }
 .ntf-compose { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line, var(--border)); background: var(--panel2); }
 .ntf-compose .lbl { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--txl); margin-bottom: 2px; }
 .ntf-compose input, .ntf-compose textarea { width: 100%; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line2, var(--border-bright));

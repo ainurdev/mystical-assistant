@@ -125,8 +125,11 @@ For frontend changes, look at the pixels — see the **bridge-eyes** skill.
 ## Order of operations
 
 1. `python3 -m pytest tests/ -q` — green before you restart anything.
-2. Commit.
-3. `mystical build` if any `web/` or `site/` source changed.
-4. Restart via the transient unit above; warn the user first.
-5. After the session resumes: `mystical status` + one real check that the new
+2. A change that only shows in a state (a login at its limit, a question waiting,
+   an answer landing): add its change note and picture in `docs/changes/` (the
+   README there), so the changelog can show it. Staged data only: the repo is public.
+3. Commit.
+4. `mystical build` if any `web/` or `site/` source changed.
+5. Restart via the transient unit above; warn the user first.
+6. After the session resumes: `mystical status` + one real check that the new
    behaviour is present.
