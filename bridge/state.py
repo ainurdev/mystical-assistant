@@ -67,6 +67,12 @@ def running_chats() -> set[int]:
         return set(_run_chats.values())
 
 
+def running_sessions() -> list[str]:
+    """Sessions with a turn in flight: what a restart would stop."""
+    with _run_guard:
+        return list(_run_chats)
+
+
 def any_running() -> bool:
     with _run_guard:
         return bool(_run_chats)

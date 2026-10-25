@@ -85,6 +85,7 @@ import { Brand, RightCap, Strip } from "./components/hud/Strip";
 import { PaletteButton } from "./components/hud/PaletteButton";
 import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
+import { LiveButton } from "./components/hud/LiveButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import { TeamPanel } from "./components/hud/TeamPanel";
 import { UsagePanel } from "./components/hud/UsagePanel";
@@ -2911,6 +2912,7 @@ export function App() {
                   open={settings.rightOpen} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
                   railFoot={<>
+                    <LiveButton onFeed={feed} />
                     <ChangelogButton onFeed={feed} />
                     <UpdateButton onFeed={feed} variant="rail" />
                     <PaletteButton onPalette={() => setPaletteOpen(true)} />
