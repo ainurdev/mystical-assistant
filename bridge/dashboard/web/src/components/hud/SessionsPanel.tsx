@@ -9,7 +9,6 @@ import { ago, projectName, projectTint } from "../../lib/surfaces";
 import type { ProjectTint } from "../../lib/surfaces";
 import { dayLabel, isJob, JOB_LABEL, jobGroup, jobLabel, JOBS_REL, jobTarget } from "../../lib/jobs";
 import { JOB_ICON, JobsTile } from "./JobTag";
-import { orderBranches } from "../../lib/branchorder";
 import { useIntegrations } from "../../lib/integrations";
 import { useStickyObj } from "../../lib/prefs";
 import { isDeviceRun, rowAge } from "../../lib/devicerun";
@@ -20,6 +19,7 @@ import { Avatar } from "./TeamPanel";
 import { DeviceTile } from "../DeviceRunPlate";
 import type { ProjectGroup } from "./ProjectsPanel";
 import { RivendellQueue } from "./RivendellQueue";
+import { NewSessionPop } from "./NewSessionPop";
 
 /** A prompt of yours that hasn't run yet, flagged on the session it belongs to:
  *  unsent text in the composer, a relevance check in flight, or a held card
@@ -68,9 +68,6 @@ type Detail = { proj: boolean; branch: boolean; wt: boolean };
 // "recent" is the saved key for newest-started; it was last-used once, and
 // keeping the key keeps everyone's saved pick.
 type OrderMode = "recent" | "alpha" | "biggest" | "custom";
-
-const PROJ_CAP = 10; // project chips shown before "SHOW ALL"
-const BRANCH_CAP = 8; // branch chips shown before "SHOW ALL"
 
 const ORDER_LABEL: Record<OrderMode, string> = {
   recent: "newest started", alpha: "a → z", biggest: "biggest", custom: "custom",
@@ -471,27 +468,12 @@ export function SessionsPanel(props: Props) {
     onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
   } = props;
 
-  // New-session form.
-  const [nsOpen, setNsOpen] = useState(false);
-  const [nsProject, setNsProject] = useState<string | null>(null);
-  const [branches, setBranches] = useState<string[]>([]);
-  const [current, setCurrent] = useState("");
-  const [nsBranch, setNsBranch] = useState("");
-  const [nsNewOpen, setNsNewOpen] = useState(false);
-  const [nsNewBranch, setNsNewBranch] = useState("");
-  const [nsParent, setNsParent] = useState("");
-  const [nsScoped, setNsScoped] = useState(false); // opened from a project header — project is fixed
-  const [projQ, setProjQ] = useState("");
+  // NEW SESSION's popover: "" = the + beside the search, a rel = that project head's + New.
+  const [nsAt, setNsAt] = useState<string | null>(null);
   // New-project form — the PROJECTS mode's counterpart to NEW SESSION.
   const [npOpen, setNpOpen] = useState(false);
   const [npName, setNpName] = useState("");
   const [npPrompt, setNpPrompt] = useState("");
-  const [projAll, setProjAll] = useState(false);
-  const [branchQ, setBranchQ] = useState("");
-  const [branchAll, setBranchAll] = useState(false);
-  // Branches already checked out — the project checkout and every linked worktree.
-  const [held, setHeld] = useState<Set<string>>(new Set());
-  const [parentMenu, setParentMenu] = useState(false);
 
   // Browser state — mode + project order remembered across reloads.
   const plugins = useIntegrations();
@@ -532,14 +514,10 @@ export function SessionsPanel(props: Props) {
   const [sessionQ, setSessionQ] = useState("");
   // One hover key for every small control — the rows manage their own.
   const [hov, setHov] = useState("");
-  const [chipHov, setChipHov] = useState("");
-  const [closeHov, setCloseHov] = useState(false);
   // Folded: the project whose rows hang beside its tile, and where its tile sits.
   const [fly, setFly] = useState<{ rel: string; top: number } | null>(null);
   const flyT = useRef<number | undefined>(undefined);
   const railRef = useRef<HTMLDivElement>(null);
-  const [startHov, setStartHov] = useState(false);
-  const [cancelHov, setCancelHov] = useState(false);
 
   useEffect(() => {
     setFresh(true);
@@ -601,34 +579,6 @@ export function SessionsPanel(props: Props) {
   useSeenShots(); // a picture marked seen, or a chat opened, re-counts its tag
   const unseen = new Map(Object.entries(pics).map(([id, ps]) => [id, id === selectedSessionId ? 0
     : ps.filter(([p, at]) => at > chatOpenedAt(id) && shotUnseen(p, at)).length]));
-
-  // Branches power the WORKTREE chips + parent cycle — load per selected project
-  // while the form is open (same endpoint the old inline picker used).
-  useEffect(() => {
-    if (!nsOpen || !nsProject) return;
-    let live = true;
-    // Which branches are checked out rides along with the list, so the chips
-    // order once instead of reshuffling when a second answer lands. It only
-    // ranks and marks them: if it fails, the list still loads in git's order.
-    void Promise.all([
-      api.branches(nsProject),
-      api.worktrees(nsProject).then((w) => w.worktrees.map((x) => x.branch), () => [] as string[]),
-    ]).then(([b, wt]) => {
-      if (!live) return;
-      const cur = b.current || b.branches[0] || "main";
-      // Default to the branch of the session you're in when it's this project —
-      // new work continues where you are, not wherever the main checkout sits.
-      const mine = sessions.find((s) => s.id === selectedSessionId);
-      const pick = mine?.project === nsProject && mine.branch && b.branches.includes(mine.branch)
-        ? mine.branch : cur;
-      setBranches(b.branches);
-      setHeld(new Set(wt));
-      setCurrent(cur);
-      setNsBranch(pick);
-      setNsParent(pick);
-    }).catch(() => {});
-    return () => { live = false; };
-  }, [nsOpen, nsProject]);
 
   const branchOf = new Map(groups.map((g) => [g.rel, g.badge?.branch]));
   // One resolution of "which branch is this session on", so the row label and
@@ -815,8 +765,9 @@ export function SessionsPanel(props: Props) {
     overscan: 8,
     scrollMargin,
   });
-  // The new-session form sits above the list inside the scroller, so the list's
-  // start offset shifts when it opens/closes — re-measure and feed it back.
+  // The new-project form and the plugin queue sit above the list inside the
+  // scroller, so the list's start offset shifts as they come and go — re-measure
+  // and feed it back.
   useLayoutEffect(() => {
     const sc = scrollRef.current, li = listRef.current;
     if (!sc || !li) return;
@@ -824,23 +775,16 @@ export function SessionsPanel(props: Props) {
     setScrollMargin((prev) => (Math.abs(prev - m) > 0.5 ? m : prev));
   });
 
-  function resetForm() {
-    setBranches([]); setCurrent(""); setNsBranch(""); setNsParent("");
-    setNsNewOpen(false); setNsNewBranch(""); setBranchQ(""); setBranchAll(false);
-  }
-
-  function toggleForm() {
-    if (nsOpen && !nsScoped) { setNsOpen(false); return; }
-    setNsProject((p) => p ?? activeProject ?? groups[0]?.rel ?? null);
-    resetForm(); setNsScoped(false); setProjQ(""); setProjAll(false); setNsOpen(true);
-  }
-
-  /** New session for one project — same form, project locked to it, opened
-   *  inline under that project's header. */
-  function openFor(rel: string) {
-    if (nsOpen && nsScoped && nsProject === rel) { setNsOpen(false); return; }
-    setNsProject(rel); setNsScoped(true); setNsOpen(true); resetForm();
-  }
+  /** The + beside the search, or a project head's + New: each toggles its own popover. */
+  const toggleNs = (at: string) => setNsAt((v) => (v === at ? null : at));
+  const nsPop = (scoped?: string) => (
+    <NewSessionPop
+      groups={groups} sessions={sessions} status={status} here={activeProject}
+      mine={sessions.find((s) => s.id === selectedSessionId)} scoped={scoped}
+      onNew={onNewSession} onWorktree={onWorktreeSession}
+      onNewProject={() => { setNsAt(null); setNpOpen(true); }} onClose={() => setNsAt(null)}
+    />
+  );
 
   /** Drop `dragRel` into `target`'s slot, materialising the visible order as the
    *  custom one on first drag. */
@@ -854,261 +798,8 @@ export function SessionsPanel(props: Props) {
     setDragRel(null); setOverRel(null);
   }
 
-  function start() {
-    if (!nsProject) return;
-    const nb = nsNewOpen ? nsNewBranch.trim().replace(/\s+/g, "-") : "";
-    // Same routing as the old per-project picker: new branch → create worktree,
-    // other existing branch → attach worktree, current branch → plain session.
-    if (nb) onWorktreeSession(nsProject, nb, true, nsParent || undefined);
-    else if (nsBranch && current && nsBranch !== current) onWorktreeSession(nsProject, nsBranch, false);
-    else onNewSession(nsProject);
-    setNsOpen(false); setNsNewOpen(false); setNsNewBranch("");
-  }
-
-  // FROM is a text box over the branch list, so a typo has to be caught here
-  // rather than by git failing a minute later. An exact match lists everything —
-  // otherwise reopening the menu after a pick would show that one branch.
-  const parentOk = !nsParent || branches.includes(nsParent);
-  const parentHits = parentOk ? branches : branches.filter((b) => b.toLowerCase().includes(nsParent.toLowerCase()));
-
-  // Form pickers: searchable, and long lists stay collapsed until asked for.
-  const q = projQ.trim().toLowerCase();
-  // Selected project first, so it never hides behind SHOW ALL (sort is stable —
-  // everything else keeps its order).
-  const projList = (q ? groups.filter((g) => `${g.name} ${g.rel}`.toLowerCase().includes(q)) : groups)
-    .slice().sort((a, b) => Number(b.rel === nsProject) - Number(a.rel === nsProject));
-  const projShown = projAll ? projList : projList.slice(0, PROJ_CAP);
-  const projHidden = projList.length - projShown.length;
-  const bq = branchQ.trim().toLowerCase();
-  // Same collapse as the projects, at a larger scale: a repo keeps hundreds of
-  // branches and has a handful checked out, so those are the ones worth a chip.
-  const branchList = orderBranches(bq ? branches.filter((b) => b.toLowerCase().includes(bq)) : branches, nsBranch, held);
-  const branchOpen = branchAll && branchList.length > BRANCH_CAP;
-  const branchesShown = branchOpen ? branchList : branchList.slice(0, BRANCH_CAP);
-  const branchesHidden = branchList.length - branchesShown.length;
-  const branchChips = branchesShown.map((b) => {
-    const on = !nsNewOpen && b === nsBranch;
-    const h = chipHov === `b:${b}`;
-    // ⧉ is the mark session rows already use for "runs in a linked worktree".
-    const linked = held.has(b) && b !== current;
-    // A pick folds the opened list: it sorts first, so staying scrolled where
-    // you clicked would leave the chip you just chose out of view.
-    return (
-      <button
-        key={b} onClick={() => { setNsBranch(b); setNsNewOpen(false); setBranchAll(false); }}
-        onMouseEnter={() => setChipHov(`b:${b}`)} onMouseLeave={() => setChipHov("")}
-        title={`${b} · ${linked ? "has a worktree" : b === current ? "the project checkout" : "no worktree yet — starting here makes one"}`}
-        style={{
-          appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-          border: `1px solid ${on || h ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`,
-          background: on ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)",
-          color: on ? "var(--purple-b)" : "var(--purple-h)",
-          fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "5px 8px", maxWidth: "100%", minWidth: 0,
-        }}
-      >
-        <span style={{ color: "var(--purple)", flex: "none" }}>{linked ? "⧉" : "⎇"}</span>
-        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b}</span>
-      </button>
-    );
-  });
-
-  // The form renders under whatever opened it: the NEW SESSION button (pinned
-  // above the scroller) or a project header's + NEW.
-  const nsForm = (
-    <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--purple) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
-        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--purple)", flex: "none" }} />
-        <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--purple-h)" }}>NEW SESSION</span>
-        {nsScoped && (
-          <span style={{ fontSize: "var(--t95)", color: "var(--txm)", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            · {groups.find((g) => g.rel === nsProject)?.name ?? nsProject}
-          </span>
-        )}
-        <span style={{ flex: 1 }} />
-        <button
-          onClick={() => setNsOpen(false)} title="close"
-          onMouseEnter={() => setCloseHov(true)} onMouseLeave={() => setCloseHov(false)}
-          aria-label="close"
-          style={{ appearance: "none", cursor: "pointer", flex: "none", width: 24, height: 24, padding: 0, borderRadius: 7,
-                   display: "grid", placeItems: "center", border: 0,
-                   background: closeHov ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent",
-                   color: closeHov ? "var(--purple-b)" : "var(--purple-g)", transition: "background .15s ease, color .15s ease" }}
-        >
-          <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true">
-            <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
-      {!nsScoped && (<>
-      <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
-        <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>PROJECT</span>
-        <input
-          value={projQ} onChange={(e) => setProjQ(e.target.value)} placeholder="search projects…"
-          style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "4px 7px" }}
-        />
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-        {projShown.map((g) => {
-          const on = g.rel === nsProject;
-          const h = chipHov === `p:${g.rel}`;
-          const tint = projectTint(g.rel);
-          return (
-            <button
-              key={g.rel} onClick={() => setNsProject(g.rel)}
-              onMouseEnter={() => setChipHov(`p:${g.rel}`)} onMouseLeave={() => setChipHov("")}
-              style={{
-                appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5,
-                border: `1px solid ${on || h ? "var(--acc)" : "color-mix(in srgb, var(--acc) 18%, transparent)"}`,
-                background: on ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "color-mix(in srgb, var(--panel2) 40%, transparent)",
-                color: on ? "var(--txb)" : "var(--txm)",
-                fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "4px 8px", minWidth: 0, maxWidth: "100%",
-              }}
-            >
-              <span style={{ width: 6, height: 6, borderRadius: "50%", background: tint.color, flex: "none" }} />
-              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{g.name}</span>
-            </button>
-          );
-        })}
-        {projHidden > 0 && (
-          <button
-            onClick={() => setProjAll(true)}
-            style={{ appearance: "none", cursor: "pointer", border: "1px dashed color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 0.5, padding: "4px 8px" }}
-          >SHOW ALL · {projHidden} MORE</button>
-        )}
-        {projAll && projList.length > PROJ_CAP && (
-          <button
-            onClick={() => setProjAll(false)}
-            style={{ appearance: "none", cursor: "pointer", border: "1px dashed color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 0.5, padding: "4px 8px" }}
-          >COLLAPSE</button>
-        )}
-        {projList.length === 0 && (
-          <span style={{ fontSize: "var(--t95)", color: "var(--txl)", padding: "4px 2px" }}>no project matches “{projQ}”</span>
-        )}
-      </div>
-      </>)}
-      <div style={{ display: "flex", alignItems: "center", gap: 7, margin: "12px 0 6px" }}>
-        <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", flex: "none" }}>WORKTREE</span>
-        {branches.length > 5 && (
-          <input
-            value={branchQ} onChange={(e) => setBranchQ(e.target.value)} placeholder={`search ${branches.length} branches…`}
-            style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--purple) 25%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "4px 7px" }}
-          />
-        )}
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-        {/* Opened, the chips scroll inside a fixed box: SHOW ALL on a repo with
-            hundreds of branches must not push START SESSION out of reach again.
-            Eight and a half rows at any font scale (a chip is 1.5 lines of
-            --t95 plus 12px, rows 5px apart) — the cut row is what says there
-            is more. Keyed on the query so a new search starts at its first match. */}
-        {branchOpen
-          ? <div key={bq} style={{ flex: "1 0 100%", display: "flex", flexWrap: "wrap", gap: 5, maxHeight: "calc(var(--t95) * 12.75 + 142px)", overflowY: "auto", overscrollBehavior: "contain" }}>{branchChips}</div>
-          : branchChips}
-        {bq && branchList.length === 0 && (
-          <span style={{ fontSize: "var(--t95)", color: "var(--txd)", padding: "4px 2px" }}>no branch matches “{branchQ}”</span>
-        )}
-        {branchesHidden > 0 && (
-          <button
-            onClick={() => setBranchAll(true)}
-            style={{ appearance: "none", cursor: "pointer", border: "1px dashed color-mix(in srgb, var(--purple) 30%, transparent)", background: "transparent", color: "var(--purple-d)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 0.5, padding: "4px 8px" }}
-          >SHOW ALL · {branchesHidden} MORE</button>
-        )}
-        {branchOpen && (
-          <button
-            onClick={() => setBranchAll(false)}
-            style={{ appearance: "none", cursor: "pointer", border: "1px dashed color-mix(in srgb, var(--purple) 30%, transparent)", background: "transparent", color: "var(--purple-d)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 0.5, padding: "4px 8px" }}
-          >COLLAPSE</button>
-        )}
-        <button
-          onClick={() => setNsNewOpen((o) => !o)} title="create a new worktree branch"
-          style={{ appearance: "none", cursor: "pointer", border: `1px solid ${nsNewOpen ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: nsNewOpen ? "color-mix(in srgb, var(--purple) 14%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 0.5, padding: "5px 9px" }}
-        >+ NEW WORKTREE</button>
-      </div>
-      {nsNewOpen && (
-        <>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8 }}>
-            <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--purple-g)", flex: "none" }}>FROM</span>
-            {/* Type to filter, or open the list — same popup shape as the order menu. */}
-            <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, flex: "0 1 220px", minWidth: 0, border: `1px solid ${parentOk ? "color-mix(in srgb, var(--purple) 30%, transparent)" : "var(--err)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", padding: "3px 7px" }}>
-              <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-              <input
-                value={nsParent} onFocus={() => setParentMenu(true)} onClick={() => setParentMenu(true)}
-                onChange={(e) => { setNsParent(e.target.value); setParentMenu(true); }}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") { setParentMenu(false); return; }
-                  if (e.key === "Enter" && parentHits[0]) { e.preventDefault(); setNsParent(parentHits[0]); setParentMenu(false); }
-                }}
-                placeholder="main" title="parent branch — type to search"
-                style={{ flex: 1, minWidth: 0, border: 0, background: "transparent", outline: "none", color: parentOk ? "var(--purple-h)" : "var(--err)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", padding: 0 }}
-              />
-              <button
-                onMouseDown={(e) => e.preventDefault()} onClick={() => setParentMenu((o) => !o)}
-                title={`${branches.length} branches`} aria-expanded={parentMenu}
-                style={{ flex: "none", border: 0, background: "transparent", padding: 0, margin: 0, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", lineHeight: 1, color: "var(--purple-g)" }}
-              >▾</button>
-              {parentMenu && (
-                <>
-                  <div onClick={() => setParentMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
-                  <div style={{ position: "absolute", top: "calc(100% + 2px)", left: -1, right: -1, zIndex: 97, maxHeight: 190, overflowY: "auto",
-                                border: "1px solid color-mix(in srgb, var(--purple) 34%, transparent)", background: "var(--panel)",
-                                boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
-                    {parentHits.map((b) => (
-                      <button
-                        key={b} onClick={() => { setNsParent(b); setParentMenu(false); }}
-                        onMouseEnter={() => setChipHov(`par:${b}`)} onMouseLeave={() => setChipHov("")}
-                        style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0, display: "flex", alignItems: "center", gap: 5,
-                                 background: b === nsParent ? "color-mix(in srgb, var(--purple) 16%, transparent)"
-                                   : chipHov === `par:${b}` ? "color-mix(in srgb, var(--purple) 8%, transparent)" : "transparent",
-                                 color: b === nsParent ? "var(--purple-b)" : "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", padding: "5px 7px" }}
-                      >
-                        <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-                        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b}</span>
-                      </button>
-                    ))}
-                    {parentHits.length === 0 && (
-                      <div style={{ fontSize: "var(--t9)", color: "var(--txl)", padding: "5px 7px" }}>no branch matches</div>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-            {!parentOk && <span style={{ flex: "none", whiteSpace: "nowrap", fontSize: "var(--t9)", color: "var(--err-g)" }}>no such branch</span>}
-          </div>
-          <input
-            value={nsNewBranch} onChange={(e) => setNsNewBranch(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && nsNewBranch.trim()) start(); }}
-            placeholder="new-worktree-branch"
-            style={{ width: "100%", boxSizing: "border-box", marginTop: 7, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", padding: "7px 9px" }}
-          />
-        </>
-      )}
-      <div style={{ display: "flex", gap: 7, marginTop: 9 }}>
-        <button
-          onClick={start} disabled={nsNewOpen && !parentOk}
-          title={nsNewOpen && !parentOk ? `FROM: no branch named “${nsParent}”` : undefined}
-          onMouseEnter={() => setStartHov(true)} onMouseLeave={() => setStartHov(false)}
-          style={{ flex: 1, appearance: "none", cursor: nsNewOpen && !parentOk ? "not-allowed" : "pointer", opacity: nsNewOpen && !parentOk ? 0.45 : 1, border: "1px solid var(--purple)", background: startHov ? "color-mix(in srgb, var(--purple) 26%, transparent)" : "color-mix(in srgb, var(--purple) 16%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 9, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
-        ><span style={{ color: "var(--purple)" }}>▸</span>START SESSION</button>
-        <button
-          onClick={() => setNsOpen(false)}
-          onMouseEnter={() => setCancelHov(true)} onMouseLeave={() => setCancelHov(false)}
-          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: cancelHov ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "9px 12px" }}
-        >CANCEL</button>
-      </div>
-      {/* Adding a project is rare, so it lives in here rather than taking a row of its own. */}
-      {!nsScoped && (
-        <button
-          onClick={() => { setNsOpen(false); setNpOpen(true); }}
-          onMouseEnter={() => setHov("addproj")} onMouseLeave={() => setHov("")}
-          style={{ appearance: "none", cursor: "pointer", display: "block", marginTop: 10, padding: 0, border: 0, background: "transparent",
-                   fontFamily: "inherit", fontSize: "var(--t95)", color: hov === "addproj" ? "var(--info)" : "var(--txd)" }}
-        >or add a new project ›</button>
-      )}
-    </div>
-  );
-
-  // The new-project form: a repo name and the first thing to build in it. Same
-  // shape as nsForm, one tint over — a project is not a session.
+  // The new-project form: a repo name and the first thing to build in it, in the
+  // info tint — a project is not a session. NEW SESSION's popover opens it.
   const npForm = (
     <div style={{ border: "1px solid color-mix(in srgb, var(--info) 30%, transparent)", background: "linear-gradient(160deg,color-mix(in srgb, var(--info) 7%, transparent),color-mix(in srgb, var(--panel) 40%, transparent))", padding: 12, marginBottom: 11, animation: "mslide .22s ease both" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
@@ -1225,7 +916,7 @@ export function SessionsPanel(props: Props) {
           <Search size={16} strokeWidth={2} aria-hidden />
         </button>
         <button className="srail-btn" data-acc aria-label="New session" title="New session"
-                onClick={() => { onUnfold?.(); toggleForm(); }}>
+                onClick={() => { onUnfold?.(); setNsAt(""); }}>
           <Plus size={17} strokeWidth={2.2} aria-hidden />
         </button>
         <span className="srail-sep" />
@@ -1332,7 +1023,7 @@ export function SessionsPanel(props: Props) {
         {/* New stands beside the search, in the same well: one line, where the
             full-width NEW SESSION / ADD PROJECT rows used to take one each.
             It wears .sess-search too, so every family draws it as that well. */}
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+        <div style={{ position: "relative", display: "flex", alignItems: "flex-start", gap: 6 }}>
           <div className="sess-search" style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 10, height: 38, marginTop: 11, position: "relative",
                         borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)" }}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flex: "none" }} aria-hidden="true">
@@ -1432,17 +1123,19 @@ export function SessionsPanel(props: Props) {
           {/* PLUGINS lists what plugin workers started — there's no session of yours to start there. */}
           {mode !== "plugins" && (
             <button
-              className="sess-search sess-plus" onClick={toggleForm} aria-label="New session" aria-expanded={nsOpen && !nsScoped}
-              title="New session — in a project's checkout or a worktree"
+              className="sess-search sess-plus" onClick={() => toggleNs("")} aria-label="New session" aria-haspopup="dialog" aria-expanded={nsAt === ""}
+              data-ns-anchor title="New session — in a project's checkout or a worktree"
               style={{ flex: "none", height: 38, aspectRatio: "1", marginTop: 11, padding: 0, display: "grid", placeItems: "center",
                        border: 0, borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)", cursor: "pointer", color: "var(--acc)" }}
-            ><Plus size={16} strokeWidth={2.2} aria-hidden /></button>
+            >{/* open, the + turns into the × that shuts it */}
+              <Plus size={16} strokeWidth={2.2} aria-hidden style={{ transform: nsAt === "" ? "rotate(45deg)" : "none", transition: "transform .18s ease" }} />
+            </button>
           )}
+          {nsAt === "" && mode !== "plugins" && nsPop()}
         </div>
       </div>
 
       <div ref={scrollRef} className="mscroll" style={{ flex: 1, minHeight: 0, padding: "16px 10px 26px" }}>
-        {nsOpen && !nsScoped && mode !== "plugins" && nsForm}
         {npOpen && mode !== "plugins" && npForm}
         {/* Pending plugin requests sit above the sessions they become on accept. */}
         {plugins.rivendell && <RivendellQueue active={mode === "plugins"} />}
@@ -1522,18 +1215,18 @@ export function SessionsPanel(props: Props) {
                     <span style={{ flex: 1, minWidth: 6 }} />
                     {/* Rivendell or a teammate started these; there is no session of yours to start here. */}
                     {!jobs && !shared && <button
-                      onClick={(e) => { e.stopPropagation(); openFor(g.rel); }}
-                      title={`New session in ${g.rel}`}
+                      onClick={(e) => { e.stopPropagation(); toggleNs(g.rel); }}
+                      title={`New session in ${g.rel}`} aria-haspopup="dialog" aria-expanded={nsAt === g.rel} data-ns-anchor
                       draggable={false} onDragStart={(e) => e.preventDefault()}
                       onMouseEnter={() => setHov(`add:${g.rel}`)} onMouseLeave={() => setHov("")}
-                      className="rowact" data-keep={nsOpen && nsScoped && nsProject === g.rel}
+                      className="rowact" data-keep={nsAt === g.rel}
                       // Sits inside a header that collapses on click, so a near
                       // miss shuts the project instead. Full row height plus
                       // side padding, pulled back so nothing moves.
                       style={{ flex: "none", alignSelf: "stretch", display: "flex", alignItems: "center", gap: 6, border: 0, background: "transparent",
                                padding: "0 8px", margin: "0 -8px", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)",
                                letterSpacing: ".14em", textTransform: "uppercase",
-                               color: hov === `add:${g.rel}` || (nsOpen && nsScoped && nsProject === g.rel) ? "var(--acc)" : "var(--txl)" }}
+                               color: hov === `add:${g.rel}` || nsAt === g.rel ? "var(--acc)" : "var(--txl)" }}
                     >
                       <svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: "none" }}>
                         <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -1541,7 +1234,7 @@ export function SessionsPanel(props: Props) {
                       New
                     </button>}
                   </div>
-                  {nsOpen && nsScoped && nsProject === g.rel && nsForm}
+                  {nsAt === g.rel && <div style={{ position: "relative", zIndex: 60 }}>{nsPop(g.rel)}</div>}
                   {/* Expanded, a project can be hundreds of rows long — the way
                       out has to sit at the top, not under all of them. */}
                   {open.has(g.rel) && (

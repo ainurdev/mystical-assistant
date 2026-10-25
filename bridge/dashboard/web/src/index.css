@@ -4117,6 +4117,12 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* New, beside the search: the same well (it wears .sess-search), lit when touched or open */
 [data-fam] .sess-plus { color: var(--acc) !important; }
 [data-fam] .sess-plus:is(:hover, [aria-expanded="true"]) { background: var(--ac-08) !important; }
+/* NEW SESSION's popover (components/hud/NewSessionPop): tiles at row size, its
+   section labels the HUD's tracked capitals, or sentence case where a family writes that way */
+[data-fam] .nsp .ptile { width: 22px; height: 22px; margin: 0; font-size: 9.5px; }
+[data-fam] .nsp .nsp-crumb .ptile { width: 18px; height: 18px; font-size: 8.5px; }
+.nsp-lab { font-size: var(--t8); letter-spacing: .18em; text-transform: uppercase; color: var(--txl); }
+[data-fam]:not([data-fam="aurora"]) .nsp-lab { font: 600 var(--t11) var(--ui-font); letter-spacing: 0; text-transform: none; }
 /* PROJECTS: a project heads its sessions, which hang off a rail centred under
    its tile (18px tile, 6px row padding → rail centre at 15px) */
 [data-fam] .projhead { height: 30px !important; padding: 0 6px !important; gap: 0 !important; border-radius: var(--f-rad-s); }
