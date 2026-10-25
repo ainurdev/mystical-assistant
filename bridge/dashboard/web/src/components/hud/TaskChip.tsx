@@ -9,9 +9,9 @@ import { notify } from "./Notifications";
  *  a tab beside the branch in the prompt box (TaskChip) and a line above PUBLISH
  *  in the GIT tab (TaskLine). NO TASK while there is work no task covers; the
  *  key once the branch carries one, or a create or a card answer recorded it;
- *  NOT A TASK once you said so. A linked task also names its board column
- *  (NRA-79 · In progress), which Rivendell moves on its own as the PR opens and
- *  merges. The question itself waits for the push (the
+ *  NOT A TASK once you said so. A linked task also names its board column as
+ *  Rivendell has it (NRA-79 · In progress): its PR webhook moves the card as
+ *  the PR opens and merges. The question itself waits for the push (the
  *  runner's note, held to it by bridge/taskcheck.py). This is where you see the
  *  state, and can answer before the push asks.
  *
