@@ -481,6 +481,8 @@ class Handler(BaseHTTPRequestHandler):
                                "quiet": notices.quiet(),
                                # Whether any route to Telegram exists at all (System ▸ Telegram).
                                "telegram": bool(config.NOTIFY_ENABLE and config.TOKEN)})
+        if path.startswith("/local/changelog/media/"):
+            return self._change_media(path[len("/local/changelog/media/"):])
         if path == "/local/changelog":
             # project: where the changelog's Ask Claude starts its session (this checkout)
             return self._json({"notices": notices.changelog(), "project": selfupdate.project()})
@@ -2531,6 +2533,46 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "not found"}, 404)
         with open(fp, "rb") as f:
             self._send(f.read(), 200, ctype, cache="private, max-age=300")
+
+    def _change_media(self, name: str):
+        """A change note's picture or clip (bridge/whatsnew.py CHANGES_DIR), from this
+        checkout: one file name, no path, so nothing else on disk is readable through this.
+        It answers Range, which WebKit's player asks before it plays a clip."""
+        from bridge import whatsnew
+        base = os.path.realpath(os.path.join(selfupdate.REPO, whatsnew.CHANGES_DIR))
+        fp = os.path.realpath(os.path.join(base, name))
+        if not whatsnew.MEDIA_NAME.fullmatch(name) or os.path.dirname(fp) != base or not os.path.isfile(fp):
+            return self._json({"error": "not found"}, 404)
+        size = os.path.getsize(fp)
+        rng = re.fullmatch(r"bytes=(\d*)-(\d*)", self.headers.get("Range") or "")
+        part = bool(rng and (rng[1] or rng[2]))
+        a, b = 0, size - 1
+        if part:
+            a, b = ((int(rng[1]), min(int(rng[2] or size - 1), size - 1)) if rng[1]
+                    else (max(0, size - int(rng[2])), size - 1))
+            if a > b:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return None
+        with open(fp, "rb") as f:
+            f.seek(a)
+            data = f.read(b - a + 1)
+        self.send_response(206 if part else 200)
+        self.send_header("Content-Type", whatsnew.MEDIA_TYPES[os.path.splitext(name)[1]])
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Accept-Ranges", "bytes")
+        if part:
+            self.send_header("Content-Range", f"bytes {a}-{b}/{size}")
+        self.send_header("Cache-Control", "private, max-age=3600")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.end_headers()
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        return None
 
     def _manifest(self):
         """The PWA manifest, built here rather than shipped in dist/ so start_url

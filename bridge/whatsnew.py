@@ -35,6 +35,17 @@ Why a bullet may name a place (`go`, from PLACES): the changelog's Open › take
 the thing that changed. haiku picks from a fixed list or says null; anything else is
 dropped, so a row never links somewhere the dashboard doesn't have.
 
+Why a change can bring its own words and picture (`docs/changes/<slug>.md`, CHANGES_DIR):
+a change that only shows in a state (a login at its limit, a question waiting) has nothing
+Open › can show, and haiku guesses its place. So the session that ships one may commit a
+note: frontmatter `area`, `when` (the state), `place` (from PLACES) and `for`, one sentence,
+and `<slug>.webp|png|jpg` and/or `<slug>.mp4` beside it. A note added in the range is told
+first, in its own words, with its picture (`meta.media`, `meta.when`, aligned with the bullets
+like `go`); haiku is told to leave it out and a bullet of the same area goes. A note `for:` a
+commit an older row already told decorates that row in place instead: a picture can come
+later without telling the change twice. The repo is public, so a note's picture shows staged
+data only (docs/changes/README.md).
+
 Why SEND NOTE pushes: a local commit on master would make every later PULL &
 RESTART (`--ff-only`) fail on an install that cannot push, so a refused push is
 rolled back and nothing is left behind.
@@ -65,6 +76,13 @@ _BULLET = 140   # the prompt asks for under 100; haiku overshoots a little, so k
 _HEADLINE = 64  # the prompt asks for 40; the changelog wraps, so only a runaway is cut
 _RETRY_S = 7 * 86400   # a fallback row older than this keeps its words
 _LEGACY = re.compile(r"\d+ commits? pulled")   # a fallback written before meta["ai"]
+_BODY = 600           # notices keeps a row's body to this: the bullets that fit
+CHANGES_DIR = "docs/changes"
+# A change note's picture: <slug>.webp|png|jpg (a still, a clip's poster too) and <slug>.mp4 (a clip).
+MEDIA_TYPES = {".webp": "image/webp", ".png": "image/png", ".jpg": "image/jpeg", ".mp4": "video/mp4"}
+MEDIA_NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,63}\.(?:webp|png|jpg|mp4)")
+_SLUG = re.compile(r"[a-z0-9][a-z0-9-]{0,63}")
+_SHA = re.compile(r"[0-9a-f]{7,40}")
 _COMING_EVERY = 3600   # a waiting update that grows is written again at most hourly
 _WATCH_S = 3600        # the bridge's own look upstream, for an install with no dashboard open
 _lock = threading.Lock()
@@ -153,17 +171,21 @@ def _announce(old: str, head: str) -> None:
         _remember(seen)
         if row and _holds(head, m.get("to")):
             notices.drop(row["id"])
+        # a note for a change an older row told goes onto that row; the rest are this update's
+        fresh = [c for c in changes_in(old, head) if not (c["for"] and _decorate(c))]
         # the model's words for this very range, written before the pull; a fallback says "waiting"
-        cl = (_changelog(old, head) if not m.get("ai") or (m.get("from"), m.get("to")) != (old, head) else
+        cl = (_changelog(old, head, told=[c["area"] for c in fresh])
+              if not m.get("ai") or (m.get("from"), m.get("to")) != (old, head) else
               {"headline": row["title"], "bullets": row["body"].split("\n"), "rest": m.get("rest", 0),
                "commits": m.get("commits", 0), "branch": m.get("branch", ""), "url": m.get("url"),
                "go": m.get("go"), "ai": True})
         if cl:
+            cl = _with_changes(cl, fresh)
             notices.emit("updated", f"update:{head}", title=cl["headline"],
                          body="\n".join(cl["bullets"]),
                          meta={"from": old, "to": head, "commits": cl["commits"],
                                "branch": cl["branch"], "rest": cl["rest"], "url": cl["url"], "ai": cl["ai"],
-                               **_places(cl)})
+                               **_aligned(cl)})
             _telegram("updated", "\n".join([f"UPDATED · {cl['headline']}"]
                                            + [f"• {b}" for b in cl["bullets"]]))
     except Exception as e:  # noqa: BLE001 — a changelog must never take the bridge down
@@ -224,15 +246,19 @@ def _write_coming(head: str, up: str, nid: "int | None") -> None:
     global _writing
     repo = selfupdate.REPO
     try:
-        cl = _changelog(head, up, "waiting")
+        # shortcut: no pictures until pulled (the media route serves this checkout's files), upgrade to
+        # `git show up:<file>` if a waiting picture is ever wanted; a note for an older change waits for the boot
+        notes = [{**c, "media": None} for c in changes_in(head, up) if not c["for"]]
+        cl = _changelog(head, up, "waiting", told=[c["area"] for c in notes])
         if not cl:
             return
+        cl = _with_changes(cl, notes)
         before = {e["heading"] for e in notes_in(git.file_at(repo, head, NOTES_PATH))} | set(_seen())
         notes = [{k: e[k] for k in ("heading", "title", "body", "author")}
                  for e in notes_in(git.file_at(repo, up, NOTES_PATH)) if e["heading"] not in before][:3]
         body = "\n".join(cl["bullets"])
         meta = {"from": head, "to": up, "commits": cl["commits"], "branch": cl["branch"], "rest": cl["rest"],
-                "url": cl["url"], "notes": notes, "ai": cl["ai"], "written": time.time(), **_places(cl)}
+                "url": cl["url"], "notes": notes, "ai": cl["ai"], "written": time.time(), **_aligned(cl)}
         if nid and notices.revise(nid, title=cl["headline"], body=body, meta=meta):
             return
         notices.emit("coming", "coming", title=cl["headline"], body=body, meta=meta)
@@ -251,10 +277,10 @@ def _holds(head: str, sha: "str | None") -> bool:
     return bool(head and sha) and git._run(selfupdate.REPO, "merge-base", "--is-ancestor", sha, head)[0] == 0
 
 
-def _places(cl: dict) -> dict:
-    """`go` for a row's meta, only when a bullet has a place."""
-    go = cl.get("go") or []
-    return {"go": go} if any(go) else {}
+def _aligned(cl: dict) -> dict:
+    """A row's per-bullet columns for its meta: `go` (a place), `when` (the state it shows in)
+    and `media` (a note's picture), each only when some bullet has one."""
+    return {k: cl[k] for k in ("go", "when", "media") if any(cl.get(k) or [])}
 
 
 def retry() -> None:
@@ -272,11 +298,13 @@ def retry() -> None:
         n, subjects = _subjects(m["from"], m["to"]) if m.get("from") and m.get("to") else (0, [])
         if not n:
             continue   # the range is gone (history rewritten): nothing to say, the next row may have one
-        said = _summarise(subjects, n)
+        notes = _notes_of(row)
+        said = _summarise(subjects, n, [c["area"] for c in notes])
         if said:
+            said = _with_changes(said, notes)
             notices.revise(row["id"], title=said["headline"], body="\n".join(said["bullets"]),
-                           meta={**{k: v for k, v in m.items() if k != "go"}, "rest": said["rest"], "ai": True,
-                                 **_places(said)})
+                           meta={**{k: v for k, v in m.items() if k not in ("go", "when", "media")},
+                                 "rest": said["rest"], "ai": True, **_aligned(said)})
         return
 
 
@@ -323,12 +351,12 @@ def _subjects(old: str, head: str) -> "tuple[int, list]":
     return n, [s for s in log.splitlines() if s.strip()]
 
 
-def _changelog(old: str, head: str, word: str = "pulled") -> "dict | None":
+def _changelog(old: str, head: str, word: str = "pulled", told: "list | tuple" = ()) -> "dict | None":
     repo = selfupdate.REPO
     n, subjects = _subjects(old, head)
     if n <= 0:
         return None
-    said = _summarise(subjects, n) if aifeatures.enabled("changelog") else None
+    said = _summarise(subjects, n, told) if aifeatures.enabled("changelog") else None
     d = said or _fallback(subjects, n, word)
     d.update(commits=n, branch=git.current_branch(repo), url=_compare_url(old, head), ai=bool(said))
     return d
@@ -375,11 +403,13 @@ def _fallback(subjects: list, n: int, word: str = "pulled") -> dict:
     return {"headline": _cut(headline, _HEADLINE), "bullets": bullets, "rest": n - len(bullets)}
 
 
-def _summarise(subjects: list, n: int) -> "dict | None":
+def _summarise(subjects: list, n: int, told: "list | tuple" = ()) -> "dict | None":
     """One haiku call over the subjects → {headline, bullets, rest}, cut to the
-    spec's limits; None when the reply is an error or not the JSON asked for."""
+    spec's limits; None when the reply is an error or not the JSON asked for.
+    `told`: the areas change notes already tell, for the model to leave out."""
+    prompt = _PROMPT + "\n".join(subjects) + (f"\n\nALREADY TOLD, leave out: {'; '.join(told)}" if told else "")
     result, _sid, _cost, is_error = runner.run_blocking(
-        config.DASH_CHAT_ID, _PROMPT + "\n".join(subjects), cwd=selfupdate.REPO,
+        config.DASH_CHAT_ID, prompt, cwd=selfupdate.REPO,
         timeout=180, model="haiku", skip_pack=True)
     text = "" if is_error else (result or "")
     a, b = text.find("{"), text.rfind("}")
@@ -481,6 +511,111 @@ def add_note(title: str, body: str) -> "tuple[bool, str]":
     seen.append(heading)
     _remember(seen)
     return True, out
+
+
+# --- change notes: docs/changes/<slug>.md ----------------------------------------------
+
+def change_note(text: str) -> "dict | None":
+    """A change note: `key: value` lines between `---` fences (area, when, place, for), then
+    its sentence. No area or no sentence is no note; a place outside PLACES and a `for`
+    that isn't a sha are dropped, so a note never links somewhere the dashboard lacks."""
+    lines = [l.strip() for l in (text or "").strip().splitlines()]
+    if len(lines) < 2 or lines[0] != "---" or "---" not in lines[1:]:
+        return None
+    end = lines.index("---", 1)
+    keys = {k.strip().lower(): v.strip() for k, _, v in (l.partition(":") for l in lines[1:end])}
+    said = " ".join(l for l in lines[end + 1:] if l)
+    if not keys.get("area") or not said:
+        return None
+    sha = keys.get("for", "").lower()
+    return {"area": keys["area"], "text": said, "when": keys.get("when") or None,
+            "place": keys.get("place") if keys.get("place") in PLACES else None,
+            "for": sha if _SHA.fullmatch(sha) else None}
+
+
+def changes_in(old: str, head: str) -> list:
+    """The change notes added in old..head, in path order, each with its picture at head:
+    {area, text, when, place, for, media: {still, clip} or None}."""
+    repo = selfupdate.REPO
+    rc, added, _ = git._run(repo, "diff", "--name-only", "--diff-filter=A", old, head, "--", CHANGES_DIR)
+    rc2, tree, _ = git._run(repo, "ls-tree", "--name-only", head, CHANGES_DIR + "/")
+    if rc != 0 or rc2 != 0:
+        return []
+    have = {os.path.basename(p) for p in tree.splitlines()}
+    out = []
+    for path in added.splitlines():
+        slug, ext = os.path.splitext(os.path.basename(path))
+        c = change_note(git.file_at(repo, head, path)) if ext == ".md" and _SLUG.fullmatch(slug) else None
+        if c:
+            still = next((slug + e for e in (".webp", ".png", ".jpg") if slug + e in have), None)
+            clip = slug + ".mp4" if slug + ".mp4" in have else None
+            out.append({**c, "media": {"still": still, "clip": clip} if still or clip else None})
+    return out
+
+
+def _key(area: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", area.lower())
+
+
+def _area(bullet: str) -> str:
+    return bullet.split(" — ", 1)[0] if " — " in bullet else ""
+
+
+def _with_changes(cl: dict, notes: list) -> dict:
+    """The notes first, in their own words with their place, state and picture, then the
+    summary's bullets about anything else: as many as fit the row's body."""
+    if not notes:
+        return cl
+    told = {_key(c["area"]) for c in notes}
+    go = cl.get("go") or []
+    rows = ([(_cut(f"{c['area']} — {c['text']}", _BULLET), c["place"], c["when"], c["media"]) for c in notes]
+            + [(b, go[i] if i < len(go) else None, None, None) for i, b in enumerate(cl["bullets"])
+               if _key(_area(b)) not in told or not _area(b)])
+    kept: list = []
+    for r in rows:
+        if len("\n".join([k[0] for k in kept] + [r[0]])) > _BODY:
+            break
+        kept.append(r)
+    return {**cl, **{k: [r[i] for r in kept] for i, k in enumerate(("bullets", "go", "when", "media"))}}
+
+
+def _decorate(c: dict) -> bool:
+    """A note for a change an older row already told (`for:` one of its commits): that row's
+    bullet of the same area takes the note's words, place, state and picture, or the note
+    joins the row. Revised in place, so a picture that comes later is not news again."""
+    for row in store.list_notices(0, 50, ("updated",)):
+        m = row["meta"]
+        if not (m.get("from") and m.get("to")) or not _holds(m["to"], c["for"]) or _holds(m["from"], c["for"]):
+            continue
+        bullets = [b for b in row["body"].split("\n") if b]
+        n = len(bullets)
+        cols = {k: ((m.get(k) if isinstance(m.get(k), list) else []) + [None] * n)[:n] for k in ("go", "when", "media")}
+        i = next((j for j, b in enumerate(bullets) if _area(b) and _key(_area(b)) == _key(c["area"])), n)
+        line = _cut(f"{c['area']} — {c['text']}", _BULLET)
+        if i == n:
+            bullets.append(line)
+            for col in cols.values():
+                col.append(None)
+        else:
+            bullets[i] = line
+        cols["go"][i] = c["place"] or cols["go"][i]
+        cols["when"][i], cols["media"][i] = c["when"], c["media"]
+        body = "\n".join(bullets)
+        if len(body) > _BODY:
+            return False
+        meta = {**{k: v for k, v in m.items() if k not in cols}, **_aligned(cols)}
+        return notices.revise(row["id"], title=row["title"], body=body, meta=meta)
+    return False
+
+
+def _notes_of(row: dict) -> list:
+    """A row's bullets that came from notes (they carry a state or a picture), as notes
+    again, so a rewrite keeps their words first."""
+    m = row["meta"]
+    bullets = [b for b in row["body"].split("\n") if b]
+    col = {k: (m.get(k) if isinstance(m.get(k), list) else []) + [None] * len(bullets) for k in ("go", "when", "media")}
+    return [{"area": _area(b), "text": b.split(" — ", 1)[1], "place": col["go"][i], "when": col["when"][i],
+             "media": col["media"][i]} for i, b in enumerate(bullets) if _area(b) and (col["when"][i] or col["media"][i])]
 
 
 # --- the notes file ---------------------------------------------------------------------

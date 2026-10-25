@@ -572,3 +572,165 @@ def test_a_local_commit_does_not_rewrite_the_same_incoming(repo, origin, monkeyp
     _run(repo, "commit", "-qm", "my own work")                     # HEAD moves, what waits doesn't
     monkeypatch.setattr(whatsnew, "_COMING_EVERY", 0)
     assert whatsnew.preview(selfupdate.check()) is None
+
+
+# --- change notes: a change's own words, place, state and picture (changelog v4) ------------
+
+_LIMITS = ("---\narea: Usage limits\nwhen: a login hits its 5-hour limit\nplace: rail:usage\n---\n\n"
+           "A card while parked,\na receipt once it clears.\n")
+
+
+def _change(repo, slug, note, *media):
+    _write(repo, f"docs/changes/{slug}.md", note)
+    for ext in media:
+        _write(repo, f"docs/changes/{slug}{ext}", f"{slug}{ext} bytes")
+
+
+def test_change_note_reads_its_frontmatter_and_sentence():
+    assert whatsnew.change_note(_LIMITS) == {
+        "area": "Usage limits", "text": "A card while parked, a receipt once it clears.",
+        "when": "a login hits its 5-hour limit", "place": "rail:usage", "for": None}
+    c = whatsnew.change_note("---\narea: Answers\nplace: settings:nowhere\nfor: 341C9BB4\n---\nThey land whole.")
+    assert c["place"] is None and c["for"] == "341c9bb4" and c["when"] is None   # an unknown place goes
+    assert whatsnew.change_note("---\narea: X\nfor: not-a-sha\n---\nY.")["for"] is None
+    assert whatsnew.change_note("---\nwhen: x\n---\nNo area.") is None
+    assert whatsnew.change_note("---\narea: Empty\n---\n") is None
+    assert whatsnew.change_note("Just prose, no frontmatter.") is None
+
+
+def test_boot_tells_change_notes_first_with_their_pictures(repo, origin):
+    whatsnew.boot()
+    _commit(origin, "two\n", "git: a push button")
+    _change(origin, "answers", "---\narea: Answers\nwhen: an answer lands\n---\nThey land whole.", ".webp", ".mp4")
+    _change(origin, "usage-limits", _LIMITS, ".png")
+    _write(origin, "docs/changes/README.md", "# How to write one\n")
+    _run(origin, "add", "-A")
+    _run(origin, "commit", "-qm", "answers: they land whole")
+    assert g.pull(repo)[0]
+    whatsnew.boot().join(10)
+    row = notices.feed()[0]
+    assert row["body"].splitlines() == ["Answers — They land whole.",
+                                        "Usage limits — A card while parked, a receipt once it clears.",
+                                        "Git — a push button"]          # "Answers —" from the subject: told once
+    m = row["meta"]
+    assert m["media"] == [{"still": "answers.webp", "clip": "answers.mp4"}, {"still": "usage-limits.png", "clip": None}, None]
+    assert m["when"] == ["an answer lands", "a login hits its 5-hour limit", None]
+    assert m["go"] == [None, "rail:usage", None]
+
+
+def test_boot_tells_the_model_what_the_notes_already_say(repo, origin, monkeypatch):
+    whatsnew.boot()
+    _change(origin, "usage-limits", _LIMITS)
+    _run(origin, "add", "-A")
+    _run(origin, "commit", "-qm", "usage: a limits card")
+    g.pull(repo)
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k == "changelog")
+    prompts = []
+    reply = json.dumps({"headline": "Limits", "bullets": ["Usage limits — a card", "Telegram — live"],
+                        "go": ["rail:usage", None], "rest": 0})
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda chat, prompt, **k: prompts.append(prompt) or (reply, None, 0, False))
+    whatsnew.boot().join(10)
+    assert prompts[0].endswith("ALREADY TOLD, leave out: Usage limits")
+    row = notices.feed()[0]
+    assert row["body"].splitlines() == ["Usage limits — A card while parked, a receipt once it clears.", "Telegram — live"]
+    assert row["meta"]["go"] == ["rail:usage", None] and row["meta"]["ai"] is True
+
+
+def test_a_note_for_an_older_change_decorates_the_row_that_told_it(repo, origin):
+    whatsnew.boot()
+    _commit(origin, "two\n", "usage limits: a card while parked")
+    _commit(origin, "three\n", "sidebar: rows sort by start")
+    sha = g.head_sha(origin)
+    g.pull(repo)
+    whatsnew.boot().join(10)
+    old = notices.feed()[0]
+    notices.mark_read([old["id"]])
+    _change(origin, "usage-limits", _LIMITS.replace("---\n\n", f"for: {sha[:8]}\n---\n\n"), ".webp")
+    _change(origin, "sidebar-hold", f"---\narea: Busy rows\nfor: {sha}\n---\nBusy rows lift.", ".webp")
+    _change(origin, "elsewhere", "---\narea: Elsewhere\nfor: 0123456789abcdef\n---\nNo row holds it.")
+    _run(origin, "add", "-A")
+    _run(origin, "commit", "-qm", "docs: pictures for recent changes")
+    g.pull(repo)
+    whatsnew.boot().join(10)
+    new, old = notices.changelog()
+    assert old["read"] is True and old["title"] == "Sidebar and Usage limits"     # revised in place, not news
+    assert old["body"].splitlines() == ["Sidebar — rows sort by start",
+                                        "Usage limits — A card while parked, a receipt once it clears.",
+                                        "Busy rows — Busy rows lift."]           # no bullet of its area: it joins
+    assert old["meta"]["media"] == [None, {"still": "usage-limits.webp", "clip": None}, {"still": "sidebar-hold.webp", "clip": None}]
+    assert old["meta"]["when"] == [None, "a login hits its 5-hour limit", None]
+    assert old["meta"]["go"] == [None, "rail:usage", None]
+    assert new["body"].splitlines()[0] == "Elsewhere — No row holds it."           # a commit no row holds: told new
+    assert "Usage limits" not in new["body"] and "Busy rows" not in new["body"]
+
+
+def test_retry_keeps_the_notes_words_and_pictures(repo, origin, monkeypatch):
+    whatsnew.boot()
+    _commit(origin, "two\n", "telegram: live answers")
+    _change(origin, "usage-limits", _LIMITS, ".webp")
+    _run(origin, "add", "-A")
+    _run(origin, "commit", "-qm", "usage limits: a card")
+    g.pull(repo)
+    whatsnew.boot().join(10)                                     # UPDATE NOTES off: the fallback, with the note
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k == "changelog")
+    reply = json.dumps({"headline": "Telegram", "bullets": ["Telegram — answers stream in", "Usage limits — a card"],
+                        "go": [None, "rail:usage"], "rest": 0})
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda *a, **k: (reply, None, 0, False))
+    whatsnew.retry()
+    row = notices.feed()[0]
+    assert row["meta"]["ai"] is True and row["title"] == "Telegram"
+    assert row["body"].splitlines() == ["Usage limits — A card while parked, a receipt once it clears.",
+                                        "Telegram — answers stream in"]
+    assert row["meta"]["media"] == [{"still": "usage-limits.webp", "clip": None}, None]
+    assert row["meta"]["go"] == ["rail:usage", None]
+
+
+def test_preview_tells_waiting_notes_without_their_pictures(repo, origin):
+    whatsnew.boot()
+    _change(origin, "usage-limits", _LIMITS, ".webp")
+    _change(origin, "late", "---\narea: Late\nfor: 0123456789abcdef\n---\nA picture for an old change.", ".webp")
+    _run(origin, "add", "-A")
+    _run(origin, "commit", "-qm", "usage limits: a card")
+    whatsnew.preview(selfupdate.check()).join(10)
+    row = notices.coming()
+    assert row["body"].splitlines() == ["Usage limits — A card while parked, a receipt once it clears."]
+    assert row["meta"]["when"] == ["a login hits its 5-hour limit"] and "media" not in row["meta"]
+
+
+# --- the change notes' pictures, served (/local/changelog/media/<name>) -------------------
+
+def _media_get(name, headers=None):
+    import io
+    from bridge.dashboard import server as dash
+    h = dash.Handler.__new__(dash.Handler)
+    h.headers = headers or {}
+    h.wfile = io.BytesIO()
+    box = {"headers": {}}
+    h.send_response = lambda code, msg=None: box.update(code=code)
+    h.send_header = lambda k, v: box["headers"].__setitem__(k, v)
+    h.end_headers = lambda: None
+    h._json = lambda obj, code=200: box.update(code=code, obj=obj)
+    h._get_api(f"/local/changelog/media/{name}", {})
+    box["body"] = h.wfile.getvalue()
+    return box
+
+
+def test_media_serves_a_picture_and_a_range_of_a_clip(repo):
+    _write(repo, "docs/changes/usage-limits.webp", "still")
+    _write(repo, "docs/changes/answers.mp4", "0123456789")
+    still = _media_get("usage-limits.webp")
+    assert still["code"] == 200 and still["body"] == b"still"
+    assert still["headers"]["Content-Type"] == "image/webp" and still["headers"]["Accept-Ranges"] == "bytes"
+    part = _media_get("answers.mp4", {"Range": "bytes=2-5"})
+    assert part["code"] == 206 and part["body"] == b"2345" and part["headers"]["Content-Range"] == "bytes 2-5/10"
+    assert part["headers"]["Content-Type"] == "video/mp4"
+    assert _media_get("answers.mp4", {"Range": "bytes=-3"})["body"] == b"789"
+    assert _media_get("answers.mp4", {"Range": "bytes=8-"})["body"] == b"89"
+    assert _media_get("answers.mp4", {"Range": "bytes=10-"})["code"] == 416
+
+
+def test_media_serves_nothing_else(repo):
+    _write(repo, "docs/changes/notes.txt", "x")
+    _write(repo, "docs/secret.webp", "x")
+    for name in ("notes.txt", "../secret.webp", "..%2Fsecret.webp", "missing.webp", "Upper.webp", "a.b.webp", ""):
+        assert _media_get(name)["code"] == 404, name
