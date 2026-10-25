@@ -119,6 +119,10 @@ const PLUGINS: { label: string; sub?: string; tint: string; match: (s: SessionBr
  *  `created` is optional on older payloads, so fall back to `updated`. */
 const byCreated = (a: SessionBrief, b: SessionBrief) =>
   (b.created ?? b.updated) - (a.created ?? a.updated);
+/** When you last asked it — its newest prompt. Not `updated`: that moves again
+ *  when a turn ends, so a long turn finishing late would lift its session over
+ *  the ones you prompted since. A bridge older than the field sends none. */
+const askedAt = (s: SessionBrief) => s.asked ?? s.updated;
 
 // Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
@@ -263,7 +267,7 @@ function SessionRow({
   const wtShown = !job && !team && detail.wt && inWorktree;
   const one = !dev && !tiles && !detail.branch && !detail.wt;
   // The state where the age used to be: how long a turn has run or waited,
-  // the two states that are yours to act on, the age at rest.
+  // the two states that are yours to act on, the age at rest (since you asked).
   const since = st?.since;
   const edge = v.lane === "work" ? <span style={{ color: "var(--ok)" }}>{since ? lasted(now - since) : "now"}</span>
     : v.lane === "ask" ? edgeChip("var(--warn)", "Answer")
@@ -275,7 +279,7 @@ function SessionRow({
     )
     // the server's label says when it comes back ("usage limit — resuming ~14:00")
     : v.lane === "parked" ? <span style={{ color: "var(--info)" }}>↻ {st?.label?.match(/\d{1,2}:\d{2}/)?.[0] ?? ago(s.updated)}</span>
-    : <span>{ago(s.updated)}</span>;
+    : <span>{ago(askedAt(s))}</span>;
   // Unseen pictures: on line 2 under the time, where Telegram puts an unread
   // count, the same spot on every row; a one-line row carries it beside the
   // time. Its negative margin keeps it from growing line 2, so a tag coming or
@@ -644,7 +648,7 @@ export function SessionsPanel(props: Props) {
     // RECENT is one flat stream, cut into time buckets — no project grouping.
     // The one tab that follows the last touch: recency is its point.
     const now = Date.now() / 1000;
-    const at = (s: SessionBrief) => (busy(s) ? now : s.updated);
+    const at = (s: SessionBrief) => (busy(s) ? now : askedAt(s));
     const cuts: [number, string][] = [[86400, "TODAY"], [7 * 86400, "THIS WEEK"], [Infinity, "EARLIER"]];
     lanes = cuts.flatMap(([max, label], i) => {
       const min = i === 0 ? -1 : cuts[i - 1][0];

@@ -508,7 +508,7 @@ def test_session_brief_shape(monkeypatch):
                         lambda *a, **k: [{"rule": "mcp__github", "name": "github"}])
     s = store.create_session(555, "p6")
     b = _session_brief(s)
-    assert set(b) == {"id", "title", "project", "created", "updated", "archived",
+    assert set(b) == {"id", "title", "project", "created", "updated", "asked", "archived",
                       "origin", "cwd", "branch", "fallback_policy", "goal", "job", "device", "team",
                       "lifecycle", "disabled_tools",
                       "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
@@ -527,10 +527,18 @@ def test_session_brief_shape(monkeypatch):
 
 
 def test_store_list_sessions_all():
-    store.create_session(900, "a")
+    a = store.create_session(900, "a")
     store.create_session(900, "b")
     projs = {s["project"] for s in store.list_sessions_all(900)}
     assert {"a", "b"} <= projs
+    # `asked` is the newest prompt's start, None before the first — the
+    # sidebar's RECENT sorts by it, not by `updated` (which a turn's end bumps).
+    assert a["asked"] is None
+    before = time.time()
+    store.start_turn(a["id"], "t-asked", "hi", None)
+    rows = {s["id"]: s for s in store.list_sessions_all(900)}
+    assert before <= rows[a["id"]]["asked"] <= time.time()
+    assert store.get_session(a["id"])["asked"] == rows[a["id"]]["asked"]
 
 
 # --- dashboard security ------------------------------------------------------

@@ -203,6 +203,7 @@ def _session_brief(s: dict) -> dict:
     run = profiles.brief(s)
     return {"id": s["id"], "title": s["title"], "project": s["project"],
             "created": s.get("created"), "updated": s["updated"], "archived": s["archived"],
+            "asked": s.get("asked"),           # its last prompt's time; None before the first
             "origin": s.get("origin"), "cwd": cwd,
             "fallback_policy": s.get("fallback_policy"),
             "ctx_tokens": s.get("ctx_tokens"),

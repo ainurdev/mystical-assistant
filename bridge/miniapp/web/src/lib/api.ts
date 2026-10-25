@@ -69,6 +69,7 @@ export interface SessionBrief {
   project: string;
   created?: number; // epoch seconds it was started (CHATS sorts by this)
   updated: number;
+  asked?: number | null; // epoch seconds its last prompt went in; null before the first (HISTORY sorts by it)
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
   // A Rivendell job's kind and facts (bridge/rivendell_jobs.py); null = not one.

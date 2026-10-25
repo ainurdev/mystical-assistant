@@ -54,6 +54,7 @@ export interface SessionBrief {
   project: string;
   created?: number; // epoch seconds the session was created (PLUGINS tab sorts by this)
   updated: number;
+  asked?: number | null; // epoch seconds its last prompt went in; null before the first (RECENT sorts by it)
   archived: number;
   origin?: string | null; // where it started: vscode | dashboard | miniapp | bot | null
   cwd?: string | null; // run dir — a linked worktree differs from the project dir

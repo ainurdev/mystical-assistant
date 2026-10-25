@@ -63,6 +63,9 @@ const HIST_CAP = 40; // HISTORY rows before "show more"
  *  end, and one at work goes over them (`lift`; the dashboard's sidebar sorts
  *  the same way). Older payloads lack it. */
 const start = (s?: SessionBrief) => (s ? s.created ?? s.updated : 0);
+// When you last asked it. Not `updated`: that moves when a turn ends too, so a
+// long turn finishing late would lift its chat over the ones you prompted since.
+const askedAt = (s: SessionBrief) => s.asked ?? s.updated;
 const byStart = (a: SessionBrief, b: SessionBrief) => start(b) - start(a);
 
 /** A chat a plugin or a teammate brought, not one of yours (PLUGINS). */
@@ -331,7 +334,7 @@ function ChatsPage() {
             )
           ) : (
             <div className="space-y-px">
-              {[...shown].sort((a, b) => Number(busy(b)) - Number(busy(a)) || b.updated - a.updated).slice(0, histAll || needle ? undefined : HIST_CAP).map((s) => row(s, true))}
+              {[...shown].sort((a, b) => Number(busy(b)) - Number(busy(a)) || askedAt(b) - askedAt(a)).slice(0, histAll || needle ? undefined : HIST_CAP).map((s) => row(s, true))}
               {!histAll && !needle && shown.length > HIST_CAP && (
                 <button type="button" className="sb-more" onClick={() => setHistAll(true)}>
                   {shown.length - HIST_CAP} more <ChevronDown size={12} aria-hidden />
@@ -371,7 +374,7 @@ function Row({ s, v, on, proj, tint, label, onOpen }: {
         </span>
       </span>
       <SurfaceBadge origin={s.origin ?? null} job={s.job ?? null} />
-      <span className="sb-ago">{on ? "open" : ago(s.updated)}</span>
+      <span className="sb-ago">{on ? "open" : ago(askedAt(s))}</span>
     </button>
   );
 }
