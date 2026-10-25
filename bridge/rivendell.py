@@ -411,6 +411,10 @@ class Worker:
         # fails still shows its cards, dimmed as "last known" (tasks()). One
         # entry per repo the tab has shown.
         self._last_tasks: "dict[str, dict]" = {}
+        # (token, person id): who the token's owner is on the boards, for the
+        # tasks work_create assigns them (_me). Keyed by the token, because a
+        # saved config swaps the token onto this same worker (reconfigure).
+        self._person: "tuple[str, str]" = ("", "")
         # TEST LINK: nonce -> the event its pong sets; the last outcome (Settings
         # ▸ PLUGINS shows it). The send lock keeps TEST LINK's ping (an HTTP
         # thread) from interleaving with the listener's own frames.
@@ -3179,13 +3183,31 @@ def work_list(path: str) -> str:
         return f"Rivendell couldn't answer: {e}"
 
 
+def _me(w: Worker) -> str:
+    """The person the token's owner is on Rivendell's boards (an assignee id):
+    /auth/me names the user, and the people list maps each person to theirs.
+    Looked up once per token. Raises TasksError."""
+    if w._person[0] != w.token:
+        me = (_tool(w, "read_route", {"path": "/auth/me"}) or {}).get("id")
+        people = _tool(w, "read_route", {"path": "/task-management/users"}) or []
+        pid = next((str(p["externalId"]) for p in people if isinstance(p, dict) and p.get("externalId")
+                    and me and (p.get("user") or {}).get("id") == me), "")
+        if not pid:
+            raise TasksError("refused", "no person on the boards is yours")
+        w._person = (w.token, pid)
+    return w._person[1]
+
+
 def work_create(path: str, title: str, description: str = "", board: str = "") -> str:
     """CreateRivendellTask: file a task for work no open task covers, on the
     checkout's board (the one named `board` when there are several), in the
-    list work_list names. A title an open task on that
-    board already has is refused with that task's key: a retried call, or a
-    second session on the same work, must not leave a client's board a
-    duplicate. Text for Claude, failures too."""
+    list work_list names, assigned to the token's owner: this bridge is doing
+    the work, and Rivendell drops a task that has someone into the board's To
+    do column, where a task nobody has would sit in no column. A failed lookup
+    of the owner still files the task, unassigned, and says why. A title an
+    open task on that board already has is refused with that task's key: a
+    retried call, or a second session on the same work, must not leave a
+    client's board a duplicate. Text for Claude, failures too."""
     title = (title or "").strip()
     if not title:
         return "title is required."
@@ -3217,6 +3239,11 @@ def work_create(path: str, title: str, description: str = "", board: str = "") -
         body = {"tasklistId": lst["id"], "name": title[:500]}   # Rivendell's MaxLength
         if (description or "").strip():
             body["description"] = description.strip()
+        try:
+            body["assigneeExternalIds"] = [_me(b["w"])]
+            who = "assigned to you"
+        except TasksError as e:
+            who = f"unassigned (couldn't look you up: {e})"
         t = _tool(b["w"], "write_route", {"method": "POST", "path": "/task-management/tasks", "body": body})
         t = t if isinstance(t, dict) else {}
         if t.get("key"):                         # the task tab shows it before the branch carries it
@@ -3224,7 +3251,7 @@ def work_create(path: str, title: str, description: str = "", board: str = "") -
             top = taskcheck.toplevel(path)
             taskcheck.record(top, taskcheck.branch(top), t["key"])
         key = t.get("key") or "the new task"
-        return (f"Created {key} \"{t.get('name') or body['name']}\" on {b['label']} ▸ {lst['name']}"
+        return (f"Created {key} \"{t.get('name') or body['name']}\" on {b['label']} ▸ {lst['name']}, {who}"
                 + f": {b['frontend']}/task-management/projects/{b['id']}?task={t.get('id')}"
                 + f"\nPut {key} in the branch name and the PR title, so Rivendell links the PR to it.")
     except TasksError as e:

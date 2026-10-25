@@ -3308,6 +3308,11 @@ _BOARD = {
     ("read_route", "/task-management/projects/b1/tasklists"): [
         {"id": "l-fu", "name": "Follow-ups"}, {"id": "l-in", "name": "Inbox"}],
     ("write_route", "/task-management/tasks"): {"id": "t74", "key": "NRA-74", "name": "Add audit log"},
+    ("read_route", "/auth/me"): {"id": "u1", "name": "Mahziyar Erfani"},
+    ("read_route", "/task-management/users"): [
+        {"externalId": "user-u2", "firstName": "Erfan", "user": {"id": "u2"}},
+        {"externalId": "tw-9", "firstName": "Client", "user": None},
+        {"externalId": "743470", "firstName": "Mahziyar", "user": {"id": "u1"}}],
 }
 
 
@@ -3428,14 +3433,41 @@ def test_landing_list_prefers_inbox_then_unorganized_then_first():
     assert pick([{"name": "Inbox"}]) is None and pick([]) is None
 
 
-def test_work_create_files_an_untagged_task_on_the_inbox(workers, monkeypatch):
+def test_work_create_files_an_untagged_task_on_the_inbox_assigned_to_the_token_owner(workers, monkeypatch):
     calls = _on_board(workers, monkeypatch)
     text = rivendell.work_create("/x", "Add audit log", "Why.")
     assert calls[-1] == ("write_route", "POST", "/task-management/tasks",
-                         {"tasklistId": "l-in", "name": "Add audit log", "description": "Why."})
+                         {"tasklistId": "l-in", "name": "Add audit log", "description": "Why.",
+                          "assigneeExternalIds": ["743470"]})
     assert not [c for c in calls if "/task-management/tags" in c]
-    assert "Created NRA-74" in text and "tagged" not in text
+    assert "Created NRA-74" in text and "tagged" not in text and "assigned to you" in text
     assert "https://rv/task-management/projects/b1?task=t74" in text
+
+
+def test_the_token_owner_is_looked_up_once_per_token(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch)
+
+    def lookups():
+        return [c for c in calls if c[:3] == ("read_route", "GET", "/auth/me")]
+    rivendell.work_create("/x", "Add audit log")
+    rivendell.work_create("/x", "Add search")
+    assert len(lookups()) == 1
+    workers["a"].inst = {**workers["a"].inst, "token": "another-owners-token"}
+    rivendell.work_create("/x", "Add export")
+    assert len(lookups()) == 2
+
+
+def test_work_create_files_unassigned_when_rivendell_cant_say_who_you_are(workers, monkeypatch):
+    calls = _on_board(workers, monkeypatch, routes={
+        ("read_route", "/auth/me"): "GET /auth/me answered 403: Forbidden resource"})
+    text = rivendell.work_create("/x", "Add audit log")
+    assert "assigneeExternalIds" not in calls[-1][3]
+    assert "Created NRA-74" in text and "unassigned" in text and "403" in text
+    _on_board(workers, monkeypatch, routes={("read_route", "/auth/me"): {"id": "u9"}})
+    assert "unassigned" in rivendell.work_create("/x", "Add audit log")   # no person on the boards is theirs
+    calls = _on_board(workers, monkeypatch, routes={("read_route", "/auth/me"): {}})
+    assert "unassigned" in rivendell.work_create("/x", "Add audit log")   # never the client nobody maps to
+    assert "assigneeExternalIds" not in calls[-1][3]
 
 
 def _checkout(tmp_path, branch="fix/login", pushed=False):
