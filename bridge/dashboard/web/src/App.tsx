@@ -977,6 +977,8 @@ export function App() {
       keepPlace(stick);
     };
     el.addEventListener("scroll", sync, { passive: true });
+    // An answer is landing (`landed` below): it aims the view itself.
+    let landing = false;
     // Content grew/shrank: pull to the bottom if we were parked there, otherwise
     // re-check (a shrink can land us back at the bottom on its own).
     const ro = new ResizeObserver(() => {
@@ -988,6 +990,7 @@ export function App() {
       // Still on our way back to where you were reading: re-aim, and let none of
       // the follow policy below see the half-settled positions on the way.
       if (restoreTo.current) { applyRestore(); prev = el.scrollTop; return; }
+      if (landing) { prev = el.scrollTop; return; }
       if (!stickRef.current) {
         // Content moved, not you — so this can only re-arm follow by landing
         // exactly on the end (see stickOnResize). Running the gesture test here
@@ -1018,11 +1021,44 @@ export function App() {
     };
     el.addEventListener("click", reading);
     el.addEventListener("keydown", reading);
-    // Touch the scroller mid-restore and it's yours again — 2s of re-aiming
-    // would otherwise fight you.
-    const giveUp = () => endRestore();
+    // Touch the scroller mid-restore or mid-landing and it's yours again — 2s of
+    // re-aiming (or an answer's glide) would otherwise fight you.
+    const giveUp = () => { endRestore(); landing = false; };
     el.addEventListener("wheel", giveUp, { passive: true });
     el.addEventListener("touchstart", giveUp, { passive: true });
+    // An answer landing live (RunStream FinalResult) is drawn whole at its full
+    // height. Followed, the snap above would leave you on its last line. Move
+    // the view once instead: glide its first line to the jump line (86px =
+    // Terminal's 62px padding + Transcript's scrollPaddingStart), or to the end
+    // when it fits. If you're reading elsewhere, nothing moves. The glide
+    // re-aims every frame. The box starts out skipped (.vskip-card's
+    // content-visibility) at a 60px guess, and the WORK plate above it is still
+    // shutting its live row (~300ms), so a target taken once lands it 37px short.
+    const landed = (e: Event) => {
+      if (!stickRef.current || restoreTo.current || staleTurns.current) return;
+      landing = true;
+      glideRef.current = true;
+      const box = e.target as Element;
+      const ms = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? 0 : 420;
+      const s0 = el.scrollTop;
+      let t0 = 0;
+      const step = (now: number) => {
+        // Called off: a wheel or a touch took over (giveUp), or another session is opening.
+        if (!landing || staleTurns.current || restoreTo.current) { landing = false; glideRef.current = false; return; }
+        t0 ||= now;
+        const p = ms ? Math.min(1, (now - t0) / ms) : 1;
+        const head = el.scrollTop + box.getBoundingClientRect().top - el.getBoundingClientRect().top - 86;
+        const top = Math.max(s0, Math.min(head, el.scrollHeight - el.clientHeight));
+        el.scrollTop = s0 + (top - s0) * (1 - (1 - p) ** 3);
+        if (p < 1 && box.isConnected) { requestAnimationFrame(step); return; }
+        landing = false;
+        glideRef.current = false;
+        stickRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 1;
+        setAtBottom(stickRef.current);
+      };
+      requestAnimationFrame(() => requestAnimationFrame(step));
+    };
+    el.addEventListener("answer-landed", landed);
     if (stickRef.current) requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
     return () => {
       el.removeEventListener("scroll", sync);
@@ -1030,6 +1066,7 @@ export function App() {
       el.removeEventListener("keydown", reading);
       el.removeEventListener("wheel", giveUp);
       el.removeEventListener("touchstart", giveUp);
+      el.removeEventListener("answer-landed", landed);
       ro.disconnect();
     };
   }, [view, showDashboard, keepPlace, applyRestore, endRestore]);

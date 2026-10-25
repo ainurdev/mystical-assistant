@@ -34,57 +34,25 @@ import {
   type Shape, type Tier, type ToolKind,
 } from "../lib/tools";
 
-// Result blocks already "printed" this session — guards against re-typing when a
-// session is reopened or the transcript re-renders.
-const typedResults = new Set<string>();
+// Answers already landed this session — a reopened session or a re-render draws
+// them at once.
+const landedResults = new Set<string>();
 
-/** Types `text` out left-to-right (plain) the first time a live result lands,
- *  then swaps to formatted Markdown. Non-live results render instantly. */
-function Typewriter({
-  text,
-  animate,
-  idKey,
-  className,
-}: {
-  text: string;
-  animate: boolean;
-  idKey: string;
-  className?: string;
-}) {
-  // -1 is "done typing". A `n >= text.length` test can't stand in for it: `text`
-  // grows under a mounted block when FinalResult folds the ask-back question back
-  // into the body (the turn stopped being the last one), and a finished block that
-  // falls back to the plain branch prints raw markdown under a stuck caret.
-  const [n, setN] = useState(() => (animate && !typedResults.has(idKey) ? 0 : -1));
-
-  useEffect(() => {
-    if (n < 0) return;
-    typedResults.add(idKey);
-    const step = Math.max(1, Math.ceil(text.length / 60)); // ~60 frames ≈ 2.1s, capped
-    const id = setInterval(() => {
-      setN((p) => {
-        const next = p + step;
-        if (next >= text.length) {
-          clearInterval(id);
-          return -1;
-        }
-        return next;
-      });
-    }, 35);
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  if (n < 0) return <Markdown className={className}>{text}</Markdown>;
-  return (
-    <div className={`${className ?? ""} whitespace-pre-wrap break-words`}>
-      {text.slice(0, n)}
-      <span
-        className="ml-px inline-block h-[1em] w-[7px] translate-y-[2px] bg-primary align-middle"
-        style={{ animation: "caret 1s steps(1) infinite" }}
-      />
-    </div>
-  );
+/** Timing for an answer landing live (index.css `.res[data-land]`). The answer is
+ *  complete when it arrives — stream-json hands over whole text blocks — so it is
+ *  drawn whole, formatted, at its full height: nothing below it moves. Its
+ *  paragraphs then fade in three at a time. A paragraph is a top-level block, or
+ *  one item of a top-level list (its sub-list goes with it). The steps share at
+ *  most 1.5s, so a long answer doesn't drip. It replaced a typewriter that
+ *  replayed raw markdown for 2.1s, then reflowed: 42 height changes on an
+ *  ordinary answer, each one moving the followed view. */
+function stagger(box: HTMLElement) {
+  const md = box.querySelector(".md");
+  const beats = md ? [...md.children].flatMap((el) => (el.tagName === "UL" || el.tagName === "OL" ? [...el.children] : [el])) : [];
+  const last = Math.max(0, Math.ceil(beats.length / 3) - 1);
+  const gap = Math.min(380, 1500 / Math.max(1, last));
+  beats.forEach((el, i) => (el as HTMLElement).style.setProperty("--d", `${Math.round(60 + Math.floor(i / 3) * gap)}ms`));
+  box.querySelector<HTMLElement>(".res-fold")?.style.setProperty("--d", `${Math.round(60 + last * gap)}ms`);
 }
 
 /** Every tool card is drawn in its own accent (see lib/tools) — this is the two
@@ -3201,7 +3169,16 @@ export function FinalResult({
   askDocked?: boolean;
 }) {
   const h12 = useClock12();
-  const flash = animate && !typedResults.has(idKey);
+  // Live, the first time it lands (stagger). App's follow policy hears it land
+  // and moves the view once, to its first line when it's taller than the view.
+  const [land] = useState(() => animate && !landedResults.has(idKey));
+  const boxRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!land || !boxRef.current) return;
+    landedResults.add(idKey);
+    stagger(boxRef.current);
+    boxRef.current.dispatchEvent(new Event("answer-landed", { bubbles: true }));
+  }, [land, idKey]);
   const drawn = useMemo(() => (view ? jobView(view, result) : null), [view, result]);
   // The CLI answers a slash command it doesn't have with one line and a clean
   // exit, so the turn arrives is_error:false and drew green — "RESULT // OK",
@@ -3216,7 +3193,7 @@ export function FinalResult({
   const lines = body.split("\n").length;
   // A live result stays open — you're watching it land. Long ones from earlier in
   // the session arrive folded.
-  const [open, setOpen] = useState(flash || lines <= RESULT_FOLD_LINES);
+  const [open, setOpen] = useState(land || lines <= RESULT_FOLD_LINES);
   return (
     // `--tone` rather than four inline colours: the answer is the loudest thing
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
@@ -3225,10 +3202,7 @@ export function FinalResult({
     <div className="resblk relative my-2 pl-[var(--rail)]" data-bad={bad ? "" : undefined} data-paper={drawn ? "" : undefined}
       style={{ "--tone": tone } as React.CSSProperties}>
       <RailNode />
-      <div
-        className="res group/res"
-        style={flash ? { animation: "resultflash 1.2s ease both" } : undefined}
-      >
+      <div ref={boxRef} className="res group/res" data-land={land ? "" : undefined}>
         <div className="res-head">
           <span className="res-lab">{label ?? (dossier ? (bad ? "ANSWER // ERROR" : "ANSWER") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
           {drawn && view?.job.kind && <span className="res-kind"><JobTag job={view.job} /></span>}
@@ -3250,7 +3224,7 @@ export function FinalResult({
         {drawn ?? (body && (
           <div className="res-body relative">
             <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
-              <Typewriter text={body} animate={animate} idKey={idKey} className="leading-relaxed text-foreground-bright" />
+              <Markdown className="leading-relaxed text-foreground-bright">{body}</Markdown>
             </div>
             {!open && <div className="res-fade" aria-hidden />}
           </div>

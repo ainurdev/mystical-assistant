@@ -1939,6 +1939,18 @@ input {
   font-size: var(--t95); letter-spacing: 1.5px; color: var(--txd);
 }
 .res-fold:hover { color: var(--txb); }
+/* An answer landing live (RunStream stagger): drawn whole at its full height, so
+   nothing moves, and its paragraphs fade in where they already sit, three at a
+   time. `backwards`, not `both`: a step that has played leaves nothing on the
+   element. */
+@media (prefers-reduced-motion: no-preference) {
+  .res[data-land] > .res-head { animation: landfade .22s ease-out backwards; }
+  .res[data-land] .md > :not(ul, ol), .res[data-land] .md > :is(ul, ol) > li {
+    animation: landin .4s cubic-bezier(.2,.8,.2,1) var(--d, 0ms) backwards; }
+  .res[data-land] > .res-fold { animation: landfade .4s ease-out var(--d, 0ms) backwards; }
+}
+@keyframes landin { from { opacity: 0; transform: translateY(10px); } }
+@keyframes landfade { from { opacity: 0; } }
 
 /* === RIVENDELL JOBS =========================================================
    A Rivendell job's session reads as the job (components/JobPlate, JobBar,
