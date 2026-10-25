@@ -736,3 +736,21 @@ def test_media_serves_nothing_else(repo):
     _write(repo, "docs/secret.webp", "x")
     for name in ("notes.txt", "../secret.webp", "..%2Fsecret.webp", "missing.webp", "Upper.webp", "a.b.webp", ""):
         assert _media_get(name)["code"] == 404, name
+
+
+def test_retry_keeps_a_note_that_only_names_a_place(repo, origin, monkeypatch):
+    whatsnew.boot()
+    _change(origin, "projects-tab", "---\narea: Projects\nplace: settings:projects\n---\nEvery repo in one list.")
+    _run(origin, "add", "-A")
+    _run(origin, "commit", "-qm", "projects: a tab")
+    g.pull(repo)
+    whatsnew.boot().join(10)                                     # the fallback, with the note
+    monkeypatch.setattr(aifeatures, "enabled", lambda k: k == "changelog")
+    prompts = []
+    reply = json.dumps({"headline": "Projects", "bullets": ["Projects — a tab", "Repos — listed"], "go": ["rail:git", None], "rest": 0})
+    monkeypatch.setattr(whatsnew.runner, "run_blocking", lambda chat, prompt, **k: prompts.append(prompt) or (reply, None, 0, False))
+    whatsnew.retry()
+    row = notices.feed()[0]
+    assert prompts[0].endswith("ALREADY TOLD, leave out: Projects")
+    assert row["body"].splitlines() == ["Projects — Every repo in one list.", "Repos — listed"]
+    assert row["meta"]["go"] == ["settings:projects", None]

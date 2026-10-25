@@ -205,8 +205,10 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
     if (ids.length) void api.noticesRead(ids).then(load, () => { /* next poll */ });
   };
   // Closes the way UPDATE's popover does: a press outside it, or Escape (which shuts find first);
-  // a picture open full size has both to itself. ↑ ↓ step, unless a note is being written.
-  // Any key stops ▶ NEW.
+  // a picture open full size has both to itself. The press is heard in the capture phase: the
+  // clip viewer shuts on pointerdown, and by bubbling time this effect has re-run with zoom gone.
+  // ↑ ↓ step, unless a note is being written. Any key stops ▶ NEW, but its own Enter/Space
+  // (that click toggles it, and must see it playing).
   useEffect(() => {
     if (!open) return;
     const onDown = (e: PointerEvent) => {
@@ -215,13 +217,13 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
     };
     const onKey = (e: KeyboardEvent) => {
       if (zoom) return;
-      setPlaying(false);
+      if (!((e.key === "Enter" || e.key === " ") && (e.target as Element | null)?.closest?.(".clg-new"))) setPlaying(false);
       if (e.key === "Escape") { e.stopPropagation(); if (q !== null) setQ(null); else close(); return; }
       if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !composing) { e.preventDefault(); stepRef.current(e.key === "ArrowDown" ? 1 : -1); }
     };
-    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
-    return () => { document.removeEventListener("pointerdown", onDown); document.removeEventListener("keydown", onKey); };
+    return () => { document.removeEventListener("pointerdown", onDown, true); document.removeEventListener("keydown", onKey); };
   }, [open, rows, q, composing, zoom]);
   // the picked row stays in view as ↑ ↓ (or ▶ NEW) move it
   useEffect(() => { listRef.current?.querySelector('[data-on="1"]')?.scrollIntoView({ block: "nearest" }); }, [pick, q]);

@@ -609,13 +609,14 @@ def _decorate(c: dict) -> bool:
 
 
 def _notes_of(row: dict) -> list:
-    """A row's bullets that came from notes (they carry a state or a picture), as notes
-    again, so a rewrite keeps their words first."""
+    """A row's bullets that came from notes, as notes again, so a rewrite keeps their words
+    first: a state or a picture marks one, and so does a place, since retry() only rewrites
+    fallback rows and the fallback never names a place."""
     m = row["meta"]
     bullets = [b for b in row["body"].split("\n") if b]
     col = {k: (m.get(k) if isinstance(m.get(k), list) else []) + [None] * len(bullets) for k in ("go", "when", "media")}
     return [{"area": _area(b), "text": b.split(" — ", 1)[1], "place": col["go"][i], "when": col["when"][i],
-             "media": col["media"][i]} for i, b in enumerate(bullets) if _area(b) and (col["when"][i] or col["media"][i])]
+             "media": col["media"][i]} for i, b in enumerate(bullets) if _area(b) and (col["when"][i] or col["media"][i] or col["go"][i])]
 
 
 # --- the notes file ---------------------------------------------------------------------
