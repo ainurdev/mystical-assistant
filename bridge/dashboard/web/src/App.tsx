@@ -235,6 +235,8 @@ export function App() {
   const [sessions, setSessions] = useState<SessionBrief[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [loadingSession, setLoadingSession] = useState(false); // true from select until its transcript first resolves
+  // The project a new session is being made in, until it opens (openBlank): the fresh screen's.
+  const [blankIn, setBlankIn] = useState<string | null>(null);
   // Latest transcript fetcher, so answering a permission/question can pull the
   // resolved card in immediately instead of waiting for the next poll tick.
   const refetchTurns = useRef<() => Promise<void>>(async () => {});
@@ -637,7 +639,9 @@ export function App() {
     if (sessionProject) openAnalyze(sessionProject, { path, branch: sessionBranch }, changed ? "changes" : undefined);
   }
 
-  function openSession(id: string) {
+  // `fresh`: a session just made, so there are no turns to wait for — the
+  // fresh screen New put up stays, with no loading state in between.
+  function openSession(id: string, fresh = false) {
     // Already the open one: re-opening would re-fetch and re-animate the chat
     // to land on what's already on screen.
     if (id === sessionIdRef.current) return;
@@ -656,7 +660,8 @@ export function App() {
     stickRef.current = !restoreTo.current;
     setAtBottom(stickRef.current);
     staleTurns.current = true;
-    setLoadingSession(true);
+    setLoadingSession(!fresh);
+    setBlankIn(null);
     setSessionId(id);
     setDoneIds((d) => { if (!d.has(id)) return d; const n = new Set(d); n.delete(id); return n; });
   }
@@ -1622,13 +1627,14 @@ export function App() {
   // which React has not updated yet for the session we just created.
   // Opening a new session means a round trip (a POST, and for a worktree a git
   // add that takes seconds) — spent staring at the session you just left. So the
-  // chat opens on nothing first and the transcript's own loading state carries
-  // the wait; the real session drops in behind it.
-  function openBlank() {
+  // chat opens on the fresh screen of `project` first (its prompt line says what
+  // a worktree is waiting on), and the real session takes it over as it is.
+  function openBlank(project?: string) {
     skipRestore.current = true;
     setSessionId(null);
     setTurns([]);
-    setLoadingSession(true);
+    setBoot(null);             // the session left's; its fresh screen would say it
+    setBlankIn(project ?? null);
     toChat();
   }
 
@@ -1636,11 +1642,11 @@ export function App() {
     project: string, prompt: string,
     opts?: { images?: string[]; title?: string; force?: boolean; cwd?: string },
   ): Promise<boolean> {
-    openBlank();
+    openBlank(project);
     try {
       const { session } = await api.createSession(project, opts?.cwd, opts?.title);
       setSessions((prev) => [session, ...prev]);
-      openSession(session.id);
+      openSession(session.id, true);
       toChat();
       // Its profile's picks, else this browser's: what its composer shows once
       // it opens, not the picks of the session it was started from.
@@ -1682,12 +1688,12 @@ export function App() {
    *  waits in its composer, unsent (the RIVENDELL tab's WORK ON IT). */
   /** A new session in `project` (the new session's id, or null when it couldn't be made). */
   async function newSession(project: string, draft?: string, branch?: string, title?: string): Promise<string | null> {
-    openBlank();
+    openBlank(project);
     try {
       const { session } = await api.createSession(project, undefined, title, branch);
       setSessions((prev) => [session, ...prev]);
       if (draft) setDrafts((d) => ({ ...d, [session.id]: draft }));
-      openSession(session.id);
+      openSession(session.id, true);
       return session.id;
     } catch { setLoadingSession(false); return null; }
   }
@@ -1839,7 +1845,7 @@ export function App() {
 
   async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string,
                                  firstPrompt?: string) {
-    openBlank();
+    openBlank(rel);
     // `git worktree add` checks out the whole tree — seconds on a big repo, spent
     // on a blank chat that says nothing about what it's waiting for. Same boot
     // line a starting child gets; the transcript's first poll clears it.
@@ -1853,7 +1859,7 @@ export function App() {
       if (firstPrompt) { await startIn(rel, firstPrompt, { cwd: wt.path }); return; }
       const { session } = await api.createSession(rel, wt.path);
       await loadSessions();
-      openSession(session.id);
+      openSession(session.id, true);
     } catch (e) { setBoot(null); setLoadingSession(false); notify("error", (e as Error).message); }
   }
 
@@ -2713,7 +2719,7 @@ export function App() {
 
               {/* CENTER */}
               <Terminal
-                view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={activeProject}
+                view={view} onView={setView} selected={selected} sessionId={sessionId} activeProject={blankIn ?? activeProject}
                 // "Your N turns" only on your own session sent back: anywhere else the hop's `from` is the sender's word.
                 teamMe={team?.inbox.find((r) => r.id === selected?.team?.share)?.relation === "back"
                   ? team?.outbox.find((o) => !o.queued)?.from.id ?? null : null}

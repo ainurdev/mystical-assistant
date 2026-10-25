@@ -995,6 +995,9 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
   const ind = state && hud?.indicator === "nyan" ? (
     <div className="dwork-ind"><WorkingIndicator hud={hud} events={events} started={started} /></div>
   ) : null;
+  // In with the stream, and a card that starts empty (the turn just sent) a
+  // beat behind your prompt. Fixed at mount: a delay changed mid-play jumps it.
+  const [enter] = useState(() => (animate ? `streamIn .34s cubic-bezier(.2,.8,.2,1) ${steps ? 0 : 90}ms both` : undefined));
   const fresh = pics.filter((p) => p.unseen);
   const words = workTitle(stepsTitle(cats), notes);
   const picsWord = `${pics.length} picture${pics.length === 1 ? "" : "s"}`;
@@ -1009,7 +1012,7 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
       data-now={line ? "" : undefined}
       data-err={failed ? "" : undefined}
       data-shots={fresh.length ? "new" : undefined}
-      style={animate ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}
+      style={enter ? { animation: enter } : undefined}
     >
       <button
         ref={head}
@@ -2319,6 +2322,10 @@ export const RunStream = memo(function RunStream({
     return s < 100 ? s.toFixed(1) : String(Math.round(s));
   };
   const [openFolds, setOpenFolds] = useState<Set<number>>(new Set());
+  // A boot step seen and then gone means Claude is up: an empty card says
+  // Thinking from there, not Starting again.
+  const booted = useRef(false);
+  if (boot) booted.current = true;
   // A WORK zone's chip reads lib/seenshots: re-render when a shot gets seen.
   useSeenShots();
   const pendingIds = new Set(pending.map((p) => p.request_id));
@@ -2955,6 +2962,13 @@ export const RunStream = memo(function RunStream({
         ...(quiet ? w.map(rowOf) : []),
       ];
     }).filter((r) => r !== null);
+  // A zone is keyed by the tier-1/2 row before it (or a card drawn at the
+  // foot), so the zone you opened stays the same zone as rows land, and the
+  // empty live card (below) is already the zone the next event opens.
+  const zoneKey = (start: number) => {
+    while (start > 0 && (waiting(start - 1) || !topAt(start - 1))) start--;
+    return `z${start}`;
+  };
   const workZone = (zsegs: Seg[], lastZone: boolean) => {
     const { cats, pics, notes, steps, failed, running, out, live, said, openAt, last, span } = tally(zsegs);
     // The last zone of a running turn is live: a tool out is WORKING since it
@@ -2989,13 +3003,9 @@ export const RunStream = memo(function RunStream({
         />
       );
     });
-    // Keyed by the tier-1/2 row before it (or a card drawn at the foot), so the
-    // zone you opened stays the same zone as rows land.
-    let start = zsegs[0].start;
-    while (start > 0 && (waiting(start - 1) || !topAt(start - 1))) start--;
     return (
       <WorkZone
-        key={`z${start}`}
+        key={zoneKey(zsegs[0].start)}
         cats={cats}
         notes={notes}
         steps={steps}
@@ -3029,21 +3039,42 @@ export const RunStream = memo(function RunStream({
   }
   const galleryAt = (i: number) => zoneShots.get(i) ?? shots;
   // Whether a WORK zone is there to carry the working indicator (the last zone,
-  // while it runs); otherwise the indicator draws at the foot — before the
-  // first event, or after a steer the model is still reading.
+  // while it runs); otherwise there's none yet — before the first event, or
+  // after a steer the model is still reading.
   const carried = working && zones.length > 0 && zones[zones.length - 1].kind === "work";
+  // The words in the flow, the work under a row each (lib/segments) — or, in
+  // DOSSIER, under one WORK zone per stretch (lib/dossier).
+  const rows = dossier
+    ? zones.map((z, i) =>
+        z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs, i === zones.length - 1))
+    : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)));
+  // DOSSIER: with no zone to carry it, the card is there anyway, live and
+  // empty, its line saying what the turn waits on (the boot step). It is keyed
+  // as the zone the next event opens, in the same list, so that zone is this
+  // card filling in: no other indicator to swap out when the work starts.
+  const blank = dossier && working && !carried;
+  if (blank) {
+    const key = zoneKey(events.length);
+    // after a steer or a card, or once Claude is up: the model is on it ("t",
+    // a wordless Thinking line's key, so a first thought without words won't roll)
+    const up = key !== "z0" || (booted.current && !boot);
+    const verb = boot ? boot[0].toUpperCase() + boot.slice(1) : up ? "Thinking" : "Starting";
+    rows.push(
+      <WorkZone key={key} cats={[]} notes={0} steps={0} failed={0} pics={[]} gallery={[]}
+        state="think" since={events.length ? events[events.length - 1].at : turnStarted} hud={hud} events={events}
+        started={turnStarted} now={{ key: up ? "t" : "boot", mark: "think", verb, what: "", code: "", more: 0 }}
+        span="" chapters={0} defaultOpen={foldsOpen} animate={animate}>
+        {[]}
+      </WorkZone>,
+    );
+  }
   return (
     // vskip-card: a turn runs to hundreds of events, so each card skips layout
     // and paint while it's off-screen (see .vskip-card in index.css).
     <div className="rstream space-y-2 vskip-card">
-      {boot ? <BootRow text={boot} /> : null}
-      {/* The words in the flow, the work under a row each (lib/segments) —
-          or, in DOSSIER, under one WORK zone per stretch (lib/dossier). */}
-      {dossier
-        ? zones.map((z, i) =>
-            z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs, i === zones.length - 1))
-        : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)))}
-      {working && !carried ? <WorkingIndicator hud={hud} events={events} boot={boot} started={turnStarted} /> : null}
+      {boot && !blank ? <BootRow text={boot} /> : null}
+      {rows}
+      {working && !carried && !dossier ? <WorkingIndicator hud={hud} events={events} boot={boot} started={turnStarted} /> : null}
     </div>
   );
 });

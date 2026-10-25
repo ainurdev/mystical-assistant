@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, type DevServerInfo, type GitCommit, type GitStatus,
          type SessionBrief, type SessionStatus } from "../api";
 import { localRows, mergeable, mergeClause } from "../lib/freshlocal";
@@ -51,9 +51,16 @@ export function FreshPanel({ project, branch, run, onOpenRun, local }: {
   const [starting, setStarting] = useState(false);
   const [runErr, setRunErr] = useState("");
 
+  // Another project's facts are never shown for this one. A branch named late
+  // (the session New made landing under its fresh screen) keeps what's drawn
+  // until its own facts land, or the panel would fold and grow back.
+  const drawn = useRef(project);
   useEffect(() => {
     let live = true;
-    setGit(null); setCommit(null); setRunCmd(undefined); setTree(null);
+    if (drawn.current !== project) {
+      drawn.current = project;
+      setGit(null); setCommit(null); setRunCmd(undefined); setTree(null);
+    }
     api.git(project, branch || undefined).then((g) => live && setGit(g)).catch(() => {});
     api.gitLog(project, 1, branch || undefined)
       .then((r) => live && setCommit(r.commits[0] ?? null)).catch(() => {});

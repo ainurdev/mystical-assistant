@@ -528,6 +528,8 @@ body {
 /* mpulse, but keeping the dot's own glow under the ring so it never reads as flat between beats, and themed off --ok rather than a baked-in green. */
 @keyframes workpulse { 0% { box-shadow: 0 0 8px var(--ok), 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); } 70% { box-shadow: 0 0 8px var(--ok), 0 0 0 6px transparent; } 100% { box-shadow: 0 0 8px var(--ok), 0 0 0 0 transparent; } }
 @keyframes mfadeup { from { transform: translateY(8px); filter: brightness(1.6); } to { transform: none; filter: none; } }
+/* the fresh screen lifting off as the first turn lands under it (Terminal FreshState) */
+@keyframes freshleave { to { opacity: 0; transform: translateY(-10px) scale(.985); } }
 @keyframes mslide { from { transform: translateX(10px); filter: brightness(1.5); } to { transform: none; filter: none; } }
 @keyframes mpop { from { opacity: 0; transform: translateY(10px) scale(0.98); } to { opacity: 1; transform: none; } }
 @keyframes grow { from { width: 0; } }
@@ -2775,7 +2777,9 @@ input {
 @media (prefers-reduced-motion: reduce) {
   [data-style="dossier"] :is(.dwork[data-live] .dwork-node::before, .dwork[data-live] .dwork-node::after) { display: none; }
 }
-[data-style="dossier"] .dwork-l2 { grid-column: 2; grid-row: 2; display: flex; align-items: center; min-width: 0; margin-top: 7px; }
+/* min-height: a chip's tile, so a card that starts empty (RunStream, the turn
+   just sent) doesn't grow when its first step lands */
+[data-style="dossier"] .dwork-l2 { grid-column: 2; grid-row: 2; display: flex; align-items: center; min-width: 0; min-height: 20px; margin-top: 7px; }
 /* the chips never clip (a sliver of a tile reads as a stray bar) */
 [data-style="dossier"] .dwork-kinds { display: flex; flex: none; gap: 13px; }
 [data-style="dossier"] .dwork-k { --m: var(--d-tool); display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--txd); }
