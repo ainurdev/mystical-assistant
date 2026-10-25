@@ -135,6 +135,7 @@ export function TeamSendSheet({ what, teammates, outbox = [], to: first, onClose
   // A turn that was still running when it went is new to them again now it has an answer.
   const newTurns = had && preview ? preview.turns - num(had.last.meta.turns) + num(had.last.meta.unfinished) : 0;
   const newPics = had && preview ? preview.pictures - num(had.last.meta.pictures) : 0;
+  const picsLine = preview && (preview.pictures_total ?? 0) > preview.pictures ? `${preview.pictures} of ${preview.pictures_total}` : `${preview?.pictures ?? 0}`;
   const waits = what.kind === "session" && !!preview?.running && when === "end";
   const label = waits ? "SEND WHEN IT ENDS" : had ? (newTurns > 0 || newPics > 0 ? "SEND UPDATE" : "SEND AGAIN") : "SEND";
   const nowSec = Date.now() / 1000;
@@ -239,7 +240,7 @@ export function TeamSendSheet({ what, teammates, outbox = [], to: first, onClose
               <div style={{ minWidth: 0, flex: 1 }}>
                 <Box on locked title="The transcript" hint="prompts, answers and steps, as you see them" />
                 <Box on={pictures && !!preview?.pictures} locked={!preview?.pictures} onToggle={() => setPictures((v) => !v)}
-                  title={`Pictures · ${preview?.pictures ?? 0}`} hint="the screenshots in its WORK zones" />
+                  title={`Pictures · ${picsLine}`} hint="the screenshots in its WORK zones" />
                 <Box on={code} onToggle={() => setCode((v) => !v)} title="The code"
                   hint="this checkout with its uncommitted changes; it opens on a branch of its own" />
                 {preview?.earlier && (

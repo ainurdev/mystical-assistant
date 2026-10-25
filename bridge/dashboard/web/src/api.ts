@@ -1075,6 +1075,7 @@ export interface TeamOverview {
 export interface TeamPreview {
   title: string; project: string; repo: string | null; branch: string | null;
   turns: number; pictures: number; redacted: number;
+  pictures_total?: number;  // more than `pictures` when the cap left some out
   thread?: string;     // ties its sends together (absent from an older bridge)
   running?: boolean;   // a turn is going in it now
   unfinished?: number; // turns of it that are running (they'd reach them unfinished)

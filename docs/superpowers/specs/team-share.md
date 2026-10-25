@@ -69,7 +69,7 @@ this machine, because the dashboard binds 127.0.0.1. Pictures and files have no 
   | What | Cap |
   |---|---|
   | Transcript | 8 MB gzipped |
-  | Pictures | 20, at 5 MB each |
+  | Pictures | 100, at 5 MB each |
   | File | 25 MB |
   | Code | 9 MB |
 

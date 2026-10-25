@@ -93,7 +93,11 @@ export function shareFacts(kind: string, meta: Record<string, unknown>): { proje
   const project = repo.split("/").pop() || (typeof meta.project === "string" ? meta.project.split("/").pop() : "") || "";
   const bits: string[] = [];
   if (typeof meta.turns === "number") bits.push(`${meta.turns} turn${meta.turns === 1 ? "" : "s"}`);
-  if (typeof meta.pictures === "number" && meta.pictures > 0) bits.push(`${meta.pictures} picture${meta.pictures === 1 ? "" : "s"}`);
+  if (typeof meta.pictures === "number" && meta.pictures > 0) {
+    // The cap bit: "100 of 148 pictures", so nobody thinks 100 was all of them.
+    const of = typeof meta.pictures_total === "number" && meta.pictures_total > meta.pictures ? ` of ${meta.pictures_total}` : "";
+    bits.push(`${meta.pictures}${of} picture${meta.pictures === 1 && !of ? "" : "s"}`);
+  }
   if (meta.code === true) bits.push("code");
   return { project: project || undefined, branch: typeof meta.branch === "string" ? meta.branch : undefined, bits };
 }

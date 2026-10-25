@@ -88,7 +88,7 @@ _JSON_MAX = 64 * 1024 * 1024       # a transcript, unzipped
 _UNPACK_MAX = 128 * 1024 * 1024    # code, unpacked (device_ask's _RAW_MAX)
 _UNPACK_FILES = 20000              # entries in it: a gzip of a million empty ones is small
 _PIC_MAX = 5 * 1024 * 1024
-_PICS = 20
+_PICS = 100
 _ATTACH = 8                        # the composer's own ceiling (UPLOAD_MAX_COUNT)
 _TITLE_MAX, _NOTE_MAX = 200, 2000
 _TEXT_MAX = 20000                  # one field of one event
@@ -322,6 +322,7 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
     up = os.path.realpath(config.UPLOAD_DIR) + os.sep
     pics: list = []
     names: dict = {}
+    left = [0]             # real pictures the cap kept out: the sheet and the card say so
 
     def picture(path):
         if not pictures or not isinstance(path, str):
@@ -329,12 +330,15 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
         if path in names:
             return names[path]
         real = os.path.realpath(path)
-        if len(pics) >= _PICS or not real.startswith(up) or not os.path.isfile(real) \
-                or os.path.getsize(real) > _PIC_MAX:
+        if not real.startswith(up) or not os.path.isfile(real) or os.path.getsize(real) > _PIC_MAX:
             return None
         with open(real, "rb") as f:
             ext = _img_ext(f.read(16))
         if not ext:
+            return None
+        if len(pics) >= _PICS:
+            names[path] = None
+            left[0] += 1
             return None
         names[path] = f"pic-{len(pics) + 1}{ext}"
         pics.append((names[path], real))
@@ -355,7 +359,8 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
     cwd = _session_dir(s)
     meta = {"project": s.get("project"), "repo": github.remote_slug(cwd) if cwd else None,
             "branch": (git.current_branch_cached(cwd) or None) if cwd else None, "turns": len(turns),
-            "pictures": len(pics), "code": False, "commitSha": None, "redacted": redacted, "thread": thread,
+            "pictures": len(pics), "pictures_total": len(pics) + left[0], "code": False, "commitSha": None,
+            "redacted": redacted, "thread": thread,
             "unfinished": sum(1 for x in turns if x["status"] == "running")}
     return {"payload": payload, "pictures": pics, "meta": meta, "title": title,
             "earlier": {"from": earlier["from"].get("name"), "turns": len(earlier["turns"])} if earlier else None}
@@ -423,7 +428,7 @@ def preview(session_id: str) -> dict:
     p = pack_session(session_id)
     m = p["meta"]
     return {"title": p["title"], "project": m["project"], "repo": m["repo"], "branch": m["branch"],
-            "turns": m["turns"], "pictures": m["pictures"], "redacted": m["redacted"],
+            "turns": m["turns"], "pictures": m["pictures"], "pictures_total": m["pictures_total"], "redacted": m["redacted"],
             "thread": m["thread"], "running": _running(session_id), "unfinished": m["unfinished"],
             "earlier": p["earlier"]}
 
@@ -730,6 +735,7 @@ def _clean_meta(meta, kind: str) -> dict:
             "branch": _one_line(m.get("branch"), 200) or None,
             "turns": int(m["turns"]) if _num(m.get("turns")) else None,
             "pictures": int(m["pictures"]) if _num(m.get("pictures")) else 0,
+            "pictures_total": int(m["pictures_total"]) if _num(m.get("pictures_total")) else None,
             "code": m.get("code") is True,
             "commitSha": sha if isinstance(sha, str) and _SHA.fullmatch(sha) else None,
             "thread": thread if isinstance(thread, str) and _THREAD.fullmatch(thread) else None}

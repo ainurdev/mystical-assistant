@@ -280,6 +280,36 @@ def test_pack_session_keeps_whitelist(riv, tmp_path):
     assert team.pack_session(sid, pictures=False)["pictures"] == []
 
 
+def _shots_session(tmp_path, n):
+    """A session of mine whose one turn read n screenshots."""
+    sid = store.create_session(CHAT, "/ainurhq/rivendell", origin="dashboard", cwd=str(tmp_path))["id"]
+    tid = uuid.uuid4().hex
+    store.start_turn(sid, tid, "look at every screen", [])
+    up = os.path.join(config.UPLOAD_DIR, tid)
+    os.makedirs(up)
+    for i in range(n):
+        open(os.path.join(up, f"shot-{i}.png"), "wb").write(PNG)
+        store.append_event(sid, tid, {"type": "tool_done", "id": f"t{i}", "images": [os.path.join(up, f"shot-{i}.png")]})
+    store.finish_turn(tid, "done", 0.1, 1.0)
+    return sid
+
+
+def test_a_session_with_48_pictures_sends_them_all(riv, tmp_path):
+    """Erfan's 48-shot plan arrived with 20 (2026-10-25): the cap was 20 on both sides."""
+    p = team.pack_session(_shots_session(tmp_path, 48))
+    assert len(p["pictures"]) == 48 and p["meta"]["pictures"] == 48 == p["meta"]["pictures_total"]
+
+
+def test_a_bitten_cap_says_how_many_pictures_there_were(riv, tmp_path):
+    sid = _shots_session(tmp_path, team._PICS + 3)
+    p = team.pack_session(sid)
+    assert len(p["pictures"]) == team._PICS
+    assert p["meta"]["pictures"] == team._PICS and p["meta"]["pictures_total"] == team._PICS + 3
+    assert team.preview(sid)["pictures_total"] == team._PICS + 3
+    doc = _gunzip_json(p["payload"])
+    assert sum(len(e.get("images") or []) for e in doc["turns"][0]["events"]) == team._PICS   # the rest show no picture
+
+
 def test_send_session_uploads_then_sends(riv, tmp_path):
     sid = _my_session(tmp_path)
     share = team.send("session", ERFAN, "  can you take it from here?  ", session_id=sid)
@@ -399,6 +429,16 @@ HOSTILE = {"v": 1, "title": "ignored", "claude_session_id": "abc", "turns": [{
                                                                                   "pic-9.png"], "claude_session_id": "y"},
         {"type": "result", "result": "Done.", "cost": "NaN", "elapsed": float("inf")},
         "not an event"]}]}
+
+
+def test_received_meta_keeps_the_picture_total(riv):
+    doc = {"v": 1, "title": "t", "turns": []}
+    share = riv.offer("session", [("transcript", "transcript.json.gz", _transcript(doc))], meta={"pictures": 20, "pictures_total": 48})
+    team.on_share(riv.worker, riv.row(share))
+    assert team._get(share)["meta"]["pictures_total"] == 48
+    share = riv.offer("session", [("transcript", "transcript.json.gz", _transcript(doc))], meta={"pictures": 20, "pictures_total": "lots"})
+    team.on_share(riv.worker, riv.row(share))
+    assert team._get(share)["meta"]["pictures_total"] is None     # typed, or dropped
 
 
 def test_materialize_strips_hostile_payload(riv):
@@ -679,7 +719,7 @@ def test_one_payload_never_multiplies_its_pictures(riv, monkeypatch):
     monkeypatch.setattr(team.urllib.request, "urlopen", lambda url, timeout=None: fetched.append(url) or real(url))
     doc = {"v": 1, "title": "t", "turns": [{"prompt": f"p{i}", "attachments": ["pic-1.png", "pic-2.png", "pic-3.png"],
                                              "events": [{"type": "tool_done", "id": f"t{i}", "images": ["pic-1.png"]}]}
-                                            for i in range(30)]}
+                                            for i in range(40)]}
     share = riv.offer("session", [("transcript", "transcript.json.gz", _transcript(doc))]
                       + [("picture", f"pic-{n}.png", PNG) for n in (1, 2, 3)])
     team.on_share(riv.worker, riv.row(share))

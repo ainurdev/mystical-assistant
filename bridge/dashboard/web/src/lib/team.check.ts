@@ -47,6 +47,7 @@ eq(shareFacts("session", { repo: "ainurhq/rivendell", branch: "main", turns: 1, 
   { project: "rivendell", branch: "main", bits: ["1 turn", "4 pictures", "code"] }, "a session's facts");
 eq(shareFacts("session", { project: "/ainurhq/apex", turns: 3 }), { project: "apex", bits: ["3 turns"] }, "no repo: the folder");
 eq(shareFacts("file", { bytes: 1887436 }), { bits: ["1.8 MB"] }, "a file's size");
+eq(shareFacts("session", { turns: 2, pictures: 100, pictures_total: 148 }), { bits: ["2 turns", "100 of 148 pictures"] }, "a bitten cap says how many there were");
 eq([size(512), size(4096), size(-1), size("x")], ["512 B", "4 KB", "", ""], "sizes");
 
 // SENT TO YOU keeps a share until you open or continue it; SEEN (and the rail's count) take it after.
