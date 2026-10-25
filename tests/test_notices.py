@@ -547,14 +547,14 @@ def test_a_device_runs_end_rings_like_its_start(monkeypatch):
 
 
 def test_updates_group_kinds_and_defaults():
-    """Mystical's own changelog and a maintainer's note share one group, news
+    """Mystical's own changelog and the update waiting upstream share one group, news
     from the bridge, silent on Telegram until the user says otherwise."""
-    assert notices.CATALOG["updated"] == ("updates", "news", "bridge") == notices.CATALOG["note"]
-    assert notices.verb("updated") == "UPDATED" and notices.verb("note") == "NOTE"
+    assert notices.CATALOG["updated"] == ("updates", "news", "bridge") == notices.CATALOG["coming"]
+    assert notices.verb("updated") == "UPDATED" and "note" not in notices.CATALOG
     assert notices.prefs()["events"]["updates"] == {"pop": True, "sound": "none", "tg": "off"}
     assert notices.telegram_ok("updated") is False
     notices.set_prefs({"events": {"updates": {"tg": "always"}}})
-    assert notices.telegram_ok("note") is True
+    assert notices.telegram_ok("coming") is True
 
 
 def test_a_ready_meeting_brief_has_its_own_group_and_reaches_telegram_by_default():
@@ -591,16 +591,16 @@ def test_prefs_saved_before_teammates_went_always_move_to_always():
 
 
 def test_changelog_outlives_the_week_and_the_cap():
-    """The rail's changelog reads updates and notes however old, past the feed's
-    200 rows; the week's prune spares them and only them."""
+    """The rail's changelog reads updates however old, past the feed's 200 rows;
+    the week's prune spares them and only them."""
     upd = notices.emit("updated", "update:abc", title="Changelog moves to the rail", body="x")
     old = notices.emit("done", "s-old", title="old")
     with closing(store._connect()) as c:
         c.execute("UPDATE notices SET at=? WHERE id IN (?,?)", (time.time() - 30 * 86400, upd, old))
     for i in range(205):
         store.add_notice("done", f"s{i}", "t", "", {})
-    note = notices.emit("note", "note:2026-10-18 · Hi", title="Hi")    # the emit prunes
-    assert [r["id"] for r in notices.changelog()] == [note, upd]
+    coming = notices.emit("coming", "coming", title="Hi")              # the emit prunes
+    assert [r["id"] for r in notices.changelog()] == [coming, upd]
     assert notices.changelog()[1]["verb"] == "UPDATED" and notices.changelog()[1]["group"] == "updates"
     with closing(store._connect()) as c:
         assert c.execute("SELECT COUNT(*) FROM notices WHERE id=?", (old,)).fetchone()[0] == 0

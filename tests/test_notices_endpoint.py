@@ -110,27 +110,9 @@ def test_post_limit_wait_answers_the_offer(monkeypatch):
     assert answered == [(sid, None)]
 
 
-def test_get_changelog_is_updates_and_notes_only():
+def test_get_changelog_is_updates_only():
     notices.emit("pr_failing", "pr:o/r:x", title="#9 · x", body="lint")
     nid = notices.emit("updated", "update:abc", title="Changelog moves", body="a\nb")
     from bridge import selfupdate
     assert _call("GET", "/local/changelog", {}) == (200, {"notices": notices.changelog(), "project": selfupdate.project()})
     assert [n["id"] for n in notices.changelog()] == [nid]
-
-
-# --- POST /local/update/note -------------------------------------------------------
-
-def test_update_note_validates(monkeypatch):
-    from bridge import whatsnew
-    monkeypatch.setattr(whatsnew, "add_note", lambda t, b: (_ for _ in ()).throw(AssertionError("not reached")))
-    for bad in ({}, {"title": "  "}, {"title": "x" * 81}, {"title": "a\nb"},
-                {"title": "ok", "body": "y" * 601}, {"title": 5}):
-        assert _call("POST", "/local/update/note", bad)[0] == 400, bad
-
-
-def test_update_note_calls_add_note(monkeypatch):
-    from bridge import whatsnew
-    got = []
-    monkeypatch.setattr(whatsnew, "add_note", lambda t, b: got.append((t, b)) or (True, "pushed"))
-    code, obj = _call("POST", "/local/update/note", {"title": " Hello ", "body": "a\r\nb "})
-    assert code == 200 and obj == {"ok": True, "output": "pushed"} and got == [("Hello", "a\nb")]

@@ -1507,18 +1507,6 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": ok, "output": output})
         if path == "/local/update/publish":
             return self._publish_update(chat)
-        if path == "/local/update/note":
-            # The bell's SEND NOTE: a one-line title and some text for every install,
-            # written to docs/notes.md, committed and pushed (bridge/whatsnew.py).
-            title = body.get("title") if isinstance(body.get("title"), str) else ""
-            text = body.get("body") if isinstance(body.get("body"), str) else ""
-            title, text = title.strip(), text.replace("\r\n", "\n").strip()
-            if not title or len(title) > 80 or "\n" in title or len(text) > 600:
-                return self._json({"error": "a one-line title up to 80 characters, and up to "
-                                            "600 characters of text"}, 400)
-            from bridge import whatsnew
-            ok, output = whatsnew.add_note(title, text)
-            return self._json({"ok": ok, "output": output})
         if path.startswith("/local/move/"):
             from bridge import movejob
             got = movejob.post(path[len("/local/move/"):], body)

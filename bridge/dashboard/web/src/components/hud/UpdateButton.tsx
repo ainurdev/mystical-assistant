@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowDownToLine, ChevronRight, MessageSquareText } from "lucide-react";
+import { ArrowDownToLine, ChevronRight } from "lucide-react";
 import { api, type Notice, type UpdateInfo } from "../../api";
 import { notify } from "./Notifications";
 import { Bullets, Meta } from "./ChangelogButton";
-import { ago, notesOf } from "../../lib/notices";
+import { ago } from "../../lib/notices";
 import { watchRestart } from "../../lib/restart";
 import { popPlace } from "../../lib/prchip";
 
@@ -15,8 +15,8 @@ import { popPlace } from "../../lib/prchip";
 // there is nothing to do, a count of incoming commits when there is (an amber
 // dot for unshipped local work alone); `badge` is the labelled chip SETTINGS
 // shows when an update is waiting. Before an update is taken, its popover leads
-// with what it brings (bridge/whatsnew.py preview: a headline, bullets, the
-// maintainers' notes), and the rail's button is where that news pops out.
+// with what it brings (bridge/whatsnew.py preview: a headline and bullets), and the
+// rail's button is where that news pops out.
 // ponytail: self-contained (polls + owns its popover) like NotificationCenter, so
 // the Strip stays a dumb header.
 const POLL_MS = 300_000; // 5 min — new commits are not a live-tail concern
@@ -281,8 +281,7 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
             <div className="clg-co-t">{fresh.title}</div>
             <div className="clg-co-b">{fresh.body.split("\n").filter(Boolean).map((l) => l.split(" — ")[0]).join(" · ")}</div>
             <div className="clg-co-f">
-              <span>{`${Number(fresh.meta.commits) || 0} commit${fresh.meta.commits === 1 ? "" : "s"}`}
-                {notesOf(fresh).length > 0 && ` · ${notesOf(fresh).length} note${notesOf(fresh).length === 1 ? "" : "s"}`}</span>
+              <span>{`${Number(fresh.meta.commits) || 0} commit${fresh.meta.commits === 1 ? "" : "s"}`}</span>
               <span style={{ flex: 1 }} />
               <span className="go">See what's coming ›</span>
             </div>
@@ -346,13 +345,6 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
                 <div className="upd-lab">WHAT'S COMING</div>
                 <div className="clg-ht">{coming.title}</div>
                 <Bullets body={coming.body} />
-                {notesOf(coming).map((n) => (
-                  <div key={n.heading} className="upd-note">
-                    <div className="upd-note-h"><MessageSquareText size={12} strokeWidth={1.8} /><span className="v">NOTE</span>{n.author && <span>from {n.author}</span>}</div>
-                    <div className="upd-note-t">{n.title}</div>
-                    {n.body && <div className="upd-note-b">{n.body}</div>}
-                  </div>
-                ))}
                 <div className="upd-row">
                   <Meta r={coming} />
                   <span style={{ flex: 1 }} />

@@ -1,5 +1,5 @@
-"""bridge/whatsnew.py — what the last update changed, and notes for every install
-(docs/superpowers/specs/notif-updates.md). Git runs against throwaway clones, the
+"""bridge/whatsnew.py — what the last update changed
+(docs/superpowers/specs/changelog-v4.md). Git runs against throwaway clones, the
 tests/test_selfupdate.py way; the feed and the two settings are cleared per test."""
 
 import json
@@ -57,7 +57,7 @@ def _clean(monkeypatch):
     store.init()
     with closing(store._connect()) as c:
         c.execute("DELETE FROM notices")
-    for key in ("notify_prefs", "last_head", "notes_seen"):
+    for key in ("notify_prefs", "last_head"):
         store.set_setting(key, None)
     monkeypatch.setattr(notices, "_last_seen", float("-inf"))
     monkeypatch.setattr(config, "NOTIFY_ENABLE", True)
@@ -83,30 +83,13 @@ def repo(_pair, monkeypatch):
 
 # --- the notes file -----------------------------------------------------------------
 
-def test_notes_in_parses_headings_bodies_and_authors():
-    text = (whatsnew.NOTES_HEADER + "\n## 2026-10-18 · Re-enter the token — Mahziyar Erfani\n\n"
-            "Line one.\nLine two.\n\n## 2026-10-19 · Second\n\nShort.\n")
-    a, b = whatsnew.notes_in(text)
-    assert a == {"heading": "2026-10-18 · Re-enter the token — Mahziyar Erfani", "date": "2026-10-18",
-                 "title": "Re-enter the token", "author": "Mahziyar Erfani", "body": "Line one.\nLine two."}
-    assert b["title"] == "Second" and b["author"] == "" and b["body"] == "Short."
-
-
-def test_notes_in_hand_written_and_empty():
-    text = "# Notes\n\n## Just a heading\n\n## 2026-10-18 · Empty one\n### not an entry\n"
-    a, b = whatsnew.notes_in(text)
-    assert a == {"heading": "Just a heading", "date": "", "title": "Just a heading", "author": "", "body": ""}
-    assert b["title"] == "Empty one" and b["body"] == "### not an entry"
-    assert whatsnew.notes_in("") == []
-
-
 def test_file_at_reads_a_committed_version_and_empty_when_missing(repo):
     _commit(repo, "x\n", "feat: more")           # a.txt now "one\nx\n"
     first = subprocess.run(["git", "-C", repo, "rev-list", "--max-parents=0", "HEAD"],
                            capture_output=True, text=True, check=True).stdout.strip()
     assert g.file_at(repo, first, "a.txt") == "one\n"
     assert g.file_at(repo, "HEAD", "a.txt") == "one\nx\n"
-    assert g.file_at(repo, "HEAD", "docs/notes.md") == "" and g.file_at(repo, "nope", "a.txt") == ""
+    assert g.file_at(repo, "HEAD", "docs/missing.md") == "" and g.file_at(repo, "nope", "a.txt") == ""
 
 
 # --- boot: the range since the last boot --------------------------------------------
@@ -131,28 +114,20 @@ def test_first_boot_tells_the_last_day(repo):
     assert store.get_setting("last_head") == g.head_sha(repo)
 
 
-def test_boot_announces_pulled_commits_and_new_notes(repo, origin):
+def test_boot_announces_pulled_commits(repo, origin):
     whatsnew.boot()
     _commit(origin, "two\n", "notifications: the bell counts unread only — the chip tallied every row")
     _commit(origin, "three\n", "git: HANDLE IN A NEW SESSION opens on the tree whose push failed")
-    _write(origin, "docs/notes.md", whatsnew.NOTES_HEADER
-           + "\n## 2026-10-18 · Re-enter the token — Mahziyar\n\nPaste it once.\n")
-    _run(origin, "add", "-A")
-    _run(origin, "commit", "-qm", "note: Re-enter the token")
+    _commit(origin, "four\n", "docs: a spec")
     assert g.pull(repo)[0]
-    t = whatsnew.boot()
-    t.join(10)
-    note, upd = sorted(notices.feed(), key=lambda r: r["kind"])
-    assert note["kind"] == "note" and note["subject"] == "note:2026-10-18 · Re-enter the token — Mahziyar"
-    assert note["title"] == "Re-enter the token" and note["body"] == "Paste it once."
-    assert note["meta"]["author"] == "Mahziyar" and note["read"] is False
-    assert upd["title"] == "Git and Notifications" and upd["subject"] == f"update:{g.head_sha(repo)}"
-    # the note's own commit is left out: the note is its own row
+    whatsnew.boot().join(10)
+    [upd] = notices.feed()
+    assert upd["kind"] == "updated" and upd["title"] == "Git and Notifications" and upd["subject"] == f"update:{g.head_sha(repo)}"
+    # the docs commit is left out: nothing for the person updating
     assert upd["body"].splitlines() == ["Git — HANDLE IN A NEW SESSION opens on the tree whose push failed",
                                         "Notifications — the bell counts unread only"]
     assert upd["meta"]["commits"] == 3 and upd["meta"]["rest"] == 1 and upd["meta"]["branch"] == "main"
     assert upd["meta"]["url"] is None                      # a /tmp origin is not github
-    assert json.loads(store.get_setting("notes_seen")) == ["2026-10-18 · Re-enter the token — Mahziyar"]
 
 
 def test_boot_is_silent_on_same_head_and_branch_switch(repo):
@@ -340,85 +315,6 @@ def test_compare_url_only_for_github(repo):
     assert whatsnew._compare_url("a" * 40, "b" * 40) is None
 
 
-# --- add_note: write, commit that file, push, or roll back --------------------------
-
-def test_add_note_appends_commits_pushes_and_emits_read_and_quiet(repo, origin, monkeypatch):
-    _run(origin, "config", "receive.denyCurrentBranch", "ignore")
-    monkeypatch.setattr(whatsnew.time, "strftime", lambda *a: "2026-10-18")
-    ok, out = whatsnew.add_note("Re-enter the token", "Paste it once.\r\nThen restart.")
-    assert ok, out
-    with open(os.path.join(repo, "docs/notes.md")) as f:
-        assert f.read() == (whatsnew.NOTES_HEADER + "\n## 2026-10-18 · Re-enter the token — Tester\n\n"
-                            "Paste it once.\nThen restart.\n")
-    st = g.status(repo)
-    assert st["dirty"] == 0 and st["ahead"] == 0
-    last = subprocess.run(["git", "-C", repo, "log", "-1", "--format=%s"], capture_output=True, text=True)
-    assert last.stdout.strip() == "note: Re-enter the token"
-    row = notices.feed()[0]
-    assert row["kind"] == "note" and row["read"] is True
-    assert row["meta"] == {"author": "Tester", "date": "2026-10-18", "quiet": True}
-    assert json.loads(store.get_setting("notes_seen")) == ["2026-10-18 · Re-enter the token — Tester"]
-
-
-def test_add_note_commits_only_the_notes_file(repo, origin):
-    _run(origin, "config", "receive.denyCurrentBranch", "ignore")
-    _write(repo, "a.txt", "dirty\n")
-    ok, out = whatsnew.add_note("T", "")
-    assert ok, out
-    assert [f["path"] for f in g.status(repo)["files"]] == ["a.txt"]      # still dirty, uncommitted
-    with open(os.path.join(repo, "docs/notes.md")) as f:
-        assert f.read().endswith("\n## " + whatsnew.time.strftime("%Y-%m-%d") + " · T — Tester\n")
-
-
-def test_add_note_rolls_back_a_refused_push(repo, origin):
-    # origin refuses a push to its checked-out branch; the file had a hand edit already
-    _write(repo, "docs/notes.md", whatsnew.NOTES_HEADER + "\nhand edit\n")
-    head = g.head_sha(repo)
-    ok, out = whatsnew.add_note("T", "b")
-    assert ok is False and out
-    assert g.head_sha(repo) == head
-    with open(os.path.join(repo, "docs/notes.md")) as f:
-        assert f.read() == whatsnew.NOTES_HEADER + "\nhand edit\n"
-    assert [f["path"] for f in g.status(repo)["files"]] == ["docs/notes.md"]   # the hand edit, unstaged
-    assert notices.feed() == [] and store.get_setting("notes_seen") in (None, "[]")
-
-
-def test_add_note_rollback_removes_a_file_it_created(repo, origin):
-    ok, _ = whatsnew.add_note("T", "b")
-    assert ok is False
-    assert not os.path.exists(os.path.join(repo, "docs/notes.md")) and g.status(repo)["dirty"] == 0
-
-
-def test_boot_does_not_repeat_your_own_note(repo, origin):
-    _run(origin, "config", "receive.denyCurrentBranch", "ignore")
-    whatsnew.boot()
-    ok, out = whatsnew.add_note("Mine", "x")
-    assert ok, out
-    whatsnew.boot().join(10)                              # last_head..HEAD now holds the note commit
-    assert [r["kind"] for r in notices.feed()] == ["updated", "note"]
-
-
-# --- the final review's findings: what other installs would have seen ----------------
-
-def test_notes_in_keeps_a_dash_in_the_title_and_skips_empty_headings():
-    text = "## 2026-10-18 · Settings moved — see PLUGINS — Tester\n\nbody\n\n## \n\n## 2026-10-18 · Plain\n"
-    a, b = whatsnew.notes_in(text)
-    assert a["title"] == "Settings moved — see PLUGINS" and a["author"] == "Tester" and a["body"] == "body"
-    assert b["title"] == "Plain"
-
-
-def test_add_note_round_trips_a_heading_line_in_the_body(repo, origin):
-    _run(origin, "config", "receive.denyCurrentBranch", "ignore")
-    ok, out = whatsnew.add_note("Steps", "## Step 1\nDo X")
-    assert ok, out
-    with open(os.path.join(repo, "docs/notes.md")) as f:
-        text = f.read()
-    assert "\n ## Step 1\nDo X\n" in text                       # escaped in the file …
-    (e,) = whatsnew.notes_in(text)
-    assert e["title"] == "Steps" and e["body"] == "## Step 1\nDo X"   # … read back as typed, one note
-    assert notices.feed()[0]["body"] == "## Step 1\nDo X"        # the author sees what the others will
-
-
 def test_changelog_skips_merge_commits(repo, origin):
     whatsnew.boot()
     _run(origin, "checkout", "-q", "-b", "topic")
@@ -433,12 +329,6 @@ def test_changelog_skips_merge_commits(repo, origin):
 
 # --- preview: what the update waiting upstream brings, before it is taken ------------
 
-def _note(origin, title="Re-enter the token", body="Paste it once."):
-    _write(origin, "docs/notes.md", whatsnew.NOTES_HEADER + f"\n## 2026-10-23 · {title} — Mahziyar\n\n{body}\n")
-    _run(origin, "add", "-A")
-    _run(origin, "commit", "-qm", f"note: {title}")
-
-
 def _sha(repo, rev="HEAD"):
     return subprocess.run(["git", "-C", repo, "rev-parse", rev], capture_output=True, text=True,
                           check=True).stdout.strip()
@@ -446,7 +336,6 @@ def _sha(repo, rev="HEAD"):
 
 def test_preview_writes_one_coming_row_and_tells_telegram_once(repo, origin, monkeypatch):
     _commit(origin, "two\n", "feat: two — why")
-    _note(origin)
     notices.set_prefs({"events": {"updates": {"tg": "always"}}})
     monkeypatch.setattr(config, "ALLOWED_CHAT_IDS", [555])
     sent = []
@@ -454,13 +343,11 @@ def test_preview_writes_one_coming_row_and_tells_telegram_once(repo, origin, mon
     whatsnew.preview(selfupdate.check()).join(10)
     [row] = notices.changelog()
     assert row["kind"] == "coming" and row["verb"] == "UPDATE READY" and row["read"] is False
-    assert row["title"] == "2 commits waiting" and row["body"].splitlines() == ["Two"]
+    assert row["title"] == "1 commit waiting" and row["body"].splitlines() == ["Two"]
     m = row["meta"]
-    assert m["from"] == g.head_sha(repo) and m["to"] == _sha(origin) and m["commits"] == 2 and m["rest"] == 1
-    assert m["notes"] == [{"heading": "2026-10-23 · Re-enter the token — Mahziyar", "title": "Re-enter the token",
-                           "body": "Paste it once.", "author": "Mahziyar"}]
-    assert sent == ["UPDATE READY · 2 commits waiting\n• Two\n"
-                    "NOTE · Re-enter the token\n↓ UPDATE on the dashboard pulls it"]
+    assert m["from"] == g.head_sha(repo) and m["to"] == _sha(origin) and m["commits"] == 1 and m["rest"] == 0
+    assert "notes" not in m
+    assert sent == ["UPDATE READY · 1 commit waiting\n• Two\n↓ UPDATE on the dashboard pulls it"]
     assert whatsnew.preview(selfupdate.check()) is None           # the same range: nothing to write
     assert len(notices.changelog()) == 1 and len(sent) == 1
 
@@ -496,10 +383,9 @@ def test_preview_says_nothing_when_nothing_waits(repo):
     assert notices.changelog() == []
 
 
-def test_boot_reuses_the_preview_and_quiets_the_note_it_showed(repo, origin, monkeypatch):
+def test_boot_reuses_the_preview(repo, origin, monkeypatch):
     whatsnew.boot()
     _commit(origin, "two\n", "feat: two")
-    _note(origin)
     notices.set_prefs({"events": {"updates": {"tg": "always"}}})
     monkeypatch.setattr(config, "ALLOWED_CHAT_IDS", [555])
     sent = []
@@ -512,10 +398,9 @@ def test_boot_reuses_the_preview_and_quiets_the_note_it_showed(repo, origin, mon
     assert g.pull(repo)[0]
     whatsnew.boot().join(10)
     assert len(calls) == 1                                         # the boot took the preview's words
-    upd, note = notices.changelog()                                # and the coming row is gone
+    [upd] = notices.changelog()                                    # and the coming row is gone
     assert upd["kind"] == "updated" and upd["title"] == "Threads" and upd["body"] == "Threads — stack into one"
-    assert upd["meta"]["rest"] == 1 and upd["meta"]["commits"] == 2 and upd["meta"]["to"] == g.head_sha(repo)
-    assert note["kind"] == "note" and note["meta"]["quiet"] is True   # shown before the pull: no second pop
+    assert upd["meta"]["rest"] == 1 and upd["meta"]["commits"] == 1 and upd["meta"]["to"] == g.head_sha(repo)
     assert [s.split(" · ")[0] for s in sent] == ["UPDATE READY", "UPDATED"]
 
 

@@ -1,6 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/notices.check.ts
 import type { Need, Notice, NoticePrefs } from "../api.ts";
-import { ago, askChange, badge, cardFor, changeMarkdown, changesOf, chipCount, dayOf, findChanges, freshSince, groupBySubject, iconFor, isQuiet, leadOf, matches, mediaUrl, needMatches, notesOf, popFor, safeUrl, sameArea, sectionOf, shortWhen, stamp, whenOf } from "./notices.ts";
+import { ago, askChange, badge, cardFor, changeMarkdown, changesOf, chipCount, dayOf, findChanges, freshSince, groupBySubject, iconFor, isQuiet, leadOf, matches, mediaUrl, needMatches, popFor, safeUrl, sameArea, sectionOf, shortWhen, stamp, whenOf } from "./notices.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -86,10 +86,6 @@ const now = 10_000_000;
 ok(ago(now - 20, now) === "now" && ago(now - 120, now) === "2m" && ago(now - 3 * 3600, now) === "3h", "now / minutes / hours");
 ok(ago(now - 30 * 3600, now) === "yest." && ago(now - 3 * 86400, now) === "3d", "yesterday and days");
 
-const waiting = n(9, "coming", { kind: "coming", meta: { notes: [{ heading: "h", title: "T", body: "b", author: "A" }, "junk", { body: "no title" }, { title: "Bare" }] } });
-ok(JSON.stringify(notesOf(waiting)) === '[{"heading":"h","title":"T","body":"b","author":"A"},{"heading":"Bare","title":"Bare","body":"","author":""}]',
-  "a waiting update's notes: shaped, a titleless one or junk dropped");
-ok(notesOf(n(1, "a")).length === 0 && notesOf(n(2, "b", { meta: { notes: "x" } })).length === 0, "no notes, or not a list: none");
 
 
 // ---- the changelog: one change at a time ----------------------------------------------
@@ -110,10 +106,9 @@ ok(notesOf(n(1, "a")).length === 0 && notesOf(n(2, "b", { meta: { notes: "x" } }
   const upd = u(948, at(25, 2, 16), { body: "Asks dock — questions wait\nUsage limits — a card while parked\nplain clause", read: true,
     meta: { go: [null, "rail:usage", "nowhere"], when: [null, "a login hits its limit", 7],
             media: [{ still: "asks-dock.webp", clip: null }, { still: "../x.webp", clip: "usage-limits.mp4" }, { still: "Bad Name.png" }] } });
-  const note = n(950, "note:x", { kind: "note", at: at(25, 3), title: "Re-enter the token", body: "Paste it once.\nThen restart." });
-  const all = changesOf([note, upd]);
-  ok(all.map((c) => c.id).join() === "950,948.0,948.1,948.2", "a note is one change, an update a change per bullet, in order");
-  ok(all[0].area === "Re-enter the token" && all[0].text === "Paste it once.\nThen restart." && all[0].media === null, "a note keeps its title and body");
+  const coming = n(990, "coming", { kind: "coming", at: at(25, 3), title: "Threads", body: "Threads — stack into one" });
+  const all = changesOf([coming, upd]);
+  ok(all.map((c) => c.id).join() === "990.0,948.0,948.1,948.2", "a change per bullet, a waiting update's first, in order");
   ok(all[1].area === "Asks dock" && all[1].text === "questions wait" && JSON.stringify(all[1].media) === '{"still":"asks-dock.webp","clip":null}',
     "a bullet splits into its area and words, its picture by index");
   ok(all[2].place === "rail:usage" && all[2].when === "a login hits its limit" && JSON.stringify(all[2].media) === '{"still":null,"clip":"usage-limits.mp4"}',
@@ -126,14 +121,14 @@ ok(notesOf(n(1, "a")).length === 0 && notesOf(n(2, "b", { meta: { notes: "x" } }
   ok(findChanges(all, " LIMIT ").map((c) => c.id).join() === "948.1" && findChanges(all, "").length === 4, "find matches areas and words, any case");
   const more = changesOf([u(981, at(25, 4, 59), { body: "Usage — a tab\nUsage pace — a line" }), upd]);
   ok(sameArea(more, more[3]).map((c) => c.id).join() === "981.0,981.1,948.1", "the same area by its first word, newest first");
-  ok(sameArea(all, all[0]).length === 1, "a note is its own area");
+  ok(sameArea(all, all[1]).length === 1, "an area of its own: one change");
 
   const ask = askChange({ ...all[2], row: { ...upd, meta: { ...upd.meta, from: "3e77cc8aa", to: "ab5fc19bb" } } });
   ok(ask.startsWith("Tell me about this change to Mystical, from the update of Oct 25 02:16 (`git log 3e77cc8..ab5fc19`)")
     && ask.includes("**Usage limits** — a card while parked") && ask.endsWith("(it shows when a login hits its limit)."),
     "Ask Claude carries the range, the change and its state");
   ok(changeMarkdown(all[2]) === "**Usage limits** — a card while parked\n\n_Shows when a login hits its limit._"
-    && changeMarkdown(all[0]) === "**Re-enter the token**\n\nPaste it once.\nThen restart.", "Copy writes the change as markdown");
+    && changeMarkdown(all[3]) === "**plain clause**", "Copy writes the change as markdown");
 }
 
 console.log("\nall notices checks passed");

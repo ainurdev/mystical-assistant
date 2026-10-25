@@ -5817,7 +5817,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .clg-tag { flex: none; display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: calc(var(--f-rad-s, 0px) * .6);
   font: 600 var(--t8) var(--ui-font); letter-spacing: .14em; color: var(--acc); background: color-mix(in oklab, var(--acc) 16%, transparent); }
 .clg-ht { margin-top: 7px; font: 500 var(--t15)/1.3 var(--ui-font); color: var(--txb); overflow-wrap: anywhere; }
-.clg-note { margin-top: 10px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; }
 .clg-mline { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line, var(--border)); display: flex; align-items: center; gap: 6px;
   font: 500 var(--t10) var(--mono); color: var(--txl); }
 .clg-mline .br { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
@@ -5848,14 +5847,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .clg-pos button:disabled { opacity: .35; cursor: default; }
 .clg-pos b { font-weight: 500; color: var(--txb); }
 .clg-pos span { padding: 0 3px; }
-.clg-write { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; margin-left: -4px; padding: 3px 6px 3px 4px; border: 0;
-  border-radius: var(--f-rad-s, 0); background: transparent; font: 500 var(--t105) var(--ui-font); color: var(--txd); }
-.clg-write svg { flex: none; color: var(--acc); }
-.clg-write:hover { color: var(--txb); background: var(--ac-06); }
-.clg-sent { color: var(--ok); }
-.clg-err { padding: 8px 14px; border-top: 1px solid var(--line, var(--border)); background: var(--panel2); font: 500 var(--t10) var(--mono); color: var(--err); white-space: pre-wrap; }
-.clg-err + .ntf-compose { border-top: 0; padding-top: 4px; }
-/* an update or a note that just landed, out of the changelog's rail icon (not under the bell); its
+/* an update that just landed, out of the changelog's rail icon (not under the bell); its
    notch sits on the icon's middle, which ChangelogButton puts 23px over the popup's bottom */
 .clg-co { position: fixed; z-index: 96; width: 340px; max-width: calc(100vw - 80px); cursor: pointer; font-family: var(--ui-font);
   border: 1px solid var(--line2, var(--border-bright)); background: var(--panel); border-radius: var(--f-rad, 0);
@@ -5871,7 +5863,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   font: 700 var(--t75)/1 var(--ui-font); letter-spacing: .12em; color: #fff; }
 .clg-co .clg-ic { flex: none; color: var(--ok); }
 .clg-co .v { flex: none; font: 600 var(--t9) var(--ui-font); letter-spacing: .12em; color: var(--ok); }
-.clg-co.note :is(.clg-ic, .v) { color: var(--acc); }
 .clg-co .w { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--t10) var(--mono); color: var(--txl); }
 .clg-co-t { margin-top: 5px; font: 500 var(--t13)/1.35 var(--ui-font); color: var(--txb); }
 .clg-co-b { margin-top: 5px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
@@ -5883,7 +5874,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .clg-co .x:hover { color: var(--txb); }
 /* its clock: 8 s like the bell's news; the bar's animationend dismisses it, so a hover that pauses the bar holds it */
 .clg-co .bar { position: absolute; left: 0; bottom: 0; width: 100%; height: 2px; background: var(--ok); opacity: .55; transform-origin: left; animation: clg-bar 8s linear both; }
-.clg-co.note .bar { background: var(--acc); }
 .clg-co:hover .bar { animation-play-state: paused; }
 @keyframes clg-bar { to { transform: scaleX(0); } }
 /* the rail icon while its popup is out */
@@ -5893,21 +5883,10 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* an update not taken yet (bridge/whatsnew.py preview): COMING in the changelog's reader,
    and what it brings at the head of UPDATE's popover */
 .clg-tag.ok { color: var(--ok); background: color-mix(in oklab, var(--ok) 16%, transparent); }
-.clg-cnote { margin-top: 10px; display: flex; gap: 7px; align-items: baseline; font: 400 var(--t115)/1.45 var(--ui-font); color: var(--tx); }
-.clg-cnote svg { flex: none; color: var(--ask); position: relative; top: 2px; }
-.clg-cnote b { color: var(--txb); font-weight: 600; }
-.clg-cnote i { font-style: normal; color: var(--txl); }
 .upd-lab { font: 600 var(--t85) var(--ui-font); letter-spacing: .16em; color: var(--ok); }
 .upd-pv .clg-ht { margin-top: 6px; }
 .upd-pv .ntf-ul { margin-top: 8px; gap: 5px; }
 .upd-pv .ntf-ul li { font-size: var(--t12); }
-.upd-note { margin-top: 14px; padding: 10px 12px 11px; border-radius: var(--f-rad-s, 0); background: color-mix(in oklab, var(--ask) 9%, var(--panel2));
-  border: 1px solid color-mix(in oklab, var(--ask) 32%, var(--line, var(--border))); }
-.upd-note-h { display: flex; align-items: center; gap: 7px; font: 500 var(--t10) var(--mono); color: var(--txl); }
-.upd-note-h svg { flex: none; color: var(--ask); }
-.upd-note-h .v { font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--ask); }
-.upd-note-t { margin-top: 5px; font: 600 var(--t125)/1.35 var(--ui-font); color: var(--txb); }
-.upd-note-b { margin-top: 3px; font: 400 var(--t115)/1.5 var(--ui-font); color: var(--tx); white-space: pre-wrap; overflow-wrap: anywhere; }
 .upd-row { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
 .upd-fold { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; background: transparent;
   font: 500 var(--t10) var(--mono); color: var(--txd); }
@@ -5915,14 +5894,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .upd-fold svg { transition: transform .15s; }
 .upd-how { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t11)/1.5 var(--ui-font); color: var(--txl); }
 @media (prefers-reduced-motion: reduce) { .clg-co, .clg-read > :is(.clg-stage, .clg-t) { animation: none; } }
-.ntf-compose { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line, var(--border)); background: var(--panel2); }
-.ntf-compose .lbl { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--txl); margin-bottom: 2px; }
-.ntf-compose input, .ntf-compose textarea { width: 100%; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line2, var(--border-bright));
-  border-radius: var(--f-rad-s, 0); padding: 7px 9px; font: 400 var(--t12)/1.45 var(--ui-font); color: var(--txb); outline: none; resize: vertical; }
-.ntf-compose input:focus, .ntf-compose textarea:focus { border-color: var(--acc); }
-.ntf-compose textarea { color: var(--tx); min-height: 84px; }
-.ntf-compose .foot { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
-.ntf-compose .hint { font: 500 var(--t10) var(--mono); color: var(--txl); text-align: right; }
 .ntf-meta { margin-top: 5px; font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ntf-when { font: 500 var(--t10) var(--mono); color: var(--txl); white-space: nowrap; padding-top: 2px; }
 .ntf-acts { display: flex; gap: 6px; margin-top: 9px; flex-wrap: wrap; }

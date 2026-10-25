@@ -1,7 +1,6 @@
 """What changed in Mystical, told in the changelog (the scroll above UPDATE on the
 dashboard's right rail): a row each install writes at boot from the commits that
-landed, and a note row for each heading a maintainer added to docs/notes.md
-(docs/superpowers/specs/notif-updates.md). Both pop like any news when they land.
+landed (docs/superpowers/specs/changelog-v4.md). It pops like any news when it lands.
 
 Why each install writes its own row rather than reading a committed CHANGELOG:
 the range is known only here (`last_head` → HEAD), every path that moves the
@@ -10,20 +9,14 @@ passes through boot, and nobody has to remember to write an entry at merge time.
 The cost is one haiku call per restart that found new commits, behind the UPDATE
 NOTES switch; off, the row lists the commit subjects instead.
 
-Why a note's heading is its identity: the file is diffed between the old and the
-new HEAD, so an edit to a note's body tells nobody again and a changed heading is
-a new note. `notes_seen` remembers what this install already showed, because the
-feed forgets after a week.
-
 Why the waiting update is told too (`preview`): the summary above lands only after
-PULL & RESTART, so nobody could see what an update brought before taking it, and a
-note could warn no one. So the bridge looks upstream (each dashboard's UPDATE poll,
-plus an hourly `watch` of its own so an install with no dashboard open hears it on
-Telegram) and writes `HEAD..@{u}` into one `coming` row, with the notes added in that
-range. It is news once; as more commits land it is rewritten in place at most hourly,
-so a busy upstream costs a call an hour, not one a push. The boot after the pull takes
-that row's words for its UPDATED row when the ranges match: the one-shot moved earlier
-instead of doubling, and a note the preview showed lands without a second pop.
+PULL & RESTART, so nobody could see what an update brought before taking it. So the
+bridge looks upstream (each dashboard's UPDATE poll, plus an hourly `watch` of its own
+so an install with no dashboard open hears it on Telegram) and writes `HEAD..@{u}` into
+one `coming` row. It is news once; as more commits land it is rewritten in place at most
+hourly, so a busy upstream costs a call an hour, not one a push. The boot after the pull
+takes that row's words for its UPDATED row when the ranges match: the one-shot moved
+earlier instead of doubling.
 
 Why a row the one-shot couldn't write is asked again (`retry`): an update that lands
 while the login is at its limit got only its commit subjects, and nothing came back for
@@ -46,10 +39,6 @@ commit an older row already told decorates that row in place instead: a picture 
 later without telling the change twice. The repo is public, so a note's picture shows staged
 data only (docs/changes/README.md).
 
-Why SEND NOTE pushes: a local commit on master would make every later PULL &
-RESTART (`--ff-only`) fail on an install that cannot push, so a refused push is
-rolled back and nothing is left behind.
-
 Best-effort throughout: boot() never blocks start-up — everything after recording
 HEAD runs in a daemon thread that prints and never raises.
 """
@@ -63,15 +52,7 @@ import time
 
 from bridge import aifeatures, config, git, native, notices, runner, selfupdate, store
 
-NOTES_PATH = "docs/notes.md"
-NOTES_HEADER = (
-    "# Notes for every install\n\n"
-    "A heading per note. Each lands in the changelog of every Mystical that pulls it\n"
-    "(bridge/whatsnew.py). Write one from the changelog, or by hand in this shape.\n"
-)
 _LAST_HEAD = "last_head"
-_SEEN = "notes_seen"
-_SEEN_MAX = 200
 _BULLET = 140   # the prompt asks for under 100; haiku overshoots a little, so keep those whole
 _HEADLINE = 64  # the prompt asks for 40; the changelog wraps, so only a runaway is cut
 _RETRY_S = 7 * 86400   # a fallback row older than this keeps its words
@@ -150,25 +131,11 @@ def boot() -> "threading.Thread | None":
 
 
 def _announce(old: str, head: str) -> None:
-    """Notes first (cheap), then the changelog: a one-shot, ~30 s, unless the preview
-    of this very range already wrote it."""
-    repo = selfupdate.REPO
+    """The changelog: a one-shot, ~30 s, unless the preview of this very range already
+    wrote it."""
     try:
         row = notices.coming()
         m = row["meta"] if row else {}
-        shown = {n.get("heading") for n in m.get("notes") or [] if isinstance(n, dict)}
-        seen = _seen()
-        before = {e["heading"] for e in notes_in(git.file_at(repo, old, NOTES_PATH))}
-        for e in notes_in(git.file_at(repo, head, NOTES_PATH)):
-            if e["heading"] in before or e["heading"] in seen:
-                continue
-            quiet = e["heading"] in shown   # read before the pull, in the preview: no second pop
-            notices.emit("note", f"note:{e['heading']}", title=e["title"], body=e["body"],
-                         meta={"author": e["author"], "date": e["date"], **({"quiet": True} if quiet else {})})
-            seen.append(e["heading"])
-            if not quiet:
-                _telegram("note", f"NOTE · {e['title']}\n{e['body']}".rstrip())
-        _remember(seen)
         if row and _holds(head, m.get("to")):
             notices.drop(row["id"])
         # a note for a change an older row told goes onto that row; the rest are this update's
@@ -244,7 +211,6 @@ def _preview(info: dict) -> "threading.Thread | None":
 
 def _write_coming(head: str, up: str, nid: "int | None") -> None:
     global _writing
-    repo = selfupdate.REPO
     try:
         # shortcut: no pictures until pulled (the media route serves this checkout's files), upgrade to
         # `git show up:<file>` if a waiting picture is ever wanted; a note for an older change waits for the boot
@@ -253,17 +219,13 @@ def _write_coming(head: str, up: str, nid: "int | None") -> None:
         if not cl:
             return
         cl = _with_changes(cl, changes)
-        before = {e["heading"] for e in notes_in(git.file_at(repo, head, NOTES_PATH))} | set(_seen())
-        notes = [{k: e[k] for k in ("heading", "title", "body", "author")}
-                 for e in notes_in(git.file_at(repo, up, NOTES_PATH)) if e["heading"] not in before][:3]
         body = "\n".join(cl["bullets"])
         meta = {"from": head, "to": up, "commits": cl["commits"], "branch": cl["branch"], "rest": cl["rest"],
-                "url": cl["url"], "notes": notes, "ai": cl["ai"], "written": time.time(), **_aligned(cl)}
+                "url": cl["url"], "ai": cl["ai"], "written": time.time(), **_aligned(cl)}
         if nid and notices.revise(nid, title=cl["headline"], body=body, meta=meta):
             return
         notices.emit("coming", "coming", title=cl["headline"], body=body, meta=meta)
         _telegram("coming", "\n".join([f"UPDATE READY · {cl['headline']}"] + [f"• {b}" for b in cl["bullets"]]
-                                      + [f"NOTE · {n['title']}" for n in notes]
                                       + ["↓ UPDATE on the dashboard pulls it"]))
     except Exception as e:  # noqa: BLE001 — a preview must never take the bridge down
         print(f"[whatsnew] preview: {e}", file=sys.stderr)
@@ -328,18 +290,6 @@ def watch() -> None:
     threading.Thread(target=loop, daemon=True, name="whatsnew-watch").start()
 
 
-def _seen() -> list:
-    try:
-        raw = json.loads(store.get_setting(_SEEN) or "[]")
-    except ValueError:
-        raw = []
-    return [str(h) for h in raw] if isinstance(raw, list) else []
-
-
-def _remember(seen: list) -> None:
-    store.set_setting(_SEEN, json.dumps(seen[-_SEEN_MAX:]))
-
-
 def _subjects(old: str, head: str) -> "tuple[int, list]":
     """The range's commit count and up to 80 subjects, newest first, merges left out."""
     repo = selfupdate.REPO
@@ -362,8 +312,8 @@ def _changelog(old: str, head: str, word: str = "pulled", told: "list | tuple" =
     return d
 
 
-# nothing for the person updating; a SEND NOTE commit ("note: …") lands as its own NOTE row
-_SKIP = {"docs", "doc", "test", "tests", "chore", "ci", "build", "style", "note"}
+# nothing for the person updating
+_SKIP = {"docs", "doc", "test", "tests", "chore", "ci", "build", "style"}
 _TYPES = {"feat", "fix", "perf", "refactor", "revert"}                       # a kind, not a place: its scope leads
 _AREA = re.compile(r"(?P<area>[A-Za-z][\w .&/-]{0,23}?)(?:\((?P<scope>[^)]{1,24})\))?!?: (?P<text>.+)")
 
@@ -462,55 +412,6 @@ def _telegram(kind: str, text: str) -> None:
             send(chat, text, silent=True)   # news, not an ask: no ring
     except Exception as e:  # noqa: BLE001
         print(f"[whatsnew] telegram: {e}", file=sys.stderr)
-
-
-# --- a maintainer's note: write, commit that file, push — or roll back ------------------
-
-def add_note(title: str, body: str) -> "tuple[bool, str]":
-    """Append the note to docs/notes.md, commit only that file and push: one tap,
-    like SHIP. The commit or the push refused: put the file back as it was (a hand
-    edit included), drop the commit, return git's words — nothing is left behind.
-    The caller validates lengths; here only line endings and whitespace are tidied."""
-    repo = selfupdate.REPO
-    path = os.path.join(repo, NOTES_PATH)
-    title = title.strip()
-    body = body.replace("\r\n", "\n").strip()
-    # A line that starts "## " would read as the next note on every other install:
-    # the file gets it behind a space, which notes_in takes off again.
-    escaped = "\n".join(" " + l if l.startswith("## ") else l for l in body.split("\n"))
-    author = git._run(repo, "config", "user.name")[1].strip()
-    date = time.strftime("%Y-%m-%d")
-    heading = f"{date} · {title}" + (f" — {author}" if author else "")
-    before = None
-    if os.path.exists(path):
-        with open(path, encoding="utf-8") as f:
-            before = f.read()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        f.write((before or NOTES_HEADER) + f"\n## {heading}\n" + (f"\n{escaped}\n" if escaped else ""))
-    ok, out = git.commit_paths(repo, f"note: {title}", [NOTES_PATH])
-    committed = ok
-    if ok:
-        ok, out = git.push(repo)
-    if not ok:
-        if committed:
-            git._run(repo, "reset", "-q", "--soft", "HEAD~1")
-        git._run(repo, "reset", "-q", "HEAD", "--", NOTES_PATH)
-        # shortcut: a hand edit that was already staged comes back unstaged, upgrade if anyone stages notes by hand
-        if before is None:
-            os.remove(path)
-        else:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(before)
-        return False, out
-    nid = notices.emit("note", f"note:{heading}", title=title, body=body,
-                       meta={"author": author, "date": date, "quiet": True})
-    if nid:
-        notices.mark_read([nid])   # your own note is not news to you
-    seen = _seen()
-    seen.append(heading)
-    _remember(seen)
-    return True, out
 
 
 # --- change notes: docs/changes/<slug>.md ----------------------------------------------
@@ -617,33 +518,3 @@ def _notes_of(row: dict) -> list:
     col = {k: (m.get(k) if isinstance(m.get(k), list) else []) + [None] * len(bullets) for k in ("go", "when", "media")}
     return [{"area": _area(b), "text": b.split(" — ", 1)[1], "place": col["go"][i], "when": col["when"][i],
              "media": col["media"][i]} for i, b in enumerate(bullets) if _area(b) and (col["when"][i] or col["media"][i] or col["go"][i])]
-
-
-# --- the notes file ---------------------------------------------------------------------
-
-# `## 2026-10-18 · Title — Author`; the author is optional and never holds an em
-# dash, so the LAST ` — ` splits and a title keeps its own. Anything else under a
-# `## ` is a hand-written heading: the title whole, no date, no author.
-_HEADING = re.compile(r"^(\d{4}-\d{2}-\d{2}) · (.+?)(?: — ([^—]+))?$")
-
-
-def notes_in(text: str) -> list:
-    """The entries of docs/notes.md, in file order: {heading, date, title, author,
-    body}. The heading line (without `## `) is the note's identity; the body is
-    everything up to the next entry, stripped."""
-    out: list = []
-    for line in text.splitlines():
-        if line.startswith("## "):
-            heading = line[3:].strip()
-            if not heading:
-                continue   # a bare `## ` is nobody's note
-            # shortcut: two notes with the same heading on one day are one note, upgrade to an id line if it ever happens
-            m = _HEADING.match(heading)
-            out.append({"heading": heading, "date": m.group(1) if m else "",
-                        "title": (m.group(2) if m else heading).strip(),
-                        "author": (m.group(3) or "").strip() if m else "", "body": ""})
-        elif out:
-            out[-1]["body"] += (line[1:] if line.startswith(" ## ") else line) + "\n"
-    for e in out:
-        e["body"] = e["body"].strip()
-    return out

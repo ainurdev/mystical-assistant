@@ -2,15 +2,14 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowDownToLine, ArrowRight, ArrowUpRight, ChevronLeft, ChevronRight, Clapperboard, Copy, Download, Eye, Flame, Gauge, GitBranch, History,
-  Image, Layers, MapPin, Maximize2, MessageSquareText, Palette, PanelLeft, Pause, Pencil, Play, ScrollText, Search, Send, Sparkles, Trees,
+  Image, Layers, MapPin, Maximize2, Palette, PanelLeft, Pause, Play, ScrollText, Search, Send, Sparkles, Trees,
   Users, X, type LucideIcon,
 } from "lucide-react";
 import { api, type Notice } from "../../api";
 import { popPlace } from "../../lib/prchip";
-import { ago, askChange, changeMarkdown, changesOf, findChanges, iconFor, mediaUrl, notesOf, PLACES, safeUrl, sameArea, shortWhen, whenOf,
+import { ago, askChange, changeMarkdown, changesOf, findChanges, iconFor, mediaUrl, PLACES, safeUrl, sameArea, shortWhen, whenOf,
   type Change, type FeatIcon } from "../../lib/notices";
 import { ImageLightbox } from "../ImageLightbox";
-import { NoteComposer } from "./NoteComposer";
 
 // The right rail's changelog, over UPDATE: what changed in Mystical, one change at a time
 // (docs/superpowers/specs/changelog-v4.md). Each update bridge/whatsnew.py writes at a boot
@@ -21,18 +20,17 @@ import { NoteComposer } from "./NoteComposer";
 // lit and Open ›; the rest, its icon. The stage keeps its size for every change, so stepping
 // never moves the box. ↑ ↓ step, ⌕ finds, ▶ NEW walks the new ones, the same-area stepper
 // walks one area's changes, Ask Claude starts a session in this checkout on one change.
-// A maintainer's note is a change of its own; an update waiting upstream (whatsnew preview)
-// leads the list as COMING, and Update now hands it to UPDATE (hud:update).
+// An update waiting upstream (whatsnew preview) leads the list as COMING, and Update now hands it to UPDATE (hud:update).
 // When one lands, the bell's poll hands it here (hud:changelog-pop) and it pops out of this
 // icon with its first picture; its click, or an OS banner's (hud:changelog), opens it.
 // A dot while any is unread; closing marks what it showed read. Self-contained (polls, owns
 // its popover) like UpdateButton.
-const POLL_MS = 60_000; // rows land at a boot or a SEND NOTE; a fresh one comes by event, not by this
+const POLL_MS = 60_000; // rows land at a boot; a fresh one comes by event, not by this
 const STEP_MS = 5_000;  // ▶ NEW: how long a change without a clip stays
 
 const ICON: Record<FeatIcon, LucideIcon> = { send: Send, panel: PanelLeft, gauge: Gauge, layers: Layers, flame: Flame,
   trees: Trees, users: Users, image: Image, palette: Palette, down: Download, spark: Sparkles };
-const iconOf = (c: Change) => (c.row.kind === "note" ? MessageSquareText : ICON[iconFor(c.area)]);
+const iconOf = (c: Change) => ICON[iconFor(c.area)];
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const RAIL = ["files", "git", "learn", "rivendell", "team", "usage"];   // App's right-rail tabs, top down
 const SETTINGS = Object.keys(PLACES).filter((k) => k.startsWith("settings:"));
@@ -128,7 +126,6 @@ function Stage({ c, playing, onEnded, onZoom }: { c: Change; playing: boolean; o
   const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches && !playing;
   const m = broken ? null : c.media;
   const Ic = iconOf(c);
-  const by = typeof c.row.meta.author === "string" ? c.row.meta.author : "";
   return (
     <div className="clg-stage">
       {m?.clip ? <>
@@ -146,7 +143,7 @@ function Stage({ c, playing, onEnded, onZoom }: { c: Change; playing: boolean; o
       </> : m?.still ? <img className="pic" src={mediaUrl(m.still)} alt="" onError={() => setBroken(true)} />
         : c.place ? <PlaceMap place={c.place} />
         : <div className="clg-tc"><span className="big"><Ic size={28} strokeWidth={1.8} /></span><span className="nm">{c.area}</span>
-            <span className="sub">{c.row.kind === "note" ? `a note${by ? ` from ${by}` : ""}` : "no picture for this one"}</span></div>}
+            <span className="sub">no picture for this one</span></div>}
       {c.when ? <span className="clg-chip"><Eye size={13} strokeWidth={1.8} /><b>SHOWS WHEN</b><span className="w">{c.when}</span></span>
         : !m && c.place ? <span className="clg-chip"><MapPin size={13} strokeWidth={1.8} /><b>LIVES IN</b><span className="w">{placeName(c.place)}</span></span> : null}
       {m && <button className="clg-zoom" title="Full size" aria-label="Full size" onClick={() => onZoom(mediaUrl(m.clip ?? m.still ?? ""))}>
@@ -163,8 +160,6 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   const [q, setQ] = useState<string | null>(null);                           // find: null = the field shut
   const [fresh, setFresh] = useState<Notice | null>(null);                   // the popup out of the icon
   const [picGone, setPicGone] = useState(false);                             // its picture didn't load
-  const [composing, setComposing] = useState(false);
-  const [bar, setBar] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const [copied, setCopied] = useState<"" | "ok" | "no">("");
   const [hov, setHov] = useState(false);
   const [zoom, setZoom] = useState<string | null>(null);                     // a picture full size (ImageLightbox)
@@ -199,7 +194,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
 
   const close = () => {
     // fresh too: one that landed while this was open was read here, it doesn't pop on the way out
-    setOpen(false); setComposing(false); setBar(null); setPick(null); setQ(null); setFresh(null); setCopied("");
+    setOpen(false); setPick(null); setQ(null); setFresh(null); setCopied("");
     setZoom(null); setPlaying(false);
     const ids = (rows ?? []).filter((r) => !r.read).map((r) => r.id);
     if (ids.length) void api.noticesRead(ids).then(load, () => { /* next poll */ });
@@ -207,7 +202,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   // Closes the way UPDATE's popover does: a press outside it, or Escape (which shuts find first);
   // a picture open full size has both to itself. The press is heard in the capture phase: the
   // clip viewer shuts on pointerdown, and by bubbling time this effect has re-run with zoom gone.
-  // ↑ ↓ step, unless a note is being written. Any key stops ▶ NEW, but its own Enter/Space
+  // ↑ ↓ step. Any key stops ▶ NEW, but its own Enter/Space
   // (that click toggles it, and must see it playing).
   useEffect(() => {
     if (!open) return;
@@ -219,12 +214,12 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
       if (zoom) return;
       if (!((e.key === "Enter" || e.key === " ") && (e.target as Element | null)?.closest?.(".clg-new"))) setPlaying(false);
       if (e.key === "Escape") { e.stopPropagation(); if (q !== null) setQ(null); else close(); return; }
-      if ((e.key === "ArrowDown" || e.key === "ArrowUp") && !composing) { e.preventDefault(); stepRef.current(e.key === "ArrowDown" ? 1 : -1); }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); stepRef.current(e.key === "ArrowDown" ? 1 : -1); }
     };
     document.addEventListener("pointerdown", onDown, true);
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("pointerdown", onDown, true); document.removeEventListener("keydown", onKey); };
-  }, [open, rows, q, composing, zoom]);
+  }, [open, rows, q, zoom]);
   // the picked row stays in view as ↑ ↓ (or ▶ NEW) move it
   useEffect(() => { listRef.current?.querySelector('[data-on="1"]')?.scrollIntoView({ block: "nearest" }); }, [pick, q]);
   // ▶ NEW: a change holds STEP_MS, a clip until it ends (its Stage calls next), at most 15 s
@@ -272,7 +267,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
                                  right: Math.max(8, Math.min(window.innerWidth - rect.right, window.innerWidth - W - 8)) };
   // The popup sits left of the rail, its notch (index.css) on the icon's middle.
   const out = fresh && !open && rect && { right: window.innerWidth - rect.left + 10, bottom: Math.max(8, window.innerHeight - rect.bottom - 4) };
-  const pics = fresh && fresh.kind !== "note" ? changesOf([fresh]).filter((c) => c.media?.still) : [];
+  const pics = fresh ? changesOf([fresh]).filter((c) => c.media?.still) : [];
   const theme = document.querySelector("[data-theme]") ?? document.body;
   const qq = q ?? "";
 
@@ -295,7 +290,6 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
   const reader = (c: Change) => {
     const r = c.row;
     const branch = typeof r.meta.branch === "string" ? r.meta.branch : "";
-    const by = typeof r.meta.author === "string" ? r.meta.author : "";
     const same = sameArea(all, c), k = same.indexOf(c);
     const go = (x: Change) => { setPlaying(false); setQ(null); setPick(x.id); };
     return (
@@ -308,11 +302,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
             {r.kind === "coming" && <span className="clg-tag ok">COMING</span>}
             <span className="tm">{r.kind === "coming" ? "not installed yet" : whenOf(r.at, now)}</span>
           </div>
-          {c.text && <div className={r.kind === "note" ? "clg-note" : "x"}>{marked(r.kind === "note" ? c.text : cap(c.text), qq)}</div>}
-          {r.kind === "coming" && c.id === `${r.id}.0` && notesOf(r).map((n) => (
-            <div key={n.heading} className="clg-cnote"><MessageSquareText size={12} strokeWidth={1.8} />
-              <span><b>{n.title}</b>{n.author && <i> — note from {n.author}</i>}</span></div>
-          ))}
+          {c.text && <div className="x">{marked(cap(c.text), qq)}</div>}
         </div>
         <div className="clg-acts">
           {r.kind === "coming" ? (
@@ -336,12 +326,10 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
           )}
         </div>
         <div className="clg-mline">
-          {r.kind === "note" ? <span>{by ? `a note from ${by}` : "a note"}</span> : <>
-            <span>{r.kind === "coming" ? "in the waiting update ·" : `from the ${shortWhen(r.at, now)} update ·`}</span>
-            <Meta r={r} />
-            <span style={{ flex: 1 }} />
-            {branch && <span className="br"><GitBranch size={11} strokeWidth={1.8} aria-hidden />{r.kind === "coming" ? `waiting on ${branch}` : branch}</span>}
-          </>}
+          <span>{r.kind === "coming" ? "in the waiting update ·" : `from the ${shortWhen(r.at, now)} update ·`}</span>
+          <Meta r={r} />
+          <span style={{ flex: 1 }} />
+          {branch && <span className="br"><GitBranch size={11} strokeWidth={1.8} aria-hidden />{r.kind === "coming" ? `waiting on ${branch}` : branch}</span>}
         </div>
       </div>
     );
@@ -365,27 +353,25 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
       {/* What just landed, out of the icon: 8 s like the bell's news (the bar's
           animation is the clock, so a hover that pauses it holds the popup). */}
       {fresh && out && createPortal(
-        <div key={fresh.id} className={`clg-co${fresh.kind === "note" ? " note" : ""}`} style={out} role="status" onClick={() => openOn(fresh.id)}>
+        <div key={fresh.id} className="clg-co" style={out} role="status" onClick={() => openOn(fresh.id)}>
           <div className="in">
             {pics.length > 0 && !picGone && (
               <div className="clg-co-pic"><img src={mediaUrl(pics[0].media!.still!)} alt="" onError={() => setPicGone(true)} />
                 {pics.length > 1 && <span className="n">{pics.length} PICTURES</span>}</div>
             )}
             <div className="clg-co-h">
-              {fresh.kind === "note" ? <MessageSquareText size={13} strokeWidth={1.8} className="clg-ic" /> : (
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" className="clg-ic">
-                  <path d="M12 3 21 12 12 21 3 12Z" /><path d="M12 9 15 12 12 15 9 12Z" fill="currentColor" stroke="none" />
-                </svg>)}
+              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" className="clg-ic">
+                <path d="M12 3 21 12 12 21 3 12Z" /><path d="M12 9 15 12 12 15 9 12Z" fill="currentColor" stroke="none" />
+              </svg>
               <span className="v">{fresh.verb}</span>
-              <span className="w">{ago(fresh.at, now.getTime() / 1000)}{fresh.kind === "note" && typeof fresh.meta.author === "string" ? ` · by ${fresh.meta.author}` : ""}</span>
+              <span className="w">{ago(fresh.at, now.getTime() / 1000)}</span>
             </div>
             <div className="clg-co-t">{fresh.title}</div>
-            <div className="clg-co-b">{fresh.kind === "note" ? fresh.body
-              : fresh.body.split("\n").filter(Boolean).map((l) => l.split(" — ")[0]).join(" · ")}</div>
+            <div className="clg-co-b">{fresh.body.split("\n").filter(Boolean).map((l) => l.split(" — ")[0]).join(" · ")}</div>
             <div className="clg-co-f">
-              {fresh.kind !== "note" && <span>{`${fresh.meta.commits ?? 0} commit${fresh.meta.commits === 1 ? "" : "s"}`}</span>}
+              <span>{`${fresh.meta.commits ?? 0} commit${fresh.meta.commits === 1 ? "" : "s"}`}</span>
               <span style={{ flex: 1 }} />
-              <span className="go">{fresh.kind === "note" ? "Read the note ›" : "See what changed ›"}</span>
+              <span className="go">See what changed ›</span>
             </div>
             <span className="bar" onAnimationEnd={(e) => { if (e.animationName === "clg-bar") setFresh(null); }} />
           </div>
@@ -434,25 +420,13 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
               {cur ? reader(cur) : <div className="clg-read" />}
             </div>
           )}
-          {composing ? (
-            <>
-              {bar?.kind === "err" && <div className="clg-err">{bar.text}</div>}
-              <NoteComposer
-                onSent={() => { setComposing(false); setBar({ kind: "ok", text: "Sent · every install sees it after its next update" }); void load(); }}
-                onCancel={() => { setComposing(false); setBar(null); }}
-                onError={(m) => setBar({ kind: "err", text: m })} />
-            </>
-          ) : (
+          {list.length > 1 && cur && (
             <div className="ntf-foot">
-              {bar?.kind === "ok" ? <span className="clg-sent">✓ {bar.text}</span>
-                : <button className="clg-write" onClick={() => setComposing(true)}><Pencil size={12} strokeWidth={1.8} />Write a note for every install</button>}
-              {list.length > 1 && cur && (
-                <span className="clg-pos">↑ ↓
-                  <button title="Newer" aria-label="Newer" disabled={list.indexOf(cur) <= 0} onClick={() => stepRef.current(-1)}><ChevronLeft size={13} strokeWidth={2} /></button>
-                  <span><b>{list.indexOf(cur) + 1}</b> of {list.length}</span>
-                  <button title="Older" aria-label="Older" disabled={list.indexOf(cur) >= list.length - 1} onClick={() => stepRef.current(1)}><ChevronRight size={13} strokeWidth={2} /></button>
-                </span>
-              )}
+              <span className="clg-pos">↑ ↓
+                <button title="Newer" aria-label="Newer" disabled={list.indexOf(cur) <= 0} onClick={() => stepRef.current(-1)}><ChevronLeft size={13} strokeWidth={2} /></button>
+                <span><b>{list.indexOf(cur) + 1}</b> of {list.length}</span>
+                <button title="Older" aria-label="Older" disabled={list.indexOf(cur) >= list.length - 1} onClick={() => stepRef.current(1)}><ChevronRight size={13} strokeWidth={2} /></button>
+              </span>
             </div>
           )}
         </div>,

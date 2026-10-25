@@ -33,8 +33,10 @@ picked **C · INDEX** and all three add-ons: a picture in the popup, same area, 
 - **`retry` keeps the notes.** It rewrites a fallback row with the notes' bullets first (`_notes_of`).
 - **The preview tells waiting notes.** The waiting notes carry their words and states but no
   pictures (`shortcut:` in `_write_coming`), and `for:` notes wait for the boot.
-- **Seed.** Three state-only changes from 2026-10-25 got notes and staged pictures: the Answers
-  clip (124 KB), the Asks dock and the Usage limits card (emails replaced).
+- **Seed, and only the seed.** The overnight changes of 2026-10-25 that only show in a state got
+  notes and staged pictures: the Answers clip (124 KB), the Asks dock and the Usage limits card
+  (emails replaced). Nothing asks later changes for one, on the user's word ("no need to add
+  pictures for all, just for last night changes is enough"): each picture is weight in a public repo.
 
 ## The media route (`bridge/dashboard/server.py`)
 
@@ -49,8 +51,7 @@ picked **C · INDEX** and all three add-ons: a picture in the popup, same area, 
 
 The popover is 560 × 488, at the same anchor.
 
-- **The list.** One row per change (`changesOf`): a maintainer's note whole, and each bullet of an
-  update or of COMING. It's flat and newest first, with no day heads and no update batches.
+- **The list.** One row per change (`changesOf`): each bullet of an update or of COMING. It's flat and newest first, with no day heads and no update batches.
   - A row shows its icon, its area (🖼 for a picture, 🎬 for a clip), one line of words, and its
     time (today's hour, or the date).
   - New changes get a dot.
@@ -68,8 +69,7 @@ The popover is 560 × 488, at the same anchor.
     404s.
   - Under the stage come the area, NEW or COMING, the time, and the words. Then the actions:
     Open <place> (the full name is in the tooltip), Ask Claude (`askChange`), and Copy
-    (`changeMarkdown`). For COMING the action is Update now, with the waiting notes under the first
-    change. At the foot: "from the 02:16 update ·" commits ↗ and ⎇ branch.
+    (`changeMarkdown`). For COMING the action is Update now. At the foot: "from the 02:16 update ·" commits ↗ and ⎇ branch.
 - **Find** filters changes by area and words (`findChanges`) and marks matches in both panes.
 - **Keys.** ↑ ↓ step, and the footer has ‹ i of n ›. Escape shuts the lightbox first, then Find,
   then the popover.
@@ -83,15 +83,17 @@ The popover is 560 × 488, at the same anchor.
     when there are more.
 - **Removed (v3):** the week bars, the spine, the day heads, `byDay`, `weekBars`, `nodeSize`,
   `findIn`, `placesOf`, `notesMarkdown` and `askPrompt`.
-- **Unchanged:** mark-read on close, the note form, OS banners, and UPDATE's preview (`Bullets` /
-  `Meta`).
+- **Removed, on the user's word (2026-10-25):** notes for every install, never used: `docs/notes.md`
+  was its header alone and no install held a note row. Gone with it: the form, `NoteComposer`,
+  `POST /local/update/note`, `whatsnew.add_note`/`notes_in`/`notes_seen`, the `note` kind, NOTE on
+  Telegram, and the notes in the waiting update and in UPDATE's popover.
+- **Unchanged:** mark-read on close, OS banners, and UPDATE's preview (`Bullets` / `Meta`).
 
-The Mini App has no changelog. Telegram keeps the text. `bridge-ship` gained the step "write the
-change note".
+The Mini App has no changelog. Telegram keeps the text.
 
 ## Open
 
-- **Repo weight.** About 2 pictures a day at about 100 KB each is roughly +70 MB a year on a 45 MB
-  pack. If that matters, move the media to the landing site and keep URLs in the notes.
+- **Repo weight.** The seed is about 230 KB. A picture added later is about 100 KB in git for good;
+  if they ever become routine, move the media to the landing site and keep URLs in the notes.
 - **Read state is per update**, not per change.
 - Changes without a note keep haiku's guessed places.

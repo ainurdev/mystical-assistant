@@ -38,7 +38,7 @@ LIMIT = 200
 # Mystical's own changelog (bridge/whatsnew.py): read by the right rail's changelog,
 # not the bell, and kept past the week — a few rows a day, so never pruned.
 # shortcut: unbounded, fine at a few rows a day; prune by count if it ever reaches thousands
-CHANGELOG = ("updated", "note", "coming")
+CHANGELOG = ("updated", "coming")
 _KEY = "notify_prefs"
 
 # kind -> (group, tier, source). The group is the row on Settings ▸ NOTIFY.
@@ -75,7 +75,6 @@ CATALOG = {
     "weekly": ("weekly", "fyi", "bridge"),
     "updated": ("updates", "news", "bridge"),
     "coming": ("updates", "news", "bridge"),       # an update waiting upstream, before it is taken
-    "note": ("updates", "news", "bridge"),
 }
 
 # The one place the copy lives: the dashboard and the Mac app render `verb`.
@@ -89,7 +88,7 @@ VERBS = {
     "rv_brief": "BRIEF READY", "team_in": "SENT YOU",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
     "move_failed": "MOVE FAILED", "styled": "STYLED", "style_failed": "STYLE FAILED", "weekly": "WEEKLY REPORT",
-    "updated": "UPDATED", "note": "NOTE", "coming": "UPDATE READY",
+    "updated": "UPDATED", "coming": "UPDATE READY",
 }
 _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED", "conflict": "RESOLVED"}
 
@@ -181,7 +180,7 @@ def feed() -> list:
 
 
 def changelog() -> list:
-    """The newest 50 updates and notes, however old: the feed's week and its 200
+    """The newest 50 updates, however old: the feed's week and its 200
     rows (a busy day fills them) would lose this morning's update by tonight."""
     return [_row(r, {}) for r in store.list_notices(0, 50, CHANGELOG)]
 

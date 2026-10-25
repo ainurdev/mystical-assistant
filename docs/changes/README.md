@@ -4,7 +4,9 @@ A change that only shows in a state (a login at its limit, a question waiting) h
 the changelog's Open › can show. A note here brings the change's own words and a picture, and
 the changelog tells it first (`bridge/whatsnew.py`, `docs/superpowers/specs/changelog-v4.md`).
 
-One note per change, committed with it: `<slug>.md`, the slug in lowercase letters, digits and dashes.
+Notes are rare by choice: the three here are the pictures for the 2026-10-25 overnight changes,
+and nothing asks a change for one (each picture is weight in a public repo). To add one anyway,
+commit `<slug>.md` with the change, the slug in lowercase letters, digits and dashes.
 
 ```
 ---

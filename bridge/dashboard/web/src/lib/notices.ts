@@ -112,17 +112,6 @@ export function safeUrl(u: unknown): string | null {
   return typeof u === "string" && /^https?:\/\//i.test(u.trim()) ? u.trim() : null;
 }
 
-/** The maintainers' notes an update waiting upstream carries (bridge/whatsnew.py
- *  preview, `meta.notes`), shaped or dropped: a row's meta is free JSON. */
-export function notesOf(n: Notice): { heading: string; title: string; body: string; author: string }[] {
-  const raw = Array.isArray(n.meta.notes) ? n.meta.notes : [];
-  return raw.flatMap((x) => {
-    const o = x && typeof x === "object" ? (x as Record<string, unknown>) : {};
-    const s = (k: string) => (typeof o[k] === "string" ? (o[k] as string) : "");
-    return s("title") ? [{ heading: s("heading") || s("title"), title: s("title"), body: s("body"), author: s("author") }] : [];
-  });
-}
-
 // ---- the changelog: one change at a time (components/hud/ChangelogButton.tsx,
 // docs/superpowers/specs/changelog-v4.md) ------------------------------------------------
 
@@ -177,8 +166,8 @@ export const PLACES: Record<string, string> = {
 
 /** A change note's picture (bridge/whatsnew.py MEDIA_NAME): a still, a clip, or a clip with its still. */
 export type Media = { still: string | null; clip: string | null };
-/** One change: an update's bullet (or a waiting update's) with its place, state and picture,
- *  or a maintainer's note whole. `area` is the lead, or the bullet itself when it has none. */
+/** One change: an update's bullet (or a waiting update's) with its place, state and picture.
+ *  `area` is the lead, or the bullet itself when it has none. */
 export interface Change { id: string; row: Notice; area: string; text: string; place: string | null; when: string | null; media: Media | null }
 
 const MEDIA_NAME = /^[a-z0-9][a-z0-9-]{0,63}\.(webp|png|jpg|mp4)$/;
@@ -190,7 +179,6 @@ export const mediaUrl = (name: string) => `/local/changelog/media/${name}`;
  *  columns aligned with its bullets, each kept only in the shape the bridge writes. */
 export function changesOf(rows: Notice[]): Change[] {
   return rows.flatMap((r): Change[] => {
-    if (r.kind === "note") return [{ id: `${r.id}`, row: r, area: r.title, text: r.body, place: null, when: null, media: null }];
     const col = (k: string) => (Array.isArray(r.meta[k]) ? (r.meta[k] as unknown[]) : []);
     const go = col("go"), when = col("when"), media = col("media");
     return r.body.split("\n").filter(Boolean).map((line, i) => {
@@ -214,7 +202,7 @@ export function findChanges(list: Change[], q: string): Change[] {
 /** The changes to one area, by its first word ("Usage", "Usage limits"), in list order. */
 export function sameArea(list: Change[], c: Change): Change[] {
   const k = (x: Change) => x.area.toLowerCase().split(/\s+/)[0];
-  return c.row.kind === "note" ? [c] : list.filter((x) => x.row.kind !== "note" && k(x) === k(c));
+  return list.filter((x) => k(x) === k(c));
 }
 
 /** Ask Claude about it: the prompt a new session in Mystical's own checkout starts with. */
@@ -230,6 +218,5 @@ export function askChange(c: Change): string {
 
 /** A change as markdown, for Copy. */
 export function changeMarkdown(c: Change): string {
-  return c.row.kind === "note" ? `**${c.area}**\n\n${c.text}`
-    : `**${c.area}**${c.text ? ` — ${c.text}` : ""}${c.when ? `\n\n_Shows when ${c.when}._` : ""}`;
+  return `**${c.area}**${c.text ? ` — ${c.text}` : ""}${c.when ? `\n\n_Shows when ${c.when}._` : ""}`;
 }

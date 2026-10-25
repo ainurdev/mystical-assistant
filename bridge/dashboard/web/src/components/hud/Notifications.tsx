@@ -149,9 +149,9 @@ function Source({ kind, source, project }: { kind: string; source: string; proje
 
 function openRow(n: { id?: number; kind: string; subject: string; source: string; meta: Record<string, unknown>; session_id?: string | null }) {
   const sid = n.session_id ?? str(n.meta.session_id) ?? "";
-  // Mystical's own updates and notes live in the rail's changelog (ChangelogButton), not the bell;
+  // Mystical's own updates live in the rail's changelog (ChangelogButton), not the bell;
   // it opens on this row, unfolded even though the click that got here just marked it read.
-  if (n.kind === "updated" || n.kind === "note") return void window.dispatchEvent(new CustomEvent("hud:changelog", { detail: n.id }));
+  if (n.kind === "updated") return void window.dispatchEvent(new CustomEvent("hud:changelog", { detail: n.id }));
   // An update not taken yet opens where it is taken: UPDATE's popover, on its release notes.
   if (n.kind === "coming") return void window.dispatchEvent(new CustomEvent("hud:update"));
   if (n.source === "session" || sid) return env.openSession(sid || n.subject);
@@ -448,7 +448,7 @@ export function NotificationCenter() {
     if (ids.length) void api.noticesRead(ids).then(() => load.current(), () => { /* next poll */ });
   }, [openSid, feed]);
 
-  // Updates and notes are the changelog's: it lists them and pops them (the poll above).
+  // Updates are the changelog's: it lists them and pops them (the poll above).
   const rows = useMemo(() => groupBySubject(feed.filter((n) => n.group !== "updates")), [feed]);
   const unread = rows.filter((r) => !r.read).length;
   const quiet = prefs ? isQuiet(prefs.quiet, new Date(now * 1000)) : false;
