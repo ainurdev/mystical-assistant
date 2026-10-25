@@ -196,9 +196,11 @@ function ChatsPage() {
     for (const list of by.values()) list.sort(byStart);
     // the active repo heads the list even with nothing in it yet
     if (active && !needle && !by.has(active)) by.set(active, []);
+    // a project with a chat at work goes over the ones at rest, like its rows (`lift`)
+    const atWork = (l: SessionBrief[]) => Number(l.some(busy));
     return [...by.entries()].sort((a, b) =>
-      (a[0] === active ? -1 : b[0] === active ? 1 : 0) || start(b[1][0]) - start(a[1][0]));
-  }, [shown, active, needle, hidden]);
+      (a[0] === active ? -1 : b[0] === active ? 1 : 0) || atWork(b[1]) - atWork(a[1]) || start(b[1][0]) - start(a[1][0]));
+  }, [shown, active, needle, hidden, status]);
 
   const TABS: { k: Mode; icon: typeof BellRing; label: string; n?: number }[] = [
     { k: "attention", icon: BellRing, label: "Attention", n: asks },

@@ -677,13 +677,19 @@ export function SessionsPanel(props: Props) {
   }
 
   // PROJECTS: the tree. By default a project ranks by its newest session's
-  // start, so it rises when you start one there, never because a turn ran.
+  // start, so it rises when you start one there, not because a turn ran —
+  // except while one runs: a project with a turn the bridge holds goes over the
+  // ones at rest, the way its rows do (`lift`), so the one you work in never
+  // sits under idle projects that happened to start a session later. It drops
+  // back to its start position when the turn ends.
   const started = new Map<string, number>();
   for (const s of sessions) {
     const g = jobGroup(s), t = s.created ?? s.updated;
     if (t > (started.get(g) ?? 0)) started.set(g, t);
   }
-  const byStart = [...groups].sort((a, b) => (started.get(b.rel) ?? 0) - (started.get(a.rel) ?? 0));
+  const atWork = new Set(sessions.filter(busy).map(jobGroup));
+  const byStart = [...groups].sort((a, b) =>
+    Number(atWork.has(b.rel)) - Number(atWork.has(a.rel)) || (started.get(b.rel) ?? 0) - (started.get(a.rel) ?? 0));
   // CUSTOM: dragged positions first (sort is stable, so anything you never
   // dragged keeps its start order behind them).
   const rank = (rel: string) => { const i = customOrder.indexOf(rel); return i < 0 ? Infinity : i; };
@@ -777,6 +783,11 @@ export function SessionsPanel(props: Props) {
 
   /** The + beside the search, or a project head's + New: each toggles its own popover. */
   const toggleNs = (at: string) => setNsAt((v) => (v === at ? null : at));
+  /** The jobs head's All: drill into the group's whole log, or step back out of it. */
+  const toggleLog = (rel: string) => {
+    setShut((c) => { const n = new Set(c); n.delete(rel); return n; });
+    setOpen((c) => { const n = new Set(c); if (!n.delete(rel)) n.add(rel); return n; });
+  };
   const nsPop = (scoped?: string) => (
     <NewSessionPop
       groups={groups} sessions={sessions} status={status} here={activeProject}
@@ -1173,6 +1184,12 @@ export function SessionsPanel(props: Props) {
               const jobs = g.rel === JOBS_REL;
               const shared = g.rel === SHARED_REL;    // no folder of yours: no project menu, no New
               const tint = jobs || shared ? JOB_TINT : projectTint(g.rel);
+              // The head's one action: + New opens this project's popover; Rivendell
+              // started the jobs, so that head's All opens the whole log instead.
+              // Open, either is the × that shuts it (like the + beside the search).
+              const actOn = jobs ? open.has(g.rel) : nsAt === g.rel;
+              const actTitle = jobs ? (actOn ? "Back to all projects" : `All ${g.sessionCount} jobs`)
+                : actOn ? "Close" : `New session in ${g.rel}`;
               return (
                 <div
                   key={g.rel}
@@ -1213,25 +1230,29 @@ export function SessionsPanel(props: Props) {
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
                     <span style={{ flex: 1, minWidth: 6 }} />
-                    {/* Rivendell or a teammate started these; there is no session of yours to start here. */}
-                    {!jobs && !shared && <button
-                      onClick={(e) => { e.stopPropagation(); toggleNs(g.rel); }}
-                      title={`New session in ${g.rel}`} aria-haspopup="dialog" aria-expanded={nsAt === g.rel} data-ns-anchor
+                    {/* A teammate started Shared's; there is nothing of yours to open or start there. */}
+                    {!shared && <button
+                      onClick={(e) => { e.stopPropagation(); if (jobs) toggleLog(g.rel); else toggleNs(g.rel); }}
+                      title={actTitle} aria-label={actTitle} aria-expanded={actOn}
+                      aria-haspopup={jobs ? undefined : "dialog"} data-ns-anchor={jobs ? undefined : true}
                       draggable={false} onDragStart={(e) => e.preventDefault()}
                       onMouseEnter={() => setHov(`add:${g.rel}`)} onMouseLeave={() => setHov("")}
-                      className="rowact" data-keep={nsAt === g.rel}
+                      className="rowact" data-keep={actOn}
                       // Sits inside a header that collapses on click, so a near
                       // miss shuts the project instead. Full row height plus
                       // side padding, pulled back so nothing moves.
                       style={{ flex: "none", alignSelf: "stretch", display: "flex", alignItems: "center", gap: 6, border: 0, background: "transparent",
                                padding: "0 8px", margin: "0 -8px", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)",
                                letterSpacing: ".14em", textTransform: "uppercase",
-                               color: hov === `add:${g.rel}` || nsAt === g.rel ? "var(--acc)" : "var(--txl)" }}
-                    >
-                      <svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true" style={{ flex: "none" }}>
-                        <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                               color: hov === `add:${g.rel}` || actOn ? "var(--acc)" : "var(--txl)" }}
+                    >{/* open, the glyph turns into the × that shuts it */}
+                      <svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true"
+                           style={{ flex: "none", transform: actOn ? "rotate(45deg)" : "none", transition: "transform .18s ease" }}>
+                        {jobs && !actOn
+                          ? <path d="M1 2.5h10M1 6h10M1 9.5h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                          : <path d="M6 1v10M1 6h10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />}
                       </svg>
-                      New
+                      {!actOn && (jobs ? "All" : "New")}
                     </button>}
                   </div>
                   {nsAt === g.rel && <div style={{ position: "relative", zIndex: 60 }}>{nsPop(g.rel)}</div>}
