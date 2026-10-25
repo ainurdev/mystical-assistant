@@ -125,6 +125,80 @@ def test_asked_never_undoes_an_answer(repo):
     assert taskcheck.read(repo) == {"fix/login": "skip"}
 
 
+def on_main(repo):
+    """The checkout back on main, tracking origin/main, with a commit no remote has."""
+    git(repo, "checkout", "-q", "main")
+    git(repo, "branch", "-q", "-u", "origin/main")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "tweak the footer")
+
+
+def land(repo, then="the next piece of work"):
+    """Push main, then start the next piece of work on it."""
+    git(repo, "push", "-q", "origin", "main")
+    git(repo, "commit", "-q", "--allow-empty", "-m", then)
+
+
+def test_a_push_from_main_is_held_once_per_piece_of_work(repo):
+    on_main(repo)
+    assert held(repo)
+    assert held(repo) is None                       # the retry goes through
+    land(repo)
+    assert held(repo)                               # new work on main asks again
+
+
+@pytest.mark.parametrize("value", ["skip", "EFA-68"])
+def test_an_answer_on_main_covers_only_the_work_it_was_given_for(repo, value):
+    on_main(repo)
+    taskcheck.record(repo, "main", value)
+    assert held(repo) is None
+    land(repo)
+    assert held(repo)
+
+
+def test_a_fetch_keeps_an_answer_on_main(repo, tmp_path):
+    on_main(repo)
+    taskcheck.record(repo, "main", "skip")
+    mate = str(tmp_path / "mate")
+    subprocess.run(["git", "clone", "-q", git(repo, "remote", "get-url", "origin"), mate], check=True)
+    git(mate, "-c", "user.email=m@m", "-c", "user.name=m", "commit", "-q", "--allow-empty", "-m", "theirs")
+    git(mate, "push", "-q", "origin", "main")
+    git(repo, "fetch", "-q")                        # a teammate's push, fetched in the background
+    assert held(repo) is None
+
+
+def test_an_answer_main_kept_forever_no_longer_counts_and_goes(repo):
+    on_main(repo)
+    os.makedirs(os.path.join(repo, ".mystical"))
+    with open(os.path.join(repo, taskcheck.STATE), "w") as f:     # as it was written before
+        json.dump({"main": "skip", "fix/login": "NRA-61"}, f)
+    assert held(repo)
+    d = taskcheck.read(repo)
+    assert "main" not in d and d["fix/login"] == "NRA-61"
+    assert [v for k, v in d.items() if k.startswith("main@")] == ["asked"]
+    land(repo)
+    assert held(repo)
+    assert len([k for k in taskcheck.read(repo) if k.startswith("main@")]) == 1   # one answer per main
+
+
+def test_a_feature_branch_keeps_its_answer_after_its_push(repo):
+    taskcheck.record(repo, "fix/login", "skip")
+    git(repo, "push", "-q", "-u", "origin", "fix/login")
+    git(repo, "commit", "-q", "--allow-empty", "-m", "and the logout one")
+    assert held(repo) is None
+    assert taskcheck.read(repo) == {"fix/login": "skip"}
+
+
+def test_the_default_branch_is_whatever_origin_names(repo):
+    git(repo, "branch", "-q", "trunk", "main")
+    git(repo, "push", "-q", "origin", "trunk")
+    git(repo, "remote", "set-head", "origin", "trunk")
+    git(repo, "checkout", "-q", "trunk")
+    git(repo, "branch", "-q", "-u", "origin/trunk")
+    assert taskcheck.slot(repo, "trunk").startswith("trunk@")
+    assert taskcheck.slot(repo, "main") == "main"   # origin names trunk, so main is just a branch
+    assert taskcheck.slot(repo, "fix/login") == "fix/login"
+
+
 def test_the_answers_stay_out_of_git(repo):
     taskcheck.record(repo, "fix/login", "skip")
     assert git(repo, "status", "--porcelain") == ""

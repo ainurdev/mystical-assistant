@@ -3526,6 +3526,24 @@ def test_task_state_reads_a_recorded_answer(cached, tmp_path):
     assert rivendell.task_state(repo)["state"] == "skip"
 
 
+def test_task_state_on_main_forgets_an_answer_once_its_work_lands(cached, tmp_path):
+    import subprocess
+    from bridge import taskcheck
+    repo = _checkout(tmp_path, pushed=True)
+
+    def git(*a):
+        subprocess.run(["git", "-C", repo, "-c", "user.email=t@t", "-c", "user.name=t", *a],
+                       check=True, capture_output=True)
+    git("checkout", "-q", "main")
+    git("push", "-q", "-u", "origin", "main")
+    git("commit", "-q", "--allow-empty", "-m", "tweak the footer")
+    taskcheck.record(repo, "main", "EFA-68")
+    assert rivendell.task_state(repo)["key"] == "EFA-68"
+    git("push", "-q")
+    git("commit", "-q", "--allow-empty", "-m", "the next piece of work")
+    assert rivendell.task_state(repo)["state"] == "none"     # EFA-68's work landed: this is new work
+
+
 def test_task_state_draws_nothing_without_work_a_board_or_a_branch(cached, workers, tmp_path, monkeypatch):
     import subprocess
     assert rivendell.task_state(_checkout(tmp_path, pushed=True)) is None     # nothing to push

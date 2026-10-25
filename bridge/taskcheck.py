@@ -14,7 +14,10 @@ stuck push.
 Each checkout keeps the answers in .mystical/tasks.json (branch -> "asked",
 "skip" or a task key). The hook is a separate process with no bridge to ask,
 and the task tab (rivendell.task_state) reads the same file, so the two agree
-and a restart forgets nothing.
+and a restart forgets nothing. A feature branch is one piece of work, so its
+answer lasts as long as the branch. The default branch carries one piece of
+work after another, so its answer is kept under `main@<commit>` (slot): one
+"Not a task" on main once switched the check off there for good.
 
 Stdlib only, nothing from bridge/: the hook runs this file as a script under -I.
 Not built: a git pre-push hook would catch terminal pushes too, but it means
@@ -85,6 +88,21 @@ def has_work(top: str) -> bool:
                 or _git(top, "rev-list", "-n", "1", "HEAD", "--not", "--remotes"))
 
 
+def slot(top: str, br: str) -> str:
+    """The key a branch's answer is kept under. On the default branch (the one
+    origin's HEAD names; main or master when it names none) it also carries the
+    commit the work sits on, HEAD's merge-base with its upstream: once the push
+    lands that commit moves, and the next work there asks again. A background
+    fetch doesn't move it. Any other branch: the branch name.
+    shortcut: a pull or rebase between the answer and the push moves it too, so
+    that push is held once more. Key on the work's first commit if that bites."""
+    head = _git(top, "symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD")
+    if not br or br not in ({head.split("/", 1)[1]} if "/" in head else {"main", "master"}):
+        return br
+    base = _git(top, "merge-base", "HEAD", "@{upstream}")
+    return f"{br}@{base[:12]}" if base else br
+
+
 def read(top: str) -> dict:
     try:
         with open(os.path.join(top, STATE), encoding="utf-8") as f:
@@ -95,14 +113,19 @@ def read(top: str) -> dict:
 
 
 def record(top: str, br: str, value: str) -> None:
-    """One branch's answer: "asked", "skip" or a key. "asked" only marks a
-    branch with no answer yet; it never undoes one. Best-effort."""
+    """One branch's answer: "asked", "skip" or a key, under its slot. "asked"
+    only marks a branch with no answer yet; it never undoes one. The default
+    branch keeps only its newest answer: the older ones were for work that has
+    landed. Best-effort."""
     if not (top and br and value):
         return
+    key = slot(top, br)
     d = read(top)
-    if value == "asked" and d.get(br):
+    if value == "asked" and d.get(key):
         return
-    d[br] = value
+    if key != br:
+        d = {k: v for k, v in d.items() if k != br and not k.startswith(br + "@")}
+    d[key] = value
     path = os.path.join(top, STATE)
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -164,7 +187,7 @@ def gate(cwd: str, command: str, home: str, prefixes=()) -> "str | None":
         return None
     top = toplevel(d)
     br = branch(top)
-    if not br or read(top).get(br):
+    if not br or read(top).get(slot(top, br)):
         return None
     rx = key_re(prefixes)
     if rx.search(br) or rx.search(command):

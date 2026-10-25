@@ -49,6 +49,11 @@ itself.
    recorded by `rivendell.work_create`, and the tab's NOT A TASK by
    `POST /local/rivendell/taskstate`. A file instead of bridge memory: the hook
    is a separate process with no bridge to ask, and a restart forgets nothing.
+   The default branch is the exception (2026-10-25): its answer is kept as
+   `main@<merge-base with upstream>` and lapses once that push lands, because
+   main carries one piece of work after another. Kept per branch, one `skip`
+   had turned Rivendell's main off for good and EFAS's main read EFA-68 for
+   every later push.
 4. **The styled card.** The dashboard's QuestionCard dresses a `Task` question:
    - the eyebrow reads `● NEEDS YOUR ANSWER · RIVENDELL TASK`;
    - the board's mark tile sits beside the question;

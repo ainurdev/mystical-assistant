@@ -3076,7 +3076,7 @@ def task_state(path: str) -> "dict | None":
     if not br:
         return None
     tasks, projects = _cached(top)
-    rec = taskcheck.read(top).get(br)
+    rec = taskcheck.read(top).get(taskcheck.slot(top, br))
     m = taskcheck.key_re(key_prefixes(top)).search(br)
     key = m.group(0).upper() if m else (rec if rec not in (None, "asked", "skip") else None)
     board_url = next((p["url"] for p in projects if p.get("url")), None)
