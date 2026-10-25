@@ -49,3 +49,14 @@ export function previewTexts(q: Question): string[] | null {
   const texts = q.options.map((o) => parsePreview(o.preview).text);
   return texts.some(Boolean) ? texts : null;
 }
+
+/** The one frame a question's shots share (.mystical/design-drafts/ask-pictures-steady):
+ *  the largest width and the largest height among them, in natural px. Every shot
+ *  draws at the one scale that fits it, hung from the top, so a tab or an option
+ *  never resizes the card or zooms the picture. 16 × 10 until every shot has a size
+ *  (`undefined` = still loading; leave out the ones that failed), so the frame
+ *  settles once, as the card arrives, rather than once per picture. */
+export function frameOf(sizes: ([number, number] | undefined)[]): [number, number] {
+  if (!sizes.length || sizes.some((s) => !s)) return [16, 10];
+  return [Math.max(...sizes.map((s) => s![0])), Math.max(...sizes.map((s) => s![1]))];
+}

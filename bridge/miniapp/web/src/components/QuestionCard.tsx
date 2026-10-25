@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { Maximize2 } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
 import type { AnswerSelection, Question } from "../lib/api";
-import { optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
+import { frameOf, optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { ImageLightbox } from "./ImageLightbox";
 import { ToolImage } from "./RunStream";
@@ -11,14 +11,27 @@ import { ToolImage } from "./RunStream";
 /** The pictures of the option on show, above the option rows: the phone's half
  *  of the dashboard's Stage (QuestionCard.tsx there), stacked, so a tapped row
  *  swaps the picture right above it. The tabs page that option's shots and keep
- *  their place when you switch options. Its viewer has no PICK: closing it puts
- *  the rows back under your thumb. */
+ *  their place when you switch options. Only an option with pictures takes the
+ *  stage (a tapped Revise or Park it leaves the last pictures up), and every shot
+ *  draws at one scale in one frame (lib/qpreview frameOf), hung from the top, so
+ *  a tap never resizes the card or zooms the picture. Its viewer has no PICK:
+ *  closing it puts the rows back under your thumb. */
 function StageView({ q, shown }: { q: Question; shown: number }) {
   const [tab, setTab] = useState(0);
   const [zoom, setZoom] = useState<string | null>(null);
   const [srcs, setSrcs] = useState<Record<string, string>>({});
+  const [dims, setDims] = useState<Record<string, [number, number]>>({});
   const opts = q.options.map((o, i) => ({ ...optionKey(o.label, i), pv: parsePreview(o.preview) }));
-  const cur = opts[shown] ?? opts[0];
+  const has = (x: (typeof opts)[number]) => x.pv.shots.length > 0 || x.pv.text !== "";
+  const cur = opts[shown] && has(opts[shown]) ? opts[shown] : opts.find(has) ?? opts[0];
+  const ci = opts.indexOf(cur);
+  // Sized from the blob ToolImage hands over; a picture that never arrives keeps the frame at 16 × 10.
+  const [W, H] = frameOf(opts.flatMap((x) => x.pv.shots).map((s) => dims[s.path]));
+  const measure = (path: string, src: string) => {
+    const im = new Image();
+    im.onload = () => setDims((d) => ({ ...d, [path]: [im.naturalWidth, im.naturalHeight] }));
+    im.src = src;
+  };
   const t = Math.min(tab, Math.max(cur.pv.shots.length - 1, 0));
   const shot = cur.pv.shots[t];
   return (
@@ -42,28 +55,29 @@ function StageView({ q, shown }: { q: Question; shown: number }) {
           )}
         </span>
       </div>
-      {/* Every option's every shot stacked in one cell, the shown one fading in
-          (the dashboard Stage's way): the cell holds the tallest, each capped in
-          height, so a tap never resizes the card or waits on a fetch. */}
-      <div className="grid grid-cols-[minmax(0,1fr)]">
-        {opts.flatMap((x, oi) => (x.pv.shots.length ? x.pv.shots : [null]).map((s, k) => {
-          const on = oi === shown && k === t;
+      {/* Every pictured option's every shot stacked in one frame, the question's
+          largest shot, the shown one fading in (the dashboard Stage's way): a tap
+          never resizes the card, zooms the picture or waits on a fetch. */}
+      <div className="grid grid-cols-[minmax(0,1fr)] overflow-hidden"
+        style={{ containerType: "size", aspectRatio: `${W} / ${H}`, maxHeight: "min(56vh, 440px)" }}>
+        {opts.flatMap((x, oi) => !has(x) ? [] : (x.pv.shots.length ? x.pv.shots : [null]).map((s, k) => {
+          const on = oi === ci && k === t;
+          const w = (s && dims[s.path]?.[0]) || W;
           return (
-            <div key={`${oi}.${k}`} className={`col-start-1 row-start-1 flex min-w-0 flex-col justify-center transition-[opacity,visibility] duration-150 motion-reduce:transition-none ${on ? "" : "invisible opacity-0"}`}>
-              {s && (
+            <div key={`${oi}.${k}`} style={{ width: `min(100cqw * ${w} / ${W}, 100cqh * ${w} / ${H})` }}
+              className={`col-start-1 row-start-1 min-w-0 self-start justify-self-center transition-[opacity,visibility] duration-150 motion-reduce:transition-none ${on ? "" : "invisible opacity-0"}`}>
+              {s ? (
                 <ToolImage
                   path={s.path}
                   alt={`${x.key} · ${x.name}${s.alt ? ` · ${s.alt}` : ""}`}
-                  className="block h-auto max-h-[min(56vh,440px)] w-full object-contain"
+                  className="block h-auto w-full"
                   fallback={<p className="px-3 py-2 text-xs text-[var(--tg-hint)]">{s.alt || "This picture is gone."}</p>}
                   onZoom={(src) => setZoom(src)}
-                  onSrc={(src) => setSrcs((m) => ({ ...m, [s.path]: src }))}
+                  onSrc={(src) => { setSrcs((m) => ({ ...m, [s.path]: src })); measure(s.path, src); }}
                 />
+              ) : (
+                <pre className="m-0 max-h-[100cqh] overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs text-[var(--tg-hint)]">{x.pv.text}</pre>
               )}
-              {x.pv.text && (
-                <pre className="m-0 max-h-80 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs text-[var(--tg-hint)]">{x.pv.text}</pre>
-              )}
-              {!s && !x.pv.text && <p className="px-3 py-3 text-center text-xs text-[var(--tg-hint)]">No picture for this option</p>}
             </div>
           );
         }))}
@@ -260,7 +274,12 @@ export function QuestionCard({
               return (
                 <button
                   key={o.label}
-                  onClick={() => { toggle(q, qi, o.label); setShownAt((m) => ({ ...m, [qi]: i })); }}
+                  onClick={() => {
+                    toggle(q, qi, o.label);
+                    // An option without pictures leaves the last pictures up (StageView).
+                    const pv = parsePreview(o.preview);
+                    if (pv.shots.length || pv.text) setShownAt((m) => ({ ...m, [qi]: i }));
+                  }}
                   disabled={sending}
                   className={`border px-3 py-2.5 text-left text-sm active:opacity-70 ${
                     picked

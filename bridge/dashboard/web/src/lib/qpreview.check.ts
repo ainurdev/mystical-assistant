@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/qpreview.check.ts
-import { optionKey, parsePreview, previewTexts, staged } from "./qpreview.ts";
+import { frameOf, optionKey, parsePreview, previewTexts, staged } from "./qpreview.ts";
 
 const p = parsePreview("![In the box](/up/j/r-1-a1.png)\n![Sent](</up/j/r-2-a3.png>)\n\nthe chip sits in your words");
 console.assert(p.shots.length === 2, `two shots: ${JSON.stringify(p.shots)}`);
@@ -30,5 +30,9 @@ const tx = previewTexts(q(false, "1 · PLAN\nstep one"));
 console.assert(JSON.stringify(tx) === JSON.stringify(["", "1 · PLAN\nstep one"]), `text previews: ${JSON.stringify(tx)}`);
 console.assert(previewTexts(q(false, "![x](/a.png)\nwords")) === null, "a picture stages it: no text panel");
 console.assert(previewTexts(q(true, "words")) === null && previewTexts(q(false)) === null, "multiSelect or none: no panel");
+
+console.assert(JSON.stringify(frameOf([[1600, 920], [1600, 162], [658, 1878]])) === "[1600,1878]", "the largest width and the largest height");
+console.assert(JSON.stringify(frameOf([[1600, 920], undefined])) === "[16,10]", "16 x 10 until every shot has a size");
+console.assert(JSON.stringify(frameOf([])) === "[16,10]", "no shots: 16 x 10");
 
 console.log("qpreview.check ok");

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown, Ban, Check, ChevronLeft, ChevronRight, CircleQuestionMark, ListChecks, Maximize2, MessageCircleQuestion,
   Minimize2, Plug, SquareTerminal, X,
 } from "lucide-react";
 import { api, type AnswerSelection, type Question } from "../api";
 import { splitAsk, waited, type Docked } from "../lib/askdock";
-import { optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
+import { frameOf, optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { hhmm as clock, useClock12 } from "../lib/surfaces";
 import { mcpParts } from "../lib/tools";
@@ -277,35 +277,57 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
   );
 }
 
-/** A question whose options carry pictures. Tiles side by side, each showing the
- *  same shot (the tabs switch every tile at once, so one state compares across
- *  options); Bigger grows the dock into a stage for one option at a time, and
- *  every picture opens the lightbox with PICK. */
+/** A question whose options carry pictures (.mystical/design-drafts/ask-pictures-steady).
+ *  Only the options that bring pictures get picture space; the others are plain rows
+ *  under them, never a "No picture" box. One pictured option (approve / revise / park)
+ *  is what the question is about: its shots fill a stage and every option is a row.
+ *  Several are tiles showing the same shot (the tabs switch every tile at once), and
+ *  Bigger pages them on a stage. Every frame takes the question's largest shot
+ *  (lib/qpreview frameOf) and every shot draws at that one scale, hung from the top,
+ *  so a tab or an option never resizes the dock or zooms the picture. Every picture
+ *  opens the lightbox with PICK. */
 function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
   q: Question; chosen: string[]; onPick: (label: string) => void; sending: boolean;
   /** The answered record: tiles open their picture and Bigger pages them; nothing is picked. */
   readOnly?: boolean;
 }) {
   const opts = q.options.map((o, i) => ({ o, ...optionKey(o.label, i), pv: parsePreview(o.preview) }));
-  const tabs = opts.reduce((m, x) => (x.pv.shots.length > m.length ? x.pv.shots : m), opts[0]?.pv.shots ?? []);
+  const pics = opts.filter((x) => x.pv.shots.length || x.pv.text);
+  const solo = pics.length === 1;
+  const rows = solo ? opts : opts.filter((x) => !pics.includes(x));
+  const tabs = pics.reduce((m, x) => (x.pv.shots.length > m.length ? x.pv.shots : m), pics[0]?.pv.shots ?? []);
   const [tab, setTab] = useState(0);
   const [big, setBig] = useState(false);
-  const at = opts.findIndex((x) => chosen.includes(x.o.label));
+  const at = pics.findIndex((x) => chosen.includes(x.o.label));
   const [shown, setShown] = useState(at >= 0 ? at : 0);
   const [zoom, setZoom] = useState<number | null>(null);
-  const shotOf = (x: (typeof opts)[number]) => x.pv.shots[Math.min(tab, x.pv.shots.length - 1)];
-  const all = opts.flatMap((x, oi) => x.pv.shots.map((s, k) => ({
-    oi, k, src: api.attachmentUrl(s.path), tag: x.key,
+  const [dims, setDims] = useState<Record<string, [number, number]>>({});
+  const [gone, setGone] = useState<Set<string>>(() => new Set());
+  const [W, H] = frameOf(pics.flatMap((x) => x.pv.shots).filter((s) => !gone.has(s.path)).map((s) => dims[s.path]));
+  const frame = { "--W": W, "--H": H, "--ar": Math.min(Math.max(W / H, 1.15), 2.4) } as React.CSSProperties;
+  const kOf = (x: (typeof pics)[number]) => Math.min(tab, Math.max(x.pv.shots.length - 1, 0));
+  const all = pics.flatMap((x, pi) => x.pv.shots.map((s, k) => ({
+    pi, k, src: api.attachmentUrl(s.path), tag: x.key,
     name: [`${x.key} · ${x.name}`, x.pv.shots.length > 1 ? `${k + 1}/${x.pv.shots.length}` : "", s.alt].filter(Boolean).join(" · "),
   })));
-  const open = (oi: number) => {
-    const s = shotOf(opts[oi]);
-    const i = all.findIndex((a) => a.oi === oi && (!s || a.k === opts[oi].pv.shots.indexOf(s)));
+  const open = (pi: number) => {
+    const i = all.findIndex((a) => a.pi === pi && a.k === kOf(pics[pi]));
     if (i >= 0) setZoom(i);
   };
-  const cur = opts[shown] ?? opts[0];
-  const curShot = shotOf(cur);
-  const n = Math.min(opts.length, 4);
+  // One option's shots stacked in a frame, only the `on` one visible.
+  const layers = (x: (typeof pics)[number], on: (k: number) => boolean) => x.pv.shots.length
+    ? x.pv.shots.map((s, k) => (
+      <span key={k} className="ad-shot" data-on={on(k) ? "" : undefined} style={{ "--w": dims[s.path]?.[0] ?? W } as React.CSSProperties}>
+        {gone.has(s.path)
+          ? <span className="ad-pre">{s.alt || "This picture is gone."}</span>
+          : <img src={api.attachmentUrl(s.path)} alt={`${x.key} · ${x.name}${s.alt ? ` · ${s.alt}` : ""}`} draggable={false}
+              onLoad={(e) => { const im = e.currentTarget; setDims((d) => ({ ...d, [s.path]: [im.naturalWidth, im.naturalHeight] })); }}
+              onError={() => setGone((g) => new Set(g).add(s.path))} />}
+      </span>
+    ))
+    : [<span key="t" className="ad-shot ad-pre" data-on={on(0) ? "" : undefined}>{x.pv.text}</span>];
+  const cur = pics[shown] ?? pics[0];
+  const curShot = cur.pv.shots[kOf(cur)];
   return (
     <>
       <div className="ad-pbar">
@@ -318,65 +340,85 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
             ))}
           </span>
         )}
-        <button type="button" className="ad-grow" onClick={() => setBig((b) => !b)} title={big ? "Back to the tiles" : "See one option large"}>
-          {big ? <><Minimize2 size={11} aria-hidden /> Smaller</> : <><Maximize2 size={11} aria-hidden /> Bigger</>}
-        </button>
+        {solo
+          ? curShot && <button type="button" className="ad-grow" onClick={() => open(0)}><Maximize2 size={11} aria-hidden /> Full size</button>
+          : (
+            <button type="button" className="ad-grow" onClick={() => setBig((b) => !b)} title={big ? "Back to the tiles" : "See one option large"}>
+              {big ? <><Minimize2 size={11} aria-hidden /> Smaller</> : <><Maximize2 size={11} aria-hidden /> Bigger</>}
+            </button>
+          )}
       </div>
-      {big ? (
+      {solo || big ? (
         <>
-          <div className="ad-stage">
-            <div className="ad-sh">
-              <Key k={cur.key} on={chosen.includes(cur.o.label)} />
-              <b>{cur.name}</b>
-              {curShot && <span className="ad-of">{cur.pv.shots.length > 1 ? `shot ${Math.min(tab, cur.pv.shots.length - 1) + 1} of ${cur.pv.shots.length}` : "1 shot"}{curShot.alt ? ` · ${curShot.alt}` : ""}</span>}
-              {curShot && <button type="button" className="ad-full" onClick={() => open(shown)}><Maximize2 size={11} aria-hidden /> Full size</button>}
-            </div>
+          <div className="ad-stage" style={frame}>
+            {!solo && (
+              <div className="ad-sh">
+                <Key k={cur.key} on={chosen.includes(cur.o.label)} />
+                <b>{cur.name}</b>
+                {curShot && <span className="ad-of">{cur.pv.shots.length > 1 ? `shot ${kOf(cur) + 1} of ${cur.pv.shots.length}` : "1 shot"}{curShot.alt ? ` · ${curShot.alt}` : ""}</span>}
+                {curShot && <button type="button" className="ad-full" onClick={() => open(shown)}><Maximize2 size={11} aria-hidden /> Full size</button>}
+              </div>
+            )}
             <div className="ad-pic">
-              {curShot
-                ? <button type="button" className="ad-img" onClick={() => open(shown)} title="Open full size"><img src={api.attachmentUrl(curShot.path)} alt={`${cur.key} · ${cur.name}`} /></button>
-                : <pre className="ad-pre">{cur.pv.text || "No picture for this option"}</pre>}
-              {opts.length > 1 && <>
-                <button type="button" className="ad-nav" data-side="l" aria-label="Previous option" onClick={() => setShown((shown + opts.length - 1) % opts.length)}><ChevronLeft size={16} strokeWidth={2.4} /></button>
-                <button type="button" className="ad-nav" data-side="r" aria-label="Next option" onClick={() => setShown((shown + 1) % opts.length)}><ChevronRight size={16} strokeWidth={2.4} /></button>
+              <div className="ad-frame" onClick={() => open(shown)} title={curShot ? "Open full size" : undefined}>
+                {pics.map((x, pi) => <Fragment key={pi}>{layers(x, (k) => pi === shown && k === kOf(x))}</Fragment>)}
+              </div>
+              {pics.length > 1 && <>
+                <button type="button" className="ad-nav" data-side="l" aria-label="Previous option" onClick={() => setShown((shown + pics.length - 1) % pics.length)}><ChevronLeft size={16} strokeWidth={2.4} /></button>
+                <button type="button" className="ad-nav" data-side="r" aria-label="Next option" onClick={() => setShown((shown + 1) % pics.length)}><ChevronRight size={16} strokeWidth={2.4} /></button>
               </>}
             </div>
           </div>
-          <div className="ad-strip">
-            {opts.map((x, oi) => (
-              <button key={x.o.label} type="button" className="ad-chip" aria-pressed={chosen.includes(x.o.label)} data-shown={oi === shown ? "" : undefined}
-                disabled={sending} onClick={() => { setShown(oi); if (!readOnly) onPick(x.o.label); }}>
-                <Key k={x.key} on={chosen.includes(x.o.label)} />{x.name}{x.rec && <span className="ad-sug" title="Suggested">★</span>}
-                {x.pv.shots.length > 0 && <small>{x.pv.shots.length === 1 ? "1 shot" : `${x.pv.shots.length} shots`}</small>}
-              </button>
-            ))}
-          </div>
+          {!solo && (
+            <div className="ad-strip">
+              {pics.map((x, pi) => (
+                <button key={x.o.label} type="button" className="ad-chip" aria-pressed={chosen.includes(x.o.label)} data-shown={pi === shown ? "" : undefined}
+                  disabled={sending} onClick={() => { setShown(pi); if (!readOnly) onPick(x.o.label); }}>
+                  <Key k={x.key} on={chosen.includes(x.o.label)} />{x.name}{x.rec && <span className="ad-sug" title="Suggested">★</span>}
+                  {x.pv.shots.length > 0 && <small>{x.pv.shots.length === 1 ? "1 shot" : `${x.pv.shots.length} shots`}</small>}
+                </button>
+              ))}
+            </div>
+          )}
         </>
       ) : (
-        <div className="ad-pics" style={{ "--n": n } as React.CSSProperties}>
-          {opts.map((x, oi) => {
-            const s = shotOf(x);
+        <div className="ad-pics" style={{ "--n": Math.min(pics.length, 4), ...frame } as React.CSSProperties}>
+          {pics.map((x, pi) => {
             const on = chosen.includes(x.o.label);
             return (
               <div key={x.o.label} className="ad-tile" data-on={on ? "" : undefined}>
                 <button type="button" className="ad-tilebtn" aria-pressed={on} disabled={sending}
-                  onClick={() => { setShown(oi); if (readOnly) open(oi); else onPick(x.o.label); }}>
-                  <span className="ad-th">
-                    {s ? <img src={api.attachmentUrl(s.path)} alt={`${x.key} · ${x.name}${s.alt ? ` · ${s.alt}` : ""}`} loading="lazy" />
-                      : <pre className="ad-pre">{x.pv.text || "No picture"}</pre>}
-                  </span>
+                  onClick={() => { setShown(pi); if (readOnly) open(pi); else onPick(x.o.label); }}>
+                  <span className="ad-th ad-frame">{layers(x, (k) => k === kOf(x))}</span>
                   <span className="ad-meta">
                     <Key k={x.key} on={on} />
                     <span className="ad-lab">{x.name}{x.rec && <span className="ad-sug" title="Suggested">★</span>}</span>
                     {x.o.description && <span className="ad-desc">{x.o.description}</span>}
                   </span>
                 </button>
-                {s && (
-                  <button type="button" className="ad-zm" title="Open full size" aria-label={`Open ${x.name} full size`} onClick={() => open(oi)}>
+                {x.pv.shots.length > 0 && (
+                  <button type="button" className="ad-zm" title="Open full size" aria-label={`Open ${x.name} full size`} onClick={() => open(pi)}>
                     <Maximize2 size={11} aria-hidden />
                   </button>
                 )}
               </div>
             );
+          })}
+        </div>
+      )}
+      {rows.length > 0 && (
+        <div className="ad-rows" style={{ "--n": rows.length === 4 ? 2 : Math.min(rows.length, 3) } as React.CSSProperties}
+          role={readOnly ? undefined : "radiogroup"} aria-label={q.header}>
+          {rows.map((x) => {
+            const on = chosen.includes(x.o.label);
+            const inner = <>
+              <Key k={x.key} on={on} />
+              <span className="ad-lab">{x.name}{x.rec && <span className="ad-sug" title="Suggested">★</span>}</span>
+              {x.o.description && <span className="ad-desc">{x.o.description}</span>}
+            </>;
+            return readOnly
+              ? <div key={x.o.label} className="ad-row" aria-pressed={on} data-ro="">{inner}</div>
+              : <button key={x.o.label} type="button" className="ad-row" aria-pressed={on} disabled={sending} onClick={() => onPick(x.o.label)}>{inner}</button>;
           })}
         </div>
       )}
@@ -387,7 +429,7 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
           onClose={() => setZoom(null)}
           action={readOnly ? undefined : (i) => {
             const a = all[i];
-            return a ? { label: `PICK ${opts[a.oi].key}`, onClick: () => { onPick(opts[a.oi].o.label); setShown(a.oi); setTab(a.k); setZoom(null); } } : null;
+            return a ? { label: `PICK ${pics[a.pi].key}`, onClick: () => { onPick(pics[a.pi].o.label); setShown(a.pi); setTab(a.k); setZoom(null); } } : null;
           }}
         />
       )}

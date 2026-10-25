@@ -6523,17 +6523,19 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .qstage-tab[aria-selected="true"] i { color: var(--d-ask, var(--acc)); }
 .qstage-zoom { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; cursor: zoom-in;
   color: var(--txm); border: 1px solid color-mix(in oklab, var(--txl) 35%, transparent); }
-/* Every option's shots stacked in one cell, the shown one on top: the cell
-   holds the tallest, so the card keeps its size whichever option is on show,
-   and a tall shot is capped and letterboxed instead of stretching the card. */
-.qstage-shots { display: grid; grid-template-columns: minmax(0, 1fr); }
-.qstage-layer { grid-area: 1 / 1; min-width: 0; display: flex; flex-direction: column; justify-content: center;
-  transition: opacity .16s ease, visibility .16s; }
+/* The dock's one frame (.ad-frame, lib/qpreview frameOf): --W x --H is the
+   question's largest shot, --w a shot's own width. Every shot draws at the one
+   scale that fits the largest, hung from the top and stacked with the shown one
+   visible, so the card keeps its size and the picture its zoom whichever option
+   or tab is on show; a tall frame is capped. */
+.qstage-shots { display: grid; container-type: size; overflow: hidden; aspect-ratio: var(--W) / var(--H); max-height: min(56vh, 480px); }
+.qstage-layer { grid-area: 1 / 1; justify-self: center; align-self: start; min-width: 0;
+  width: min(100cqw * var(--w) / var(--W), 100cqh * var(--w) / var(--H)); transition: opacity .16s ease, visibility .16s; }
 .qstage-layer[data-on="false"] { opacity: 0; visibility: hidden; }
-.qstage-none { margin: 0; padding: 12px; text-align: center; font-size: var(--t12, 12px); color: var(--txl); }
 @media (prefers-reduced-motion: reduce) { .qstage-layer { transition: none; } }
 .qstage-pic { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
-.qstage-pic img { display: block; width: 100%; height: auto; max-height: min(56vh, 480px); object-fit: contain; }
+.qstage-pic img { display: block; width: 100%; height: auto; }
+.qstage-shots .qstage-text { max-height: 100cqh; }
 .qstage-text { margin: 0; padding: 10px 12px; max-height: 320px; overflow: auto; white-space: pre-wrap;
   font: var(--t12, 12px)/1.5 var(--mono); color: var(--txm); }
 
@@ -6926,15 +6928,25 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   border: 1px solid var(--rc-line2); background: transparent; color: var(--txm); font-size: var(--t11); font-weight: 650; }
 .ad-grow:hover { color: var(--txh); border-color: color-mix(in oklab, var(--rc) 45%, var(--rc-line2)); }
 .ad-pics { display: grid; grid-template-columns: repeat(var(--n, 3), minmax(0, 1fr)); gap: 8px; margin-top: 9px; }
-.ad-tile { position: relative; min-width: 0; }
+.ad-tile { position: relative; min-width: 0; container-type: inline-size; }
 .ad-tilebtn { display: flex; flex-direction: column; width: 100%; padding: 0; overflow: hidden; border-radius: max(3px, var(--rc-rs)); background: var(--panel2); border: 1px solid var(--rc-line2); }
 .ad-tile[data-on] .ad-tilebtn { border-color: var(--rc); box-shadow: 0 0 0 2px color-mix(in oklab, var(--rc) 25%, transparent); }
 .ad-tilebtn:hover:not(:disabled) { border-color: color-mix(in oklab, var(--rc) 45%, var(--rc-line2)); }
-.ad-th { position: relative; display: block; aspect-ratio: 16 / 10; background: color-mix(in oklab, var(--panel3, var(--panel)) 70%, #000); border-bottom: 1px solid var(--rc-line); overflow: hidden; }
+.ad-th { position: relative; aspect-ratio: var(--ar, 16 / 10); background: color-mix(in oklab, var(--panel3, var(--panel)) 70%, #000); border-bottom: 1px solid var(--rc-line); }
 :root[data-light] .ad-th { background: var(--panel3, var(--panel)); }
-.ad-th img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .ad-pre { margin: 0; padding: 8px 10px; font: 500 var(--t105)/1.45 var(--mono); color: var(--txm); white-space: pre-wrap; overflow: hidden; }
 .ad-th .ad-pre { position: absolute; inset: 0; }
+/* One frame per question (lib/qpreview frameOf, .mystical/design-drafts/ask-pictures-steady):
+   --W x --H is the question's largest shot in natural px, --w a shot's own width. Every
+   shot draws at the one scale that fits the largest, hung from the top and stacked with
+   the shown one visible, so a tab or an option never resizes the dock or zooms the picture. */
+.ad-frame { display: grid; container-type: size; overflow: hidden; }
+.ad-shot { grid-area: 1 / 1; justify-self: center; align-self: start; display: block; min-width: 0;
+  width: min(100cqw * var(--w) / var(--W), 100cqh * var(--w) / var(--H)); transition: opacity .16s ease, visibility .16s; }
+.ad-shot:not([data-on]) { opacity: 0; visibility: hidden; }
+.ad-shot img { display: block; width: 100%; height: auto; }
+.ad-frame > .ad-pre { width: 100%; height: 100%; overflow: auto; }
+@media (prefers-reduced-motion: reduce) { .ad-shot { transition: none; } }
 /* Text-only previews (QuestionCard TextPreview, in the dock, its records and the
    transcript card): one panel under the rows. Every option's text sits stacked
    in its one cell, so switching options never resizes the card. The dock's
@@ -6957,7 +6969,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-meta .ad-key { width: 22px; height: 22px; }
 .ad-meta .ad-lab { line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ad-meta .ad-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.ad-zm { position: absolute; right: 7px; top: 7px; display: grid; place-items: center; width: 26px; height: 24px; padding: 0; border-radius: 6px;
+/* the tile frame's bottom-right corner: the shots hang from the top, so it is the free one */
+.ad-zm { position: absolute; right: 7px; top: calc(100cqw / var(--ar, 1.6) - 31px); display: grid; place-items: center; width: 26px; height: 24px; padding: 0; border-radius: 6px;
   background: color-mix(in oklab, var(--panel3, var(--panel)) 85%, transparent); border: 1px solid var(--rc-line2); color: var(--txb); }
 .ad-stage { margin-top: 9px; border-radius: max(3px, var(--rc-rs)); border: 1px solid var(--rc-line2); overflow: hidden; background: color-mix(in oklab, var(--panel3, var(--panel)) 70%, #000); }
 :root[data-light] .ad-stage { background: var(--panel3, var(--panel)); }
@@ -6967,8 +6980,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-of { color: var(--txl); font-size: var(--t12); }
 .ad-full { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 6px; border: 1px solid var(--rc-line2); background: transparent; color: var(--txm); font-size: var(--t11); font-weight: 650; }
 .ad-pic { position: relative; }
-.ad-img { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
-.ad-img img { display: block; width: 100%; max-height: 62vh; object-fit: contain; }
+.ad-stage .ad-frame { width: 100%; aspect-ratio: var(--W) / var(--H); max-height: min(46vh, 480px); cursor: zoom-in; }
 .ad-nav { position: absolute; top: 50%; transform: translateY(-50%); display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border-radius: 50%;
   background: color-mix(in oklab, var(--panel) 86%, transparent); border: 1px solid var(--rc-line2); color: var(--txh); }
 .ad-nav[data-side="l"] { left: 10px; } .ad-nav[data-side="r"] { right: 10px; }

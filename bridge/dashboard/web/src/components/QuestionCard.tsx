@@ -4,7 +4,7 @@ import { Check, Maximize2 } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
 import { api, type AnswerSelection, type Question } from "../api";
 import { ImageLightbox } from "./ImageLightbox";
-import { optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
+import { frameOf, optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { RivendellIcon } from "../lib/rivendellicon";
 
@@ -66,6 +66,9 @@ export function taskVerb(q: Question, picked?: string): string | null {
  *  (.mystical/design-drafts/picture-choices). The tabs page the shown option's
  *  shots and keep their place when you switch options, so A·2 → B·2 compares one
  *  state across them. A narrow card stacks it, stage first (index.css .qstage).
+ *  Only an option with pictures takes the stage: picking Revise or Park it leaves
+ *  the last pictures up, never a "No picture" box, and every shot draws at one
+ *  scale in one frame (lib/qpreview frameOf), as in the dock's Pictures.
  *  Without `onPick` it is the answered record: rows still switch the stage. */
 function Stage({ q, chosen, onPick, sending }: {
   q: Question;
@@ -74,11 +77,14 @@ function Stage({ q, chosen, onPick, sending }: {
   sending?: boolean;
 }) {
   const opts = q.options.map((o, i) => ({ o, ...optionKey(o.label, i), pv: parsePreview(o.preview) }));
-  const at = opts.findIndex((x) => chosen.includes(x.o.label));
-  const [shown, setShown] = useState(at >= 0 ? at : 0);
+  const has = (x: (typeof opts)[number]) => x.pv.shots.length > 0 || x.pv.text !== "";
+  const at = opts.findIndex((x) => chosen.includes(x.o.label) && has(x));
+  const [shown, setShown] = useState(at >= 0 ? at : Math.max(0, opts.findIndex(has)));
   const [tab, setTab] = useState(0);
   const [zoom, setZoom] = useState<number | null>(null);
   const [gone, setGone] = useState<Set<string>>(() => new Set());
+  const [dims, setDims] = useState<Record<string, [number, number]>>({});
+  const [W, H] = frameOf(opts.flatMap((x) => x.pv.shots).filter((s) => !gone.has(s.path)).map((s) => dims[s.path]));
   const cur = opts[shown] ?? opts[0];
   const t = Math.min(tab, Math.max(cur.pv.shots.length - 1, 0));
   const shot = cur.pv.shots[t];
@@ -88,7 +94,7 @@ function Stage({ q, chosen, onPick, sending }: {
     name: [`${x.key} · ${x.name}`, x.pv.shots.length > 1 ? `${k + 1}/${x.pv.shots.length}` : "", s.alt].filter(Boolean).join(" · "),
   })));
   const open = () => setZoom(all.findIndex((a) => a.oi === shown && a.k === t));
-  const pick = (oi: number) => { setShown(oi); onPick?.(opts[oi].o.label); };
+  const pick = (oi: number) => { if (has(opts[oi])) setShown(oi); onPick?.(opts[oi].o.label); };
   return (
     <div className="qstage-wrap">
       <div className="qstage">
@@ -100,7 +106,7 @@ function Stage({ q, chosen, onPick, sending }: {
                 key={x.o.label}
                 type="button"
                 disabled={sending}
-                onClick={() => (onPick ? pick(oi) : setShown(oi))}
+                onClick={() => (onPick ? pick(oi) : has(x) && setShown(oi))}
                 aria-pressed={on}
                 className={`qopt${on ? " qopt-on" : ""} rounded-lg px-3 py-2 text-left text-sm active:opacity-70 ${
                   on ? "bg-[var(--tg-button)] text-[var(--tg-button-text)]"
@@ -139,23 +145,24 @@ function Stage({ q, chosen, onPick, sending }: {
               </button>
             )}
           </div>
-          {/* Every option's every shot sits stacked in one cell and the shown
-              one fades in: the cell holds the tallest (each capped in height),
-              so switching options or tabs never resizes the card, and nothing
-              waits on a load you asked for — they all loaded with the card. */}
-          <div className="qstage-shots">
-            {opts.flatMap((x, oi) => (x.pv.shots.length ? x.pv.shots : [null]).map((s, k) => (
-              <div key={`${oi}.${k}`} className="qstage-layer" data-on={oi === shown && k === t}>
-                {s && (gone.has(s.path)
+          {/* Every pictured option's every shot sits stacked in one frame, the
+              question's largest shot, and the shown one fades in: switching
+              options or tabs never resizes the card or zooms the picture, and
+              nothing waits on a load you asked for — they all loaded with the card. */}
+          <div className="qstage-shots" style={{ "--W": W, "--H": H } as React.CSSProperties}>
+            {opts.flatMap((x, oi) => !has(x) ? [] : (x.pv.shots.length ? x.pv.shots : [null]).map((s, k) => (
+              <div key={`${oi}.${k}`} className="qstage-layer" data-on={oi === shown && k === t}
+                style={{ "--w": (s && dims[s.path]?.[0]) || W } as React.CSSProperties}>
+                {s ? (gone.has(s.path)
                   ? <p className="qstage-text">{s.alt || "This picture is gone."}</p>
                   : (
                     <button type="button" className="qstage-pic" title="Open full size" onClick={open}>
                       <img src={api.attachmentUrl(s.path)} alt={`${x.key} · ${x.name}${s.alt ? ` · ${s.alt}` : ""}`}
+                        onLoad={(e) => { const im = e.currentTarget; setDims((d) => ({ ...d, [s.path]: [im.naturalWidth, im.naturalHeight] })); }}
                         onError={() => setGone((g) => new Set(g).add(s.path))} />
                     </button>
-                  ))}
-                {x.pv.text && <pre className="qstage-text">{x.pv.text}</pre>}
-                {!s && !x.pv.text && <p className="qstage-none">No picture for this option</p>}
+                  ))
+                  : <pre className="qstage-text">{x.pv.text}</pre>}
               </div>
             )))}
           </div>
