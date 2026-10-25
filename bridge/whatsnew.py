@@ -598,8 +598,8 @@ def _decorate(c: dict) -> bool:
                 col.append(None)
         else:
             bullets[i] = line
-        cols["go"][i] = c["place"] or cols["go"][i]
-        cols["when"][i], cols["media"][i] = c["when"], c["media"]
+        # the note's words are the change's, its place too: none drops the model's guess
+        cols["go"][i], cols["when"][i], cols["media"][i] = c["place"], c["when"], c["media"]
         body = "\n".join(bullets)
         if len(body) > _BODY:
             return False

@@ -644,22 +644,24 @@ def test_a_note_for_an_older_change_decorates_the_row_that_told_it(repo, origin)
     g.pull(repo)
     whatsnew.boot().join(10)
     old = notices.feed()[0]
+    notices.revise(old["id"], title=old["title"], body=old["body"], meta={**old["meta"], "go": ["rail:git", "settings:system"]})
     notices.mark_read([old["id"]])
     _change(origin, "usage-limits", _LIMITS.replace("---\n\n", f"for: {sha[:8]}\n---\n\n"), ".webp")
     _change(origin, "sidebar-hold", f"---\narea: Busy rows\nfor: {sha}\n---\nBusy rows lift.", ".webp")
     _change(origin, "elsewhere", "---\narea: Elsewhere\nfor: 0123456789abcdef\n---\nNo row holds it.")
+    _change(origin, "sidebar-start", f"---\narea: Sidebar\nfor: {sha}\n---\nRows sort by when they started.")
     _run(origin, "add", "-A")
     _run(origin, "commit", "-qm", "docs: pictures for recent changes")
     g.pull(repo)
     whatsnew.boot().join(10)
     new, old = notices.changelog()
     assert old["read"] is True and old["title"] == "Sidebar and Usage limits"     # revised in place, not news
-    assert old["body"].splitlines() == ["Sidebar — rows sort by start",
+    assert old["body"].splitlines() == ["Sidebar — Rows sort by when they started.",
                                         "Usage limits — A card while parked, a receipt once it clears.",
                                         "Busy rows — Busy rows lift."]           # no bullet of its area: it joins
     assert old["meta"]["media"] == [None, {"still": "usage-limits.webp", "clip": None}, {"still": "sidebar-hold.webp", "clip": None}]
     assert old["meta"]["when"] == [None, "a login hits its 5-hour limit", None]
-    assert old["meta"]["go"] == [None, "rail:usage", None]
+    assert old["meta"]["go"] == [None, "rail:usage", None]   # the notes' places, none included: not the model's guesses
     assert new["body"].splitlines()[0] == "Elsewhere — No row holds it."           # a commit no row holds: told new
     assert "Usage limits" not in new["body"] and "Busy rows" not in new["body"]
 

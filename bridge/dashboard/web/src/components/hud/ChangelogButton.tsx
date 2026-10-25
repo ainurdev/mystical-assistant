@@ -37,6 +37,7 @@ const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 const RAIL = ["files", "git", "learn", "rivendell", "team", "usage"];   // App's right-rail tabs, top down
 const SETTINGS = Object.keys(PLACES).filter((k) => k.startsWith("settings:"));
 const placeName = (p: string) => (p.startsWith("rail:") ? `the right rail ▸ ${p.slice(5).toUpperCase()}` : PLACES[p]);
+const placeShort = (p: string) => (p.startsWith("rail:") ? p.slice(5).toUpperCase() : PLACES[p].replace("Settings ▸ ", ""));
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 /** An update's bullets: the lead bold, split at the first " — ". UPDATE's preview draws these. */
@@ -146,8 +147,8 @@ function Stage({ c, playing, onEnded, onZoom }: { c: Change; playing: boolean; o
         : c.place ? <PlaceMap place={c.place} />
         : <div className="clg-tc"><span className="big"><Ic size={28} strokeWidth={1.8} /></span><span className="nm">{c.area}</span>
             <span className="sub">{c.row.kind === "note" ? `a note${by ? ` from ${by}` : ""}` : "no picture for this one"}</span></div>}
-      {c.when ? <span className="clg-chip"><Eye size={13} strokeWidth={1.8} /><b>SHOWS WHEN</b>{c.when}</span>
-        : !m && c.place ? <span className="clg-chip"><MapPin size={13} strokeWidth={1.8} /><b>LIVES IN</b>{placeName(c.place)}</span> : null}
+      {c.when ? <span className="clg-chip"><Eye size={13} strokeWidth={1.8} /><b>SHOWS WHEN</b><span className="w">{c.when}</span></span>
+        : !m && c.place ? <span className="clg-chip"><MapPin size={13} strokeWidth={1.8} /><b>LIVES IN</b><span className="w">{placeName(c.place)}</span></span> : null}
       {m && <button className="clg-zoom" title="Full size" aria-label="Full size" onClick={() => onZoom(mediaUrl(m.clip ?? m.still ?? ""))}>
         <Maximize2 size={12} strokeWidth={2} /></button>}
     </div>
@@ -280,7 +281,7 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
         className={`clg-row${c === cur ? " on" : ""}${isNew(c) ? " new" : ""}${c.row.kind === "coming" ? " next" : ""}`}>
         <span className="ic"><Ic size={13} strokeWidth={1.8} aria-hidden /></span>
         <span className="w">
-          <b>{marked(c.area, qq)}{c.media && (c.media.clip ? <Clapperboard size={11} strokeWidth={1.8} aria-label="a clip" />
+          <b><span className="a">{marked(c.area, qq)}</span>{c.media && (c.media.clip ? <Clapperboard size={11} strokeWidth={1.8} aria-label="a clip" />
             : <Image size={11} strokeWidth={1.8} aria-label="a picture" />)}</b>
           <span className="x">{marked(cap(c.text.split("\n")[0]), qq)}</span>
         </span>
@@ -316,8 +317,8 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
             <button className="ok" onClick={() => { close(); window.dispatchEvent(new CustomEvent("hud:update")); }}>
               <ArrowDownToLine size={12} strokeWidth={1.8} />Update now</button>
           ) : <>
-            {c.place && <button className="pri" onClick={() => { close(); goTo(c.place!); }}>
-              Open {PLACES[c.place]}<ArrowRight size={12} strokeWidth={1.8} /></button>}
+            {c.place && <button className="pri" title={`Open ${PLACES[c.place]}`} onClick={() => { close(); goTo(c.place!); }}>
+              Open {placeShort(c.place)}<ArrowRight size={12} strokeWidth={1.8} /></button>}
             {project && r.kind === "updated" && (
               <button onClick={() => { close(); onFeed([askChange(c)], project, true); }}><Sparkles size={12} strokeWidth={1.8} />Ask Claude</button>
             )}
@@ -394,7 +395,8 @@ export function ChangelogButton({ onFeed }: { onFeed: (texts: string[], project?
       {/* Portalled into the themed container, like UPDATE's, so position:fixed
           escapes the rail's animated ancestors; the bell's frame (.ntf-pop). */}
       {pop && createPortal(
-        <div ref={popRef} className="ntf-pop clg-pop" style={{ position: "fixed", zIndex: 96, width: W, ...pop }}>
+        // hidden, not shut, under a picture open full size: the lightbox shares its z-index
+        <div ref={popRef} className="ntf-pop clg-pop" style={{ position: "fixed", zIndex: 96, width: W, ...pop, visibility: zoom ? "hidden" : undefined }}>
           <div className="ntf-head">
             <span className="t">CHANGELOG</span>
             {unseen.length > 0 && (
