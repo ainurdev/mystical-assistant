@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/qpreview.check.ts
-import { optionKey, parsePreview, staged } from "./qpreview.ts";
+import { optionKey, parsePreview, previewTexts, staged } from "./qpreview.ts";
 
 const p = parsePreview("![In the box](/up/j/r-1-a1.png)\n![Sent](</up/j/r-2-a3.png>)\n\nthe chip sits in your words");
 console.assert(p.shots.length === 2, `two shots: ${JSON.stringify(p.shots)}`);
@@ -25,5 +25,10 @@ const q = (multiSelect: boolean, preview?: string) =>
 console.assert(staged(q(false, "![x](/a.png)")), "a preview stages it");
 console.assert(!staged(q(true, "![x](/a.png)")), "multiSelect never stages (the CLI's rule)");
 console.assert(!staged(q(false, "  ")) && !staged(q(false)), "no preview, no stage");
+console.assert(!staged(q(false, "┌──┐\n│A │\n└──┘")), "text alone is no picture: no stage");
+const tx = previewTexts(q(false, "1 · PLAN\nstep one"));
+console.assert(JSON.stringify(tx) === JSON.stringify(["", "1 · PLAN\nstep one"]), `text previews: ${JSON.stringify(tx)}`);
+console.assert(previewTexts(q(false, "![x](/a.png)\nwords")) === null, "a picture stages it: no text panel");
+console.assert(previewTexts(q(true, "words")) === null && previewTexts(q(false)) === null, "multiSelect or none: no panel");
 
 console.log("qpreview.check ok");

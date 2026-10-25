@@ -525,6 +525,7 @@ export interface TaskState {
   url: string | null;         // the task, else its board's project in Rivendell
   board: string | null;
   board_url: string | null;
+  column?: string | null;     // a linked task's board column (Backlog: none); absent until the cache has it
 }
 export interface PrStatus {
   pr: PrInfo | null;    // null = no chip: no PR, no GitHub remote, gh missing or signed out

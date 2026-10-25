@@ -3504,15 +3504,50 @@ def test_key_prefixes_come_from_the_cached_tasks(workers, monkeypatch):
 
 @pytest.fixture
 def cached(workers, monkeypatch):
-    """On the NR board, with NRA-61 in the cached open tasks."""
+    """On the NR board, with NRA-61 in the cached open tasks, fetched just now."""
     _on_board(workers, monkeypatch)
     workers["a"]._last_tasks["acme/app"] = {"projects": [_PROJ], "tasks": [{**_OPEN, "url": "https://rv/t61"}]}
+    workers["a"]._tasks_at["acme/app"] = time.time()
 
 
 def test_task_state_links_the_key_in_the_branch_in_any_case(cached, tmp_path):
     s = rivendell.task_state(_checkout(tmp_path, "fix/nra-61-login"))
     assert s == {"state": "linked", "key": "NRA-61", "title": "Fix login redirect", "url": "https://rv/t61",
-                 "board": "NR Chatbot & Complaints", "board_url": "https://rv/projects/p1"}
+                 "board": "NR Chatbot & Complaints", "board_url": "https://rv/projects/p1", "column": "In progress"}
+
+
+def test_task_state_names_backlog_for_a_task_in_no_column_and_nothing_for_one_not_cached(cached, workers, tmp_path):
+    from bridge import taskcheck
+    workers["a"]._last_tasks["acme/app"]["tasks"][0]["column"] = None
+    assert rivendell.task_state(_checkout(tmp_path, "fix/nra-61-login"))["column"] == "Backlog"
+    repo = _checkout(tmp_path / "b")
+    taskcheck.record(repo, "fix/login", "NRA-74")                       # filed, not in the cache yet
+    assert rivendell.task_state(repo)["column"] is None
+
+
+def test_task_state_refreshes_an_old_board_answer_off_thread(cached, workers, tmp_path):
+    calls = []
+    workers["a"]._api = _rv({"projects": [_PROJ], "tasks": [{**_OPEN, "column": "Shipped"}]}, dict(_BOARD), calls)
+    repo = _checkout(tmp_path, "fix/nra-61-login")
+    assert rivendell.task_state(repo)["column"] == "In progress"
+    assert calls == []                                                  # fresh: the poll reads the cache only
+    workers["a"]._tasks_at["acme/app"] -= 301
+    assert rivendell.task_state(repo)["column"] == "In progress"       # never waits on the network
+    _wait_until(lambda: rivendell.task_state(repo)["column"] == "Shipped")
+    assert [c for c in calls if c[0] == "plugin"] == [("plugin", "/plugin/tasks?repository=acme/app")]
+
+
+def test_a_key_the_cache_lacks_is_looked_for_again_after_a_minute(cached, workers, tmp_path):
+    from bridge import taskcheck
+    calls = []
+    workers["a"]._api = _rv({"projects": [_PROJ], "tasks": [_OPEN, {"id": "t74", "key": "NRA-74", "name": "Add audit log",
+                                                               "column": "To do"}]}, dict(_BOARD), calls)
+    repo = _checkout(tmp_path)
+    taskcheck.record(repo, "fix/login", "NRA-74")
+    assert rivendell.task_state(repo)["column"] is None and calls == []
+    workers["a"]._tasks_at["acme/app"] -= 61
+    rivendell.task_state(repo)
+    _wait_until(lambda: rivendell.task_state(repo)["column"] == "To do")
 
 
 def test_task_state_reads_a_recorded_answer(cached, tmp_path):

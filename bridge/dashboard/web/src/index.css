@@ -6100,6 +6100,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-task b { color: var(--ask); }
 .gp-task b.ln { color: var(--acc); }
 .gp-task b.skip { color: var(--txl); }
+.gp-task .col { font: 500 var(--t10)/1 var(--m); color: var(--txd); }
 .gp-task button { appearance: none; border: 0; padding: 0; background: none; font: inherit; color: var(--acc); cursor: pointer; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .gp-task span button { text-decoration: underline; text-underline-offset: 2px; }
 .gp-task > button { color: var(--txd); }
@@ -6934,6 +6935,24 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-th img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 .ad-pre { margin: 0; padding: 8px 10px; font: 500 var(--t105)/1.45 var(--mono); color: var(--txm); white-space: pre-wrap; overflow: hidden; }
 .ad-th .ad-pre { position: absolute; inset: 0; }
+/* Text-only previews (QuestionCard TextPreview, in the dock, its records and the
+   transcript card): one panel under the rows. Every option's text sits stacked
+   in its one cell, so switching options never resizes the card. The dock's
+   --rc tokens first, the theme's own outside it. */
+.qpv { --qpv-line: var(--rc-line2, var(--line2, color-mix(in srgb, var(--acc) 28%, transparent)));
+  display: grid; margin-top: 9px; border: 1px solid var(--qpv-line); border-radius: max(3px, var(--rc-rs, var(--f-rad-s, 0px)));
+  overflow: hidden; background: color-mix(in oklab, var(--panel3, var(--panel)) 70%, #000); }
+:root[data-light] .qpv { background: var(--panel3, var(--panel)); }
+.qpv-layer { grid-area: 1 / 1; display: flex; flex-direction: column; min-width: 0; }
+.qpv-layer:not([data-on]) { visibility: hidden; }
+.qpv-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 8px; border-bottom: 1px solid var(--qpv-line);
+  font-size: var(--t11); color: var(--txh); }
+.qpv-head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.qpv-head em { margin-left: auto; flex: none; font: 700 var(--t95)/1 var(--mono); letter-spacing: 1.2px; font-style: normal; color: var(--txl); }
+.qpv-key { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: max(3px, calc(var(--rc-rs, 4px) * .7));
+  font: 700 var(--t105)/1 var(--mono); color: var(--txh); background: var(--panel3, var(--panel)); border: 1px solid var(--qpv-line); }
+.qpv-pre { margin: 0; padding: 9px 12px 10px; max-height: 228px; overflow: auto; white-space: pre-wrap; font: 500 var(--t105)/1.45 var(--mono); color: var(--txm); }
+.qpv-none { margin: 0; padding: 12px; font-size: var(--t115); color: var(--txl); }
 .ad-meta { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 9px; row-gap: 2px; align-items: start; padding: 8px 10px 9px; text-align: left; }
 .ad-meta .ad-key { width: 22px; height: 22px; }
 .ad-meta .ad-lab { line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

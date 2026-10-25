@@ -5,13 +5,13 @@ import {
 } from "lucide-react";
 import { api, type AnswerSelection, type Question } from "../api";
 import { splitAsk, waited, type Docked } from "../lib/askdock";
-import { optionKey, parsePreview, staged } from "../lib/qpreview";
+import { optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { hhmm as clock, useClock12 } from "../lib/surfaces";
 import { mcpParts } from "../lib/tools";
 import { ImageLightbox } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
-import { REC, TaskQuestion, isTask, taskLabel, taskVerb } from "./QuestionCard";
+import { REC, TaskQuestion, TextPreview, isTask, taskLabel, taskVerb } from "./QuestionCard";
 import { Spinner } from "./ui";
 
 /* Every card that waits on you, docked on the prompt box
@@ -218,6 +218,7 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
   useEffect(() => { bind(mode); }, [mode, bind]);
 
   const pics = staged(q);
+  const texts = previewTexts(q);
   return (
     <>
       <Head icon={<CircleQuestionMark size={13} strokeWidth={2.2} />} kind={qs.length > 1 ? "Questions" : "Question"}
@@ -268,6 +269,7 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
               })}
             </div>
           )}
+        {texts && <TextPreview q={q} texts={texts} picked={picked[0]} />}
         {q.multiSelect && <p className="ad-hint">Pick any — they all go back together.</p>}
         {failed && <p className="ad-err">That didn't reach the bridge. Try again.</p>}
       </div>
@@ -568,6 +570,7 @@ function RecordQuestions({ questions, answered }: { questions: Question[]; answe
       {questions.map((q, qi) => {
         const given = answered?.[qi]?.header === q.header ? answered[qi] : answered?.find((x) => x.header === q.header);
         const chosen = given?.labels ?? [];
+        const texts = previewTexts(q);
         return (
           <div key={qi} className="ad-b">
             {questions.length > 1 && <p className="ad-tail">{qi + 1} of {questions.length} · {q.header}</p>}
@@ -589,6 +592,7 @@ function RecordQuestions({ questions, answered }: { questions: Question[]; answe
                   })}
                 </div>
               )}
+            {texts && <TextPreview q={q} texts={texts} picked={chosen[0]} />}
             {given?.notes && <p className="ad-hint">Your words: “{given.notes}”</p>}
           </div>
         );

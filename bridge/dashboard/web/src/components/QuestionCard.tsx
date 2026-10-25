@@ -4,7 +4,7 @@ import { Check, Maximize2 } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
 import { api, type AnswerSelection, type Question } from "../api";
 import { ImageLightbox } from "./ImageLightbox";
-import { optionKey, parsePreview, staged } from "../lib/qpreview";
+import { optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { RivendellIcon } from "../lib/rivendellicon";
 
@@ -176,6 +176,31 @@ function Stage({ q, chosen, onPick, sending }: {
   );
 }
 
+/** Options whose previews are text alone (lib/qpreview previewTexts): the rows
+ *  stay rows, and this one panel under them shows the picked option's preview,
+ *  else the suggested one's, else the first there is
+ *  (.mystical/design-drafts/task-flow). Every option's text sits stacked in the
+ *  panel's one cell and only the shown one is visible, so switching options
+ *  never resizes the card. The prompt-box dock and its records use it too. */
+export function TextPreview({ q, texts, picked }: { q: Question; texts: string[]; picked?: string }) {
+  const at = q.options.findIndex((o) => o.label === picked);
+  const rec = q.options.findIndex((o, i) => texts[i] && REC.test(o.label));
+  const shown = at >= 0 ? at : rec >= 0 ? rec : texts.findIndex(Boolean);
+  return (
+    <div className="qpv">
+      {q.options.map((o, i) => {
+        const k = optionKey(o.label, i);
+        return (
+          <div key={o.label} className="qpv-layer" data-on={i === shown ? "" : undefined} aria-hidden={i !== shown}>
+            <div className="qpv-head"><span className="qpv-key">{k.key}</span><b>{k.name}</b><em>PREVIEW</em></div>
+            {texts[i] ? <pre className="qpv-pre">{texts[i]}</pre> : <p className="qpv-none">No preview for this option.</p>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Mirrors bridge/miniapp/web/src/components/QuestionCard.tsx (shared design):
 // full-width option rows with descriptions, not cramped wrapping chips.
 // Live only: once answered (or never answered) a question is drawn as AskDock's
@@ -261,6 +286,7 @@ export function QuestionCard({
         const frame = (notes[qi] ?? "").trim()
           ? "border-[var(--tg-button)]"
           : "border-[var(--tg-hint)]/40";
+        const texts = previewTexts(q);
         return (
         <div key={qi} className="space-y-1.5">
           {task ? <TaskQuestion text={q.question} /> : <div className="text-sm font-medium">{q.question}</div>}
@@ -290,6 +316,7 @@ export function QuestionCard({
                 </button>
               );
             })}
+            {texts && <TextPreview q={q} texts={texts} picked={sel[qi]?.[0]} />}
             {/* The free-text escape hatch rides *inside* the option list at option
                 weight: as a footnote under the buttons it got scrolled straight past.
                 Not a <details>: its content is display:none while closed, so it can

@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { Maximize2 } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
 import type { AnswerSelection, Question } from "../lib/api";
-import { optionKey, parsePreview, staged } from "../lib/qpreview";
+import { optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { ImageLightbox } from "./ImageLightbox";
 import { ToolImage } from "./RunStream";
@@ -76,6 +76,35 @@ function StageView({ q, shown }: { q: Question; shown: number }) {
           onClose={() => setZoom(null)}
         />
       )}
+    </div>
+  );
+}
+
+/** Options whose previews are text alone (lib/qpreview previewTexts): the
+ *  dashboard's TextPreview (QuestionCard.tsx there). One panel under the rows
+ *  with the picked option's preview, else the suggested one's, else the first;
+ *  every option's text stacked in one cell, so a tap never resizes the card. */
+function TextPreview({ q, texts, picked }: { q: Question; texts: string[]; picked?: string }) {
+  const at = q.options.findIndex((o) => o.label === picked);
+  const rec = q.options.findIndex((o, i) => texts[i] && optionKey(o.label, i).rec);
+  const shown = at >= 0 ? at : rec >= 0 ? rec : texts.findIndex(Boolean);
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)] border border-border bg-[var(--tg-bg)]">
+      {q.options.map((o, i) => {
+        const k = optionKey(o.label, i);
+        return (
+          <div key={o.label} aria-hidden={i !== shown} className={`col-start-1 row-start-1 flex min-w-0 flex-col ${i === shown ? "" : "invisible"}`}>
+            <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
+              <span className="inline-flex h-[21px] w-[21px] shrink-0 items-center justify-center bg-[var(--brand-soft)] font-mono text-[11px] font-bold text-[var(--tg-bg)]">{k.key}</span>
+              <span className="min-w-0 truncate text-sm font-medium text-foreground-bright">{k.name}</span>
+              <span className="ml-auto shrink-0 text-[9.5px] tracking-[1.5px] text-[var(--tg-hint)]">PREVIEW</span>
+            </div>
+            {texts[i]
+              ? <pre className="m-0 max-h-60 overflow-auto whitespace-pre-wrap px-3 py-2 font-mono text-xs text-[var(--tg-hint)]">{texts[i]}</pre>
+              : <p className="px-3 py-3 text-xs text-[var(--tg-hint)]">No preview for this option.</p>}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -155,6 +184,7 @@ export function QuestionCard({
                   );
                 })}
               </div>
+              {previewTexts(q) && <TextPreview q={q} texts={previewTexts(q)!} picked={chosen[0]} />}
               {given?.notes && (
                 <div className="text-xs text-[var(--tg-hint)]">Note: {given.notes}</div>
               )}
@@ -215,6 +245,8 @@ export function QuestionCard({
         // Typed text counts as the answer (see `ready`), so the frame says so.
         const frame = (notes[qi] ?? "").trim() ? "border-[var(--brand-soft)]" : "border-border";
         const stage = staged(q);
+        const texts = previewTexts(q);
+        const lettered = stage || !!texts;      // the stage and the text panel name options by their key
         return (
         <div key={qi} className="space-y-1.5">
           <div className="text-sm font-medium text-foreground-bright">{q.question}</div>
@@ -242,10 +274,10 @@ export function QuestionCard({
                         picked ? "text-[var(--brand-soft)]" : "text-[var(--tg-hint)]"
                       }`}
                     >
-                      {stage ? k.key : i + 1}
+                      {lettered ? k.key : i + 1}
                     </span>
-                    <span className="font-medium">{stage ? k.name : o.label}</span>
-                    {stage && k.rec && <span className="ml-auto text-[9.5px] tracking-[1.5px] text-[var(--brand-soft)]">SUGGESTED</span>}
+                    <span className="font-medium">{lettered ? k.name : o.label}</span>
+                    {lettered && k.rec && <span className="ml-auto text-[9.5px] tracking-[1.5px] text-[var(--brand-soft)]">SUGGESTED</span>}
                   </div>
                   {o.description && (
                     <div className={`pl-[17px] text-xs ${picked ? "opacity-80" : "text-[var(--tg-hint)]"}`}>
@@ -255,6 +287,7 @@ export function QuestionCard({
                 </button>
               );
             })}
+            {texts && <TextPreview q={q} texts={texts} picked={sel[qi]?.[0]} />}
             {/* The free-text escape hatch rides *inside* the option list at option
                 weight, on the numbered gutter: as a footnote it got scrolled past.
                 Not a <details>: its content is display:none while closed, so it can

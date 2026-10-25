@@ -9,7 +9,9 @@ import { notify } from "./Notifications";
  *  a tab beside the branch in the prompt box (TaskChip) and a line above PUBLISH
  *  in the GIT tab (TaskLine). NO TASK while there is work no task covers; the
  *  key once the branch carries one, or a create or a card answer recorded it;
- *  NOT A TASK once you said so. The question itself waits for the push (the
+ *  NOT A TASK once you said so. A linked task also names its board column
+ *  (NRA-79 · In progress), which Rivendell moves on its own as the PR opens and
+ *  merges. The question itself waits for the push (the
  *  runner's note, held to it by bridge/taskcheck.py). This is where you see the
  *  state, and can answer before the push asks.
  *
@@ -96,7 +98,7 @@ export function TaskChip({ project, branch, busy, onSend }: {
       <span className="np-sep" style={hairline(9)} />
       <button
         className="np-task"
-        title={task.state === "linked" ? `${task.key}${task.title ? ` · ${task.title}` : ""}: open in Rivendell`
+        title={task.state === "linked" ? `${task.key}${task.column ? ` · ${task.column}` : ""}${task.title ? ` · ${task.title}` : ""}: open in Rivendell`
           : task.state === "skip" ? "you said this work isn't a task" : "no Rivendell task for this work yet: the push asks"}
         onClick={(e) => {
           if (task.state === "linked") return open(task.url);
@@ -107,6 +109,9 @@ export function TaskChip({ project, branch, busy, onSend }: {
         style={{ display: "inline-flex", alignItems: "center", gap: 5, flex: "none", fontFamily: "var(--mono)", fontSize: "var(--t9)", letterSpacing: ".4px", padding: 0, border: 0, appearance: "none", background: "transparent", cursor: "pointer", color: hov ? "var(--txb)" : look.ink }}>
         <RivendellIcon size={11} strokeWidth={2.2} style={{ color: look.mark, flex: "none" }} />
         {label(task)}
+        {task.state === "linked" && task.column && (
+          <span style={{ color: "var(--txd)", maxWidth: "18ch", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>· {task.column}</span>
+        )}
       </button>
       {at && (
         <ContextMenu ctx={{ x: at.x, y: at.y, type: "task", id: branch, label: `${task.state === "skip" ? "not a task" : "no task yet"}${task.board ? ` · ${task.board}` : ""}` }}
@@ -129,7 +134,9 @@ export function TaskLine({ project, branch, onSend }: {
     <div className="gp-rosub gp-task">
       <RivendellIcon size={13} strokeWidth={2.2} style={{ color: LOOK[task.state].mark, flex: "none" }} />
       {task.state === "linked" ? (
-        <button onClick={() => open(task.url)} title="open in Rivendell"><b className="ln">{task.key}</b> {task.title ?? "open in Rivendell"} ↗</button>
+        <button onClick={() => open(task.url)} title="open in Rivendell">
+          <b className="ln">{task.key}</b>{task.column && <span className="col"> · {task.column}</span>} {task.title ?? "open in Rivendell"} ↗
+        </button>
       ) : task.state === "skip" ? (
         <span><b className="skip">Not a task</b> for this branch{link}</span>
       ) : (

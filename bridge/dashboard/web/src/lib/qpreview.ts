@@ -33,6 +33,17 @@ export function optionKey(label: string, i: number): { key: string; name: string
   return { key: m ? m[1] : "ABCD"[i] ?? String(i + 1), name: name || label, rec: REC.test(label) };
 }
 
-/** Does this question get the stage? The CLI allows previews on single-select only. */
+/** Does this question get the stage? Only pictures earn it: options carrying
+ *  text alone were drawn as picture tiles reading "No picture" (2026-10-25).
+ *  The CLI allows previews on single-select only. */
 export const staged = (q: Question) =>
-  !q.multiSelect && q.options.some((o) => (o.preview ?? "").trim() !== "");
+  !q.multiSelect && q.options.some((o) => parsePreview(o.preview).shots.length > 0);
+
+/** Each option's preview text when the previews are text alone, for the one
+ *  panel under the rows (QuestionCard TextPreview); null when there is none or
+ *  the question is staged. */
+export function previewTexts(q: Question): string[] | null {
+  if (q.multiSelect || staged(q)) return null;
+  const texts = q.options.map((o) => parsePreview(o.preview).text);
+  return texts.some(Boolean) ? texts : null;
+}

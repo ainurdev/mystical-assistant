@@ -411,6 +411,7 @@ class Worker:
         # fails still shows its cards, dimmed as "last known" (tasks()). One
         # entry per repo the tab has shown.
         self._last_tasks: "dict[str, dict]" = {}
+        self._tasks_at: "dict[str, float]" = {}     # when each of those was fetched (_refresh)
         # (token, person id): who the token's owner is on the boards, for the
         # tasks work_create assigns them (_me). Keyed by the token, because a
         # saved config swaps the token onto this same worker (reconfigure).
@@ -2875,6 +2876,7 @@ def tasks(slug: str) -> dict:
                 raise TasksError("unreachable", f"unreachable: {w.status_detail or 'link down'}")
             got = w._last_tasks[slug] = _ask(
                 w, "/plugin/tasks?repository=" + quote(slug, safe="/"))
+            w._tasks_at[slug] = time.time()
         except TasksError as e:
             out["errors"].append({"instance_id": w.id, "instance": w.name,
                                   "error": e.code, "detail": str(e)})
@@ -3060,14 +3062,40 @@ def key_prefixes(path: str) -> list:
                    for t in _cached(path)[0] if "-" in str(t.get("key") or "")})
 
 
+_refreshing: set = set()
+
+
+def _refresh(path: str, max_age: float) -> None:
+    """Fetch this checkout's board answers again, off-thread, when the cached
+    ones are older than `max_age` seconds: a task's column moves in Rivendell
+    (its PR opened, someone dragged its card), and the task tab's poll reads
+    only the cache. One fetch per slug at a time."""
+    with _manager_lock:
+        running = list(_workers.values())
+    now = time.time()
+    for slug in _repo_slugs(path):
+        if slug in _refreshing or not running or all(now - w._tasks_at.get(slug, 0) < max_age for w in running):
+            continue
+        _refreshing.add(slug)
+
+        def fetch(s=slug):
+            try:
+                tasks(s)
+            finally:
+                _refreshing.discard(s)
+        threading.Thread(target=fetch, daemon=True, name="rivendell-refresh").start()
+
+
 def task_state(path: str) -> "dict | None":
     """The task tab's state for the checkout at `path`
     (docs/superpowers/specs/rivendell-task-check.md), or None to draw nothing:
     not on a board, no branch, or nothing to push and nothing decided.
     linked: the branch carries a key, or a create or a card answer recorded one
     (taskcheck's .mystical/tasks.json); skip: the answer was Not a task; none:
-    work no task covers yet. Titles and links come from the cache, so a poll
-    costs a few git calls."""
+    work no task covers yet. Titles, links and a linked task's column (Backlog
+    when it sits in none) come from the cache, so a poll costs a few git calls;
+    a cache over 5 minutes old, or one a minute old that lacks the key (a task
+    filed since), is fetched again behind the poll's back."""
     from bridge import taskcheck
     if not on_board(path):
         return None
@@ -3085,7 +3113,9 @@ def task_state(path: str) -> "dict | None":
            or next((p["name"] for p in projects if p.get("name")), None)}
     if key:
         t = next((t for t in tasks if str(t.get("key") or "").upper() == key), {})
-        return {**out, "state": "linked", "title": t.get("name"), "url": t.get("url") or board_url}
+        _refresh(top, 300 if t else 60)
+        return {**out, "state": "linked", "title": t.get("name"), "url": t.get("url") or board_url,
+                "column": (t.get("column") or "Backlog") if t else None}
     if rec == "skip":
         return {**out, "state": "skip"}
     return out if taskcheck.has_work(top) else None
