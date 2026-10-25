@@ -89,8 +89,8 @@ def test_worktree_holding(repo):
     os.makedirs(sub)
     assert git.worktree_holding(repo["proj"], repo["wt"]) == repo["wt"]
     assert git.worktree_holding(repo["proj"], sub) == repo["wt"]          # any depth
-    assert git.worktree_holding(repo["proj"], repo["proj"]) == repo["proj"]
-    assert git.worktree_holding(repo["proj"], repo["proj"] + "/.mystical") == ""  # the checkout: root only
+    assert git.worktree_holding(repo["proj"], repo["proj"]) == ""         # the checkout never answers
+    assert git.worktree_holding(repo["proj"], repo["proj"] + "/.mystical") == ""
     assert git.worktree_holding(repo["proj"], repo["wt"] + "-2") == ""    # a sibling sharing the prefix
     assert git.worktree_holding(repo["proj"], repo["outsider"]) == ""
     assert git.worktree_holding(repo["proj"], "") == ""
@@ -112,7 +112,7 @@ def _job(sid, cwd):
     return j
 
 
-def test_note_work_cwd_follows_and_returns(repo):
+def test_note_work_cwd_follows_and_stays(repo):
     s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
     job = _job(s["id"], repo["proj"])
 
@@ -120,10 +120,13 @@ def test_note_work_cwd_follows_and_returns(repo):
     assert store.get_session(s["id"])["work_cwd"] == repo["wt"]
     assert _session_brief(store.get_session(s["id"]))["branch"] == "feat/x"
 
-    # ...and back home clears it, rather than leaving a stale worktree label.
-    runner._note_work_cwd(job, f"cd {repo['proj']} && git status")
-    assert store.get_session(s["id"])["work_cwd"] is None
-    assert _session_brief(store.get_session(s["id"]))["branch"] == "master"
+    # The checkout is where probes, merges and reads of master happen
+    # mid-feature: a cd there keeps the label on the branch, which used to flip
+    # back and forth. The tree's removal is what hands it back (test below).
+    for cmd in (f"cd {repo['proj']} && git status", f"cd {repo['proj']}/.mystical && node probe.mjs",
+                f"cd {repo['proj']} && git merge feat/x"):
+        runner._note_work_cwd(job, cmd)
+        assert store.get_session(s["id"])["work_cwd"] == repo["wt"], cmd
 
 
 def test_note_work_cwd_follows_a_cd_below_the_root(repo):
@@ -135,19 +138,19 @@ def test_note_work_cwd_follows_a_cd_below_the_root(repo):
     job = _job(s["id"], repo["proj"])
     runner._note_work_cwd(job, f"cd {sub} && npm test")
     assert store.get_session(s["id"])["work_cwd"] == repo["wt"]
-    # A detour into the checkout's own folders (a .mystical/ probe) keeps it:
-    # only the checkout itself walks it home.
-    runner._note_work_cwd(job, f"cd {repo['proj']}/.mystical && node probe.mjs")
-    assert store.get_session(s["id"])["work_cwd"] == repo["wt"]
 
 
-def test_a_session_on_a_worktree_is_home_anywhere_in_it(repo):
-    """Started on a worktree, that tree is home from any depth; the checkout
-    still answers at its root, as it always did."""
+def test_a_session_on_a_worktree_comes_home_from_any_depth(repo):
+    """Started on a worktree, that tree is home: entering it again, from any
+    depth, takes the session back from another tree. The checkout never does."""
     s = store.create_session(555, "/proj", origin="test", cwd=repo["wt"])
     job = _job(s["id"], repo["wt"])
     runner._note_work_cwd(job, f"cd {repo['proj']} && git merge feat/x")
-    assert store.get_session(s["id"])["work_cwd"] == repo["proj"]
+    assert store.get_session(s["id"])["work_cwd"] is None
+    wt2 = os.path.join(repo["root"], "wt-feat-y")
+    _git(repo["proj"], "worktree", "add", "-q", "-b", "feat/y", wt2)
+    runner._note_work_cwd(job, f"cd {wt2} && git status")
+    assert store.get_session(s["id"])["work_cwd"] == wt2
     runner._note_work_cwd(job, f"cd {repo['wt']}/web && npm test")
     assert store.get_session(s["id"])["work_cwd"] is None
 
@@ -182,10 +185,10 @@ def test_a_bash_call_is_judged_on_its_result(repo):
     assert store.get_session(s["id"])["work_cwd"] == wt
 
 
-def test_a_later_turn_can_walk_home(repo, monkeypatch):
-    """A new turn's job starts on the session's tree, so `cd <checkout> && git
-    merge` in a later turn clears the label — a job that started blank saw no
-    change to record."""
+def test_a_later_turn_starts_on_the_sessions_tree(repo, monkeypatch):
+    """A new turn's job carries the session's tree: a Task card answered in it is
+    recorded for that branch, and coming home in a later turn is a change to
+    record (a job that started blank saw none)."""
     from bridge import state, titler
     s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
     store.set_work_cwd(s["id"], repo["wt"])
@@ -196,13 +199,9 @@ def test_a_later_turn_can_walk_home(repo, monkeypatch):
     def turn():
         job = runner.start_streaming_job(555, "go", [], project=repo["proj"], session_id=s["id"])
         state.release_run(s["id"])
-        job.cwd = repo["proj"]   # _run_streaming's first act, stubbed out here
         return job
 
-    job = turn()
-    assert job.work_cwd == repo["wt"]
-    runner._note_work_cwd(job, f"cd {repo['proj']} && git merge feat/x")
-    assert store.get_session(s["id"])["work_cwd"] is None
+    assert turn().work_cwd == repo["wt"]
     # A tree removed since is not one to start on (a Task card answered there
     # would be recorded nowhere).
     store.set_work_cwd(s["id"], os.path.join(repo["root"], "gone"))

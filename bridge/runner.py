@@ -2101,15 +2101,16 @@ def _note_work_cwd(job: "Job", command: str, before: "set[str] | None" = None) -
     Two things move it. A command that added a worktree of this session's repo
     (`before` holds the trees from just before it ran): a session that starts on
     main and branches off for its change is on that branch from then on, whether
-    or not it ever `cd`s there. And a literal `cd` into a tree, which counts from
-    any depth of a linked worktree but only at the root of the main checkout
-    (git.worktree_holding), so a detour into the checkout's scratch dirs (a
-    .mystical/ probe) keeps the label; landing in its own tree walks it home.
-    Judged on the result, not the call: `git worktree add … && cd …` names a tree
-    that only exists once the line has run. A `cd /tmp`, a relative `cd`, or a
-    command that merely reads a worktree leaves the label alone — a wrong branch
-    on the card is worse than a stale one. Best-effort; never raises into the
-    turn."""
+    or not it ever `cd`s there. And a literal `cd` into a linked worktree, at any
+    depth (git.worktree_holding); landing in the session's own tree walks it home.
+    A `cd` to the main checkout never does: that is where probes, merges and
+    reads of master happen mid-feature, so the label stays on the branch until
+    the session enters another tree or its tree is removed (_session_brief then
+    falls back to the checkout). Judged on the result, not the call: `git
+    worktree add … && cd …` names a tree that only exists once the line has run.
+    A `cd /tmp`, a relative `cd`, or a command that merely reads a worktree
+    leaves the label alone — a wrong branch on the card is worse than a stale
+    one. Best-effort; never raises into the turn."""
     if not (job.store_session_id and job.cwd):
         return
     try:
