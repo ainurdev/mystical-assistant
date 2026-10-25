@@ -1628,6 +1628,36 @@ export interface UpdateInfo {
   coming?: Notice | null;
 }
 
+// The rail's ⟳ (bridge/selfupdate.py live()): what's on disk but not running. Each web
+// app is compared with the tree it was built from, the bridge with the tree it launched
+// with. The route is absent on a bridge older than this bundle; then ⟳ just doesn't show.
+export interface LiveCommit { sha: string; at: number; subject: string }
+export interface LivePart {
+  key: "miniapp" | "dashboard" | "bridge";
+  name: string;
+  act: "rebuild" | "restart";
+  since: number;          // when the app was built, or the bridge launched (epoch s; 0 = unknown)
+  commits: LiveCommit[];  // landed since then, newest first
+  dirty: number;          // of the changed files, how many are uncommitted
+  files: number;          // changed files in all
+  unknown?: boolean;      // no build stamp (built before builds stamped), or one git no longer knows
+}
+export interface LiveTurn { id: string; title: string; started: number }
+export interface LiveInfo {
+  repo: boolean;
+  path?: string;          // the checkout: named in FIX WITH CLAUDE's prompt
+  project?: string;       // that checkout as a project rel, where the fix's session runs
+  branch?: string;
+  running?: string;       // short sha the bridge launched from
+  disk?: string;          // short sha of the checkout's HEAD
+  parts: LivePart[];
+  commits: number;        // distinct commits across the parts (one can touch two)
+  turns: LiveTurn[];      // what a restart would stop
+  // AFTER N TURNS is armed: the turns it still waits on; restarting once they're done and it's going
+  queued: { turns: LiveTurn[]; restarting?: boolean } | null;
+  error: { name: string; output: string } | null;  // what the wait's build said when it failed
+}
+
 // --- MOVE: export / import this bridge (bridge/movejob.py) ---------------------
 // One item of the EXPORT or IMPORT list. `ref` is what `skip` takes; the rest
 // are the facts its chips draw, and on IMPORT, `do` is what it would do here.
@@ -1686,6 +1716,10 @@ export const api = {
   noteUpdate: (title: string, body: string) =>
     req<{ ok: boolean; output: string }>("/local/update/note", { method: "POST", body: { title, body } }),
   restart: () => req<{ ok: boolean }>("/local/restart", { method: "POST", body: {} }),
+  live: () => req<LiveInfo>("/local/live"),
+  liveBuild: (ui: string) =>
+    req<{ ok: boolean; output: string; seconds: number }>("/local/live/build", { method: "POST", body: { ui } }),
+  liveAfter: (cancel = false) => req<{ ok: boolean }>("/local/live/after", { method: "POST", body: { cancel } }),
   updateClaude: () => req<{ ok: boolean }>("/local/claude/update", { method: "POST", body: {} }),
   projects: (dir?: string) =>
     req<ProjectsListing>(`/local/projects${dir ? `?dir=${encodeURIComponent(dir)}` : ""}`),

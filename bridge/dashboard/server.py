@@ -974,6 +974,9 @@ class Handler(BaseHTTPRequestHandler):
             # enabled plugins', the CLI's own. Blank/unknown project: the rest.
             from bridge import commands
             return self._json({"commands": commands.available(_abs_project(qs.get("project", [None])[0]))})
+        if path == "/local/live":
+            # the rail's ⟳: what's on disk but not running (no network, so it's polled)
+            return self._json(selfupdate.live())
         if path == "/local/update":
             # the platform's own checkout — new commits waiting upstream? and, once
             # whatsnew has written it, what they bring (bridge/whatsnew.py preview)
@@ -1522,6 +1525,13 @@ class Handler(BaseHTTPRequestHandler):
             got = movejob.post(path[len("/local/move/"):], body)
             err = got.get("error")
             return self._json(got, 404 if err == "not found" else 400 if err else 200)
+        if path == "/local/live/build":
+            # one step of going live: rebuild one web app ("miniapp" | "dashboard")
+            return self._json(selfupdate.build(str(body.get("ui") or "")))
+        if path == "/local/live/after":
+            # AFTER N TURNS: go live once the turns running now end; cancel drops it
+            selfupdate.after(cancel=bool(body.get("cancel")))
+            return self._json({"ok": True})
         if path == "/local/restart":
             # no pull, no rebuild — just re-exec the bridge (and with it this
             # dashboard) so code already on disk becomes the code running.

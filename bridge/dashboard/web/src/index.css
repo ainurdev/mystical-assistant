@@ -5859,6 +5859,72 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .upd-fold svg { transition: transform .15s; }
 .upd-how { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t11)/1.5 var(--ui-font); color: var(--txl); }
 @media (prefers-reduced-motion: reduce) { .clg-co, .clg-read { animation: none; } }
+/* the rail's ⟳ over the changelog (LiveButton): what's on disk but not running. The card
+   is UPDATE's popover frame; the pop is the changelog's callout in the accent. */
+@keyframes gl-spin { to { transform: rotate(360deg); } }
+@keyframes gl-bar { from { left: -30%; } to { left: 100%; } }
+.gl-spin { animation: gl-spin 1s linear infinite; }
+.gl-ic { position: relative; }
+.gl-pill { position: absolute; right: 3px; top: 1px; height: 15px; min-width: 15px; padding: 0 3px; border-radius: 999px; text-align: center;
+  font: 600 var(--t7)/15px var(--ui-font); background: var(--acc); color: var(--acc-on); }
+.gl-pill.bad { background: var(--err); }
+.gl-pill.q { display: inline-flex; align-items: center; justify-content: center; width: 15px; padding: 0; background: var(--warn); }
+.gl-dot { position: absolute; right: 5px; top: 4px; width: 8px; height: 8px; border-radius: 999px; background: var(--acc); }
+.gl-ring { position: absolute; left: 50%; top: 50%; width: 32px; height: 32px; margin: -16px 0 0 -16px; pointer-events: none; transform: rotate(-90deg); }
+.gl-ring circle { fill: none; stroke-width: 2; transition: stroke-dasharray .4s ease; }
+.gl-ring .bg { stroke: color-mix(in oklab, var(--acc) 18%, transparent); }
+.gl-ring .fg { stroke: var(--acc); stroke-linecap: round; }
+.gl-lead { font: 400 var(--t125)/1.55 var(--ui-font); color: var(--txh); }
+.gl-lead b { color: var(--txb); font-weight: 600; }
+.gl-lead i { font: normal 500 var(--t10) var(--mono); color: var(--txl); }
+.gl-part { margin-top: 14px; }
+.gl-ph { display: flex; align-items: center; gap: 8px; }
+.gl-ph > svg { flex: none; color: var(--txm); }
+.gl-ph .n { font: 600 var(--t12) var(--ui-font); color: var(--txb); }
+.gl-ph .m { font: 500 var(--t10) var(--mono); color: var(--txl); }
+.gl-ph .sp { flex: 1; }
+.gl-tag { flex: none; display: inline-flex; align-items: center; height: 17px; padding: 0 7px; border-radius: calc(var(--f-rad-s, 0px) * .6);
+  font: 600 var(--t85) var(--ui-font); letter-spacing: .12em; color: var(--acc); background: color-mix(in oklab, var(--acc) 15%, transparent); }
+.gl-tag.rs { color: var(--warn); background: color-mix(in oklab, var(--warn) 14%, transparent); }
+.gl-cm { margin: 6px 0 0 6px; border-left: 2px solid color-mix(in srgb, var(--acc) 30%, transparent); padding: 1px 0 1px 13px; }
+.gl-cm div { font: 400 var(--t10)/1.55 var(--mono); color: var(--txm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gl-cm b { font-weight: 400; color: var(--acc); margin-right: 6px; }
+.gl-cm .more { color: var(--txl); }
+.gl-turns { margin-top: 15px; display: flex; gap: 9px; align-items: flex-start; padding: 9px 11px; border-radius: var(--f-rad-s, 0);
+  border: 1px solid color-mix(in oklab, var(--warn) 32%, var(--line, var(--border))); background: color-mix(in oklab, var(--warn) 6%, transparent);
+  font: 400 var(--t11)/1.5 var(--ui-font); color: var(--tx); }
+.gl-turns > svg { flex: none; color: var(--warn); margin-top: 2px; }
+.gl-turns b { color: var(--txb); font-weight: 600; }
+.gl-steps { display: flex; flex-direction: column; }
+.gl-step { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; column-gap: 11px; padding: 10px 0; border-bottom: 1px solid var(--line, var(--border)); }
+.gl-step:last-child { border-bottom: 0; }
+.gl-step > svg { color: var(--txg); }
+.gl-step.ok > svg { color: var(--ok); }
+.gl-step.now > svg { color: var(--acc); }
+.gl-step.bad > svg { color: var(--err); }
+.gl-step .n { font: 600 var(--t12) var(--ui-font); color: var(--txb); }
+.gl-step.wait .n { color: var(--txm); font-weight: 500; }
+.gl-step .d { font: 500 var(--t10) var(--mono); color: var(--txl); }
+.gl-step.ok .d { color: var(--ok); }
+.gl-step.now .d { color: var(--acc); }
+.gl-step.bad .d { color: var(--err); }
+.gl-step .bar { grid-column: 2 / 4; position: relative; height: 2px; margin-top: 8px; overflow: hidden; background: color-mix(in oklab, var(--acc) 16%, transparent); }
+.gl-step .bar::after { content: ""; position: absolute; top: 0; bottom: 0; width: 30%; background: var(--acc); animation: gl-bar 1.4s ease-in-out infinite; }
+.gl-err { margin-top: 14px; padding: 9px 11px; border-radius: var(--f-rad-s, 0);
+  border: 1px solid color-mix(in srgb, var(--err) 40%, transparent); background: color-mix(in srgb, var(--err) 7%, transparent); }
+.gl-err .h { margin-bottom: 6px; font: 600 var(--t85) var(--ui-font); letter-spacing: .14em; color: var(--err); }
+.gl-err pre { margin: 0; max-height: 150px; overflow-y: auto; font: 400 var(--t95)/1.55 var(--mono); color: var(--txm); white-space: pre-wrap; overflow-wrap: anywhere; }
+.gl-calm { margin-top: 12px; font: 400 var(--t11)/1.5 var(--ui-font); color: var(--txl); }
+.gl-wl { margin-top: 12px; display: flex; flex-direction: column; }
+.gl-wl div { display: flex; align-items: center; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--line, var(--border)); }
+.gl-wl div:last-child { border-bottom: 0; }
+.gl-wl svg { flex: none; color: var(--acc); }
+.gl-wl .t { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 var(--t12) var(--ui-font); color: var(--txb); }
+.gl-wl .e { flex: none; font: 500 var(--t10) var(--mono); color: var(--txl); }
+.gl-co .clg-ic, .gl-co .clg-co-h .v { color: var(--acc); }
+.gl-co .bar { background: var(--acc); }
+@media (prefers-reduced-motion: reduce) { .gl-spin, .gl-step .bar::after { animation: none; } }
+
 .ntf-compose { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line, var(--border)); background: var(--panel2); }
 .ntf-compose .lbl { font: 600 var(--t9) var(--ui-font); letter-spacing: .16em; color: var(--txl); margin-bottom: 2px; }
 .ntf-compose input, .ntf-compose textarea { width: 100%; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line2, var(--border-bright));

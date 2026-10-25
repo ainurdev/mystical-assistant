@@ -1,6 +1,6 @@
 ---
 name: bridge-ship
-description: Use when a change to this repo needs to actually run — after editing anything under bridge/, or when the user says "restart the bridge", "is it live", "ship it", "rebuild the dashboard", or reports that a fix you already made isn't working. Covers the build/restart/verify loop and the ways restarting from inside a bridge session kills your own turn.
+description: Use when a change to this repo needs to actually run — after editing anything under bridge/, or when the user says "restart the bridge", "is it live", "ship it", "go live", "rebuild the dashboard", or reports that a fix you already made isn't working. Covers the dashboard's ⟳ go-live button, the build/restart/verify loop, and the ways restarting from inside a bridge session kills your own turn.
 user-invocable: true
 ---
 
@@ -10,6 +10,20 @@ user-invocable: true
 with. Python edits need a restart; web edits need a rebuild *and* a restart to
 be served. A user testing "your fix" against the old process is the single most
 expensive failure mode in this repo — it looks like the fix didn't work.
+
+## Usually: the user goes live, not you
+
+The dashboard's right rail shows **⟳ above the changelog** whenever this checkout holds
+code that isn't running: a web app built before its latest change, or a bridge launched
+before its latest Python (`GET /local/live`, `bridge/selfupdate.py live()`). Its card
+rebuilds what's behind and restarts the bridge (REBUILD & RESTART), or waits for the
+running turns to end (AFTER N TURNS).
+
+So once your change is merged on master and the suite is green, **don't ask when to ship
+and don't build or restart anything yourself.** End your reply by saying it's on master and
+the user can press ⟳ on the right rail to go live, and name what that does (rebuilds the
+dashboard, restarts the bridge). Use the paths below only when the user asks you to ship
+it yourself, or isn't on the dashboard (a Telegram-origin session).
 
 ## Before you touch anything: who is supervising?
 
@@ -102,7 +116,10 @@ mystical build          # forces all three: dashboard, Mini App, site
 
 `mystical start` builds only what looks stale (source newer than
 `dist/index.html`), and reinstalls deps when `package-lock.json` is newer than
-`node_modules/.package-lock.json`. Build output goes to
+`node_modules/.package-lock.json`. Every vite build also stamps `dist/.built` with
+the tree it was built from (the `builtFrom` plugin in each `vite.config.ts`); ⟳
+diffs that against the checkout, so a bundle copied in from a worktree build
+reads correctly too. Build output goes to
 `~/.bridge_state/mystical.log`, not your terminal — read it there when a build
 fails.
 
@@ -126,7 +143,8 @@ For frontend changes, look at the pixels — see the **bridge-eyes** skill.
 
 1. `python3 -m pytest tests/ -q` — green before you restart anything.
 2. Commit.
-3. `mystical build` if any `web/` or `site/` source changed.
-4. Restart via the transient unit above; warn the user first.
-5. After the session resumes: `mystical status` + one real check that the new
+3. Merged on master: tell the user to press ⟳ (above). Only when shipping it yourself:
+4. `mystical build` if any `web/` or `site/` source changed.
+5. Restart via the transient unit above; warn the user first.
+6. After the session resumes: `mystical status` + one real check that the new
    behaviour is present.

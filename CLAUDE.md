@@ -20,7 +20,9 @@ by `windows/build.sh` through `dotnet.exe`; `windows/probe.sh` snapshots it,
 **The running bridge is a snapshot of the code from when it launched.** A
 committed fix does nothing until the bridge restarts, and restarting is not
 `mystical restart` when you are a session *inside* that bridge — you share its
-systemd cgroup and would kill yourself mid-turn. Use the **bridge-ship** skill.
+systemd cgroup and would kill yourself mid-turn. The dashboard's ⟳ (right rail,
+above the changelog) shows what's on disk but not running and makes it live: point
+the user at it rather than restarting. Details: the **bridge-ship** skill.
 
 ## Tests
 

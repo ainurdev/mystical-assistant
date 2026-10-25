@@ -147,6 +147,7 @@ def main():
     # Before anything reads config: the SYSTEM tab's saved settings go on top of
     # what .env said, so the checks below and every server started here see them.
     envsettings.apply()
+    selfupdate.boot()              # the tree this process runs: what the rail's ⟳ diffs against
     if not os.path.isdir(config.BASE_PATH):
         sys.exit(f"BASE_PATH does not exist: {config.BASE_PATH}")
     signal.signal(signal.SIGINT, _on_stop_signal)
