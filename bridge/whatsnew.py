@@ -248,11 +248,11 @@ def _write_coming(head: str, up: str, nid: "int | None") -> None:
     try:
         # shortcut: no pictures until pulled (the media route serves this checkout's files), upgrade to
         # `git show up:<file>` if a waiting picture is ever wanted; a note for an older change waits for the boot
-        notes = [{**c, "media": None} for c in changes_in(head, up) if not c["for"]]
-        cl = _changelog(head, up, "waiting", told=[c["area"] for c in notes])
+        changes = [{**c, "media": None} for c in changes_in(head, up) if not c["for"]]
+        cl = _changelog(head, up, "waiting", told=[c["area"] for c in changes])
         if not cl:
             return
-        cl = _with_changes(cl, notes)
+        cl = _with_changes(cl, changes)
         before = {e["heading"] for e in notes_in(git.file_at(repo, head, NOTES_PATH))} | set(_seen())
         notes = [{k: e[k] for k in ("heading", "title", "body", "author")}
                  for e in notes_in(git.file_at(repo, up, NOTES_PATH)) if e["heading"] not in before][:3]
