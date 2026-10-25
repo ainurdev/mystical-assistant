@@ -4796,9 +4796,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* ponytail: no floor — in a ~570–620px column the name is down to a letter or two before
    SEND's group wraps; a floor that spares short names needs the label split into an unbreakable head */
 .pb-l .drop-prof .drop-val { white-space: normal !important; word-break: break-all; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; }
-/* a turn runs: profile and ponytail keep their glyph (and the profile its usage), the names go */
-.pb-card[data-running] .pb-foot .drop-val { display: none; }
-.pb-card[data-running] .pb-foot .drop-btn { min-width: 0 !important; }
 
 /* the ledger: goal, agents, paused, queued on one wrapping line, absent when
    nothing is live (the pill strip always renders; its pills do not). Busy
