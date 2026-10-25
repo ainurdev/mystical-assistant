@@ -1,7 +1,9 @@
-"""A session whose shell walks into a worktree gets labelled with that worktree's
-branch. Three layers, one file: the `cd` parser (git.shell_cd_target), the
-worktree check against a real repo (git.is_worktree_of), and the runner hook that
-writes it (runner._note_work_cwd) — plus what _session_brief then serves.
+"""A session whose shell walks into a worktree — or that makes one for its change —
+gets labelled with that worktree's branch. Three layers, one file: the `cd`
+parser (git.shell_cd_target), the worktree lookups against a real repo
+(git.is_worktree_of, git.worktree_holding), and the runner hook that writes it
+(runner._note_work_cwd, judged on a Bash call's result) — plus what
+_session_brief then serves.
 
 Real git here, not a stub: the whole point of is_worktree_of is that git, not the
 path shape, decides what a worktree is. Env pinning lives in conftest."""
@@ -28,7 +30,9 @@ def _git(cwd, *args):
 def repo():
     """A repo on master with a linked worktree on feat/x, plus a bare directory
     that is not a worktree at all."""
-    root = tempfile.mkdtemp()
+    # Real path: git lists worktrees by it (/private/var… on a Mac), and that is
+    # the path the hook records.
+    root = os.path.realpath(tempfile.mkdtemp())
     proj = os.path.join(root, "proj")
     os.makedirs(proj)
     _git(proj, "init", "-q", "-b", "master")
@@ -80,6 +84,26 @@ def test_is_worktree_of(repo):
     assert not git.is_worktree_of(repo["proj"], "")
 
 
+def test_worktree_holding(repo):
+    sub = os.path.join(repo["wt"], "web", "src")
+    os.makedirs(sub)
+    assert git.worktree_holding(repo["proj"], repo["wt"]) == repo["wt"]
+    assert git.worktree_holding(repo["proj"], sub) == repo["wt"]          # any depth
+    assert git.worktree_holding(repo["proj"], repo["proj"]) == repo["proj"]
+    assert git.worktree_holding(repo["proj"], repo["proj"] + "/.mystical") == ""  # the checkout: root only
+    assert git.worktree_holding(repo["proj"], repo["wt"] + "-2") == ""    # a sibling sharing the prefix
+    assert git.worktree_holding(repo["proj"], repo["outsider"]) == ""
+    assert git.worktree_holding(repo["proj"], "") == ""
+
+
+def test_worktree_holding_finds_a_tree_nested_in_the_checkout(repo):
+    """Claude Code's own worktrees sit inside the checkout (.claude/worktrees/):
+    the checkout containing them must not shadow them."""
+    nested = os.path.join(repo["proj"], ".claude", "worktrees", "n")
+    _git(repo["proj"], "worktree", "add", "-q", "-b", "n", nested)
+    assert git.worktree_holding(repo["proj"], os.path.join(nested, "x")) == nested
+
+
 # --- the runner hook -----------------------------------------------------
 
 def _job(sid, cwd):
@@ -102,6 +126,89 @@ def test_note_work_cwd_follows_and_returns(repo):
     assert _session_brief(store.get_session(s["id"]))["branch"] == "master"
 
 
+def test_note_work_cwd_follows_a_cd_below_the_root(repo):
+    """`cd <wt>/web/src && npm test` works on that tree's branch as much as
+    `cd <wt>` does; the session takes the tree, not the folder."""
+    sub = os.path.join(repo["wt"], "web", "src")
+    os.makedirs(sub)
+    s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
+    job = _job(s["id"], repo["proj"])
+    runner._note_work_cwd(job, f"cd {sub} && npm test")
+    assert store.get_session(s["id"])["work_cwd"] == repo["wt"]
+    # A detour into the checkout's own folders (a .mystical/ probe) keeps it:
+    # only the checkout itself walks it home.
+    runner._note_work_cwd(job, f"cd {repo['proj']}/.mystical && node probe.mjs")
+    assert store.get_session(s["id"])["work_cwd"] == repo["wt"]
+
+
+def test_a_session_on_a_worktree_is_home_anywhere_in_it(repo):
+    """Started on a worktree, that tree is home from any depth; the checkout
+    still answers at its root, as it always did."""
+    s = store.create_session(555, "/proj", origin="test", cwd=repo["wt"])
+    job = _job(s["id"], repo["wt"])
+    runner._note_work_cwd(job, f"cd {repo['proj']} && git merge feat/x")
+    assert store.get_session(s["id"])["work_cwd"] == repo["proj"]
+    runner._note_work_cwd(job, f"cd {repo['wt']}/web && npm test")
+    assert store.get_session(s["id"])["work_cwd"] is None
+
+
+def test_a_tree_the_command_made_is_where_the_session_works(repo):
+    """A session starts on master and branches off for its change: the worktree
+    its command added is its branch from then on — with no `cd` into it, and
+    even when the same line went home first."""
+    s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
+    job = _job(s["id"], repo["proj"])
+    before = {w["path"] for w in git.worktrees(repo["proj"])}
+    wt = os.path.join(repo["root"], "wt-feat-y")
+    _git(repo["proj"], "worktree", "add", "-q", "-b", "feat/y", wt)   # the command ran
+    runner._note_work_cwd(job, f"cd {repo['proj']} && WT={wt}; git worktree add -q -b feat/y $WT", before)
+    assert store.get_session(s["id"])["work_cwd"] == wt
+    assert _session_brief(store.get_session(s["id"]))["branch"] == "feat/y"
+
+
+def test_a_bash_call_is_judged_on_its_result(repo):
+    """`git worktree add … && cd …` names a tree that only exists once the line
+    has run, so the call can't place the session; its result does."""
+    s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
+    job = _job(s["id"], repo["proj"])
+    wt = os.path.join(repo["root"], "wt-feat-y")
+    cmd = f"git worktree add -q -b feat/y {wt} && cd {wt} && git status"
+    runner._handle_event(job, {"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": cmd}}]}})
+    assert store.get_session(s["id"])["work_cwd"] is None
+    _git(repo["proj"], "worktree", "add", "-q", "-b", "feat/y", wt)   # the CLI runs it
+    runner._handle_event(job, {"type": "user", "message": {"content": [
+        {"type": "tool_result", "tool_use_id": "t1", "content": "ok"}]}})
+    assert store.get_session(s["id"])["work_cwd"] == wt
+
+
+def test_a_later_turn_can_walk_home(repo, monkeypatch):
+    """A new turn's job starts on the session's tree, so `cd <checkout> && git
+    merge` in a later turn clears the label — a job that started blank saw no
+    change to record."""
+    from bridge import state, titler
+    s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
+    store.set_work_cwd(s["id"], repo["wt"])
+    monkeypatch.setattr(runner, "_jobs", {})
+    monkeypatch.setattr(titler, "kick", lambda *a, **k: None)
+    monkeypatch.setattr(runner, "_run_streaming", lambda *a: None)
+
+    def turn():
+        job = runner.start_streaming_job(555, "go", [], project=repo["proj"], session_id=s["id"])
+        state.release_run(s["id"])
+        job.cwd = repo["proj"]   # _run_streaming's first act, stubbed out here
+        return job
+
+    job = turn()
+    assert job.work_cwd == repo["wt"]
+    runner._note_work_cwd(job, f"cd {repo['proj']} && git merge feat/x")
+    assert store.get_session(s["id"])["work_cwd"] is None
+    # A tree removed since is not one to start on (a Task card answered there
+    # would be recorded nowhere).
+    store.set_work_cwd(s["id"], os.path.join(repo["root"], "gone"))
+    assert turn().work_cwd is None
+
+
 def test_note_work_cwd_ignores_non_worktrees(repo):
     s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
     job = _job(s["id"], repo["proj"])
@@ -109,6 +216,15 @@ def test_note_work_cwd_ignores_non_worktrees(repo):
                 "cd src && ls", "git -C /somewhere status"):
         runner._note_work_cwd(job, cmd)
         assert store.get_session(s["id"])["work_cwd"] is None, cmd
+
+
+def test_a_branch_made_in_the_checkout_needs_no_hook(repo):
+    """`git checkout -b` in the session's own checkout: the brief reads the
+    checkout's branch on every poll (through a 3 s cache)."""
+    s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
+    _git(repo["proj"], "checkout", "-q", "-b", "feat/z")
+    git._branch_cache.clear()
+    assert _session_brief(store.get_session(s["id"]))["branch"] == "feat/z"
 
 
 def test_brief_falls_back_when_the_worktree_is_gone(repo):

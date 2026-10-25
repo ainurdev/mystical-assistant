@@ -838,6 +838,9 @@ class Job:
         # tool_use id -> the image file a Read opened, so the chat shows that
         # file and not the copy the CLI shrank for the model (_save_result_images).
         self.read_paths: dict[str, str] = {}
+        # tool_use id -> (command, worktrees before it) for a Bash call, judged by
+        # _note_work_cwd once its result says it ran.
+        self.bash_cmds: dict[str, tuple[str, "set[str] | None"]] = {}
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -2074,32 +2077,49 @@ def _hook_log(job: Job, d: dict):
              "text": body[:_HOOK_MAX], "error": bad})
 
 
-def _note_work_cwd(job: "Job", command: str) -> None:
-    """Follow the session's shell when it walks into a worktree.
+def _trees_before(job: "Job", command: str) -> "set[str] | None":
+    """The repo's worktrees from just before a Bash command that adds one, so its
+    result can tell which tree it made. None for any other command, or when git
+    can't say."""
+    if "worktree add" not in command or not job.cwd:
+        return None
+    try:
+        return {w["path"] for w in git.worktrees(job.cwd)} or None
+    except Exception:  # noqa: BLE001 - same as _note_work_cwd: never fail a turn
+        return None
 
-    `cd ~/projects/.worktrees/x/feat-y && git commit` is how an agent works a
+
+def _note_work_cwd(job: "Job", command: str, before: "set[str] | None" = None) -> None:
+    """Follow the session onto the worktree it works in, once a Bash command ran.
+
+    `cd ~/projects/.worktrees/x/feat-y/web && git commit` is how an agent works a
     feature branch, and claude's own cwd never moves with it — so the session
     row keeps naming the checkout's branch while every commit lands on another
-    one. Recording the destination lets the surfaces label the session with the
-    branch it is actually on.
+    one. Recording the tree lets the surfaces label the session with the branch
+    it is actually on.
 
-    Deliberately narrow: only a literal `cd` to a path git already lists as a
-    worktree of this session's repo counts. A `cd /tmp`, a relative `cd`, or a
+    Two things move it. A command that added a worktree of this session's repo
+    (`before` holds the trees from just before it ran): a session that starts on
+    main and branches off for its change is on that branch from then on, whether
+    or not it ever `cd`s there. And a literal `cd` into a tree, which counts from
+    any depth of a linked worktree but only at the root of the main checkout
+    (git.worktree_holding), so a detour into the checkout's scratch dirs (a
+    .mystical/ probe) keeps the label; landing in its own tree walks it home.
+    Judged on the result, not the call: `git worktree add … && cd …` names a tree
+    that only exists once the line has run. A `cd /tmp`, a relative `cd`, or a
     command that merely reads a worktree leaves the label alone — a wrong branch
     on the card is worse than a stale one. Best-effort; never raises into the
     turn."""
     if not (job.store_session_id and job.cwd):
         return
     try:
+        made = [w["path"] for w in git.worktrees(job.cwd)
+                if not w["is_main"] and w["path"] not in before] if before else []
         dest = git.shell_cd_target(command)
-        if not dest:
+        tree = made[0] if len(made) == 1 else git.worktree_holding(job.cwd, dest) if dest else ""
+        if not tree:
             return
-        if os.path.realpath(dest) == os.path.realpath(job.cwd):
-            new = None                       # walked back home
-        elif git.is_worktree_of(job.cwd, dest):
-            new = dest
-        else:
-            return
+        new = None if os.path.realpath(tree) == os.path.realpath(job.cwd) else tree   # None: home
         if new != job.work_cwd:
             job.work_cwd = new
             store.set_work_cwd(job.store_session_id, new)
@@ -2158,7 +2178,8 @@ def _handle_event(job: Job, d: dict):
                 name = b.get("name", "tool")
                 inp = b.get("input", {})
                 if name == "Bash":
-                    _note_work_cwd(job, inp.get("command") or "")
+                    cmd = inp.get("command") or ""
+                    job.bash_cmds[b.get("id")] = (cmd, _trees_before(job, cmd))
                 elif name == "TodoWrite" and isinstance(inp.get("todos"), list):
                     job.todos = inp["todos"]
                 elif name == "TaskUpdate" and inp.get("taskId"):
@@ -2180,6 +2201,8 @@ def _handle_event(job: Job, d: dict):
             if isinstance(b, dict) and b.get("type") == "tool_result":
                 rid = b.get("tool_use_id")
                 name, t0 = job.open_tools.pop(rid, (None, 0.0))
+                if (bash := job.bash_cmds.pop(rid, None)) is not None:
+                    _note_work_cwd(job, *bash)
                 made = d.get("tool_use_result") if name == "TaskCreate" else None
                 if (isinstance(made, dict) and isinstance(made.get("task"), dict)
                         and made["task"].get("id")):
@@ -2922,6 +2945,9 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                 session["id"], session["claude_session_id"])
         job.account_slot = account_slot
         job.project = session.get("project")
+        # A tree an earlier turn moved onto, while it is still there (_session_brief's rule).
+        wt = session.get("work_cwd")
+        job.work_cwd = wt if wt and os.path.isdir(wt) else None
         job.mcp_on, job.extra_args = mcp_on, list(extra_args or [])
         job.skip_pack = skip_pack
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
