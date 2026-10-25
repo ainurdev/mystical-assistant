@@ -93,12 +93,17 @@ const FACES: { eyeL: EyeV; eyeR: EyeV; mouth: MouthV }[] = [
  *  a blinking "awaiting your command" caret, then FreshPanel — where the
  *  project stands and what is open off its default branch. Mounted whenever a
  *  project is known; unlike the strips it replaced, it does not wait on an AI switch. */
-function FreshState({ project, branch, run, onOpenRun, local }: {
+function FreshState({ project, branch, run, onOpenRun, local, step, leaving, onLeft }: {
   project: string | null;
   branch?: string | null;
   run?: DevServerInfo | null;
   onOpenRun?: () => void;
   local: FreshLocal;
+  /** What a session being made waits on (a worktree being cut), said on the prompt line. */
+  step?: string | null;
+  /** The first turn has landed: the screen lifts off where it stood, over it. */
+  leaving?: boolean;
+  onLeft?: () => void;
 }) {
   const [qi, setQi] = useState(0);
   const [face, setFace] = useState(0);
@@ -112,7 +117,10 @@ function FreshState({ project, branch, run, onOpenRun, local }: {
     return () => clearInterval(id);
   }, []);
   return (
-    <div style={{ height: "100%", minHeight: 330, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, textAlign: "center", animation: "mfadeup .5s ease both" }}>
+    <div onAnimationEnd={(e) => { if (e.target === e.currentTarget && e.animationName === "freshleave") onLeft?.(); }}
+      style={{ height: "100%", minHeight: 330, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, textAlign: "center", animation: "mfadeup .5s ease both",
+               // out of the flow at the spot it held (the content box's top), so the turn takes its place under it
+               ...(leaving && { position: "absolute", top: ISLE_EDGE + 12, left: 0, right: 0, height: "auto", pointerEvents: "none", animation: "freshleave .2s cubic-bezier(.2,.8,.2,1) both" }) }}>
       <div style={{ position: "relative", width: 112, height: 112, display: "flex", alignItems: "center", justifyContent: "center" }}>
         <svg viewBox="0 0 100 100" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", overflow: "visible", opacity: 0.5 }}>
           <circle cx="50" cy="50" r="46" fill="none" stroke="var(--acc)" strokeWidth="1" strokeDasharray="5 9" style={{ transformOrigin: "50px 50px", animation: "introspin 11s linear infinite" }} />
@@ -152,7 +160,7 @@ function FreshState({ project, branch, run, onOpenRun, local }: {
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 9, color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)" }}>
         <span className="fresh-pfx" style={{ color: "var(--purple)" }}>~ ❯</span>
-        <span style={{ letterSpacing: 2, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>awaiting your command</span>
+        <span style={{ letterSpacing: 2, background: "linear-gradient(90deg,var(--txl) 0%,var(--txl) 28%,#9fe9dd 50%,var(--txl) 72%,var(--txl) 100%)", backgroundSize: "200% 100%", WebkitBackgroundClip: "text", backgroundClip: "text", WebkitTextFillColor: "transparent", color: "transparent", animation: "awaitsweep 3s linear infinite" }}>{step || "awaiting your command"}</span>
         <span style={{ width: 7, height: 14, background: "var(--acc)", display: "inline-block", boxShadow: "0 0 8px color-mix(in srgb, var(--acc) 70%, transparent)", animation: "caretbreath 1.5s ease-in-out infinite" }} />
       </div>
       {project && (
@@ -391,17 +399,23 @@ export function Terminal({
   // glitch — which read as a fault rather than a transition.
   const tunedFor = useRef<string | null>(null);
   const firstTune = useRef(true);
+  // Whether the view last landed on the fresh screen: a fresh screen handing
+  // over to another (New's blank to the session made for it) stays put.
+  const tunedEmpty = useRef(false);
   useLayoutEffect(() => {
     if (!isChat || loading) return; // wait until the new transcript has landed
     // Release the hold in the same commit the new turns render in, so the dim
     // lifting and the fade-up below read as one motion.
     const wrap = swapRef.current;
     if (wrap) delete wrap.dataset.swapping;
+    const wasEmpty = tunedEmpty.current;
+    tunedEmpty.current = empty;
     if (tunedFor.current === (sessionId ?? null)) return; // already retuned this session
     const el = scrollRef.current;
     if (!el) return;
     tunedFor.current = sessionId ?? null;
     if (firstTune.current) { firstTune.current = false; return; } // initial load: enterZoom covers it
+    if (wasEmpty && empty) return;
     if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     el.animate(
       [
@@ -410,7 +424,20 @@ export function Terminal({
       ],
       { duration: 220, easing: "cubic-bezier(.2,.8,.2,1)" },
     );
-  }, [sessionId, loading, view, scrollRef]);
+  }, [sessionId, loading, view, scrollRef, empty]);
+
+  // A prompt sent from the fresh screen: the screen lifts off over your turn
+  // rising in (Transcript), rather than cutting to it. The same FreshState, so
+  // its quote holds while it goes; anything else that ends it (a switch, which
+  // loads first) still cuts.
+  const fresh = empty && !loading;
+  const [freshWas, setFreshWas] = useState(fresh);
+  const [leaving, setLeaving] = useState(false);
+  if (freshWas !== fresh) {
+    setFreshWas(fresh);
+    if (freshWas && isChat && turns.length > 0 && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) setLeaving(true);
+  }
+  useEffect(() => { setLeaving(false); }, [sessionId]);
 
   // The transcript itself, so both readings of it — the page and the board —
   // render the same scroller, the same virtualiser and the same rails.
@@ -438,15 +465,17 @@ export function Terminal({
             below it: parked at the top nothing has slid under it, so the
             LAST row stays folded and the transcript opens on its first
             message, not on a header repeating it. */}
-        <div ref={contentRef} style={{ minHeight: "100%", padding: `${ISLE_EDGE + 12}px 0 16px` }}>
+        <div ref={contentRef} style={{ minHeight: "100%", padding: `${ISLE_EDGE + 12}px 0 16px`, position: "relative" }}>
           {/* A switch that lands inside the delay renders neither: no
               scanline for a load that's already over, and no FreshState
               flashing in front of a transcript that's about to arrive. */}
           {empty && slowLoad ? (
             <ChannelTuning step={boot} />
-          ) : empty && loading ? null : empty ? (
-            <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} local={freshLocal} />
-          ) : (
+          ) : empty && loading ? null : empty || leaving ? (
+            <FreshState project={sessionProject} branch={branch} run={run} onOpenRun={onOpenRun} local={freshLocal}
+              step={empty ? boot : null} leaving={!empty} onLeft={() => setLeaving(false)} />
+          ) : null}
+          {empty ? null : (
             <Transcript turns={turns} activeId={activeId} boot={boot} who={who} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={theirs ? undefined : onRunCommand} onQuote={theirs ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={theirs ? undefined : onAnswer} askDocked={!theirs && !!askDocked} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
               job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject}
               top={theirs && selected?.team?.earlier

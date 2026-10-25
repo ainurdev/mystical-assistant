@@ -14,7 +14,6 @@ import { openSettings } from "../lib/opensettings";
 import { updateClaude } from "../lib/restart";
 import { anchorAt, type Anchor, type Rows } from "../lib/scrollmem";
 import { hhmm, useClock12 } from "../lib/surfaces";
-import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { RuneSpirit } from "./hud/RuneSpirit";
 import { UnfinishedPlate } from "./TeamBar";
 import { LimitBlock, type LimitLive } from "./LimitCard";
@@ -196,6 +195,10 @@ function TurnBlock({
   const jobKey = job?.kind ? JSON.stringify(job) : "";
   const view = useMemo(() => (jobKey ? { job: JSON.parse(jobKey) as RivendellJob, prompt: turn.prompt } : null), [jobKey, turn.prompt]);
   const replied = turn.events.length > 0 || turn.status === "running" || !!turn.runtime;
+  // Sent from this page a moment ago: your prompt rises into place, its WORK
+  // card a beat behind (RunStream). Read at mount, so a turn you come back to is
+  // simply there.
+  const [sent] = useState(() => !!liveTurns?.has(turn.id) && turn.status === "running" && !turn.events.length);
   // The usage limit (LimitCard): the turn it cut off gives its error answer and
   // badge to the limit's card or receipt, and a turn the bridge sent to carry the
   // work on draws no plate — those words aren't yours. The two then read as one
@@ -220,7 +223,8 @@ function TurnBlock({
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
       data-limit={limitHit && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge ? "" : undefined}
       data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
-      <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}>
+      <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}
+        style={sent ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
         {turn.prompt && !nudge && (
           <div data-prompt-idx={promptIdx}>
             {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
@@ -275,6 +279,7 @@ function TurnBlock({
 type Row = { kind: "turn"; turn: Turn } | { kind: "working" };
 
 const NO_LOGINS: AccountInfo[] = [];
+const NO_EVENTS: Turn["events"] = [];
 
 /** Imperative surface for checkpoint navigation — the virtualized list can't
  *  be driven by getElementById, because the target usually isn't mounted. */
@@ -581,7 +586,9 @@ export function Transcript({
         askDocked={askDocked}
       />
     ) : (
-      <WorkingIndicator hud={hud} />
+      // Working with no running turn to hang it on (a native session's run, or a
+      // queued prompt the next poll brings): the live WORK card, empty.
+      <RunStream events={NO_EVENTS} working boot="working" hud={hud} animate />
     );
 
   const olderButton = hasOlder && (
