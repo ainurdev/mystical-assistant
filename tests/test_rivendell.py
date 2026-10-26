@@ -4008,7 +4008,7 @@ def test_built_file_answers_the_page_or_why_not(tmp_path):
     assert len(data) == rivendell._DESIGN_FILE_MAX and why == ""               # at the cap is in
     with open(page, "wb") as f:
         f.truncate(rivendell._DESIGN_FILE_MAX + 1)
-    assert rivendell._built_file(str(tmp_path), "b1")[0] is None               # a byte over is out
+    assert rivendell._built_file(str(tmp_path), "b1") == (None, "the built page is 26 MB, over 25 MB")   # a byte over is out; the size rounds up
 
 
 def test_design_report_reads_the_json_object_with_a_known_outcome():
@@ -4027,3 +4027,90 @@ def test_queued_message_names_a_design_build():
             "slug": "ainurdev/nr-kantoor", "created_at": 0.0}
     text, _kb = _worker()._queued_message(item, "tok")
     assert "Rivendell design build queued — ainurdev/nr-kantoor" in text
+
+
+def _design_report_json(outcome, **fields):
+    return json.dumps({"outcome": outcome, **fields})
+
+
+@pytest.mark.parametrize("answer, lines", [
+    (_design_report_json("built", commit="abc1234", changelog=["x"], summary="S" * 300),
+     ["◫ Design built: Student card", "S" * 200]),
+    (_design_report_json("no-preview", summary="A Vite app.", suggestion="\n  Add vite-plugin-singlefile.\nThen an in-memory data layer."),
+     ["◫ No preview build: Student card", "Add vite-plugin-singlefile."]),
+    (_design_report_json("no-preview", summary="A Vite app with no single-file build.", suggestion=" \n"),
+     ["◫ No preview build: Student card", "A Vite app with no single-file build."]),
+    (_design_report_json("no-preview", suggestion="S" * 400),
+     ["◫ No preview build: Student card", "S" * 300]),
+    (_design_report_json("unsuitable", summary="U" * 400),
+     ["◫ Not suitable: Student card", "U" * 300]),
+    (f"Built it.\n```json\n{_BUILT}\n```", ["◫ Design built: Student card", "Built."]),
+], ids=["built", "no-preview: the suggestion's first line", "no-preview: no suggestion, the summary",
+        "no-preview: capped", "unsuitable", "in a fence"])
+def test_design_message_says_what_the_build_came_to_over_open_design(answer, lines):
+    text, kb = rivendell._design_message(_DESIGN, answer)
+    assert text.splitlines() == lines
+    assert kb == {"inline_keyboard": [[{"text": "Open design ↗", "url": _DESIGN["url"]}]]}
+
+
+def test_design_message_leaves_out_what_the_request_did_not_say():
+    text, kb = rivendell._design_message({}, _BUILT)
+    assert text == "◫ Design built\nBuilt." and kb is None
+    text, kb = rivendell._design_message({"title": None, "url": None}, _design_report_json("unsuitable", summary="A backend."))
+    assert text == "◫ Not suitable\nA backend." and kb is None
+    text, _kb = rivendell._design_message({}, _design_report_json("no-preview", suggestion="Add y."))
+    assert text == "◫ No preview build\nAdd y."
+    text, _kb = rivendell._design_message(_DESIGN, '{"outcome": "built"}')         # a report with nothing to say
+    assert text == "◫ Design built: Student card"
+
+
+@pytest.mark.parametrize("answer", ["just prose", "", '{"outcome": "resolved"}', "{broken"])
+def test_design_message_is_none_for_an_answer_that_is_no_report(answer):
+    assert rivendell._design_message(_DESIGN, answer) is None
+
+
+_DESIGN_ROW = {"id": "b1", "mode": "build", "designId": "d1", "designTitle": "Student card",
+               "projectName": "NR Kantoor", "url": _DESIGN["url"],
+               "repositoryFullName": "ainurdev/nr-kantoor", "branch": "main"}
+
+
+def _design_pinged(monkeypatch, src, ok, answer):
+    """A worker that was sent design build b1 (as `src`, a frame or a catch-up row), ran it in a
+    session, and has its result posted: the Telegram messages it would send and the notes it made
+    for the bell are collected. Returns (worker, sent, noted)."""
+    from bridge import store
+    w = _worker()
+    w._enqueue("design-build", "b1", "ainurdev/nr-kantoor", src=src)
+    sent, noted = [], []
+    monkeypatch.setattr(store, "sessions_for_refs", lambda refs: {refs[0]: "s1"})
+    monkeypatch.setattr(store, "get_session", lambda sid: {"id": sid, "title": "Student card · design build"})
+    monkeypatch.setattr(rivendell, "_result_view", lambda sid, checks=True: {})
+    monkeypatch.setattr(rivendell.notices, "telegram_ok", lambda kind, now=None: True)
+    monkeypatch.setattr(w, "_note", lambda kind, rid, title, body="", **meta: noted.append((kind, meta)))
+    monkeypatch.setattr(w, "_deliver_telegram", lambda text, kb: sent.append((text, kb)))
+    w._ping_done("b1", ok, answer, kind_path="design-build-requests")
+    return w, sent, noted
+
+
+@pytest.mark.parametrize("src", [_DESIGN_FRAME, _DESIGN_ROW], ids=["frame", "catch-up row"])
+def test_a_finished_design_build_sends_the_design_message(monkeypatch, src):
+    """Either way the request arrived, the design's title and page were kept for the message, and
+    they are forgotten once it is told."""
+    w, sent, noted = _design_pinged(monkeypatch, src, True, _BUILT)
+    (text, kb), = sent
+    assert text.splitlines() == ["◫ Design built: Student card", "Built."]
+    assert kb == {"inline_keyboard": [[{"text": "Open design ↗", "url": _DESIGN["url"]}]]}
+    assert [(kind, meta["job_kind"]) for kind, meta in noted] == [("rv_done", "design-build")]
+    assert "b1" not in w._designs
+
+
+@pytest.mark.parametrize("ok, answer, head", [
+    (True, "Built it, but there is no report.", "✓ Rivendell job done"),
+    (False, "the built page is 26 MB, over 25 MB", "✕ Rivendell job failed"),
+    (False, _BUILT, "✕ Rivendell job failed"),
+], ids=["no report", "failed", "failed, whatever it said"])
+def test_a_design_build_without_a_report_or_that_failed_keeps_the_generic_message(monkeypatch, ok, answer, head):
+    w, sent, _noted = _design_pinged(monkeypatch, _DESIGN_FRAME, ok, answer)
+    (text, _kb), = sent
+    assert text.startswith(head) and "◫" not in text and "Open design" not in text
+    assert "b1" not in w._designs

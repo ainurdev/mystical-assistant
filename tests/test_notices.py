@@ -56,6 +56,11 @@ def test_resolved_conflicts_read_resolved_in_the_bell():
     assert notices.feed()[0]["verb"] == "RESOLVED"
 
 
+def test_built_designs_read_built_in_the_bell():
+    notices.emit("rv_done", "rv:i:10", title="Student card · design build", meta={"job_kind": "design-build"})
+    assert notices.feed()[0]["verb"] == "BUILT"
+
+
 def test_prune_drops_week_old():
     old = notices.emit("done", "s-old", title="old")
     with closing(store._connect()) as c:

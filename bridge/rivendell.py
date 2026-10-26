@@ -102,12 +102,12 @@ build) builds the design's prototype as one self-contained HTML page in the
 repository's checkout, or says why it can't: its answer is a JSON object whose
 `outcome` is built, unsuitable (the repository has no web interface to show) or
 no-preview (a web app with no single-file build; the answer then carries a
-suggestion). It is the one kind whose result is more than text. A built page is
+suggestion). A built page is
 the file the run left at <checkout>/.mystical/design-build/<request id>.html, and
 the bridge, not the agent, sends it, before the result: Rivendell makes the
 version from the result and refuses a built one that has no file. _built_file
-reads that one regular file the way device_side reads a screenshot (no symlink
-followed, no pipe waited on, the size judged before a byte is read). A page that
+reads that one regular file the way device_side reads a screenshot (the page
+never a link, no pipe waited on, the size judged before a byte is read). A page that
 is missing, over 25 MB or that did not upload lands the job FAILED with that
 reason, never COMPLETED for a version that will not exist. Any other answer is
 posted as it is: Rivendell judges the answer, the bridge only carries the file.
@@ -879,6 +879,7 @@ class Worker:
             job_kind = next((k for k, v in self._KIND_PATH.items() if v == kind_path), None)
             meeting = self._briefs.pop(request_id, None) if job_kind == "meeting-brief" else None
             pr_meta = self._conflicts.pop(request_id, None) if job_kind == "conflict" else None
+            design = self._designs.pop(request_id, None) if job_kind == "design-build" else None
             brief = ok and job_kind == "meeting-brief"
             kind = "rv_brief" if brief else ("rv_done" if ok else "rv_failed")
             line = (_brief_lead(text) if brief
@@ -897,6 +898,7 @@ class Worker:
             if not notices.telegram_ok(kind):
                 return
             told = _conflict_message(pr_meta or {}, text) if ok and job_kind == "conflict" else None
+            told = _design_message(design or {}, text) if ok and job_kind == "design-build" else told
             msg, kb = (_brief_message(meeting or {}, text) if brief
                        else told or _done_message(sess, ok, text, res))
             self._deliver_telegram(msg, kb)
@@ -3623,15 +3625,39 @@ def _design_report(answer: str) -> "dict | None":
     return body if isinstance(body, dict) and body.get("outcome") in ("built", "unsuitable", "no-preview") else None
 
 
+def _design_message(meta: dict, answer: str) -> "tuple | None":
+    """A design build's ping: built (the summary), or why not: no preview build (the first line of
+    the suggestion, else the summary) or not suitable (the summary), over OPEN DESIGN, which opens
+    the design's page in Rivendell. `meta` is the request's design ({title, url}); a line or button
+    it can't fill is left out. None when the answer holds no report: the generic done message says
+    it then. Pure, so the wording is unit-testable."""
+    report = _design_report(answer)
+    if report is None:
+        return None
+    summary = str(report.get("summary") or "").strip()
+    if report["outcome"] == "built":
+        head, body = "Design built", summary[:200]
+    elif report["outcome"] == "no-preview":
+        first = next((ln.strip() for ln in str(report.get("suggestion") or "").splitlines() if ln.strip()), "")
+        head, body = "No preview build", (first or summary)[:300]
+    else:
+        head, body = "Not suitable", summary[:300]
+    lines = [f"◫ {head}: {meta['title']}" if meta.get("title") else f"◫ {head}", body]
+    url = meta.get("url")
+    return "\n".join(ln for ln in lines if ln), ({"inline_keyboard": [[{"text": "Open design ↗", "url": url}]]} if url else None)
+
+
 def _built_file(workdir: str, request_id: str) -> "tuple[bytes | None, str]":
     """The page a design build left at <workdir>/.mystical/design-build/<id>.html, as (bytes, ""),
     or (None, why) when it can't go up: there is none, it is no regular file, or it is over
-    Rivendell's 25 MB. Read the way device_side._upload reads a screenshot: never through a symlink
-    (the agent chose that path, and a link could point anywhere on this machine), never waiting on
-    a pipe, and the size judged on the file as opened, before a byte of it is read."""
+    Rivendell's 25 MB. Read the way device_side._upload reads a screenshot: the page itself is never a
+    link (the agent chose that path, and a link could point anywhere on this machine), never waiting
+    on a pipe, and the size judged on the file as opened, before a byte of it is read."""
     rel = f".mystical/design-build/{request_id}.html"
     gone = None, f"no built page at {rel}"
     try:
+        # ponytail: O_NOFOLLOW guards the last component only, so a symlinked .mystical folder is followed.
+        # No boundary is lost while the agent runs with bypassPermissions: it can read anything anyway.
         fd = os.open(os.path.join(workdir, rel), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except OSError:
         return gone
@@ -3640,7 +3666,7 @@ def _built_file(workdir: str, request_id: str) -> "tuple[bytes | None, str]":
         if not stat.S_ISREG(st.st_mode):
             return gone
         if st.st_size > _DESIGN_FILE_MAX:
-            return None, f"the built page is {st.st_size // (1024 * 1024)} MB, over 25 MB"
+            return None, f"the built page is {-(-st.st_size // (1024 * 1024))} MB, over 25 MB"
         with os.fdopen(fd, "rb", closefd=False) as f:
             return f.read(), ""
     finally:
