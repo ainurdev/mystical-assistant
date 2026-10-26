@@ -1353,7 +1353,8 @@ def test_a_shared_ready_device_says_so_in_the_handshake(monkeypatch):
 def test_any_other_device_sends_neither_header(monkeypatch, why, inst, facts, setup):
     _device(monkeypatch, facts, setup)
     h = _upgrade_headers(monkeypatch, **inst)
-    assert not [k for k in h if k.lower().startswith("x-mystical")], why
+    # Neither device header; X-Mystical-Tools (the video tools) is not about devices.
+    assert not [k for k in h if k.lower() in ("x-mystical-features", "x-mystical-device")], why
     assert h["Authorization"] == "Bearer rvd_testtoken"
 
 
@@ -1362,7 +1363,7 @@ def test_a_device_probe_that_raises_never_keeps_the_link_down(monkeypatch):
         raise RuntimeError("the config went away mid-read")
     monkeypatch.setattr(device_share, "handshake_headers", broken)
     h = _upgrade_headers(monkeypatch)
-    assert not [k for k in h if k.lower().startswith("x-mystical")]
+    assert not [k for k in h if k.lower() in ("x-mystical-features", "x-mystical-device")]
     assert h["Authorization"] == "Bearer rvd_testtoken", "the link still comes up, as a plain one"
 
 

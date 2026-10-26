@@ -2987,6 +2987,36 @@ def test_a_device_run_cancel_stops_it_off_the_listener(monkeypatch):
     assert w.queue_snapshot() == []
 
 
+def test_a_setup_request_runs_off_the_listener(monkeypatch):
+    """Set up installs and downloads for minutes (bridge/tool_setup.py): never on the listener."""
+    ran, release = [], threading.Event()
+    monkeypatch.setattr("bridge.tool_setup.run", lambda worker, frame: ran.append(frame["need"]) or release.wait(5))
+    w = _worker()
+    began = time.monotonic()
+    try:
+        assert w._handle_message(json.dumps({"type": "setup-request", "need": "transcribe"}).encode()) is None
+        assert time.monotonic() - began < 1, "it returned while Set up was still going"
+        _wait_until(lambda: ran == ["transcribe"])
+    finally:
+        release.set()
+
+
+def test_redial_tools_drops_every_live_link(monkeypatch):
+    """After Set up each link redials, so its upgrade carries the new X-Mystical-Tools."""
+    dropped = []
+
+    class Link:
+        def __init__(self, name):
+            self.name = name
+
+        def _drop_connection(self):
+            dropped.append(self.name)
+
+    monkeypatch.setattr(rivendell, "_workers", {"a": Link("a"), "b": Link("b")})
+    rivendell.redial_tools()
+    assert sorted(dropped) == ["a", "b"]
+
+
 def test_one_device_run_at_a_time_even_from_the_queue_tab(monkeypatch):
     """ACCEPT on a waiting one while another runs leaves it waiting its turn."""
     w = _worker()
