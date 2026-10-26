@@ -3,7 +3,7 @@ import { type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
 import { setClock12 } from "../../lib/surfaces";
 import { isMacApp, macWindow } from "../../lib/mac";
-import { PanelLeftClose } from "lucide-react";
+import { Minus, PanelLeftClose, Plus, X, type LucideIcon } from "lucide-react";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -120,8 +120,8 @@ export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: (
  *  cap's left edge, in the room the logo's slide makes. */
 function Lights({ show }: { show: boolean }) {
   const [hover, setHover] = useState(false);
-  const dots: [string, "close" | "minimize" | "zoom", string][] = [
-    ["#ff5f57", "close", "×"], ["#febc2e", "minimize", "–"], ["#28c840", "zoom", "+"],
+  const dots: [string, "close" | "minimize" | "zoom", LucideIcon][] = [
+    ["#ff5f57", "close", X], ["#febc2e", "minimize", Minus], ["#28c840", "zoom", Plus],
   ];
   return (
     <div
@@ -129,7 +129,7 @@ function Lights({ show }: { show: boolean }) {
       onMouseLeave={() => setHover(false)}
       style={{ position: "absolute", left: 13, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 8, opacity: show ? 1 : 0, transition: "opacity .2s ease", pointerEvents: show ? "auto" : "none" }}
     >
-      {dots.map(([fill, action, glyph]) => (
+      {dots.map(([fill, action, Glyph]) => (
         <button
           key={action}
           aria-label={action}
@@ -137,11 +137,13 @@ function Lights({ show }: { show: boolean }) {
           style={{
             appearance: "none", cursor: "default", width: 12, height: 12, borderRadius: 6, padding: 0, border: 0,
             background: fill, boxShadow: "inset 0 0 0 1px rgba(0,0,0,.15)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            fontFamily: "system-ui", fontSize: 10, lineHeight: 1, fontWeight: 700, color: "rgba(0,0,0,.55)",
+            display: "flex", alignItems: "center", justifyContent: "center", color: "#000",
           }}
         >
-          {hover ? glyph : ""}
+          {/* Drawn, not typed: a font's ×–+ sat ~1px low (its metrics, not the
+              box); the icon's centre is the dot's. Opacity on the whole icon, so
+              the ×'s crossing doesn't darken twice. */}
+          {hover && <Glyph size={8} strokeWidth={3} style={{ opacity: 0.55 }} aria-hidden />}
         </button>
       ))}
     </div>
