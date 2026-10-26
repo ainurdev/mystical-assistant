@@ -528,10 +528,19 @@ export function Transcript({
         const i = rowIndex(turnId);
         if (i < 0) return false;
         virtualizer.scrollToIndex(i, { align: "start" });
-        if (subAnchorId)
-          requestAnimationFrame(() => requestAnimationFrame(() => {
-            document.getElementById(subAnchorId)?.scrollIntoView({ block: "start" });
-          }));
+        // scrollToIndex aims off estimated heights for rows never drawn, and for
+        // the second after a jump nothing compensates the rows above as they
+        // measure (shouldAdjust… above), so a landing drifted a turn or two
+        // short. Re-aim at the anchor itself once it has mounted, a few times
+        // inside that second — unless you take the scroll back first.
+        const el = scrollRef?.current;
+        const aim = () => document.getElementById(subAnchorId ?? ckId(turnId))?.scrollIntoView({ block: "start" });
+        const timers = [window.setTimeout(aim, 300), window.setTimeout(aim, 800)];
+        const yours = () => { timers.forEach(clearTimeout); el?.removeEventListener("wheel", yours); el?.removeEventListener("pointerdown", yours); };
+        el?.addEventListener("wheel", yours, { passive: true, once: true });
+        el?.addEventListener("pointerdown", yours, { once: true });
+        window.setTimeout(yours, 900);
+        requestAnimationFrame(() => requestAnimationFrame(aim));
         return true;
       },
       turnTop: (turnId) => {

@@ -1,4 +1,4 @@
-import type { Question, RunEvent, StoreTurn, TimedEvent, Transcript, TurnOutcome } from "./api";
+import type { Question, RunEvent, StoreTurn, TimedEvent, Transcript, TurnOutcome, TurnSum } from "./api";
 
 export interface PendingRequest {
   request_id: string;
@@ -39,6 +39,11 @@ export interface Turn {
   // .code, never by reference: the server sends a fresh object every poll and
   // the merge below leans on object identity to skip re-rendering past turns.
   outcome?: TurnOutcome | null;
+  // Wall seconds the bridge recorded for it; null while running or when killed.
+  elapsed?: number | null;
+  // Its outline from a tailed load (StoreTurn.sum), kept across the polls that
+  // don't carry one: the TURNS tab reads it until the turn's events are here.
+  sum?: TurnSum;
 }
 
 /** A store turn's total token spend, or null when nothing was ever reported.
@@ -87,13 +92,15 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
       const attachments =
         ex.attachments?.length || !st.attachments.length ? ex.attachments : st.attachments;
       const prompt = ex.prompt || st.prompt;
+      // A poll carries no outline: keep the one the tailed load brought.
+      const sum = st.sum && JSON.stringify(st.sum) !== JSON.stringify(ex.sum) ? st.sum : ex.sum;
       if (ex.status !== st.status || ex.prompt !== prompt || ex.attachments !== attachments
           || ex.runtime !== st.runtime || ex.sha !== st.sha
           || ex.model !== st.model || ex.effort !== st.effort || ex.permission_mode !== st.permission_mode
-          || ex.outcome?.code !== st.outcome?.code)
+          || ex.outcome?.code !== st.outcome?.code || ex.elapsed !== st.elapsed || ex.sum !== sum)
         map.set(st.id, { ...ex, status: st.status, prompt, attachments, runtime: st.runtime,
                          sha: st.sha, model: st.model, effort: st.effort, permission_mode: st.permission_mode,
-                         tokens: tokensOf(st), outcome: st.outcome });
+                         tokens: tokensOf(st), outcome: st.outcome, elapsed: st.elapsed, sum });
       if (ex.status !== st.status) touched.add(st.id);   // a turn ending clears its pending
     } else
       map.set(st.id, {
@@ -111,6 +118,8 @@ export function mergeDelta(prev: Turn[], t: Transcript): Turn[] {
         started: st.started,
         tokens: tokensOf(st),
         outcome: st.outcome,
+        elapsed: st.elapsed,
+        sum: st.sum,
       });
   }
   for (const ev of t.events) {

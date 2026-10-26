@@ -54,3 +54,18 @@ const over = mergeDelta(asked, tx([{ ...storeTurn("a", 0), status: "error" }], [
 ok(over[0].pending.length === 0, "the turn ending clears the unanswered question");
 
 console.log("all mergeDelta identity checks passed");
+
+// A turn's outline comes with a tailed load only; the polls after it carry none
+// and must neither drop it nor cost a re-render.
+{
+  const sum = { answer: "Done.", tools: 3, ended: 9, marks: [] };
+  const loaded = mergeDelta([], tx([{ ...storeTurn("a", 0), sum, elapsed: 42 }], []));
+  ok(loaded[0].sum?.answer === "Done." && loaded[0].elapsed === 42, "a tailed load brings the outline and the elapsed");
+  const polled = mergeDelta(loaded, tx([{ ...storeTurn("a", 0), elapsed: 42 }], []));
+  ok(polled === loaded, "a poll without an outline changes nothing");
+  ok(polled[0].sum === sum, "and keeps the outline it had");
+  const again = mergeDelta(loaded, tx([{ ...storeTurn("a", 0), sum: { ...sum }, elapsed: 42 }], []));
+  ok(again === loaded, "the same outline sent again is no change either");
+  const moved = mergeDelta(loaded, tx([{ ...storeTurn("a", 0), sum: { ...sum, answer: "Shipped." }, elapsed: 42 }], []));
+  ok(moved[0].sum?.answer === "Shipped.", "a new outline replaces the old");
+}

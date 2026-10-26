@@ -1026,6 +1026,20 @@ def test_transcript_for_bridge_falls_back_to_jsonl_when_store_empty(monkeypatch)
     assert any(x["prompt"] == "jsonl only" for x in t["turns"])   # fell back to JSONL
 
 
+def test_transcript_for_tail_outlines_turns_whose_events_it_cut():
+    from bridge.miniapp.server import transcript_for
+    s = store.create_session(591, "/p")
+    turns = [{"id": f"o{i}", "seq": i, "prompt": f"p{i}", "attachments": [], "status": "done",
+              "cost": None, "elapsed": 5.0, "started": float(i), "model": "opus"} for i in range(2)]
+    events = [{"type": "result", "result": "first answer", "seq": 0, "turn_id": "o0"},
+              {"type": "result", "result": "second answer", "seq": 1, "turn_id": "o1"}]
+    store.import_transcript(s["id"], turns, events)
+    t = transcript_for(store.get_session(s["id"]), 0, tail=1)
+    assert [e["turn_id"] for e in t["events"]] == ["o1"]          # o0's events stay behind the cut
+    assert [x["sum"]["answer"] for x in t["turns"]] == ["first answer", "second answer"]
+    assert "sum" not in transcript_for(store.get_session(s["id"]), 0)["turns"][0]   # polls stay lean
+
+
 def test_resolve_context_adopts_native_session_into_store(monkeypatch):
     import tempfile
     from bridge import transcript_jsonl as _T

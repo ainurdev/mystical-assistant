@@ -6326,6 +6326,105 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-fam="middle-earth"] :is(.us-w i, .us-rst, .us-tag) { text-transform: lowercase; letter-spacing: 0; }
 [data-fam="middle-earth"] :is(.us-plan, .us-day > span) { letter-spacing: 0; }
 
+/* === TURNS TAB =================================================================
+   The right rail's TURNS panel (hud/TurnsPanel, drafts/turns-tab B · LEDGER):
+   the GIT tab's bones (.gp root, .gp-ro readout) plus one spine down the list,
+   a node per turn on it, three even lines a turn and a bar on a shared track
+   whose fill is the turn's share of the session's longest. Asks, steers and
+   resumes hang off the spine as 22px rows. */
+.tn { --askc: var(--ask, var(--warn)); }
+.tn .gp-title { margin-right: 0; }
+.tn-cnt { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--r); background: var(--wash);
+  border: 1px solid var(--l); color: var(--txm); font: 500 var(--t10)/1 var(--m); }
+.tn-sp { flex: 1; }
+.tn .gp-ib.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 13%, transparent); }
+.tn .mscroll { flex: 1; min-height: 0; overflow-y: auto; }
+.tn .gp-roc b { font-size: calc(var(--fsu) * 18); }
+.tn .gp-roc.ask { background: color-mix(in srgb, var(--askc) 9%, transparent); }
+.tn .gp-roc.ask b, .tn .gp-roc.ask b svg { color: var(--askc); }
+.tn .gp-rosub:is(.run, .ask) b { color: inherit; }
+.tn .gp-rosub.run { color: var(--warn); }
+.tn .gp-rosub.ask { color: var(--askc); }
+.tn-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: tnpulse 1.4s ease-in-out infinite; }
+@keyframes tnpulse { 50% { opacity: .35; } }
+.tn-none { padding: 18px 14px; font: italic 400 var(--t115)/1.5 var(--f); color: var(--txl); }
+/* the spine */
+.tn-list { position: relative; padding: 2px 0 14px; }
+.tn-day { position: relative; display: flex; align-items: center; gap: 8px; padding: 13px 12px 6px 34px;
+  font: 600 var(--t95)/1 var(--f); letter-spacing: .08em; text-transform: uppercase; color: var(--txl); }
+.tn-day::after { content: ""; flex: 1; height: 1px; background: var(--l); }
+:is(.tn-day, .tn-t, .tn-s)::before { content: ""; position: absolute; left: 17px; top: 0; bottom: 0; width: 1px; background: var(--l2); }
+.tn-list > .tn-day:first-child::before { top: 50%; }
+.tn-list > :last-child::before { bottom: auto; height: 12px; }
+.tn-t { position: relative; isolation: isolate; padding: 7px 12px 11px 34px; cursor: pointer; }
+.tn-t:is(:hover, .sel)::after, .tn-t.on::after { content: ""; position: absolute; inset: 1px 6px; border-radius: var(--r); background: var(--wash); z-index: -1; }
+.tn-t.on::after { background: var(--side-row, var(--ac-08)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 22%, transparent); }
+.tn-o { position: absolute; left: 13px; top: 10px; width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; z-index: 1;
+  border: 1.5px solid var(--txl); background: var(--canvas, var(--panel2)); }
+.tn-t.on .tn-o { background: var(--acc); border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 28%, transparent); }
+.tn-t.err .tn-o { border-color: var(--err); background: color-mix(in srgb, var(--err) 30%, var(--canvas, var(--panel2))); }
+.tn-t.run .tn-o { border-color: var(--warn); background: var(--warn); animation: tnpulse 1.4s ease-in-out infinite; }
+.tn-t.ask .tn-o { border-color: var(--askc); background: var(--askc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--askc) 26%, transparent); }
+.tn-l1 { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.tn-n { flex: none; min-width: 14px; font: normal 500 var(--t10)/1 var(--m); color: var(--txl); text-align: right; }
+.tn-t.on .tn-n { color: var(--acc); }
+.tn-t.err .tn-n { color: var(--err); }
+.tn-p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 calc(var(--fsu) * 12.5)/1.35 var(--f); color: var(--txh); }
+.tn-t.on .tn-p { color: var(--txb); font-weight: 600; }
+/* copy · send again: over the line's end on hover, so the line never reflows */
+.tn-acts { position: absolute; right: 12px; top: 4px; display: none; gap: 1px; padding: 1px; border-radius: var(--r); background: var(--panel2);
+  box-shadow: 0 0 0 1px var(--l); }
+.tn-t:is(:hover, :focus-within) .tn-acts { display: flex; }
+.tn-acts .gp-ib { width: 20px; height: 20px; }
+.tn-l2 { margin: 3px 0 0 21px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t11)/1.35 var(--f); color: var(--txd); }
+.tn-l2 > i { font-style: normal; color: var(--txg); margin-right: 4px; }
+.tn-l2.none { font-style: italic; color: var(--txg); }
+.tn-l2.run { color: var(--warn); }
+.tn-t.ask .tn-l2.run { color: var(--askc); }
+.tn-l3 { display: flex; align-items: center; gap: 6px; margin: 5px 0 0 21px; font: 400 var(--t95)/1 var(--m); color: var(--txl); white-space: nowrap; overflow: hidden; }
+.tn-l3 > .s { color: var(--txg); }
+.tn-tag { display: inline-flex; align-items: center; gap: 3px; height: 15px; padding: 0 5px; border-radius: min(4px, var(--r)); font: 600 var(--t85)/1 var(--f);
+  letter-spacing: .06em; text-transform: uppercase; color: var(--txd); background: var(--wash); flex: none; }
+.tn-tag.err { color: var(--err); background: color-mix(in srgb, var(--err) 13%, transparent); }
+.tn-tag.ask { color: var(--askc); background: color-mix(in srgb, var(--askc) 15%, transparent); }
+.tn-tag.run { color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); }
+.tn-here { margin-left: auto; font: normal 700 var(--t85)/1 var(--f); letter-spacing: .1em; text-transform: uppercase; color: var(--acc); }
+.tn-bar { position: absolute; left: 55px; right: 12px; bottom: 5px; height: 3px; display: flex; gap: 2px; border-radius: 2px;
+  background: color-mix(in oklab, var(--txl) 13%, transparent); overflow: hidden; }
+.tn-bar > i { display: block; height: 100%; flex: none; border-radius: 2px; background: color-mix(in srgb, var(--acc) 62%, transparent); }
+.tn-t.on .tn-bar > i { background: var(--acc); box-shadow: 0 0 6px color-mix(in srgb, var(--acc) 60%, transparent); }
+.tn-t.err .tn-bar > i { background: color-mix(in srgb, var(--err) 70%, transparent); }
+.tn-t:is(.run, .ask) .tn-bar > i { background: repeating-linear-gradient(90deg, var(--warn) 0 6px, color-mix(in srgb, var(--warn) 35%, transparent) 6px 12px); }
+/* what hangs off the spine */
+.tn-s { position: relative; display: flex; align-items: center; gap: 6px; height: 22px; margin-top: -4px; padding: 0 12px 4px 55px;
+  font: 400 var(--t105)/1 var(--f); color: var(--txd); white-space: nowrap; cursor: pointer; }
+.tn-s::after { content: ""; position: absolute; left: 18px; top: 9px; width: 28px; height: 1px; background: var(--l); }
+.tn-s:hover { color: var(--txh); }
+.tn-s > .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.tn-s b { font-weight: 600; color: var(--txm); }
+.tn-s .note { font-style: italic; }
+.tn-q { flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; box-sizing: border-box; border-radius: min(4px, var(--r));
+  border: 1px solid var(--l2); font: 700 var(--t8)/1 var(--f); color: var(--txl); }
+.tn-s.open, .tn-s.open b { color: var(--askc); }
+.tn-s.open .tn-q { border-color: color-mix(in srgb, var(--askc) 60%, transparent); background: color-mix(in srgb, var(--askc) 16%, transparent); color: var(--askc); }
+.tn-s.steer svg { color: var(--purple); }
+.tn-s.re { color: var(--txl); font-style: italic; }
+.tn-s.re svg { flex: none; margin: 0 1px 0 2px; }
+.tn-go { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 2px; font: 600 var(--t95)/1 var(--f); color: var(--askc); }
+.tn mark { background: color-mix(in srgb, var(--warn) 30%, transparent); color: var(--txb); border-radius: 2px; padding: 0 1px; }
+/* find */
+.tn-find { display: flex; align-items: center; gap: 6px; height: 30px; flex: none; margin: 9px 10px 3px; padding: 0 4px 0 9px; border-radius: var(--r);
+  border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); background: var(--panel2); color: var(--txl);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 12%, transparent); }
+.tn-find input { flex: 1; min-width: 0; border: 0; padding: 0; background: none; outline: none; font: 400 var(--t115)/1 var(--f); color: var(--txb); }
+.tn-find input::placeholder { color: var(--txl); }
+.tn-find > em { font: normal 400 var(--t95)/1 var(--m); color: var(--txl); white-space: nowrap; }
+.tn-hint { flex: none; padding: 4px 12px 2px; font: 400 var(--t95)/1.4 var(--f); color: var(--txl); }
+.tn-hint kbd { font: 500 var(--t85)/1 var(--m); padding: 1px 4px; border-radius: 3px; border: 1px solid var(--l2); color: var(--txd); }
+@media (prefers-reduced-motion: reduce) { .tn-dot, .tn-t.run .tn-o { animation: none; } }
+/* MIDDLE-EARTH reads natural case, as its USAGE tab does */
+[data-fam="middle-earth"] .tn :is(.tn-tag, .tn-here, .tn-day) { text-transform: none; letter-spacing: 0; }
+
 /* === THE FAMILIES · PEBBLE · STANDARD ======================================
    The roast's fixes (.mystical/design-drafts/pebble-standard). Keep this block
    last: it was drawn and checked as the last stylesheet, and several rules win

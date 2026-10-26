@@ -9,6 +9,9 @@ export interface PanelTab {
   // A red dot instead of a count: something this tab is about is broken (the
   // castle's, while a Rivendell link is down — App.tsx). Shows on every tab.
   alert?: boolean;
+  // A dot in the theme's waits-on-you colour (--ask): a turn of the open
+  // session is blocked on you (TURNS). Shows open or shut, like the others.
+  ask?: boolean;
   // Panel owns its scroller — the wrapper must not add a second one.
   ownScroll?: boolean;
   // Panel's WHOLE body is one session's data — "project" for the repo-wide
@@ -123,9 +126,9 @@ export function RightPanel({
                   style={{ background: "var(--acc)", color: "var(--acc-on)" }}
                 >{t.badge}</span>
               ) : null}
-              {t.alert ? (
+              {t.alert || t.ask ? (
                 <span className="absolute right-[5px] top-[4px] h-[8px] w-[8px] rounded-full"
-                  style={{ background: "var(--err)", boxShadow: "0 0 6px var(--err)" }} />
+                  style={{ background: t.alert ? "var(--err)" : "var(--ask, var(--warn))", boxShadow: `0 0 6px ${t.alert ? "var(--err)" : "var(--ask, var(--warn))"}` }} />
               ) : null}
             </button>
           );

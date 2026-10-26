@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FolderTree, Gauge, GitBranch, GraduationCap, Users,
+  FolderTree, Gauge, GitBranch, GraduationCap, ListOrdered, Users,
 } from "lucide-react";
 import {
   api,
@@ -30,7 +30,7 @@ import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, login
 import type { ProfilesInfo } from "./lib/profiles";
 import { agentPickers, NO_PICKS, sendPicks, setAgentLabels } from "./lib/agents";
 import { activeOf, mergeDelta, type Turn } from "./chat";
-import { ckId, type Mark } from "./lib/checkpoints";
+import { ckId, turnRows } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
 import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
@@ -89,6 +89,7 @@ import { LiveButton } from "./components/hud/LiveButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import { TeamPanel } from "./components/hud/TeamPanel";
 import { UsagePanel } from "./components/hud/UsagePanel";
+import { stepRow, TurnsPanel } from "./components/hud/TurnsPanel";
 import { TeamSendSheet, type SendWhat } from "./components/TeamSendSheet";
 import { BackPill, TeamBar } from "./components/TeamBar";
 import { ProjectPick } from "./components/ProjectPick";
@@ -245,6 +246,8 @@ export function App() {
   // "still loading", not "you have no projects".
   const [booted, setBooted] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
+  const turnsRef = useRef(turns);   // for the checkpoint walk, which outlives a render
+  turnsRef.current = turns;
   // What the live turn is waiting on before its first token — a status the poll
   // carries, not a recorded event, so it clears itself when the child speaks.
   const [boot, setBoot] = useState<string | null>(null);
@@ -904,7 +907,7 @@ export function App() {
   // scrolls to it — so the checkpoint list keeps covering the whole session
   // even though only its tail is loaded.
   const transcriptNav = useRef<TranscriptNav | null>(null);
-  const jumpToMark = useCallback(async (m: Mark) => {
+  const jumpTo = useCallback(async (turnId: string, key?: string) => {
     // Asking for a checkpoint is asking to stop following the latest — and it
     // has to be said here, before the walk: the follow policy's resize snap runs
     // in the same frame as the jump but after it (rAF callbacks, then observer
@@ -912,17 +915,38 @@ export function App() {
     // any scroll event gets the chance to disarm it.
     stickRef.current = false;
     setAtBottom(false);
-    const sub = m.subKey ? ckId(m.turnId, m.subKey) : undefined;
-    // A prepend only reaches the nav a render later, so a pass with nothing left
-    // to page in waits a frame and tries again: giving up on the first attempt
-    // after the last page landed short of the checkpoint every time.
+    const sub = key ? ckId(turnId, key) : undefined;
+    // A page just merged reaches the nav a render or two later, so a pass that
+    // misses waits a frame and tries again instead of giving up — and pages
+    // again only while the turn is still behind the render cut: paging in that
+    // gap prepended more turns under the jump and landed it a turn short.
     for (let idle = 0; idle < 30;) {
-      if (transcriptNav.current?.jumpToTurn(m.turnId, sub)) return;
-      if (olderRef.current.has && !olderRef.current.loading) await loadOlder();
+      if (transcriptNav.current?.jumpToTurn(turnId, sub)) return;
+      const ids = turnsRef.current.map((t) => t.id);
+      const cut = olderRef.current.from;
+      const behind = cut != null && ids.indexOf(turnId) < ids.indexOf(cut);
+      if (behind && olderRef.current.has && !olderRef.current.loading) await loadOlder();
       else idle++;
       await new Promise((r) => requestAnimationFrame(() => r(null)));
     }
   }, [loadOlder]);
+
+  // ⌥↑ / ⌥↓: the previous / next of your turns, the TURNS tab open or not. A
+  // turn you're halfway down takes you back to its own start first. Not inside
+  // a text field, where the same keys move the caret a paragraph.
+  useEffect(() => {
+    if (view !== "chat") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
+      const to = stepRow(turnRows(turns), scrollRef.current, transcriptNav.current, e.key === "ArrowUp" ? -1 : 1);
+      if (!to) return;
+      e.preventDefault();
+      void jumpTo(to);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [view, turns, jumpTo]);
 
   // Remember the place in the open session on every scroll, so leaving it keeps
   // it. Parked at the bottom is a place too — it's what brings you back to the
@@ -2165,7 +2189,26 @@ export function App() {
     }
   };
 
+  const waitsOnYou = turns.some((t) => t.pending.length > 0);
   const rightTabs: PanelTab[] = [
+    {
+      id: "turns", label: waitsOnYou ? "Turns (one waits on you)" : "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true,
+      ask: waitsOnYou,
+      render: () => (
+        <TurnsPanel key={sessionId ?? ""} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
+          onJump={(id, key) => void jumpTo(id, key)} onLatest={jumpToBottom}
+          onCopy={(text) => {
+            try { void navigator.clipboard?.writeText(text); notify("info", "Prompt copied."); }
+            catch { notify("error", "Clipboard refused the copy."); }
+          }}
+          onReuse={(text) => {
+            // After whatever you were writing, never over it; Send is still yours to press.
+            setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")}\n\n${text}` : text);
+            toChat();
+            window.dispatchEvent(new Event("ask:focus"));
+          }} />
+      ),
+    },
     {
       id: "files", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree",
       render: () => (
@@ -2777,7 +2820,7 @@ export function App() {
                 boot={boot}
                 hasOlder={older.has} olderLoading={older.loading} onLoadOlder={() => void loadOlder()}
                 renderFrom={older.from}
-                navRef={transcriptNav} restoringRef={restoreTo} correctingRef={correctingRef} onJumpMark={(m) => void jumpToMark(m)}
+                navRef={transcriptNav} restoringRef={restoreTo} correctingRef={correctingRef}
                 onRunCommand={runCommand}
                 onQuote={quote}
                 // A reply to a question asked in prose (answerAsk); none once it's dismissed.

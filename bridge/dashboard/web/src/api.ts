@@ -152,6 +152,17 @@ export interface StoreTurn {
   tok_out?: number | null;
   tok_cache_w?: number | null;
   tok_cache_r?: number | null;
+  // The turn's outline (transcript_page.summarize), on a tailed load only: the
+  // TURNS tab draws a turn behind the tail cut from it. Absent on a poll.
+  sum?: TurnSum;
+}
+
+export interface TurnSum {
+  answer: string;              // the first line of its last answer, raw
+  tools: number;
+  ended: number | null;        // when its last event landed
+  marks: ({ kind: "question"; id: string; label: string; pick: string | null; note: string | null }
+    | { kind: "steer"; i: number; label: string })[];
 }
 
 export interface QuestionOption {
@@ -2300,13 +2311,6 @@ export const api = {
     req<CompareInfo>(
       `/local/git/compare?project=${encodeURIComponent(project)}&base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}${
         dots === 2 ? "&dots=2" : ""
-      }`,
-    ),
-  // Drift between a checkpoint's commit and the tree right now (commits + uncommitted).
-  since: (project: string, sha: string, branch?: string) =>
-    req<{ ok: boolean; files: CompareFile[]; add: number; del: number }>(
-      `/local/git/since?project=${encodeURIComponent(project)}&sha=${encodeURIComponent(sha)}${
-        branch ? `&branch=${encodeURIComponent(branch)}` : ""
       }`,
     ),
   checkout: (project: string, ref: string) =>

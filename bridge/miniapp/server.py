@@ -253,9 +253,11 @@ def transcript_for(session: dict, cursor: int = 0,
     JSONL on demand; everything else renders from the store. Same shape either way.
     `tail`/`before` window the events to the last N event-bearing turns
     (transcript_page.tail_slice) — turns and next_cursor always ship whole, so
-    forward polling is unaffected. Without `tail` the shape is unchanged."""
+    forward polling is unaffected — and outline every turn first
+    (transcript_page.summarize), events cut or not. Without `tail` the shape is
+    unchanged: a poll carries only new events, too few to outline anything."""
     def page(d: dict) -> dict:
-        d = transcript_page.tail_slice(d, tail, before) if tail is not None else d
+        d = transcript_page.tail_slice(transcript_page.summarize(d), tail, before) if tail is not None else d
         # A turn that has spawned but not yet spoken shows an empty stream, which
         # reads as a hang. Say what it is waiting on — live, so it disappears on
         # the first token rather than being journaled into the transcript.

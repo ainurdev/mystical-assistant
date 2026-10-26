@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { ProjectTile } from "../ui/ProjectTile";
 import { type AccountInfo, type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
-import type { Mark } from "../../lib/checkpoints";
 import type { Anchor } from "../../lib/scrollmem";
 import { projectName, projectTint } from "../../lib/surfaces";
 import { isJob } from "../../lib/jobs";
@@ -16,7 +15,7 @@ import { HistoryView } from "../HistoryView";
 import { NextView } from "../NextView";
 import { FreshPanel, type FreshLocal } from "../FreshPanel";
 import { ViewTabs, type View } from "./ViewTabs";
-import { Checkpoints, ScrollRail } from "./Checkpoints";
+import { ScrollRail } from "./Checkpoints";
 import { SpendPanel } from "./SpendPanel";
 import { PrChip } from "./PrChip";
 import { TaskChip } from "./TaskChip";
@@ -218,7 +217,7 @@ export function Terminal({
   scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext, freshLocal,
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
-  hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef, onJumpMark,
+  hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
   onOpenProject, run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
   limit, logins,
 }: {
@@ -260,8 +259,6 @@ export function Terminal({
   navRef?: MutableRefObject<TranscriptNav | null>;
   restoringRef?: RefObject<Anchor | null>;
   correctingRef?: MutableRefObject<boolean>;
-  /** Jump to a checkpoint, auto-loading older pages when it isn't loaded. */
-  onJumpMark?: (m: Mark) => void;
   /** Re-run a transcript command in this project's TERMINAL tab. */
   onRunCommand?: (command: string) => void;
   onQuote?: (text: string) => void;
@@ -635,13 +632,6 @@ export function Terminal({
               style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: 0, flex: "none", border: 0, background: "transparent", color: projBtnHov ? "var(--txb)" : "var(--txd)" }}>
               ⊞ PROJECT
             </button>
-            <span style={hairline(11)} />
-          </>
-        )}
-        {/* No turns, no checkpoints, and no hairline left hanging in front of TIME. */}
-        {isChat && turns.length > 0 && (
-          <>
-            <Checkpoints turns={turns} scrollRef={scrollRef} project={sessionProject} branch={branch} nav={navRef} onJump={onJumpMark} />
             <span style={hairline(11)} />
           </>
         )}
