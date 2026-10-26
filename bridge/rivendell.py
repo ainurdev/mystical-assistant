@@ -885,10 +885,11 @@ class Worker:
             kind = "rv_brief" if brief else ("rv_done" if ok else "rv_failed")
             line = (_brief_lead(text) if brief
                     else next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")[:200])
-            if report:                      # its summary, not the opening line of the JSON
+            if ok and report:               # its summary, not the opening line of the JSON
                 line = str(report.get("summary") or "").strip()[:200]
             # The bell's word follows the kind (notices._RV_DONE): a design build reads BUILT only when it built one.
-            note_kind = None if job_kind == "design-build" and (report or {}).get("outcome") != "built" else job_kind
+            # A failed one keeps its kind: its word is FAILED, and the row still says which job it was.
+            note_kind = None if ok and job_kind == "design-build" and (report or {}).get("outcome") != "built" else job_kind
             if sid is None:
                 self._note(kind, request_id, f"Rivendell job {request_id[:8]}",
                            "" if ok else line, job_kind=note_kind)

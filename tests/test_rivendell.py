@@ -4119,18 +4119,21 @@ def test_a_design_build_without_a_report_or_that_failed_keeps_the_generic_messag
     assert rid not in w._designs
 
 
-@pytest.mark.parametrize("rid, ok, answer, verb, body", [
-    ("d-built", True, _BUILT, "BUILT", "Built."),
-    ("d-fenced", True, f"```json\n{_BUILT}\n```", "BUILT", "Built."),
-    ("d-nopreview", True, '{"outcome": "no-preview", "summary": "A Vite app.", "suggestion": "Add x."}', "DONE", "A Vite app."),
-    ("d-unsuitable", True, '{"outcome": "unsuitable", "summary": "A CLI."}', "DONE", "A CLI."),
-    ("d-noreport", True, "Built it, but there is no report.", "DONE", "Built it, but there is no report."),
-    ("d-long", True, json.dumps({"outcome": "built", "summary": "  " + "S" * 300}), "BUILT", "S" * 200),
-    ("d-nosummary", True, '{"outcome": "no-preview", "suggestion": "Add x."}', "DONE", ""),
-    ("d-failed", False, "the built page is 26 MB, over 25 MB", "FAILED", "the built page is 26 MB, over 25 MB"),
-], ids=["built", "built, in a fence", "no preview build", "not suitable", "no report", "long summary", "no summary", "failed"])
-def test_the_bell_reads_built_only_for_a_design_that_was_built(monkeypatch, rid, ok, answer, verb, body):
+@pytest.mark.parametrize("rid, ok, answer, verb, body, kind", [
+    ("d-built", True, _BUILT, "BUILT", "Built.", "design-build"),
+    ("d-fenced", True, f"```json\n{_BUILT}\n```", "BUILT", "Built.", "design-build"),
+    ("d-nopreview", True, '{"outcome": "no-preview", "summary": "A Vite app.", "suggestion": "Add x."}', "DONE", "A Vite app.", None),
+    ("d-unsuitable", True, '{"outcome": "unsuitable", "summary": "A CLI."}', "DONE", "A CLI.", None),
+    ("d-noreport", True, "Built it, but there is no report.", "DONE", "Built it, but there is no report.", None),
+    ("d-long", True, json.dumps({"outcome": "built", "summary": "  " + "S" * 300}), "BUILT", "S" * 200, "design-build"),
+    ("d-nosummary", True, '{"outcome": "no-preview", "suggestion": "Add x."}', "DONE", "", None),
+    ("d-failed", False, "the built page is 26 MB, over 25 MB", "FAILED", "the built page is 26 MB, over 25 MB", "design-build"),
+    ("d-failed-report", False, _BUILT, "FAILED", _BUILT, "design-build"),
+], ids=["built", "built, in a fence", "no preview build", "not suitable", "no report", "long summary", "no summary",
+        "failed", "failed, whatever it said"])
+def test_the_bell_reads_built_only_for_a_design_that_was_built(monkeypatch, rid, ok, answer, verb, body, kind):
     """The bell's word follows the job's kind, so a design build reads BUILT only when its report says
-    built; any other answer reads DONE (FAILED, when the job failed). Under it is the report's summary."""
+    built; any other answer reads DONE and carries no kind. A failed one keeps its kind (the word is
+    FAILED), and its body is what the run said, even when that happens to be a report: it built nothing."""
     _w, _sent, rows = _design_pinged(monkeypatch, rid, _DESIGN_FRAME, ok, answer)
-    assert [(r["verb"], r["body"]) for r in rows] == [(verb, body)]
+    assert [(r["verb"], r["body"], r["meta"].get("job_kind")) for r in rows] == [(verb, body, kind)]
