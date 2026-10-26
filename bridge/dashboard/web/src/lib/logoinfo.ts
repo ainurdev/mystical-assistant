@@ -14,6 +14,7 @@ import { rgbToOklch, oklchToHex } from "./ink.ts";
 
 export interface LogoInfo {
   fill: boolean;     // opaque to its edges: an app icon, not a see-through mark
+  square: boolean;   // opaque along the middle of every edge: an app icon, rounded corners allowed
   colors: string[];  // up to 3 hex, strongest first
   night: boolean;    // vanishes on a dark ground: AUTO puts light behind it there
   day: boolean;      // vanishes on a light ground: AUTO puts dark behind it there
@@ -34,8 +35,11 @@ export function analyse(px: ArrayLike<number>, w: number, h: number): LogoInfo {
       const i = (y * w + x) * 4;
       const a = px[i + 3];
       if (x === 0 || y === 0 || x === w - 1 || y === h - 1) { edge++; if (a > 240) edgeSolid++; }
-      // AUTO's own fill test skips the corners: an app icon's rounded ones are see-through.
-      if (((x === 0 || x === w - 1) && y > h * 0.2 && y < h * 0.8) || ((y === 0 || y === h - 1) && x > w * 0.2 && x < w * 0.8)) {
+      // The square test reads the middle 40% of each edge, by pixel centre so both ends
+      // match: an app icon's rounded corners are see-through, a squircle's for a quarter
+      // of the side (osanwe's, 2026-10-27).
+      const u = (x + 0.5) / w, v = (y + 0.5) / h;
+      if (((x === 0 || x === w - 1) && v > 0.3 && v < 0.7) || ((y === 0 || y === h - 1) && u > 0.3 && u < 0.7)) {
         mid++; if (a > 240) midSolid++;
       }
       if (a < 128) continue;
@@ -70,9 +74,11 @@ export function analyse(px: ArrayLike<number>, w: number, h: number): LogoInfo {
   }
   // A background where under half of the ink stands out (2:1) from the ground;
   // never behind an icon that fills its square.
-  const plated = (seen: number) => ink > 0 && !(mid > 0 && midSolid / mid > 0.9) && seen / ink < 0.5;
+  const square = mid > 0 && midSolid / mid > 0.9;
+  const plated = (seen: number) => ink > 0 && !square && seen / ink < 0.5;
   return {
     fill: edge > 0 && edgeSolid / edge > 0.9,
+    square,
     colors: picked.map((c) => oklchToHex(c.L, c.C, c.H)),
     night: plated(seenN),
     day: plated(seenD),
@@ -107,8 +113,9 @@ let version = 0;
 export function useLogoInfo(name: string | null | undefined, src: string): LogoInfo | null {
   useSyncExternalStore((fn) => { subs.add(fn); return () => { subs.delete(fn); }; }, () => version);
   if (!name) return null;
-  // A reading cached before AUTO lacks night/day: read it again.
-  if ((!cache[name] || cache[name].night === undefined) && !pending.has(name)) {
+  // A reading cached before AUTO lacks night/day, and one before the folded rail's
+  // full tiles lacks square: read it again.
+  if ((!cache[name] || cache[name].square === undefined) && !pending.has(name)) {
     pending.add(name);
     readLogo(src).then((info) => {
       cache = { ...cache, [name]: info };

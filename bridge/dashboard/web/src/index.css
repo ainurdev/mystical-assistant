@@ -6765,31 +6765,56 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 
 /* ── the sessions column folded to its rail (SessionsPanel `folded`): search and
    New, one tile per project you are working in, unfold at the foot. Tokens
-   only, so every family wears it; --side-* are Middle-earth's, with fallbacks. ── */
-.srail { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 0 12px; }
+   only, so every family wears it; --side-* are Middle-earth's, with fallbacks.
+   Every item is one 40px square and every glyph 18px (design-drafts/rail-icons,
+   A · FULL TILES): a project's tile is the button. ── */
+.srail { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 0 12px; }
 .srail-btn, .srail-tile {
   position: relative; flex: none; width: 40px; height: 40px; display: grid; place-items: center; padding: 0; border: 0;
   border-radius: var(--f-rad, 0px); background: transparent; color: var(--txd); cursor: pointer; transition: background .13s ease, color .13s ease;
 }
 .srail-btn { background: var(--side-well, color-mix(in srgb, var(--acc) 6%, transparent)); }
 .srail-btn[data-acc] { color: var(--acc); }
-.srail-btn[data-bare] { background: transparent; }
-.srail-btn:hover, .srail-tile:hover, .srail-tile[data-hot="true"] { background: color-mix(in srgb, var(--acc) 10%, transparent); color: var(--txb); }
-.srail-tile[data-on="true"] { background: var(--side-row, color-mix(in srgb, var(--acc) 12%, transparent)); }
-/* the open session's project: a bar on the rail's edge, as a chat app marks its open server */
-.srail-tile[data-on="true"]::before { content: ""; position: absolute; left: -16px; top: 10px; bottom: 10px; width: 4px; border-radius: 0 3px 3px 0; background: var(--txb); }
-.srail-tile .ptile { width: 24px !important; height: 24px !important; margin: 0 !important; }
+.srail-btn:hover { background: color-mix(in srgb, var(--acc) 10%, transparent); color: var(--txb); }
+/* An app icon (lib/logoinfo fill or square) fills the tile. A see-through logo, an
+   icon or initials sit on Search's well, in the project's ink; a plate (pinned, or
+   AUTO's, which outranks the well) stays behind its logo. */
+.srail-tile .ptile {
+  width: 40px !important; height: 40px !important; margin: 0 !important; border-radius: inherit !important; box-shadow: none !important;
+  font-size: 13px; transition: filter .13s ease;
+}
+.srail-tile .ptile[data-kind="icon"] svg { width: 18px; height: 18px; stroke-width: 2px; }
+.srail-tile .ptile:not([data-kind="logo"]) {
+  background: var(--side-well, color-mix(in srgb, var(--acc) 6%, transparent)) !important; color: color-mix(in oklab, var(--pc) 75%, var(--txb)) !important;
+}
+.srail-tile .ptile[data-kind="logo"]:not([data-logo]):not([data-plate]),
+[data-fam="middle-earth"] .srail-tile .ptile[data-self] { background: var(--side-well, color-mix(in srgb, var(--acc) 6%, transparent)) !important; }
+.srail-tile .ptile[data-kind="logo"]:not([data-logo]) img, [data-fam="middle-earth"] .srail-tile .ptile[data-self] > .ptile-em { width: 64%; height: 64%; }
+/* AURORA draws the logo as a silhouette (::after): the same 64%, and an app icon with
+   rounded corners keeps its lettering by lightness, as a "fill" one does */
+[data-fam="aurora"] .srail-tile .ptile[data-kind="logo"]:not([data-logo])::after { inset: 18%; }
+[data-fam="aurora"] .srail-tile .ptile[data-logo="square"]::after { mask-mode: luminance; }
+.srail-tile:is(:hover, [data-hot="true"]) .ptile { filter: brightness(1.18); }
+/* no well to light, so the rail's edge carries it, as a chat app marks its servers:
+   a nub under the pointer, the bar for the open session's project */
+.srail-tile::before {
+  content: ""; position: absolute; left: -16px; top: 16px; bottom: 16px; width: 4px; border-radius: 0 3px 3px 0;
+  background: var(--txb); opacity: 0; transition: top .15s ease, bottom .15s ease, opacity .15s ease;
+}
+.srail-tile:is(:hover, [data-hot="true"])::before { opacity: .7; }
+.srail-tile[data-on="true"]::before { top: 8px; bottom: 8px; opacity: 1; }
+/* the 6px pad keeps a corner badge (and its ring) on the first and last tiles out of the scroll clip */
 .srail-tiles {
   align-self: stretch; flex: 1; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none;
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 0; margin: -6px 0;
 }
 .srail-sep { flex: none; width: 24px; height: 1px; margin: 4px 0; background: color-mix(in srgb, var(--acc) 14%, transparent); }
 .srail-bd {
-  position: absolute; right: 0; bottom: 0; min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
+  position: absolute; right: -4px; bottom: -4px; min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
   display: grid; place-items: center; font-family: var(--ui-font); font-size: 9px; font-weight: 800; line-height: 1;
   color: var(--acc-on); background: var(--warn); box-shadow: 0 0 0 2px var(--side, var(--canvas));
 }
-.srail-new { position: absolute; right: 5px; top: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--side, var(--canvas)); }
+.srail-new { position: absolute; right: -3px; top: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--side, var(--canvas)); }
 .srail-fly {
   position: fixed; z-index: 60; width: 318px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box;
   padding: 6px; border-radius: var(--f-rad-l, 0px); animation: mslide .16s ease both;

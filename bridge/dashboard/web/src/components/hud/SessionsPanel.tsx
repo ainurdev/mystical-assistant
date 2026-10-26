@@ -928,11 +928,11 @@ export function SessionsPanel(props: Props) {
       <div ref={railRef} className="srail">
         <button className="srail-btn" aria-label="Search sessions" title="Search sessions  /"
                 onClick={() => { onUnfold?.(); requestAnimationFrame(() => searchRef.current?.focus()); }}>
-          <Search size={16} strokeWidth={2} aria-hidden />
+          <Search size={18} strokeWidth={2} aria-hidden />
         </button>
         <button className="srail-btn" data-acc aria-label="New session" title="New session"
                 onClick={() => { onUnfold?.(); setNsAt(""); }}>
-          <Plus size={17} strokeWidth={2.2} aria-hidden />
+          <Plus size={18} strokeWidth={2} aria-hidden />
         </button>
         <span className="srail-sep" />
         <div className="srail-tiles">
@@ -953,8 +953,8 @@ export function SessionsPanel(props: Props) {
           })}
         </div>
         <span className="srail-sep" />
-        <button className="srail-btn" data-bare aria-label="Unfold the sidebar" title="Unfold the sidebar" onClick={onUnfold}>
-          <PanelLeftOpen size={17} strokeWidth={1.9} aria-hidden />
+        <button className="srail-btn" aria-label="Unfold the sidebar" title="Unfold the sidebar" onClick={onUnfold}>
+          <PanelLeftOpen size={18} strokeWidth={2} aria-hidden />
         </button>
         {flyG && fly && (
           // A popover like the order menu (--shadow-pop), so each family dresses it as one.
