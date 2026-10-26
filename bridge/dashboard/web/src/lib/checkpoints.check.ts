@@ -3,7 +3,7 @@
 // the turn they carry on, each turn outlined from its events when the chat has
 // them and from the bridge's summary when it doesn't.
 import type { Turn } from "../chat.ts";
-import { fmtElapsed, resumeOf, turnRows } from "./checkpoints.ts";
+import { fmtElapsed, resumeOf, timeSplit, toolName, turnRows } from "./checkpoints.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -160,3 +160,16 @@ eq(turnRows([turn("a", "  two\n\nlines  ")])[0].prompt, "two lines", "a prompt r
 
 // --- durations ------------------------------------------------------------------
 eq([fmtElapsed(31), fmtElapsed(1172), fmtElapsed(4787)], ["31s", "19m 32s", "1h 19m"], "an hour rolls over");
+
+// --- the TIME dock ----------------------------------------------------------------
+{
+  const spend = (union_s: number, calls = 1) => ({ calls, union_s, naive_s: union_s, avg_s: union_s / calls, unfinished: 0 });
+  const t = timeSplit({
+    wall: 600, thinking_s: 200, waiting_s: 50, model_s: 150, tokens: null, capped: 0, turns: 2,
+    tools: { Read: spend(5, 3), Bash: spend(120, 9), mcp__playwright__browser_click: spend(60), Edit: spend(1, 2) },
+  }, 2);
+  eq(t.tools.map((x) => x.name), ["Bash", "playwright · browser_click"], "tools rank by real time, MCP names shortened");
+  eq([t.rest, t.restSecs], [2, 6], "the tools past the top fold into a count and a sum");
+  eq(t.kinds.map((k) => [k.k, k.secs]), [["think", 200], ["gen", 150], ["tools", 186], ["you", 50]], "four kinds, tools summed");
+}
+eq([toolName("Bash"), toolName("mcp__verify__Attach"), toolName("mcp__goals__List__x")], ["Bash", "verify · Attach", "goals · List__x"], "an MCP name splits on its first __ pair");

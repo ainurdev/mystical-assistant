@@ -1,3 +1,4 @@
+import type { SessionBreakdown, ToolSpend } from "../api";
 import type { Turn } from "../chat";
 import { limitNudge } from "./limit.ts";
 
@@ -148,4 +149,29 @@ export function fmtElapsed(s: number): string {
   if (s < 60) return `${Math.round(s)}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m ${Math.round(s % 60)}s`;
   return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+export type TimeKind = "think" | "gen" | "tools" | "you";
+
+/** The TURNS tab's TIME dock: the session's time by kind, the tools that took
+ *  it (the longest `top`, the rest as a count and a sum) — what the tab's rows
+ *  don't already say, its Working cell being the total. */
+export function timeSplit(b: SessionBreakdown, top = 6) {
+  const tools = Object.entries(b.tools).map(([name, t]: [string, ToolSpend]) => ({ name: toolName(name), ...t }))
+    .sort((x, y) => y.union_s - x.union_s);
+  const rest = tools.slice(top);
+  const kinds: { k: TimeKind; label: string; secs: number }[] = [
+    { k: "think", label: "Thinking", secs: b.thinking_s },
+    { k: "gen", label: "Generating", secs: b.model_s },
+    // shortcut: each tool's own union summed, so two tools running at once count twice; add a tools_s union in attribution.py if the bar reads wrong
+    { k: "tools", label: "Tools", secs: tools.reduce((s, t) => s + t.union_s, 0) },
+    { k: "you", label: "Waiting on you", secs: b.waiting_s },
+  ];
+  return { kinds, tools: tools.slice(0, top), rest: rest.length, restSecs: rest.reduce((s, t) => s + t.union_s, 0) };
+}
+
+/** An MCP tool as `server · tool`; the CLI's own tools keep their names. */
+export function toolName(name: string): string {
+  const m = /^mcp__(.+?)__(.+)$/.exec(name);
+  return m ? `${m[1]} · ${m[2]}` : name;
 }

@@ -1,22 +1,19 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarDays, ChevronDown, ChevronRight, Clock, Copy, GitBranch, Hourglass, LayoutGrid, MessageSquare, Sparkles, TriangleAlert } from "lucide-react";
-import { api, type AccountInfo, type UsageBucket, type WeeklyReport } from "../../api";
-import { fmtReset, hhmm, projectName, projectTint, useClock12 } from "../../lib/surfaces";
+import { CalendarDays, ChevronDown, ChevronRight, Clock, Copy, GitBranch, LayoutGrid, MessageSquare } from "lucide-react";
+import { api, type WeeklyReport } from "../../api";
+import { projectName, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
-import { slotHue } from "../../lib/profiles";
 import { ProjectTile } from "../ui/ProjectTile";
 import { notify } from "./Notifications";
-import { daysOf, dur, fmtTokens, leftOf, pct, timesheet, tone } from "../../lib/week";
+import { daysOf, dur, fmtTokens, pct, timesheet } from "../../lib/week";
 
-/** The USAGE tab (drafts/usage-rail): what the login this chat spends has left,
- *  then where the week went. It replaced the week report that hung off the
- *  brand cap as a popover over the sessions list.
+/** The USAGE tab (drafts/usage-rail): where the week went. It replaced the week
+ *  report that hung off the brand cap as a popover over the sessions list.
  *
- *  Limits come first because they are what decides whether you can keep
- *  working. The readout is the GIT tab's (`.gp-ro`): % left with a fuel line
- *  (fill = left), the refills under it, and a pace line once the bridge has
- *  an hour of readings (usage.pace). The week is bridge/report.py's: worktrees
- *  already folded into their repo, days, failures by outcome.
+ *  What each login has left lives in the composer's PROFILE and MODEL menus;
+ *  this tab's limits and Logins fold repeated them and went (drafts/usage-time).
+ *  The readout is the GIT tab's (`.gp-ro`). The week is bridge/report.py's:
+ *  worktrees already folded into their repo, days, failures by outcome.
  *
  *  Time and tokens, never dollars (9f612a4). "Agent time" because turn wall
  *  time adds up across parallel sessions, so a day can hold 48h of it. */
@@ -26,33 +23,6 @@ const TOP = 6;   // projects shown before "N more"
 
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 
-
-/** A refill time: the clock within a day, with the weekday past that. */
-function when(iso: string | null | undefined): string {
-  const t = iso ? Date.parse(iso) / 1000 : NaN;
-  if (!isFinite(t)) return "—";
-  return t - Date.now() / 1000 < 86400 ? hhmm(t)
-    : `${new Date(t * 1000).toLocaleDateString(undefined, { weekday: "short" })} ${hhmm(t)}`;
-}
-
-const span = (s: number) => {
-  const m = Math.max(0, Math.round(s / 60));
-  return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m` : `${m}m`;
-};
-
-const THEN: Record<string, string> = {
-  auto: "Then this chat moves to another login on its own.",
-  ask: "Then this chat stops and asks which login to use.",
-  wait: "Then this chat waits for the refill.",
-};
-
-/** Why a login shows no meter, or null when it has one. */
-function noMeter(a: AccountInfo): string | null {
-  if (a.disabled) return "switched off";
-  if (!a.logged_in) return "signed out — sign in again from Settings ▸ Accounts";
-  if (a.left === null) return "no reading while it sits idle — it reads again on its next turn";
-  return null;
-}
 
 function Fold({ title, em, acts, closed, onToggle, children }: {
   title: ReactNode; em?: ReactNode; acts?: ReactNode; closed: boolean; onToggle: () => void; children: ReactNode;
@@ -70,107 +40,22 @@ function Fold({ title, em, acts, closed, onToggle, children }: {
   );
 }
 
-function Cell({ icon, value, label, t, fuel, title }: {
-  icon: ReactNode; value: ReactNode; label: string; t?: string; fuel?: number; title?: string;
-}) {
+function Cell({ icon, value, label, t }: { icon: ReactNode; value: ReactNode; label: string; t?: string }) {
   return (
-    <div className={`gp-roc${t ? ` ${t}` : ""}`} title={title}>
+    <div className={`gp-roc${t ? ` ${t}` : ""}`}>
       <b>{icon}<span>{value}</span></b><span>{label}</span>
-      {fuel !== undefined && <i className="us-fuel"><i style={{ width: `${fuel}%` }} /></i>}
     </div>
   );
 }
 
-/** The login this chat spends: each window's % left, when it refills, and the pace. */
-function Limits({ a, policy }: { a: AccountInfo; policy: string }) {
-  const why = noMeter(a);
-  if (why) return <div className="gp-rd"><div className="us-sub">{why}</div></div>;
-  const cells: { icon: ReactNode; label: string; b: UsageBucket }[] = [];
-  if (a.five_hour) cells.push({ icon: <Hourglass size={14} strokeWidth={2.2} />, label: "5-hour left", b: a.five_hour });
-  if (a.seven_day) cells.push({ icon: <CalendarDays size={14} strokeWidth={2.2} />, label: "week left", b: a.seven_day });
-  for (const l of a.limits ?? []) {
-    if (l.kind === "weekly_scoped" && l.scope?.model?.display_name)
-      cells.push({ icon: <Sparkles size={14} strokeWidth={2.2} />, label: `${l.scope.model.display_name} week`, b: l });
-  }
-  const h5 = a.five_hour, wk = a.seven_day;
-  const out = a.runs_out_at ? Date.parse(a.runs_out_at) / 1000 : NaN;
-  const refill = h5?.resets_at ? Date.parse(h5.resets_at) / 1000 : NaN;
-  return (
-    <div className="gp-rd">
-      <div className="gp-ro" style={{ gridTemplateColumns: `repeat(${cells.length}, minmax(0, 1fr))` }}>
-        {cells.map(({ icon, label, b }) => {
-          const left = leftOf(b);
-          return <Cell key={label} icon={icon} value={<>{left}<small>%</small></>} label={label} t={tone(left, b.severity)}
-            fuel={left} title={`${label}: ${left}% left, refills ${when(b.resets_at)}`} />;
-        })}
-      </div>
-      <div className="us-sub">
-        {h5 && <span data-tone={tone(leftOf(h5), h5.severity) || undefined}>
-          5-hour refills at <b>{when(h5.resets_at)}</b> · in <em className="us-rst">{fmtReset(h5.resets_at)}</em></span>}
-        {wk && <span>week refills <b>{when(wk.resets_at)}</b> · in <em className="us-rst">{fmtReset(wk.resets_at)}</em></span>}
-      </div>
-      {isFinite(out) && isFinite(refill) && (
-        <div className="us-pace">
-          <TriangleAlert size={13} strokeWidth={2} />
-          <span>At this pace the 5-hour window runs out about <b>{hhmm(out)}</b>, <b>{span(refill - out)}</b> before
-            it refills. {THEN[policy] ?? ""}</span>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Logins({ accounts, spend }: { accounts: AccountInfo[]; spend: number | null }) {
-  return (
-    <div>
-      {accounts.map((a) => {
-        const why = noMeter(a);
-        const win = (tag: string, b: UsageBucket | null) => {
-          if (!b) return null;
-          const left = leftOf(b);
-          return (
-            <span key={tag} className="us-w" data-tone={tone(left, b.severity) || undefined} title={`refills ${when(b.resets_at)}`}>
-              <i>{tag}</i><span className="us-bar"><span style={{ width: `${left}%` }} /></span><b>{left}%</b>
-              <em className="us-rst">{fmtReset(b.resets_at)}</em>
-            </span>
-          );
-        };
-        return (
-          <div key={a.slot} className="us-login">
-            <span className="us-slot" style={{ background: slotHue(String(a.slot)) }}>{a.slot}</span>
-            <div className="us-lm">
-              <div className="us-l1">
-                <span>{a.alias || a.email || `login ${a.slot}`}</span>
-                {a.plan && <span className="us-plan">{a.plan}</span>}
-                {a.slot === spend ? <span className="us-tag">THIS CHAT</span> : a.default ? <span className="us-tag" data-ok="">DEFAULT</span> : null}
-              </div>
-              {why ? <span className="us-why" data-dead={!a.logged_in || undefined}>{why}</span>
-                : <div className="us-ws">{win("5H", a.five_hour)}{win("WK", a.seven_day)}</div>}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-export function UsagePanel({ accounts, spend, policy, onOpenProject }: {
-  accounts: AccountInfo[];
-  /** The login this chat spends (models.spendingSlot); null for another agent. */
-  spend: number | null;
-  /** What this chat does when that login runs out: ask | auto | wait. */
-  policy: string;
-  onOpenProject: (rel: string) => void;
-}) {
-  useClock12();   // refill times answer to the header clock's 12H switch
+export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => void }) {
   const [back, setBack] = useState(0);
   const [rep, setRep] = useState<WeeklyReport | null>(null);
   // A bridge still running pre-restart code has no /local/report route: say
-  // "restart" instead of spinning forever (the SpendPanel posture).
+  // "restart" instead of spinning forever.
   const [stale, setStale] = useState(false);
   const [pick, setPick] = useState<number | null>(null);
   const [all, setAll] = useState(false);
-  const [lgClosed, setLgClosed] = useStickyFlag("usage-logins-closed");
   const [wkClosed, setWkClosed] = useStickyFlag("usage-week-closed");
   const [pjClosed, setPjClosed] = useStickyFlag("usage-projects-closed");
   const [stClosed, setStClosed] = useStickyFlag("usage-stopped-closed");
@@ -188,7 +73,6 @@ export function UsagePanel({ accounts, spend, policy, onOpenProject }: {
     return () => { live = false; clearInterval(id); };
   }, [back]);
 
-  const me = accounts.find((a) => a.slot === spend) ?? null;
   const days = rep ? daysOf(rep) : [];
   const today = new Date().toLocaleDateString("sv-SE");
   const peak = Math.max(...days.map((d) => d.elapsed), 1);
@@ -254,22 +138,9 @@ export function UsagePanel({ accounts, spend, policy, onOpenProject }: {
     <div className="panel gp us" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div className="gp-head">
         <span className="gp-title">USAGE</span>
-        {me && (
-          <span className="gp-branch" title={`this chat spends ${me.email ?? `login ${me.slot}`}`}>
-            <span className="us-slot" style={{ background: slotHue(String(me.slot)) }}>{me.slot}</span><span>{(me.alias || me.email || `login ${me.slot}`).split("@")[0]}</span>
-          </span>
-        )}
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
       <div className="mscroll" style={{ flex: 1, minHeight: 0 }}>
-        {me && <div className="gp-rdw"><Limits a={me} policy={policy} /></div>}
-
-        {accounts.length > 1 && (
-          <Fold title="Logins" em={accounts.length} closed={lgClosed} onToggle={() => setLgClosed((v) => !v)}>
-            <Logins accounts={accounts} spend={spend} />
-          </Fold>
-        )}
-
         <Fold title={back ? "Last week" : "This week"} em={range} closed={wkClosed} onToggle={() => setWkClosed((v) => !v)}
           acts={
             <span className="us-seg">

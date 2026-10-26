@@ -1,10 +1,6 @@
 // Run: node bridge/dashboard/web/src/lib/week.check.ts
 import type { WeeklyReport } from "../api";
-import { daysOf, dur, fmtTokens, pct, timesheet, tone } from "./week.ts";
-
-// A window reads amber at a quarter left, red at a tenth, and the meter's own word wins either way.
-console.assert(tone(26) === "" && tone(25) === "warn" && tone(11) === "warn" && tone(10) === "err", "tone thresholds");
-console.assert(tone(80, "warning") === "warn" && tone(80, "exceeded") === "err" && tone(80, "normal") === "", "tone severity");
+import { daysOf, dur, fmtTokens, pct, timesheet } from "./week.ts";
 
 // Figures: a million never prints as 1000K, agent time drops a bare .0, a big week rounds to whole hours.
 console.assert(fmtTokens(999_600) === "1.0M" && fmtTokens(176_431) === "176K" && fmtTokens(22.18e9) === "22.2B", "fmtTokens");

@@ -257,7 +257,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
 
   function body(): ReactNode {
     // A dashboard built from newer code than the running bridge: the route is
-    // missing, and the catch-all answers 404 "not found" (see SpendPanel).
+    // missing, and the catch-all answers 404 "not found".
     if (fail === "not found") return <Empty title="The bridge needs a restart" text="This dashboard is newer than the running bridge, which can't list Rivendell tasks yet." />;
     if (fail) return <Empty title="Couldn't read the task list" text={fail} />;
     if (!data) return [100, 100, 60].map((w, i) => <div key={i} style={{ height: 30, margin: "8px 12px", width: `calc(${w}% - 24px)`, background: mix("var(--acc)", 7) }} />);

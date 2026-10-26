@@ -6221,53 +6221,10 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 
 /* === USAGE TAB =================================================================
    The right rail's USAGE panel (hud/UsagePanel, drafts/usage-rail): the GIT
-   tab's bones (.gp root, .gp-ro readout, .gp-fold folds) plus these. A limit
-   cell carries a fuel line along its foot, fill = what is left. */
-.us-slot { display: inline-grid; place-items: center; width: 13px; height: 13px; flex: none; border-radius: min(3px, var(--r)); font: 600 8px/1 var(--f);
-  color: var(--acc-on, #000); }   /* background: the login's own hue (lib/profiles slotHue), as the PROFILE menu draws it */
-.us .gp-roc { position: relative; padding-bottom: 12px; }
-.us .gp-roc b small { font-size: .62em; margin-left: 1px; color: var(--txd); }
-.us .gp-roc.warn b, .us .gp-roc.warn b svg { color: var(--warn); }
-.us .gp-roc.err { background: color-mix(in srgb, var(--err) 8%, transparent); }
-.us .gp-roc.err b, .us .gp-roc.err b svg { color: var(--err); }
-.us-fuel { position: absolute; left: 10px; right: 10px; bottom: 6px; height: 3px; border-radius: min(2px, var(--r)); overflow: hidden;
-  background: color-mix(in oklab, var(--txl) 20%, transparent); }
-.us-fuel > i { display: block; height: 100%; border-radius: inherit; background: var(--acc); }
-.us .gp-roc.warn .us-fuel > i { background: var(--warn); }
-.us .gp-roc.err .us-fuel > i { background: var(--err); }
+   tab's bones (.gp root, .gp-ro readout, .gp-fold folds) plus these. */
 .us-sub { display: flex; flex-direction: column; gap: 3px; margin: 8px 2px 0; font: 400 var(--t105)/1.35 var(--f); color: var(--txd); }
 .us-sub b { font: 500 var(--t105)/1 var(--m); color: var(--txh); }
 .us-sub em { font-style: normal; }
-.us-sub [data-tone="warn"] { color: var(--warn); }
-.us-sub [data-tone="err"] { color: var(--err); }
-.us-pace { display: flex; align-items: flex-start; gap: 6px; margin-top: 9px; padding: 8px 9px; border-radius: var(--r);
-  border: 1px dashed color-mix(in srgb, var(--warn) 45%, var(--l)); background: color-mix(in srgb, var(--warn) 6%, transparent);
-  font: 400 var(--t105)/1.4 var(--f); color: var(--txm); }
-.us-pace svg { flex: none; color: var(--warn); margin-top: 1px; }
-.us-pace b { color: var(--txb); font-weight: 600; }
-/* logins: one row each, a window a line */
-.us-login { display: flex; align-items: flex-start; gap: 9px; padding: 8px 12px; }
-.us-login + .us-login { border-top: 1px solid var(--l); }
-.us-login .us-slot { width: 18px; height: 18px; border-radius: min(5px, var(--r)); font-size: 9.5px; margin-top: 1px; }
-.us-lm { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1; }
-.us-l1 { display: flex; align-items: center; gap: 6px; min-width: 0; font: 500 var(--t115)/18px var(--f); color: var(--txh); }
-.us-l1 > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.us-plan { flex: none; font: 600 var(--t85)/1 var(--f); letter-spacing: .06em; color: var(--txl); }
-.us-tag { flex: none; margin-left: auto; height: 16px; display: inline-flex; align-items: center; padding: 0 6px; border-radius: 999px;
-  font: 600 var(--t85)/1 var(--f); letter-spacing: .06em; color: var(--purple-h); background: color-mix(in oklab, var(--purple) 16%, transparent); }
-.us-tag[data-ok] { color: var(--ok); background: color-mix(in oklab, var(--ok) 15%, transparent); }
-.us-ws { display: flex; flex-direction: column; gap: 6px; line-height: 12px; }
-.us-w { --c: var(--acc); display: grid; grid-template-columns: 18px minmax(0, 1fr) 32px 52px; align-items: center; column-gap: 7px;
-  font: var(--t95) var(--m); color: var(--c); white-space: nowrap; }
-.us-w[data-tone="warn"] { --c: var(--warn); }
-.us-w[data-tone="err"] { --c: var(--err); }
-.us-w i { font-style: normal; font-size: var(--t85); color: var(--txl); }
-.us-w b { font-weight: 500; text-align: right; }
-.us-w em { font-style: normal; color: var(--txd); text-align: right; }
-.us-bar { height: 4px; border-radius: min(2px, var(--r)); overflow: hidden; background: color-mix(in oklab, var(--txl) 22%, var(--panel)); }
-.us-bar > span { display: block; height: 100%; background: var(--c); }
-.us-why { font: 400 var(--t105)/1.35 var(--f); color: var(--txl); }
-.us-why[data-dead] { color: var(--err); }
 /* the week */
 .us-seg { display: flex; border: 1px solid var(--l2); border-radius: var(--r); overflow: hidden; }
 .us-seg button { appearance: none; border: 0; background: transparent; color: var(--txd); font: 500 var(--t10)/1 var(--f); padding: 4px 8px; cursor: pointer; }
@@ -6323,8 +6280,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .us-tok em { font: 500 var(--t13)/1 var(--m); font-style: normal; color: var(--txh); }
 .us-note { padding: 4px 12px 12px; font: 400 var(--t10)/1.45 var(--f); color: var(--txl); }
 /* MIDDLE-EARTH reads natural case, as its PROFILE menu does (.pm-wtag, .pm-reset, .pm-tag) */
-[data-fam="middle-earth"] :is(.us-w i, .us-rst, .us-tag) { text-transform: lowercase; letter-spacing: 0; }
-[data-fam="middle-earth"] :is(.us-plan, .us-day > span) { letter-spacing: 0; }
+[data-fam="middle-earth"] .us-day > span { letter-spacing: 0; }
 
 /* === TURNS TAB =================================================================
    The right rail's TURNS panel (hud/TurnsPanel, drafts/turns-tab B · LEDGER):
@@ -6422,8 +6378,48 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tn-hint { flex: none; padding: 4px 12px 2px; font: 400 var(--t95)/1.4 var(--f); color: var(--txl); }
 .tn-hint kbd { font: 500 var(--t85)/1 var(--m); padding: 1px 4px; border-radius: 3px; border: 1px solid var(--l2); color: var(--txd); }
 @media (prefers-reduced-motion: reduce) { .tn-dot, .tn-t.run .tn-o { animation: none; } }
+/* TIME, docked under the list (TurnsPanel TimeDock, drafts/usage-time B · DOCK): the
+   session's time by kind, and on a tap the tools and tokens behind it, raised over
+   the list's foot. A kind's colour is one --c, shared by its bar piece and legend key. */
+.tt { position: relative; flex: none; }
+.tt [data-k="think"] { --c: var(--acc); }
+.tt [data-k="gen"] { --c: color-mix(in oklab, var(--acc) 45%, var(--panel2)); }
+.tt [data-k="tools"] { --c: var(--info); }
+.tt [data-k="you"] { --c: var(--purple); }
+/* .tt > : over the families' rounded buttons — the dock is the panel's foot, not a button shape */
+.tt > .tt-dock { display: block; width: 100%; padding: 9px 10px 10px 12px; border: 0; border-top: 1px solid var(--l2); border-radius: 0;
+  background: var(--panel2); color: var(--txl); font: inherit; text-align: left; cursor: pointer; appearance: none; }
+.tt-dock:hover:not(:disabled) { background: color-mix(in srgb, var(--acc) 5%, var(--panel2)); }
+.tt-dock:disabled { cursor: default; }
+.tt-dock:focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 55%, transparent); outline-offset: -2px; }
+.tt-d1 { display: flex; align-items: center; gap: 8px; }
+.tt-d1 > b { font: 600 var(--t105)/1 var(--f); letter-spacing: .08em; text-transform: uppercase; color: var(--txm); }
+.tt-d1 > svg { flex: none; }
+.tt-bar { flex: 1; display: flex; gap: 1px; height: 6px; border-radius: 3px; overflow: hidden; background: color-mix(in oklab, var(--txl) 13%, transparent); }
+.tt-bar > i { display: block; flex: 1 1 0; min-width: 2px; background: var(--c); }
+.tt-leg { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 14px; margin-top: 10px; }
+.tt-leg > span { display: flex; align-items: center; gap: 6px; min-width: 0; font: 400 var(--t105)/1 var(--f); color: var(--txm); }
+.tt-leg > span > i { width: 7px; height: 7px; flex: none; border-radius: 2px; background: var(--c); }
+.tt-leg > span > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-leg > span > b { margin-left: auto; font: 500 var(--t10)/1 var(--m); color: var(--txb); }
+.tt-sheet { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 1; padding: 11px 12px 12px; background: var(--panel2);
+  border-top: 1px solid var(--l2); box-shadow: 0 -14px 30px var(--shadow-pop); animation: ttrise .18s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes ttrise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+.tt-sh { margin-bottom: 7px; font: 600 var(--t85)/1 var(--f); letter-spacing: .12em; text-transform: uppercase; color: var(--txl); }
+.tt-tr { display: grid; grid-template-columns: minmax(0, 1fr) 56px 50px; align-items: center; column-gap: 8px; font: 400 var(--t105)/1.2 var(--f); color: var(--txm); }
+.tt-tr + .tt-tr { margin-top: 7px; }
+.tt-tr > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-tr > span > em { margin-left: 5px; font: normal 400 var(--t95)/1 var(--m); color: var(--txl); }
+.tt-tr > i { display: block; height: 3px; border-radius: 2px; overflow: hidden; background: color-mix(in oklab, var(--txl) 16%, transparent); }
+.tt-tr > i > i { display: block; height: 100%; background: var(--info); }
+.tt-tr > b { font: 500 var(--t10)/1 var(--m); color: var(--txb); text-align: right; }
+.tt-more { margin-top: 7px; font: 400 var(--t10)/1.2 var(--f); color: var(--txl); }
+.tt-tok { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--l); font: 400 var(--t105)/1 var(--f); color: var(--txl); }
+.tt-tok > b { margin-left: auto; font: 500 var(--t10)/1 var(--m); color: var(--txm); white-space: nowrap; }
+.tt-tok small { font-size: 1em; color: var(--txl); }
+@media (prefers-reduced-motion: reduce) { .tt-sheet { animation: none; } }
 /* MIDDLE-EARTH reads natural case, as its USAGE tab does */
-[data-fam="middle-earth"] .tn :is(.tn-tag, .tn-here, .tn-day) { text-transform: none; letter-spacing: 0; }
+[data-fam="middle-earth"] .tn :is(.tn-tag, .tn-here, .tn-day, .tt-d1 > b, .tt-sh) { text-transform: none; letter-spacing: 0; }
 
 /* === THE FAMILIES · PEBBLE · STANDARD ======================================
    The roast's fixes (.mystical/design-drafts/pebble-standard). Keep this block

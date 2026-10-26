@@ -253,7 +253,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
   };
 
   const body = (): ReactNode => {
-    // A dashboard newer than the running bridge: the route is missing (see SpendPanel).
+    // A dashboard newer than the running bridge: the route is missing.
     if (fail === "not found") return <Empty title="The bridge needs a restart" text="This dashboard is newer than the running bridge, which can't show the team yet." />;
     if (fail) return <Empty title="Couldn't read the team" text={fail} />;
     if (!data) return [100, 100, 60].map((w, i) => <div key={i} style={{ height: 30, margin: "8px 12px", width: `calc(${w}% - 24px)`, background: mix("var(--acc)", 7) }} />);

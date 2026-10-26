@@ -16,7 +16,6 @@ import { NextView } from "../NextView";
 import { FreshPanel, type FreshLocal } from "../FreshPanel";
 import { ViewTabs, type View } from "./ViewTabs";
 import { ScrollRail } from "./Checkpoints";
-import { SpendPanel } from "./SpendPanel";
 import { PrChip } from "./PrChip";
 import { TaskChip } from "./TaskChip";
 import { ChatChromeContext } from "../../lib/chatchrome";
@@ -618,7 +617,7 @@ export function Terminal({
       </div>
   );
   // `isle-reads` / `isle-keep`: FLINT's TUCK header folds the readouts down to
-  // the one marked keep (the clock row when it's here, else the spend) until
+  // the one marked keep (the clock row when it's here, else ⊞ PROJECT) until
   // the island is hovered.
   const readouts = (
       <div className="isle-reads" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
@@ -626,19 +625,11 @@ export function Terminal({
             terminal — is worth a click of its own; its neighbours (design
             system, tasks, issues) stay in the menu on the project's name. */}
         {isChat && onOpenProject && (
-          <>
-            <button onClick={onOpenProject} title="project — files, git, worktrees, terminal"
-              onMouseEnter={() => setProjBtnHov(true)} onMouseLeave={() => setProjBtnHov(false)}
-              style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: 0, flex: "none", border: 0, background: "transparent", color: projBtnHov ? "var(--txb)" : "var(--txd)" }}>
-              ⊞ PROJECT
-            </button>
-            <span style={hairline(11)} />
-          </>
-        )}
-        {isChat && (
-          <span className={chrome ? undefined : "isle-keep"} style={{ display: "contents" }}>
-            <SpendPanel sessionId={sessionId ?? selected?.id ?? null} running={!!activeId} />
-          </span>
+          <button onClick={onOpenProject} title="project — files, git, worktrees, terminal" className={chrome ? undefined : "isle-keep"}
+            onMouseEnter={() => setProjBtnHov(true)} onMouseLeave={() => setProjBtnHov(false)}
+            style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: 0, flex: "none", border: 0, background: "transparent", color: projBtnHov ? "var(--txb)" : "var(--txd)" }}>
+            ⊞ PROJECT
+          </button>
         )}
         <ViewTabs view={view} onView={onView} />
         {chrome && (

@@ -22,14 +22,6 @@ export function pct(cur: number, prev: number): string {
   return n >= 0 ? `+${n}%` : `−${Math.abs(n)}%`;
 }
 
-/** Amber once a window is a quarter full or the meter says so, red at a tenth or spent. */
-export function tone(left: number, severity?: string): "" | "warn" | "err" {
-  if (severity === "critical" || severity === "exceeded" || left <= 10) return "err";
-  return (severity && severity !== "normal") || left <= 25 ? "warn" : "";
-}
-
-export const leftOf = (b: { percent: number }) => Math.max(0, 100 - Math.round(b.percent));
-
 /** Mon..Sun for the report's span, each with the day's agent time written in. */
 export function daysOf(rep: WeeklyReport) {
   const by = new Map(rep.days.map((d) => [d.day, d]));

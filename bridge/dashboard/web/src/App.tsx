@@ -278,7 +278,6 @@ export function App() {
   const [gitNonce, setGitNonce] = useState(0);
   const [usage, setUsage] = useState<UsageInfo | null>(null);
   const [accounts, setAccounts] = useState<AccountInfo[]>([]);
-  const [limitPolicy, setLimitPolicy] = useState("ask"); // what a session with no policy of its own does on a limit
   // Non-Claude agents: their labels and the options each last advertised,
   // which an agent session's pickers offer. null = not loaded, or a bridge
   // older than them (404) — an agent session then shows no pickers.
@@ -1258,7 +1257,6 @@ export function App() {
   const loadAccounts = useCallback(() => api.accounts()
     .then((a) => {
       setAccounts(a.accounts);
-      setLimitPolicy(a.default_policy);
       markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
     })
     .catch(() => markBoot("auth", "fail", "NO LOGIN")), [markBoot]);
@@ -2195,7 +2193,7 @@ export function App() {
       id: "turns", label: waitsOnYou ? "Turns (one waits on you)" : "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true,
       ask: waitsOnYou,
       render: () => (
-        <TurnsPanel key={sessionId ?? ""} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
+        <TurnsPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
           onJump={(id, key) => { toChat(); void jumpTo(id, key); }} onLatest={() => { toChat(); jumpToBottom(); }}
           onCopy={(text) => {
             try { void navigator.clipboard?.writeText(text); notify("info", "Prompt copied."); }
@@ -2270,8 +2268,7 @@ export function App() {
     {
       id: "usage", label: "Usage", icon: <Gauge {...RAIL} />, ownScroll: true,
       render: () => (
-        <UsagePanel accounts={accounts} spend={spendSlot} policy={selected?.fallback_policy ?? limitPolicy}
-          onOpenProject={(rel) => openAnalyze(rel)} />
+        <UsagePanel onOpenProject={(rel) => openAnalyze(rel)} />
       ),
     },
   ];

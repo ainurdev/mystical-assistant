@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
-import { Check, ChevronRight, CircleHelp, Copy, CornerDownLeft, ListEnd, ListOrdered, RotateCw, Search, Timer, X } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Copy, CornerDownLeft, ListEnd, ListOrdered, RotateCw, Search, Timer, X } from "lucide-react";
+import { api, type SessionBreakdown } from "../../api";
 import type { Turn } from "../../chat";
-import { ckId, fmtElapsed, turnRows, type Resume, type Sub, type TurnRow } from "../../lib/checkpoints";
+import { ckId, fmtElapsed, timeSplit, turnRows, type Resume, type Sub, type TurnRow } from "../../lib/checkpoints";
 import { hhmm, useClock12 } from "../../lib/surfaces";
-import { dur } from "../../lib/week";
+import { dur, fmtTokens } from "../../lib/week";
 import { modelName } from "../../models";
 import type { TranscriptNav } from "../Transcript";
 import { SteerIcon } from "../Composer";
@@ -73,8 +74,9 @@ function hit(r: TurnRow, q: string): boolean {
  *  It replaced the header's TURNS dropdown, which closed on every jump and knew
  *  only the turns the chat had loaded. */
 export function TurnsPanel({
-  turns, scrollRef, nav, following, onJump, onLatest, onCopy, onReuse,
+  sessionId, turns, scrollRef, nav, following, onJump, onLatest, onCopy, onReuse,
 }: {
+  sessionId: string | null;
   turns: Turn[];
   scrollRef: RefObject<HTMLDivElement | null>;
   nav: MutableRefObject<TranscriptNav | null>;
@@ -259,9 +261,78 @@ export function TurnsPanel({
           );
         })}
       </div>
+      <TimeDock sessionId={sessionId} running={running} />
     </div>
   );
 }
+
+/** Where the session's time went, by kind — the part of the old header TIME
+ *  readout this tab didn't already have (its Working cell is the total, the rows
+ *  each turn's time). Pinned under the list, always in view; a tap raises the
+ *  tools that took it and the tokens over the list's foot (drafts/usage-time,
+ *  B · DOCK). Loads per session and as a turn starts or ends; polls only while
+ *  raised on a live turn. */
+function TimeDock({ sessionId, running }: { sessionId: string | null; running: boolean }) {
+  // undefined while it loads: the dock is drawn at once, so the list never shrinks under you.
+  const [b, setB] = useState<SessionBreakdown | null | undefined>(undefined);
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!sessionId) return;
+    let live = true;
+    // A bridge older than the route answers with the transcript's shape: draw nothing.
+    const load = () => void api.sessionBreakdown(sessionId)
+      .then((r) => { if (live) setB(r && typeof r.wall === "number" && r.tools ? r : null); })
+      .catch(() => {});
+    load();
+    if (!open || !running) return () => { live = false; };
+    const id = setInterval(load, 5000);
+    return () => { live = false; clearInterval(id); };
+  }, [sessionId, running, open]);
+  if (b === null || !sessionId) return null;
+
+  const { kinds, tools, rest, restSecs } = timeSplit(b ?? EMPTY);
+  const peak = tools[0]?.union_s || 1;
+  const t = b?.tokens;
+  const tin = t ? t.in + t.cache_w + t.cache_r : 0;
+  return (
+    <div className="tt">
+      {open && b && (
+        <div className="tt-sheet">
+          <div className="tt-sh">Tools</div>
+          {tools.length ? tools.map((x) => (
+            <div key={x.name} className="tt-tr" title={`${x.calls} calls, avg ${fmtElapsed(x.avg_s)}${x.naive_s - x.union_s >= 1
+              ? ` — ${fmtElapsed(x.naive_s)} summed, ${fmtElapsed(x.union_s)} of real time (they overlapped)` : ""}`}>
+              <span>{x.name}<em>{[`${x.calls}×`, x.calls > 1 && x.naive_s - x.union_s < 1 ? "serial" : null,
+                x.unfinished ? `${x.unfinished} killed` : null].filter(Boolean).join(" · ")}</em></span>
+              <i><i style={{ width: `${Math.max(2, (100 * x.union_s) / peak)}%` }} /></i>
+              <b>{fmtElapsed(x.union_s)}</b>
+            </div>
+          )) : <div className="tt-more">no tool calls yet</div>}
+          {rest > 0 && <div className="tt-more">+{rest} more · {fmtElapsed(restSecs)} between them</div>}
+          <div className="tt-tok">
+            <span>Tokens</span>
+            {t ? <b title={`in ${t.in} · out ${t.out} · cache write ${t.cache_w} · cache read ${t.cache_r}`}>
+                {fmtTokens(tin)} in · {fmtTokens(t.out)} out <small>· {Math.round((100 * t.cache_r) / Math.max(1, tin + t.out))}% cache reads</small></b>
+              : <b title="no turn in this session reported usage — unknown, not zero">—</b>}
+          </div>
+        </div>
+      )}
+      <button type="button" className="tt-dock" aria-expanded={open} disabled={!b} onClick={() => setOpen((v) => !v)}
+        title={open ? "hide the tools and tokens" : "the tools and tokens behind this time"}>
+        <span className="tt-d1">
+          <b>Time</b>
+          <span className="tt-bar">{kinds.filter((k) => k.secs > 0).map((k) => <i key={k.k} data-k={k.k} style={{ flexGrow: k.secs }} />)}</span>
+          {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+        </span>
+        <span className="tt-leg">
+          {kinds.map((k) => <span key={k.k} data-k={k.k}><i /><span>{k.label}</span><b>{b ? dur(k.secs) : "…"}</b></span>)}
+        </span>
+      </button>
+    </div>
+  );
+}
+
+const EMPTY: SessionBreakdown = { wall: 0, tools: {}, thinking_s: 0, waiting_s: 0, model_s: 0, tokens: null, capped: 0, turns: 0 };
 
 function SubRow({ s, q, onJump }: { s: Sub; q: string; onJump: (turnId: string, key?: string) => void }) {
   if (s.kind === "resume")
