@@ -880,20 +880,25 @@ class Worker:
             meeting = self._briefs.pop(request_id, None) if job_kind == "meeting-brief" else None
             pr_meta = self._conflicts.pop(request_id, None) if job_kind == "conflict" else None
             design = self._designs.pop(request_id, None) if job_kind == "design-build" else None
+            report = _design_report(text) if job_kind == "design-build" else None
             brief = ok and job_kind == "meeting-brief"
             kind = "rv_brief" if brief else ("rv_done" if ok else "rv_failed")
             line = (_brief_lead(text) if brief
                     else next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")[:200])
+            if report:                      # its summary, not the opening line of the JSON
+                line = str(report.get("summary") or "").strip()[:200]
+            # The bell's word follows the kind (notices._RV_DONE): a design build reads BUILT only when it built one.
+            note_kind = None if job_kind == "design-build" and (report or {}).get("outcome") != "built" else job_kind
             if sid is None:
                 self._note(kind, request_id, f"Rivendell job {request_id[:8]}",
-                           "" if ok else line, job_kind=job_kind)
+                           "" if ok else line, job_kind=note_kind)
                 return
             sess = store.get_session(sid) or {"id": sid}
             res = _result_view(sid, checks=False) or {}
             pr = res.get("pr") or {}
             why = None if ok else (res.get("outcome") or {}).get("label")
             self._note(kind, request_id, sess.get("title") or "Rivendell job",
-                       why.capitalize() if why else line, job_kind=job_kind, session_id=sid,
+                       why.capitalize() if why else line, job_kind=note_kind, session_id=sid,
                        pr_url=pr.get("url"), pr_number=pr.get("number"))
             if not notices.telegram_ok(kind):
                 return

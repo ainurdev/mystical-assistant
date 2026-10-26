@@ -4074,43 +4074,63 @@ _DESIGN_ROW = {"id": "b1", "mode": "build", "designId": "d1", "designTitle": "St
                "repositoryFullName": "ainurdev/nr-kantoor", "branch": "main"}
 
 
-def _design_pinged(monkeypatch, src, ok, answer):
-    """A worker that was sent design build b1 (as `src`, a frame or a catch-up row), ran it in a
-    session, and has its result posted: the Telegram messages it would send and the notes it made
-    for the bell are collected. Returns (worker, sent, noted)."""
+def _design_pinged(monkeypatch, request_id, src, ok, answer):
+    """A worker that was sent design build `request_id` (as `src`, a frame or a catch-up row), ran it
+    in a session of its own, and has its result posted (`ok`, `answer`): the Telegram messages it
+    would send are collected, and the bell's rows for it are read back as the feed gives them. The
+    feed is kept between tests, so each takes an id of its own. Returns (worker, sent, rows)."""
     from bridge import store
-    w = _worker()
-    w._enqueue("design-build", "b1", "ainurdev/nr-kantoor", src=src)
-    sent, noted = [], []
-    monkeypatch.setattr(store, "sessions_for_refs", lambda refs: {refs[0]: "s1"})
-    monkeypatch.setattr(store, "get_session", lambda sid: {"id": sid, "title": "Student card · design build"})
+    store.init()
     monkeypatch.setattr(rivendell, "_result_view", lambda sid, checks=True: {})
     monkeypatch.setattr(rivendell.notices, "telegram_ok", lambda kind, now=None: True)
-    monkeypatch.setattr(w, "_note", lambda kind, rid, title, body="", **meta: noted.append((kind, meta)))
+    w = _worker()
+    sid = store.create_session(555, "/repo", origin="rivendell:t1")["id"]
+    store.set_ref(sid, f"t1:{request_id}")
+    store.rename(sid, "Student card · design build")
+    w._enqueue("design-build", request_id, "ainurdev/nr-kantoor", src=src)
+    sent = []
     monkeypatch.setattr(w, "_deliver_telegram", lambda text, kb: sent.append((text, kb)))
-    w._ping_done("b1", ok, answer, kind_path="design-build-requests")
-    return w, sent, noted
+    w._ping_done(request_id, ok, answer, kind_path="design-build-requests")
+    return w, sent, _feed_of(request_id)
 
 
-@pytest.mark.parametrize("src", [_DESIGN_FRAME, _DESIGN_ROW], ids=["frame", "catch-up row"])
-def test_a_finished_design_build_sends_the_design_message(monkeypatch, src):
+@pytest.mark.parametrize("src, rid", [(_DESIGN_FRAME, "d-frame"), (_DESIGN_ROW, "d-row")], ids=["frame", "catch-up row"])
+def test_a_finished_design_build_sends_the_design_message(monkeypatch, src, rid):
     """Either way the request arrived, the design's title and page were kept for the message, and
-    they are forgotten once it is told."""
-    w, sent, noted = _design_pinged(monkeypatch, src, True, _BUILT)
+    they are forgotten once it is told. The bell's body is the report's summary, not the JSON's
+    opening line."""
+    w, sent, rows = _design_pinged(monkeypatch, rid, src, True, _BUILT)
     (text, kb), = sent
     assert text.splitlines() == ["◫ Design built: Student card", "Built."]
     assert kb == {"inline_keyboard": [[{"text": "Open design ↗", "url": _DESIGN["url"]}]]}
-    assert [(kind, meta["job_kind"]) for kind, meta in noted] == [("rv_done", "design-build")]
-    assert "b1" not in w._designs
+    assert [(r["kind"], r["body"]) for r in rows] == [("rv_done", "Built.")]
+    assert rid not in w._designs
 
 
-@pytest.mark.parametrize("ok, answer, head", [
-    (True, "Built it, but there is no report.", "✓ Rivendell job done"),
-    (False, "the built page is 26 MB, over 25 MB", "✕ Rivendell job failed"),
-    (False, _BUILT, "✕ Rivendell job failed"),
+@pytest.mark.parametrize("rid, ok, answer, head", [
+    ("d-prose", True, "Built it, but there is no report.", "✓ Rivendell job done"),
+    ("d-error", False, "the built page is 26 MB, over 25 MB", "✕ Rivendell job failed"),
+    ("d-failed-built", False, _BUILT, "✕ Rivendell job failed"),
 ], ids=["no report", "failed", "failed, whatever it said"])
-def test_a_design_build_without_a_report_or_that_failed_keeps_the_generic_message(monkeypatch, ok, answer, head):
-    w, sent, _noted = _design_pinged(monkeypatch, _DESIGN_FRAME, ok, answer)
+def test_a_design_build_without_a_report_or_that_failed_keeps_the_generic_message(monkeypatch, rid, ok, answer, head):
+    w, sent, _rows = _design_pinged(monkeypatch, rid, _DESIGN_FRAME, ok, answer)
     (text, _kb), = sent
     assert text.startswith(head) and "◫" not in text and "Open design" not in text
-    assert "b1" not in w._designs
+    assert rid not in w._designs
+
+
+@pytest.mark.parametrize("rid, ok, answer, verb, body", [
+    ("d-built", True, _BUILT, "BUILT", "Built."),
+    ("d-fenced", True, f"```json\n{_BUILT}\n```", "BUILT", "Built."),
+    ("d-nopreview", True, '{"outcome": "no-preview", "summary": "A Vite app.", "suggestion": "Add x."}', "DONE", "A Vite app."),
+    ("d-unsuitable", True, '{"outcome": "unsuitable", "summary": "A CLI."}', "DONE", "A CLI."),
+    ("d-noreport", True, "Built it, but there is no report.", "DONE", "Built it, but there is no report."),
+    ("d-long", True, json.dumps({"outcome": "built", "summary": "  " + "S" * 300}), "BUILT", "S" * 200),
+    ("d-nosummary", True, '{"outcome": "no-preview", "suggestion": "Add x."}', "DONE", ""),
+    ("d-failed", False, "the built page is 26 MB, over 25 MB", "FAILED", "the built page is 26 MB, over 25 MB"),
+], ids=["built", "built, in a fence", "no preview build", "not suitable", "no report", "long summary", "no summary", "failed"])
+def test_the_bell_reads_built_only_for_a_design_that_was_built(monkeypatch, rid, ok, answer, verb, body):
+    """The bell's word follows the job's kind, so a design build reads BUILT only when its report says
+    built; any other answer reads DONE (FAILED, when the job failed). Under it is the report's summary."""
+    _w, _sent, rows = _design_pinged(monkeypatch, rid, _DESIGN_FRAME, ok, answer)
+    assert [(r["verb"], r["body"]) for r in rows] == [(verb, body)]

@@ -25,6 +25,10 @@ Rivendell's job kind is `design-build`, wired here like `conflict`. The bridge b
   - A run that failed or timed out: its error, FAILED, no file. A page left by an earlier try is never read.
 - **The page is read the way `device_side._upload` reads a screenshot** (`_built_file`): opened with `O_NOFOLLOW`, without waiting on a pipe, and judged on the open file (regular, at most 25 MB) before a byte is read. When it can't go up, the reason is the job's error.
 - **The design is kept for the done ping.** `Worker._designs` holds each request's `{title, url}` from its frame (nested `design`) or its catch-up row (flat), in memory like `_conflicts`.
+- **The done ping says what the build came to.** "Design built", "No preview build" or "Not suitable", with the design's title and a line of the report, over "Open design ↗", the design's page (`_design_message`). An answer with no report, and a run that failed, keep the generic done message.
+- **The bell reads BUILT only for a design that was built.** For any other answer the note carries no job kind, so it reads DONE (FAILED, when the job failed); its body is the report's summary, not the JSON's first line.
+- **The session's facts** (the design's title, its repository and its page) come from the frame, the catch-up row or the claim (`rivendell_jobs.facts`); an older session's are read back from the prompt's fixed lines (`classify`).
+- **The session's title** is "<design> · design build" (`rivendell_jobs.title`); without the design's title it is left to the titler.
 
 ## What it refuses
 
@@ -39,4 +43,4 @@ Rivendell's job kind is `design-build`, wired here like `conflict`. The bridge b
 - A retry of the upload. It is one `PUT`; a failed one fails the job and the owner presses Build version again.
 - Removing the page from the checkout once it is up. It stays in the git-ignored `.mystical/design-build/`.
 - Checking the page's contents (one HTML file, nothing linked beside it). The prompt tells the agent what the page must be, and Rivendell checks what it takes.
-- The done ping ("Design built", "No preview build", "Not suitable"), the session's title and facts, and the DESIGN word in the dashboard and Mini App. They come with the rest of this branch; Rivendell's spec, section Mystical, has the wording.
+- The DESIGN word in the dashboard and Mini App. It comes with the rest of this branch; Rivendell's spec, section Mystical, has the wording.
