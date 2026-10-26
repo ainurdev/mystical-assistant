@@ -52,6 +52,24 @@ def test_tools_says_which_video_tools_are_found(monkeypatch, tmp_path):
     assert rv.tools() == {"ffmpeg": True, "whisper": False, "model": True}
 
 
+def test_tools_header_names_the_tools_this_machine_has(monkeypatch):
+    """Rivendell sends a transcript only to a Mystical with all three (X-Mystical-Tools)."""
+    monkeypatch.setattr(rv, "tools", lambda: {"ffmpeg": True, "whisper": True, "model": True})
+    assert rv.tools_header() == "X-Mystical-Tools: ffmpeg,whisper,whisper-model"
+    monkeypatch.setattr(rv, "tools", lambda: {"ffmpeg": True, "whisper": False, "model": False})
+    assert rv.tools_header() == "X-Mystical-Tools: ffmpeg"
+    monkeypatch.setattr(rv, "tools", lambda: {"ffmpeg": False, "whisper": False, "model": False})
+    assert rv.tools_header() == "X-Mystical-Tools: "     # has none, which is not the same as not saying
+
+
+def test_tools_header_says_nothing_when_the_check_fails(monkeypatch):
+    """No header reads as an older Mystical on Rivendell's side: its jobs still come."""
+    def broken():
+        raise OSError("no PATH")
+    monkeypatch.setattr(rv, "tools", broken)
+    assert rv.tools_header() is None
+
+
 def test_pick_frames_reads_showinfo_moments_and_caps_the_count(tmp_path, monkeypatch):
     """ffmpeg's showinfo prints one pts_time per selected frame, in the files' order."""
     out = tmp_path / "frames"

@@ -907,6 +907,9 @@ class Worker:
             print(f"rivendell[{self.name}]: device check failed, connecting without it: {e}")
             device = []
         self._offered = bool(device)
+        # Which video tools this machine has, so a transcript comes only if it can be made here.
+        from bridge import rivendell_video        # local import: keeps the tests' monkeypatching simple
+        tools = rivendell_video.tools_header()
         sock = socket.create_connection((parts.hostname, port), timeout=10)
         if secure:
             sock = ssl.create_default_context().wrap_socket(
@@ -924,7 +927,7 @@ class Worker:
             f"Sec-WebSocket-Key: {key}\r\n"
             "Sec-WebSocket-Version: 13\r\n"
             f"Authorization: Bearer {self.token}\r\n"
-            + "".join(h + "\r\n" for h in device)
+            + "".join(h + "\r\n" for h in device + ([tools] if tools else []))
             + "\r\n"
         ).encode())
 
@@ -1311,6 +1314,12 @@ class Worker:
             # The helper's stop waits on the run's process group: off the listener.
             threading.Thread(target=device_side.stop, args=(obj["requestId"],),
                              name=f"rivendell-cancel-{self.id}", daemon=True).start()
+            return None
+        if obj.get("type") == "setup-request":
+            # Set up installs and downloads for minutes (bridge/tool_setup.py): off the listener.
+            from bridge import tool_setup   # local import: keeps the tests' monkeypatching simple
+            threading.Thread(target=tool_setup.run, args=(self, obj),
+                             name=f"rivendell-setup-{self.id}", daemon=True).start()
             return None
         if obj.get("type") == "device-run-update" and obj.get("requestId"):
             # A run this Mystical sent: the hand-back downloads screens and runs gh, so off the listener.
@@ -2554,6 +2563,15 @@ def redial() -> None:
         workers = list(_workers.values())
     for w in workers:
         w.recheck_device()
+
+
+def redial_tools() -> None:
+    """After Set up (bridge/tool_setup.py) installed the video tools: every live link
+    redials, so its upgrade carries the new X-Mystical-Tools."""
+    with _manager_lock:
+        workers = list(_workers.values())
+    for w in workers:
+        w._drop_connection()
 
 
 def status() -> dict:
