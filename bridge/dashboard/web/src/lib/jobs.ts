@@ -16,7 +16,7 @@ export const JOBS_NAME = "Rivendell jobs";
 export const JOB_LABEL: Record<NonNullable<RivendellJob["kind"]>, string> = {
   review: "REVIEW", impl: "IMPLEMENT", todolist: "TODOLIST", taskdesc: "TASK DESC",
   changelog: "CHANGELOG", news: "NEWSPAPER", deck: "DECK", video: "VIDEO", "meeting-notes": "MEETING NOTES",
-  "project-summary": "SUMMARY", "meeting-brief": "BRIEF", conflict: "CONFLICTS",
+  "project-summary": "SUMMARY", "meeting-brief": "BRIEF", conflict: "CONFLICTS", "design-build": "DESIGN",
 };
 
 export const jobLabel = (job: RivendellJob | null | undefined): string =>
@@ -59,7 +59,7 @@ export function jobTarget(job: RivendellJob | null | undefined): string {
   if (!job?.kind) return "";
   switch (job.kind) {
     case "review": case "conflict": return [repoName(job.repo), job.number ? `#${job.number}` : ""].filter(Boolean).join(" ");
-    case "impl": return repoName(job.repo);
+    case "impl": case "design-build": return repoName(job.repo);
     case "news": return job.date ? dayOf(job.date) : "";
     case "video": case "meeting-notes": return [job.step, job.language].filter(Boolean).join(" · ");
     default: return "";

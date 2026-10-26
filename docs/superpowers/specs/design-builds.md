@@ -43,4 +43,3 @@ Rivendell's job kind is `design-build`, wired here like `conflict`. The bridge b
 - A retry of the upload. It is one `PUT`; a failed one fails the job and the owner presses Build version again.
 - Removing the page from the checkout once it is up. It stays in the git-ignored `.mystical/design-build/`.
 - Checking the page's contents (one HTML file, nothing linked beside it). The prompt tells the agent what the page must be, and Rivendell checks what it takes.
-- The DESIGN word in the dashboard and Mini App. It comes with the rest of this branch; Rivendell's spec, section Mystical, has the wording.
