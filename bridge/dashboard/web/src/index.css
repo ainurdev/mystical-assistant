@@ -6479,7 +6479,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tcard .tc-work { margin-top: 6px; font-family: var(--mono); font-size: var(--t105); color: var(--txd); overflow-wrap: anywhere; }
 .tcard .tc-work .add { color: var(--ok); }
 .tcard .tc-work .del { color: var(--err); }
-.tcard .tc-sug { display: inline-block; margin-right: 7px; padding: 1px 6px 0; border-radius: 5px; font-size: var(--t85); font-weight: 700; letter-spacing: 1.3px; vertical-align: 1.5px;
+:is(.tcard, .askdock) .tc-sug { display: inline-block; margin-right: 7px; padding: 1px 6px 0; border-radius: 5px; font-size: var(--t85); font-weight: 700; letter-spacing: 1.3px; vertical-align: 1.5px;
   color: var(--ask); background: color-mix(in oklab, var(--ask) 18%, transparent); }
 .tcard .tc-key { display: inline-block; margin: 0 2px; padding: 0 5px; border-radius: 5px; font-family: var(--mono); font-size: .92em; font-weight: 500; color: var(--acc);
   background: color-mix(in oklab, var(--acc) 12%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 30%, transparent); }
