@@ -21,14 +21,17 @@ export function readingRow(rows: TurnRow[], root: HTMLElement | null, nav?: Tran
   if (root.scrollTop + root.clientHeight >= root.scrollHeight - 2) return rows.length - 1;
   const line = root.getBoundingClientRect().top + AIM + 8;
   const scrollTop = root.scrollTop + 8;
-  let idx = 0;
+  let idx = -1, first = -1;
   rows.forEach((r, i) => {
     const el = document.getElementById(ckId(r.id));
-    if (el) { if (el.getBoundingClientRect().top <= line) idx = i; return; }
-    const y = nav?.turnTop(r.id);
-    if (y != null && y <= scrollTop) idx = i;
+    const y = el ? null : nav?.turnTop(r.id);
+    if (!el && y == null) return;          // behind the tail cut: not on screen at all
+    if (first < 0) first = i;
+    if (el ? el.getBoundingClientRect().top <= line : y! <= scrollTop) idx = i;
   });
-  return idx;
+  // Nothing has reached the line yet (the top of what's loaded sits under the
+  // LOAD OLDER bar): the first turn drawn is the one you're reading.
+  return idx >= 0 ? idx : first;
 }
 
 /** Where ⌥↑ / ⌥↓ go from the turn on screen: the next one down, or the one
@@ -98,17 +101,17 @@ export function TurnsPanel({
 
   const [reading, setReading] = useState(-1);
   useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
     let raf = 0;
-    const read = () => { raf = 0; setReading(readingRow(rowsRef.current, el, nav.current)); };
-    const onScroll = () => { if (!raf) raf = requestAnimationFrame(read); };
+    const read = () => { raf = 0; setReading(readingRow(rowsRef.current, scrollRef.current, nav.current)); };
+    // Caught on the way down from the document, not bound to the scroller: the
+    // chat unmounts it in HIST and NEXT and comes back with a new one.
+    const onScroll = (e: Event) => { if (e.target === scrollRef.current && !raf) raf = requestAnimationFrame(read); };
     // A frame late on purpose: turns that just landed reach the transcript's
     // nav in its own effect, and a page prepended above a jump can leave the
     // scroll where it was, firing no scroll event to re-read on.
     raf = requestAnimationFrame(read);
-    el.addEventListener("scroll", onScroll, { passive: true });
-    return () => { el.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
+    document.addEventListener("scroll", onScroll, { capture: true, passive: true });
+    return () => { document.removeEventListener("scroll", onScroll, { capture: true }); cancelAnimationFrame(raf); };
   }, [scrollRef, nav, turns]);
 
   // Keep the lit row in sight with what hangs under it (an ask waiting on you
@@ -128,9 +131,14 @@ export function TurnsPanel({
   }, [reading, subsOf]);
 
   const [find, setFind] = useState<string | null>(null);
-  const [sel, setSel] = useState(0);
+  const [pickAt, setSel] = useState(0);
   const q = (find ?? "").trim().toLowerCase();
   const shown = rows.map((r, i) => ({ r, i })).filter(({ r }) => hit(r, q));
+  const sel = Math.min(pickAt, shown.length - 1);
+  useEffect(() => {
+    if (find === null) return;
+    listRef.current?.querySelector<HTMLElement>(".tn-t.sel")?.scrollIntoView({ block: "nearest" });
+  }, [find === null, sel, q]);
 
   if (!rows.length)
     return (
@@ -147,7 +155,7 @@ export function TurnsPanel({
   const live = [...rows].reverse().find((r) => r.status === "running");
   const last = rows[rows.length - 1];
   const cut = rows.reduce((s, r) => s + r.resumes.length, 0);
-  const ended = last.started != null && last.secs != null ? last.started + last.secs : null;
+  const ended = last.ended;
 
   const pick = (i: number) => {
     const m = shown[i];
@@ -213,11 +221,11 @@ export function TurnsPanel({
           const prevModel = i > 0 ? rows[i - 1].model : null;
           const run = r.status === "running";
           const cls = ["tn-t", i === reading && !q && "on", r.status === "error" && "err", run && !r.waiting && "run",
-                       r.waiting && "ask", q && k === sel && "sel"].filter(Boolean).join(" ");
+                       r.waiting && "ask", find !== null && k === sel && "sel"].filter(Boolean).join(" ");
           return (
             <Fragment key={r.id}>
               {head}
-              <div className={cls} data-row={i} onClick={() => onJump(r.id)} onMouseEnter={q ? () => setSel(k) : undefined}>
+              <div className={cls} data-row={i} onClick={() => onJump(r.id)} onMouseEnter={find !== null ? () => setSel(k) : undefined}>
                 <span className="tn-o" />
                 <div className="tn-l1">
                   <i className="tn-n">{r.n}</i>

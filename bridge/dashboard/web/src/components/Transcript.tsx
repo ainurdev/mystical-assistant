@@ -396,6 +396,7 @@ export function Transcript({
   // While a jump settles, scroll anchoring is off (see below). ponytail: a
   // deadline, not a "landed" signal — scrollToIndex doesn't report one.
   const jumpT = useRef(0);
+  const reaim = useRef(() => {});   // cancels the last jump's pending re-aims
   const keyOf = (r: Row) => (r.kind === "turn" ? r.turn.id : "__working");
 
   // Ctrl-F escape hatch: browser find only sees mounted rows, so the shortcut
@@ -533,13 +534,18 @@ export function Transcript({
         // measure (shouldAdjust… above), so a landing drifted a turn or two
         // short. Re-aim at the anchor itself once it has mounted, a few times
         // inside that second — unless you take the scroll back first.
+        // A jump that lands on top of another one (⌥↓ held, two taps) drops
+        // the first one's re-aims, or the view swings back to it.
+        reaim.current();
         const el = scrollRef?.current;
-        const aim = () => document.getElementById(subAnchorId ?? ckId(turnId))?.scrollIntoView({ block: "start" });
+        let live = true;
+        const aim = () => { if (live) document.getElementById(subAnchorId ?? ckId(turnId))?.scrollIntoView({ block: "start" }); };
         const timers = [window.setTimeout(aim, 300), window.setTimeout(aim, 800)];
-        const yours = () => { timers.forEach(clearTimeout); el?.removeEventListener("wheel", yours); el?.removeEventListener("pointerdown", yours); };
+        const yours = () => { live = false; timers.forEach(clearTimeout); el?.removeEventListener("wheel", yours); el?.removeEventListener("pointerdown", yours); };
         el?.addEventListener("wheel", yours, { passive: true, once: true });
         el?.addEventListener("pointerdown", yours, { once: true });
         window.setTimeout(yours, 900);
+        reaim.current = yours;
         requestAnimationFrame(() => requestAnimationFrame(aim));
         return true;
       },

@@ -146,3 +146,20 @@ def test_summary_caps_the_answer_and_leaves_the_input_alone():
     assert len(out["turns"][0]["sum"]["answer"]) == 240
     assert "sum" not in d["turns"][0]
     assert out["events"] is d["events"]
+
+
+def test_summary_indexes_steers_as_the_chat_draws_them_and_reads_native_answers():
+    # RunStream drops AskUserQuestion's own tool row before it numbers anything,
+    # so a steer after an ask is anchored one index lower than the raw events say.
+    ev = [
+        {"seq": 1, "turn_id": "t1", "type": "tool", "name": "AskUserQuestion"},
+        {"seq": 2, "turn_id": "t1", "type": "tool", "name": "Bash"},
+        {"seq": 3, "turn_id": "t1", "type": "steer", "text": "faster"},
+        # a native (VS Code / terminal) turn: prose, never a result event
+        {"seq": 4, "turn_id": "t2", "type": "text", "text": "First reply."},
+        {"seq": 5, "turn_id": "t2", "type": "text", "text": "\n\nThe last word, at length.\nmore"},
+    ]
+    s = {t["id"]: t["sum"] for t in summarize(_data(ev, turns=["t1", "t2"]))["turns"]}
+    assert s["t1"]["marks"] == [{"kind": "steer", "i": 1, "label": "faster"}]
+    assert s["t1"]["tools"] == 1                      # the ask's row isn't a tool you'd count
+    assert s["t2"]["answer"] == "The last word, at length."

@@ -52,29 +52,37 @@ def summarize(data: dict) -> dict:
     turn has no elapsed of its own). Run on the assembled transcript before
     tail_slice drops the older events, so it costs one pass over what is already
     in memory. A steer is named by its index among its turn's events, which is
-    how the client anchors it (lib/checkpoints steerKey).
+    how the client anchors it (lib/checkpoints steerKey) — counted, as RunStream
+    counts them, without AskUserQuestion's own tool row. A turn with no result
+    (a native session's: transcript_jsonl emits prose only) answers with its
+    last prose.
 
     Turns are copied, not mutated; events pass through as they are."""
     turns = [dict(t) for t in data.get("turns") or []]
     sums = {t["id"]: {"answer": "", "tools": 0, "marks": [], "ended": None} for t in turns}
     index: dict = {}                    # turn id -> events of it seen so far
     asks: dict = {}                     # request id -> its question mark
+    prose: dict = {}                    # turn id -> first line of its last text
     for e in data.get("events") or []:
         tid = e.get("turn_id")
         s = sums.get(tid)
         if s is None:
             continue
+        kind = e.get("type")
+        if kind == "tool" and e.get("name") == "AskUserQuestion":
+            continue                    # the question card draws it; RunStream drops the row
         i = index.get(tid, 0)
         index[tid] = i + 1
         if e.get("at") is not None:
             s["ended"] = e["at"]
-        kind = e.get("type")
         if kind == "tool":
             s["tools"] += 1
-        elif kind == "result":
-            line = next((ln.strip() for ln in str(e.get("result") or "").splitlines() if ln.strip()), "")
-            if line:
+        elif kind in ("result", "text"):
+            line = next((ln.strip() for ln in str(e.get(kind) or "").splitlines() if ln.strip()), "")
+            if line and kind == "result":
                 s["answer"] = line[:ANSWER_MAX]
+            elif line:
+                prose[tid] = line[:ANSWER_MAX]
         elif kind == "question":
             q = (e.get("questions") or [{}])[0]
             mark = {"kind": "question", "id": e.get("request_id"),
@@ -92,4 +100,5 @@ def summarize(data: dict) -> dict:
             s["marks"].append({"kind": "steer", "i": i, "label": e.get("text") or ""})
     for t in turns:
         t["sum"] = sums[t["id"]]
+        t["sum"]["answer"] = t["sum"]["answer"] or prose.get(t["id"], "")
     return {**data, "turns": turns}

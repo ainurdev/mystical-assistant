@@ -134,6 +134,27 @@ eq(resumeOf("go"), null, "your own words are not a resume");
   eq(r.subs[0].kind === "question" && r.subs[0].pick, "Push & open draft PR", "the option's (Recommended) tag is the model's, not your pick");
 }
 
+// --- anchors as the chat draws them, answers from prose, ends ------------------
+{
+  const [r] = turnRows([turn("a", "p", { events: [
+    { type: "tool", name: "AskUserQuestion", summary: "" },
+    { type: "tool", name: "Bash", summary: "ls" },
+    { type: "steer", text: "faster" },
+    { type: "text", text: "First reply." },
+    { type: "text", text: "The last word.\nmore" },
+  ] })]);
+  eq(r.subs[0].kind === "steer" && r.subs[0].key, "steer1", "a steer after an ask anchors where RunStream draws it");
+  eq(r.tools, 1, "the ask's own tool row isn't a tool you'd count");
+  eq(r.answer, "The last word.", "a turn with no result answers with its last prose");
+}
+{
+  const rows = turnRows([
+    turn("a", "ship", { status: "error", elapsed: 60, started: 1000 }),
+    turn("b", LIMIT, { elapsed: 30, started: 9000 }),
+  ]);
+  eq(rows[0].ended, 9030, "a chain ends where its last turn does, not at its start plus the summed time");
+}
+
 // --- the prompt, as one line ---------------------------------------------------
 eq(turnRows([turn("a", "  two\n\nlines  ")])[0].prompt, "two lines", "a prompt reads as one line");
 

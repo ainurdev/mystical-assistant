@@ -34,6 +34,7 @@ export interface TurnRow {
   prompt: string;              // one line
   answer: string;              // the first line of the chain's last answer, "" when none
   started: number | null;
+  ended: number | null;        // when the chain's last turn did; null while it runs
   secs: number | null;         // the parts summed; null when no part is known
   parts: number[];             // each turn's time in the chain, for the stacked bar
   status: Turn["status"];      // the chain's last turn: did the work finish
@@ -68,9 +69,13 @@ function outline(t: Turn) {
   }
   const open = new Set(t.pending.filter((p) => p.kind === "question").map((p) => p.request_id));
   const asks = new Map<string, Extract<Sub, { kind: "question" }>>();
-  t.events.forEach((e, i) => {
+  let prose = "";
+  // Counted as RunStream counts them for its anchors: without AskUserQuestion's
+  // own tool row, which the question card stands in for.
+  t.events.filter((e) => !(e.type === "tool" && e.name === "AskUserQuestion")).forEach((e, i) => {
     if (e.at != null) ended = e.at;
     if (e.type === "tool") tools++;
+    else if (e.type === "text") prose = clean(firstLine(e.text)) || prose;
     else if (e.type === "result") {
       const line = clean(firstLine(e.result));
       if (line) answer = line;
@@ -89,7 +94,8 @@ function outline(t: Turn) {
       if (s) { s.pick = chosen(e.answers[0]?.labels[0]); s.note = e.answers[0]?.notes || null; }
     } else if (e.type === "steer") subs.push({ kind: "steer", turnId: t.id, key: steerKey(i), label: e.text });
   });
-  return { answer, tools, ended, ran, failed, stopped, subs };
+  // A native session's turns never carry a result: their answer is their prose.
+  return { answer: answer || prose, tools, ended, ran, failed, stopped, subs };
 }
 
 /** How long a turn ran: the bridge's own figure, its result's, from its start to
@@ -108,6 +114,8 @@ export function turnRows(turns: Turn[], now = Date.now() / 1000): TurnRow[] {
   for (const t of turns) {
     const o = outline(t);
     const secs = spanOf(t, o, now);
+    const end = t.status === "running" ? null
+      : t.started != null && secs != null ? t.started + secs : o.ended;
     const prompt = (t.prompt || "").replace(/\s+/g, " ").trim();
     const why = resumeOf(prompt);
     const waiting = t.pending[0]?.kind ?? null;
@@ -120,6 +128,7 @@ export function turnRows(turns: Turn[], now = Date.now() / 1000): TurnRow[] {
       if (secs != null) row.secs = (row.secs ?? 0) + secs;
       row.tools += o.tools;
       if (o.answer) row.answer = o.answer;
+      row.ended = end;
       row.status = o.failed ? "error" : t.status;
       row.outcome = o.failed ? t.outcome?.label ?? null : null;
       row.stopped = o.stopped;
@@ -127,7 +136,7 @@ export function turnRows(turns: Turn[], now = Date.now() / 1000): TurnRow[] {
       continue;
     }
     rows.push({
-      id: t.id, n: rows.length + 1, prompt, answer: o.answer, started: t.started ?? null,
+      id: t.id, n: rows.length + 1, prompt, answer: o.answer, started: t.started ?? null, ended: end,
       secs, parts: [secs ?? 0], status: o.failed ? "error" : t.status, outcome: o.failed ? t.outcome?.label ?? null : null,
       stopped: o.stopped, model: t.model ?? null, tools: o.tools, waiting, resumes: [], subs: o.subs, ids: [t.id],
     });

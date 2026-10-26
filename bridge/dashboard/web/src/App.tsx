@@ -2196,7 +2196,7 @@ export function App() {
       ask: waitsOnYou,
       render: () => (
         <TurnsPanel key={sessionId ?? ""} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
-          onJump={(id, key) => void jumpTo(id, key)} onLatest={jumpToBottom}
+          onJump={(id, key) => { toChat(); void jumpTo(id, key); }} onLatest={() => { toChat(); jumpToBottom(); }}
           onCopy={(text) => {
             try { void navigator.clipboard?.writeText(text); notify("info", "Prompt copied."); }
             catch { notify("error", "Clipboard refused the copy."); }
