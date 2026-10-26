@@ -283,8 +283,8 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
  *  is what the question is about: its shots fill a stage and every option is a row.
  *  Several are tiles showing the same shot (the tabs switch every tile at once), and
  *  Bigger pages them on a stage. Every frame takes the question's largest shot
- *  (lib/qpreview frameOf) and every shot draws at that one scale, hung from the top,
- *  so a tab or an option never resizes the dock or zooms the picture. Every picture
+ *  (lib/qpreview frameOf), so a tab or an option never resizes the dock, and every
+ *  shot fills that frame as large as it fits, hung from the top. Every picture
  *  opens the lightbox with PICK. */
 function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
   q: Question; chosen: string[]; onPick: (label: string) => void; sending: boolean;
@@ -317,7 +317,7 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
   // One option's shots stacked in a frame, only the `on` one visible.
   const layers = (x: (typeof pics)[number], on: (k: number) => boolean) => x.pv.shots.length
     ? x.pv.shots.map((s, k) => (
-      <span key={k} className="ad-shot" data-on={on(k) ? "" : undefined} style={{ "--w": dims[s.path]?.[0] ?? W } as React.CSSProperties}>
+      <span key={k} className="ad-shot" data-on={on(k) ? "" : undefined}>
         {gone.has(s.path)
           ? <span className="ad-pre">{s.alt || "This picture is gone."}</span>
           : <img src={api.attachmentUrl(s.path)} alt={`${x.key} · ${x.name}${s.alt ? ` · ${s.alt}` : ""}`} draggable={false}

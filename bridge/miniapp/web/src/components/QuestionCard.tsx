@@ -13,8 +13,8 @@ import { ToolImage } from "./RunStream";
  *  swaps the picture right above it. The tabs page that option's shots and keep
  *  their place when you switch options. Only an option with pictures takes the
  *  stage (a tapped Revise or Park it leaves the last pictures up), and every shot
- *  draws at one scale in one frame (lib/qpreview frameOf), hung from the top, so
- *  a tap never resizes the card or zooms the picture. Its viewer has no PICK:
+ *  fills one frame (lib/qpreview frameOf) as large as it fits, hung from the top,
+ *  so a tap never resizes the card. Its viewer has no PICK:
  *  closing it puts the rows back under your thumb. */
 function StageView({ q, shown }: { q: Question; shown: number }) {
   const [tab, setTab] = useState(0);
@@ -56,21 +56,20 @@ function StageView({ q, shown }: { q: Question; shown: number }) {
         </span>
       </div>
       {/* Every pictured option's every shot stacked in one frame, the question's
-          largest shot, the shown one fading in (the dashboard Stage's way): a tap
-          never resizes the card, zooms the picture or waits on a fetch. */}
+          largest shot, each as large as it fits, the shown one fading in (the
+          dashboard Stage's way): a tap never resizes the card or waits on a fetch. */}
       <div className="grid grid-cols-[minmax(0,1fr)] overflow-hidden"
         style={{ containerType: "size", aspectRatio: `${W} / ${H}`, maxHeight: "min(56vh, 440px)" }}>
         {opts.flatMap((x, oi) => !has(x) ? [] : (x.pv.shots.length ? x.pv.shots : [null]).map((s, k) => {
           const on = oi === ci && k === t;
-          const w = (s && dims[s.path]?.[0]) || W;
           return (
-            <div key={`${oi}.${k}`} style={{ width: `min(100cqw * ${w} / ${W}, 100cqh * ${w} / ${H})` }}
-              className={`col-start-1 row-start-1 min-w-0 self-start justify-self-center transition-[opacity,visibility] duration-150 motion-reduce:transition-none ${on ? "" : "invisible opacity-0"}`}>
+            <div key={`${oi}.${k}`}
+              className={`col-start-1 row-start-1 h-full w-full min-h-0 min-w-0 transition-[opacity,visibility] duration-150 motion-reduce:transition-none ${on ? "" : "invisible opacity-0"}`}>
               {s ? (
                 <ToolImage
                   path={s.path}
                   alt={`${x.key} · ${x.name}${s.alt ? ` · ${s.alt}` : ""}`}
-                  className="block h-auto w-full"
+                  className="block h-full w-full object-contain object-top"
                   fallback={<p className="px-3 py-2 text-xs text-[var(--tg-hint)]">{s.alt || "This picture is gone."}</p>}
                   onZoom={(src) => setZoom(src)}
                   onSrc={(src) => { setSrcs((m) => ({ ...m, [s.path]: src })); measure(s.path, src); }}

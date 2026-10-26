@@ -67,8 +67,8 @@ export function taskVerb(q: Question, picked?: string): string | null {
  *  shots and keep their place when you switch options, so A·2 → B·2 compares one
  *  state across them. A narrow card stacks it, stage first (index.css .qstage).
  *  Only an option with pictures takes the stage: picking Revise or Park it leaves
- *  the last pictures up, never a "No picture" box, and every shot draws at one
- *  scale in one frame (lib/qpreview frameOf), as in the dock's Pictures.
+ *  the last pictures up, never a "No picture" box, and every shot fills one frame
+ *  (lib/qpreview frameOf) as large as it fits, as in the dock's Pictures.
  *  Without `onPick` it is the answered record: rows still switch the stage. */
 function Stage({ q, chosen, onPick, sending }: {
   q: Question;
@@ -146,13 +146,12 @@ function Stage({ q, chosen, onPick, sending }: {
             )}
           </div>
           {/* Every pictured option's every shot sits stacked in one frame, the
-              question's largest shot, and the shown one fades in: switching
-              options or tabs never resizes the card or zooms the picture, and
+              question's largest shot, each as large as it fits, and the shown one
+              fades in: switching options or tabs never resizes the card, and
               nothing waits on a load you asked for — they all loaded with the card. */}
           <div className="qstage-shots" style={{ "--W": W, "--H": H } as React.CSSProperties}>
             {opts.flatMap((x, oi) => !has(x) ? [] : (x.pv.shots.length ? x.pv.shots : [null]).map((s, k) => (
-              <div key={`${oi}.${k}`} className="qstage-layer" data-on={oi === shown && k === t}
-                style={{ "--w": (s && dims[s.path]?.[0]) || W } as React.CSSProperties}>
+              <div key={`${oi}.${k}`} className="qstage-layer" data-on={oi === shown && k === t}>
                 {s ? (gone.has(s.path)
                   ? <p className="qstage-text">{s.alt || "This picture is gone."}</p>
                   : (

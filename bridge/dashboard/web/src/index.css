@@ -6521,17 +6521,17 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .qstage-zoom { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; cursor: zoom-in;
   color: var(--txm); border: 1px solid color-mix(in oklab, var(--txl) 35%, transparent); }
 /* The dock's one frame (.ad-frame, lib/qpreview frameOf): --W x --H is the
-   question's largest shot, --w a shot's own width. Every shot draws at the one
-   scale that fits the largest, hung from the top and stacked with the shown one
-   visible, so the card keeps its size and the picture its zoom whichever option
-   or tab is on show; a tall frame is capped. */
+   question's largest shot, so the frame keeps its size whichever option or tab
+   is on show; a tall frame is capped. Every shot fills the frame as large as it
+   fits (object-fit: contain), hung from the top and stacked with the shown one
+   visible. One scale for every shot came first and drew a page shot at a quarter
+   of the frame whenever a phone shot stood beside it (2026-10-26). */
 .qstage-shots { display: grid; container-type: size; overflow: hidden; aspect-ratio: var(--W) / var(--H); max-height: min(56vh, 480px); }
-.qstage-layer { grid-area: 1 / 1; justify-self: center; align-self: start; min-width: 0;
-  width: min(100cqw * var(--w) / var(--W), 100cqh * var(--w) / var(--H)); transition: opacity .16s ease, visibility .16s; }
+.qstage-layer { grid-area: 1 / 1; min-width: 0; min-height: 0; width: 100%; height: 100%; transition: opacity .16s ease, visibility .16s; }
 .qstage-layer[data-on="false"] { opacity: 0; visibility: hidden; }
 @media (prefers-reduced-motion: reduce) { .qstage-layer { transition: none; } }
-.qstage-pic { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
-.qstage-pic img { display: block; width: 100%; height: auto; }
+.qstage-pic { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
+.qstage-pic img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: top; }
 .qstage-shots .qstage-text { max-height: 100cqh; }
 .qstage-text { margin: 0; padding: 10px 12px; max-height: 320px; overflow: auto; white-space: pre-wrap;
   font: var(--t12, 12px)/1.5 var(--mono); color: var(--txm); }
@@ -6938,10 +6938,9 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    shot draws at the one scale that fits the largest, hung from the top and stacked with
    the shown one visible, so a tab or an option never resizes the dock or zooms the picture. */
 .ad-frame { display: grid; container-type: size; overflow: hidden; }
-.ad-shot { grid-area: 1 / 1; justify-self: center; align-self: start; display: block; min-width: 0;
-  width: min(100cqw * var(--w) / var(--W), 100cqh * var(--w) / var(--H)); transition: opacity .16s ease, visibility .16s; }
+.ad-shot { grid-area: 1 / 1; display: block; min-width: 0; min-height: 0; width: 100%; height: 100%; transition: opacity .16s ease, visibility .16s; }
 .ad-shot:not([data-on]) { opacity: 0; visibility: hidden; }
-.ad-shot img { display: block; width: 100%; height: auto; }
+.ad-shot img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: top; }
 .ad-frame > .ad-pre { width: 100%; height: 100%; overflow: auto; }
 @media (prefers-reduced-motion: reduce) { .ad-shot { transition: none; } }
 /* Text-only previews (QuestionCard TextPreview, in the dock, its records and the

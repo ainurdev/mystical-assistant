@@ -617,7 +617,7 @@ export function ToolImage({ path, alt = "tool output", className = "h-20 w-auto 
   }, [path]);
   if (!src) return gone ? <>{fallback}</> : null;
   return (
-    <button type="button" onClick={() => onZoom(src, isVideo(path))} aria-label={`Open ${alt}`} className="block">
+    <button type="button" onClick={() => onZoom(src, isVideo(path))} aria-label={`Open ${alt}`} className="block h-full">
       <MediaThumb src={src} alt={alt} video={isVideo(path)} className={className} />
     </button>
   );
