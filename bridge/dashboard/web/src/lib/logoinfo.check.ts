@@ -52,4 +52,14 @@ console.assert(!site.night && !site.day && !square.night && !square.day, "an app
 // A dark app icon with see-through rounded corners still fills its square for AUTO.
 const rounded = analyse(img(S, S, (x, y) => ((x < 2 || x > 13) && (y < 2 || y > 13) ? [0, 0, 0, 0] : [20, 30, 25, 255])), S, S);
 console.assert(!rounded.night && !rounded.day, "rounded corners don't make an app icon see-through", rounded);
+// The folded rail fills a tile with an app icon, rounded corners or not; a see-through mark sits on the well.
+console.assert(square.square && site.square, "an opaque square is square");
+console.assert(rounded.square && !rounded.fill, "rounded corners are square, not fill", rounded);
+console.assert(!navy.square && !yellow.square && !empty.square, "see-through edges are not square");
+// Deep rounded corners (a squircle's run a quarter of the side) still read square; a disc does not.
+const R = 4.5, out = (x: number, y: number) => Math.hypot(x - Math.min(Math.max(x, R), S - 1 - R), y - Math.min(Math.max(y, R), S - 1 - R)) > R;
+const squircle = analyse(img(S, S, (x, y) => (out(x, y) ? [0, 0, 0, 0] : [20, 90, 220, 255])), S, S);
+console.assert(squircle.square && !squircle.fill, "an app icon with deep rounded corners is square", squircle);
+const disc = analyse(img(32, 32, (x, y) => (Math.hypot(x - 15.5, y - 15.5) > 16 ? [0, 0, 0, 0] : [20, 90, 220, 255])), 32, 32);
+console.assert(!disc.square, "a disc is not square", disc);
 console.log("logoinfo.check ok");

@@ -36,15 +36,16 @@ export function ProjectTile({ project, mark: other }: { project: string | null |
  *  carries lib/logoinfo's night/day readings and index.css plates it only on
  *  the ground it would vanish into. In AURORA it turns to phosphor,
  *  and a square one (lib/logoinfo's `fill`) keeps its lettering by its own
- *  lightness. A logo the bridge can't serve (lost in a move, say) falls back
- *  to the initials. */
+ *  lightness. The folded rail draws an app icon (`fill`, or `square` with
+ *  rounded corners) edge to edge. A logo the bridge can't serve (lost in a
+ *  move, say) falls back to the initials. */
 function LogoTile({ name, pc, letters, plate, self }: { name: string; pc: string; letters: string; plate?: string; self?: boolean }) {
   const src = projectLogoUrl(name);
   const info = useLogoInfo(name, src);
   const [broken, setBroken] = useState(false);
   if (broken) return <b className="ptile" aria-hidden style={{ ["--pc" as string]: pc }}>{letters}</b>;
   return (
-    <b className="ptile" aria-hidden data-kind="logo" data-logo={info?.fill ? "fill" : undefined} data-self={self || undefined}
+    <b className="ptile" aria-hidden data-kind="logo" data-logo={info?.fill ? "fill" : info?.square ? "square" : undefined} data-self={self || undefined}
       data-plate={plate === "light" || plate === "dark" ? plate : undefined}
       data-auto-n={(!plate && info?.night) || undefined} data-auto-d={(!plate && info?.day) || undefined}
       style={{ ["--pc" as string]: pc, ["--logo" as string]: `url("${src}")` }}>
