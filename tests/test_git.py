@@ -560,3 +560,12 @@ def test_current_branch_detached_on_remote_ref_drops_the_remote():
     _run(d, "fetch", "-q", "origin")
     _run(d, "checkout", "-q", "--detach", "origin/feat/photos")
     assert g.current_branch(d) == "feat/photos"
+
+
+def test_current_branch_of_a_removed_tree_runs_no_git(monkeypatch):
+    # every session that ever worked in a since-removed worktree still asks for
+    # its branch on each 5 s sidebar poll: a stat, not a git process apiece
+    calls = []
+    monkeypatch.setattr(g, "_run", lambda *a, **k: calls.append(a) or (128, "", ""))
+    assert g.current_branch(os.path.join(tempfile.mkdtemp(), "gone")) == ""
+    assert calls == []

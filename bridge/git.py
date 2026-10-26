@@ -604,6 +604,8 @@ def current_branch(cwd: str) -> str:
     the chip names a branch, and "origin/" says where the ref is stored, not
     which branch this is — the local one is gone (deleted after merge) as often
     as not."""
+    if not os.path.isdir(cwd):            # a removed worktree: git would only fail
+        return ""
     rc, out, _ = _run(cwd, "rev-parse", "--abbrev-ref", "HEAD")
     name = out.strip() if rc == 0 else ""
     if name != "HEAD":
