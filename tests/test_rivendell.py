@@ -663,6 +663,7 @@ def test_catch_up_queues_meeting_notes_requests(monkeypatch):
 
 @pytest.mark.parametrize("kind, path, runner", [
     ("conflict", "conflict-requests", "_run_conflict"),
+    ("design-build", "design-build-requests", "_run_design_build"),
     ("meeting-notes", "meeting-notes-requests", "_run_meeting_notes"),
     ("project-summary", "project-summary-requests", "_run_project_summary"),
     ("meeting-brief", "meeting-brief-requests", "_run_meeting_brief"),
@@ -3798,3 +3799,231 @@ def test_conflict_message_says_why_mystical_stopped():
 
 def test_conflict_message_is_none_for_an_answer_that_is_no_report():
     assert rivendell._conflict_message({"number": 87}, "just prose") is None
+
+
+# --- design builds: a design's page built from its repository, sent up, then the answer posted -----------
+
+_DESIGN_FRAME = {
+    "type": "design-build-request", "requestId": "b1", "mode": "build",
+    "design": {"id": "d1", "title": "Student card", "url": "https://riv.example/projects/p1/designs/d1"},
+    "repository": {"id": "repo-1", "fullName": "ainurdev/nr-kantoor"}, "branch": "main"}
+_DESIGN = {"title": "Student card", "url": "https://riv.example/projects/p1/designs/d1"}
+
+
+def test_handle_message_design_build_requests():
+    """design-build-request events queue as "design-build" under the repository, once, and keep
+    the design's title and page for the done ping."""
+    w = _worker()
+    ev = json.dumps(_DESIGN_FRAME).encode()
+    w._handle_message(ev)
+    w._handle_message(ev)                          # duplicate: dropped
+    assert _drain(w) == [("design-build", "b1", "ainurdev/nr-kantoor")]
+    assert w._designs["b1"] == _DESIGN
+
+
+def test_catch_up_queues_design_build_requests(monkeypatch):
+    """A catch-up row is flat (designTitle, url, repositoryFullName): the same key, slug and design as the event."""
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+
+    def api(path, payload=None):
+        if path == "/plugin/design-build-requests":
+            return [{"id": "b1", "mode": "build", "designId": "d1", "designTitle": "Student card",
+                     "projectName": "NR Kantoor", "url": "https://riv.example/projects/p1/designs/d1",
+                     "repositoryFullName": "ainurdev/nr-kantoor", "branch": "main",
+                     "createdAt": "2026-10-26T09:00:00.000Z"}]
+        return []
+    monkeypatch.setattr(w, "_api", api)
+    w._catch_up()
+    assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [("design-build:b1", "ainurdev/nr-kantoor")]
+    assert w._designs["b1"] == _DESIGN
+
+
+def test_design_build_without_checkout_is_refused(monkeypatch, acks):
+    """Like an implementation: a design build runs the repository's code, so with no local checkout
+    of it, it is refused ("no-checkout") instead of claimed, forgotten, and the owner is told what."""
+    w = _worker()
+    hits, calls, notes = [], [], []
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: None)
+    monkeypatch.setattr(w, "accept", lambda key: hits.append(key) or True)
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: calls.append((path, payload)))
+    monkeypatch.setattr(w, "_note", lambda kind, rid, title, body="", **meta: notes.append((kind, rid, title)))
+    w._apply_policy(w._enqueue("design-build", "b1", "ainurdev/nr-kantoor"))
+    assert hits == [] and acks == [] and w.queue_snapshot() == []
+    assert calls == [("/plugin/design-build-requests/b1/refuse", {"reason": "no-checkout"})]
+    assert notes == [("rv_refused", "b1", "Design build · ainurdev/nr-kantoor")]
+    assert "design-build:b1" not in w._seen
+
+
+_BUILT = '{"outcome": "built", "commit": "abc1234", "changelog": ["x"], "summary": "Built."}'
+_PAGE = b"<!doctype html><html><body>Student card</body></html>"
+
+
+def _design_worker(monkeypatch, tmp_path, answer=_BUILT, run_ok=True, page=_PAGE):
+    """A worker that runs one design build against fakes: the claim, the checkout (tmp_path), a Claude
+    run that ends (run_ok, answer) as _wait_job returns it, and the page the agent left at
+    .mystical/design-build/b1.html (`page` bytes; None leaves none). Returns (worker, seen): seen
+    lists what it did: started, tracked, waited, put and post, and order (put and post, as they happened)."""
+    w = _worker()
+    seen = {"started": [], "tracked": [], "waited": [], "put": [], "post": [], "order": []}
+    job = type("Job", (), {"store_session_id": "s1"})()
+
+    def wait_job(job, timeout):
+        seen["waited"].append(timeout)
+        return run_ok, answer
+
+    def put(path, data, content_type, headers=None):
+        seen["order"].append("put")
+        seen["put"].append((path, data, content_type))
+
+    def post(kind_path, rid, ok, text):
+        seen["order"].append("post")
+        seen["post"].append((kind_path, rid, ok, text))
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {"prompt": "build it", "repositoryFullName": "ainurdev/nr-kantoor", "mode": "build"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: str(tmp_path) if slug == "ainurdev/nr-kantoor" else None)
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None, **k: seen["started"].append((prompt, workdir, hang_timeout, k)) or job)
+    monkeypatch.setattr(w, "_track", lambda rid, kind, slug, sid, **k: seen["tracked"].append((rid, kind, slug, sid)))
+    monkeypatch.setattr(w, "_wait_job", wait_job)
+    monkeypatch.setattr(w, "_api_put_bytes", put)
+    monkeypatch.setattr(w, "_post_result", post)
+    if page is not None:
+        built = tmp_path / ".mystical" / "design-build"
+        built.mkdir(parents=True)
+        (built / "b1.html").write_bytes(page)
+    return w, seen
+
+
+def test_run_design_build_fails_without_checkout(monkeypatch):
+    """No local checkout for the repository -> FAILED, never a run somewhere else."""
+    w = _worker()
+    posted = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {"prompt": "build it", "repositoryFullName": "acme/gone"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: None)
+    monkeypatch.setattr(w, "_post_result", lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    monkeypatch.setattr(w, "_start_run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
+    w._run_design_build("b1", "acme/other")
+    assert posted == [("design-build-requests", "b1", False,
+                       f"no local checkout for 'acme/gone' under {rivendell.config.BASE_PATH}")]
+
+
+def test_run_design_build_uploads_the_page_then_posts_the_answer(monkeypatch, tmp_path):
+    """It runs in the repository's checkout, with tools, on an implementation's clock, tracked as a
+    design build. When the answer says built, the page the agent left goes up first, as the raw body
+    of the request's file route; then the answer is posted as it came."""
+    w, seen = _design_worker(monkeypatch, tmp_path)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["started"] == [("build it", str(tmp_path), 10800, {})]
+    assert seen["tracked"] == [("b1", "design-build", "ainurdev/nr-kantoor", "s1")]
+    assert seen["waited"] == [10800]
+    assert seen["put"] == [("/plugin/design-build-requests/b1/file", _PAGE, "text/html; charset=utf-8")]
+    assert seen["post"] == [("design-build-requests", "b1", True, _BUILT)]
+    assert seen["order"] == ["put", "post"]
+
+
+def test_run_design_build_fails_when_the_page_is_missing(monkeypatch, tmp_path):
+    """Built, but no page where the prompt said to leave it: FAILED saying where, and nothing sent."""
+    w, seen = _design_worker(monkeypatch, tmp_path, page=None)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["put"] == []
+    assert seen["post"] == [("design-build-requests", "b1", False, "no built page at .mystical/design-build/b1.html")]
+
+
+def test_run_design_build_fails_when_the_page_is_too_big(monkeypatch, tmp_path):
+    """Over 25 MB is a 400 from Rivendell waiting to happen: FAILED with the size, nothing sent. A link
+    where the page should be is no page, whatever it points to."""
+    w, seen = _design_worker(monkeypatch, tmp_path, page=None)
+    page = tmp_path / ".mystical" / "design-build" / "b1.html"
+    page.parent.mkdir(parents=True)
+    with open(page, "wb") as f:
+        f.truncate(26 * 1024 * 1024)               # sparse: 26 MB without writing them
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["post"] == [("design-build-requests", "b1", False, "the built page is 26 MB, over 25 MB")]
+    page.unlink()
+    (tmp_path / "elsewhere.html").write_bytes(_PAGE)
+    page.symlink_to(tmp_path / "elsewhere.html")
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["post"][1:] == [("design-build-requests", "b1", False, "no built page at .mystical/design-build/b1.html")]
+    assert seen["put"] == []
+
+
+@pytest.mark.parametrize("outcome", ["no-preview", "unsuitable"])
+def test_run_design_build_posts_other_outcomes_as_they_are(monkeypatch, tmp_path, outcome):
+    """no-preview and unsuitable are answers, not builds: posted as they came, ok, with no page sent
+    (even when one lies there)."""
+    answer = json.dumps({"outcome": outcome, "summary": "A Vite app with no single-file build.",
+                         "suggestion": "Add vite-plugin-singlefile and an in-memory data layer."})
+    w, seen = _design_worker(monkeypatch, tmp_path, answer=answer)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["put"] == []
+    assert seen["post"] == [("design-build-requests", "b1", True, answer)]
+
+
+def test_run_design_build_uploads_nothing_for_a_run_that_failed(monkeypatch, tmp_path):
+    """A run that failed posts what it has, FAILED, and sends no page: not even when its text reads
+    like a build report (a run that errored after answering) and a page lies there."""
+    w, seen = _design_worker(monkeypatch, tmp_path, run_ok=False)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["put"] == []
+    assert seen["post"] == [("design-build-requests", "b1", False, _BUILT)]
+
+
+def test_run_design_build_fails_when_the_upload_fails(monkeypatch, tmp_path):
+    """Rivendell makes the version from the page, so a page that did not go up is a FAILED job, never
+    a COMPLETED one for a version that will not exist; the reason is the upload's."""
+    w, seen = _design_worker(monkeypatch, tmp_path)
+
+    def boom(path, data, content_type, headers=None):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(w, "_api_put_bytes", boom)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["post"] == [("design-build-requests", "b1", False, "the built page did not upload: boom")]
+
+
+def test_built_file_answers_the_page_or_why_not(tmp_path):
+    """Only a regular file at the page's path, at most 25 MB, comes back as bytes. It is opened without
+    following a link or waiting on a pipe; every other shape is no page, and a big one says so."""
+    d = tmp_path / ".mystical" / "design-build"
+    d.mkdir(parents=True)
+    page, gone = d / "b1.html", (None, "no built page at .mystical/design-build/b1.html")
+    assert rivendell._built_file(str(tmp_path), "b1") == gone                  # nothing there
+    page.mkdir()
+    assert rivendell._built_file(str(tmp_path), "b1") == gone                  # a folder
+    page.rmdir()
+    (tmp_path / "elsewhere.html").write_bytes(_PAGE)
+    page.symlink_to(tmp_path / "elsewhere.html")
+    assert rivendell._built_file(str(tmp_path), "b1") == gone                  # a link, even to a good page
+    page.unlink()
+    os.mkfifo(page)
+    got = []
+    t = threading.Thread(target=lambda: got.append(rivendell._built_file(str(tmp_path), "b1")), daemon=True)
+    t.start()
+    t.join(5)
+    assert got == [gone]                                                       # a pipe, not waited on
+    page.unlink()
+    page.write_bytes(_PAGE)
+    assert rivendell._built_file(str(tmp_path), "b1") == (_PAGE, "")
+    with open(page, "wb") as f:
+        f.truncate(rivendell._DESIGN_FILE_MAX)
+    data, why = rivendell._built_file(str(tmp_path), "b1")
+    assert len(data) == rivendell._DESIGN_FILE_MAX and why == ""               # at the cap is in
+    with open(page, "wb") as f:
+        f.truncate(rivendell._DESIGN_FILE_MAX + 1)
+    assert rivendell._built_file(str(tmp_path), "b1")[0] is None               # a byte over is out
+
+
+def test_design_report_reads_the_json_object_with_a_known_outcome():
+    """The agent's answer is one JSON object, sometimes in a ```json fence. Only an outcome a design
+    build has makes it a report; prose, other kinds' reports and broken JSON make none."""
+    fenced = f"Built it.\n```json\n{_BUILT}\n```"
+    assert rivendell._design_report(fenced) == json.loads(_BUILT)
+    assert rivendell._design_report('{"outcome": "unsuitable", "summary": "A backend."}')["outcome"] == "unsuitable"
+    assert rivendell._design_report('{"outcome": "no-preview", "suggestion": "x"}')["outcome"] == "no-preview"
+    for no_report in ("just prose", "", None, '{"outcome": "resolved"}', '{"summary": "no outcome"}', "[1, 2]", "{broken"):
+        assert rivendell._design_report(no_report) is None
+
+
+def test_queued_message_names_a_design_build():
+    item = {"key": "design-build:b1", "kind": "design-build", "request_id": "b1",
+            "slug": "ainurdev/nr-kantoor", "created_at": 0.0}
+    text, _kb = _worker()._queued_message(item, "tok")
+    assert "Rivendell design build queued — ainurdev/nr-kantoor" in text

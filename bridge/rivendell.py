@@ -27,6 +27,7 @@ by refusing it (below):
     project-summary-request            |
     meeting-brief-request              |
     pr-conflict-request                |
+    design-build-request               |
     deck-request                       v  ACCEPT (dashboard PLUGINS tab / Telegram)
           -> GET  /plugin/<kind>-requests/<id>/prompt
           (the GET claims the request: PENDING -> IN_PROGRESS)
@@ -58,10 +59,11 @@ in markdown). The bridge runs both the same way and posts the answer verbatim �
 rivendell-api parses it by the request's kind — and only uses the step to label
 the request in the log, the Telegram ping and the dashboard queue.
 
-Reviews, implementations and merge conflicts need a local checkout of the named
-repository (a conflicts job merges the PR's base into its branch, fixes the
-conflicts, runs the tests and pushes; like an implementation it never falls back
-to another folder, and a bridge without the checkout refuses it);
+Reviews, implementations, merge conflicts and design builds need a local
+checkout of the named repository (a conflicts job merges the PR's base into its
+branch, fixes the conflicts, runs the tests and pushes; a design build builds a
+prototype page, below; like an implementation neither falls back to another
+folder, and a bridge without the checkout refuses them);
 todolists, task descriptions, changelogs, deck drafts, project summaries and meeting
 briefs need none — the whole project/task context (for a changelog: the tasks, pull
 requests and commits the user picked; for a deck: its slides and the project's work of
@@ -94,6 +96,22 @@ lead from the answer, which is the brief's JSON. Its notice kind, rv_brief, has 
 group of its own, which reaches Telegram whether or not you are at a dashboard
 (bridge/notices.py). A brief that failed, or that Rivendell could not use (it answers
 the result POST FAILED), is an ordinary failed job.
+
+A design build (Rivendell's Build version on a design, or its Set up the preview
+build) builds the design's prototype as one self-contained HTML page in the
+repository's checkout, or says why it can't: its answer is a JSON object whose
+`outcome` is built, unsuitable (the repository has no web interface to show) or
+no-preview (a web app with no single-file build; the answer then carries a
+suggestion). It is the one kind whose result is more than text. A built page is
+the file the run left at <checkout>/.mystical/design-build/<request id>.html, and
+the bridge, not the agent, sends it, before the result: Rivendell makes the
+version from the result and refuses a built one that has no file. _built_file
+reads that one regular file the way device_side reads a screenshot (no symlink
+followed, no pipe waited on, the size judged before a byte is read). A page that
+is missing, over 25 MB or that did not upload lands the job FAILED with that
+reason, never COMPLETED for a version that will not exist. Any other answer is
+posted as it is: Rivendell judges the answer, the bridge only carries the file.
+Why and what was left out: docs/superpowers/specs/design-builds.md.
 
 Each request names its repository (owner/repo); _find_checkout maps that to a
 local checkout under BASE_PATH by matching git origin remotes (the scan is
@@ -224,6 +242,7 @@ import json
 import os
 import socket
 import ssl
+import stat
 import tempfile
 import threading
 import time
@@ -243,6 +262,7 @@ _MAX_MISSED_PONGS = 2     # this many silent intervals -> assume dead, reconnect
 _HTTP_TIMEOUT = 30        # prompt fetch / result post
 _RESULT_RETRIES = (2, 10, 30)   # a finished run is expensive; retry the POST
 _ERROR_MAX = 5000         # Rivendell's MaxLength on a result's error: longer is a 400
+_DESIGN_FILE_MAX = 25 * 1024 * 1024   # Rivendell's cap on a design build's page (25 MB): more is a 400
 _POLL_INTERVAL = 2.0      # job status poll cadence
 _HELD_MAX = 24 * 3600.0   # a run may wait on a person this long in all; then it fails
 _CHECKOUT_CACHE_TTL = 300.0   # seconds before the slug->path map is rescanned
@@ -379,6 +399,9 @@ class Worker:
         # Request id -> the PR a conflicts job is about ({number, title, url}: its Rivendell
         # page), until _ping_done tells how it went. Memory only, like the briefs.
         self._conflicts: "dict[str, dict]" = {}
+        # Request id -> the design a design build is about ({title, url}: its Rivendell page),
+        # for the done ping to tell. Memory only, like the conflicts'.
+        self._designs: "dict[str, dict]" = {}
         self._sock: socket.socket | None = None    # so stop() can unblock reads
         self._listen_thread: threading.Thread | None = None
         self._progress_thread: threading.Thread | None = None
@@ -1028,6 +1051,11 @@ class Worker:
         except Exception as e:  # noqa: BLE001 — catch-up is best-effort
             print(f"rivendell[{self.name}]: conflict catch-up failed: {e}")
         try:
+            for item in self._api("/plugin/design-build-requests"):
+                self._apply_policy(self._enqueue("design-build", item["id"], item.get("repositoryFullName"), offered=bool(item.get("offered")), src=item))
+        except Exception as e:  # noqa: BLE001 — catch-up is best-effort
+            print(f"rivendell[{self.name}]: design build catch-up failed: {e}")
+        try:
             head = device_side.headers(self.inst)    # teammates' device runs: only on a device READY for one
             if head:
                 device_side.report_interrupted(self, head)   # runs a restart cut short, first
@@ -1083,6 +1111,9 @@ class Worker:
                 self._conflicts[request_id] = {"number": p.get("number") or p.get("pullRequestNumber"),
                                                "title": p.get("title") or p.get("pullRequestTitle"),
                                                "url": p.get("url")}
+            if kind == "design-build":
+                d = src.get("design") or src        # an event nests the design; a catch-up row is flat
+                self._designs[request_id] = {"title": d.get("title") or d.get("designTitle"), "url": d.get("url")}
         with self._q_lock:
             self._pending[key] = {
                 "key": key, "kind": kind, "request_id": request_id,
@@ -1135,12 +1166,12 @@ class Worker:
             if not busy:
                 self.accept(key)
             return
-        if item.get("kind") in ("impl", "conflict") and self._find_checkout(item["slug"]) is None:
+        if item.get("kind") in ("impl", "conflict", "design-build") and self._find_checkout(item["slug"]) is None:
             kind = item["kind"]
             with self._q_lock:
                 self._pending.pop(key, None)
             rid = item["request_id"]
-            what = "Implementation" if kind == "impl" else "Merge conflicts"
+            what = {"impl": "Implementation", "conflict": "Merge conflicts", "design-build": "Design build"}[kind]
             print(f"rivendell[{self.name}]: {what.lower()} {rid} refused: no "
                   f"local checkout for {item['slug']!r} under {config.BASE_PATH}")
             if not item.get("offered"):      # a teammate's job you never took is not your news
@@ -1303,6 +1334,11 @@ class Worker:
             print(f"rivendell[{self.name}]: merge conflicts sent for "
                   f"{pr.get('repositoryFullName', '?')}#{pr.get('number', '?')}")
             return self._enqueue("conflict", obj["requestId"], pr.get("repositoryFullName"), offered=offered, src=obj)
+        if obj.get("type") == "design-build-request" and obj.get("requestId"):
+            design, repo = obj.get("design") or {}, obj.get("repository") or {}
+            print(f"rivendell[{self.name}]: design build requested in "
+                  f"{repo.get('fullName', '?')}: {design.get('title', '?')}")
+            return self._enqueue("design-build", obj["requestId"], repo.get("fullName"), offered=offered, src=obj)
         if obj.get("type") == "device-run-request" and obj.get("requestId"):
             print(f"rivendell[{self.name}]: {(obj.get('requester') or {}).get('name', '?')} asks this "
                   f"device for a run of {obj.get('repository', '?')}")
@@ -1678,6 +1714,52 @@ class Worker:
             self._untrack(request_id)
         print(f"rivendell[{self.name}]: merge conflicts {request_id} {'completed' if ok else 'failed'}")
         self._post_result("conflict-requests", request_id, ok, text)
+
+    def _run_design_build(self, request_id: str, slug: "str | None") -> None:
+        """A design's page, built from its repository: Rivendell's prompt says how (find the
+        preview build, run it, leave the page at .mystical/design-build/<id>.html) or why not
+        (no web interface, no single-file build). Like a conflicts job it runs in the repository's
+        checkout, never another directory, with an implementation's clock and tools. A `built`
+        answer is only as good as its page, so the bridge reads it and sends it up before the
+        result (Rivendell makes the version from the result and refuses one with no file); a page
+        that is missing, too big or does not upload lands the job FAILED, saying so. Any other
+        answer is posted as it is, for Rivendell to judge."""
+        resp = self._claim("design-build-requests", request_id)
+        if resp is None:
+            return
+        prompt = resp["prompt"]
+        slug = resp.get("repositoryFullName") or slug
+        workdir = self._find_checkout(slug)
+        if workdir is None:
+            print(f"rivendell[{self.name}]: design build {request_id}: no checkout for {slug!r}")
+            self._post_result("design-build-requests", request_id, False,
+                              f"no local checkout for {slug!r} under {config.BASE_PATH}")
+            return
+        print(f"rivendell[{self.name}]: design build {request_id} running in {workdir}")
+        job = self._start_run(prompt, workdir, hang_timeout=self.inst.get("impl_timeout", 10800))
+        if job is None:  # can't happen for a fresh session; never hang the queue
+            self._post_result("design-build-requests", request_id, False,
+                              "could not start a Claude run (session busy)")
+            return
+        self._track(request_id, "design-build", slug, job.store_session_id, label=None, link=None)
+        try:
+            ok, text = self._wait_job(job, self.inst.get("impl_timeout", 10800))
+        finally:
+            self._untrack(request_id)
+        if ok and (_design_report(text) or {}).get("outcome") == "built":
+            page, why = _built_file(workdir, request_id)
+            if page is None:
+                ok, text = False, why
+            else:
+                try:
+                    # ponytail: one PUT, no retry (unlike _post_result): a failed one fails the job and
+                    # the owner builds again. Add _RESULT_RETRIES backoff if links drop mid-upload.
+                    self._api_put_bytes(f"/plugin/design-build-requests/{request_id}/file", page,
+                                        "text/html; charset=utf-8")
+                except Exception as e:  # noqa: BLE001 — the job lands FAILED, the worker carries on
+                    ok, text = False, f"the built page did not upload: {e}"
+        print(f"rivendell[{self.name}]: design build {request_id} {'completed' if ok else 'failed'}")
+        self._post_result("design-build-requests", request_id, ok, text)
 
     def _run_batch_queue(self, request_id: str, resp: dict, steps: list, workdir: str) -> None:
         """Queue mode: one queued turn per step in a fresh session, in order, and
@@ -2119,6 +2201,7 @@ class Worker:
         "meeting-brief": "meeting-brief-requests",
         "device-run": "device-run-requests",
         "conflict": "conflict-requests",
+        "design-build": "design-build-requests",
     }
 
     # -- Telegram ping for queued (non-auto-accepted) requests --
@@ -2136,6 +2219,7 @@ class Worker:
         "meeting-brief": "meeting brief",
         "device-run": "Device run",
         "conflict": "merge conflicts",
+        "design-build": "design build",
     }
 
     def _label(self, item: dict) -> str:
@@ -2358,6 +2442,8 @@ class Worker:
                 self._run_device_run(item)
             elif kind == "conflict":
                 self._run_conflict(request_id, slug)
+            elif kind == "design-build":
+                self._run_design_build(request_id, slug)
             else:
                 self._run_review(request_id, slug)
         except Exception as e:  # noqa: BLE001 — worker must outlive any run
@@ -3521,6 +3607,44 @@ def _conflict_message(meta: dict, answer: str) -> "tuple | None":
                  str(report.get("notes") or "").strip()[:300]]
     url = meta.get("url")
     return "\n".join(ln for ln in lines if ln), ({"inline_keyboard": [[{"text": "Open PR ↗", "url": url}]]} if url else None)
+
+
+def _design_report(answer: str) -> "dict | None":
+    """The JSON report a design build answers with (outcome, commit, changelog, summary,
+    suggestion, branch, pullRequestUrl), read out of its ```json fence; None for an answer that
+    holds none. Rivendell stores the answer as it is: this only tells the bridge what the answer
+    is, so whether a page is to be sent."""
+    raw = answer or ""
+    i, j = raw.find("{"), raw.rfind("}")
+    try:
+        body = json.loads(raw[i:j + 1]) if 0 <= i < j else None
+    except ValueError:
+        return None
+    return body if isinstance(body, dict) and body.get("outcome") in ("built", "unsuitable", "no-preview") else None
+
+
+def _built_file(workdir: str, request_id: str) -> "tuple[bytes | None, str]":
+    """The page a design build left at <workdir>/.mystical/design-build/<id>.html, as (bytes, ""),
+    or (None, why) when it can't go up: there is none, it is no regular file, or it is over
+    Rivendell's 25 MB. Read the way device_side._upload reads a screenshot: never through a symlink
+    (the agent chose that path, and a link could point anywhere on this machine), never waiting on
+    a pipe, and the size judged on the file as opened, before a byte of it is read."""
+    rel = f".mystical/design-build/{request_id}.html"
+    gone = None, f"no built page at {rel}"
+    try:
+        fd = os.open(os.path.join(workdir, rel), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return gone
+    try:
+        st = os.fstat(fd)
+        if not stat.S_ISREG(st.st_mode):
+            return gone
+        if st.st_size > _DESIGN_FILE_MAX:
+            return None, f"the built page is {st.st_size // (1024 * 1024)} MB, over 25 MB"
+        with os.fdopen(fd, "rb", closefd=False) as f:
+            return f.read(), ""
+    finally:
+        os.close(fd)
 
 
 def _answer(token: str, labels: list, notes: str = "") -> "str | None":
