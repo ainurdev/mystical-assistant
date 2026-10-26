@@ -907,6 +907,9 @@ class Worker:
             print(f"rivendell[{self.name}]: device check failed, connecting without it: {e}")
             device = []
         self._offered = bool(device)
+        # Which video tools this machine has, so a transcript comes only if it can be made here.
+        from bridge import rivendell_video        # local import: keeps the tests' monkeypatching simple
+        tools = rivendell_video.tools_header()
         sock = socket.create_connection((parts.hostname, port), timeout=10)
         if secure:
             sock = ssl.create_default_context().wrap_socket(
@@ -924,7 +927,7 @@ class Worker:
             f"Sec-WebSocket-Key: {key}\r\n"
             "Sec-WebSocket-Version: 13\r\n"
             f"Authorization: Bearer {self.token}\r\n"
-            + "".join(h + "\r\n" for h in device)
+            + "".join(h + "\r\n" for h in device + ([tools] if tools else []))
             + "\r\n"
         ).encode())
 

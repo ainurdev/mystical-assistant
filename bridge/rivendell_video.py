@@ -46,6 +46,21 @@ def tools() -> dict[str, bool]:
             "model": os.path.isfile(os.path.expanduser(config.WHISPER_MODEL))}
 
 
+# tools()'s keys and the names Rivendell knows them by (backend mystical-tools.ts), in that order.
+_HEADER_NAMES = (("ffmpeg", "ffmpeg"), ("whisper", "whisper"), ("model", "whisper-model"))
+
+
+def tools_header() -> "str | None":
+    """The X-Mystical-Tools line for the websocket upgrade: the video tools this machine
+    has, so Rivendell sends a transcript only where it can be made. None when the check
+    itself fails: no header reads as "didn't say" there, and the jobs still come."""
+    try:
+        have = tools()
+    except Exception:  # noqa: BLE001 — a probe never keeps the link down
+        return None
+    return "X-Mystical-Tools: " + ",".join(name for key, name in _HEADER_NAMES if have.get(key))
+
+
 def download(url: str, dest: str, timeout: float = 900) -> None:
     """Stream the file to disk; the signed URL is good for an hour."""
     try:

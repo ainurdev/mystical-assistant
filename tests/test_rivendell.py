@@ -136,6 +136,7 @@ def test_client_handshake(monkeypatch):
     and verifies the Sec-WebSocket-Accept echo."""
     server, client = socket.socketpair()
     monkeypatch.setattr("socket.create_connection", lambda *a, **k: client)
+    monkeypatch.setattr("bridge.rivendell_video.tools_header", lambda: "X-Mystical-Tools: ffmpeg")
     w = _worker(ws_url="ws://api.example:3001/agent", token="rvd_testtoken")
 
     captured = {}
@@ -161,6 +162,7 @@ def test_client_handshake(monkeypatch):
 
     assert "GET /agent HTTP/1.1" in captured["request"]
     assert "Authorization: Bearer rvd_testtoken" in captured["request"]
+    assert "X-Mystical-Tools: ffmpeg\r\n" in captured["request"]
     assert "Upgrade: websocket" in captured["request"]
     key_line = [l for l in captured["request"].split("\r\n")
                 if l.startswith("Sec-WebSocket-Key: ")][0]
