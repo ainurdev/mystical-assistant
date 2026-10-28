@@ -232,6 +232,15 @@ const stateDots = (n: Partial<Record<LaneKey, number>>) => (n.work || n.ask) ? (
   </span>
 ) : null;
 
+/** What the ATTENTION tab counts: one number per state, most urgent first, each in
+ *  its lane's colour, so two running turns never wear a question's amber. Waiting
+ *  and parked turns come back on their own, so they stay out. */
+const ATTN: { k: LaneKey; c: string; say: (n: number) => string }[] = [
+  { k: "ask", c: "var(--warn)", say: (n) => `${n} ${n === 1 ? "needs" : "need"} your answer` },
+  { k: "done", c: "var(--acc)", say: (n) => `${n} finished` },
+  { k: "work", c: "var(--ok)", say: (n) => `${n} running` },
+];
+
 function SessionRow({
   s, i, on, v, st, flag, wait, shots, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
 }: {
@@ -289,7 +298,7 @@ function SessionRow({
   const since = st?.since;
   const edge = v.lane === "work" ? <span style={{ color: "var(--ok)" }}>{since ? lasted(now - since) : "now"}</span>
     : v.lane === "ask" ? edgeChip("var(--warn)", "Answer")
-    : v.lane === "done" ? edgeChip("var(--ok)", "New")
+    : v.lane === "done" ? edgeChip("var(--acc)", "New")
     : v.lane === "wait" ? (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: wait?.needs ? "var(--warn)" : "var(--purple)" }}>
         <Hourglass size={10} strokeWidth={2.2} aria-hidden />{since ? lasted(now - since) : ago(s.updated)}
@@ -747,9 +756,10 @@ export function SessionsPanel(props: Props) {
     const keep = new Set(f.slice(0, 2).map((s) => s.id));
     return lift(f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id) || laneOf(s) !== "idle" || flags.has(s.id) || !!unseen.get(s.id)));
   };
-  // How many of a project's sessions sit in each lane, every session, not the
-  // rows showing: a shut head's dots and amber wash and the rail's dots and New
-  // dot read it. No head prints the counts — the rows under it already say so.
+  // How many of a list's sessions sit in each lane, every session, not the
+  // rows showing: a shut head's dots and amber wash, the rail's dots and New
+  // dot, and the ATTENTION tab's numbers read it. No head prints the counts —
+  // the rows under it already say so.
   const tallyOf = (f: SessionBrief[]) => {
     const n: Partial<Record<LaneKey, number>> = {};
     for (const s of f) { const k = laneOf(s); n[k] = (n[k] ?? 0) + 1; }
@@ -893,13 +903,16 @@ export function SessionsPanel(props: Props) {
   // The PLUGINS tab exists while Rivendell is installed, and `mode` can't be
   // "plugins" otherwise, so the pill never stands on a tab that isn't rendered.
   const pluginRows = sorted.filter((s) => PLUGINS.some((p) => p.match(s)));
+  // ATTENTION's numbers (ATTN), and the words that say them: colour is never the only signal.
+  const attn = tallyOf(mine);
+  const attnOn = ATTN.filter((x) => attn[x.k]);
+  const attnSay = attnOn.map((x) => x.say(attn[x.k]!)).join(", ");
   // Tabs are icons only — the label survives as the tooltip and the
   // accessible name, so the bar stays narrow and never wraps.
   const modeTabs: { id: Mode; label: string; Icon: LucideIcon; count: number; tip: string }[] = [
-    // ATTENTION counts what wants you — a question, or a finish you haven't
-    // opened — and the turns running now. Waiting and parked turns come back
-    // on their own, so they stay out.
-    { id: "attention", label: "Attention", Icon: BellRing, count: mine.filter((s) => ["ask", "done", "work"].includes(laneOf(s))).length, tip: "Attention — grouped by what each session wants from you" },
+    { id: "attention", label: ["Attention", attnSay].filter(Boolean).join(", "), Icon: BellRing,
+      count: attnOn.reduce((t, x) => t + attn[x.k]!, 0),
+      tip: attnSay ? `Attention — ${attnSay}` : "Attention — grouped by what each session wants from you" },
     { id: "projects", label: "Projects", Icon: FolderTree, count: groups.length, tip: "Projects — grouped by project" },
     ...(plugins.rivendell ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
     { id: "recent", label: "Recent", Icon: History, count: mine.length, tip: "Recent — one flat stream, newest first" },
@@ -1059,7 +1072,9 @@ export function SessionsPanel(props: Props) {
                 {/* Only ATTENTION's count shows, and only while something
                     runs or waits on you. */}
                 {m.id === "attention" && m.count > 0 && (
-                  <span style={{ flex: "none", fontSize: "var(--t9)", fontWeight: 700, color: "var(--warn)" }}>{m.count}</span>
+                  <span style={{ flex: "none", display: "inline-flex", gap: 5, fontSize: "var(--t9)", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                    {attnOn.map((x) => <span key={x.k} style={{ color: x.c }}>{attn[x.k]}</span>)}
+                  </span>
                 )}
               </button>
             );

@@ -6917,7 +6917,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .srail-sep { flex: none; width: 24px; height: 1px; margin: 4px 0; background: color-mix(in srgb, var(--acc) 14%, transparent); }
 .srail-tile .pstate { position: absolute; right: -3px; bottom: -3px; gap: 3px; }
 .srail-tile .pstate > span { width: 9px; height: 9px; outline: 2px solid var(--side, var(--canvas)); }
-.srail-new { position: absolute; right: -3px; top: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--side, var(--canvas)); }
+.srail-new { position: absolute; right: -3px; top: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 2px var(--side, var(--canvas)); }
 .srail-fly {
   position: fixed; z-index: 60; width: 318px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box;
   padding: 6px; border-radius: var(--f-rad-l, 0px); animation: mslide .16s ease both;
