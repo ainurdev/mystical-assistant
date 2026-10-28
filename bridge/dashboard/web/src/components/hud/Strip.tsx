@@ -50,7 +50,7 @@ const seg = (on: boolean): CSSProperties => ({
 /** Left column cap: mark + wordmark, on the SESSIONS head's own gutter, and at
  *  its end the fold. The week report that hung off its end moved to the right
  *  rail's USAGE tab. */
-export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: () => void }) {
+export function Brand({ folded = false, onFold, workspace }: { folded?: boolean; onFold?: () => void; workspace?: ReactNode }) {
   // Mystical.app: the cap is the window's title bar, and its traffic lights
   // are drawn here, not by AppKit (DashboardWindow hides the native ones): they
   // fade in while the cap is hovered and the logo slides out from under them.
@@ -108,6 +108,8 @@ export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: (
       </div>
       {!folded && onFold && (<>
         <span style={{ flex: 1, minWidth: 6 }} />
+        {/* The workspace switch sits left of the fold (WorkspaceButton). */}
+        {workspace}
         <FoldButton onClick={onFold} />
       </>)}
     </div>

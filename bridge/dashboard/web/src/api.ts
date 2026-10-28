@@ -349,6 +349,14 @@ export interface ProjectMark {
   rv?: { instance?: string; client?: string; name?: string; logo_id?: string | null; own?: boolean };
 }
 
+/** A sidebar workspace (bridge/workspaces.py). `image` is a stored picture's name. */
+export interface Workspace { id: string; name: string; image: string | null }
+/** Every workspace, DEFAULT first, and which one each sidebar group key is in;
+ *  a key not in `assign` is DEFAULT's. */
+export interface WorkspaceSet { workspaces: Workspace[]; assign: Record<string, string> }
+/** Where a workspace's picture is served; named by its hash, like a logo. */
+export const workspaceImageUrl = (name: string) => `/local/workspaces/image/${encodeURIComponent(name)}`;
+
 /** Where a stored logo is served. Its name is the bytes' hash, so it caches forever. */
 export const projectLogoUrl = (name: string) => `/local/project-mark/logo/${encodeURIComponent(name)}`;
 
@@ -2159,6 +2167,10 @@ export const api = {
       method: "POST",
       body: { ...ctx, ...patch },
     }),
+  workspaces: () => req<WorkspaceSet>("/local/workspaces"),
+  /** The whole set at once. `images`: {workspace id: base64} for pictures picked in this edit. */
+  saveWorkspaces: (body: { workspaces: Workspace[]; assign: Record<string, string>; images?: Record<string, string> }) =>
+    req<WorkspaceSet>("/local/workspaces", { method: "POST", body }),
   pickLogos: (action: "pick" | "undo") =>
     req<PickResult & { undone?: number }>("/local/project-mark/pick", { method: "POST", body: { action } }),
   styleCandidates: () => req<StyleCandidates>("/local/project-mark/style/candidates"),

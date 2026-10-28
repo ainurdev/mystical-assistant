@@ -7214,3 +7214,39 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-wco] .hudgrid[data-rbare] .chathead { padding-right: calc(12px + var(--wco-r)) !important; }
 /* The buttons sit on the rail's ground, continuous with the gear's cell. */
 [data-wco] .rcap:not([data-bare]) { background: linear-gradient(to left, var(--panel3) var(--wco-r), transparent 0); }
+
+/* ── workspaces (WorkspaceButton): the switch in Brand's cap, its menu ──
+   A workspace's avatar is not a project tile: a tile is a flat square of the
+   project's tint (.ptile), the avatar is the accent's, with a ring a step off
+   its edge, so the two never read as the same kind of thing. */
+.wsav {
+  position: relative; display: inline-grid; place-items: center; flex: none; overflow: hidden;
+  border-radius: 3px; font: 700 11px/1 var(--mono); color: var(--acc);
+  background: color-mix(in srgb, var(--acc) 12%, var(--panel, transparent));
+  box-shadow: 0 0 0 1px var(--panel, #000), 0 0 0 2px color-mix(in srgb, var(--acc) 55%, transparent);
+}
+.wsav img { width: 100%; height: 100%; object-fit: cover; display: block; }
+[data-fam] .wsav { border-radius: max(4px, var(--f-rad-s)); font-family: var(--ui-font); font-weight: 650; }
+.wsbtn-wrap { position: relative; flex: none; display: inline-flex; margin-right: 8px; }
+.wsbtn { appearance: none; border: 0; padding: 0; background: transparent; cursor: pointer; display: inline-flex; border-radius: 4px; transition: transform .12s ease; }
+.wsbtn:hover .wsav, .wsbtn[aria-expanded="true"] .wsav { box-shadow: 0 0 0 1px var(--panel, #000), 0 0 0 2px var(--acc); }
+.wsbtn:active { transform: scale(.94); }
+.wspop {
+  position: absolute; top: calc(100% + 10px); right: -6px; z-index: 60; width: 236px; padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: var(--panel2, var(--panel));
+  box-shadow: 0 16px 44px var(--shadow-pop, rgba(0,0,0,.5)); animation: mslide .16s ease both;
+}
+[data-fam] .wspop { border-radius: var(--f-rad, 8px); border-color: var(--line); }
+.wspop-h { padding: 4px 8px 7px; font-size: var(--t95); letter-spacing: 1.5px; text-transform: uppercase; color: var(--txd); }
+.wspop-row {
+  appearance: none; border: 0; background: transparent; width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px; cursor: pointer; text-align: left; color: var(--txb); font: inherit; font-size: var(--t12);
+}
+[data-fam] .wspop-row { border-radius: var(--f-rad-s, 6px); font-family: var(--ui-font); }
+.wspop-row:hover { background: var(--ac-06, color-mix(in srgb, var(--acc) 8%, transparent)); }
+.wspop-row[aria-checked="true"] { color: var(--txh, var(--txb)); }
+.wspop-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.wspop-n { flex: none; font-size: var(--t95); color: var(--txl, var(--txd)); }
+.wspop-on { flex: none; color: var(--acc); }
+.wspop-manage { margin-top: 4px; border-top: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); padding-top: 9px; color: var(--txm); }
+[data-fam] .wspop-manage { border-top-color: var(--line); }

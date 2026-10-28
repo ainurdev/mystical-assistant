@@ -11,7 +11,7 @@ import {
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, type LucideIcon,
-  ChevronDown, ChevronRight, FileArchive, FolderGit2, HardDriveDownload, HardDriveUpload, 
+  ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin,
 } from "lucide-react";
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
@@ -22,6 +22,7 @@ import { SkillsFold } from "./SkillsFold";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
+import { WorkspacesSettings } from "./WorkspacesSettings";
 import {
   api,
   type AccountInfo,
@@ -133,7 +134,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 export type Tab = "appearance" | "transcript" | "notifications"
-  | "projects" | "aimgmt"
+  | "projects" | "workspaces" | "aimgmt"
   | "integrations" | "system" | "move"
   | "mac";
 
@@ -179,6 +180,10 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   // MANAGEMENT, where a long list of repos had to share a page with logins.
   { key: "projects", label: "PROJECTS", hint: "names · marks · sidebar", icon: FolderGit2, group: "THE WORK",
     about: "Every repo the bridge can run in, and what each keeps for itself: its name and mark, the profile its sessions start on, whether the sidebar lists it, its run command, design link and lessons." },
+  // Beside PROJECTS: which of them the sidebar shows together. Right-clicking
+  // the sidebar's workspace button lands here.
+  { key: "workspaces", label: "WORKSPACES", hint: "sidebar · project sets", icon: Layers, group: "THE WORK",
+    about: "Split the sidebar into sets of projects, like a browser's workspaces: personal and work apart. The sidebar shows one at a time; Default takes every project you haven't moved." },
   // Who runs a session. One page, four folds — it was tabs (SESSION, MCP,
   // ACCOUNTS, AI) that each held a piece of the same question, and the
   // sidebar's SKILLS panel besides.
@@ -231,6 +236,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "system", sec: "USAGE SHARING", terms: "share usage telemetry analytics posthog privacy tracking anonymous opt in out replay recording" },
   { tab: "aimgmt", sec: "SKILLS", terms: "skills skill catalog install plugin marketplace SKILL.md system project" },
+  { tab: "workspaces", sec: "WORKSPACES", terms: "workspace workspaces personal work profile split sidebar set group switch picture avatar" },
   { tab: "projects", sec: "PROJECTS", terms: "manage projects hide show sidebar repository repo folder name rename label mark logo icon default profile starts with run command design system lessons" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
   { tab: "system", sec: "PLATFORM", terms: "update version git rebuild restart" },
@@ -4472,6 +4478,8 @@ export function SettingsModal(props: SettingsModalProps) {
             {shown === "notifications" && <NotifyPanel settings={settings} onPatch={onPatch} />}
 
             {shown === "projects" && <ProjectsPage projects={projects} current={project} onAccountsChanged={onAccountsChanged} />}
+
+            {shown === "workspaces" && <WorkspacesSettings groups={projects.groups} />}
 
             {shown === "aimgmt" && (
               <AiManagementPanel settings={settings} onPatch={onPatch} models={models} sessionTools={sessionTools}
