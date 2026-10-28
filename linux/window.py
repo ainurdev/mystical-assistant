@@ -35,6 +35,11 @@ Why it is shaped like this:
   and the window polls every 2 s.
 - **One window.** A Gtk.Application: launching it again (the launcher, the
   tray, `--session <id>`) brings the running one forward instead.
+- **A log** at ~/.cache/mystical/window.log when it isn't run from a terminal
+  (a launcher has nowhere to show stderr): what the page handed over as
+  notifications, focus changes, loads, links sent out, the page's console and
+  WebKit's own warnings. Started over past LOG_MAX. Notifications that never
+  showed are answered there: either the page never sent one, or it did.
 - **Its own storage** under ~/.local/share/mystical/webkit: localStorage and
   cookies are this window's, apart from any browser's. What has to agree
   across them (the workspaces, the last one picked) is the bridge's already.
@@ -62,8 +67,38 @@ DATA = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.lo
 CACHE = os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "mystical", "webkit")
 PACKAGES = ("Debian/Ubuntu: sudo apt install gir1.2-webkit2-4.1 python3-gi — Fedora: sudo dnf install "
             "webkit2gtk4.1 python3-gobject — Arch: sudo pacman -S webkit2gtk-4.1 python-gobject")
+LOG = os.path.join(CACHE.rsplit(os.sep, 1)[0], "window.log")
+LOG_MAX = 512 * 1024
 _HTTP = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 _LOCAL = {"127.0.0.1", "localhost", "::1", "[::1]"}
+
+
+# --- the log ----------------------------------------------------------------------
+def log(msg: str) -> None:
+    import time
+    print(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}", file=sys.stderr, flush=True)
+
+
+def bare(url: str) -> str:
+    """A URL without its query: the dashboard's carries the token."""
+    return (url or "").split("?", 1)[0]
+
+
+def to_log_file() -> None:
+    """stdout and stderr, fd-level so WebKit's and GLib's own lines land too,
+    into LOG — started over once it has grown past LOG_MAX."""
+    os.makedirs(os.path.dirname(LOG), exist_ok=True)
+    try:
+        if os.path.getsize(LOG) > LOG_MAX:
+            os.remove(LOG)
+    except OSError:
+        pass
+    fd = os.open(LOG, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+    os.dup2(fd, 1)
+    os.dup2(fd, 2)
+    os.close(fd)
+    sys.stdout = os.fdopen(1, "w", buffering=1)
+    sys.stderr = os.fdopen(2, "w", buffering=1)
 
 
 # --- pure: where a navigation goes, what to load --------------------------------
@@ -211,6 +246,8 @@ def run(argv) -> int:
             s.set_enable_developer_extras(True)
             s.set_javascript_can_access_clipboard(True)
             s.set_enable_back_forward_navigation_gestures(False)
+            # The page's console into the log: a script error explains a silence.
+            s.set_enable_write_console_messages_to_stdout(True)
             ground = Gdk.RGBA()
             ground.parse("#060a0a")
             self.web.set_background_color(ground)
@@ -255,8 +292,13 @@ def run(argv) -> int:
             self.win.connect("window-state-event", self.on_window_state)
             self.win.connect("key-press-event", self.on_key)
             self.win.connect("focus-in-event", lambda *_: self.win.set_urgency_hint(False))
+            # The page only notifies while the window isn't focused (Notifications.tsx).
+            self.win.connect("notify::is-active", lambda w, _p: log(f"window {'active' if w.is_active() else 'inactive'}"))
+            log(f"start: pid {os.getpid()}, port {self.port}, WebKitGTK "
+                f"{WebKit2.get_major_version()}.{WebKit2.get_minor_version()}.{WebKit2.get_micro_version()}")
             self.win.show_all()
             if manifest(self.port) is None:
+                log("bridge not answering at launch: starting the unit")
                 # Launched with the bridge down: start it (a no-op without the
                 # unit); the placeholder polls until it answers.
                 subprocess.Popen(["systemctl", "--user", "start", "mystical-assistant.service"],
@@ -274,6 +316,8 @@ def run(argv) -> int:
             self.session = None
 
         def cover(self, up_after: bool):
+            if self.showing or not self.poll:
+                log("bridge not answering: placeholder up, polling")
             self.showing = False
             self.web.load_alternate_html(placeholder(self.port, up_after), "about:mystical", None)
             if not self.poll:
@@ -292,6 +336,7 @@ def run(argv) -> int:
                     or err.matches(WebKit2.NetworkError.quark(), WebKit2.NetworkError.CANCELLED):
                 return False
             if same_origin(uri, self.port):
+                log(f"load failed: {bare(uri)}: {err.message}")
                 self.cover(up_after=True)
                 return True
             return False
@@ -299,6 +344,7 @@ def run(argv) -> int:
         def on_load_changed(self, web, event):
             if event == WebKit2.LoadEvent.COMMITTED:
                 self.win.set_title(web.get_title() or "mystical//assistant")
+                log(f"loaded {bare(web.get_uri())}")
 
         def open_session(self, sid: str):
             """A running window switches in place (App.tsx __mysticalOpenSession); else a deep link."""
@@ -322,6 +368,7 @@ def run(argv) -> int:
 
         # where things go ----------------------------------------------------
         def to_browser(self, uri: str):
+            log(f"link out: {bare(uri)}")
             try:
                 Gio.AppInfo.launch_default_for_uri(uri, None)
             except GLib.Error as e:
@@ -353,6 +400,7 @@ def run(argv) -> int:
             return None
 
         def on_permission(self, _web, req):
+            log(f"permission request: {type(req).__name__}")
             if isinstance(req, WebKit2.NotificationPermissionRequest):
                 req.allow()
             else:
@@ -365,7 +413,8 @@ def run(argv) -> int:
             the session); this only brings the window forward for that click,
             and flags it while it's behind. Checked against a stand-in service
             on a private bus: Notify arrives, ActionInvoked reaches onclick."""
-            note.connect("clicked", lambda *_: self.present())
+            log(f"notification: {note.get_title()!r} (window {'active' if self.win.is_active() else 'inactive'})")
+            note.connect("clicked", lambda *_: (log(f"notification clicked: {note.get_title()!r}"), self.present()))
             if not self.win.is_active():
                 self.win.set_urgency_hint(True)
             return False
@@ -493,6 +542,8 @@ def main(argv=None) -> int:
         return 1
     if a.check:
         return 0
+    if not sys.stderr.isatty():
+        to_log_file()
     return run(argv)
 
 
