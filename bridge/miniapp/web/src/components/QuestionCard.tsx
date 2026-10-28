@@ -38,7 +38,7 @@ function StageView({ q, shown }: { q: Question; shown: number }) {
     <div className="border border-border bg-[var(--tg-bg)]">
       <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
         <span className="inline-flex h-[21px] w-[21px] shrink-0 items-center justify-center bg-[var(--brand-soft)] font-mono text-[11px] font-bold text-[var(--tg-bg)]">{cur.key}</span>
-        <span className="min-w-0 truncate text-sm font-medium text-foreground-bright">{cur.name}</span>
+        <span className="min-w-0 text-sm font-medium text-foreground-bright [overflow-wrap:anywhere]">{cur.name}</span>
         <span className="ml-auto flex min-w-0 gap-1 overflow-x-auto">
           {cur.pv.shots.length > 1 && cur.pv.shots.map((s, k) => (
             <button key={k} type="button" role="tab" aria-selected={k === t} onClick={() => setTab(k)}
@@ -109,7 +109,7 @@ function TextPreview({ q, texts, picked }: { q: Question; texts: string[]; picke
           <div key={o.label} aria-hidden={i !== shown} className={`col-start-1 row-start-1 flex min-w-0 flex-col ${i === shown ? "" : "invisible"}`}>
             <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
               <span className="inline-flex h-[21px] w-[21px] shrink-0 items-center justify-center bg-[var(--brand-soft)] font-mono text-[11px] font-bold text-[var(--tg-bg)]">{k.key}</span>
-              <span className="min-w-0 truncate text-sm font-medium text-foreground-bright">{k.name}</span>
+              <span className="min-w-0 text-sm font-medium text-foreground-bright [overflow-wrap:anywhere]">{k.name}</span>
               <span className="ml-auto shrink-0 text-[9.5px] tracking-[1.5px] text-[var(--tg-hint)]">PREVIEW</span>
             </div>
             {texts[i]
