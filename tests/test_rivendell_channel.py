@@ -746,7 +746,7 @@ def test_a_reply_to_any_other_message_is_still_a_prompt(monkeypatch):
 def test_a_tap_on_an_old_ping_after_remove_does_nothing(monkeypatch):
     """Review focus 5: the buttons outlive the plugin; a tap must not reach it."""
     from bridge import dispatch, integrations
-    monkeypatch.setattr(integrations, "_cache", {"rivendell": False, "trackers": True, "design": True})
+    monkeypatch.setattr(integrations, "_cache", {"rivendell": False, "design": True})
     acks, touched = [], []
     monkeypatch.setattr(dispatch, "answer_cb", lambda cid, text="": acks.append(text))
     monkeypatch.setattr(dispatch, "edit", lambda *a, **k: None)
@@ -761,7 +761,7 @@ def test_a_tap_on_an_old_ping_after_remove_does_nothing(monkeypatch):
 
 def test_a_reply_to_an_old_ping_after_remove_is_a_prompt(monkeypatch):
     from bridge import dispatch, integrations
-    monkeypatch.setattr(integrations, "_cache", {"rivendell": False, "trackers": True, "design": True})
+    monkeypatch.setattr(integrations, "_cache", {"rivendell": False, "design": True})
     started, asked = [], []
     monkeypatch.setattr(dispatch.tglive, "start", lambda *a, **k: started.append(a))
     monkeypatch.setattr(dispatch, "send", lambda *a, **k: None)

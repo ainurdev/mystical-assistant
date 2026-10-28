@@ -265,6 +265,13 @@ def test_summarize_tool():
     assert runner._summarize_tool("Weird", {}) == ""
 
 
+def test_an_mcp_call_is_shown_whole_on_its_card():
+    d = runner._mcp_detail({"object": {"type": "tasks", "id": 4512}, "content_type": "TEXT",
+                            "body": "Fixed the loop.\n\nPR: https://x/1"})
+    assert d == ('object: {"type": "tasks", "id": 4512}\ncontent_type: TEXT\n'
+                 'body:\nFixed the loop.\n\nPR: https://x/1')
+
+
 def test_job_snapshot_cursor():
     job = runner.Job("j3", 555)
     job.add({"type": "text", "text": "a"})

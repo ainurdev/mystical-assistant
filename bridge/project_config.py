@@ -135,24 +135,6 @@ def design_link_count() -> int:
         return sum(1 for v in _load().values() if isinstance(v, dict) and v.get("design_project"))
 
 
-def tracker(project: str) -> "str | None":
-    """The task tracker a repo is linked to, as "<connection id>:<project id or
-    key>" (bridge/trackers.py resolves it). Project-wide: a repo's task list is
-    the same whatever branch is checked out."""
-    return _get_field(project, None, "tracker")
-
-
-def set_tracker(project: str, value: str, label: str = "") -> "str | None":
-    """Link (or, when blank, unlink) a repo to a tracker project. The label is
-    what to call it on screen; the id is what the fetch uses."""
-    _set_field(project, None, "tracker_label", label if value else "")
-    return _set_field(project, None, "tracker", value)
-
-
-def tracker_label(project: str) -> "str | None":
-    return _get_field(project, None, "tracker_label")
-
-
 def name(project: str, fallback: str = "") -> str:
     """What to call a project on screen: the name you gave it, else its
     directory name. Display only — the rel path stays the key everywhere, so a

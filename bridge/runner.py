@@ -158,20 +158,6 @@ def _graph_pack_for(chat_id: int, cwd: "str | None") -> str:
         return ""
 
 
-def _tasks_digest_for(project: "str | None", cwd: "str | None") -> str:
-    """Tracker digest for injection (bridge/trackers.py). Same contract as the
-    graph pack: best-effort, empty on anything, never blocks a turn past the
-    2 s the digest itself allows. `project` is the session's rel — a worktree's
-    cwd is not the project the link hangs off."""
-    try:
-        if not (integrations.installed("trackers") and aifeatures.enabled("tasks")):
-            return ""
-        from bridge import trackers
-        return trackers.digest(project or rel(cwd or state.project_dir(0)))
-    except Exception:  # noqa: BLE001
-        return ""
-
-
 def _dream_pack_for(chat_id: int, cwd: "str | None") -> str:
     """The repo's nightly digest for injection (bridge/dream.py). Same contract
     as the graph pack: best-effort, empty on anything, never blocks a turn."""
@@ -271,7 +257,7 @@ def _push_gate(cwd: str) -> "dict | None":
 
 def _one_settings(cmd: list[str]) -> list[str]:
     """claude keeps only the last --settings it is given, so every one a run
-    collects (the Stop hook, a push gate, a tracker's ask rule in extra_args)
+    collects (the Stop hook, a push gate, the bot's EXTRA_CLAUDE_ARGS in extra_args)
     goes in as one: objects merged key by key, lists joined."""
     def merge(a, b):
         if isinstance(a, dict) and isinstance(b, dict):
@@ -534,7 +520,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               claude_session_id: str | None = None, cwd: str | None = None,
               skip_pack: bool = False, new_session: bool = False,
               fork: bool = False, disabled_tools: list[str] | None = None,
-              autocompact: str | None = None, project: str | None = None) -> list[str]:
+              autocompact: str | None = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -609,11 +595,9 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         graph = ""
     else:
         graph = _graph_pack_for(chat_id, cwd)
-        # The task digest and the nightly digest ride the same once-per-session
-        # gate: something that moved between turns must not re-write the
-        # appended prompt.
-        graph = "\n\n".join(p for p in (graph, _tasks_digest_for(project, cwd),
-                                         _dream_pack_for(chat_id, cwd)) if p)
+        # The nightly digest rides the same once-per-session gate: something
+        # that moved between turns must not re-write the appended prompt.
+        graph = "\n\n".join(p for p in (graph, _dream_pack_for(chat_id, cwd)) if p)
         if claude_session_id:
             _packed_sessions.add(claude_session_id)
     _ensure_mystical(cwd)
@@ -813,10 +797,9 @@ class Job:
         # leaves the columns NULL — unknown rather than free.
         self.tokens: dict | None = None
         self.cwd: str | None = None       # where claude was spawned (set by _run_streaming)
-        self.project: str | None = None   # the session's project rel (a worktree cwd differs)
-        # A tracker update turn (bridge/trackers.py): the MCP server to switch on
-        # for this turn whatever the session's toggles say, and the argv extras
-        # (the --settings ask rule) that make every call on it show a card.
+        # The MCP server to switch on for this turn whatever the session's toggles
+        # say (a Rivendell newspaper's `rivendell`), and argv extras for the child
+        # (the bot chat's EXTRA_CLAUDE_ARGS, bridge/tglive.py).
         self.mcp_on: str | None = None
         self.extra_args: list[str] = []
         # A run whose prompt carries untrusted text (start_streaming_job's skip_pack):
@@ -974,9 +957,9 @@ class Job:
         decision, not a permission.
 
         A pick that lands while the child is still being spawned (job.proc is
-        None while the MCP health check, the graph pack and the task digest
-        build its argv) is held, and _run_streaming writes it the moment the
-        child exists, ahead of the prompt (release_held).
+        None while the MCP health check and the graph pack build its argv) is
+        held, and _run_streaming writes it the moment the child exists, ahead
+        of the prompt (release_held).
 
         ponytail: a can_use_tool the CLI emits after its success answer (a check
         that began before the switch) still shows its card; it's answerable."""
@@ -1019,8 +1002,8 @@ class Job:
         the moment the switch is real: the model moves, and a switch to
         bypassPermissions approves the permission cards already waiting —
         except what Bypass itself would still ask about (_bypass_still_asks),
-        and nothing at all on a tracker update, whose --settings ask rule
-        (extra_args) is there so you confirm every call on its server.
+        and nothing at all on a run that brought its own argv (extra_args),
+        whose --settings can hold an ask rule meant to confirm every call.
         Answers to anything else (interrupt) are not ours to act on."""
         with self._lock:
             sent = self._controls.pop(request_id, None)
@@ -2593,7 +2576,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         claude_session_id=job.resume_id, cwd=cwd,
                         new_session=job.new_session, disabled_tools=denied,
                         autocompact=store.get_autocompact(job.store_session_id)
-                        if job.store_session_id else None, project=job.project,
+                        if job.store_session_id else None,
                         skip_pack=job.skip_pack)
         if "--mcp-config" in cmd:
             # Its file holds tokens (see _mcp_config); it goes with the child.
@@ -2908,7 +2891,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         session, cwd, perm = _finalize_run_context(
             session, project_dir, permission_mode=permission_mode, origin=origin)
         # The session's own model unless the caller brought one: the /run routes
-        # save theirs to the row; internal callers (Rivendell, trackers, goals)
+        # save theirs to the row; internal callers (Rivendell, goals)
         # run theirs without writing it. Neither = no --model, the CLI default.
         # Same for effort/account: the profile only fills what the caller didn't
         # bring, and never overrides an explicit account_slot/runtime (an agent
@@ -2945,7 +2928,6 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
             job.resume_id, job.new_session, job.fork = _claim_session_id(
                 session["id"], session["claude_session_id"])
         job.account_slot = account_slot
-        job.project = session.get("project")
         # A tree an earlier turn moved onto, while it is still there (_session_brief's rule).
         wt = session.get("work_cwd")
         job.work_cwd = wt if wt and os.path.isdir(wt) else None

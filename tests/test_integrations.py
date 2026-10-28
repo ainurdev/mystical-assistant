@@ -11,11 +11,11 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 
 from bridge import (config, envsettings, integrations, project_config, rivendell,
-                    rivendell_instances, state, trackers)
+                    rivendell_instances, state)
 from bridge.dashboard import server as dash
 from bridge.miniapp import server as mini
 
-IDS = ["rivendell", "trackers", "design"]
+IDS = ["rivendell", "design"]
 
 
 @pytest.fixture
@@ -25,14 +25,13 @@ def fresh(monkeypatch, tmp_path):
     monkeypatch.setattr(integrations, "_path", lambda: str(path))
     monkeypatch.setattr(integrations, "_cache", None)
     monkeypatch.setattr(rivendell_instances, "raw_instances", lambda: [])
-    monkeypatch.setattr(trackers, "connections", lambda: [])
     monkeypatch.setattr(project_config, "design_link_count", lambda: 0)
     monkeypatch.setattr(rivendell, "reconfigure", lambda: None)
     monkeypatch.setattr(rivendell, "busy", lambda: False)
     return path
 
 
-def test_the_registry_holds_the_three_bundled_plugins():
+def test_the_registry_holds_the_two_bundled_plugins():
     assert [p["id"] for p in integrations.PLUGINS] == IDS
     for p in integrations.PLUGINS:
         assert {"id", "label", "blurb", "needs", "env_keys", "origins", "routes"} <= set(p)
@@ -41,14 +40,13 @@ def test_the_registry_holds_the_three_bundled_plugins():
 
 
 def test_a_first_boot_with_nothing_to_adopt_installs_nothing(fresh):
-    assert integrations.flags() == {"rivendell": False, "trackers": False, "design": False}
-    assert json.loads(fresh.read_text()) == {"rivendell": False, "trackers": False, "design": False}
+    assert integrations.flags() == {"rivendell": False, "design": False}
+    assert json.loads(fresh.read_text()) == {"rivendell": False, "design": False}
     assert stat.S_IMODE(os.stat(fresh).st_mode) == 0o600
 
 
 ADOPT = {
     "rivendell": (rivendell_instances, "raw_instances", lambda: [{"id": "production"}]),
-    "trackers": (trackers, "connections", lambda: [{"id": "c1"}]),
     "design": (project_config, "design_link_count", lambda: 1),
 }
 
@@ -70,8 +68,18 @@ def test_adoption_runs_once_so_a_removal_survives_a_restart(fresh, monkeypatch):
 
 def test_a_corrupt_file_adopts_again(fresh, monkeypatch):
     fresh.write_text("{not json")
-    monkeypatch.setattr(trackers, "connections", lambda: [{"id": "c1"}])
-    assert integrations.installed("trackers")
+    monkeypatch.setattr(project_config, "design_link_count", lambda: 1)
+    assert integrations.installed("design")
+
+
+def test_an_id_this_build_no_longer_ships_is_ignored(fresh):
+    """An older install's plugins.json still names the removed Teamwork/Jira
+    "trackers": it reads as not installed, and the file stays usable."""
+    fresh.write_text(json.dumps({"rivendell": True, "trackers": True, "design": False}))
+    assert integrations.flags() == {"rivendell": True, "design": False}
+    assert integrations.installed("trackers") is False
+    integrations.set_installed("design", True)
+    assert integrations.installed("design") and integrations.installed("rivendell")
 
 
 def test_install_and_remove_persist(fresh):
@@ -142,32 +150,21 @@ def test_the_rivendell_worker_dials_nothing_while_not_installed(fresh, monkeypat
     assert rivendell._desired() == {"p": inst}
 
 
-def test_the_task_digest_is_silent_while_trackers_are_not_installed(fresh, monkeypatch):
-    from bridge import aifeatures, runner
-    monkeypatch.setattr(aifeatures, "enabled", lambda key: True)
-    monkeypatch.setattr(trackers, "digest", lambda rel: "3 open")
-    assert runner._tasks_digest_for("/app", None) == ""
-    integrations.set_installed("trackers", True)
-    assert runner._tasks_digest_for("/app", None) == "3 open"
-
-
 def test_every_plugin_route_has_an_owner():
     owner = integrations.route_owner
     assert owner("/local/rivendell") == owner("/local/rivendell/queue") == "rivendell"
-    assert owner("/local/trackers") == owner("/local/tracker/tasks") == "trackers"
-    assert owner("/api/tracker/update") == "trackers"
     assert owner("/local/design/prompt") == "design"
     assert owner("/local/rivendellx") is None
     assert owner("/local/sessions") is None
 
 
 def test_state_summarises_only_what_is_installed(fresh, monkeypatch):
-    monkeypatch.setattr(trackers, "connections", lambda: [{"id": "c1"}])
-    integrations.set_installed("trackers", True)
+    monkeypatch.setattr(project_config, "design_link_count", lambda: 1)
+    integrations.set_installed("design", True)
     rows = {r["id"]: r for r in integrations.state()}
-    assert set(rows["trackers"]) == {"id", "label", "blurb", "needs", "installed", "summary"}
-    assert (rows["trackers"]["installed"], rows["trackers"]["summary"]) == (True, "1 connection")
-    assert (rows["design"]["installed"], rows["design"]["summary"]) == (False, "")
+    assert set(rows["design"]) == {"id", "label", "blurb", "needs", "installed", "summary"}
+    assert (rows["design"]["installed"], rows["design"]["summary"]) == (True, "1 repo linked")
+    assert (rows["rivendell"]["installed"], rows["rivendell"]["summary"]) == (False, "")
 
 
 def test_summaries_count_what_each_plugin_holds(fresh, monkeypatch):
@@ -177,21 +174,21 @@ def test_summaries_count_what_each_plugin_holds(fresh, monkeypatch):
     for pid in IDS:
         integrations.set_installed(pid, True)
     assert {r["id"]: r["summary"] for r in integrations.state()} == {
-        "rivendell": "2 instances · 1 on", "trackers": "0 connections", "design": "3 repos linked"}
+        "rivendell": "2 instances · 1 on", "design": "3 repos linked"}
 
 
 def test_a_store_that_raises_blanks_only_its_own_summary(fresh, monkeypatch):
     """The Integrations page is the one place to install or remove: one bad store
     must not take it down, nor turn a REMOVE that worked into a 500."""
-    integrations.set_installed("trackers", True)
+    integrations.set_installed("design", True)
 
     def boom():
         raise OSError("disk gone")
 
-    monkeypatch.setattr(trackers, "connections", boom)
+    monkeypatch.setattr(project_config, "design_link_count", boom)
     rows = integrations.state()
     assert [r["id"] for r in rows] == IDS
-    assert {r["id"]: r["summary"] for r in rows}["trackers"] == ""
+    assert {r["id"]: r["summary"] for r in rows}["design"] == ""
 
 
 def test_design_link_count_counts_linked_entries(monkeypatch, tmp_path):
@@ -227,11 +224,6 @@ ROUTES = {
                   ("GET", "/local/rivendell/todolist"), ("POST", "/local/rivendell"),
                   ("POST", "/local/rivendell/queue"), ("POST", "/local/rivendell/implement"),
                   ("POST", "/local/rivendell/again"), ("POST", "/local/rivendell/test")],
-    "trackers": [("GET", "/local/trackers"), ("GET", "/local/tracker/projects"),
-                 ("GET", "/local/tracker/tasks"), ("GET", "/local/tracker/statuses"),
-                 ("POST", "/local/trackers"), ("POST", "/local/tracker/update"),
-                 ("GET", "/api/tracker/tasks"), ("GET", "/api/tracker/statuses"),
-                 ("POST", "/api/tracker/update")],
     "design": [("GET", "/local/design/prompt")],
 }
 
@@ -253,12 +245,12 @@ def test_an_installed_rivendell_lists_its_env_keys(fresh):
 def test_the_integrations_route_lists_installs_and_removes(fresh):
     box = call("GET", "/local/integrations")
     assert box["code"] == 200 and [p["id"] for p in box["obj"]["plugins"]] == IDS
-    box = call("POST", "/local/integrations", {"id": "trackers", "action": "install"})
+    box = call("POST", "/local/integrations", {"id": "design", "action": "install"})
     assert box["code"] == 200 and box["obj"]["ok"] is True
-    assert {p["id"]: p["installed"] for p in box["obj"]["plugins"]}["trackers"] is True
-    assert call("GET", "/local/trackers")["code"] == 200
-    call("POST", "/local/integrations", {"id": "trackers", "action": "remove"})
-    assert call("GET", "/local/trackers")["code"] == 404
+    assert {p["id"]: p["installed"] for p in box["obj"]["plugins"]}["design"] is True
+    assert call("GET", "/local/design/prompt?kind=link")["code"] == 200
+    call("POST", "/local/integrations", {"id": "design", "action": "remove"})
+    assert call("GET", "/local/design/prompt?kind=link")["code"] == 404
 
 
 def test_the_integrations_route_refuses_what_it_does_not_know(fresh):
@@ -295,9 +287,8 @@ def test_removing_rivendell_while_a_run_still_claims_answers_409(monkeypatch):
 def test_the_miniapp_state_carries_the_flags(fresh, monkeypatch):
     monkeypatch.setattr(mini.models, "get_models", lambda: [])
     monkeypatch.setattr(state, "project_dir", lambda chat_id: config.BASE_PATH)
-    integrations.set_installed("trackers", True)
-    assert call("GET", "/api/state")["obj"]["plugins"] == {
-        "rivendell": False, "trackers": True, "design": False}
+    integrations.set_installed("design", True)
+    assert call("GET", "/api/state")["obj"]["plugins"] == {"rivendell": False, "design": True}
 
 
 def test_the_rivendell_route_reports_the_video_tools_and_an_edit_keeps_the_ws_url(

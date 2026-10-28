@@ -528,26 +528,8 @@ export interface ProjectSettings {
   run_cmd: string | null;
   prod_url: string | null;
   design_project: string | null;
-  /** "<connection id>:<tracker project id or key>" — see bridge/trackers.py */
-  tracker: string | null;
-  tracker_label: string | null;
   default_cmd: string;
   log_path: string;
-}
-
-// --- task trackers (Teamwork / Jira) — bridge/trackers.py -------------------
-export interface TrackerConnection {
-  id: string;
-  kind: "teamwork" | "jira";
-  name: string;
-  site: string;
-  email: string;
-  me: string;
-  cloud_id: string;
-  token: string;       // masked: "…" + last 4
-  mcp_server: string;  // the MCP entry an update turn switches on
-  mcp: boolean;        // that entry exists in ~/.claude.json
-  mcp_cmd: string;     // how to add it when it doesn't
 }
 
 // --- rivendell instances (PR-review plugin — bridge/rivendell_instances.py) ---
@@ -2086,7 +2068,7 @@ export const api = {
   setProjectSettings: (
     ctx: RunCtx,
     patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean; name?: string;
-             tracker?: string; tracker_label?: string; mark?: ProjectMark | null; logo_data?: string },
+             mark?: ProjectMark | null; logo_data?: string },
   ) =>
     req<{
       ok: boolean;
@@ -2096,8 +2078,6 @@ export const api = {
       design_project?: string | null;
       hidden?: boolean;
       name?: string | null;
-      tracker?: string | null;
-      tracker_label?: string | null;
     }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },
@@ -2129,14 +2109,6 @@ export const api = {
       `/local/rivendell/taskstate?project=${encodeURIComponent(project)}&branch=${encodeURIComponent(branch)}`),
   taskSkip: (project: string, branch: string) =>
     req<{ task: TaskState | null }>("/local/rivendell/taskstate", { method: "POST", body: { project, branch, state: "skip" } }),
-  // --- task trackers ---
-  trackers: () => req<{ connections: TrackerConnection[] }>("/local/trackers"),
-  addTracker: (body: { kind: "teamwork" | "jira"; name: string; site: string; email?: string; token: string }) =>
-    req<{ ok: boolean; connection: TrackerConnection }>("/local/trackers", {
-      method: "POST", body: { op: "add", ...body },
-    }),
-  removeTracker: (id: string) =>
-    req<{ ok: boolean }>("/local/trackers", { method: "POST", body: { op: "remove", id } }),
   // --- rivendell instances (PR-review plugin — bridge/rivendell_instances.py) ---
   rivendell: () => req<{ instances: RivendellInstance[]; video?: VideoTools }>("/local/rivendell"),
   addRivendell: (body: RivendellInput) =>

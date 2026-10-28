@@ -108,10 +108,10 @@ from bridge import integrations  # noqa: E402
 
 @pytest.fixture(autouse=True)
 def _plugins_installed(monkeypatch, tmp_path):
-    """Every bundled plugin installed, so the Rivendell, tracker and design
-    suites keep testing their features; test_integrations.py starts from none."""
+    """Every bundled plugin installed, so the Rivendell and design suites keep
+    testing their features; test_integrations.py starts from none."""
     monkeypatch.setattr(integrations, "_path", lambda: str(tmp_path / "conftest-plugins.json"))
-    monkeypatch.setattr(integrations, "_cache", dict.fromkeys(("rivendell", "trackers", "design"), True))
+    monkeypatch.setattr(integrations, "_cache", dict.fromkeys(("rivendell", "design"), True))
 
 
 # An empty selection is not a failure. pytest counts session.testscollected AFTER

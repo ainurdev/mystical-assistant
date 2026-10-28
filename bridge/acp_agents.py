@@ -16,8 +16,8 @@ Safety rules (spec: profiles-and-acp-agents.md) live here, in code:
      own flow (login_hint() shows the command). The only secrets kept are
      pasted API keys: ACCOUNTS_FILE, 0600, returned masked.
   3. env_for() builds the child env from an allow-list. The bridge's own env
-     holds the Telegram bot token, the dashboard token, Rivendell/GitHub/
-     tracker tokens, and maybe Anthropic credentials. None of that goes to a
+     holds the Telegram bot token, the dashboard token, Rivendell/GitHub
+     tokens, and maybe Anthropic credentials. None of that goes to a
      third-party CLI, and neither do other agents' keys.
   4. is_claude_model(): Claude models run only through the claude CLI.
   6. run_problem(): agent turns run only in the owner's chat, one person per

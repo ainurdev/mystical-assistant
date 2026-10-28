@@ -1,8 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { api, type Integration } from "../api";
 
-/** Which bundled integrations are installed (Rivendell, the task trackers, Claude
- *  Design), shared by everything that has to hide itself while its plugin isn't
+/** Which bundled integrations are installed (Rivendell, Claude Design), shared
+ *  by everything that has to hide itself while its plugin isn't
  *  and stop calling routes that would 404 — the RIVENDELL poll above all. One
  *  fetch, many readers, the shape of lib/ai.ts. Unknown reads as off, so a
  *  plugin's UI never flashes in before the bridge has answered. */
@@ -24,9 +24,9 @@ export async function refreshIntegrations(): Promise<void> {
     publish(flags((await api.integrations()).plugins));
   } catch (e) {
     // A bridge older than this dashboard 404s "not found": it has no install step
-    // and runs all three, so show all three.
+    // and runs them all, so show them all.
     if (e instanceof Error && e.message === "not found") {
-      publish({ rivendell: true, trackers: true, design: true });
+      publish({ rivendell: true, design: true });
     }
     /* any other failure keeps the last answer — a blip shouldn't blank the tabs */
   }

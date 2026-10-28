@@ -126,17 +126,6 @@ FEATURES = (
               "ANALYZE gets the MAP tab. Off, nothing is built, refreshed or "
               "injected, /map answers that the switch is off, and both leave the "
               "dashboard. An existing graphify-out/ is left on disk."},
-    {"key": "tasks", "env": "TASKS_DIGEST", "label": "TASK DIGEST",
-     "hint": "what is open, overdue and due soon, on a session's first turn",
-     "cost": "no extra call, a prompt pack per session in a linked repo",
-     "tokens": "~300 tokens",
-     "about": "A repo linked to a Teamwork or Jira project (ANALYZE ▸ LINK TASKS) "
-              "opens every session with a dozen lines from the tracker: counts, "
-              "the next deadline, what is overdue, what is due this week, what is "
-              "yours — keys, titles and dates only, never a description. Read from "
-              "a two-minute cache, sent once per session so the prompt cache holds, "
-              "and never waits more than two seconds for the tracker. Off, "
-              "nothing is injected; the TASKS tab and FEED still work."},
     {"key": "rvtrack", "env": "RIVENDELL_TRACK", "label": "RIVENDELL TASKS",
      "hint": "work in a repo on a Rivendell board finds or files its task",
      "cost": "no extra call; a note per run in a repo on a board, plus a tool call per piece of work",

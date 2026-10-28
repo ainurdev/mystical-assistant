@@ -1,9 +1,8 @@
-"""Which bundled plugins are installed: Rivendell, the task trackers (Teamwork,
-Jira) and Claude Design.
+"""Which bundled plugins are installed: Rivendell and Claude Design.
 
-Mystical is being prepared for a public release, and each of these three belongs
-to a particular setup (a Rivendell team, a Teamwork or Jira workspace, a Claude
-Design project), not to every install. They ship inside the tree but start OFF
+Mystical is being prepared for a public release, and each of these
+belongs to a particular setup (a Rivendell team, a Claude Design
+project), not to every install. They ship inside the tree but start OFF
 and invisible. "Install" flips a switch here and downloads nothing: the code is
 already on disk. Not installed means none of it exists. Its routes answer 404 at
 each server's door (route_owner), the Rivendell worker sits idle, its env rows,
@@ -12,12 +11,13 @@ draws its UI. Every one of those asks this module, so "is X on" has one answer
 instead of one per call site.
 
 Removing a plugin switches it off and leaves its own state where it is
-(rivendell_instances.json, trackers.json, a repo's design link), so installing it
-again brings it back as it was. The first read with no plugins.json adopts what
-the machine already uses (a Rivendell instance, a tracker connection, a linked
-repo), so an upgrade breaks nothing and asks for no click. Adoption runs once:
-from then on the file exists, and a removal survives a restart. A corrupt file
-counts as a missing one.
+(rivendell_instances.json, a repo's design link), so installing it again brings
+it back as it was. The first read with no plugins.json adopts what the machine
+already uses (a Rivendell instance, a linked repo), so an upgrade breaks nothing
+and asks for no click. Adoption runs once: from then on the file exists, and a
+removal survives a restart. A corrupt file counts as a missing one. An id the
+file holds that PLUGINS no longer has (the Teamwork/Jira "trackers", removed) is
+ignored.
 
 Persisted beside the DB as plugins.json, the way aifeatures is: one small file,
 readable by a bridge whose store is mid-migration. Stdlib only.
@@ -51,14 +51,6 @@ PLUGINS: tuple[dict, ...] = (
      "env_keys": ("FFMPEG_BIN", "WHISPER_BIN", "WHISPER_MODEL"),
      "origins": ("rivendell", "device-run", "team"),
      "routes": ("/local/rivendell",)},
-    {"id": "trackers", "label": "Teamwork · Jira",
-     "blurb": "A repo linked to a Teamwork or Jira project opens every session with what is "
-              "open and overdue. Adds the TASKS tab, LINK TASKS and updates posted through "
-              "the run.",
-     "needs": "API token",
-     "env_keys": (),
-     "origins": (),
-     "routes": ("/local/trackers", "/local/tracker", "/api/tracker")},
     {"id": "design", "label": "Claude Design",
      "blurb": "Link a repo to its Claude Design system: pull tokens and component specs as a "
               "skill, push finished work back. Adds the DESIGN tab and the DESIGN button.",
@@ -89,10 +81,9 @@ def _adopt() -> dict:
     under _lock, which is not reentrant: a source must never ask this module
     anything (installed(), flags(), state(), all of which take it), or the first
     boot hangs."""
-    from bridge import project_config, rivendell_instances, trackers
+    from bridge import project_config, rivendell_instances
     uses = {
         "rivendell": lambda: rivendell_instances.raw_instances(),
-        "trackers": lambda: trackers.connections(),
         "design": lambda: project_config.design_link_count() > 0,
     }
     found = {}
@@ -117,7 +108,7 @@ def _save(d: dict) -> None:
 
 
 def _load() -> dict:
-    """The install set, all three ids. Callers hold _lock."""
+    """The install set, every id in PLUGINS. Callers hold _lock."""
     global _cache
     if _cache is None:
         try:
@@ -171,13 +162,11 @@ def _summary(pid: str) -> str:
     """One line of what an installed plugin is holding, for its card. A store
     that raises reads "": this is the page that installs and removes, so one bad
     store must not fail it (nor a POST that worked, which answers state())."""
-    from bridge import project_config, rivendell_instances, trackers
+    from bridge import project_config, rivendell_instances
     try:
         if pid == "rivendell":
             rows = rivendell_instances.instances()
             return f"{_count(len(rows), 'instance')} · {sum(1 for r in rows if r['enable'])} on"
-        if pid == "trackers":
-            return _count(len(trackers.connections()), "connection")
         return _count(project_config.design_link_count(), "repo") + " linked"
     except Exception:  # noqa: BLE001 - one bad store blanks its own row only
         return ""

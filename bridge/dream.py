@@ -15,8 +15,8 @@ are. Ten lines is the whole budget, so the model has to *choose*.
 `.mystical/docs/` because `devserver.mystical_dir` self-ignores from git, so a
 repo's dream never lands in its history.
 
-The file is then a third prompt-pack source in `runner._base_cmd`, beside the
-graph map (~400 tokens) and the tracker digest (~300), sent once per session so
+The file is then a second prompt-pack source in `runner._base_cmd`, beside the
+graph map (~400 tokens), sent once per session so
 the prompt cache holds. That injection is the entire point — a digest nobody
 reads back is a diary, not a memory — and it is also why this ships OFF and
 answers to a switch in the AI tab.

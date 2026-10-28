@@ -1,6 +1,6 @@
 """The RIVENDELL tab's two dashboard routes.
 
-Socket-free via Handler.__new__ (the test_tracker_endpoints.py pattern). What is
+Socket-free via Handler.__new__. What is
 under test is the wiring: a project resolves to its checkout's remotes' slugs
 before Rivendell is asked, a checkout without one never reaches Rivendell, and
 IMPLEMENT's failures come back as the one line req() throws.

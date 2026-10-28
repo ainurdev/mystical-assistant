@@ -103,9 +103,6 @@ function ExtraCard({ f, busy, err, open, onToggle, onInfo }: {
   );
 }
 
-/** TASK DIGEST has its switch in SETTINGS ▸ INTEGRATIONS ▸ Trackers, not here. */
-const inGrid = (f: AiFeature) => f.key !== "tasks";
-
 /** Anything that runs on its own ships off: an install should cost exactly the
  *  turns you typed until you decide otherwise. A switch applies to the next
  *  turn — nothing to restart. */
@@ -120,7 +117,7 @@ function ExtrasGrid() {
 
   useEffect(() => {
     void api.aiFeatures()
-      .then((r) => { setRows(r.features.filter(inGrid)); setAiFeatures(r.features); })
+      .then((r) => { setRows(r.features); setAiFeatures(r.features); })
       .catch(() => setRows([]));
   }, []);
 
@@ -129,7 +126,7 @@ function ExtrasGrid() {
     setErr(null);
     try {
       const fresh = (await api.setAiFeature(f.key, !f.enabled)).features;
-      setRows(fresh.filter(inGrid));
+      setRows(fresh);
       // The switch owns visible UI elsewhere (tabs, boards, cards) — hand the
       // fresh answer to the shared store so it appears/disappears right now.
       setAiFeatures(fresh);

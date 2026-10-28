@@ -79,7 +79,7 @@ def test_project_settings_sets_the_design_link(client, tmp_repo):
 
 
 def test_design_prompt_is_gone_while_claude_design_is_not_installed(client, tmp_repo, monkeypatch):
-    monkeypatch.setattr(integrations, "_cache", {"rivendell": True, "trackers": True, "design": False})
+    monkeypatch.setattr(integrations, "_cache", {"rivendell": True, "design": False})
     assert client.get(f"/local/design/prompt?kind=link&cwd={tmp_repo}") == {"error": "not installed"}
 
 

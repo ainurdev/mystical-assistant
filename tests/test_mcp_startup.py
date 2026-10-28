@@ -73,6 +73,38 @@ def test_server_left_on_is_redeclared_under_strict(monkeypatch):
     assert _mcp_servers(cmd) == ["goals", "teamwork", "verify"]
 
 
+def test_mcp_on_beats_the_sessions_toggle_and_extra_args_join_its_one_settings(monkeypatch):
+    """A run's mcp_on (a Rivendell newspaper's `rivendell`) is on for that turn
+    whatever the session's toggles say, and its extra_args fold into the one
+    --settings beside the run's own Stop hook: claude keeps only the last."""
+    from bridge import store
+    store.init()
+    sid = store.create_session(555, "p-mcp-on")["id"]
+    store.set_disabled_tools(sid, ["mcp__figma"])          # the session has it off
+    monkeypatch.setattr(toolsets, "servers",
+                        lambda refresh=False: [{"name": "figma", "rule": "mcp__figma"}])
+    monkeypatch.setattr(runner, "_configured_mcp_servers",
+                        lambda cwd: {"figma": {"type": "http", "url": "https://mcp.figma.com/mcp"}})
+    monkeypatch.setattr(toolsets, "ready", lambda: True)
+    seen = {}
+
+    class Popen:
+        def __init__(self, cmd, **kw):
+            seen["cmd"] = cmd
+            seen["servers"] = _mcp_servers(cmd)        # read now: it goes with the child
+            raise FileNotFoundError
+    monkeypatch.setattr(runner.subprocess, "Popen", Popen)
+    job = runner.Job("job-mcp-on", 555, sid)
+    job.resume_id, job.new_session = SID, True
+    job.mcp_on, job.extra_args = "figma", ["--settings", '{"permissions": {"ask": ["mcp__figma"]}}']
+    runner._run_streaming(job, "hi", [], config.BASE_PATH)
+    cmd = seen["cmd"]
+    settings = json.loads(cmd[cmd.index("--settings") + 1])
+    assert cmd.count("--settings") == 1 and settings["permissions"] == {"ask": ["mcp__figma"]}
+    assert "Stop" in settings["hooks"]
+    assert "figma" in seen["servers"] and "--strict-mcp-config" in cmd
+
+
 def test_plugin_server_left_on_keeps_the_ambient_config(monkeypatch):
     # A plugin-bundled server has no definition we could re-declare, so strict
     # mode would silently drop a tool the Tools modal shows as ON. Pay the

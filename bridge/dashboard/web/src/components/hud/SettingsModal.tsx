@@ -25,7 +25,6 @@ import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./Pro
 import {
   api,
   type AccountInfo,
-  type AiFeature,
   type EnvSetting,
   type Integration,
   type AcpAccount,
@@ -38,7 +37,6 @@ import {
   type RivendellInput,
   type RivendellStatus,
   type StartupState,
-  type TrackerConnection,
   type UpdateInfo,
   type VideoTools,
   MOVE_EVENT,
@@ -76,7 +74,7 @@ import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWr
 import { AGENT_DEFAULT, agentLabel, optionRows, setAgentLabels } from "../../lib/agents";
 import { notify } from "./Notifications";
 import { NYAN_MODES, nyanLabel, nyanThumb, type NyanSound } from "../../lib/nyan";
-import { setAiFeatures, useAiFeatures } from "../../lib/ai";
+import { useAiFeatures } from "../../lib/ai";
 import { setIntegrations, useIntegrations } from "../../lib/integrations";
 import { askConfirm } from "../ui/Ask";
 import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
@@ -224,9 +222,8 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini api key install test other agent" },
   { tab: "integrations", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout video ffmpeg whisper" },
   { tab: "integrations", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
-  { tab: "integrations", sec: "TRACKERS", terms: "teamwork jira tracker tasks link token connection digest" },
   { tab: "integrations", sec: "CLAUDE DESIGN", terms: "claude design system link pull sync skill tokens components" },
-  { tab: "integrations", sec: "AVAILABLE", terms: "install integration plugin add rivendell teamwork jira claude design" },
+  { tab: "integrations", sec: "AVAILABLE", terms: "install integration plugin add rivendell claude design" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "system", sec: "USAGE SHARING", terms: "share usage telemetry analytics posthog privacy tracking anonymous opt in out replay recording" },
@@ -1663,129 +1660,6 @@ function EnvPanel() {
   );
 }
 
-/* TRACKERS — the Teamwork / Jira connections (bridge/trackers.py). What exists
-   on the machine; which repo uses which lives in ANALYZE, beside the repo. */
-const KIND_LABEL = { teamwork: "TEAMWORK", jira: "JIRA" } as const;
-
-function TrackersPanel({ onChange }: { onChange?: () => void }) {   // onChange: a connection was added or removed
-  const [rows, setRows] = useState<TrackerConnection[] | null>(null);
-  const [gone, setGone] = useState(false);     // an old bridge: the route 404s
-  const [kind, setKind] = useState<"teamwork" | "jira">("teamwork");
-  const [name, setName] = useState("");
-  const [site, setSite] = useState("");
-  const [email, setEmail] = useState("");
-  const [token, setToken] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState("");
-  const [hov, setHov] = useState("");
-  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
-
-  useEffect(() => {
-    void api.trackers().then((r) => setRows(r.connections)).catch(() => { setRows([]); setGone(true); });
-  }, []);
-
-  async function add() {
-    setBusy(true);
-    setErr("");
-    try {
-      const r = await api.addTracker({ kind, name, site, email: kind === "jira" ? email : undefined, token });
-      setRows((p) => [...(p ?? []), r.connection].sort((a, b) => a.name.localeCompare(b.name)));
-      setName(""); setSite(""); setEmail(""); setToken("");
-      onChange?.();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "could not connect");
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove(id: string) {
-    try {
-      await api.removeTracker(id);
-      setRows((p) => (p ?? []).filter((c) => c.id !== id));
-      onChange?.();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "could not remove");
-    }
-  }
-
-  if (rows === null) return <Placeholder icon={LoaderCircle} spin>Reading the tracker connections…</Placeholder>;
-  if (gone) return <Placeholder icon={TriangleAlert}>This bridge is running a build without trackers. Restart it.</Placeholder>;
-
-  const btn = (k: string, on: boolean): CSSProperties => ({
-    appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5,
-    padding: "6px 12px", flex: "none",
-    border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 25%, transparent)"}`,
-    background: on ? "color-mix(in srgb, var(--acc) 14%, transparent)" : hov === k ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent",
-    color: on ? "var(--txb)" : "var(--txm)",
-  });
-
-  return (
-    <>
-      {rows.length > 0 && (
-        <div style={CARD}>
-          {rows.map((c, i) => (
-            <Row key={c.id} first={!i}
-              label={<span>{c.name} <span style={{ color: "var(--txd)", letterSpacing: 1 }}>· {KIND_LABEL[c.kind]}</span></span>}
-              desc={
-                <>
-                  <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{c.site}</span>
-                  {c.me && <> · as {c.me}</>}
-                  {" · token "}<span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{c.token}</span>
-                  <div style={{ marginTop: 4, color: c.mcp ? "var(--txd)" : "var(--warn)" }}>
-                    {c.mcp
-                      ? <>MCP entry <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{c.mcp_server}</span> ready — updates can post</>
-                      : <>MCP entry <span style={{ fontFamily: "'JetBrains Mono',monospace" }}>{c.mcp_server}</span> missing — updates cannot post until you run{" "}
-                          <code style={{ fontFamily: "'JetBrains Mono',monospace", userSelect: "all" }}>{c.mcp_cmd}</code>
-                          {" "}and sign in once{c.kind === "jira" ? " (a private window for a different Atlassian account)" : ""}.</>}
-                  </div>
-                </>
-              }
-            >
-              <button onClick={() => void remove(c.id)} {...hp(`rm:${c.id}`)}
-                style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: hov === `rm:${c.id}` ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "var(--err)" }}>
-                REMOVE
-              </button>
-            </Row>
-          ))}
-        </div>
-      )}
-      <div style={{ ...CARD, marginTop: rows.length ? 11 : 0 }}>
-        <Row first label="ADD A CONNECTION"
-          desc={kind === "teamwork"
-            ? "Your API key: Teamwork ▸ profile ▸ Edit My Details ▸ API & Mobile. Site is your Teamwork address."
-            : "An Atlassian API token (id.atlassian.com ▸ Security ▸ API tokens) with the account email it belongs to. Site is the atlassian.net address; a scoped token works too."}>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={() => setKind("teamwork")} {...hp("k:tw")} style={btn("k:tw", kind === "teamwork")}>TEAMWORK</button>
-            <button onClick={() => setKind("jira")} {...hp("k:jira")} style={btn("k:jira", kind === "jira")}>JIRA</button>
-          </div>
-        </Row>
-        <div style={LINE}>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="name (e.g. ACME)" spellCheck={false}
-            style={{ ...field, flex: "1 1 140px" }} />
-          <input value={site} onChange={(e) => setSite(e.target.value)} spellCheck={false}
-            placeholder={kind === "teamwork" ? "acme.teamwork.com" : "acme.atlassian.net"}
-            style={{ ...field, flex: "2 1 200px", fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0 }} />
-        </div>
-        <div style={LINE}>
-          {kind === "jira" && (
-            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="account email" spellCheck={false}
-              style={{ ...field, flex: "1 1 180px", letterSpacing: 0 }} />
-          )}
-          <input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder={kind === "teamwork" ? "API key" : "API token"}
-            style={{ ...field, flex: "2 1 200px", fontFamily: "'JetBrains Mono',monospace", letterSpacing: 0 }} />
-          <button onClick={() => void add()} disabled={busy || !site.trim() || !token.trim() || (kind === "jira" && !email.trim())}
-            {...hp("add")}
-            style={{ ...btn("add", false), border: "1px solid var(--acc)", color: "var(--txb)", opacity: busy ? 0.6 : 1 }}>
-            {busy ? "TESTING…" : "TEST & ADD"}
-          </button>
-        </div>
-        {err && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 8 }}>{err}</div>}
-      </div>
-    </>
-  );
-}
-
 /* INTEGRATIONS ▸ RIVENDELL — the rivendell-api connections the PR-review plugin runs
    (bridge/rivendell_instances.py). One bridge, several Rivendells: a production
    dashboard, a local one, staging later. Each is an independent websocket
@@ -2084,19 +1958,13 @@ function RivendellPanel({ onChange }: { onChange?: () => void }) {   // onChange
    one place it shows: a card per installed plugin with its settings inside and
    REMOVE at its head, then the rest, each with INSTALL. Titled by search's
    INDEX names, so a hit lands on the card. */
-const PLUGIN_SEC: Record<string, string> = { rivendell: "RIVENDELL", trackers: "TRACKERS", design: "CLAUDE DESIGN" };
+const PLUGIN_SEC: Record<string, string> = { rivendell: "RIVENDELL", design: "CLAUDE DESIGN" };
 const PLUGIN_INFO: Record<string, string> = {
   rivendell: "Each instance holds a websocket open to a rivendell-api /agent endpoint and runs every request it sends with full autonomy (bypassPermissions) in its own workdir, so only connect an API you own. The token is minted in that Rivendell (Profile ▸ Tokens, LLM capability), kept beside the session store (mode 0600) and never shown again in full; revoke it there if it leaks. Runs appear in the session list tagged with the instance name. The first instance is seeded from your .env RIVENDELL_* values; edit or add more here — a save reconnects without a restart.",
-  trackers: "The token is kept beside the session store (mode 0600), sent only to the tracker's own API, and never shown again in full. Reading — the TASKS tab, the first-turn digest, NEXT UP — is the bridge's own HTTP and spends no model call. Writing goes through the session: its claude turn gets the tracker's MCP server for that turn only, in manual mode, with an ask rule on the whole server, so every comment and status change shows an Allow card with the full text before it posts. Teamwork's MCP entry is shared; each Jira site needs its own (Atlassian's login is per site) — the row says how to add it.",
 };
-// AVAILABLE's cards. Trackers is two, Teamwork and Jira, both installing it;
-// the other two say what the registry says.
-const OFFERS: { id: string; chip: string; color: string; name?: string; hint?: string; needs?: string }[] = [
+// AVAILABLE's cards: a chip each; the words are what the registry says.
+const OFFERS: { id: string; chip: string; color: string }[] = [
   { id: "rivendell", chip: "RV", color: "var(--ok)" },
-  { id: "trackers", chip: "TW", color: "var(--purple)", name: "Teamwork", needs: "API key",
-    hint: "A repo linked to a Teamwork project opens every session with what is open and overdue; TASKS tab, LINK TASKS, updates posted through the run." },
-  { id: "trackers", chip: "JR", color: "var(--info)", name: "Jira", needs: "API token",
-    hint: "The same, against an Atlassian site: one connection per site, an API token and the account it belongs to." },
   { id: "design", chip: "CD", color: "var(--warn)" },
 ];
 
@@ -2105,7 +1973,6 @@ function IntegrationsPanel() {
   const [down, setDown] = useState("");   // why the list can't be read; "not found" is a bridge from before integrations
   const [busy, setBusy] = useState("");   // the plugin being installed or removed
   const [err, setErr] = useState<{ id: string; msg: string } | null>(null);   // shown on the card it belongs to
-  const [digest, setDigest] = useState<AiFeature>();   // TASK DIGEST: the aifeatures switch `tasks`
 
   // Every answer also goes to the shared store, so the tabs and buttons a
   // plugin brings appear or leave in the same frame.
@@ -2116,8 +1983,6 @@ function IntegrationsPanel() {
   useEffect(() => {
     void api.integrations().then((r) => take(r.plugins))
       .catch((e) => setDown(e instanceof Error ? e.message : "could not read the integrations"));
-    void api.aiFeatures().then((r) => { setDigest(r.features.find((f) => f.key === "tasks")); setAiFeatures(r.features); })
-      .catch(() => {});
   }, []);
 
   async function set(id: string, action: "install" | "remove") {
@@ -2135,17 +2000,6 @@ function IntegrationsPanel() {
   async function remove(p: Integration) {
     if (await askConfirm(`Remove ${p.label}? Its tabs, buttons and worker go; its connections stay on disk, so installing it again restores them.`, { ok: "Remove" }))
       await set(p.id, "remove");
-  }
-
-  async function toggleDigest(f: AiFeature) {
-    setErr(null);
-    try {
-      const fresh = (await api.setAiFeature("tasks", !f.enabled)).features;
-      setDigest(fresh.find((x) => x.key === "tasks"));
-      setAiFeatures(fresh);
-    } catch (e) {
-      setErr({ id: "tasks", msg: e instanceof Error ? e.message : "could not save" });
-    }
   }
 
   if (down === "not found")
@@ -2168,14 +2022,8 @@ function IntegrationsPanel() {
                 : errLine(p.id)}>
               <MiniBtn danger disabled={!!busy} onClick={() => void remove(p)} title={`Remove ${p.label}`}>REMOVE</MiniBtn>
             </Row>
-            {p.id === "trackers" && digest && (
-              <Row label="TASK DIGEST" desc={<>{digest.hint}{errLine("tasks")}</>} info={digest.about}>
-                <Switch on={digest.enabled} onClick={() => void toggleDigest(digest)} label="Task digest" />
-              </Row>
-            )}
           </div>
           {p.id === "rivendell" && <div style={{ marginTop: 11 }}><RivendellPanel onChange={recount} /><DeviceRunsPanel /></div>}
-          {p.id === "trackers" && <div style={{ marginTop: 11 }}><TrackersPanel onChange={recount} /></div>}
         </Section>
       ))}
       <Section title="AVAILABLE" top={installed.length > 0}
@@ -2185,7 +2033,7 @@ function IntegrationsPanel() {
           <div className="aim aim-xgrid">
             {offers.map((o) => {
               const p = list.find((x) => x.id === o.id)!;
-              const name = o.name ?? p.label;
+              const name = p.label;
               return (
                 <div key={o.chip} className="aim-x" data-busy={busy === o.id || undefined}
                   style={{ border: "1px dashed var(--line2)", background: "transparent" }}>
@@ -2196,10 +2044,10 @@ function IntegrationsPanel() {
                     </span>
                     <b>{name}</b>
                   </div>
-                  <div className="aim-xhint">{o.hint ?? p.blurb}</div>
+                  <div className="aim-xhint">{p.blurb}</div>
                   {err?.id === o.id && <div className="aim-xerr">{err.msg}</div>}
                   <div className="aim-xfoot">
-                    <span>{o.needs ?? p.needs}</span>
+                    <span>{p.needs}</span>
                     <span style={{ flex: 1 }} />
                     <button type="button" className="aim-xbtn" disabled={!!busy} aria-label={`Install ${name}`}
                       onClick={() => void set(o.id, "install")} style={{ border: "1px solid var(--acc)", color: "var(--txb)" }}>

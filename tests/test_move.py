@@ -180,9 +180,8 @@ def world(tmp_path, monkeypatch):
     _write(os.path.join(old.state, "rivendell_instances.json"), json.dumps({"instances": {
         "production": {"id": "production", "name": "production", "enable": True,
                        "token": "rvd_secret", "workdir": app}}}))
-    _write(os.path.join(old.state, "trackers.json"), json.dumps({"connections": {"c1": {"x": 1}}}))
     _write(os.path.join(old.state, "plugins.json"),
-           json.dumps({"rivendell": True, "trackers": False, "design": False}))
+           json.dumps({"rivendell": True, "design": False}))
     _write(os.path.join(old.state, "ai_features.json"), json.dumps({"title": False, "ponytail": True}))
     _write(os.path.join(old.state, "nextup.json"), json.dumps({"cache": True}))
     db = sqlite3.connect(old.db)
@@ -375,11 +374,9 @@ def test_bridge_config_merges_and_per_machine_keys_stay_behind(world):
     assert prod["enable"] is False, "two linked bridges would both run every job"
     assert prod["workdir"] == f"{new.base}/acme/app"
     assert json.load(open(os.path.join(new.state, "plugins.json"))) == \
-        {"rivendell": True, "trackers": False, "design": False}
+        {"rivendell": True, "design": False}
     assert json.load(open(os.path.join(new.state, "ai_features.json"))) == \
         {"title": True, "ponytail": True}
-    assert json.load(open(os.path.join(new.state, "trackers.json")))["connections"] == \
-        {"c1": {"x": 1}}
     assert json.load(open(new.freeagents)) == {"groq": "k"}
     parked = os.path.join(new.state, "moved")
     host = os.listdir(parked)[0]
@@ -394,10 +391,10 @@ def test_a_machine_that_booted_takes_the_old_machines_installs(world):
     with every integration uninstalled. A true from the old machine wins."""
     new = world["new"]
     _write(os.path.join(new.state, "plugins.json"),
-           json.dumps({"rivendell": False, "trackers": False, "design": False}))
+           json.dumps({"rivendell": False, "design": False}))
     rep = _import(world, _export(world))
     assert json.load(open(os.path.join(new.state, "plugins.json"))) == \
-        {"rivendell": True, "trackers": False, "design": False}
+        {"rivendell": True, "design": False}
     assert "plugins.json" in rep["bridge"]["state merged"]
 
 

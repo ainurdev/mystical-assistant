@@ -43,7 +43,7 @@ from bridge import (acp_agents, agents, attribution, browser, config,
                     pubsub, queue_manager, relevance, report, rivendell,
                     rivendell_instances, rivendell_video, runner, selfupdate,
                     share,
-                    shell, skills, state, store, sysinfo, team, terminals, titler, trackers,
+                    shell, skills, state, store, sysinfo, team, terminals, titler,
                     usage, weather, wsutil)
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
@@ -689,8 +689,6 @@ class Handler(BaseHTTPRequestHandler):
                 abs_p, (qs.get("branch", [""])[0] or "").strip(),
                 force=qs.get("force", ["0"])[0] == "1",
                 session=(qs.get("session", [""])[0] or "").strip()))
-        if path == "/local/trackers":
-            return self._json({"connections": trackers.connections()})
         if path == "/local/rivendell":
             live = rivendell.status()
             insts = [{**i, "status": live.get(i["id"], {"state": "off"})}
@@ -770,25 +768,6 @@ class Handler(BaseHTTPRequestHandler):
             except rivendell.TasksError as e:
                 return self._json({"error": str(e), "code": e.code},
                                   502 if e.code == "unreachable" else 400)
-        if path == "/local/tracker/projects":
-            try:
-                return self._json({"projects": trackers.projects((qs.get("conn", [""])[0] or "").strip())})
-            except trackers.TrackerError as e:
-                return self._json({"error": str(e)}, 400)
-        if path == "/local/tracker/tasks":
-            abs_p = _abs_project(qs.get("project", [None])[0])
-            if abs_p is None:
-                return self._json({"error": "invalid project"}, 400)
-            return self._json(trackers.view(browser.rel(abs_p), (qs.get("session_id", [""])[0] or "").strip() or None))
-        if path == "/local/tracker/statuses":
-            abs_p = _abs_project(qs.get("project", [None])[0])
-            key = (qs.get("key", [""])[0] or "").strip()
-            if abs_p is None or not key:
-                return self._json({"error": "invalid project or key"}, 400)
-            try:
-                return self._json({"statuses": trackers.statuses(browser.rel(abs_p), key)})
-            except trackers.TrackerError as e:
-                return self._json({"error": str(e)}, 400)
         if path == "/local/project/settings":
             abs_p = (_abs_within((qs.get("cwd", [""])[0] or "").strip())
                      or _abs_project(qs.get("cwd_rel", [None])[0] or qs.get("project", [None])[0])
@@ -801,8 +780,6 @@ class Handler(BaseHTTPRequestHandler):
                 "prod_url": project_config.prod_url(rel, branch),
                 "design_project": project_config.design_project(rel, branch),
                 "name": project_config.name(rel),
-                "tracker": project_config.tracker(rel),
-                "tracker_label": project_config.tracker_label(rel),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
             })
@@ -1617,26 +1594,7 @@ class Handler(BaseHTTPRequestHandler):
                     out["mark"] = projectmarks.set_mark(rel, body.get("mark"), body.get("logo_data"))
                 except ValueError as e:
                     return self._json({"error": str(e)}, 400)
-            if "tracker" in body:
-                out["tracker"] = project_config.set_tracker(
-                    rel, (body.get("tracker") or "")[:120], (body.get("tracker_label") or "")[:120])
-                out["tracker_label"] = project_config.tracker_label(rel)
-                trackers.invalidate()
             return self._json(out)
-        if path == "/local/trackers":
-            op = body.get("op")
-            try:
-                if op == "add":
-                    return self._json({"ok": True, "connection": trackers.add_connection(
-                        (body.get("kind") or "").strip(), (body.get("name") or "")[:60],
-                        (body.get("site") or "")[:200], (body.get("email") or "")[:200],
-                        (body.get("token") or "")[:2000])})
-                if op == "remove":
-                    trackers.invalidate()
-                    return self._json({"ok": trackers.remove_connection((body.get("id") or "").strip())})
-            except trackers.TrackerError as e:
-                return self._json({"error": str(e)}, 400)
-            return self._json({"error": "op must be add or remove"}, 400)
         if path == "/local/rivendell":
             op = body.get("op")
             if body.get("share_device") is not None and not isinstance(body.get("share_device"), bool):
@@ -1858,17 +1816,6 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 text = device_ask.cancel(body.get("run"), csid)["sentence"]
             return self._json({"text": text})
-        if path == "/local/tracker/update":
-            abs_p = _abs_project(body.get("project"))
-            if abs_p is None:
-                return self._json({"error": "invalid project"}, 400)
-            job, err = trackers.start_update(
-                chat, browser.rel(abs_p), abs_p, (body.get("session_id") or "").strip(),
-                (body.get("key") or "")[:60], (body.get("status_id") or "")[:60],
-                (body.get("status_name") or "")[:80], (body.get("note") or "")[:2000], "dashboard")
-            if job is None:
-                return self._json({"error": err}, 409 if err == "busy" else 400)
-            return self._json({"job_id": job.id, "session_id": job.store_session_id})
         if path == "/local/git/checkout":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:

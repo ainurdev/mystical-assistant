@@ -84,7 +84,7 @@ _SYNCED = "synced"
 # The bridge state beside the DB that is configuration. The rest are caches or
 # runtime parking lots (cards, nextup, limit_resume, preview_queue, learn-cards).
 _STATE_FILES = ("env_settings.json", "ai_features.json", "fallback_policy.json",
-                "project_config.json", "trackers.json", "rivendell_instances.json",
+                "project_config.json", "rivendell_instances.json",
                 "project_marks.json", "plugins.json", "usage_sharing.json")
 
 # .env and env_settings.json keys that describe the machine itself, or would make

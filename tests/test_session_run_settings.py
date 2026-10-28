@@ -113,7 +113,7 @@ def test_a_run_with_no_picks_of_its_own_runs_the_sessions(monkeypatch):
 
 
 def test_a_caller_that_brings_picks_runs_them_and_writes_nothing(monkeypatch):
-    """Rivendell, trackers, goals: their values win for the run, and the session
+    """Rivendell, goals: their values win for the run, and the session
     keeps the picks a person made for it."""
     s = store.create_session(CHAT, "/srs-internal", cwd=config.BASE_PATH,
                              permission_mode="bypassPermissions")
@@ -332,10 +332,10 @@ def test_a_switch_to_bypass_leaves_what_bypass_itself_still_asks(monkeypatch):
         "hook", "newer"]
 
 
-def test_a_tracker_turn_keeps_its_cards_under_bypass():
-    """A tracker update runs with a --settings ask rule (extra_args) so every
-    call on its server is confirmed by you: no switch answers those."""
-    job = _live_job("s-tracker", PERM)
+def test_a_run_with_its_own_ask_rule_keeps_its_cards_under_bypass():
+    """A run that brought its own argv (extra_args) can carry a --settings ask
+    rule so every call it names is confirmed by you: no switch answers those."""
+    job = _live_job("s-own-rule", PERM)
     job.extra_args = ["--settings", '{"permissions": {"ask": ["mcp__jira"]}}']
     job.set_run_settings(permission_mode="bypassPermissions")
     _answer(job)
@@ -349,9 +349,9 @@ def test_other_modes_leave_waiting_cards_alone():
 
 
 def test_a_pick_made_while_the_child_spawns_reaches_it_before_the_prompt(monkeypatch):
-    """job.proc is None while the argv is built (MCP health check, graph pack,
-    task digest): a pick made then is held and written the moment the child
-    exists, ahead of the prompt — not dropped."""
+    """job.proc is None while the argv is built (MCP health check, graph pack):
+    a pick made then is held and written the moment the child exists, ahead of
+    the prompt — not dropped."""
     from bridge import goals, toolsets
     s = store.create_session(CHAT, "/srs-spawn", cwd=config.BASE_PATH)
     job = runner.Job("j-srs-spawn", CHAT, s["id"])
@@ -454,7 +454,7 @@ def _bot_argv(monkeypatch, sid, extra="--permission-mode acceptEdits"):
             return 0
     monkeypatch.setattr(runner.subprocess, "Popen", Popen)
     monkeypatch.setattr(runner.git, "head_sha", lambda cwd: None)   # it would spawn through Popen
-    for name in ("_graph_pack_for", "_tasks_digest_for", "_dream_pack_for",
+    for name in ("_graph_pack_for", "_dream_pack_for",
                  "_graph_refresh_after_turn", "_announce_end"):
         monkeypatch.setattr(runner, name, lambda *a, **k: "")
     monkeypatch.setattr(runner, "_maybe_auto_resume", lambda *a, **k: False)

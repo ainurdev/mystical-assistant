@@ -3,10 +3,8 @@
 One bridge, several Rivendells: a production dashboard, a local one you develop
 against, a staging one later. Each is an independent websocket connection with
 its own URL, token, model and workdir, so this is a keyed collection rather than
-the single flat ``RIVENDELL_*`` block it grew out of — the same shape
-``bridge/trackers.py`` uses for Teamwork/Jira connections, persisted the same
-way (a JSON file beside the session store, mode 0600, the token never returned in
-full).
+the single flat ``RIVENDELL_*`` block it grew out of, persisted as a JSON file
+beside the session store (mode 0600, the token never returned in full).
 
 Migration is transparent: the first read, with no file yet, seeds one instance
 named "production" from whatever ``RIVENDELL_*`` was set in the environment, so a

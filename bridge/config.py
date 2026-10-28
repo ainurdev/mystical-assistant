@@ -224,13 +224,6 @@ PONYTAIL_ENABLE = os.environ.get("PONYTAIL_ENABLE", "1").lower() \
 GRAPH_ENABLE = os.environ.get("GRAPH_ENABLE", "1").lower() \
     not in ("0", "false", "no", "")
 
-# --- Task digest ---------------------------------------------------------------
-# A repo linked to a Teamwork or Jira project (ANALYZE ▸ LINK TASKS) opens every
-# session with a dozen lines of what is open, overdue and due soon. Off, nothing
-# is read or injected; the TASKS tab stays.
-TASKS_DIGEST = os.environ.get("TASKS_DIGEST", "1").lower() \
-    not in ("0", "false", "no", "")
-
 # --- Rivendell tasks -----------------------------------------------------------
 # A session in a repo on a Rivendell task board is told to find the task behind
 # its work, or ask and then file one, and gets the two goals

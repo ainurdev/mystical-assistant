@@ -136,15 +136,6 @@ def test_a_teammates_device_run_is_never_reported_as_stalled():
     assert [x["prompt"] for x in stalled] == ["do the thing"]
 
 
-def test_no_tracker_is_read_while_trackers_are_not_installed(monkeypatch):
-    from bridge import integrations, trackers
-    monkeypatch.setattr(integrations, "_cache", {"rivendell": True, "trackers": False, "design": True})
-    asked = []
-    monkeypatch.setattr(trackers, "tasks", lambda *a, **k: asked.append(a) or {})
-    f = nextup.facts(CHAT, _mkrepo())
-    assert asked == [] and f["tracker"] == "" and f["tasks_due"] == []
-
-
 def test_cache_key_moves_when_the_worktree_gets_dirty():
     d = _mkrepo()
     before = nextup.cache_key(nextup.facts(CHAT, d))

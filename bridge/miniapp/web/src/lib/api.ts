@@ -460,40 +460,6 @@ export interface IssuesInfo {
   issues: Issue[];
 }
 
-// --- task trackers (Teamwork / Jira) — bridge/trackers.py; mirrors the dashboard's
-export interface TrackerTask {
-  key: string;         // "ACME-12" | "tw-4512"
-  title: string;
-  status: string;
-  due: string;         // YYYY-MM-DD or ""
-  priority: string;
-  assignee: string;
-  mine: boolean;
-  url: string;
-  updated: string;
-  description: string;
-}
-export interface TrackerNext { kind: string; name: string; date: string }
-export interface TrackerTasks {
-  linked: boolean;
-  kind: "teamwork" | "jira" | "";
-  name: string;
-  label: string;
-  url: string;
-  me: string;
-  read: number | null;
-  stale: boolean;
-  error: string;
-  open: number;
-  done: number | null;
-  overdue: number;
-  due_week: number;
-  next: TrackerNext[];
-  tasks: TrackerTask[];
-  session_key?: string;  // the task the given session's branch names
-}
-export interface TrackerStatus { id: string; name: string }
-
 // One session's prompt queue (bridge/queue_manager.py). Items run one at a time
 // per session and auto-advance when the chat frees up.
 export interface QueueItem {
@@ -720,13 +686,6 @@ export const api = {
   getAccounts: () => request<{ accounts: AccountInfo[] }>("/api/accounts"),
 
   getIssues: () => request<IssuesInfo>("/api/github/issues"),
-  // the active project's tracker tasks; session_id marks the one its branch names
-  getTrackerTasks: (sessionId?: string | null) =>
-    request<TrackerTasks>(`/api/tracker/tasks${sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : ""}`),
-  getTrackerStatuses: (key: string) =>
-    request<{ statuses: TrackerStatus[] }>(`/api/tracker/statuses?key=${encodeURIComponent(key)}`),
-  trackerUpdate: (body: { session_id: string; key: string; status_id?: string; status_name?: string; note?: string }) =>
-    request<{ job_id: string; session_id: string }>("/api/tracker/update", { method: "POST", body }),
 
   getFiles: () => request<{ files: string[] }>("/api/files"),
 

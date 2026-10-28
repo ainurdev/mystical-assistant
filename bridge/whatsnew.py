@@ -78,7 +78,7 @@ PLACES = {
     "settings:notifications": "pop-ups, sounds, quiet hours",
     "settings:projects": "repos, their names, logos and profiles",
     "settings:aimgmt": "logins, profiles, skills, MCP servers",
-    "settings:integrations": "Rivendell, task trackers",
+    "settings:integrations": "Rivendell, Claude Design",
     "settings:system": "the bridge itself, updates",
     "settings:move": "export and import to another machine",
     "rail:files": "the session's changed files",
