@@ -190,6 +190,22 @@ def open_url(url: str, browser: str | None, profile: str | None) -> None:
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+WINDOW = os.path.join(REPO, "linux", "window.py")
+_window_ok: list = []
+
+
+def window_argv(port: int, sid: str | None = None) -> list[str] | None:
+    """linux/window.py's command line when its bindings import here (checked
+    once), else None and the Chrome --app window stands in. The window is one
+    instance: a second launch brings it forward, switched to `sid`."""
+    if not _window_ok:
+        _window_ok.append(os.path.isfile(WINDOW) and subprocess.run(
+            ["/usr/bin/python3", WINDOW, "--check"], capture_output=True).returncode == 0)
+    if not _window_ok[0]:
+        return None
+    return ["/usr/bin/python3", WINDOW, "--port", str(port), *(["--session", sid] if sid else [])]
+
+
 def open_window(port: int, browser: str | None, profile: str | None,
                 wait_s: float = 20, unit: str = "mystical-assistant.service") -> bool:
     """The app-launcher entry's whole job: start the unit if nothing answers,
@@ -303,6 +319,12 @@ class Tray:
         self.ind.set_secondary_activate_target(opener)
 
     def open(self, sid):
+        argv = window_argv(self.a.port, sid)
+        if argv:
+            subprocess.Popen(argv, start_new_session=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+
         def work():
             manifest = fetch(self.a.port, "/manifest.webmanifest") or {}
             open_url(session_url(self.a.port, manifest.get("start_url"), sid),

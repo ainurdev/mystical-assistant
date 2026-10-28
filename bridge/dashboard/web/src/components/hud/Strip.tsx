@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
 import { setClock12 } from "../../lib/surfaces";
-import { isMacApp, macWindow } from "../../lib/mac";
-import { Minus, PanelLeftClose, Plus, X, type LucideIcon } from "lucide-react";
+import { isMacApp, linuxWindow, macWindow } from "../../lib/mac";
+import { Minus, PanelLeftClose, Plus, Square, X, type LucideIcon } from "lucide-react";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -380,6 +380,25 @@ export function Strip(props: StripProps) {
       <span style={{ display: "flex", alignItems: "center", gap: 12, flex: "none" }}>
         <NotificationCenter />
       </span>
+    </div>
+  );
+}
+
+/** The Linux window's buttons (linux/window.py draws no title bar): minimize,
+ *  maximize, close, fixed in the top-right corner index.css keeps free for
+ *  them (data-wco="linux"). Where KDE and GNOME put theirs by default. */
+export function LinuxControls() {
+  return (
+    <div className="lxctl" role="group" aria-label="Window">
+      <button type="button" aria-label="Minimize" title="Minimize" onClick={() => linuxWindow("minimize")}>
+        <Minus size={14} strokeWidth={1.8} aria-hidden />
+      </button>
+      <button type="button" aria-label="Maximize" title="Maximize" onClick={() => linuxWindow("maximize")}>
+        <Square size={11} strokeWidth={1.8} aria-hidden />
+      </button>
+      <button type="button" aria-label="Close" title="Close" data-close="" onClick={() => linuxWindow("close")}>
+        <X size={15} strokeWidth={1.8} aria-hidden />
+      </button>
     </div>
   );
 }

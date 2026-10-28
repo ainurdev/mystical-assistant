@@ -578,6 +578,7 @@ def test_linux_launcher_entry_opens_the_window_even_when_the_bridge_is_down(tmp_
     (apps / "mystical-assistant.desktop").write_text("old")
     entry = apps / "chrome-localhost__-Profile_5.desktop"
     monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_window_ok", lambda: False)
     monkeypatch.setattr(startup, "_APPS_DIR", str(apps))
     monkeypatch.setattr(startup, "_browser", lambda: "/usr/bin/google-chrome")
     monkeypatch.setattr(startup, "_profile", lambda *_: "Profile 5")
@@ -597,6 +598,7 @@ def test_linux_launcher_entry_opens_the_window_even_when_the_bridge_is_down(tmp_
 
 def test_linux_launcher_entry_needs_a_chromium_browser(monkeypatch):
     monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_window_ok", lambda: False)
     monkeypatch.setattr(startup, "_browser", lambda: None)
     with pytest.raises(RuntimeError, match="Chrome"):
         startup.install_launcher()
@@ -613,6 +615,7 @@ def test_linux_launcher_steps_aside_for_the_installed_app(tmp_path, monkeypatch)
                    "Exec=/opt/google/chrome/google-chrome --profile-directory=Default --app-id=abcdefghijklmnop\n")
     (apps / "chrome-zzz-Default.desktop").write_text("[Desktop Entry]\nName=Slack\nExec=chrome --app-id=zzz\n")
     monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_window_ok", lambda: False)
     monkeypatch.setattr(startup, "_APPS_DIR", str(apps))
     monkeypatch.setattr(startup, "_browser", lambda: "/usr/bin/google-chrome")
     monkeypatch.setattr(startup, "_profile", lambda *_: "Default")
@@ -621,3 +624,26 @@ def test_linux_launcher_steps_aside_for_the_installed_app(tmp_path, monkeypatch)
     assert startup.install_launcher() == str(pwa)
     assert not ours.exists()
     assert pwa.exists()
+
+
+def test_linux_launcher_is_the_webkit_window_when_it_can_run(tmp_path, monkeypatch):
+    """With GTK/WebKitGTK here, the entry runs linux/window.py, named for its
+    app id, and the Chrome --app entry it replaces goes. Chrome's own PWA entry stays."""
+    apps = tmp_path / "applications"
+    apps.mkdir()
+    (apps / "chrome-localhost__-Default.desktop").write_text("old")
+    (apps / "mystical-assistant.desktop").write_text("older")
+    pwa = apps / "chrome-abcdefghijklmnop-Default.desktop"
+    pwa.write_text("[Desktop Entry]\nName=mystical//assistant\nExec=chrome --app-id=abcdefghijklmnop\n")
+    monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_window_ok", lambda: True)
+    monkeypatch.setattr(startup, "_APPS_DIR", str(apps))
+    monkeypatch.setattr(startup.shutil, "which", lambda _t: None)
+
+    path = startup.install_launcher()
+    assert path == str(apps / "cloud.ainurhq.mystical.desktop")
+    text = (apps / "cloud.ainurhq.mystical.desktop").read_text()
+    assert "linux/window.py --port " in text and "StartupWMClass=cloud.ainurhq.mystical\n" in text
+    assert "$" not in text and "%" not in text
+    assert sorted(p.name for p in apps.iterdir()) == ["chrome-abcdefghijklmnop-Default.desktop",
+                                                      "cloud.ainurhq.mystical.desktop"]

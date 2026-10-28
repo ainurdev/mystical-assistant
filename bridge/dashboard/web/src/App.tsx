@@ -71,7 +71,7 @@ import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
 import { syncBadge, syncOf } from "./lib/gitsync";
 import { chime, pushGranted } from "./lib/push";
-import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
+import { isLinuxApp, isMacApp, isNativeApp, linuxWindow, macAppearance, macDrag, useMacSettings } from "./lib/mac";
 import { watchWco } from "./lib/wco";
 import { switchWorkspace, useWorkspaces, workspaceOf } from "./lib/workspaces";
 import { WorkspaceButton } from "./components/hud/WorkspaceButton";
@@ -84,7 +84,7 @@ import { JobBar } from "./components/JobBar";
 import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
-import { Brand, RightCap, Strip } from "./components/hud/Strip";
+import { Brand, LinuxControls, RightCap, Strip } from "./components/hud/Strip";
 import { PaletteButton } from "./components/hud/PaletteButton";
 import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
@@ -738,6 +738,24 @@ export function App() {
 
   // The installed PWA with its title bar hidden: the caps take over (lib/wco.ts).
   useEffect(() => watchWco(), []);
+
+  // The Linux window (linux/window.py) has no title bar and WebKitGTK no
+  // app-region, so the caps' bare surface (.wco-bar, not a control or a
+  // popover) asks the window to drag, and a double-click maximizes — what a
+  // title bar does.
+  useEffect(() => {
+    if (!isLinuxApp()) return;
+    const bare = (e: MouseEvent) => {
+      const t = e.target as Element;
+      return e.button === 0 && !!t.closest?.(".wco-bar")
+        && !t.closest("button,a,input,textarea,select,label,[role=button],[contenteditable],[tabindex],.wspop,.mscroll");
+    };
+    const down = (e: MouseEvent) => { if (bare(e) && e.detail === 1) linuxWindow("drag"); };
+    const dbl = (e: MouseEvent) => { if (bare(e)) linuxWindow("maximize"); };
+    window.addEventListener("mousedown", down);
+    window.addEventListener("dblclick", dbl);
+    return () => { window.removeEventListener("mousedown", down); window.removeEventListener("dblclick", dbl); };
+  }, []);
 
   // --- polls (unchanged data flow) ---
   useEffect(() => {
@@ -3050,6 +3068,7 @@ export function App() {
             {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
             <MoveDock />
             <PillHost />
+            {isLinuxApp() && <LinuxControls />}
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
                 settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}

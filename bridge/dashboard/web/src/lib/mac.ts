@@ -36,6 +36,20 @@ export function isWinApp(): boolean {
   return typeof navigator !== "undefined" && /\bMysticalWin\//.test(navigator.userAgent);
 }
 
+/** Running inside linux/window.py, the Linux window (WebKitGTK). Not one of
+ *  isNativeApp's shells: it has no shim and no settings of its own — WebKit's
+ *  own Notification is the desktop's — only a title bar the page draws. */
+export function isLinuxApp(): boolean {
+  return typeof navigator !== "undefined" && /\bMysticalLinux\//.test(navigator.userAgent);
+}
+
+/** The Linux window's ops: drag (a press on the caps), minimize, maximize (a
+ *  toggle), close. A no-op anywhere else. */
+export function linuxWindow(op: "drag" | "minimize" | "maximize" | "close"): void {
+  const w = window as Window & { webkit?: { messageHandlers?: Record<string, { postMessage: (m: unknown) => unknown }> } };
+  try { w.webkit?.messageHandlers?.mysticalLinux?.postMessage({ op }); } catch { /* not the window */ }
+}
+
 /** Either native shell: the shim, the banner buttons and the tab apply. */
 export function isNativeApp(): boolean {
   return isMacApp() || isWinApp();

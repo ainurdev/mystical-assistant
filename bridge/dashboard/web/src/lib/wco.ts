@@ -1,3 +1,4 @@
+import { isLinuxApp } from "./mac";
 /** The installed PWA's title bar, when Chrome hands it to the page.
  *
  *  The manifest asks for display_override: window-controls-overlay. Installed
@@ -16,7 +17,14 @@
  *  navigator.windowControlsOverlay or it isn't visible, and nothing changes. */
 type Wco = EventTarget & { visible: boolean };
 
+/** The Linux window (linux/window.py) has no title bar either, and no
+ *  overlay: the page draws min/max/close itself (LinuxControls) in the same
+ *  corner, so it wears `data-wco="linux"` and index.css gives it that room. */
 export function watchWco(): () => void {
+  if (isLinuxApp()) {
+    document.documentElement.setAttribute("data-wco", "linux");
+    return () => document.documentElement.removeAttribute("data-wco");
+  }
   const wco = (navigator as Navigator & { windowControlsOverlay?: Wco }).windowControlsOverlay;
   if (!wco) return () => {};
   const sync = () => document.documentElement.toggleAttribute("data-wco", wco.visible);

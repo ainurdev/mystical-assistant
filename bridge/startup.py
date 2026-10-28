@@ -380,13 +380,67 @@ def _pwa_entry() -> str | None:
     return None
 
 
+# linux/window.py, the WebKitGTK window. Its entry is named for its Gtk.Application
+# id, which is also its Wayland app_id, so panels match the window to this icon.
+_WINDOW = os.path.join(_REPO, "linux", "window.py")
+_WINDOW_ID = "cloud.ainurhq.mystical"
+
+
+def _window_ok() -> bool:
+    """The window's bindings (GTK 3, WebKitGTK 4.1) import on the system python3."""
+    try:
+        return os.path.isfile(_WINDOW) and subprocess.run(
+            ["/usr/bin/python3", _WINDOW, "--check"], capture_output=True, timeout=30).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def _window_desktop() -> str:
+    """The launcher entry for linux/window.py: links leave it for the desktop's
+    default browser, which a Chrome window never did (its module docstring)."""
+    from bridge import config
+    icon = os.path.join(_REPO, "bridge", "dashboard", "web", "public", "icon-512.png")
+    argv = ["/usr/bin/python3", _WINDOW, "--port", str(config.DASH_PORT)]
+    return ("[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=Mystical\n"
+            "GenericName=mystical//assistant dashboard\n"
+            "Comment=The dashboard in its own window\n"
+            f"Exec={' '.join(map(_exec_arg, argv))}\n"
+            f"Icon={icon}\n"
+            "Terminal=false\n"
+            "Categories=Development;\n"
+            "StartupNotify=true\n"
+            f"StartupWMClass={_WINDOW_ID}\n")
+
+
+def _refresh_apps() -> None:
+    # Launchers watch this dir; the cache refresh is for the ones that don't.
+    for tool in ("update-desktop-database", "kbuildsycoca6", "kbuildsycoca5"):
+        if shutil.which(tool):
+            args = [tool, _APPS_DIR] if tool.startswith("update") else [tool]
+            subprocess.run(args, capture_output=True, timeout=60)
+
+
 def install_launcher() -> str:
     """Write the app-launcher entry (native Linux; `mystical app`). Returns its
-    path; raises RuntimeError when there is no Chromium-family browser. Once
-    Chrome has installed the dashboard as an app, that entry is the launcher:
-    ours goes, so the menu doesn't offer two windows, and its path comes back."""
+    path. linux/window.py when its bindings are here: it takes the place of the
+    Chrome --app entry, which goes. Without them, the Chrome window, and once
+    Chrome has installed the dashboard as an app, Chrome's entry is the
+    launcher (ours goes, so the menu doesn't offer two). A PWA you installed is
+    left alone either way: it's Chrome's entry, not ours. Raises RuntimeError
+    when there is neither the window's bindings nor a Chromium-family browser."""
     if _wsl() or _darwin():
         raise RuntimeError("the launcher entry is for a native Linux desktop")
+    if _window_ok():
+        os.makedirs(_APPS_DIR, exist_ok=True)
+        path = os.path.join(_APPS_DIR, _WINDOW_ID + ".desktop")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(_window_desktop())
+        _remove(os.path.join(_APPS_DIR, _OLD_LAUNCHER),
+                *glob.glob(os.path.join(_APPS_DIR, "chrome-localhost__-*.desktop")))
+        _refresh_apps()
+        return path
     if not _browser():
         raise RuntimeError("no Chrome/Chromium/Edge on PATH — the window is a browser --app window")
     from bridge import config
@@ -399,12 +453,8 @@ def install_launcher() -> str:
     os.makedirs(_APPS_DIR, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         f.write(_launcher_desktop(prof))
-    _remove(os.path.join(_APPS_DIR, _OLD_LAUNCHER))
-    # Launchers watch this dir; the cache refresh is for the ones that don't.
-    for tool in ("update-desktop-database", "kbuildsycoca6", "kbuildsycoca5"):
-        if shutil.which(tool):
-            args = [tool, _APPS_DIR] if tool.startswith("update") else [tool]
-            subprocess.run(args, capture_output=True, timeout=60)
+    _remove(os.path.join(_APPS_DIR, _OLD_LAUNCHER), os.path.join(_APPS_DIR, _WINDOW_ID + ".desktop"))
+    _refresh_apps()
     return path
 
 
