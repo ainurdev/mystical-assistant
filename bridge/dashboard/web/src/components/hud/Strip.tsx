@@ -53,13 +53,20 @@ const seg = (on: boolean): CSSProperties => ({
 export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: () => void }) {
   // Mystical.app: the cap is the window's title bar, and its traffic lights
   // are drawn here, not by AppKit (DashboardWindow hides the native ones): they
-  // fade in while the cap is hovered and the logo slides out from under them.
+  // fade in while the mark's end of the cap is hovered and the logo slides out
+  // from under them.
   const mac = isMacApp();
   const [hot, setHot] = useState(false);
 
   return (
     // Relative: the Mac's traffic lights sit absolute inside it.
-    <div onMouseEnter={mac ? () => setHot(true) : undefined} onMouseLeave={mac ? () => setHot(false) : undefined} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    <div style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+      {/* The lights' hover zone: the mark, the cap's full height, and out over
+          its padding to the window's corner (margin -12, padding 12). Not the
+          fold button's end — reaching for the fold shouldn't wake the lights.
+          Folded there is no fold, and the zone is the whole cap. */}
+      <div onMouseEnter={mac ? () => setHot(true) : undefined} onMouseLeave={mac ? () => setHot(false) : undefined}
+           style={{ alignSelf: "stretch", display: "flex", alignItems: "center", flex: folded ? 1 : "none", margin: "0 -12px", padding: "0 12px" }}>
       {mac && <Lights show={hot} />}
       {/* A transform, not padding: the slide composites instead of reflowing the row.
           Folded to the rail there is nowhere to slide to, so the mark steps
@@ -105,6 +112,7 @@ export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: (
           <span className="bw-a">MYSTICAL</span><span className="bw-sep" style={{ color: "var(--acc)" }}>//</span><span className="bw-b" style={{ color: "var(--txd)" }}>ASSISTANT</span>
         </span>
       )}
+      </div>
       </div>
       {!folded && onFold && (<>
         <span style={{ flex: 1, minWidth: 6 }} />
