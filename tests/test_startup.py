@@ -568,3 +568,56 @@ def test_mac_state_reads_disabled_and_supervised(mac):
     assert startup.state()["supervised"] is True
     mac["disabled"]["out"] = f'\t\t"{startup.BRIDGE_LABEL}" => disabled\n'
     assert startup.state()["login"] is False               # plist there, but disabled
+
+
+def test_linux_launcher_entry_opens_the_window_even_when_the_bridge_is_down(tmp_path, monkeypatch):
+    """The app-launcher entry hands off to tray.py --open, which knows the token,
+    and is named after the window's app_id so panels find its icon."""
+    apps = tmp_path / "applications"
+    apps.mkdir()
+    (apps / "mystical-assistant.desktop").write_text("old")
+    entry = apps / "chrome-localhost__-Profile_5.desktop"
+    monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_APPS_DIR", str(apps))
+    monkeypatch.setattr(startup, "_browser", lambda: "/usr/bin/google-chrome")
+    monkeypatch.setattr(startup, "_profile", lambda *_: "Profile 5")
+    monkeypatch.setattr(startup.shutil, "which", lambda _t: None)
+
+    assert startup.install_launcher() == str(entry)
+    text = entry.read_text()
+    assert "Name=Mystical\n" in text
+    assert "linux/tray.py --open --port " in text, "the token comes from the manifest at launch"
+    assert '--profile "Profile 5"' in text
+    assert "StartupWMClass=chrome-localhost__-Profile_5\n" in text
+    assert "$" not in text and "%" not in text, "both need Desktop Entry escaping"
+    assert "X-GNOME-Autostart" not in text
+    assert sorted(p.name for p in apps.iterdir()) == [entry.name], \
+        "named after the window's app_id, and the old name is gone"
+
+
+def test_linux_launcher_entry_needs_a_chromium_browser(monkeypatch):
+    monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_browser", lambda: None)
+    with pytest.raises(RuntimeError, match="Chrome"):
+        startup.install_launcher()
+
+
+def test_linux_launcher_steps_aside_for_the_installed_app(tmp_path, monkeypatch):
+    """Chrome's own entry for the installed dashboard wins: ours is removed."""
+    apps = tmp_path / "applications"
+    apps.mkdir()
+    ours = apps / "chrome-localhost__-Default.desktop"
+    ours.write_text("[Desktop Entry]\nName=Mystical\nExec=/usr/bin/python3 tray.py --open\n")
+    pwa = apps / "chrome-abcdefghijklmnop-Default.desktop"
+    pwa.write_text("[Desktop Entry]\nName=mystical//assistant\n"
+                   "Exec=/opt/google/chrome/google-chrome --profile-directory=Default --app-id=abcdefghijklmnop\n")
+    (apps / "chrome-zzz-Default.desktop").write_text("[Desktop Entry]\nName=Slack\nExec=chrome --app-id=zzz\n")
+    monkeypatch.setattr(startup, "_wsl", lambda: False)
+    monkeypatch.setattr(startup, "_APPS_DIR", str(apps))
+    monkeypatch.setattr(startup, "_browser", lambda: "/usr/bin/google-chrome")
+    monkeypatch.setattr(startup, "_profile", lambda *_: "Default")
+    monkeypatch.setattr(startup.shutil, "which", lambda _t: None)
+
+    assert startup.install_launcher() == str(pwa)
+    assert not ours.exists()
+    assert pwa.exists()

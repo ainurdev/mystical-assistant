@@ -59,7 +59,7 @@ export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: (
 
   return (
     // Relative: the Mac's traffic lights sit absolute inside it.
-    <div onMouseEnter={mac ? () => setHot(true) : undefined} onMouseLeave={mac ? () => setHot(false) : undefined} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    <div className="wco-bar brand" onMouseEnter={mac ? () => setHot(true) : undefined} onMouseLeave={mac ? () => setHot(false) : undefined} style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
       {mac && <Lights show={hot} />}
       {/* A transform, not padding: the slide composites instead of reflowing the row.
           Folded to the rail there is nowhere to slide to, so the mark steps
@@ -177,7 +177,7 @@ export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => v
     // position + z-index lift the cap's stacking context (its entry animation
     // makes one) above the panel under it, which would otherwise cover the
     // clock's popovers.
-    <div className="rcap" style={{ position: "relative", zIndex: 40, display: "flex", height: CAP_H, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    <div className="rcap wco-bar" data-bare={children ? undefined : ""} style={{ position: "relative", zIndex: 40, display: "flex", height: CAP_H, borderBottom: CAP_LINE, animation: CAP_IN }}>
       {children && (
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", padding: "0 12px", borderLeft: "1px solid var(--border)" }}>
           {children}

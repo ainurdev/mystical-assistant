@@ -2581,15 +2581,23 @@ class Handler(BaseHTTPRequestHandler):
         Handing out the token is safe exactly where the read GETs above are: the
         Host allow-list has already run (so DNS-rebinding is out), the bind is
         loopback, and a cross-origin fetch can't read the response because
-        nothing here sends CORS headers."""
+        nothing here sends CORS headers.
+
+        `id` pins the installed app's identity to the origin, not to start_url,
+        so a rotated token updates the app instead of orphaning it. The
+        window-controls-overlay override is the Linux window (linux/, `mystical
+        app`): Chrome drops its title bar and the HUD's caps take its place
+        (lib/wco.ts); browsers without it fall back to standalone."""
         start = f"/?token={quote(config.DASH_TOKEN, safe='')}" if config.DASH_TOKEN else "/"
         body = json.dumps({
+            "id": "/",
             "name": "mystical//assistant",
             "short_name": "mystical",
             "description": "A full desktop Claude client for the mystical-assistant bridge.",
             "start_url": start,
             "scope": "/",
             "display": "standalone",
+            "display_override": ["window-controls-overlay"],
             "background_color": "#060a0a",
             "theme_color": "#060a0a",
             "icons": [

@@ -645,7 +645,7 @@ export function Terminal({
       {readouts}
     </div>
   ) : (
-    <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 12px", height: 40, flex: "none", minWidth: 0 }}>
+    <div className="chathead" style={{ display: "flex", alignItems: "center", gap: 14, padding: "0 12px", height: 40, flex: "none", minWidth: 0 }}>
       {nameplate}
       <span style={{ flex: 1, minWidth: 12 }} />
       {readouts}
