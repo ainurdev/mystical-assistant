@@ -514,3 +514,36 @@ def test_a_branch_with_no_chip_is_not_cached(monkeypatch):
     for branch in ("feat/made-up-1", "feat/made-up-2", "main", "59", ""):
         prstatus.snapshot("/r", branch)
     assert prstatus._cache == {} and prstatus._locks == {}
+
+
+# --- branch_prs: the BRANCHES tab's chips ---------------------------------------
+
+def test_branch_prs_reads_the_repo_twice_and_never_pings(monkeypatch):
+    """Every PR's head, then the open ones' checks. A branch's newest PR wins,
+    a fork's same-named branch is skipped, and nothing pings: a red check here
+    is news for the chat header's chip, which pings once someone opens it."""
+    prstatus._lists.clear()
+    every = [{"number": 9, "state": "OPEN", "headRefName": "feat/x", "headRefOid": "aaa"},
+             {"number": 8, "state": "MERGED", "headRefName": "feat/done", "headRefOid": "bbb"},
+             {"number": 7, "state": "MERGED", "headRefName": "feat/x", "headRefOid": "old"},
+             {"number": 6, "state": "OPEN", "headRefName": "feat/fork", "headRefOid": "ccc", "isCrossRepository": True}]
+    open_ = [_raw(number=9, headRefName="feat/x", headRefOid="aaa",
+                  statusCheckRollup=[_run("lint"), _run("test", conclusion="FAILURE")])]
+    calls = _fake_gh(monkeypatch, [
+        (("pr", "list", "-R", "acme/rivendell", "--state", "all"), (0, json.dumps(every), "")),
+        (("pr", "list", "-R", "acme/rivendell", "--state", "open"), (0, json.dumps(open_), "")),
+    ])
+    monkeypatch.setattr(prstatus, "_pings", lambda *a: pytest.fail("branch_prs must not ping"))
+    prs = prstatus.branch_prs("/r")
+    assert prs == {"feat/x": {"number": 9, "state": "OPEN", "status": "failing", "sha": "aaa", "failed": 1},
+                   "feat/done": {"number": 8, "state": "MERGED", "status": "merged", "sha": "bbb", "failed": 0}}
+    assert prstatus.branch_prs("/r") == prs and len(calls) == 2      # cached
+
+
+def test_branch_prs_is_empty_when_gh_cant_say(monkeypatch):
+    prstatus._lists.clear()
+    _fake_gh(monkeypatch, [(("pr", "list"), (1, "", "gh auth login"))])
+    assert prstatus.branch_prs("/r") == {}
+    monkeypatch.setattr(prstatus.github, "remote_slug", lambda d: None)
+    prstatus._lists.clear()
+    assert prstatus.branch_prs("/r") == {}

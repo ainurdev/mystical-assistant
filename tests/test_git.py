@@ -535,6 +535,8 @@ def test_branch_status_says_what_each_branch_has_against_the_base():
     assert feat["dirty"] == 1 and os.path.realpath(feat["worktree"]) == os.path.realpath(wt)
     assert feat["upstream"] == "" and feat["unpushed"] is None   # never pushed
     assert feat["merged"] is False and feat["at"] > 0
+    assert feat["subject"] == "c"
+    assert feat["sha"] == subprocess.check_output(["git", "-C", d, "rev-parse", "feat"], text=True).strip()
     assert old["merged"] is True and old["worktree"] is None and old["dirty"] is None
     assert main["main"] is True and (main["ahead"], main["behind"]) == (0, 0)
     assert g.branch_status(tempfile.mkdtemp()) == {"base": "", "branches": []}
@@ -553,6 +555,7 @@ def test_branch_status_lists_a_detached_checkout_by_its_commit():
     det = [r for r in rows if r["name"] == ""]
     assert len(det) == 1
     assert det[0]["head"] and det[0]["main"] is True and det[0]["behind"] == 1
+    assert det[0]["subject"] == "init" and det[0]["at"] > 0
     assert [r["name"] for r in rows if r["name"]] == [base]
 
 

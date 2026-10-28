@@ -766,7 +766,8 @@ def branch_status(cwd: str) -> dict:
     the default branch: the dashboard's BRANCHES tab in one call.
 
     A row: `name` ("" for a detached checkout, which carries `head`), `at` (last
-    commit, epoch s), `ahead`/`behind` against the base, `upstream` with
+    commit, epoch s), `subject` (its first line), `sha` (the branch's tip, which
+    the tab matches against a merged PR's head), `ahead`/`behind` against the base, `upstream` with
     `unpushed` (its commits the remote lacks; None when it was never pushed or
     its remote branch is gone), `worktree` (the checkout holding it, else None),
     `main` (that checkout is the repo folder itself), `dirty` (uncommitted files
@@ -785,11 +786,13 @@ def branch_status(cwd: str) -> dict:
     def dirty(path: str) -> int:   # porcelain v2: "#" lines are the branch header
         return sum(1 for ln in (_porcelain(path) or "").splitlines() if ln and not ln.startswith("#"))
 
-    fmt = "%(refname:short)%09%(committerdate:unix)%09%(upstream:short)%09%(upstream:track,nobracket)"
+    # the subject goes last: a tab inside it stays part of it
+    fmt = ("%(refname:short)%09%(committerdate:unix)%09%(upstream:short)%09%(upstream:track,nobracket)"
+           "%09%(objectname)%09%(subject)")
     rc, out, _ = _run(cwd, "for-each-ref", f"--format={fmt}", "--sort=-committerdate", "refs/heads")
     rows: list[dict] = []
     for line in out.splitlines() if rc == 0 else []:
-        name, at, up, track = (line.split("\t") + ["", "", "", ""])[:4]
+        name, at, up, track, sha, subject = (line.split("\t", 5) + [""] * 6)[:6]
         if not name:
             continue
         gone = track.strip() == "gone"
@@ -797,7 +800,8 @@ def branch_status(cwd: str) -> dict:
         ahead, behind = _left_right(cwd, base, name)
         w = held.get(name)
         rows.append({
-            "name": name, "at": int(at or 0), "ahead": ahead, "behind": behind,
+            "name": name, "at": int(at or 0), "subject": subject, "sha": sha,
+            "ahead": ahead, "behind": behind,
             "upstream": "" if gone else up,
             "unpushed": None if (gone or not up) else (int(m.group(1)) if m else 0),
             "worktree": w["path"] if w else None, "main": bool(w and w["is_main"]),
@@ -807,9 +811,10 @@ def branch_status(cwd: str) -> dict:
         if not w["detached"]:
             continue
         ahead, behind = _left_right(cwd, base, w["head"])
-        rc, at, _ = _run(cwd, "log", "-1", "--format=%ct", w["head"])
+        rc, log, _ = _run(cwd, "log", "-1", "--format=%ct%x09%s", w["head"])
+        at, subject = (log.strip().split("\t", 1) + [""])[:2] if rc == 0 else ("", "")
         rows.append({
-            "name": "", "head": w["head"][:7], "at": int(at.strip() or 0) if rc == 0 else 0,
+            "name": "", "head": w["head"][:7], "at": int(at or 0), "subject": subject, "sha": w["head"],
             "ahead": ahead, "behind": behind, "upstream": "", "unpushed": None,
             "worktree": w["path"], "main": w["is_main"], "dirty": dirty(w["path"]), "merged": False,
         })

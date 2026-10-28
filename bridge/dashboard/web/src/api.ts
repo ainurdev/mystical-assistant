@@ -1,5 +1,5 @@
 import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
-import type { BranchStatus } from "./lib/branchrows";
+import type { BranchPr, BranchStatus } from "./lib/branchrows";
 
 // The dashboard server hands out a per-process token in the URL the user opens
 // (http://127.0.0.1:8790/?token=...). We keep it and send it on every
@@ -2227,6 +2227,9 @@ export const api = {
   // The BRANCHES rail tab: every branch and checkout with its status (lib/branchrows).
   branchStatus: (project: string) =>
     req<BranchStatus>(`/local/git/branchstatus?project=${encodeURIComponent(project)}`),
+  // Its PR chips, a beat later: gh is slower than git (bridge prstatus.branch_prs).
+  branchPrs: (project: string) =>
+    req<{ prs: Record<string, BranchPr> }>(`/local/github/prs?project=${encodeURIComponent(project)}`),
   worktrees: (project: string) =>
     req<{ worktrees: Worktree[]; merged: string[] }>(
       `/local/git/worktrees?project=${encodeURIComponent(project)}`,

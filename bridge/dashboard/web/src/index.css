@@ -453,9 +453,55 @@ body {
 .sessrow:hover .rowact,
 .sessrow:focus-within .rowact,
 .projgrp:hover .projhead .rowact,
-.projgrp:focus-within .projhead .rowact {
+.projgrp:focus-within .projhead .rowact,
+.brow:hover .rowact,
+.brow:focus-within .rowact {
   opacity: 1;
 }
+/* BRANCHES rows (BranchesPanel): three lines of fixed height, so every row is
+   as tall as the next. + Session shares the age's cell and takes its place. */
+.brow { margin: 1px 6px; padding: 6px 8px 7px; border-radius: 8px; }
+.brow[data-here] { background: color-mix(in srgb, var(--acc) 9%, transparent); }
+.brow:not([data-here]):hover { background: color-mix(in srgb, var(--acc) 6%, transparent); }
+.brow-l1 { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brow-end { display: grid; flex: none; justify-items: end; align-items: center; }
+.brow-end > * { grid-area: 1 / 1; }
+.brow-age { min-width: 22px; text-align: right; font-size: var(--t9); color: var(--txd); }
+.brow:hover .brow-age, .brow:focus-within .brow-age { visibility: hidden; }
+.brow-go { display: flex; align-items: center; gap: 7px; }
+.brow-hint { display: none; font-size: var(--t9); color: var(--txd); white-space: nowrap; }
+.brow:hover .brow-hint, .brow:focus-within .brow-hint { display: inline; }
+.brow-pill.gp-pb { width: auto; height: 19px; padding: 0 8px 0 7px; gap: 5px; font-size: var(--t9); border-radius: 6px; }
+.brow-l2 { display: flex; align-items: center; gap: 6px; height: 15px; margin: 3px 0 0 15px; font-size: var(--t95); color: var(--txm); min-width: 0; }
+.brow-l2 > .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brow-l3 { display: flex; align-items: center; gap: 8px; height: 16px; margin: 3px 0 0 15px; font-size: var(--t9);
+  white-space: nowrap; min-width: 0; overflow: hidden; font-variant-numeric: tabular-nums; }
+/* a fact that doesn't fit wraps onto a second line the box hides: it drops whole, never half an icon */
+.brow-facts { display: flex; flex-wrap: wrap; align-content: flex-start; align-items: center; gap: 0 8px; height: 16px; min-width: 0; overflow: hidden; }
+.brow-facts > * { flex: none; height: 16px; display: inline-flex; align-items: center; gap: 4px; }
+/* its overview: four counts that filter the list */
+.bov { display: flex; gap: 5px; margin: 9px 12px 2px; }
+.bovc { appearance: none; flex: 1 1 auto; min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 4px;
+  height: 24px; padding: 0 6px; border-radius: 7px; cursor: pointer; font-family: inherit; font-size: var(--t9); line-height: 22px;
+  white-space: nowrap; color: var(--txm); border: 1px solid color-mix(in srgb, var(--c, var(--txd)) 30%, transparent);
+  background: color-mix(in srgb, var(--c, var(--txd)) 9%, transparent); }
+.bovc b { font-weight: 700; font-size: var(--t115); color: var(--c, var(--txd)); font-variant-numeric: tabular-nums; }
+.bovc[data-on] { border-color: var(--c); background: color-mix(in srgb, var(--c) 20%, transparent); color: var(--txb); }
+.bovc:disabled { cursor: default; color: var(--txd); background: transparent; border-color: color-mix(in srgb, var(--txd) 22%, transparent); }
+/* + Branch's field */
+.bnew { display: flex; align-items: center; gap: 8px; margin: 8px 12px 0; padding: 0 6px 0 9px; height: 30px; border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--acc) 55%, transparent); background: color-mix(in srgb, var(--acc) 7%, transparent); }
+.bnew input { flex: 1; min-width: 0; height: 100%; padding: 0; border: 0; outline: none; background: transparent;
+  font-family: inherit; font-size: var(--t105); color: var(--txb); }
+.bnew-from { position: relative; flex: none; display: inline-flex; align-items: center; gap: 4px; font-size: var(--t9); color: var(--txm); }
+.bnew-base { display: inline-flex; align-items: center; gap: 3px; max-width: 110px; padding: 1px 5px; border-radius: 6px;
+  color: var(--purple-h); border: 1px solid color-mix(in srgb, var(--txd) 40%, transparent); }
+.bnew-base .v { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bnew-from:focus-within .bnew-base { border-color: var(--acc); }
+.bnew-from select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.bnew-kbd { flex: none; appearance: none; cursor: pointer; font-family: inherit; font-size: var(--t8); line-height: 14px; padding: 0 4px;
+  border-radius: 4px; color: var(--txd); background: transparent; border: 1px solid color-mix(in srgb, var(--txd) 45%, transparent); }
+.bnew-kbd:disabled { cursor: default; opacity: .5; }
 /* the fresh screen's LOCAL rows that open a session (FreshPanel) */
 .fresh-row:hover { background: var(--ac-06) !important; }
 /* Only WORK gets motion. Every other busy state (WAIT, ASK, CHECK) is waiting

@@ -1796,11 +1796,12 @@ export function App() {
 
   /** A new session in `project`, in `branch`'s worktree when given; `draft`
    *  waits in its composer, unsent (the RIVENDELL tab's WORK ON IT). */
-  /** A new session in `project` (the new session's id, or null when it couldn't be made). */
-  async function newSession(project: string, draft?: string, branch?: string, title?: string): Promise<string | null> {
+  /** A new session in `project` (the new session's id, or null when it couldn't be made).
+   *  `cwd` names the checkout outright: BRANCHES' detached one has no branch to name it by. */
+  async function newSession(project: string, draft?: string, branch?: string, title?: string, cwd?: string): Promise<string | null> {
     openBlank(project);
     try {
-      const { session } = await api.createSession(project, undefined, title, branch);
+      const { session } = await api.createSession(project, cwd, title, branch);
       setSessions((prev) => [session, ...prev]);
       if (draft) setDrafts((d) => ({ ...d, [session.id]: draft }));
       openSession(session.id, true);
@@ -2325,12 +2326,18 @@ export function App() {
         />
       ),
     },
-    // Status only (lib/branchrows): the project window's WORKTREES, minus its buttons.
+    // Every branch to watch (lib/branchrows); + Session and + Branch start work on one.
     {
       id: "branches", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project",
       render: () => (
         <BranchesPanel project={sessionProject} branch={sessionBranch}
-          sessions={sessions} status={statusMap} nonce={gitNonce} />
+          sessions={sessions} status={statusMap} nonce={gitNonce}
+          onOpen={(s) => { selectSession(s); toChat(); }}
+          // a checkout gets a session in it; a branch without one gets a worktree first
+          onNew={(r) => { if (!sessionProject) return;
+            if (!r.worktree) void worktreeSession(sessionProject, r.name, false);
+            else void newSession(sessionProject, undefined, r.name || undefined, undefined, r.name ? undefined : r.worktree); }}
+          onNewBranch={(name, from) => { if (sessionProject) void worktreeSession(sessionProject, name, true, from); }} />
       ),
     },
     // Hidden while LESSONS is off — nothing is being written.

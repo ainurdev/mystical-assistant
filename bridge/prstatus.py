@@ -448,3 +448,48 @@ def snapshot(repo_dir: str, branch: str, *, force: bool = False,
         if hit is None or time.time() - hit["at"] >= trust:
             hit = _cache[key] = _read(repo_dir, slug, branch, session, hit)
     return {"pr": hit["pr"], "pinged": hit["pinged"], "checked": hit["at"]}
+
+
+LIST_TTL = 60      # s: the BRANCHES tab re-reads every 30s; two tabs share one gh read
+_lists: dict = {}  # repo_dir -> {"at", "ttl", "prs"}
+
+
+def branch_prs(repo_dir: str) -> dict:
+    """The BRANCHES tab's PR chips: each branch's newest PR, for the whole repo.
+    Two `gh pr list` calls instead of a `gh pr view` per branch: every PR's
+    head (light, about 1s), then the open ones' checks, conflicts and reviews.
+    Asking for checks on all 100 took 7s on efasone/app (2026-10-29).
+    Read-only on purpose: no pings, no failure logs, no review comments. Those
+    stay with snapshot(), the chat header's chip, so a branch nobody has open
+    still doesn't ping. `sha` lets the tab tell a branch that is done (its PR
+    merged at its tip) from one that moved on after an older PR merged.
+    Forks' same-named branches are skipped, as gh pr view skips them.
+    {branch: {"number", "state", "status", "sha", "failed"}}; {} when gh can't say.
+    shortcut: the newest 100 PRs only; a branch whose PR is older shows no chip."""
+    slug = github.remote_slug(repo_dir)
+    if not slug:
+        return {}
+    with _locks.setdefault(("list", repo_dir), threading.Lock()):
+        hit = _lists.get(repo_dir)
+        if hit and time.time() - hit["at"] < hit["ttl"]:
+            return hit["prs"]
+        prs, ttl = {}, ERR_TTL
+        rc, out, _ = _gh("pr", "list", "-R", slug, "--state", "all", "--limit", "100", "--json",
+                         "number,state,headRefName,headRefOid,isCrossRepository")
+        rc2, out2, _ = _gh("pr", "list", "-R", slug, "--state", "open", "--limit", "100", "--json",
+                           "number,state,headRefName,headRefOid,isCrossRepository,isDraft,"
+                           "mergeable,statusCheckRollup,reviewDecision,reviewRequests")
+        if rc == 0 and rc2 == 0:
+            try:
+                live = {r["number"]: r for r in json.loads(out2)}
+                for raw in json.loads(out):          # newest first: a branch's first PR wins
+                    b = raw.get("headRefName") or ""
+                    if not b or b in prs or raw.get("isCrossRepository"):
+                        continue
+                    pr = normalize(live.get(raw["number"], raw))
+                    prs[b] = {k: pr[k] for k in ("number", "state", "status", "sha", "failed")}
+                ttl = LIST_TTL
+            except (ValueError, KeyError, TypeError):
+                prs = {}
+        _lists[repo_dir] = {"at": time.time(), "ttl": ttl, "prs": prs}
+        return prs
