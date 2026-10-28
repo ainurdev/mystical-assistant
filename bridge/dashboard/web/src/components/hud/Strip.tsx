@@ -3,7 +3,7 @@ import { type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
 import { setClock12 } from "../../lib/surfaces";
 import { isMacApp, linuxWindow, macWindow } from "../../lib/mac";
-import { Minus, PanelLeftClose, Plus, Square, X, type LucideIcon } from "lucide-react";
+import { Minus, PanelLeftClose, Plus, Settings, Square, X, type LucideIcon } from "lucide-react";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -173,7 +173,13 @@ function FoldButton({ onClick }: { onClick: () => void }) {
 
 /** Right column cap: the cluster over the panel, the gear over the rail.
  *  Collapsed there are no children — the column is the rail's 48px alone. */
-export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => void; children?: ReactNode }) {
+export function RightCap({ onOpenSettings, children, railTop }: {
+  onOpenSettings: () => void;
+  children?: ReactNode;
+  /** The Linux window: its close button takes the gear's cell, which then
+   *  runs into the rail with no rule under it (the gear moves into the rail). */
+  railTop?: ReactNode;
+}) {
   const [gearHover, setGearHover] = useState(false);
   return (
     // position + z-index lift the cap's stacking context (its entry animation
@@ -187,6 +193,13 @@ export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => v
       )}
       {/* The rail's own width, hairline and ground, so the rail reads as
           running to the top. */}
+      {railTop ? (
+        // One pixel past the cap's rule, so the rail runs on under it unbroken.
+        <div className="flex flex-col" style={{ width: 48, flex: "none", marginLeft: "auto", height: "calc(100% + 1px)", marginBottom: -1,
+                      position: "relative", borderLeft: "1px solid var(--border)", background: "var(--panel3)" }}>
+          {railTop}
+        </div>
+      ) : (
       <div style={{ width: 48, flex: "none", marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center", borderLeft: "1px solid var(--border)", background: "var(--panel3)" }}>
         <button
           onClick={onOpenSettings}
@@ -215,6 +228,7 @@ export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => v
           </svg>
         </button>
       </div>
+      )}
     </div>
   );
 }
@@ -384,22 +398,33 @@ export function Strip(props: StripProps) {
   );
 }
 
-/** The Linux window's buttons (linux/window.py draws no title bar): minimize,
- *  maximize, close, stacked at the top of the right rail (RightPanel's
- *  railHead) and drawn like the rail's own tabs. They sat in the top-right
+/** The Linux window's buttons (linux/window.py draws no title bar), down the
+ *  right rail drawn like its tabs: close in the gear's cell at the very top
+ *  (LinuxClose, RightCap's railTop), then maximize and minimize, a rule, and
+ *  the gear (LinuxRailHead, RightPanel's railHead). They sat in the top-right
  *  corner first, as a title bar's do, and read as foreign chrome there. */
-export function LinuxControls() {
-  const btn = "flex h-[34px] items-center justify-center text-muted-2 hover:bg-accent hover:text-primary";
+const LX_BTN = "flex h-[34px] w-full items-center justify-center text-muted-2 hover:bg-accent hover:text-primary";
+
+export function LinuxClose() {
+  return (
+    <button type="button" className={`${LX_BTN} lxclose h-full`} aria-label="Close" title="Close" onClick={() => linuxWindow("close")}>
+      <X size={16} strokeWidth={1.8} aria-hidden />
+    </button>
+  );
+}
+
+export function LinuxRailHead({ onOpenSettings }: { onOpenSettings: () => void }) {
   return (
     <>
-      <button type="button" className={btn} aria-label="Minimize" title="Minimize" onClick={() => linuxWindow("minimize")}>
-        <Minus size={15} strokeWidth={1.8} aria-hidden />
-      </button>
-      <button type="button" className={btn} aria-label="Maximize" title="Maximize" onClick={() => linuxWindow("maximize")}>
+      <button type="button" className={LX_BTN} aria-label="Maximize" title="Maximize" onClick={() => linuxWindow("maximize")}>
         <Square size={12} strokeWidth={1.8} aria-hidden />
       </button>
-      <button type="button" className={`${btn} lxclose`} aria-label="Close" title="Close" onClick={() => linuxWindow("close")}>
-        <X size={16} strokeWidth={1.8} aria-hidden />
+      <button type="button" className={LX_BTN} aria-label="Minimize" title="Minimize" onClick={() => linuxWindow("minimize")}>
+        <Minus size={15} strokeWidth={1.8} aria-hidden />
+      </button>
+      <div className="my-1 border-t border-border" aria-hidden />
+      <button type="button" className={LX_BTN} aria-label="Dashboard settings" title="dashboard settings" onClick={onOpenSettings}>
+        <Settings size={15} strokeWidth={1.6} aria-hidden />
       </button>
     </>
   );

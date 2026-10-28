@@ -84,7 +84,7 @@ import { JobBar } from "./components/JobBar";
 import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
-import { Brand, LinuxControls, RightCap, Strip } from "./components/hud/Strip";
+import { Brand, LinuxClose, LinuxRailHead, RightCap, Strip } from "./components/hud/Strip";
 import { PaletteButton } from "./components/hud/PaletteButton";
 import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
@@ -3010,14 +3010,14 @@ export function App() {
                   cap rides on top: the cluster over the panel, the gear over
                   the rail. */}
               <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0, minWidth: 0 }}>
-                <RightCap onOpenSettings={() => setSettingsOpen(true)}>
+                <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined}>
                   {settings.rightOpen && strip}
                 </RightCap>
                 <RightPanel
                   tabs={rightTabs} activeId={settings.rightTab}
                   open={settings.rightOpen} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
-                  railHead={isLinuxApp() ? <LinuxControls /> : undefined}
+                  railHead={isLinuxApp() ? <LinuxRailHead onOpenSettings={() => setSettingsOpen(true)} /> : undefined}
                   railFoot={<>
                     <LiveButton onFeed={feed} />
                     <ChangelogButton onFeed={feed} />
