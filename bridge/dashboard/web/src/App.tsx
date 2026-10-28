@@ -72,6 +72,7 @@ import { pushFailedDraft } from "./lib/pushfailed";
 import { syncBadge, syncOf } from "./lib/gitsync";
 import { chime, pushGranted } from "./lib/push";
 import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
+import { watchWco } from "./lib/wco";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
@@ -720,6 +721,9 @@ export function App() {
     window.addEventListener("mousedown", down);
     return () => window.removeEventListener("mousedown", down);
   }, []);
+
+  // The installed PWA with its title bar hidden: the caps take over (lib/wco.ts).
+  useEffect(() => watchWco(), []);
 
   // --- polls (unchanged data flow) ---
   useEffect(() => {
@@ -2775,6 +2779,7 @@ export function App() {
                 edge, and ⌘K sits at the foot of the rail. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
+              data-rbare={settings.rightOpen ? undefined : ""}
               style={{ gridTemplateColumns: shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}

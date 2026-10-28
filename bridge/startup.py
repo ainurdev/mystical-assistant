@@ -54,6 +54,11 @@ _AUTOSTART = os.path.expanduser("~/.config/autostart/mystical-assistant.desktop"
 # The tray's own entry beside the window's, so the desktop's startup-apps list
 # shows, and can switch off, each one on its own.
 _TRAY_AUTOSTART = os.path.expanduser("~/.config/autostart/mystical-tray.desktop")
+# The app-launcher entry: the same window as _AUTOSTART's, on demand. Its file
+# name is the window's app_id (_launcher_id), not this; this is the old name,
+# removed on install so the menu doesn't list Mystical twice.
+_APPS_DIR = os.path.expanduser("~/.local/share/applications")
+_OLD_LAUNCHER = "mystical-assistant.desktop"
 # Windows exes aren't on a WSL PATH; this one is on every Windows 10/11.
 _POWERSHELL = "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
 _UNIT_DIR = os.path.expanduser("~/.config/systemd/user")
@@ -318,6 +323,89 @@ def _desktop(profile: str | None = None) -> str:
             f'Exec=sh -c "until curl -sf -o /dev/null http://127.0.0.1:{port}/; '
             f'do sleep 0.25; done; exec {browser}{pick} --app=http://localhost:{port}/"\n'
             "X-GNOME-Autostart-enabled=true\n")
+
+
+def _launcher_id(prof: str | None) -> str:
+    """The Wayland app_id Chrome gives an --app=http://localhost:<port>/ window:
+    chrome-<host>__-<profile dir, spaces as _>; the port isn't in it. Read off a
+    live window through KWin (2026-10-28). Panels that map a window to its icon
+    by desktop-file name (quickshell, GNOME) need the entry *named* this;
+    StartupWMClass covers the ones that read that instead.
+    ponytail: the format is Chrome's, undocumented. If the window loses its icon
+    after a Chrome update, read the real app_id and match it here."""
+    return f"chrome-localhost__-{(prof or 'Default').replace(' ', '_')}"
+
+
+def _launcher_desktop(prof: str | None = None) -> str:
+    """The app-launcher entry for a Linux desktop: the dashboard in a Chrome --app
+    window, the lightest real browser window there is. Notifications, audio and
+    storage are Chrome's own, and with Chrome already running it's one more
+    window of that process, not a second browser the way Electron would be.
+
+    It runs `linux/tray.py --open` rather than the browser itself: the dashboard
+    wants ?token= in its URL, and the tray reads it from the manifest at launch,
+    so a rotated DASH_TOKEN never leaves a stale entry behind. Same script, same
+    window the tray's Open dashboard gives you; the bridge-down case is there."""
+    from bridge import config
+    port, browser = config.DASH_PORT, _browser()
+    argv = ["/usr/bin/python3", os.path.join(_REPO, "linux", "tray.py"), "--open",
+            "--port", str(port), "--browser", browser]
+    argv += ["--profile", prof] if prof else []
+    icon = os.path.join(_REPO, "bridge", "dashboard", "web", "public", "icon-512.png")
+    return ("[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=Mystical\n"
+            "GenericName=mystical//assistant dashboard\n"
+            "Comment=The dashboard in its own window\n"
+            f"Exec={' '.join(map(_exec_arg, argv))}\n"
+            f"Icon={icon}\n"
+            "Terminal=false\n"
+            "Categories=Development;\n"
+            f"StartupWMClass={_launcher_id(prof)}\n")
+
+
+def _pwa_entry() -> str | None:
+    """The launcher entry Chrome wrote when the dashboard was installed as an
+    app (chrome-<app id>-<profile>.desktop, Exec with --app-id=), or None. That
+    window is the better one — its own app id and icon, and the manifest's
+    window-controls-overlay, which a plain --app window never gets."""
+    for path in sorted(glob.glob(os.path.join(_APPS_DIR, "chrome-*.desktop"))):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                text = f.read()
+        except OSError:
+            continue
+        if "--app-id=" in text and re.search(r"^Name=mystical//assistant$", text, re.M):
+            return path
+    return None
+
+
+def install_launcher() -> str:
+    """Write the app-launcher entry (native Linux; `mystical app`). Returns its
+    path; raises RuntimeError when there is no Chromium-family browser. Once
+    Chrome has installed the dashboard as an app, that entry is the launcher:
+    ours goes, so the menu doesn't offer two windows, and its path comes back."""
+    if _wsl() or _darwin():
+        raise RuntimeError("the launcher entry is for a native Linux desktop")
+    if not _browser():
+        raise RuntimeError("no Chrome/Chromium/Edge on PATH — the window is a browser --app window")
+    from bridge import config
+    prof = _profile(_browser(), config.DASH_PORT)
+    path = os.path.join(_APPS_DIR, _launcher_id(prof) + ".desktop")
+    pwa = _pwa_entry()
+    if pwa:
+        _remove(path, os.path.join(_APPS_DIR, _OLD_LAUNCHER))
+        return pwa
+    os.makedirs(_APPS_DIR, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(_launcher_desktop(prof))
+    _remove(os.path.join(_APPS_DIR, _OLD_LAUNCHER))
+    # Launchers watch this dir; the cache refresh is for the ones that don't.
+    for tool in ("update-desktop-database", "kbuildsycoca6", "kbuildsycoca5"):
+        if shutil.which(tool):
+            args = [tool, _APPS_DIR] if tool.startswith("update") else [tool]
+            subprocess.run(args, capture_output=True, timeout=60)
+    return path
 
 
 def _tray_ps1() -> str:

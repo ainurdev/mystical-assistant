@@ -7189,3 +7189,26 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ask-rec :is(.ad-tile[data-on] .ad-tilebtn, .ad-chip[aria-pressed="true"]) { border-color: color-mix(in oklab, var(--ok) 65%, var(--rc-line2)); box-shadow: none; }
 .ask-rec .ad-row[aria-pressed="true"] { border-color: color-mix(in oklab, var(--ok) 55%, var(--rc-line2)); background: color-mix(in oklab, var(--ok) 9%, var(--panel2)); }
 .ask-rec .ad-key[data-on] { background: var(--ok); border-color: var(--ok); color: var(--canvas, #000); }
+
+/* The installed PWA with its title bar hidden (lib/wco.ts sets data-wco): the
+   caps are the title bar. A cap's bare surface drags the window; anything you
+   can press, and the popovers that hang off a cap, don't. --wco-l/--wco-r are
+   the room Chrome's own buttons take at either end (KDE puts them right). */
+:root { --wco-l: 0px; --wco-r: 0px; }
+:root[data-wco] {
+  --wco-l: env(titlebar-area-x, 0px);
+  --wco-r: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+[data-wco] .wco-bar { -webkit-app-region: drag; app-region: drag; }
+[data-wco] .wco-bar :is(button, a, input, select, textarea, label, [role=button], [contenteditable], [tabindex], [style*="position: absolute"]) {
+  -webkit-app-region: no-drag; app-region: no-drag;
+}
+[data-wco] .wco-bar.brand { padding-left: calc(12px + var(--wco-l)) !important; }
+[data-wco] .rcap { padding-right: var(--wco-r); }
+/* Right panel folded: the cap is the rail's 48px, narrower than the buttons,
+   so it grows left over the transcript's corner and the chat header's own
+   cluster (it moves there when folded) steps out of the way. */
+[data-wco] .rcap[data-bare] { margin-left: calc(-1 * var(--wco-r)); background: var(--panel3); }
+[data-wco] .hudgrid[data-rbare] .chathead { padding-right: calc(12px + var(--wco-r)) !important; }
+/* The buttons sit on the rail's ground, continuous with the gear's cell. */
+[data-wco] .rcap:not([data-bare]) { background: linear-gradient(to left, var(--panel3) var(--wco-r), transparent 0); }
