@@ -18,8 +18,8 @@ import { isLinuxApp } from "./mac";
 type Wco = EventTarget & { visible: boolean };
 
 /** The Linux window (linux/window.py) has no title bar either, and no
- *  overlay: the page draws min/max/close itself (LinuxControls) in the same
- *  corner, so it wears `data-wco="linux"` and index.css gives it that room. */
+ *  overlay: its min/max/close sit in the right rail (LinuxControls), and
+ *  `data-wco="linux"` only marks the caps as the bar to drag (App.tsx). */
 export function watchWco(): () => void {
   if (isLinuxApp()) {
     document.documentElement.setAttribute("data-wco", "linux");

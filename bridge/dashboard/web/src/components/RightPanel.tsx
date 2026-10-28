@@ -55,6 +55,7 @@ export function RightPanel({
   project,
   branch,
   railFoot,
+  railHead,
 }: {
   tabs: PanelTab[];
   activeId: string;
@@ -65,6 +66,8 @@ export function RightPanel({
   branch?: string | null;
   /** Pinned to the rail's foot, under the tabs — the changelog, the platform's UPDATE and ⌘K. */
   railFoot?: ReactNode;
+  /** Over the tabs: the Linux window's own buttons (LinuxControls), ruled off from them. */
+  railHead?: ReactNode;
 }) {
   const current = tabs.find((t) => t.id === activeId) ?? tabs[0];
   // Two different events land on the same element and must not look alike. A
@@ -100,6 +103,7 @@ export function RightPanel({
         className="flex w-[48px] flex-none flex-col items-stretch gap-1 border-l border-border py-2.5"
         style={{ background: "var(--panel3)", animation: "enterRight .55s cubic-bezier(.2,.8,.2,1) both .12s" }}
       >
+        {railHead && <div className="mb-1 flex flex-col items-stretch border-b border-border pb-1">{railHead}</div>}
         {tabs.map((t) => {
           const on = open && t.id === current?.id;
           return (

@@ -385,20 +385,22 @@ export function Strip(props: StripProps) {
 }
 
 /** The Linux window's buttons (linux/window.py draws no title bar): minimize,
- *  maximize, close, fixed in the top-right corner index.css keeps free for
- *  them (data-wco="linux"). Where KDE and GNOME put theirs by default. */
+ *  maximize, close, stacked at the top of the right rail (RightPanel's
+ *  railHead) and drawn like the rail's own tabs. They sat in the top-right
+ *  corner first, as a title bar's do, and read as foreign chrome there. */
 export function LinuxControls() {
+  const btn = "flex h-[34px] items-center justify-center text-muted-2 hover:bg-accent hover:text-primary";
   return (
-    <div className="lxctl" role="group" aria-label="Window">
-      <button type="button" aria-label="Minimize" title="Minimize" onClick={() => linuxWindow("minimize")}>
-        <Minus size={14} strokeWidth={1.8} aria-hidden />
+    <>
+      <button type="button" className={btn} aria-label="Minimize" title="Minimize" onClick={() => linuxWindow("minimize")}>
+        <Minus size={15} strokeWidth={1.8} aria-hidden />
       </button>
-      <button type="button" aria-label="Maximize" title="Maximize" onClick={() => linuxWindow("maximize")}>
-        <Square size={11} strokeWidth={1.8} aria-hidden />
+      <button type="button" className={btn} aria-label="Maximize" title="Maximize" onClick={() => linuxWindow("maximize")}>
+        <Square size={12} strokeWidth={1.8} aria-hidden />
       </button>
-      <button type="button" aria-label="Close" title="Close" data-close="" onClick={() => linuxWindow("close")}>
-        <X size={15} strokeWidth={1.8} aria-hidden />
+      <button type="button" className={`${btn} lxclose`} aria-label="Close" title="Close" onClick={() => linuxWindow("close")}>
+        <X size={16} strokeWidth={1.8} aria-hidden />
       </button>
-    </div>
+    </>
   );
 }

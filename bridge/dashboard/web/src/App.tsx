@@ -3017,6 +3017,7 @@ export function App() {
                   tabs={rightTabs} activeId={settings.rightTab}
                   open={settings.rightOpen} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
+                  railHead={isLinuxApp() ? <LinuxControls /> : undefined}
                   railFoot={<>
                     <LiveButton onFeed={feed} />
                     <ChangelogButton onFeed={feed} />
@@ -3068,7 +3069,6 @@ export function App() {
             {inspectorOpen && <InspectorModal onClose={() => setInspectorOpen(false)} />}
             <MoveDock />
             <PillHost />
-            {isLinuxApp() && <LinuxControls />}
             {settingsOpen && (
               <SettingsModal host={host.host} port={location.port || "8790"} startTab={settingsTab}
                 settings={settingsView} onTheme={setTheme} onToggle={toggleCrt} onPatch={patchFromSettings}
