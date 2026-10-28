@@ -879,8 +879,9 @@ export function SessionsPanel(props: Props) {
   // accessible name, so the bar stays narrow and never wraps.
   const modeTabs: { id: Mode; label: string; Icon: LucideIcon; count: number; tip: string }[] = [
     // ATTENTION counts what wants you — a question, or a finish you haven't
-    // opened — not everything that's busy: eight running turns are not eight to-dos.
-    { id: "attention", label: "Attention", Icon: BellRing, count: mine.filter((s) => laneOf(s) === "ask" || laneOf(s) === "done").length, tip: "Attention — grouped by what each session wants from you" },
+    // opened — and the turns running now. Waiting and parked turns come back
+    // on their own, so they stay out.
+    { id: "attention", label: "Attention", Icon: BellRing, count: mine.filter((s) => ["ask", "done", "work"].includes(laneOf(s))).length, tip: "Attention — grouped by what each session wants from you" },
     { id: "projects", label: "Projects", Icon: FolderTree, count: groups.length, tip: "Projects — grouped by project" },
     ...(plugins.rivendell ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
     { id: "recent", label: "Recent", Icon: History, count: mine.length, tip: "Recent — one flat stream, newest first" },
@@ -1037,8 +1038,8 @@ export function SessionsPanel(props: Props) {
                     style={{ position: "absolute", top: 4, left: "calc(50% + 4px)", width: 6, height: 6, borderRadius: "50%", background: "var(--info)",
                              boxShadow: "0 0 0 2px var(--panel2), 0 0 8px var(--info)" }} />
                 )}
-                {/* Only ATTENTION's count is a number you act on, so it shows
-                    only while there is something to act on. */}
+                {/* Only ATTENTION's count shows, and only while something
+                    runs or waits on you. */}
                 {m.id === "attention" && m.count > 0 && (
                   <span style={{ flex: "none", fontSize: "var(--t9)", fontWeight: 700, color: "var(--warn)" }}>{m.count}</span>
                 )}
