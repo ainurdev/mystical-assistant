@@ -44,7 +44,7 @@ from bridge import (acp_agents, agents, attribution, browser, config,
                     rivendell_instances, rivendell_video, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, team, terminals, titler, trackers,
-                    usage, weather, wsutil)
+                    usage, weather, workspaces, wsutil)
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
                                    normalize_model_effort,
@@ -445,6 +445,15 @@ class Handler(BaseHTTPRequestHandler):
             if got is None:
                 return self._json({"error": "no such logo"}, 404)
             # The name is the bytes' hash, so a logo never changes under it.
+            return self._send_image(*got, "public, max-age=31536000, immutable")
+        if path == "/local/workspaces":
+            # The sidebar's workspaces and which projects each holds (bridge/workspaces.py).
+            return self._json(workspaces.listing())
+        if path.startswith("/local/workspaces/image/"):
+            got = workspaces.image(path[len("/local/workspaces/image/"):])
+            if got is None:
+                return self._json({"error": "no such picture"}, 404)
+            # Named by its bytes' hash, like a project logo.
             return self._send_image(*got, "public, max-age=31536000, immutable")
         if path == "/local/project-mark/repo":
             # The mark editor's From this repo strip: the pictures the repo
@@ -1671,6 +1680,13 @@ class Handler(BaseHTTPRequestHandler):
             # store and starts/stops/rewires to match.
             rivendell.reconfigure()
             return self._json({"ok": True, "instance": inst})
+        if path == "/local/workspaces":
+            # The WORKSPACES settings tab saves the whole set at once.
+            try:
+                return self._json(workspaces.save(body.get("workspaces"), body.get("assign"),
+                                                  body.get("images")))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
         if path == "/local/project-mark/pick":
             # PICK LOGOS on the Projects page, and its Undo (bridge/projectmarks.py).
             act = body.get("action")

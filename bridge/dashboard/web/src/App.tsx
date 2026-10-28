@@ -73,6 +73,8 @@ import { syncBadge, syncOf } from "./lib/gitsync";
 import { chime, pushGranted } from "./lib/push";
 import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
 import { watchWco } from "./lib/wco";
+import { useWorkspaces, workspaceOf } from "./lib/workspaces";
+import { WorkspaceButton } from "./components/hud/WorkspaceButton";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
@@ -2020,9 +2022,16 @@ export function App() {
     return groups;
   }, [sessions, gitBadges, statusMap, activeProject, discovered, labelVersion, selected]);
 
+  // The sidebar shows one workspace (lib/workspaces): a group key assigned
+  // elsewhere is out of every tab, PLUGINS included, so it is filtered here
+  // rather than by HIDE, which PLUGINS deliberately ignores.
+  const ws = useWorkspaces();
+  const inWs = useCallback((key: string) => workspaceOf(ws.set, key) === ws.cur, [ws]);
+  const sidebarSessions = useMemo(() => sessions.filter((s) => inWs(jobGroup(s))), [sessions, inWs]);
+
   // HIDE keeps a project out of the sidebar. SessionsPanel drops its sessions
   // itself, as PLUGINS still lists the runs of a hidden folder or group.
-  const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel]);
+  const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && inWs(g.rel));
 
   // Prompt state the session list flags, so work you left mid-flight is visible
   // from anywhere: a check still running, a card waiting on you, unsent text.
@@ -2784,10 +2793,11 @@ export function App() {
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
-                <Brand folded={!settings.leftOpen} onFold={toggleLeft} />
+                <Brand folded={!settings.leftOpen} onFold={toggleLeft}
+                  workspace={<WorkspaceButton onManage={() => { setSettingsTab("workspaces"); setSettingsOpen(true); }} />} />
                 <SessionsPanel
                   folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })}
-                  sessions={sessions} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
+                  sessions={sidebarSessions} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
                   selectedSessionId={sessionId} booting={!booted}
                   activeProject={activeProject}
