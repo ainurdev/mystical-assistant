@@ -7,13 +7,26 @@ import { FileIcon } from "../../lib/fileicon";
 import { ignoredMatcher } from "../../lib/gitignored";
 import { Skeleton } from "../ui";
 import { useLoadingPhase } from "../../lib/loadingPhase";
+import { findFiles } from "../../lib/filefind";
 
 /* FILES — a VS Code-ish explorer for the ACTIVE SESSION's working tree
    (project + its branch's worktree). Git-changed files carry their status
    letter and colour, and every folder above one gets a dot, so a change is
    findable without expanding the whole tree. Clicking a file hands it to the
    editor modal. Tree building is shared with the EDITOR tab. The changed-file
-   list, the commit box and the graph are the GIT tab's (GitPanel). */
+   list, the commit box and the graph are the GIT tab's (GitPanel).
+
+   It is the way to a file now that the session header's ⊞ PROJECT is gone, so
+   it has a find field (⌘P from anywhere, App): typing swaps the tree for the
+   paths that hold the text (lib/filefind), ↑/↓ and ↵ open one, esc clears. */
+
+// ⌘P asks for the find field from anywhere, sometimes before this panel has
+// mounted (the rail was on another tab): the request waits here until it has.
+let findWanted = false;
+export function requestFileFind(): void {
+  findWanted = true;
+  window.dispatchEvent(new Event("files:find"));
+}
 
 interface Props {
   project: string | null;
@@ -67,6 +80,16 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
   // A long tree scrolls the top out of reach — hence the back-to-top button.
   const listRef = useRef<HTMLDivElement>(null);
   const [scrolled, setScrolled] = useState(false);
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(0);
+  const findRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const focus = () => { findWanted = false; findRef.current?.focus(); findRef.current?.select(); };
+    if (findWanted) focus();
+    window.addEventListener("files:find", focus);
+    return () => window.removeEventListener("files:find", focus);
+  }, []);
 
   const loadTree = useCallback(async () => {
     if (!project) { setPaths([]); return; }
@@ -101,6 +124,10 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
 
   const rows: Row[] = useMemo(() => buildRows(paths, collapsed), [paths, collapsed]);
   const isIgnored = useMemo(() => ignoredMatcher(ignored), [ignored]);
+  const finding = q.trim() !== "";
+  const found = useMemo(() => findFiles(paths, q, 60, isIgnored), [paths, q, isIgnored]);
+  // The picked match stays in view while ↑/↓ walk past the list's edge.
+  useEffect(() => { listRef.current?.querySelector("[data-sel]")?.scrollIntoView({ block: "nearest" }); }, [sel]);
   const changedDirs = useMemo(() => ancestorsOf(changed.keys()), [changed]);
   const dirs = useMemo(() => dirsOf(paths), [paths]);
   const allCollapsed = dirs.length > 0 && collapsed.size >= dirs.length;
@@ -181,6 +208,52 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
     { k: "ref", g: "⟳", t: "refresh", on: () => void loadTree() },
   ];
 
+  function onFindKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Escape") {
+      e.stopPropagation();   // App's Escape would close whatever sits on top
+      if (q) setQ(""); else e.currentTarget.blur();
+    } else if (e.key === "ArrowDown") { e.preventDefault(); setSel((i) => Math.min(i + 1, found.hits.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setSel((i) => Math.max(i - 1, 0)); }
+    else if (e.key === "Enter") {
+      const h = found.hits[sel];
+      if (h) onOpenFile(h.path, changed.has(h.path));
+    }
+  }
+
+  const qlen = q.trim().length;
+  const results = (
+    <div className="swapin">
+      <div style={{ display: "flex", gap: 8, padding: "2px 9px 6px", fontSize: "var(--t9)", letterSpacing: ".4px", color: "var(--txd)" }}>
+        <span>{found.total ? `${found.total} file${found.total === 1 ? "" : "s"}` : "No file matches."}</span>
+        <span style={{ flex: 1 }} />
+        {found.total > 0 && <span>↵ open · esc clear</span>}
+      </div>
+      {found.hits.map((h, i) => {
+        const st = changed.get(h.path);
+        return (
+          <button key={h.path} className="trow" data-sel={i === sel ? "" : undefined}
+            onClick={() => onOpenFile(h.path, !!st)} onMouseMove={() => { if (i !== sel) setSel(i); }}
+            onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtx({ x: e.clientX, y: e.clientY, path: h.path, dir: false }); }}
+            title={isIgnored(h.path) ? `${h.path} — git-ignored` : h.path}
+            style={{ width: "100%", appearance: "none", border: 0, cursor: "pointer", opacity: isIgnored(h.path) ? 0.5 : 1, display: "flex", alignItems: "center", gap: 6, textAlign: "left", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", padding: "4px 9px",
+              background: i === sel ? "color-mix(in srgb, var(--acc) 14%, transparent)" : undefined }}>
+            <FileIcon name={h.name} size={15} />
+            <span style={{ color: st ? ST_COLOR(st) : "var(--txf)", flex: "none", maxWidth: "62%", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              {h.at < 0 ? h.name : (
+                <>{h.name.slice(0, h.at)}<b style={{ color: "var(--txb)", fontWeight: 700, textDecoration: "underline", textDecorationColor: "color-mix(in srgb, var(--acc) 70%, transparent)", textUnderlineOffset: 3 }}>{h.name.slice(h.at, h.at + qlen)}</b>{h.name.slice(h.at + qlen)}</>
+              )}
+            </span>
+            <span style={{ flex: 1, minWidth: 0, textAlign: "right", color: "var(--txd)", fontSize: "var(--t95)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{h.dir}</span>
+            {st && <span style={{ fontSize: "var(--t95)", fontWeight: 700, color: ST_COLOR(st), flex: "none" }}>{st}</span>}
+          </button>
+        );
+      })}
+      {found.total > found.hits.length && (
+        <div style={{ padding: "8px 9px", fontSize: "var(--t95)", color: "var(--txd)" }}>{found.total - found.hits.length} more: keep typing</div>
+      )}
+    </div>
+  );
+
   return (
     <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
@@ -198,7 +271,22 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
 
-      {branch && (
+      {project && (
+        // The sidebar's search, so every theme family draws it the same way.
+        <div className="sess-search" style={{ display: "flex", alignItems: "center", gap: 10, height: 34, margin: "6px 12px 2px", flex: "none",
+                      borderBottom: "1px solid color-mix(in srgb, var(--acc) 9%, transparent)" }}>
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flex: "none" }} aria-hidden="true">
+            <circle cx="5" cy="5" r="3.6" stroke="var(--txl)" strokeWidth="1.3" />
+            <line x1="7.8" y1="7.8" x2="11" y2="11" stroke="var(--txl)" strokeWidth="1.3" strokeLinecap="round" />
+          </svg>
+          <input ref={findRef} value={q} placeholder="Find a file" aria-label="find a file" spellCheck={false}
+            onChange={(e) => { setQ(e.target.value); setSel(0); }} onKeyDown={onFindKey}
+            style={{ flex: 1, minWidth: 0, height: "100%", border: 0, outline: "none", background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", color: "var(--txb)" }} />
+          <span title="⌘P / Ctrl+P jumps here from anywhere" style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>⌘P</span>
+        </div>
+      )}
+
+      {branch && !finding && (
         <div className="swapin" style={{ display: "flex", alignItems: "center", gap: 5, padding: "6px 12px 0", fontSize: "var(--t9)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", minWidth: 0 }}>
           <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
           <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch}</span>
@@ -214,7 +302,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
             style={{ cursor: "pointer", margin: "0 8px 6px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", color: "var(--txl)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{note}</div>
         )}
         {!project && <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 9px" }}>No session selected.</div>}
-        {project && !rows.length && (
+        {project && !finding && !rows.length && (
           skel ? (
             <div className="swapin" style={{ padding: "4px 7px" }} aria-label="Reading the working tree" aria-busy>
               {SKEL.map(([d, w], i) => (
@@ -234,6 +322,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
         )}
         {/* vskip-row: a repo tree is thousands of rows once expanded — off-screen
             ones skip layout and paint (see index.css). */}
+        {finding ? results : (
         <div className="vskip-row swapin">
         {rows.map((r) => {
           const st = r.dir ? undefined : changed.get(r.path);
@@ -265,6 +354,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile }: Props) {
           );
         })}
         </div>
+        )}
       </div>
 
       {scrolled && (

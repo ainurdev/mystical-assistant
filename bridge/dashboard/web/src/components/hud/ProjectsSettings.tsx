@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
-  ArrowUpRight, ChevronRight, Diamond, EyeOff, GitBranch, GraduationCap, PanelLeft, Pencil, Search, Shapes,
-  SquareTerminal, UserRound, WandSparkles, X, type LucideIcon,
+  ArrowUpRight, ChevronRight, Diamond, EyeOff, GitBranch, GraduationCap, PanelLeft, Pencil, Puzzle, Search, Shapes,
+  SquareTerminal, UserRound, WandSparkles, Waypoints, X, type LucideIcon,
 } from "lucide-react";
 import { api, type AccountInfo, type PickResult } from "../../api";
 import { slotHue, type ProfilesInfo } from "../../lib/profiles";
@@ -45,9 +45,11 @@ export interface ProjectsSettingsProps {
   onSetProfile?: (rel: string, profileId: string) => void | Promise<void>; // "" = no default
   // The Claude logins, so a profile's picker can show whose it is.
   logins?: AccountInfo[];
-  // The project modal's DESIGN tab, where a repo is linked to Claude Design:
+  // The right rail's DESIGN tab, where a repo is linked to Claude Design:
   // linking queues a prompt into a session, which a settings page can't do.
   onOpenDesign?: (rel: string) => void;
+  // SETTINGS ▸ Skills with this repo picked (SettingsModal switches the page).
+  onOpenSkills?: (rel: string) => void;
   current?: string | null; // the open session's project, picked first
 }
 
@@ -192,10 +194,12 @@ function PickStrip({ res, busy, onUndo, onClose }: { res: PickResult | string; b
 }
 
 /** The picked project's settings that live in its own config, not in the listing. */
-type Cfg = { rel: string; run: string; def: string; design: string | null; lessons: boolean | null };
+type Cfg = { rel: string; run: string; def: string; design: string | null; lessons: boolean | null;
+  map: boolean | null; skills: { here: number; machine: number } | null };
 
 export function ProjectsSettings(props: ProjectsSettingsProps) {
-  const { groups, hidden, remotes, onSetHidden, onRename, profiles, onSetProfile, logins = [], onOpenDesign, current } = props;
+  const { groups, hidden, remotes, onSetHidden, onRename, profiles, onSetProfile, logins = [], onOpenDesign, onOpenSkills, current } = props;
+  const mapAll = !!useAiFeatures().graph;   // PROJECT MAP, the machine-wide switch over each repo's own
   const [q, setQ] = useState("");
   const [show, setShow] = useState<Show>("all");
   // The open session's project starts unfolded, so the row on the right is in view.
@@ -287,10 +291,12 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
     setCfg(null); setRun(""); setErr("");
     if (!focus?.startsWith("/")) return;
     let live = true;
-    void Promise.all([api.projectSettings({ project: focus }), api.lessons(focus).catch(() => null)])
-      .then(([s, l]) => {
+    void Promise.all([api.projectSettings({ project: focus }), api.lessons(focus).catch(() => null),
+                      api.skills(focus).catch(() => null)])
+      .then(([s, l, k]) => {
         if (!live) return;
-        setCfg({ rel: focus, run: s.run_cmd ?? "", def: s.default_cmd, design: s.design_project, lessons: l ? l.repo_enabled : null });
+        setCfg({ rel: focus, run: s.run_cmd ?? "", def: s.default_cmd, design: s.design_project, lessons: l ? l.repo_enabled : null,
+                 map: s.map ?? null, skills: k ? { here: k.project.length, machine: k.system.length } : null });
         setRun(s.run_cmd ?? "");
       })
       .catch((e: Error) => { if (live) setErr(`Couldn't read its settings: ${e.message}`); });
@@ -310,6 +316,14 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
     api.setLessonsForRepo(rel, on)
       .then((r) => setCfg((c) => (c?.rel === rel ? { ...c, lessons: r.repo_enabled } : c)))
       .catch((e: Error) => { setCfg((c) => (c?.rel === rel ? { ...c, lessons: !on } : c)); setErr(`Lessons didn't change: ${e.message}`); });
+  }
+  function setMap(on: boolean) {
+    if (!cfg) return;
+    const rel = cfg.rel;
+    setCfg({ ...cfg, map: on });
+    api.setProjectSettings({ project: rel }, { map: on })
+      .then((r) => setCfg((c) => (c?.rel === rel ? { ...c, map: r.map ?? on } : c)))
+      .catch((e: Error) => { setCfg((c) => (c?.rel === rel ? { ...c, map: !on } : c)); setErr(`The project map didn't change: ${e.message}`); });
   }
   // PICK LOGOS and its Undo: the bridge picks (bridge/projectmarks.pick_all),
   // the tiles take the new marks at once, the strip says what happened.
@@ -521,6 +535,17 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                     <button type="button" className="ps-tog" data-on={cfg?.lessons || undefined} aria-pressed={!!cfg?.lessons}
                       aria-label="lessons" disabled={cfg?.lessons == null} onClick={() => setLessons(!cfg?.lessons)} />
                   </Field>
+                  <Field icon={Waypoints} label="Project map"
+                    hint={mapAll ? "a code graph each new session starts from" : "PROJECT MAP is off in AI management ▸ Extras"}>
+                    <button type="button" className="ps-tog" data-on={(mapAll && cfg?.map) || undefined} aria-pressed={mapAll && !!cfg?.map}
+                      aria-label="project map" disabled={!mapAll || cfg?.map == null} onClick={() => setMap(!cfg?.map)} />
+                  </Field>
+                  {onOpenSkills && (
+                    <Field icon={Puzzle} label="Skills"
+                      hint={cfg?.skills ? `${cfg.skills.here ? `${cfg.skills.here} in this repo` : "none in this repo"} · ${cfg.skills.machine} on this machine` : "SKILL.md files a session here can reach"}>
+                      <button type="button" className="ps-btn" onClick={() => onOpenSkills(g.rel)}>Open…</button>
+                    </Field>
+                  )}
                 </>
               )}
               {err && <div className="prj-err">{err}</div>}

@@ -7,7 +7,7 @@ import {
   FolderTree, Gauge, GitBranch, 
   Globe,
   Handshake, Hourglass, KeyRound, ListMusic, ListTree, LoaderCircle, Lock,
-  Monitor, Moon, Network, Palette, Play, Plug,
+  Monitor, Moon, Network, Palette, Play, Plug, Puzzle,
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, type LucideIcon,
@@ -18,7 +18,7 @@ import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
 
 import { ago, hhmm, projectName, useClock12, windowLabels } from "../../lib/surfaces";
-import { SkillsFold } from "./SkillsFold";
+import { ExtrasFold, SkillsPage } from "./SkillsFold";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
@@ -116,7 +116,7 @@ export interface SettingsModalProps {
   onAccountsChanged: () => void;
   onOpenInspector: () => void;
   projects: ProjectsSettingsProps;
-  /** The open session's project — what the SKILLS fold installs to. */
+  /** The open session's project — where SETTINGS ▸ Skills starts. */
   project: string | null;
 }
 
@@ -132,7 +132,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 export type Tab = "appearance" | "transcript" | "notifications"
-  | "projects" | "workspaces" | "aimgmt"
+  | "projects" | "workspaces" | "aimgmt" | "skills"
   | "integrations" | "system" | "move"
   | "mac";
 
@@ -185,8 +185,12 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   // Who runs a session. One page, four folds — it was tabs (SESSION, MCP,
   // ACCOUNTS, AI) that each held a piece of the same question, and the
   // sidebar's SKILLS panel besides.
-  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · skills · mcp · profile", icon: KeyRound, group: "THE WORK",
-    about: "Who runs your sessions and with what: the logins and the profiles bound to them, the skills, extras and MCP servers they can reach, and the default profile." },
+  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · extras · mcp · profile", icon: KeyRound, group: "THE WORK",
+    about: "Who runs your sessions and with what: the logins and the profiles bound to them, the extras and MCP servers they can reach, and the default profile." },
+  // A fold of AI MANAGEMENT and a tab of the project window before; one page now,
+  // with any repo's skills a pick away (.mystical/design-drafts/project-split).
+  { key: "skills", label: "SKILLS", hint: "project · machine · catalog", icon: Puzzle, group: "THE WORK",
+    about: "What a session can reach that you didn't type: the SKILL.md files in a project or on this machine, the catalog to install from, and Claude Code plugins." },
   { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", icon: Waypoints, group: "THE WORK",
     about: "Other systems the bridge does work for. Each one ships with Mystical but stays silent until you install it: no tab, no card, no rows, no worker." },
   { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
@@ -232,7 +236,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "system", sec: "USAGE SHARING", terms: "share usage telemetry analytics posthog privacy tracking anonymous opt in out replay recording" },
-  { tab: "aimgmt", sec: "SKILLS", terms: "skills skill catalog install plugin marketplace SKILL.md system project" },
+  { tab: "skills", sec: "SKILLS", terms: "skills skill catalog install plugin marketplace SKILL.md system project" },
   { tab: "workspaces", sec: "WORKSPACES", terms: "workspace workspaces personal work profile split sidebar set group switch picture avatar" },
   { tab: "projects", sec: "PROJECTS", terms: "manage projects hide show sidebar repository repo folder name rename label mark logo icon default profile starts with run command design system lessons" },
   { tab: "system", sec: "HTTP INSPECTOR", terms: "api traffic proxy request sse token" },
@@ -2996,17 +3000,18 @@ function AimFold({ id, title, hint, count, right, secs, defaultOpen = false, ope
 }
 
 /** SETTINGS ▸ Projects, with the logins its profile pickers name. */
-function ProjectsPage({ projects, current, onAccountsChanged }: {
+function ProjectsPage({ projects, current, onAccountsChanged, onOpenSkills }: {
   projects: ProjectsSettingsProps;
   current: string | null;
   onAccountsChanged: () => void;
+  onOpenSkills: (rel: string) => void;
 }) {
   const acc = useAccounts(onAccountsChanged);
-  return <ProjectsSettings {...projects} logins={acc.rows ?? []} current={current} />;
+  return <ProjectsSettings {...projects} logins={acc.rows ?? []} current={current} onOpenSkills={onOpenSkills} />;
 }
 
 function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, profilesAvailable, profilesError,
-  onProfilesChanged, onAccountsChanged, project, openSec }: {
+  onProfilesChanged, onAccountsChanged, openSec }: {
   settings: HudSettings;
   onPatch: (patch: Partial<HudSettings>) => void;
   models: { id: string; label: string }[];
@@ -3016,7 +3021,6 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   profilesError: string | null;
   onProfilesChanged: () => void;
   onAccountsChanged: () => void;
-  project: string | null;
   openSec: string | null;
 }) {
   const aiFeatures = useAiFeatures();
@@ -3260,9 +3264,9 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         right={policyPick}>
         {accountsBody}
       </AimFold>
-      <AimFold id="skills" title="Skills" secs={["SKILLS", "MODEL-SPENDING EXTRAS"]} openSec={openSec}
-        hint="installed here and on this machine, the catalog, and the extras that spend model calls">
-        <SkillsFold project={project} />
+      <AimFold id="extras" title="Extras" secs={["MODEL-SPENDING EXTRAS"]} openSec={openSec}
+        hint="the model calls the bridge makes on top of your turns, each with its switch">
+        <ExtrasFold />
       </AimFold>
       <AimFold id="mcp" title="MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec} hint="servers and their logins">
         <McpPanel />
@@ -3835,6 +3839,8 @@ export function SettingsModal(props: SettingsModalProps) {
   const [start] = useState(() => normalizeTab(startTab));
   const startSec = start.sec;
   const [tab, setTab] = useState<Tab>(start.tab ?? "appearance");
+  // SETTINGS ▸ Skills' repo: Projects ▸ a project ▸ Skills ▸ Open… picks it; else the session's.
+  const [skillsFor, setSkillsFor] = useState<string | null>(null);
   const aiFeatures = useAiFeatures();   // the PONYTAIL level hides with its switch
   // Search. A query replaces the panel with its results; picking one puts the
   // tab back and scrolls to the setting, so `q` is also "which view is this".
@@ -4325,7 +4331,13 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "notifications" && <NotifyPanel settings={settings} onPatch={onPatch} />}
 
-            {shown === "projects" && <ProjectsPage projects={projects} current={project} onAccountsChanged={onAccountsChanged} />}
+            {shown === "projects" && <ProjectsPage projects={projects} current={project} onAccountsChanged={onAccountsChanged}
+              onOpenSkills={(rel) => { setSkillsFor(rel); setTab("skills"); }} />}
+            {shown === "skills" && (
+              <SkillsPage project={skillsFor ?? project} onPick={setSkillsFor}
+                projects={projects.groups.filter((g) => g.rel.startsWith("/")).map((g) => ({ rel: g.rel, name: g.name }))
+                  .sort((a, b) => a.name.localeCompare(b.name))} />
+            )}
 
             {shown === "workspaces" && <WorkspacesSettings groups={projects.groups} />}
 
@@ -4333,7 +4345,7 @@ export function SettingsModal(props: SettingsModalProps) {
               <AiManagementPanel settings={settings} onPatch={onPatch} models={models} sessionTools={sessionTools}
                 profiles={profiles} profilesAvailable={profilesAvailable} profilesError={profilesError}
                 onProfilesChanged={onProfilesChanged} onAccountsChanged={onAccountsChanged}
-                project={project} openSec={jump?.sec ?? startSec} />
+                openSec={jump?.sec ?? startSec} />
             )}
             {shown === "integrations" && <IntegrationsPanel />}
             {shown === "move" && <MovePanel />}

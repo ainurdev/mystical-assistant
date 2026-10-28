@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FolderTree, Gauge, GitBranch, GraduationCap, ListOrdered, Users,
+  DraftingCompass, FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Users,
 } from "lucide-react";
 import {
   api,
@@ -98,7 +98,9 @@ import { BackPill, TeamBar } from "./components/TeamBar";
 import { ProjectPick } from "./components/ProjectPick";
 import { setLightboxSend } from "./components/ImageLightbox";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
-import { FilesPanel } from "./components/hud/FilesPanel";
+import { FilesPanel, requestFileFind } from "./components/hud/FilesPanel";
+import { BranchesPanel } from "./components/hud/BranchesPanel";
+import { DesignPanel } from "./components/hud/DesignTab";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitPanel } from "./components/hud/GitPanel";
@@ -620,6 +622,14 @@ export function App() {
   // Tab click: the active tab collapses the sidebar, any other opens on it.
   function pickRightTab(id: string) {
     setSettings((s) => ({ ...s, rightTab: id as RightTab, rightOpen: !(s.rightOpen && s.rightTab === id) }));
+  }
+
+  // The DESIGN rail tab, on `rel`: the session's repo, or another one SETTINGS ▸
+  // Projects or the project menu asked for (null = follow the session's).
+  const [designFor, setDesignFor] = useState<string | null>(null);
+  function openDesign(rel: string) {
+    setDesignFor(rel === sessionProject ? null : rel);
+    patchSettings({ rightTab: "design", rightOpen: true });
   }
 
   // Every AnalyzeModal open goes through here so a stale file deep-link can't
@@ -1374,12 +1384,19 @@ export function App() {
     }
   }
 
-  // ⌘K palette + Escape closes the topmost overlay.
+  // ⌘K palette, ⌘P find a file, and Escape closes the topmost overlay.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setPaletteOpen((v) => !v);
+      } else if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "p" && !analyzeProject) {
+        // FILES' find field, from anywhere: the way to a file now that ⊞ PROJECT
+        // is gone. Not over the editor window, whose own Ctrl+P is Go to File.
+        e.preventDefault();
+        if (settingsOpen) setSettingsOpen(false);   // the field would sit behind it
+        patchSettings({ rightTab: "files", rightOpen: true });
+        requestFileFind();
       } else if (((e.metaKey || e.ctrlKey) && !e.shiftKey && e.key.toLowerCase() === "r") || e.key === "F5") {
         // Worth stealing the browser's reload only when there's something to
         // lose — then it's our dialog asking, in the theme, instead of Chrome's.
@@ -2093,6 +2110,18 @@ export function App() {
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
   const sessionBranch = selected?.branch;
+  // Another session, another repo: DESIGN follows the chat again.
+  useEffect(() => setDesignFor(null), [sessionProject]);
+  // The MAP chip and the window's MAP tab show only where the repo's own switch
+  // (SETTINGS ▸ Projects ▸ Project map) is on; re-read when SETTINGS closes.
+  const [mapOn, setMapOn] = useState(false);
+  useEffect(() => {
+    if (!ai.graph || !sessionProject || settingsOpen) { if (!ai.graph || !sessionProject) setMapOn(false); return; }
+    let live = true;
+    void api.graphState(sessionProject).then((g) => { if (live) setMapOn(g.repo_on !== false); })
+      .catch(() => { if (live) setMapOn(false); });
+    return () => { live = false; };
+  }, [ai.graph, sessionProject, settingsOpen]);
 
   // The app running for this project, out of the dev servers the 3s state poll
   // already carries. ponytail: matched on the project, not the session's
@@ -2295,7 +2324,26 @@ export function App() {
         />
       ),
     },
-    // Hidden while LESSONS is off, like ANALYZE's copy — nothing is being written.
+    // Status only (lib/branchrows): the project window's WORKTREES, minus its buttons.
+    {
+      id: "branches", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project",
+      render: () => (
+        <BranchesPanel project={sessionProject} branch={sessionBranch}
+          sessions={sessions} status={statusMap} nonce={gitNonce} />
+      ),
+    },
+    // While Claude Design is installed, as the window's DESIGN tab was.
+    ...(plugins.design ? [{
+      id: "design", label: "Design", icon: <DraftingCompass {...RAIL} />, ownScroll: true,
+      render: () => {
+        const rel = designFor ?? sessionProject;
+        return (
+          <DesignPanel key={rel ?? ""} project={rel} other={designFor ? projectName(designFor) : undefined}
+            onFeed={(t) => feed(t, rel ?? undefined)} />
+        );
+      },
+    }] : []),
+    // Hidden while LESSONS is off — nothing is being written.
     ...(ai.learn ? [{
       id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true,
       badge: unreadLessons ? railCount(unreadLessons) : null,
@@ -2537,7 +2585,7 @@ export function App() {
       // folded in here.
       if (plugins.design)
         items.push({ icon: "◇", label: "Design system", hint: "link · pull · sync",
-          onClick: () => openAnalyze(ctxMenu.id, undefined, "design") });
+          onClick: () => openDesign(ctxMenu.id) });
       items.push({ icon: "◉", label: "Select as active", onClick: () => void selectProject(ctxMenu.id) });
       items.push({ icon: "+", label: "New session here", onClick: () => void newSession(ctxMenu.id) });
       // SETTINGS ▸ Projects' sidebar switch, flipped from here; the pill says where it flips back.
@@ -2886,7 +2934,6 @@ export function App() {
                 onAnswer={lastTurnId && droppedAsks.has(lastTurnId) ? undefined : answerAsk}
                 askDocked={!!dock && !(selected && (isDeviceRun(selected.origin) || isTeam(selected.origin)))}
                 onOpenFile={openFileRef}
-                onOpenProject={sessionProject ? () => openAnalyze(sessionProject) : undefined}
                 run={sessionRun}
                 onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
                 onDropFiles={(f) => composerFiles.current?.(f)}
@@ -2990,7 +3037,7 @@ export function App() {
                       onEjectQueued={(id) => void ejectQueued(id)}
                       onSteerQueued={agentPick ? undefined : (id) => void queue.steerQueued(id).catch((e) => notify("error", (e as Error).message))}
                       project={sessionProject}
-                      onOpenMap={ai.graph && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
+                      onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"
@@ -3037,8 +3084,6 @@ export function App() {
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
                 activeSession={selected?.id}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
-                onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); toChat(); }}
-                onWorktreeSession={(rel, branch, create, parent) => { void worktreeSession(rel, branch, create, parent); setAnalyzeProject(null); }}
                 onPushFailed={(branch, output) => { setAnalyzeProject(null); pushFailedSession(analyzeProject, branch, output); }}
                 // GIT tab review notes. The chat goes to where they went, so you
                 // see the agent pick them up. A session mid-turn queues them.
@@ -3084,7 +3129,7 @@ export function App() {
                   onRename: renameProject,
                   profiles: profilesAvailable ? profiles ?? undefined : undefined,
                   onSetProfile: setProjectProfile,
-                  onOpenDesign: (rel) => { setSettingsOpen(false); setSettingsTab(undefined); openAnalyze(rel, undefined, "design"); },
+                  onOpenDesign: (rel) => { setSettingsOpen(false); setSettingsTab(undefined); openDesign(rel); },
                 }}
                 onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
             )}

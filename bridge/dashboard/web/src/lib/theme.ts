@@ -347,7 +347,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => Object.keys(t.pal))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["turns", "files", "git", "learn", "rivendell", "team", "usage"] as const;
+export const RIGHT_TABS = ["turns", "files", "git", "branches", "design", "learn", "rivendell", "team", "usage"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 export { INDICATORS, type Indicator } from "./indicator";

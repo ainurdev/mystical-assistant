@@ -11,7 +11,6 @@ import {
   type Worktree,
 } from "../../api";
 import { useAiFeatures } from "../../lib/ai";
-import { useIntegrations } from "../../lib/integrations";
 import { parseDiff, type DiffRow } from "../../lib/diff";
 import { useStickyFlag } from "../../lib/prefs";
 import {
@@ -24,19 +23,21 @@ import { CommitGraph } from "../CommitGraph";
 import { askConfirm } from "../ui/Ask";
 import { NoteEditor, NoteThread, SendBar } from "./DiffNotes";
 import { EditorTab, type BranchOpt } from "./EditorTab";
-import { LearnTab } from "./LearnTab";
 import { MapTab } from "./MapTab";
-import { SkillsTab } from "./SkillsTab";
-import { DesignTab } from "./DesignTab";
-import { WorktreesTab } from "./WorktreesTab";
 import { XtermPane } from "./XtermPane";
 import MarkEditor from "./MarkEditor";
 
 /* PROJECT ANALYSIS modal — matches the HUD design mock (hud.dc.html lines
    530–1258): header with the project's mark (its tile opens MarkEditor), tab bar (EDITOR / GIT /
-   WORKTREES / TERMINAL), and per-tab bodies. */
+   TERMINAL, and MAP where the repo's map is on), and per-tab bodies.
 
-export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "design" | "map" | "learn";
+   Nothing opens it on purpose any more: the session header's ⊞ PROJECT is gone
+   (.mystical/design-drafts/project-split). A file opens it (FILES, a file link in
+   chat), a changed file opens its diff, RUN its terminal, the MAP chip its map.
+   What else it held moved out: WORKTREES to the rail's BRANCHES, DESIGN to the
+   rail's DESIGN, SKILLS to SETTINGS ▸ Skills, LEARN was the rail's already. */
+
+export type Tab = "changes" | "editor" | "terminal" | "map";
 
 interface Props {
   project: string;
@@ -58,8 +59,6 @@ interface Props {
   initialCommand?: string;
   onClose: () => void;
   onFeed: (texts: string[], project?: string) => void;
-  onSelectSession: (s: SessionBrief) => void;
-  onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
   /** GIT tab review notes → a session on the branch, or a new one in its tree. */
   onSendTo: SendTo;
   /** A push git refused → a new session on that branch, git's message as its
@@ -79,14 +78,13 @@ export function AnalyzeModal(props: Props) {
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
-  const aiFeatures = useAiFeatures();   // MAP and LEARN hide with their switches
-  const plugins = useIntegrations();    // DESIGN shows while its plugin is installed
+  const aiFeatures = useAiFeatures();   // MAP hides with its switch, and with the repo's own
+  const [mapOn, setMapOn] = useState(false);
   const [tab, setTab] = useState<Tab>(props.initialTab ?? "editor");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
-  const [mergedBranches, setMergedBranches] = useState<string[]>([]);
   const [termCount, setTermCount] = useState(0);
   const [closing, setClosing] = useState(false);
   // Maximize sticks per browser, so the next open comes back the way you left it.
@@ -100,7 +98,7 @@ export function AnalyzeModal(props: Props) {
   const refreshGit = () => { void api.git(project).then(setGit).catch(() => {}); };
   const refreshWt = () => {
     void api.worktrees(project)
-      .then((w) => { setWorktrees(w.worktrees); setMergedBranches(w.merged ?? []); })
+      .then((w) => setWorktrees(w.worktrees))
       .catch(() => {});
   };
   const refreshBranches = () => {
@@ -117,6 +115,11 @@ export function AnalyzeModal(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
 
+  useEffect(() => {
+    if (!aiFeatures.graph) { setMapOn(false); return; }
+    void api.graphState(project).then((g) => setMapOn(g.repo_on !== false)).catch(() => setMapOn(false));
+  }, [project, aiFeatures.graph]);
+
   // default viewed branch → the checked-out branch
   useEffect(() => { const c = git?.branch || badge?.branch; if (c) setSelectedBranch((p) => p || c); }, [git, badge]);
 
@@ -131,7 +134,6 @@ export function AnalyzeModal(props: Props) {
     const st = props.status.get(s.id)?.state;
     return st === "working" || st === "live";
   });
-  const linkedWt = worktrees.filter((w) => !w.is_main).length;
 
   const branchOpts: BranchOpt[] = useMemo(() => {
     const list = branches.length ? branches : (cur ? [cur] : []);
@@ -141,13 +143,9 @@ export function AnalyzeModal(props: Props) {
   const tabs: { k: Tab; l: string; badge?: number }[] = [
     { k: "editor", l: "Editor" },
     { k: "changes", l: "Git", badge: git?.dirty || undefined },
-    { k: "worktrees", l: "Worktrees", badge: linkedWt || undefined },
     { k: "terminal", l: "Terminal", badge: termCount || undefined },
-    { k: "skills", l: "Skills" },
-    ...(plugins.design ? [{ k: "design" as Tab, l: "Design" }] : []),
-    // hidden while their AI switch is off — nothing is being built or written
-    ...(aiFeatures.graph ? [{ k: "map" as Tab, l: "Map" }] : []),
-    ...(aiFeatures.learn ? [{ k: "learn" as Tab, l: "Learn" }] : []),
+    // hidden while PROJECT MAP or the repo's own switch is off: nothing is built
+    ...(mapOn ? [{ k: "map" as Tab, l: "Map" }] : []),
   ];
 
   return (
@@ -203,12 +201,6 @@ export function AnalyzeModal(props: Props) {
               sessions={props.sessions} activeSession={props.activeSession} worktrees={worktrees}
               onSendTo={props.onSendTo} onPushFailed={props.onPushFailed} />
           )}
-          {tab === "worktrees" && (
-            <WorktreesTab project={project} sessions={props.sessions} worktrees={worktrees}
-              branches={branches} defaultBranch={defaultBranch} git={git} mergedBranches={mergedBranches}
-              onSelectSession={props.onSelectSession} onWorktreeSession={props.onWorktreeSession}
-              onRefresh={() => { refreshGit(); refreshWt(); refreshBranches(); }} />
-          )}
           {tab === "editor" && (
             <EditorTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
               onPickBranch={setSelectedBranch} initialFile={props.initialFile} initialLine={props.initialLine} />
@@ -217,10 +209,7 @@ export function AnalyzeModal(props: Props) {
             <TerminalTab project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount}
               initialCommand={props.initialCommand} />
           )}
-          {tab === "skills" && <SkillsTab project={project} name={name(project)} />}
-          {tab === "design" && <DesignTab project={project} onFeed={(t) => props.onFeed(t, project)} />}
           {tab === "map" && <MapTab project={project} />}
-          {tab === "learn" && <LearnTab project={project} />}
         </div>
       </div>
     </div>

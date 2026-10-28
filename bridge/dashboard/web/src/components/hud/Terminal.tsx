@@ -217,7 +217,7 @@ export function Terminal({
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
-  onOpenProject, run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
+  run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
   limit, logins,
 }: {
   view: View;
@@ -267,8 +267,6 @@ export function Terminal({
   askDocked?: boolean;
   /** Move a typed session's stage — the rail's jumps and a gate's APPROVE. */
   /** Open a fresh typed session from a report card (PROBE -> FIX, and friends). */
-  /** Open the project modal on its default tab. */
-  onOpenProject?: () => void;
   /** The dev server the bridge is running for this project, if any. */
   run?: DevServerInfo | null;
   /** Open this project's TERMINAL tab (the run bar, logs and STOP). */
@@ -301,7 +299,6 @@ export function Terminal({
   const [projHov, setProjHov] = useState(false);
   const [brHov, setBrHov] = useState(false);
   const [titleHov, setTitleHov] = useState(false);
-  const [projBtnHov, setProjBtnHov] = useState(false);
   const [cntHov, setCntHov] = useState(false);
   const isChat = view === "chat";
   const empty = isChat && turns.length === 0;
@@ -617,24 +614,15 @@ export function Terminal({
       </div>
   );
   // `isle-reads` / `isle-keep`: FLINT's TUCK header folds the readouts down to
-  // the one marked keep (the clock row when it's here, else ⊞ PROJECT) until
-  // the island is hovered.
+  // the one marked keep (the clock row, when it's here) until the island is
+  // hovered. ⊞ PROJECT is gone: what its window held lives on the right rail
+  // (FILES, BRANCHES, DESIGN) and in SETTINGS (Skills, Projects ▸ Project map).
   const readouts = (
       <div className="isle-reads" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
-        {/* The row's one link. The project modal — files, git, worktrees, the
-            terminal — is worth a click of its own; its neighbours (design
-            system, tasks, issues) stay in the menu on the project's name. */}
-        {isChat && onOpenProject && (
-          <button onClick={onOpenProject} title="project — files, git, worktrees, terminal" className={chrome ? undefined : "isle-keep"}
-            onMouseEnter={() => setProjBtnHov(true)} onMouseLeave={() => setProjBtnHov(false)}
-            style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: 0, flex: "none", border: 0, background: "transparent", color: projBtnHov ? "var(--txb)" : "var(--txd)" }}>
-            ⊞ PROJECT
-          </button>
-        )}
         <ViewTabs view={view} onView={onView} />
         {chrome && (
           <>
-            <span style={hairline(11)} />
+            {!isChat && <span style={hairline(11)} />}
             <span className="isle-keep" style={{ display: "contents" }}>{chrome}</span>
           </>
         )}
@@ -720,7 +708,8 @@ export function Terminal({
       data-layout={compact ? "compact" : "default"}
       style={{ position: "relative", gridColumn: 2, backgroundColor: "color-mix(in srgb, var(--panel2) 60%, transparent)", display: "flex", flexDirection: "column", minHeight: 0, minWidth: 0, overflow: "hidden", paddingInline: chatPad, animation: "enterZoom .65s cubic-bezier(.2,.8,.2,1) both .12s" }}
     >
-      {island}
+      {/* COMPACT CHAT with no chrome has nothing left to hold: no empty pill. */}
+      {!(compact && isChat && !chrome) && island}
 
       {view === "history" ? (
         <div style={{ minHeight: 0, flex: 1, overflowY: "auto" }}>

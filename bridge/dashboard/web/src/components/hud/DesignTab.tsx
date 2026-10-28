@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 import { api, type InstalledSkill } from "../../api";
 
 /* DESIGN tab — link this repo to a Claude Design project, then pull its tokens
-   and components down as a project skill, or push local drift back. Lives in
-   the per-project modal (moved out of SETTINGS: the link is per-repo state, so
-   it belongs with the repo). Every button only composes a prompt
-   (api.designPrompt) and queues it into the open session via onFeed — nothing
-   here runs a tool on its own. */
+   and components down as a project skill, or push local drift back. A tab of
+   the right rail (DesignPanel), moved there from the project window when the
+   session header's ⊞ PROJECT went (.mystical/design-drafts/project-split): the
+   link is per-repo state, so it sits with the repo you are working in. Every
+   button only composes a prompt (api.designPrompt) and queues it into the open
+   session via onFeed — nothing here runs a tool on its own. */
 
 // bridge/skills.py stamps every SKILLS entry with `from_design`/`design_project`
 // (a pulled design system's own marker), but api.ts's InstalledSkill predates
@@ -151,6 +152,30 @@ export function DesignTab({ project, onFeed }: {
           </StateRow>
         )}
         {err && <div style={{ ...NOTE, color: "var(--err)", marginTop: 8 }}>{err}</div>}
+      </div>
+    </div>
+  );
+}
+
+/** The DESIGN rail tab: the body above in the rail's panel frame (FILES'). It
+ *  shows the open session's repo, or the one SETTINGS ▸ Projects or the project
+ *  menu asked for — then its name is in the header, since it isn't the chat's. */
+export function DesignPanel({ project, other, onFeed }: {
+  project: string | null;
+  other?: string;                 // the asked-for repo's name, when it isn't the session's
+  onFeed: (texts: string[]) => void;
+}) {
+  return (
+    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px" }}>
+        <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>DESIGN</span>
+        {other && <span style={{ fontSize: "var(--t95)", color: "var(--purple-h)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{other}</span>}
+      </div>
+      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
+      <div className="mscroll" style={{ padding: "12px 12px 16px", flex: 1, minHeight: 0, overflowY: "auto" }}>
+        {project
+          ? <DesignTab key={project} project={project} onFeed={onFeed} />
+          : <div style={NOTE}>No session selected.</div>}
       </div>
     </div>
   );

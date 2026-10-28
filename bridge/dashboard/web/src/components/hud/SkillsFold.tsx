@@ -7,21 +7,22 @@ import {
   api, type AiFeature, type CatalogSkill, type InstalledSkill, type SkillCategory, type SkillScope, type SkillsInfo,
 } from "../../api";
 import { setAiFeatures } from "../../lib/ai";
-import { PluginsView } from "./SkillsTab";
+import { PluginsView } from "./PluginsView";
 
-/* SETTINGS ▸ AI MANAGEMENT ▸ SKILLS — one fold, two kinds of card.
+/* The extras and the skills — two kinds of card, one card grammar.
 
    The extras (every model call the bridge makes on top of your own turns —
    titles, guards, lessons) and the skills (a SKILL.md under .claude/skills/,
-   from the catalog or by hand) used to live two tabs apart in two idioms: the
-   extras as a grid of switch cards, the skills as the sidebar's ruled list.
-   They answer the same question — what does a session carry that you didn't
-   type — so they share one card grammar here: an icon, a name, what it does,
-   and on the card's floor what it costs or where it came from. The switch or
-   the install button sits where the eye lands first, top right.
+   from the catalog or by hand) answer the same question — what does a session
+   carry that you didn't type — so they share one card grammar: an icon, a
+   name, what it does, and on the card's floor what it costs or where it came
+   from. The switch or the install button sits where the eye lands first, top
+   right. Authored in FLINT's idiom with the settings page's tokens.
 
-   SkillsTab.tsx keeps the HUD-styled list for the ANALYZE modal; this is the
-   settings page's view, authored in FLINT's idiom with the page's tokens. */
+   They used to share one fold of AI MANAGEMENT, and the project window had a
+   SKILLS tab of its own. Now the extras keep the fold (ExtrasFold) and the
+   skills are a page of SETTINGS (SkillsPage), with a project picker so any
+   repo's skills are one pick away (.mystical/design-drafts/project-split). */
 
 // One icon per extra: a grid of ten cards is scanned by shape long before it
 // is read, and these are otherwise ten identical rectangles.
@@ -371,11 +372,27 @@ function SkillsGrid({ project }: { project: string | null }) {
   );
 }
 
-/** The SKILLS fold of SETTINGS ▸ AI MANAGEMENT. */
-export function SkillsFold({ project }: { project: string | null }) {
+/** SETTINGS ▸ AI MANAGEMENT ▸ Extras. */
+export function ExtrasFold() {
+  return <ExtrasGrid />;
+}
+
+/** SETTINGS ▸ Skills. The PROJECT list and + Project act on the picked repo,
+ *  which starts as the open session's (SettingsModal holds the pick). */
+export function SkillsPage({ projects, project, onPick }: {
+  projects: { rel: string; name: string }[];
+  project: string | null;
+  onPick: (rel: string) => void;
+}) {
   return (
     <>
-      <ExtrasGrid />
+      <div className="aim-vfield row" style={{ marginBottom: 14 }}>
+        <div><b>Project</b><span>whose skills the PROJECT list shows, and where + Project installs</span></div>
+        <select className="aim-sel" value={project ?? ""} aria-label="project" onChange={(e) => onPick(e.target.value)}>
+          {!project && <option value="">No project</option>}
+          {projects.map((p) => <option key={p.rel} value={p.rel}>{p.name}</option>)}
+        </select>
+      </div>
       <SkillsGrid project={project} />
     </>
   );

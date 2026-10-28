@@ -1,4 +1,5 @@
 import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
+import type { BranchStatus } from "./lib/branchrows";
 
 // The dashboard server hands out a per-process token in the URL the user opens
 // (http://127.0.0.1:8790/?token=...). We keep it and send it on every
@@ -541,6 +542,8 @@ export interface ProjectSettings {
   run_cmd: string | null;
   prod_url: string | null;
   design_project: string | null;
+  /** The repo's own PROJECT MAP switch (SETTINGS ▸ Projects); absent on an older bridge. */
+  map?: boolean;
   default_cmd: string;
   log_path: string;
 }
@@ -1549,6 +1552,7 @@ export interface GraphState {
   head: string | null;
   stale: boolean;
   building: boolean;
+  repo_on?: boolean; // this repo's own switch (SETTINGS ▸ Projects ▸ Project map); absent on an older bridge
 }
 
 // One lesson written after a turn, listed by the LEARN tab. Body is fetched
@@ -2081,7 +2085,7 @@ export const api = {
   setProjectSettings: (
     ctx: RunCtx,
     patch: { run_cmd?: string; prod_url?: string; design_project?: string; hidden?: boolean; name?: string;
-             mark?: ProjectMark | null; logo_data?: string },
+             mark?: ProjectMark | null; logo_data?: string; map?: boolean },
   ) =>
     req<{
       ok: boolean;
@@ -2091,6 +2095,7 @@ export const api = {
       design_project?: string | null;
       hidden?: boolean;
       name?: string | null;
+      map?: boolean;
     }>("/local/project/settings", {
       method: "POST",
       body: { ...ctx, ...patch },
@@ -2219,6 +2224,9 @@ export const api = {
     ),
   // `merged`: branch names already contained in the default branch — the WORKTREES
   // tab marks them, worktree or not, so a finished branch is visible as finished.
+  // The BRANCHES rail tab: every branch and checkout with its status (lib/branchrows).
+  branchStatus: (project: string) =>
+    req<BranchStatus>(`/local/git/branchstatus?project=${encodeURIComponent(project)}`),
   worktrees: (project: string) =>
     req<{ worktrees: Worktree[]; merged: string[] }>(
       `/local/git/worktrees?project=${encodeURIComponent(project)}`,
