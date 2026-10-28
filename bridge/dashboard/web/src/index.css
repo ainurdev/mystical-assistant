@@ -7252,8 +7252,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-fam] .wspop-manage { border-top-color: var(--line); }
 /* ROW: every workspace a button; the current one ringed in the accent, the rest
    dimmed until hovered. Padding keeps the rings inside the scroll box. */
-.wsrow { display: flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0; max-width: 168px; margin-right: 6px;
-  padding: 3px; overflow-x: auto; scrollbar-width: none; }
+.wsrow { display: flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0; max-width: 172px; margin-right: 4px;
+  padding: 5px; overflow-x: auto; scrollbar-width: none; }
 .wsrow::-webkit-scrollbar { display: none; }
 .wsrow .wsbtn { flex: none; }
 .wsrow .wsbtn[aria-checked="false"] .wsav { opacity: .55; box-shadow: 0 0 0 1px var(--panel, #000), 0 0 0 2px color-mix(in srgb, var(--acc) 22%, transparent); }
@@ -7279,3 +7279,12 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   font-size: var(--t95); color: var(--txm); background: transparent; border: 1px solid color-mix(in srgb, var(--acc) 25%, transparent); }
 .wspick-foot button:hover { color: var(--txb); border-color: var(--acc); }
 [data-fam] .wspick-foot button { border-radius: var(--f-rad-s, 6px); }
+/* Something new in a workspace you aren't on (WorkspaceButton `news`): a dot at
+   the button's top right, cut out of the cap by a ring of the panel's ground,
+   and NEW with the count on its menu row. */
+.wsbtn { position: relative; }
+.wsdot { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; pointer-events: none;
+  background: var(--warn, #f5a524); box-shadow: 0 0 0 2px var(--panel, #000); }
+.wspop-new { flex: none; padding: 2px 6px; border-radius: 4px; font: 700 var(--t85, 9px)/1.2 var(--mono); letter-spacing: .06em;
+  color: var(--warn, #f5a524); background: color-mix(in srgb, var(--warn, #f5a524) 16%, transparent); }
+[data-fam] .wspop-new { font-family: var(--ui-font); border-radius: 999px; }

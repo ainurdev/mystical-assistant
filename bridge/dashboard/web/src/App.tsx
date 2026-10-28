@@ -73,7 +73,7 @@ import { syncBadge, syncOf } from "./lib/gitsync";
 import { chime, pushGranted } from "./lib/push";
 import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
 import { watchWco } from "./lib/wco";
-import { useWorkspaces, workspaceOf } from "./lib/workspaces";
+import { switchWorkspace, useWorkspaces, workspaceOf } from "./lib/workspaces";
 import { WorkspaceButton } from "./components/hud/WorkspaceButton";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
@@ -645,9 +645,21 @@ export function App() {
     if (sessionProject) openAnalyze(sessionProject, { path, branch: sessionBranch }, changed ? "changes" : undefined);
   }
 
+  // A session opened from outside the sidebar (a notification, ⌘K, NEXT UP,
+  // the tray) brings its workspace on screen, so its row is in the list you
+  // see. Read-only runs never do: they list in no workspace's projects.
+  function revealWorkspace(s: SessionBrief | undefined) {
+    if (!s || !ws.set || isReadOnly(s.origin)) return;
+    const id = workspaceOf(ws.set, jobGroup(s));
+    if (id !== ws.cur) switchWorkspace(id);
+  }
+
   // `fresh`: a session just made, so there are no turns to wait for — the
   // fresh screen New put up stays, with no loading state in between.
-  function openSession(id: string, fresh = false) {
+  // `reveal`: switch to its workspace (revealWorkspace); off for the boot's
+  // reopen, which must leave you on the workspace you picked last.
+  function openSession(id: string, fresh = false, reveal = true) {
+    if (reveal) revealWorkspace(sessions.find((s) => s.id === id));
     // Already the open one: re-opening would re-fetch and re-animate the chat
     // to land on what's already on screen.
     if (id === sessionIdRef.current) return;
@@ -828,7 +840,12 @@ export function App() {
         }
         const was = ss.find((s) => s.id === asked) ?? ss.find((s) => s.id === lastOpen())
           ?? ss.find((s) => s.project === projectRel) ?? ss[0];
-        if (was) openSession(was.id);
+        // Reopening what you had open keeps the workspace you picked last; a
+        // link that names a session (?s=) brings that session's workspace.
+        if (was) {
+          openSession(was.id, false, false);
+          if (asked && was.id === asked) revealWorkspace(was);
+        }
         // Nothing to reopen (or the list never landed) — say so, or the intro
         // would wait on a transcript fetch that is never going to happen.
         else markBoot("chat", "ok", "NONE");
@@ -2043,6 +2060,22 @@ export function App() {
     return m;
   }, [drafts, heldMap, checkingMap]);
 
+  // What's new in the workspaces you aren't looking at: per workspace, its chats
+  // the sidebar would flag (DONE, finished and unopened; ASK, waiting on you),
+  // so the switch can say a hidden one wants you. Read-only runs and what you
+  // hid never count, as in the sidebar's own lanes.
+  const wsNews = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of sessions) {
+      if (isReadOnly(s.origin) || hiddenProjects[s.project] || hiddenProjects[jobGroup(s)]) continue;
+      const id = workspaceOf(ws.set, jobGroup(s));
+      if (id === ws.cur) continue;
+      const lane = resolve(statusMap.get(s.id), doneIds.has(s.id), promptFlags.get(s.id)).lane;
+      if (lane === "done" || lane === "ask") m.set(id, (m.get(id) ?? 0) + 1);
+    }
+    return m;
+  }, [sessions, ws, hiddenProjects, statusMap, doneIds, promptFlags]);
+
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
   const sessionBranch = selected?.branch;
@@ -2794,9 +2827,9 @@ export function App() {
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
                 <Brand folded={!settings.leftOpen} onFold={toggleLeft}
-                  workspace={<WorkspaceButton onManage={() => { setSettingsTab("workspaces"); setSettingsOpen(true); }} />} />
+                  workspace={<WorkspaceButton news={wsNews} onManage={() => { setSettingsTab("workspaces"); setSettingsOpen(true); }} />} />
                 <SessionsPanel
-                  folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })}
+                  folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })} workspace={ws.cur}
                   sessions={sidebarSessions} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
                   selectedSessionId={sessionId} booting={!booted}

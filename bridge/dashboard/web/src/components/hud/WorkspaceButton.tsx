@@ -26,8 +26,13 @@ export function WorkspaceAvatar({ ws, size = 22 }: { ws: Workspace; size?: numbe
  *  ROW (the page's SWITCHER) draws every workspace as its own button instead,
  *  the current one ringed: a click switches, a right-click still manages. The
  *  row scrolls sideways once it outgrows the cap rather than pushing the fold
- *  off it. */
-export function WorkspaceButton({ onManage }: { onManage: () => void }) {
+ *  off it.
+ *
+ *  `news` counts, per workspace you aren't on, the chats the sidebar would
+ *  flag (App's wsNews): each such workspace's button wears a dot at its top
+ *  right, the menu's trigger wears one when any does, and the menu tags the
+ *  workspace NEW with the count. */
+export function WorkspaceButton({ onManage, news }: { onManage: () => void; news?: Map<string, number> }) {
   const { set, cur } = useWorkspaces();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLSpanElement>(null);
@@ -45,15 +50,18 @@ export function WorkspaceButton({ onManage }: { onManage: () => void }) {
   const here = list.find((w) => w.id === cur) ?? list[0];
   const count = (id: string) => Object.values(set?.assign ?? {}).filter((v) => v === id).length;
   const manage = () => { setOpen(false); onManage(); };
+  const newIn = (id: string) => (id === here.id ? 0 : news?.get(id) ?? 0);
+  const anyNew = list.some((w) => newIn(w.id) > 0);
   const onCtx = (e: RMouseEvent) => { e.preventDefault(); e.stopPropagation(); manage(); };
 
   if (set?.display === "row" && list.length > 1) return (
     <span className="wsrow" role="radiogroup" aria-label="Workspaces">
       {list.map((w) => (
         <button key={w.id} type="button" className="wsbtn" role="radio" aria-checked={w.id === here.id}
-          title={`${w.name} — right-click to manage workspaces`}
+          title={`${w.name}${newIn(w.id) ? ` — ${newIn(w.id)} new` : ""} — right-click to manage workspaces`}
           onClick={() => switchWorkspace(w.id)} onContextMenu={onCtx}>
           <WorkspaceAvatar ws={w} size={20} />
+          {newIn(w.id) > 0 && <i className="wsdot" aria-hidden />}
         </button>
       ))}
     </span>
@@ -62,11 +70,12 @@ export function WorkspaceButton({ onManage }: { onManage: () => void }) {
   return (
     <span ref={wrap} className="wsbtn-wrap">
       <button type="button" className="wsbtn" aria-haspopup="menu" aria-expanded={open}
-        title={`Workspace: ${here.name} — click to switch, right-click to manage`}
+        title={`Workspace: ${here.name}${anyNew ? " — something new in another workspace" : ""} — click to switch, right-click to manage`}
         onClick={() => setOpen((o) => !o)}
         // Stopped here: the dashboard's own right-click menu would open over the page.
         onContextMenu={onCtx}>
         <WorkspaceAvatar ws={here} />
+        {anyNew && <i className="wsdot" aria-hidden />}
       </button>
       {open && (
         <div className="wspop" role="menu" aria-label="Workspaces">
@@ -76,6 +85,7 @@ export function WorkspaceButton({ onManage }: { onManage: () => void }) {
               onClick={() => { switchWorkspace(w.id); setOpen(false); }}>
               <WorkspaceAvatar ws={w} size={20} />
               <span className="wspop-name">{w.name}</span>
+              {newIn(w.id) > 0 && <span className="wspop-new" title={`${newIn(w.id)} chat${newIn(w.id) === 1 ? "" : "s"} finished or waiting on you`}>NEW {newIn(w.id)}</span>}
               <span className="wspop-n">{w.id === "default" ? "the rest" : `${count(w.id)} project${count(w.id) === 1 ? "" : "s"}`}</span>
               {w.id === here.id && <Check size={13} strokeWidth={2.4} aria-hidden className="wspop-on" />}
             </button>
