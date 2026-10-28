@@ -224,11 +224,16 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
   const [picking, setPicking] = useState(false);
   // STYLE WITH AI (LogoStylist.tsx) replaces PICK LOGOS while its AI switch is on. Its run
   // takes the right side until a project is picked; the bell's row (focus "style") brings it back.
+  // Any other focus is a project's rel: the HIDE pill's Open Settings lands on the one it hid.
   const styleOn = !!useAiFeatures().logostyle;
   const style = useStyle();
   const styleRow = useStyleRows();
   const [reviewing, setReviewing] = useState(true);
-  useEffect(() => { if (takeSettingsFocus() === "style") { showStyle(); setReviewing(true); } }, []);
+  useEffect(() => {
+    const f = takeSettingsFocus();
+    if (f === "style") { showStyle(); setReviewing(true); }
+    else if (f) { setReviewing(false); setSel(f); }
+  }, []);
   useEffect(() => { if (style.drawing) setReviewing(true); }, [style.drawing]);
   const paneRun = styleOn && reviewing && (style.drawing || (!!style.run && style.run.state !== "idle" && !style.dismissed));
   // A filter or a search never swaps the project on the right; only a click does.

@@ -2485,6 +2485,15 @@ export function App() {
       items.push({ icon: "◉", label: "Select as active", onClick: () => void selectProject(ctxMenu.id) });
       items.push({ icon: "+", label: "New session here", onClick: () => void newSession(ctxMenu.id) });
       items.push({ icon: "◎", label: "Open issues", onClick: () => openAnalyze(ctxMenu.id) });
+      // SETTINGS ▸ Projects' sidebar switch, flipped from here; the pill says where it flips back.
+      if (!hiddenProjects[ctxMenu.id])
+        items.push({ icon: "⊖", label: "Hide project", hint: "from the sidebar", onClick: () => {
+          setHidden([ctxMenu.id], true);
+          notify("info", `Hid “${ctxMenu.label || ctxMenu.id}” from the sidebar.`, undefined, {
+            sub: "Turn it back on in Settings › Projects.",
+            actions: [{ label: "Open Settings", primary: true, run: () => openSettings("projects", ctxMenu.id) }],
+          });
+        } });
       items.push({ divider: true });
     } else if (ctxMenu.type === "issue") {
       items.push({ icon: "▸", label: "Feed to Claude", onClick: () => feed([`Address issue #${ctxMenu.id} in ${cproj}`], cproj) });
@@ -2592,7 +2601,7 @@ export function App() {
       items.push({ divider: true }, { icon: "⌾", label: "Browser", children: nativeCtx.page });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai, plugins]);
+  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai, plugins, hiddenProjects]);
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
