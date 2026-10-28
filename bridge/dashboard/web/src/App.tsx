@@ -2834,7 +2834,6 @@ export function App() {
         <div
           data-theme={settings.theme}
           data-fam={family(settings.theme)}
-          data-hdr={settings.headerStyle}
           style={{
             flex: 1,
             display: "flex",

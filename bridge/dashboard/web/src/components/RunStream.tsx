@@ -854,8 +854,8 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
     return () => { root.removeEventListener("scroll", onScroll); cancelAnimationFrame(raf); };
   }, [open]);
   // Shut from the pinned header, the shut line stays on the pin line, so it
-  // keeps the pinned header's dress (index.css: VEIL's fade lifts, the pill's
-  // chips hide) until a scroll moves it off.
+  // keeps the pinned header's dress (index.css: the pill's chips hide) until a
+  // scroll moves it off.
   const [landed, setLanded] = useState(false);
   useEffect(() => {
     const el = head.current, root = el?.closest(".mscroll");

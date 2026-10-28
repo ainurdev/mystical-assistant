@@ -2735,8 +2735,8 @@ input {
 /* Open, the header pins at the top while you are inside the zone, so a click
    folds the work from anywhere. --isle-b (Terminal.tsx, on the scroller) is
    where it pins: level with the compact pill, which floats over the plate's
-   right end (its chips hide while pinned, data-isle; VEIL's fade lifts, THE
-   FAMILIES), or under the full island bar. Its hairline (below) cuts it from
+   right end (its chips hide while pinned, data-isle), or under the full
+   island bar. Its hairline (below) cuts it from
    the rows passing under, and pinned (WorkZone's measure) a lid in the
    plate's colour covers the band above it so rows don't surface over the
    header on their way out. The lid spans the plate's padding box (--zpl/--zpr). */
@@ -4152,41 +4152,21 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .projgrp .sessrow { margin-left: 0; border-radius: 0 var(--f-rad-s) var(--f-rad-s) 0; }
 [data-fam] .projgrp .sessrow::before { left: -1px; top: 6px; bottom: 6px; }
 
-/* ── THE FAMILIES · HEADER — the island over the transcript, in the style
-   picked under Appearance (data-hdr on the themed container, lib/theme
-   HEADER_STYLES). All three drop the HUD's accent border and drop shadow:
-   the island was a sticker on whatever scrolled under it. ── */
-[data-fam] .isle { box-shadow: none !important; border-radius: var(--f-rad-l) !important; transition: border-color .2s ease; }
+/* ── THE FAMILIES · HEADER — the island over the transcript: glass the
+   transcript blurs through, half ink until reached for. No HUD accent border
+   or drop shadow: the island was a sticker on whatever scrolled under it. ── */
+[data-fam] .isle { border: 1px solid var(--f-glass-edge) !important; box-shadow: none !important; border-radius: var(--f-rad-l) !important; transition: border-color .2s ease; }
 [data-fam] .isle-pill { border-radius: 999px !important; }
 [data-fam] .isle > div:last-child > * { transition: opacity .2s ease; }
-[data-fam] .isle-glass { transition: background-color .2s ease; }
-[data-fam] .isle button:first-child > span { font-family: var(--ui-font); }
-/* FROST: glass the transcript blurs through; half ink until reached for */
-[data-fam]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle { border: 1px solid var(--f-glass-edge) !important; }
-[data-fam]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle-glass {
+[data-fam] .isle-glass {
   background: color-mix(in srgb, var(--panel) 42%, transparent) !important;
   backdrop-filter: blur(14px) saturate(1.2) !important;
+  transition: background-color .2s ease;
 }
-[data-fam][data-hdr="frost"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .55; }
-[data-fam]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) { border-color: var(--line2) !important; }
-[data-fam]:is([data-hdr="frost"], [data-hdr="tuck"]) .isle:is(:hover, :focus-within) .isle-glass { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; }
-/* VEIL: no object — the column's top fades the transcript out under it, and
-   the readouts sit in the fade like a status line */
-[data-fam][data-hdr="veil"] .isle { border-color: transparent !important; }
-[data-fam][data-hdr="veil"] .isle-glass { background: none !important; backdrop-filter: none !important; }
-[data-fam][data-hdr="veil"] [data-layout]::before {
-  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 74px; z-index: 11; pointer-events: none;
-  background: linear-gradient(var(--canvas) 30%, color-mix(in oklab, var(--canvas) 70%, transparent) 62%, transparent);
-  transition: height .2s ease, opacity .2s ease;
-}
-[data-fam][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { height: 88px; background: linear-gradient(var(--canvas) 50%, transparent); }
-/* a pinned WORK header (DOSSIER) sits in the fade's band and would be swallowed by it: while one is pinned the fade lifts,
-   and stays lifted for a zone shut from there until you scroll (data-landed) */
-[data-fam][data-hdr="veil"] [data-layout]:has(.dwork:is([data-pinned], [data-landed]))::before { opacity: 0; }
-[data-fam][data-hdr="veil"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .5; }
-/* TUCK: frost folded to its last readout (.isle-keep); the rest unfolds on hover */
-[data-fam][data-hdr="tuck"] .isle:not(:hover, :focus-within) .isle-reads > :not(.isle-keep) { display: none; }
-[data-fam][data-hdr="tuck"] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .7; }
+[data-fam] .isle button:first-child > span { font-family: var(--ui-font); }
+[data-fam] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .55; }
+[data-fam] .isle:is(:hover, :focus-within) { border-color: var(--line2) !important; }
+[data-fam] .isle:is(:hover, :focus-within) .isle-glass { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; }
 [data-fam] .np-meta { height: 20px !important; }
 [data-fam] .np-proj { font-family: var(--ui-font) !important; font-size: var(--t11) !important; font-weight: 500; color: var(--txh) !important; }
 [data-fam] .np-proj .ptile { width: 16px; height: 16px; font-size: 8px; margin-right: 2px; }
@@ -4461,19 +4441,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .ftsq button:hover:not(:disabled) { transform: translateY(-1px); }
 .ftsq button:disabled { cursor: default; }
 .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--txb); }
-/* header styles: each a tiny header showing the time the way it would */
-.fthdr { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-.fthdr label { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.fthdr button { appearance: none; cursor: pointer; position: relative; width: 100%; height: 38px; padding: 0; border: 1px solid var(--line); border-radius: 9px; overflow: hidden;
-  background: repeating-linear-gradient(var(--panel2) 0 6px, color-mix(in oklab, var(--txl) 35%, var(--panel2)) 6px 8px); }
-.fthdr button span { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font: 500 10.5px var(--mono); color: var(--txb); white-space: nowrap; padding: 3px 9px; border-radius: 999px; }
-.fthdr [data-h="frost"] span { background: color-mix(in srgb, var(--panel) 45%, transparent); backdrop-filter: blur(3px); border: 1px solid var(--f-glass-edge, rgba(255,255,255,.08)); opacity: .8; }
-.fthdr [data-h="veil"] button::before { content: ""; position: absolute; inset: 0 0 35% 0; background: linear-gradient(var(--panel2) 30%, transparent); }
-.fthdr [data-h="veil"] span { color: var(--txm); top: 38%; }
-.fthdr [data-h="tuck"] span { background: color-mix(in srgb, var(--panel) 70%, transparent); backdrop-filter: blur(3px); border: 1px solid var(--f-glass-edge, rgba(255,255,255,.08)); font-size: 9.5px; padding: 2px 7px; color: var(--txm); }
-.fthdr label[data-on] button { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 2px color-mix(in oklab, var(--acc) 18%, transparent); }
-.fthdr small { font: 12px var(--ui-font, inherit); color: var(--txd); }
-.fthdr label[data-on] small { color: var(--txh); }
 /* type (SettingsModal TypePicker, drafts/type-settings C · TWO MENUS): a preview
    strip of the chat over a typeface menu and a size stepper */
 .tp-bar { display: flex; align-items: center; gap: 8px; }
@@ -4487,7 +4454,6 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* a fixed window: a bigger size shows fewer lines, fading out, and the controls under it never move */
 .typepv::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 40px; pointer-events: none;
   background: linear-gradient(transparent, var(--col)); }
-.setpane .typepv[data-layout]::before { content: none !important; }   /* not the chat column: no VEIL band */
 .tp-pick { appearance: none; cursor: pointer; width: 100%; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 12px 0 4px;
   border: 1px solid var(--line2); border-radius: var(--f-rad-s, 0); background: var(--panel2); color: var(--txb); text-align: left; }
 .tp-pick[data-open] { border-color: color-mix(in oklab, var(--acc) 60%, var(--line2)); box-shadow: 0 0 0 3px color-mix(in oklab, var(--acc) 14%, transparent); }
@@ -4566,7 +4532,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    intensity: the structure is dim phosphor, you are full phosphor and glow. ── */
 [data-fam="aurora"] :is(.ptile, .isle-pill, [data-style="dossier"] .dprompt, [data-style="dossier"] .dwork, [style*="--shadow-modal"],
   .setdlg, .set-search, .set-close, .setrail button, .setpane [style*="padding: 14px 16px"], .set-toggle, .set-toggle i,
-  .set-seg, .set-seg button, .setpane select, .set-seg2, .set-seg2 button, .ftcard, .ftmeta em, .ftsq button, .fthdr button, .fthdr button span,
+  .set-seg, .set-seg button, .setpane select, .set-seg2, .set-seg2 button, .ftcard, .ftmeta em, .ftsq button,
   .pb-tabs .np-tile, .pb-tabs :is(.np-title-btn, .np-branch, .np-pr, .np-run, .np-task), .pb-tabs > .ctrl-ctx, .pb-paused > button, .pb-place, .ctrl-ctx .seg i,
   .aim-fold, .aim-card, .aim-editor, .aim-f input, .aim-f select, .aim-sel, .aim-field, .aim-x, .aim-xic, .aim-xbtn, .aim-xaside, .aim-chip,
   .aim-chipbtn, .aim-note, .aim-search, .aim-hero, .aim-vfield, .aim-pills em, .aim-prof, .aim-addrow, .aim-segwrap > div, .aim-segwrap > div button,
@@ -4709,26 +4675,20 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 
 /* ── THE FAMILIES · PEBBLE · THE CHAT — the third pebble (design A · SHEET,
    .mystical/design-drafts/chat-ground). The column is an opaque rounded sheet
-   in the slabs' material. One token, --col, is its colour: VEIL's fade starts
-   from it and the answer mat is it — both were authored against the HUD's
-   translucent column (panel2 at 60%, hud/Terminal.tsx) and showed through as a
-   dark band and a feathered strip once the slabs' glow sat behind it. The dots
+   in the slabs' material. One token, --col, is its colour, and the answer mat
+   is it — authored against the HUD's translucent column (panel2 at 60%,
+   hud/Terminal.tsx), it showed through as a feathered strip once the slabs'
+   glow sat behind it. The dots
    go quieter on the sheet; WORK plates sit one step up with no hairline. ── */
 [data-fam="pebble"] [data-ctx-type="terminal"] {
   --col: color-mix(in srgb, var(--panel2) 90%, var(--canvas));
   background-color: var(--col) !important; border-radius: var(--f-rad-l); box-shadow: var(--f-pop-shadow);
 }
-[data-fam="pebble"][data-hdr="veil"] [data-layout]::before {
-  background: linear-gradient(var(--col) 30%, color-mix(in oklab, var(--col) 70%, transparent) 62%, transparent);
-  border-radius: var(--f-rad-l) var(--f-rad-l) 0 0;
-}
-[data-fam="pebble"][data-hdr="veil"] [data-layout]:has(.isle:hover)::before { background: linear-gradient(var(--col) 50%, transparent); }
 [data-fam="pebble"] :is([data-bg="grid"], [data-bg="dots"], [data-bg="rule"], [data-bg="tooth"]) [data-style="dossier"] :is(.res, .resblk[data-bad] .res) { --mat: var(--col); }
 [data-fam="pebble"] [data-bg="dots"] { --gnd: color-mix(in srgb, var(--txg) 42%, transparent); }
 [data-fam="pebble"] [data-style="dossier"] .dwork { background: var(--panel); --zg: var(--panel); border-bottom: 0; border-radius: var(--f-rad); }
 [data-fam="pebble"] [data-style="dossier"] .dwork[data-pinned] > .dwork-head::before { background: var(--panel); }
 [data-fam="aurora"] .ftsq button[data-on] { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px var(--acc), 0 0 10px color-mix(in oklab, var(--acc) 60%, transparent); }
-[data-fam="aurora"] .fthdr small { letter-spacing: .16em; text-transform: uppercase; }
 [data-fam="aurora"] .set-mini { letter-spacing: .12em !important; text-transform: uppercase; }
 [data-fam="aurora"] .set-caps { text-transform: uppercase; }   /* a panel's own words, in the voice .set-key speaks */
 /* the shell */

@@ -447,8 +447,7 @@ export function Terminal({
           reply's own tables all answer to it (index.css, THE SESSION'S IDIOM). */}
       {/* --isle-b: where an open WORK zone's header pins (index.css, DOSSIER): level with the
           compact pill, which then floats over the plate's right end (data-isle=pill hides those
-          chips while pinned, and VEIL's fade lifts); under the island bar and its LAST row
-          otherwise */}
+          chips while pinned); under the island bar and its LAST row otherwise */}
       <div ref={scrollRef} data-style="dossier" data-isle={compact ? "pill" : "bar"} className="mscroll mscroll-bare" style={{ ...({ "--isle-b": `${compact ? ISLE_TOP : ISLE_EDGE + 6 + (showPeek ? PEEK_H : 0)}px` } as CSSProperties), flex: 1, minHeight: 0, padding: "0 18px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t13)", lineHeight: 1.6, overflowWrap: "break-word" }}
         onDragOver={(e) => { if (!fileDrag(e)) return; e.preventDefault(); if (!dropping) setDropping(true); }}
         // relatedTarget is where the drag went: still inside, it only crossed a child
@@ -613,9 +612,7 @@ export function Terminal({
         </div>
       </div>
   );
-  // `isle-reads` / `isle-keep`: FLINT's TUCK header folds the readouts down to
-  // the one marked keep (the clock row, when it's here) until the island is
-  // hovered. ⊞ PROJECT is gone: what its window held lives on the right rail
+  // ⊞ PROJECT is gone: what its window held lives on the right rail
   // (FILES, BRANCHES, DESIGN) and in SETTINGS (Skills, Projects ▸ Project map).
   const readouts = (
       <div className="isle-reads" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
@@ -623,7 +620,7 @@ export function Terminal({
         {chrome && (
           <>
             {!isChat && <span style={hairline(11)} />}
-            <span className="isle-keep" style={{ display: "contents" }}>{chrome}</span>
+            {chrome}
           </>
         )}
       </div>
