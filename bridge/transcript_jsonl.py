@@ -121,21 +121,45 @@ def find_transcript(claude_session_id: str) -> str | None:
     return path
 
 
-def _summarize_tool(name: str, inp) -> str:
-    if not isinstance(inp, dict):
-        return ""
+# A summary is a row's one line; past this it's cut, and the whole text rides
+# alongside as the event's `detail` (tool_detail), up to DETAIL_MAX.
+SUMMARY_MAX = 120
+DETAIL_MAX = 16000
+
+
+def _summary_source(name: str, inp: dict) -> str | None:
+    """The one input field a tool's summary is cut from, whole; None for the
+    summaries composed from several (TodoWrite, _arg_summary)."""
     if name == "Bash":
-        return str(inp.get("command") or "")[:120]
+        return str(inp.get("command") or "")
     if name == "TodoWrite":
-        return _todo_summary(inp.get("todos"))
+        return None
     if name == "Skill":
         # The kit's name rides in agent_meta, where the card draws it as a header
         # — repeating it in front of the argument said it twice.
-        return str(inp.get("args") or "")[:120]
+        return str(inp.get("args") or "")
     for key in _SUMMARY_KEYS:
         if inp.get(key):
-            return str(inp[key])[:120]
-    return _arg_summary(inp)
+            return str(inp[key])
+    return None
+
+
+def _summarize_tool(name: str, inp) -> str:
+    if not isinstance(inp, dict):
+        return ""
+    if name == "TodoWrite":
+        return _todo_summary(inp.get("todos"))
+    src = _summary_source(name, inp)
+    return src[:SUMMARY_MAX] if src is not None else _arg_summary(inp)
+
+
+def tool_detail(name: str, inp) -> str | None:
+    """The text the summary cut, whole, for the card's open drawer: a command
+    read, copied or re-run from its first 120 chars is a different command (the
+    tail is often the `&& git push` that matters). None when nothing was cut, so
+    short calls keep their exact event shape."""
+    src = _summary_source(name, inp) if isinstance(inp, dict) else None
+    return src[:DETAIL_MAX] if src and len(src) > SUMMARY_MAX else None
 
 
 def agent_meta(name: str, inp) -> dict | None:
@@ -585,6 +609,8 @@ def _parse_full(path: str, sidechain: bool = False) -> dict:
                             inp = b.get("input", {})
                             ev = {"type": "tool", "name": name, "id": b.get("id"),
                                   "summary": _summarize_tool(name, inp)}
+                            if (full := tool_detail(name, inp)):
+                                ev["detail"] = full
                             if (am := agent_meta(name, inp)):
                                 ev["agent"] = am
                             emit(ev)

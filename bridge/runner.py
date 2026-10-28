@@ -1994,13 +1994,13 @@ def _handle_control_request(job: Job, obj: dict):
             # The whole call, not 120 chars of it: an MCP write (a tracker
             # comment, a status change) is judged on its full text.
             ev["detail"] = _mcp_detail(inp)
-        elif tool == "Bash" and len(str(inp.get("command") or "")) > len(summary):
-            # A command is allowed on all of it: the tail past 120 chars is
-            # often the `&& git push` the card exists for.
-            ev["detail"] = str(inp["command"])[:4000]
         elif tool == "ExitPlanMode" and inp.get("plan"):
             # The plan is what's being approved; the card renders it as markdown.
             ev["detail"] = str(inp["plan"])[:8000]
+        elif (full := transcript_jsonl.tool_detail(tool, inp)):
+            # A command is allowed on all of it: the tail past 120 chars is
+            # often the `&& git push` the card exists for.
+            ev["detail"] = full
         job.add(ev)
     ask = (((req.get("input") or {}).get("questions") or [{}])[0].get("question") or ""
            if tool == "AskUserQuestion" else f"{tool}: {summary}")
@@ -2194,6 +2194,8 @@ def _handle_event(job: Job, d: dict):
                 job.open_tools[b.get("id")] = (name, time.time())
                 ev = {"type": "tool", "name": name, "id": b.get("id"),
                       "summary": _summarize_tool(name, inp)}
+                if (full := transcript_jsonl.tool_detail(name, inp)):
+                    ev["detail"] = full
                 if (am := transcript_jsonl.agent_meta(name, inp)):
                     ev["agent"] = am
                 job.add(ev)

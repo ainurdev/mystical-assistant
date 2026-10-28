@@ -91,6 +91,25 @@ def test_tool_event_carries_name_and_summary():
     assert tool["name"] == "Bash" and tool["summary"] == "ls -la"
 
 
+def test_a_cut_summary_rides_whole_in_detail():
+    """The row shows 120 chars; the drawer, copy and re-run need all of it."""
+    cmd = "git status --short && git log --format='%s%n%b---' -4 | head -30 && " \
+          "git fetch -q origin && git log --oneline HEAD..origin/master | head"
+    assert T._summarize_tool("Bash", {"command": cmd}) == cmd[:120]
+    assert T.tool_detail("Bash", {"command": cmd}) == cmd
+    assert T.tool_detail("Bash", {"command": "ls -la"}) is None, "short calls keep their shape"
+    assert T.tool_detail("Agent", {"prompt": "p" * 200}) == "p" * 200
+    assert T.tool_detail("Bash", {"command": "x" * 99999}) == "x" * T.DETAIL_MAX
+    assert T.tool_detail("TodoWrite", {"todos": [{"content": "t" * 300}]}) is None
+    assert T.tool_detail("Bash", "not a dict") is None
+
+
+def test_an_uncut_tool_event_has_no_detail():
+    out = T.parse_jsonl(_write(FIXTURE))
+    tool = next(e for e in out["events"] if e["type"] == "tool")
+    assert "detail" not in tool, "ls -la was never cut"
+
+
 def test_reasoning_text_surfaces_on_its_own_event_and_sidechain_skipped():
     out = T.parse_jsonl(_write(FIXTURE))
     texts = [e.get("text") for e in out["events"] if e["type"] == "text"]
