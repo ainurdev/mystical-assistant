@@ -53,7 +53,7 @@ PLUGINS: tuple[dict, ...] = (
      "routes": ("/local/rivendell",)},
     {"id": "design", "label": "Claude Design",
      "blurb": "Link a repo to its Claude Design system: pull tokens and component specs as a "
-              "skill, push finished work back. Adds the DESIGN tab and the DESIGN button.",
+              "skill, push finished work back. Adds SETTINGS ▸ Projects' Design system row and the DESIGN button.",
      "needs": "claude.ai login",
      "env_keys": (),
      "origins": (),

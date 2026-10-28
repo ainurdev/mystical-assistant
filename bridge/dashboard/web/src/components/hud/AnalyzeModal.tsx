@@ -34,8 +34,9 @@ import MarkEditor from "./MarkEditor";
    Nothing opens it on purpose any more: the session header's ⊞ PROJECT is gone
    (.mystical/design-drafts/project-split). A file opens it (FILES, a file link in
    chat), a changed file opens its diff, RUN its terminal, the MAP chip its map.
-   What else it held moved out: WORKTREES to the rail's BRANCHES, DESIGN to the
-   rail's DESIGN, SKILLS to SETTINGS ▸ Skills, LEARN was the rail's already. */
+   What else it held moved out: WORKTREES to the rail's BRANCHES, DESIGN to
+   SETTINGS ▸ Projects ▸ Design system, SKILLS to SETTINGS ▸ Skills, LEARN was
+   the rail's already. */
 
 export type Tab = "changes" | "editor" | "terminal" | "map";
 

@@ -2028,7 +2028,7 @@ function IntegrationsPanel() {
           <div style={CARD}>
             <Row first label={p.summary}
               desc={p.id === "design"
-                ? <>Adds ANALYZE ▸ DESIGN (link · pull · sync), the composer's DESIGN button and the project menu's Design system. A repo is linked from ANALYZE ▸ DESIGN.{errLine(p.id)}</>
+                ? <>Adds a Design system row to each repo in SETTINGS ▸ Projects (link · pull · sync), the composer's DESIGN button and the project menu's Design system.{errLine(p.id)}</>
                 : errLine(p.id)}>
               <MiniBtn danger disabled={!!busy} onClick={() => void remove(p)} title={`Remove ${p.label}`}>REMOVE</MiniBtn>
             </Row>

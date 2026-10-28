@@ -3,7 +3,7 @@ import {
   ArrowUpRight, ChevronRight, Diamond, EyeOff, GitBranch, GraduationCap, PanelLeft, Pencil, Puzzle, Search, Shapes,
   SquareTerminal, UserRound, WandSparkles, Waypoints, X, type LucideIcon,
 } from "lucide-react";
-import { api, type AccountInfo, type PickResult } from "../../api";
+import { api, type AccountInfo, type InstalledSkill, type PickResult } from "../../api";
 import { slotHue, type ProfilesInfo } from "../../lib/profiles";
 import { agentLabel } from "../../lib/agents";
 import { ago, projectGivenName, projectMark, projectName, setProjectMarks } from "../../lib/surfaces";
@@ -45,9 +45,10 @@ export interface ProjectsSettingsProps {
   onSetProfile?: (rel: string, profileId: string) => void | Promise<void>; // "" = no default
   // The Claude logins, so a profile's picker can show whose it is.
   logins?: AccountInfo[];
-  // The right rail's DESIGN tab, where a repo is linked to Claude Design:
-  // linking queues a prompt into a session, which a settings page can't do.
-  onOpenDesign?: (rel: string) => void;
+  // Claude Design's link · pull · sync, while it is installed. Each button only
+  // composes a prompt (api.designPrompt); App feeds it to a session in that repo
+  // and closes SETTINGS. It was a right-rail tab, the project window's before that.
+  onDesign?: (texts: string[], rel: string) => void;
   // SETTINGS ▸ Skills with this repo picked (SettingsModal switches the page).
   onOpenSkills?: (rel: string) => void;
   current?: string | null; // the open session's project, picked first
@@ -193,12 +194,16 @@ function PickStrip({ res, busy, onUndo, onClose }: { res: PickResult | string; b
   );
 }
 
+// bridge/skills.py stamps every SKILLS entry with `from_design`/`design_project`
+// (a pulled design system's own marker); api.ts's InstalledSkill predates it.
+type DesignSkill = InstalledSkill & { from_design: boolean; design_project: string | null };
+
 /** The picked project's settings that live in its own config, not in the listing. */
-type Cfg = { rel: string; run: string; def: string; design: string | null; lessons: boolean | null;
-  map: boolean | null; skills: { here: number; machine: number } | null };
+type Cfg = { rel: string; run: string; def: string; design: string | null; pulled: DesignSkill | null;
+  lessons: boolean | null; map: boolean | null; skills: { here: number; machine: number } | null };
 
 export function ProjectsSettings(props: ProjectsSettingsProps) {
-  const { groups, hidden, remotes, onSetHidden, onRename, profiles, onSetProfile, logins = [], onOpenDesign, onOpenSkills, current } = props;
+  const { groups, hidden, remotes, onSetHidden, onRename, profiles, onSetProfile, logins = [], onDesign, onOpenSkills, current } = props;
   const mapAll = !!useAiFeatures().graph;   // PROJECT MAP, the machine-wide switch over each repo's own
   const [q, setQ] = useState("");
   const [show, setShow] = useState<Show>("all");
@@ -295,7 +300,10 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                       api.skills(focus).catch(() => null)])
       .then(([s, l, k]) => {
         if (!live) return;
-        setCfg({ rel: focus, run: s.run_cmd ?? "", def: s.default_cmd, design: s.design_project, lessons: l ? l.repo_enabled : null,
+        const pulled = s.design_project
+          ? (k?.project as DesignSkill[] | undefined)?.find((x) => x.from_design && x.design_project === s.design_project) ?? null
+          : null;
+        setCfg({ rel: focus, run: s.run_cmd ?? "", def: s.default_cmd, design: s.design_project, pulled, lessons: l ? l.repo_enabled : null,
                  map: s.map ?? null, skills: k ? { here: k.project.length, machine: k.system.length } : null });
         setRun(s.run_cmd ?? "");
       })
@@ -316,6 +324,21 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
     api.setLessonsForRepo(rel, on)
       .then((r) => setCfg((c) => (c?.rel === rel ? { ...c, lessons: r.repo_enabled } : c)))
       .catch((e: Error) => { setCfg((c) => (c?.rel === rel ? { ...c, lessons: !on } : c)); setErr(`Lessons didn't change: ${e.message}`); });
+  }
+  const [designing, setDesigning] = useState<"link" | "pull" | "push" | null>(null);
+  async function design(kind: "link" | "pull" | "push", name?: string) {
+    if (!cfg || !onDesign) return;
+    const rel = cfg.rel;
+    setDesigning(kind); setErr("");
+    try {
+      const r = await api.designPrompt({ project: rel }, kind, name);
+      if (r.error) setErr(r.error);
+      else if (r.prompt) onDesign([r.prompt], rel);
+    } catch (e) {
+      setErr(`The design prompt wasn't made: ${(e as Error).message}`);
+    } finally {
+      setDesigning(null);
+    }
   }
   function setMap(on: boolean) {
     if (!cfg) return;
@@ -525,10 +548,26 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                         if (e.key === "Escape") { e.stopPropagation(); setRun(cfg?.run ?? ""); }
                       }} />
                   </Field>
-                  {onOpenDesign && (
+                  {onDesign && (
                     <Field icon={Diamond} label="Design system"
-                      hint={cfg?.design ? <>linked · <code>{cfg.design.slice(0, 8)}</code></> : "the Claude Design project its UI work follows"}>
-                      <button type="button" className="ps-btn" onClick={() => onOpenDesign(g.rel)}>{cfg?.design ? "Open" : "Link…"}</button>
+                      hint={!cfg?.design ? "the Claude Design project its UI work follows"
+                        : cfg.pulled ? <>linked · pulled as <code>{cfg.pulled.name || cfg.pulled.id}</code></>
+                        : <>linked · <code>{cfg.design.slice(0, 8)}</code> · not pulled yet</>}>
+                      {/* One state at a time: unlinked → Link…, linked → Pull, pulled → Sync / Re-pull. */}
+                      {!cfg?.design ? (
+                        <button type="button" className="ps-btn" disabled={!cfg || !!designing} onClick={() => void design("link")}
+                          title="a prompt that has Claude link this repo to a Claude Design project">Link…</button>
+                      ) : !cfg.pulled ? (
+                        <button type="button" className="ps-btn" disabled={!!designing} onClick={() => void design("pull")}
+                          title="a prompt that pulls its design system down as a project skill (.claude/skills/)">Pull</button>
+                      ) : (
+                        <span className="prj-acts">
+                          <button type="button" className="ps-btn" disabled={!!designing} onClick={() => void design("push")}
+                            title="a prompt that pushes what changed here back to the Claude Design project">Sync</button>
+                          <button type="button" className="ps-btn" disabled={!!designing} onClick={() => void design("pull", cfg.pulled?.id)}
+                            title="a prompt that pulls the design system again, over its project skill">Re-pull</button>
+                        </span>
+                      )}
                     </Field>
                   )}
                   <Field icon={GraduationCap} label="Lessons" hint="learn from each turn here">

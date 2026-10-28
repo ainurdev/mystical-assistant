@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  DraftingCompass, FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Users,
+  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Users,
 } from "lucide-react";
 import {
   api,
@@ -100,7 +100,6 @@ import { setLightboxSend } from "./components/ImageLightbox";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel, requestFileFind } from "./components/hud/FilesPanel";
 import { BranchesPanel } from "./components/hud/BranchesPanel";
-import { DesignPanel } from "./components/hud/DesignTab";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitPanel } from "./components/hud/GitPanel";
@@ -622,14 +621,6 @@ export function App() {
   // Tab click: the active tab collapses the sidebar, any other opens on it.
   function pickRightTab(id: string) {
     setSettings((s) => ({ ...s, rightTab: id as RightTab, rightOpen: !(s.rightOpen && s.rightTab === id) }));
-  }
-
-  // The DESIGN rail tab, on `rel`: the session's repo, or another one SETTINGS ▸
-  // Projects or the project menu asked for (null = follow the session's).
-  const [designFor, setDesignFor] = useState<string | null>(null);
-  function openDesign(rel: string) {
-    setDesignFor(rel === sessionProject ? null : rel);
-    patchSettings({ rightTab: "design", rightOpen: true });
   }
 
   // Every AnalyzeModal open goes through here so a stale file deep-link can't
@@ -2110,8 +2101,6 @@ export function App() {
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
   const sessionBranch = selected?.branch;
-  // Another session, another repo: DESIGN follows the chat again.
-  useEffect(() => setDesignFor(null), [sessionProject]);
   // The MAP chip and the window's MAP tab show only where the repo's own switch
   // (SETTINGS ▸ Projects ▸ Project map) is on; re-read when SETTINGS closes.
   const [mapOn, setMapOn] = useState(false);
@@ -2332,17 +2321,6 @@ export function App() {
           sessions={sessions} status={statusMap} nonce={gitNonce} />
       ),
     },
-    // While Claude Design is installed, as the window's DESIGN tab was.
-    ...(plugins.design ? [{
-      id: "design", label: "Design", icon: <DraftingCompass {...RAIL} />, ownScroll: true,
-      render: () => {
-        const rel = designFor ?? sessionProject;
-        return (
-          <DesignPanel key={rel ?? ""} project={rel} other={designFor ? projectName(designFor) : undefined}
-            onFeed={(t) => feed(t, rel ?? undefined)} />
-        );
-      },
-    }] : []),
     // Hidden while LESSONS is off — nothing is being written.
     ...(ai.learn ? [{
       id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true,
@@ -2582,10 +2560,10 @@ export function App() {
     } else if (ctxMenu.type === "project") {
       items.push({ icon: "⊞", label: "Analyze project", onClick: () => openAnalyze(ctxMenu.id) });
       // The chat header's project name opens this menu; its DESIGN SYSTEM link
-      // folded in here.
+      // folded in here, and lands on the repo's row in SETTINGS ▸ Projects.
       if (plugins.design)
         items.push({ icon: "◇", label: "Design system", hint: "link · pull · sync",
-          onClick: () => openDesign(ctxMenu.id) });
+          onClick: () => openSettings("projects", ctxMenu.id) });
       items.push({ icon: "◉", label: "Select as active", onClick: () => void selectProject(ctxMenu.id) });
       items.push({ icon: "+", label: "New session here", onClick: () => void newSession(ctxMenu.id) });
       // SETTINGS ▸ Projects' sidebar switch, flipped from here; the pill says where it flips back.
@@ -3129,7 +3107,9 @@ export function App() {
                   onRename: renameProject,
                   profiles: profilesAvailable ? profiles ?? undefined : undefined,
                   onSetProfile: setProjectProfile,
-                  onOpenDesign: (rel) => { setSettingsOpen(false); setSettingsTab(undefined); openDesign(rel); },
+                  onDesign: plugins.design
+                    ? (texts, rel) => { setSettingsOpen(false); setSettingsTab(undefined); feed(texts, rel); }
+                    : undefined,
                 }}
                 onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
             )}
