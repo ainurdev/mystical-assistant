@@ -52,9 +52,8 @@ const seg = (on: boolean): CSSProperties => ({
  *  rail's USAGE tab. */
 export function Brand({ folded = false, onFold, workspace }: { folded?: boolean; onFold?: () => void; workspace?: ReactNode }) {
   // Mystical.app: the cap is the window's title bar, and its traffic lights
-  // are drawn here, not by AppKit (DashboardWindow hides the native ones): they
-  // fade in while the mark's end of the cap is hovered and the logo slides out
-  // from under them.
+  // are drawn here, not by AppKit (DashboardWindow hides the native ones): while
+  // the mark's end of the cap is hovered the logo fades out and they fade in.
   const mac = isMacApp();
   const [hot, setHot] = useState(false);
 
@@ -68,12 +67,16 @@ export function Brand({ folded = false, onFold, workspace }: { folded?: boolean;
       <div onMouseEnter={mac ? () => setHot(true) : undefined} onMouseLeave={mac ? () => setHot(false) : undefined}
            style={{ alignSelf: "stretch", display: "flex", alignItems: "center", flex: folded ? 1 : "none", margin: "0 -12px", padding: "0 12px" }}>
       {mac && <Lights show={hot} />}
-      {/* A transform, not padding: the slide composites instead of reflowing the row.
-          Folded to the rail there is nowhere to slide to, so the mark steps
-          aside by fading and the lights take the cap. */}
+      {/* No slide: the logo used to slide 66px right for the lights, and the
+          workspace switch now sits where it landed. It fades out (drifting 8px,
+          unfolded), then the lights fade in; on the way back they leave first,
+          so the two are never on screen at once. Hidden, it lets clicks through
+          to the lights under it. */}
       <div style={{ display: "flex", alignItems: "center", gap: 9, margin: folded ? "0 auto" : undefined,
-                    transform: hot && !folded ? "translate3d(66px,0,0)" : "translate3d(0,0,0)", opacity: hot && folded ? 0 : 1,
-                    transition: "transform .28s cubic-bezier(.2,.8,.2,1), opacity .2s ease" }}>
+                    transform: hot && !folded ? "translate3d(8px,0,0)" : "translate3d(0,0,0)", opacity: hot ? 0 : 1,
+                    pointerEvents: hot ? "none" : undefined,
+                    transition: hot ? "opacity .1s ease-in, transform .2s cubic-bezier(.2,.8,.2,1)"
+                                    : "opacity .18s ease-out .07s, transform .26s cubic-bezier(.2,.8,.2,1) .07s" }}>
       <svg
         viewBox="0 0 100 100"
         style={{ width: 19, height: 19, flex: "none", overflow: "visible" }}
@@ -127,7 +130,7 @@ export function Brand({ folded = false, onFold, workspace }: { folded?: boolean;
 /** macOS traffic lights, the page's own: close hides the window (the app's
  *  rule), minimize miniaturizes, zoom goes full screen (Notifier "window").
  *  Glyphs while the group is hovered, like the real ones. Absolute at the
- *  cap's left edge, in the room the logo's slide makes. */
+ *  cap's left edge, over where the logo was: in once it has faded, out first. */
 function Lights({ show }: { show: boolean }) {
   const [hover, setHover] = useState(false);
   const dots: [string, "close" | "minimize" | "zoom", LucideIcon][] = [
@@ -137,7 +140,7 @@ function Lights({ show }: { show: boolean }) {
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      style={{ position: "absolute", left: 13, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 8, opacity: show ? 1 : 0, transition: "opacity .2s ease", pointerEvents: show ? "auto" : "none" }}
+      style={{ position: "absolute", left: 13, top: 0, bottom: 0, display: "flex", alignItems: "center", gap: 8, opacity: show ? 1 : 0, transition: show ? "opacity .16s ease-out .09s" : "opacity .08s ease", pointerEvents: show ? "auto" : "none" }}
     >
       {dots.map(([fill, action, Glyph]) => (
         <button
