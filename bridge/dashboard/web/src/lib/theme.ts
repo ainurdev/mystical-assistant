@@ -37,14 +37,6 @@ export type ThemeKey =
 export type Family = "aurora" | "claude" | "flint" | "pebble" | "middle-earth";
 export const FAMILIES: Family[] = ["aurora", "claude", "flint", "pebble", "middle-earth"];
 
-/** How the header island sits over the transcript. FROST is glass the
- *  transcript blurs through, its readouts at half ink until reached for; VEIL
- *  is no object at all, the column's top fading the transcript out with the
- *  readouts set in the fade; TUCK is frost folded to its last readout, the rest
- *  unfolding on hover. Every family reads it (index.css, THE FAMILIES · HEADER). */
-export const HEADER_STYLES = ["frost", "veil", "tuck"] as const;
-export type HeaderStyle = (typeof HEADER_STYLES)[number];
-
 export interface ThemeDef {
   key: ThemeKey;
   fam: Family;
@@ -389,8 +381,6 @@ export interface HudSettings {
   pushVolume: number; // 0..1
   // The texture under all of it — independent of the language (see lib/toolwidget).
   chatBg: ChatBg;
-  // FLINT's header island (see HEADER_STYLES).
-  headerStyle: HeaderStyle;
   // How the chat column is laid out. DEFAULT is the nameplate header over a
   // four-dropdown control row. COMPACT reads as a chat: your prompt on the
   // right, replies capped short of the far edge, the header shrunk to a pill of
@@ -446,7 +436,7 @@ const DEFAULTS: HudSettings = {
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   push: false, pushSound: true,
-  pushTone: "blip", pushVolume: 0.6, chatBg: "none", headerStyle: "frost",
+  pushTone: "blip", pushVolume: 0.6, chatBg: "none",
   layout: "default", composer: "tabs", sendKey: "enter",
 };
 
@@ -536,7 +526,6 @@ export function loadSettings(): HudSettings {
         pushTone: p.pushTone && p.pushTone in TONES ? p.pushTone : "blip",
         pushVolume: clamp01(p.pushVolume, 0.6),
         chatBg: toChatBg(p.chatBg),
-        headerStyle: HEADER_STYLES.includes(p.headerStyle as HeaderStyle) ? (p.headerStyle as HeaderStyle) : "frost",
         sendKey: p.sendKey === "ctrl-enter" ? "ctrl-enter" : "enter",
         layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
         composer: urlComposer() ?? (COMPOSER_STYLES.includes(p.composer as ComposerStyle) ? (p.composer as ComposerStyle) : "tabs"),

@@ -17,7 +17,7 @@ import {
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
 
-import { ago, hhmm, projectName, useClock12, windowLabels } from "../../lib/surfaces";
+import { ago, projectName, windowLabels } from "../../lib/surfaces";
 import { ExtrasFold, SkillsPage } from "./SkillsFold";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
@@ -60,8 +60,6 @@ import {
   FAMILIES,
   family,
   FONTS,
-  HEADER_STYLES,
-  type HeaderStyle,
   fontStack,
   isLight,
   themeDef,
@@ -160,8 +158,8 @@ export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec
 // sentence. The rail's hint names what's inside; nothing said why you'd open
 // it, so every page began on its first block and left you to work that out.
 const TABS: { key: Tab; label: string; hint: string; about: string; icon: LucideIcon; group: string }[] = [
-  { key: "appearance", label: "APPEARANCE", hint: "theme · header · type", icon: Palette, group: "THE HUD",
-    about: "How the dashboard looks: its theme and colour, the header over the transcript, its typeface and size." },
+  { key: "appearance", label: "APPEARANCE", hint: "theme · type", icon: Palette, group: "THE HUD",
+    about: "How the dashboard looks: its theme and colour, its typeface and size." },
   { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD",
     about: "How a session reads: the chat layout, the composer's send key, the ground every turn is drawn on, whether results start open, and what shows while it works." },
   { key: "notifications", label: "NOTIFY", hint: "events · quiet · sound", icon: Bell, group: "THE HUD",
@@ -209,7 +207,6 @@ const RAIL = TABS.filter((t) => t.key !== "mac" || isNativeApp());
 // it in row by row, which also means nobody has to keep a copy of them here.
 const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "THEME", terms: "colour color palette scheme aurora claude flint phosphor dark light day bright" },
-  { tab: "appearance", sec: "HEADER", terms: "header island frost veil tuck glass readouts" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base preview" },
   { tab: "appearance", sec: "LOADING SCREEN", terms: "loading screen boot intro splash startup restart scene emblem gandalf balrog you shall not pass khazad-dum bridge durin door moria mellon speak friend enter shuffle random lord of the rings lotr middle-earth" },
@@ -396,7 +393,6 @@ const SEC_ICONS: Record<string, LucideIcon> = {
 // tells you, before you read any of that, whether you're in the right place.
 const SEC_DESC: Record<string, string> = {
   "WHILE IT WORKS": "What the transcript shows while a session is working.",
-  HEADER: "How the session header sits over the transcript.",
   "CRT EFFECTS": "The tube laid over the screen: raster lines, a roaming glow, bloom on headings.",
   TYPE: "The typeface the HUD is set in, and the base size every other size scales from.",
   "LOADING SCREEN": "What fills the screen while the dashboard starts, and while it restarts.",
@@ -761,22 +757,6 @@ function ThemeGrid({ light, settings, onTheme }: {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-/** The header styles, each a tiny header showing the time the way it would. */
-function HeaderStyles({ settings, onHeader }: { settings: HudSettings; onHeader: (h: HeaderStyle) => void }) {
-  const h12 = useClock12();
-  const now = hhmm(Date.now() / 1000, h12);
-  return (
-    <div className="fthdr">
-      {HEADER_STYLES.map((h) => (
-        <label key={h} data-h={h} data-on={settings.headerStyle === h || undefined}>
-          <button title={`header: ${h}`} onClick={() => onHeader(h)}><span>{now}</span></button>
-          <small>{sentence(h)}</small>
-        </label>
-      ))}
     </div>
   );
 }
@@ -4111,10 +4091,6 @@ export function SettingsModal(props: SettingsModalProps) {
                     <CrtToggles settings={settings} onToggle={onToggle} />
                   </Section>
                 )}
-
-                <Section title="HEADER" top>
-                  <HeaderStyles settings={settings} onHeader={(headerStyle) => onPatch({ headerStyle })} />
-                </Section>
 
                 {/* One block, not two: a section heading and a fold-out
                     paragraph each, for one control each, spent more of the tab
