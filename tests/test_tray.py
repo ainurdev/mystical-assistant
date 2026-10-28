@@ -198,3 +198,25 @@ def test_mystical_app_hands_the_tray_the_port_from_env(tmp_path):
     p = subprocess.run([str(repo / "bin" / "mystical"), "app"], capture_output=True,
                        text=True, env=env, timeout=30)
     assert "port=8899" in p.stdout, p.stdout + p.stderr
+
+
+def test_open_window_carries_the_manifest_token(monkeypatch):
+    """The launcher's window must land with ?token= — without it the dashboard
+    only shows "Missing token"."""
+    opened = []
+    monkeypatch.setattr(tray, "fetch", lambda port, path: {"start_url": "/?token=abc"})
+    monkeypatch.setattr(tray, "open_url", lambda *a: opened.append(a))
+    monkeypatch.setattr(tray.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("up already")))
+    assert tray.open_window(8790, "chrome", "Default") is True
+    assert opened == [("http://localhost:8790/?token=abc", "chrome", "Default")]
+
+
+def test_open_window_starts_the_unit_and_still_opens_when_it_never_answers(monkeypatch):
+    opened, ran = [], []
+    monkeypatch.setattr(tray, "fetch", lambda port, path: None)
+    monkeypatch.setattr(tray, "open_url", lambda *a: opened.append(a))
+    monkeypatch.setattr(tray.subprocess, "run", lambda argv, **k: ran.append(argv))
+    monkeypatch.setattr(tray.time, "sleep", lambda _s: None)
+    assert tray.open_window(8790, None, None, wait_s=0) is False
+    assert ran == [["systemctl", "--user", "start", "mystical-assistant.service"]]
+    assert opened == [("http://localhost:8790/", None, None)]

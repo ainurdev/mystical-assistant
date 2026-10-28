@@ -29,7 +29,7 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
   const [open, setOpen] = useState(false);
   const [phase, setPhase] = useState<"" | "updating" | "restarting" | "shipping" | "checking">("");
   const [err, setErr] = useState("");
-  const [failed, setFailed] = useState<"pull" | "ship">("pull");
+  const [failed, setFailed] = useState<"pull" | "build" | "ship">("pull");
   const [hov, setHov] = useState("");
   const [fresh, setFresh] = useState<Notice | null>(null);   // the waiting update, popped out of the rail button
   const [commitsOpen, setCommitsOpen] = useState(false);
@@ -94,7 +94,7 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
       const r = await api.applyUpdate();
       if (!r.ok) {
         setPhase("");
-        setFailed("pull");
+        setFailed(r.pulled ? "build" : "pull");
         setErr(r.output || "git pull failed");
         return;
       }
@@ -133,10 +133,10 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
     await load();
   }
 
-  // Escape hatch when git refuses (diverged history, rejected push…): hand the
-  // failure to Claude rather than making the user go find a terminal — in a new
-  // session in the bridge's own checkout, not whichever session is open (it may
-  // be another repo, or a worktree of this one).
+  // Escape hatch when git refuses (diverged history, rejected push…) or a build
+  // breaks after the pull landed: hand the failure to Claude rather than making
+  // the user go find a terminal — in a new session in the bridge's own checkout,
+  // not whichever session is open (it may be another repo, or a worktree of this one).
   function fixWithClaude() {
     const where = info?.path || "the mystical-assistant repo";
     const pending = info?.behind ?? 0;
@@ -145,6 +145,11 @@ export function UpdateButton({ onFeed, variant = "badge" }: {
         ? `Committing and pushing the platform's own work in \`${where}\` failed. Work out ` +
           `what blocks it and fix it, then commit the changes with a good message and push.` +
           `\n\ngit said:\n${err}`
+        : failed === "build"
+        ? `Updating the platform failed after the pull landed: \`git pull --ff-only\` in the ` +
+          `bridge's own checkout (${where}) brought the new commits in, then a web build broke. ` +
+          `Work out why and fix it, then rebuild and restart so the update goes live.` +
+          `\n\nThe update said:\n${err}`
         : `Updating the platform failed: \`git pull --ff-only\` in the bridge's own checkout ` +
           `(${where}) refused. Work out what blocks it and fix it, then pull the ${pending} ` +
           `pending commit${pending === 1 ? "" : "s"}. Don't discard my source changes — ` +

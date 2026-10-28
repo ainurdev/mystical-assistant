@@ -359,6 +359,9 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
                 {curShot && <button type="button" className="ad-full" onClick={() => open(shown)}><Maximize2 size={11} aria-hidden /> Full size</button>}
               </div>
             )}
+            {/* Bigger drops the tiles, and the chips under the stage carry names
+                only: without this the shown option's description had nowhere to be. */}
+            {!solo && cur.o.description && <p className="ad-shd">{cur.o.description}</p>}
             <div className="ad-pic">
               <div className="ad-frame" onClick={() => open(shown)} title={curShot ? "Open full size" : undefined}>
                 {pics.map((x, pi) => <Fragment key={pi}>{layers(x, (k) => pi === shown && k === kOf(x))}</Fragment>)}
@@ -526,7 +529,7 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
         ) : (
           <>
             <p className="ad-ask">Allow <b>{d.tool}</b>?</p>
-            {d.summary && <pre className="ad-cmd">{d.summary}</pre>}
+            {d.summary && <pre className="ad-cmd">{d.detail ?? d.summary}</pre>}
           </>
         )}
         <div className="ad-acts">

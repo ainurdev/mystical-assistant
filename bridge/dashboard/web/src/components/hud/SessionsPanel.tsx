@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
@@ -58,6 +58,8 @@ interface Props {
   /** Folded to the rail: one tile per project you are working in. */
   folded?: boolean;
   onUnfold?: () => void;
+  /** The workspace on screen (lib/workspaces): each keeps its own expanded projects. */
+  workspace?: string;
 }
 
 type Mode = "attention" | "projects" | "plugins" | "recent";
@@ -66,13 +68,18 @@ type Mode = "attention" | "projects" | "plugins" | "recent";
  *  names the project but not the branch was simply not on the menu. */
 type Detail = { proj: boolean; branch: boolean; wt: boolean };
 // "recent" is the saved key for newest-started; it was last-used once, and
-// keeping the key keeps everyone's saved pick.
-type OrderMode = "recent" | "alpha" | "biggest" | "custom";
+// keeping the key keeps everyone's saved pick. "used" is last-used again, for
+// whoever wants the old behaviour back: a reply lifts its chat to the top of
+// its project and the project to the top of the list. Newest-started holds
+// rows still while turns run; this one trades that stillness for recency.
+// No project expanded. Shared, never mutated: every update copies.
+const NONE: Set<string> = new Set();
+type OrderMode = "used" | "recent" | "alpha" | "biggest" | "custom";
 
 const ORDER_LABEL: Record<OrderMode, string> = {
-  recent: "newest started", alpha: "a → z", biggest: "biggest", custom: "custom",
+  used: "recently used", recent: "newest started", alpha: "a → z", biggest: "biggest", custom: "custom",
 };
-const ORDERS: OrderMode[] = ["recent", "alpha", "biggest", "custom"];
+const ORDERS: OrderMode[] = ["used", "recent", "alpha", "biggest", "custom"];
 
 const FIELDS: { k: keyof Detail; label: string; tip: string }[] = [
   { k: "proj", label: "project name", tip: "Name the project on every row" },
@@ -214,6 +221,26 @@ const edgeChip = (c: string, l: string) => (
                  fontSize: "var(--t10)", fontWeight: 700, color: c, background: `color-mix(in srgb, ${c} 16%, transparent)` }}>{l}</span>
 );
 
+/** A project's state where its rows can't be seen (a shut head, a rail tile): the
+ *  rows' own dots, green pulsing while a turn runs, amber when one waits on you. No
+ *  counts — open the project and its rows say how many. */
+const stateWords = (n: Partial<Record<LaneKey, number>>) => [n.work && "working", n.ask && "needs you"].filter(Boolean).join(", ");
+const stateDots = (n: Partial<Record<LaneKey, number>>) => (n.work || n.ask) ? (
+  <span className="pstate" role="img" aria-label={stateWords(n)}>
+    {!!n.work && <span className="sessdot" data-work="true" />}
+    {!!n.ask && <span />}
+  </span>
+) : null;
+
+/** What the ATTENTION tab counts: one number per state, most urgent first, each in
+ *  its lane's colour, so two running turns never wear a question's amber. Waiting
+ *  and parked turns come back on their own, so they stay out. */
+const ATTN: { k: LaneKey; c: string; say: (n: number) => string }[] = [
+  { k: "ask", c: "var(--warn)", say: (n) => `${n} ${n === 1 ? "needs" : "need"} your answer` },
+  { k: "done", c: "var(--acc)", say: (n) => `${n} finished` },
+  { k: "work", c: "var(--ok)", say: (n) => `${n} running` },
+];
+
 function SessionRow({
   s, i, on, v, st, flag, wait, shots, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
 }: {
@@ -271,7 +298,7 @@ function SessionRow({
   const since = st?.since;
   const edge = v.lane === "work" ? <span style={{ color: "var(--ok)" }}>{since ? lasted(now - since) : "now"}</span>
     : v.lane === "ask" ? edgeChip("var(--warn)", "Answer")
-    : v.lane === "done" ? edgeChip("var(--ok)", "New")
+    : v.lane === "done" ? edgeChip("var(--acc)", "New")
     : v.lane === "wait" ? (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: wait?.needs ? "var(--warn)" : "var(--purple)" }}>
         <Hourglass size={10} strokeWidth={2.2} aria-hidden />{since ? lasted(now - since) : ago(s.updated)}
@@ -470,6 +497,7 @@ export function SessionsPanel(props: Props) {
   const {
     sessions, groups, hidden, status, done, flags, pins, selectedSessionId, activeProject, booting,
     onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
+    workspace = "",
   } = props;
 
   // NEW SESSION's popover: "" = the + beside the search, a rel = that project head's + New.
@@ -508,8 +536,13 @@ export function SessionsPanel(props: Props) {
   // you keep out of the way are the same ones every day.
   const [shut, setShut] = useState<Set<string>>(() => new Set(loadPrefs().shut));
   // Projects expanded past their default rows. ponytail: not persisted — an
-  // expand is "show me this now", not a preference.
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  // expand is "show me this now", not a preference. One set per workspace: an
+  // expand drills into a project, and a workspace without it listed nothing;
+  // now each workspace comes back the way you left it.
+  const [openBy, setOpenBy] = useState<Record<string, Set<string>>>({});
+  const open = openBy[workspace] ?? NONE;
+  const setOpen = useCallback((f: Set<string> | ((c: Set<string>) => Set<string>)) =>
+    setOpenBy((m) => ({ ...m, [workspace]: typeof f === "function" ? f(m[workspace] ?? NONE) : f })), [workspace]);
   // Which kind the open Rivendell jobs group shows ("" = every kind).
   const [jobKind, setJobKind] = useState("");
   // A mode switch replaces every row, so the list cascades in once. Rows mount
@@ -594,9 +627,11 @@ export function SessionsPanel(props: Props) {
   // turns start and end, and the dot says what changed. Every list below slices
   // this one, so a pin holds the top of its lane, its bucket, and its project's
   // rows alike — and the search applied here reaches every mode from one place.
+  // RECENTLY USED (the order menu) ranks by the last touch instead.
+  const byOrder = order === "used" ? (a: SessionBrief, b: SessionBrief) => b.updated - a.updated : byCreated;
   const sorted = [...sessions]
     .filter((s) => !sq || `${s.title ?? ""} ${branchFor(s)}`.toLowerCase().includes(sq))
-    .sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || byCreated(a, b));
+    .sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || byOrder(a, b));
 
   // One state resolution per session per render — lanes, dots and counts all
   // read this map so they can never disagree.
@@ -688,7 +723,8 @@ export function SessionsPanel(props: Props) {
   // back to its start position when the turn ends.
   const started = new Map<string, number>();
   for (const s of sessions) {
-    const g = jobGroup(s), t = s.created ?? s.updated;
+    // RECENTLY USED: by the newest touch, so a reply lifts its project.
+    const g = jobGroup(s), t = order === "used" ? s.updated : s.created ?? s.updated;
     if (t > (started.get(g) ?? 0)) started.set(g, t);
   }
   const atWork = new Set(sessions.filter(busy).map(jobGroup));
@@ -709,7 +745,9 @@ export function SessionsPanel(props: Props) {
   // those falls back to its newest rows.
   // Expanding is a drill-down, not a longer list: while one project is open the
   // others step aside, and "← All projects" is the way back.
-  const drilled = !sq && open.size > 0;
+  // Drilled only into a project this list has: one moved to another workspace
+  // while open would otherwise leave the list empty.
+  const drilled = !sq && groups.some((g) => open.has(g.rel));
   // Shared lists what teammates sent, which `mine` keeps out of every other group.
   const rowsOf = (g: ProjectGroup) => (g.rel === SHARED_REL ? sorted.filter(listed) : mine).filter((s) => jobGroup(s) === g.rel);
   // Newest rows *plus* anything live — a union, not a replacement: selecting
@@ -718,9 +756,10 @@ export function SessionsPanel(props: Props) {
     const keep = new Set(f.slice(0, 2).map((s) => s.id));
     return lift(f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id) || laneOf(s) !== "idle" || flags.has(s.id) || !!unseen.get(s.id)));
   };
-  // How many of a project's sessions sit in each lane, every session, not the
-  // rows showing: a shut head's amber wash and the rail's ask badge and New dot
-  // read it. No head prints the counts — the rows under it already say so.
+  // How many of a list's sessions sit in each lane, every session, not the
+  // rows showing: a shut head's dots and amber wash, the rail's dots and New
+  // dot, and the ATTENTION tab's numbers read it. No head prints the counts —
+  // the rows under it already say so.
   const tallyOf = (f: SessionBrief[]) => {
     const n: Partial<Record<LaneKey, number>> = {};
     for (const s of f) { const k = laneOf(s); n[k] = (n[k] ?? 0) + 1; }
@@ -864,12 +903,16 @@ export function SessionsPanel(props: Props) {
   // The PLUGINS tab exists while Rivendell is installed, and `mode` can't be
   // "plugins" otherwise, so the pill never stands on a tab that isn't rendered.
   const pluginRows = sorted.filter((s) => PLUGINS.some((p) => p.match(s)));
+  // ATTENTION's numbers (ATTN), and the words that say them: colour is never the only signal.
+  const attn = tallyOf(mine);
+  const attnOn = ATTN.filter((x) => attn[x.k]);
+  const attnSay = attnOn.map((x) => x.say(attn[x.k]!)).join(", ");
   // Tabs are icons only — the label survives as the tooltip and the
   // accessible name, so the bar stays narrow and never wraps.
   const modeTabs: { id: Mode; label: string; Icon: LucideIcon; count: number; tip: string }[] = [
-    // ATTENTION counts what wants you — a question, or a finish you haven't
-    // opened — not everything that's busy: eight running turns are not eight to-dos.
-    { id: "attention", label: "Attention", Icon: BellRing, count: mine.filter((s) => laneOf(s) === "ask" || laneOf(s) === "done").length, tip: "Attention — grouped by what each session wants from you" },
+    { id: "attention", label: ["Attention", attnSay].filter(Boolean).join(", "), Icon: BellRing,
+      count: attnOn.reduce((t, x) => t + attn[x.k]!, 0),
+      tip: attnSay ? `Attention — ${attnSay}` : "Attention — grouped by what each session wants from you" },
     { id: "projects", label: "Projects", Icon: FolderTree, count: groups.length, tip: "Projects — grouped by project" },
     ...(plugins.rivendell ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
     { id: "recent", label: "Recent", Icon: History, count: mine.length, tip: "Recent — one flat stream, newest first" },
@@ -901,10 +944,10 @@ export function SessionsPanel(props: Props) {
 
 
   // FOLDED: the column is a rail of the projects you are working in — any with
-  // a session busy or touched this week, and the open one's — each wearing its
-  // tally as a badge: a question in amber, else how many are running, and a dot
-  // for a finish you haven't opened. A tile opens its rows beside it; anything
-  // more unfolds the panel.
+  // a session busy or touched this week, and the open one's — each wearing a
+  // shut head's dots in its corner (a turn running, a question) and a dot for a
+  // finish you haven't opened. A tile opens its rows beside it; anything more
+  // unfolds the panel.
   if (asRail) {
     const cur = sessions.find((x) => x.id === selectedSessionId);
     const openRel = cur ? jobGroup(cur) : activeProject;
@@ -940,13 +983,13 @@ export function SessionsPanel(props: Props) {
             const n = tallyOf(rowsOf(g));
             return (
               <button
-                key={g.rel} className="srail-tile" aria-label={g.name}
+                key={g.rel} className="srail-tile" aria-label={[g.name, stateWords(n)].filter(Boolean).join(", ")}
                 data-on={g.rel === openRel} data-hot={fly?.rel === g.rel}
                 onMouseEnter={(e) => peek(g.rel, e.currentTarget)} onMouseLeave={unpeek}
                 onClick={(e) => (fly?.rel === g.rel ? setFly(null) : peek(g.rel, e.currentTarget, 0))}
               >
                 {tile(g)}
-                {!!n.ask && <span className="srail-bd">{n.ask}</span>}
+                {stateDots(n)}
                 {!!n.done && <span className="srail-new" />}
               </button>
             );
@@ -1026,10 +1069,12 @@ export function SessionsPanel(props: Props) {
                     style={{ position: "absolute", top: 4, left: "calc(50% + 4px)", width: 6, height: 6, borderRadius: "50%", background: "var(--info)",
                              boxShadow: "0 0 0 2px var(--panel2), 0 0 8px var(--info)" }} />
                 )}
-                {/* Only ATTENTION's count is a number you act on, so it shows
-                    only while there is something to act on. */}
+                {/* Only ATTENTION's count shows, and only while something
+                    runs or waits on you. */}
                 {m.id === "attention" && m.count > 0 && (
-                  <span style={{ flex: "none", fontSize: "var(--t9)", fontWeight: 700, color: "var(--warn)" }}>{m.count}</span>
+                  <span style={{ flex: "none", display: "inline-flex", gap: 5, fontSize: "var(--t9)", fontWeight: 700, fontVariantNumeric: "tabular-nums" }}>
+                    {attnOn.map((x) => <span key={x.k} style={{ color: x.c }}>{attn[x.k]}</span>)}
+                  </span>
                 )}
               </button>
             );
@@ -1223,7 +1268,7 @@ export function SessionsPanel(props: Props) {
                     title={order === "custom" && !sq
                       ? `${g.rel} — drag to reorder, click to ${isShut ? "expand" : "collapse"}`
                       : `${g.rel} · ${sq ? `${f.length} of ${g.sessionCount} match` : `${g.sessionCount} sessions`} — click to ${isShut ? "expand" : "collapse"}`}
-                    style={{ display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", userSelect: "none",
+                    style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", userSelect: "none",
                              cursor: order === "custom" && !sq ? "grab" : "pointer",
                              // shut on a question: the head is the only thing left to say so
                              background: isShut && n.ask ? "color-mix(in srgb, var(--warn) 9%, transparent)" : undefined }}
@@ -1234,6 +1279,8 @@ export function SessionsPanel(props: Props) {
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
                     <span style={{ flex: 1, minWidth: 6 }} />
+                    {/* shut, its rows can't say what they're doing; New's open form owns the spot */}
+                    {isShut && !actOn && stateDots(n)}
                     {/* A teammate started Shared's; there is nothing of yours to open or start there. */}
                     {!shared && <button
                       onClick={(e) => { e.stopPropagation(); if (jobs) toggleLog(g.rel); else toggleNs(g.rel); }}

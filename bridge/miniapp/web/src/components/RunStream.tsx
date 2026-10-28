@@ -1207,7 +1207,7 @@ export const RunStream = memo(function RunStream({
         const withExtra = (node: ReactNode) =>
           extra ? <div key={i} className="space-y-2">{node}{extra}</div> : node;
         if (event.name === "Bash")
-          return <TerminalBlock key={i} command={event.summary} done={done} />;
+          return <TerminalBlock key={i} command={event.detail ?? event.summary} done={done} />;
         if (groupOf.has(i)) return null;   // drawn by the run's head
         // A delegation is a turn nested inside this one, so it is drawn as
         // its own framed block — and a run of them as one fan, not as N

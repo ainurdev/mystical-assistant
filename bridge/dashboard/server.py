@@ -44,7 +44,7 @@ from bridge import (acp_agents, agents, attribution, browser, config,
                     rivendell_instances, rivendell_video, runner, selfupdate,
                     share,
                     shell, skills, state, store, sysinfo, team, terminals, titler,
-                    usage, weather, wsutil)
+                    usage, weather, workspaces, wsutil)
 from bridge.miniapp.server import (_SERVABLE, _pre_title, _qs_int, _save_images,
                                    _session_brief,
                                    normalize_model_effort,
@@ -445,6 +445,15 @@ class Handler(BaseHTTPRequestHandler):
             if got is None:
                 return self._json({"error": "no such logo"}, 404)
             # The name is the bytes' hash, so a logo never changes under it.
+            return self._send_image(*got, "public, max-age=31536000, immutable")
+        if path == "/local/workspaces":
+            # The sidebar's workspaces and which projects each holds (bridge/workspaces.py).
+            return self._json(workspaces.listing())
+        if path.startswith("/local/workspaces/image/"):
+            got = workspaces.image(path[len("/local/workspaces/image/"):])
+            if got is None:
+                return self._json({"error": "no such picture"}, 404)
+            # Named by its bytes' hash, like a project logo.
             return self._send_image(*got, "public, max-age=31536000, immutable")
         if path == "/local/project-mark/repo":
             # The mark editor's From this repo strip: the pictures the repo
@@ -1483,8 +1492,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/update":
             # pull the platform's new commits; on success the bridge restarts
             # shortly after this response flushes.
-            ok, output = selfupdate.update()
-            return self._json({"ok": ok, "output": output})
+            ok, output, pulled = selfupdate.update()
+            return self._json({"ok": ok, "output": output, "pulled": pulled})
         if path == "/local/update/publish":
             return self._publish_update(chat)
         if path.startswith("/local/move/"):
@@ -1629,6 +1638,19 @@ class Handler(BaseHTTPRequestHandler):
             # store and starts/stops/rewires to match.
             rivendell.reconfigure()
             return self._json({"ok": True, "instance": inst})
+        if path == "/local/workspaces/prefs":
+            # A window switched workspace, or the switch's look changed.
+            try:
+                return self._json(workspaces.set_prefs(body.get("last"), body.get("display")))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+        if path == "/local/workspaces":
+            # The WORKSPACES settings tab saves the whole set at once.
+            try:
+                return self._json(workspaces.save(body.get("workspaces"), body.get("assign"),
+                                                  body.get("images")))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
         if path == "/local/project-mark/pick":
             # PICK LOGOS on the Projects page, and its Undo (bridge/projectmarks.py).
             act = body.get("action")
@@ -2528,15 +2550,23 @@ class Handler(BaseHTTPRequestHandler):
         Handing out the token is safe exactly where the read GETs above are: the
         Host allow-list has already run (so DNS-rebinding is out), the bind is
         loopback, and a cross-origin fetch can't read the response because
-        nothing here sends CORS headers."""
+        nothing here sends CORS headers.
+
+        `id` pins the installed app's identity to the origin, not to start_url,
+        so a rotated token updates the app instead of orphaning it. The
+        window-controls-overlay override is the Linux window (linux/, `mystical
+        app`): Chrome drops its title bar and the HUD's caps take its place
+        (lib/wco.ts); browsers without it fall back to standalone."""
         start = f"/?token={quote(config.DASH_TOKEN, safe='')}" if config.DASH_TOKEN else "/"
         body = json.dumps({
+            "id": "/",
             "name": "mystical//assistant",
             "short_name": "mystical",
             "description": "A full desktop Claude client for the mystical-assistant bridge.",
             "start_url": start,
             "scope": "/",
             "display": "standalone",
+            "display_override": ["window-controls-overlay"],
             "background_color": "#060a0a",
             "theme_color": "#060a0a",
             "icons": [

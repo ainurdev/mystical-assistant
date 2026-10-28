@@ -71,7 +71,10 @@ import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
 import { syncBadge, syncOf } from "./lib/gitsync";
 import { chime, pushGranted } from "./lib/push";
-import { isMacApp, isNativeApp, macAppearance, macDrag, useMacSettings } from "./lib/mac";
+import { isLinuxApp, isMacApp, isNativeApp, linuxWindow, macAppearance, macDrag, useMacSettings } from "./lib/mac";
+import { watchWco } from "./lib/wco";
+import { switchWorkspace, useWorkspaces, workspaceOf } from "./lib/workspaces";
+import { WorkspaceButton } from "./components/hud/WorkspaceButton";
 import { chatToMarkdown } from "./lib/chatmd";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
@@ -81,7 +84,7 @@ import { JobBar } from "./components/JobBar";
 import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
-import { Brand, RightCap, Strip } from "./components/hud/Strip";
+import { Brand, LinuxClose, LinuxRailHead, RightCap, Strip } from "./components/hud/Strip";
 import { PaletteButton } from "./components/hud/PaletteButton";
 import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
@@ -642,9 +645,21 @@ export function App() {
     if (sessionProject) openAnalyze(sessionProject, { path, branch: sessionBranch }, changed ? "changes" : undefined);
   }
 
+  // A session opened from outside the sidebar (a notification, ⌘K, NEXT UP,
+  // the tray) brings its workspace on screen, so its row is in the list you
+  // see. Read-only runs never do: they list in no workspace's projects.
+  function revealWorkspace(s: SessionBrief | undefined) {
+    if (!s || !ws.set || isReadOnly(s.origin)) return;
+    const id = workspaceOf(ws.set, jobGroup(s));
+    if (id !== ws.cur) switchWorkspace(id);
+  }
+
   // `fresh`: a session just made, so there are no turns to wait for — the
   // fresh screen New put up stays, with no loading state in between.
-  function openSession(id: string, fresh = false) {
+  // `reveal`: switch to its workspace (revealWorkspace); off for the boot's
+  // reopen, which must leave you on the workspace you picked last.
+  function openSession(id: string, fresh = false, reveal = true) {
+    if (reveal) revealWorkspace(sessions.find((s) => s.id === id));
     // Already the open one: re-opening would re-fetch and re-animate the chat
     // to land on what's already on screen.
     if (id === sessionIdRef.current) return;
@@ -719,6 +734,27 @@ export function App() {
     };
     window.addEventListener("mousedown", down);
     return () => window.removeEventListener("mousedown", down);
+  }, []);
+
+  // The installed PWA with its title bar hidden: the caps take over (lib/wco.ts).
+  useEffect(() => watchWco(), []);
+
+  // The Linux window (linux/window.py) has no title bar and WebKitGTK no
+  // app-region, so the caps' bare surface (.wco-bar, not a control or a
+  // popover) asks the window to drag, and a double-click maximizes — what a
+  // title bar does.
+  useEffect(() => {
+    if (!isLinuxApp()) return;
+    const bare = (e: MouseEvent) => {
+      const t = e.target as Element;
+      return e.button === 0 && !!t.closest?.(".wco-bar")
+        && !t.closest("button,a,input,textarea,select,label,[role=button],[contenteditable],[tabindex],.wspop,.mscroll");
+    };
+    const down = (e: MouseEvent) => { if (bare(e) && e.detail === 1) linuxWindow("drag"); };
+    const dbl = (e: MouseEvent) => { if (bare(e)) linuxWindow("maximize"); };
+    window.addEventListener("mousedown", down);
+    window.addEventListener("dblclick", dbl);
+    return () => { window.removeEventListener("mousedown", down); window.removeEventListener("dblclick", dbl); };
   }, []);
 
   // --- polls (unchanged data flow) ---
@@ -822,7 +858,12 @@ export function App() {
         }
         const was = ss.find((s) => s.id === asked) ?? ss.find((s) => s.id === lastOpen())
           ?? ss.find((s) => s.project === projectRel) ?? ss[0];
-        if (was) openSession(was.id);
+        // Reopening what you had open keeps the workspace you picked last; a
+        // link that names a session (?s=) brings that session's workspace.
+        if (was) {
+          openSession(was.id, false, false);
+          if (asked && was.id === asked) revealWorkspace(was);
+        }
         // Nothing to reopen (or the list never landed) — say so, or the intro
         // would wait on a transcript fetch that is never going to happen.
         else markBoot("chat", "ok", "NONE");
@@ -2012,9 +2053,16 @@ export function App() {
     return groups;
   }, [sessions, gitBadges, statusMap, activeProject, discovered, labelVersion, selected]);
 
+  // The sidebar shows one workspace (lib/workspaces): a group key assigned
+  // elsewhere is out of every tab, PLUGINS included, so it is filtered here
+  // rather than by HIDE, which PLUGINS deliberately ignores.
+  const ws = useWorkspaces();
+  const inWs = useCallback((key: string) => workspaceOf(ws.set, key) === ws.cur, [ws]);
+  const sidebarSessions = useMemo(() => sessions.filter((s) => inWs(jobGroup(s))), [sessions, inWs]);
+
   // HIDE keeps a project out of the sidebar. SessionsPanel drops its sessions
   // itself, as PLUGINS still lists the runs of a hidden folder or group.
-  const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel]);
+  const visibleGroups = projectGroups.filter((g) => !hiddenProjects[g.rel] && inWs(g.rel));
 
   // Prompt state the session list flags, so work you left mid-flight is visible
   // from anywhere: a check still running, a card waiting on you, unsent text.
@@ -2025,6 +2073,22 @@ export function App() {
     for (const sid of Object.keys(checkingMap)) m.set(sid, "checking");
     return m;
   }, [drafts, heldMap, checkingMap]);
+
+  // What's new in the workspaces you aren't looking at: per workspace, its chats
+  // the sidebar would flag (DONE, finished and unopened; ASK, waiting on you),
+  // so the switch can say a hidden one wants you. Read-only runs and what you
+  // hid never count, as in the sidebar's own lanes.
+  const wsNews = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of sessions) {
+      if (isReadOnly(s.origin) || hiddenProjects[s.project] || hiddenProjects[jobGroup(s)]) continue;
+      const id = workspaceOf(ws.set, jobGroup(s));
+      if (id === ws.cur) continue;
+      const lane = resolve(statusMap.get(s.id), doneIds.has(s.id), promptFlags.get(s.id)).lane;
+      if (lane === "done" || lane === "ask") m.set(id, (m.get(id) ?? 0) + 1);
+    }
+    return m;
+  }, [sessions, ws, hiddenProjects, statusMap, doneIds, promptFlags]);
 
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
@@ -2771,14 +2835,16 @@ export function App() {
                 edge, and ⌘K sits at the foot of the rail. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
+              data-rbare={settings.rightOpen ? undefined : ""}
               style={{ gridTemplateColumns: shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
-                <Brand folded={!settings.leftOpen} onFold={toggleLeft} />
+                <Brand folded={!settings.leftOpen} onFold={toggleLeft}
+                  workspace={<WorkspaceButton news={wsNews} onManage={() => { setSettingsTab("workspaces"); setSettingsOpen(true); }} />} />
                 <SessionsPanel
-                  folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })}
-                  sessions={sessions} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
+                  folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })} workspace={ws.cur}
+                  sessions={sidebarSessions} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
                   flags={promptFlags} pins={pins}
                   selectedSessionId={sessionId} booting={!booted}
                   activeProject={activeProject}
@@ -2940,13 +3006,14 @@ export function App() {
                   cap rides on top: the cluster over the panel, the gear over
                   the rail. */}
               <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0, minWidth: 0 }}>
-                <RightCap onOpenSettings={() => setSettingsOpen(true)}>
+                <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined}>
                   {settings.rightOpen && strip}
                 </RightCap>
                 <RightPanel
                   tabs={rightTabs} activeId={settings.rightTab}
                   open={settings.rightOpen} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
+                  railHead={isLinuxApp() ? <LinuxRailHead onOpenSettings={() => setSettingsOpen(true)} /> : undefined}
                   railFoot={<>
                     <LiveButton onFeed={feed} />
                     <ChangelogButton onFeed={feed} />

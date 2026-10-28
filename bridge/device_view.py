@@ -184,6 +184,8 @@ class Feed:
             name, inp, raw = _str(b.get("name")) or "tool", b.get("input"), b.get("id")
             ev = {"type": "tool", "name": name, "id": self._id(raw),
                   "summary": transcript_jsonl._summarize_tool(name, inp)}
+            if (full := transcript_jsonl.tool_detail(name, inp)):
+                ev["detail"] = full
             if isinstance(raw, str):
                 self.open[raw] = (ev["id"], name, now)
             if (meta := transcript_jsonl.agent_meta(name, inp)):

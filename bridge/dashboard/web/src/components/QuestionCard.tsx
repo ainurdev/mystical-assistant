@@ -115,7 +115,7 @@ function Stage({ q, chosen, onPick, sending }: {
               >
                 <span className="flex min-w-0 items-center gap-2 font-medium">
                   <span className={`qkey rounded-md${on ? " qkey-on" : ""}`}>{on ? <Check size={12} strokeWidth={3} aria-hidden /> : x.key}</span>
-                  <span className="min-w-0 truncate">{x.name}</span>
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{x.name}</span>
                   {on && !onPick ? <span className="qsug rounded-full">YOUR PICK</span> : x.rec && <span className="qsug rounded-full">SUGGESTED</span>}
                 </span>
                 {x.o.description && (
@@ -128,7 +128,7 @@ function Stage({ q, chosen, onPick, sending }: {
         <div className="qstage-view rounded-lg">
           <div className="qstage-head">
             <span className="qkey qkey-on rounded-md">{cur.key}</span>
-            <b className="min-w-0 truncate">{cur.name}</b>
+            <b className="min-w-0 [overflow-wrap:anywhere]">{cur.name}</b>
             {cur.pv.shots.length > 1 && (
               <span className="qstage-tabs" role="tablist" aria-label={`${cur.name} shots`}>
                 {cur.pv.shots.map((s, k) => (
