@@ -203,6 +203,19 @@ def set_learn_off(project: str, off: bool) -> None:
     _set_field(project, None, "learn_off", "1" if off else "")
 
 
+def map_setting(project: str) -> "bool | None":
+    """The repo's own PROJECT MAP switch (SETTINGS ▸ Projects): True or False once
+    flipped, None while never set — graphmap.repo_on decides that default."""
+    v = get(project).get("map")
+    return None if v is None else v == "on"
+
+
+def set_map(project: str, on: bool) -> bool:
+    """Project-wide, like lessons: one map per repo, whatever the branch."""
+    _set_field(project, None, "map", "on" if on else "off")
+    return on
+
+
 def hidden_projects() -> list[str]:
     """Every project rel currently hidden. Only ever written project-wide, so
     branch-scoped keys never carry the flag."""

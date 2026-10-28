@@ -55,7 +55,7 @@ def _handle_map(chat_id: int, arg: str):
     """Runs in a thread — graphify build/explain shell out for seconds."""
     cwd = state.project_dir(chat_id)
     # Switched off or not installed — say so once, before promising a build.
-    blocked = graphmap.blocked_reason()
+    blocked = graphmap.blocked_reason(cwd)
     if blocked:
         send(chat_id, blocked)
         return

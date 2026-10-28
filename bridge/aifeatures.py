@@ -122,9 +122,11 @@ FEATURES = (
               "model call), which the first turn of every session carries as a "
               "~400-token structure summary — subsystems, hub files — so Claude "
               "starts oriented. The map builds itself after a turn and refreshes "
-              "as the code moves. On, the prompt box gets the MAP chip and "
-              "ANALYZE gets the MAP tab. Off, nothing is built, refreshed or "
-              "injected, /map answers that the switch is off, and both leave the "
+              "as the code moves. Each repo also has its own switch (SETTINGS ▸ "
+              "Projects ▸ Project map), on where a map already exists and off "
+              "elsewhere; where both are on, the prompt box gets the MAP chip and "
+              "the project window the MAP tab. Off, nothing is built, refreshed or "
+              "injected, /map says which switch is off, and both leave the "
               "dashboard. An existing graphify-out/ is left on disk."},
     {"key": "rvtrack", "env": "RIVENDELL_TRACK", "label": "RIVENDELL TASKS",
      "hint": "work in a repo on a Rivendell board finds or files its task",

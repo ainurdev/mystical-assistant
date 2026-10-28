@@ -10,7 +10,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pytest  # noqa: E402
 
-from bridge import aifeatures, config, graphmap  # noqa: E402
+from bridge import aifeatures, browser, config, graphmap, project_config  # noqa: E402
+
+_REAL_REPO_ON = graphmap.repo_on
 
 
 @pytest.fixture(autouse=True)
@@ -19,6 +21,8 @@ def _graph_on(monkeypatch):
     that gates it — pin it on so a bridge with the map switched off doesn't turn
     the suite red. The switch itself has its own tests at the bottom."""
     monkeypatch.setattr(aifeatures, "enabled", lambda k: True)
+    # and each repo's own switch (SETTINGS ▸ Projects), tested at the bottom
+    monkeypatch.setattr(graphmap, "repo_on", lambda cwd: True)
 
 
 def _git(cwd, *args):
@@ -103,7 +107,8 @@ def test_state_no_git_is_harmless(tmp_path, monkeypatch):
     os.makedirs(d, exist_ok=True)
     st = graphmap.graph_state(d)
     assert st == {"available": False, "exists": False, "built_commit": None,
-                  "built_at": None, "head": None, "stale": False, "building": False}
+                  "built_at": None, "head": None, "stale": False, "building": False,
+                  "repo_on": True}
 
 
 def test_state_wrong_shape_json_is_harmless(tmp_path, monkeypatch):
@@ -357,7 +362,7 @@ def test_update_async_fires_thread_and_returns_state(tmp_path, monkeypatch):
     assert spawned["args"] == (d, 42)
     assert spawned.get("started") is True
     assert set(st) == {"available", "exists", "built_commit", "built_at", "head",
-                       "stale", "building"}
+                       "stale", "building", "repo_on"}
     assert st["building"] is True   # forced True so a poller doesn't render stale graph
 
 
@@ -501,3 +506,44 @@ def test_switched_off_injects_nothing(tmp_path, monkeypatch):
     _off(monkeypatch)
     graphmap._pack_cache.clear()           # the on-answer was just memoized
     assert graphmap.graph_pack(d) == ""
+
+
+# ── each repo's own switch (SETTINGS ▸ Projects ▸ Project map) ──────────────
+
+def test_repo_switch_defaults_to_whether_the_repo_has_a_map(tmp_path, monkeypatch):
+    monkeypatch.setattr(graphmap, "repo_on", _REAL_REPO_ON)
+    d = _mkrepo(tmp_path)
+    assert graphmap.repo_on(d) is False        # never mapped: off until you turn it on
+    _write_rich_graph(d)
+    assert graphmap.repo_on(d) is True         # mapped under the machine-wide switch: keeps it
+
+
+def test_repo_switch_off_stops_the_build_the_refresh_and_the_pack(tmp_path, monkeypatch):
+    monkeypatch.setattr(graphmap, "repo_on", _REAL_REPO_ON)
+    d = _mkrepo(tmp_path)
+    _write_rich_graph(d)
+    project_config.set_map(browser.rel(d), False)
+    st = graphmap.graph_state(d)
+    assert st["repo_on"] is False and st["available"] is False
+    assert graphmap.blocked_reason(d) == graphmap.OFF_REPO_MSG
+    monkeypatch.setattr(graphmap, "_graphify_bin", "/usr/bin/graphify")
+    monkeypatch.setattr(graphmap.subprocess, "run",
+                        lambda *a, **k: pytest.fail("graphify ran while the repo is off"))
+    monkeypatch.setattr(graphmap.threading, "Thread",
+                        lambda *a, **k: pytest.fail("refresh spawned while the repo is off"))
+    ok, msg = graphmap.update(d)
+    assert ok is False and msg == graphmap.OFF_REPO_MSG
+    assert graphmap.explain(d, "anything") == graphmap.OFF_REPO_MSG
+    graphmap.refresh_async(d)
+    graphmap._pack_cache.clear()
+    assert graphmap.graph_pack(d) == ""
+
+
+def test_the_repo_switch_turns_on_and_a_worktree_follows_it(tmp_path, monkeypatch):
+    monkeypatch.setattr(graphmap, "repo_on", _REAL_REPO_ON)
+    d = _mkrepo(tmp_path)
+    wt = d + "-wt"
+    _git(d, "worktree", "add", "-q", "-b", "feat", wt)
+    assert graphmap.repo_on(wt) is False
+    assert project_config.set_map(browser.rel(d), True) is True
+    assert graphmap.repo_on(d) is True and graphmap.repo_on(wt) is True

@@ -788,6 +788,7 @@ class Handler(BaseHTTPRequestHandler):
                 "run_cmd": project_config.run_cmd(rel, branch),
                 "prod_url": project_config.prod_url(rel, branch),
                 "design_project": project_config.design_project(rel, branch),
+                "map": graphmap.repo_on(abs_p),
                 "name": project_config.name(rel),
                 "default_cmd": config.START_CMD,
                 "log_path": devserver.DEV_LOG_REL,
@@ -834,6 +835,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"branches": git.branches(abs_p),
                                "current": git.current_branch(abs_p),
                                "default": git.default_branch(abs_p)})
+        if path == "/local/git/branchstatus":
+            # The BRANCHES rail tab: every branch and checkout, status only.
+            abs_p = _abs_project(qs.get("project", [None])[0])
+            if abs_p is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json(git.branch_status(abs_p))
         if path == "/local/git/worktrees":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
@@ -1598,6 +1605,9 @@ class Handler(BaseHTTPRequestHandler):
                 out["name"] = project_config.set_name(rel, (body.get("name") or "")[:60])
             if "hidden" in body:
                 out["hidden"] = project_config.set_hidden(rel, bool(body.get("hidden")))
+            if "map" in body:   # one switch per repo: a worktree sets its project's
+                out["map"] = project_config.set_map(
+                    browser.rel(git.main_checkout(abs_p) or abs_p), bool(body.get("map")))
             if "mark" in body:
                 try:
                     out["mark"] = projectmarks.set_mark(rel, body.get("mark"), body.get("logo_data"))

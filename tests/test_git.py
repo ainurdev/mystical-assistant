@@ -484,6 +484,78 @@ def test_merged_branches_reports_only_contained_branches():
     assert g.merged_branches(tempfile.mkdtemp()) == []
 
 
+def test_merged_branches_skips_a_detached_head():
+    # `git branch --merged` lists a detached checkout as "(HEAD detached at …)";
+    # that is not a branch, and the dashboard drew it as one (seen on nr-kantoor).
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    base = g.current_branch(d)
+    _write(d, "a.txt", "two\n")
+    _run(d, "commit", "-qam", "two")
+    _run(d, "checkout", "-q", "--detach", "HEAD~1")
+    assert g.merged_branches(d, base) == []
+
+
+def test_branch_status_says_what_each_branch_has_against_the_base():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    base = g.current_branch(d)
+    # feat: two commits of its own, checked out in a worktree with one dirty file
+    _commit_on_branch(d, "feat")
+    for n in ("b", "c"):
+        _write(d, f"{n}.txt", n)
+        _run(d, "add", "-A")
+        _run(d, "commit", "-qm", n)
+    _run(d, "checkout", "-q", base)
+    wt = tempfile.mkdtemp()
+    os.rmdir(wt)
+    _run(d, "worktree", "add", "-q", wt, "feat")
+    _write(wt, "b.txt", "changed")
+    # old: merged into base, no worktree; base then moves one commit on
+    _commit_on_branch(d, "old")
+    _write(d, "o.txt", "o")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "old work")
+    _run(d, "checkout", "-q", base)
+    _run(d, "merge", "-q", "--no-edit", "old")
+    _write(d, "m.txt", "m")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "base moves on")
+
+    st = g.branch_status(d)
+    assert st["base"] == base
+    rows = {r["name"]: r for r in st["branches"]}
+    assert set(rows) == {base, "feat", "old"}
+    feat, old, main = rows["feat"], rows["old"], rows[base]
+    assert (feat["ahead"], feat["behind"]) == (2, 2)        # its b, c · base's merge + move
+    assert feat["dirty"] == 1 and os.path.realpath(feat["worktree"]) == os.path.realpath(wt)
+    assert feat["upstream"] == "" and feat["unpushed"] is None   # never pushed
+    assert feat["merged"] is False and feat["at"] > 0
+    assert old["merged"] is True and old["worktree"] is None and old["dirty"] is None
+    assert main["main"] is True and (main["ahead"], main["behind"]) == (0, 0)
+    assert g.branch_status(tempfile.mkdtemp()) == {"base": "", "branches": []}
+
+
+def test_branch_status_lists_a_detached_checkout_by_its_commit():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    base = g.current_branch(d)
+    _write(d, "a.txt", "two\n")
+    _run(d, "commit", "-qam", "two")
+    _run(d, "checkout", "-q", "--detach", "HEAD~1")
+    rows = g.branch_status(d)["branches"]
+    det = [r for r in rows if r["name"] == ""]
+    assert len(det) == 1
+    assert det[0]["head"] and det[0]["main"] is True and det[0]["behind"] == 1
+    assert [r["name"] for r in rows if r["name"]] == [base]
+
+
 def test_current_branch_detached_names_something_useful():
     d = _mkrepo()
     _write(d, "a.txt", "one\n")

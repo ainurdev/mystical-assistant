@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import threading
 
-from bridge import aifeatures
+from bridge import aifeatures, browser, git, project_config
 
 log = logging.getLogger("bridge.graphmap")
 
@@ -47,15 +47,29 @@ def graphify_bin() -> "str | None":
     return _graphify_bin
 
 
-OFF_MSG = "The PROJECT MAP switch is off (SETTINGS ▸ AI)."
+OFF_MSG = "The PROJECT MAP switch is off (SETTINGS ▸ AI management ▸ Extras)."
+OFF_REPO_MSG = "The project map is off for this repo (SETTINGS ▸ Projects ▸ Project map)."
 
 
-def blocked_reason() -> "str | None":
-    """Why graphify can't run right now — the AI switch, or a missing binary.
-    Every entry point below asks here, so switching the feature off stops the
-    build, the refresh, the injection and the explain in one place."""
+def repo_on(cwd: str) -> bool:
+    """This repo's own switch (SETTINGS ▸ Projects ▸ Project map), under the
+    machine-wide PROJECT MAP one. Never flipped, it is on where a map is already
+    on disk (a repo the machine-wide switch alone used to map keeps its map) and
+    off everywhere else. A worktree answers for its repo: one switch per project."""
+    root = git.main_checkout(cwd) or cwd
+    v = project_config.map_setting(browser.rel(root))
+    return has_graph(root) if v is None else v
+
+
+def blocked_reason(cwd: "str | None" = None) -> "str | None":
+    """Why graphify can't run right now: the machine-wide switch, this repo's own
+    (when a `cwd` is given), or a missing binary. Every entry point below asks
+    here, so switching the map off stops the build, the refresh, the injection
+    and the explain in one place."""
     if not aifeatures.enabled("graph"):
         return OFF_MSG
+    if cwd and not repo_on(cwd):
+        return OFF_REPO_MSG
     if not graphify_bin():
         return "graphify is not installed (pipx install graphifyy)."
     return None
@@ -115,7 +129,8 @@ def graph_state(cwd: str) -> dict:
     built = _built_commit(cwd)
     head = _head_commit(cwd)
     return {
-        "available": blocked_reason() is None,
+        "available": blocked_reason(cwd) is None,
+        "repo_on": repo_on(cwd),
         "exists": has_graph(cwd),
         "built_commit": built,
         "built_at": _built_at(cwd),
@@ -129,7 +144,7 @@ def graph_state(cwd: str) -> dict:
 
 def explain(cwd: str, query: str) -> str:
     """`graphify explain "<query>"` in the project root, truncated for chat."""
-    blocked = blocked_reason()
+    blocked = blocked_reason(cwd)
     if blocked:
         return blocked
     bin_ = graphify_bin()
@@ -194,7 +209,7 @@ def _ensure_viz(cwd: str, bin_: str) -> None:
 def update(cwd: str, timeout: int = BUILD_TIMEOUT) -> "tuple[bool, str]":
     """Build or refresh a project's graph (`graphify update .`). Serialized per
     project; a concurrent caller returns immediately instead of stacking."""
-    blocked = blocked_reason()
+    blocked = blocked_reason(cwd)
     if blocked:
         return False, blocked
     bin_ = graphify_bin()
@@ -240,7 +255,7 @@ def refresh_async(cwd: "str | None") -> None:
     """Post-turn build-or-refresh: the first turn in a project maps it, every
     later turn keeps that map current as the code grows. Fire-and-forget; the
     per-project lock drops overlapping runs. Never blocks a turn."""
-    if not cwd or blocked_reason():
+    if not cwd or blocked_reason(cwd):
         return
     mapped = has_graph(cwd)
     # A first build is a full AST pass, so only real repos get one — with no
@@ -309,7 +324,7 @@ def graph_pack(cwd: "str | None") -> str:
     """≤~400-token structure summary for the system prompt; "" when the project
     has no graph. Memoized by graph.json mtime so repeat turns get the exact
     same string (cache-eligible) without re-parsing megabytes of JSON."""
-    if not cwd or not aifeatures.enabled("graph"):
+    if not cwd or not aifeatures.enabled("graph") or not repo_on(cwd):
         return ""
     path = _graph_json(cwd)
     try:

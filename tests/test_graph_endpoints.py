@@ -79,3 +79,26 @@ def test_graph_update_endpoint(monkeypatch):
     h, box = _handler()
     h._post_api("/local/graph/update", {"project": name})
     assert box["code"] == 200 and box["obj"]["building"] is True
+
+
+def test_project_settings_carry_the_map_switch(monkeypatch):
+    name, d = _mkproject("proj_mapswitch")
+    h, box = _handler()
+    h._get_api("/local/project/settings", {"project": [name]})
+    assert box["code"] == 200 and box["obj"]["map"] is False
+    h._post_api("/local/project/settings", {"project": name, "map": True})
+    assert box["obj"]["map"] is True
+    h._get_api("/local/project/settings", {"project": [name]})
+    assert box["obj"]["map"] is True
+
+
+def test_branch_status_endpoint(monkeypatch):
+    name, d = _mkproject("proj_branches")
+    h, box = _handler()
+    from bridge import git
+    monkeypatch.setattr(git, "branch_status", lambda cwd: {"base": "main", "branches": [], "cwd": cwd})
+    h._get_api("/local/git/branchstatus", {"project": [name]})
+    assert box["code"] == 200 and box["obj"]["base"] == "main"
+    assert os.path.realpath(box["obj"]["cwd"]) == os.path.realpath(d)
+    h._get_api("/local/git/branchstatus", {"project": ["../../etc"]})
+    assert box["code"] == 400

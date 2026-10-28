@@ -750,7 +750,70 @@ def merged_branches(cwd: str, base: str = "") -> list[str]:
     rc, out, _ = _run(cwd, "branch", f"--merged={base}", "--format=%(refname:short)")
     if rc != 0:
         return []
-    return [b for b in (x.strip() for x in out.splitlines()) if b and b != base]
+    # A detached checkout lists as "(HEAD detached at …)": not a branch.
+    return [b for b in (x.strip() for x in out.splitlines()) if b and b != base and not b.startswith("(")]
+
+
+def _left_right(cwd: str, base: str, ref: str) -> tuple[int, int]:
+    """(ahead, behind) of `ref` against `base`; (0, 0) when git can't say."""
+    rc, out, _ = _run(cwd, "rev-list", "--left-right", "--count", f"{base}...{ref}")
+    parts = out.split() if rc == 0 else []
+    return (int(parts[1]), int(parts[0])) if len(parts) == 2 else (0, 0)
+
+
+def branch_status(cwd: str) -> dict:
+    """Every local branch, and every detached checkout, with what it has against
+    the default branch: the dashboard's BRANCHES tab in one call.
+
+    A row: `name` ("" for a detached checkout, which carries `head`), `at` (last
+    commit, epoch s), `ahead`/`behind` against the base, `upstream` with
+    `unpushed` (its commits the remote lacks; None when it was never pushed or
+    its remote branch is gone), `worktree` (the checkout holding it, else None),
+    `main` (that checkout is the repo folder itself), `dirty` (uncommitted files
+    there, None without a checkout) and `merged` (contained in the base).
+
+    One `for-each-ref` for the names, dates and upstreams, then a rev-list per
+    branch and a status per checkout. ponytail: a repo with hundreds of
+    branches pays one git call each; fold them into one `rev-list` if that bites."""
+    if not is_repo(cwd):
+        return {"base": "", "branches": []}
+    base = default_branch(cwd)
+    trees = worktrees(cwd)
+    held = {w["branch"]: w for w in trees if w["branch"]}
+    merged = set(merged_branches(cwd, base))
+
+    def dirty(path: str) -> int:   # porcelain v2: "#" lines are the branch header
+        return sum(1 for ln in (_porcelain(path) or "").splitlines() if ln and not ln.startswith("#"))
+
+    fmt = "%(refname:short)%09%(committerdate:unix)%09%(upstream:short)%09%(upstream:track,nobracket)"
+    rc, out, _ = _run(cwd, "for-each-ref", f"--format={fmt}", "--sort=-committerdate", "refs/heads")
+    rows: list[dict] = []
+    for line in out.splitlines() if rc == 0 else []:
+        name, at, up, track = (line.split("\t") + ["", "", "", ""])[:4]
+        if not name:
+            continue
+        gone = track.strip() == "gone"
+        m = re.search(r"ahead (\d+)", track)
+        ahead, behind = _left_right(cwd, base, name)
+        w = held.get(name)
+        rows.append({
+            "name": name, "at": int(at or 0), "ahead": ahead, "behind": behind,
+            "upstream": "" if gone else up,
+            "unpushed": None if (gone or not up) else (int(m.group(1)) if m else 0),
+            "worktree": w["path"] if w else None, "main": bool(w and w["is_main"]),
+            "dirty": dirty(w["path"]) if w else None, "merged": name in merged,
+        })
+    for w in trees:
+        if not w["detached"]:
+            continue
+        ahead, behind = _left_right(cwd, base, w["head"])
+        rc, at, _ = _run(cwd, "log", "-1", "--format=%ct", w["head"])
+        rows.append({
+            "name": "", "head": w["head"][:7], "at": int(at.strip() or 0) if rc == 0 else 0,
+            "ahead": ahead, "behind": behind, "upstream": "", "unpushed": None,
+            "worktree": w["path"], "main": w["is_main"], "dirty": dirty(w["path"]), "merged": False,
+        })
+    return {"base": base, "branches": rows}
 
 
 def checkout(cwd: str, ref: str) -> tuple[bool, str]:
