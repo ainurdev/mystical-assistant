@@ -1723,7 +1723,7 @@ export const api = {
   state: () => req<DashState>("/local/state"),
   update: () => req<UpdateInfo>("/local/update"),
   applyUpdate: () =>
-    req<{ ok: boolean; output: string }>("/local/update", { method: "POST", body: {} }),
+    req<{ ok: boolean; output: string; pulled?: boolean }>("/local/update", { method: "POST", body: {} }),
   publishUpdate: () =>
     req<{ ok: boolean; output: string; message: string }>(
       "/local/update/publish", { method: "POST", body: {} }),

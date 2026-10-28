@@ -1506,8 +1506,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/update":
             # pull the platform's new commits; on success the bridge restarts
             # shortly after this response flushes.
-            ok, output = selfupdate.update()
-            return self._json({"ok": ok, "output": output})
+            ok, output, pulled = selfupdate.update()
+            return self._json({"ok": ok, "output": output, "pulled": pulled})
         if path == "/local/update/publish":
             return self._publish_update(chat)
         if path.startswith("/local/move/"):
