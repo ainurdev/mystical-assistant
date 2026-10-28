@@ -214,6 +214,17 @@ const edgeChip = (c: string, l: string) => (
                  fontSize: "var(--t10)", fontWeight: 700, color: c, background: `color-mix(in srgb, ${c} 16%, transparent)` }}>{l}</span>
 );
 
+/** A project's state where its rows can't be seen (a shut head, a rail tile): the
+ *  rows' own dots, green pulsing while a turn runs, amber when one waits on you. No
+ *  counts — open the project and its rows say how many. */
+const stateWords = (n: Partial<Record<LaneKey, number>>) => [n.work && "working", n.ask && "needs you"].filter(Boolean).join(", ");
+const stateDots = (n: Partial<Record<LaneKey, number>>) => (n.work || n.ask) ? (
+  <span className="pstate" role="img" aria-label={stateWords(n)}>
+    {!!n.work && <span className="sessdot" data-work="true" />}
+    {!!n.ask && <span />}
+  </span>
+) : null;
+
 function SessionRow({
   s, i, on, v, st, flag, wait, shots, branch, pinned, showDot, showProj, detail, pulse, onPin, onAttach,
 }: {
@@ -719,8 +730,8 @@ export function SessionsPanel(props: Props) {
     return lift(f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id) || laneOf(s) !== "idle" || flags.has(s.id) || !!unseen.get(s.id)));
   };
   // How many of a project's sessions sit in each lane, every session, not the
-  // rows showing: a shut head's amber wash and the rail's ask badge and New dot
-  // read it. No head prints the counts — the rows under it already say so.
+  // rows showing: a shut head's dots and amber wash and the rail's dots and New
+  // dot read it. No head prints the counts — the rows under it already say so.
   const tallyOf = (f: SessionBrief[]) => {
     const n: Partial<Record<LaneKey, number>> = {};
     for (const s of f) { const k = laneOf(s); n[k] = (n[k] ?? 0) + 1; }
@@ -901,10 +912,10 @@ export function SessionsPanel(props: Props) {
 
 
   // FOLDED: the column is a rail of the projects you are working in — any with
-  // a session busy or touched this week, and the open one's — each wearing its
-  // tally as a badge: a question in amber, else how many are running, and a dot
-  // for a finish you haven't opened. A tile opens its rows beside it; anything
-  // more unfolds the panel.
+  // a session busy or touched this week, and the open one's — each wearing a
+  // shut head's dots in its corner (a turn running, a question) and a dot for a
+  // finish you haven't opened. A tile opens its rows beside it; anything more
+  // unfolds the panel.
   if (asRail) {
     const cur = sessions.find((x) => x.id === selectedSessionId);
     const openRel = cur ? jobGroup(cur) : activeProject;
@@ -940,13 +951,13 @@ export function SessionsPanel(props: Props) {
             const n = tallyOf(rowsOf(g));
             return (
               <button
-                key={g.rel} className="srail-tile" aria-label={g.name}
+                key={g.rel} className="srail-tile" aria-label={[g.name, stateWords(n)].filter(Boolean).join(", ")}
                 data-on={g.rel === openRel} data-hot={fly?.rel === g.rel}
                 onMouseEnter={(e) => peek(g.rel, e.currentTarget)} onMouseLeave={unpeek}
                 onClick={(e) => (fly?.rel === g.rel ? setFly(null) : peek(g.rel, e.currentTarget, 0))}
               >
                 {tile(g)}
-                {!!n.ask && <span className="srail-bd">{n.ask}</span>}
+                {stateDots(n)}
                 {!!n.done && <span className="srail-new" />}
               </button>
             );
@@ -1223,7 +1234,7 @@ export function SessionsPanel(props: Props) {
                     title={order === "custom" && !sq
                       ? `${g.rel} — drag to reorder, click to ${isShut ? "expand" : "collapse"}`
                       : `${g.rel} · ${sq ? `${f.length} of ${g.sessionCount} match` : `${g.sessionCount} sessions`} — click to ${isShut ? "expand" : "collapse"}`}
-                    style={{ display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", userSelect: "none",
+                    style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", userSelect: "none",
                              cursor: order === "custom" && !sq ? "grab" : "pointer",
                              // shut on a question: the head is the only thing left to say so
                              background: isShut && n.ask ? "color-mix(in srgb, var(--warn) 9%, transparent)" : undefined }}
@@ -1234,6 +1245,8 @@ export function SessionsPanel(props: Props) {
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
                     <span style={{ flex: 1, minWidth: 6 }} />
+                    {/* shut, its rows can't say what they're doing; New's open form owns the spot */}
+                    {isShut && !actOn && stateDots(n)}
                     {/* A teammate started Shared's; there is nothing of yours to open or start there. */}
                     {!shared && <button
                       onClick={(e) => { e.stopPropagation(); if (jobs) toggleLog(g.rel); else toggleNs(g.rel); }}

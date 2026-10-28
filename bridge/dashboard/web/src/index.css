@@ -457,6 +457,17 @@ body {
 .sessdot[data-work="true"] {
   animation: workpulse 1.8s ease-out infinite;
 }
+/* A project's state where its rows can't be seen (SessionsPanel stateDots): the rows'
+   own dots. On a shut head they sit where + New shows on hover and step aside for it,
+   so nothing moves; on a rail tile they are its corner badge. */
+.pstate { display: flex; align-items: center; gap: 7px; pointer-events: none; }
+.pstate > span { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); box-shadow: 0 0 7px color-mix(in srgb, var(--warn) 40%, transparent); }
+.pstate > .sessdot { background: var(--ok); box-shadow: 0 0 7px color-mix(in srgb, var(--ok) 40%, transparent); }
+.projhead .pstate { position: absolute; right: 12px; top: 0; bottom: 0; transition: opacity 0.15s ease; }
+.projgrp:hover .projhead .pstate,
+.projgrp:focus-within .projhead .pstate {
+  opacity: 0;
+}
 .panel {
   position: relative;
 }
@@ -6904,11 +6915,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 6px 0; margin: -6px 0;
 }
 .srail-sep { flex: none; width: 24px; height: 1px; margin: 4px 0; background: color-mix(in srgb, var(--acc) 14%, transparent); }
-.srail-bd {
-  position: absolute; right: -4px; bottom: -4px; min-width: 15px; height: 15px; padding: 0 4px; box-sizing: border-box; border-radius: 8px;
-  display: grid; place-items: center; font-family: var(--ui-font); font-size: 9px; font-weight: 800; line-height: 1;
-  color: var(--acc-on); background: var(--warn); box-shadow: 0 0 0 2px var(--side, var(--canvas));
-}
+.srail-tile .pstate { position: absolute; right: -3px; bottom: -3px; gap: 3px; }
+.srail-tile .pstate > span { width: 9px; height: 9px; outline: 2px solid var(--side, var(--canvas)); }
 .srail-new { position: absolute; right: -3px; top: -3px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--side, var(--canvas)); }
 .srail-fly {
   position: fixed; z-index: 60; width: 318px; max-height: calc(100vh - 24px); overflow-y: auto; box-sizing: border-box;
