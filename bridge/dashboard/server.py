@@ -1680,6 +1680,12 @@ class Handler(BaseHTTPRequestHandler):
             # store and starts/stops/rewires to match.
             rivendell.reconfigure()
             return self._json({"ok": True, "instance": inst})
+        if path == "/local/workspaces/prefs":
+            # A window switched workspace, or the switch's look changed.
+            try:
+                return self._json(workspaces.set_prefs(body.get("last"), body.get("display")))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
         if path == "/local/workspaces":
             # The WORKSPACES settings tab saves the whole set at once.
             try:

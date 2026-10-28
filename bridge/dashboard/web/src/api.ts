@@ -352,8 +352,11 @@ export interface ProjectMark {
 /** A sidebar workspace (bridge/workspaces.py). `image` is a stored picture's name. */
 export interface Workspace { id: string; name: string; image: string | null }
 /** Every workspace, DEFAULT first, and which one each sidebar group key is in;
- *  a key not in `assign` is DEFAULT's. */
-export interface WorkspaceSet { workspaces: Workspace[]; assign: Record<string, string> }
+ *  a key not in `assign` is DEFAULT's. `last`: the workspace picked last in any
+ *  window, the one a new window opens on. `display`: the switch as one button
+ *  and a menu, or a row of buttons. */
+export type WorkspaceDisplay = "menu" | "row";
+export interface WorkspaceSet { workspaces: Workspace[]; assign: Record<string, string>; last: string; display: WorkspaceDisplay }
 /** Where a workspace's picture is served; named by its hash, like a logo. */
 export const workspaceImageUrl = (name: string) => `/local/workspaces/image/${encodeURIComponent(name)}`;
 
@@ -2168,6 +2171,8 @@ export const api = {
       body: { ...ctx, ...patch },
     }),
   workspaces: () => req<WorkspaceSet>("/local/workspaces"),
+  workspacePrefs: (body: { last?: string; display?: WorkspaceDisplay }) =>
+    req<WorkspaceSet>("/local/workspaces/prefs", { method: "POST", body }),
   /** The whole set at once. `images`: {workspace id: base64} for pictures picked in this edit. */
   saveWorkspaces: (body: { workspaces: Workspace[]; assign: Record<string, string>; images?: Record<string, string> }) =>
     req<WorkspaceSet>("/local/workspaces", { method: "POST", body }),

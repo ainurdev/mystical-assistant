@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent as RMouseEvent } from "react";
 import { Check, Settings2 } from "lucide-react";
 import { workspaceImageUrl, type Workspace } from "../../api";
 import { switchWorkspace, useWorkspaces } from "../../lib/workspaces";
@@ -21,7 +21,12 @@ export function WorkspaceAvatar({ ws, size = 22 }: { ws: Workspace; size?: numbe
 /** The sidebar's workspace switch, in Brand's cap beside the fold. A click
  *  lists the workspaces to switch to; a right-click (or MANAGE) opens their
  *  settings page. With only DEFAULT it is still there: it's how you find the
- *  page that adds the second. */
+ *  page that adds the second.
+ *
+ *  ROW (the page's SWITCHER) draws every workspace as its own button instead,
+ *  the current one ringed: a click switches, a right-click still manages. The
+ *  row scrolls sideways once it outgrows the cap rather than pushing the fold
+ *  off it. */
 export function WorkspaceButton({ onManage }: { onManage: () => void }) {
   const { set, cur } = useWorkspaces();
   const [open, setOpen] = useState(false);
@@ -40,6 +45,19 @@ export function WorkspaceButton({ onManage }: { onManage: () => void }) {
   const here = list.find((w) => w.id === cur) ?? list[0];
   const count = (id: string) => Object.values(set?.assign ?? {}).filter((v) => v === id).length;
   const manage = () => { setOpen(false); onManage(); };
+  const onCtx = (e: RMouseEvent) => { e.preventDefault(); e.stopPropagation(); manage(); };
+
+  if (set?.display === "row" && list.length > 1) return (
+    <span className="wsrow" role="radiogroup" aria-label="Workspaces">
+      {list.map((w) => (
+        <button key={w.id} type="button" className="wsbtn" role="radio" aria-checked={w.id === here.id}
+          title={`${w.name} — right-click to manage workspaces`}
+          onClick={() => switchWorkspace(w.id)} onContextMenu={onCtx}>
+          <WorkspaceAvatar ws={w} size={20} />
+        </button>
+      ))}
+    </span>
+  );
 
   return (
     <span ref={wrap} className="wsbtn-wrap">
@@ -47,7 +65,7 @@ export function WorkspaceButton({ onManage }: { onManage: () => void }) {
         title={`Workspace: ${here.name} — click to switch, right-click to manage`}
         onClick={() => setOpen((o) => !o)}
         // Stopped here: the dashboard's own right-click menu would open over the page.
-        onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); manage(); }}>
+        onContextMenu={onCtx}>
         <WorkspaceAvatar ws={here} />
       </button>
       {open && (

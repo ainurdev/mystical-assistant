@@ -57,7 +57,8 @@ PERSONAL = {"id": "w-pers1", "name": "Personal", "image": None}
 
 def test_nothing_stored_is_one_default_workspace_and_no_assignments():
     assert workspaces.listing() == {
-        "workspaces": [{"id": "default", "name": "Default", "image": None}], "assign": {}}
+        "workspaces": [{"id": "default", "name": "Default", "image": None}], "assign": {},
+        "last": "default", "display": "menu"}
 
 
 def test_a_workspace_takes_projects_and_default_stays_first():
@@ -118,3 +119,24 @@ def test_routes_list_save_and_serve():
     assert pic["code"] == 200 and pic["wfile"].getvalue() == PNG
     assert dget("/local/workspaces/image/" + "0" * 64 + ".png")["code"] == 404
     assert dpost("/local/workspaces", {"workspaces": "x", "assign": {}})["code"] == 400
+
+
+def test_the_last_pick_and_the_display_are_kept_and_checked():
+    workspaces.save([PERSONAL], {})
+    got = workspaces.set_prefs(last="w-pers1", display="row")
+    assert (got["last"], got["display"]) == ("w-pers1", "row")
+    # a save of the sets keeps them
+    assert workspaces.save([PERSONAL], {"/a": "w-pers1"})["last"] == "w-pers1"
+    with pytest.raises(ValueError, match="no such workspace"):
+        workspaces.set_prefs(last="w-gone1")
+    with pytest.raises(ValueError, match="display must be"):
+        workspaces.set_prefs(display="grid")
+    # the workspace picked last is deleted: windows open on Default
+    assert workspaces.save([], {})["last"] == "default"
+
+
+def test_prefs_route():
+    workspaces.save([PERSONAL], {})
+    r = dpost("/local/workspaces/prefs", {"last": "w-pers1"})
+    assert r["code"] == 200 and r["obj"]["last"] == "w-pers1" and r["obj"]["display"] == "menu"
+    assert dpost("/local/workspaces/prefs", {"display": "nope"})["code"] == 400

@@ -8,7 +8,11 @@ project nobody assigned. With no workspace added, nothing changes.
 What's stored here is the *sets*, in workspaces.json beside the DB, so every
 browser, the installed app and Mystical.app agree on what Personal holds. Which
 workspace a window is *on* is that window's (lib/workspaces.ts): two windows
-can look at two workspaces, the way two Zen windows can.
+can look at two workspaces, the way two Zen windows can. The last one picked
+in any window is kept here too (`last`), and a window opens on it: kept by the
+browser alone it was lost between localhost and 127.0.0.1, which Chrome stores
+apart, and between the installed app and a tab on the other address. So is
+how the switch draws (`display`): one button and a menu, or a row of buttons.
 
 Only the dashboard's sidebar reads this. The Telegram bot, the Mini App and
 the rest of the dashboard (⌘K, NEXT UP, the transcript) list every
@@ -43,6 +47,7 @@ _lock = threading.RLock()
 _PATH = os.path.join(os.path.dirname(config.BRIDGE_DB), "workspaces.json")
 
 DEFAULT = "default"
+DISPLAYS = ("menu", "row")
 IMAGE_MAX = 512 * 1024
 NAME_MAX = 40
 _ID_RE = re.compile(r"^(default|w-[a-z0-9]{4,24})$")
@@ -81,11 +86,14 @@ def _shown(d: dict) -> dict:
     ids = {w["id"] for w in out}
     assign = {k: v for k, v in (d.get("assign") or {}).items()
               if isinstance(k, str) and v in ids and v != DEFAULT}
-    return {"workspaces": out, "assign": assign}
+    last = d.get("last") if d.get("last") in ids else DEFAULT
+    display = d.get("display") if d.get("display") in DISPLAYS else DISPLAYS[0]
+    return {"workspaces": out, "assign": assign, "last": last, "display": display}
 
 
 def listing() -> dict:
-    """{workspaces: [{id, name, image}], assign: {group key: workspace id}}."""
+    """{workspaces: [{id, name, image}], assign: {group key: workspace id},
+    last: the workspace picked last, display: "menu" | "row"}."""
     with _lock:
         return _shown(_load())
 
@@ -113,6 +121,24 @@ def _put_image(d: dict, b64: str) -> str:
     name = f"{hashlib.sha256(data).hexdigest()}.{ext}"
     d.setdefault("images", {})[name] = base64.b64encode(data).decode()
     return name
+
+
+def set_prefs(last=None, display=None) -> dict:
+    """The last workspace picked, and how the switch draws. Either may be left
+    out. An unknown workspace or display is refused, so a stale window can't
+    point every other one at a workspace that's gone."""
+    with _lock:
+        d = _load()
+        if last is not None:
+            if last not in {w["id"] for w in _shown(d)["workspaces"]}:
+                raise ValueError("no such workspace")
+            d["last"] = last
+        if display is not None:
+            if display not in DISPLAYS:
+                raise ValueError(f"display must be one of {', '.join(DISPLAYS)}")
+            d["display"] = display
+        _save(d)
+        return _shown(d)
 
 
 def save(workspaces, assign, images=None) -> dict:
