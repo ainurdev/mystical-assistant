@@ -1903,8 +1903,7 @@ export function App() {
     toChat();
   }
 
-  async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string,
-                                 firstPrompt?: string) {
+  async function worktreeSession(rel: string, branch: string, create: boolean, parent?: string) {
     openBlank(rel);
     // `git worktree add` checks out the whole tree — seconds on a big repo, spent
     // on a blank chat that says nothing about what it's waiting for. Same boot
@@ -1914,9 +1913,6 @@ export function App() {
       const wt = await api.worktreeAdd(rel, branch, parent, create);
       if (!wt.ok) { setBoot(null); setLoadingSession(false); notify("error", wt.output || "worktree failed"); return; }
       setBoot(`moving into ${wt.rel}`);
-      // With a prompt this is startIn's job — it already opens a session in a
-      // given cwd and addresses the run to it by id.
-      if (firstPrompt) { await startIn(rel, firstPrompt, { cwd: wt.path }); return; }
       const { session } = await api.createSession(rel, wt.path);
       await loadSessions();
       openSession(session.id, true);
@@ -2365,7 +2361,6 @@ export function App() {
 
   const ctxItems: CtxItem[] = useMemo(() => {
     if (!ctxMenu) return [];
-    const cproj = analyzeProject || activeProject || "";
     // Copy / open link / image act on what was under the cursor, so they lead.
     // An edit box has its own Copy, so the selection rows would only repeat it.
     const items: CtxItem[] = nativeCtx.top.length && ctxMenu.type !== "editor" ? [...nativeCtx.top, { divider: true }] : [];
@@ -2474,17 +2469,13 @@ export function App() {
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
       items.push({ icon: "⊞", label: "Analyze project", onClick: () => openAnalyze(ctxMenu.id) });
-      // The chat header's project name opens this menu; its DESIGN SYSTEM and
-      // TASKS links folded in here.
+      // The chat header's project name opens this menu; its DESIGN SYSTEM link
+      // folded in here.
       if (plugins.design)
         items.push({ icon: "◇", label: "Design system", hint: "link · pull · sync",
           onClick: () => openAnalyze(ctxMenu.id, undefined, "design") });
-      if (plugins.trackers)
-        items.push({ icon: "⌁", label: "Tasks", hint: "Teamwork · Jira",
-          onClick: () => openAnalyze(ctxMenu.id, undefined, "tasks") });
       items.push({ icon: "◉", label: "Select as active", onClick: () => void selectProject(ctxMenu.id) });
       items.push({ icon: "+", label: "New session here", onClick: () => void newSession(ctxMenu.id) });
-      items.push({ icon: "◎", label: "Open issues", onClick: () => openAnalyze(ctxMenu.id) });
       // SETTINGS ▸ Projects' sidebar switch, flipped from here; the pill says where it flips back.
       if (!hiddenProjects[ctxMenu.id])
         items.push({ icon: "⊖", label: "Hide project", hint: "from the sidebar", onClick: () => {
@@ -2494,10 +2485,6 @@ export function App() {
             actions: [{ label: "Open Settings", primary: true, run: () => openSettings("projects", ctxMenu.id) }],
           });
         } });
-      items.push({ divider: true });
-    } else if (ctxMenu.type === "issue") {
-      items.push({ icon: "▸", label: "Feed to Claude", onClick: () => feed([`Address issue #${ctxMenu.id} in ${cproj}`], cproj) });
-      items.push({ icon: "⧉", label: "Copy issue ref", onClick: () => copy(`${cproj}#${ctxMenu.id}`) });
       items.push({ divider: true });
     } else if (ctxMenu.type === "turn") {
       // The turn the cursor was inside — its prompt, and whatever the agent
@@ -2984,7 +2971,7 @@ export function App() {
                 activeSession={selected?.id}
                 onClose={() => setAnalyzeProject(null)} onFeed={feed}
                 onSelectSession={(s) => { void selectSession(s); setAnalyzeProject(null); toChat(); }}
-                onWorktreeSession={(rel, branch, create, parent, firstPrompt) => { void worktreeSession(rel, branch, create, parent, firstPrompt); setAnalyzeProject(null); }}
+                onWorktreeSession={(rel, branch, create, parent) => { void worktreeSession(rel, branch, create, parent); setAnalyzeProject(null); }}
                 onPushFailed={(branch, output) => { setAnalyzeProject(null); pushFailedSession(analyzeProject, branch, output); }}
                 // GIT tab review notes. The chat goes to where they went, so you
                 // see the agent pick them up. A session mid-turn queues them.

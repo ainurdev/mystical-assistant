@@ -466,28 +466,6 @@ export interface GrepHit {
 }
 export type FileOp = "new" | "newdir" | "rename" | "delete";
 
-export interface GitHubLabel {
-  name: string;
-  color: string;
-}
-export interface Issue {
-  number: number;
-  title: string;
-  url: string;
-  updated: string;
-  body: string;
-  labels: GitHubLabel[];
-}
-export interface IssuesInfo {
-  has_remote: boolean;
-  slug: string | null;
-  gh_ok: boolean;
-  error: string;
-  open_count: number;
-  closed_count: number;
-  issues: Issue[];
-}
-
 /** One CI check on a PR (bridge/prstatus.py). Skipped checks are left out. */
 export interface PrCheck {
   name: string;
@@ -571,39 +549,6 @@ export interface TrackerConnection {
   mcp: boolean;        // that entry exists in ~/.claude.json
   mcp_cmd: string;     // how to add it when it doesn't
 }
-export interface TrackerTask {
-  key: string;         // "ACME-12" | "tw-4512"
-  title: string;
-  status: string;
-  due: string;         // YYYY-MM-DD or ""
-  priority: string;
-  assignee: string;
-  mine: boolean;
-  url: string;
-  updated: string;
-  description: string;
-}
-export interface TrackerNext { kind: string; name: string; date: string }
-export interface TrackerTasks {
-  linked: boolean;
-  kind: "teamwork" | "jira" | "";
-  name: string;
-  label: string;
-  url: string;
-  me: string;
-  read: number | null;
-  stale: boolean;
-  error: string;
-  open: number;
-  done: number | null;
-  overdue: number;
-  due_week: number;
-  next: TrackerNext[];
-  tasks: TrackerTask[];
-  /** the task the given session's branch names, when a session_id was passed */
-  session_key?: string;
-}
-export interface TrackerStatus { id: string; name: string }
 
 // --- rivendell instances (PR-review plugin — bridge/rivendell_instances.py) ---
 /** Live connection status of one instance's websocket worker. */
@@ -2172,13 +2117,6 @@ export const api = {
   designPrompt: (ctx: RunCtx, kind: "link" | "pull" | "push", name?: string) =>
     req<{ prompt?: string; error?: string }>(
       `/local/design/prompt?kind=${kind}&${ctxQuery(ctx)}${name ? `&name=${encodeURIComponent(name)}` : ""}`),
-  issues: (project: string) =>
-    req<IssuesInfo>(`/local/github/issues?project=${encodeURIComponent(project)}`),
-  createIssue: (project: string, title: string, body: string) =>
-    req<{ ok: boolean; output: string }>("/local/github/issue", {
-      method: "POST",
-      body: { project, title, body },
-    }),
   // The chat header's PR chip. `force` (focus, a push) still has a 10s floor
   // in the bridge. `session` is only used for the Telegram ping's button.
   prStatus: (project: string, branch: string, session?: string, force = false) =>
@@ -2270,19 +2208,6 @@ export const api = {
   // when it isn't the run going here, or from an older bridge that has no route.
   stopDeviceRun: (session: string) =>
     req<{ ok: boolean }>("/local/device-runs/stop", { method: "POST", body: { session } }),
-  trackerProjects: (conn: string) =>
-    req<{ projects: { id: string; name: string }[] }>(`/local/tracker/projects?conn=${encodeURIComponent(conn)}`),
-  trackerTasks: (project: string, sessionId?: string | null) =>
-    req<TrackerTasks>(`/local/tracker/tasks?project=${encodeURIComponent(project)}${
-      sessionId ? `&session_id=${encodeURIComponent(sessionId)}` : ""}`),
-  trackerStatuses: (project: string, key: string) =>
-    req<{ statuses: TrackerStatus[] }>(
-      `/local/tracker/statuses?project=${encodeURIComponent(project)}&key=${encodeURIComponent(key)}`),
-  /** The update turn: a comment (and a status) posted from the session's own
-   *  context, every write behind an Allow card. */
-  trackerUpdate: (body: { project: string; session_id: string; key: string; status_id?: string;
-                          status_name?: string; note?: string }) =>
-    req<{ job_id: string; session_id: string }>("/local/tracker/update", { method: "POST", body }),
   // --- host vitals + weather (WORKSPACE panel ambient widgets) ---
   sysinfo: () => req<HostStats>("/local/sysinfo"),
   weather: () => req<Weather>("/local/weather"),

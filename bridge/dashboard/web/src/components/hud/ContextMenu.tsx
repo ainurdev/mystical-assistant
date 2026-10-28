@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 export interface CtxState {
   x: number;
   y: number;
-  type: string; // session | project | issue | branch | terminal | surface
+  type: string; // session | project | branch | terminal | surface
   id: string;
   label: string;
 }

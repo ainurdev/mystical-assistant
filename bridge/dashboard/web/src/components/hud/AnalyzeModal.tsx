@@ -5,28 +5,20 @@ import {
   type DevServerInfo,
   type GitBadge,
   type GitStatus,
-  type Issue,
-  type IssuesInfo,
   type SessionBrief,
   type SessionStatus,
   type TermInfo,
-  type TrackerConnection,
-  type TrackerStatus,
-  type TrackerTask,
-  type TrackerTasks,
   type Worktree,
 } from "../../api";
 import { useAiFeatures } from "../../lib/ai";
 import { useIntegrations } from "../../lib/integrations";
 import { parseDiff, type DiffRow } from "../../lib/diff";
-import { branchForIssue, branchForTask, keyFromBranch } from "../../lib/issuebranch";
-import { ContextMenu, type CtxItem } from "./ContextMenu";
 import { useStickyFlag } from "../../lib/prefs";
 import {
   countByPath, loadNotes, noteRange, notesKey, notesMessage, reanchor, saveNotes,
   type Note, type NoteDraft, type SendTo,
 } from "../../lib/reviewnotes";
-import { ago, projectName, projectTint } from "../../lib/surfaces";
+import { projectName, projectTint } from "../../lib/surfaces";
 import { ProjectTile } from "../ui/ProjectTile";
 import { CommitGraph } from "../CommitGraph";
 import { askConfirm } from "../ui/Ask";
@@ -42,17 +34,17 @@ import MarkEditor from "./MarkEditor";
 
 /* PROJECT ANALYSIS modal — matches the HUD design mock (hud.dc.html lines
    530–1258): header with the project's mark (its tile opens MarkEditor), tab bar (EDITOR / GIT /
-   WORKTREES / TERMINAL / ISSUES), and per-tab bodies. */
+   WORKTREES / TERMINAL), and per-tab bodies. */
 
-export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "design" | "issues" | "tasks" | "map" | "learn";
+export type Tab = "changes" | "worktrees" | "editor" | "terminal" | "skills" | "design" | "map" | "learn";
 
 interface Props {
   project: string;
   badge?: GitBadge;
   sessions: SessionBrief[];
   status: Map<string, SessionStatus>;
-  /** The session open in the chat — what POST UPDATE runs in unless a session
-      already carries the task on its branch. */
+  /** The session open in the chat — where the GIT tab's review notes go when
+      it is on that branch. */
   activeSession?: string | null;
   // Deep-link from the sidebar FILES explorer: open straight into the editor
   // on this file, in the branch's worktree the explorer was listing.
@@ -67,10 +59,7 @@ interface Props {
   onClose: () => void;
   onFeed: (texts: string[], project?: string) => void;
   onSelectSession: (s: SessionBrief) => void;
-  /** `firstPrompt` is sent to the session the worktree gets, not the one you
-      were looking at — that is what makes SHIP IT one press instead of four. */
-  onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string,
-                      firstPrompt?: string) => void;
+  onWorktreeSession: (rel: string, branch: string, create: boolean, parent?: string) => void;
   /** GIT tab review notes → a session on the branch, or a new one in its tree. */
   onSendTo: SendTo;
   /** A push git refused → a new session on that branch, git's message as its
@@ -85,32 +74,15 @@ function name(rel: string): string {
   return projectName(rel);
 }
 
-function hexRgba(hex: string, a: number): string {
-  const h = hex.replace("#", "");
-  if (h.length < 6) return `rgba(159,199,192,${a})`;
-  const r = parseInt(h.slice(0, 2), 16);
-  const g = parseInt(h.slice(2, 4), 16);
-  const b = parseInt(h.slice(4, 6), 16);
-  return `rgba(${r},${g},${b},${a})`;
-}
-
 export function AnalyzeModal(props: Props) {
   const { project, badge } = props;
   const [hov, setHov] = useState("");
   const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
 
   const aiFeatures = useAiFeatures();   // MAP and LEARN hide with their switches
-  const plugins = useIntegrations();    // LINK TASKS / TASKS and DESIGN show while their plugin is installed
+  const plugins = useIntegrations();    // DESIGN shows while its plugin is installed
   const [tab, setTab] = useState<Tab>(props.initialTab ?? "editor");
   const [git, setGit] = useState<GitStatus | null>(null);
-  const [issues, setIssues] = useState<IssuesInfo | null>(null);
-  // the linked Teamwork / Jira project's tasks (bridge/trackers.py); null until read
-  const [tracker, setTracker] = useState<TrackerTasks | null>(null);
-  const [linkOpen, setLinkOpen] = useState(false);
-  const [conns, setConns] = useState<TrackerConnection[] | null>(null);
-  const [linkConn, setLinkConn] = useState("");
-  const [linkProjects, setLinkProjects] = useState<{ id: string; name: string }[] | null>(null);
-  const [linkErr, setLinkErr] = useState("");
   const [branches, setBranches] = useState<string[]>([]);
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
@@ -134,50 +106,16 @@ export function AnalyzeModal(props: Props) {
   const refreshBranches = () => {
     void api.branches(project).then((b) => { setBranches(b.branches); if (b.default) setDefaultBranch(b.default); }).catch(() => {});
   };
-  const refreshTracker = () => { void api.trackerTasks(project).then(setTracker).catch(() => {}); };
-
-  // LINK TASKS: connection → its projects → one of them, written as the repo's
-  // tracker link. Connections themselves are made in SETTINGS ▸ INTEGRATIONS ▸ TRACKERS.
-  function openLink() {
-    setLinkOpen(true); setLinkErr(""); setLinkConn(""); setLinkProjects(null);
-    void api.trackers().then((r) => setConns(r.connections)).catch((e) => { setConns([]); setLinkErr((e as Error).message); });
-  }
-  function pickConn(id: string) {
-    setLinkConn(id); setLinkProjects(null); setLinkErr("");
-    void api.trackerProjects(id).then((r) => setLinkProjects(r.projects)).catch((e) => { setLinkProjects([]); setLinkErr((e as Error).message); });
-  }
-  async function pickProject(p: { id: string; name: string }) {
-    try {
-      await api.setProjectSettings({ project }, { tracker: `${linkConn}:${p.id}`, tracker_label: p.name });
-      setLinkOpen(false);
-      refreshTracker();
-      setTab("tasks");
-    } catch (e) { setLinkErr((e as Error).message); }
-  }
-  async function unlink() {
-    await api.setProjectSettings({ project }, { tracker: "" }).catch(() => {});
-    setTracker(null);
-    refreshTracker();
-    if (tab === "tasks") setTab("editor");
-  }
 
   useEffect(() => {
     setSelectedBranch(props.initialBranch ?? "");
     setMarkOpen(false);
     refreshGit();
-    void api.issues(project).then(setIssues).catch(() => {});
     refreshBranches();
     refreshWt();
     void api.terminals(project).then((d) => setTermCount(d.terminals.length)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [project]);
-
-  // The tracker link is read only while Trackers is installed (its route 404s
-  // otherwise), and again when that answer lands after the modal opened.
-  useEffect(() => {
-    if (plugins.trackers) refreshTracker();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, plugins.trackers]);
 
   // default viewed branch → the checked-out branch
   useEffect(() => { const c = git?.branch || badge?.branch; if (c) setSelectedBranch((p) => p || c); }, [git, badge]);
@@ -194,7 +132,6 @@ export function AnalyzeModal(props: Props) {
     return st === "working" || st === "live";
   });
   const linkedWt = worktrees.filter((w) => !w.is_main).length;
-  const issueCount = issues?.open_count ?? 0;
 
   const branchOpts: BranchOpt[] = useMemo(() => {
     const list = branches.length ? branches : (cur ? [cur] : []);
@@ -206,9 +143,6 @@ export function AnalyzeModal(props: Props) {
     { k: "changes", l: "Git", badge: git?.dirty || undefined },
     { k: "worktrees", l: "Worktrees", badge: linkedWt || undefined },
     { k: "terminal", l: "Terminal", badge: termCount || undefined },
-    { k: "issues", l: "Issues", badge: issueCount || undefined },
-    // only a linked repo has a task list (the header's LINK TASKS makes one), and only while Trackers is installed
-    ...(plugins.trackers && tracker?.linked ? [{ k: "tasks" as Tab, l: "Tasks", badge: tracker.overdue || undefined }] : []),
     { k: "skills", l: "Skills" },
     ...(plugins.design ? [{ k: "design" as Tab, l: "Design" }] : []),
     // hidden while their AI switch is off — nothing is being built or written
@@ -244,59 +178,6 @@ export function AnalyzeModal(props: Props) {
             <span>↓{git?.behind ?? badge?.behind ?? 0}</span>
           </span>
           {live && <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 6px" }}>LIVE</span>}
-          {/* the tracker link: a chip when linked (✕ unlinks), LINK TASKS when not —
-              none of it while Trackers isn't installed */}
-          {plugins.trackers && (
-            <span style={{ position: "relative", flex: "none", display: "flex", alignItems: "center" }}>
-              {tracker?.linked ? (
-                <span title={`${tracker.name} · ${tracker.kind}${tracker.url ? ` · ${tracker.url}` : ""}`}
-                  style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--t9)", letterSpacing: 1, color: "var(--purple-h)", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", padding: "1px 4px 1px 7px" }}>
-                  ⌁ {tracker.label.toUpperCase()}
-                  <button onClick={() => void unlink()} title="unlink this repo from its tracker project" {...hp("unlink")}
-                    style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: hov === "unlink" ? "var(--err)" : "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", padding: "0 3px", lineHeight: 1 }}>✕</button>
-                </span>
-              ) : (
-                <button onClick={openLink} title="link this repo to a Teamwork or Jira project" {...hp("link")}
-                  style={{ appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "2px 8px", border: "1px solid color-mix(in srgb, var(--purple) 35%, transparent)", background: hov === "link" || linkOpen ? "color-mix(in srgb, var(--purple) 12%, transparent)" : "transparent", color: "var(--purple-h)" }}>
-                  ⌁ LINK TASKS
-                </button>
-              )}
-              {linkOpen && (
-                <div style={{ position: "absolute", top: "calc(100% + 7px)", left: 0, zIndex: 40, width: 300, border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 14px 40px var(--shadow-pop)", padding: 12, animation: "mslide .16s ease both" }}>
-                  <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
-                    <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)" }}>{linkConn ? "PROJECT" : "TRACKER"}</span>
-                    <span style={{ flex: 1 }} />
-                    <button onClick={() => setLinkOpen(false)} style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", padding: 0 }}>✕</button>
-                  </div>
-                  {conns === null && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>reading connections…</div>}
-                  {conns !== null && !linkConn && conns.length === 0 && (
-                    <div style={{ fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.6 }}>No tracker connected yet. Add Teamwork or Jira in SETTINGS ▸ INTEGRATIONS ▸ TRACKERS, then come back.</div>
-                  )}
-                  {!linkConn && conns?.map((c) => (
-                    <button key={c.id} onClick={() => pickConn(c.id)} {...hp(`conn:${c.id}`)}
-                      style={{ display: "flex", width: "100%", alignItems: "center", gap: 8, appearance: "none", cursor: "pointer", border: 0, background: hov === `conn:${c.id}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 4px", textAlign: "left" }}>
-                      <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--txl)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "0 5px" }}>{c.kind === "jira" ? "JIRA" : "TEAMWORK"}</span>
-                      {c.name}
-                    </button>
-                  ))}
-                  {linkConn && linkProjects === null && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>reading projects…</div>}
-                  {linkConn && linkProjects && (
-                    <div className="mscroll" style={{ maxHeight: 260, overflowY: "auto" }}>
-                      {linkProjects.length === 0 && !linkErr && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>No projects visible to this token.</div>}
-                      {linkProjects.map((p) => (
-                        <button key={p.id} onClick={() => void pickProject(p)} {...hp(`proj:${p.id}`)}
-                          style={{ display: "block", width: "100%", appearance: "none", cursor: "pointer", border: 0, background: hov === `proj:${p.id}` ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 4px", textAlign: "left" }}>
-                          {p.name} <span style={{ color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)" }}>{p.id}</span>
-                        </button>
-                      ))}
-                      <button onClick={() => { setLinkConn(""); setLinkProjects(null); }} style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "8px 4px 2px" }}>‹ TRACKERS</button>
-                    </div>
-                  )}
-                  {linkErr && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 6 }}>{linkErr}</div>}
-                </div>
-              )}
-            </span>
-          )}
           <span style={{ flex: 1 }} />
           <button onClick={() => setFull((v) => !v)} title={full ? "restore size" : "expand"} {...hp("full")}
             style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "full" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "3px 9px", lineHeight: 1.4 }}>{full ? "⤡" : "⤢"}</button>
@@ -336,22 +217,8 @@ export function AnalyzeModal(props: Props) {
             <TerminalTab project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount}
               initialCommand={props.initialCommand} />
           )}
-          {tab === "tasks" && (tracker?.linked ? (
-            <TasksTab project={project} data={tracker} sessions={props.sessions} activeSession={props.activeSession}
-              onFeed={(t) => props.onFeed(t, project)} onReload={refreshTracker}
-              onSelectSession={props.onSelectSession}
-              onShip={(t) => props.onWorktreeSession(project, branchForTask(t.key, t.title), true, undefined, taskText(tracker.kind, t))} />
-          ) : (
-            <div style={{ fontSize: "var(--t12)", color: "var(--txd)", padding: "6px 2px" }}>No tracker linked to this repo — ⌁ LINK TASKS in the header.</div>
-          ))}
           {tab === "skills" && <SkillsTab project={project} name={name(project)} />}
           {tab === "design" && <DesignTab project={project} onFeed={(t) => props.onFeed(t, project)} />}
-          {tab === "issues" && (
-            <IssuesTab project={project} info={issues} onFeed={(t) => props.onFeed(t, project)}
-              onShip={(i) => props.onWorktreeSession(
-                project, branchForIssue(i.number, i.title), true, undefined, issueText(i))}
-              onReload={() => void api.issues(project).then(setIssues).catch(() => {})} />
-          )}
           {tab === "map" && <MapTab project={project} />}
           {tab === "learn" && <LearnTab project={project} />}
         </div>
@@ -735,500 +602,6 @@ function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, i
       )}
     </div>
   );
-}
-
-/* ---------------- ISSUES: master-detail with select/feed + pagination (design 876–991) ---------------- */
-
-const ISSUES_PER_PAGE = 4;
-const NEW_ISSUE_LABELS = [
-  { name: "bug", color: "var(--err)" },
-  { name: "enhancement", color: "var(--purple)" },
-  { name: "p1", color: "var(--warn)" },
-  { name: "good first issue", color: "var(--ok)" },
-];
-
-function issueText(i: Issue): string {
-  return `Address issue #${i.number}: ${i.title}\n\n${i.body || ""}`;
-}
-
-function agoIso(iso: string): string {
-  const t = Date.parse(iso);
-  if (Number.isNaN(t)) return "—";
-  return ago(t / 1000) || "now";
-}
-
-function IssuesTab({ project, info, onFeed, onShip, onReload }: {
-  project: string; info: IssuesInfo | null; onFeed: (t: string[]) => void;
-  onShip: (i: Issue) => void; onReload: () => void;
-}) {
-  const [hov, setHov] = useState("");
-  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
-
-  const [open, setOpen] = useState<number | null>(null);
-  const [page, setPage] = useState(0);
-  const [sel, setSel] = useState<Set<number>>(new Set());
-  const [fed, setFed] = useState<Set<number>>(new Set());
-  const [banner, setBanner] = useState("");
-  const bannerT = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [newOpen, setNewOpen] = useState(false);
-  const [title, setTitle] = useState("");
-  const [label, setLabel] = useState("bug"); // TODO(phase2-data): createIssue has no labels param yet
-
-  useEffect(() => () => { if (bannerT.current) clearTimeout(bannerT.current); }, []);
-  function showBanner(m: string) {
-    setBanner(m);
-    if (bannerT.current) clearTimeout(bannerT.current);
-    bannerT.current = setTimeout(() => setBanner(""), 4500);
-  }
-
-  const issues = info?.issues ?? [];
-  const pageCount = Math.max(1, Math.ceil(issues.length / ISSUES_PER_PAGE));
-  const pageIdx = Math.min(page, pageCount - 1);
-  const pageIssues = issues.slice(pageIdx * ISSUES_PER_PAGE, pageIdx * ISSUES_PER_PAGE + ISSUES_PER_PAGE);
-  const selIssue = issues.find((i) => i.number === open) || null;
-  const selCount = sel.size;
-
-  function toggleSel(n: number) {
-    setSel((prev) => { const s = new Set(prev); if (s.has(n)) s.delete(n); else s.add(n); return s; });
-  }
-
-  function feedSelected() {
-    const picked = issues.filter((i) => sel.has(i.number));
-    if (!picked.length) return;
-    onFeed(picked.map(issueText));
-    setFed((f) => { const n = new Set(f); picked.forEach((i) => n.add(i.number)); return n; });
-    setSel(new Set());
-    showBanner(`Fed ${picked.length} issue${picked.length === 1 ? "" : "s"} to Claude`);
-  }
-
-  function feedOne(i: Issue) {
-    onFeed([issueText(i)]);
-    setFed((f) => new Set(f).add(i.number));
-    showBanner(`Fed #${i.number} to Claude`);
-  }
-
-  async function create() {
-    if (!title.trim()) return;
-    await api.createIssue(project, title.trim(), "");
-    setTitle(""); setNewOpen(false); onReload();
-  }
-
-  if (info && !info.has_remote) return <div style={{ fontSize: "var(--t12)", color: "var(--txd)", padding: "6px 2px" }}>No GitHub remote for this project.</div>;
-  if (info && !info.gh_ok) return <div style={{ fontSize: "var(--t12)", color: "var(--err)", padding: "6px 2px" }}>gh CLI unavailable: {info.error || "not authenticated"}.</div>;
-
-  return (
-    <div style={{ animation: "mslide .3s ease both" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11 }}>
-        <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)" }}>{info?.open_count ?? 0} OPEN ISSUES</span>
-        <span style={{ flex: 1 }} />
-        {selCount > 0 && (
-          <button onClick={feedSelected} {...hp("feedsel")}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "feedsel" ? "color-mix(in srgb, var(--ok) 22%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "4px 10px", display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ color: "var(--ok)" }}>▸</span>FEED {selCount} TO CLAUDE</button>
-        )}
-        <button onClick={() => setNewOpen((o) => !o)} {...hp("newissue")}
-          style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: hov === "newissue" ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "4px 10px", display: "flex", alignItems: "center", gap: 5 }}>
-          <span style={{ fontSize: "var(--t12)" }}>+</span>NEW ISSUE</button>
-      </div>
-
-      {banner && (
-        <div style={{ border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--ok) 8%, transparent)", color: "var(--ok)", fontSize: "var(--t105)", letterSpacing: ".5px", padding: "8px 11px", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, animation: "mslide .25s ease both" }}>
-          <span style={{ color: "var(--ok)" }}>▸</span>{banner}
-        </div>
-      )}
-
-      {newOpen && (
-        <div style={{ border: "1px solid color-mix(in srgb, var(--purple) 32%, transparent)", background: "color-mix(in srgb, var(--purple) 5%, transparent)", padding: "11px 12px", marginBottom: 10, animation: "mslide .2s ease both" }}>
-          <div style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>NEW ISSUE · {name(project)}</div>
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="describe the issue…"
-            style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t12)", padding: "7px 9px" }} />
-          <div style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txl)", margin: "9px 0 6px" }}>LABEL</div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-            {NEW_ISSUE_LABELS.map((l) => {
-              const on = label === l.name;
-              return (
-                <button key={l.name} onClick={() => setLabel(l.name)}
-                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${on ? `color-mix(in srgb, ${l.color} 60%, transparent)` : "color-mix(in srgb, var(--acc) 18%, transparent)"}`, background: on ? `color-mix(in srgb, ${l.color} 12%, transparent)` : "transparent", color: on ? "var(--txb)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: ".5px", padding: "4px 9px", display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: l.color }} />{l.name}</button>
-              );
-            })}
-          </div>
-          <div style={{ display: "flex", gap: 7, marginTop: 10 }}>
-            <button onClick={() => void create()} {...hp("createissue")}
-              style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "createissue" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 7 }}>CREATE ISSUE</button>
-            <button onClick={() => setNewOpen(false)} {...hp("cancelissue")}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "cancelissue" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "7px 12px" }}>CANCEL</button>
-          </div>
-        </div>
-      )}
-
-      {/* master-detail */}
-      <div style={{ display: "grid", gridTemplateColumns: "330px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", minHeight: 372 }}>
-        {/* LEFT: list */}
-        <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: 9 }}>
-            {pageIssues.map((i) => {
-              const isOpen = i.number === open;
-              const isSel = sel.has(i.number);
-              return (
-                <div key={i.number} onClick={() => setOpen(i.number)} data-ctx-type="issue" data-ctx-id={String(i.number)} data-ctx-label={`#${i.number}`} {...hp(`row:${i.number}`)}
-                  style={{ border: `1px solid ${isOpen ? "color-mix(in srgb, var(--acc) 40%, transparent)" : hov === `row:${i.number}` ? "color-mix(in srgb, var(--acc) 30%, transparent)" : isSel ? "color-mix(in srgb, var(--acc) 25%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)"}`, borderLeft: `2px solid ${isOpen ? "var(--acc)" : "transparent"}`, padding: "9px 10px", marginBottom: 7, cursor: "pointer", background: isOpen ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", display: "flex", gap: 9 }}>
-                  <span onClick={(e) => { e.stopPropagation(); toggleSel(i.number); }} title="select"
-                    style={{ width: 15, height: 15, border: `1px solid ${isSel ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: isSel ? "var(--acc)" : "transparent", flex: "none", marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--acc-on)", fontSize: "var(--t11)", fontWeight: 700, cursor: "pointer" }}>{isSel ? "✓" : ""}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
-                      <div style={{ fontSize: "var(--t12)", color: "var(--txh)", lineHeight: 1.35, flex: 1 }}>{i.title}</div>
-                      {fed.has(i.number) && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 5px", flex: "none" }}>✓</span>}
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "var(--t95)", color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace" }}>#{i.number}</span>
-                      {i.labels.slice(0, 2).map((l) => (
-                        <span key={l.name} style={{ fontSize: "var(--t85)", letterSpacing: ".5px", padding: "1px 6px", color: `#${l.color || "9fc7c0"}`, border: `1px solid ${hexRgba(l.color || "9fc7c0", 0.4)}` }}>{l.name}</span>
-                      ))}
-                      <span style={{ fontSize: "var(--t95)", color: "var(--txg)", marginLeft: "auto" }}>{agoIso(i.updated)}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            {issues.length === 0 && <div style={{ fontSize: "var(--t11)", color: "var(--txl)", padding: 6 }}>No open issues.</div>}
-          </div>
-          {pageCount > 1 && (
-            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "8px 9px", borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", flex: "none" }}>
-              <button onClick={() => setPage((p) => Math.max(0, p - 1))} {...hp("prev")}
-                style={{ appearance: "none", cursor: pageIdx > 0 ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "prev" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: pageIdx > 0 ? "var(--txm)" : "var(--txl)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1, padding: "5px 10px" }}>‹ PREV</button>
-              <span style={{ flex: 1, textAlign: "center", fontSize: "var(--t9)", letterSpacing: 1, color: "var(--txd)" }}>{pageIdx + 1} / {pageCount}</span>
-              <button onClick={() => setPage((p) => Math.min(pageCount - 1, p + 1))} {...hp("next")}
-                style={{ appearance: "none", cursor: pageIdx < pageCount - 1 ? "pointer" : "not-allowed", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "next" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: pageIdx < pageCount - 1 ? "var(--txm)" : "var(--txl)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1, padding: "5px 10px" }}>NEXT ›</button>
-            </div>
-          )}
-        </div>
-        {/* RIGHT: detail */}
-        <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-          {selIssue ? (
-            <>
-              <div style={{ flex: "none", padding: "15px 18px 13px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", animation: "mslide .25s ease both" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                  <span style={{ fontSize: "var(--t10)", color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace" }}>#{selIssue.number}</span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--t9)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", padding: "2px 8px" }}>
-                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--ok)" }} />OPEN</span>
-                  {fed.has(selIssue.number) && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 6px" }}>✓ FED</span>}
-                  <span style={{ flex: 1 }} />
-                  <button onClick={() => setOpen(null)} title="close detail" {...hp("closedetail")}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "closedetail" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "2px 8px", lineHeight: 1 }}>✕</button>
-                </div>
-                <div style={{ fontSize: "var(--t15)", color: "var(--txb)", marginTop: 11, lineHeight: 1.4 }}>{selIssue.title}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 9, flexWrap: "wrap" }}>
-                  {selIssue.labels.map((l) => (
-                    <span key={l.name} style={{ fontSize: "var(--t9)", letterSpacing: ".5px", padding: "1px 7px", color: `#${l.color || "9fc7c0"}`, border: `1px solid ${hexRgba(l.color || "9fc7c0", 0.4)}` }}>{l.name}</span>
-                  ))}
-                </div>
-                {/* TODO(phase2-data): author/assignee aren't in the issues endpoint yet */}
-                <div style={{ fontSize: "var(--t10)", color: "var(--txd)", marginTop: 11 }}>opened {agoIso(selIssue.updated)} ago by <span style={{ color: "var(--txm)" }}>—</span> · assignee <span style={{ color: "var(--txm)" }}>—</span></div>
-              </div>
-              <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px" }}>
-                <div style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>DESCRIPTION</div>
-                <div style={{ fontSize: "var(--t12)", color: "var(--tx)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{selIssue.body || "No description."}</div>
-                <div style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", margin: "18px 0 11px" }}>ACTIVITY</div>
-                {/* TODO(phase2-data): no issue-activity endpoint yet */}
-                <div style={{ fontSize: "var(--t105)", color: "var(--txg)" }}>No activity yet.</div>
-              </div>
-              <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "12px 18px", borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
-                <button onClick={() => feedOne(selIssue)} {...hp("feedone")}
-                  style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "feedone" ? "color-mix(in srgb, var(--ok) 22%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "8px 13px" }}>
-                  {fed.has(selIssue.number) ? "FEED AGAIN" : "FEED TO CLAUDE"}</button>
-                {/* FEED puts the issue in front of the session you already had
-                    open, in whatever branch that was. SHIP IT gives the issue
-                    its own branch, worktree and session first — the three steps
-                    everyone does by hand between reading an issue and starting
-                    it. Pressing it twice reuses the worktree it made. */}
-                <button onClick={() => onShip(selIssue)} {...hp("shipissue")}
-                  title={`branch ${branchForIssue(selIssue.number, selIssue.title)}, its own worktree, and a session already working it`}
-                  style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "shipissue" ? "color-mix(in srgb, var(--purple) 22%, transparent)" : "color-mix(in srgb, var(--purple) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "8px 13px" }}>
-                  SHIP IT →</button>
-                <span style={{ flex: 1 }} />
-                {/* TODO(phase2-data): no close-issue endpoint yet (unwired in the design too) */}
-                <button {...hp("closeissue")}
-                  style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: hov === "closeissue" ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "8px 13px" }}>CLOSE ISSUE</button>
-              </div>
-            </>
-          ) : (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
-              <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="var(--txg)" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
-              <div style={{ fontSize: "var(--t11)", letterSpacing: 1.5, color: "var(--txl)" }}>SELECT AN ISSUE</div>
-              <div style={{ fontSize: "var(--t10)", color: "var(--txg)", maxWidth: 210, lineHeight: 1.55 }}>Click any issue on the left to read its full description and activity.</div>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- TASKS: the linked Teamwork / Jira project (bridge/trackers.py) ---------------- */
-
-function taskText(kind: string, t: TrackerTask): string {
-  return `Work on ${kind === "jira" ? "Jira issue" : "Teamwork task"} ${t.key}: ${t.title}\n\n${
-    t.description?.trim() || "(no description provided)"}\n\n${t.due ? `Due ${t.due}. ` : ""}${
-    t.assignee ? `Assigned to ${t.assignee}. ` : ""}${t.url}`;
-}
-
-function TasksTab({ project, data, sessions, activeSession, onFeed, onShip, onReload, onSelectSession }: {
-  project: string; data: TrackerTasks; sessions: SessionBrief[]; activeSession?: string | null;
-  onFeed: (t: string[]) => void; onShip: (t: TrackerTask) => void; onReload: () => void;
-  onSelectSession: (s: SessionBrief) => void;
-}) {
-  const [hov, setHov] = useState("");
-  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
-  const [open, setOpen] = useState<string | null>(null);
-  // Right-click on a task row: the detail view's actions, for that task.
-  const [ctx, setCtx] = useState<{ x: number; y: number; key: string } | null>(null);
-  const [mine, setMine] = useState(false);
-  const [sel, setSel] = useState<Set<string>>(new Set());
-  const [fed, setFed] = useState<Set<string>>(new Set());
-  const [banner, setBanner] = useState("");
-  const bannerT = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // POST UPDATE sheet — the status is picked here, before the turn; Claude only carries it out
-  const [upd, setUpd] = useState(false);
-  const [updSession, setUpdSession] = useState("");
-  const [statuses, setStatuses] = useState<TrackerStatus[] | null>(null);
-  const [status, setStatus] = useState("");
-  const [note, setNote] = useState("");
-  const [updBusy, setUpdBusy] = useState(false);
-  const [updErr, setUpdErr] = useState("");
-
-  useEffect(() => () => { if (bannerT.current) clearTimeout(bannerT.current); }, []);
-  function showBanner(m: string) {
-    setBanner(m);
-    if (bannerT.current) clearTimeout(bannerT.current);
-    bannerT.current = setTimeout(() => setBanner(""), 4500);
-  }
-
-  const today = new Date().toISOString().slice(0, 10);
-  const list = data.tasks.filter((t) => !mine || t.mine);
-  const selTask = data.tasks.find((t) => t.key === open) || null;
-  // the session already working a task, read off its branch (SHIP names it so)
-  const sessionFor = (key: string) => sessions.find((s) => keyFromBranch(s.branch, data.kind) === key);
-  const dueColor = (t: TrackerTask) => (t.due && t.due < today ? "var(--err)" : t.due && t.due <= addDays(today, 7) ? "var(--warn)" : "var(--txd)");
-
-  function toggleSel(k: string) {
-    setSel((prev) => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
-  }
-  function feedSelected() {
-    const picked = data.tasks.filter((t) => sel.has(t.key));
-    if (!picked.length) return;
-    onFeed(picked.map((t) => taskText(data.kind, t)));
-    setFed((f) => { const n = new Set(f); picked.forEach((t) => n.add(t.key)); return n; });
-    setSel(new Set());
-    showBanner(`Fed ${picked.length} task${picked.length === 1 ? "" : "s"} to Claude`);
-  }
-  function feedOne(t: TrackerTask) {
-    onFeed([taskText(data.kind, t)]);
-    setFed((f) => new Set(f).add(t.key));
-    showBanner(`Fed ${t.key} to Claude`);
-  }
-  function ctxItems(t: TrackerTask): CtxItem[] {
-    const items: CtxItem[] = [
-      { icon: "▸", label: "Feed to Claude", onClick: () => feedOne(t) },
-      { icon: "⑂", label: "Ship it", hint: `branch ${branchForTask(t.key, t.title)}`, onClick: () => onShip(t) },
-    ];
-    if (t.url) items.push({ icon: "↗", label: "Open in tracker", onClick: () => { window.open(t.url, "_blank", "noopener,noreferrer"); } });
-    items.push({ icon: "⧉", label: "Copy key", onClick: () => { void navigator.clipboard?.writeText(t.key).catch(() => {}); } });
-    items.push({ divider: true });
-    items.push({ icon: "⌁", label: "Post update…", onClick: () => { setOpen(t.key); openUpdate(t); } });
-    return items;
-  }
-  function openUpdate(t: TrackerTask) {
-    setUpd(true); setStatuses(null); setStatus(""); setNote(""); setUpdErr("");
-    setUpdSession((sessionFor(t.key) ?? sessions.find((s) => s.id === activeSession) ?? sessions[0])?.id ?? "");
-    void api.trackerStatuses(project, t.key).then((r) => setStatuses(r.statuses))
-      .catch((e) => { setStatuses([]); setUpdErr((e as Error).message); });
-  }
-  async function startUpdate() {
-    if (!selTask || !updSession) return;
-    setUpdBusy(true); setUpdErr("");
-    try {
-      await api.trackerUpdate({ project, session_id: updSession, key: selTask.key, status_id: status,
-        status_name: statuses?.find((s) => s.id === status)?.name ?? "", note });
-      const s = sessions.find((x) => x.id === updSession);
-      setUpd(false);
-      showBanner(`Update turn started${s?.title ? ` in "${s.title}"` : ""} — every write shows an Allow card there`);
-      if (s) onSelectSession(s);
-    } catch (e) {
-      setUpdErr((e as Error).message);
-    } finally {
-      setUpdBusy(false);
-    }
-  }
-
-  const small = (k: string, color: string, active: boolean): React.CSSProperties => ({
-    appearance: "none", cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "4px 10px",
-    border: `1px solid ${active ? color : `color-mix(in srgb, ${color} 40%, transparent)`}`,
-    background: active ? `color-mix(in srgb, ${color} 16%, transparent)` : hov === k ? `color-mix(in srgb, ${color} 10%, transparent)` : "transparent",
-    color: active ? "var(--txb)" : color, display: "flex", alignItems: "center", gap: 5,
-  });
-
-  return (
-    <div style={{ animation: "mslide .3s ease both" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11, flexWrap: "wrap" }}>
-        <span style={{ fontSize: "var(--t95)", letterSpacing: 1.5, color: "var(--txl)" }}>
-          {data.open} OPEN · <span style={{ color: data.overdue ? "var(--err)" : undefined }}>{data.overdue} OVERDUE</span> · {data.due_week} DUE THIS WEEK
-          {data.done !== null && <> · {data.done} DONE</>}
-        </span>
-        {data.next.slice(0, 2).map((n) => (
-          <span key={`${n.kind}:${n.name}`} title={`${n.kind} deadline`} style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--warn)", border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)", padding: "1px 6px" }}>
-            ⚑ {n.kind.toUpperCase()} {n.name} · {n.date}
-          </span>
-        ))}
-        {data.stale && <span title={data.error || "the tracker did not answer; this is the last list"} style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--warn)", border: "1px solid color-mix(in srgb, var(--warn) 35%, transparent)", padding: "1px 6px" }}>STALE</span>}
-        <span style={{ flex: 1 }} />
-        {sel.size > 0 && (
-          <button onClick={feedSelected} {...hp("feedsel")} style={small("feedsel", "var(--ok)", false)}>
-            <span>▸</span>FEED {sel.size} TO CLAUDE</button>
-        )}
-        <button onClick={() => setMine((m) => !m)} {...hp("mine")} title="only tasks assigned to you" style={small("mine", "var(--acc)", mine)}>★ MINE</button>
-        <button onClick={onReload} {...hp("reload")} title={data.read ? `read ${ago(data.read)} ago` : "read"} style={small("reload", "var(--acc)", false)}>↻</button>
-      </div>
-
-      {banner && (
-        <div style={{ border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", background: "color-mix(in srgb, var(--ok) 8%, transparent)", color: "var(--ok)", fontSize: "var(--t105)", letterSpacing: ".5px", padding: "8px 11px", marginBottom: 9, display: "flex", alignItems: "center", gap: 8, animation: "mslide .25s ease both" }}>
-          <span>▸</span>{banner}
-        </div>
-      )}
-      {data.error && !data.stale && (
-        <div style={{ fontSize: "var(--t105)", color: "var(--err)", marginBottom: 9 }}>{data.error}</div>
-      )}
-
-      <div style={{ display: "grid", gridTemplateColumns: "330px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", minHeight: 372 }}>
-        {/* LEFT: the list, by due date */}
-        <div className="mscroll" style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", overflowY: "auto", minHeight: 0, maxHeight: "60vh", padding: 9 }}>
-          {list.map((t) => {
-            const isOpen = t.key === open;
-            const isSel = sel.has(t.key);
-            const ses = sessionFor(t.key);
-            return (
-              <div key={t.key} onClick={() => setOpen(t.key)} {...hp(`row:${t.key}`)}
-                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setCtx({ x: e.clientX, y: e.clientY, key: t.key }); }}
-                style={{ border: `1px solid ${isOpen ? "color-mix(in srgb, var(--acc) 40%, transparent)" : hov === `row:${t.key}` ? "color-mix(in srgb, var(--acc) 30%, transparent)" : isSel ? "color-mix(in srgb, var(--acc) 25%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)"}`, borderLeft: `2px solid ${isOpen ? "var(--acc)" : t.due && t.due < today ? "var(--err)" : "transparent"}`, padding: "9px 10px", marginBottom: 7, cursor: "pointer", background: isOpen ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", display: "flex", gap: 9 }}>
-                <span onClick={(e) => { e.stopPropagation(); toggleSel(t.key); }} title="select"
-                  style={{ width: 15, height: 15, border: `1px solid ${isSel ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`, background: isSel ? "var(--acc)" : "transparent", flex: "none", marginTop: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--acc-on)", fontSize: "var(--t11)", fontWeight: 700, cursor: "pointer" }}>{isSel ? "✓" : ""}</span>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: 7 }}>
-                    <div style={{ fontSize: "var(--t12)", color: "var(--txh)", lineHeight: 1.35, flex: 1 }}>{t.mine && <span title="assigned to you" style={{ color: "var(--warn)" }}>★ </span>}{t.title}</div>
-                    {fed.has(t.key) && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 5px", flex: "none" }}>✓</span>}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 6, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: "var(--t95)", color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace" }}>{t.key}</span>
-                    {t.status && <span style={{ fontSize: "var(--t85)", letterSpacing: ".5px", padding: "1px 6px", color: "var(--txm)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)" }}>{t.status}</span>}
-                    {ses && <span title={`session: ${ses.title || "untitled"}`} style={{ fontSize: "var(--t85)", letterSpacing: ".5px", padding: "1px 6px", color: "var(--purple-h)", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)" }}>↳ SESSION</span>}
-                    <span style={{ fontSize: "var(--t95)", color: dueColor(t), marginLeft: "auto", fontFamily: "'JetBrains Mono',monospace" }}>{t.due || "no date"}</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-          {list.length === 0 && <div style={{ fontSize: "var(--t11)", color: "var(--txl)", padding: 6 }}>{mine ? "Nothing assigned to you." : "No open tasks."}</div>}
-        </div>
-        {/* RIGHT: detail, or the POST UPDATE sheet */}
-        <div style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-          {selTask ? (
-            <>
-              <div style={{ flex: "none", padding: "15px 18px 13px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", animation: "mslide .25s ease both" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-                  <a href={selTask.url} target="_blank" rel="noreferrer" title="open in the tracker" style={{ fontSize: "var(--t10)", color: "var(--txl)", fontFamily: "'JetBrains Mono',monospace", textDecoration: "none" }}>{selTask.key} ↗</a>
-                  {selTask.status && <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 40%, transparent)", padding: "2px 8px" }}>{selTask.status.toUpperCase()}</span>}
-                  {selTask.priority && <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--txm)", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", padding: "2px 8px" }}>{selTask.priority.toUpperCase()}</span>}
-                  {fed.has(selTask.key) && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--acc-on)", background: "var(--ok)", padding: "2px 6px" }}>✓ FED</span>}
-                  <span style={{ flex: 1 }} />
-                  <button onClick={() => { setOpen(null); setUpd(false); }} title="close detail" {...hp("closedetail")}
-                    style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "closedetail" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "2px 8px", lineHeight: 1 }}>✕</button>
-                </div>
-                <div style={{ fontSize: "var(--t15)", color: "var(--txb)", marginTop: 11, lineHeight: 1.4 }}>{selTask.title}</div>
-                <div style={{ fontSize: "var(--t10)", color: "var(--txd)", marginTop: 11 }}>
-                  due <span style={{ color: dueColor(selTask) }}>{selTask.due || "—"}</span>
-                  {" · "}assignee <span style={{ color: "var(--txm)" }}>{selTask.assignee || "—"}{selTask.mine ? " (you)" : ""}</span>
-                  {selTask.updated && <> · updated {agoIso(selTask.updated)} ago</>}
-                  {(() => { const s = sessionFor(selTask.key); return s ? (
-                    <> · <button onClick={() => onSelectSession(s)} style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t10)", padding: 0 }}>↳ session "{s.title || "untitled"}"</button></>
-                  ) : null; })()}
-                </div>
-              </div>
-              {upd ? (
-                <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px", animation: "mslide .2s ease both" }}>
-                  <div style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>POST UPDATE</div>
-                  <div style={{ fontSize: "var(--t105)", color: "var(--txd)", lineHeight: 1.6, marginBottom: 12 }}>
-                    A turn in the session below writes a comment about what it did{data.kind === "jira" ? " (Markdown)" : " (plain text)"} and sets the status you pick.
-                    Every write shows an Allow card with the full text first — deny it and nothing posts.
-                  </div>
-                  <div style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txl)", margin: "9px 0 5px" }}>SESSION</div>
-                  <select value={updSession} onChange={(e) => setUpdSession(e.target.value)}
-                    style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "7px 9px" }}>
-                    {sessions.length === 0 && <option value="">no session in this repo yet</option>}
-                    {sessions.map((s) => (
-                      <option key={s.id} value={s.id}>{s.title || "untitled"}{s.branch ? ` · ${s.branch}` : ""}{keyFromBranch(s.branch, data.kind) === selTask.key ? " · this task" : ""}</option>
-                    ))}
-                  </select>
-                  <div style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txl)", margin: "11px 0 5px" }}>STATUS</div>
-                  <select value={status} onChange={(e) => setStatus(e.target.value)} disabled={statuses === null}
-                    style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "7px 9px" }}>
-                    <option value="">{statuses === null ? "reading statuses…" : "no status change"}</option>
-                    {statuses?.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                  <div style={{ fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txl)", margin: "11px 0 5px" }}>NOTE FOR CLAUDE (OPTIONAL)</div>
-                  <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="e.g. keep it short · mention the migration · don't link the PR"
-                    style={{ width: "100%", boxSizing: "border-box", resize: "vertical", background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "7px 9px", lineHeight: 1.5 }} />
-                  {updErr && <div style={{ fontSize: "var(--t95)", color: "var(--err)", marginTop: 8 }}>{updErr}</div>}
-                  <div style={{ display: "flex", gap: 7, marginTop: 12 }}>
-                    <button onClick={() => void startUpdate()} disabled={updBusy || !updSession} {...hp("updstart")}
-                      style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "updstart" ? "color-mix(in srgb, var(--purple) 24%, transparent)" : "color-mix(in srgb, var(--purple) 14%, transparent)", color: "var(--purple-b)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8, opacity: updBusy || !updSession ? 0.5 : 1 }}>
-                      {updBusy ? "STARTING…" : "START THE UPDATE TURN"}</button>
-                    <button onClick={() => setUpd(false)} {...hp("updcancel")}
-                      style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: hov === "updcancel" ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent", color: "var(--txd)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "8px 12px" }}>CANCEL</button>
-                  </div>
-                </div>
-              ) : (
-                <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0, padding: "14px 18px" }}>
-                  <div style={{ fontSize: "var(--t85)", letterSpacing: 1.5, color: "var(--txl)", marginBottom: 8 }}>DESCRIPTION</div>
-                  <div style={{ fontSize: "var(--t12)", color: "var(--tx)", lineHeight: 1.65, whiteSpace: "pre-wrap" }}>{selTask.description || "No description."}</div>
-                </div>
-              )}
-              <div style={{ flex: "none", display: "flex", alignItems: "center", gap: 8, padding: "12px 18px", borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", flexWrap: "wrap" }}>
-                <button onClick={() => feedOne(selTask)} {...hp("feedone")}
-                  style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "feedone" ? "color-mix(in srgb, var(--ok) 22%, transparent)" : "color-mix(in srgb, var(--ok) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "8px 13px" }}>
-                  {fed.has(selTask.key) ? "FEED AGAIN" : "FEED TO CLAUDE"}</button>
-                <button onClick={() => onShip(selTask)} {...hp("shiptask")}
-                  title={`branch ${branchForTask(selTask.key, selTask.title)}, its own worktree, and a session already working it`}
-                  style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--purple)", background: hov === "shiptask" ? "color-mix(in srgb, var(--purple) 22%, transparent)" : "color-mix(in srgb, var(--purple) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "8px 13px" }}>
-                  SHIP IT →</button>
-                <span style={{ flex: 1 }} />
-                <button onClick={() => (upd ? setUpd(false) : openUpdate(selTask))} {...hp("postupd")}
-                  title="a turn in a session posts a comment (and a status) — behind Allow cards"
-                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${upd ? "var(--acc)" : "color-mix(in srgb, var(--acc) 40%, transparent)"}`, background: hov === "postupd" || upd ? "color-mix(in srgb, var(--acc) 12%, transparent)" : "transparent", color: upd ? "var(--txb)" : "var(--acc)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "8px 13px" }}>
-                  ⌁ POST UPDATE</button>
-              </div>
-            </>
-          ) : (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 24, textAlign: "center" }}>
-              <svg viewBox="0 0 24 24" width="34" height="34" fill="none" stroke="var(--txg)" strokeWidth="1.5"><circle cx="12" cy="12" r="9" /><path d="M12 8v4M12 16h.01" /></svg>
-              <div style={{ fontSize: "var(--t11)", letterSpacing: 1.5, color: "var(--txl)" }}>SELECT A TASK</div>
-              <div style={{ fontSize: "var(--t10)", color: "var(--txg)", maxWidth: 230, lineHeight: 1.55 }}>Read it, feed it to the chat, ship it to its own branch, or post an update from the session that did the work.</div>
-            </div>
-          )}
-        </div>
-      </div>
-      {ctx && (() => {
-        const t = data.tasks.find((x) => x.key === ctx.key);
-        return t && <ContextMenu ctx={{ x: ctx.x, y: ctx.y, type: "task", id: t.key, label: t.key }}
-          items={ctxItems(t)} onClose={() => setCtx(null)} />;
-      })()}
-    </div>
-  );
-}
-
-function addDays(iso: string, n: number): string {
-  const d = new Date(iso + "T00:00:00Z");
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
 }
 
 /* The app this project is running, live. The dev server is owned by the bridge
