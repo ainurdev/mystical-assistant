@@ -54,7 +54,7 @@ ${c_c}✦ mystical${c_d}//${c_0}${c_c}assistant${c_0} ${c_d}— control the brid
   ${c_b}🔗${c_0} mystical ${c_c}design-link${c_0} <rel> <id>  link a repo to a Claude Design project
   ${c_b}📦${c_0} mystical ${c_c}export${c_0}    pack repos, MCPs, settings and history into one file for a new machine
   ${c_b}📥${c_0} mystical ${c_c}import${c_0} <file> [--dry-run]  replay that file on the new machine
-  ${c_b}🍎${c_0} mystical ${c_c}app${c_0} ${c_c}[open]${c_0}  macOS: build + install Mystical.app · Windows (WSL): build + install Mystical.exe · Linux: start the tray; 'app open' opens it
+  ${c_b}🍎${c_0} mystical ${c_c}app${c_0} ${c_c}[open]${c_0}  macOS: build + install Mystical.app · Windows (WSL): build + install Mystical.exe · Linux: add the Mystical window (linux/window.py) to the app launcher + start the tray; 'app open' opens it
 EOF
 }
 
@@ -378,6 +378,19 @@ cmd_app() {
       wsl || die "'mystical app open' is for macOS and Windows (WSL) — here 'mystical app' starts the tray"
       PYTHONPATH="$REPO" python3 -c 'import sys; from bridge import startup; sys.exit(0 if startup._win_app() else 1)' \
         || die "not built yet — run: mystical app"
+    fi
+    # Native Linux: the app-launcher entry first, so a desktop without the
+    # tray's GTK bindings still gets the window.
+    if ! wsl; then
+      launcher=$(PYTHONPATH="$REPO" python3 -c '
+import sys
+from bridge import startup
+try:
+    print(startup.install_launcher())
+except RuntimeError as e:
+    sys.exit(str(e))
+') || exit 1
+      ok "\"Mystical\" is in your app launcher ${c_d}($launcher)${c_0}"
     fi
     # Linux, and WSL without the exe: the tray (linux/tray.py, windows/tray.ps1)
     # runs from this checkout; with the exe, launch_tray() opens it instead.

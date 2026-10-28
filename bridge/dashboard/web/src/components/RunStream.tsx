@@ -169,7 +169,9 @@ const kindTag = (name: string): string => {
   return t.length > 7 ? KIND_WORD[toolKind(name)] : t;
 };
 
-type Cmd = { command: string; done?: Done };
+/** `full`: the command whole when `command` (the event's summary) is its first
+ *  120 chars — the drawer shows, copies and re-runs that one. */
+type Cmd = { command: string; full?: string; done?: Done };
 
 /** One command as a row of the ledger: the phrase it amounts to, and its output
  *  behind the chevron. Inside a run it wears no tag and no mark — the run's head
@@ -178,6 +180,7 @@ type Cmd = { command: string; done?: Done };
  *  for the newest command. */
 function CommandRow({
   command,
+  full,
   done,
   newest,
   animate,
@@ -227,8 +230,8 @@ function CommandRow({
               <>
                 <DrawerHead
                   mark="$"
-                  text={command}
-                  onRerun={onRerun && (() => onRerun(command))}
+                  text={full ?? command}
+                  onRerun={onRerun && (() => onRerun(full ?? command))}
                 />
                 {lines > 0 ? <DrawerText text={out} error={failed} /> : null}
                 <DrawerFoot>
@@ -282,6 +285,7 @@ function TerminalGroup({
     return (
       <CommandRow
         command={cmds[0].command}
+        full={cmds[0].full}
         done={cmds[0].done}
         tag="BASH"
         newest
@@ -308,6 +312,7 @@ function TerminalGroup({
         <CommandRow
           key={k}
           command={c.command}
+          full={c.full}
           done={c.done}
           newest={k === cmds.length - 1}
           animate={animate}
@@ -1601,7 +1606,7 @@ function DrawerHead({
       onClick={(e) => e.stopPropagation()}
     >
       <span className="flex-none text-[var(--txg)]" aria-hidden>{mark}</span>
-      <span className="min-w-0 flex-1">{children ?? text}</span>
+      <span className="min-w-0 flex-1 whitespace-pre-wrap">{children ?? text}</span>
       <span className="ml-auto flex flex-none gap-2">
         <CopyBtn text={text} title="copy" />
         {onRerun && (
@@ -1782,6 +1787,8 @@ type AgentMeta = { type?: string; title?: string };
 /** One delegation, as the block draws it. */
 type AgentRun = {
   name: string; summary: string; meta?: AgentMeta;
+  /** The brief whole, when `summary` is its first 120 chars. */
+  detail?: string;
   ms?: number; stat?: string; error?: boolean; running?: boolean;
   /** The Agent call's tool_use id — how the roster (lib/subagents) finds it. */
   id?: string;
@@ -1853,10 +1860,10 @@ function AgentStat({ run, children }: { run: AgentRun; children: ReactNode }) {
  *  so it is a plain row: the kit's name, and no brief to plate. */
 function AgentBlock({ run, animate }: { run: AgentRun; animate: boolean }) {
   const [open, setOpen] = useState(false);
-  const { name, summary, meta, stat, error, running } = run;
+  const { name, summary, detail, meta, stat, error, running } = run;
   const skill = name === "Skill";
   const title = meta?.title ?? "";
-  const brief = skill ? "" : summary;
+  const brief = skill ? "" : detail ?? summary;
   return (
     <div
       className="agb"
@@ -2528,9 +2535,9 @@ export const RunStream = memo(function RunStream({
         // identical rows or a generic "AGENT · 4 CALLS" box.
         if (toolKind(event.name) === "agent") {
           const runs = run.map((j) => {
-            const e = events[j] as { name: string; summary: string; agent?: AgentMeta; id?: string };
+            const e = events[j] as { name: string; summary: string; detail?: string; agent?: AgentMeta; id?: string };
             const d = doneOf(events[j]);
-            return { name: e.name, summary: e.summary, meta: e.agent, ms: d?.ms,
+            return { name: e.name, summary: e.summary, detail: e.detail, meta: e.agent, ms: d?.ms,
                      stat: d?.stat, error: d?.is_error, running: !d, id: e.id };
           });
           return runs.length > 1
@@ -2543,6 +2550,7 @@ export const RunStream = memo(function RunStream({
               key={i}
               cmds={run.map((j) => ({
                 command: (events[j] as { summary: string }).summary,
+                full: (events[j] as { detail?: string }).detail,
                 done: doneOf(events[j]),
               }))}
               animate={animate}

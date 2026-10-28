@@ -133,7 +133,8 @@ def test_restart_endpoint_arms_a_restart():
 
 def test_update_rebuilds_both_uis_then_restarts():
     """UPDATE pulls, rebuilds the Mini App and the dashboard, then restarts; a
-    failed build restarts nothing. Stubbed: no real pull, npm or SIGINT."""
+    failed build restarts nothing and says the pull still landed, a refused pull
+    builds nothing. Stubbed: no real pull, npm or SIGINT."""
     built, restarts, result = [], [], [(True, "")]
 
     def build(name, web):
@@ -145,14 +146,95 @@ def test_update_rebuilds_both_uis_then_restarts():
     selfupdate._build = build
     selfupdate.restart = lambda *a, **k: restarts.append(True)
     try:
-        assert selfupdate.update() == (True, "pulled")
+        assert selfupdate.update() == (True, "pulled", True)
         assert built == ["Mini App", "dashboard"] and restarts == [True]
         built.clear(); restarts.clear(); result[0] = (False, "boom")
-        ok, out = selfupdate.update()
+        ok, out, pulled = selfupdate.update()
+        assert built == ["Mini App"] and restarts == []     # the first failure stops it
+        built.clear(); selfupdate.git.pull = lambda repo: (False, "refused")
+        refused = selfupdate.update()
     finally:
         selfupdate.git.pull, selfupdate._build, selfupdate.restart = saved
-    assert ok is False and "Mini App build failed:\nboom" in out
-    assert built == ["Mini App"] and restarts == []     # the first failure stops it
+    assert ok is False and pulled is True and "Mini App build failed:\nboom" in out
+    assert refused == (False, "refused", False) and built == [] and restarts == []
+
+
+def test_update_endpoint_says_whether_the_pull_landed():
+    """The card words its FIX WITH CLAUDE prompt from `pulled`: a build that broke
+    after a good pull isn't a refused pull."""
+    saved = selfupdate.update
+    selfupdate.update = lambda: (False, "pulled\n\ndashboard build failed:\nTS2307", True)
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    try:
+        h._post_api("/local/update", {})
+    finally:
+        selfupdate.update = saved
+    assert box["obj"] == {"ok": False, "output": "pulled\n\ndashboard build failed:\nTS2307", "pulled": True}
+
+
+def _web(lock=True, seen=True):
+    """A web app dir with node_modules, and optionally its lockfile and npm's record."""
+    web = tempfile.mkdtemp()
+    os.mkdir(os.path.join(web, "node_modules"))
+    for want, path in ((lock, "package-lock.json"), (seen, os.path.join("node_modules", ".package-lock.json"))):
+        if want:
+            with open(os.path.join(web, path), "w") as f:
+                f.write("{}")
+    return web
+
+
+def _npm(code=0, err=""):
+    """A stand-in for subprocess.run that records npm's argv and answers `code`."""
+    ran = []
+
+    def run(argv, **kw):
+        ran.append(argv[1:])
+        return subprocess.CompletedProcess(argv, code, "", err)
+    return ran, run
+
+
+def test_build_installs_first_when_a_pull_changed_the_lockfile():
+    """A pull that adds a dependency leaves package-lock.json newer than npm's record
+    of what it installed, and building against the old node_modules fails on the new
+    module (posthog-js, 2026-10-28). Stubbed npm."""
+    web = _web()
+    lock = os.path.join(web, "package-lock.json")
+    seen = os.path.join(web, "node_modules", ".package-lock.json")
+    ran, run = _npm()
+
+    def build():
+        ran.clear()
+        assert selfupdate._build("dashboard", web) == (True, "")
+        return list(ran)
+
+    saved = selfupdate.subprocess.run
+    selfupdate.subprocess.run = run
+    try:
+        os.utime(seen, (1000, 1000)); os.utime(lock, (2000, 2000))
+        assert build() == [["install"], ["run", "build"]]
+        os.utime(seen, (3000, 3000))                        # installed since: just build
+        assert build() == [["run", "build"]]
+        os.remove(seen)                                     # npm never recorded a tree
+        assert build() == [["install"], ["run", "build"]]
+        os.remove(lock)                                     # no lockfile to install from
+        assert build() == [["run", "build"]]
+    finally:
+        selfupdate.subprocess.run = saved
+
+
+def test_a_failed_install_builds_nothing_and_says_so():
+    web = _web(seen=False)
+    ran, run = _npm(1, "npm ERR! network ETIMEDOUT")
+    saved = selfupdate.subprocess.run
+    selfupdate.subprocess.run = run
+    try:
+        ok, out = selfupdate._build("dashboard", web)
+    finally:
+        selfupdate.subprocess.run = saved
+    assert ok is False and out == "npm install failed:\nnpm ERR! network ETIMEDOUT"
+    assert ran == [["install"]]                             # no build on a half-installed tree
 
 
 def test_claude_update_endpoint_arms_the_update_and_a_restart():

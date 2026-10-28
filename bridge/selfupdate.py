@@ -69,14 +69,33 @@ _WEB_UIS = [("Mini App", os.path.join(REPO, "bridge", "miniapp", "web")),
             ("dashboard", os.path.join(REPO, "bridge", "dashboard", "web"))]
 
 
+def _deps_stale(web: str) -> bool:
+    """npm records the tree it installed in node_modules/.package-lock.json, so a
+    lockfile newer than that means a pull changed deps. bin/mystical's rule."""
+    try:
+        lock = os.path.getmtime(os.path.join(web, "package-lock.json"))
+    except OSError:
+        return False
+    try:
+        return lock > os.path.getmtime(os.path.join(web, "node_modules", ".package-lock.json"))
+    except OSError:
+        return True
+
+
 def _build(name: str, web: str) -> tuple[bool, str]:
     """Rebuild one UI's bundle. dist/ is generated, not committed, so a pull
     that changes the UI would otherwise keep serving the old (or a deleted) one.
-    No node_modules → nothing we can build; leave what's on disk."""
+    No node_modules → nothing we can build; leave what's on disk. Deps a pull
+    changed install first: the build fails on a module it added (2026-10-28)."""
     if not os.path.isdir(os.path.join(web, "node_modules")):
         return True, f"{name} build skipped (no node_modules)"
     try:
         with _build_lock:
+            if _deps_stale(web):
+                p = subprocess.run(["npm", "install"], cwd=web,
+                                   capture_output=True, text=True, timeout=300)
+                if p.returncode != 0:
+                    return False, "npm install failed:\n" + (p.stdout + p.stderr).strip()[-2000:]
             p = subprocess.run(["npm", "run", "build"], cwd=web,
                                capture_output=True, text=True, timeout=300)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -84,18 +103,19 @@ def _build(name: str, web: str) -> tuple[bool, str]:
     return p.returncode == 0, (p.stdout + p.stderr).strip()[-2000:]
 
 
-def update() -> tuple[bool, str]:
+def update() -> tuple[bool, str, bool]:
     """Pull, rebuild both UIs, then arm the restart (delayed, so the caller's HTTP
-    response still gets out). A failed pull or build restarts nothing."""
+    response still gets out). A failed pull or build restarts nothing. The last
+    value says whether the pull landed, so a failed build isn't read as a refused pull."""
     ok, output = git.pull(REPO)
     if not ok:
-        return False, output
+        return False, output, False
     for name, web in _WEB_UIS:
         built, build_out = _build(name, web)
         if not built:
-            return False, f"{output}\n\n{name} build failed:\n{build_out}"
+            return False, f"{output}\n\n{name} build failed:\n{build_out}", True
     restart()
-    return True, output
+    return True, output, True
 
 
 def publish(message: str) -> tuple[bool, str]:

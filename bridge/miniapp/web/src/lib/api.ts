@@ -216,7 +216,8 @@ export type RunEvent =
   | { type: "log"; src: "hook" | "stderr" | "control"; label?: string; text: string; error?: boolean }
   // `agent` is Task/Agent/Skill-only (bridge/transcript_jsonl.agent_meta) and
   // absent on turns recorded before it landed.
-  | { type: "tool"; name: string; summary: string; id?: string;
+  // `detail`: the summary's field whole, when its 120 chars cut it (transcript_jsonl.tool_detail).
+  | { type: "tool"; name: string; summary: string; id?: string; detail?: string;
       agent?: { type?: string; title?: string } }
   // `output` is Bash-only, `patch` edit-only, `stat` for everything else (see
   // transcript_jsonl.tool_done); turns recorded before this landed carry no `id`.

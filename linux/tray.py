@@ -31,6 +31,7 @@ import os
 import subprocess
 import sys
 import threading
+import time
 import urllib.parse
 import urllib.request
 
@@ -174,6 +175,9 @@ def parser() -> argparse.ArgumentParser:
     p.add_argument("--profile", help="its --profile-directory")
     p.add_argument("--check", action="store_true",
                    help="exit 0 if the GTK bindings import, else name the packages")
+    p.add_argument("--open", action="store_true",
+                   help="open the dashboard window and exit (the app-launcher entry); "
+                        "needs no GTK")
     return p
 
 
@@ -184,6 +188,39 @@ def open_url(url: str, browser: str | None, profile: str | None) -> None:
              f"--app={url}"] if browser else ["xdg-open", url])
     subprocess.Popen(argv, start_new_session=True, stdin=subprocess.DEVNULL,
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+WINDOW = os.path.join(REPO, "linux", "window.py")
+_window_ok: list = []
+
+
+def window_argv(port: int, sid: str | None = None) -> list[str] | None:
+    """linux/window.py's command line when its bindings import here (checked
+    once), else None and the Chrome --app window stands in. The window is one
+    instance: a second launch brings it forward, switched to `sid`."""
+    if not _window_ok:
+        _window_ok.append(os.path.isfile(WINDOW) and subprocess.run(
+            ["/usr/bin/python3", WINDOW, "--check"], capture_output=True).returncode == 0)
+    if not _window_ok[0]:
+        return None
+    return ["/usr/bin/python3", WINDOW, "--port", str(port), *(["--session", sid] if sid else [])]
+
+
+def open_window(port: int, browser: str | None, profile: str | None,
+                wait_s: float = 20, unit: str = "mystical-assistant.service") -> bool:
+    """The app-launcher entry's whole job: start the unit if nothing answers,
+    wait up to `wait_s` for the manifest, open the window with its start_url's
+    token. Opens even when the bridge never answers — the page says so, where a
+    launcher that silently does nothing reads as broken. True if it answered."""
+    manifest = fetch(port, "/manifest.webmanifest")
+    if manifest is None:
+        subprocess.run(["systemctl", "--user", "start", unit], capture_output=True)
+        deadline = time.monotonic() + wait_s
+        while manifest is None and time.monotonic() < deadline:
+            time.sleep(0.25)
+            manifest = fetch(port, "/manifest.webmanifest")
+    open_url(session_url(port, (manifest or {}).get("start_url")), browser, profile)
+    return manifest is not None
 
 
 def run_mystical(cmd: str) -> tuple[int, str]:
@@ -282,6 +319,12 @@ class Tray:
         self.ind.set_secondary_activate_target(opener)
 
     def open(self, sid):
+        argv = window_argv(self.a.port, sid)
+        if argv:
+            subprocess.Popen(argv, start_new_session=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return
+
         def work():
             manifest = fetch(self.a.port, "/manifest.webmanifest") or {}
             open_url(session_url(self.a.port, manifest.get("start_url"), sid),
@@ -313,6 +356,9 @@ class Tray:
 
 def main(argv=None) -> int:
     a = parser().parse_args(argv)
+    if a.open:
+        open_window(a.port, a.browser, a.profile)
+        return 0
     why = missing()
     if why:
         print(why, file=sys.stderr)

@@ -2,8 +2,8 @@ import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 
 import { type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
 import { setClock12 } from "../../lib/surfaces";
-import { isMacApp, macWindow } from "../../lib/mac";
-import { Minus, PanelLeftClose, Plus, X, type LucideIcon } from "lucide-react";
+import { isMacApp, linuxWindow, macWindow } from "../../lib/mac";
+import { Minus, PanelLeftClose, Plus, Settings, Square, X, type LucideIcon } from "lucide-react";
 
 /* The shell's chrome, minus the row it used to be.
  *
@@ -50,7 +50,7 @@ const seg = (on: boolean): CSSProperties => ({
 /** Left column cap: mark + wordmark, on the SESSIONS head's own gutter, and at
  *  its end the fold. The week report that hung off its end moved to the right
  *  rail's USAGE tab. */
-export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: () => void }) {
+export function Brand({ folded = false, onFold, workspace }: { folded?: boolean; onFold?: () => void; workspace?: ReactNode }) {
   // Mystical.app: the cap is the window's title bar, and its traffic lights
   // are drawn here, not by AppKit (DashboardWindow hides the native ones): they
   // fade in while the mark's end of the cap is hovered and the logo slides out
@@ -60,7 +60,7 @@ export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: (
 
   return (
     // Relative: the Mac's traffic lights sit absolute inside it.
-    <div style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    <div className="wco-bar brand" style={{ position: "relative", zIndex: 40, flex: "none", height: CAP_H, display: "flex", alignItems: "center", gap: 9, padding: "0 12px", minWidth: 0, borderBottom: CAP_LINE, animation: CAP_IN }}>
       {/* The lights' hover zone: the mark, the cap's full height, and out over
           its padding to the window's corner (margin -12, padding 12). Not the
           fold button's end — reaching for the fold shouldn't wake the lights.
@@ -116,6 +116,8 @@ export function Brand({ folded = false, onFold }: { folded?: boolean; onFold?: (
       </div>
       {!folded && onFold && (<>
         <span style={{ flex: 1, minWidth: 6 }} />
+        {/* The workspace switch sits left of the fold (WorkspaceButton). */}
+        {workspace}
         <FoldButton onClick={onFold} />
       </>)}
     </div>
@@ -179,13 +181,19 @@ function FoldButton({ onClick }: { onClick: () => void }) {
 
 /** Right column cap: the cluster over the panel, the gear over the rail.
  *  Collapsed there are no children — the column is the rail's 48px alone. */
-export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => void; children?: ReactNode }) {
+export function RightCap({ onOpenSettings, children, railTop }: {
+  onOpenSettings: () => void;
+  children?: ReactNode;
+  /** The Linux window: its close button takes the gear's cell, which then
+   *  runs into the rail with no rule under it (the gear moves into the rail). */
+  railTop?: ReactNode;
+}) {
   const [gearHover, setGearHover] = useState(false);
   return (
     // position + z-index lift the cap's stacking context (its entry animation
     // makes one) above the panel under it, which would otherwise cover the
     // clock's popovers.
-    <div className="rcap" style={{ position: "relative", zIndex: 40, display: "flex", height: CAP_H, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    <div className="rcap wco-bar" data-bare={children ? undefined : ""} style={{ position: "relative", zIndex: 40, display: "flex", height: CAP_H, borderBottom: CAP_LINE, animation: CAP_IN }}>
       {children && (
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", padding: "0 12px", borderLeft: "1px solid var(--border)" }}>
           {children}
@@ -193,6 +201,13 @@ export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => v
       )}
       {/* The rail's own width, hairline and ground, so the rail reads as
           running to the top. */}
+      {railTop ? (
+        // One pixel past the cap's rule, so the rail runs on under it unbroken.
+        <div className="flex flex-col" style={{ width: 48, flex: "none", marginLeft: "auto", height: "calc(100% + 1px)", marginBottom: -1,
+                      position: "relative", borderLeft: "1px solid var(--border)", background: "var(--panel3)" }}>
+          {railTop}
+        </div>
+      ) : (
       <div style={{ width: 48, flex: "none", marginLeft: "auto", display: "flex", alignItems: "center", justifyContent: "center", borderLeft: "1px solid var(--border)", background: "var(--panel3)" }}>
         <button
           onClick={onOpenSettings}
@@ -221,6 +236,7 @@ export function RightCap({ onOpenSettings, children }: { onOpenSettings: () => v
           </svg>
         </button>
       </div>
+      )}
     </div>
   );
 }
@@ -387,5 +403,37 @@ export function Strip(props: StripProps) {
         <NotificationCenter />
       </span>
     </div>
+  );
+}
+
+/** The Linux window's buttons (linux/window.py draws no title bar), down the
+ *  right rail drawn like its tabs: close in the gear's cell at the very top
+ *  (LinuxClose, RightCap's railTop), then maximize and minimize, a rule, and
+ *  the gear (LinuxRailHead, RightPanel's railHead). They sat in the top-right
+ *  corner first, as a title bar's do, and read as foreign chrome there. */
+const LX_BTN = "flex h-[34px] w-full items-center justify-center text-muted-2 hover:bg-accent hover:text-primary";
+
+export function LinuxClose() {
+  return (
+    <button type="button" className={`${LX_BTN} lxclose h-full`} aria-label="Close" title="Close" onClick={() => linuxWindow("close")}>
+      <X size={16} strokeWidth={1.8} aria-hidden />
+    </button>
+  );
+}
+
+export function LinuxRailHead({ onOpenSettings }: { onOpenSettings: () => void }) {
+  return (
+    <>
+      <button type="button" className={LX_BTN} aria-label="Maximize" title="Maximize" onClick={() => linuxWindow("maximize")}>
+        <Square size={12} strokeWidth={1.8} aria-hidden />
+      </button>
+      <button type="button" className={LX_BTN} aria-label="Minimize" title="Minimize" onClick={() => linuxWindow("minimize")}>
+        <Minus size={15} strokeWidth={1.8} aria-hidden />
+      </button>
+      <div className="my-1 border-t border-border" aria-hidden />
+      <button type="button" className={LX_BTN} aria-label="Dashboard settings" title="dashboard settings" onClick={onOpenSettings}>
+        <Settings size={15} strokeWidth={1.6} aria-hidden />
+      </button>
+    </>
   );
 }

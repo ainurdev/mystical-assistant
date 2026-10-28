@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
@@ -58,6 +58,8 @@ interface Props {
   /** Folded to the rail: one tile per project you are working in. */
   folded?: boolean;
   onUnfold?: () => void;
+  /** The workspace on screen (lib/workspaces): each keeps its own expanded projects. */
+  workspace?: string;
 }
 
 type Mode = "attention" | "projects" | "plugins" | "recent";
@@ -66,13 +68,18 @@ type Mode = "attention" | "projects" | "plugins" | "recent";
  *  names the project but not the branch was simply not on the menu. */
 type Detail = { proj: boolean; branch: boolean; wt: boolean };
 // "recent" is the saved key for newest-started; it was last-used once, and
-// keeping the key keeps everyone's saved pick.
-type OrderMode = "recent" | "alpha" | "biggest" | "custom";
+// keeping the key keeps everyone's saved pick. "used" is last-used again, for
+// whoever wants the old behaviour back: a reply lifts its chat to the top of
+// its project and the project to the top of the list. Newest-started holds
+// rows still while turns run; this one trades that stillness for recency.
+// No project expanded. Shared, never mutated: every update copies.
+const NONE: Set<string> = new Set();
+type OrderMode = "used" | "recent" | "alpha" | "biggest" | "custom";
 
 const ORDER_LABEL: Record<OrderMode, string> = {
-  recent: "newest started", alpha: "a → z", biggest: "biggest", custom: "custom",
+  used: "recently used", recent: "newest started", alpha: "a → z", biggest: "biggest", custom: "custom",
 };
-const ORDERS: OrderMode[] = ["recent", "alpha", "biggest", "custom"];
+const ORDERS: OrderMode[] = ["used", "recent", "alpha", "biggest", "custom"];
 
 const FIELDS: { k: keyof Detail; label: string; tip: string }[] = [
   { k: "proj", label: "project name", tip: "Name the project on every row" },
@@ -481,6 +488,7 @@ export function SessionsPanel(props: Props) {
   const {
     sessions, groups, hidden, status, done, flags, pins, selectedSessionId, activeProject, booting,
     onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
+    workspace = "",
   } = props;
 
   // NEW SESSION's popover: "" = the + beside the search, a rel = that project head's + New.
@@ -519,8 +527,13 @@ export function SessionsPanel(props: Props) {
   // you keep out of the way are the same ones every day.
   const [shut, setShut] = useState<Set<string>>(() => new Set(loadPrefs().shut));
   // Projects expanded past their default rows. ponytail: not persisted — an
-  // expand is "show me this now", not a preference.
-  const [open, setOpen] = useState<Set<string>>(new Set());
+  // expand is "show me this now", not a preference. One set per workspace: an
+  // expand drills into a project, and a workspace without it listed nothing;
+  // now each workspace comes back the way you left it.
+  const [openBy, setOpenBy] = useState<Record<string, Set<string>>>({});
+  const open = openBy[workspace] ?? NONE;
+  const setOpen = useCallback((f: Set<string> | ((c: Set<string>) => Set<string>)) =>
+    setOpenBy((m) => ({ ...m, [workspace]: typeof f === "function" ? f(m[workspace] ?? NONE) : f })), [workspace]);
   // Which kind the open Rivendell jobs group shows ("" = every kind).
   const [jobKind, setJobKind] = useState("");
   // A mode switch replaces every row, so the list cascades in once. Rows mount
@@ -605,9 +618,11 @@ export function SessionsPanel(props: Props) {
   // turns start and end, and the dot says what changed. Every list below slices
   // this one, so a pin holds the top of its lane, its bucket, and its project's
   // rows alike — and the search applied here reaches every mode from one place.
+  // RECENTLY USED (the order menu) ranks by the last touch instead.
+  const byOrder = order === "used" ? (a: SessionBrief, b: SessionBrief) => b.updated - a.updated : byCreated;
   const sorted = [...sessions]
     .filter((s) => !sq || `${s.title ?? ""} ${branchFor(s)}`.toLowerCase().includes(sq))
-    .sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || byCreated(a, b));
+    .sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || byOrder(a, b));
 
   // One state resolution per session per render — lanes, dots and counts all
   // read this map so they can never disagree.
@@ -699,7 +714,8 @@ export function SessionsPanel(props: Props) {
   // back to its start position when the turn ends.
   const started = new Map<string, number>();
   for (const s of sessions) {
-    const g = jobGroup(s), t = s.created ?? s.updated;
+    // RECENTLY USED: by the newest touch, so a reply lifts its project.
+    const g = jobGroup(s), t = order === "used" ? s.updated : s.created ?? s.updated;
     if (t > (started.get(g) ?? 0)) started.set(g, t);
   }
   const atWork = new Set(sessions.filter(busy).map(jobGroup));
@@ -720,7 +736,9 @@ export function SessionsPanel(props: Props) {
   // those falls back to its newest rows.
   // Expanding is a drill-down, not a longer list: while one project is open the
   // others step aside, and "← All projects" is the way back.
-  const drilled = !sq && open.size > 0;
+  // Drilled only into a project this list has: one moved to another workspace
+  // while open would otherwise leave the list empty.
+  const drilled = !sq && groups.some((g) => open.has(g.rel));
   // Shared lists what teammates sent, which `mine` keeps out of every other group.
   const rowsOf = (g: ProjectGroup) => (g.rel === SHARED_REL ? sorted.filter(listed) : mine).filter((s) => jobGroup(s) === g.rel);
   // Newest rows *plus* anything live — a union, not a replacement: selecting

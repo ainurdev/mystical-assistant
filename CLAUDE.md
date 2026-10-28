@@ -14,6 +14,11 @@ WebView2, Microsoft frameworks only) is the same shell, built on the Windows sid
 by `windows/build.sh` through `dotnet.exe`; `windows/probe.sh` snapshots it,
 `windows/capture.sh` captures the real screen through it, and
 `windows/build.sh --check` plus `node windows/shim.check.mjs` run its checks.
+On a Linux desktop, **linux/window.py** (system python3 + GTK 3/WebKitGTK 4.1, no
+build) is the same window: links go to the desktop's default browser, the page
+draws its title bar (`isLinuxApp()`), and `mystical app` puts it in the app
+launcher. `tests/test_linux_window.py` covers its link policy; the GTK half was
+checked on a private Xvfb + dbus-run-session, never the user's own display.
 
 ## The one thing that bites everyone
 

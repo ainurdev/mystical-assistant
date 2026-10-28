@@ -7083,7 +7083,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .qpv-layer:not([data-on]) { visibility: hidden; }
 .qpv-head { display: flex; align-items: center; gap: 8px; padding: 6px 10px 6px 8px; border-bottom: 1px solid var(--qpv-line);
   font-size: var(--t11); color: var(--txh); }
-.qpv-head b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+.qpv-head b { min-width: 0; overflow-wrap: anywhere; font-weight: 700; }
 .qpv-head em { margin-left: auto; flex: none; font: 700 var(--t95)/1 var(--mono); letter-spacing: 1.2px; font-style: normal; color: var(--txl); }
 .qpv-key { display: grid; place-items: center; flex: none; width: 20px; height: 20px; border-radius: max(3px, calc(var(--rc-rs, 4px) * .7));
   font: 700 var(--t105)/1 var(--mono); color: var(--txh); background: var(--panel3, var(--panel)); border: 1px solid var(--qpv-line); }
@@ -7091,8 +7091,9 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .qpv-none { margin: 0; padding: 12px; font-size: var(--t115); color: var(--txl); }
 .ad-meta { display: grid; grid-template-columns: 22px minmax(0, 1fr); column-gap: 9px; row-gap: 2px; align-items: start; padding: 8px 10px 9px; text-align: left; }
 .ad-meta .ad-key { width: 22px; height: 22px; }
-.ad-meta .ad-lab { line-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ad-meta .ad-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* An option is never clipped: a cut label or description is a choice you can't
+   read. Tiles in a row grow to the longest one instead. */
+.ad-meta .ad-lab { line-height: 1.35; padding-top: 2px; }
 /* the tile frame's bottom-right corner: the shots hang from the top, so it is the free one */
 .ad-zm { position: absolute; right: 7px; top: calc(100cqw / var(--ar, 1.6) - 31px); display: grid; place-items: center; width: 26px; height: 24px; padding: 0; border-radius: 6px;
   background: color-mix(in oklab, var(--panel3, var(--panel)) 85%, transparent); border: 1px solid var(--rc-line2); color: var(--txb); }
@@ -7110,10 +7111,11 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-nav[data-side="l"] { left: 10px; } .ad-nav[data-side="r"] { right: 10px; }
 .ad-strip { display: flex; gap: 6px; margin-top: 8px; }
 .ad-chip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 9px; padding: 6px 10px 6px 7px; border-radius: max(3px, var(--rc-rs)); background: var(--panel2);
-  border: 1px solid var(--rc-line); font-size: var(--t13); font-weight: 750; color: var(--txh); white-space: nowrap; overflow: hidden; }
+  border: 1px solid var(--rc-line); font-size: var(--t13); font-weight: 750; line-height: 1.3; color: var(--txh); text-align: left; overflow-wrap: anywhere; }
 .ad-chip .ad-key { grid-row: auto; width: 22px; height: 22px; }
 .ad-chip[data-shown]:not([aria-pressed="true"]) { border-color: color-mix(in oklab, var(--rc) 45%, var(--rc-line2)); }
 .ad-chip[aria-pressed="true"] { border-color: var(--rc); background: color-mix(in oklab, var(--rc) 12%, var(--panel2)); }
+.ad-shd { margin: 0; padding: 8px 10px 9px; border-bottom: 1px solid var(--rc-line); font-size: var(--t115); line-height: 1.45; color: var(--txm); }
 .ad-chip small { margin-left: auto; font-size: var(--t11); font-weight: 600; color: var(--txl); }
 
 /* a permission: the command, the plan or the call, and the two ways out */
@@ -7197,3 +7199,108 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ask-rec :is(.ad-tile[data-on] .ad-tilebtn, .ad-chip[aria-pressed="true"]) { border-color: color-mix(in oklab, var(--ok) 65%, var(--rc-line2)); box-shadow: none; }
 .ask-rec .ad-row[aria-pressed="true"] { border-color: color-mix(in oklab, var(--ok) 55%, var(--rc-line2)); background: color-mix(in oklab, var(--ok) 9%, var(--panel2)); }
 .ask-rec .ad-key[data-on] { background: var(--ok); border-color: var(--ok); color: var(--canvas, #000); }
+
+/* The installed PWA with its title bar hidden (lib/wco.ts sets data-wco): the
+   caps are the title bar. A cap's bare surface drags the window; anything you
+   can press, and the popovers that hang off a cap, don't. --wco-l/--wco-r are
+   the room Chrome's own buttons take at either end (KDE puts them right). */
+:root { --wco-l: 0px; --wco-r: 0px; }
+:root[data-wco] {
+  --wco-l: env(titlebar-area-x, 0px);
+  --wco-r: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
+}
+[data-wco] .wco-bar { -webkit-app-region: drag; app-region: drag; }
+[data-wco] .wco-bar :is(button, a, input, select, textarea, label, [role=button], [contenteditable], [tabindex], [style*="position: absolute"]) {
+  -webkit-app-region: no-drag; app-region: no-drag;
+}
+/* The corner Chrome's overlay takes: the PWA's only (data-wco=""). The Linux
+   window's buttons are in the rail, and these grounds stacked a second
+   translucent --panel3 under the gear's cell there, a lighter square. */
+[data-wco=""] .wco-bar.brand { padding-left: calc(12px + var(--wco-l)) !important; }
+[data-wco=""] .rcap { padding-right: var(--wco-r); }
+/* Right panel folded: the cap is the rail's 48px, narrower than the buttons,
+   so it grows left over the transcript's corner and the chat header's own
+   cluster (it moves there when folded) steps out of the way. */
+[data-wco=""] .rcap[data-bare] { margin-left: calc(-1 * var(--wco-r)); background: var(--panel3); }
+[data-wco=""] .hudgrid[data-rbare] .chathead { padding-right: calc(12px + var(--wco-r)) !important; }
+/* The buttons sit on the rail's ground, continuous with the gear's cell. */
+[data-wco=""] .rcap:not([data-bare]) { background: linear-gradient(to left, var(--panel3) var(--wco-r), transparent 0); }
+
+/* ── workspaces (WorkspaceButton): the switch in Brand's cap, its menu ──
+   A workspace's avatar is not a project tile: a tile is a flat square of the
+   project's tint (.ptile), the avatar is the accent's, with a ring a step off
+   its edge, so the two never read as the same kind of thing. */
+.wsav {
+  position: relative; display: inline-grid; place-items: center; flex: none; overflow: hidden;
+  border-radius: 3px; font: 700 11px/1 var(--mono); color: var(--acc);
+  background: color-mix(in srgb, var(--acc) 12%, var(--panel, transparent));
+  box-shadow: 0 0 0 1px var(--panel, #000), 0 0 0 2px color-mix(in srgb, var(--acc) 55%, transparent);
+}
+.wsav img { width: 100%; height: 100%; object-fit: cover; display: block; }
+[data-fam] .wsav { border-radius: max(4px, var(--f-rad-s)); font-family: var(--ui-font); font-weight: 650; }
+.wsbtn-wrap { position: relative; flex: none; display: inline-flex; margin-right: 8px; }
+.wsbtn { appearance: none; border: 0; padding: 0; background: transparent; cursor: pointer; display: inline-flex; border-radius: 4px; transition: transform .12s ease; }
+.wsbtn:hover .wsav, .wsbtn[aria-expanded="true"] .wsav { box-shadow: 0 0 0 1px var(--panel, #000), 0 0 0 2px var(--acc); }
+.wsbtn:active { transform: scale(.94); }
+.wspop {
+  position: absolute; top: calc(100% + 10px); right: -6px; z-index: 60; width: 236px; padding: 6px;
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: var(--panel2, var(--panel));
+  box-shadow: 0 16px 44px var(--shadow-pop, rgba(0,0,0,.5)); animation: mslide .16s ease both;
+}
+[data-fam] .wspop { border-radius: var(--f-rad, 8px); border-color: var(--line); }
+.wspop-h { padding: 4px 8px 7px; font-size: var(--t95); letter-spacing: 1.5px; text-transform: uppercase; color: var(--txd); }
+.wspop-row {
+  appearance: none; border: 0; background: transparent; width: 100%; display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px; cursor: pointer; text-align: left; color: var(--txb); font: inherit; font-size: var(--t12);
+}
+[data-fam] .wspop-row { border-radius: var(--f-rad-s, 6px); font-family: var(--ui-font); }
+.wspop-row:hover { background: var(--ac-06, color-mix(in srgb, var(--acc) 8%, transparent)); }
+.wspop-row[aria-checked="true"] { color: var(--txh, var(--txb)); }
+.wspop-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.wspop-n { flex: none; font-size: var(--t95); color: var(--txl, var(--txd)); }
+.wspop-on { flex: none; color: var(--acc); }
+.wspop-manage { margin-top: 4px; border-top: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); padding-top: 9px; color: var(--txm); }
+[data-fam] .wspop-manage { border-top-color: var(--line); }
+/* ROW: every workspace a button; the current one ringed in the accent, the rest
+   dimmed until hovered. Padding keeps the rings inside the scroll box. */
+.wsrow { display: flex; align-items: center; gap: 7px; flex: 0 1 auto; min-width: 0; max-width: 172px; margin-right: 4px;
+  padding: 5px; overflow-x: auto; scrollbar-width: none; }
+.wsrow::-webkit-scrollbar { display: none; }
+.wsrow .wsbtn { flex: none; }
+.wsrow .wsbtn[aria-checked="false"] .wsav { opacity: .55; box-shadow: 0 0 0 1px var(--panel, #000), 0 0 0 2px color-mix(in srgb, var(--acc) 22%, transparent); }
+.wsrow .wsbtn[aria-checked="false"]:hover .wsav { opacity: 1; }
+.wsrow .wsbtn[aria-checked="true"] .wsav { box-shadow: 0 0 0 1px var(--panel, #000), 0 0 0 2px var(--acc); }
+/* The picture picker under a workspace's avatar (WorkspacesSettings) */
+.wspick { position: absolute; top: calc(100% + 8px); left: -4px; z-index: 70; width: 288px; padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: var(--panel2, var(--panel));
+  box-shadow: 0 16px 44px var(--shadow-pop, rgba(0,0,0,.5)); animation: mslide .16s ease both; text-align: left; }
+[data-fam] .wspick { border-radius: var(--f-rad, 8px); border-color: var(--line); }
+.wspick-h { font-size: var(--t95); letter-spacing: 1.5px; text-transform: uppercase; color: var(--txd); margin: 0 2px 8px; }
+[data-fam] .wspick-h { letter-spacing: .02em; text-transform: none; font-weight: 600; }
+.wspick-q { width: 100%; box-sizing: border-box; margin-bottom: 8px; padding: 5px 8px; font: inherit; font-size: var(--t10); color: var(--txb);
+  background: var(--panel3, var(--panel)); border: 1px solid color-mix(in srgb, var(--acc) 20%, transparent); outline: none; }
+.wspick-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; max-height: 196px; overflow-y: auto; padding: 2px; }
+.wspick-logo { appearance: none; aspect-ratio: 1; min-width: 0; padding: 5px; cursor: pointer; display: grid; place-items: center;
+  background: var(--panel3, var(--panel)); border: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); border-radius: 4px; }
+.wspick-logo:hover { border-color: var(--acc); }
+.wspick-logo img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.wspick-none { padding: 10px 2px; font-size: var(--t10); color: var(--txd); }
+.wspick-foot { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); }
+.wspick-foot button { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; font: inherit;
+  font-size: var(--t95); color: var(--txm); background: transparent; border: 1px solid color-mix(in srgb, var(--acc) 25%, transparent); }
+.wspick-foot button:hover { color: var(--txb); border-color: var(--acc); }
+[data-fam] .wspick-foot button { border-radius: var(--f-rad-s, 6px); }
+/* Something new in a workspace you aren't on (WorkspaceButton `news`): a dot at
+   the button's top right, cut out of the cap by a ring of the panel's ground,
+   and NEW with the count on its menu row. */
+.wsbtn { position: relative; }
+.wsdot { position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; pointer-events: none;
+  background: var(--warn, #f5a524); box-shadow: 0 0 0 2px var(--panel, #000); }
+.wspop-new { flex: none; padding: 2px 6px; border-radius: 4px; font: 700 var(--t85, 9px)/1.2 var(--mono); letter-spacing: .06em;
+  color: var(--warn, #f5a524); background: color-mix(in srgb, var(--warn, #f5a524) 16%, transparent); }
+[data-fam] .wspop-new { font-family: var(--ui-font); border-radius: 999px; }
+/* The Linux window (linux/window.py): its buttons live in the right rail
+   (LinuxControls), so the caps keep their corners; data-wco="linux" only
+   marks the caps as the title bar to drag. */
+:root[data-wco="linux"] { --wco-l: 0px; --wco-r: 0px; }
+.lxclose:hover { color: var(--err) !important; background: color-mix(in srgb, var(--err) 12%, transparent) !important; }
