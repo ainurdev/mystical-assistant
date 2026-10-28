@@ -392,7 +392,7 @@ body {
 }
 .vskip-row > * {
   content-visibility: auto;
-  contain-intrinsic-size: auto 21px;
+  contain-intrinsic-size: auto 24px;
 }
 /* ponytail: file-tree rows hover in CSS, not React state. Tracking the hovered
    row in the parent re-rendered all ~1100 of them on every mouse move (measured
@@ -402,6 +402,13 @@ body {
 .trow:hover {
   background: color-mix(in srgb, var(--acc) 6%, transparent);
 }
+/* FILES: a file row's actions (@ add to prompt, copy path) take its marks'
+   place on hover — CSS for the reason above. */
+.trow-act { display: none; flex: none; gap: 2px; margin-right: -4px; }
+.trow:hover .trow-act { display: flex; }
+.trow:hover .trow-mark { display: none !important; }
+.trow-act > span { display: grid; place-items: center; width: 22px; height: 20px; border-radius: var(--r); color: var(--txl); }
+.trow-act > span:hover { color: var(--txh); background: var(--wash); }
 /* GIT tab review notes: the gutter's + shows on the hovered diff line only.
    CSS, not React state, for the reason .trow gives: a diff can be thousands of
    rows. */

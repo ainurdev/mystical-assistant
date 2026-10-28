@@ -120,6 +120,7 @@ import { SettingsModal, type Tab as SettingsTab } from "./components/hud/Setting
 import { AskDialog, askConfirm, askPrompt } from "./components/ui/Ask";
 import { confirmLeave, leavePending, leavingOnPurpose, setLeavePending } from "./lib/leaveGuard";
 import { RestartIntro, restartBridge } from "./lib/restart";
+import { sessionEdits } from "./lib/sessionedits";
 import { NativeTips } from "./components/ui/Tip";
 import { ContextMenu, type CtxItem, type CtxState } from "./components/hud/ContextMenu";
 import { AnalyzeModal, type Tab as AnalyzeTab } from "./components/hud/AnalyzeModal";
@@ -2101,6 +2102,10 @@ export function App() {
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
   const sessionBranch = selected?.branch;
+  // What the session wrote, for FILES' ✦ marks, relative to the tree FILES shows:
+  // the worktree its shell moved into, else its run dir.
+  const filesEdits = useMemo(() => sessionEdits(turns, selected?.work_cwd || selected?.cwd),
+    [turns, selected?.work_cwd, selected?.cwd]);
   // The MAP chip and the window's MAP tab show only where the repo's own switch
   // (SETTINGS ▸ Projects ▸ Project map) is on; re-read when SETTINGS closes.
   const [mapOn, setMapOn] = useState(false);
@@ -2294,6 +2299,13 @@ export function App() {
           onSendFile={teammates.length && sessionProject
             ? (file) => setSendWhat({ what: { kind: "file", project: sessionProject, branch: sessionBranch || undefined, file } })
             : undefined}
+          edited={filesEdits.edited} editing={filesEdits.now}
+          onAddToPrompt={(path) => {
+            // After whatever you were writing, as TURNS' reuse does, but inline.
+            setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")} \`${path}\` ` : `\`${path}\` `);
+            toChat();
+            window.dispatchEvent(new Event("ask:focus"));
+          }}
         />
       ),
     },
