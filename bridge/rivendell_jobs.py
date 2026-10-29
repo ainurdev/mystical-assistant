@@ -36,7 +36,7 @@ import time
 
 # A kind's tag in the dashboard is the PLUGINS queue's word for it (RivendellQueue.tsx).
 KINDS = ("review", "impl", "taskdesc", "todolist", "changelog", "news", "deck", "video", "meeting-notes",
-         "project-summary", "meeting-brief", "conflict")
+         "project-summary", "meeting-brief", "conflict", "design-build")
 
 
 def _pick(*vals):
@@ -53,6 +53,7 @@ def facts(kind: str, request_id: str, instance_id: str,
     batch = s.get("batch") or c.get("batch") or {}
     file = s.get("file") or c.get("file") or {}
     meeting = s.get("meeting") or c.get("meeting") or {}
+    design = s.get("design") or {}
     step = None
     if kind == "todolist":
         step = str(_pick(s.get("kind"), c.get("kind")) or "").lower() or None
@@ -72,6 +73,7 @@ def facts(kind: str, request_id: str, instance_id: str,
         "video": _pick(file.get("name"), s.get("fileName")),
         "meeting-notes": _pick(meeting.get("name"), s.get("meetingName")),
         "meeting-brief": _pick(meeting.get("name"), s.get("meetingName"), c.get("meetingName")),
+        "design-build": _pick(design.get("title"), s.get("designTitle"), c.get("designTitle")),
     }.get(kind)
     job = {
         "kind": kind, "instance": instance_id, "request": request_id, "step": step, "title": title,
@@ -79,7 +81,7 @@ def facts(kind: str, request_id: str, instance_id: str,
                       s.get("repositoryFullName"), c.get("repositoryFullName")),
         "number": _pick(pr.get("number"), s.get("pullRequestNumber")),
         "html_url": _pick(pr.get("htmlUrl"), s.get("pullRequestHtmlUrl"), task.get("htmlUrl")),
-        "url": _pick(s.get("url"), c.get("url"), pr.get("url"), batch.get("url"), meeting.get("url")),
+        "url": _pick(s.get("url"), design.get("url"), c.get("url"), pr.get("url"), batch.get("url"), meeting.get("url")),
         # A brief's meeting start, for its view's date and countdown (JobViews).
         "starts": _pick(meeting.get("startsAt"), s.get("startsAt"), c.get("startsAt")),
         "date": _pick(s.get("editionDate"), c.get("editionDate")),
@@ -112,6 +114,8 @@ def title(job: dict) -> "str | None":
         if name:
             return f"{name} · conflicts"
         return f"Conflicts · {job['repo']} #{job['number']}" if job.get("repo") and job.get("number") else None
+    if kind == "design-build":
+        return f"{name} · design build" if name else None
     if not name or kind in ("video", "meeting-notes"):
         return None
     if kind == "todolist":
@@ -140,12 +144,13 @@ def headline(text: "str | None") -> "str | None":
 
 
 # The fixed opening of each Rivendell prompt template (backend/src/**/*prompt.template.ts).
-# The brief's and the summary's come first: a prompt's head can quote a meeting's or a commit's title,
-# and that can hold another template's words.
+# The brief's, the summary's and the design build's come first: a prompt's head can quote a meeting's,
+# a commit's or a design's title, and that can hold another template's words.
 _MARKS = (
     ("conflict", "resolving a pull request's merge conflicts"),
     ("meeting-brief", "You are preparing a brief for the meeting"),
     ("project-summary", "You are writing a short summary of what happened in the project"),
+    ("design-build", "You are building a design version"),
     ("review", "performing a code review"),
     ("impl", "implementing a task"),
     ("impl", "implementing a batch of related tasks"),
@@ -173,6 +178,7 @@ _TITLE_MARKS = (
     ("project-summary", "You are writing a short summary of what happened"),
     ("meeting-brief", "You are preparing a brief for the meeting"),
     ("conflict", "You are resolving a pull request's merge confl"),
+    ("design-build", "You are building a design version for the team"),
     ("video", "You are given the transcript of a recording"),
 )
 
@@ -216,6 +222,9 @@ def classify(prompt: "str | None") -> "dict | None":
         job["title"] = _line(r'in the project "(.+?)"\.', head)
     elif kind == "meeting-brief":
         job["title"] = _line(r'for the meeting "(.+?)"\.', head)
+    elif kind == "design-build":
+        job["title"] = _line(r'the web prototype "(.+?)" of the project', head)
+        job["repo"] = _line(r"^Repository: (\S+)", p)
     elif kind == "video":
         job["title"] = _line(r"^File: (.+?) \(", p)
         job["step"] = "transcribe" if "the screens of it" in head else None

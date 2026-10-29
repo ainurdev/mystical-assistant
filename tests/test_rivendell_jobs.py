@@ -452,3 +452,62 @@ def test_classify_reads_a_conflicts_job_back_from_its_prompt():
     assert rivendell_jobs.classify(CONFLICT_PROMPT) == {
         "kind": "conflict", "title": "Fix hydration error",
         "html_url": "https://github.com/ainurdev/rivendell/pull/87", "repo": "ainurdev/rivendell", "number": 87}
+
+
+# --- design builds -----------------------------------------------------------
+
+DESIGN_URL = "https://riv.example/projects/p1/designs/d1"
+DESIGN_FRAME = {
+    "type": "design-build-request", "requestId": "b1", "mode": "build",
+    "design": {"id": "d1", "title": "Student card", "url": DESIGN_URL},
+    "repository": {"id": "repo-1", "fullName": "ainurdev/nr-kantoor"}, "branch": "main"}
+DESIGN_ROW = {"id": "b1", "mode": "build", "designId": "d1", "designTitle": "Student card",
+              "projectName": "NR Kantoor", "url": DESIGN_URL,
+              "repositoryFullName": "ainurdev/nr-kantoor", "branch": "main",
+              "createdAt": "2026-10-26T09:00:00.000Z"}
+DESIGN_PROMPT = """You are building a design version for the team: the web prototype "Student card" of the project NR Kantoor.
+
+Design: Student card
+Project: NR Kantoor
+Repository: ainurdev/nr-kantoor (https://github.com/ainurdev/nr-kantoor)
+"""
+
+
+def test_facts_name_a_design_build_by_its_design_from_an_event_a_row_and_a_claim():
+    job = {"kind": "design-build", "instance": "t1", "request": "b1", "title": "Student card",
+           "repo": "ainurdev/nr-kantoor", "url": DESIGN_URL}
+    assert rivendell_jobs.facts("design-build", "b1", "t1", src=DESIGN_FRAME) == job      # the design's page, nested
+    assert rivendell_jobs.facts("design-build", "b1", "t1", src=DESIGN_ROW) == job
+    claim = {"requestId": "b1", "status": "IN_PROGRESS", "mode": "build", "repositoryFullName": "ainurdev/nr-kantoor",
+             "branch": "main", "designTitle": "Student card", "url": DESIGN_URL}
+    assert rivendell_jobs.facts("design-build", "b1", "t1", claim=claim) == job
+
+
+def test_title_names_a_design_builds_job():
+    t = rivendell_jobs.title
+    assert t({"kind": "design-build", "title": "Student card"}) == "Student card · design build"
+    assert t({"kind": "design-build", "repo": "ainurdev/nr-kantoor"}) is None
+
+
+def test_classify_reads_a_design_build_back_from_its_prompt():
+    assert rivendell_jobs.classify(DESIGN_PROMPT) == {
+        "kind": "design-build", "title": "Student card", "repo": "ainurdev/nr-kantoor"}
+    # A design is named by anyone on the team, so its title can hold another template's words:
+    # the build's own opening line wins.
+    assert rivendell_jobs.classify(DESIGN_PROMPT.replace("Student card", "Review: performing a code review")) \
+        == {"kind": "design-build", "title": "Review: performing a code review", "repo": "ainurdev/nr-kantoor"}
+
+
+def test_backfill_files_a_design_build_by_its_prompt_and_by_its_title():
+    """Rivendell's design build template opens with a fixed line: a session that kept its prompt is
+    filed by it and named as the worker names it now; one MOVE brought over has only its title,
+    the prompt's first 60 characters."""
+    store.init()
+    kept = _rv_session(DESIGN_PROMPT)
+    moved = store.upsert_native_session("native-" + str(next(_chat)), next(_chat), "/", "/x",
+                                        title=DESIGN_PROMPT[:60])["id"]
+    rivendell_jobs.backfill()
+    assert store.parse_job(store.get_session(kept)["job"])["kind"] == "design-build"
+    assert store.get_session(kept)["title"] == "Student card · design build"
+    assert store.parse_job(store.get_session(moved)["job"]) == {"kind": "design-build"}
+    assert store.get_session(moved)["title"] == DESIGN_PROMPT[:60]

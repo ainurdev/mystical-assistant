@@ -29,7 +29,7 @@ os.environ.setdefault("BRIDGE_DB", os.path.join(tempfile.mkdtemp(), "t.db"))
 
 import pytest  # noqa: E402
 
-from bridge import device_share, device_side, device_view, integrations, rivendell, wsutil  # noqa: E402
+from bridge import device_share, device_side, device_view, integrations, rivendell, rivendell_jobs, wsutil  # noqa: E402
 
 _real_ack = rivendell.Worker._ack
 
@@ -665,6 +665,7 @@ def test_catch_up_queues_meeting_notes_requests(monkeypatch):
 
 @pytest.mark.parametrize("kind, path, runner", [
     ("conflict", "conflict-requests", "_run_conflict"),
+    ("design-build", "design-build-requests", "_run_design_build"),
     ("meeting-notes", "meeting-notes-requests", "_run_meeting_notes"),
     ("project-summary", "project-summary-requests", "_run_project_summary"),
     ("meeting-brief", "meeting-brief-requests", "_run_meeting_brief"),
@@ -686,6 +687,14 @@ def test_each_kind_is_routed_by_its_own_path_never_the_review_fallback(monkeypat
     monkeypatch.setattr(w, "_post_result", lambda kp, rid, ok, text: posted.append((kp, rid, ok, text)))
     w._run_accepted({"kind": kind, "request_id": "m1", "slug": "Weekly sync"})
     assert ran == [] and posted == [(path, "m1", False, "bridge error: boom")]
+
+
+def test_every_kind_has_a_path_a_label_and_a_job_kind():
+    """A kind added to one of the tables and not the others lands on a fallback: the review path, the
+    kind's raw word, or a session with no job. device-run is a device's run (filed by device_view), not
+    a job of rivendell_jobs."""
+    assert set(rivendell.Worker._KIND_PATH) - {"device-run"} == set(rivendell_jobs.KINDS)
+    assert set(rivendell.Worker._KIND_LABEL) == set(rivendell.Worker._KIND_PATH)
 
 
 def test_queued_message_names_meeting_notes():
@@ -3830,3 +3839,464 @@ def test_conflict_message_says_why_mystical_stopped():
 
 def test_conflict_message_is_none_for_an_answer_that_is_no_report():
     assert rivendell._conflict_message({"number": 87}, "just prose") is None
+
+
+# --- design builds: a design's page built from its repository, sent up, then the answer posted -----------
+
+_DESIGN_FRAME = {
+    "type": "design-build-request", "requestId": "b1", "mode": "build",
+    "design": {"id": "d1", "title": "Student card", "url": "https://riv.example/projects/p1/designs/d1"},
+    "repository": {"id": "repo-1", "fullName": "ainurdev/nr-kantoor"}, "branch": "main"}
+_DESIGN = {"title": "Student card", "url": "https://riv.example/projects/p1/designs/d1"}
+
+
+def test_handle_message_design_build_requests():
+    """design-build-request events queue as "design-build" under the repository, once, and keep
+    the design's title and page for the done ping."""
+    w = _worker()
+    ev = json.dumps(_DESIGN_FRAME).encode()
+    w._handle_message(ev)
+    w._handle_message(ev)                          # duplicate: dropped
+    assert _drain(w) == [("design-build", "b1", "ainurdev/nr-kantoor")]
+    assert w._designs["b1"] == _DESIGN
+
+
+def test_catch_up_queues_design_build_requests(monkeypatch):
+    """A catch-up row is flat (designTitle, url, repositoryFullName): the same key, slug and design as the event."""
+    w = _worker()
+    monkeypatch.setattr(w, "_apply_policy", lambda key: None)
+
+    def api(path, payload=None):
+        if path == "/plugin/design-build-requests":
+            return [{"id": "b1", "mode": "build", "designId": "d1", "designTitle": "Student card",
+                     "projectName": "NR Kantoor", "url": "https://riv.example/projects/p1/designs/d1",
+                     "repositoryFullName": "ainurdev/nr-kantoor", "branch": "main",
+                     "createdAt": "2026-10-26T09:00:00.000Z"}]
+        return []
+    monkeypatch.setattr(w, "_api", api)
+    w._catch_up()
+    assert [(r["key"], r["slug"]) for r in w.queue_snapshot()] == [("design-build:b1", "ainurdev/nr-kantoor")]
+    assert w._designs["b1"] == _DESIGN
+
+
+def test_design_build_without_checkout_is_refused(monkeypatch, acks):
+    """Like an implementation: a design build runs the repository's code, so with no local checkout
+    of it, it is refused ("no-checkout") instead of claimed, forgotten, and the owner is told what."""
+    w = _worker()
+    hits, calls, notes = [], [], []
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: None)
+    monkeypatch.setattr(w, "accept", lambda key: hits.append(key) or True)
+    monkeypatch.setattr(w, "_api", lambda path, payload=None: calls.append((path, payload)))
+    monkeypatch.setattr(w, "_note", lambda kind, rid, title, body="", **meta: notes.append((kind, rid, title)))
+    w._apply_policy(w._enqueue("design-build", "b1", "ainurdev/nr-kantoor"))
+    assert hits == [] and acks == [] and w.queue_snapshot() == []
+    assert calls == [("/plugin/design-build-requests/b1/refuse", {"reason": "no-checkout"})]
+    assert notes == [("rv_refused", "b1", "Design build · ainurdev/nr-kantoor")]
+    assert "design-build:b1" not in w._seen
+
+
+_BUILT = '{"outcome": "built", "commit": "abc1234", "changelog": ["x"], "summary": "Built."}'
+_PAGE = b"<!doctype html><html><body>Student card</body></html>"
+
+
+def _design_worker(monkeypatch, tmp_path, answer=_BUILT, run_ok=True, page=_PAGE):
+    """A worker that runs one design build against fakes: the claim, the checkout (tmp_path), a Claude
+    run that ends (run_ok, answer) as _wait_job returns it, and the page the agent left at
+    .mystical/design-build/b1.html (`page` bytes; None leaves none). Returns (worker, seen): seen
+    lists what it did: started, tracked, waited, put and post, and order (put and post, as they happened)."""
+    w = _worker()
+    seen = {"started": [], "tracked": [], "waited": [], "put": [], "post": [], "order": []}
+    job = type("Job", (), {"store_session_id": "s1"})()
+
+    def wait_job(job, timeout):
+        seen["waited"].append(timeout)
+        return run_ok, answer
+
+    def put(path, data, content_type, headers=None):
+        seen["order"].append("put")
+        seen["put"].append((path, data, content_type))
+
+    def post(kind_path, rid, ok, text):
+        seen["order"].append("post")
+        seen["post"].append((kind_path, rid, ok, text))
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {"prompt": "build it", "repositoryFullName": "ainurdev/nr-kantoor", "mode": "build"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: str(tmp_path) if slug == "ainurdev/nr-kantoor" else None)
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None, **k: seen["started"].append((prompt, workdir, hang_timeout, k)) or job)
+    monkeypatch.setattr(w, "_track", lambda rid, kind, slug, sid, **k: seen["tracked"].append((rid, kind, slug, sid)))
+    monkeypatch.setattr(w, "_wait_job", wait_job)
+    monkeypatch.setattr(w, "_api_put_bytes", put)
+    monkeypatch.setattr(w, "_post_result", post)
+    if page is not None:
+        built = tmp_path / ".mystical" / "design-build"
+        built.mkdir(parents=True)
+        (built / "b1.html").write_bytes(page)
+    return w, seen
+
+
+def test_run_design_build_fails_without_checkout(monkeypatch):
+    """No local checkout for the repository -> FAILED, never a run somewhere else."""
+    w = _worker()
+    posted = []
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {"prompt": "build it", "repositoryFullName": "acme/gone"})
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: None)
+    monkeypatch.setattr(w, "_post_result", lambda kind_path, rid, ok, text: posted.append((kind_path, rid, ok, text)))
+    monkeypatch.setattr(w, "_start_run", lambda *a, **k: (_ for _ in ()).throw(AssertionError("must not run")))
+    w._run_design_build("b1", "acme/other")
+    assert posted == [("design-build-requests", "b1", False,
+                       f"no local checkout for 'acme/gone' under {rivendell.config.BASE_PATH}")]
+
+
+def test_run_design_build_uploads_the_page_then_posts_the_answer(monkeypatch, tmp_path):
+    """It runs in the repository's checkout, with tools, on an implementation's clock, tracked as a
+    design build. When the answer says built, the page the agent left goes up first, as the raw body
+    of the request's file route; then the answer is posted as it came."""
+    w, seen = _design_worker(monkeypatch, tmp_path)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["started"] == [("build it", str(tmp_path), 10800, {})]
+    assert seen["tracked"] == [("b1", "design-build", "ainurdev/nr-kantoor", "s1")]
+    assert seen["waited"] == [10800]
+    assert seen["put"] == [("/plugin/design-build-requests/b1/file", _PAGE, "text/html; charset=utf-8")]
+    assert seen["post"] == [("design-build-requests", "b1", True, _BUILT)]
+    assert seen["order"] == ["put", "post"]
+
+
+def test_run_design_build_fails_when_the_page_is_missing(monkeypatch, tmp_path):
+    """Built, but no page where the prompt said to leave it: FAILED saying where, and nothing sent."""
+    w, seen = _design_worker(monkeypatch, tmp_path, page=None)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["put"] == []
+    assert seen["post"] == [("design-build-requests", "b1", False, "no built page at .mystical/design-build/b1.html")]
+
+
+def test_run_design_build_fails_when_the_page_is_too_big(monkeypatch, tmp_path):
+    """Over 25 MB is a 400 from Rivendell waiting to happen: FAILED with the size, nothing sent. A link
+    where the page should be is no page, whatever it points to."""
+    w, seen = _design_worker(monkeypatch, tmp_path, page=None)
+    page = tmp_path / ".mystical" / "design-build" / "b1.html"
+    page.parent.mkdir(parents=True)
+    with open(page, "wb") as f:
+        f.truncate(26 * 1024 * 1024)               # sparse: 26 MB without writing them
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["post"] == [("design-build-requests", "b1", False, "the built page is 26 MB, over 25 MB")]
+    page.unlink()
+    (tmp_path / "elsewhere.html").write_bytes(_PAGE)
+    page.symlink_to(tmp_path / "elsewhere.html")
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["post"][1:] == [("design-build-requests", "b1", False, "no built page at .mystical/design-build/b1.html")]
+    assert seen["put"] == []
+
+
+@pytest.mark.parametrize("outcome", ["no-preview", "unsuitable"])
+def test_run_design_build_posts_other_outcomes_as_they_are(monkeypatch, tmp_path, outcome):
+    """no-preview and unsuitable are answers, not builds: posted as they came, ok, with no page sent
+    (even when one lies there)."""
+    answer = json.dumps({"outcome": outcome, "summary": "A Vite app with no single-file build.",
+                         "suggestion": "Add vite-plugin-singlefile and an in-memory data layer."})
+    w, seen = _design_worker(monkeypatch, tmp_path, answer=answer)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["put"] == []
+    assert seen["post"] == [("design-build-requests", "b1", True, answer)]
+
+
+def test_run_design_build_uploads_nothing_for_a_run_that_failed(monkeypatch, tmp_path):
+    """A run that failed posts what it has, FAILED, and sends no page: not even when its text reads
+    like a build report (a run that errored after answering) and a page lies there."""
+    w, seen = _design_worker(monkeypatch, tmp_path, run_ok=False)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["put"] == []
+    assert seen["post"] == [("design-build-requests", "b1", False, _BUILT)]
+
+
+def _refused(code, reason, message=None):
+    """What a call raises when Rivendell refuses it with HTTP `code` (`reason` is its status line): an
+    HTTPError whose body is Nest's {statusCode, message, error}; with no message, no body."""
+    body = json.dumps({"statusCode": code, "message": message, "error": reason}).encode() if message else b""
+    return urllib.error.HTTPError("http://api/x", code, reason, None, io.BytesIO(body))
+
+
+_NO_FILE = "No file was uploaded for this build."
+_ONE_HTML = "Upload one self-contained HTML file (.html), up to 25 MB."
+
+
+@pytest.mark.parametrize("error, why", [
+    (RuntimeError("boom"), "boom"),
+    (_refused(400, "Bad Request", _ONE_HTML), _ONE_HTML),
+    (_refused(502, "Bad Gateway"), "HTTP Error 502: Bad Gateway"),
+], ids=["a failure with its own words", "Rivendell's words", "a refusal with none: the status"])
+def test_run_design_build_fails_when_the_upload_fails(monkeypatch, tmp_path, error, why):
+    """Rivendell makes the version from the page, so a page that did not go up is a FAILED job, never
+    a COMPLETED one for a version that will not exist; the reason is the upload's, in Rivendell's own
+    words when it gave any (the owner reads them, not "HTTP Error 400: Bad Request")."""
+    w, seen = _design_worker(monkeypatch, tmp_path)
+
+    def boom(path, data, content_type, headers=None):
+        raise error
+    monkeypatch.setattr(w, "_api_put_bytes", boom)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert seen["post"] == [("design-build-requests", "b1", False, f"the built page did not upload: {why}")]
+
+
+@pytest.mark.parametrize("run_ok, answer, refusals, statuses", [
+    (True, _BUILT, 1, ["COMPLETED", "FAILED"]),
+    (True, '{"outcome": "no-preview", "summary": "A Vite app.", "suggestion": "Add x."}', 1, ["COMPLETED", "FAILED"]),
+    (True, _BUILT, 2, ["COMPLETED", "FAILED"]),
+    (False, "the run timed out", 1, ["FAILED"]),
+], ids=["built", "no preview", "the FAILED is refused too", "a run that failed"])
+def test_a_design_result_rivendell_refuses_is_posted_again_failed(monkeypatch, tmp_path, run_ok, answer, refusals, statuses):
+    """A 4xx on the COMPLETED result (here a 400 that says why) would never change, and the request
+    would stay open for good: so the same request is posted FAILED,
+    saying what Rivendell said. A FAILED result is only posted once, whatever Rivendell answers."""
+    from bridge import store
+    store.init()
+    w, _seen = _design_worker(monkeypatch, tmp_path, answer=answer, run_ok=run_ok)
+    monkeypatch.setattr(w, "_post_result", rivendell.Worker._post_result.__get__(w))     # the real one
+    posts = []
+
+    def api(path, payload=None, headers=None):
+        posts.append((path, payload))
+        if len(posts) <= refusals:
+            raise _refused(400, "Bad Request", _NO_FILE)
+        return {}
+    monkeypatch.setattr(w, "_api", api)
+    w._run_design_build("b1", "ainurdev/nr-kantoor")
+    assert [(p, body["status"]) for p, body in posts] == [("/plugin/design-build-requests/b1/result", s) for s in statuses]
+    assert posts[0][1]["result" if run_ok else "error"] == answer
+    if len(statuses) == 2:
+        assert posts[1][1]["error"] == f"Rivendell refused the result: {_NO_FILE}"
+
+
+@pytest.mark.parametrize("error, said", [
+    (_refused(400, "Bad Request", _NO_FILE), _NO_FILE),
+    (_refused(400, "Bad Request", ["error must be shorter than 5000 characters", "model must be a string"]),
+     "error must be shorter than 5000 characters; model must be a string"),
+    (urllib.error.HTTPError("http://api/x", 502, "Bad Gateway", None, io.BytesIO(b"<html>Bad Gateway</html>")),
+     "HTTP Error 502: Bad Gateway"),
+    (_refused(409, "Conflict"), "HTTP Error 409: Conflict"),
+    (urllib.error.URLError("connection refused"), "<urlopen error connection refused>"),
+    (RuntimeError("boom"), "boom"),
+], ids=["a message", "a list of them", "a body that is no JSON", "no body", "no response at all", "any other failure"])
+def test_reason_is_rivendells_own_words_else_the_errors_text(error, said):
+    assert rivendell._reason(error) == said
+
+
+def test_built_file_answers_the_page_or_why_not(tmp_path):
+    """Only a regular file at the page's path, at most 25 MB, comes back as bytes. It is opened without
+    following a link or waiting on a pipe; every other shape is no page, and a big one says so."""
+    d = tmp_path / ".mystical" / "design-build"
+    d.mkdir(parents=True)
+    page, gone = d / "b1.html", (None, "no built page at .mystical/design-build/b1.html")
+    assert rivendell._built_file(str(tmp_path), "b1") == gone                  # nothing there
+    page.mkdir()
+    assert rivendell._built_file(str(tmp_path), "b1") == gone                  # a folder
+    page.rmdir()
+    (tmp_path / "elsewhere.html").write_bytes(_PAGE)
+    page.symlink_to(tmp_path / "elsewhere.html")
+    assert rivendell._built_file(str(tmp_path), "b1") == gone                  # a link, even to a good page
+    page.unlink()
+    os.mkfifo(page)
+    got = []
+    t = threading.Thread(target=lambda: got.append(rivendell._built_file(str(tmp_path), "b1")), daemon=True)
+    t.start()
+    t.join(5)
+    assert got == [gone]                                                       # a pipe, not waited on
+    page.unlink()
+    page.write_bytes(_PAGE)
+    assert rivendell._built_file(str(tmp_path), "b1") == (_PAGE, "")
+    with open(page, "wb") as f:
+        f.truncate(rivendell._DESIGN_FILE_MAX)
+    data, why = rivendell._built_file(str(tmp_path), "b1")
+    assert len(data) == rivendell._DESIGN_FILE_MAX and why == ""               # at the cap is in
+    with open(page, "wb") as f:
+        f.truncate(rivendell._DESIGN_FILE_MAX + 1)
+    assert rivendell._built_file(str(tmp_path), "b1") == (None, "the built page is 26 MB, over 25 MB")   # a byte over is out; the size rounds up
+
+
+def test_design_report_reads_the_json_object_with_a_known_outcome():
+    """The agent's answer is one JSON object, sometimes in a ```json fence. Only an outcome a design
+    build has makes it a report; prose, other kinds' reports and broken JSON make none."""
+    fenced = f"Built it.\n```json\n{_BUILT}\n```"
+    assert rivendell._design_report(fenced) == json.loads(_BUILT)
+    assert rivendell._design_report('{"outcome": "unsuitable", "summary": "A backend."}')["outcome"] == "unsuitable"
+    assert rivendell._design_report('{"outcome": "no-preview", "suggestion": "x"}')["outcome"] == "no-preview"
+    for no_report in ("just prose", "", None, '{"outcome": "resolved"}', '{"summary": "no outcome"}', "[1, 2]", "{broken"):
+        assert rivendell._design_report(no_report) is None
+
+
+_DRAFT = '{"outcome": "built", "summary": "Draft."}'
+_FINAL = '{"outcome": "unsuitable", "summary": "A CLI."}'
+
+
+@pytest.mark.parametrize("answer, outcome", [
+    (_BUILT, "built"),
+    (f"```json\n{_BUILT}\n```", "built"),
+    (f"```\n{_BUILT}\n```", "built"),
+    (f"```JSON\n{_BUILT}\n```", "built"),
+    (f"Here it is: {_BUILT} That is all.", "built"),
+    (f"I set `{{ base: './' }}` in the Vite config.\n```json\n{_BUILT}\n```", None),
+    (f"```json\n{_BUILT}\n```\nI also fixed {{x}}.", None),
+    (f"```bash\nnpm run build\n```\n{_BUILT}", "built"),
+    (f"{_DRAFT}\nNo, that was wrong:\n```json\n{_FINAL}\n```", None),
+    (f"```json\n{_DRAFT}\n```\nNo, that was wrong:\n{_FINAL}", None),
+    (f"{_DRAFT}\nNo, that was wrong:\n{_FINAL}", None),
+    (f"[{_BUILT}]", "built"),
+    (f"```json\n[{_BUILT}]\n```\n{_BUILT}", None),
+], ids=["bare", "fence", "fence, untagged", "fence, tagged in capitals", "words around it",
+        "braces in the words before a fence", "braces in the words after a fence", "a code block that is no JSON first",
+        "a draft, then the final one in a fence", "the first fence holds the draft, the final one is loose",
+        "two objects, no fence", "an array", "a fence that holds an array first"])
+def test_design_report_finds_the_object_the_way_rivendell_does(answer, outcome):
+    """Rivendell reads a design build's answer with parseBuildReport (backend/src/designs/
+    design-build-report.ts), not its extractJson: the text from the first { to the last }, a report
+    only if that parses as an object with a known outcome. So a fence or words around the object are
+    read past and an object in an array is read, but braces in those words, or two objects (a draft
+    and a final one), make none, there as here. The bridge must find a report exactly when Rivendell
+    does: it sends the page only for a built one, and Rivendell fails a built one whose page did not
+    come."""
+    assert (rivendell._design_report(answer) or {}).get("outcome") == outcome
+
+
+def test_conflict_report_reads_an_answer_the_same_way():
+    """A conflicts job's answer goes through the same reader: its fence and the words around it read past,
+    unless those words hold braces too."""
+    stopped = '{"outcome": "stopped", "files": [], "tests": null, "commit": null, "notes": "Needs a person."}'
+    for answer in (stopped, f"```json\n{stopped}\n```", f"Merged what I could.\n```json\n{stopped}\n```"):
+        assert rivendell._conflict_report(answer)["outcome"] == "stopped"
+    for no_report in ("just prose", "", None, _BUILT, "{broken",              # a design build's outcome is no conflicts report
+                      f"Merged `{{ ours }}` first.\n```json\n{stopped}\n```", f"```json\n{stopped}\n```\nI also fixed {{x}}."):
+        assert rivendell._conflict_report(no_report) is None
+
+
+def test_queued_message_names_a_design_build():
+    item = {"key": "design-build:b1", "kind": "design-build", "request_id": "b1",
+            "slug": "ainurdev/nr-kantoor", "created_at": 0.0}
+    text, _kb = _worker()._queued_message(item, "tok")
+    assert "Rivendell design build queued — ainurdev/nr-kantoor" in text
+
+
+def _design_report_json(outcome, **fields):
+    return json.dumps({"outcome": outcome, **fields})
+
+
+@pytest.mark.parametrize("answer, lines", [
+    (_design_report_json("built", commit="abc1234", changelog=["x"], summary="S" * 300),
+     ["◫ Design built: Student card", "S" * 200]),
+    (_design_report_json("no-preview", summary="A Vite app.", suggestion="\n  Add vite-plugin-singlefile.\nThen an in-memory data layer."),
+     ["◫ No preview build: Student card", "Add vite-plugin-singlefile."]),
+    (_design_report_json("no-preview", summary="A Vite app with no single-file build.", suggestion=" \n"),
+     ["◫ No preview build: Student card", "A Vite app with no single-file build."]),
+    (_design_report_json("no-preview", suggestion="S" * 400),
+     ["◫ No preview build: Student card", "S" * 300]),
+    (_design_report_json("unsuitable", summary="U" * 400),
+     ["◫ Not suitable: Student card", "U" * 300]),
+    (f"Built it.\n```json\n{_BUILT}\n```", ["◫ Design built: Student card", "Built."]),
+], ids=["built", "no-preview: the suggestion's first line", "no-preview: no suggestion, the summary",
+        "no-preview: capped", "unsuitable", "in a fence"])
+def test_design_message_says_what_the_build_came_to_over_open_design(answer, lines):
+    text, kb = rivendell._design_message(_DESIGN, answer)
+    assert text.splitlines() == lines
+    assert kb == {"inline_keyboard": [[{"text": "Open design ↗", "url": _DESIGN["url"]}]]}
+
+
+def test_design_message_leaves_out_what_the_request_did_not_say():
+    text, kb = rivendell._design_message({}, _BUILT)
+    assert text == "◫ Design built\nBuilt." and kb is None
+    text, kb = rivendell._design_message({"title": None, "url": None}, _design_report_json("unsuitable", summary="A backend."))
+    assert text == "◫ Not suitable\nA backend." and kb is None
+    text, _kb = rivendell._design_message({}, _design_report_json("no-preview", suggestion="Add y."))
+    assert text == "◫ No preview build\nAdd y."
+    text, _kb = rivendell._design_message(_DESIGN, '{"outcome": "built"}')         # a report with nothing to say
+    assert text == "◫ Design built: Student card"
+
+
+@pytest.mark.parametrize("answer", ["just prose", "", '{"outcome": "resolved"}', "{broken"])
+def test_design_message_is_none_for_an_answer_that_is_no_report(answer):
+    assert rivendell._design_message(_DESIGN, answer) is None
+
+
+_DESIGN_ROW = {"id": "b1", "mode": "build", "designId": "d1", "designTitle": "Student card",
+               "projectName": "NR Kantoor", "url": _DESIGN["url"],
+               "repositoryFullName": "ainurdev/nr-kantoor", "branch": "main"}
+
+
+def _design_pinged(monkeypatch, request_id, src, ok, answer, ran=True):
+    """A worker that was sent design build `request_id` (as `src`, a frame or a catch-up row), ran it
+    in a session of its own (`ran`; not when it died before it ran), and has its result posted (`ok`,
+    `answer`): the Telegram messages it would send are collected, and the bell's rows for it are read
+    back as the feed gives them. The feed is kept between tests, so each takes an id of its own.
+    Returns (worker, sent, rows)."""
+    from bridge import store
+    store.init()
+    monkeypatch.setattr(rivendell, "_result_view", lambda sid, checks=True: {})
+    monkeypatch.setattr(rivendell.notices, "telegram_ok", lambda kind, now=None: True)
+    w = _worker()
+    if ran:
+        sid = store.create_session(555, "/repo", origin="rivendell:t1")["id"]
+        store.set_ref(sid, f"t1:{request_id}")
+        store.rename(sid, "Student card · design build")
+    w._enqueue("design-build", request_id, "ainurdev/nr-kantoor", src=src)
+    sent = []
+    monkeypatch.setattr(w, "_deliver_telegram", lambda text, kb: sent.append((text, kb)))
+    w._ping_done(request_id, ok, answer, kind_path="design-build-requests")
+    return w, sent, _feed_of(request_id)
+
+
+@pytest.mark.parametrize("src, rid", [(_DESIGN_FRAME, "d-frame"), (_DESIGN_ROW, "d-row")], ids=["frame", "catch-up row"])
+def test_a_finished_design_build_sends_the_design_message(monkeypatch, src, rid):
+    """Either way the request arrived, the design's title and page were kept for the message, and
+    they are forgotten once it is told. The bell's body is the report's summary, not the JSON's
+    opening line."""
+    w, sent, rows = _design_pinged(monkeypatch, rid, src, True, _BUILT)
+    (text, kb), = sent
+    assert text.splitlines() == ["◫ Design built: Student card", "Built."]
+    assert kb == {"inline_keyboard": [[{"text": "Open design ↗", "url": _DESIGN["url"]}]]}
+    assert [(r["kind"], r["body"]) for r in rows] == [("rv_done", "Built.")]
+    assert rid not in w._designs
+
+
+@pytest.mark.parametrize("rid, ok, answer, head", [
+    ("d-prose", True, "Built it, but there is no report.", "✓ Rivendell job done"),
+    ("d-error", False, "the built page is 26 MB, over 25 MB", "✕ Rivendell job failed"),
+    ("d-failed-built", False, _BUILT, "✕ Rivendell job failed"),
+], ids=["no report", "failed", "failed, whatever it said"])
+def test_a_design_build_without_a_report_or_that_failed_keeps_the_generic_message(monkeypatch, rid, ok, answer, head):
+    w, sent, _rows = _design_pinged(monkeypatch, rid, _DESIGN_FRAME, ok, answer)
+    (text, _kb), = sent
+    assert text.startswith(head) and "◫" not in text and "Open design" not in text
+    assert rid not in w._designs
+
+
+@pytest.mark.parametrize("rid, ok, answer, verb, body, kind", [
+    ("d-built", True, _BUILT, "BUILT", "Built.", "design-build"),
+    ("d-fenced", True, f"```json\n{_BUILT}\n```", "BUILT", "Built.", "design-build"),
+    ("d-nopreview", True, '{"outcome": "no-preview", "summary": "A Vite app.", "suggestion": "Add x."}', "DONE", "A Vite app.", None),
+    ("d-unsuitable", True, '{"outcome": "unsuitable", "summary": "A CLI."}', "DONE", "A CLI.", None),
+    ("d-noreport", True, "Built it, but there is no report.", "DONE", "Built it, but there is no report.", None),
+    ("d-long", True, json.dumps({"outcome": "built", "summary": "  " + "S" * 300}), "BUILT", "S" * 200, "design-build"),
+    ("d-nosummary", True, '{"outcome": "no-preview", "suggestion": "Add x."}', "DONE", "", None),
+    ("d-failed", False, "the built page is 26 MB, over 25 MB", "FAILED", "the built page is 26 MB, over 25 MB", "design-build"),
+    ("d-failed-report", False, _BUILT, "FAILED", _BUILT, "design-build"),
+], ids=["built", "built, in a fence", "no preview build", "not suitable", "no report", "long summary", "no summary",
+        "failed", "failed, whatever it said"])
+def test_the_bell_reads_built_only_for_a_design_that_was_built(monkeypatch, rid, ok, answer, verb, body, kind):
+    """The bell's word follows the job's kind, so a design build reads BUILT only when its report says
+    built; any other answer reads DONE and carries no kind. A failed one keeps its kind (the word is
+    FAILED), and its body is what the run said, even when that happens to be a report: it built nothing."""
+    _w, _sent, rows = _design_pinged(monkeypatch, rid, _DESIGN_FRAME, ok, answer)
+    assert [(r["verb"], r["body"], r["meta"].get("job_kind")) for r in rows] == [(verb, body, kind)]
+
+
+@pytest.mark.parametrize("rid, ok, answer, verb, body, kind", [
+    ("d-died", False, "no local checkout for 'ainurdev/nr-kantoor' under /code", "FAILED",
+     "no local checkout for 'ainurdev/nr-kantoor' under /code", "design-build"),
+    ("d-ghost-built", True, _BUILT, "BUILT", "", "design-build"),
+    ("d-ghost-nopreview", True, '{"outcome": "no-preview", "summary": "A Vite app.", "suggestion": "Add x."}', "DONE", "", None),
+], ids=["died before it ran", "built, with no session", "no preview, with no session"])
+def test_a_design_build_with_no_session_is_still_heard_in_the_bell(monkeypatch, rid, ok, answer, verb, body, kind):
+    """No session is filed under a job that died before it ran (no checkout, a claim that failed): the
+    bell hears it all the same, under the request's own name, as the generic failure of a design build
+    (its kind kept, as for any failed one; a finished one reads BUILT only if it built). Telegram is
+    for a job that ran here, so it hears nothing, and the design is forgotten."""
+    w, sent, rows = _design_pinged(monkeypatch, rid, _DESIGN_FRAME, ok, answer, ran=False)
+    assert [(r["kind"], r["verb"], r["title"], r["body"], r["meta"].get("job_kind")) for r in rows] == [
+        ("rv_failed" if not ok else "rv_done", verb, f"Rivendell job {rid[:8]}", body, kind)]
+    assert sent == [] and rid not in w._designs

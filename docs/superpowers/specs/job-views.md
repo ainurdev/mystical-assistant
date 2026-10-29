@@ -19,7 +19,9 @@ on the newspaper's sheet (`.paper`), with one signature element each. Approved f
 | NEWS | JSON | unchanged |
 
 Not drawn: TODOLIST and its RECOMMEND/TODO_ITEM steps (the todolist is moving into task management),
-and DECK (no Rivendell job sends one).
+DECK (no Rivendell job sends one), and DESIGN (a design build's answer is a JSON report Rivendell
+makes the design's next version from; `JobViews.tsx` has no `design-build` case, so the report
+shows raw in the answer box).
 
 Rules:
 - A view shows only what the answer, the job's facts or Rivendell's prompt (turn 1) hold; what only
