@@ -20,7 +20,7 @@ const stamp = (s: string) => `${dayOf(s.slice(0, 10))} ${s.slice(11, 16)}`;
 function subLine(job: RivendellJob, prompt: string): string {
   switch (job.kind) {
     case "review": case "conflict": return [job.repo, job.number ? `#${job.number}` : ""].filter(Boolean).join("  ");
-    case "impl": return job.repo ?? "";
+    case "impl": case "design-build": return job.repo ?? "";
     case "news": {
       const m = /It covers (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) to (\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?: \(([^)]+?) time\))?/.exec(prompt);
       return m ? `covers ${stamp(m[1])} → ${stamp(m[2])}${m[3] ? ` · ${m[3]} time` : ""}` : "";

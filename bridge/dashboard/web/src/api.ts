@@ -34,7 +34,7 @@ export interface RivendellJob {
   instance?: string;          // the Rivendell connection it came from
   request?: string;           // its request id there
   step?: string;              // todolist: recommendations | todolist; video: transcribe | ask; meeting: text | recording
-  title?: string;             // the PR title, the task, the project, the file, the meeting
+  title?: string;             // the PR title, the task, the project, the file, the meeting, the design
   repo?: string;              // owner/repo (review, implement, conflicts, design build)
   number?: number;            // the PR's number
   html_url?: string;          // the PR on GitHub
@@ -681,7 +681,7 @@ export interface RivendellQueueItem {
   key: string;             // "<kind>:<request_id>" — the accept/reject handle
   kind: "review" | "impl" | "todolist" | "taskdesc" | "changelog" | "news" | "deck" | "video" | "meeting-notes" | "project-summary" | "meeting-brief" | "conflict" | "design-build";
   request_id: string;
-  slug: string | null;     // repo (review/impl), project (todolist/changelog/project-summary), task (taskdesc), reader (news), deck title (deck) or meeting name (meeting-notes/meeting-brief)
+  slug: string | null;     // repo (review/impl/design-build), project (todolist/changelog/project-summary), task (taskdesc), reader (news), deck title (deck) or meeting name (meeting-notes/meeting-brief)
   /** A todolist's step: task recommendations first, then the todolist itself.
    *  Null when rivendell-api did not say (older API). */
   step?: "recommendations" | "todolist" | null;
