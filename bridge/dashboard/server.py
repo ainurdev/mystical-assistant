@@ -529,6 +529,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/usage-sharing":
             from bridge import usagesharing
             return self._json({"share": usagesharing.answer()})
+        if path == "/local/storage":
+            # SETTINGS ▸ System ▸ Storage: what sessions left on disk (bridge/storage.py).
+            from bridge import storage
+            return self._json(storage.scan())
         if path == "/local/startup":
             from bridge import startup
             return self._json(startup.state())
@@ -1232,6 +1236,12 @@ class Handler(BaseHTTPRequestHandler):
             if not isinstance(share, bool):
                 return self._json({"error": "share must be true or false"}, 400)
             return self._json({"share": usagesharing.set_answer(share)})
+        if path == "/local/storage/clear":
+            from bridge import storage
+            items, moves = body.get("clear", []), body.get("move_files", [])
+            if not (isinstance(items, list) and all(isinstance(i, dict) for i in items) and isinstance(moves, list)):
+                return self._json({"error": "clear must be a list of projects, move_files a list of paths"}, 400)
+            return self._json(storage.clear(items, moves))
         if path == "/local/startup":
             from bridge import startup
             try:

@@ -515,6 +515,24 @@ def tool_images_since(chat_id: int, t: float) -> list[tuple[str, str, float]]:
     return out
 
 
+def projects_of(ids) -> dict[str, tuple[str, str]]:
+    """{id: (project, session id)} for each turn or session id in `ids`; an
+    upload folder is named for one or the other. A session's project is its
+    main checkout's rel even while it runs in a worktree."""
+    ids = [i for i in ids if isinstance(i, str)]
+    out: dict[str, tuple[str, str]] = {}
+    with closing(_connect()) as c:
+        for i in range(0, len(ids), 500):   # under SQLite's old 999-parameter ceiling
+            part = ids[i:i + 500]
+            marks = ",".join("?" * len(part))
+            for r in c.execute(f"SELECT id, project FROM sessions WHERE id IN ({marks})", part):
+                out[r["id"]] = (r["project"], r["id"])
+            for r in c.execute("SELECT t.id, s.project, s.id AS sid FROM turns t JOIN sessions s "
+                               f"ON s.id=t.session_id WHERE t.id IN ({marks})", part):
+                out[r["id"]] = (r["project"], r["sid"])
+    return out
+
+
 def profile_has_agent_session(pid: str) -> bool:
     """Has any session bound to this profile opened an agent session yet?"""
     with closing(_connect()) as c:
