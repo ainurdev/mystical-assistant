@@ -1,42 +1,28 @@
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import {
-  api,
-  logStream,
-  type DevServerInfo,
-  type GitBadge,
-  type GitStatus,
-  type SessionBrief,
-  type SessionStatus,
-  type TermInfo,
-  type Worktree,
-} from "../../api";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, GitBranch, Search, SquareTerminal } from "lucide-react";
+import { api, type GitBadge, type GitStatus, type SessionBrief, type SessionStatus, type Worktree } from "../../api";
 import { useAiFeatures } from "../../lib/ai";
-import { parseDiff, type DiffRow } from "../../lib/diff";
-import { useStickyFlag } from "../../lib/prefs";
-import {
-  countByPath, loadNotes, noteRange, notesKey, notesMessage, reanchor, saveNotes,
-  type Note, type NoteDraft, type SendTo,
-} from "../../lib/reviewnotes";
-import { projectName, projectTint } from "../../lib/surfaces";
+import { isMacApp } from "../../lib/mac";
+import { projectName } from "../../lib/surfaces";
 import { ProjectTile } from "../ui/ProjectTile";
-import { CommitGraph } from "../CommitGraph";
-import { askConfirm } from "../ui/Ask";
-import { NoteEditor, NoteThread, SendBar } from "./DiffNotes";
 import { EditorTab, type BranchOpt } from "./EditorTab";
 import { MapTab } from "./MapTab";
-import { XtermPane } from "./XtermPane";
+import { Lights } from "./Strip";
+import { TermDrawer } from "./TermDrawer";
 import MarkEditor from "./MarkEditor";
 
-/* PROJECT ANALYSIS modal — matches the HUD design mock (hud.dc.html lines
-   530–1258): header with the project's mark (its tile opens MarkEditor), tab bar (EDITOR / GIT /
-   TERMINAL, and MAP where the repo's map is on), and per-tab bodies.
+/* The FILE WINDOW (AnalyzeModal by name) — full-bleed since
+   .mystical/design-drafts/editor-window: the window is the screen, with no
+   backdrop, no rounded corners and nothing of the dashboard at its edges. One
+   title bar: the project's mark (its tile opens MarkEditor), the branch it
+   shows, ↑↓, LIVE, a ⌘P box for the editor's palette, the terminal's toggle,
+   close. The EDITOR (EditorTab) fills the rest — explorer · search · outline ·
+   changes · map down its activity bar, the terminal a drawer under the code.
 
-   Nothing opens it on purpose any more: the session header's ⊞ PROJECT is gone
-   (.mystical/design-drafts/project-split). A file opens it (FILES, a file link in
-   chat), a changed file opens its diff, RUN its terminal, the MAP chip its map.
-   What else it held moved out: WORKTREES to the rail's BRANCHES, DESIGN to
-   SETTINGS ▸ Projects ▸ Design system, SKILLS to SETTINGS ▸ Skills, LEARN was
-   the rail's already. */
+   Nothing opens it on purpose: a file does (FILES, a file link in chat); a
+   changed file opens it on CHANGES with its diff inline (the GIT tab that showed
+   diffs here went — commits are the rail's GIT tab); RUN and a transcript
+   re-run open the terminal drawer; the MAP chip opens the map. */
 
 export type Tab = "changes" | "editor" | "terminal" | "map";
 
@@ -45,9 +31,6 @@ interface Props {
   badge?: GitBadge;
   sessions: SessionBrief[];
   status: Map<string, SessionStatus>;
-  /** The session open in the chat — where the GIT tab's review notes go when
-      it is on that branch. */
-  activeSession?: string | null;
   // Deep-link from the sidebar FILES explorer: open straight into the editor
   // on this file, in the branch's worktree the explorer was listing.
   initialFile?: string;
@@ -55,23 +38,17 @@ interface Props {
   /** Line named by a chat file reference (`RunStream.tsx:190`) — the editor
       opens scrolled to it. */
   initialLine?: number;
+  /** How it opens: on CHANGES (a changed file), the terminal, the map — else the editor. */
   initialTab?: Tab;
-  /** Re-run from a transcript terminal block: typed into the TERMINAL tab's PTY. */
+  /** Re-run from a transcript terminal block: typed into the drawer's PTY. */
   initialCommand?: string;
+  /** What this session wrote — ✦ in CHANGES. */
+  edited?: Set<string>;
   onClose: () => void;
-  onFeed: (texts: string[], project?: string) => void;
-  /** GIT tab review notes → a session on the branch, or a new one in its tree. */
-  onSendTo: SendTo;
-  /** A push git refused → a new session on that branch, git's message as its
-      unsent draft (App's pushFailedSession). */
-  onPushFailed?: (branch: string, output: string) => void;
-}
-
-const FILE_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
-
-
-function name(rel: string): string {
-  return projectName(rel);
+  /** ✦ Ask Claude / REVIEW: text for the prompt; `close` when no unsaved edits hold the window. */
+  onAsk?: (text: string, close: boolean) => void;
+  /** COMMIT IN GIT ›: close, and show the rail's GIT tab. */
+  onOpenGit?: () => void;
 }
 
 export function AnalyzeModal(props: Props) {
@@ -81,36 +58,34 @@ export function AnalyzeModal(props: Props) {
 
   const aiFeatures = useAiFeatures();   // MAP hides with its switch, and with the repo's own
   const [mapOn, setMapOn] = useState(false);
-  const [tab, setTab] = useState<Tab>(props.initialTab ?? "editor");
   const [git, setGit] = useState<GitStatus | null>(null);
   const [branches, setBranches] = useState<string[]>([]);
   const [defaultBranch, setDefaultBranch] = useState("main");
   const [worktrees, setWorktrees] = useState<Worktree[]>([]);
   const [termCount, setTermCount] = useState(0);
+  // The drawer mounts on its first show and only hides after: its PTYs and
+  // their scrollback keep running underneath.
+  const [term, setTerm] = useState<"none" | "open" | "hidden">(props.initialTab === "terminal" ? "open" : "none");
   const [closing, setClosing] = useState(false);
-  // Maximize sticks per browser, so the next open comes back the way you left it.
-  const [full, setFull] = useStickyFlag("hud-modal-full");
-  // modal-wide branch focus for the GIT + EDITOR tabs (which worktree we view)
+  // window-wide branch focus (which worktree the editor shows)
   const [selectedBranch, setSelectedBranch] = useState(props.initialBranch ?? "");
-
+  const [menuOpen, setMenuOpen] = useState(false);
   const [markOpen, setMarkOpen] = useState(false);   // the tile's mark editor
   const markTile = useRef<HTMLButtonElement>(null);
+  const bus = useRef<{ palette?: () => void }>({});
+  const mac = isMacApp();
 
-  const refreshGit = () => { void api.git(project).then(setGit).catch(() => {}); };
   const refreshWt = () => {
     void api.worktrees(project)
       .then((w) => setWorktrees(w.worktrees))
       .catch(() => {});
   };
-  const refreshBranches = () => {
-    void api.branches(project).then((b) => { setBranches(b.branches); if (b.default) setDefaultBranch(b.default); }).catch(() => {});
-  };
 
   useEffect(() => {
     setSelectedBranch(props.initialBranch ?? "");
     setMarkOpen(false);
-    refreshGit();
-    refreshBranches();
+    void api.git(project).then(setGit).catch(() => {});
+    void api.branches(project).then((b) => { setBranches(b.branches); if (b.default) setDefaultBranch(b.default); }).catch(() => {});
     refreshWt();
     void api.terminals(project).then((d) => setTermCount(d.terminals.length)).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,9 +101,8 @@ export function AnalyzeModal(props: Props) {
 
   function close() {
     setClosing(true);
-    setTimeout(props.onClose, 260);
+    setTimeout(props.onClose, 200);
   }
-
 
   const cur = git?.branch || badge?.branch || "";
   const live = props.sessions.some((s) => {
@@ -140,27 +114,18 @@ export function AnalyzeModal(props: Props) {
     const list = branches.length ? branches : (cur ? [cur] : []);
     return list.map((b) => ({ name: b, on: b === (selectedBranch || cur), hasWorktree: worktrees.some((w) => w.branch === b) }));
   }, [branches, cur, selectedBranch, worktrees]);
-
-  const tabs: { k: Tab; l: string; badge?: number }[] = [
-    { k: "editor", l: "Editor" },
-    { k: "changes", l: "Git", badge: git?.dirty || undefined },
-    { k: "terminal", l: "Terminal", badge: termCount || undefined },
-    // hidden while PROJECT MAP or the repo's own switch is off: nothing is built
-    ...(mapOn ? [{ k: "map" as Tab, l: "Map" }] : []),
-  ];
+  const toggleTerm = () => setTerm((t) => (t === "open" ? "hidden" : "open"));
+  const line = (a: number, c = "acc") => `1px solid color-mix(in srgb, var(--${c}) ${a}%, transparent)`;
+  const mono = "'JetBrains Mono',monospace";
 
   return (
-    <div onClick={close}
-      style={{ position: "fixed", inset: 0, background: "color-mix(in srgb, var(--panel3) 72%, transparent)", zIndex: 92, display: "flex", alignItems: "center", justifyContent: "center", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .22s ease both" }}>
-      {/* Both sizes are viewport-relative and definite: most of the screen by
-          default, near-full when maximized — never taller than the monitor, and
-          a definite height is what lets each tab scroll inside itself instead of
-          stretching the modal. */}
-      <div onClick={(e) => e.stopPropagation()} className="panel"
-        style={{ width: full ? "96vw" : "min(94vw, max(560px, var(--modal-w)))", height: full ? "94vh" : "min(90vh, max(560px, 78vh))", transition: "width .38s cubic-bezier(.25,.9,.25,1),height .38s cubic-bezier(.25,.9,.25,1)", display: "flex", flexDirection: "column", border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 98%, transparent)", boxShadow: "0 0 70px var(--shadow-modal),0 0 30px color-mix(in srgb, var(--acc) 8%, transparent)", animation: closing ? "modalOut .28s ease-in forwards" : "modalIn .46s cubic-bezier(.16,.84,.3,1) both" }}>
-        {/* header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "14px 18px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", flex: "none", flexWrap: "wrap" }}>
-          <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>ANALYZE</span>
+    <div className="fwin"
+      style={{ position: "fixed", inset: 0, zIndex: 92, display: "flex", flexDirection: "column", background: "var(--panel2)", color: "var(--tx)", animation: closing ? "backdropOut .2s ease forwards" : "backdropIn .2s ease both" }}>
+      {/* title bar — in Mystical.app its bare surface drags the window (App's
+          --mac-titlebar listener), and the page's traffic lights sit at its left */}
+      <div style={{ position: "relative", height: 40, flex: "none", display: "grid", gridTemplateColumns: "1fr auto 1fr", alignItems: "center", gap: 12, padding: `0 10px 0 ${mac ? 82 : 12}px`, borderBottom: line(14), background: "color-mix(in srgb, var(--panel3) 70%, transparent)" }}>
+        {mac && <Lights show />}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           {/* The project's tile is its mark editor: a logo, an icon or its initials, and its colour. */}
           <span className="mkwrap an-mark">
             <button ref={markTile} type="button" className="mktile" data-on={markOpen || undefined} onClick={() => setMarkOpen((o) => !o)}
@@ -168,687 +133,65 @@ export function AnalyzeModal(props: Props) {
               <ProjectTile project={project} />
             </button>
             {markOpen && (
-              <MarkEditor project={project} name={name(project)} anchor={markTile.current} onClose={() => setMarkOpen(false)} />
+              <MarkEditor project={project} name={projectName(project)} anchor={markTile.current} onClose={() => setMarkOpen(false)} />
             )}
           </span>
-          <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px" }}>{name(project)}</span>
-          <span style={{ fontSize: "var(--t11)", color: "var(--txd)", display: "flex", gap: 9, fontFamily: "'JetBrains Mono',monospace" }}>
+          <span style={{ fontSize: "var(--t13)", color: "var(--txb)", letterSpacing: ".3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{projectName(project)}</span>
+          {/* the branch the window shows — worktrees marked */}
+          <div style={{ position: "relative", flex: "none" }}>
+            <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
+              style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "br" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: mono, fontSize: "var(--t95)", padding: "3px 8px", maxWidth: 200 }}>
+              <GitBranch size={12} strokeWidth={1.8} style={{ color: "var(--purple)", flex: "none" }} />
+              <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{selectedBranch || cur || "—"}</span>
+              <ChevronDown size={11} strokeWidth={1.8} style={{ color: "var(--purple-g)", flex: "none" }} />
+            </button>
+            {menuOpen && (
+              <div style={{ position: "absolute", top: "calc(100% + 5px)", left: 0, zIndex: 30, minWidth: 214, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
+                <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
+                {branchOpts.map((b) => (
+                  <button key={b.name} onClick={() => { setSelectedBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}
+                    style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, background: hov === `bi:${b.name}` ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: mono, fontSize: "var(--t10)", padding: "7px 9px", textAlign: "left" }}>
+                    <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
+                    <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
+                    {b.hasWorktree && <span style={{ fontSize: "var(--t75)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", padding: "1px 4px", flex: "none" }}>WORKTREE</span>}
+                    {b.on && <span style={{ color: "var(--acc)", flex: "none" }}>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <span style={{ fontSize: "var(--t10)", color: "var(--txd)", display: "flex", gap: 8, fontFamily: mono, flex: "none" }}>
             <span style={{ color: "var(--ok)" }}>↑{git?.ahead ?? badge?.ahead ?? 0}</span>
             <span>↓{git?.behind ?? badge?.behind ?? 0}</span>
           </span>
-          {live && <span style={{ fontSize: "var(--t9)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 6px" }}>LIVE</span>}
-          <span style={{ flex: 1 }} />
-          <button onClick={() => setFull((v) => !v)} title={full ? "restore size" : "expand"} {...hp("full")}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "full" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "3px 9px", lineHeight: 1.4 }}>{full ? "⤡" : "⤢"}</button>
-          <button onClick={close} style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "4px 10px" }}>ESC ✕</button>
+          {live && <span style={{ fontSize: "var(--t8)", letterSpacing: 1, color: "var(--ok)", border: line(30, "ok"), padding: "1px 6px", flex: "none" }}>LIVE</span>}
         </div>
-        {/* tabs */}
-        <div style={{ display: "flex", flex: "none", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "0 6px", overflowX: "auto" }}>
-          {tabs.map((t) => (
-            <button key={t.k} className="caps" onClick={() => setTab(t.k)} {...hp(`tab:${t.k}`)}
-              style={{ appearance: "none", border: 0, borderBottom: `2px solid ${tab === t.k ? "var(--acc)" : "transparent"}`, cursor: "pointer", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1, padding: "10px 11px", background: tab === t.k ? "color-mix(in srgb, var(--acc) 6%, transparent)" : hov === `tab:${t.k}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", color: tab === t.k ? "var(--txb)" : "var(--txl)", display: "flex", alignItems: "center", gap: 7 }}>
-              {t.l}
-              {t.badge != null && <span style={{ fontSize: "var(--t9)", color: "var(--acc)", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", padding: "0 5px" }}>{t.badge}</span>}
-            </button>
-          ))}
-        </div>
-        {/* body — EDITOR and TERMINAL fill it with their own framed layout (an
-            app in a tab, not a page of content), so the modal's edge is the only
-            frame they need. The rest are documents and keep their margin. */}
-        <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: tab === "editor" || tab === "terminal" ? 0 : 18 }}>
-          {tab === "changes" && (
-            <ChangesTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
-              onPickBranch={setSelectedBranch} onRefreshGit={refreshGit} initialFile={props.initialFile}
-              sessions={props.sessions} activeSession={props.activeSession} worktrees={worktrees}
-              onSendTo={props.onSendTo} onPushFailed={props.onPushFailed} />
-          )}
-          {tab === "editor" && (
-            <EditorTab project={project} branch={selectedBranch || cur} branchOpts={branchOpts}
-              onPickBranch={setSelectedBranch} initialFile={props.initialFile} initialLine={props.initialLine} />
-          )}
-          {tab === "terminal" && (
-            <TerminalTab project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount}
-              initialCommand={props.initialCommand} />
-          )}
-          {tab === "map" && <MapTab project={project} />}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- GIT (changes): working-tree master-detail + commit/push (design 656–728) ---------------- */
-
-const DIFF_VIEW: Record<DiffRow["kind"], { bg: string; sign: string; color: string }> = {
-  add: { bg: "color-mix(in srgb, var(--ok) 7%, transparent)", sign: "var(--ok)", color: "var(--ok)" },
-  del: { bg: "color-mix(in srgb, var(--err) 7%, transparent)", sign: "var(--err)", color: "var(--err)" },
-  ctx: { bg: "transparent", sign: "var(--txg)", color: "var(--txd)" },
-  hunk: { bg: "color-mix(in srgb, var(--acc) 6%, transparent)", sign: "var(--acc)", color: "var(--acc)" },
-};
-
-function ChangesTab({ project, branch, branchOpts, onPickBranch, onRefreshGit, initialFile,
-                      sessions, activeSession, worktrees, onSendTo, onPushFailed }: {
-  project: string; branch: string; branchOpts: BranchOpt[]; onPickBranch: (b: string) => void;
-  onRefreshGit: () => void; initialFile?: string;
-  sessions: SessionBrief[]; activeSession?: string | null; worktrees: Worktree[]; onSendTo: SendTo;
-  onPushFailed?: (branch: string, output: string) => void;
-}) {
-  const [hov, setHov] = useState("");
-  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
-  const ai = useAiFeatures();   // GEN is hidden while commit messages are off
-  // Uncommitted work, or what already landed. Same tab because they answer the
-  // same question ("what changed") and share the branch switcher below.
-  const [view, setView] = useState<"tree" | "history">("tree");
-
-  const [st, setSt] = useState<GitStatus | null>(null);
-  const [sel, setSel] = useState<string | null>(initialFile ?? null);
-  const [diff, setDiff] = useState("");
-  const [msg, setMsg] = useState("");
-  const [genBusy, setGenBusy] = useState(false);
-  const [gitOp, setGitOp] = useState("");
-  const [pushErr, setPushErr] = useState("");   // git's refusal of the last push, until the next
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [busy, setBusy] = useState(false);
-  // Which files are staged for the next commit. `sel` above is the *focused*
-  // file (whose diff shows); `checked` is the multi-select for commit/GEN.
-  const [checked, setChecked] = useState<Set<string>>(new Set());
-  const opT = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  function showOp(m: string) {
-    setGitOp(m);
-    if (opT.current) clearTimeout(opT.current);
-    opT.current = setTimeout(() => setGitOp(""), 4500);
-  }
-  useEffect(() => () => { if (opT.current) clearTimeout(opT.current); }, []);
-
-  const load = () => {
-    void api.git(project, branch || undefined)
-      .then((g) => { setSt(g); setChecked(new Set(g.files.map((f) => f.path))); })
-      .catch(() => setSt(null));
-  };
-  // Focus the deep-linked file (sidebar → GIT), else the first changed one.
-  useEffect(() => { setSel(initialFile ?? null); setMsg(""); load(); // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project, branch, initialFile]);
-
-  // A branch with no worktree makes the backend fall back to the project
-  // checkout — whose status would masquerade as this branch's. Detect the
-  // mismatch and show nothing rather than another branch's changes.
-  const wrongTree = !!(st?.is_repo && branch && st.branch !== branch);
-  const files = wrongTree ? [] : st?.files ?? [];
-  // A focused file that left the list (committed since) gives way to the first
-  // one: its notes are listed with the others that have no changes now.
-  const selName = (sel && files.some((f) => f.path === sel) ? sel : files[0]?.path) ?? null;
-  const allChecked = files.length > 0 && checked.size === files.length;
-  const toggleCheck = (p: string) =>
-    setChecked((prev) => { const n = new Set(prev); if (n.has(p)) n.delete(p); else n.add(p); return n; });
-  const toggleAll = () => setChecked(allChecked ? new Set() : new Set(files.map((f) => f.path)));
-
-  useEffect(() => {
-    if (!selName) { setDiff(""); return; }
-    let live = true;
-    void api.gitDiff(project, selName, undefined, undefined, branch || undefined)
-      .then((d) => { if (live) setDiff(d.diff); })
-      .catch(() => { if (live) setDiff(""); });
-    return () => { live = false; };
-  }, [selName, project, branch]);
-
-  const rows = useMemo(() => parseDiff(diff), [diff]);
-  const selFile = files.find((f) => f.path === selName);
-
-  // Review notes (lib/reviewnotes.ts): drafts on this branch's diff, kept in
-  // localStorage until SEND or CLEAR.
-  const nkey = notesKey(project, branch);
-  const [notes, setNotesState] = useState<Note[]>(() => loadNotes(nkey));
-  const [editor, setEditor] = useState<NoteDraft | null>(null);
-  const [drag, setDrag] = useState<{ a: number; b: number } | null>(null);
-  const [sendTo, setSendTo] = useState("");   // "" = the branch's own session, "new" = a new one
-  const [sending, setSending] = useState(false);
-  const setNotes = (next: Note[]) => { setNotesState(next); saveNotes(nkey, next); };
-  useEffect(() => { setNotesState(loadNotes(nkey)); setSendTo(""); }, [nkey]);
-  useEffect(() => { setEditor(null); }, [nkey, selName]);
-  const fileNotes = notes.filter((x) => x.path === selName);
-  const noteCount = useMemo(() => countByPath(notes), [notes]);
-  // The open session if it's on this branch, else the branch's newest; none = a new one.
-  const onBranch = useMemo(() => sessions.filter((s) => s.branch === branch).sort((a, b) => b.updated - a.updated), [sessions, branch]);
-  const target = sendTo === "new" ? null
-    : onBranch.find((s) => s.id === sendTo) ?? onBranch.find((s) => s.id === activeSession) ?? onBranch[0] ?? null;
-  // Notes on a file with no uncommitted change now (committed since, so the
-  // tree may even be clean) still go on SEND: they're listed with their path,
-  // and the send bar stays, so they can always be sent or dropped.
-  const stray = notes.filter((x) => !files.some((f) => f.path === x.path));
-  const sendBar = notes.length > 0 && (
-    <SendBar count={notes.length} targets={onBranch} target={target} tint={projectTint(project).color}
-      busy={sending} sendable={!wrongTree} onPick={setSendTo} onClear={() => void clearNotes()} onSend={() => void sendNotes()} />
-  );
-
-  // A drag down the line numbers ends where the mouse is let go. That is
-  // caught on the window, so letting go outside the diff still opens the editor.
-  useEffect(() => {
-    if (!drag) return;
-    const up = () => {
-      const r = noteRange(rows, drag.a, drag.b);
-      setDrag(null);
-      if (r && selName) setEditor({ path: selName, ...r, text: "" });
-    };
-    window.addEventListener("mouseup", up);
-    return () => window.removeEventListener("mouseup", up);
-  }, [drag, rows, selName]);
-
-  function saveNote(text: string) {
-    if (!editor || !text.trim()) return;
-    const kept = notes.filter((x) => x.id !== editor.id);
-    setNotes([...kept, { ...editor, id: editor.id ?? crypto.randomUUID(), text: text.trim(), at: Date.now() }]);
-    setEditor(null);
-  }
-
-  async function clearNotes() {
-    if (await askConfirm(`Drop ${notes.length} review note${notes.length === 1 ? "" : "s"} on ${branch}?`, { ok: "Drop", danger: true })) setNotes([]);
-  }
-
-  async function sendNotes() {
-    // Storage, not this tab's state: another tab may have sent or cleared them.
-    const current = loadNotes(nkey);
-    if (sending || !current.length) { setNotesState(current); return; }
-    setSending(true);
-    try {
-      // Line numbers are the working tree's at the moment of SEND: each noted
-      // file is read again and each note found again by its line's text.
-      const paths = [...new Set(current.map((x) => x.path))];
-      const files = await Promise.all(paths.map((p) => api.fileRead(project, p, branch || undefined)
-        .then((f) => (f.ok && !f.binary && !f.too_large ? (f.content ?? "").split("\n") : null))
-        .catch(() => null)));
-      const text = notesMessage(branch, current.map((x) => reanchor(x, files[paths.indexOf(x.path)])));
-      const cwd = worktrees.find((w) => w.branch === branch)?.path ?? "";
-      // Dropped only once the message ran or was queued: a failed send keeps them.
-      // Only the notes that went: another tab may have added one meanwhile.
-      if (await onSendTo(text, target ? { session: target.id } : { cwd })) {
-        const sent = new Set(current.map((x) => x.id));
-        setNotes(loadNotes(nkey).filter((x) => !sent.has(x.id)));
-      }
-    } finally { setSending(false); }
-  }
-
-  async function genMsg() {
-    if (genBusy || !checked.size) return;
-    setGenBusy(true);
-    try {
-      const r = await api.commitMessage(project, branch, [...checked]);
-      if (r.message) setMsg(r.message);
-    } catch { /* ignore */ }
-    finally { setGenBusy(false); }
-  }
-
-  async function doCommit() {
-    if (busy || !msg.trim() || !checked.size) return;
-    setBusy(true);
-    const n = checked.size;
-    try {
-      const r = await api.gitCommit(project, msg.trim(), [...checked], branch || undefined);
-      if (r.ok) { showOp(`Committed ${n} file${n === 1 ? "" : "s"} on ${branch}`); setMsg(""); load(); onRefreshGit(); }
-      else showOp(`Commit failed: ${r.output}`);
-    } finally { setBusy(false); }
-  }
-
-  async function doPush() {
-    if (busy) return;
-    setBusy(true);
-    try {
-      const r = await api.gitPush(project, branch || undefined);
-      showOp(r.ok ? `Pushed ${branch} to origin` : `Push failed: ${r.output}`);
-      setPushErr(r.ok ? "" : r.output || "Push failed.");
-      if (r.ok) { load(); onRefreshGit(); }
-    } finally { setBusy(false); }
-  }
-
-  function doPull() {
-    // TODO(phase2-data): no pull endpoint on the bridge yet.
-    showOp("Pull isn't wired to the bridge yet");
-  }
-
-  return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      {/* Header row always renders the branch switcher — inside the file grid it
-          unmounted on a clean branch, leaving no way to switch back. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11, flex: "none" }}>
-        {([["tree", "WORKING TREE"], ["history", "HISTORY"]] as const).map(([v, l]) => (
-          <button key={v} onClick={() => setView(v)} {...hp(`v:${v}`)}
-            style={{ appearance: "none", cursor: "pointer", border: 0, borderBottom: `1px solid ${view === v ? "var(--acc)" : "transparent"}`, background: "transparent", color: view === v ? "var(--txb)" : hov === `v:${v}` ? "var(--txm)" : "var(--txl)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "2px 1px" }}>{l}</button>
-        ))}
-        <span style={{ flex: 1 }} />
-        <div style={{ position: "relative", flex: "none" }}>
-          <button onClick={() => setMenuOpen((o) => !o)} title="switch branch — worktrees marked" {...hp("br")}
-            style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === "br" ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "4px 8px", maxWidth: 160 }}>
-            <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-            <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{branch || "—"}</span>
-            <span style={{ color: "var(--purple-g)", flex: "none" }}>▾</span>
+        {/* the editor's palette, where it can be seen: files · @symbols · >commands */}
+        <button onClick={() => bus.current.palette?.()} title="go to a file, a @symbol in this file or a >command · Ctrl-P" {...hp("pal")}
+          style={{ appearance: "none", cursor: "pointer", width: "min(440px, 34vw)", height: 27, display: "flex", alignItems: "center", gap: 8, padding: "0 6px 0 10px", border: line(hov === "pal" ? 38 : 20), background: "color-mix(in srgb, var(--panel2) 80%, transparent)", color: "var(--txl)", fontFamily: mono, fontSize: "var(--t105)" }}>
+          <Search size={13} strokeWidth={1.8} style={{ flex: "none" }} />
+          <span style={{ flex: 1, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Go to file · <span style={{ color: "var(--txd)" }}>@</span>symbol · <span style={{ color: "var(--txd)" }}>&gt;</span>command</span>
+          <span style={{ fontSize: "var(--t85)", color: "var(--txl)", border: line(22), padding: "0 5px", lineHeight: "16px", flex: "none" }}>{mac ? "⌘P" : "Ctrl P"}</span>
+        </button>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8 }}>
+          <button onClick={toggleTerm} title={term === "open" ? "hide the terminal · Ctrl-`" : "terminal · Ctrl-`"} {...hp("term")}
+            style={{ appearance: "none", cursor: "pointer", height: 27, display: "flex", alignItems: "center", gap: 6, padding: "0 9px", border: line(term === "open" ? 40 : 22), background: term === "open" ? "color-mix(in srgb, var(--acc) 12%, transparent)" : hov === "term" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: term === "open" ? "var(--txb)" : "var(--txm)", fontFamily: mono, fontSize: "var(--t95)" }}>
+            <SquareTerminal size={15} strokeWidth={1.6} />{termCount > 0 && <span>{termCount}</span>}
           </button>
-          {menuOpen && (
-            <div style={{ position: "absolute", top: "calc(100% + 5px)", right: 0, zIndex: 30, minWidth: 214, border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: "color-mix(in srgb, var(--panel2) 99%, transparent)", boxShadow: "0 12px 32px var(--shadow-pop)", padding: 5, animation: "mslide .16s ease both" }}>
-              <div style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--txl)", padding: "5px 8px 7px" }}>SWITCH BRANCH</div>
-              {branchOpts.map((b) => (
-                <button key={b.name} onClick={() => { onPickBranch(b.name); setMenuOpen(false); }} {...hp(`bi:${b.name}`)}
-                  style={{ width: "100%", appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 7, border: 0, background: hov === `bi:${b.name}` ? "color-mix(in srgb, var(--purple) 10%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", padding: "7px 9px", textAlign: "left" }}>
-                  <span style={{ color: "var(--purple)", flex: "none" }}>⎇</span>
-                  <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{b.name}</span>
-                  {b.hasWorktree && <span style={{ fontSize: "var(--t75)", letterSpacing: 1, color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", padding: "1px 4px", flex: "none" }}>WORKTREE</span>}
-                  {b.on && <span style={{ color: "var(--acc)", flex: "none" }}>✓</span>}
-                </button>
-              ))}
-            </div>
+          <button onClick={close} {...hp("x")}
+            style={{ appearance: "none", cursor: "pointer", height: 27, border: line(25), background: hov === "x" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "0 10px" }}>ESC ✕</button>
+        </div>
+      </div>
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <EditorTab project={project} branch={selectedBranch || cur}
+          initialFile={props.initialFile} initialLine={props.initialLine} initialMode={props.initialTab}
+          bus={bus} edited={props.edited} onAsk={props.onAsk} onOpenGit={props.onOpenGit}
+          mapView={mapOn ? <MapTab project={project} /> : undefined}
+          drawer={term === "none" ? undefined : (
+            <TermDrawer project={project} worktrees={worktrees} branch={cur || defaultBranch} onCount={setTermCount}
+              initialCommand={props.initialCommand} open={term === "open"} onHide={() => setTerm("hidden")} />
           )}
-        </div>
-      </div>
-      {/* The right rail's commit graph, in a pane wide enough to read a diff
-          in: click a commit for its files, a file for that commit's diff. */}
-      {view === "history" && (
-        <div className="mscroll" style={{ flex: 1, minHeight: 0, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", padding: "6px 9px" }}>
-          <CommitGraph project={project} branch={branch || undefined} />
-        </div>
-      )}
-      {view === "tree" && st && files.length === 0 && (
-        <div style={{ fontSize: "var(--t12)", color: "var(--txd)", fontFamily: "'JetBrains Mono',monospace", padding: "6px 2px" }}>
-          {wrongTree
-            ? <>⎇ {branch} isn't checked out — no working tree to show. Create a worktree for it in the WORKTREES tab.</>
-            : "Working tree clean."}
-        </div>
-      )}
-      {view === "tree" && st && files.length === 0 && stray.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", minHeight: 0, border: "1px solid color-mix(in srgb, var(--purple) 30%, transparent)" }}>
-          <div className="mscroll" style={{ overflowY: "auto", minHeight: 0, padding: "6px 0" }}>
-            {stray.map((x) => (
-              <NoteThread key={x.id} note={x} path={x.path} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
-            ))}
-          </div>
-          {sendBar}
-        </div>
-      )}
-      {/* Fills the modal body (not min-height): the file list and diff then
-          scroll inside their columns, keeping the commit box pinned at the
-          bottom instead of pushing it below the modal's own scroll. */}
-      {view === "tree" && files.length > 0 && (
-        <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", border: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", flex: 1, minHeight: 0, overflow: "hidden" }}>
-          {/* file list */}
-          <div style={{ borderRight: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "11px 12px 8px", flex: "none" }}>
-              <button onClick={toggleAll} disabled={!files.length} title={allChecked ? "deselect all" : "select all"} {...hp("all")}
-                style={{ appearance: "none", cursor: files.length ? "pointer" : "default", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "all" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t85)", letterSpacing: 1, padding: "3px 7px", flex: "none" }}>{allChecked ? "NONE" : "ALL"}</button>
-              <span style={{ fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)" }}>{checked.size}/{files.length} SEL</span>
-            </div>
-            <div className="mscroll" style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
-              {files.map((f) => {
-                const on = f.path === selName;
-                const isChecked = checked.has(f.path);
-                return (
-                  <div key={f.path} onClick={() => setSel(f.path)} {...hp(`f:${f.path}`)}
-                    style={{ borderLeft: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--acc) 8%, transparent)" : hov === `f:${f.path}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", cursor: "pointer", fontFamily: "'JetBrains Mono',monospace", textAlign: "left", display: "flex", alignItems: "center", gap: 9, padding: "8px 10px" }}>
-                    <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(f.path)} onClick={(e) => e.stopPropagation()} title="stage this file for commit"
-                      style={{ accentColor: "var(--acc)", cursor: "pointer", flex: "none", width: 13, height: 13, margin: 0 }} />
-                    <span style={{ fontSize: "var(--t11)", fontWeight: 700, width: 13, textAlign: "center", flex: "none", color: FILE_COLOR(f.status) }}>{f.status}</span>
-                    <span style={{ fontSize: "var(--t11)", color: on ? "var(--txb)" : isChecked ? "var(--txm)" : "var(--txf)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{f.path}</span>
-                    {noteCount[f.path] > 0 && <span title={`${noteCount[f.path]} review note${noteCount[f.path] === 1 ? "" : "s"}`} style={{ fontSize: "var(--t9)", letterSpacing: ".5px", color: "var(--purple)", flex: "none" }}>◆{noteCount[f.path]}</span>}
-                    <span style={{ fontSize: "var(--t10)", flex: "none", display: "flex", gap: 5 }}><span style={{ color: "var(--ok)" }}>+{f.add}</span><span style={{ color: "var(--err)" }}>−{f.del}</span></span>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ borderTop: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", flex: "none" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 9px 0" }}>
-                <input value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="commit message…"
-                  style={{ flex: 1, minWidth: 0, background: "color-mix(in srgb, var(--panel2) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t11)", padding: "6px 8px" }} />
-                {ai.commitmsg && <button onClick={() => void genMsg()} title="generate with Claude" {...hp("gen")}
-                  style={{ appearance: "none", cursor: "pointer", border: `1px solid ${genBusy ? "color-mix(in srgb, var(--purple) 50%, transparent)" : "color-mix(in srgb, var(--purple) 35%, transparent)"}`, background: genBusy ? "color-mix(in srgb, var(--purple) 16%, transparent)" : hov === "gen" ? "color-mix(in srgb, var(--purple) 16%, transparent)" : "transparent", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "6px 9px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
-                  <span style={{ width: 5, height: 5, background: "var(--purple)", transform: "rotate(45deg)" }} />{genBusy ? "THINKING…" : "GEN"}</button>}
-              </div>
-              {gitOp && (
-                <div style={{ margin: "8px 9px 0", border: "1px solid color-mix(in srgb, var(--ok) 35%, transparent)", background: "color-mix(in srgb, var(--ok) 6%, transparent)", color: "var(--ok)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "6px 9px", display: "flex", alignItems: "center", gap: 7, animation: "mslide .2s ease both" }}>
-                  <span style={{ color: "var(--ok)", flex: "none" }}>✓</span>
-                  <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{gitOp}</span>
-                </div>
-              )}
-              <div style={{ padding: "8px 9px 6px" }}>
-                <button onClick={() => void doCommit()} disabled={!checked.size || !msg.trim() || busy} {...hp("commit")}
-                  style={{ width: "100%", appearance: "none", cursor: checked.size && msg.trim() && !busy ? "pointer" : "not-allowed", border: "1px solid var(--acc)", background: hov === "commit" ? "color-mix(in srgb, var(--acc) 22%, transparent)" : "color-mix(in srgb, var(--acc) 12%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8, opacity: !checked.size || !msg.trim() || busy ? 0.45 : 1 }}>COMMIT {checked.size} FILE{checked.size === 1 ? "" : "S"}</button>
-              </div>
-              {/* Not a retry: the push goes to a new session on the branch,
-                  which you send yourself (runner._PUSH_NOTE tells agents the same).
-                  Above PUSH, so a second press there still retries. */}
-              {pushErr && onPushFailed && (
-                <div style={{ padding: "0 9px 7px" }}>
-                  <button onClick={() => onPushFailed(branch, pushErr)} {...hp("pushfail")}
-                    title="Handle it in a new session on this branch, with git's message as an unsent draft"
-                    style={{ width: "100%", appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--err) 35%, transparent)", background: hov === "pushfail" ? "color-mix(in srgb, var(--err) 10%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8 }}>
-                    PUSH FAILED ▸ HANDLE IN A NEW SESSION</button>
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 7, padding: "0 9px 9px" }}>
-                <button onClick={() => void doPush()} title="push to origin" {...hp("push")}
-                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "push" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                  <span style={{ color: "var(--ok)" }}>↑</span>PUSH {st?.ahead ?? 0}</button>
-                <button onClick={doPull} title="pull from origin" {...hp("pull")}
-                  style={{ flex: 1, appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: hov === "pull" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                  <span style={{ color: "var(--info)" }}>↓</span>PULL {st?.behind ?? 0}</button>
-              </div>
-            </div>
-          </div>
-          {/* diff panel */}
-          <div style={{ minWidth: 0, minHeight: 0, display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "9px 12px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", flex: "none" }}>
-              <span style={{ color: FILE_COLOR(selFile?.status ?? "M"), fontWeight: 700 }}>{selFile?.status ?? ""}</span>
-              <span style={{ flex: 1, color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", direction: "rtl", textAlign: "left" }}>{selName || ""}</span>
-              <span style={{ color: "var(--ok)" }}>+{selFile?.add ?? 0}</span><span style={{ color: "var(--err)" }}>−{selFile?.del ?? 0}</span>
-            </div>
-            <div className="mscroll" style={{ flex: 1, overflow: "auto", minHeight: 0, fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", lineHeight: 1.7 }}>
-              {rows.map((d, i) => {
-                const v = DIFF_VIEW[d.kind];
-                const ln = d.ln ? Number(d.ln) : 0;   // 0: a deleted line or a hunk header takes no note
-                const noted = ln > 0 && fileNotes.some((x) => ln >= x.start && ln <= x.end);
-                const dragged = !!drag && ln > 0 && i >= Math.min(drag.a, drag.b) && i <= Math.max(drag.a, drag.b);
-                const grab = ln > 0 ? (e: { button: number; preventDefault: () => void }) => {
-                  if (e.button !== 0) return;
-                  e.preventDefault();               // no text selection while dragging a range
-                  setDrag({ a: i, b: i });
-                } : undefined;
-                return (
-                  <Fragment key={i}>
-                    <div className="dnote-row" onMouseEnter={drag && ln > 0 ? () => setDrag({ ...drag, b: i }) : undefined}
-                      style={{ display: "flex", background: v.bg, boxShadow: dragged ? "inset 0 0 0 1px color-mix(in srgb, var(--acc) 45%, transparent)" : undefined }}>
-                      {/* The note gutter: ◆ on a noted line, + on the hovered one (index.css .dnote-plus). */}
-                      <span onMouseDown={grab} style={{ width: 18, flex: "none", display: "flex", alignItems: "center", justifyContent: "center", userSelect: "none", cursor: grab ? "pointer" : undefined }}>
-                        {noted ? <span style={{ color: "var(--purple)", fontSize: "var(--t9)" }}>◆</span>
-                          : grab ? <span className="dnote-plus" title="note this line, or drag down the numbers for a range"
-                              style={{ width: 14, height: 14, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--acc)", color: "var(--acc-on)", fontWeight: 700, lineHeight: 1 }}>+</span>
-                          : null}
-                      </span>
-                      <span onMouseDown={grab} style={{ width: 36, flex: "none", textAlign: "right", paddingRight: 9, color: noted ? "var(--purple-h)" : "var(--txg)", userSelect: "none", borderRight: "1px solid color-mix(in srgb, var(--acc) 8%, transparent)", cursor: grab ? "pointer" : undefined }}>{d.ln}</span>
-                      <span style={{ width: 14, flex: "none", textAlign: "center", color: v.sign }}>{d.mark}</span>
-                      <span style={{ color: v.color, whiteSpace: "pre", flex: 1 }}>{d.text || " "}</span>
-                    </div>
-                    {ln > 0 && fileNotes.filter((x) => x.end === ln && x.id !== editor?.id).map((x) => (
-                      <NoteThread key={x.id} note={x} onEdit={() => setEditor({ ...x })}
-                        onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
-                    ))}
-                    {ln > 0 && editor && editor.path === selName && editor.end === ln && (
-                      // Keyed: two notes ending on one line share this spot, and the
-                      // editor's typed text must not carry from one to the other.
-                      <NoteEditor key={editor.id ?? `new:${editor.start}`}
-                        start={editor.start} end={editor.end} initial={editor.text} isNew={!editor.id}
-                        onCancel={() => setEditor(null)} onSave={saveNote} />
-                    )}
-                  </Fragment>
-                );
-              })}
-              {/* A note whose line has left the diff (the code changed since) still
-                  goes on SEND, so it stays here where it can be seen and deleted. */}
-              {fileNotes.filter((x) => !rows.some((r) => r.ln === String(x.end))).map((x) => (
-                <NoteThread key={x.id} note={x} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
-              ))}
-              {stray.map((x) => (
-                <NoteThread key={x.id} note={x} path={x.path} onDelete={() => setNotes(notes.filter((y) => y.id !== x.id))} />
-              ))}
-            </div>
-            {sendBar}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-/* The app this project is running, live. The dev server is owned by the bridge
-   — started here, or by the model's Run tool when the human said "run it" in
-   chat — so this is the same server the chat header's chip points at. Logs come
-   off the SSE stream every surface already publishes to; the poll alone would
-   drop everything between ticks. */
-function RunningApp({ project }: { project: string }) {
-  const [srv, setSrv] = useState<DevServerInfo | null>(null);
-  const [lines, setLines] = useState<string[]>([]);
-  const [hov, setHov] = useState("");
-  const logRef = useRef<HTMLDivElement>(null);
-  const seeded = useRef<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    const tick = () => void api.servers()
-      .then((d) => { if (live) setSrv(d.servers.find((x) => x.dir === project || x.project === project) ?? null); })
-      .catch(() => { /* the bridge will be back */ });
-    tick();
-    const id = setInterval(tick, 3000);
-    return () => { live = false; clearInterval(id); };
-  }, [project]);
-
-  const dir = srv?.dir ?? null;
-  useEffect(() => {   // a different (or restarted) server starts its log over
-    if (dir && seeded.current !== dir) { seeded.current = dir; setLines(srv?.tail ?? []); }
-  }, [dir, srv]);
-  useEffect(() => {
-    if (!dir) return;
-    return logStream((line, d) => { if (d === dir) setLines((p) => [...p, line].slice(-200)); });
-  }, [dir]);
-  useLayoutEffect(() => {
-    const el = logRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
-  }, [lines]);
-
-  if (!srv || srv.status === "not started") return null;
-  const live = srv.status === "running";
-  const c = live ? "var(--ok)" : "var(--err)";
-  return (
-    <div style={{ marginBottom: 11, border: `1px solid color-mix(in srgb, ${c} 24%, transparent)`, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "7px 11px", flexWrap: "wrap", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)" }}>
-        <span style={{ width: 6, height: 6, borderRadius: "50%", background: c, flex: "none", boxShadow: live ? `0 0 7px ${c}` : "none" }} />
-        <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: c, flex: "none" }}>{live ? "RUNNING" : "EXITED"}</span>
-        <span title={srv.cmd ?? ""} style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t10)", color: "var(--txd)", flex: 1, minWidth: 60, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{srv.cmd}</span>
-        {srv.url && (
-          <a href={srv.url} target="_blank" rel="noreferrer" {...{ onMouseEnter: () => setHov("url"), onMouseLeave: () => setHov("") }}
-            style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: hov === "url" ? "var(--txb)" : "var(--ok)", textDecoration: "none", flex: "none", borderBottom: `1px solid color-mix(in srgb, var(--ok) ${hov === "url" ? 70 : 30}%, transparent)` }}>
-            {srv.url.replace("http://", "")} ↗</a>
-        )}
-        {live && (
-          <button onClick={() => void api.server("stop", { project }).catch(() => {})} title="stop this server"
-            onMouseEnter={() => setHov("stop")} onMouseLeave={() => setHov("")}
-            style={{ appearance: "none", cursor: "pointer", border: `1px solid color-mix(in srgb, var(--err) ${hov === "stop" ? 60 : 30}%, transparent)`, background: hov === "stop" ? "color-mix(in srgb, var(--err) 14%, transparent)" : "transparent", color: "var(--err)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "4px 10px", flex: "none" }}>
-            ■ STOP</button>
-        )}
-      </div>
-      <div ref={logRef} style={{ maxHeight: 132, overflowY: "auto", padding: "7px 11px", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", lineHeight: 1.55, color: "var(--txd)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-        {lines.length ? lines.join("\n") : "(no output yet)"}
-      </div>
-    </div>
-  );
-}
-
-/* ---------------- TERMINAL: run-project bar + multi-tab PTY terminals (design 1063–1120) ---------------- */
-
-function TerminalTab({ project, worktrees, branch, onCount, initialCommand }: {
-  project: string; worktrees: Worktree[]; branch: string; onCount: (n: number) => void;
-  initialCommand?: string;
-}) {
-  // Consumed by the first pane that connects, then cleared so switching tabs or
-  // opening another terminal doesn't run it again.
-  const [preload, setPreload] = useState(initialCommand ?? "");
-  const ai = useAiFeatures();   // GENERATE asks Claude — hidden while RUN COMMAND is off
-  const [hov, setHov] = useState("");
-  const hp = (k: string) => ({ onMouseEnter: () => setHov(k), onMouseLeave: () => setHov("") });
-
-  const [terms, setTerms] = useState<TermInfo[]>([]);
-  const [activeId, setActiveId] = useState<string | null>(null);
-  const [newOpen, setNewOpen] = useState(false);
-  const [creating, setCreating] = useState(false);
-  const [error, setError] = useState("");
-
-  const [runCmd, setRunCmd] = useState("");
-  const [runSource, setRunSource] = useState("");
-  const [detected, setDetected] = useState(false);
-  const [genBusy, setGenBusy] = useState(false);
-  const [runBusy, setRunBusy] = useState(false);
-
-  // auto-detect the run command for this project
-  useEffect(() => {
-    let live = true;
-    setRunCmd(""); setRunSource(""); setDetected(false);
-    void api.detectRunCommand({ project })
-      .then((r) => { if (live) { setRunCmd(r.command || ""); setRunSource(r.source || ""); setDetected(true); } })
-      .catch(() => { if (live) setDetected(true); });
-    return () => { live = false; };
-  }, [project]);
-
-  // reconnect to this project's persisted terminals — with none open, start one on
-  // the checked-out branch (the main checkout) so the tab lands on a live prompt
-  const autoOpened = useRef("");
-  useEffect(() => {
-    let live = true;
-    void api.terminals(project).then((d) => {
-      if (!live) return;
-      setTerms(d.terminals);
-      setActiveId((cur) => (cur && d.terminals.some((t) => t.id === cur)) ? cur : (d.terminals[0]?.id ?? null));
-      if (!d.terminals.length && autoOpened.current !== project) {
-        autoOpened.current = project;
-        void create(project);
-      }
-    }).catch(() => {});
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [project]);
-
-  useEffect(() => { onCount(terms.length); }, [terms, onCount]);
-
-  const branchOf = (t: TermInfo): string => {
-    const wt = worktrees.find((w) => w.rel && w.rel === t.cwd_rel);
-    if (wt) return wt.branch;
-    if (t.cwd_rel === project) return branch || "main";
-    return t.cwd_rel.replace(/\/+$/, "").split("/").pop() || t.cwd_rel;
-  };
-
-  const removeTerm = (id: string) => {
-    setTerms((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      setActiveId((cur) => (cur === id ? (next[next.length - 1]?.id ?? null) : cur));
-      return next;
-    });
-  };
-
-  async function create(cwdRel: string) {
-    if (creating) return;
-    setCreating(true); setError("");
-    try {
-      const r = await api.createTerminal(project, cwdRel, 80, 24);
-      if (r.error || !r.id) { setError(r.error || "could not open terminal"); return; }
-      const fresh: TermInfo = { id: r.id, project, cwd_rel: r.cwd_rel ?? cwdRel, cols: 80, rows: 24, created: Date.now() / 1000, alive: true, venv: r.venv };
-      setTerms((prev) => [...prev, fresh]);
-      setActiveId(r.id);
-      setNewOpen(false);
-    } catch (e) { setError((e as Error).message); }
-    finally { setCreating(false); }
-  }
-
-  async function closeTerm(id: string) {
-    try { await api.closeTerminal(id); } catch { /* already gone */ }
-    removeTerm(id);
-  }
-
-  async function genRun() {
-    if (genBusy) return;
-    setGenBusy(true);
-    try {
-      const r = await api.detectRunCommand({ project });
-      setRunCmd(r.command || "");
-      setRunSource(r.source || "");
-    } catch { /* ignore */ }
-    finally { setGenBusy(false); }
-  }
-
-  async function runProject() {
-    const cmd = runCmd.trim();
-    if (!cmd || runBusy) return;
-    setRunBusy(true);
-    try {
-      const r = await api.server("start", { cmd, project });
-      if (r.message?.startsWith("❌")) setError(r.message);
-    } catch (e) { setError((e as Error).message); }
-    finally { setRunBusy(false); }
-  }
-
-  const wtOpts = worktrees.length
-    ? worktrees.map((w) => ({ name: w.branch, rel: w.rel ?? project }))
-    : [{ name: branch || "main", rel: project }];
-
-  return (
-    <div style={{ animation: "mslide .3s ease both", height: "100%", display: "flex", flexDirection: "column" }}>
-      {/* run project */}
-      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 11, border: "1px solid color-mix(in srgb, var(--ok) 24%, transparent)", background: "color-mix(in srgb, var(--ok) 4%, transparent)", padding: "9px 11px", flexWrap: "wrap" }}>
-        <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--ok)", flex: "none" }}>RUN PROJECT</span>
-        <span style={{ fontSize: "var(--t13)", color: "var(--ok)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>$</span>
-        <input value={runCmd} onChange={(e) => setRunCmd(e.target.value)} placeholder="command to run this project…"
-          style={{ flex: 1, minWidth: 120, background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", outline: "none", color: "var(--txb)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t12)", padding: "7px 9px" }} />
-        <span title="auto-detected" style={{ fontSize: "var(--t8)", letterSpacing: ".5px", color: "var(--txf)", flex: "none", fontFamily: "'JetBrains Mono',monospace" }}>{runSource}</span>
-        {ai.preview && detected && !runCmd && (
-          <button onClick={() => void genRun()} title="complex project — let Claude generate the run command" {...hp("gen")}
-            style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--purple) 40%, transparent)", background: hov === "gen" ? "color-mix(in srgb, var(--purple) 18%, transparent)" : "color-mix(in srgb, var(--purple) 8%, transparent)", color: "var(--purple-h)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1, padding: "7px 11px", flex: "none", display: "flex", alignItems: "center", gap: 5 }}>
-            <span style={{ color: "var(--purple)" }}>✦</span>{genBusy ? "THINKING…" : "GENERATE"}</button>
-        )}
-        <button onClick={() => void runProject()} title="run in terminal" {...hp("run")}
-          style={{ appearance: "none", cursor: "pointer", border: "1px solid var(--ok)", background: hov === "run" ? "color-mix(in srgb, var(--ok) 24%, transparent)" : "color-mix(in srgb, var(--ok) 14%, transparent)", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "7px 14px", flex: "none", display: "flex", alignItems: "center", gap: 6, opacity: runBusy ? 0.6 : 1 }}>
-          <span style={{ color: "var(--ok)" }}>▸</span>RUN</button>
-      </div>
-      {error && (
-        <div style={{ border: "1px solid color-mix(in srgb, var(--err) 30%, transparent)", background: "color-mix(in srgb, var(--err) 6%, transparent)", color: "var(--err)", fontSize: "var(--t105)", padding: "7px 11px", marginBottom: 9, fontFamily: "'JetBrains Mono',monospace" }}>{error}</div>
-      )}
-      <RunningApp project={project} />
-      {/* terminal box */}
-      <div style={{ border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, background: "color-mix(in srgb, var(--panel3) 55%, transparent)" }}>
-        <div style={{ flex: "none", display: "flex", alignItems: "stretch", borderBottom: "1px solid color-mix(in srgb, var(--acc) 12%, transparent)", background: "color-mix(in srgb, var(--panel2) 50%, transparent)", overflowX: "auto" }}>
-          {terms.map((t) => {
-            const on = t.id === activeId;
-            return (
-              <div key={t.id} onClick={() => setActiveId(t.id)} {...hp(`term:${t.id}`)}
-                style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px", cursor: "pointer", borderRight: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", borderBottom: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--acc) 6%, transparent)" : hov === `term:${t.id}` ? "color-mix(in srgb, var(--acc) 5%, transparent)" : "transparent", flex: "none" }}>
-                <span style={{ color: "var(--acc)", fontSize: "var(--t10)", flex: "none" }}>❯_</span>
-                <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t105)", color: on ? "var(--txb)" : "var(--txd)", maxWidth: 150, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>⎇ {branchOf(t)}</span>
-                {t.venv && (
-                  // The shell started activated — say so, or `python` being the
-                  // project's 3.12 instead of the system one is a mystery.
-                  <span title={`${t.venv} is activated in this shell`}
-                    style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t85)", letterSpacing: ".5px", color: "var(--ok)", border: "1px solid color-mix(in srgb, var(--ok) 30%, transparent)", padding: "1px 4px", flex: "none" }}>
-                    {t.venv}
-                  </span>
-                )}
-                <button onClick={(e) => { e.stopPropagation(); void closeTerm(t.id); }} title="close terminal" {...hp(`termx:${t.id}`)}
-                  style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: hov === `termx:${t.id}` ? "var(--err)" : "var(--txd)", fontFamily: "inherit", fontSize: "var(--t12)", lineHeight: 1, padding: "0 2px", flex: "none" }}>✕</button>
-              </div>
-            );
-          })}
-          <button onClick={() => setNewOpen((o) => !o)} title="new terminal on a worktree" {...hp("termnew")}
-            style={{ appearance: "none", cursor: "pointer", border: 0, background: hov === "termnew" ? "color-mix(in srgb, var(--acc) 8%, transparent)" : "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t15)", lineHeight: 1, padding: "4px 13px", flex: "none" }}>+</button>
-        </div>
-        {newOpen && (
-          <div style={{ flex: "none", display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, padding: "9px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", background: "color-mix(in srgb, var(--purple) 4%, transparent)" }}>
-            <span style={{ fontSize: "var(--t8)", letterSpacing: 1.5, color: "var(--purple-g)", flex: "none" }}>OPEN ON WORKTREE</span>
-            {wtOpts.map((w) => (
-              <button key={w.name} onClick={() => void create(w.rel)} {...hp(`wt:${w.name}`)}
-                style={{ appearance: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 5, border: `1px solid ${hov === `wt:${w.name}` ? "var(--purple)" : "color-mix(in srgb, var(--purple) 30%, transparent)"}`, background: "color-mix(in srgb, var(--purple) 6%, transparent)", color: "var(--purple-h)", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t95)", padding: "4px 8px" }}>
-                <span style={{ color: "var(--purple)" }}>⎇</span>{w.name}</button>
-            ))}
-          </div>
-        )}
-        {terms.length === 0 ? (
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 11 }}>
-            <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t22)", color: "var(--txg)" }}>❯_</span>
-            <div style={{ fontSize: "var(--t11)", letterSpacing: 1.5, color: "var(--txl)" }}>NO OPEN TERMINALS</div>
-            <button onClick={() => setNewOpen(true)} {...hp("emptynew")}
-              style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: hov === "emptynew" ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "color-mix(in srgb, var(--acc) 6%, transparent)", color: "var(--tx)", fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: 1.5, padding: "8px 14px" }}>+ NEW TERMINAL</button>
-          </div>
-        ) : (
-          /* real PTY panes replace the design's simulated output/input; all stay
-             mounted so output keeps flowing, only the active one is visible */
-          <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
-            {terms.map((t) => (
-              <div key={t.id} style={{ position: "absolute", inset: 8, display: t.id === activeId ? "block" : "none" }}>
-                <XtermPane id={t.id} active={t.id === activeId} onEnded={() => removeTerm(t.id)}
-                  preload={t.id === activeId ? preload : ""} onPreloaded={() => setPreload("")} />
-              </div>
-            ))}
-          </div>
-        )}
+          onToggleTerm={toggleTerm} />
       </div>
     </div>
   );

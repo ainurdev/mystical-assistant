@@ -409,11 +409,6 @@ body {
 .trow:hover .trow-mark { display: none !important; }
 .trow-act > span { display: grid; place-items: center; width: 22px; height: 20px; border-radius: var(--r); color: var(--txl); }
 .trow-act > span:hover { color: var(--txh); background: var(--wash); }
-/* GIT tab review notes: the gutter's + shows on the hovered diff line only.
-   CSS, not React state, for the reason .trow gives: a diff can be thousands of
-   rows. */
-.dnote-row .dnote-plus { opacity: 0; }
-.dnote-row:hover .dnote-plus { opacity: 1; }
 /* The commit box is the one place in the HUD you type prose into, so its
    textarea keeps a focus cue — every other input here suppresses the outline. */
 .cbox textarea:focus {
@@ -4363,6 +4358,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* dialogs read in Geist throughout; code-ish fields keep a mono via their own classes */
 [data-fam] [style*="--shadow-modal"] { font-family: var(--ui-font) !important; }
 [data-fam] [style*="--shadow-modal"] [style*="JetBrains Mono"]:not(input):not(textarea):not(pre) { font-family: var(--ui-font) !important; }
+/* The file window (AnalyzeModal) is full-bleed, so it names no --shadow-modal
+   and wears none of a modal's furniture: no radius, border or scrim. It keeps
+   the faces the modal gave it: the family's UI font on the chrome, code in the
+   code font (`.code`, and CodeMirror's own classes). */
+[data-fam] .fwin { font-family: var(--ui-font); }
+[data-fam] .fwin [style*="JetBrains Mono"]:not(input):not(textarea):not(pre) { font-family: var(--ui-font) !important; }
+.fwin .code { font-family: 'JetBrains Mono', monospace !important; }
 /* ── THE FAMILIES · SETTINGS — the dialog as an app's settings page
    (SettingsModal's markup is the same for all three; this restyles the HUD
    inline styles it still carries) ── */

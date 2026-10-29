@@ -2045,6 +2045,11 @@ export const api = {
     req<FileContent>(
       `/local/files/read?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
     ),
+  /** The file as committed at HEAD — the base the EDITOR's inline diff compares with. */
+  fileHead: (project: string, path: string, branch?: string) =>
+    req<{ ok: boolean; exists?: boolean; content?: string; error?: string }>(
+      `/local/files/head?project=${encodeURIComponent(project)}&path=${encodeURIComponent(path)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+    ),
   fileWrite: (project: string, path: string, content: string, branch?: string) =>
     req<{ ok: boolean; error?: string }>("/local/files/write", {
       method: "POST",
@@ -2071,9 +2076,10 @@ export const api = {
       `/local/sessions/${encodeURIComponent(sessionId)}/retitle`,
       { method: "POST", body: title ? { title } : {} },
     ),
-  filesGrep: (project: string, q: string, branch?: string) =>
+  /** mode: "" search-in-files · "word" references (whole word, case-sensitive) · "def" definitions. */
+  filesGrep: (project: string, q: string, branch?: string, mode?: "word" | "def") =>
     req<{ hits: GrepHit[] }>(
-      `/local/files/grep?project=${encodeURIComponent(project)}&q=${encodeURIComponent(q)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+      `/local/files/grep?project=${encodeURIComponent(project)}&q=${encodeURIComponent(q)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}${mode ? `&mode=${mode}` : ""}`,
     ),
   fileOp: (project: string, op: FileOp, path: string, to?: string, branch?: string) =>
     req<{ ok: boolean; path?: string; error?: string }>("/local/files/op", {

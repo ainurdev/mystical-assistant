@@ -178,6 +178,22 @@ def test_read_endpoint_hands_back_media_but_not_svg():
     assert "media" not in box["obj"] and box["obj"]["content"] == "<svg/>\n", box["obj"]
 
 
+def test_read_endpoint_opens_typescript_as_text_not_video():
+    # mimetypes calls `.ts` video/mp2t; a TypeScript file must still load as source,
+    # while a real transport stream (binary, NULs) stays media.
+    name, d = _mkproject("proj_ts")
+    with open(os.path.join(d, "a.ts"), "w") as f:
+        f.write("export const x: number = 1;\n")
+    with open(os.path.join(d, "clip.ts"), "wb") as f:
+        f.write(b"\x47\x40\x00\x10" + b"\x00\xff" * 200)
+    h, box = _handler()
+    h._get_api("/local/files/read", {"project": [name], "path": ["a.ts"], "branch": [""]})
+    assert box["obj"]["binary"] is False and "media" not in box["obj"], box["obj"]
+    assert box["obj"]["content"] == "export const x: number = 1;\n"
+    h._get_api("/local/files/read", {"project": [name], "path": ["clip.ts"], "branch": [""]})
+    assert box["obj"]["mime"] == "video/mp2t" and box["obj"]["media"].startswith("data:video/mp2t;base64,"), box["obj"]
+
+
 def test_read_endpoint_caps_oversized_media():
     name, d = _mkproject("proj_media_cap")
     with open(os.path.join(d, "huge.pdf"), "wb") as f:
@@ -300,3 +316,85 @@ def test_git_compare_never_reads_a_ref_as_an_option():
     git.compare(d, base, head, three_dot=False)
     with open(victim) as f:
         assert f.read() == "precious\n"
+
+
+def _grep_hits(name, q, mode):
+    h, box = _handler()
+    h._get_api("/local/files/grep", {"project": [name], "q": [q], "mode": [mode], "branch": [""]})
+    assert box["code"] == 200, box
+    return {(x["path"], x["line"]) for x in box["obj"]["hits"]}
+
+
+def test_grep_word_mode_is_whole_word_and_case_sensitive():
+    """find-references. The route passes mode through: the default search would
+    hit all four lines."""
+    name, d = _mkproject("proj_grep_word")
+    with open(os.path.join(d, "w.ts"), "w") as f:
+        f.write("foo\nfoobar\nFoo\ncall(foo);\n")
+    assert _grep_hits(name, "foo", "word") == {("w.ts", 1), ("w.ts", 4)}
+
+
+def test_grep_def_mode_finds_declarations_not_calls():
+    name, d = _mkproject("proj_grep_def")
+    with open(os.path.join(d, "t.ts"), "w") as f:
+        f.write("function foo(a) {}\n"           # 1
+                "export function foo(b) {}\n"    # 2
+                "const foo = () => 1;\n"         # 3
+                "const api = {\n"
+                "  foo: (a: string) => a,\n"     # 5
+                "};\n"
+                "class Foo {\n"                  # 7
+                "  async foo(x) {\n"             # 8
+                "  }\n"
+                "}\n"
+                "foo(1);\n"
+                "bar(foo);\n"
+                "foo(a, () => {\n"
+                "});\n"
+                "let $foo = 1;\n")                # 15
+    with open(os.path.join(d, "p.py"), "w") as f:
+        f.write("class Foo:\n    def foo(self):\n        pass\n")
+    assert _grep_hits(name, "foo", "def") == {
+        ("t.ts", 1), ("t.ts", 2), ("t.ts", 3), ("t.ts", 5), ("t.ts", 8), ("p.py", 2)}
+    assert _grep_hits(name, "Foo", "def") == {("t.ts", 7), ("p.py", 1)}
+    assert _grep_hits(name, "$foo", "def") == {("t.ts", 15)}   # `$` escaped, not an anchor
+
+
+def test_grep_def_mode_refuses_non_identifiers():
+    """Never a regex built from raw input: a non-identifier finds nothing."""
+    name, d = _mkproject("proj_grep_def_bad")
+    with open(os.path.join(d, "t.ts"), "w") as f:
+        f.write("const x = 1;\nlet y = 2;\nfunction a(b) {}\n")
+    for q in ("a b", "x|y", ".*"):
+        assert _grep_hits(name, q, "def") == set(), q
+
+
+def test_head_endpoint_reads_the_committed_version():
+    name, d = _mkproject("proj_head")
+    with open(os.path.join(d, "a.txt"), "w") as f:
+        f.write("edited\n")
+    with open(os.path.join(d, "new.txt"), "w") as f:
+        f.write("fresh\n")
+    h, box = _handler()
+    h._get_api("/local/files/head", {"project": [name], "path": ["a.txt"], "branch": [""]})
+    assert box["obj"] == {"ok": True, "path": "a.txt", "exists": True, "content": "hello\n"}, box
+    h._get_api("/local/files/head", {"project": [name], "path": ["new.txt"], "branch": [""]})
+    assert box["obj"]["exists"] is False and box["obj"]["content"] == "", box
+    for bad in ("../x", "/etc/hosts"):
+        h._get_api("/local/files/head", {"project": [name], "path": [bad], "branch": [""]})
+        assert box["code"] == 400, (bad, box)
+    h._get_api("/local/files/head", {"project": ["does_not_exist_xyz"], "path": ["a.txt"], "branch": [""]})
+    assert box["code"] == 400
+    # a project that is a subdirectory of its repo: paths stay project-relative
+    os.makedirs(os.path.join(d, "sub"))
+    with open(os.path.join(d, "sub", "b.txt"), "w") as f:
+        f.write("inner\n")
+    _git(d, "add", "sub")
+    _git(d, "commit", "-qm", "sub")
+    h._get_api("/local/files/head", {"project": [name + "/sub"], "path": ["b.txt"], "branch": [""]})
+    assert box["obj"]["content"] == "inner\n", box
+    # a repo with no commits has no HEAD to read
+    os.makedirs(os.path.join(BASE, "proj_head_empty"), exist_ok=True)
+    subprocess.run(["git", "init", "-q", os.path.join(BASE, "proj_head_empty")], check=True)
+    h._get_api("/local/files/head", {"project": ["proj_head_empty"], "path": ["a.txt"], "branch": [""]})
+    assert box["obj"] == {"ok": True, "path": "a.txt", "exists": False, "content": ""}, box

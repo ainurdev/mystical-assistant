@@ -336,6 +336,16 @@ def ignored_paths(cwd: str) -> list[str]:
     return kept
 
 
+def _is_text(raw: bytes) -> bool:
+    if b"\x00" in raw[:8192]:
+        return False
+    try:
+        raw.decode("utf-8")   # a real video or image fails within its first bytes
+    except UnicodeDecodeError:
+        return False
+    return True
+
+
 def read_file(cwd: str, path: str) -> dict:
     """Load a working-tree file for the editor. Returns {ok, path, content,
     binary, too_large, size}; content is "" when binary or too_large. Binary is
@@ -361,6 +371,14 @@ def read_file(cwd: str, path: str) -> dict:
             raw = f.read()
     except OSError as e:
         return {"ok": False, "error": str(e)}
+    # The type was guessed from the extension alone, and `.ts` is MPEG-TS video
+    # to mimetypes: TypeScript opened as a video player. Bytes with no NUL that
+    # decode as UTF-8 are source, so they load as text under the text cap.
+    if media and _is_text(raw):
+        media = False
+        if size > _MAX_FILE:
+            return {"ok": True, "path": safe, "content": "", "binary": False,
+                    "too_large": True, "size": size}
     # ponytail: data URL rather than a raw-bytes route — no second authed
     # endpoint to gate, and the cap keeps the JSON payload bounded
     if media:
@@ -372,6 +390,18 @@ def read_file(cwd: str, path: str) -> dict:
                 "too_large": False, "size": size}
     return {"ok": True, "path": safe, "content": raw.decode("utf-8", "replace"),
             "binary": False, "too_large": False, "size": size}
+
+
+def read_head(cwd: str, path: str) -> dict:
+    """A working-tree file as committed at HEAD → {ok, path, exists, content}.
+    `cat-file blob` rather than file_at(): one call tells "absent" from "empty",
+    and a directory or a repo with no commits fails it instead of printing a
+    tree. `./` keeps the path cwd-relative like every other editor path."""
+    safe = _safe_path(cwd, path)
+    if safe is None:
+        return {"ok": False, "error": "path escapes workspace"}
+    rc, out, _ = _run(cwd, "cat-file", "blob", f"HEAD:./{safe}")
+    return {"ok": True, "path": safe, "exists": rc == 0, "content": out if rc == 0 else ""}
 
 
 def write_file(cwd: str, path: str, content: str) -> tuple[bool, str]:
@@ -392,18 +422,49 @@ def write_file(cwd: str, path: str, content: str) -> tuple[bool, str]:
         return False, str(e)
 
 
-def grep(cwd: str, query: str, limit: int = 200) -> list[dict]:
+_IDENT = re.compile(r"[A-Za-z_$][\w$]*")
+# Declaration shapes for go-to-definition, %s = the escaped identifier. POSIX
+# ERE: `git grep -E` knows no \s or \w.
+_DEF_PATTERNS = (
+    # function foo( · def foo( · class Foo · const foo = · type Foo = · fn foo
+    r"(^|[^[:alnum:]_$])(function\*?|def|class|interface|type|enum|struct|trait"
+    r"|fn|func|const|let|var)[[:space:]]+%s([^[:alnum:]_$]|$)",
+    # fileWrite: (project) => · foo = () => · foo = async (
+    r"^[[:space:]]*(export[[:space:]]+)?((static|async|public|private|protected"
+    r"|readonly)[[:space:]]+)*%s[[:space:]]*(\??:|=)[[:space:]]*(async[[:space:]]+)?"
+    r"(\(|function|<)",
+    # save() { · async load(x: T): Promise<void> {  — not the call foo(a, () => {
+    r"^[[:space:]]*((static|async|public|private|protected|get|set)[[:space:]]+)*"
+    r"%s[[:space:]]*\(.*\)[[:space:]]*(:[^=]*)?\{[[:space:]]*$",
+)
+
+
+def grep(cwd: str, query: str, limit: int | None = None, mode: str = "") -> list[dict]:
     """EDITOR search-in-files: case-insensitive fixed-string search over the
     working tree (tracked + untracked, .gitignore honored, binaries skipped) →
     [{path, line, text}]. `-e` keeps a query starting with `-` from being read
-    as a flag. rc 1 just means no matches."""
+    as a flag. rc 1 just means no matches.
+
+    mode="word" is find-references: case-sensitive, whole word. mode="def" is
+    go-to-definition: `query` must be an identifier (else [] — no regex is ever
+    built from raw input), tried against _DEF_PATTERNS. Each mode has its own
+    per-file cap and default `limit`."""
     if not query or not is_repo(cwd):
         return []
-    base = ("-c", "core.quotePath=false", "grep", "-I", "-n", "-i", "-F",
+    if mode == "word":
+        args, cap, top = ["-w", "-F", "-e", query], "50", 300
+    elif mode == "def":
+        if not _IDENT.fullmatch(query):
+            return []
+        name = query.replace("$", r"\$")   # the one ERE metachar an identifier can hold
+        args, cap, top = ["-E"] + [a for p in _DEF_PATTERNS for a in ("-e", p % name)], "20", 100
+    else:
+        args, cap, top = ["-i", "-F", "-e", query], "20", 200
+    base = ("-c", "core.quotePath=false", "grep", "-I", "-n",
             "--untracked", "--exclude-standard")
-    rc, out, _ = _run(cwd, *base, "--max-count", "20", "-e", query, timeout=15)
+    rc, out, _ = _run(cwd, *base, "--max-count", cap, *args, timeout=15)
     if rc > 1:   # --max-count wants git ≥ 2.38 — fall back to an uncapped grep
-        rc, out, _ = _run(cwd, *base, "-e", query, timeout=15)
+        rc, out, _ = _run(cwd, *base, *args, timeout=15)
     if rc > 1:
         return []
     hits: list[dict] = []
@@ -413,7 +474,7 @@ def grep(cwd: str, query: str, limit: int = 200) -> list[dict]:
         if not num.isdigit():
             continue
         hits.append({"path": path, "line": int(num), "text": text.strip()[:200]})
-        if len(hits) >= limit:
+        if len(hits) >= (limit or top):
             break
     return hits
 

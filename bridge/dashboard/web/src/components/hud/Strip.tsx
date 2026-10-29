@@ -131,7 +131,7 @@ export function Brand({ folded = false, onFold, workspace }: { folded?: boolean;
  *  rule), minimize miniaturizes, zoom goes full screen (Notifier "window").
  *  Glyphs while the group is hovered, like the real ones. Absolute at the
  *  cap's left edge, over where the logo was: in once it has faded, out first. */
-function Lights({ show }: { show: boolean }) {
+export function Lights({ show }: { show: boolean }) {
   const [hover, setHover] = useState(false);
   const dots: [string, "close" | "minimize" | "zoom", LucideIcon][] = [
     ["#ff5f57", "close", X], ["#febc2e", "minimize", Minus], ["#28c840", "zoom", Plus],

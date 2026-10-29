@@ -676,13 +676,23 @@ class Handler(BaseHTTPRequestHandler):
                 out.update(fmt.indent_for(cwd, out.get("path") or rel))
                 out["formatter"] = fmt.formatters_for(cwd, rel)[0] is not None
             return self._json(out)
-        if path == "/local/files/grep":
-            # EDITOR search-in-files (the palette's `#` mode)
+        if path == "/local/files/head":
+            # EDITOR: the open file as committed at HEAD
             cwd = _worktree_cwd(qs.get("project", [None])[0],
                                 (qs.get("branch", [""])[0] or "").strip())
             if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
-            return self._json({"hits": git.grep(cwd, (qs.get("q", [""])[0] or "")[:200])})
+            out = git.read_head(cwd, qs.get("path", [""])[0])
+            return self._json(out, 200 if out["ok"] else 400)
+        if path == "/local/files/grep":
+            # EDITOR search-in-files (the palette's `#` mode); mode=word|def
+            # backs find-references / go-to-definition
+            cwd = _worktree_cwd(qs.get("project", [None])[0],
+                                (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            return self._json({"hits": git.grep(cwd, (qs.get("q", [""])[0] or "")[:200],
+                                                mode=qs.get("mode", [""])[0])})
         if path == "/local/github/issues":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:

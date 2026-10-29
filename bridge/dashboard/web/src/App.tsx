@@ -1395,6 +1395,9 @@ export function App() {
         if (!leavePending()) return;
         e.preventDefault();
         void confirmLeave().then((ok) => ok && location.reload());
+      } else if (e.ctrlKey && !e.metaKey && e.key === "`") {
+        const rel = selected?.project ?? activeProject;
+        if (!analyzeProject && rel) { e.preventDefault(); openAnalyze(rel, undefined, "terminal"); }
       } else if (e.key === "Escape") {
         if (ctxMenu) closeCtx();
         else if (inspectorOpen) setInspectorOpen(false);
@@ -1407,7 +1410,7 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, toolsFor, inspectorOpen, paletteOpen, settingsOpen, analyzeProject]);
+  }, [ctxMenu, toolsFor, inspectorOpen, paletteOpen, settingsOpen, analyzeProject, selected?.project, activeProject]);
 
   // "Open SETTINGS on this tab", from anywhere (lib/opensettings.ts).
   useEffect(() => {
@@ -2664,6 +2667,9 @@ export function App() {
         if (act.format) items.push({ icon: "⌥", label: "Format document", hint: "⇧⌥F", onClick: act.format });
         if (act.symbol) items.push({ icon: "◎", label: "Go to symbol…", hint: "⇧⌃O", onClick: act.symbol });
         if (act.find) items.push({ icon: "⌕", label: "Find in files", hint: "⇧⌃F", onClick: act.find });
+        if (act.def) items.push({ icon: "↗", label: "Go to definition", hint: "⌘-click · F12", onClick: act.def });
+        if (act.peek) items.push({ icon: "◫", label: "Peek definition", hint: "⌥F12", onClick: act.peek });
+        if (act.refs) items.push({ icon: "≡", label: "Find all references", hint: "⇧F12", onClick: act.refs });
         if (sel) {
           const from = v.state.selection.main.from;
           items.push({ icon: "❞", label: "Send selection to chat", hint: "quotes path:line into the prompt",
@@ -3078,20 +3084,18 @@ export function App() {
                 initialLine={analyzeFile?.line}
                 initialTab={analyzeTab} initialCommand={analyzeCommand}
                 sessions={sessions.filter((s) => s.project === analyzeProject)} status={statusMap}
-                activeSession={selected?.id}
-                onClose={() => setAnalyzeProject(null)} onFeed={feed}
-                onPushFailed={(branch, output) => { setAnalyzeProject(null); pushFailedSession(analyzeProject, branch, output); }}
-                // GIT tab review notes. The chat goes to where they went, so you
-                // see the agent pick them up. A session mid-turn queues them.
-                onSendTo={(text, to) => {
-                  const project = analyzeProject;
+                edited={analyzeProject === sessionProject ? filesEdits.edited : undefined}
+                onClose={() => setAnalyzeProject(null)}
+                // ✦ Ask Claude / REVIEW: into the prompt, after whatever you were
+                // writing; the window goes unless it holds unsaved edits.
+                onAsk={(text, close) => {
+                  setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")}\n\n${text}` : text);
+                  if (!close) return;
                   setAnalyzeProject(null);
-                  if ("cwd" in to) return startIn(project, text, { cwd: to.cwd || undefined, force: true });
-                  const s = sessions.find((x) => x.id === to.session);
-                  if (s) selectSession(s);
                   toChat();
-                  return send(text, [], { sessionId: to.session, project, force: true });
+                  window.dispatchEvent(new Event("ask:focus"));
                 }}
+                onOpenGit={() => { setAnalyzeProject(null); patchSettings({ rightTab: "git", rightOpen: true }); }}
               />
             )}
             <CommandPalette open={paletteOpen} commands={commands} onClose={() => setPaletteOpen(false)} />
