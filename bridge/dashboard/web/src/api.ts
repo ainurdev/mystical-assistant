@@ -1635,6 +1635,17 @@ export interface MovePlan {
   host: string; base: string; out: string; loose: string[]; sections: MoveSection[];
 }
 export interface MoveFile { path: string; name: string; dir: string; bytes: number; mtime: number }
+/** One thing in a project's .mystical/: a folder or a file, its disk use, its newest file. */
+export interface StorageEntry { name: string; dir: boolean; bytes: number; mtime: number }
+export interface StorageProject {
+  project: string; bytes: number; running: number;   // running: its sessions with a turn in flight
+  entries: StorageEntry[]; kept: StorageEntry[];     // kept: the bridge's own files, never deleted
+  pictures: { bytes: number; count: number; mtime: number };
+  worktrees: { bytes: number; count: number };
+}
+export interface StorageScan { projects: StorageProject[]; move_files: (MoveFile & { from: string })[]; bytes: number }
+/** No `entries` = everything but what stays; [] = none of them. */
+export interface StorageClear { project: string; entries?: string[]; pictures?: boolean; worktrees?: boolean }
 export interface MoveFrom {
   host?: string; platform?: string; home?: string; base?: string; at?: number;
   mystical?: string; claude?: string;
@@ -2360,6 +2371,11 @@ export const api = {
   moveDismiss: (id: string) => req<{ ok: boolean }>("/local/move/dismiss", { method: "POST", body: { id } }),
   moveForget: () => req<{ ok: boolean }>("/local/move/forget", { method: "POST", body: {} }),
   moveDelete: (path: string) => req<{ ok: boolean }>("/local/move/delete", { method: "POST", body: { path } }),
+
+  // --- SETTINGS ▸ System ▸ Storage (bridge/storage.py) ---
+  storage: () => req<StorageScan>("/local/storage"),
+  clearStorage: (clear: StorageClear[], move_files: string[] = []) =>
+    req<{ freed: number; errors: string[] }>("/local/storage/clear", { method: "POST", body: { clear, move_files } }),
 };
 
 /** Query string for a run context (cwd/project/branch), omitting blanks. */

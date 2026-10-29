@@ -11,7 +11,7 @@ import {
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, type LucideIcon,
-  ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDriveDownload, HardDriveUpload, 
+  ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDrive, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin,
 } from "lucide-react";
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
@@ -21,6 +21,7 @@ import { ago, projectName, windowLabels } from "../../lib/surfaces";
 import { ExtrasFold, SkillsPage } from "./SkillsFold";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
+import { StorageSection } from "./StorageSection";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WorkspacesSettings } from "./WorkspacesSettings";
 import {
@@ -191,8 +192,8 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
     about: "What a session can reach that you didn't type: the SKILL.md files in a project or on this machine, the catalog to install from, and Claude Code plugins." },
   { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", icon: Waypoints, group: "THE WORK",
     about: "Other systems the bridge does work for. Each one ships with Mystical but stays silent until you install it: no tab, no card, no rows, no worker." },
-  { key: "system", label: "SYSTEM", hint: "bridge · updates", icon: Server, group: "THE WORK",
-    about: "The bridge itself: its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
+  { key: "system", label: "SYSTEM", hint: "storage · bridge · updates", icon: Server, group: "THE WORK",
+    about: "The bridge itself: what its sessions left on disk, its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
   { key: "move", label: "MOVE", hint: "export · import", icon: Truck, group: "THE WORK",
     about: "Carry this bridge to another machine. EXPORT packs your repos' unpushed work, MCP servers, plugins, Claude Code settings and chat history into one file; IMPORT replays a file from another machine here." },
 ];
@@ -230,6 +231,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "integrations", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
   { tab: "integrations", sec: "CLAUDE DESIGN", terms: "claude design system link pull sync skill tokens components" },
   { tab: "integrations", sec: "AVAILABLE", terms: "install integration plugin add rivendell claude design" },
+  { tab: "system", sec: "STORAGE", terms: "storage disk space cache caches clear delete clean up free files mystical screenshots pictures uploads drafts scratch" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "system", sec: "USAGE SHARING", terms: "share usage telemetry analytics posthog privacy tracking anonymous opt in out replay recording" },
@@ -372,6 +374,7 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "ON USAGE LIMIT": Gauge,
   "CLAUDE LOGINS": KeyRound,
   AGENTS: Handshake,
+  STORAGE: HardDrive,
   BRIDGE: Network,
   STARTUP: Power,
   "HTTP INSPECTOR": Activity,
@@ -416,6 +419,7 @@ const SEC_DESC: Record<string, string> = {
   "ON USAGE LIMIT": "What a chat does when its login runs out: ask you, fall back on its own, or wait.",
   "CLAUDE LOGINS": "The Claude accounts runs can use, and how much of each is left.",
   AGENTS: "Other coding agents a profile can run a session on, and the accounts they use.",
+  STORAGE: "What sessions left on this machine: every project's .mystical/ folder and their turn pictures. Lessons and reports are never touched.",
   BRIDGE: "The address this dashboard is talking to.",
   STARTUP: "Install the dashboard as its own app, and start it when you log in.",
   "HTTP INSPECTOR": "Watch every API request a run makes, live.",
@@ -4329,7 +4333,9 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "system" && (
               <>
-                <Section title="BRIDGE">
+                <StorageSection />
+
+                <Section title="BRIDGE" top>
                   <div style={CARD}>
                     <Row first label="HOST">
                       <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{host}</span>

@@ -4594,7 +4594,8 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   .aim-fold, .aim-card, .aim-editor, .aim-f input, .aim-f select, .aim-sel, .aim-field, .aim-x, .aim-xic, .aim-xbtn, .aim-xaside, .aim-chip,
   .aim-chipbtn, .aim-note, .aim-search, .aim-hero, .aim-vfield, .aim-pills em, .aim-prof, .aim-addrow, .aim-segwrap > div, .aim-segwrap > div button,
   .set-mini, .ps-rows, .ps-btn, .ps-pick, .ps-menu, .ps-opt, .ps-chip, .ps-av, .ps-name input,
-  .prj-search, .prj-search kbd, .prj-clr, .prj-list, .prj-det, .prj-stats, .prj-input, .prj-rename input, .prj-bigtile, .prj-foldact) { border-radius: 0 !important; }
+  .prj-search, .prj-search kbd, .prj-clr, .prj-list, .prj-det, .prj-stats, .prj-input, .prj-rename input, .prj-bigtile, .prj-foldact,
+  .stg-stack, .stg-rb, .stg-rb i, .stg-chip, .stg-list, .stg-tick, .stg-kept code, .stg-warn) { border-radius: 0 !important; }
 [data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::before,
 [data-fam="aurora"] :is(.ftcard, .setpane [style*="padding: 14px 16px"])::after {
   content: ""; position: absolute; z-index: 1; width: 9px; height: 9px; pointer-events: none;
@@ -5467,6 +5468,72 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
   .prj-tools { flex-wrap: wrap; }
   .prj-field { flex-wrap: wrap; }
 }
+
+/* ── SETTINGS ▸ System ▸ Storage (StorageSection): the block and its two
+   tick-list dialogs (.mystical/design-drafts/clear-caches, B). Rows share one
+   height so a list reads as a table; bars scale to the biggest row. ── */
+.stg { --l: var(--line, var(--border)); --l2: var(--line2, var(--border-bright)); --f: var(--ui-font, inherit); font-family: var(--f); }
+.stg code { font: 11.5px var(--mono); }
+.stg-note { font-size: var(--t10); color: var(--txm); line-height: 1.6; }
+.stg-note[data-k="warn"] { color: var(--warn); }
+.stg-note[data-k="done"] { margin-top: 6px; color: var(--ok); }
+.stg-sum { display: flex; align-items: baseline; gap: 10px; }
+.stg-sum b { font: 600 22px var(--mono); color: var(--txh); }
+.stg-sum span { font-size: 12.5px; color: var(--txd); }
+.stg-sum .ps-btn { margin-left: auto; align-self: center; }
+.stg-stack { display: flex; height: 10px; border-radius: 5px; overflow: hidden; gap: 2px; margin: 10px 0 4px; }
+.stg-stack i { display: block; height: 100%; min-width: 2px; }
+.stg-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11.5px; color: var(--txd); margin-bottom: 6px; }
+.stg-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.stg-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
+.stg-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 150px 64px 84px; align-items: center; gap: 12px; height: 40px; font-size: 13px; color: var(--txh); }
+.stg-row + .stg-row { border-top: 1px solid color-mix(in oklab, var(--l) 70%, transparent); }
+.stg-row .ps-btn { justify-self: end; height: 28px; padding: 0 10px; font-size: 12px; }
+.stg-tile { width: 20px; height: 20px; display: grid; place-items: center; }
+.stg-tile > * { transform: scale(.82); }
+.stg-dim { color: var(--txl); }
+.stg-nm { display: flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; overflow: hidden; }
+.stg-nm > span { overflow: hidden; text-overflow: ellipsis; }
+.stg-nm small { color: var(--txl); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.stg-nm code { color: var(--txh); }
+.stg-rb { height: 6px; border-radius: 3px; background: color-mix(in oklab, var(--l) 80%, transparent); overflow: hidden; }
+.stg-rb i { display: block; height: 100%; border-radius: 3px; background: color-mix(in oklab, var(--acc) 75%, transparent); }
+.stg-sz { font: 500 12px var(--mono); color: var(--txb); text-align: right; white-space: nowrap; }
+.stg-ag { font: 11px var(--mono); color: var(--txl); text-align: right; white-space: nowrap; }
+.stg-chip { font: 600 9.5px var(--f); letter-spacing: .08em; color: var(--warn); border: 1px solid color-mix(in oklab, var(--warn) 45%, transparent);
+  border-radius: 5px; padding: 2px 6px; flex: none; justify-self: end; }
+/* the dialogs: AskDialog's frame and backdrop, with a list where its sentence was */
+.stg-back { position: fixed; inset: 0; z-index: 96; display: flex; align-items: flex-start; justify-content: center; padding-top: 9vh;
+  background: color-mix(in srgb, var(--panel3) 74%, transparent); animation: backdropIn .2s ease both; }
+.stg-dlg { width: 560px; max-width: 94vw; max-height: 84vh; display: flex; flex-direction: column; gap: 14px; padding: 18px 18px 16px;
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); background: color-mix(in srgb, var(--panel2) 98%, transparent);
+  box-shadow: 0 0 60px var(--shadow-modal); animation: mslide .2s ease both; }
+.stg-title { font-size: var(--t13); font-weight: 600; color: var(--txh); line-height: 1.45; }
+.stg-about { margin-top: 6px; font-size: var(--t12); color: var(--txm); line-height: 1.55; }
+.stg-list { display: flex; flex-direction: column; border: 1px solid var(--l); border-radius: 10px; background: var(--panel2); overflow: auto; min-height: 0; }
+.stg-line { appearance: none; border: 0; background: none; font: 12.5px var(--f); color: var(--txh); text-align: left; cursor: pointer; width: 100%; flex: none;
+  display: grid; grid-template-columns: 16px minmax(0, 1fr) 112px 58px 46px; align-items: center; gap: 10px; height: 32px; padding: 0 12px; }
+.stg-line[data-tile] { grid-template-columns: 16px 20px minmax(0, 1fr) 112px 58px 74px; }
+.stg-line + .stg-line { border-top: 1px solid color-mix(in oklab, var(--l) 70%, transparent); }
+.stg-line:hover { background: var(--ac-06); }
+.stg-line[data-off] :is(.stg-nm, .stg-nm code, .stg-sz) { color: var(--txl); }
+.stg-line[data-off] .stg-rb i { background: color-mix(in oklab, var(--txl) 45%, transparent); }
+.stg-more { cursor: default; }
+.stg-more > button { appearance: none; border: 0; background: none; padding: 0; color: inherit; font: inherit; cursor: pointer; display: flex; align-items: center; }
+.stg-more .stg-nm { color: var(--txd); gap: 7px; }
+.stg-more .stg-nm > span { flex: none; }
+.stg-more .stg-nm svg { color: var(--txl); flex: none; }
+.stg-tick { width: 15px; height: 15px; border-radius: 4px; border: 1.5px solid var(--txl); display: grid; place-items: center; color: var(--acc-on, #fff); flex: none; }
+.stg-tick[data-on] { background: var(--acc); border-color: var(--acc); }
+.stg-kept { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 12px; color: var(--txd); }
+.stg-kept svg { color: var(--txl); }
+.stg-kept code { color: var(--txm); background: color-mix(in oklab, var(--l) 60%, transparent); border-radius: 5px; padding: 1px 6px; }
+.stg-kept span { color: var(--txl); }
+.stg-warn { display: flex; align-items: flex-start; gap: 8px; font-size: 12px; line-height: 1.5; color: var(--txm); padding: 8px 10px; border-radius: 8px;
+  border: 1px solid color-mix(in oklab, var(--warn) 35%, transparent); background: color-mix(in oklab, var(--warn) 8%, transparent); }
+.stg-warn svg { color: var(--warn); flex: none; margin-top: 2px; }
+.stg-foot { display: flex; justify-content: flex-end; align-items: center; gap: 9px; }
+.stg-foot > span { margin-right: auto; font-size: 11.5px; color: var(--txl); }
 
 /* the composer's PROFILE menu (Composer ProfileRows; drafts/profile-menu): two
    lines a profile, the login's tile from the picker above, and the default
