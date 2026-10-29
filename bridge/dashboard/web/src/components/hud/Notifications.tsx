@@ -395,7 +395,10 @@ export function NotificationCenter() {
       const tones = new Set<ToneKey>();
       const fresh: Notice[] = [];
       for (const n of freshSince(r.notices, cursor)) {
-        const d = popFor(n, { openSession: env.openSessionId, visible: document.visibilityState === "visible", prefs: r.prefs, quiet,
+        // "Looking at it" is visible AND focused: a window on screen behind
+        // another app is visible (Wayland can't tell it's covered), and news of
+        // its open chat went unannounced while you were elsewhere.
+        const d = popFor(n, { openSession: env.openSessionId, visible: document.visibilityState === "visible" && document.hasFocus(), prefs: r.prefs, quiet,
           live: new Set(needs.map((x) => x.subject)), now: Date.now() / 1000 });
         if (!d) continue;
         if (d.sound) tones.add(d.sound);
