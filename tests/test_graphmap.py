@@ -214,6 +214,54 @@ def test_update_exclude_not_duplicated(tmp_path, monkeypatch):
         assert f.read().count("graphify-out/") == 1
 
 
+def test_graphify_runs_local_only(tmp_path, monkeypatch):
+    """No LLM backend (graphify picks one from any API key in the env, or falls back
+    to `claude -p`) and no query log, on every graphify the bridge starts."""
+    d = _mkrepo(tmp_path)
+    monkeypatch.delenv("GRAPHIFY_BACKEND", raising=False)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    envs = []
+    fake = _fake_update_ok(d)
+    monkeypatch.setattr(graphmap.subprocess, "run",
+                        lambda cmd, **k: (envs.append(k.get("env")) if "graphify" in str(cmd[0]) else None) or fake(cmd, **k))
+    graphmap.update(d)
+    graphmap.explain(d, "a")
+    assert len(envs) >= 2
+    for env in envs:
+        assert env["GRAPHIFY_BACKEND"] == "none"
+        assert env["GRAPHIFY_QUERY_LOG_DISABLE"] == "1"
+        assert env["PATH"] == os.environ["PATH"]
+
+
+def test_explicit_graphify_backend_is_kept(monkeypatch):
+    monkeypatch.setenv("GRAPHIFY_BACKEND", "ollama")
+    assert graphmap.local_only_env()["GRAPHIFY_BACKEND"] == "ollama"
+
+
+def test_sessions_run_graphify_local_only(monkeypatch):
+    """The pack tells the agent to run `graphify explain` itself; that one inherits
+    the session's env."""
+    from bridge import runner
+    monkeypatch.delenv("GRAPHIFY_BACKEND", raising=False)
+    env = runner._run_env(None)
+    assert env["GRAPHIFY_BACKEND"] == "none"
+    assert env["GRAPHIFY_QUERY_LOG_DISABLE"] == "1"
+
+
+def test_update_excludes_in_a_worktree(tmp_path, monkeypatch):
+    """A worktree's .git is a file, not a dir; its ignores live in the repo's
+    common info/exclude."""
+    d = _mkrepo(tmp_path)
+    wt = d + "-wt"
+    _git(d, "worktree", "add", "--detach", wt)
+    monkeypatch.setattr(graphmap, "graphify_bin", lambda: "/usr/bin/graphify")
+    monkeypatch.setattr(graphmap.subprocess, "run", _fake_update_ok(wt))
+    ok, _ = graphmap.update(wt)
+    assert ok is True
+    st = _real_subprocess_run(["git", "-C", wt, "status", "--porcelain"], capture_output=True, text=True)
+    assert "graphify-out" not in st.stdout
+
+
 def _fake_update_calls(d, writes_html):
     """Stub graphify: records subcommands; `update` writes graph.json (and
     graph.html only when `writes_html`), `export html` writes graph.html."""

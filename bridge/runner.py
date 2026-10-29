@@ -201,14 +201,17 @@ def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
     return "\n\n".join(parts)
 
 
-# Claude session ids we've already injected the graph pack into. The pack
-# are rebuilt from live state, so re-sending them each turn silently changes
-# --append-system-prompt and invalidates the cached prefix (measured: one added
-# pack line moved ~11k tokens from cache_read to cache_create, a ~12x price step
-# on that segment, and on a resumed session the invalidated span is the whole
-# transcript). Once per session is also all that's useful: turn 1's pack is still
-# in context. Bounded by sessions-since-boot.
-_packed_sessions: set[str] = set()
+# Claude session id -> the packs its first turn got, re-sent unchanged on every
+# later turn. Every turn, because Claude Code re-renders the appended prompt from
+# the current turn's flags when a conversation compacts (--system-prompt-snapshot):
+# a pack sent on turn 1 only was gone from the system prompt after the first
+# compaction (seen in a real transcript, 2026-10-29). Unchanged, because the packs
+# are rebuilt from live state, and on a CLI without the snapshot a rebuilt pack
+# changes --append-system-prompt and invalidates the cached prefix (measured: one
+# added pack line moved ~11k tokens from cache_read to cache_create, a ~12x price
+# step on that segment, and on a resumed session the invalidated span is the whole
+# transcript). Bounded by sessions-since-boot.
+_session_packs: dict[str, str] = {}
 
 # claude session id -> whether its runs carry the Rivendell note, decided at the
 # session's first run and kept: a board linked later, or a Rivendell that was
@@ -315,6 +318,10 @@ def _run_env(ponytail: "str | None",
         over["PONYTAIL_DEFAULT_MODE"] = "off"
     elif ponytail:
         over["PONYTAIL_DEFAULT_MODE"] = ponytail
+    # The graph pack sends the agent to run `graphify explain` itself; that run
+    # inherits this env, so it stays code-only and unlogged like the bridge's own.
+    from bridge import graphmap
+    over.update(graphmap.local_only_env())
     base = inspector.base_url()
     if base:
         # The inspector is a pass-through proxy in front of api.anthropic.com;
@@ -591,15 +598,17 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
             # Duplicated session: resume the source transcript but let claude
             # mint a new id, so the original is never appended to.
             cmd.append("--fork-session")
-    if skip_pack or (claude_session_id and claude_session_id in _packed_sessions):
+    if skip_pack:
         graph = ""
+    elif claude_session_id and claude_session_id in _session_packs:
+        graph = _session_packs[claude_session_id]
     else:
         graph = _graph_pack_for(chat_id, cwd)
-        # The nightly digest rides the same once-per-session gate: something
-        # that moved between turns must not re-write the appended prompt.
+        # The nightly digest is frozen the same way: something that moved
+        # between turns must not re-write the appended prompt.
         graph = "\n\n".join(p for p in (graph, _dream_pack_for(chat_id, cwd)) if p)
         if claude_session_id:
-            _packed_sessions.add(claude_session_id)
+            _session_packs[claude_session_id] = graph
     _ensure_mystical(cwd)
     # Only runs that get the goals server (below) can act on the note.
     rv_note = (_rivendell_note_for(chat_id, claude_session_id, cwd)

@@ -30,6 +30,15 @@ _GRAPHIFY_FALLBACKS = ("~/.local/bin/graphify",)   # pipx/uv tool bin dir
 _graphify_bin: "str | None" = None
 
 
+def local_only_env() -> dict:
+    """graphify's switches for a code-only, unlogged run: no LLM backend (it would
+    pick one from any API key in the env, or fall back to `claude -p` for labels)
+    and no query log in ~/.cache. An explicit GRAPHIFY_BACKEND (ollama, say) is the
+    user's choice and wins."""
+    return {"GRAPHIFY_BACKEND": os.environ.get("GRAPHIFY_BACKEND") or "none",
+            "GRAPHIFY_QUERY_LOG_DISABLE": "1"}
+
+
 def graphify_bin() -> "str | None":
     """Absolute path to graphify, or None when not installed. Re-resolves when
     the cached path disappears; keeps returning None until installed (cheap)."""
@@ -158,7 +167,7 @@ def explain(cwd: str, query: str) -> str:
     try:
         proc = subprocess.run([bin_, "explain", query], cwd=cwd,
                               capture_output=True, text=True,
-                              timeout=EXPLAIN_TIMEOUT)
+                              timeout=EXPLAIN_TIMEOUT, env={**os.environ, **local_only_env()})
     except subprocess.TimeoutExpired:
         log.debug("graphify explain timed out", exc_info=True)
         return "graphify explain timed out."
@@ -172,13 +181,16 @@ def explain(cwd: str, query: str) -> str:
 
 
 def _exclude_artifacts(cwd: str) -> None:
-    """Keep artifacts out of the user's repo: append graphify-out/ to
-    .git/info/exclude (repo-local, never committed). Best-effort."""
+    """Keep artifacts out of the user's repo: append graphify-out/ to its
+    info/exclude (repo-local, never committed). Git resolves the path: in a
+    worktree, .git is a file and the exclude lives in the repo's common git dir.
+    Best-effort."""
     try:
-        info = os.path.join(cwd, ".git", "info")
-        if not os.path.isdir(info):
+        proc = subprocess.run(["git", "rev-parse", "--git-path", "info/exclude"], cwd=cwd,
+                              capture_output=True, text=True, timeout=GIT_TIMEOUT)
+        path = os.path.join(cwd, proc.stdout.strip())   # relative in a main checkout
+        if proc.returncode != 0 or not os.path.isdir(os.path.dirname(path)):
             return
-        path = os.path.join(info, "exclude")
         try:
             with open(path, encoding="utf-8") as f:
                 if "graphify-out/" in f.read():
@@ -187,7 +199,7 @@ def _exclude_artifacts(cwd: str) -> None:
             pass
         with open(path, "a", encoding="utf-8") as f:
             f.write("\ngraphify-out/\n")
-    except OSError:
+    except (OSError, subprocess.SubprocessError):
         log.debug("graphmap exclude_artifacts failed", exc_info=True)
 
 
@@ -201,7 +213,7 @@ def _ensure_viz(cwd: str, bin_: str) -> None:
         return
     try:
         subprocess.run([bin_, "export", "html"], cwd=cwd, capture_output=True,
-                       text=True, timeout=VIZ_TIMEOUT)
+                       text=True, timeout=VIZ_TIMEOUT, env={**os.environ, **local_only_env()})
     except (OSError, subprocess.SubprocessError):
         log.debug("graphify export html failed", exc_info=True)
 
@@ -221,7 +233,8 @@ def update(cwd: str, timeout: int = BUILD_TIMEOUT) -> "tuple[bool, str]":
     try:
         first = not has_graph(cwd)
         proc = subprocess.run([bin_, "update", "."], cwd=cwd,
-                              capture_output=True, text=True, timeout=timeout)
+                              capture_output=True, text=True, timeout=timeout,
+                              env={**os.environ, **local_only_env()})
         if proc.returncode != 0:
             tail = (proc.stderr or proc.stdout or "").strip()[-500:]
             return False, f"graphify update failed: {tail or proc.returncode}"

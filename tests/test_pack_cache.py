@@ -1,8 +1,13 @@
-"""The graph pack goes into --append-system-prompt once per session.
+"""A session's graph pack rides --append-system-prompt on every turn, frozen at
+the text its first turn got.
 
-Re-sending a rebuilt pack every turn changes the appended block, which sits after
-the last prompt-cache breakpoint — the whole block plus the resumed transcript
-gets re-written at cache-write price.
+Every turn: Claude Code records the appended prompt on a conversation's first
+request and, when the conversation compacts, re-renders it from that turn's flags
+(--system-prompt-snapshot), so a pack sent on turn 1 only is gone after the first
+compaction (seen in a real transcript, 2026-10-29). Frozen: on a CLI without the
+snapshot, a rebuilt pack would change the appended block, which sits after the
+last prompt-cache breakpoint — the whole block plus the resumed transcript gets
+re-written at cache-write price.
 Run: python -m pytest tests/test_pack_cache.py -v"""
 
 import os
@@ -27,12 +32,12 @@ def _stub_pack(monkeypatch, pack: str) -> None:
     monkeypatch.setattr(runner, "_graph_pack_for", lambda *a, **k: pack)
 
 
-def test_pack_injected_on_first_turn_only(monkeypatch):
+def test_pack_resent_every_turn(monkeypatch):
     _stub_pack(monkeypatch, "GRAPH")
     sid = str(uuid.uuid4())
 
     assert "GRAPH" in _sysprompt(_cmd(sid, new=True))
-    assert "GRAPH" not in _sysprompt(_cmd(sid))
+    assert "GRAPH" in _sysprompt(_cmd(sid))
 
 
 def test_appended_prompt_is_byte_stable_across_turns(monkeypatch):
@@ -46,6 +51,7 @@ def test_appended_prompt_is_byte_stable_across_turns(monkeypatch):
     _stub_pack(monkeypatch, "GRAPH v2 — the map was rebuilt mid-session")
     turn3 = _sysprompt(_cmd(sid))
     assert turn2 == turn3
+    assert "GRAPH v1" in turn3          # the session keeps the pack it started with
 
 
 def test_each_session_gets_its_own_injection(monkeypatch):
@@ -53,7 +59,8 @@ def test_each_session_gets_its_own_injection(monkeypatch):
     a, b = str(uuid.uuid4()), str(uuid.uuid4())
     assert "GRAPH" in _sysprompt(_cmd(a, new=True))
     assert "GRAPH" in _sysprompt(_cmd(b, new=True))   # b is not muted by a
-    assert "GRAPH" not in _sysprompt(_cmd(a))
+    _stub_pack(monkeypatch, "OTHER")
+    assert "GRAPH" in _sysprompt(_cmd(a))             # a keeps its own, not b's or a new one
 
 
 def test_skip_pack_still_wins(monkeypatch):
