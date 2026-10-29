@@ -99,7 +99,7 @@ import { ProjectPick } from "./components/ProjectPick";
 import { setLightboxSend } from "./components/ImageLightbox";
 import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel, requestFileFind } from "./components/hud/FilesPanel";
-import { BranchesPanel } from "./components/hud/BranchesPanel";
+import { BranchesPanel, branchMenu } from "./components/hud/BranchesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
 import { GitPanel } from "./components/hud/GitPanel";
@@ -2329,7 +2329,7 @@ export function App() {
         />
       ),
     },
-    // Every branch to watch (lib/branchrows); + Session and + Branch start work on one.
+    // Every branch and its next step (lib/branchrows); ⋯ and right-click hold the rest.
     {
       id: "branches", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project",
       render: () => (
@@ -2340,7 +2340,9 @@ export function App() {
           onNew={(r) => { if (!sessionProject) return;
             if (!r.worktree) void worktreeSession(sessionProject, r.name, false);
             else void newSession(sessionProject, undefined, r.name || undefined, undefined, r.name ? undefined : r.worktree); }}
-          onNewBranch={(name, from) => { if (sessionProject) void worktreeSession(sessionProject, name, true, from); }} />
+          onNewBranch={(name, from) => { if (sessionProject) void worktreeSession(sessionProject, name, true, from); }}
+          // ✦ steps: a fresh session in that checkout, the step's prompt first (as RESOLVE IN A NEW SESSION does)
+          onAsk={(prompt, cwd) => { if (sessionProject) void startIn(sessionProject, prompt, { cwd, force: true }); }} />
       ),
     },
     // Hidden while LESSONS is off — nothing is being written.
@@ -2636,6 +2638,9 @@ export function App() {
       items.push({ icon: "✎", label: "Clock & weather…", onClick: () => setWxSettings((n) => n + 1) });
       items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
       items.push({ divider: true });
+    } else if (ctxMenu.type === "branch") {
+      // a BRANCHES row: the panel builds its items, the same list its ⋯ opens
+      items.push(...(branchMenu.items?.(ctxMenu.id) ?? []));
     } else if (ctxMenu.type === "editor" && editorFor(ctxMenu.id)) {
       // The prompt box and the EDITOR body are CodeMirror, a contenteditable the
       // browser-menu exemption misses (lib/editorctx). The registry hands back

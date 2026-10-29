@@ -464,7 +464,7 @@ def branch_prs(repo_dir: str) -> dict:
     still doesn't ping. `sha` lets the tab tell a branch that is done (its PR
     merged at its tip) from one that moved on after an older PR merged.
     Forks' same-named branches are skipped, as gh pr view skips them.
-    {branch: {"number", "state", "status", "sha", "failed"}}; {} when gh can't say.
+    {branch: {"number", "state", "status", "sha", "failed", "url"}}; {} when gh can't say.
     shortcut: the newest 100 PRs only; a branch whose PR is older shows no chip."""
     slug = github.remote_slug(repo_dir)
     if not slug:
@@ -475,9 +475,9 @@ def branch_prs(repo_dir: str) -> dict:
             return hit["prs"]
         prs, ttl = {}, ERR_TTL
         rc, out, _ = _gh("pr", "list", "-R", slug, "--state", "all", "--limit", "100", "--json",
-                         "number,state,headRefName,headRefOid,isCrossRepository")
+                         "number,state,url,headRefName,headRefOid,isCrossRepository")
         rc2, out2, _ = _gh("pr", "list", "-R", slug, "--state", "open", "--limit", "100", "--json",
-                           "number,state,headRefName,headRefOid,isCrossRepository,isDraft,"
+                           "number,state,url,headRefName,headRefOid,isCrossRepository,isDraft,"
                            "mergeable,statusCheckRollup,reviewDecision,reviewRequests")
         if rc == 0 and rc2 == 0:
             try:
@@ -487,7 +487,7 @@ def branch_prs(repo_dir: str) -> dict:
                     if not b or b in prs or raw.get("isCrossRepository"):
                         continue
                     pr = normalize(live.get(raw["number"], raw))
-                    prs[b] = {k: pr[k] for k in ("number", "state", "status", "sha", "failed")}
+                    prs[b] = {k: pr[k] for k in ("number", "state", "status", "sha", "failed", "url")}
                 ttl = LIST_TTL
             except (ValueError, KeyError, TypeError):
                 prs = {}

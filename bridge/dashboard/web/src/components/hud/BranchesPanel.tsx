@@ -1,104 +1,90 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ChevronDown, GitBranch, GitCommitHorizontal, MessageSquare, Plus } from "lucide-react";
+import { ArrowUp, BrushCleaning, ChevronDown, Ellipsis, ExternalLink, GitBranch, MessageSquare, Plus, Sparkle } from "lucide-react";
 import { api, type SessionBrief, type SessionStatus } from "../../api";
-import { branchGroups, CHIPS, type Activity, type BranchPr, type BranchStatus, type Chip, type ShownRow } from "../../lib/branchrows";
-import { ago } from "../../lib/surfaces";
+import { branchGroups, facts, nextStep, type Activity, type BranchPr, type BranchStatus, type ShownRow, type Step } from "../../lib/branchrows";
+import { conflictsMessage } from "../../lib/prchip";
+import { askConfirm } from "../ui/Ask";
+import type { CtxItem } from "./ContextMenu";
+import { notify } from "./Notifications";
 
-/* BRANCHES — the right rail's view of the open session's repo, for watching
-   every branch at once (.mystical/design-drafts/branches-tab, round 2).
-   On top, four chips count what's working, uncommitted, unmerged and merged,
-   and each one filters the list. A row is three even lines: the name and its
-   age; a live session's title, else the last commit's subject; then where it
-   stands against the base. Hover a row for + Session (in its worktree, or a new
-   worktree for a branch without one); a click opens its newest session.
-   + Branch makes a worktree from a branch and opens a session there.
-   Merge and delete stay a sentence to Claude.
-   Rows, groups and chips: lib/branchrows. Two bridge calls: git.branch_status,
-   then the PRs (prstatus.branch_prs) for a repo with anything pushed. */
+/* BRANCHES — the right rail's view of the open session's repo, for working on
+   every branch from one place (.mystical/design-drafts/branches-actions, A).
+   A row is two even lines: the name with its one next step (lib/branchrows
+   nextStep) and ⋯; then who is working on it, else where it stands in a few
+   words (facts). ⋯ and right-click open the app's context menu with the rest.
+   ✦ steps start a fresh Claude session with a prompt, in the branch's
+   worktree (merge and Open PR use the repo folder when it has none); push
+   and clean up are git, behind a confirm when they delete anything.
+   A click opens the branch's live session, else its newest; a branch with no
+   session opens the menu. Hover a row for + Session.
+   Rows and groups: lib/branchrows. Two bridge calls: git.branch_status, then
+   the PRs (prstatus.branch_prs) for a repo with anything pushed. */
+
+/** App's context menu asks here for a row's items: data-ctx-type="branch", data-ctx-id its key. */
+export const branchMenu: { items: ((id: string) => CtxItem[]) | null } = { items: null };
 
 const FOLD = 8;
 const SEC: React.CSSProperties = { display: "flex", alignItems: "center", gap: 7, padding: "12px 14px 5px", fontSize: "var(--t9)", letterSpacing: 1.4, color: "var(--txl)" };
 const MONO = "'JetBrains Mono',monospace";
-const CHIP_TONE: Record<Chip, string> = { waiting: "var(--ask, var(--warn))", working: "var(--ok)", uncommitted: "var(--warn)", unmerged: "var(--acc)", merged: "var(--purple-h)" };
-// prstatus.chip_state's words, as a chip
-const PR_CHIP: Record<string, [string, string]> = {
-  merged: ["merged", "var(--purple-h)"], closed: ["closed", "var(--txd)"], conflicts: ["conflict", "var(--warn)"],
-  failing: ["failing", "var(--err)"], changes: ["changes asked", "var(--warn)"], running: ["checks running", "var(--txm)"],
-  ready: ["✓ ready", "var(--ok)"], review: ["in review", "var(--txm)"],
-};
+const TONE = { warn: "var(--warn)", err: "var(--err)", merged: "var(--purple-h)" };
+const keyOf = (r: ShownRow) => r.name || `@${r.worktree}`;
+const plural = (n: number, w: string, ws = `${w}s`) => `${n} ${n === 1 ? w : ws}`;
+type Ask = "commit" | "update" | "merge" | "openpr" | "resolve" | "fix";
 
-function Tag({ text, color }: { text: string; color: string }) {
-  return (
-    <span style={{ flex: "none", fontSize: "var(--t8)", letterSpacing: 1, lineHeight: "15px", padding: "0 5px", borderRadius: 4, color,
-                   border: `1px solid color-mix(in srgb, ${color} 45%, transparent)` }}>{text}</span>
-  );
-}
-
-/** Distance from the base: behind in amber left of the tick, ahead in green right of it (√ scale). */
-function Bar({ r, max }: { r: ShownRow; max: { a: number; b: number } }) {
-  const a = r.ahead ? Math.max(.08, Math.sqrt(r.ahead / max.a)) * 32 : 0;
-  const b = r.behind ? Math.max(.08, Math.sqrt(r.behind / max.b)) * 10 : 0;
-  return (
-    <span style={{ position: "relative", flex: "none", width: 44, height: 4, marginRight: 8 }}>
-      <i style={{ position: "absolute", left: 11, top: -2, width: 1, height: 8, background: "color-mix(in srgb, var(--txd) 70%, transparent)" }} />
-      {b > 0 && <b style={{ position: "absolute", top: 0, height: 4, borderRadius: 2, left: 11 - b, width: b, background: "var(--warn)", opacity: .85 }} />}
-      {a > 0 && <b style={{ position: "absolute", top: 0, height: 4, borderRadius: 2, left: 12, width: a, background: "var(--ok)" }} />}
-    </span>
-  );
-}
-
-function Row({ r, base, max, sess, live, onOpen, onNew }: {
-  r: ShownRow; base: string; max: { a: number; b: number };
-  sess: SessionBrief[]; live: SessionBrief | undefined;
-  onOpen: (s: SessionBrief) => void; onNew: (r: ShownRow) => void;
-}) {
-  const dot = !r.name ? "var(--warn)" : r.activity === "asking" ? "var(--ask, var(--warn))" : r.activity === "working" ? "var(--ok)" : null;
-  const tone = r.activity === "asking" ? "var(--ask, var(--warn))" : "var(--ok)";
-  const facts: ReactNode[] = [
-    r.base ? <span key="d" style={{ color: "var(--txd)" }}>the base</span>
-      : r.landed && !r.ahead ? <span key="d" style={{ color: "var(--ok)" }}>✓ in {base}</span>
-      : !r.ahead && !r.behind ? <span key="d" style={{ color: "var(--txd)" }}>same as {base}</span>
-      : <span key="d" style={{ color: r.behind && !r.ahead ? "var(--warn)" : "var(--txm)" }}>
-          <Bar r={r} max={max} />{[r.ahead && `↑${r.ahead}`, r.behind && `↓${r.behind}`].filter(Boolean).join(" ")}
-        </span>,
-  ];
-  if (r.dirty) facts.push(<span key="u" style={{ color: "var(--warn)" }}>●{r.dirty} uncommitted</span>);
-  if (r.pr) {
-    const [t, c] = PR_CHIP[r.pr.status] ?? ["open", "var(--txm)"];
-    facts.push(<span key="p" style={{ lineHeight: "12px", height: 14, padding: "0 5px", borderRadius: 4, color: c, border: `1px solid color-mix(in srgb, ${c} 45%, transparent)` }}>
-      #{r.pr.number} {r.pr.status === "failing" ? `✗ ${r.pr.failed} failing` : t}</span>);
+/** A step's pill. Sparkle (✦) marks one a Claude session does. */
+function stepLook(s: Step, r: ShownRow): { t: string; c?: string; ai?: boolean; Icon: typeof Plus } {
+  switch (s) {
+    case "answer": return { t: "Answer", c: "var(--ask, var(--warn))", Icon: MessageSquare };
+    case "cleanup": return { t: "Clean up", c: "var(--purple-h)", Icon: BrushCleaning };
+    case "push": return { t: `Push ${r.unpushed}`, Icon: ArrowUp };
+    case "pr": return { t: `PR #${r.pr?.number}`, Icon: ExternalLink };
+    case "resolve": return { t: "Resolve", c: "var(--warn)", ai: true, Icon: Sparkle };
+    case "fix": return { t: "Fix checks", c: "var(--err)", ai: true, Icon: Sparkle };
+    case "openpr": return { t: "Open PR", ai: true, Icon: Sparkle };
+    case "commit": return { t: "Commit", ai: true, Icon: Sparkle };
+    case "merge": return { t: "Merge", ai: true, Icon: Sparkle };
   }
-  if (sess.length) facts.push(<span key="s" style={{ color: "var(--txl)" }} title={`${sess.length} session${sess.length === 1 ? "" : "s"} on this branch`}>
-    <MessageSquare size={11} strokeWidth={2.2} aria-hidden style={{ color: "var(--txd)" }} />{sess.length}</span>);
-  const push = !r.name || r.landed || (r.base && !r.upstream) ? null
-    : !r.upstream ? <span style={{ color: "var(--txd)" }}>local</span>
-    : r.unpushed ? <span style={{ color: "var(--warn)" }}>↑{r.unpushed} to push</span>
-    : <span style={{ color: "var(--txd)" }}>✓ pushed</span>;
+}
+
+function Row({ r, base, sess, live, busy, onOpen, onNew, onStep }: {
+  r: ShownRow; base: string; sess: SessionBrief[]; live: SessionBrief | undefined; busy: boolean;
+  onOpen: (s: SessionBrief) => void; onNew: (r: ShownRow) => void; onStep: (s: Step) => void;
+}) {
+  const dot = r.activity === "asking" ? "var(--ask, var(--warn))" : r.activity === "working" ? "var(--ok)" : null;
+  const tone = r.activity === "asking" ? "var(--ask, var(--warn))" : "var(--ok)";
+  const step = nextStep(r);
+  const look = step && stepLook(step, r);
+  const go = live ?? sess[0];
+  // The menu is the app's right-click menu, opened where asked: the window listener reads data-ctx-* off the row.
+  const menu = (el: HTMLElement, x: number, y: number) => el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: x, clientY: y }));
   return (
-    <div className="brow" data-here={r.here || undefined} onClick={sess[0] ? () => onOpen(sess[0]) : undefined}
-      title={[r.name || `detached at ${r.head}`, r.worktree, sess[0] && "click: its newest session"].filter(Boolean).join("\n")}
-      style={{ cursor: sess[0] ? "pointer" : "default" }}>
+    <div className="brow" data-here={r.here || undefined} data-ctx-type="branch" data-ctx-id={keyOf(r)} data-ctx-label={r.name || r.label}
+      onClick={(e) => { if (go) onOpen(go); else menu(e.currentTarget, e.clientX, e.clientY); }}
+      title={[r.name || `detached at ${r.head}`, r.worktree, go ? `click: ${live ? "its session" : "its newest session"}` : "click: its actions"].filter(Boolean).join("\n")}>
       <div className="brow-l1">
         {dot ? (
           <span className={r.activity === "working" ? "sessdot" : undefined} data-work={r.activity === "working" || undefined}
-            style={{ flex: "none", width: 7, height: 7, borderRadius: "50%", background: dot, boxShadow: r.activity ? `0 0 6px color-mix(in srgb, ${dot} 50%, transparent)` : undefined }} />
+            style={{ flex: "none", width: 7, height: 7, borderRadius: "50%", background: dot, boxShadow: `0 0 6px color-mix(in srgb, ${dot} 50%, transparent)` }} />
         ) : (
           <span style={{ flex: "none", width: 7, height: 7, boxSizing: "border-box", borderRadius: "50%", border: "1.5px solid color-mix(in srgb, var(--txd) 80%, transparent)" }} />
         )}
         <span style={{ fontFamily: MONO, fontSize: "var(--t105)", color: "var(--txb)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.label}</span>
-        {r.here && <Tag text="HERE" color="var(--acc)" />}
-        {r.base && <Tag text="BASE" color="var(--txl)" />}
-        {!r.name && <Tag text="CHECKOUT" color="var(--txl)" />}
-        {/* the age and + Session share one cell, so the row never moves */}
-        <span className="brow-end">
-          <span className="brow-age">{ago(r.at)}</span>
-          <span className="rowact brow-go">
-            {!r.worktree && <span className="brow-hint">new worktree</span>}
-            <button className="gp-pb tint brow-pill" onClick={(e) => { e.stopPropagation(); onNew(r); }}
-              title={r.worktree ? `New session in ${r.worktree}` : `Check ${r.name} out into a new worktree and start a session there`}>
-              <Plus size={10} strokeWidth={2.6} aria-hidden />Session
+        <span className="brow-acts">
+          {/* + Session sits over the name's tail while you hover, so nothing moves */}
+          <button className="rowact brow-plus" onClick={(e) => { e.stopPropagation(); onNew(r); }} aria-label="New session"
+            title={r.worktree ? `New session in ${r.worktree}` : `Check ${r.name} out into a new worktree and start a session there`}>
+            <Plus size={11} strokeWidth={2.6} aria-hidden />
+          </button>
+          {look && (
+            <button className="brow-step" data-ai={look.ai || undefined} data-tone={look.c ? true : undefined} disabled={busy} onClick={(e) => { e.stopPropagation(); onStep(step!); }}
+              style={look.c ? { ["--c" as string]: look.c } : undefined}>
+              <look.Icon size={10} strokeWidth={2.2} aria-hidden />{look.t}
             </button>
-          </span>
+          )}
+          <button className="brow-more" aria-label="Actions" title="Every action for this branch"
+            onClick={(e) => { e.stopPropagation(); const b = e.currentTarget.getBoundingClientRect(); menu(e.currentTarget, b.right - 216, b.bottom + 4); }}>
+            <Ellipsis size={13} strokeWidth={2.2} aria-hidden />
+          </button>
         </span>
       </div>
       <div className="brow-l2">
@@ -109,28 +95,24 @@ function Row({ r, base, max, sess, live, onOpen, onNew }: {
             <span style={{ flex: "none", color: tone }}>{r.activity === "asking" ? "waits on you" : "working"}</span>
           </>
         ) : (
-          <>
-            <GitCommitHorizontal size={12} strokeWidth={2} aria-hidden style={{ flex: "none", color: "var(--txd)" }} />
-            <span className="t">{r.subject}</span>
-          </>
+          <span className="t">
+            {facts(r, base).map((f, i) => (
+              <span key={i}>{i > 0 && <i>·</i>}<span style={f.tone ? { color: TONE[f.tone] } : undefined}>{f.t}</span></span>
+            ))}
+          </span>
         )}
-      </div>
-      <div className="brow-l3">
-        <span className="brow-facts">{facts}</span>
-        <span style={{ flex: 1 }} />
-        {push}
       </div>
     </div>
   );
 }
 
-function Group({ title, rows, fold, render }: { title: string; rows: ShownRow[]; fold?: boolean; render: (r: ShownRow) => ReactNode }) {
+function Group({ title, rows, fold, bulk, render }: { title: string; rows: ShownRow[]; fold?: boolean; bulk?: ReactNode; render: (r: ShownRow) => ReactNode }) {
   const [all, setAll] = useState(false);
   if (!rows.length) return null;
   const shown = fold && !all ? rows.slice(0, FOLD) : rows;
   return (
     <>
-      <div style={SEC}>{title}<span style={{ color: "var(--txd)" }}>{rows.length}</span></div>
+      <div style={SEC}>{title}<span style={{ color: "var(--txd)" }}>{rows.length}</span>{bulk}</div>
       {shown.map(render)}
       {shown.length < rows.length && (
         <button onClick={() => setAll(true)}
@@ -142,7 +124,7 @@ function Group({ title, rows, fold, render }: { title: string; rows: ShownRow[];
   );
 }
 
-export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen, onNew, onNewBranch }: {
+export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen, onNew, onNewBranch, onAsk }: {
   project: string | null;
   branch?: string;                        // the open session's: HERE
   sessions: SessionBrief[];
@@ -151,15 +133,16 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
   onOpen: (s: SessionBrief) => void;
   onNew: (r: ShownRow) => void;           // + Session on a row
   onNewBranch: (name: string, from: string) => void;
+  onAsk: (prompt: string, cwd?: string) => void;   // ✦: a fresh session there (the repo folder without a cwd), the prompt first
 }) {
   const [data, setData] = useState<BranchStatus | null>(null);
   const [prs, setPrs] = useState<Record<string, BranchPr>>({});
   const [err, setErr] = useState("");
   const [hov, setHov] = useState(false);
-  const [only, setOnly] = useState<Chip | null>(null);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [from, setFrom] = useState("");
+  const [busy, setBusy] = useState("");   // the row whose git step is running
 
   const load = useCallback(async () => {
     if (!project) return;
@@ -194,14 +177,102 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
 
   const base = data?.base ?? "";
   const g = useMemo(() => branchGroups(data?.branches ?? [], base, branch ?? null, activity, prs), [data, base, branch, activity, prs]);
-  const counts = useMemo(() => Object.fromEntries((Object.keys(CHIPS) as Chip[]).map((k) => [k, g.all.filter(CHIPS[k]).length])) as Record<Chip, number>, [g]);
-  const shown: Chip[] = [counts.waiting ? "waiting" : "working", "uncommitted", "unmerged", "merged"];
-  const f = only && shown.includes(only) && counts[only] ? only : null;    // a filter whose chip or rows are gone lets go
-  const pick = (rows: ShownRow[]) => f ? rows.filter(CHIPS[f]) : rows;
-  const max = { a: Math.max(1, ...g.all.map((r) => r.ahead)), b: Math.max(1, ...g.all.map((r) => r.behind)) };
+
+  // A git step: say how it went, then read the branches again.
+  async function run(r: ShownRow, p: Promise<{ ok: boolean; output: string }>, done: string, what: string) {
+    setBusy(keyOf(r));
+    const res = await p.catch((e: Error) => ({ ok: false, output: e.message }));
+    setBusy("");
+    notify(res.ok ? "info" : "error", res.ok ? done : `${what} failed: ${res.output}`);
+    void load();
+  }
+  const push = (r: ShownRow) => run(r, api.gitPush(project!, r.name), `Pushed ${r.name}.`, "Push");
+  async function cleanup(r: ShownRow) {
+    const dirty = r.dirty ? ` Its ${plural(r.dirty, "uncommitted file")} go too.` : "";
+    if (!(await askConfirm(`${r.worktree ? `Remove the ${r.label} worktree and delete` : "Delete"} ${r.name}? Its work is in ${base}.${dirty}`,
+      { ok: "Clean up", danger: !!r.dirty }))) return;
+    // A squash merge leaves commits git can't find in the base, so -d would refuse: its PR merged at the tip says it's done.
+    await run(r, r.worktree ? api.worktreeRemove(project!, r.worktree, r.name, true) : api.deleteBranch(project!, r.name, !r.merged),
+      `Cleaned up ${r.name}.`, "Clean up");
+  }
+  async function removeTree(r: ShownRow) {
+    if (!(await askConfirm(`Remove the worktree at ${r.worktree}?${r.dirty ? ` Its ${plural(r.dirty, "uncommitted file")} are deleted.` : ""} The branch stays.`,
+      { ok: "Remove", danger: true }))) return;
+    await run(r, api.worktreeRemove(project!, r.worktree!, r.name || undefined, false), `Removed the ${r.label} worktree.`, "Remove");
+  }
+  async function del(r: ShownRow) {
+    const lost = r.ahead ? ` Its ${plural(r.ahead, "commit")} not in ${base} go${r.upstream ? " here; origin keeps what was pushed" : " for good"}.` : "";
+    const tree = r.worktree ? ` Its worktree goes too${r.dirty ? `, with ${plural(r.dirty, "uncommitted file")}` : ""}.` : "";
+    if (!(await askConfirm(`Delete ${r.name}?${lost}${tree}`, { ok: "Delete", danger: true }))) return;
+    await run(r, r.worktree ? api.worktreeRemove(project!, r.worktree, r.name, true) : api.deleteBranch(project!, r.name, true),
+      `Deleted ${r.name}.`, "Delete");
+  }
+  async function cleanAll(rows: ShownRow[]) {
+    if (!(await askConfirm(`Delete ${plural(rows.length, "merged branch", "merged branches")}? Their work is in ${base}.`, { ok: "Clean up" }))) return;
+    let bad = 0;
+    for (const r of rows) if (!(await api.deleteBranch(project!, r.name, !r.merged).catch(() => ({ ok: false }))).ok) bad++;
+    notify(bad ? "error" : "info", bad ? `${bad} of ${rows.length} merged branches wouldn't delete.` : `Deleted ${plural(rows.length, "merged branch", "merged branches")}.`);
+    void load();
+  }
+  // ✦: a fresh session does it in the branch's checkout. Merge and Open PR go from the repo folder when there's none.
+  function ask(s: Ask, r: ShownRow) {
+    const n = r.name, pr = r.pr;
+    const text: Record<Ask, string> = {
+      commit: `Commit the uncommitted changes on ${n}: look at what changed, then commit with a short message. Don't push.`,
+      update: `Bring ${n} up to date with ${base}: merge ${base} in, resolve any conflicts, make sure the build and tests pass, then commit. Don't push.`,
+      merge: `Merge ${n} into ${base} the way this repo does it, resolve any conflicts, and make sure the build and tests pass. Don't push.`,
+      openpr: `Open a pull request for ${n} into ${base}: push it, then write the title and description from its commits.`,
+      resolve: pr ? conflictsMessage({ number: pr.number, head: n, base, url: pr.url ?? "" }) : "",
+      fix: pr ? `Checks failed on PR #${pr.number} · ⎇ ${n}: ${pr.url ?? ""}\nRead the failing checks with gh, fix the cause, make sure the build and tests pass, then commit and push.` : "",
+    };
+    if (text[s]) onAsk(text[s], s === "merge" ? undefined : r.worktree ?? undefined);
+  }
+  function onStep(r: ShownRow, s: Step) {
+    if (s === "answer") { const l = live.get(r.name); if (l) onOpen(l); }
+    else if (s === "pr") { if (r.pr?.url) window.open(r.pr.url, "_blank", "noopener"); }
+    else if (s === "push") void push(r);
+    else if (s === "cleanup") void cleanup(r);
+    else ask(s, r);
+  }
+
+  // ⋯ and right-click: everything that applies, sessions first, then git, then copy and the destructive ones.
+  function menuFor(r: ShownRow): CtxItem[] {
+    const l = r.name ? live.get(r.name) : undefined;
+    const go = l ?? ((r.name && byBranch.get(r.name)?.[0]) || undefined);
+    const items: CtxItem[] = [];
+    if (go) items.push({ icon: "▸", label: l ? "Open its session" : "Open newest session", hint: l ? (r.activity === "asking" ? "WAITS" : "LIVE") : undefined, onClick: () => onOpen(go) });
+    items.push({ icon: "+", label: "New session", hint: r.worktree ? undefined : "NEW WORKTREE", onClick: () => onNew(r) });
+    const git: CtxItem[] = [];
+    if (r.worktree && r.name && (r.upstream ? !!r.unpushed : !r.base))
+      git.push({ icon: "↑", label: r.upstream ? "Push" : "Publish", hint: r.upstream ? `↑${r.unpushed}` : "ORIGIN", onClick: () => void push(r) });
+    if (r.worktree && r.dirty) git.push({ icon: "✦", label: "Commit changes", hint: `${r.dirty} FILES`, onClick: () => ask("commit", r) });
+    if (r.worktree && r.name && r.behind && !r.base) git.push({ icon: "✦", label: `Update from ${base}`, hint: `↓${r.behind}`, onClick: () => ask("update", r) });
+    if (r.name && r.ahead && !r.base && !r.landed) git.push({ icon: "✦", label: `Merge into ${base}`, hint: `↑${r.ahead}`, onClick: () => ask("merge", r) });
+    const url = r.pr?.state === "OPEN" ? r.pr.url : undefined;
+    if (url) git.push({ icon: "↗", label: `PR #${r.pr!.number} on GitHub`, onClick: () => window.open(url, "_blank", "noopener") });
+    else if (r.name && r.ahead && !r.base && !r.landed && !r.pr) git.push({ icon: "✦", label: "Open a PR", onClick: () => ask("openpr", r) });
+    if (r.worktree && r.pr?.status === "conflicts") git.push({ icon: "✦", label: "Resolve conflicts", onClick: () => ask("resolve", r) });
+    if (r.worktree && r.pr?.status === "failing") git.push({ icon: "✦", label: "Fix failing checks", hint: `${r.pr.failed}`, onClick: () => ask("fix", r) });
+    if (r.landed && !r.main) git.push({ icon: "⌫", label: "Clean up", hint: "MERGED", onClick: () => void cleanup(r) });
+    if (git.length) items.push({ divider: true }, ...git);
+    const tail: CtxItem[] = [];
+    if (r.name) tail.push({ icon: "⧉", label: "Copy name", onClick: () => void navigator.clipboard.writeText(r.name).then(() => notify("info", `Copied ${r.name}.`), () => notify("error", "Couldn't copy.")) });
+    // nothing destructive while a session works or waits there, and never the repo folder itself
+    if (!r.activity && !r.main && !r.landed) {
+      if (r.worktree) tail.push({ icon: "⊘", label: "Remove worktree", hint: r.dirty ? `${r.dirty} DIRTY` : undefined, danger: true, onClick: () => void removeTree(r) });
+      if (r.name && !r.base) tail.push({ icon: "✕", label: "Delete branch…", hint: r.merged ? undefined : "UNMERGED", danger: true, onClick: () => void del(r) });
+    }
+    if (tail.length) items.push({ divider: true }, ...tail);
+    return items;
+  }
+  useEffect(() => {
+    branchMenu.items = (id) => { const r = g.all.find((x) => keyOf(x) === id); return r ? menuFor(r) : []; };
+    return () => { branchMenu.items = null; };
+  });
+
   const row = (r: ShownRow) => (
-    <Row key={r.name || `@${r.worktree}`} r={r} base={base} max={max} sess={(r.name && byBranch.get(r.name)) || []}
-      live={r.name ? live.get(r.name) : undefined} onOpen={onOpen} onNew={onNew} />
+    <Row key={keyOf(r)} r={r} base={base} sess={(r.name && byBranch.get(r.name)) || []} live={r.name ? live.get(r.name) : undefined}
+      busy={busy === keyOf(r)} onOpen={onOpen} onNew={onNew} onStep={(s) => onStep(r, s)} />
   );
   const make = () => {
     const n = name.trim();
@@ -213,9 +284,10 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
 
   return (
     <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px" }}>
         <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>BRANCHES</span>
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        {base && <span className="bhead-base swapin"><GitBranch size={10} strokeWidth={2.2} aria-hidden />{base}</span>}
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
           {project && data && data.branches.length > 0 && (
             <button onClick={() => setNaming((v) => !v)} aria-expanded={naming} title="A new branch in its own worktree, and a session there"
               style={{ ...btn, display: "inline-flex", alignItems: "center", gap: 5, fontSize: "var(--t9)",
@@ -228,11 +300,6 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
         </span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
-      {base && (
-        <div className="swapin" style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px 0", fontSize: "var(--t9)", color: "var(--txd)", fontFamily: MONO }}>
-          <span style={{ color: "var(--purple)" }}>⎇</span><span style={{ color: "var(--purple-h)" }}>{base}</span><span>is the base</span>
-        </div>
-      )}
       {naming && (
         <>
           <form className="bnew" onSubmit={(e) => { e.preventDefault(); make(); }}>
@@ -252,17 +319,6 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
           <div style={{ margin: "5px 14px 0 21px", fontSize: "var(--t9)", color: "var(--txd)" }}>makes the worktree, opens a session there · esc closes</div>
         </>
       )}
-      {data && data.branches.length > 0 && (
-        <div className="bov" role="group" aria-label="Show only">
-          {shown.map((k) => (
-            <button key={k} className="bovc" disabled={!counts[k]} aria-pressed={f === k} data-on={f === k || undefined}
-              style={counts[k] ? { ["--c" as string]: CHIP_TONE[k] } : undefined} onClick={() => setOnly(f === k ? null : k)}
-              title={f === k ? "Show every branch" : `Show only the ${k} ones`}>
-              <b>{counts[k]}</b>{k}
-            </button>
-          ))}
-        </div>
-      )}
       <div className="mscroll" style={{ padding: "4px 0 14px", flex: 1, minHeight: 0, overflowY: "auto" }}>
         {!project && <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 14px" }}>No session selected.</div>}
         {project && err && <div style={{ fontSize: "var(--t105)", color: "var(--err)", padding: "8px 14px" }}>Couldn't read the branches: {err}</div>}
@@ -271,9 +327,14 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
           <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 14px" }}>No branches: not a git repo?</div>
         )}
         <div className="swapin">
-          <Group title="WORKTREES" rows={pick(g.worktrees)} render={row} />
-          <Group title="BRANCHES" rows={pick(g.branches)} render={row} fold />
-          <Group title="MERGED" rows={pick(g.merged)} render={row} fold />
+          <Group title="WORKTREES" rows={g.worktrees} render={row} />
+          <Group title="BRANCHES" rows={g.branches} render={row} fold />
+          <Group title="MERGED" rows={g.merged} render={row} fold
+            bulk={g.merged.length > 1 && (
+              <button className="brow-step bsec-bulk" data-tone style={{ ["--c" as string]: "var(--purple-h)" }} onClick={() => void cleanAll(g.merged)}>
+                <BrushCleaning size={10} strokeWidth={2.2} aria-hidden />Clean up all
+              </button>
+            )} />
         </div>
       </div>
     </div>

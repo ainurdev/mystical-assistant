@@ -94,7 +94,7 @@ export function commentsMessage(pr: PrInfo): string {
 
 /** RESOLVE IN A NEW SESSION: the first prompt of a fresh session in the
  *  branch's checkout. Merge, not rebase: the branch is public. */
-export function conflictsMessage(pr: PrInfo): string {
+export function conflictsMessage(pr: Pick<PrInfo, "number" | "head" | "base" | "url">): string {
   return [
     `PR #${pr.number} · ⎇ ${pr.head} → ${pr.base} has merge conflicts: ${pr.url}`,
     `Merge origin/${pr.base} into ${pr.head} here — merge, not rebase, the branch is already on GitHub. ` +

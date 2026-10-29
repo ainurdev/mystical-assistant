@@ -524,10 +524,11 @@ def test_branch_prs_reads_the_repo_twice_and_never_pings(monkeypatch):
     is news for the chat header's chip, which pings once someone opens it."""
     prstatus._lists.clear()
     every = [{"number": 9, "state": "OPEN", "headRefName": "feat/x", "headRefOid": "aaa"},
-             {"number": 8, "state": "MERGED", "headRefName": "feat/done", "headRefOid": "bbb"},
+             {"number": 8, "state": "MERGED", "headRefName": "feat/done", "headRefOid": "bbb",
+              "url": "https://github.com/acme/rivendell/pull/8"},
              {"number": 7, "state": "MERGED", "headRefName": "feat/x", "headRefOid": "old"},
              {"number": 6, "state": "OPEN", "headRefName": "feat/fork", "headRefOid": "ccc", "isCrossRepository": True}]
-    open_ = [_raw(number=9, headRefName="feat/x", headRefOid="aaa",
+    open_ = [_raw(number=9, headRefName="feat/x", headRefOid="aaa", url="https://github.com/acme/rivendell/pull/9",
                   statusCheckRollup=[_run("lint"), _run("test", conclusion="FAILURE")])]
     calls = _fake_gh(monkeypatch, [
         (("pr", "list", "-R", "acme/rivendell", "--state", "all"), (0, json.dumps(every), "")),
@@ -535,8 +536,10 @@ def test_branch_prs_reads_the_repo_twice_and_never_pings(monkeypatch):
     ])
     monkeypatch.setattr(prstatus, "_pings", lambda *a: pytest.fail("branch_prs must not ping"))
     prs = prstatus.branch_prs("/r")
-    assert prs == {"feat/x": {"number": 9, "state": "OPEN", "status": "failing", "sha": "aaa", "failed": 1},
-                   "feat/done": {"number": 8, "state": "MERGED", "status": "merged", "sha": "bbb", "failed": 0}}
+    assert prs == {"feat/x": {"number": 9, "state": "OPEN", "status": "failing", "sha": "aaa", "failed": 1,
+                              "url": "https://github.com/acme/rivendell/pull/9"},
+                   "feat/done": {"number": 8, "state": "MERGED", "status": "merged", "sha": "bbb", "failed": 0,
+                                 "url": "https://github.com/acme/rivendell/pull/8"}}
     assert prstatus.branch_prs("/r") == prs and len(calls) == 2      # cached
 
 

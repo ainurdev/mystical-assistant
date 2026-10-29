@@ -5,7 +5,10 @@
  *
  *  Worktrees order by what you'd look for: the open session's branch, then one
  *  waiting on you or working, then the newest commit, then the base, and a
- *  detached checkout last (it holds no branch, only a commit). */
+ *  detached checkout last (it holds no branch, only a commit).
+ *
+ *  Each row offers its one next step (nextStep) and says where it stands in a
+ *  few words (facts); the panel's ⋯ lists everything else. */
 export interface BranchRow {
   name: string;            // "" for a detached checkout, which carries `head`
   head?: string;
@@ -23,8 +26,9 @@ export interface BranchRow {
 }
 export interface BranchStatus { base: string; branches: BranchRow[] }
 
-/** A branch's newest PR (bridge prstatus.branch_prs); `status` is the chat header chip's word. */
-export interface BranchPr { number: number; state: "OPEN" | "MERGED" | "CLOSED"; status: string; sha: string; failed: number }
+/** A branch's newest PR (bridge prstatus.branch_prs); `status` is the chat header chip's word.
+ *  `url` is missing on a bridge from before it was added. */
+export interface BranchPr { number: number; state: "OPEN" | "MERGED" | "CLOSED"; status: string; sha: string; failed: number; url?: string }
 
 export type Activity = "working" | "asking" | null;
 export interface ShownRow extends BranchRow {
@@ -36,16 +40,49 @@ export interface ShownRow extends BranchRow {
   landed: boolean;         // its work is in the base, by git or by a PR merged at its tip (a squash merge)
 }
 
-/** The overview chips: each counts the rows it filters to, so the two can't disagree.
- *  The panel shows waiting in working's place while anything waits on you. */
-export const CHIPS = {
-  waiting: (r: ShownRow) => r.activity === "asking",
-  working: (r: ShownRow) => !!r.activity,
-  uncommitted: (r: ShownRow) => !!r.dirty,
-  unmerged: (r: ShownRow) => !!r.name && !r.base && r.ahead > 0 && !r.landed,
-  merged: (r: ShownRow) => r.landed,
+/** A row's one next step. The ones a Claude session does (commit, merge,
+ *  openpr, resolve, fix) start a fresh session with a prompt; push and
+ *  cleanup are git; pr is a link; answer opens the session waiting on you. */
+export type Step = "answer" | "resolve" | "fix" | "cleanup" | "commit" | "pr" | "push" | "openpr" | "merge";
+
+/** First match wins. Nothing while a session works there: Claude is on it.
+ *  Steps that need the branch checked out (commit, push, resolve, fix) wait for a worktree. */
+export function nextStep(r: ShownRow): Step | null {
+  if (r.activity === "asking") return "answer";
+  if (r.activity === "working") return null;
+  if (r.worktree && r.pr?.status === "conflicts") return "resolve";
+  if (r.worktree && r.pr?.status === "failing") return "fix";
+  if (r.landed) return r.main ? null : "cleanup";     // the repo folder itself never goes
+  if (!r.name) return null;                           // a detached checkout holds no branch
+  if (r.dirty) return "commit";
+  if (r.pr?.state === "OPEN") return r.pr.url ? "pr" : null;
+  if (r.worktree && r.upstream && r.unpushed) return "push";
+  if (r.base) return null;
+  if (r.ahead) return r.upstream ? "openpr" : "merge";
+  return null;
+}
+
+const PR_WORD: Record<string, string> = {
+  review: "in review", ready: "ready", running: "checks running", changes: "changes asked",
+  failing: "checks failing", conflicts: "conflicts",
 };
-export type Chip = keyof typeof CHIPS;
+export type Fact = { t: string; tone?: "warn" | "err" | "merged" };
+
+/** Where a row stands, in up to three short facts: its PR or that it landed,
+ *  what's uncommitted, how far from the base, and whether it's pushed. */
+export function facts(r: ShownRow, base: string): Fact[] {
+  const f: Fact[] = [];
+  if (r.pr) f.push(r.pr.state === "MERGED" ? { t: `merged · PR #${r.pr.number}`, tone: "merged" }
+    : { t: `PR ${PR_WORD[r.pr.status] ?? "open"}`, tone: r.pr.status === "failing" ? "err" : r.pr.status === "conflicts" ? "warn" : undefined });
+  else if (r.landed) f.push({ t: `in ${base}`, tone: "merged" });
+  if (r.dirty) f.push({ t: `${r.dirty} uncommitted`, tone: "warn" });
+  if (!r.landed) {
+    f.push({ t: r.base ? "the base" : r.ahead || r.behind
+      ? [r.ahead && `${r.ahead} ahead`, r.behind && `${r.behind} behind`].filter(Boolean).join(", ") : `same as ${base}` });
+    if (r.name && !r.pr) f.push({ t: !r.upstream ? "local" : r.unpushed ? `${r.unpushed} to push` : "pushed" });
+  }
+  return f.slice(0, 3);
+}
 
 export function branchGroups(rows: BranchRow[], base: string, here: string | null,
                              activity: Map<string, Activity>, prs: Record<string, BranchPr> = {}) {

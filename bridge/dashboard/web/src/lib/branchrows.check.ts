@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/branchrows.check.ts
-import { branchGroups, CHIPS, type BranchRow } from "./branchrows.ts";
+import { branchGroups, facts, nextStep, type BranchRow } from "./branchrows.ts";
 
 const row = (name: string, at: number, extra: Partial<BranchRow> = {}): BranchRow => ({
   name, at, subject: "", sha: `${name}-tip`, ahead: 0, behind: 0, upstream: "", unpushed: null,
@@ -47,9 +47,34 @@ console.assert(by.get("staging")!.pr === null && !by.get("staging")!.landed, "an
 console.assert(by.get("feat/open")!.pr?.number === 170, "an open PR rides along");
 console.assert(!by.get("feat/fresh")!.landed && by.get("feat/done")!.landed,
   "a checkout at the base's own commit hasn't landed; one the base moved past has");
-const count = (k: keyof typeof CHIPS) => prs.all.filter(CHIPS[k]).map((r) => r.name).join();
-console.assert(count("working") === "feat/open" && count("uncommitted") === "feat/open", "working, uncommitted");
-console.assert(count("waiting") === "", "nothing waits on you here");
-console.assert(count("unmerged") === "staging,feat/open", `unmerged: ahead and not landed; got ${count("unmerged")}`);
-console.assert(count("merged") === "fix/squashed,feat/done", `merged: landed; got ${count("merged")}`);
+const said = (n: string) => facts(by.get(n)!, "main").map((f) => f.t).join(" · ");
+console.assert(said("staging") === "17 ahead, 113 behind · local", `staging: ${said("staging")}`);
+console.assert(said("feat/open") === "PR checks failing · 2 uncommitted · 4 ahead", `three facts at most, PR first: ${said("feat/open")}`);
+console.assert(facts(by.get("feat/open")!, "main")[0].tone === "err" && facts(by.get("feat/open")!, "main")[1].tone === "warn", "failing is red, uncommitted amber");
+console.assert(said("fix/squashed") === "merged · PR #163", `a landed branch says only that: ${said("fix/squashed")}`);
+console.assert(said("feat/fresh") === "same as main · local", `fresh: ${said("feat/fresh")}`);
+
+// The next step: one per row, first match wins.
+const step = (extra: Partial<BranchRow>, act: "working" | "asking" | null = null, pr?: Partial<NonNullable<Parameters<typeof branchGroups>[4]>[string]>) =>
+  nextStep(branchGroups([row("feat/s", 1, extra)], "main", null, new Map(act ? [["feat/s", act]] : []),
+    pr ? { "feat/s": { number: 7, state: "OPEN", status: "review", sha: "feat/s-tip", failed: 0, ...pr } } : {}).all[0]);
+const WT = { worktree: "/w/s" };
+console.assert(step({ ...WT, dirty: 3 }, "asking") === "answer", "waiting on you comes first");
+console.assert(step({ ...WT, dirty: 3, ahead: 2 }, "working") === null, "a session working there: nothing to do");
+console.assert(step({ ...WT, ahead: 2 }, null, { status: "conflicts", url: "u" }) === "resolve", "conflicts in a checkout: resolve");
+console.assert(step({ ahead: 2 }, null, { status: "conflicts", url: "u" }) === "pr", "no checkout to resolve in: the PR link");
+console.assert(step({ ...WT, ahead: 2 }, null, { status: "failing", url: "u" }) === "fix", "failing checks: fix");
+console.assert(step({ ...WT, merged: true, behind: 4, dirty: 1 }) === "cleanup", "landed: clean up");
+console.assert(step({ worktree: "/r", main: true, merged: true, behind: 4 }) === null, "the repo folder is never cleaned up");
+console.assert(step({ ...WT, dirty: 3, ahead: 2 }) === "commit", "uncommitted: commit");
+console.assert(step({ ...WT, ahead: 2, upstream: "o/s", unpushed: 0 }, null, { url: "u" }) === "pr", "an open PR: its link");
+console.assert(step({ ...WT, ahead: 2, upstream: "o/s", unpushed: 0 }, null, {}) === null, "no link from an older bridge: nothing, not Open PR");
+console.assert(step({ ...WT, ahead: 2, upstream: "o/s", unpushed: 2 }) === "push", "unpushed: push");
+console.assert(step({ ahead: 2, upstream: "o/s", unpushed: 2 }) === "openpr", "push needs a checkout; pushed-ish without one: open a PR");
+console.assert(step({ ...WT, ahead: 2, upstream: "o/s", unpushed: 0 }) === "openpr", "pushed, no PR: open one");
+console.assert(step({ ahead: 2 }) === "merge", "local commits: merge");
+console.assert(step({ ...WT }) === null, "same as the base: nothing");
+const baseStep = (extra: Partial<BranchRow>) => nextStep(branchGroups([row("main", 1, { worktree: "/r", main: true, upstream: "o/main", ...extra })], "main", null, new Map()).all[0]);
+console.assert(baseStep({ unpushed: 0 }) === null && baseStep({ unpushed: 3 }) === "push", "the base: only push");
+console.assert(nextStep(g.worktrees[4]) === null, "a detached checkout: nothing");
 console.log("branchrows ok");
