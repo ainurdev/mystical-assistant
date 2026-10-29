@@ -102,15 +102,18 @@ build) builds the design's prototype as one self-contained HTML page in the
 repository's checkout, or says why it can't: its answer is a JSON object whose
 `outcome` is built, unsuitable (the repository has no web interface to show) or
 no-preview (a web app with no single-file build; the answer then carries a
-suggestion). A built page is
-the file the run left at <checkout>/.mystical/design-build/<request id>.html, and
-the bridge, not the agent, sends it, before the result: Rivendell makes the
-version from the result and refuses a built one that has no file. _built_file
-reads that one regular file the way device_side reads a screenshot (the page
-never a link, no pipe waited on, the size judged before a byte is read). A page that
-is missing, over 25 MB or that did not upload lands the job FAILED with that
-reason, never COMPLETED for a version that will not exist. Any other answer is
-posted as it is: Rivendell judges the answer, the bridge only carries the file.
+suggestion). A built page is the file the run left at
+<checkout>/.mystical/design-build/<request id>.html, and the bridge, not the
+agent, sends it, before the result: Rivendell makes the version from the result
+and refuses a built one that has no file. _built_file reads that one regular file
+the way device_side reads a screenshot (the page never a link, no pipe waited on,
+the size judged before a byte is read). A page that is missing, over 25 MB or that
+did not upload lands the job FAILED with that reason, never COMPLETED for a
+version that will not exist; so does a result Rivendell refuses (_post_result
+says why), posted again FAILED so the request is never left open. The answer is
+read as Rivendell reads it (_report_json), so the bridge finds a report exactly
+when Rivendell does. Any other answer is posted as it is: Rivendell judges the
+answer, the bridge only carries the file.
 Why and what was left out: docs/superpowers/specs/design-builds.md.
 
 Each request names its repository (owner/repo); _find_checkout maps that to a
@@ -291,6 +294,19 @@ def _refused(e: Exception) -> bool:
     """rivendell-api refused a claim with 409: the request is another bridge's
     (claimed, or waiting for its requester's own bridge) or already finished."""
     return isinstance(e, urllib.error.HTTPError) and e.code == 409
+
+
+def _reason(e: Exception) -> str:
+    """Why a call to rivendell-api failed, in its own words where it gave any (the `message` of
+    its error body; class-validator sends a list of them), else the error's own text."""
+    if isinstance(e, urllib.error.HTTPError):
+        try:
+            msg = json.loads(e.read().decode() or "{}").get("message")
+        except Exception:  # noqa: BLE001 — the status alone still says something
+            msg = None
+        if msg:
+            return "; ".join(map(str, msg)) if isinstance(msg, list) else str(msg)
+    return str(e)
 
 # The BASE_PATH slug->checkout scan is instance-independent, so it is shared
 # across every worker rather than rescanned per connection.
@@ -673,7 +689,7 @@ class Worker:
             return None
 
     def _post_result(self, kind_path: str, request_id: str, ok: bool, text: str,
-                     error: "str | None" = None) -> None:
+                     error: "str | None" = None) -> "str | None":
         """Report the outcome. The run was expensive, so a network or server
         failure is retried with backoff; a 4xx is Rivendell refusing this very
         body, which waiting can't change, so it isn't. A Rivendell whose hello
@@ -684,7 +700,10 @@ class Worker:
         rides beside the result (a video's transcript landed, its summary did
         not, and the viewer says why). Only a result that landed gets the
         "job done" ping, and one Rivendell answers FAILED (it could not use a
-        COMPLETED result: a brief that is not one) is the failure it is."""
+        COMPLETED result: a brief that is not one) is the failure it is. Returns
+        Rivendell's reason when it refused the result (a 4xx), else None: the
+        request is then still open, and a caller that cannot leave it so ends it
+        FAILED (_run_design_build)."""
         payload = {
             "status": "COMPLETED" if ok else "FAILED",
             ("result" if ok else "error"): text if ok else text[:_ERROR_MAX],
@@ -718,7 +737,7 @@ class Worker:
                     self._note("rv_failed", request_id, f"Rivendell job {request_id[:8]}",
                                "Couldn't report the result to Rivendell; the transcript is in "
                                "the dashboard.")
-                    return
+                    return _reason(e) if refused else None
                 time.sleep(delay)
         if ok and isinstance(answer, dict) and answer.get("status") == "FAILED":
             ok, text = False, "Rivendell could not use the result."
@@ -1730,8 +1749,9 @@ class Worker:
         checkout, never another directory, with an implementation's clock and tools. A `built`
         answer is only as good as its page, so the bridge reads it and sends it up before the
         result (Rivendell makes the version from the result and refuses one with no file); a page
-        that is missing, too big or does not upload lands the job FAILED, saying so. Any other
-        answer is posted as it is, for Rivendell to judge."""
+        that is missing, too big or does not upload lands the job FAILED, saying so, and so does a
+        result Rivendell refuses (posted again FAILED, with its message). Any other answer is
+        posted as it is, for Rivendell to judge."""
         resp = self._claim("design-build-requests", request_id)
         if resp is None:
             return
@@ -1765,9 +1785,11 @@ class Worker:
                     self._api_put_bytes(f"/plugin/design-build-requests/{request_id}/file", page,
                                         "text/html; charset=utf-8")
                 except Exception as e:  # noqa: BLE001 — the job lands FAILED, the worker carries on
-                    ok, text = False, f"the built page did not upload: {e}"
+                    ok, text = False, f"the built page did not upload: {_reason(e)}"
         print(f"rivendell[{self.name}]: design build {request_id} {'completed' if ok else 'failed'}")
-        self._post_result("design-build-requests", request_id, ok, text)
+        refused = self._post_result("design-build-requests", request_id, ok, text)
+        if ok and refused:      # that COMPLETED is never sent again and the request would stay open: end it FAILED
+            self._post_result("design-build-requests", request_id, False, f"Rivendell refused the result: {refused}")
 
     def _run_batch_queue(self, request_id: str, resp: dict, steps: list, workdir: str) -> None:
         """Queue mode: one queued turn per step in a fresh session, in order, and
@@ -3578,17 +3600,31 @@ def _brief_message(meta: dict, answer: str, now: "datetime | None" = None) -> tu
     return "\n".join(lines), ({"inline_keyboard": [[{"text": "Open brief ↗", "url": url}]]} if url else None)
 
 
-def _conflict_report(answer: str) -> "dict | None":
-    """The JSON report a conflicts job answers with (outcome, files, tests,
-    commit, notes), read out of its ```json fence; None for an answer that holds
-    none. Rivendell stores the answer as it is: this only shapes the message."""
+def _report_json(answer: str) -> "dict | None":
+    """The JSON object an agent's answer holds, read as Rivendell's parseBuildReport reads a design
+    build's report (not through its extractJson): the text from the first { to the last }, so a code
+    fence and words around the object are read past, but braces in those words, or two objects (a
+    draft and a final one), make it none, there as here. The bridge must find a report exactly when
+    Rivendell does: it sends the page only for a built one, and Rivendell fails a built one whose
+    page did not come."""
     raw = answer or ""
     i, j = raw.find("{"), raw.rfind("}")
     try:
+        # shortcut: json also takes NaN and Infinity, which JSON.parse refuses; Rivendell then fails such an
+        # answer (nothing stays open) and an agent's report holds neither. Refuse them if that ever matters.
         body = json.loads(raw[i:j + 1]) if 0 <= i < j else None
     except ValueError:
         return None
-    return body if isinstance(body, dict) and body.get("outcome") in ("resolved", "stopped") else None
+    return body if isinstance(body, dict) else None
+
+
+def _conflict_report(answer: str) -> "dict | None":
+    """The JSON report a conflicts job answers with (outcome, files, tests,
+    commit, notes), read by _report_json out of its ```json fence; None for an
+    answer that holds none. Rivendell stores the answer as it is: this only
+    shapes the message."""
+    body = _report_json(answer)
+    return body if body and body.get("outcome") in ("resolved", "stopped") else None
 
 
 def _conflict_message(meta: dict, answer: str) -> "tuple | None":
@@ -3619,16 +3655,11 @@ def _conflict_message(meta: dict, answer: str) -> "tuple | None":
 
 def _design_report(answer: str) -> "dict | None":
     """The JSON report a design build answers with (outcome, commit, changelog, summary,
-    suggestion, branch, pullRequestUrl), read out of its ```json fence; None for an answer that
-    holds none. Rivendell stores the answer as it is: this only tells the bridge what the answer
-    is, so whether a page is to be sent."""
-    raw = answer or ""
-    i, j = raw.find("{"), raw.rfind("}")
-    try:
-        body = json.loads(raw[i:j + 1]) if 0 <= i < j else None
-    except ValueError:
-        return None
-    return body if isinstance(body, dict) and body.get("outcome") in ("built", "unsuitable", "no-preview") else None
+    suggestion, branch, pullRequestUrl), read by _report_json the way Rivendell reads it; None for
+    an answer that holds none. Rivendell stores the answer as it is: this only tells the bridge what
+    the answer is, so whether a page is to be sent."""
+    body = _report_json(answer)
+    return body if body and body.get("outcome") in ("built", "unsuitable", "no-preview") else None
 
 
 def _design_message(meta: dict, answer: str) -> "tuple | None":

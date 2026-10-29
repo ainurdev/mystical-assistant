@@ -18,7 +18,7 @@ Rivendell's job kind is `design-build`, wired here like `conflict`. The bridge b
 
 - **A run like a conflicts job.** The same queue, ack and refuse handshake, and accept gate (auto-accepted when idle, else held with the Approve/Dismiss ask, "Rivendell design build queued — owner/repo"). The same run: `_start_run` in the repository's checkout, tools on, an implementation's clock (`impl_timeout`, 3 h), tracked as `design-build`. `build` and `setup` mode differ only in Rivendell's prompt; the bridge runs both alike.
 - **The bridge sends the page, not the agent.** The file route is the bridge's own (its token, as device runs hand back screenshots), and Rivendell makes the version from the result, which it refuses for `built` without a file. So after the run the bridge reads that one file, `PUT`s it with `_api_put_bytes`, and only then posts the result.
-- **What each outcome does** (the answer is read by `_design_report`, as `_conflict_report` reads a conflict's):
+- **What each outcome does** (the answer is read by `_design_report`, as `_conflict_report` reads a conflict's, both through `_report_json`, which reads the answer from its first `{` to its last `}` as Rivendell's `parseBuildReport` does (not its `extractJson`); so the bridge finds a report exactly when Rivendell does):
   - `built`: the page goes up, then the answer is posted COMPLETED.
   - `unsuitable` (the repository has no web interface to show) and `no-preview` (a web app with no single-file preview build; the answer carries a suggestion): posted as they are, COMPLETED, no file. Rivendell shows the summary or the suggestion on the design.
   - Any other answer, or none: posted as it is. Rivendell judges it ("not a build report" is FAILED there); the bridge only carries the file.
@@ -35,7 +35,8 @@ Rivendell's job kind is `design-build`, wired here like `conflict`. The bridge b
 - **No checkout of the repository:** not taken. It is refused `no-checkout` when queued (Rivendell then asks the requester whether another bridge may run it) and the bell says so ("Design build · owner/repo"). If the checkout is gone by the claim, the job is FAILED `no local checkout for 'owner/repo' under <BASE_PATH>`. It never runs in another folder: a run that installs and builds must not land in an unrelated directory.
 - **No page where the prompt said to leave it,** or anything there but a regular file (a symlink, which could point anywhere on the machine; a folder; a pipe): FAILED `no built page at .mystical/design-build/<id>.html`.
 - **A page over 25 MB:** FAILED `the built page is <n> MB, over 25 MB`. Nothing is sent; Rivendell would answer 400.
-- **A page that does not upload** (network, a 400): FAILED `the built page did not upload: <error>`. The transcript stays in the dashboard.
+- **A page that does not upload** (network, a 400): FAILED `the built page did not upload: <error>`, in Rivendell's own words when it gave any (its `message`). The transcript stays in the dashboard.
+- **A result Rivendell refuses** (a 4xx on the COMPLETED post): never sent again as it is, as waiting would not change it, but posted FAILED, `Rivendell refused the result: <its message>`, so the request never stays open.
 - **A claim answered 409** (another bridge's): nothing runs and nothing is posted, as for every kind.
 
 ## Not built
