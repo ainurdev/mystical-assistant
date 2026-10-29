@@ -67,19 +67,19 @@ type Mode = "attention" | "projects" | "plugins" | "recent";
  *  presets this replaced could not express the obvious wants — a sidebar that
  *  names the project but not the branch was simply not on the menu. */
 type Detail = { proj: boolean; branch: boolean; wt: boolean };
-// "recent" is the saved key for newest-started; it was last-used once, and
-// keeping the key keeps everyone's saved pick. "used" is last-used again, for
-// whoever wants the old behaviour back: a reply lifts its chat to the top of
-// its project and the project to the top of the list. Newest-started holds
-// rows still while turns run; this one trades that stillness for recency.
+// "recent" is most recent: the chat you prompt goes to the top of its project
+// and the project to the top of the list. It was newest-started for a while,
+// which held rows still but sank the chat you worked in under idle ones; the
+// stillness comes from the pointer now (`held`). A saved "used" (recently used,
+// from that while) is no order any more and loads as this one.
 // No project expanded. Shared, never mutated: every update copies.
 const NONE: Set<string> = new Set();
-type OrderMode = "used" | "recent" | "alpha" | "biggest" | "custom";
+type OrderMode = "recent" | "alpha" | "biggest" | "custom";
 
 const ORDER_LABEL: Record<OrderMode, string> = {
-  used: "recently used", recent: "newest started", alpha: "a → z", biggest: "biggest", custom: "custom",
+  recent: "most recent", alpha: "a → z", biggest: "biggest", custom: "custom",
 };
-const ORDERS: OrderMode[] = ["used", "recent", "alpha", "biggest", "custom"];
+const ORDERS: OrderMode[] = ["recent", "alpha", "biggest", "custom"];
 
 const FIELDS: { k: keyof Detail; label: string; tip: string }[] = [
   { k: "proj", label: "project name", tip: "Name the project on every row" },
@@ -120,16 +120,18 @@ const PLUGINS: { label: string; sub?: string; tint: string; match: (s: SessionBr
   { label: "FROM TEAMMATES", sub: "sessions sent to you", tint: "var(--purple)", match: (s) => isTeam(s.origin) },
   { label: "RIVENDELL", tint: "var(--purple)", match: isJob },
 ];
-/** Newest-started first: when a session was created, not last touched, so a
- *  turn starting or ending never reshuffles the rows at rest (PROJECTS lifts the
- *  one at work over them, `lift` below). Every tab but RECENT reads it.
- *  `created` is optional on older payloads, so fall back to `updated`. */
+/** Newest-started first, for the logs (PLUGINS, the opened jobs group): they
+ *  read in the order things began. `created` is optional on older payloads, so
+ *  fall back to `updated`. */
 const byCreated = (a: SessionBrief, b: SessionBrief) =>
   (b.created ?? b.updated) - (a.created ?? a.updated);
-/** When you last asked it — its newest prompt. Not `updated`: that moves again
- *  when a turn ends, so a long turn finishing late would lift its session over
- *  the ones you prompted since. A bridge older than the field sends none. */
+/** When you last asked it — its newest prompt, what "most recent" ranks by. Not
+ *  `updated`: that moves again when a turn ends, so a long turn finishing late
+ *  would lift its session over the ones you prompted since. A bridge older than
+ *  the field sends none. */
 const askedAt = (s: SessionBrief) => s.asked ?? s.updated;
+/** What a session ranks by: at work now, then when you last asked it. */
+type Rank = { busy: boolean; asked: number };
 
 // Which mode you were on, how PROJECTS is ordered, and your hand-dragged order.
 // ponytail: localStorage = per-browser, like every other HUD pref (see lib/surfaces.ts).
@@ -555,6 +557,12 @@ export function SessionsPanel(props: Props) {
   const [fly, setFly] = useState<{ rel: string; top: number } | null>(null);
   const flyT = useRef<number | undefined>(undefined);
   const railRef = useRef<HTMLDivElement>(null);
+  // Under the pointer nothing re-sorts: every session keeps the rank it had when
+  // the pointer came in, so a turn starting elsewhere never moves the row you
+  // are about to click. The list catches up when the pointer leaves.
+  // ponytail: a pointer parked on the sidebar holds the order until it moves
+  // off; if that bites, let go after some idle seconds too.
+  const [held, setHeld] = useState<Map<string, Rank> | null>(null);
 
   useEffect(() => {
     setFresh(true);
@@ -586,8 +594,9 @@ export function SessionsPanel(props: Props) {
   }, []);
 
   // A search left in the box would filter the rail with nothing on screen to
-  // say so; a flyout outlives nothing that folds or unfolds.
-  useEffect(() => { setFly(null); if (asRail) setSessionQ(""); }, [asRail]);
+  // say so; a flyout outlives nothing that folds or unfolds, and neither does a
+  // hold (the root it was on is gone, and never says the pointer left).
+  useEffect(() => { setFly(null); setHeld(null); if (asRail) setSessionQ(""); }, [asRail]);
   useEffect(() => {
     if (!fly) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFly(null); };
@@ -623,27 +632,30 @@ export function SessionsPanel(props: Props) {
   const branchFor = (s: SessionBrief) => s.branch || branchOf.get(s.project) || "main";
 
   const sq = sessionQ.trim().toLowerCase();
-  // Pinned first, then newest-started first: a row at rest holds its place while
-  // turns start and end, and the dot says what changed. Every list below slices
-  // this one, so a pin holds the top of its lane, its bucket, and its project's
-  // rows alike — and the search applied here reaches every mode from one place.
-  // RECENTLY USED (the order menu) ranks by the last touch instead.
-  const byOrder = order === "used" ? (a: SessionBrief, b: SessionBrief) => b.updated - a.updated : byCreated;
-  const sorted = [...sessions]
-    .filter((s) => !sq || `${s.title ?? ""} ${branchFor(s)}`.toLowerCase().includes(sq))
-    .sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || byOrder(a, b));
-
-  // One state resolution per session per render — lanes, dots and counts all
-  // read this map so they can never disagree.
-  const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
-  const laneOf = (s: SessionBrief) => views.get(s.id)?.lane ?? "idle";
   // A turn the bridge holds is a touch happening now: its row goes over the ones
   // at rest, so a session at work never sits under one that finished, and it
   // rejoins them when the turn ends. Not native "working": it lasts
   // 3 s after each write, so a terminal row lifted on it would bounce mid-turn.
   const busy = (s: SessionBrief) => { const st = status.get(s.id); return st?.source === "bridge" && BUSY_NOW.includes(st.state); };
-  // Pins still head the list; the rest keep the order they came in (sort is stable).
-  const lift = (f: SessionBrief[]) => [...f].sort((a, b) => Number(pins.has(b.id)) - Number(pins.has(a.id)) || Number(busy(b)) - Number(busy(a)));
+  const rankOf = (s: SessionBrief): Rank => held?.get(s.id) ?? { busy: busy(s), asked: askedAt(s) };
+  // The ranks on screen now, kept while the pointer is over the sidebar. A
+  // session started since has none, so it ranks live: new ones still show.
+  const hold = () => setHeld(new Map(sessions.map((s) => [s.id, rankOf(s)])));
+  // Pinned first, then most recent: at work, then your last prompt. Every list
+  // below slices this one, so a pin holds the top of its lane, its bucket, and
+  // its project's rows alike — and the search applied here reaches every mode
+  // from one place.
+  const sorted = [...sessions]
+    .filter((s) => !sq || `${s.title ?? ""} ${branchFor(s)}`.toLowerCase().includes(sq))
+    .sort((a, b) => {
+      const x = rankOf(a), y = rankOf(b);
+      return Number(pins.has(b.id)) - Number(pins.has(a.id)) || Number(y.busy) - Number(x.busy) || y.asked - x.asked;
+    });
+
+  // One state resolution per session per render — lanes, dots and counts all
+  // read this map so they can never disagree.
+  const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
+  const laneOf = (s: SessionBrief) => views.get(s.id)?.lane ?? "idle";
   // What HIDE leaves in the sidebar: a session whose folder and group (Rivendell
   // jobs, Shared) are both shown.
   const listed = (s: SessionBrief) => !hidden[s.project] && !hidden[jobGroup(s)];
@@ -681,9 +693,8 @@ export function SessionsPanel(props: Props) {
     });
   } else if (mode === "recent") {
     // RECENT is one flat stream, cut into time buckets — no project grouping.
-    // The one tab that follows the last touch: recency is its point.
     const now = Date.now() / 1000;
-    const at = (s: SessionBrief) => (busy(s) ? now : askedAt(s));
+    const at = (s: SessionBrief) => { const r = rankOf(s); return r.busy ? now : r.asked; };
     const cuts: [number, string][] = [[86400, "TODAY"], [7 * 86400, "THIS WEEK"], [Infinity, "EARLIER"]];
     lanes = cuts.flatMap(([max, label], i) => {
       const min = i === 0 ? -1 : cuts[i - 1][0];
@@ -715,29 +726,24 @@ export function SessionsPanel(props: Props) {
     });
   }
 
-  // PROJECTS: the tree. By default a project ranks by its newest session's
-  // start, so it rises when you start one there, not because a turn ran —
-  // except while one runs: a project with a turn the bridge holds goes over the
-  // ones at rest, the way its rows do (`lift`), so the one you work in never
-  // sits under idle projects that happened to start a session later. It drops
-  // back to its start position when the turn ends.
-  const started = new Map<string, number>();
+  // PROJECTS: the tree. By default a project ranks the way its rows do: one with
+  // a turn the bridge holds over the ones at rest, then by your last prompt in it.
+  const lastAsked = new Map<string, number>();
   for (const s of sessions) {
-    // RECENTLY USED: by the newest touch, so a reply lifts its project.
-    const g = jobGroup(s), t = order === "used" ? s.updated : s.created ?? s.updated;
-    if (t > (started.get(g) ?? 0)) started.set(g, t);
+    const g = jobGroup(s), t = rankOf(s).asked;
+    if (t > (lastAsked.get(g) ?? 0)) lastAsked.set(g, t);
   }
-  const atWork = new Set(sessions.filter(busy).map(jobGroup));
-  const byStart = [...groups].sort((a, b) =>
-    Number(atWork.has(b.rel)) - Number(atWork.has(a.rel)) || (started.get(b.rel) ?? 0) - (started.get(a.rel) ?? 0));
+  const atWork = new Set(sessions.filter((s) => rankOf(s).busy).map(jobGroup));
+  const byRecent = [...groups].sort((a, b) =>
+    Number(atWork.has(b.rel)) - Number(atWork.has(a.rel)) || (lastAsked.get(b.rel) ?? 0) - (lastAsked.get(a.rel) ?? 0));
   // CUSTOM: dragged positions first (sort is stable, so anything you never
-  // dragged keeps its start order behind them).
+  // dragged keeps its most-recent order behind them).
   const rank = (rel: string) => { const i = customOrder.indexOf(rel); return i < 0 ? Infinity : i; };
   const ps =
     order === "alpha" ? [...groups].sort((a, b) => a.name.localeCompare(b.name))
       : order === "biggest" ? [...groups].sort((a, b) => b.sessionCount - a.sessionCount)
-        : order === "custom" ? [...byStart].sort((a, b) => rank(a.rel) - rank(b.rel))
-          : byStart;
+        : order === "custom" ? [...byRecent].sort((a, b) => rank(a.rel) - rank(b.rel))
+          : byRecent;
   // A capped project lists every session that is doing something (WORK/WAIT/
   // ASK/DONE), holding a prompt of yours, pinned, open right now, or holding
   // pictures you haven't opened (a folded row's tag is no tag) — hiding the
@@ -754,7 +760,7 @@ export function SessionsPanel(props: Props) {
   // an idle row made it "live" and shoved its sibling out of the list.
   const capped = (f: SessionBrief[]) => {
     const keep = new Set(f.slice(0, 2).map((s) => s.id));
-    return lift(f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id) || laneOf(s) !== "idle" || flags.has(s.id) || !!unseen.get(s.id)));
+    return f.filter((s) => keep.has(s.id) || s.id === selectedSessionId || pins.has(s.id) || laneOf(s) !== "idle" || flags.has(s.id) || !!unseen.get(s.id));
   };
   // How many of a list's sessions sit in each lane, every session, not the
   // rows showing: a shut head's dots and amber wash, the rail's dots and New
@@ -774,7 +780,7 @@ export function SessionsPanel(props: Props) {
     const isShut = !f.length || (shut.has(g.rel) && !sq);
     const vis = isShut ? [] : sq || open.has(g.rel)
       // Opened, the jobs group reads as a log: newest job first, one kind at a time.
-      ? (g.rel === JOBS_REL ? f.filter((s) => !jobKind || (s.job?.kind ?? "") === jobKind).sort(byCreated) : lift(f))
+      ? (g.rel === JOBS_REL ? f.filter((s) => !jobKind || (s.job?.kind ?? "") === jobKind).sort(byCreated) : f)
       : capped(f);
     const rest = Math.max(0, g.sessionCount - vis.length);
     return [{ g, f, isShut, vis, rest, n: tallyOf(f) }];
@@ -968,7 +974,7 @@ export function SessionsPanel(props: Props) {
     const flyVis = capped(flyRows);
     const flyRest = flyG ? Math.max(0, flyG.sessionCount - flyVis.length) : 0;
     return (
-      <div ref={railRef} className="srail">
+      <div ref={railRef} className="srail" onPointerEnter={hold} onPointerLeave={() => setHeld(null)}>
         <button className="srail-btn" aria-label="Search sessions" title="Search sessions  /"
                 onClick={() => { onUnfold?.(); requestAnimationFrame(() => searchRef.current?.focus()); }}>
           <Search size={18} strokeWidth={2} aria-hidden />
@@ -1040,7 +1046,7 @@ export function SessionsPanel(props: Props) {
     );
   }
   return (
-    <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
+    <div className="panel" onPointerEnter={hold} onPointerLeave={() => setHeld(null)} style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", animation: "enterLeft .55s cubic-bezier(.2,.8,.2,1) both .12s", flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       <div style={{ flex: "none", display: "flex", flexDirection: "column", padding: "14px 16px 0" }}>
         <div style={{ position: "relative", display: "flex", alignItems: "stretch", gap: 2, padding: 2, borderRadius: 4, background: "color-mix(in srgb, var(--acc) 4%, transparent)" }}>
           {/* One pill travels to the tab you picked. Three backgrounds fading in
