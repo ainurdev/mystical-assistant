@@ -34,7 +34,7 @@ from urllib.parse import parse_qs, quote, urlparse
 
 import re
 
-from bridge import (acp_agents, agents, attribution, browser, config,
+from bridge import (acp_agents, acp_setup, agents, attribution, browser, config,
                     device_ask, device_setup, device_share, device_side, device_view,
                     devserver, fmt, git,
                     github, graphmap, httpgz, integrations, logostyle,
@@ -1312,6 +1312,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(*acp_agents.api_account(body))
         if path == "/local/acp/test":
             return self._json(*acp_agents.api_test(body))
+        if path == "/local/acp/login":
+            return self._json(*acp_setup.api_login(body))
         if path == "/local/inspector":
             from bridge import inspector
             action = body.get("action")

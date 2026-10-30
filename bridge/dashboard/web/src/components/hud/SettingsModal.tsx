@@ -31,6 +31,7 @@ import {
   type Integration,
   type AcpAccount,
   type AcpAgentsInfo,
+  type AcpLogin,
   type AcpPreset,
   type McpInfo,
   type NoticePrefs,
@@ -226,7 +227,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
   { tab: "aimgmt", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
-  { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini api key install test other agent" },
+  { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini kimi moonshot api key install test other agent" },
   { tab: "integrations", sec: "RIVENDELL", terms: "rivendell plugin pr review implement ai instance production local staging websocket agent token api url workdir model timeout video ffmpeg whisper" },
   { tab: "integrations", sec: "ADD AN INSTANCE", terms: "rivendell add new instance connection production local staging api url token" },
   { tab: "integrations", sec: "CLAUDE DESIGN", terms: "claude design system link pull sync skill tokens components" },
@@ -2473,18 +2474,23 @@ function copyText(text: string) {
  *  not, the accounts each runs under, and a TEST per account. A pasted key goes
  *  to the bridge in a POST body and is dropped here once saved: the list only
  *  ever holds the masked form the bridge sends back. */
-function AgentsSection({ profileRows }: { profileRows?: (agentId: string) => ReactNode }) {
+function AgentsSection({ profileRows, onChanged }: {
+  profileRows?: (agentId: string) => ReactNode;
+  /** An account, login or TEST changed what the agents offer: the profile
+   *  editor keeps its own copy of this list and must re-read it. */
+  onChanged?: (info: AcpAgentsInfo) => void;
+}) {
   const [info, setInfo] = useState<AcpAgentsInfo | null>(null);
   const [gone, setGone] = useState(false); // a bridge older than agents (404)
   const [err, setErr] = useState<string | null>(null);
   const load = () => api.acpAgents()
-    .then((r) => { setInfo(r); setGone(false); setErr(null); setAgentLabels(r.presets); })
+    .then((r) => { setInfo(r); setGone(false); setErr(null); setAgentLabels(r.presets); onChanged?.(r); })
     .catch((e) => { if ((e as Error).message === "not found") setGone(true); else setErr((e as Error).message); });
   useEffect(() => { void load(); }, []);
 
   const note = (
     <div style={NOTE}>
-      Only vetted agents are offered. Logins happen in each CLI&apos;s own sign-in; the bridge stores only API keys you paste here.
+      Only vetted agents are offered. Logins happen in each CLI&apos;s own sign-in (LOG IN runs it here and shows its link and code); the bridge stores only API keys you paste here.
     </div>
   );
   if (gone) return <div style={CARD}><div style={KEY_TX}>Restart the bridge to use other agents.</div></div>;
@@ -2526,6 +2532,42 @@ function AgentRow({ p, first, accounts, onChanged }: {
   const [err, setErr] = useState<string | null>(null);
   const [hint, setHint] = useState<string | null>(null);
   const [tests, setTests] = useState<Record<string, TestState>>({});
+  const [logins, setLogins] = useState<Record<string, AcpLogin>>({});
+  const live = (l?: AcpLogin) => !!l && (l.state === "starting" || l.state === "waiting" || l.state === "testing");
+  const anyLive = Object.values(logins).some(live);
+
+  // A running sign-in: poll until the CLI exits and its TEST is in.
+  useEffect(() => {
+    if (!anyLive) return;
+    const t = window.setInterval(() => {
+      for (const [acct, l] of Object.entries(logins)) {
+        if (!live(l)) continue;
+        api.acpLogin("status", p.id, acct)
+          .then((r) => {
+            setLogins((m) => ({ ...m, [acct]: r }));
+            if (r.state === "ok") onChanged();   // its models are cached now
+          })
+          .catch(() => {});
+      }
+    }, 2000);
+    return () => window.clearInterval(t);
+  }, [anyLive, logins, p.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function login(acct: string) {
+    setLogins((m) => ({ ...m, [acct]: { state: "starting" } }));
+    try {
+      const r = await api.acpLogin("start", p.id, acct);
+      setLogins((m) => ({ ...m, [acct]: r }));
+    } catch (e) {
+      setLogins((m) => ({ ...m, [acct]: { state: "error", error: (e as Error).message } }));
+    }
+  }
+  async function cancelLogin(acct: string) {
+    try {
+      const r = await api.acpLogin("cancel", p.id, acct);
+      setLogins((m) => ({ ...m, [acct]: r }));
+    } catch { /* the next poll says where it stands */ }
+  }
 
   function open(kind: "" | "key" | "home") {
     setAdding(kind);
@@ -2542,9 +2584,12 @@ function AgentRow({ p, first, accounts, onChanged }: {
         action: "create", agent: p.id, label: label.trim(), kind: adding as "key" | "home",
         ...(adding === "key" ? { key: key.trim() } : {}),
       });
-      setHint(r.login_hint ?? null);
+      // A new separate login is empty: sign it in right away where we can.
+      const signIn = adding === "home" && p.can_login && r.account ? r.account.id : null;
+      setHint(signIn ? null : r.login_hint ?? null);
       open("");          // drops the pasted key: from here on only its masked form exists
       onChanged();
+      if (signIn) void login(signIn);
     } catch (e) {
       setErr((e as Error).message);
     } finally {
@@ -2598,16 +2643,45 @@ function AgentRow({ p, first, accounts, onChanged }: {
       </MiniBtn>
     );
   };
+  const loginBtn = (acct: string) => {
+    const l = logins[acct];
+    return live(l)
+      ? <MiniBtn disabled={l!.state === "testing"} onClick={() => void cancelLogin(acct)} title="Stop this sign-in">
+          {l!.state === "testing" ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite" }} /> TESTING…</> : "CANCEL LOGIN"}
+        </MiniBtn>
+      : <MiniBtn disabled={!p.installed} onClick={() => void login(acct)}
+          title={p.installed ? `Sign in with ${p.label}'s own device-code login` : "Install it first"}>LOG IN</MiniBtn>;
+  };
+  const loginPanel = (acct: string) => {
+    const l = logins[acct];
+    if (!l || l.state === "idle" || l.state === "cancelled") return null;
+    const small = { fontSize: "var(--t10)", marginTop: 6, lineHeight: 1.6, overflowWrap: "anywhere" as const };
+    if (l.state === "ok") return <div style={{ ...small, color: "var(--ok)" }}>✓ SIGNED IN · {l.models ?? 0} MODEL{l.models === 1 ? "" : "S"}</div>;
+    if (l.state === "error") return <div style={{ ...small, color: "var(--warn)" }}>{l.error ?? "Sign-in failed"}</div>;
+    if (!l.url) return <div style={{ ...small, color: "var(--txd)" }}>{l.state === "testing" ? "Signed in — testing…" : `Starting ${p.label}'s sign-in…`}</div>;
+    return (
+      <div style={{ ...small, color: "var(--tx)" }}>
+        Open the link on any device and approve{l.code ? <> the code <b style={{ color: "var(--txb)", letterSpacing: 2 }}>{l.code}</b></> : null}:
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
+          <a href={l.url} target="_blank" rel="noreferrer" style={{ ...CODE, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--acc)" }}>{l.url}</a>
+          <MiniBtn onClick={() => copyText(l.url!)} title="Copy the sign-in link">COPY</MiniBtn>
+        </div>
+      </div>
+    );
+  };
+  const canLogin = (acct: string) => !!p.can_login && (acct === "" || accounts.some((a) => a.id === acct && a.kind === "home"));
   const line = (acct: string, name: ReactNode, extra?: ReactNode) => (
     <div key={acct || "machine"} style={{ padding: "7px 0 0 12px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
         <span style={{ fontSize: "var(--t10)", color: "var(--tx)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
         <span style={{ flex: 1 }} />
         {result(acct)}
+        {canLogin(acct) && loginBtn(acct)}
         {testBtn(acct)}
         {extra}
       </div>
       {why(acct)}
+      {loginPanel(acct)}
     </div>
   );
   const input = (v: string, set: (v: string) => void, placeholder: string, secret = false) => (
@@ -2621,9 +2695,12 @@ function AgentRow({ p, first, accounts, onChanged }: {
       <div style={KV}>
         <span style={{ fontSize: "var(--t11)", color: p.installed ? "var(--txb)" : "var(--txl)" }}>{p.label.toUpperCase()}</span>
         <span style={{ fontSize: "var(--t10)", letterSpacing: 1, color: p.installed ? "var(--ok)" : "var(--txd)" }}>
-          {p.installed ? "INSTALLED" : "NOT INSTALLED"}
+          {!p.installed ? "NOT INSTALLED" : p.fetch?.state === "running" ? "DOWNLOADING…" : p.fetch?.state === "error" ? "DOWNLOAD FAILED" : "INSTALLED"}
         </span>
       </div>
+      {p.fetch?.state === "error" && p.fetch.error && (
+        <div style={{ fontSize: "var(--t10)", color: "var(--warn)", marginTop: 6, lineHeight: 1.6, overflowWrap: "anywhere" }}>{p.fetch.error}</div>
+      )}
       {!p.installed && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 7 }}>
           <code style={{ ...CODE, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.install}</code>
@@ -2637,7 +2714,7 @@ function AgentRow({ p, first, accounts, onChanged }: {
       {hint && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 9 }}>
           <code style={{ ...CODE, minWidth: 0, overflowWrap: "anywhere" }}>{hint}</code>
-          <MiniBtn onClick={() => copyText(hint.replace(/^Run once in a terminal: /, ""))} title="Copy the sign-in command">COPY</MiniBtn>
+          <MiniBtn onClick={() => copyText(hint.replace(/^.*[Rr]un once in a terminal: /, ""))} title="Copy the sign-in command">COPY</MiniBtn>
           <MiniBtn onClick={() => setHint(null)} title="Dismiss">✕</MiniBtn>
         </div>
       )}
@@ -2840,8 +2917,10 @@ function ProfileEditor({ form, setForm, models, settings, sessionTools, logins, 
   // An agent's pickers: what it advertised for this account (a TEST or a turn
   // cached it), AGENT DEFAULT first. Nothing cached yet → a TEST right here.
   const cached = isAgent ? acp?.options[`${form.agent}|${form.account}`] : undefined;
-  const agentRows = (list: { value: string; name: string }[] | undefined, v: string) =>
-    keep(optionRows(list) ?? [AGENT_DEFAULT], v);
+  const agentRows = (list: { value: string; name: string }[] | undefined, v: string, def?: string) =>
+    keep(optionRows(list, def) ?? [AGENT_DEFAULT], v);
+  const hasOptions = !!(cached?.model.length || cached?.mode.length || cached?.effort.length);
+  const preset = acp?.presets.find((p) => p.id === form.agent);
   async function testHere() {
     setTesting(true); setTestErr(null);
     try {
@@ -2850,6 +2929,18 @@ function ProfileEditor({ form, setForm, models, settings, sessionTools, logins, 
     } catch (e) { setTestErr((e as Error).message); }
     finally { setTesting(false); }
   }
+  // Picking an agent (or one of its accounts) nothing has asked yet: ask it now,
+  // once per agent|account, so the pickers list its real models instead of
+  // only AGENT DEFAULT. A failure (no login yet) stays shown, with TEST to retry.
+  const asked = useRef(new Set<string>());
+  useEffect(() => {
+    const k = `${form.agent}|${form.account}`;
+    // Also when only the defaults are missing (cached before they were kept), so
+    // AGENT DEFAULT can name the model; the pickers stay usable meanwhile.
+    if (!isAgent || !acp || (hasOptions && cached?.defaults) || testing || asked.current.has(k) || !preset?.installed) return;
+    asked.current.add(k);
+    void testHere();
+  }, [form.agent, form.account, acp, hasOptions]); // eslint-disable-line react-hooks/exhaustive-deps
   const warn = (text: string) => <div style={{ fontSize: "var(--t10)", color: "var(--warn)" }}>{text}</div>;
   return (
     <div className="aim-editor">
@@ -2892,17 +2983,21 @@ function ProfileEditor({ form, setForm, models, settings, sessionTools, logins, 
       {isAgent ? (
         <>
           <div className="aim-f"><label>Model</label>
-            <select value={form.model} onChange={(e) => set({ model: e.target.value })}>{agentRows(cached?.model, form.model).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+            <select value={form.model} disabled={testing && !hasOptions} onChange={(e) => set({ model: e.target.value })}>{agentRows(cached?.model, form.model, cached?.defaults?.model).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
           <div className="aim-f"><label>Mode</label>
-            <select value={form.mode} onChange={(e) => set({ mode: e.target.value })}>{agentRows(cached?.mode, form.mode).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+            <select value={form.mode} disabled={testing && !hasOptions} onChange={(e) => set({ mode: e.target.value })}>{agentRows(cached?.mode, form.mode, cached?.defaults?.mode).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
           <div className="aim-f"><label>Effort</label>
-            <select value={form.effort} onChange={(e) => set({ effort: e.target.value })}>{agentRows(cached?.effort, form.effort).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
-          {!cached?.model.length && !cached?.mode.length && !cached?.effort.length && (
+            <select value={form.effort} disabled={testing && !hasOptions} onChange={(e) => set({ effort: e.target.value })}>{agentRows(cached?.effort, form.effort, cached?.defaults?.effort).map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
+          {!hasOptions && (
             <div className="aim-f wide">
-              <MiniBtn disabled={testing} onClick={() => void testHere()} title="Start the agent once and list its models and modes (up to two minutes)">
-                {testing ? "TESTING…" : "TEST"}
-              </MiniBtn>
-              {testErr && warn(testErr)}
+              {testing
+                ? <span style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>
+                    <LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite", verticalAlign: "-2px" }} /> Asking {preset?.label ?? agentLabel(form.agent)} which models this account has…
+                  </span>
+                : <MiniBtn onClick={() => void testHere()} title="Start the agent once and list its models and modes (up to two minutes)">TEST</MiniBtn>}
+              {testErr && warn(preset?.can_login && /login/i.test(testErr)
+                ? `This ${preset.label} account isn't signed in yet. Press LOG IN on it in the ${preset.label} card under Agents, then TEST.`
+                : testErr)}
             </div>
           )}
         </>
@@ -3094,7 +3189,9 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         ))}
         {form && !form.p.id && form.under === under ? editor : (
           <button type="button" className="aim-addrow" disabled={pBusy || !profilesAvailable}
-            onClick={() => { setPErr(null); setForm({ p: { ...blank(owner.account ?? ""), agent: owner.agent }, under }); }}>
+            onClick={() => { setPErr(null); setForm({ p: owner.agent === "claude" ? blank(owner.account ?? "")
+              // Another agent's ids are its own: start on its defaults, never this device's Claude picks.
+              : { ...blank(), agent: owner.agent, model: "", mode: "", effort: "" }, under }); }}>
             <span className="aim-tree">+</span><u>New profile</u> {newLabel}
           </button>
         )}
@@ -3179,9 +3276,10 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
       {profilesError && <div style={{ fontSize: "var(--t10)", color: "var(--warn)", marginTop: 8 }}>Couldn't reload profiles, so this list may be stale — {profilesError}</div>}
       <div className="aim-sub">
         <b>Other agents</b>
-        <span className="aim-hint">Codex, OpenCode — over the Agent Client Protocol — and the profiles that run on them. TEST starts one once and remembers the models and modes it offers.</span>
+        <span className="aim-hint">Codex, OpenCode, Kimi — over the Agent Client Protocol — and the profiles that run on them. TEST starts one once and remembers the models and modes it offers.</span>
       </div>
-      <AgentsSection profileRows={profilesAvailable ? (id) => profileRows({ agent: id }, id, `on ${agentLabel(id)}`) : undefined} />
+      <AgentsSection profileRows={profilesAvailable ? (id) => profileRows({ agent: id }, id, `on ${agentLabel(id)}`) : undefined}
+        onChanged={setAcp} />
     </>
   );
 

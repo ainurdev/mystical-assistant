@@ -1192,6 +1192,9 @@ export interface AcpPreset {
   login: string | null; // the CLI's own sign-in command
   install: string;
   installed: boolean;
+  can_login?: boolean; // its device-code sign-in runs from Settings (acpLogin); older bridges omit it
+  /** A pinned npx package being fetched at boot: null = nothing to fetch. */
+  fetch?: { state: "running" | "ok" | "error"; error?: string } | null;
 }
 /** An agent account. `key` arrives masked ("sk-…abcd"); the raw key never
  *  comes back from the bridge. */
@@ -1204,7 +1207,20 @@ export interface AcpAccount {
 }
 export interface AcpOption { value: string; name: string }
 /** What an agent advertised for one account, as last seen by a turn or a TEST. */
-export interface AcpOptions { model: AcpOption[]; mode: AcpOption[]; effort: AcpOption[] }
+export interface AcpOptions {
+  model: AcpOption[]; mode: AcpOption[]; effort: AcpOption[];
+  /** What a fresh session runs with, per knob, as a TEST last saw it. */
+  defaults?: { model?: string; mode?: string; effort?: string };
+}
+/** A sign-in the bridge runs through the agent's own CLI: it relays the URL and
+ *  code the CLI prints, the user approves anywhere, then a TEST runs. */
+export interface AcpLogin {
+  state: "idle" | "starting" | "waiting" | "testing" | "ok" | "error" | "cancelled";
+  url?: string | null;
+  code?: string | null;
+  error?: string;
+  models?: number;
+}
 export interface AcpAgentsInfo {
   presets: AcpPreset[];
   accounts: AcpAccount[];
@@ -1862,6 +1878,10 @@ export const api = {
     req<{ ok: boolean; options?: AcpOptions; error?: string }>("/local/acp/test", {
       method: "POST", body: { agent, account },
     }),
+  /** start → the login's state (call again for status; starting twice returns the
+   *  running one). account "" is the machine login. */
+  acpLogin: (action: "start" | "status" | "cancel", agent: string, account: string) =>
+    req<AcpLogin>("/local/acp/login", { method: "POST", body: { action, agent, account } }),
   /** The AI-powered extras and whether each is switched on. All ship off. */
   aiFeatures: () => req<{ features: AiFeature[] }>("/local/aifeatures"),
   setAiFeature: (key: string, enabled: boolean) =>

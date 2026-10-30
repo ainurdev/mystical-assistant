@@ -17,7 +17,7 @@ def isolated(monkeypatch, tmp_path):
 
 
 def test_only_vetted_presets_exist():
-    assert {p["id"] for p in acp_agents.PRESETS} == {"codex", "opencode", "gemini"}
+    assert {p["id"] for p in acp_agents.PRESETS} == {"codex", "opencode", "gemini", "kimi"}
     banned = ("copilot", "antigravity", "agy", "amp", "droid")
     assert not any(b in " ".join(p["cmd"]).lower() for p in acp_agents.PRESETS for b in banned)
 
@@ -126,6 +126,35 @@ def test_a_key_account_gets_its_own_home_and_loses_it_on_delete():
     assert acp_agents.auth_method(acp_agents.preset("codex"), h["id"]) is None
     assert acp_agents.auth_method(acp_agents.preset("codex"), "") is None
     assert "CODEX_HOME" not in acp_agents.env_for(acp_agents.preset("codex"), "")
+
+
+def test_kimi_is_login_only_with_a_home_per_account(monkeypatch):
+    p = acp_agents.preset("kimi")
+    assert p["cmd"][-1] == "acp" and acp_agents.KIMI_PKG in p["cmd"] and p["login_cmd"]
+    with pytest.raises(ValueError):
+        acp_agents.add_account("kimi", "work", "key", key="sk-abcdefghijklmnop")
+    a = acp_agents.add_account("kimi", "work", "home")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "secret")
+    env = acp_agents.env_for(p, a["id"])
+    assert env["KIMI_CODE_HOME"] == acp_agents.home_dir(a["id"])
+    assert env["KIMI_CODE_NO_AUTO_UPDATE"] == "1" and "TELEGRAM_BOT_TOKEN" not in env
+    assert acp_agents.auth_method(p, a["id"]) is None
+    assert acp_agents.login_hint(p, a["id"]) == \
+        "Press LOG IN on it under Settings ▸ Accounts ▸ Agents, or run once in a terminal: " \
+        f"KIMI_CODE_HOME={acp_agents.home_dir(a['id'])} npx -y {acp_agents.KIMI_PKG} login"
+
+
+def test_a_test_records_the_agents_defaults_and_a_turn_keeps_them():
+    opts = [{"id": "model", "category": "model", "type": "select", "currentValue": "k3.1-pro",
+             "options": [{"value": "k3", "name": "K3"}, {"value": "k3.1-pro", "name": "K3.1 Pro"}]},
+            {"id": "mode", "category": "mode", "type": "select", "currentValue": "default",
+             "options": [{"value": "default", "name": "Default"}, {"value": "yolo", "name": "YOLO"}]}]
+    acp_agents.remember_options("kimi", "", opts, None, fresh=True)
+    assert acp_agents.options_for("kimi", "")["defaults"] == {"model": "k3.1-pro", "mode": "default"}
+    # A resumed session's current values are its own picks, not the defaults.
+    opts[0]["currentValue"] = "k3"
+    acp_agents.remember_options("kimi", "", opts, None)
+    assert acp_agents.options_for("kimi", "")["defaults"]["model"] == "k3.1-pro"
 
 
 def test_the_unstable_models_field_fills_the_model_list():

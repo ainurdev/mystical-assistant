@@ -40,7 +40,7 @@ import os
 import signal
 import sys
 
-from bridge import (config, devserver, dream, envsettings, landing, limits,
+from bridge import (acp_setup, config, devserver, dream, envsettings, landing, limits,
                     native_activity, notices, onboard, profiles, pubsub, queue_manager, recovery,
                     report, rivendell, runner, selfupdate, state, store,
                     tgtopics, toolsets, tunnel, whatsnew)
@@ -172,6 +172,7 @@ def main():
         # deny rules. Started here it finishes while the servers below come up,
         # instead of stalling the first turn the user sends.
         toolsets.warm()
+        acp_setup.warm()               # fetch pinned agent CLIs (Kimi Code) before a turn needs them
         # Dashboard first: the login launcher blocks on this port, and the Mini
         # App's tunnel below spends seconds registering + settling before it
         # returns. Nothing here reads the tunnel's URL at start-up.

@@ -220,10 +220,12 @@ installed versions:
 | `codex` | Codex | `npx -y @agentclientprotocol/codex-acp@2.1.1` (pin bumped deliberately) | `OPENAI_API_KEY` | `CODEX_HOME` | — |
 | `opencode` | opencode | `opencode acp` | — (providers via `opencode auth login`) | `XDG_DATA_HOME` | `OPENCODE_PERMISSION` (ask), `OPENCODE_DISABLE_AUTOUPDATE=1` |
 | `gemini` | Gemini CLI | `gemini --acp` | `GEMINI_API_KEY` (required) | `GEMINI_CLI_HOME` | — |
+| `kimi` | Kimi Code | `npx -y @moonshot-ai/kimi-code@2.4.1 acp` (pin in `KIMI_PKG`) | — (Kimi Code login only: `kimi acp` refuses without its OAuth token) | `KIMI_CODE_HOME` | `KIMI_CODE_NO_AUTO_UPDATE=1`, `KIMI_DISABLE_TELEMETRY=1` |
 
 Each preset also has a login command for "separate login" accounts:
 - `codex login --device-auth`
 - `opencode auth login`
+- `npx -y @moonshot-ai/kimi-code@2.4.1 login` (added 2026-10-30). Settings runs it too: LOG IN relays the device URL and code (`bridge/acp_setup.py`), and the bridge fetches the pin at every boot so installs and upgrades have it before the first turn.
 - none for Gemini, which is API key only.
 
 Accounts per agent:

@@ -29,6 +29,12 @@ have() { command -v "$1" >/dev/null 2>&1; }
 # opencode's own installer drops it in ~/.opencode/bin, which is off PATH until
 # a new shell — probe both, the way freeagent.py resolves the binary.
 have_opencode() { have opencode || [ -x "$HOME/.opencode/bin/opencode" ]; }
+# Kimi Code runs through npx at the version bridge/acp_agents.py pins (KIMI_PKG),
+# so the pin is read from there: one place to bump it.
+KIMI_PKG="$(sed -n 's/^KIMI_PKG = "\(.*\)"$/\1/p' "$REPO/bridge/acp_agents.py")"
+node_ok_for_kimi() {   # Kimi Code's engines field: node >= 22.19
+  have npx && node -e 'const [a,b]=process.versions.node.split(".").map(Number);process.exit(a>22||(a===22&&b>=19)?0:1)' 2>/dev/null
+}
 
 PATH_ORIG="$PATH"                      # remember what the user's shell really has
 export PATH="$HOME/.local/bin:$PATH"   # so a tunnel client/mystical we install is visible now
@@ -50,6 +56,8 @@ doctor() {
   else warn "tunnel client — missing: no Mini App on your phone (setup offers to install it)"; fi
   if have_opencode; then ok "opencode — free-agent fallback when the Claude accounts run out"
   else warn "opencode — missing: sessions stop at the usage limit (setup offers to install it)"; fi
+  if node_ok_for_kimi; then ok "node $(node -v) — runs Kimi Code (and Codex) sessions through npx"
+  else warn "node 22.19+ — missing: no Kimi Code sessions (setup offers Node LTS when npm is missing)"; fi
   if have graphify; then ok "graphify — projects map themselves after the first turn"
   else warn "graphify — missing: no project maps. Install: pipx install graphifyy"; fi
   if [ "$(uname -s)" = Darwin ]; then
@@ -344,6 +352,19 @@ if ! have_opencode; then
        if install_opencode; then ok "opencode installed → ~/.local/bin/opencode"
        else warn "install failed — free-agent rungs stay off (bot, dashboard and Claude are unaffected)."; fi ;;
   esac
+fi
+
+# -- Kimi Code ---------------------------------------------------------------
+# A session can run on Kimi Code (Settings ▸ Accounts ▸ Agents, then a profile).
+# It runs as `npx -y <pin>`; fetching the pin now keeps a ~50 MB download out of
+# the first turn. The bridge fetches it again at every boot (bridge/acp_setup.py),
+# which is what installs a new pin after an update. Logins happen in Settings.
+step "🌙" "Kimi Code"
+if [ -z "$KIMI_PKG" ]; then warn "couldn't read the Kimi Code pin from bridge/acp_agents.py — skipped"
+elif ! node_ok_for_kimi; then warn "needs Node 22.19+ (have: $(node -v 2>/dev/null || echo none)) — Kimi Code sessions stay off"
+else echo "Fetching $KIMI_PKG…"
+     if npx -y "$KIMI_PKG" --version >/dev/null 2>&1; then ok "Kimi Code ready — sign in under Settings ▸ Accounts ▸ Agents"
+     else warn "fetch failed — the bridge retries at start; Claude is unaffected"; fi
 fi
 
 # -- link `mystical` onto PATH -----------------------------------------------

@@ -38,9 +38,13 @@ export function runtimeBadge(runtime: string, labels: Record<string, string> = k
 }
 
 /** One picker's rows, AGENT DEFAULT first; null when the agent advertised none
- *  (that picker hides). */
-export function optionRows(list?: AcpOption[]): Row[] | null {
-  return list?.length ? [AGENT_DEFAULT, ...list.map((o) => ({ id: o.value, label: o.name }))] : null;
+ *  (that picker hides). With the agent's default known (a TEST saw it), that
+ *  row names it: "AGENT DEFAULT · Kimi K3.1 Pro". */
+export function optionRows(list?: AcpOption[], def?: string): Row[] | null {
+  if (!list?.length) return null;
+  const name = def ? list.find((o) => o.value === def)?.name ?? def : null;
+  const first = name ? { id: "", label: `${AGENT_DEFAULT.label} · ${name}` } : AGENT_DEFAULT;
+  return [first, ...list.map((o) => ({ id: o.value, label: o.name }))];
 }
 
 export interface AgentPickers { agent: string; label: string; model: Row[] | null; mode: Row[] | null; effort: Row[] | null }
@@ -51,8 +55,9 @@ export function agentPickers(agent: string | undefined, account: string | undefi
                              info: AcpAgentsInfo | null): AgentPickers | null {
   if (!agent || agent === "claude") return null;
   const o = info?.options[`${agent}|${account ?? ""}`];
-  return { agent, label: agentLabel(agent), model: optionRows(o?.model), mode: optionRows(o?.mode),
-           effort: optionRows(o?.effort) };
+  const d = o?.defaults ?? {};
+  return { agent, label: agentLabel(agent), model: optionRows(o?.model, d.model), mode: optionRows(o?.mode, d.mode),
+           effort: optionRows(o?.effort, d.effort) };
 }
 
 /** Whether a run to a session carries the composer's model/mode/effort. They

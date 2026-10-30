@@ -70,12 +70,12 @@ def test_create_with_a_bad_kind_is_400():
     assert box["code"] == 400
 
 
-def test_get_listing_has_three_presets_and_no_raw_key():
+def test_get_listing_has_every_preset_and_no_raw_key():
     acp_agents.add_account("codex", "work", "key", key=KEY)
     h, box = _handler()
     h._get_api("/local/acp/agents", {})
     assert box["code"] == 200
-    assert len(box["obj"]["presets"]) == 3
+    assert len(box["obj"]["presets"]) == len(acp_agents.PRESETS)
     assert all("installed" in p for p in box["obj"]["presets"])
     assert KEY not in json.dumps(box["obj"])
 

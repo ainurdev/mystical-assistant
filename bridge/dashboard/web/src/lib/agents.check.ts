@@ -39,6 +39,12 @@ eq(m.effort, null, "no thought_level advertised: the effort picker hides");
 eq(m.label, "CODEX", "the chip names the agent");
 const a = agentPickers("codex", "a_1", info)!;
 eq([a.model?.[1].id, a.mode, a.effort?.[1].id], ["o4", null, "high"], "options are per account, not per agent");
+const kimi: AcpAgentsInfo = { presets: [], accounts: [], options: { "kimi|": {
+  model: [{ value: "k3", name: "Kimi K3" }, { value: "k3.1-pro", name: "Kimi K3.1 Pro" }], mode: [], effort: [],
+  defaults: { model: "k3.1-pro", mode: "gone" } } } };
+eq(agentPickers("kimi", "", kimi)!.model?.[0], { id: "", label: "AGENT DEFAULT · Kimi K3.1 Pro" },
+  "a TEST saw the default: AGENT DEFAULT names it");
+eq(agentPickers("kimi", "", kimi)!.mode, null, "a default for a picker with no rows doesn't make one");
 eq(agentPickers("gemini", "", info), { agent: "gemini", label: "GEMINI CLI", model: null, mode: null, effort: null },
   "never tested: every picker hides (the chip still shows)");
 

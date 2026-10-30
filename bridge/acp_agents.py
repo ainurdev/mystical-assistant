@@ -13,8 +13,9 @@ Safety rules (spec: profiles-and-acp-agents.md) live here, in code:
      - Gemini with a Google login: consumer logins are dead since 2026-06-18,
        and piggybacking on one is a ban, so the preset is API key only.
   2. No login token is ever read. A subscription login happens in the CLI's
-     own flow (login_hint() shows the command). The only secrets kept are
-     pasted API keys: ACCOUNTS_FILE, 0600, returned masked.
+     own flow: login_hint() shows the command, or acp_setup runs it and relays
+     only the URL and code it prints. The only secrets kept are pasted API
+     keys: ACCOUNTS_FILE, 0600, returned masked.
   3. env_for() builds the child env from an allow-list. The bridge's own env
      holds the Telegram bot token, the dashboard token, Rivendell/GitHub
      tokens, and maybe Anthropic credentials. None of that goes to a
@@ -46,6 +47,8 @@ import uuid
 
 from bridge import config
 
+KIMI_PKG = "@moonshot-ai/kimi-code@2.4.1"
+
 PRESETS = (
     # codex-acp runs OpenAI's own `codex app-server`; pin bumped deliberately.
     # 2.1.1 depends on @openai/codex ^0.159.1 and runs that bundled binary (its
@@ -76,6 +79,20 @@ PRESETS = (
      # clears the cached Google credential and rewrites settings in its home.
      "login": None, "install": "npm i -g @google/gemini-cli", "auth_method": "gemini-api-key",
      "env": {"GEMINI_CLI_NO_RELAUNCH": "true"}},
+    # Moonshot's Kimi Code CLI (the TypeScript successor; the Python kimi-cli is
+    # archived and "will stop working"). Read off the 2.4.1 tarball (dist/main.mjs):
+    # `kimi acp` gates session/new|load|resume on a Kimi Code OAuth login and offers
+    # only terminal auth, so accounts are logins, each in its own KIMI_CODE_HOME.
+    # An API key needs a provider block in its config.toml, which the bridge
+    # doesn't write. Its "default" mode is manual approvals (rule 7). Pinned like
+    # codex-acp, with its self-update off, so a pin bump is the only upgrade;
+    # `warm` fetches the pin at boot, so the first turn isn't a 50 MB download.
+    {"id": "kimi", "label": "Kimi Code", "cmd": ["npx", "-y", KIMI_PKG, "acp"],
+     "key_env": None, "home_env": "KIMI_CODE_HOME", "key_required": False,
+     "login": f"npx -y {KIMI_PKG} login", "login_cmd": ["npx", "-y", KIMI_PKG, "login"],
+     "warm": ["npx", "-y", KIMI_PKG, "--version"],
+     "auth_method": None, "install": "Node.js 22.19+ (for npx)",
+     "env": {"KIMI_CODE_NO_AUTO_UPDATE": "1", "KIMI_DISABLE_TELEMETRY": "1"}},
 )
 
 _ALLOW = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "TERM", "TMPDIR",
@@ -117,7 +134,10 @@ def argv(p: dict) -> list:
 
 
 def available() -> list:
-    return [{k: v for k, v in p.items() if k != "env"} | {"installed": bool(_resolve(p["cmd"][0]))}
+    from bridge import acp_setup   # local: acp_setup imports this module at its own top
+    return [{k: v for k, v in p.items() if k not in ("env", "login_cmd", "warm")}
+            | {"installed": bool(_resolve(p["cmd"][0])), "can_login": bool(p.get("login_cmd")),
+               "fetch": acp_setup.fetch_state(p["id"])}
             for p in PRESETS]
 
 
@@ -247,9 +267,10 @@ def login_hint(p: dict, acct_id) -> str:
     if not p.get("login"):
         return f"Add a {p['label']} API key under Settings ▸ Accounts ▸ Agents."
     a = account(acct_id)
+    here = "Press LOG IN on it under Settings ▸ Accounts ▸ Agents, or r" if p.get("login_cmd") else "R"
     if a and a["kind"] == "home":
-        return f"Run once in a terminal: {p['home_env']}={home_dir(a['id'])} {p['login']}"
-    return f"Run once in a terminal: {p['login']}"
+        return f"{here}un once in a terminal: {p['home_env']}={home_dir(a['id'])} {p['login']}"
+    return f"{here}un once in a terminal: {p['login']}"
 
 
 def is_claude_model(value) -> bool:
@@ -307,6 +328,21 @@ def _shape(config_options, modes, models=None) -> dict:
     return got
 
 
+def _current(config_options, modes, models) -> dict:
+    """What a session is set to, per knob: on a fresh session (a TEST's), the
+    agent's own default, which is what AGENT DEFAULT in a picker means."""
+    cur = {}
+    for o in config_options or []:
+        cat = _CATEGORY.get((o or {}).get("category"))
+        if cat and o.get("currentValue") is not None:
+            cur[cat] = str(o["currentValue"])
+    if "model" not in cur and isinstance(models, dict) and models.get("currentModelId"):
+        cur["model"] = str(models["currentModelId"])
+    if "mode" not in cur and isinstance(modes, dict) and modes.get("currentModeId"):
+        cur["mode"] = str(modes["currentModeId"])
+    return cur
+
+
 def _key(agent, acct_id) -> str:
     return f"{agent}|{acct_id or ''}"
 
@@ -324,10 +360,15 @@ def _load_options() -> None:
         pass
 
 
-def remember_options(agent: str, acct_id, config_options, modes, models=None) -> None:
+def remember_options(agent: str, acct_id, config_options, modes, models=None, fresh=False) -> None:
+    """fresh: the options come off a new session (a TEST), so its current values
+    are the agent's defaults. A turn's session may carry earlier picks, so a
+    turn keeps the defaults a TEST last saw."""
     shaped = _shape(config_options, modes, models)
     with _lock:
         _load_options()
+        prev = (_options.get(_key(agent, acct_id)) or {}).get("defaults") or {}
+        shaped["defaults"] = _current(config_options, modes, models) if fresh else prev
         _options[_key(agent, acct_id)] = shaped
         os.makedirs(os.path.dirname(OPTIONS_FILE), mode=0o700, exist_ok=True)
         with open(OPTIONS_FILE + ".tmp", "w", encoding="utf-8") as f:
@@ -382,6 +423,7 @@ def api_test(body: dict) -> "tuple[dict, int]":
     res = acp.probe(argv=argv(p), env=env_for(p, acct), label=p["label"],
                     login_hint=login_hint(p, acct), auth_method=auth_method(p, acct))
     if res.get("ok"):
-        remember_options(p["id"], acct, res.get("options"), res.get("modes"), res.get("models"))
+        remember_options(p["id"], acct, res.get("options"), res.get("modes"), res.get("models"),
+                         fresh=True)
         return {"ok": True, "options": options_for(p["id"], acct)}, 200
     return res, 200
