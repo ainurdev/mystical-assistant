@@ -379,3 +379,16 @@ def test_a_duplicate_keeps_the_effort_beside_the_model():
     store.set_session_field(s["id"], "effort", "high")
     copy = store.duplicate(s["id"])
     assert (copy["model"], copy["effort"]) == ("claude-opus-5-5", "high")
+
+
+def test_a_new_agent_account_gets_one_profile_that_runs_on_it(monkeypatch, tmp_path):
+    monkeypatch.setattr(acp_agents, "ACCOUNTS_FILE", str(tmp_path / "agent-accounts.json"))
+    monkeypatch.setattr(acp_agents, "HOMES", str(tmp_path / "agent-homes"))
+    res, code = acp_agents.api_account({"action": "create", "agent": "kimi", "label": "work", "kind": "home"})
+    assert code == 200
+    mine = [p for p in profiles.all_profiles() if p["agent"] == "kimi"]
+    assert [(p["name"], p["account"]) for p in mine] == [("Kimi Code · work", res["account"]["id"])]
+    # The machine login's first working TEST gets one too; a second doesn't.
+    assert profiles.add_agent_default("kimi")["name"] == "Kimi Code"
+    assert profiles.add_agent_default("kimi") is None
+    assert profiles.add_agent_default("nope") is None

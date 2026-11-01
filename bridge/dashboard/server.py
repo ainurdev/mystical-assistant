@@ -1276,6 +1276,8 @@ class Handler(BaseHTTPRequestHandler):
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
+            if profiles.claude_only_refusal(s, "policy"):
+                return self._json({"error": profiles.claude_only_refusal(s, "policy")}, 409)
             policy = body.get("policy") or None
             if policy is not None and policy not in ladder.POLICIES:
                 return self._json(
@@ -1288,6 +1290,8 @@ class Handler(BaseHTTPRequestHandler):
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
+            if profiles.claude_only_refusal(s, "autocompact"):
+                return self._json({"error": profiles.claude_only_refusal(s, "autocompact")}, 409)
             ok, value = normalize_autocompact(body.get("autocompact"))
             if not ok:
                 return self._json(
@@ -1342,6 +1346,8 @@ class Handler(BaseHTTPRequestHandler):
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
+            if profiles.claude_only_refusal(s, "tools"):
+                return self._json({"error": profiles.claude_only_refusal(s, "tools")}, 409)
             rules = toolsets.clean(body.get("disabled_tools"))
             store.set_disabled_tools(sid, rules)
             return self._json({"ok": True, "disabled_tools": rules})
@@ -1405,6 +1411,8 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
             objective = (body.get("objective") or "").strip()[:2000]
+            if objective and profiles.claude_only_refusal(s, "goal"):   # clearing one is always fine
+                return self._json({"error": profiles.claude_only_refusal(s, "goal")}, 409)
             if not objective:
                 goals.clear(sid)          # empty objective = abandon the goal
                 return self._json({"ok": True, "goal": None})
@@ -1458,6 +1466,8 @@ class Handler(BaseHTTPRequestHandler):
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
+            if profiles.claude_only_refusal(s, "duplicate"):
+                return self._json({"error": profiles.claude_only_refusal(s, "duplicate")}, 409)
             if team.refusal(s["origin"]):
                 # The copy would be an ordinary session, carrying the teammate's work on under this account.
                 return self._json({"error": team.refusal(s["origin"])}, 409)

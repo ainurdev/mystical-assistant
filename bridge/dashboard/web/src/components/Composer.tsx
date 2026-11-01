@@ -702,17 +702,20 @@ export function Composer({
   // A box that leads with a /word needs the list too, to draw it as a command
   // (MarkdownInput): a draft can come back with one already in it.
   const leadsSlash = text.startsWith("/");
+  // The list is Claude's (.claude/skills, commands, plugins, CLI builtins): an
+  // agent session's / would run none of them, so it gets no list.
+  const onAgent = !!agentPick;
   useEffect(() => {
     if (!slashOn) setSlashDismissed(false);
-    if (!slashOn && !leadsSlash) return;
+    if (onAgent || (!slashOn && !leadsSlash)) return;
     let live = true;
     void api.commands(project)
       .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };
-  }, [slashOn, leadsSlash, project]);
-  const shits = slash ? rankCommands(cmds, slash.q) : [];
-  const slashOpen = !!slash && !slashDismissed && (shits.length > 0 || cmdsStale);
+  }, [slashOn, leadsSlash, project, onAgent]);
+  const shits = slash && !onAgent ? rankCommands(cmds, slash.q) : [];
+  const slashOpen = !!slash && !onAgent && !slashDismissed && (shits.length > 0 || cmdsStale);
   useEffect(() => { setSlashPick(0); }, [slash?.q]);
   const slashListRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -852,14 +855,15 @@ export function Composer({
     key: string; label: string; stamp?: string; stampTone?: string; hot?: boolean;
     tip: string; anchor?: "right"; disabled?: boolean; onClick: () => void;
   }[] = [
-    {
+    // GRILL, REVIEW, AUDIT are Claude skills: an agent session gets MAP only.
+    ...(onAgent ? [] : [{
       key: "grill",
       label: "GRILL",
       tip: "GRILL — a relentless interview before any code gets written.\n\nIt asks one question at a time until every open branch of the decision is closed, then you have something worth building from.\n\nType first to grill a specific idea; leave the box empty to grill the conversation so far.\n\nNeeds a grill skill installed — SKILLS ▸ PLUGINS.",
       disabled,
       onClick: () => { const t = text.trim(); setText(""); onSend(t ? `/grill-me ${t}` : "/grill-me", []); },
-    },
-    ...(showPonytail ? [
+    }]),
+    ...(showPonytail && !onAgent ? [
       { key: "review", label: "REVIEW", tip: "REVIEW — /ponytail-review over the working tree: what in this diff can be deleted, reused, or replaced by stdlib.", disabled, onClick: () => onSend("/ponytail-review", []) },
       { key: "audit", label: "AUDIT", tip: "AUDIT — /ponytail-audit over the whole repo: a ranked list of what to delete, simplify, or replace with a native equivalent.", disabled, onClick: () => onSend("/ponytail-audit", []) },
     ] : []),
@@ -931,16 +935,7 @@ export function Composer({
       onPick={pickProfileRow}
       menu={<ProfileRows profiles={profiles} accounts={accounts} value={profile} defaultId={defaultProfile} onPick={pickProfileRow} onDefault={onDefaultProfile} />} />
   );
-  // Which agent runs this session, when it isn't Claude. A label, not a
-  // control: a session keeps the agent it first ran on.
-  const agentChip = agentPick && (
-    <span title={`Runs on ${agentPick.label}, not Claude — its own models and modes. Change it with a new session.`}
-      style={{ ...chip, flex: "none", cursor: "help", color: "var(--warn)", whiteSpace: "nowrap",
-               borderColor: "color-mix(in srgb, var(--warn) 40%, transparent)" }}>
-      ◇ {agentPick.label}
-    </span>
-  );
-  const ponyDrop = (right: boolean) => showPonytail && (
+  const ponyDrop = (right: boolean) => showPonytail && !onAgent && (
     <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} align={right ? "right" : "left"} open={openDrop === "pony"}
       title={PONYTAIL_TIP}
       onToggle={() => setOpenDrop((d) => (d === "pony" ? "" : "pony"))}
@@ -979,7 +974,9 @@ export function Composer({
       {openDrop === "plus" && menuOf([{ key: "attach", label: "ATTACH A FILE", tip: "Attach a file", onClick: () => fileRef.current?.click() }, ...verbs])}
     </div>
   );
-  const ctxBlock = (
+  // Claude's window and Claude's /compact: an agent's meter would divide its
+  // tokens by the wrong ceiling, and /compact would reach it as plain text.
+  const ctxBlock = onAgent ? null : (
     <div className="ctrl-ctx" title={`Context — ${ctxPct}% of ${fmtTokens(ctxMax)}${ctx > 0 ? ` (${ctx.toLocaleString()} tokens on the last request)` : ", not measured yet"}`}>
       <span className="lbl">CTX</span>
       <span className="seg">
@@ -1018,7 +1015,7 @@ export function Composer({
       style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "var(--txd)", display: "flex", flex: "none", marginTop: 3 }}>
       <Paperclip size={14} strokeWidth={1.8} aria-hidden /></button>
   );
-  const designBtn = plugins.design && (
+  const designBtn = plugins.design && !onAgent && (
     <button className="act-alt neutral caps" onClick={design} disabled={disabled || !text.trim()}
       title={"DESIGN — design before code.\n\nSends the box to /design-first: Claude drafts the screens with the design system, screenshots them into the transcript, pushes the draft to the linked Claude Design project, and waits for your approval before implementing.\n\nNeeds text in the box; syncing needs a linked design project (the chat header's project name ▸ ◇ Design system)."}>
       Design <DraftingCompass size={12} strokeWidth={1.8} aria-hidden /></button>
@@ -1145,7 +1142,7 @@ export function Composer({
       ))}
     </div>
   );
-  const settingsChips = (right: boolean) => (<>{profileDrop(right)}{agentPick && agentChip}{ponyDrop(right)}</>);
+  const settingsChips = (right: boolean) => (<>{profileDrop(right)}{ponyDrop(right)}</>);
   const runTrigger = (
     <RunTrigger open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
       model={model} modelOpts={modelOpts} perm={perm} permOpts={permOpts} effort={effort}
@@ -1239,7 +1236,7 @@ export function Composer({
     <MarkdownInput
       ref={taRef}
       value={text}
-      commands={cmds}
+      commands={onAgent ? [] : cmds}
       onChange={(t, c) => { setText(t); setCaret(c); }}
       onCaret={setCaret}
       onKeyDown={(e) => {
@@ -1258,7 +1255,7 @@ export function Composer({
         if (text.includes("\n")) void askConfirm("Clear the draft?", { ok: "Clear", danger: true }).then((yes) => { if (yes) setText(""); });
         else setText("");
       }}
-      placeholder={ask?.placeholder ?? (disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : placeholder ?? "message claude — describe a change, paste an error…")}
+      placeholder={ask?.placeholder ?? (disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : placeholder ?? `message ${onAgent ? agentPick!.label.toLowerCase() : "claude"} — describe a change, paste an error…`)}
     />
   );
   const pfx = <span className="pb-pfx" style={{ color: "var(--purple)", fontSize: "var(--t13)", flex: "none", marginTop: 2 }}>~ ❯</span>;
@@ -1405,7 +1402,6 @@ export function Composer({
             {ctxBlock}
             <div className="ctrl-set">
               {profileDrop(true)}
-              {agentPick && agentChip}
               {ponyDrop(true)}
             </div>
           </div>
@@ -1415,7 +1411,6 @@ export function Composer({
         <div className="ctrl-row">
           <div className="ctrl-set">
             {profileDrop(false)}
-            {agentPick && agentChip}
             {modelOpts.length > 0 && (
               <Drop label="MODEL" code={<Brain size={12} />} value={model} options={modelOpts} fallback={agentPick ? { id: model, label: model || "AGENT DEFAULT" } : undefined}
                 open={openDrop === "model"} dot={own("model")}

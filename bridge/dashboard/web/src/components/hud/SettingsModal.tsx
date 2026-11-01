@@ -185,12 +185,13 @@ const TABS: { key: Tab; label: string; hint: string; about: string; icon: Lucide
   // Who runs a session. One page, four folds — it was tabs (SESSION, MCP,
   // ACCOUNTS, AI) that each held a piece of the same question, and the
   // sidebar's SKILLS panel besides.
-  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · extras · mcp · profile", icon: KeyRound, group: "THE WORK",
+  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · agents · extras · claude mcp", icon: KeyRound, group: "THE WORK",
     about: "Who runs your sessions and with what: the logins and the profiles bound to them, the extras and MCP servers they can reach, and the default profile." },
   // A fold of AI MANAGEMENT and a tab of the project window before; one page now,
   // with any repo's skills a pick away (.mystical/design-drafts/project-split).
-  { key: "skills", label: "SKILLS", hint: "project · machine · catalog", icon: Puzzle, group: "THE WORK",
-    about: "What a session can reach that you didn't type: the SKILL.md files in a project or on this machine, the catalog to install from, and Claude Code plugins." },
+  // Claude's: Kimi Code reads its own (~/.agents/skills, a project's .agents/skills).
+  { key: "skills", label: "CLAUDE SKILLS", hint: "project · machine · catalog", icon: Puzzle, group: "THE WORK",
+    about: "What a Claude session can reach that you didn't type: the SKILL.md files in a project or on this machine, the catalog to install from, and Claude Code plugins. Other agents keep their own — Kimi Code reads ~/.agents/skills and a project's .agents/skills." },
   { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", icon: Waypoints, group: "THE WORK",
     about: "Other systems the bridge does work for. Each one ships with Mystical but stays silent until you install it: no tab, no card, no rows, no worker." },
   { key: "system", label: "SYSTEM", hint: "storage · bridge · updates", icon: Server, group: "THE WORK",
@@ -412,7 +413,7 @@ const SEC_DESC: Record<string, string> = {
   "MODEL-SPENDING EXTRAS": "Features that call a model on their own. Each shows what one use costs.",
   "CLAUDE CODE": "Claude Code's global instructions and settings, read by every run.",
   OPENCODE: "opencode's global instructions and config.",
-  "MCP SERVERS": "Servers a session can call tools from: their health, their login, removing them.",
+  "MCP SERVERS": "Servers a Claude session can call tools from: their health, their login, removing them.",
   "ADD A SERVER": "Connect a new server by URL, or by the command that starts it.",
   "INBOUND HOOKS": "Your hook URLs. Anything POSTed to one is pushed to Telegram.",
   "ADD A HOOK": "Make a new URL for one sender, like GitHub, Sentry or a CI job.",
@@ -3313,7 +3314,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         <span className="aim-hint">Codex, OpenCode, Kimi — over the Agent Client Protocol — and the profiles that run on them. TEST starts one once and remembers the models and modes it offers.</span>
       </div>
       <AgentsSection profileRows={profilesAvailable ? (id) => profileRows({ agent: id }, id, `on ${agentLabel(id)}`) : undefined}
-        onChanged={setAcp} signIn={signIn} />
+        onChanged={(i) => { setAcp(i); onProfilesChanged(); }} signIn={signIn} />
     </>
   );
 
@@ -3384,7 +3385,10 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         hint="the model calls the bridge makes on top of your turns, each with its switch">
         <ExtrasFold />
       </AimFold>
-      <AimFold id="mcp" title="MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec} hint="servers and their logins">
+      {/* Claude's servers (`claude mcp`). Kimi Code reads its own ~/.kimi-code/mcp.json;
+          a project's .mcp.json reaches both. */}
+      <AimFold id="mcp" title="Claude MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec}
+        hint="servers Claude sessions load · Kimi Code keeps its own, a project's .mcp.json reaches both">
         <McpPanel />
       </AimFold>
       <AimFold id="defprofile" title="Default profile" secs={["PROFILES", "RUN DEFAULTS"]} openSec={openSec}

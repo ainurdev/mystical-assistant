@@ -712,6 +712,8 @@ class Handler(BaseHTTPRequestHandler):
         s = store.get_session(sid)
         if not s or s["chat_id"] != chat_id:
             return self._json({"error": "not found"}, 404)
+        if profiles.claude_only_refusal(s, "policy"):
+            return self._json({"error": profiles.claude_only_refusal(s, "policy")}, 409)
         policy = body.get("policy") or None
         if policy is not None and policy not in ladder.POLICIES:
             return self._json({"error": f"policy must be one of {ladder.POLICIES}"}, 400)
@@ -724,6 +726,8 @@ class Handler(BaseHTTPRequestHandler):
         s = store.get_session(sid)
         if not s or s["chat_id"] != chat_id:
             return self._json({"error": "not found"}, 404)
+        if profiles.claude_only_refusal(s, "autocompact"):
+            return self._json({"error": profiles.claude_only_refusal(s, "autocompact")}, 409)
         ok, value = normalize_autocompact(body.get("autocompact"))
         if not ok:
             return self._json({"error": "autocompact must be 'auto' or 100000-1000000"}, 400)

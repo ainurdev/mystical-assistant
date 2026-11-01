@@ -379,3 +379,42 @@ def test_a_separate_login_is_never_authenticated_with_a_key(monkeypatch, tmp_pat
     assert job.status == "error" and "needs a login" in job.error_msg
     sent = [json.loads(line) for line in _log(tmp_path).read_text().splitlines()]
     assert "authenticate" not in [m.get("method") for m in sent]
+
+
+@pytest.mark.parametrize("route,body", [
+    ("tools", {"disabled_tools": ["Bash"]}),
+    ("policy", {"policy": "wait"}),
+    ("autocompact", {"autocompact": "100000"}),
+    ("goal", {"objective": "ship it"}),
+    ("duplicate", {}),
+])
+def test_claude_only_session_actions_are_refused_on_an_agent_session(route, body):
+    """The UI hides them on an agent session; a stale tab still gets a 409."""
+    sid = _session()
+    h, box = _handler(dash)
+    h._post_api(f"/local/sessions/{sid}/{route}", body)
+    assert box["code"] == 409 and "runs on Fake" in box["obj"]["error"]
+    claude = store.create_session(CHAT, "/acp-run", cwd=config.BASE_PATH)["id"]
+    h._post_api(f"/local/sessions/{claude}/{route}", body)
+    assert box["code"] == 200
+
+
+def test_clearing_a_goal_is_fine_anywhere_and_mini_routes_refuse_too():
+    sid = _session()
+    h, box = _handler(dash)
+    h._post_api(f"/local/sessions/{sid}/goal", {"objective": ""})
+    assert box["code"] == 200
+    m, mbox = _handler(mini)
+    m._api_session_policy(CHAT, sid, {"policy": "wait"})
+    assert mbox["code"] == 409
+    m._api_session_autocompact(CHAT, sid, {"autocompact": "auto"})
+    assert mbox["code"] == 409
+
+
+def test_a_goal_never_nudges_an_agent_turn():
+    from bridge import goals
+    sid = _session()
+    goals.create(sid, "never done")     # e.g. set before this guard existed
+    job = runner.AcpJob("j-goal", CHAT, sid)
+    job.runtime, job.status = "acp:fake", "done"
+    assert goals.continue_after_turn(job) is False

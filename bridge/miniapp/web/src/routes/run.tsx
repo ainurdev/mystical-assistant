@@ -63,8 +63,10 @@ function RunPage() {
     turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession, boot,
     runPrompt, setDraft,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
-    hasOlder, olderLoading, loadOlder, renderFrom, transcriptNav,
+    hasOlder, olderLoading, loadOlder, renderFrom, transcriptNav, sessionAgent,
   } = useChat();
+  // Kimi, Codex…: the limit ladder and compaction are Claude's (the bridge refuses them).
+  const onAgent = sessionAgent !== "claude";
   // A cached session has its turns already, so this never fires for one; only a
   // transcript that is genuinely still coming gets a skeleton.
   const slowLoad = useLoadingPhase(loadingSession);
@@ -285,16 +287,16 @@ function RunPage() {
       {/* What this session is for, and what a usage limit does to it. */}
       <div className="flex items-center gap-1.5">
         <GoalPill sessionId={sessionId} />
-        <PolicyChip
+        {!onAgent && <PolicyChip
           sessionId={sessionId}
           stored={sessions.find((s) => s.id === sessionId)?.fallback_policy ?? null}
-        />
-        <ContextChip
+        />}
+        {!onAgent && <ContextChip
           sessionId={sessionId}
           tokens={sessions.find((s) => s.id === sessionId)?.ctx_tokens}
           window={sessions.find((s) => s.id === sessionId)?.ctx_window}
           autocompact={sessions.find((s) => s.id === sessionId)?.autocompact}
-        />
+        />}
       </div>
 
       <RunMonitor />

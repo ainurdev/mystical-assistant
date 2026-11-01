@@ -223,6 +223,32 @@ def add_default(slot: int) -> "dict | None":
     return None
 
 
+def add_agent_default(agent: str, acct: str = "") -> "dict | None":
+    """add_default for an agent account (bridge/acp_agents.py): a new account, or
+    the machine login's first sign-in or TEST, gets one profile that runs on it,
+    so the composer's PROFILE picker offers it without a trip to the editor.
+    Only when no profile already runs on that agent and account (a deleted one
+    comes back only by hand). Never raises."""
+    from bridge import acp_agents               # lazy: acp_agents is leaf-level, keep it so
+    p = acp_agents.preset(agent)
+    if p is None:
+        return None
+    acct = acct or ""
+    if any(r.get("agent") == agent and (r.get("account") or "") == acct for r in _load()):
+        return None
+    a = acp_agents.account(acct) if acct else None
+    if acct and a is None:
+        return None
+    label = p["label"] if a is None else f"{p['label']} · {a['label']}"
+    for name in (label[:32], f"{p['label']} {acct}"[:32]):
+        try:
+            return create({"name": name, "agent": agent, "account": acct})
+        except (ValueError, OSError) as e:
+            err = e
+    print(f"[profiles] no default profile for {agent} {acct or 'machine login'}: {err}", file=sys.stderr)
+    return None
+
+
 def seed_defaults() -> None:
     """At boot, before anyone has touched profiles.json: one profile per usable
     Claude login, so the pickers offer the accounts without a trip to the editor.
@@ -457,6 +483,28 @@ def api_write(body: dict) -> "tuple[dict, int]":
     except ValueError as e:
         return {"error": str(e)}, 400
     return {"error": "action must be create, update, delete or default"}, 400
+
+
+# What only a Claude session can use, and why, for the routes that refuse the
+# rest (both servers). The UI hides them on an agent session; this is the
+# backstop for a stale tab or a Mini App that doesn't know yet.
+CLAUDE_ONLY = {
+    "tools": "Tool and MCP switches are Claude's (--disallowedTools)",
+    "policy": "The usage-limit fallback is Claude's account ladder",
+    "autocompact": "Compaction is Claude's",
+    "goal": "Goals need the goals MCP, which only Claude sessions load",
+    "duplicate": "A copy forks Claude's transcript; an agent's would start with no history",
+}
+
+
+def claude_only_refusal(session: "dict | None", what: str) -> "str | None":
+    """None on a Claude session; else why `what` (a CLAUDE_ONLY key) isn't offered."""
+    agent = agent_for(session)
+    if agent == CLAUDE:
+        return None
+    from bridge import acp_agents                # lazy, as add_agent_default
+    label = (acp_agents.preset(agent) or {}).get("label", agent)
+    return f"{CLAUDE_ONLY[what]}; this session runs on {label}."
 
 
 def agent_for(session: "dict | None", profile_id=None, project=None) -> str:

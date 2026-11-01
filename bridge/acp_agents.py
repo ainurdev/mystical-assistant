@@ -399,6 +399,11 @@ def options_for(agent: str, acct_id) -> dict:
         return _options.get(_key(agent, acct_id)) or {"model": [], "mode": [], "effort": []}
 
 
+def _default_profile(agent: str, acct) -> None:
+    from bridge import profiles   # local: profiles imports this module lazily too
+    profiles.add_agent_default(agent, acct or "")
+
+
 def api_info() -> dict:
     """GET /local/agents: what the AGENTS section and the profile editor show."""
     with _lock:
@@ -413,6 +418,7 @@ def api_account(body: dict) -> "tuple[dict, int]":
     try:
         if action == "create":
             a = add_account(body.get("agent"), body.get("label"), body.get("kind"), body.get("key"))
+            _default_profile(a["agent"], a["id"])
             # A separate login is empty until its CLI signs in: say how, once.
             hint = {"login_hint": login_hint(preset(a["agent"]), a["id"])} if a["kind"] == "home" else {}
             return {"ok": True, "account": a, **hint}, 200
@@ -442,6 +448,7 @@ def api_test(body: dict) -> "tuple[dict, int]":
     if res.get("ok"):
         remember_options(p["id"], acct, res.get("options"), res.get("modes"), res.get("models"),
                          fresh=True)
+        _default_profile(p["id"], acct)       # the machine login's first working TEST/LOG IN
         return {"ok": True, "options": options_for(p["id"], acct)}, 200
     if res.get("needs_login"):
         note_signed_out(p["id"], acct)

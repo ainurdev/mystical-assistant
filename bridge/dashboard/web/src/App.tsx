@@ -2489,6 +2489,9 @@ export function App() {
       // A teammate's device run or a session a teammate sent is read only:
       // nothing resumes it, and the bridge refuses to retitle it.
       const readOnly = isReadOnly(s?.origin);
+      // Kimi, Codex…: Claude's tool switches, limit ladder, compaction and
+      // fork-based duplicate don't reach them (the bridge refuses them too).
+      const onAgent = !!s?.agent && s.agent !== "claude";
       if (!readOnly) items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
       items.push(lc === null
         ? { icon: "⊘", label: "Abandon session", danger: true,
@@ -2510,44 +2513,46 @@ export function App() {
             .map((t) => ({ icon: t.online ? "●" : "○", label: t.name, hint: t.online ? "on now" : "away · it waits for them",
               onClick: () => setSendWhat({ what: { kind: "session", session: s.id, title: s.title || "session" }, to: t.id }) })) });
       }
-      items.push({ divider: true });
-      const nOff = s?.disabled_tools?.length ?? 0;
-      items.push({ icon: "⚒", label: "Tools & MCP…",
-        hint: nOff ? `${nOff} switched off` : "all on",
-        onClick: () => setToolsFor(ctxMenu.id) });
-      // Usage-limit fallback policy for this session; the 5s session poll picks
-      // up the new value, so the ● marker is fresh next open.
-      const pol = s?.fallback_policy ?? "ask";
-      const setPol = (v: string) => { void api.setPolicy(ctxMenu.id, v).then(() => void loadSessions()); };
-      items.push({ icon: "◈", label: `On limit: ${pol === "auto" ? "auto-switch" : pol}`, children: [
-        { icon: pol === "ask" ? "●" : "○", label: "Ask",
-          hint: "offer the other-account choices", onClick: () => setPol("ask") },
-        { icon: pol === "auto" ? "●" : "○", label: "Auto-switch",
-          hint: "take the best fallback silently", onClick: () => setPol("auto") },
-        { icon: pol === "wait" ? "●" : "○", label: "Wait",
-          hint: "only wait for the reset", onClick: () => setPol("wait") },
-      ] });
-      // How full this session's window is, and when claude compacts it. The
-      // reading is written at the end of each turn, so it's the fill the next
-      // turn resumes into.
-      const ctxPct = s?.ctx_tokens && s?.ctx_window
-        ? Math.round((s.ctx_tokens / s.ctx_window) * 100) : null;
-      const at = s?.autocompact ?? "auto";
-      const setAt = (v: string) => {
-        void api.setAutocompact(ctxMenu.id, v).then(() => void loadSessions());
-      };
-      items.push({ icon: "◫", label: `Context: ${ctxPct === null ? "not measured yet" : `${ctxPct}% full`}`, children: [
-        { icon: "◫", label: s?.ctx_tokens ? `${s.ctx_tokens.toLocaleString()} tokens` : "no reading yet",
-          hint: s?.ctx_tokens ? "on the last request" : "runs a turn to measure",
-          onClick: () => { /* a reading, not an action */ } },
-        { divider: true },
-        { icon: at === "auto" ? "●" : "○", label: "Compact: auto",
-          hint: "claude decides when", onClick: () => setAt("auto") },
-        { icon: at === "100000" ? "●" : "○", label: "Compact at 100k",
-          hint: "earlier, shorter context", onClick: () => setAt("100000") },
-        { icon: at === "150000" ? "●" : "○", label: "Compact at 150k",
-          hint: "later, more room before it summarises", onClick: () => setAt("150000") },
-      ] });
+      if (!onAgent) {
+        items.push({ divider: true });
+        const nOff = s?.disabled_tools?.length ?? 0;
+        items.push({ icon: "⚒", label: "Tools & MCP…",
+          hint: nOff ? `${nOff} switched off` : "all on",
+          onClick: () => setToolsFor(ctxMenu.id) });
+        // Usage-limit fallback policy for this session; the 5s session poll picks
+        // up the new value, so the ● marker is fresh next open.
+        const pol = s?.fallback_policy ?? "ask";
+        const setPol = (v: string) => { void api.setPolicy(ctxMenu.id, v).then(() => void loadSessions()); };
+        items.push({ icon: "◈", label: `On limit: ${pol === "auto" ? "auto-switch" : pol}`, children: [
+          { icon: pol === "ask" ? "●" : "○", label: "Ask",
+            hint: "offer the other-account choices", onClick: () => setPol("ask") },
+          { icon: pol === "auto" ? "●" : "○", label: "Auto-switch",
+            hint: "take the best fallback silently", onClick: () => setPol("auto") },
+          { icon: pol === "wait" ? "●" : "○", label: "Wait",
+            hint: "only wait for the reset", onClick: () => setPol("wait") },
+        ] });
+        // How full this session's window is, and when claude compacts it. The
+        // reading is written at the end of each turn, so it's the fill the next
+        // turn resumes into.
+        const ctxPct = s?.ctx_tokens && s?.ctx_window
+          ? Math.round((s.ctx_tokens / s.ctx_window) * 100) : null;
+        const at = s?.autocompact ?? "auto";
+        const setAt = (v: string) => {
+          void api.setAutocompact(ctxMenu.id, v).then(() => void loadSessions());
+        };
+        items.push({ icon: "◫", label: `Context: ${ctxPct === null ? "not measured yet" : `${ctxPct}% full`}`, children: [
+          { icon: "◫", label: s?.ctx_tokens ? `${s.ctx_tokens.toLocaleString()} tokens` : "no reading yet",
+            hint: s?.ctx_tokens ? "on the last request" : "runs a turn to measure",
+            onClick: () => { /* a reading, not an action */ } },
+          { divider: true },
+          { icon: at === "auto" ? "●" : "○", label: "Compact: auto",
+            hint: "claude decides when", onClick: () => setAt("auto") },
+          { icon: at === "100000" ? "●" : "○", label: "Compact at 100k",
+            hint: "earlier, shorter context", onClick: () => setAt("100000") },
+          { icon: at === "150000" ? "●" : "○", label: "Compact at 150k",
+            hint: "later, more room before it summarises", onClick: () => setAt("150000") },
+        ] });
+      }
       items.push({ divider: true });
       // The once-a-month rows. Flat inside one section — a submenu can't open
       // its own submenu, so share and relocate live here as plain rows.
@@ -2560,9 +2565,10 @@ export function App() {
           ...(ai.title ? [{ icon: "↻", label: "Regenerate title",
             hint: "let the model name it from the whole session",
             onClick: () => void regenerateTitle(ctxMenu.id) }] : []),
-          { icon: "⧉", label: "Duplicate session",
+          // A copy forks Claude's transcript; an agent's would start with no history.
+          ...(onAgent ? [] : [{ icon: "⧉", label: "Duplicate session",
             hint: "copy the transcript into a new one",
-            onClick: () => void duplicateSession(ctxMenu.id) },
+            onClick: () => void duplicateSession(ctxMenu.id) }]),
           { divider: true },
           { icon: "⇗", label: "Share read-only link", hint: "expires in 7 days",
             onClick: () => void shareSession(ctxMenu.id) },
@@ -3048,7 +3054,7 @@ export function App() {
                       fileSink={composerFiles}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"
-                        : openWait ? "message claude — sending ends the wait…" : undefined}
+                        : openWait ? `message ${agentPick ? agentPick.label.toLowerCase() : "claude"} — sending ends the wait…` : undefined}
                     />
                     )}
                   </>

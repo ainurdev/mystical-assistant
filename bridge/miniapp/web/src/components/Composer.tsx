@@ -212,9 +212,10 @@ export function Composer() {
   useEffect(() => { if (!slashOn) setSlashDismissed(false); }, [slashOn]);
   // No retries: a bridge still running pre-restart code 404s this, and the
   // list should say so now rather than after three backoffs.
-  const cmdsQ = useQuery({ queryKey: ["commands"], queryFn: () => api.getCommands(), enabled: slashOn, retry: false });
-  const hits = slashQ === null ? [] : rankCommands(cmdsQ.data?.commands ?? [], slashQ);
-  const slashOpen = slashOn && !slashDismissed && (hits.length > 0 || cmdsQ.isError);
+  // Claude's commands and skills: an agent session's / runs none of them.
+  const cmdsQ = useQuery({ queryKey: ["commands"], queryFn: () => api.getCommands(), enabled: slashOn && !onAgent, retry: false });
+  const hits = slashQ === null || onAgent ? [] : rankCommands(cmdsQ.data?.commands ?? [], slashQ);
+  const slashOpen = slashOn && !onAgent && !slashDismissed && (hits.length > 0 || cmdsQ.isError);
   function takeSlash(name: string) {
     setDraft(`/${name} `);
     taRef.current?.focus();
@@ -427,7 +428,7 @@ export function Composer() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        <Button
+        {!onAgent && <Button
           type="button"
           variant="ghost"
           size="icon"
@@ -438,7 +439,7 @@ export function Composer() {
           aria-label="Compact conversation"
         >
           <Minimize2 size={16} aria-hidden />
-        </Button>
+        </Button>}
 
         <span className="flex-1" />
 
