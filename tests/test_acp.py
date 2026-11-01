@@ -159,6 +159,12 @@ def test_unknown_agent_requests_get_method_not_found(tmp_path):
 def test_auth_required_names_the_login(tmp_path):
     job, _ = _run(tmp_path, {"new_error": {"code": -32000, "message": "Authentication required"}})
     assert job.status == "error" and "run fake login" in job.error_msg
+    assert job.needs_login                       # the runner parks it for a sign-in
+    other, _ = _run(tmp_path, {"prompt_error": {"code": 429, "message": "Quota exhausted"}})
+    assert not other.needs_login
+    probe = acp.probe(argv=[sys.executable, FAKE], label="Fake", login_hint="x",
+                      env={**os.environ, "FAKE_ACP": json.dumps({"new_error": {"code": -32000, "message": "no"}})})
+    assert probe["ok"] is False and probe["needs_login"] is True
 
 
 def test_junk_on_stdout_is_skipped(tmp_path):

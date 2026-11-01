@@ -2474,8 +2474,12 @@ function copyText(text: string) {
  *  not, the accounts each runs under, and a TEST per account. A pasted key goes
  *  to the bridge in a POST body and is dropped here once saved: the list only
  *  ever holds the masked form the bridge sends back. */
-function AgentsSection({ profileRows, onChanged }: {
+function AgentsSection({ profileRows, onChanged, signIn }: {
   profileRows?: (agentId: string) => ReactNode;
+  /** Opened to sign an agent in (a SIGNED OUT turn's button, its notice):
+   *  that agent's card scrolls in and starts LOG IN on the account named, else
+   *  on the one last seen signed out, else the machine login. */
+  signIn?: { agent: string; account?: string } | null;
   /** An account, login or TEST changed what the agents offer: the profile
    *  editor keeps its own copy of this list and must re-read it. */
   onChanged?: (info: AcpAgentsInfo) => void;
@@ -2507,7 +2511,8 @@ function AgentsSection({ profileRows, onChanged }: {
       {info.presets.map((p) => (
         <div key={p.id} className="aim-card">
           <div className="aim-agent">
-            <AgentRow p={p} first accounts={info.accounts.filter((a) => a.agent === p.id)} onChanged={() => void load()} />
+            <AgentRow p={p} first accounts={info.accounts.filter((a) => a.agent === p.id)} onChanged={() => void load()}
+              options={info.options} signIn={signIn?.agent === p.id ? signIn : null} />
           </div>
           {profileRows?.(p.id)}
         </div>
@@ -2519,12 +2524,17 @@ function AgentsSection({ profileRows, onChanged }: {
 
 /** One preset: install state, its accounts with TEST and ✕, and the forms that
  *  add a key or a separate login. */
-function AgentRow({ p, first, accounts, onChanged }: {
+function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
   p: AcpPreset;
   first: boolean;
   accounts: AcpAccount[];
   onChanged: () => void;
+  options: AcpAgentsInfo["options"];
+  signIn: { agent: string; account?: string } | null;
 }) {
+  const box = useRef<HTMLDivElement>(null);
+  // Last seen by a TEST or a turn: true opened a session, false was told to log in.
+  const signedIn = (acct: string) => options[`${p.id}|${acct}`]?.signed_in;
   const [adding, setAdding] = useState<"" | "key" | "home">("");
   const [label, setLabel] = useState("");
   const [key, setKey] = useState("");
@@ -2562,6 +2572,16 @@ function AgentRow({ p, first, accounts, onChanged }: {
       setLogins((m) => ({ ...m, [acct]: { state: "error", error: (e as Error).message } }));
     }
   }
+  // Sent here to sign in: bring the card in and start that account's LOG IN, once.
+  useEffect(() => {
+    if (!signIn || !p.can_login) return;
+    box.current?.scrollIntoView({ block: "center" });
+    const homes = ["", ...accounts.filter((a) => a.kind === "home").map((a) => a.id)];
+    const acct = signIn.account !== undefined && homes.includes(signIn.account) ? signIn.account
+      : homes.find((a) => signedIn(a) === false) ?? "";
+    if (!live(logins[acct])) void login(acct);
+  }, [signIn]); // eslint-disable-line react-hooks/exhaustive-deps
+
   async function cancelLogin(acct: string) {
     try {
       const r = await api.acpLogin("cancel", p.id, acct);
@@ -2650,7 +2670,9 @@ function AgentRow({ p, first, accounts, onChanged }: {
           {l!.state === "testing" ? <><LoaderCircle size={11} aria-hidden style={{ animation: "introspin 1.4s linear infinite" }} /> TESTING…</> : "CANCEL LOGIN"}
         </MiniBtn>
       : <MiniBtn disabled={!p.installed} onClick={() => void login(acct)}
-          title={p.installed ? `Sign in with ${p.label}'s own device-code login` : "Install it first"}>LOG IN</MiniBtn>;
+          title={p.installed ? `Sign in with ${p.label}'s own device-code login` : "Install it first"}>
+          {signedIn(acct) ? "RE-LOGIN" : "LOG IN"}
+        </MiniBtn>;
   };
   const loginPanel = (acct: string) => {
     const l = logins[acct];
@@ -2675,6 +2697,12 @@ function AgentRow({ p, first, accounts, onChanged }: {
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
         <span style={{ fontSize: "var(--t10)", color: "var(--tx)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
         <span style={{ flex: 1 }} />
+        {signedIn(acct) !== undefined && !live(logins[acct]) && (
+          <span style={{ fontSize: "var(--t10)", letterSpacing: 1, color: signedIn(acct) ? "var(--ok)" : "var(--warn)" }}
+            title="As the last TEST or turn on this account found it">
+            {signedIn(acct) ? "SIGNED IN" : "SIGNED OUT"}
+          </span>
+        )}
         {result(acct)}
         {canLogin(acct) && loginBtn(acct)}
         {testBtn(acct)}
@@ -2691,7 +2719,7 @@ function AgentRow({ p, first, accounts, onChanged }: {
   );
 
   return (
-    <div style={{ marginTop: first ? 0 : 14, paddingTop: first ? 0 : 12, borderTop: first ? undefined : RULE }}>
+    <div ref={box} style={{ marginTop: first ? 0 : 14, paddingTop: first ? 0 : 12, borderTop: first ? undefined : RULE }}>
       <div style={KV}>
         <span style={{ fontSize: "var(--t11)", color: p.installed ? "var(--txb)" : "var(--txl)" }}>{p.label.toUpperCase()}</span>
         <span style={{ fontSize: "var(--t10)", letterSpacing: 1, color: p.installed ? "var(--ok)" : "var(--txd)" }}>
@@ -3108,6 +3136,12 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   // has expired) or on a blank profile (its + NEW PROFILE): read once.
   const [focus] = useState(() => takeSettingsFocus());
   const focusSlot = Number(focus) || null;
+  // "agent:<id>[:<account>]": sent here to sign an agent account in.
+  const [signIn] = useState(() => {
+    if (!focus?.startsWith("agent:")) return null;
+    const [, agent, account] = focus.split(":");
+    return { agent, account };
+  });
   const focusRow = useRef<HTMLDivElement>(null);
   useEffect(() => { focusRow.current?.scrollIntoView({ block: "center" }); }, [acc.rows === null]);
 
@@ -3279,7 +3313,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         <span className="aim-hint">Codex, OpenCode, Kimi — over the Agent Client Protocol — and the profiles that run on them. TEST starts one once and remembers the models and modes it offers.</span>
       </div>
       <AgentsSection profileRows={profilesAvailable ? (id) => profileRows({ agent: id }, id, `on ${agentLabel(id)}`) : undefined}
-        onChanged={setAcp} />
+        onChanged={setAcp} signIn={signIn} />
     </>
   );
 
@@ -3341,7 +3375,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
 
   return (
     <div className="aim">
-      <AimFold id="accounts" title="Accounts" secs={["ACCOUNTS", "ON USAGE LIMIT", "CLAUDE LOGINS", "AGENTS"]} openSec={openSec}
+      <AimFold id="accounts" title="Accounts" secs={["ACCOUNTS", "ON USAGE LIMIT", "CLAUDE LOGINS", "AGENTS"]} openSec={signIn ? "AGENTS" : openSec}
         count={acc.rows ? `${acc.rows.length} login${acc.rows.length === 1 ? "" : "s"} · ${list.length} profile${list.length === 1 ? "" : "s"}` : null}
         right={policyPick}>
         {accountsBody}

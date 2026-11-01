@@ -601,6 +601,9 @@ def run_turn(job, *, argv, env, cwd, label, login_hint, text, agent_session_id, 
         _finish(job, turn, stop)
     except Exception as e:  # noqa: BLE001 - never raises
         turn.flush()
+        # The account has no usable login: the runner parks the turn for the
+        # sign-in to resume (runner.resume_after_agent_login), as Claude's does.
+        job.needs_login = isinstance(e, AcpError) and e.code == -32000
         if job.interrupted:                 # Stop's kill, or an agent that errors on cancel
             _stopped(job)
         elif isinstance(e, AcpClosed) and job.timed_out:
@@ -688,6 +691,7 @@ def probe(*, argv, env, label, login_hint, timeout=120, auth_method=None) -> dic
                 "agent": init.get("agentInfo")}
     except Exception as e:  # noqa: BLE001 - a TEST reports, never raises
         return {"ok": False, "error": _why(e, conn, label, login_hint),
+                "needs_login": isinstance(e, AcpError) and e.code == -32000,
                 "options": [], "modes": None}
     finally:
         if conn:

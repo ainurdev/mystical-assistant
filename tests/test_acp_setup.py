@@ -62,6 +62,9 @@ def _until(cond, t=10):
 
 
 def test_a_login_relays_url_and_code_then_tests_the_account(isolated, tmp_path, monkeypatch):
+    from bridge import runner
+    resumed = []
+    monkeypatch.setattr(runner, "resume_after_agent_login", lambda agent, acct: resumed.append((agent, acct)))
     go = tmp_path / "go"
     monkeypatch.setenv("FAKE_GO", str(go))
     a = acp_agents.add_account("kimi", "work", "home")
@@ -77,6 +80,7 @@ def test_a_login_relays_url_and_code_then_tests_the_account(isolated, tmp_path, 
     assert _until(lambda: acp_setup.status("kimi", a["id"])["state"] == "ok")
     assert acp_setup.status("kimi", a["id"])["models"] == 2
     assert isolated == [{"agent": "kimi", "account": a["id"]}]
+    assert _until(lambda: resumed == [("kimi", a["id"])])     # the turn its login stopped
     env = json.loads((tmp_path / "env.json").read_text())
     assert env["home"] == acp_agents.home_dir(a["id"])
     # No browser pops up on this machine: xdg-open is the no-op stub.

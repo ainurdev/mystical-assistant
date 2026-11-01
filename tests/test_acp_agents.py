@@ -157,6 +157,14 @@ def test_a_test_records_the_agents_defaults_and_a_turn_keeps_them():
     assert acp_agents.options_for("kimi", "")["defaults"]["model"] == "k3.1-pro"
 
 
+def test_signed_in_follows_what_the_last_test_or_turn_saw():
+    assert "signed_in" not in acp_agents.options_for("kimi", "a_1")      # never asked
+    acp_agents.note_signed_out("kimi", "a_1")
+    assert acp_agents.options_for("kimi", "a_1")["signed_in"] is False
+    acp_agents.remember_options("kimi", "a_1", [], None)
+    assert acp_agents.options_for("kimi", "a_1")["signed_in"] is True
+
+
 def test_the_unstable_models_field_fills_the_model_list():
     got = acp_agents._shape([], None, {"availableModels": [{"modelId": "gpt-x", "name": "GPT X"}]})
     assert got["model"] == [{"value": "gpt-x", "name": "GPT X"}]

@@ -129,6 +129,7 @@ export interface TurnOutcome {
   code: string;
   label: string;
   detail: string;
+  agent?: string; // code "agent_login": the agent whose LOG IN fixes it
 }
 
 export interface StoreTurn {
@@ -1211,6 +1212,8 @@ export interface AcpOptions {
   model: AcpOption[]; mode: AcpOption[]; effort: AcpOption[];
   /** What a fresh session runs with, per knob, as a TEST last saw it. */
   defaults?: { model?: string; mode?: string; effort?: string };
+  /** The login as the last TEST or turn found it; absent = never asked. */
+  signed_in?: boolean;
 }
 /** A sign-in the bridge runs through the agent's own CLI: it relays the URL and
  *  code the CLI prints, the user approves anywhere, then a TEST runs. */

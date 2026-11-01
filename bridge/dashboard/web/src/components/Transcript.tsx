@@ -110,6 +110,18 @@ function OutcomeBadge({ outcome }: { outcome: TurnOutcome }) {
           OPEN SETTINGS ▸ ACCOUNTS
         </button>
       )}
+      {/* An agent's login is gone: Settings opens on that agent and starts its
+       *  sign-in; the turn resumes once it lands (runner.resume_after_agent_login). */}
+      {outcome.code === "agent_login" && outcome.agent && (
+        <button
+          type="button"
+          onClick={() => openSettings("aimgmt", `agent:${outcome.agent}`)}
+          className="mt-0.5 self-start border px-1.5 py-px text-[length:var(--t95)] tracking-[1px] hover:bg-accent"
+          style={{ color: "var(--acc)", borderColor: "color-mix(in srgb, currentColor 40%, transparent)" }}
+        >
+          SIGN IN ▸
+        </button>
+      )}
       {outcome.code === "outdated" && (
         <button
           type="button"

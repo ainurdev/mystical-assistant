@@ -220,7 +220,11 @@ function NeedActions({ n, done }: { n: Need; done: () => void }) {
       {buttons.map((b, i) => (
         <button key={b.action} className={`ntf-btn${i === 0 ? " ask" : b.action === "deny" ? " no" : ""}`} onClick={() => answer(b.action)}>{b.title}</button>
       ))}
-      {n.kind === "login" && <button className="ntf-btn ask" onClick={() => { openSettings("aimgmt", String(n.meta.slot ?? "") || undefined); done(); }}>Sign in ›</button>}
+      {n.kind === "login" && <button className="ntf-btn ask" onClick={() => {
+        // An agent account's notice (runner._agent_auth_stop) names it; a Claude one its slot.
+        openSettings("aimgmt", n.meta.agent ? `agent:${str(n.meta.agent)}:${str(n.meta.account)}` : String(n.meta.slot ?? "") || undefined);
+        done();
+      }}>Sign in ›</button>}
       {n.kind === "limit_choice" && (Array.isArray(n.meta.rungs) ? n.meta.rungs as { slot: number; label: string }[] : []).map((r) => (
         <button key={r.slot} className="ntf-btn ask" onClick={() => limit(r.slot)}>Switch to {r.label}</button>
       ))}

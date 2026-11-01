@@ -70,6 +70,9 @@ _SAYS = {
     "restarted": ("BRIDGE RESTARTED",
                   "The bridge restarted and took its Claude child with it. Not "
                   "a crash, and not an out-of-memory kill."),
+    "agent_login": ("SIGNED OUT",
+                    "This agent account has no working login. Sign in and the turn "
+                    "picks up where it left off."),
     "auth": ("COULD NOT START",
              "Claude never got going — the binary or the login. Check ACCOUNTS."),
     "limit": ("USAGE LIMIT",
@@ -149,6 +152,10 @@ def outcome(turn: dict, signals: dict) -> "dict | None":
             # hung" (runner.py:1901) and a blocking one-shot says "Timed out
             # after N min" (runner.py:449).
             code = "timeout"
+        elif (turn.get("runtime") or "").startswith("acp:") and " needs a login." in msg:
+            # acp._why's line for ACP -32000: the agent CLI's own login is gone,
+            # which LOG IN on that agent fixes (not Claude's ACCOUNTS).
+            code = "agent_login"
         elif limits.is_auth_error(msg) or "not found on PATH" in msg:
             code = "auth"
         elif limits.is_limit_error(msg):
@@ -186,6 +193,9 @@ def outcome(turn: dict, signals: dict) -> "dict | None":
     label, detail = _SAYS[code]
     # A message nobody else renders beats the canned line — it is the most
     # specific thing known about this failure. Trimmed: some are a stack trace.
-    if msg.strip() and not on_screen:
+    if msg.strip() and not on_screen and code != "agent_login":
         detail = msg.strip()[:400]
-    return {"code": code, "label": label, "detail": detail}
+    out = {"code": code, "label": label, "detail": detail}
+    if code == "agent_login":
+        out["agent"] = turn["runtime"].split(":", 1)[1]   # whose LOG IN the button opens
+    return out

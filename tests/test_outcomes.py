@@ -185,3 +185,13 @@ def test_every_error_turn_gets_a_label():
                 _sig(stopped=True), _sig(errors=[""], has_result=True)):
         o = outcomes.outcome(_turn(), sig)
         assert o and o["code"] and o["label"] and o["detail"]
+
+
+def test_an_agent_turn_its_missing_login_stopped_reads_signed_out():
+    msg = ("Kimi Code needs a login. Press LOG IN on it under Settings ▸ Accounts ▸ Agents, "
+           "or run once in a terminal: npx -y @moonshot-ai/kimi-code@2.4.1 login")
+    o = outcomes.outcome({**_turn(), "runtime": "acp:kimi"}, _sig(errors=[msg]))
+    assert (o["code"], o["label"], o["agent"]) == ("agent_login", "SIGNED OUT", "kimi")
+    assert "Sign in" in o["detail"]
+    # The same words on a Claude turn are not an agent's login.
+    assert outcomes.outcome(_turn(), _sig(errors=[msg]))["code"] != "agent_login"

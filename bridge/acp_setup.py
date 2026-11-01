@@ -11,8 +11,9 @@ fetch_state() is what the AGENTS section shows while it runs or after it failed.
 Login. A preset with a `login_cmd` signs in through its own CLI's device-code
 flow (rule 2: the bridge never reads the token, the CLI writes it into the
 account's home). The flow prints a URL and a code and waits; we relay those two
-to the page, the user approves on any device, the CLI exits 0, and a TEST runs
-so the pickers get the account's models. The CLI also tries to open a browser
+to the page, the user approves on any device, the CLI exits 0, a TEST runs so
+the pickers get the account's models, and a turn that account's missing login
+stopped resumes (runner.resume_after_agent_login). The CLI also tries to open a browser
 on this machine; the child's PATH starts with NOOPEN, whose `xdg-open` and
 `open` do nothing, because the user is usually on a phone and a window popping
 up on the desk is wrong (BROWSER=true covers xdg-open's own fallbacks).
@@ -162,6 +163,13 @@ class _Login:
                 self.state, self.models = "ok", len((res.get("options") or {}).get("model") or [])
             else:
                 self.state, self.error = "error", f"Signed in, but the test failed: {res.get('error')}"
+        if res.get("ok"):
+            # The turn this account's missing login stopped picks up where it was.
+            from bridge import runner   # local: runner imports half the bridge
+            try:
+                runner.resume_after_agent_login(self.p["id"], self.acct)
+            except Exception as e:  # noqa: BLE001 - a sign-in never fails on its resume
+                print(f"[acp] resume after {self.p['label']} login: {e!r}")
 
     def view(self) -> dict:
         out = {"state": self.state, "url": self.url, "code": self.code}

@@ -174,6 +174,35 @@ def test_a_turn_the_restart_killed_is_left_for_recovery_without_an_error(monkeyp
     store.finish_turn(job.id, "error", None, None)        # no orphan for the recovery tests
 
 
+def test_a_turn_with_no_login_is_parked_and_resumes_after_the_sign_in(monkeypatch, tmp_path):
+    """Claude's dead-login flow, for an agent: SIGNED OUT on the account, a
+    login notice naming it, then LOG IN's success resumes the turn."""
+    sid = _session()
+    told = []
+    monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None, **kw: told.append(kw))
+    monkeypatch.setattr(config, "AUTO_RESUME", True)
+    monkeypatch.setattr(runner, "_agent_auth_dead", {})
+    job = _start(monkeypatch, sid, {"auth_required": True})
+    assert job.exited.wait(10)
+    assert job.status == "error" and job.needs_login and "needs a login" in job.error_msg
+    assert _wait(lambda: told)                    # parked just after exited is set
+    assert acp_agents.options_for("fake", "")["signed_in"] is False
+    assert told[0]["kind"] == "login" and told[0]["meta"] == {"agent": "fake", "account": ""}
+    runner._drain_journal()
+    assert store.transcript(sid)["turns"][-1]["outcome"]["code"] == "agent_login"
+    # Signed in now (the fake answers once its script stops asking for auth).
+    monkeypatch.setitem(acp_agents.PRESETS[0]["env"], "FAKE_ACP", json.dumps({"turn": [CHUNK]}))
+    started = []
+    real = runner.start_streaming_job
+    monkeypatch.setattr(runner, "start_streaming_job", lambda *a, **k: started.append(real(*a, **k)) or started[-1])
+    assert runner.resume_after_agent_login("fake", "")
+    assert started[0].exited.wait(10) and started[0].status == "done"
+    prompt = next(json.loads(l) for l in (tmp_path / "log.jsonl").read_text().splitlines()
+                  if json.loads(l).get("method") == "session/prompt")
+    assert runner.AGENT_AUTH_NUDGE in prompt["params"]["prompt"][0]["text"]
+    assert not runner.resume_after_agent_login("fake", "")             # once
+
+
 def test_boot_recovery_resumes_a_restart_killed_agent_turn_on_its_session(monkeypatch, tmp_path):
     """The whole restart: the kill leaves the turn running, the next boot's
     recovery claims it and runs the nudge on the same agent session."""

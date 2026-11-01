@@ -1085,6 +1085,7 @@ class AcpJob(Job):
         self.agent_session_id = None     # the agent's own session id, once it's open
         self.conn = None                 # acp.Conn
         self.turn = None                 # acp.Turn
+        self.needs_login = False         # ended on ACP's auth-required: parked for a sign-in
 
     def _write_stdin(self, obj):         # no stream-json stdin here
         return False
@@ -1666,8 +1667,11 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                        effort: str | None) -> bool:
     """Resume a session whose turn died without the user behind it. Returns True
     when a resume run was started (the caller then skips the error notification).
-    Never an agent turn's (acp:): no parking, no resume for those (spec non-goal)."""
+    Never an agent turn's (acp:): no parking, no resume for those (spec non-goal),
+    except the one a missing login ended, which waits for its sign-in."""
     if (job.runtime or "").startswith("acp:"):
+        if getattr(job, "needs_login", False) and not job.interrupted:
+            _agent_auth_stop(job, cwd, model, effort)
         return False
     sid = job.store_session_id
     if not sid:
@@ -1823,6 +1827,56 @@ def _auth_stop(chat_id: int | None, sid: str | None, slot: int | None,
         _notify(chat_id, text, _auth_kb(chat_id, slot), kind="login", sid=sid,
                 body=f"Claude's login on account {slot} expired. "
                      "Sign in again and it picks up where it left off.", meta={"slot": slot})
+
+
+# The same for an agent account (Kimi, Codex, …): its CLI said the login is gone
+# (ACP -32000). Keyed by (agent, account); acp_setup's LOG IN resumes it once
+# the CLI's own sign-in lands and its TEST passes.
+AGENT_AUTH_NUDGE = (
+    "⏮ Your previous turn couldn't start because the login had expired — not "
+    "by the user. It is signed in again. Review your recent transcript and "
+    "continue exactly where you left off; finish the task you were doing. "
+    "Don't start over.")
+
+_agent_auth_dead: dict[tuple, dict] = {}   # (agent, account) -> the turn its login stopped
+
+
+def _agent_auth_stop(job: "AcpJob", cwd, model, effort) -> None:
+    agent = job.runtime.split(":", 1)[1]
+    acct = job.acp_account or ""
+    acp_agents.note_signed_out(agent, acct)
+    p = acp_agents.preset(agent) or {"label": agent}
+    if job.store_session_id and job.chat_id is not None:
+        _agent_auth_dead[(agent, acct)] = {"sid": job.store_session_id, "chat_id": job.chat_id,
+                                           "cwd": cwd, "model": model, "effort": effort}
+    body = (f"{p['label']}'s login is gone. Sign in again (Settings ▸ AI Management ▸ "
+            f"{p['label']}, LOG IN) and it picks up where it left off.")
+    _notify(job.chat_id, f"🔐 {_session_label(job.store_session_id)} is stopped: {body}",
+            kind="login", sid=job.store_session_id, body=body,
+            meta={"agent": agent, "account": acct})
+    job.told = True
+
+
+def resume_after_agent_login(agent: str, acct: str) -> bool:
+    """An agent account signed in (bridge/acp_setup.py): resume the turn its
+    missing login stopped. Returns whether a resume actually started."""
+    e = _agent_auth_dead.pop((agent, acct or ""), None)
+    if not e or not config.AUTO_RESUME:
+        return False
+    sess = store.get_session(e["sid"])
+    if not sess:
+        return False
+    try:
+        job = start_streaming_job(e["chat_id"], AGENT_AUTH_NUDGE, [], project=e["cwd"],
+                                  session_id=e["sid"], model=e["model"], effort=e["effort"])
+    except Exception as ex:  # noqa: BLE001
+        print(f"[reauth] agent resume failed for {e['sid']}: {ex}", file=sys.stderr)
+        return False
+    if job is None:
+        return False                              # slot taken — the user moved on
+    _notify(e["chat_id"], f"🔄 Signed in — resuming {_session_label(e['sid'])}.",
+            kind="resumed", sid=e["sid"], body="Signed in again. Resuming.")
+    return True
 
 
 def resume_after_login(slot: "int | None") -> bool:

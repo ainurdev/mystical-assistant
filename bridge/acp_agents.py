@@ -369,11 +369,28 @@ def remember_options(agent: str, acct_id, config_options, modes, models=None, fr
         _load_options()
         prev = (_options.get(_key(agent, acct_id)) or {}).get("defaults") or {}
         shaped["defaults"] = _current(config_options, modes, models) if fresh else prev
+        shaped["signed_in"] = True          # it opened a session: the login works
         _options[_key(agent, acct_id)] = shaped
-        os.makedirs(os.path.dirname(OPTIONS_FILE), mode=0o700, exist_ok=True)
-        with open(OPTIONS_FILE + ".tmp", "w", encoding="utf-8") as f:
-            json.dump(_options, f)
-        os.replace(OPTIONS_FILE + ".tmp", OPTIONS_FILE)
+        _save_options()
+
+
+def note_signed_out(agent: str, acct_id) -> None:
+    """A TEST or a turn was told the account has no login (ACP -32000). Kept
+    beside its options, so the AGENTS card can say SIGNED OUT; the token itself
+    is never looked at (rule 2). The next session that opens says SIGNED IN."""
+    with _lock:
+        _load_options()
+        entry = _options.setdefault(_key(agent, acct_id), {"model": [], "mode": [], "effort": []})
+        entry["signed_in"] = False
+        _save_options()
+
+
+def _save_options() -> None:
+    """Caller holds _lock."""
+    os.makedirs(os.path.dirname(OPTIONS_FILE), mode=0o700, exist_ok=True)
+    with open(OPTIONS_FILE + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(_options, f)
+    os.replace(OPTIONS_FILE + ".tmp", OPTIONS_FILE)
 
 
 def options_for(agent: str, acct_id) -> dict:
@@ -426,4 +443,6 @@ def api_test(body: dict) -> "tuple[dict, int]":
         remember_options(p["id"], acct, res.get("options"), res.get("modes"), res.get("models"),
                          fresh=True)
         return {"ok": True, "options": options_for(p["id"], acct)}, 200
+    if res.get("needs_login"):
+        note_signed_out(p["id"], acct)
     return res, 200
