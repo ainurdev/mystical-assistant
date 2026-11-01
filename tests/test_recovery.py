@@ -117,6 +117,20 @@ def test_recover_skips_turn_without_claude_session_id():
     assert sid not in store.running_session_ids(CHAT)  # still flipped to error
 
 
+def test_recover_resumes_an_agent_turn_on_its_agent_session():
+    """A Kimi/Codex turn a restart cut off: it has no claude_session_id, only the
+    agent's own, and resumes through its profile (no slot, no runtime)."""
+    sid = _orphan("agent-rez", claude_sid=None, runtime="acp:kimi")
+    store.set_session_field(sid, "agent_session_id", "kimi-session-1")
+    nosid = _orphan("agent-early", claude_sid=None, runtime="acp:kimi")   # died before session/new
+    run = _Rec()
+    _recover(run)
+    mine = [c for c in run.calls if c["session_id"] in (sid, nosid)]
+    assert [c["session_id"] for c in mine] == [sid]
+    assert mine[0]["prompt"] == recovery.NUDGE
+    assert mine[0]["account_slot"] is None and mine[0]["runtime"] is None
+
+
 def test_recover_resumes_on_every_boot():
     """Back-to-back restarts each resume the interrupted turn — no cooldown skip
     (every boot-resume traces to a human restarting the bridge, so it can't loop)."""

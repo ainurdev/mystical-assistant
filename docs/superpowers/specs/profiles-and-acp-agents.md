@@ -34,7 +34,8 @@ still the main runtime.
 
 - A direct Codex `app-server` client (real reset times, steering).
 - Falling back between profiles on a limit, or cross-agent handoff.
-- Usage meters, limit parking and auto-resume for agent turns.
+- Usage meters, limit parking and mid-run auto-resume for agent turns. (A
+  turn a bridge restart cut off does resume at boot; added 2026-11-01.)
 - Claude Code pointed at third-party Anthropic-compatible URLs. A profile
   never sets a provider URL for Claude.
 - More presets (Cursor, Goose, Kimi, Qwen). Each one is a single table row,
@@ -305,9 +306,11 @@ in known dirs) and an `install` hint.
   `error` with its message. A quota hit that an agent reports only as
   assistant text stays plain text. There is no text classifier: a false
   positive would mark a real answer about rate limits as failed.
-  There is no parking and no auto-resume (`_maybe_auto_resume` returns
-  False for `acp:` runtimes, and boot recovery already skips sessions with
-  no `claude_session_id`).
+  There is no parking and no mid-run auto-resume (`_maybe_auto_resume`
+  returns False for `acp:` runtimes). A turn a restart killed is different:
+  it stays `running` with no error row, and boot recovery resumes it on its
+  `agent_session_id` with the restart nudge, through the session's profile
+  (2026-11-01). A turn that died before `session/new` has nothing to resume.
 
 ### Runner integration
 

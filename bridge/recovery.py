@@ -4,7 +4,10 @@ When the bridge is stopped/restarted mid-turn its Claude child dies with it and
 the turn is left 'running' (the runner skips finish_turn once state.shutting_down
 is set). On the next start we claim those orphaned turns and, for each resumable
 one, resume its Claude session (--resume) with a short "you were interrupted,
-continue" nudge. No cooldown: every boot-resume traces to a human restarting the
+continue" nudge. An agent turn (runtime acp:<id>, bridge/acp.py) resumes the
+same way on the agent's own session (agent_session_id): the restart's kill
+leaves it 'running' too (runner.AcpJob.add), and its run reopens that session
+with session/resume or session/load. No cooldown: every boot-resume traces to a human restarting the
 bridge, so it cannot self-loop — the crash-loop cap for resumes that keep dying
 lives in the runner's mid-run auto-resume (runner.AUTO_RESUME_MAX).
 """
@@ -36,7 +39,8 @@ def recover(*, run=None, notify=None) -> int:
         sid = t["session_id"]
         if sid in resumed_sessions:
             continue                                  # one in-flight turn per session
-        if not t["claude_session_id"]:
+        agent = (t["runtime"] or "").startswith("acp:")
+        if not (t["agent_session_id"] if agent else t["claude_session_id"]):
             continue                                  # died before init — nothing to resume
         if not config.is_owner(t["chat_id"]):
             continue
@@ -44,7 +48,9 @@ def recover(*, run=None, notify=None) -> int:
             continue                                  # a Rivendell batch's queue resumes it, not a nudge
         resumed_sessions.add(sid)
         try:
-            slot, runtime = ladder.same_agent(t["runtime"])
+            # An agent turn: no slot or runtime from here, so the session's own
+            # profile picks the agent and account, with its owner check (rule 6).
+            slot, runtime = (None, None) if agent else ladder.same_agent(t["runtime"])
             # model=None: the session's own, read when the run starts, so a pick
             # made while the turn ran (a live switch) survives the restart.
             job = run(t["chat_id"], NUDGE, [], project=t["cwd"],

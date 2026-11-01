@@ -174,6 +174,35 @@ def test_a_turn_the_restart_killed_is_left_for_recovery_without_an_error(monkeyp
     store.finish_turn(job.id, "error", None, None)        # no orphan for the recovery tests
 
 
+def test_boot_recovery_resumes_a_restart_killed_agent_turn_on_its_session(monkeypatch, tmp_path):
+    """The whole restart: the kill leaves the turn running, the next boot's
+    recovery claims it and runs the nudge on the same agent session."""
+    from bridge import recovery
+    sid = _session()
+    job = _start(monkeypatch, sid, {"turn": [{"wait_cancel": True}]})
+    assert _prompting(job)
+    first = store.get_session(sid)["agent_session_id"]
+    monkeypatch.setattr(state, "shutting_down", True)
+    runner.stop_children()
+    assert job.exited.wait(10)
+    monkeypatch.setattr(state, "shutting_down", False)                 # the next boot
+    monkeypatch.setattr(config, "ALLOWED_CHAT_IDS", {CHAT})
+    monkeypatch.setattr(config, "AUTO_RESUME", True)
+    monkeypatch.setitem(acp_agents.PRESETS[0]["env"], "FAKE_ACP", json.dumps({"turn": [CHUNK]}))
+    started = []
+    real = runner.start_streaming_job
+    assert recovery.recover(run=lambda *a, **k: started.append(real(*a, **k)) or started[-1],
+                            notify=lambda *a, **k: None) == 1
+    assert started[0].exited.wait(10) and started[0].status == "done"
+    sent = [json.loads(line) for line in (tmp_path / "log.jsonl").read_text().splitlines()]
+    opened = [m for m in sent if m.get("method") in ("session/load", "session/resume")]
+    assert opened and opened[0]["params"]["sessionId"] == first
+    prompt = next(m for m in sent if m.get("method") == "session/prompt")
+    assert prompt["params"]["prompt"][0]["text"] == recovery.NUDGE
+    turns = store.transcript(sid)["turns"]
+    assert [t["status"] for t in turns[-2:]] == ["error", "done"]
+
+
 def test_stop_ends_the_turn_and_releases_the_slot(monkeypatch):
     sid = _session()
     job = _start(monkeypatch, sid, {"turn": [{"wait_cancel": True}], "stop": "cancelled"})

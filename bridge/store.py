@@ -1377,7 +1377,7 @@ def claim_orphaned_turns() -> list[dict]:
         c.execute("BEGIN IMMEDIATE")
         rows = c.execute(
             "SELECT t.id AS turn_id, t.session_id, t.prompt, t.model, t.runtime, "
-            "s.chat_id, s.cwd, s.project, s.claude_session_id "
+            "s.chat_id, s.cwd, s.project, s.claude_session_id, s.agent_session_id "
             "FROM turns t JOIN sessions s ON s.id=t.session_id "
             "WHERE t.status='running' AND COALESCE(s.origin, '') NOT LIKE 'device-run:%' "
             "AND COALESCE(s.origin, '') NOT LIKE 'team:%'").fetchall()
