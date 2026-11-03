@@ -12,13 +12,14 @@ import {
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDrive, HardDriveDownload, HardDriveUpload, 
-  ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin,
+  ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, AlignLeft, Clock3, GitFork,
 } from "lucide-react";
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
 
 import { ago, projectName, windowLabels } from "../../lib/surfaces";
 import { ExtrasFold, SkillsPage } from "./SkillsFold";
+import { saverFoot } from "../../lib/savers";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
 import { StorageSection } from "./StorageSection";
@@ -39,6 +40,7 @@ import {
   type RivendellInstance,
   type RivendellInput,
   type RivendellStatus,
+  type Saver,
   type StartupState,
   type UpdateInfo,
   type VideoTools,
@@ -226,6 +228,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "mac", sec: "APP", terms: "rebuild version screen capture recording permission mystical.exe mystical.app" },
   { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
   { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
+  { tab: "aimgmt", sec: "SAVERS", terms: "savers cheaper turns cost tokens concise replies subagent effort trim test output pytest vitest jest cache one-shot trial coin flip experiment" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
   { tab: "aimgmt", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
   { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini kimi moonshot api key install test other agent" },
@@ -3107,6 +3110,110 @@ function AimFold({ id, title, hint, count, right, secs, defaultOpen = false, ope
   );
 }
 
+/** Savers (design-drafts/cli-signals row 6; bridge/savers.py): Claude Code's own
+ *  switches that make every turn cheaper, in the Extras' card grammar with the
+ *  Accounts fold's three-way switch. TRIAL puts one on every other new session
+ *  and scores both halves on their first turn; the card's floor says how far it
+ *  got and what it found (lib/savers saverFoot). The fourth card is the
+ *  one-shot cache: always on, no switch. A bridge older than Savers answers
+ *  404, and the fold isn't drawn. */
+const SAVER_ICONS: Record<string, LucideIcon> = { concise: AlignLeft, subagent_effort: GitFork, trim_tests: ListChecks };
+const SAVER_ABOUT: Record<string, string> = {
+  concise: "Claude Code's built-in Concise style, sent with each run: the result first, no recap, the same work. It shapes the reply itself, not how the transcript draws it; Ponytail, when on, still applies.",
+  subagent_effort: "CLAUDE_CODE_SUBAGENT_EFFORT=medium on each run: subagents stop inheriting the session's effort, which is usually the highest.",
+  trim_tests: "A hook before each Bash call: a test run (pytest, vitest, jest, go test, cargo test) hands Claude its failures and its summary, not every passing line. Its exit status is untouched.",
+};
+const SAVER_MODES: { label: string; value: Saver["mode"] }[] = [
+  { label: "OFF", value: "off" },
+  { label: "TRIAL", value: "trial" },
+  { label: "ON", value: "on" },
+];
+
+/** ⓘ: what a saver does, on hover, so the card never grows. */
+function SaverInfo({ label, about }: { label: string; about: string }) {
+  return <span className="aim-xinfo" role="img" aria-label={`about ${label}: ${about}`} title={about} style={{ cursor: "help", textAlign: "center" }}>i</span>;
+}
+
+function SaverCard({ s, busy, err, onMode }: { s: Saver; busy: boolean; err?: string; onMode: (m: Saver["mode"]) => void }) {
+  const Icon = SAVER_ICONS[s.key] ?? Sparkles;
+  const f = saverFoot(s);
+  return (
+    <div className="aim-x" data-on={s.mode === "on" || undefined} data-trial={s.mode === "trial" || undefined} data-busy={busy || undefined}>
+      <div className="aim-xhd">
+        <span className="aim-xic"><Icon size={14} strokeWidth={1.7} aria-hidden /></span>
+        <b>{s.label}</b>
+        {SAVER_ABOUT[s.key] && <SaverInfo label={s.label} about={SAVER_ABOUT[s.key]} />}
+        <span style={{ flex: 1, minWidth: 8 }} />
+        <div className="aim-segwrap aim-svseg" data-mode={s.mode}>
+          <Segmented options={SAVER_MODES} value={s.mode} onPick={(m) => { if (!busy && m !== s.mode) onMode(m); }} />
+        </div>
+      </div>
+      <div className="aim-xhint">{s.hint}</div>
+      {err && <div className="aim-xerr">{err}</div>}
+      <div className="aim-xfoot">
+        {f.bar !== null && <span className="aim-xbar" aria-hidden><i style={{ width: `${f.bar * 100}%` }} /></span>}
+        <span className="aim-svfact">{f.left}</span>
+        {f.delta ? <em><b data-good={f.good === null ? undefined : String(f.good)}>{f.delta}</b> {f.unit}</em>
+          : f.untried ? <em>not tried yet</em> : null}
+      </div>
+    </div>
+  );
+}
+
+function SaversFold({ openSec }: { openSec: string | null }) {
+  // null while reading; "gone" on a bridge older than Savers.
+  const [rows, setRows] = useState<Saver[] | "gone" | null>(null);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [err, setErr] = useState<{ key: string; msg: string } | null>(null);
+  useEffect(() => {
+    void api.savers().then((r) => setRows(r.savers))
+      .catch((e: Error) => setRows(e.message === "not found" ? "gone" : []));
+  }, []);
+  if (rows === "gone") return null;
+  async function pick(s: Saver, mode: Saver["mode"]) {
+    setBusy(s.key);
+    setErr(null);
+    try {
+      setRows((await api.setSaver(s.key, mode)).savers);
+    } catch (e) {
+      setErr({ key: s.key, msg: e instanceof Error ? e.message : "could not save" });
+    } finally {
+      setBusy(null);
+    }
+  }
+  return (
+    <AimFold id="savers" title="Savers" secs={["SAVERS"]} openSec={openSec}
+      hint="Claude Code's own switches that make every turn cheaper" right={<span className="aim-chip">NEW</span>}>
+      <p className="aim-svlead">
+        <b>TRIAL</b> turns one on for every other new session, picked by a coin flip, and compares their first
+        turns: answer length, tokens, tool calls before the first edit, errors. After {rows?.[0]?.target ?? 20} sessions
+        it tells you the result; you pick ON or OFF.
+      </p>
+      {rows === null && <div className="aim-hint">Reading the savers…</div>}
+      {rows?.length === 0 && <div className="aim-hint">Couldn't read the savers from the bridge.</div>}
+      {rows && rows.length > 0 && (
+        <div className="aim-xgrid aim-svgrid">
+          {rows.map((s) => (
+            <SaverCard key={s.key} s={s} busy={busy === s.key} err={err?.key === s.key ? err.msg : undefined} onMode={(m) => void pick(s, m)} />
+          ))}
+          <div className="aim-x" data-on>
+            <div className="aim-xhd">
+              <span className="aim-xic"><Clock3 size={14} strokeWidth={1.7} aria-hidden /></span>
+              <b>Short cache for one-shots</b>
+              <SaverInfo label="Short cache for one-shots"
+                about="CLAUDE_CODE_PROMPT_CACHE_TTL=5m on the bridge's one-shot calls. Each runs once, so a cache kept for an hour was paid for and never read." />
+              <span style={{ flex: 1, minWidth: 8 }} />
+              <span className="aim-chip ok">ALWAYS ON</span>
+            </div>
+            <div className="aim-xhint">titles, commit messages and NEXT UP scouts cache for 5 minutes, not an hour</div>
+            <div className="aim-xfoot"><span className="aim-svfact">they never reuse it, so the hour-long write was waste</span></div>
+          </div>
+        </div>
+      )}
+    </AimFold>
+  );
+}
+
 /** SETTINGS ▸ Projects, with the logins its profile pickers name. */
 function ProjectsPage({ projects, current, onAccountsChanged, onOpenSkills }: {
   projects: ProjectsSettingsProps;
@@ -3385,6 +3492,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         hint="the model calls the bridge makes on top of your turns, each with its switch">
         <ExtrasFold />
       </AimFold>
+      <SaversFold openSec={openSec} />
       {/* Claude's servers (`claude mcp`). Kimi Code reads its own ~/.kimi-code/mcp.json;
           a project's .mcp.json reaches both. */}
       <AimFold id="mcp" title="Claude MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec}

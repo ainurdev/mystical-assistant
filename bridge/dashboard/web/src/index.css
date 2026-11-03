@@ -5210,6 +5210,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-segwrap > div { display: inline-flex !important; grid-template-columns: none !important; gap: 2px !important; padding: 3px; border: 1px solid var(--l) !important; border-radius: 9px; background: var(--panel3); }
 .aim-segwrap > div button { border-radius: 6px !important; font: 12px var(--f) !important; letter-spacing: 0 !important; color: var(--txd) !important; background: transparent !important; padding: 4px 10px !important; }
 .aim-segwrap > div button[data-on] { background: var(--panel) !important; color: var(--txb) !important; box-shadow: inset 0 0 0 1px var(--l2); }
+/* a Saver's OFF / TRIAL / ON (SettingsModal SaverCard): that switch, card-sized; TRIAL picks in warn, ON in the accent */
+.aim-svseg .set-seg { padding: 2px; }
+.aim-svseg .set-seg button { font: 11px var(--f, var(--ui-font)) !important; letter-spacing: .5px !important; padding: 2px 8px !important; }
+.aim-svseg[data-mode="trial"] .set-seg button[data-on] { color: var(--warn) !important; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--warn) 40%, transparent); }
+.aim-svseg[data-mode="on"] .set-seg button[data-on] { background: color-mix(in oklab, var(--acc) 26%, var(--panel)) !important; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 50%, transparent); }
 /* the HUD sections nested inside a fold (MCP, the agents' forms) drop their
    rules and sit on the fold's own ground */
 .aim-foldbody > .set-sec:first-child, .aim-foldbody [data-sec]:first-child { margin-top: 10px !important; }
@@ -5257,6 +5262,18 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-xbtn.warn { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 50%, var(--l2)); }
 .aim-xbtn.danger:hover { color: var(--err); border-color: var(--err); background: color-mix(in oklab, var(--err) 10%, transparent); }
 .aim-chip.dim { background: var(--panel3); color: var(--txd); font-weight: 500; text-transform: capitalize; }
+/* the Savers fold (SettingsModal SaversFold): the TRIAL explainer, four cards two by two, a trial's card in warn */
+.aim-svlead { margin: 12px 0; font-size: 12px; line-height: 1.5; color: var(--txd); }
+.aim-svlead b { color: var(--warn); font-weight: 700; }
+.aim-svgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 760px) { .aim-svgrid { grid-template-columns: minmax(0, 1fr); } }
+.aim-x[data-trial] { border-color: color-mix(in oklab, var(--warn) 36%, var(--l)); background: color-mix(in oklab, var(--warn) 5%, var(--panel)); }
+.aim-svfact { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aim-xbar { flex: none; width: 46px; height: 3px; border-radius: 2px; background: var(--l2); overflow: hidden; }
+.aim-xbar > i { display: block; height: 100%; background: var(--warn); }
+.aim-xfoot em b { font-weight: 700; }
+.aim-xfoot em b[data-good="true"] { color: var(--ok); }
+.aim-xfoot em b[data-good="false"] { color: var(--warn); }
 .aim-glabel { display: flex; align-items: center; gap: 8px; margin: 16px 0 8px; font: 500 10.5px var(--f); letter-spacing: .08em; text-transform: uppercase; color: var(--txl); white-space: nowrap; }
 .aim-glabel::after { content: ""; flex: 1; height: 1px; background: var(--l); }
 .aim-note { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; margin-top: 12px; font-size: 12.5px; }
