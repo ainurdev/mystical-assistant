@@ -196,11 +196,13 @@ def test_a_turns_rate_limit_event_is_a_live_reading():
 
 
 def test_a_newer_read_outranks_the_events_word():
-    restore, _ = _stub(PAYLOAD)
+    restore, _ = _stub(PAYLOAD, PAYLOAD)
     try:
+        usage.get_usage()                              # a read, then a turn's event
         usage.note_event(None, {"status": "allowed_warning", "unifiedWindows": {
             "five_hour": {"utilization": 0.95, "status": "allowed_warning"}}})
-        assert usage.get_usage(max_age=3600)["status"] == "allowed_warning"
+        m = usage.get_usage()
+        assert m["status"] == "allowed_warning" and m["five_hour"]["percent"] == 95
         m = usage.get_usage(max_age=0)                 # a fresh read lands after it
         assert m["status"] is None and m["five_hour"]["percent"] == 7 and m["live"] is True
     finally:
