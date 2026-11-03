@@ -118,7 +118,20 @@ export function ContextMenu({ ctx, items, closing, onClose }: {
 
   return createPortal(
     <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
+      <div onClick={onClose}
+        // A right-click out here is meant for what's under it, not this backdrop:
+        // shut this menu and pass the click on there (same point and keys), so
+        // that element opens its own menu.
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          const back = e.currentTarget;
+          setSub(null);   // the menu that opens next can be this same instance
+          onClose();
+          document.elementsFromPoint(e.clientX, e.clientY).find((n) => n !== back)
+            ?.dispatchEvent(new MouseEvent("contextmenu", e.nativeEvent));
+        }}
+        style={{ position: "fixed", inset: 0, zIndex: 96 }} />
       <div data-ctxmenu="1"
         style={{ ...PANEL, left: x, top: y, zIndex: 97, animation: closing ? "ctxOut .165s ease both" : "ctxIn .28s cubic-bezier(.16,.84,.3,1) both" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 11px", borderBottom: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)" }}>
