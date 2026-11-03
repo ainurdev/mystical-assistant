@@ -1344,6 +1344,10 @@ input {
               padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); }
 .drop-btn { min-width: var(--dw, 78px); }
 .ctrl-meter { display: inline-flex; gap: 6px; }
+/* a login's meter a running turn is reporting (Composer chip, PROFILE menu): a breathing green dot */
+.meter-live { flex: none; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: twinkle 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .meter-live { animation: none; } }
 
 /* The field glyph, printed inside the chip. This is what the old .ctrl-label
    eyebrow and .ctrl-tag cluster heading both did, except it cannot be shed:
@@ -1408,6 +1412,8 @@ input {
              display: inline-flex; align-items: center; justify-content: center; color: var(--txd);
              border: 1px solid color-mix(in srgb, var(--acc) 16%, transparent); background: transparent;
              transition: color .12s ease, border-color .12s ease, background .12s ease; }
+/* STOP after the answer ends the background tasks, so it carries its words: "■ Stop them" */
+.act-glyph[data-wide] { width: auto; gap: 7px; padding: 0 11px; font-family: inherit; font-size: var(--t10); letter-spacing: .5px; white-space: nowrap; }
 .act-glyph.stop:hover { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, transparent);
                         background: color-mix(in srgb, var(--err) 10%, transparent); }
 .act-glyph.hold:hover { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent);
@@ -5640,6 +5646,19 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pm-row:hover .pm-pin { color: var(--txl); }
 .pm-pin:hover, .pm-pin:focus-visible { color: var(--txb); background: var(--ac-08); box-shadow: inset 0 0 0 1px var(--line2); outline: 0; }
 .pm-new { align-items: center; }
+/* each login's freshness under its DEFAULT pill or pin, at the meter line's end (live, N min ago, checking) */
+.pm-tail[data-fresh] { align-self: stretch; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 4px; }
+.pm-fresh { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; font: var(--t95) var(--ui-font, inherit); line-height: 12px; color: var(--txl); white-space: nowrap; }
+.pm-fresh[data-k="live"] { color: var(--ok); }
+.pm-fresh[data-k="checking"] > [role="status"] { color: var(--acc); }
+.pm-wait { font: var(--t95) var(--ui-font, inherit); line-height: 12px; color: var(--txl); }
+/* the foot: + New profile, then how idle logins are read and Check now, an underlined link */
+.pm-foot { display: flex; align-items: center; }
+.pm-foot > .pm-new { flex: 1; width: auto; }
+.pm-check { flex: none; padding: 0 11px; font: var(--t105) var(--ui-font, inherit); color: var(--txd); white-space: nowrap; }
+.pm-check > button { appearance: none; padding: 0; border: 0; background: none; font: inherit; color: var(--acc); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.pm-check > button:disabled { color: var(--txl); cursor: default; }
 
 /* ── the run sheet (Composer RunSheet): MODEL beside MODE, EFFORT along the
    foot, over the cmdbox in every layout. Rows are MenuRows, restyled here

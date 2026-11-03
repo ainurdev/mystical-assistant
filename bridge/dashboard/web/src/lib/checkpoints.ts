@@ -12,6 +12,14 @@ export function steerKey(index: number): string {
   return `steer${index}`;
 }
 
+/** The prompt of the turn boot recovery starts for Claude Code to carry on a
+ *  turn a bridge restart cut (Python recovery.CONTINUED). Nothing was sent: the
+ *  transcript draws it as a seam, never as a plate (lib/clisignals seamOf). */
+export const CONTINUED = "⏮ Claude Code carried on the turn a bridge restart cut.";
+/** The words a declined continuation's Carry on sends (Python recovery.NUDGE). */
+export const RESTART_NUDGE = "⏮ You were interrupted mid-task by a bridge restart — not by the user. "
+  + "Review your recent transcript and continue exactly where you left off; finish the task you were doing. Don't start over.";
+
 /** Why the bridge sent a turn of its own to carry the work on (bridge/limits.py
  *  and ladder.py for a limit, recovery.py for a restart, runner.py
  *  RESUME_NUDGE for an error), or null for words you wrote. */

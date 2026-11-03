@@ -1301,8 +1301,9 @@ export function App() {
   // Every login with its meter (bridge accounts.with_meters). The footer and the
   // MODEL menu read the one the open session spends, and the PROFILE menu reads
   // what each profile's login has left. Polled on the usage tick below, and
-  // reloaded at once after SETTINGS ▸ ACCOUNTS changes one.
-  const loadAccounts = useCallback(() => api.accounts()
+  // reloaded at once after SETTINGS ▸ ACCOUNTS changes one. `fresh`: the PROFILE
+  // menu has the bridge re-read, through the CLI, any meter older than that (s).
+  const loadAccounts = useCallback((fresh?: number) => api.accounts(fresh)
     .then((a) => {
       setAccounts(a.accounts);
       markBoot("auth", "ok", bootCount(a.accounts.length, "ACCOUNT"));
@@ -2283,6 +2284,9 @@ export function App() {
   const openStatus = sessionId ? statusMap.get(sessionId) : undefined;
   const limitLive = useMemo(() => (sessionId && openStatus?.state === "parked" && openStatus.kind === "limit"
     ? { session: sessionId, status: openStatus } : null), [sessionId, openStatus]);
+  // The open session answered with tasks still running in its process: a prompt
+  // queues behind them, and a steer can't land (stdin closed with the answer).
+  const openBg = openStatus?.state === "background" ? openStatus.bg?.length ?? 0 : 0;
   const waitAction = async (action: "resume" | "cancel") => {
     if (!sessionId) return;
     try {
@@ -3028,7 +3032,7 @@ export function App() {
                         // it: a lone pill on its own strip read as a layout slip.
                         <div className="pillstrip">
                           {sessionId && cameBack[sessionId] && <BackPill text={cameBack[sessionId]} />}
-                          <AgentsPill sessionId={sessionId} running={running} hud={settings} />
+                          <AgentsPill sessionId={sessionId} running={running} hud={settings} bg={openStatus} />
                           <GoalPill
                             goal={sessions.find((s) => s.id === sessionId)?.goal}
                             turns={turns} running={running}
@@ -3063,17 +3067,19 @@ export function App() {
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
                       onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
-                      // An agent turn can't be steered (the bridge refuses): SEND queues instead.
-                      onSteer={agentPick ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
+                      // An agent turn can't be steered (the bridge refuses), nor one that has
+                      // answered while background tasks run: SEND queues instead.
+                      onSteer={agentPick || openBg ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
                       onCompact={(instr) => void send(instr ? `/compact ${instr}` : "/compact", [])}
                       queued={queue.queued.map((q) => ({ id: q.id, text: q.text }))}
                       paused={queue.paused} onTogglePause={queue.togglePause}
                       onCancelQueued={(id) => queue.remove(id)}
                       onEjectQueued={(id) => void ejectQueued(id)}
-                      onSteerQueued={agentPick ? undefined : (id) => void queue.steerQueued(id).catch((e) => notify("error", (e as Error).message))}
+                      onSteerQueued={agentPick || openBg ? undefined : (id) => void queue.steerQueued(id).catch((e) => notify("error", (e as Error).message))}
                       project={sessionProject}
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
+                      bg={openBg} onAccounts={loadAccounts}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"
                         : openWait ? `message ${agentPick ? agentPick.label.toLowerCase() : "claude"} — sending ends the wait…` : undefined}

@@ -6,6 +6,8 @@ import { describe, slotHue, type Profile } from "../lib/profiles";
 import type { AgentPickers } from "../lib/agents";
 import { ago, fmtReset, hhmm } from "../lib/surfaces";
 import { loginName, otherLogin } from "../lib/limit";
+import { freshness, lowWindow, meterTone, readAgo, windowWord } from "../lib/clisignals";
+import { Spinner } from "./ui";
 import { openSettings } from "../lib/opensettings";
 import { useIntegrations } from "../lib/integrations";
 import { ImageLightbox, MediaThumb, ZoomButton, isFileUrl, withName } from "./ImageLightbox";
@@ -242,23 +244,31 @@ function LeftMeter({ left, severity }: { left: number; severity?: string }) {
  *  new sessions get (the chip SETTINGS ▸ AI & PROFILES wears), a pin on every
  *  other row that makes it the default without binding this session. A row is
  *  a div, not a button, because the pin is a button of its own. */
-function ProfileRows({ profiles, accounts, value, defaultId, onPick, onDefault }: {
+function ProfileRows({ profiles, accounts, value, defaultId, onPick, onDefault, reading, onCheck }: {
   profiles: Profile[];
   accounts?: AccountInfo[];
   value: string;
   defaultId?: string | null;   // undefined: a bridge too old to say, so no pill and no pin
   onPick: (id: string) => void;
   onDefault?: (id: string) => void;
+  /** A read of the meters in flight: the age (s) past which it redoes one; null for none. */
+  reading: number | null;
+  /** Check now: read every login through Claude Code. */
+  onCheck?: () => void;
 }) {
   const key = (id: string) => (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onPick(id); }
   };
+  const now = Date.now() / 1000;
   return (
     <div role="listbox" aria-label="Profiles">
       {profiles.map((p) => {
         const on = p.id === value;
         const dead = deadLogin(accounts, p.agent, p.account);
-        const wins = dead === null ? loginWindows(accounts?.find((a) => a.slot === loginSlot(p.agent, p.account))) : [];
+        const acct = dead === null ? accounts?.find((a) => a.slot === loginSlot(p.agent, p.account)) : undefined;
+        const wins = loginWindows(acct);
+        // How fresh its reading is (live, N min ago, checking), where the meter line ends.
+        const fresh = acct ? freshness(acct, now, reading) : null;
         return (
           <div key={p.id} className="pm-row" role="option" aria-selected={on} tabIndex={0} data-on={on || undefined} data-dead={dead !== null || undefined}
             title={dead !== null ? `Account ${dead}'s Claude login has expired. Opens SETTINGS ▸ ACCOUNTS to sign it in again.` : undefined}
@@ -271,21 +281,38 @@ function ProfileRows({ profiles, accounts, value, defaultId, onPick, onDefault }
               <span className="pm-l1"><span className="pm-name">{p.name}</span><span className="pm-knobs">{knobs(p)}</span></span>
               {dead !== null
                 ? <span className="pm-exp">LOGIN EXPIRED ▸ pick to sign in again</span>
-                : wins.length > 0 && <span className="pm-fuel">{wins.map((w) => <Fuel key={w.tag} w={w} />)}</span>}
+                : wins.length > 0 ? <span className="pm-fuel">{wins.map((w) => <Fuel key={w.tag} w={w} />)}</span>
+                : fresh && <span className="pm-wait">reading through Claude Code…</span>}
             </span>
-            {defaultId !== undefined && (
-              <span className="pm-tail">
-                {p.id === defaultId
+            {(defaultId !== undefined || fresh) && (
+              <span className="pm-tail" data-fresh={fresh ? "" : undefined}>
+                {defaultId !== undefined && (p.id === defaultId
                   ? <span className="pm-tag" title="new sessions get this profile unless their project names another">DEFAULT</span>
                   : <button type="button" className="pm-pin" aria-label="Make default"
                       title="Make default · new sessions start on this profile, unless their project names another"
-                      onClick={(e) => { e.stopPropagation(); onDefault?.(p.id); }}><Pin size={13} /></button>}
+                      onClick={(e) => { e.stopPropagation(); onDefault?.(p.id); }}><Pin size={13} /></button>)}
+                {fresh && (
+                  <span className="pm-fresh" data-k={fresh.k}
+                    title={fresh.k === "live" ? "a turn on this login is running and reporting it"
+                      : fresh.k === "checking" ? "reading it through Claude Code" : "its last reading; Check now reads it again"}>
+                    {fresh.k === "live" ? <i className="meter-live" aria-hidden />
+                      : fresh.k === "checking" ? <Spinner className="h-[9px] w-[9px] border-[1.5px] opacity-100" /> : null}
+                    {fresh.text}
+                  </span>
+                )}
               </span>
             )}
           </div>
         );
       })}
-      <button type="button" className="pm-row pm-new caps" onClick={() => onPick(NEW_PROFILE)}>+ New profile</button>
+      <div className="pm-foot">
+        <button type="button" className="pm-row pm-new caps" onClick={() => onPick(NEW_PROFILE)}>+ New profile</button>
+        {onCheck && (
+          <span className="pm-check">idle logins are read on open ·{" "}
+            <button type="button" disabled={reading === 0} onClick={(e) => { e.stopPropagation(); onCheck(); }}>Check now</button>
+          </span>
+        )}
+      </div>
     </div>
   );
 }
@@ -468,7 +495,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask,
+  dock, ask, bg = 0, onAccounts,
 }: {
   disabled: boolean;
   running: boolean;
@@ -541,6 +568,11 @@ export function Composer({
   dock?: ReactNode;
   /** While it waits, the box answers it: its text and its button belong to the ask. */
   ask?: AskMode | null;
+  /** Background tasks the answered turn left running (status `background`): a
+   *  prompt queues behind them, and STOP ends them. 0 for anything else. */
+  bg?: number;
+  /** Re-read the logins' meters, any older than `fresh` s (the PROFILE menu). */
+  onAccounts?: (fresh: number) => Promise<unknown>;
 }) {
   const text = draft;
   const setText = onDraft;
@@ -897,25 +929,40 @@ export function Composer({
   // window refills — the two numbers that decide whether to send now; both
   // windows with exact times on hover, and in the menu's rows. No
   // profile: the default login. An agent profile spends no Claude quota, and a
-  // profile the list lacks has no known login, so neither reads. A meter the
-  // usage endpoint won't serve (an idle login's access token lapsed; the CLI
-  // renews it on that login's next turn) reads UNKNOWN rather than nothing.
+  // profile the list lacks has no known login, so neither reads. The meter is
+  // read through Claude Code (bridge/usage.py), so a login always gets a number:
+  // until its first one lands it shows a spinner. A green dot while a running
+  // turn reports it; amber at the CLI's warning, red when spent, with the clock
+  // it refills at in place of the countdown.
   const chipSlot = agentPick || (profile && !bound) ? null : loginSlot(bound?.agent, bound?.account);
   const chipAcct = chipSlot === null ? undefined : accounts?.find((a) => a.slot === chipSlot);
   const chipWins = loginWindows(chipAcct);
   const chipWin = chipWindow(chipWins);
   const chipMeter = chipWin
     ? <span className="ctrl-meter" style={{ fontSize: "var(--t9)", letterSpacing: .5, flex: "none" }}>
-        <span style={{ color: sevColor(chipWin.severity) }}>{chipWin.left}%</span>
-        <span style={{ color: "var(--txd)" }}>{fmtReset(chipWin.resets_at)}</span>
+        {chipAcct?.live && <i className="meter-live" aria-hidden />}
+        <span style={{ color: meterTone(chipWin.left, chipWin.severity, chipAcct?.status) }}>{chipWin.left}%</span>
+        <span style={{ color: "var(--txd)" }}>
+          {chipWin.left === 0 && chipWin.resets_at ? hhmm(Date.parse(chipWin.resets_at) / 1000) : fmtReset(chipWin.resets_at)}
+        </span>
       </span>
     : chipAcct && chipAcct.left === null && !chipAcct.disabled
-      ? <span className="ctrl-meter" style={{ fontSize: "var(--t9)", letterSpacing: .5, color: "var(--txd)", flex: "none" }}>UNKNOWN</span>
+      ? <span className="ctrl-meter" style={{ flex: "none", color: "var(--txd)" }}><Spinner className="h-[9px] w-[9px] border-[1.5px] opacity-100" /></span>
       : undefined;
   const chipName = `PROFILE — ${bound?.name ?? (profile || "NO PROFILE")}`;
+  const chipRead = chipAcct?.live ? " · live" : chipAcct?.read_at ? ` · read ${readAgo(chipAcct.read_at, Date.now() / 1000)}` : "";
   const chipTitle = chipWins.length
-    ? `${chipName} · ${chipWins.map((w) => `${w.name}: ${w.left}% left${w.resets}`).join(" · ")}`
-    : chipMeter ? `${chipName} · usage unknown: this login's access token has lapsed; its meter reads again once it runs a turn` : undefined;
+    ? `${chipName} · ${chipWins.map((w) => `${w.name}: ${w.left}% left${w.resets}`).join(" · ")}${chipRead}`
+    : chipMeter ? `${chipName} · reading this login's usage through Claude Code…` : undefined;
+  // The PROFILE menu reads idle logins as it opens (any reading over a minute
+  // old) and every login on Check now; `reading` is that age while the read
+  // runs, so the rows it redoes say checking (lib/clisignals freshness).
+  const [reading, setReading] = useState<number | null>(null);
+  const readMeters = (fresh: number) => {
+    if (!onAccounts) return;
+    setReading(fresh);
+    void onAccounts(fresh).finally(() => setReading((r) => (r === fresh ? null : r)));
+  };
   // A row picked in the PROFILE menu: + NEW PROFILE opens a blank form, an
   // expired login its RE-LOGIN, another profile binds; the pin is not a pick.
   const pickProfileRow = (id: string) => {
@@ -931,9 +978,10 @@ export function Composer({
       fallback={{ id: profile, label: profile || "NO PROFILE" }} minWidth={104} align={right ? "right" : "left"} open={openDrop === "profile"}
       tone={boundDead !== null ? "var(--err)" : undefined} meter={boundDead !== null ? undefined : chipMeter}
       title={boundDead !== null ? `PROFILE — ${bound?.name}: account ${boundDead}'s Claude login has expired; pick it in this menu to sign in again.` : chipTitle}
-      onToggle={() => setOpenDrop((d) => (d === "profile" ? "" : "profile"))}
+      onToggle={() => { if (openDrop !== "profile") readMeters(60); setOpenDrop((d) => (d === "profile" ? "" : "profile")); }}
       onPick={pickProfileRow}
-      menu={<ProfileRows profiles={profiles} accounts={accounts} value={profile} defaultId={defaultProfile} onPick={pickProfileRow} onDefault={onDefaultProfile} />} />
+      menu={<ProfileRows profiles={profiles} accounts={accounts} value={profile} defaultId={defaultProfile} onPick={pickProfileRow} onDefault={onDefaultProfile}
+        reading={reading} onCheck={onAccounts ? () => readMeters(0) : undefined} />} />
   );
   const ponyDrop = (right: boolean) => showPonytail && !onAgent && (
     <Drop label="PONYTAIL" code={<Scissors size={12} />} value={ponytail} options={PONYTAILS} align={right ? "right" : "left"} open={openDrop === "pony"}
@@ -1042,9 +1090,10 @@ export function Composer({
     </>
   ) : running ? (
     <>
-      <button className="act-glyph stop" onClick={onStop} aria-label="Stop"
-        title="STOP — interrupt this turn now">
-        <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden /></button>
+      {/* After the answer it ends the background tasks, so it says so. */}
+      <button className="act-glyph stop" data-wide={bg ? "" : undefined} onClick={onStop} aria-label={bg ? "Stop them" : "Stop"}
+        title={bg ? "STOP — end the background tasks this turn left running; its answer stays" : "STOP — interrupt this turn now"}>
+        <Square size={11} strokeWidth={0} fill="currentColor" aria-hidden />{bg ? "Stop them" : null}</button>
       {/* The graceful counterpart to STOP: no interrupt, no half-written
           file — the turn lands, then the loop holds. It keeps its armed
           state here so the banner is confirmation, not the only tell. */}
@@ -1089,13 +1138,19 @@ export function Composer({
   // The login this chat spends is dry: a send dies in a second, then is handed
   // over or parked (the transcript's limit card). Said here before you send,
   // with the login that has room one tap away (design-drafts/limit-chat, C).
+  // Running low (the CLI's warning level) says so early, the same way, while
+  // another login has more left (design-drafts/cli-signals, row 2).
   const dry = chipWins.find((w) => w.left === 0);
-  const room = dry ? otherLogin(accounts ?? [], chipSlot) : null;
+  const low = dry ? null : lowWindow(chipWins, chipAcct?.status);
+  const other = dry || low ? otherLogin(accounts ?? [], chipSlot) : null;
+  const room = other && (dry || (other.left !== null && low && other.left > low.left)) ? other : null;
   const roomProfile = room ? profiles?.find((p) => loginSlot(p.agent, p.account) === room.slot) : undefined;
-  const dryPill = dry && (
-    <span className="pb-dry" title={`${dry.name}: used up. A prompt sent now stops at once, then moves to another login or waits for the refill.`}>
+  const dryPill = (dry || low) && (
+    <span className="pb-dry" title={dry ? `${dry.name}: used up. A prompt sent now stops at once, then moves to another login or waits for the refill.`
+      : `${low!.name}: ${low!.left}% left${low!.resets}. Claude Code warns before the limit; a turn that hits it stops, then moves to another login or waits for the refill.`}>
       <TriangleAlert size={11} strokeWidth={2} aria-hidden />
-      <span><b>{loginName(chipAcct, chipSlot)}</b> is out{dry.resets_at ? ` until ${hhmm(Date.parse(dry.resets_at) / 1000)}` : ""}</span>
+      {dry ? <span><b>{loginName(chipAcct, chipSlot)}</b> is out{dry.resets_at ? ` until ${hhmm(Date.parse(dry.resets_at) / 1000)}` : ""}</span>
+        : <span><b>{loginName(chipAcct, chipSlot)}</b> has <b>{low!.left}%</b> of its {windowWord(low!)} window{low!.resets_at ? ` · refills ${hhmm(Date.parse(low!.resets_at) / 1000)}` : ""}</span>}
       {room && roomProfile && (
         <button type="button" onClick={() => onProfile(roomProfile.id)}>
           Use {loginName(room, room.slot)}{room.left !== null ? ` · ${room.left}%` : ""}
@@ -1255,7 +1310,10 @@ export function Composer({
         if (text.includes("\n")) void askConfirm("Clear the draft?", { ok: "Clear", danger: true }).then((yes) => { if (yes) setText(""); });
         else setText("");
       }}
-      placeholder={ask?.placeholder ?? (disabled ? "working…" : running ? "queue a prompt — runs after the current turn…" : placeholder ?? `message ${onAgent ? agentPick!.label.toLowerCase() : "claude"} — describe a change, paste an error…`)}
+      placeholder={ask?.placeholder ?? (disabled ? "working…" : running
+        ? bg ? `queue a prompt — it goes in once the ${bg === 1 ? "background task finishes" : `${bg} background tasks finish`}…`
+          : "queue a prompt — runs after the current turn…"
+        : placeholder ?? `message ${onAgent ? agentPick!.label.toLowerCase() : "claude"} — describe a change, paste an error…`)}
     />
   );
   const pfx = <span className="pb-pfx" style={{ color: "var(--purple)", fontSize: "var(--t13)", flex: "none", marginTop: 2 }}>~ ❯</span>;
