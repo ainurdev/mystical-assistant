@@ -644,3 +644,38 @@ def test_current_branch_of_a_removed_tree_runs_no_git(monkeypatch):
     monkeypatch.setattr(g, "_run", lambda *a, **k: calls.append(a) or (128, "", ""))
     assert g.current_branch(os.path.join(tempfile.mkdtemp(), "gone")) == ""
     assert calls == []
+
+
+def test_drop_pr_copy_deletes_a_review_copy_only_when_nothing_is_lost():
+    """A Rivendell review reads a PR by fetching pull/<n>/head into a local pr-<n>
+    branch, which then sits in every branch list. It goes once every commit on it is
+    on a remote branch, or it is exactly the PR's head on GitHub. A commit of its
+    own, or a checkout using it, keeps it."""
+    bare = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "--bare", "-q", bare], check=True)
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    _run(d, "remote", "add", "origin", bare)
+    base = g.current_branch(d)
+    for n in (7, 8, 9):
+        _run(d, "push", "-q", "origin", f"HEAD:refs/pull/{n}/head")
+        _run(d, "fetch", "-q", "origin", f"pull/{n}/head:pr-{n}")
+    _run(d, "checkout", "-q", "pr-8")
+    _write(d, "b.txt", "two\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "local work")
+    _run(d, "checkout", "-q", base)
+    _run(d, "worktree", "add", "-q", os.path.join(tempfile.mkdtemp(), "wt"), "pr-9")
+
+    assert g.drop_pr_copy(d, 7) is True      # exactly the PR's head on GitHub
+    assert g.drop_pr_copy(d, 8) is False     # has a commit GitHub never got
+    assert g.drop_pr_copy(d, 9) is False     # a checkout is using it
+    assert g.drop_pr_copy(d, 10) is False    # no such branch
+    # The PR moved on after the review fetched it, but its commits are on a remote branch.
+    _run(d, "fetch", "-q", "origin", "pull/9/head:pr-11")
+    _run(d, "push", "-q", "origin", "pr-8:refs/pull/11/head", f"HEAD:refs/heads/{base}")
+    _run(d, "fetch", "-q", "origin")
+    assert g.drop_pr_copy(d, 11) is True
+    assert sorted(g.branches(d)) == sorted([base, "pr-8", "pr-9"])

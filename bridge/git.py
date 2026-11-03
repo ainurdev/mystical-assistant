@@ -896,6 +896,25 @@ def delete_branch(cwd: str, name: str, force: bool = False) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
+def drop_pr_copy(cwd: str, number: int) -> bool:
+    """Delete `pr-<number>`, the copy a PR review leaves when it fetches
+    pull/<number>/head to read it, once nothing would be lost: every commit on it
+    is on a remote branch, or it is exactly the PR's head on GitHub. A checkout
+    still using it keeps it (git refuses). True when it went.
+    shortcut: a PR pushed to after the review fetched it, from a branch never
+    fetched here, keeps its copy; fetch the PR head to check ancestry if that shows up."""
+    name = f"pr-{number}"
+    rc, tip, _ = _run(cwd, "rev-parse", "--verify", "-q", f"refs/heads/{name}")
+    if rc != 0:
+        return False
+    rc, extra, _ = _run(cwd, "rev-list", "--count", tip.strip(), "--not", "--remotes")
+    if not (rc == 0 and extra.strip() == "0"):
+        rc, out, _ = _run(cwd, "ls-remote", "origin", f"refs/pull/{number}/head", timeout=20)
+        if rc != 0 or out.split("\t")[0].strip() != tip.strip():
+            return False
+    return delete_branch(cwd, name, force=True)[0]
+
+
 def merge(cwd: str, branch: str, ff_only: bool = False) -> tuple[bool, str]:
     """Merge `branch` into the current branch."""
     args = ["merge", "--ff-only" if ff_only else "--no-edit", "--end-of-options", branch]

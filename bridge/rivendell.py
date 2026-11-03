@@ -255,8 +255,8 @@ import uuid
 from datetime import datetime
 from urllib.parse import quote, urlsplit
 
-from bridge import (config, device_ask, device_share, device_side, device_view, integrations, notices,
-                    rivendell_jobs, team, wsutil)
+from bridge import (config, device_ask, device_share, device_side, device_view, git, integrations,
+                    notices, rivendell_jobs, team, wsutil)
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -1658,7 +1658,10 @@ class Worker:
         # so an unknown slug falls back to the configured workdir.
         workdir = self._find_checkout(slug) or self._workdir()
         print(f"rivendell[{self.name}]: review {request_id} running in {workdir}")
-        job = self._start_run(prompt, workdir, hang_timeout=self.inst.get("review_timeout", 3600))
+        # The template says "Check out the pull request branch" and the run is in the
+        # repo's own checkout: a pr-<n> copy made to read it sat in every branch list.
+        job = self._start_run(prompt + _REVIEW_NOTE, workdir,
+                              hang_timeout=self.inst.get("review_timeout", 3600))
         if job is None:  # can't happen for a fresh session; never hang the queue
             self._post_result("review-requests", request_id, False,
                               "could not start a Claude run (session busy)")
@@ -1669,6 +1672,8 @@ class Worker:
             ok, text = self._wait_job(job, self.inst.get("review_timeout", 3600))
         finally:
             self._untrack(request_id)
+            if number := (rivendell_jobs.classify(prompt) or {}).get("number"):
+                git.drop_pr_copy(workdir, number)
         print(f"rivendell[{self.name}]: review {request_id} "
               f"{'completed' if ok else 'failed'}")
         self._post_result("review-requests", request_id, ok, text)
@@ -3423,6 +3428,9 @@ def work_create(path: str, title: str, description: str = "", board: str = "") -
 
 
 _NOTE_HEAD = "\n\n---\nA note from the operator who started this run:\n\n"
+_REVIEW_NOTE = ("\n\n---\nRead the pull request without changing this checkout: no checkout, no new "
+                "branch, no worktree. `gh pr diff <number>` shows the diff; `git fetch origin "
+                "pull/<number>/head` leaves its files at FETCH_HEAD.\n")
 
 
 def implement(instance_id: str, task_id: str, note: str = "") -> dict:

@@ -1779,6 +1779,26 @@ def test_runs_carry_their_kinds_timeout_as_the_hang_timeout(monkeypatch):
     assert started == [7200, 900]
 
 
+def test_a_review_leaves_no_pr_branch_behind(monkeypatch):
+    """A review runs in the repo's own checkout, and fetching the PR into a pr-<n>
+    branch to read it left that copy in every branch list. The run is told not to
+    branch, and a copy made anyway goes once it ends (git.drop_pr_copy)."""
+    from bridge import git
+    w = _worker()
+    prompts, dropped = [], []
+    monkeypatch.setattr(w, "_find_checkout", lambda slug: "/repo")
+    monkeypatch.setattr(w, "_fetch_prompt", lambda kind_path, rid: {
+        "prompt": "You are an experienced software engineer performing a code review for the team.\n\n"
+                  "Pull request: Fix it\nPull request URL: https://github.com/acme/app/pull/31\n"})
+    monkeypatch.setattr(w, "_start_run", lambda prompt, workdir, hang_timeout=None:
+                        prompts.append(prompt) or _StubJob("done", result="ok"))
+    monkeypatch.setattr(w, "_post_result", lambda *a: None)
+    monkeypatch.setattr(git, "drop_pr_copy", lambda cwd, n: dropped.append((cwd, n)))
+    w._run_review("r1", "acme/app")
+    assert "no new branch" in prompts[0]
+    assert dropped == [("/repo", 31)]
+
+
 def test_watchdog_honours_the_jobs_own_hang_timeout():
     from bridge import runner
 
