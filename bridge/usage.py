@@ -192,7 +192,8 @@ def _view(e: dict) -> dict:
     live_at = e.get("live_at") or 0.0
     return {**data, "read_at": max(e.get("ts") or 0.0, live_at) or None,
             "live": time.time() - live_at < LIVE_WINDOW,
-            "status": e.get("status") if live_at else None}
+            # a turn's word on the limit, until a read through the CLI is newer
+            "status": e.get("status") if live_at and live_at >= (e.get("ts") or 0.0) else None}
 
 
 # rate_limit_event's per-window status -> the meter's severity words
