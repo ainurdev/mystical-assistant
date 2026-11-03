@@ -322,12 +322,15 @@ export interface AwaitingSession {
 // "parked" = killed by a usage limit or API error; the bridge resumes it by itself.
 // "waiting" = ended on WaitForSession; it wakes when the session it waits on
 // finishes (bridge/waits.py) — its label names that session.
-export type SessionState = "working" | "awaiting" | "asking" | "checking" | "parked" | "waiting" | "live" | "idle";
-/** The two states where the session is stopped until you say something — one
- *  mid-turn, one at the end of it. Every "waiting" count, filter and badge
- *  means both. */
+// "background" = the turn answered, but background tasks still run in its
+// process: at rest, not working. "credits" = the last turn stopped on
+// credits_required, which no reset fixes (bridge/limits.py): yours to unblock.
+export type SessionState = "working" | "awaiting" | "asking" | "checking" | "parked" | "waiting" | "live" | "background" | "credits" | "idle";
+/** The states where the session is stopped until you do something — a card
+ *  mid-turn, a question at the end of it, or a login out of credits. Every
+ *  "waiting" count, filter and badge means all three. */
 export const needsYou = (s: SessionState | string | undefined) =>
-  s === "awaiting" || s === "asking";
+  s === "awaiting" || s === "asking" || s === "credits";
 // One unified per-session status, identical on every surface. Bridge sessions can
 // be any state; native (VS Code/terminal) sessions are working/live/idle.
 export interface SessionStatus {

@@ -516,6 +516,9 @@ body {
 .sessdot[data-work="true"] {
   animation: workpulse 1.8s ease-out infinite;
 }
+/* an answered row's background tasks (SessionsPanel bgTag), in line 2's tag cell beside the picture tag */
+.sess-bg { display: inline-flex; align-items: center; gap: 4px; height: 15px; font-size: var(--t85); font-weight: 700; line-height: 1;
+  color: var(--ok); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* A project's state where its rows can't be seen (SessionsPanel stateDots): the rows'
    own dots. On a shut head they sit where + New shows on hover and step aside for it,
    so nothing moves; on a rail tile they are its corner badge. */

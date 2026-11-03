@@ -52,6 +52,8 @@ const SV: Record<SessionState, { lane: Lane; c: string; fill: boolean; t: string
   live: { lane: "idle", c: "var(--info)", fill: false, t: "live in another window" },
   parked: { lane: "parked", c: "var(--info)", fill: true, t: "parked — resumes on its own" },
   waiting: { lane: "wait", c: "var(--purple)", fill: true, t: "waiting on another session" },
+  background: { lane: "idle", c: "var(--txl)", fill: false, t: "answered — background tasks still running" },
+  credits: { lane: "ask", c: "var(--warn)", fill: true, t: "needs extra-usage credits" },
   idle: { lane: "idle", c: "var(--txl)", fill: false, t: "" },
 };
 
