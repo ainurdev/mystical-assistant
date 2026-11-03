@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { api, type AnswerSelection, type Question } from "../api";
 import { splitAsk, waited, type Docked } from "../lib/askdock";
-import { frameOf, optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
+import { frameOf, optionKey, parsePreview, previewTexts, sharedShot, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { hhmm as clock, useClock12 } from "../lib/surfaces";
 import { mcpParts } from "../lib/tools";
@@ -284,8 +284,8 @@ function QuestionDock({ d, draft, setDraft, onRespond, bind }: {
  *  Several are tiles showing the same shot (the tabs switch every tile at once), and
  *  Bigger pages them on a stage. Every frame takes the question's largest shot
  *  (lib/qpreview frameOf), so a tab or an option never resizes the dock, and every
- *  shot fills that frame as large as it fits, hung from the top. Every picture
- *  opens the lightbox with PICK. */
+ *  shot fills that frame as large as it fits, centred. A shot every option shares
+ *  says so on the picture (sharedShot). Every picture opens the lightbox with PICK. */
 function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
   q: Question; chosen: string[]; onPick: (label: string) => void; sending: boolean;
   /** The answered record: tiles open their picture and Bigger pages them; nothing is picked. */
@@ -306,6 +306,8 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
   const [W, H] = frameOf(pics.flatMap((x) => x.pv.shots).filter((s) => !gone.has(s.path)).map((s) => dims[s.path]));
   const frame = { "--W": W, "--H": H, "--ar": Math.min(Math.max(W / H, 1.15), 2.4) } as React.CSSProperties;
   const kOf = (x: (typeof pics)[number]) => Math.min(tab, Math.max(x.pv.shots.length - 1, 0));
+  // two identical tiles read as a mix-up unless the picture says why (2026-11-03)
+  const same = sharedShot(pics.map((x) => x.pv.shots), tab) && <span className="ad-same">Same in every option</span>;
   const all = pics.flatMap((x, pi) => x.pv.shots.map((s, k) => ({
     pi, k, src: api.attachmentUrl(s.path), tag: x.key,
     name: [`${x.key} · ${x.name}`, x.pv.shots.length > 1 ? `${k + 1}/${x.pv.shots.length}` : "", s.alt].filter(Boolean).join(" · "),
@@ -365,6 +367,7 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
             <div className="ad-pic">
               <div className="ad-frame" onClick={() => open(shown)} title={curShot ? "Open full size" : undefined}>
                 {pics.map((x, pi) => <Fragment key={pi}>{layers(x, (k) => pi === shown && k === kOf(x))}</Fragment>)}
+                {same}
               </div>
               {pics.length > 1 && <>
                 <button type="button" className="ad-nav" data-side="l" aria-label="Previous option" onClick={() => setShown((shown + pics.length - 1) % pics.length)}><ChevronLeft size={16} strokeWidth={2.4} /></button>
@@ -392,7 +395,7 @@ function Pictures({ q, chosen, onPick, sending, readOnly = false }: {
               <div key={x.o.label} className="ad-tile" data-on={on ? "" : undefined}>
                 <button type="button" className="ad-tilebtn" aria-pressed={on} disabled={sending}
                   onClick={() => { setShown(pi); if (readOnly) open(pi); else onPick(x.o.label); }}>
-                  <span className="ad-th ad-frame">{layers(x, (k) => k === kOf(x))}</span>
+                  <span className="ad-th ad-frame">{layers(x, (k) => k === kOf(x))}{same}</span>
                   <span className="ad-meta">
                     <Key k={x.key} on={on} />
                     <span className="ad-lab">{x.name}{x.rec && <span className="ad-sug" title="Suggested">★</span>}</span>

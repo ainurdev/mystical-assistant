@@ -2470,15 +2470,22 @@ def _adopt_preview_images(job_id: str, rid: "str | None", questions):
     same size cap, copied rather than moved because the file is whoever made
     it. Anything else in a preview (text, a path that isn't an image file)
     stays as written. Never raises: the question has to reach the human even
-    when its pictures can't."""
+    when its pictures can't.
+
+    A path two options both show is copied once and both point at that copy,
+    so the card can tell the shot is the same and say so (lib/qpreview
+    sharedShot) instead of looking like a mix-up (2026-11-03)."""
     if not isinstance(questions, list):
         return questions
     tag = re.sub(r"[^\w-]", "", rid or "")[:40] or "q"
     n = 0
+    copied: "dict[str, str]" = {}
 
     def adopt(m: "re.Match") -> str:
         nonlocal n
         src = m.group(2)
+        if src in copied:
+            return f"![{m.group(1)}]({copied[src]})"
         try:
             if (not os.path.isfile(src)
                     or not (mimetypes.guess_type(src)[0] or "").startswith("image/")
@@ -2491,6 +2498,7 @@ def _adopt_preview_images(job_id: str, rid: "str | None", questions):
             # each other's a.png; the real name keeps the extension.
             fp = os.path.join(d, f"{tag}-{n}-{os.path.basename(src)}")
             shutil.copy2(src, fp)
+            copied[src] = fp
             return f"![{m.group(1)}]({fp})"
         except OSError as e:
             print(f"[runner] preview image not copied: {e}", file=sys.stderr)
