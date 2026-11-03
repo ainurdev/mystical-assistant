@@ -32,7 +32,7 @@ import uuid
 
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver,
                     git, inspector, integrations, ladder, limits, machine, native_activity, notices,
-                    profiles, pubsub, relevance, state, store, team, tgask, tgtopics,
+                    profiles, pubsub, relevance, savers, state, store, team, tgask, tgtopics,
                     transcript_jsonl, ux_mcp, waits)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send
@@ -721,8 +721,10 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                     fork=fork)
     timeout = timeout or config.RUN_TIMEOUT
     try:
+        # A one-shot never reuses its prefix: the 5-minute cache (savers.ONE_SHOT_ENV).
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
-                              text=True, timeout=timeout, env=_run_env(ponytail, account_slot))
+                              text=True, timeout=timeout,
+                              env={**_run_env(ponytail, account_slot), **savers.ONE_SHOT_ENV})
     except subprocess.TimeoutExpired:
         return (f"⏱️ Timed out after {timeout // 60} min.", None, None, True)
     except FileNotFoundError:
@@ -2849,13 +2851,16 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if "--mcp-config" in cmd:
             # Its file holds tokens (see _mcp_config); it goes with the child.
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
-        cmd = _one_settings(cmd + job.extra_args)
+        # Savers (bridge/savers.py): every ON one, and each TRIAL this session drew.
+        saving = set() if job.skip_pack else savers.for_run(job.store_session_id)
+        cmd = _one_settings(cmd + job.extra_args + savers.settings_args(saving))
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, bufsize=1,
-                                    env=_run_env(ponytail, job.account_slot,
-                                                 resume_cut=job.native_resume))
+                                    env={**_run_env(ponytail, job.account_slot,
+                                                    resume_cut=job.native_resume),
+                                         **savers.env(saving)})
         except FileNotFoundError:
             job.add({"type": "error", "message": "`claude` not found on PATH."})
             job.status = "error"
@@ -2994,6 +2999,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             store.set_turn_tokens(job.id, job.tokens)
             if not restart_killed:   # else leave 'running' for boot recovery to resume
                 store.finish_turn(job.id, job.status, job.cost, job.elapsed)
+                savers.check_done()   # a trial that just got its sessions says so
         job.clear_pending()
         job.close_stdin()
         _prune_uploads()
@@ -3231,6 +3237,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         titler.kick(chat_id, session, job.id)
         waits.drop(session["id"])   # a new turn here ends its wait; Claude can wait again
         limits.clear_credits(session["id"])   # ...and a credits stop: you chose what's next
+        savers.assign(session["id"])          # a new session draws its half of each trial
         from bridge import goals  # local import: runner<->* cycle
         goals.on_user_turn(session["id"], prompt)   # your reply re-arms a blocked goal
         _ensure_journal_thread()

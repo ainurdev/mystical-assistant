@@ -1311,6 +1311,39 @@ def turn_metrics(session_id: str) -> list[dict]:
             (session_id,)).fetchall()]
 
 
+_EDITS = ("Edit", "Write", "MultiEdit", "NotebookEdit")
+
+
+def first_turn_metrics(session_id: str) -> "dict | None":
+    """A session's first turn as a Savers trial scores it (bridge/savers.py):
+    whether it errored, its tokens, the words of its last answer, and the tool
+    calls it made before its first edit (None when it never edited). None until
+    that turn has finished."""
+    with closing(_connect()) as c:
+        t = c.execute("SELECT id, status, tok_in, tok_out, tok_cache_w, tok_cache_r FROM turns "
+                      "WHERE session_id=? ORDER BY seq LIMIT 1", (session_id,)).fetchone()
+        if t is None or t["status"] == "running":
+            return None
+        rows = c.execute("SELECT type, payload FROM events WHERE session_id=? AND turn_id=? "
+                         "AND type IN ('tool','result') ORDER BY seq",
+                         (session_id, t["id"])).fetchall()
+    before, edited, words = 0, False, 0
+    for r in rows:
+        try:
+            p = json.loads(r["payload"])
+        except (TypeError, ValueError):
+            continue
+        if r["type"] == "tool" and not edited:
+            edited = p.get("name") in _EDITS
+            before += 0 if edited else 1
+        elif r["type"] == "result":
+            words = len(str(p.get("result") or "").split())
+    toks = [t[k] for k in ("tok_in", "tok_out", "tok_cache_w", "tok_cache_r")]
+    return {"error": t["status"] == "error", "words": words,
+            "tokens": sum(x or 0 for x in toks) if any(x is not None for x in toks) else None,
+            "tools_before_edit": before if edited else None}
+
+
 def last_turn(session_id: str) -> "dict | None":
     """A session's newest turn and how it ended: `result`, the text of its last
     result event ("" when none came), and `outcome` (bridge/outcomes.py) when it
