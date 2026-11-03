@@ -1577,6 +1577,22 @@ def notify_waiting(chat_id: int | None, session_id: str | None, on_title: str) -
             kind="waiting", sid=session_id, body=f"waiting on {on_title}")
 
 
+def notify_goal(chat_id: int | None, session_id: str | None, goal: dict) -> None:
+    """The turn that met a goal, or stopped it on something only you can give:
+    said once, in place of that turn's DONE (bridge/goals.py verdict)."""
+    if _plugin_session(session_id):
+        return
+    from bridge import goals  # local import: runner<->* cycle
+    met = goal.get("state") == goals.COMPLETE
+    note = " ".join((goal.get("note") or "").split())[:300]
+    head = "◎ Goal met" if met else "◎ Goal needs you"
+    _notify(chat_id, f"{head} — {_session_label(session_id)}\n{goals.title_of(goal)}"
+                     + (f"\n{note}" if note else ""),
+            _session_kb(chat_id, session_id, "🛠 Open session"),
+            kind="goal_met" if met else "goal_blocked", sid=session_id,
+            body=note or goals.title_of(goal))
+
+
 def notify_woken(chat_id: int | None, session_id: str | None, body: str) -> None:
     """A waiting session was queued its wake-up (bridge/waits.py)."""
     if _plugin_session(session_id):
@@ -1590,8 +1606,11 @@ def _announce_end(job) -> None:
     """A turn that ended by itself: WAITING when it ended on WaitForSession (it
     wakes on its own), else DONE or FAILED; then wake whoever waited on it."""
     chat = None if job.tg_live else job.chat_id     # None: the bell only (_notify)
+    from bridge import goals  # local import: runner<->* cycle
     if w := waits.get(job.store_session_id or ""):
         notify_waiting(chat, job.store_session_id, w["title"])
+    elif job.status != "error" and (g := goals.verdict(job)):   # an error still says so
+        notify_goal(chat, job.store_session_id, g)
     else:
         notify_turn_done(chat, job.store_session_id, job.status == "error",
                          body=(job.error_msg or "") if job.status == "error" else
@@ -3033,6 +3052,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
         waits.drop(session["id"])   # a new turn here ends its wait; Claude can wait again
+        from bridge import goals  # local import: runner<->* cycle
+        goals.on_user_turn(session["id"], prompt)   # your reply re-arms a blocked goal
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort, perm,

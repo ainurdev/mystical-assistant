@@ -1482,6 +1482,20 @@ export function App() {
     return () => window.removeEventListener("contextmenu", onCtx);
   }, []);
 
+  // The goal sheet's buttons (GoalPill): Mark done, Keep going, Edit. A bridge
+  // older than their route 404s; its ⟳ (go live) brings the route.
+  async function goalAct(action: "done" | "keep" | "edit", objective?: string) {
+    const sid = sessionId;
+    if (!sid) return;
+    try {
+      const { goal } = await api.goalAction(sid, action, objective);
+      setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, goal } : s)));
+    } catch (e) {
+      const m = (e as Error).message;
+      notify("error", /^(HTTP 404|not found)$/i.test(m) ? "Restart the bridge (⟳) to use the goal's buttons." : m);
+    }
+  }
+
   // Sends are bound to the session the prompt was written in. The relevance
   // check blocks for ~10s, and you're free to open another session meanwhile —
   // so `sid` (not the open session) decides where the run, the queue fallback,
@@ -1512,7 +1526,7 @@ export function App() {
       try {
         const { goal } = await api.setGoal(sid, goalCmd[1].trim());
         setSessions((prev) => prev.map((s) => (s.id === sid ? { ...s, goal } : s)));
-        notify("info", goal ? `Goal set — ${goal.objective}` : "Goal cleared.");
+        notify("info", goal ? `Goal set — ${goal.title || goal.objective}` : "Goal cleared.");
         return true;
       } catch (e) {
         notify("error", (e as Error).message);
@@ -3017,6 +3031,9 @@ export function App() {
                           <AgentsPill sessionId={sessionId} running={running} hud={settings} />
                           <GoalPill
                             goal={sessions.find((s) => s.id === sessionId)?.goal}
+                            turns={turns} running={running}
+                            held={queue.paused || queue.queued.length > 0 || !!openWait?.on}
+                            onAct={(a, objective) => void goalAct(a, objective)}
                             onClear={() => void send("/goal", [])}
                           />
                           {openWait?.on && (

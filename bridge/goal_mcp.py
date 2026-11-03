@@ -37,6 +37,11 @@ _TOOLS = [
                     "type": "string",
                     "description": "What must be true for this to be done.",
                 },
+                "title": {
+                    "type": "string",
+                    "description": ("What to call it, in at most 8 words. The user "
+                                    "sees this, not the objective."),
+                },
             },
             "required": ["objective"],
         },
@@ -146,7 +151,7 @@ def _call(name: str, args: dict) -> str:
         objective = (args.get("objective") or "").strip()
         if not objective:
             return "objective is required."
-        goals.create(sid, objective)
+        goals.create(sid, objective, str(args.get("title") or ""))
         return (f"Goal set: {objective}\nYou will be re-prompted after each turn "
                 f"for up to {goals.MAX_ITER} turns until you call UpdateGoal.")
     if name == "UpdateGoal":

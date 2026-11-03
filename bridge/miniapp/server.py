@@ -19,7 +19,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (accounts, agents, browser, config, devserver, git, github,
+from bridge import (accounts, agents, browser, config, devserver, git, github, goals,
                     httpgz, integrations, models, native, profiles, project_config, projectmarks,
                     relevance, runner, state, store, transcript_jsonl,
                     transcript_page, usage)
@@ -213,7 +213,7 @@ def _session_brief(s: dict) -> dict:
             # overrides, defaults filled in) — both composers load these.
             **run,
             "slot": _run_slot(s, run),
-            "goal": store.parse_goal(s.get("goal")),
+            "goal": goals.brief(store.parse_goal(s.get("goal"))),
             # A Rivendell job's kind and facts (rivendell_jobs): its tag, plate and bar.
             "job": store.parse_job(s.get("job")),
             # A teammate's device run: who asked, for what, how it ended (None = not one).
@@ -456,6 +456,9 @@ class Handler(BaseHTTPRequestHandler):
             if path.startswith("/api/sessions/") and path.endswith("/policy"):
                 return self._api_session_policy(
                     chat_id, path[len("/api/sessions/"):-len("/policy")], body)
+            if path.startswith("/api/sessions/") and path.endswith("/goal"):
+                return self._api_session_goal(
+                    chat_id, path[len("/api/sessions/"):-len("/goal")], body)
             if path.startswith("/api/sessions/") and path.endswith("/autocompact"):
                 return self._api_session_autocompact(
                     chat_id, path[len("/api/sessions/"):-len("/autocompact")], body)
@@ -811,6 +814,18 @@ class Handler(BaseHTTPRequestHandler):
         self._json({"ok": ok, "path": res} if ok else {"error": res}, 200 if ok else 400)
 
     # --- queue / next up / goal (the WORK tab + the chat's goal pill) --------
+    def _api_session_goal(self, chat_id: int, sid: str, body: dict):
+        """/goal typed in the Mini App's composer: an objective sets the goal (and
+        starts on it when nothing runs), a blank one clears it — goals.set_by_user,
+        the same as the dashboard and the bot."""
+        s = self._owned_session(chat_id, sid)
+        if not s:
+            return self._json({"error": "not found"}, 404)
+        goal, refusal = goals.set_by_user(s, body.get("objective") or "")
+        if refusal:
+            return self._json({"error": refusal}, 409)
+        self._json({"ok": True, "goal": goals.brief(goal)})
+
     def _owned_session(self, chat_id: int, sid: str):
         s = store.get_session(sid) if sid else None
         return s if s and s["chat_id"] == chat_id else None
@@ -892,13 +907,12 @@ class Handler(BaseHTTPRequestHandler):
         self._json(queue_manager.snapshot(sid))
 
     def _api_goal(self, chat_id: int, qs):
-        """The session's objective, for the chat header's goal pill (read-only:
-        the model owns the verdict — see goals.py)."""
-        from bridge import goals
+        """The session's objective, for the chat header's goal strip (the model
+        owns the verdict — see goals.py)."""
         s = self._owned_session(chat_id, qs.get("session", [""])[0])
         if not s:
             return self._json({"error": "not found"}, 404)
-        self._json({"goal": goals.get(s["id"]), "max_iter": goals.MAX_ITER})
+        self._json({"goal": goals.brief(goals.get(s["id"])), "max_iter": goals.MAX_ITER})
 
     # --- static (SPA) --------------------------------------------------------
     def _serve_static(self, path: str):

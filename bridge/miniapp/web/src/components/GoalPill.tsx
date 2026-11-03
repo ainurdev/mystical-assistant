@@ -1,34 +1,72 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { api } from "../lib/api";
+import { api, type Goal } from "../lib/api";
 
 /* The context strip under the chat header: what this session is trying to
-   finish (goals.py drives the loop; the model owns the verdict, so the pill is
-   read-only) and what a usage limit does to it. */
+   finish (goals.py drives the loop; the model owns the verdict) and what a usage
+   limit does to it. The goal shows while it works, when it needs you, and once
+   met until you prompt past it — the dashboard's pill states (GoalPill there). */
 
 const POLICIES = ["ask", "auto", "wait"] as const;
 const POLICY_ICON: Record<string, string> = { ask: "⛔", auto: "↪", wait: "⏳" };
 
-export function GoalPill({ sessionId }: { sessionId: string | null }) {
-  const { data } = useQuery({
+function useGoal(sessionId: string | null) {
+  return useQuery({
     queryKey: ["goal", sessionId],
     queryFn: () => api.getGoal(sessionId as string),
     enabled: sessionId !== null,
     refetchInterval: 15000,
   });
+}
+
+/** working | blocked | met, or null when there is nothing to show. */
+function phaseOf(goal: Goal | null | undefined) {
+  if (!goal) return null;
+  if (goal.state === "active") return "working";
+  if (goal.state === "blocked") return "blocked";
+  return goal.at && !goal.seen ? "met" : null;
+}
+
+const INK = { working: "var(--brand-soft)", blocked: "var(--warning)", met: "var(--success)" } as const;
+
+export function GoalPill({ sessionId }: { sessionId: string | null }) {
+  const { data } = useGoal(sessionId);
   const goal = data?.goal;
-  if (!goal || goal.state !== "active") return null;
+  const phase = phaseOf(goal);
+  if (!goal || !phase) return null;
+  const ink = INK[phase];
   return (
-    <span className="flex min-w-0 items-center gap-1.5 rounded-full border border-border-bright bg-[var(--ac-06)] px-3 py-1 text-[11px] text-[var(--brand-soft)]">
-      <span
-        className="h-1.5 w-1.5 shrink-0 rounded-full bg-[var(--brand-soft)]"
-        style={{ animation: "mpulse 2.4s infinite" }}
-      />
+    <span
+      title={goal.note ? `${goal.objective}\n\n${goal.note}` : goal.objective}
+      className="flex min-w-0 items-center gap-1.5 rounded-full border px-3 py-1 text-[11px]"
+      style={{ color: ink, borderColor: `color-mix(in srgb, ${ink} 40%, transparent)`,
+               background: `color-mix(in srgb, ${ink} 8%, transparent)` }}
+    >
+      {phase === "met" ? <span aria-hidden>✓</span> : (
+        <span className="h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden
+          style={{ background: ink, animation: phase === "working" ? "mpulse 2.4s infinite" : undefined }} />
+      )}
       <span className="shrink-0">
-        goal · {goal.iter}/{data?.max_iter ?? 10}
+        {phase === "working" ? `goal · ${goal.iter}/${data?.max_iter ?? 10}` : phase === "met" ? "goal met" : "needs you"}
       </span>
-      <span className="truncate text-[var(--tg-hint)]">{goal.objective}</span>
+      <span className="truncate text-[var(--tg-hint)]">{goal.title || goal.objective}</span>
     </span>
+  );
+}
+
+/** The model's note on a goal it met or got stuck on, under the strip: what it
+ *  delivered, or what it needs from you. */
+export function GoalNote({ sessionId }: { sessionId: string | null }) {
+  const { data } = useGoal(sessionId);
+  const goal = data?.goal;
+  const phase = phaseOf(goal);
+  if (!goal?.note || (phase !== "blocked" && phase !== "met")) return null;
+  return (
+    <p className="line-clamp-3 rounded-lg border px-3 py-2 text-[12px] leading-snug text-[var(--tg-text)]"
+      style={{ borderColor: `color-mix(in srgb, ${INK[phase]} 30%, transparent)`,
+               background: `color-mix(in srgb, ${INK[phase]} 6%, transparent)` }}>
+      {goal.note}
+    </p>
   );
 }
 

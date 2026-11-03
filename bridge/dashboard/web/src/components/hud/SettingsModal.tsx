@@ -1170,11 +1170,11 @@ const MAC_BTN: CSSProperties = {
  *  lands in the bell whatever is picked here. */
 const NOTIFY_ROWS: { head: string; ask?: boolean; rows: [string, string, string?][] }[] = [
   { head: "NEEDS YOU · always in the bell, pinned", ask: true, rows: [
-    ["ask", "Approval or question", "a session's card, or a Rivendell run that paused for you"],
+    ["ask", "Approval or question", "a session's card, a goal that needs you, or a Rivendell run that paused for you"],
     ["rv_offer", "Rivendell offer", "a teammate's job that would run on your accounts"],
     ["account", "Login expired · limit choice"]] },
   { head: "SESSIONS", rows: [
-    ["done", "Finished"],
+    ["done", "Finished", "or met its goal"],
     ["failed", "Failed", "with the reason: context full, API error, killed…"],
     ["parked", "Paused by the usage limit", "it resumes on its own at the reset"],
     ["resumed", "Resumed or retrying on its own", "after a restart, a limit reset, an API error or a sign-in; a Rivendell link back"],

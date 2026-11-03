@@ -49,6 +49,8 @@ CATALOG = {
     "limit_choice": ("account", "needs", "session"),
     "rv_offer": ("rv_offer", "needs", "rivendell"),
     "done": ("done", "news", "session"),
+    "goal_met": ("done", "news", "session"),        # the turn that met its goal (runner.notify_goal)
+    "goal_blocked": ("ask", "needs", "session"),    # ...or stopped it on something only you can give
     "failed": ("failed", "news", "session"),
     "parked": ("parked", "news", "session"),
     "resumed": ("resumed", "fyi", "session"),
@@ -82,6 +84,7 @@ VERBS = {
     "approve": "APPROVE", "question": "QUESTION", "login": "SIGN IN",
     "limit_choice": "LIMIT", "rv_offer": "OFFERED", "done": "DONE", "failed": "FAILED",
     "parked": "PARKED", "resumed": "RESUMED", "retrying": "RETRYING", "waiting": "WAITING",
+    "goal_met": "GOAL MET", "goal_blocked": "GOAL NEEDS YOU",
     "started": "STARTED", "rv_started": "STARTED", "rv_ended": "ENDED",
     "rv_held": "HELD", "rv_dismissed": "DISMISSED", "rv_done": "DONE", "rv_failed": "FAILED",
     "rv_refused": "REFUSED", "rv_link": "LINK DOWN", "rv_link_back": "LINK BACK",
@@ -396,8 +399,9 @@ def _need(kind: str, subject: str, session_id: "str | None", title: str, body: s
 def needs(status: dict) -> list:
     """Everything waiting on you right now, newest first: sessions blocked on a
     card or a question (the status map), teammates' Rivendell jobs still held for
-    a tap, and sessions whose newest notice asks you to sign in or pick a limit
-    route. The feed only lends the detail — the card's command, the question."""
+    a tap, and sessions whose newest notice asks you to sign in, pick a limit
+    route or unblock a goal that is still blocked. The feed only lends the
+    detail — the card's command, the question."""
     try:
         rows = store.list_notices(time.time() - KEEP_S, LIMIT)
     except Exception:  # noqa: BLE001
@@ -431,7 +435,9 @@ def needs(status: dict) -> list:
             continue
         if r["kind"] == "limit_choice" and (status or {}).get(sid, {}).get("state") != "parked":
             continue
-        if r["kind"] not in ("login", "limit_choice"):
+        if r["kind"] == "goal_blocked" and (store.get_goal(sid) or {}).get("state") != "blocked":
+            continue                              # answered, re-opened or cleared
+        if r["kind"] not in ("login", "limit_choice", "goal_blocked"):
             continue
         sess = store.get_session(sid) or {}
         out.append(_need(r["kind"], sid, sid, sess.get("title") or r["title"],

@@ -25,6 +25,7 @@ HELP = (
     "/report — this week per project (time · tokens) · /report last\n"
     "/accounts — Claude logins and their usage · /accounts add\n"
     "/policy — what to do when a chat hits the usage limit\n"
+    "/goal <objective> — keep Claude working until it's true · /goal alone clears it\n"
     "/profile [name|none] — show or set this chat's run profile\n"
     "/status — everything at a glance\n"
     "/help — this message\n\n"
@@ -334,7 +335,7 @@ def on_message(msg: dict):
         back = 1 if text[len("/report"):].strip() == "last" else 0
         send(chat_id, report.render(report.weekly(chat_id, back=back)))
         return
-    if cmd0 in ("/accounts", "/policy"):
+    if cmd0 in ("/accounts", "/policy", "/goal"):
         # /accounts reads every account's usage meter — network, so off-thread.
         threading.Thread(target=handle_fallback_command, args=(chat_id, text),
                          daemon=True).start()
@@ -496,9 +497,28 @@ def _accounts_text() -> str:
 
 
 def handle_fallback_command(chat_id: int, text: str) -> bool:
-    """Handle /accounts and /policy. Returns whether the text was ours."""
+    """Handle /accounts, /policy and /goal. Returns whether the text was ours."""
     cmd, _, arg = text.strip().partition(" ")
     arg = arg.strip()
+    if cmd == "/goal":
+        # This chat's session, as /policy: goals.set_by_user is /goal on every
+        # surface — set it (and start now when idle), or clear it when bare.
+        from bridge import goals
+        s = store.latest_session(chat_id, state.project_key(chat_id))
+        if not s:
+            send(chat_id, "No chat here yet — send a prompt first.")
+            return True
+        had = goals.get(s["id"])
+        goal, refusal = goals.set_by_user(s, arg)
+        if refusal:
+            send(chat_id, refusal)
+        elif goal:
+            send(chat_id, f"◎ Goal set — {goals.title_of(goal)}\nClaude re-prompts itself after "
+                          f"each turn until it's done, {goals.MAX_ITER} turns at most. /goal alone clears it.")
+        else:
+            send(chat_id, "Goal cleared." if had else
+                 "No goal here. /goal <objective> keeps Claude working until it's true.")
+        return True
     if cmd == "/policy":
         if not arg:
             send(chat_id, _policy_text())

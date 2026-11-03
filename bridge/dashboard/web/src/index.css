@@ -1259,6 +1259,67 @@ input {
 .pillstrip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 9px; }
 .pillstrip:empty { display: none; }
 
+/* The goal pill and its sheet (components/GoalPill; .mystical/design-drafts/goals,
+   A · SHEET). --gc is the phase's ink: accent while working, amber when stalled or
+   it needs you, green when met. The sheet is the house popover (ntf-pop, PrChip). */
+.goal-pill { appearance: none; cursor: pointer; align-self: flex-start; display: inline-flex; align-items: center; gap: 8px; max-width: 100%;
+  padding: 4px 12px; border-radius: 999px; font-family: inherit; font-size: var(--t11); letter-spacing: .5px; line-height: 1.5;
+  color: var(--gc); border: 1px solid color-mix(in srgb, var(--gc) 38%, transparent);
+  background: color-mix(in srgb, var(--gc) 6%, transparent); transition: background .15s ease, border-color .15s ease; }
+.goal-pill:hover, .goal-pill[data-open] { background: color-mix(in srgb, var(--gc) 14%, transparent); border-color: color-mix(in srgb, var(--gc) 55%, transparent); }
+.goal-pill .pill-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--txm); }
+.goal-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.goal-pill[data-phase="working"] .goal-dot { animation: mpulse 2.4s infinite; }
+.goal-pips { flex: none; display: inline-flex; align-items: center; gap: 2px; }
+.goal-pips i { display: block; width: 3px; height: 9px; border-radius: 1.5px; background: color-mix(in srgb, var(--txd) 26%, transparent); }
+.goal-pips i[data-on] { background: currentColor; }
+.goal-pips i[data-live] { animation: mpulse 1.6s infinite; }
+.goal-sheet { position: fixed; z-index: 80; width: 456px; max-width: calc(100vw - 16px); padding: 13px 16px 12px; overflow-y: auto;
+  border: 1px solid var(--line2, var(--border-bright)); border-radius: var(--f-rad, 0); background: var(--panel); color: var(--tx);
+  box-shadow: var(--f-pop-shadow, 0 12px 34px var(--shadow-pop)); animation: mslide .16s ease both; font-family: var(--ui-font); }
+.gs-h { display: flex; align-items: center; gap: 8px; height: 18px; }
+.gs-g { color: var(--gc); font-size: 14px; line-height: 1; }
+.gs-lbl { font-size: var(--t95); letter-spacing: .18em; text-transform: uppercase; color: var(--txl); }
+.gs-st { margin-left: auto; display: inline-flex; align-items: center; gap: 7px; font-size: var(--t12); font-weight: 700; color: var(--gc); }
+.gs-st > i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.goal-sheet[data-phase="working"] .gs-st > i { animation: mpulse 2.4s infinite; }
+.gs-m { font-weight: 600; color: var(--txd); white-space: pre; }
+.gs-t { margin-top: 8px; font-size: 16px; font-weight: 700; line-height: 22px; color: var(--txb); }
+.gs-b { appearance: none; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; width: 100%;
+  margin-top: 4px; padding: 0; border: 0; background: none; cursor: pointer; text-align: left;
+  font: inherit; font-size: var(--t13); line-height: 1.5; color: var(--txm); white-space: pre-wrap; }
+.gs-b[data-open] { display: block; max-height: 40vh; overflow-y: auto; }
+.gs-note { margin-top: 9px; padding: 9px 11px; border-radius: var(--f-rad-s, 0); font-size: var(--t13); line-height: 1.5; color: var(--tx); white-space: pre-wrap;
+  background: color-mix(in srgb, var(--gc) 7%, transparent); border: 1px solid color-mix(in srgb, var(--gc) 26%, transparent); }
+.gs-note .gs-lbl { display: block; margin-bottom: 3px; color: var(--gc); }
+.gs-track { display: flex; align-items: flex-end; gap: 16px; margin-top: 11px; padding-top: 10px; border-top: 1px dashed var(--line2, var(--border)); }
+.gs-sum { display: flex; flex-direction: column; gap: 6px; min-width: 104px; padding-bottom: 2px; }
+.gs-sum b { font-size: 15px; font-weight: 700; color: var(--txb); font-variant-numeric: tabular-nums; }
+.gs-sum b span { margin-left: 5px; font-size: var(--t11); font-weight: 600; color: var(--txd); }
+.gs-bars { display: flex; align-items: flex-end; gap: 4px; height: 40px; }
+.gs-bar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 4px; width: 22px; height: 100%; }
+.gs-bar i { display: block; width: 12px; border-radius: 3px; background: var(--acc); }
+.goal-sheet[data-phase="met"] .gs-bar:not([data-empty]) i { background: var(--ok); }
+.gs-bar[data-first] i { opacity: .5; }
+.gs-bar[data-last] i { background: var(--warn); }
+.gs-bar[data-live] i { background: repeating-linear-gradient(-45deg, var(--acc) 0 3px, color-mix(in srgb, var(--acc) 45%, transparent) 3px 6px); animation: mpulse 1.6s infinite; }
+.gs-bar[data-empty] i { width: 4px; height: 4px; border-radius: 50%; background: color-mix(in srgb, var(--txd) 25%, transparent); }
+.gs-bar em { font-style: normal; font-size: 9.5px; line-height: 1; height: 10px; color: var(--txl); font-variant-numeric: tabular-nums; }
+.gs-a { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.gs-btn { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 11px; white-space: nowrap;
+  border: 1px solid var(--line2, var(--border)); border-radius: var(--f-rad-s, 0); background: var(--panel2); color: var(--tx); font: inherit; font-size: var(--t12); }
+.gs-btn:hover { border-color: color-mix(in srgb, var(--gc) 45%, var(--line2, var(--border))); color: var(--txb); }
+.gs-btn.pri { background: color-mix(in srgb, var(--gc) 16%, var(--panel2)); border-color: color-mix(in srgb, var(--gc) 50%, transparent); color: var(--txb); }
+.gs-btn.quiet { margin-left: auto; border-color: transparent; background: none; color: var(--txd); }
+.gs-btn.quiet:hover { color: var(--txb); }
+/* A goal's re-prompt in the transcript (PromptBubble): one line, not the brief. */
+.pgoal-line { appearance: none; cursor: pointer; display: flex; align-items: baseline; gap: 6px; width: 100%; min-width: 0; padding: 0; border: 0;
+  background: none; color: inherit; font: inherit; text-align: left; }
+.pgoal-line > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pgoal-k { color: var(--txm); font-weight: 600; }
+.pgoal-t { flex: none; margin-left: auto; font-family: var(--ui-font); font-size: var(--t11); font-weight: 400; color: var(--txl); }
+[data-style] .pbub .md.pgoal-brief, .pgoal-brief { margin-top: 6px; font-size: var(--t13); font-weight: 400; color: var(--txm); }
+
 /* Composer control row — two tiers on one line. SETTINGS (what the next turn
    *is*) keep a box and carry their own field code, so the name travels with the
    control; VERBS (things that fire now) have no box at all, because a box reads

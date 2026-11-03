@@ -23,9 +23,15 @@ export type Lifecycle = "done" | "abandoned" | "backlog";
 // UpdateGoal); the bridge re-prompts after each turn while state is "active".
 export interface Goal {
   objective: string;
+  /** Its short name: the model's, else the objective's head (bridge/goals.py
+   *  title_of). Absent from a bridge older than this dashboard. */
+  title?: string;
   state: "active" | "complete" | "blocked";
   iter: number;
   note?: string;
+  since?: number;  // epoch s it was set; goals from before have none
+  at?: number;     // epoch s it was met or blocked
+  seen?: boolean;  // a met goal you have prompted past
 }
 /** What a Rivendell job was about, filed on its session (bridge/rivendell_jobs.py
  *  facts()). Only `kind` is near-certain; every other fact is there when Rivendell
@@ -1842,6 +1848,14 @@ export const api = {
       `/local/sessions/${encodeURIComponent(id)}/tools`, {
         method: "POST",
         body: { disabled_tools: rules },
+      }),
+  // The goal sheet's buttons: Mark done, Keep going, Edit. A bridge older than
+  // this route 404s (it would have read a bare {action} as a clearing /goal).
+  goalAction: (id: string, action: "done" | "keep" | "edit", objective?: string) =>
+    req<{ ok: boolean; goal: Goal | null }>(
+      `/local/sessions/${encodeURIComponent(id)}/goal/act`, {
+        method: "POST",
+        body: { action, objective },
       }),
   // An empty objective clears the goal; the bridge owns the loop either way.
   setGoal: (id: string, objective: string) =>
