@@ -437,9 +437,11 @@ def needs(status: dict) -> list:
             continue
         if r["kind"] == "limit_choice" and (status or {}).get(sid, {}).get("state") != "parked":
             continue
+        if r["kind"] == "credits" and (status or {}).get(sid, {}).get("state") != "credits":
+            continue                              # a new turn started, or you left it
         if r["kind"] == "goal_blocked" and (store.get_goal(sid) or {}).get("state") != "blocked":
             continue                              # answered, re-opened or cleared
-        if r["kind"] not in ("login", "limit_choice", "goal_blocked"):
+        if r["kind"] not in ("login", "limit_choice", "goal_blocked", "credits"):
             continue
         sess = store.get_session(sid) or {}
         out.append(_need(r["kind"], sid, sid, sess.get("title") or r["title"],
