@@ -194,6 +194,45 @@ def test_every_run_opts_in_to_session_state_events():
     assert runner._run_env(None)["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] == "1"
 
 
+def test_only_a_recovery_run_asks_the_cli_to_carry_a_cut_turn_on():
+    assert "CLAUDE_CODE_RESUME_INTERRUPTED_TURN" not in runner._run_env(None)
+    assert runner._run_env(None, None, resume_cut=True)["CLAUDE_CODE_RESUME_INTERRUPTED_TURN"] == "1"
+
+
+def _resuming():
+    job = _job("s-rs")
+    job.native_resume, job.resume_state = True, "waiting"
+    return job
+
+
+def test_a_native_resume_that_starts_is_accepted():
+    job = _resuming()
+    runner._handle_event(job, {"type": "command_lifecycle", "command_uuid": "c", "state": "started"})
+    assert job.resume_state == "accepted"
+    runner._handle_event(job, _state("idle"))          # its own idle at the end is no decline
+    assert job.resume_state == "accepted" and not [e for e in job.events if e.get("type") == "resume"]
+    runner._jobs.clear()
+
+
+def test_a_native_resume_that_goes_idle_first_was_declined():
+    job = _resuming()
+    for d in (_state("running"), {"type": "system", "subtype": "init"}, _state("idle")):
+        runner._handle_event(job, d)
+    assert job.resume_state == "declined"
+    assert job.events[-1] == {"type": "resume", "declined": True}
+    runner._resume_declined(job)                         # the timer firing late adds nothing
+    assert [e["type"] for e in job.events].count("resume") == 1
+    runner._jobs.clear()
+
+
+def test_resume_reason_on_a_reply_also_counts_as_started():
+    job = _resuming()
+    runner._handle_event(job, {"type": "result", "subtype": "success", "result": "DONE",
+                               "num_turns": 1, "resume_reason": "interrupted_turn"})
+    assert job.resume_state == "accepted"
+    runner._jobs.clear()
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items()) if k.startswith("test_") and callable(v)]
     failed = 0

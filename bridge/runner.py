@@ -307,7 +307,7 @@ def normalize_ponytail(level) -> "str | None":
 
 
 def _run_env(ponytail: "str | None",
-             account_slot: "int | None" = None) -> dict:
+             account_slot: "int | None" = None, resume_cut: bool = False) -> dict:
     """Env for the claude subprocess: the inherited env plus a run's ponytail
     intensity and Claude account. The account arrives as CLAUDE_CONFIG_DIR,
     which is the whole multi-account mechanism -- every turn is still the
@@ -322,6 +322,11 @@ def _run_env(ponytail: "str | None",
     # the CLI's own word on whether a turn is done, where the bridge used to
     # guess from the turn row, the job and the transcript (Job.cli_state).
     over["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1"
+    if resume_cut:
+        # Only on boot recovery's run of a turn a restart cut: Claude Code then
+        # continues that turn itself, with no prompt from us. Never on a normal
+        # turn, where it could pick up a turn you stopped yourself.
+        over["CLAUDE_CODE_RESUME_INTERRUPTED_TURN"] = "1"
     # The host flag that tells the model AskUserQuestion options can carry a
     # `preview`; under -p it's off unless set. The cards draw an option's
     # preview images as that option's pictures (_adopt_preview_images).
@@ -864,6 +869,12 @@ class Job:
         # means it got through. rate_limit is the last rate_limit_event's info.
         self.retry: dict | None = None
         self.rate_limit: dict | None = None
+        # Boot recovery's run of a turn a restart cut (recovery.CONTINUED): no
+        # prompt goes in, Claude Code carries the cut turn on by itself
+        # (CLAUDE_CODE_RESUME_INTERRUPTED_TURN). resume_state is "waiting" until
+        # it starts ("accepted") or goes idle without starting ("declined").
+        self.native_resume = False
+        self.resume_state: str | None = None
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -2300,8 +2311,33 @@ def _note_rate_limit(job: Job, info: dict) -> None:
         print(f"[usage] rate_limit_event not noted: {e}", file=sys.stderr)
 
 
+RESUME_WAIT = 60.0   # a native resume that hasn't started by then was declined
+
+
+def _resume_declined(job: "Job") -> None:
+    """Claude Code went idle without carrying the cut turn on (cut too long
+    ago, it hit --max-turns, an MCP result ended it), or never said anything.
+    The turn says so and offers today's nudge; the process is let go."""
+    if job.resume_state != "waiting":
+        return
+    job.resume_state = "declined"
+    job.add({"type": "resume", "declined": True})
+    job.close_stdin()
+
+
+def _note_resume(job: "Job", d: dict) -> None:
+    t = d.get("type")
+    if (t == "command_lifecycle" and d.get("state") == "started") or t == "assistant" \
+            or d.get("resume_reason"):
+        job.resume_state = "accepted"
+    elif t == "system" and d.get("subtype") == "session_state_changed" and d.get("state") == "idle":
+        _resume_declined(job)
+
+
 def _handle_event(job: Job, d: dict):
     t = d.get("type")
+    if job.resume_state == "waiting":
+        _note_resume(job, d)
     job.boot = None          # the child is talking; nothing is loading any more
     sid = d.get("session_id")
     if sid and sid != job.session_id:
@@ -2818,7 +2854,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, bufsize=1,
-                                    env=_run_env(ponytail, job.account_slot))
+                                    env=_run_env(ponytail, job.account_slot,
+                                                 resume_cut=job.native_resume))
         except FileNotFoundError:
             job.add({"type": "error", "message": "`claude` not found on PATH."})
             job.status = "error"
@@ -2862,9 +2899,17 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         # however long; a hang does.
         threading.Thread(target=_watchdog, args=(job, proc), daemon=True).start()
 
-        # Deliver the prompt on stdin as a stream-json user message.
-        job._write_stdin({"type": "user",
-                          "message": {"role": "user", "content": full_prompt}})
+        if job.native_resume:
+            # Nothing to deliver: the CLI picks the cut turn up on its own, or
+            # goes idle (declined). RESUME_WAIT covers a CLI that says nothing.
+            job.resume_state = "waiting"
+            watch = threading.Timer(RESUME_WAIT, _resume_declined, args=(job,))
+            watch.daemon = True
+            watch.start()
+        else:
+            # Deliver the prompt on stdin as a stream-json user message.
+            job._write_stdin({"type": "user",
+                              "message": {"role": "user", "content": full_prompt}})
 
         assert proc.stdout is not None
         for line in proc.stdout:
@@ -2888,6 +2933,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 job.close_stdin()
         proc.wait()
 
+        if job.resume_state == "declined" and job.status == "running":
+            job.status = "done"       # not a failure: the turn's card offers the nudge
         if job.interrupted:
             # Stopped by the user (graceful interrupt or kill): finalize cleanly
             # and mark the turn so the transcript shows it was stopped.
@@ -3076,7 +3123,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         mcp_on: str | None = None,
                         extra_args: list[str] | None = None,
                         hang_timeout: float | None = None,
-                        skip_pack: bool = False) -> Job | None:
+                        skip_pack: bool = False,
+                        native_resume: bool = False) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -3100,6 +3148,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     even one the caller names: that refuses the run.
 
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
+
+    native_resume is boot recovery's run of a turn a restart cut: `prompt` is only
+    the turn row's marker (recovery.CONTINUED), nothing is sent, and Claude Code
+    carries the cut turn on by itself or declines (Job.resume_state).
 
     skip_pack runs it as _base_cmd's internal one-shot: no context pack, no tools and
     no MCP servers at all, for a prompt that carries untrusted text and needs no tools
@@ -3165,6 +3217,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.work_cwd = wt if wt and os.path.isdir(wt) else None
         job.mcp_on, job.extra_args = mcp_on, list(extra_args or [])
         job.skip_pack = skip_pack
+        job.native_resume = native_resume and not is_acp
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
             runtime = f"claude:{account_slot}"
         job.runtime = runtime

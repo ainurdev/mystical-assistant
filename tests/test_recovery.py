@@ -46,7 +46,8 @@ class _Rec:
         self.calls.append({"chat_id": chat_id, "prompt": prompt, "images": images,
                            "project": project, "session_id": session_id, "model": model,
                            "account_slot": kw.get("account_slot"),
-                           "runtime": kw.get("runtime")})
+                           "runtime": kw.get("runtime"),
+                           "native_resume": kw.get("native_resume", False)})
         return self._job
 
 
@@ -102,7 +103,9 @@ def test_recover_resumes_eligible():
     # model=None: the run reads the session's own (a switch made mid-turn
     # included), not the "sonnet" this turn started on.
     assert call["project"] == "/tmp/rez" and call["model"] is None
-    assert call["prompt"] == recovery.NUDGE and call["images"] == []
+    # A Claude turn carries itself on: no nudge goes in, the row holds the marker.
+    assert call["prompt"] == recovery.CONTINUED and call["native_resume"] is True
+    assert call["images"] == []
     # Bell only by default: the resumed turn's DONE or FAILED is the news.
     from bridge import notices
     assert notify.calls == []
