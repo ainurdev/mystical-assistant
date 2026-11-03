@@ -266,7 +266,15 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
+  // The CLI retrying a request (system/api_retry), one per try. `error` is its
+  // class: overloaded, rate_limit, server_error, http_529, connection…
+  | { type: "retry"; attempt: number; max: number; delay_ms: number; error: string }
+  // A refusal (rate_limit_event, status rejected). error_code credits_required is
+  // the one no reset fixes; `buy` is whether the login can buy credits.
+  | { type: "ratelimit"; status: "rejected"; error_code: string | null; resets_at: number | null; buy: boolean | null }
+  // Claude Code declined to carry on the turn a bridge restart cut (recovery.CONTINUED).
+  | { type: "resume"; declined: true };
 
 /** A run event with the clock the store kept for it. `at` is epoch seconds and
  *  is absent on a live event, which has not been stored yet — a surface that
@@ -291,6 +299,9 @@ export interface Transcript {
   oldest_seq?: number | null;
   /** First turn whose events are loaded — where rendering should start. */
   tail_from?: string | null;
+  /** The Savers trials this session drew the saver in (bridge/savers.py arms_for):
+   *  its prompts' tag says so. Absent on a bridge older than Savers. */
+  savers?: string[];
 }
 
 export interface ServerInfo {
@@ -919,9 +930,19 @@ export interface AwaitingSession {
 // usage limit or API error and waiting to auto-resume; asking = the last turn
 // finished by asking you something (the transcript's ASK card) — your move, but
 // nothing is blocked; waiting = the last turn ended on WaitForSession and it
-// wakes when the session `on` finishes (bridge/waits.py); else idle.
+// wakes when the session `on` finishes (bridge/waits.py); background = the turn
+// answered and Claude Code says idle, but background tasks still run in its
+// process; credits = the last turn stopped on credits_required, which no reset
+// fixes (bridge/limits.py block_credits); else idle.
 export type SessionState =
-  "working" | "awaiting" | "checking" | "parked" | "asking" | "waiting" | "live" | "idle";
+  "working" | "awaiting" | "checking" | "parked" | "asking" | "waiting" | "live" | "background" | "credits" | "idle";
+/** A task Claude Code still runs after the answer (background_tasks_changed). */
+export interface BgTask {
+  id: string;
+  type: "shell" | "agent" | "task";
+  desc: string;
+  since: number;   // when the bridge first saw it, epoch s
+}
 // One unified per-session status, identical on every surface. Bridge sessions can
 // be any state; native (VS Code/terminal) sessions are working/idle only.
 export interface SessionStatus {
@@ -942,6 +963,17 @@ export interface SessionStatus {
   at?: number;
   slot?: number | null;
   offer?: { slot: number; label: string }[] | null;
+  // `background` only, with `since` = when the answer landed: the tasks still
+  // running (shells too), and the most that ran at once.
+  bg?: BgTask[];
+  peak?: number;
+  // `working` only: the CLI retrying a request (system/api_retry; `error` is its
+  // class, `at` epoch s), and `resumed` while Claude Code carries on a turn a
+  // bridge restart cut. A bridge older than these sends neither.
+  retry?: { attempt: number; max: number; delay_ms: number; error: string; at: number } | null;
+  resumed?: boolean;
+  // `credits` only, with `at` and `slot`: whether that login can buy credits (null = unknown).
+  buy?: boolean | null;
 }
 export interface JobActivity {
   state: "tool" | "awaiting" | "thinking";
@@ -1186,6 +1218,12 @@ export interface AccountInfo {
   runs_out_at?: string | null; // the 5-hour window at the last hour's pace, when that beats its refill
   logged_in: boolean; // false = the OAuth token is gone/expired; only a re-login fixes it
   plan: string | null; // "MAX 20x" / "TEAM 5x" / "PRO", off the login's own credentials
+  // How fresh the meter is (bridge/usage.py), absent from an older bridge: when it
+  // was last read (through the CLI, or a running turn's report), whether a turn
+  // reported it in the last 3 min, and that turn's last word on the limit.
+  read_at?: number | null;
+  live?: boolean;
+  status?: "allowed" | "allowed_warning" | "rejected" | null;
 }
 /** A vetted non-Claude agent the bridge can run over ACP (bridge/acp_agents.py
  *  PRESETS). There is no custom command: this list is the whole menu. */
@@ -1310,6 +1348,23 @@ export interface AiFeature {
   tokens?: string; // what one unit burns, in + out — absent on a bridge older than the figure
   about: string; // the paragraph under the switch — what it does, what it adds
   enabled: boolean;
+}
+/** One Saver (bridge/savers.py): a switch of Claude Code's own that makes a turn
+ *  cheaper. TRIAL puts it on every other new session and scores both halves on
+ *  their first turn; `trial` is the latest one's result (null when none ran).
+ *  Deltas are integer percents of the other half, negative = the saver's half
+ *  lower; null while a half has nothing to compare. */
+export interface Saver {
+  key: string;
+  label: string;
+  hint: string;
+  mode: "off" | "trial" | "on";
+  target: number; // sessions a trial scores before it reports
+  trial: {
+    n: number; on: number; off: number;
+    words: number | null; tokens: number | null; tools: number | null;
+    errors_on: number; errors_off: number;
+  } | null;
 }
 /** One bundled integration (bridge/integrations.py) and whether it is installed. A
  *  plugin that isn't installed has its routes answer 404, so the UI hides it
@@ -1864,8 +1919,10 @@ export const api = {
         method: "POST",
         body: { objective },
       }),
-  accounts: () =>
-    req<AccountsInfo>("/local/accounts"),
+  // fresh=N: the bridge first re-reads, through the CLI, any login whose meter is
+  // older than N s (0 = every one, now). A bridge older than that ignores it.
+  accounts: (fresh?: number) =>
+    req<AccountsInfo>(`/local/accounts${fresh === undefined ? "" : `?fresh=${fresh}`}`),
   accountAction: (action: "add" | "remove" | "disable" | "enable", slot?: number) =>
     req<{ ok: boolean; slot?: number }>("/local/accounts", {
       method: "POST",
@@ -1912,6 +1969,13 @@ export const api = {
     req<{ ok: boolean; features: AiFeature[] }>("/local/aifeatures", {
       method: "POST",
       body: { key, enabled },
+    }),
+  /** The Savers and their trials. A bridge older than them answers 404 "not found". */
+  savers: () => req<{ savers: Saver[] }>("/local/savers"),
+  setSaver: (key: string, mode: Saver["mode"]) =>
+    req<{ ok: boolean; savers: Saver[] }>("/local/savers", {
+      method: "POST",
+      body: { key, mode },
     }),
   /** The bundled integrations and whether each is installed. A bridge older than
    *  this answers 404 "not found" (see lib/integrations.ts). */

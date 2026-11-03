@@ -12,6 +12,14 @@ locally, but wrong for both API-side deaths, so it defers the session here:
     (SERVER_BACKOFF: 1m → 30m) instead of hammering the API and stuffing
     the session transcript with dead turns.
 
+A third API death is not a wait at all: a 429 whose body says
+credits_required (rate_limit_event's errorCode, or the CLI's "usage credits
+required" text) needs purchased credits, and no reset brings it back, so it is
+never parked. The session is listed in credits_blocked() instead, which the
+status map reads as NEEDS YOU, until a new turn starts on it or you leave it.
+A plain limit's park takes the exact reset from the event's resetsAt when the
+runner has one, and reads the meter only when it doesn't.
+
 Deferred sessions are remembered (persisted next to the DB as
 limit_resume.json, so a bridge restart during the wait loses nothing) and one
 timer is armed for the earliest due entry; when it fires, every session whose
@@ -77,6 +85,16 @@ _SERVER_RE = re.compile(
     r"|\boverloaded\b"
     r"|temporarily limiting requests",
     re.IGNORECASE)
+
+
+_CREDITS = re.compile(r"usage credits required|requires? usage credits|out of extra usage", re.I)
+
+
+def is_credits_error(text: "str | None") -> bool:
+    """The death a reset can't fix: the request needs purchased usage credits
+    (1M context, a model billed to credits, extra usage used up). The text half
+    of the test; the runner checks rate_limit_event's errorCode first."""
+    return bool(text and _CREDITS.search(text))
 
 
 def is_server_error(text: "str | None") -> bool:
@@ -246,16 +264,18 @@ def _park_locked(session_id: str, chat_id: int, cwd, model, effort,
 
 def defer(session_id: str, chat_id: int, cwd: "str | None",
           model: "str | None" = None, effort: "str | None" = None,
-          slot: "int | None" = None):
+          slot: "int | None" = None, reset_at: "float | None" = None):
     """Park a limit-killed session for resume at reset. Returns (fire_at, first)
     — first is True on the episode's first defer (callers notify only then) —
-    or None when the session exhausted MAX_TRIES (caller reports a plain error)."""
+    or None when the session exhausted MAX_TRIES (caller reports a plain error).
+    reset_at is the reset Claude Code reported with the refusal (epoch s); the
+    meter is read only without one."""
     now = time.time()
     with _lock:
         tries = _tries_locked(session_id)
         if tries > MAX_TRIES:
             return None
-        reset = _reset_epoch(now, slot)
+        reset = reset_at if reset_at and reset_at > now else _reset_epoch(now, slot)
         target = (reset + RESET_BUFFER) if reset else (now + RETRY_UNKNOWN)
         _park_locked(session_id, chat_id, cwd, model, effort, tries, target,
                      "limit", slot)
@@ -277,6 +297,28 @@ def defer_server(session_id: str, chat_id: int, cwd: "str | None",
         _park_locked(session_id, chat_id, cwd, model, effort, tries, target,
                      "server", slot)
     return target, tries
+
+
+# shortcut: in memory, so a restart forgets the NEEDS YOU row (the turn's card
+# still says it); persist it beside limit_resume.json if that ever matters.
+_credits: dict = {}       # session_id -> {slot, at, buy}
+
+
+def block_credits(session_id: str, slot: "int | None", buy: "bool | None") -> None:
+    """The session stopped on credits_required: yours to unblock, not a wait."""
+    with _lock:
+        _credits[session_id] = {"slot": slot, "at": time.time(), "buy": buy}
+
+
+def clear_credits(session_id: str) -> bool:
+    """A new turn started on it, or you left it. Returns whether it was blocked."""
+    with _lock:
+        return _credits.pop(session_id, None) is not None
+
+
+def credits_blocked() -> dict:
+    with _lock:
+        return {sid: dict(c) for sid, c in _credits.items()}
 
 
 def cancel(session_id: str) -> bool:

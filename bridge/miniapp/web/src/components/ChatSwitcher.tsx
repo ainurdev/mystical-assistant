@@ -7,6 +7,7 @@ import { useChat } from "../lib/chat";
 const DOT: Record<SessionState, string> = {
   awaiting: "bg-amber-400", asking: "bg-amber-400/60", working: "bg-emerald-400",
   checking: "bg-emerald-400/60", waiting: "bg-fuchsia-300/70", parked: "bg-sky-400/60", live: "bg-sky-400",
+  background: "bg-[var(--tg-hint)]/40", credits: "bg-amber-400",
   idle: "bg-[var(--tg-hint)]/40",
 };
 

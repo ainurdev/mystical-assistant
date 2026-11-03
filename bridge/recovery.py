@@ -3,8 +3,13 @@
 When the bridge is stopped/restarted mid-turn its Claude child dies with it and
 the turn is left 'running' (the runner skips finish_turn once state.shutting_down
 is set). On the next start we claim those orphaned turns and, for each resumable
-one, resume its Claude session (--resume) with a short "you were interrupted,
-continue" nudge. An agent turn (runtime acp:<id>, bridge/acp.py) resumes the
+one, resume its Claude session (--resume) with CLAUDE_CODE_RESUME_INTERRUPTED_TURN
+set and no prompt at all: Claude Code carries the cut turn on by itself and
+marks the re-run with resume_reason. The new turn row's prompt is CONTINUED, a
+marker the dashboard draws as a seam between the two halves of the work, never
+as words you typed. Claude Code declines some (cut more than 6 h ago, a turn
+that hit --max-turns or ended on an MCP result); that turn then offers NUDGE,
+today's "you were interrupted, continue", as a button. An agent turn (runtime acp:<id>, bridge/acp.py) resumes the
 same way on the agent's own session (agent_session_id): the restart's kill
 leaves it 'running' too (runner.AcpJob.add), and its run reopens that session
 with session/resume or session/load. No cooldown: every boot-resume traces to a human restarting the
@@ -20,6 +25,9 @@ NUDGE = (
     "⏮ You were interrupted mid-task by a bridge restart — not by the user. "
     "Review your recent transcript and continue exactly where you left off; "
     "finish the task you were doing. Don't start over.")
+# The turn row's prompt for a native resume. Nothing is sent: the dashboard
+# matches this exact text (lib/checkpoints.ts CONTINUED) to draw the seam.
+CONTINUED = "⏮ Claude Code carried on the turn a bridge restart cut."
 
 
 def recover(*, run=None, notify=None) -> int:
@@ -53,9 +61,11 @@ def recover(*, run=None, notify=None) -> int:
             slot, runtime = (None, None) if agent else ladder.same_agent(t["runtime"])
             # model=None: the session's own, read when the run starts, so a pick
             # made while the turn ran (a live switch) survives the restart.
-            job = run(t["chat_id"], NUDGE, [], project=t["cwd"],
+            # A Claude turn carries itself on (no prompt); an agent's gets the nudge.
+            job = run(t["chat_id"], NUDGE if agent else CONTINUED, [], project=t["cwd"],
                       session_id=sid, model=None,
-                      account_slot=slot, runtime=runtime)
+                      account_slot=slot, runtime=runtime,
+                      **({} if agent else {"native_resume": True}))
         except Exception as e:  # noqa: BLE001
             print(f"[recovery] resume failed for {sid}: {e}", file=sys.stderr)
             continue

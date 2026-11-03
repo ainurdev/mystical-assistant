@@ -3,7 +3,7 @@
 // the turn they carry on, each turn outlined from its events when the chat has
 // them and from the bridge's summary when it doesn't.
 import type { Turn } from "../chat.ts";
-import { fmtElapsed, resumeOf, timeSplit, toolName, turnRows } from "./checkpoints.ts";
+import { CONTINUED, fmtElapsed, RESTART_NUDGE, resumeOf, timeSplit, toolName, turnRows } from "./checkpoints.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -25,6 +25,12 @@ eq(resumeOf(RESTART), "restart", "a bridge-restart nudge");
 eq(resumeOf(ERROR), "error", "an error nudge");
 eq(resumeOf("⏮ go on"), "error", "any other ⏮ nudge reads as an error resume");
 eq(resumeOf("go"), null, "your own words are not a resume");
+eq(resumeOf(CONTINUED), "restart", "Claude Code carrying a cut turn on is a restart resume (recovery.CONTINUED)");
+eq(RESTART_NUDGE, RESTART, "Carry on sends recovery.NUDGE word for word");
+{
+  const rows = turnRows([turn("a", "bump the pin"), turn("b", CONTINUED, { started: 1500 })]);
+  eq([rows.length, rows[0].resumes], [1, ["restart"]], "a carried-on turn folds into the turn it carries on");
+}
 
 // --- numbering and folding ----------------------------------------------------
 {

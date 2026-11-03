@@ -331,6 +331,12 @@ def test_account_needs_outlive_their_own_failed_and_parked(monkeypatch):
     assert [n["kind"] for n in notices.needs({**parked, "s1": {"state": "working"}})] == ["limit_choice"]
 
 
+def test_a_credits_stop_needs_you_while_it_stands():
+    notices.emit("credits", "s3", body="Its login needs extra-usage credits.")
+    assert [n["kind"] for n in notices.needs({"s3": {"state": "credits"}})] == ["credits"]
+    assert notices.needs({}) == []                               # a new turn, or left
+
+
 # --- emitters: Rivendell and PRs ------------------------------------------------
 
 def _rv(monkeypatch):

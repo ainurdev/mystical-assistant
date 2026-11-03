@@ -511,9 +511,12 @@ class Handler(BaseHTTPRequestHandler):
             # back=1 → the completed week (what the Monday push covers).
             return self._json(report.weekly(chat, back=_qs_int(qs, "back") or 0))
         if path == "/local/accounts":
-            from bridge import accounts, ladder
+            from bridge import accounts, ladder, usage
+            # ?fresh=N reads any login whose meter is older than N s (0 = now):
+            # the PROFILE menu on open, and its Check now.
+            fresh = _qs_int(qs, "fresh")
             return self._json({
-                "accounts": accounts.with_meters(),
+                "accounts": accounts.with_meters(usage.CACHE_TTL if fresh is None else max(0, fresh)),
                 "default_policy": ladder.default_policy(),
                 "pending_login": accounts.pending_login()})
         if path == "/local/profiles":
@@ -521,6 +524,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/local/aifeatures":
             from bridge import aifeatures
             return self._json({"features": aifeatures.state()})
+        if path == "/local/savers":
+            from bridge import savers
+            return self._json({"savers": savers.state()})
         if path == "/local/integrations":
             return self._json({"plugins": integrations.state()})
         if path == "/local/envsettings":
@@ -579,9 +585,11 @@ class Handler(BaseHTTPRequestHandler):
                 cursor = int(qs.get("cursor", ["0"])[0])
             except ValueError:
                 cursor = 0
-            return self._json(transcript_for(s, cursor,
-                                             tail=_qs_int(qs, "tail"),
-                                             before=_qs_int(qs, "before")))
+            from bridge import savers
+            # savers: the trials this session drew the saver in (its prompts' tag)
+            return self._json({**transcript_for(s, cursor, tail=_qs_int(qs, "tail"),
+                                                before=_qs_int(qs, "before")),
+                               "savers": savers.arms_for(sid)})
         if path == "/local/attachment":
             return self._attachment(qs.get("path", [""])[0])
         if path.startswith("/local/run/"):
@@ -1215,6 +1223,13 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "features": aifeatures.state()})
+        if path == "/local/savers":
+            from bridge import savers
+            try:
+                savers.set_mode(str(body.get("key") or ""), str(body.get("mode") or ""))
+            except ValueError as e:
+                return self._json({"error": str(e)}, 400)
+            return self._json({"ok": True, "savers": savers.state()})
         if path == "/local/integrations":
             action = body.get("action")
             if action not in ("install", "remove"):

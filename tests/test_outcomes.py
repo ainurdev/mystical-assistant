@@ -195,3 +195,13 @@ def test_an_agent_turn_its_missing_login_stopped_reads_signed_out():
     assert "Sign in" in o["detail"]
     # The same words on a Claude turn are not an agent's login.
     assert outcomes.outcome(_turn(), _sig(errors=[msg]))["code"] != "agent_login"
+
+
+def test_a_credits_refusal_is_not_a_plain_limit():
+    """credits_required reads like a limit, but no reset fixes it."""
+    o = outcomes.outcome(_turn(elapsed=12), _sig(errors=["API Error: 429 usage limit"], credits=True))
+    assert o["code"] == "credits" and o["label"] == "NEEDS CREDITS"
+    o = outcomes.outcome(_turn(elapsed=12), _sig(errors=["API Error: Usage credits required for 1M context"]))
+    assert o["code"] == "credits"
+    o = outcomes.outcome(_turn(elapsed=12), _sig(errors=["You've hit your usage limit · resets 3pm"]))
+    assert o["code"] == "limit"

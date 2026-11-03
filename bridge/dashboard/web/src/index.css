@@ -516,6 +516,9 @@ body {
 .sessdot[data-work="true"] {
   animation: workpulse 1.8s ease-out infinite;
 }
+/* an answered row's background tasks (SessionsPanel bgTag), in line 2's tag cell beside the picture tag */
+.sess-bg { display: inline-flex; align-items: center; gap: 4px; height: 15px; font-size: var(--t85); font-weight: 700; line-height: 1;
+  color: var(--ok); white-space: nowrap; font-variant-numeric: tabular-nums; }
 /* A project's state where its rows can't be seen (SessionsPanel stateDots): the rows'
    own dots. On a shut head they sit where + New shows on hover and step aside for it,
    so nothing moves; on a rail tile they are its corner badge. */
@@ -1341,6 +1344,10 @@ input {
               padding-left: 13px; border-left: 1px solid color-mix(in srgb, var(--acc) 14%, transparent); }
 .drop-btn { min-width: var(--dw, 78px); }
 .ctrl-meter { display: inline-flex; gap: 6px; }
+/* a login's meter a running turn is reporting (Composer chip, PROFILE menu): a breathing green dot */
+.meter-live { flex: none; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--ok);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 22%, transparent); animation: twinkle 2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .meter-live { animation: none; } }
 
 /* The field glyph, printed inside the chip. This is what the old .ctrl-label
    eyebrow and .ctrl-tag cluster heading both did, except it cannot be shed:
@@ -1405,6 +1412,8 @@ input {
              display: inline-flex; align-items: center; justify-content: center; color: var(--txd);
              border: 1px solid color-mix(in srgb, var(--acc) 16%, transparent); background: transparent;
              transition: color .12s ease, border-color .12s ease, background .12s ease; }
+/* STOP after the answer ends the background tasks, so it carries its words: "■ Stop them" */
+.act-glyph[data-wide] { width: auto; gap: 7px; padding: 0 11px; font-family: inherit; font-size: var(--t10); letter-spacing: .5px; white-space: nowrap; }
 .act-glyph.stop:hover { color: var(--err); border-color: color-mix(in srgb, var(--err) 55%, transparent);
                         background: color-mix(in srgb, var(--err) 10%, transparent); }
 .act-glyph.hold:hover { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 55%, transparent);
@@ -2776,6 +2785,8 @@ input {
 [data-style="dossier"] .pmeta > b { color: var(--d-you); font-weight: 700; }
 [data-style="dossier"] .pmeta .pacct { color: var(--d-you); }
 [data-style="dossier"] .pmeta .pacct[data-agent] { color: var(--warn); }
+/* a session that drew a Savers trial's saver (PromptBubble): "Concise · trial", in warn */
+[data-style="dossier"] .pmeta .psaver { color: var(--warn); font-weight: 700; }
 [data-style="dossier"] .pmeta .prun { display: inline-flex; align-items: center; gap: 5px; color: var(--txl); }
 [data-style="dossier"] .pmeta .pmodel { color: var(--txm); }
 [data-style="dossier"] .pmeta .prun[data-new] { color: var(--d-you); }
@@ -2889,6 +2900,8 @@ input {
 [data-style="dossier"] .dwork-l1 { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 [data-style="dossier"] .dwork-lab { font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm); }
 [data-style="dossier"] .dwork-ms { color: var(--txf); letter-spacing: .5px; overflow: hidden; text-overflow: ellipsis; }
+/* the turn's retries, kept quietly on its last plate once a try got through (WorkZone retried) */
+[data-style="dossier"] .dwork-retry { flex: none; letter-spacing: .3px; color: var(--warn); }
 /* live — the last zone of a running turn: the node is the instrument (a ring
    ripples out of it while the model thinks, a comet orbits it while a tool
    runs) and a third line says what it is doing (THE NOW LINE, below) */
@@ -2914,6 +2927,12 @@ input {
 }
 @keyframes dwripple { 0% { transform: scale(.25); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
 @keyframes dworbit { to { transform: rotate(360deg); } }
+/* answered, background tasks still running (RunStream BgLine): one quiet line where the indicator sat */
+.dbgline { display: flex; align-items: center; gap: 8px; font-family: var(--ui-font, inherit); font-size: var(--t12); color: var(--txd); }
+.dbgline > [role="status"] { color: var(--ok); }
+.dbgline b { font-weight: 600; color: var(--ok); }
+.dbgline .sep { color: var(--txg); }
+.dbgline .tm { font-family: var(--mono); font-size: var(--t11); color: var(--txl); font-variant-numeric: tabular-nums; }
 /* the cat, hosted by the plate: shut, under the header; open, at the foot */
 [data-style="dossier"] .dwork-ind { margin: 6px 2px 1px calc(var(--zn) + 12px); }
 [data-style="dossier"] .dwork[data-open] .dwork-ind { margin-top: 8px; }
@@ -3037,6 +3056,18 @@ input {
   animation: nowshim 2.1s linear infinite;
 }
 @keyframes nowshim { from { background-position: 100% 0; } to { background-position: -80% 0; } }
+/* the CLI retrying a request (NowLine retry): the verb in warn, the node a ring
+   draining toward the next try (--f, what's left of the wait) with its seconds in it */
+[data-style="dossier"] .dwork [data-m="retry"] { --m: var(--warn); }
+[data-style="dossier"] .dwork-now[data-st="retry"] > .now-ic {
+  background: conic-gradient(var(--mc) calc(var(--f, 0) * 1turn), color-mix(in oklab, var(--m) 16%, var(--zg)) 0);
+  box-shadow: 0 0 12px color-mix(in oklab, var(--m) 28%, transparent);
+}
+[data-style="dossier"] .now-cd {
+  position: absolute; inset: 2px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--zg); font: 600 var(--t85) var(--mono); color: var(--mc); font-variant-numeric: tabular-nums;
+}
+[data-style="dossier"] .now-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--txd); }
 /* open: under the one-line title, closer to the node */
 [data-style="dossier"] .dwork[data-open][data-now] > .dwork-head { padding-bottom: 6px; }
 /* the header is that much taller, so an open chapter pins that much lower (.wzc-head) */
@@ -3544,6 +3575,17 @@ input {
    words aren't yours; the turn draws none, its empty .dprompt goes too). */
 :is([data-fam] [data-style="dossier"], [data-style="dossier"]) .dturn[data-limit] { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
 [data-style="dossier"] .dturn[data-cont] > .dprompt { display: none; }
+/* A turn a bridge restart cut and the turn Claude Code carried it on in read as
+   one stretch too (Transcript Seam): the seam is the join, so no turn rule. */
+:is([data-fam] [data-style="dossier"], [data-style="dossier"]) .dturn[data-cut] { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
+.dseam { --sc: var(--info); display: flex; align-items: center; gap: 10px; margin: 14px 0 12px; min-width: 0;
+  font-family: var(--ui-font, inherit); font-size: var(--t12); line-height: 1.4; color: var(--sc); white-space: nowrap; }
+.dseam::before, .dseam::after { content: ""; flex: 1 1 24px; min-width: 16px; height: 1px; background: color-mix(in oklab, var(--sc) 32%, transparent); }
+.dseam[data-k="declined"] { --sc: var(--warn); }
+.dseam b { flex: none; font-weight: 700; }
+.dseam > span[aria-hidden] { flex: none; color: var(--txd); }
+.dseam > span:last-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--txd); }
+.dseam-acts { --lc: var(--warn); display: flex; justify-content: center; gap: 10px; margin: 10px 0 4px; font-family: var(--ui-font, inherit); }
 :is([data-fam] [data-style="dossier"], [data-style="dossier"]) .dturn[data-cont] .rstream > .dwork:first-child { margin-top: 2px; }
 /* Settled, it is DOSSIER's no-body answer: a receipt that says what the limit
    did (data-limit: account, reset, or "" for neither) where "✓ done" would be,
@@ -3587,6 +3629,15 @@ input {
 .dlimit-btn[data-strong] { color: var(--txb); border-color: color-mix(in oklab, var(--lc) 60%, var(--line2)); background: color-mix(in oklab, var(--lc) 18%, var(--panel)); }
 .dlimit-btn > svg { flex: none; }
 .dlimit-btn .dlimit-dim { margin-left: 0; color: color-mix(in oklab, var(--lc) 70%, var(--txb)); }
+.dlimit-btn[data-quiet] { border-color: transparent; color: var(--txd); }
+/* Stopped on credits_required (LimitCredits): the same card in warn, Claude Code's
+   own words dim under the sentence, and Add credits ↗ as a link (it leaves the app) */
+.dlimit[data-k="credits"] { --lc: var(--warn); }
+.dlimit-said { margin: 9px 0 0; padding-left: 11px; border-left: 2px solid color-mix(in oklab, var(--lc) 40%, transparent);
+  font-size: var(--t12); line-height: 1.5; color: var(--txd); }
+.dlimit-link { align-self: center; padding: 0 4px; font-size: var(--t12); font-weight: 600; color: var(--acc);
+  text-decoration: underline; text-underline-offset: 3px; }
+.dlimit-link:hover { color: var(--txb); }
 /* An open ASK (fallback policy) is a question: the question card's own frame. */
 [data-style="dossier"] .qcard-live.dlimit-ask::before { content: "● YOUR CALL · USAGE LIMIT"; }
 .dlimit-q { font-family: var(--ui-font); font-size: var(--d-big, var(--t13)); line-height: 1.55; color: var(--txb); }
@@ -5159,6 +5210,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-segwrap > div { display: inline-flex !important; grid-template-columns: none !important; gap: 2px !important; padding: 3px; border: 1px solid var(--l) !important; border-radius: 9px; background: var(--panel3); }
 .aim-segwrap > div button { border-radius: 6px !important; font: 12px var(--f) !important; letter-spacing: 0 !important; color: var(--txd) !important; background: transparent !important; padding: 4px 10px !important; }
 .aim-segwrap > div button[data-on] { background: var(--panel) !important; color: var(--txb) !important; box-shadow: inset 0 0 0 1px var(--l2); }
+/* a Saver's OFF / TRIAL / ON (SettingsModal SaverCard): that switch, card-sized; TRIAL picks in warn, ON in the accent */
+.aim-svseg .set-seg { padding: 2px; }
+.aim-svseg .set-seg button { font: 11px var(--f, var(--ui-font)) !important; letter-spacing: .5px !important; padding: 2px 8px !important; }
+.aim-svseg[data-mode="trial"] .set-seg button[data-on] { color: var(--warn) !important; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--warn) 40%, transparent); }
+.aim-svseg[data-mode="on"] .set-seg button[data-on] { background: color-mix(in oklab, var(--acc) 26%, var(--panel)) !important; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 50%, transparent); }
 /* the HUD sections nested inside a fold (MCP, the agents' forms) drop their
    rules and sit on the fold's own ground */
 .aim-foldbody > .set-sec:first-child, .aim-foldbody [data-sec]:first-child { margin-top: 10px !important; }
@@ -5206,6 +5262,18 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-xbtn.warn { color: var(--warn); border-color: color-mix(in oklab, var(--warn) 50%, var(--l2)); }
 .aim-xbtn.danger:hover { color: var(--err); border-color: var(--err); background: color-mix(in oklab, var(--err) 10%, transparent); }
 .aim-chip.dim { background: var(--panel3); color: var(--txd); font-weight: 500; text-transform: capitalize; }
+/* the Savers fold (SettingsModal SaversFold): the TRIAL explainer, four cards two by two, a trial's card in warn */
+.aim-svlead { margin: 12px 0; font-size: 12px; line-height: 1.5; color: var(--txd); }
+.aim-svlead b { color: var(--warn); font-weight: 700; }
+.aim-svgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 760px) { .aim-svgrid { grid-template-columns: minmax(0, 1fr); } }
+.aim-x[data-trial] { border-color: color-mix(in oklab, var(--warn) 36%, var(--l)); background: color-mix(in oklab, var(--warn) 5%, var(--panel)); }
+.aim-svfact { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aim-xbar { flex: none; width: 46px; height: 3px; border-radius: 2px; background: var(--l2); overflow: hidden; }
+.aim-xbar > i { display: block; height: 100%; background: var(--warn); }
+.aim-xfoot em b { font-weight: 700; }
+.aim-xfoot em b[data-good="true"] { color: var(--ok); }
+.aim-xfoot em b[data-good="false"] { color: var(--warn); }
 .aim-glabel { display: flex; align-items: center; gap: 8px; margin: 16px 0 8px; font: 500 10.5px var(--f); letter-spacing: .08em; text-transform: uppercase; color: var(--txl); white-space: nowrap; }
 .aim-glabel::after { content: ""; flex: 1; height: 1px; background: var(--l); }
 .aim-note { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; margin-top: 12px; font-size: 12.5px; }
@@ -5637,6 +5705,19 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pm-row:hover .pm-pin { color: var(--txl); }
 .pm-pin:hover, .pm-pin:focus-visible { color: var(--txb); background: var(--ac-08); box-shadow: inset 0 0 0 1px var(--line2); outline: 0; }
 .pm-new { align-items: center; }
+/* each login's freshness under its DEFAULT pill or pin, at the meter line's end (live, N min ago, checking) */
+.pm-tail[data-fresh] { align-self: stretch; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 4px; }
+.pm-fresh { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; font: var(--t95) var(--ui-font, inherit); line-height: 12px; color: var(--txl); white-space: nowrap; }
+.pm-fresh[data-k="live"] { color: var(--ok); }
+.pm-fresh[data-k="checking"] > [role="status"] { color: var(--acc); }
+.pm-wait { font: var(--t95) var(--ui-font, inherit); line-height: 12px; color: var(--txl); }
+/* the foot: + New profile, then how idle logins are read and Check now, an underlined link */
+.pm-foot { display: flex; align-items: center; }
+.pm-foot > .pm-new { flex: 1; width: auto; }
+.pm-check { flex: none; padding: 0 11px; font: var(--t105) var(--ui-font, inherit); color: var(--txd); white-space: nowrap; }
+.pm-check > button { appearance: none; padding: 0; border: 0; background: none; font: inherit; color: var(--acc); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
+.pm-check > button:disabled { color: var(--txl); cursor: default; }
 
 /* ── the run sheet (Composer RunSheet): MODEL beside MODE, EFFORT along the
    foot, over the cmdbox in every layout. Rows are MenuRows, restyled here

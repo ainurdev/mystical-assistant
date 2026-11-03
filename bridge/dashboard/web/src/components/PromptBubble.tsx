@@ -7,6 +7,7 @@ import { modelName } from "../models";
 import { runtimeBadge } from "../lib/agents";
 import { leadCommand } from "../lib/slash";
 import { hhmm, useClock12 } from "../lib/surfaces";
+import { saverTag } from "../lib/savers";
 
 type Run = Pick<Turn, "model" | "effort" | "permission_mode">;
 
@@ -41,15 +42,19 @@ function CmdSeg({ name, desc }: { name: string; desc: string }) {
  *  ↳ STEER or ⧖ WAIT OVER when it isn't a prompt of yours, the account or agent
  *  when it wasn't the default (lib/agents runtimeBadge), the model · effort ·
  *  permission the turn ran with,
- *  and when. A value that moved since the turn before is lit; a turn from before
+ *  and when; in a session that drew a Savers trial's saver (bridge/savers.py),
+ *  a warn segment says so ("Concise · trial"). A value that moved since the turn
+ *  before is lit; a turn from before
  *  turns recorded effort and mode shows only its model — nothing is borrowed from
  *  the session's current picks. A prompt that ran a /command leads with it as a
  *  segment (.mystical/design-drafts/slash-chip, C · SEGMENT).
  *  Geometry and colour live in `.pbub` / `.pline` / `.pmeta` / `.cmdseg`
  *  (index.css, DOSSIER tier 1); nothing here decides either. Design:
  *  .mystical/design-drafts/sent-prompt, B · RIM. */
-export function PromptBubble({ text, at, runtime, run, prev, steer, who, commands, children }: {
+export function PromptBubble({ text, at, runtime, run, prev, steer, who, commands, savers, children }: {
   text: string;
+  /** The Savers trials this session drew the saver in (Transcript.savers). */
+  savers?: string[];
   at?: number;
   /** The project's command list: a leading `/name` it knows is drawn as a command. */
   commands?: SlashCommand[];
@@ -86,6 +91,11 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
         {wake ? "⧖ WAIT OVER" : steer ? "↳ STEER" : nudge ? `◎ GOAL${nudge.n ? ` · AUTO ${nudge.n}/${nudge.max}` : ""}` : who}
       </b>
     ),
+    ...(run ? savers ?? [] : []).map((k) => (
+      <span key={`saver-${k}`} className="psaver" title="this session drew the saver in a Savers trial (SETTINGS ▸ AI management ▸ Savers)">
+        {saverTag(k)}
+      </span>
+    )),
     ran && <span key="acct" className="pacct" data-agent={ran.agent || undefined} title={ran.title}>{ran.text}</span>,
     run?.model && <span key="model" className="prun pmodel" data-new={moved("model")} title="model">{modelName(run.model)}</span>,
     run?.effort && (

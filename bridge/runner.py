@@ -32,7 +32,7 @@ import uuid
 
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver,
                     git, inspector, integrations, ladder, limits, machine, native_activity, notices,
-                    profiles, pubsub, relevance, state, store, team, tgask, tgtopics,
+                    profiles, pubsub, relevance, savers, state, store, team, tgask, tgtopics,
                     transcript_jsonl, ux_mcp, waits)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send
@@ -307,7 +307,7 @@ def normalize_ponytail(level) -> "str | None":
 
 
 def _run_env(ponytail: "str | None",
-             account_slot: "int | None" = None) -> dict:
+             account_slot: "int | None" = None, resume_cut: bool = False) -> dict:
     """Env for the claude subprocess: the inherited env plus a run's ponytail
     intensity and Claude account. The account arrives as CLAUDE_CONFIG_DIR,
     which is the whole multi-account mechanism -- every turn is still the
@@ -318,6 +318,15 @@ def _run_env(ponytail: "str | None",
     # for never arrives. Without the ceiling it also waits forever for a
     # background shell (a dev server): _watchdog ends those turns.
     over["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
+    # Opt in to system/session_state_changed (running | idle | requires_action):
+    # the CLI's own word on whether a turn is done, where the bridge used to
+    # guess from the turn row, the job and the transcript (Job.cli_state).
+    over["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1"
+    if resume_cut:
+        # Only on boot recovery's run of a turn a restart cut: Claude Code then
+        # continues that turn itself, with no prompt from us. Never on a normal
+        # turn, where it could pick up a turn you stopped yourself.
+        over["CLAUDE_CODE_RESUME_INTERRUPTED_TURN"] = "1"
     # The host flag that tells the model AskUserQuestion options can carry a
     # `preview`; under -p it's off unless set. The cards draw an option's
     # preview images as that option's pictures (_adopt_preview_images).
@@ -712,8 +721,10 @@ def run_blocking(chat_id: int, prompt: str, resume_id: str | None = None,
                     fork=fork)
     timeout = timeout or config.RUN_TIMEOUT
     try:
+        # A one-shot never reuses its prefix: the 5-minute cache (savers.ONE_SHOT_ENV).
         proc = subprocess.run(cmd, cwd=cwd or state.project_dir(chat_id), capture_output=True,
-                              text=True, timeout=timeout, env=_run_env(ponytail, account_slot))
+                              text=True, timeout=timeout,
+                              env={**_run_env(ponytail, account_slot), **savers.ONE_SHOT_ENV})
     except subprocess.TimeoutExpired:
         return (f"⏱️ Timed out after {timeout // 60} min.", None, None, True)
     except FileNotFoundError:
@@ -846,6 +857,26 @@ class Job:
         # tool_use id -> (command, worktrees before it) for a Bash call, judged by
         # _note_work_cwd once its result says it ran.
         self.bash_cmds: dict[str, tuple[str, "set[str] | None"]] = {}
+        # What Claude Code says about itself. cli_state is the last
+        # system/session_state_changed (running | idle | requires_action), None
+        # from a CLI that doesn't emit it, and then every reader falls back to
+        # `status`. bg is the live set from system/background_tasks_changed,
+        # replaced whole on every event (task id -> {type, desc, since}); bg_peak
+        # the most that ran at once, so a fan-out reads as progress.
+        self.cli_state: str | None = None
+        self.bg: dict[str, dict] = {}
+        self.bg_peak = 0
+        self.answered_at: float | None = None   # this turn's first result
+        # The CLI retrying a request (system/api_retry); the next assistant event
+        # means it got through. rate_limit is the last rate_limit_event's info.
+        self.retry: dict | None = None
+        self.rate_limit: dict | None = None
+        # Boot recovery's run of a turn a restart cut (recovery.CONTINUED): no
+        # prompt goes in, Claude Code carries the cut turn on by itself
+        # (CLAUDE_CODE_RESUME_INTERRUPTED_TURN). resume_state is "waiting" until
+        # it starts ("accepted") or goes idle without starting ("declined").
+        self.native_resume = False
+        self.resume_state: str | None = None
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -1358,6 +1389,22 @@ def _running_agents(claude_sid: str) -> int:
     return agents.session_agents({"claude_session_id": claude_sid})["running"]
 
 
+def _background_view(j: "Job") -> "dict | None":
+    """A turn that answered and that Claude Code calls idle, with background
+    tasks still running in its process: not WORKING (the answer is in), not
+    DONE either (the process lives, and a prompt now would queue behind it).
+    None for anything else, a CLI that never reports its state included."""
+    bg = getattr(j, "bg", None)          # a Job built bare (tests) has none of it
+    if getattr(j, "cli_state", None) != "idle" or not bg or j.answered_at is None:
+        return None
+    tasks = sorted(bg.items(), key=lambda kv: kv[1]["since"])
+    n = len(tasks)
+    return {"state": "background", "kind": None, "source": "bridge",
+            "label": f"answered — {n} in background",
+            "bg": [{"id": tid, **t} for tid, t in tasks],
+            "peak": max(j.bg_peak, n), "since": j.answered_at}
+
+
 def _build_status(bridge_running: list, awaiting: list, jobs: list,
                   external: list, native_snap: dict) -> dict:
     """Merge bridge + native liveness into one {session_id: {state, kind, source,
@@ -1369,16 +1416,28 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
     awaiting_map = {a["session_id"]: a.get("kind") for a in awaiting}
     job_label = {j["session_id"]: (j.get("activity") or {}).get("label")
                  for j in jobs if j.get("session_id")}
+    latest = _latest_jobs()
     status: dict[str, dict] = {}
     for sid in bridge_running:
+        j = latest.get(sid)
         if sid in awaiting_map:
             kind = awaiting_map[sid]
             label = "awaiting your answer" if kind == "question" else "awaiting your approval"
             status[sid] = {"state": "awaiting", "kind": kind,
                            "source": "bridge", "label": label}
+        elif j is not None and (bg := _background_view(j)) is not None:
+            status[sid] = bg
         else:
             status[sid] = {"state": "working", "kind": None, "source": "bridge",
                            "label": job_label.get(sid) or "working…"}
+            if j is not None and getattr(j, "retry", None):
+                status[sid]["retry"] = dict(j.retry)
+            if j is not None and getattr(j, "native_resume", False):
+                status[sid]["resumed"] = True    # Claude Code carrying a cut turn on
+    for sid, c in limits.credits_blocked().items():
+        # Stopped on credits_required: no reset brings it back, so it is yours.
+        status.setdefault(sid, {"state": "credits", "kind": None, "source": "bridge",
+                                "label": "needs extra-usage credits", **c})
     # A prompt being checked against its session (bridge/relevance.py) holds the
     # send for ~10s before any job exists — surface it so the session stays in the
     # active lists instead of vanishing until the prompt is approved.
@@ -1609,6 +1668,11 @@ def _announce_end(job) -> None:
     from bridge import goals  # local import: runner<->* cycle
     if w := waits.get(job.store_session_id or ""):
         notify_waiting(chat, job.store_session_id, w["title"])
+    elif getattr(job, "resume_state", None) == "declined":
+        # Nothing ran, so not DONE: the cut work is still waiting on you.
+        notify_turn_done(chat, job.store_session_id, True,
+                         body="A restart cut this turn and Claude Code didn't carry it on. "
+                              "Carry it on from the turn, or leave it.")
     elif job.status != "error" and (g := goals.verdict(job)):   # an error still says so
         notify_goal(chat, job.store_session_id, g)
     else:
@@ -1695,6 +1759,14 @@ def _stopping(rc: "int | None") -> bool:
     return state.shutting_down
 
 
+def _refused_reset(job: "Job") -> "float | None":
+    """When the window that refused this turn reopens (epoch s), as Claude Code
+    reported it with the refusal; None without a rejected rate_limit_event."""
+    rl = getattr(job, "rate_limit", None) or {}
+    r = rl.get("resetsAt")
+    return float(r) if rl.get("status") == "rejected" and isinstance(r, (int, float)) else None
+
+
 def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                        effort: str | None) -> bool:
     """Resume a session whose turn died without the user behind it. Returns True
@@ -1714,6 +1786,19 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         return False
     if job.status != "error" or job.interrupted or job.refusal:
         return False                              # a refused turn is refused again
+    rl = getattr(job, "rate_limit", None) or {}
+    if rl.get("errorCode") == "credits_required" or limits.is_credits_error(job.result or job.error_msg):
+        # Needs purchased credits: no reset clears that, so a park would wait
+        # for nothing. It is yours now; the status map lists it under NEEDS YOU.
+        limits.block_credits(sid, job.account_slot, rl.get("canUserPurchaseCredits"))
+        _notify(job.chat_id,
+                f"⊘ {_session_label(sid)} stopped: its login needs extra-usage credits, "
+                f"and waiting for the reset won't change that.",
+                _session_kb(job.chat_id, sid), kind="credits", sid=sid,
+                body="Its login needs extra-usage credits. Waiting for the reset won't change that.",
+                always=job.tg_live)
+        job.told = True
+        return False
     if job.skip_pack:
         return False                              # tools-off: a resume would run with tools
     if not config.AUTO_RESUME or state.shutting_down:
@@ -1725,7 +1810,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         if not _resumable(job, sess):
             return False                          # died before init — nothing to resume
         d = limits.defer(sid, job.chat_id, cwd, model, effort,
-                         slot=job.account_slot)
+                         slot=job.account_slot, reset_at=_refused_reset(job))
         if d is None:
             return False                          # kept failing past resets — stay stopped
         when, first = d
@@ -2206,8 +2291,62 @@ def _note_work_cwd(job: "Job", command: str, before: "set[str] | None" = None) -
         pass
 
 
+def _task_kind(task_type) -> str:
+    """background_tasks_changed's task_type in a word the pill can print:
+    local_bash is a shell, anything agent-shaped an agent."""
+    t = str(task_type or "")
+    return "shell" if "bash" in t or "shell" in t else "agent" if "agent" in t else "task"
+
+
+def _retry_reason(d: dict) -> str:
+    """api_retry's error class (rate_limit, overloaded, server_error, ...) or,
+    when it names none, the HTTP status behind it; "connection" for a retry
+    with no response at all."""
+    err = d.get("error")
+    if isinstance(err, dict):
+        err = err.get("type") or err.get("error")
+    if err:
+        return str(err)[:40]
+    status = d.get("error_status")
+    return f"http_{status}" if status else "connection"
+
+
+def _note_rate_limit(job: Job, info: dict) -> None:
+    """A login's limits as the CLI just saw them: the composer's meter reads
+    them live instead of waiting for its next poll. Best effort."""
+    try:
+        accounts.note_rate_limit(job.account_slot, info)
+    except Exception as e:  # noqa: BLE001
+        print(f"[usage] rate_limit_event not noted: {e}", file=sys.stderr)
+
+
+RESUME_WAIT = 60.0   # a native resume that hasn't started by then was declined
+
+
+def _resume_declined(job: "Job") -> None:
+    """Claude Code went idle without carrying the cut turn on (cut too long
+    ago, it hit --max-turns, an MCP result ended it), or never said anything.
+    The turn says so and offers today's nudge; the process is let go."""
+    if job.resume_state != "waiting":
+        return
+    job.resume_state = "declined"
+    job.add({"type": "resume", "declined": True})
+    job.close_stdin()
+
+
+def _note_resume(job: "Job", d: dict) -> None:
+    t = d.get("type")
+    if (t == "command_lifecycle" and d.get("state") == "started") or t == "assistant" \
+            or d.get("resume_reason"):
+        job.resume_state = "accepted"
+    elif t == "system" and d.get("subtype") == "session_state_changed" and d.get("state") == "idle":
+        _resume_declined(job)
+
+
 def _handle_event(job: Job, d: dict):
     t = d.get("type")
+    if job.resume_state == "waiting":
+        _note_resume(job, d)
     job.boot = None          # the child is talking; nothing is loading any more
     sid = d.get("session_id")
     if sid and sid != job.session_id:
@@ -2226,6 +2365,7 @@ def _handle_event(job: Job, d: dict):
             # to running, or a watchdog kill / crash from here reads as a clean
             # finish: no error row, no timeout notice, no auto-resume.
             job.status, job.elapsed = "running", None
+        job.retry = None              # a reply came, so any retry got through
         usage = d.get("message", {}).get("usage") or {}
         ctx = _ctx_of(usage)
         if ctx:
@@ -2315,6 +2455,35 @@ def _handle_event(job: Job, d: dict):
         job.status, job.elapsed = "running", None
     elif t == "system" and d.get("subtype") == "hook_response":
         _hook_log(job, d)
+    elif t == "system" and d.get("subtype") == "session_state_changed":
+        # "the session's current state rather than a transition": idle and the
+        # result can come in either order, so nothing here pairs them.
+        job.cli_state = d.get("state")
+    elif t == "system" and d.get("subtype") == "background_tasks_changed":
+        now, live = time.time(), {}
+        for task in d.get("tasks") or []:
+            tid = str((task or {}).get("task_id") or "")
+            if tid:
+                live[tid] = job.bg.get(tid) or {
+                    "type": _task_kind(task.get("task_type")),
+                    "desc": str(task.get("description") or "")[:120], "since": now}
+        job.bg = live
+        job.bg_peak = max(job.bg_peak, len(live))
+    elif t == "system" and d.get("subtype") == "api_retry":
+        job.retry = {"attempt": d.get("attempt"), "max": d.get("max_retries"),
+                     "delay_ms": d.get("retry_delay_ms"), "error": _retry_reason(d),
+                     "at": time.time()}
+        job.add({"type": "retry", **{k: job.retry[k] for k in ("attempt", "max", "delay_ms", "error")}})
+    elif t == "rate_limit_event":
+        info = d.get("rate_limit_info") or {}
+        job.rate_limit = info
+        _note_rate_limit(job, info)
+        if info.get("status") == "rejected":
+            # Only a refusal is worth a row: outcomes.py reads credits_required
+            # off it, and a plain limit's park takes its resetsAt.
+            job.add({"type": "ratelimit", "status": "rejected",
+                     "error_code": info.get("errorCode"), "resets_at": info.get("resetsAt"),
+                     "buy": info.get("canUserPurchaseCredits")})
     elif t == "control_response":
         # The CLI's answer to one of ours (interrupt, set_model,
         # set_permission_mode). Only a refusal earns a row: the pick it carried
@@ -2332,6 +2501,7 @@ def _handle_event(job: Job, d: dict):
             job.session_id = d["session_id"]
         # An interrupted turn may report is_error; treat it as a clean stop.
         job.status = "error" if (d.get("is_error") and not job.interrupted) else "done"
+        job.answered_at = job.answered_at or time.time()
         job.elapsed = int(time.time() - job.started)
         job.add({"type": "result", "result": job.result, "cost": job.cost,
                  "elapsed": job.elapsed, "is_error": job.status == "error"})
@@ -2688,12 +2858,16 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         if "--mcp-config" in cmd:
             # Its file holds tokens (see _mcp_config); it goes with the child.
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
-        cmd = _one_settings(cmd + job.extra_args)
+        # Savers (bridge/savers.py): every ON one, and each TRIAL this session drew.
+        saving = set() if job.skip_pack else savers.for_run(job.store_session_id)
+        cmd = _one_settings(cmd + job.extra_args + savers.settings_args(saving))
         try:
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, bufsize=1,
-                                    env=_run_env(ponytail, job.account_slot))
+                                    env={**_run_env(ponytail, job.account_slot,
+                                                    resume_cut=job.native_resume),
+                                         **savers.env(saving)})
         except FileNotFoundError:
             job.add({"type": "error", "message": "`claude` not found on PATH."})
             job.status = "error"
@@ -2737,9 +2911,17 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
         # however long; a hang does.
         threading.Thread(target=_watchdog, args=(job, proc), daemon=True).start()
 
-        # Deliver the prompt on stdin as a stream-json user message.
-        job._write_stdin({"type": "user",
-                          "message": {"role": "user", "content": full_prompt}})
+        if job.native_resume:
+            # Nothing to deliver: the CLI picks the cut turn up on its own, or
+            # goes idle (declined). RESUME_WAIT covers a CLI that says nothing.
+            job.resume_state = "waiting"
+            watch = threading.Timer(RESUME_WAIT, _resume_declined, args=(job,))
+            watch.daemon = True
+            watch.start()
+        else:
+            # Deliver the prompt on stdin as a stream-json user message.
+            job._write_stdin({"type": "user",
+                              "message": {"role": "user", "content": full_prompt}})
 
         assert proc.stdout is not None
         for line in proc.stdout:
@@ -2763,6 +2945,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 job.close_stdin()
         proc.wait()
 
+        if job.resume_state == "declined" and job.status == "running":
+            job.status = "done"       # not a failure: the turn's card offers the nudge
         if job.interrupted:
             # Stopped by the user (graceful interrupt or kill): finalize cleanly
             # and mark the turn so the transcript shows it was stopped.
@@ -2822,6 +3006,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             store.set_turn_tokens(job.id, job.tokens)
             if not restart_killed:   # else leave 'running' for boot recovery to resume
                 store.finish_turn(job.id, job.status, job.cost, job.elapsed)
+                savers.check_done()   # a trial that just got its sessions says so
         job.clear_pending()
         job.close_stdin()
         _prune_uploads()
@@ -2951,7 +3136,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
                         mcp_on: str | None = None,
                         extra_args: list[str] | None = None,
                         hang_timeout: float | None = None,
-                        skip_pack: bool = False) -> Job | None:
+                        skip_pack: bool = False,
+                        native_resume: bool = False) -> Job | None:
     """Acquire the busy lock and start a streaming run. Returns None if busy.
 
     Resolves (or creates) the store session and runs it in the session's own cwd
@@ -2975,6 +3161,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     even one the caller names: that refuses the run.
 
     hang_timeout caps the silence the watchdog allows this run (None = RUN_TIMEOUT).
+
+    native_resume is boot recovery's run of a turn a restart cut: `prompt` is only
+    the turn row's marker (recovery.CONTINUED), nothing is sent, and Claude Code
+    carries the cut turn on by itself or declines (Job.resume_state).
 
     skip_pack runs it as _base_cmd's internal one-shot: no context pack, no tools and
     no MCP servers at all, for a prompt that carries untrusted text and needs no tools
@@ -3040,6 +3230,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.work_cwd = wt if wt and os.path.isdir(wt) else None
         job.mcp_on, job.extra_args = mcp_on, list(extra_args or [])
         job.skip_pack = skip_pack
+        job.native_resume = native_resume and not is_acp
         if runtime is None and account_slot and account_slot != accounts.DEFAULT_SLOT:
             runtime = f"claude:{account_slot}"
         job.runtime = runtime
@@ -3052,6 +3243,8 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
         waits.drop(session["id"])   # a new turn here ends its wait; Claude can wait again
+        limits.clear_credits(session["id"])   # ...and a credits stop: you chose what's next
+        savers.assign(session["id"])          # a new session draws its half of each trial
         from bridge import goals  # local import: runner<->* cycle
         goals.on_user_turn(session["id"], prompt)   # your reply re-arms a blocked goal
         _ensure_journal_thread()

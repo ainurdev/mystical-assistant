@@ -20,6 +20,7 @@ import { DeviceTile } from "../DeviceRunPlate";
 import type { ProjectGroup } from "./ProjectsPanel";
 import { RivendellQueue } from "./RivendellQueue";
 import { NewSessionPop } from "./NewSessionPop";
+import { Spinner } from "../ui";
 
 /** A prompt of yours that hasn't run yet, flagged on the session it belongs to:
  *  unsent text in the composer, a relevance check in flight, or a held card
@@ -179,11 +180,16 @@ const SV: Record<string, { lane: LaneKey; c: string; fill: boolean; t: string }>
   live: { lane: "idle", c: "var(--info)", fill: false, t: "live in another window" },
   parked: { lane: "parked", c: "var(--info)", fill: true, t: "parked — resumes on its own" },
   waiting: { lane: "wait", c: "var(--purple)", fill: true, t: "waiting on another session — wakes when it finishes" },
+  // Answered, with background tasks still running in its process: the turn is
+  // done, so it rests (DONE when unopened); line 2's tag says what still runs.
+  background: { lane: "idle", c: "var(--txl)", fill: false, t: "answered — background tasks still running" },
+  // Stopped on credits_required: no reset fixes it, so it is yours, not parked.
+  credits: { lane: "ask", c: "var(--warn)", fill: true, t: "stopped — its login needs extra-usage credits" },
   idle: { lane: "idle", c: "var(--txl)", fill: false, t: "idle" },
 };
 const SV_DONE = { lane: "done" as LaneKey, c: "var(--acc)", fill: false, t: "finished a turn — not opened yet" };
 
-const BUSY_NOW = ["working", "awaiting", "asking", "checking", "parked", "waiting"];
+const BUSY_NOW = ["working", "awaiting", "asking", "checking", "parked", "waiting", "credits"];
 
 type StateView = { lane: LaneKey; c: string; fill: boolean; t: string };
 
@@ -295,11 +301,15 @@ function SessionRow({
   const branchShown = !job && !team && detail.branch && !!branch;
   const wtShown = !job && !team && detail.wt && inWorktree;
   const one = !dev && !tiles && !detail.branch && !detail.wt;
-  // The state where the age used to be: how long a turn has run or waited,
-  // the two states that are yours to act on, the age at rest (since you asked).
+  // The state where the age used to be: how long a turn has run or waited
+  // (the CLI's retry in its place while it retries, ↪ before it while Claude
+  // Code carries on a turn a restart cut), the two states that are yours to act
+  // on, the age at rest (since you asked).
   const since = st?.since;
-  const edge = v.lane === "work" ? <span style={{ color: "var(--ok)" }}>{since ? lasted(now - since) : "now"}</span>
-    : v.lane === "ask" ? edgeChip("var(--warn)", "Answer")
+  const edge = v.lane === "work" ? (st?.retry
+      ? <span style={{ color: "var(--warn)" }}>↻ retry {st.retry.attempt}{st.retry.max ? `/${st.retry.max}` : ""}</span>
+      : <span style={{ color: "var(--ok)" }}>{st?.resumed ? "↪ " : ""}{since ? lasted(now - since) : "now"}</span>)
+    : v.lane === "ask" ? edgeChip("var(--warn)", st?.state === "credits" ? "Credits" : "Answer")
     : v.lane === "done" ? edgeChip("var(--acc)", "New")
     : v.lane === "wait" ? (
       <span style={{ display: "inline-flex", alignItems: "center", gap: 3, color: wait?.needs ? "var(--warn)" : "var(--purple)" }}>
@@ -317,13 +327,24 @@ function SessionRow({
     <span
       role="img" aria-label={`${shots} new picture${shots === 1 ? "" : "s"}`}
       title={`${shots} new picture${shots === 1 ? "" : "s"} you haven't opened`}
-      style={{ ...(!one ? { gridRow: 2, gridColumn: -2, justifySelf: "end", margin: "-4px 0" } : { flex: "none" }),
-               display: "inline-flex", alignItems: "center", gap: 3, height: 15, padding: "0 5px 0 4px", borderRadius: 4,
+      style={{ display: "inline-flex", alignItems: "center", gap: 3, height: 15, padding: "0 5px 0 4px", borderRadius: 4,
                background: "color-mix(in srgb, var(--txl) 16%, transparent)", color: "var(--txm)", fontSize: "var(--t85)",
                fontWeight: 700, lineHeight: 1, fontVariantNumeric: "tabular-nums" }}
     >
       <ImageIcon size={10} strokeWidth={2.4} aria-hidden style={{ flex: "none" }} />{shots > 99 ? "99+" : shots}
     </span>
+  );
+  // Background tasks an answered turn left running, in the same cell: the row
+  // rests in DONE or IDLE, and this says what still runs in its process.
+  const bgN = st?.state === "background" ? st.bg?.length ?? 0 : 0;
+  const bgTag = bgN > 0 && (
+    <span className="sess-bg" title={`answered — ${bgN} background task${bgN === 1 ? "" : "s"} still running`}>
+      <Spinner className="h-[9px] w-[9px] border-[1.5px] opacity-100" />{bgN} bg
+    </span>
+  );
+  const tags = (shotTag || bgTag) && (
+    <span style={{ ...(!one ? { gridRow: 2, gridColumn: -2, justifySelf: "end", margin: "-4px 0" } : { flex: "none" }),
+                   display: "inline-flex", alignItems: "center", gap: 6 }}>{bgTag}{shotTag}</span>
   );
   return (
     <div
@@ -409,7 +430,7 @@ function SessionRow({
         )}
       </div>
       {/* Before the state column, which theme rules know as `div:last-child`. */}
-      {!one && shotTag}
+      {!one && tags}
       {/* The pin leads: a row's first span is its title to the theme rules
           (`.sessrow > div > span:first-child`), and nothing here is one. */}
       <div style={{ display: "flex", alignItems: "center", gap: 7, height: 18, fontSize: "var(--t10)", fontWeight: 600, lineHeight: 1,
@@ -435,7 +456,7 @@ function SessionRow({
         )}
         {JobIcon && <span title={jobLabel(s.job).toLowerCase()} style={{ display: "inline-flex", color: "var(--purple)" }}><JobIcon size={12} strokeWidth={2.1} aria-hidden /></span>}
         {team && <Avatar id={team.from.id || team.from.name} name={team.from.name} size={16} />}
-        {one && shotTag}
+        {one && tags}
         {age ? (
           <span style={{ color: age.tone === "run" ? "var(--info)" : pulse ? "var(--ok)" : "var(--txl)" }}>
             {age.tone === "ok" || age.tone === "bad"

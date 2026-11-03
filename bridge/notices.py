@@ -47,6 +47,7 @@ CATALOG = {
     "question": ("ask", "needs", "session"),
     "login": ("account", "needs", "session"),
     "limit_choice": ("account", "needs", "session"),
+    "credits": ("account", "needs", "session"),     # stopped on credits_required: no reset fixes it
     "rv_offer": ("rv_offer", "needs", "rivendell"),
     "done": ("done", "news", "session"),
     "goal_met": ("done", "news", "session"),        # the turn that met its goal (runner.notify_goal)
@@ -75,6 +76,7 @@ CATALOG = {
     "styled": ("bridge", "news", "bridge"),         # STYLE WITH AI finished (logostyle.py)
     "style_failed": ("bridge", "news", "bridge"),
     "weekly": ("weekly", "fyi", "bridge"),
+    "saver_trial": ("bridge", "news", "bridge"),    # a Savers trial reached its sessions (savers.py)
     "updated": ("updates", "news", "bridge"),
     "coming": ("updates", "news", "bridge"),       # an update waiting upstream, before it is taken
 }
@@ -82,7 +84,7 @@ CATALOG = {
 # The one place the copy lives: the dashboard and the Mac app render `verb`.
 VERBS = {
     "approve": "APPROVE", "question": "QUESTION", "login": "SIGN IN",
-    "limit_choice": "LIMIT", "rv_offer": "OFFERED", "done": "DONE", "failed": "FAILED",
+    "limit_choice": "LIMIT", "credits": "NEEDS CREDITS", "rv_offer": "OFFERED", "done": "DONE", "failed": "FAILED",
     "parked": "PARKED", "resumed": "RESUMED", "retrying": "RETRYING", "waiting": "WAITING",
     "goal_met": "GOAL MET", "goal_blocked": "GOAL NEEDS YOU",
     "started": "STARTED", "rv_started": "STARTED", "rv_ended": "ENDED",
@@ -90,7 +92,7 @@ VERBS = {
     "rv_refused": "REFUSED", "rv_link": "LINK DOWN", "rv_link_back": "LINK BACK",
     "rv_brief": "BRIEF READY", "team_in": "SENT YOU",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
-    "move_failed": "MOVE FAILED", "styled": "STYLED", "style_failed": "STYLE FAILED", "weekly": "WEEKLY REPORT",
+    "move_failed": "MOVE FAILED", "styled": "STYLED", "style_failed": "STYLE FAILED", "weekly": "WEEKLY REPORT", "saver_trial": "TRIAL DONE",
     "updated": "UPDATED", "coming": "UPDATE READY",
 }
 _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED", "conflict": "RESOLVED", "design-build": "BUILT"}
@@ -435,9 +437,11 @@ def needs(status: dict) -> list:
             continue
         if r["kind"] == "limit_choice" and (status or {}).get(sid, {}).get("state") != "parked":
             continue
+        if r["kind"] == "credits" and (status or {}).get(sid, {}).get("state") != "credits":
+            continue                              # a new turn started, or you left it
         if r["kind"] == "goal_blocked" and (store.get_goal(sid) or {}).get("state") != "blocked":
             continue                              # answered, re-opened or cleared
-        if r["kind"] not in ("login", "limit_choice", "goal_blocked"):
+        if r["kind"] not in ("login", "limit_choice", "goal_blocked", "credits"):
             continue
         sess = store.get_session(sid) or {}
         out.append(_need(r["kind"], sid, sid, sess.get("title") or r["title"],

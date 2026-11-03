@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { ProjectTile } from "../ui/ProjectTile";
-import { type AccountInfo, type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
+import { type AccountInfo, type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief, type SessionStatus } from "../../api";
 import type { Turn } from "../../chat";
 import type { Anchor } from "../../lib/scrollmem";
 import { projectName, projectTint } from "../../lib/surfaces";
@@ -218,7 +218,7 @@ export function Terminal({
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
   run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
-  limit, logins,
+  limit, logins, status, savers,
 }: {
   view: View;
   onView: (v: View) => void;
@@ -287,6 +287,10 @@ export function Terminal({
   limit?: LimitLive | null;
   /** The Claude logins, for the limit's names. */
   logins?: AccountInfo[];
+  /** The open session's status: answered with background tasks still running, the transcript says so. */
+  status?: SessionStatus | null;
+  /** The Savers trials the open session drew the saver in: its prompts' tag. */
+  savers?: string[];
 }) {
   const sessionProject = selected?.project ?? activeProject ?? null;
   // A teammate's device run (lib/devicerun) or a session a teammate sent (lib/team):
@@ -473,7 +477,8 @@ export function Terminal({
               top={theirs && selected?.team?.earlier
                 ? <EarlierPlate share={selected.team.share} facts={selected.team.earlier} by={selected.team.from.name} me={teamMe} /> : undefined}
               unfinished={theirs && selected?.team?.unfinished?.length ? { turns: selected.team.unfinished, by: selected.team.from.name } : null}
-              limit={theirs ? null : limit} logins={logins} />
+              limit={theirs ? null : limit} logins={logins}
+              status={status} onSend={theirs ? undefined : onSendText} savers={savers} />
           )}
         </div>
       </div>
