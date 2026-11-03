@@ -39,9 +39,9 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
         let zoom = UserDefaults.standard.double(forKey: "pageZoom")
         webView.pageZoom = zoom > 0 ? zoom : 1
 
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable],
-                              backing: .buffered, defer: false)
+        let window = PageWindow(contentRect: NSRect(x: 0, y: 0, width: 1440, height: 900),
+                                styleMask: [.titled, .closable, .miniaturizable, .resizable],
+                                backing: .buffered, defer: false)
         window.title = "mystical//assistant"
         window.minSize = NSSize(width: 720, height: 480)
         window.backgroundColor = Placeholder.ground
@@ -346,6 +346,13 @@ final class DashboardWindow: NSWindowController, NSWindowDelegate, WKNavigationD
     func downloadDidFinish(_ download: WKDownload) {
         if let url = download.progress.fileURL { NSWorkspace.shared.activateFileViewerSelecting([url]) }
     }
+}
+
+/// Esc belongs to the page. One the page doesn't preventDefault (most of its
+/// close-on-Esc handlers) comes back from WebKit as cancelOperation:, which
+/// NSWindow answers by leaving full screen. ⌃⌘F and the page's green light still do.
+private final class PageWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) {}
 }
 
 /// What the window shows instead of WebKit's error page: the brand's ground and
