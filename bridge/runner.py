@@ -1432,6 +1432,8 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
                            "label": job_label.get(sid) or "working…"}
             if j is not None and getattr(j, "retry", None):
                 status[sid]["retry"] = dict(j.retry)
+            if j is not None and getattr(j, "native_resume", False):
+                status[sid]["resumed"] = True    # Claude Code carrying a cut turn on
     for sid, c in limits.credits_blocked().items():
         # Stopped on credits_required: no reset brings it back, so it is yours.
         status.setdefault(sid, {"state": "credits", "kind": None, "source": "bridge",

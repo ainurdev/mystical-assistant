@@ -78,6 +78,9 @@ _SAYS = {
     "limit": ("USAGE LIMIT",
               "The account hit its limit. A parked session resumes itself at the "
               "reset."),
+    "credits": ("NEEDS CREDITS",
+                "This needs extra-usage credits on its login. No reset changes that, "
+                "so it isn't parked: run it on another login, or add credits."),
     "overloaded": ("API OVERLOADED",
                    "Anthropic returned a 5xx. Re-sending usually works."),
     "context": ("OUT OF CONTEXT",
@@ -132,6 +135,7 @@ def outcome(turn: dict, signals: dict) -> "dict | None":
       result_empty ...and its result string was blank
       result_text  ...and what it said, for the failures the runner writes into
                    the result instead of into an error event
+      credits      a refusal rate_limit_event said credits_required
 
     A non-error turn gets None: a green row needs no badge.
     """
@@ -158,6 +162,9 @@ def outcome(turn: dict, signals: dict) -> "dict | None":
             code = "agent_login"
         elif limits.is_auth_error(msg) or "not found on PATH" in msg:
             code = "auth"
+        elif signals.get("credits") or limits.is_credits_error(msg):
+            # Before limit: a credits refusal reads like one, but no reset fixes it.
+            code = "credits"
         elif limits.is_limit_error(msg):
             code = "limit"
         elif limits.is_server_error(msg):

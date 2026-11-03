@@ -1426,16 +1426,19 @@ def _outcome_signals(c, session_id: str, turn_ids: set) -> dict:
     and can never hit SQLite's variable limit; the events table is keyed on
     session_id, so it is the same index either way."""
     sig = {t: {"errors": [], "has_text": False, "stopped": False,
-               "has_result": False, "result_empty": False, "result_text": ""}
+               "has_result": False, "result_empty": False, "result_text": "",
+               "credits": False}
            for t in turn_ids}
     for r in c.execute(
             "SELECT turn_id,type,payload FROM events WHERE session_id=? AND "
-            "type IN ('error','stopped','result','text') ORDER BY seq", (session_id,)):
+            "type IN ('error','stopped','result','text','ratelimit') ORDER BY seq", (session_id,)):
         s = sig.get(r["turn_id"])
         if s is None:
             continue
         if r["type"] == "text":
             s["has_text"] = True
+        elif r["type"] == "ratelimit":
+            s["credits"] = json.loads(r["payload"]).get("error_code") == "credits_required"
         elif r["type"] == "stopped":
             s["stopped"] = True
         elif r["type"] == "error":
