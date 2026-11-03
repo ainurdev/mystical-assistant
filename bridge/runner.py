@@ -1668,6 +1668,11 @@ def _announce_end(job) -> None:
     from bridge import goals  # local import: runner<->* cycle
     if w := waits.get(job.store_session_id or ""):
         notify_waiting(chat, job.store_session_id, w["title"])
+    elif getattr(job, "resume_state", None) == "declined":
+        # Nothing ran, so not DONE: the cut work is still waiting on you.
+        notify_turn_done(chat, job.store_session_id, True,
+                         body="A restart cut this turn and Claude Code didn't carry it on. "
+                              "Carry it on from the turn, or leave it.")
     elif job.status != "error" and (g := goals.verdict(job)):   # an error still says so
         notify_goal(chat, job.store_session_id, g)
     else:

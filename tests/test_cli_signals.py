@@ -225,6 +225,21 @@ def test_a_native_resume_that_goes_idle_first_was_declined():
     runner._jobs.clear()
 
 
+def test_a_declined_resume_is_announced_as_still_waiting_not_done():
+    job = _resuming()
+    job.store_session_id, job.status = "s-rs", "done"
+    runner._resume_declined(job)
+    said = []
+    saved = runner.notify_turn_done
+    runner.notify_turn_done = lambda chat, sid, is_error, body="": said.append((is_error, body))
+    try:
+        runner._announce_end(job)
+    finally:
+        runner.notify_turn_done = saved
+        runner._jobs.clear()
+    assert said and said[0][0] is True and "didn't carry it on" in said[0][1]
+
+
 def test_resume_reason_on_a_reply_also_counts_as_started():
     job = _resuming()
     runner._handle_event(job, {"type": "result", "subtype": "success", "result": "DONE",
