@@ -3585,7 +3585,7 @@ input {
 .dseam b { flex: none; font-weight: 700; }
 .dseam > span[aria-hidden] { flex: none; color: var(--txd); }
 .dseam > span:last-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--txd); }
-.dseam-acts { --lc: var(--warn); display: flex; justify-content: center; gap: 10px; margin: 10px 0 4px; }
+.dseam-acts { --lc: var(--warn); display: flex; justify-content: center; gap: 10px; margin: 10px 0 4px; font-family: var(--ui-font, inherit); }
 :is([data-fam] [data-style="dossier"], [data-style="dossier"]) .dturn[data-cont] .rstream > .dwork:first-child { margin-top: 2px; }
 /* Settled, it is DOSSIER's no-body answer: a receipt that says what the limit
    did (data-limit: account, reset, or "" for neither) where "✓ done" would be,

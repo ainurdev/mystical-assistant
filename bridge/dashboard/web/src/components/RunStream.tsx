@@ -2971,7 +2971,7 @@ export const RunStream = memo(function RunStream({
     while (start > 0 && (waiting(start - 1) || !topAt(start - 1))) start--;
     return `z${start}`;
   };
-  const workZone = (zsegs: Seg[], lastZone: boolean) => {
+  const workZone = (zsegs: Seg[], lastZone: boolean, lastWork = lastZone) => {
     const { cats, pics, notes, steps, failed, running, out, live, said, openAt, last, span } = tally(zsegs);
     // The last zone of a running turn is live: a tool out is WORKING since it
     // started, nothing out is THINKING since the last thing finished. A card
@@ -3019,7 +3019,7 @@ export const RunStream = memo(function RunStream({
         gallery={galleryAt(zsegs[0].idx[0])}
         state={state}
         since={state && retry ? retry.since ?? last : running ? openAt : last}
-        retried={lastZone && !retry ? retried : 0}
+        retried={lastWork && !retry ? retried : 0}   // the turn's last WORK card, an answer after it or not
         hud={hud}
         events={events}
         started={turnStarted}
@@ -3055,7 +3055,8 @@ export const RunStream = memo(function RunStream({
   // DOSSIER, under one WORK zone per stretch (lib/dossier).
   const rows = dossier
     ? zones.map((z, i) =>
-        z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs, i === zones.length - 1))
+        z.kind === "top" ? renderEvent(z.segs[0].idx[0])
+          : workZone(z.segs, i === zones.length - 1, i === zones.map((x) => x.kind).lastIndexOf("work")))
     : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)));
   // DOSSIER: with no zone to carry it, the card is there anyway, live and
   // empty, its line saying what the turn waits on (the boot step). It is keyed
