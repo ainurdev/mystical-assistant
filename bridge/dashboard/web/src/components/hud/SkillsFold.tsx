@@ -6,7 +6,7 @@ import {
 import {
   api, type AiFeature, type CatalogSkill, type InstalledSkill, type SkillCategory, type SkillScope, type SkillsInfo,
 } from "../../api";
-import { setAiFeatures } from "../../lib/ai";
+import { setAiFeatures, useGraphify } from "../../lib/ai";
 import { PluginsView } from "./PluginsView";
 
 /* The extras and the skills — two kinds of card, one card grammar.
@@ -78,12 +78,13 @@ function Toggle({ on, busy, onClick, label }: { on: boolean; busy?: boolean; onC
 
 // ---- the extras --------------------------------------------------------------
 
-function ExtraCard({ f, busy, err, open, onToggle, onInfo }: {
+function ExtraCard({ f, busy, err, open, onToggle, onInfo, install }: {
   f: AiFeature; busy: boolean; err?: string; open: boolean; onToggle: () => void; onInfo: () => void;
+  install?: { busy: boolean; run: () => void };   // the tool it runs on is missing: Install stands where the switch was
 }) {
   const Icon = EXTRA_ICONS[f.key] ?? Sparkles;
   return (
-    <div className="aim-x" data-on={f.enabled || undefined} data-busy={busy || undefined}>
+    <div className="aim-x" data-on={(f.enabled && !install) || undefined} data-busy={busy || undefined}>
       <div className="aim-xhd">
         <span className="aim-xic"><Icon size={14} strokeWidth={1.7} aria-hidden /></span>
         <b>{sentence(f.label)}</b>
@@ -91,13 +92,19 @@ function ExtraCard({ f, busy, err, open, onToggle, onInfo }: {
           <button type="button" className="aim-xinfo" aria-expanded={open} aria-label={`about ${f.label}`} onClick={onInfo}>i</button>
         )}
         <span style={{ flex: 1, minWidth: 8 }} />
-        <Toggle on={f.enabled} busy={busy} onClick={onToggle} label={f.label} />
+        {install ? (
+          <button type="button" className="aim-xbtn" disabled={install.busy} onClick={install.run}
+            title="install graphify on this machine and switch this on">{install.busy ? "Installing…" : "Install"}</button>
+        ) : (
+          <Toggle on={f.enabled} busy={busy} onClick={onToggle} label={f.label} />
+        )}
       </div>
       <div className="aim-xhint">{f.hint}</div>
       {open && f.about && <div className="aim-xaside">{f.about}</div>}
       {err && <div className="aim-xerr">{err}</div>}
       <div className="aim-xfoot">
-        <span>{f.cost}</span>
+        {/* what Install is for, on the line the cost holds: a status in the hint would resize the card when it lands */}
+        <span>{!install ? f.cost : install.busy ? "installing graphify…" : "needs graphify, not on this machine yet"}</span>
         {f.tokens && <em>{f.tokens}</em>}
       </div>
     </div>
@@ -115,6 +122,8 @@ function ExtrasGrid() {
   // Which card's ⓘ is unfolded — the grid stretches rows so the cost lines
   // align, and one open aside would stretch its neighbours into mostly gap.
   const [openKey, setOpenKey] = useState<string | null>(null);
+  const gfy = useGraphify();
+  const missing = (f: AiFeature) => f.key === "graph" && gfy.installed === false;
 
   useEffect(() => {
     void api.aiFeatures()
@@ -138,7 +147,7 @@ function ExtrasGrid() {
     }
   }
 
-  const on = rows?.filter((f) => f.enabled).length ?? 0;
+  const on = rows?.filter((f) => f.enabled && !missing(f)).length ?? 0;
   return (
     <>
       <div className="aim-sub" data-sec="MODEL-SPENDING EXTRAS">
@@ -151,9 +160,10 @@ function ExtrasGrid() {
       {rows && rows.length > 0 && (
         <div className="aim-xgrid" data-open={openKey ? "" : undefined}>
           {rows.map((f) => (
-            <ExtraCard key={f.key} f={f} busy={busy === f.key} err={err?.key === f.key ? err.msg : undefined}
+            <ExtraCard key={f.key} f={f} busy={busy === f.key} err={err?.key === f.key ? err.msg : (missing(f) && gfy.error) || undefined}
               open={openKey === f.key} onToggle={() => void toggle(f)}
-              onInfo={() => setOpenKey(openKey === f.key ? null : f.key)} />
+              onInfo={() => setOpenKey(openKey === f.key ? null : f.key)}
+              install={missing(f) ? { busy: gfy.installing, run: () => { if (!f.enabled) void toggle(f); gfy.install(); } } : undefined} />
           ))}
         </div>
       )}

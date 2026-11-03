@@ -1,5 +1,5 @@
-import { useSyncExternalStore } from "react";
-import { api, type AiFeature } from "../api";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { api, type AiFeature, type GraphInstall } from "../api";
 
 /** Which model-spending extras are on, shared by everything that has to hide
  *  itself while its switch is off (the next-up board). One fetch, many readers —
@@ -44,4 +44,40 @@ function subscribe(fn: () => void): () => void {
 
 export function useAiFeatures(): Record<string, boolean> {
   return useSyncExternalStore(subscribe, () => snapshot);
+}
+
+/** graphify, the tool PROJECT MAP runs on: is it on the bridge machine, and the
+ *  install offered wherever a map switch would otherwise switch on nothing (the
+ *  Extras card, a repo's Project map row, the MAP tab). The caller flips its own
+ *  switch as Install is pressed, so a page closed mid-install still ends up on;
+ *  this only follows the install, polling while one runs, even one another page
+ *  started. `installed` is null until the bridge answers, and stays null on a
+ *  bridge too old for the route, so callers keep drawing their switch. */
+export function useGraphify() {
+  const [st, setSt] = useState<GraphInstall | null>(null);
+  const [gen, setGen] = useState(0);   // install() bumps it to follow the run it started
+  useEffect(() => {
+    let live = true;
+    let t = 0;
+    const read = () => void api.graphInstall()
+      .then((s) => {
+        if (!live) return;
+        setSt(s);
+        if (s.state === "running") t = window.setTimeout(read, 1500);
+      })
+      .catch(() => { /* an older bridge has no route: the switch stays as it was */ });
+    read();
+    return () => { live = false; window.clearTimeout(t); };
+  }, [gen]);
+  return {
+    installed: st ? st.installed : null,
+    installing: st?.state === "running",
+    error: st?.state === "error" ? st.error ?? "" : "",
+    install: () => {
+      setSt({ installed: false, state: "running" });
+      void api.installGraphify()
+        .then(() => setGen((g) => g + 1))
+        .catch((e: Error) => setSt({ installed: false, state: "error", error: e.message }));
+    },
+  };
 }

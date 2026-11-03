@@ -1,10 +1,15 @@
 """Graphify integration: per-project code knowledge graphs (graphify-out/).
 
-Shells out to the graphify CLI (pipx `graphifyy`; tree-sitter AST, no LLM for
+Shells out to the graphify CLI (PyPI `graphifyy`; tree-sitter AST, no LLM for
 code) and serves/parses its artifacts. Postures mirror the rest of the bridge:
 binary resolution like runner.claude_bin(), best-effort like memory.py —
 failures yield empty/friendly values and never block a turn.
 See docs/superpowers/specs/graphify-ponytail-features-design.md
+
+A missing graphify is installed from the dashboard (install_async): its PROJECT
+MAP switches show Install instead of a switch that could never work, and the
+press switches the map on itself, so this only installs. uv, else pipx, at a
+pinned version; nothing installs either of those for you.
 """
 
 import json
@@ -28,6 +33,13 @@ GIT_TIMEOUT = 10        # short git operations (rev-parse, status)
 
 _GRAPHIFY_FALLBACKS = ("~/.local/bin/graphify",)   # pipx/uv tool bin dir
 _graphify_bin: "str | None" = None
+
+# What Install puts on the machine: the CLI this module was tested against
+# (update, export html, explain, GRAPHIFY_BACKEND). A bump arrives with the pull.
+GRAPHIFY_PIN = "graphifyy==0.9.97"
+INSTALL_TIMEOUT = 10 * 60
+_install_lock = threading.Lock()
+_install: dict = {}   # {"state": "running"} while one runs, {"state": "error", "error"} after a failure
 
 
 def local_only_env() -> dict:
@@ -80,7 +92,60 @@ def blocked_reason(cwd: "str | None" = None) -> "str | None":
     if cwd and not repo_on(cwd):
         return OFF_REPO_MSG
     if not graphify_bin():
-        return "graphify is not installed (pipx install graphifyy)."
+        return "graphify is not installed (Install: SETTINGS ▸ AI management ▸ Extras ▸ Project map)."
+    return None
+
+
+def install_state() -> dict:
+    """Is graphify on this machine, and is an install running or did the last one fail."""
+    with _install_lock:
+        return {"installed": bool(graphify_bin()), **_install}
+
+
+def install_async() -> dict:
+    """Install graphify off-thread and return install_state() at once; a press
+    while one runs joins it. Clients poll install_state() for the end."""
+    with _install_lock:
+        if _install.get("state") != "running":
+            _install.clear()
+            _install["state"] = "running"
+            threading.Thread(target=_install_worker, daemon=True).start()
+    return install_state()
+
+
+def _install_worker() -> None:
+    try:
+        err = _install_graphify()
+    except Exception as e:  # noqa: BLE001 — whatever happens, the page stops waiting and says why
+        err = f"Installing graphify failed: {e}"
+    with _install_lock:
+        _install.clear()
+        if err:
+            _install.update(state="error", error=err)
+
+
+def _install_graphify() -> "str | None":
+    """uv, else pipx, into ~/.local/bin, where graphify_bin() looks. None on
+    success, else the reason the user reads. --force: uv holding the package from
+    an install with another bin dir answers "already installed" and links nothing."""
+    for argv in (["uv", "tool", "install", "--force"], ["pipx", "install", "--force"]):
+        exe = shutil.which(argv[0])
+        if exe:
+            break
+    else:
+        return "graphify installs with uv or pipx, and this machine has neither. Install uv, then press Install again."
+    try:
+        proc = subprocess.run([exe, *argv[1:], GRAPHIFY_PIN], stdin=subprocess.DEVNULL,
+                              capture_output=True, text=True, timeout=INSTALL_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return f"Installing graphify took over {INSTALL_TIMEOUT // 60} minutes."
+    except OSError as e:
+        return f"Installing graphify failed: {e}"
+    if proc.returncode != 0:
+        last = (proc.stderr or proc.stdout or "").strip().splitlines()[-1:]
+        return f"{argv[0]} couldn't install graphify: {last[0] if last else f'exit {proc.returncode}'}"
+    if not graphify_bin():
+        return f"{argv[0]} installed graphify outside the bridge's PATH and ~/.local/bin."
     return None
 
 

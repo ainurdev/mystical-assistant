@@ -12,7 +12,7 @@ import { ProjectTile } from "../ui/ProjectTile";
 import type { ProjectGroup } from "./ProjectsPanel";
 import MarkEditor, { poss } from "./MarkEditor";
 import { StyleButton, StylePane, StyleScan, StyleStrip, useStyleRows } from "./LogoStylist";
-import { useAiFeatures } from "../../lib/ai";
+import { useAiFeatures, useGraphify } from "../../lib/ai";
 import { takeSettingsFocus } from "../../lib/opensettings";
 import { showStyle, useStyle } from "../../lib/stylerun";
 
@@ -205,6 +205,8 @@ type Cfg = { rel: string; run: string; def: string; design: string | null; pulle
 export function ProjectsSettings(props: ProjectsSettingsProps) {
   const { groups, hidden, remotes, onSetHidden, onRename, profiles, onSetProfile, logins = [], onDesign, onOpenSkills, current } = props;
   const mapAll = !!useAiFeatures().graph;   // PROJECT MAP, the machine-wide switch over each repo's own
+  const gfy = useGraphify();
+  const mapInstall = mapAll && gfy.installed === false;   // its switch would switch on nothing: Install stands in for it
   const [q, setQ] = useState("");
   const [show, setShow] = useState<Show>("all");
   // The open session's project starts unfolded, so the row on the right is in view.
@@ -575,9 +577,18 @@ export function ProjectsSettings(props: ProjectsSettingsProps) {
                       aria-label="lessons" disabled={cfg?.lessons == null} onClick={() => setLessons(!cfg?.lessons)} />
                   </Field>
                   <Field icon={Waypoints} label="Project map"
-                    hint={mapAll ? "a code graph each new session starts from" : "PROJECT MAP is off in AI management ▸ Extras"}>
-                    <button type="button" className="ps-tog" data-on={(mapAll && cfg?.map) || undefined} aria-pressed={mapAll && !!cfg?.map}
-                      aria-label="project map" disabled={!mapAll || cfg?.map == null} onClick={() => setMap(!cfg?.map)} />
+                    hint={!mapAll ? "PROJECT MAP is off in AI management ▸ Extras"
+                      : !mapInstall ? "a code graph each new session starts from"
+                      : gfy.error ? <span style={{ color: "var(--err)" }}>{gfy.error}</span>
+                      : gfy.installing ? "installing graphify…" : "needs graphify, which isn't on this machine yet"}>
+                    {mapInstall ? (
+                      <button type="button" className="ps-btn" disabled={!cfg || gfy.installing}
+                        title="install graphify on this machine and switch the map on here"
+                        onClick={() => { if (!cfg?.map) setMap(true); gfy.install(); }}>{gfy.installing ? "Installing…" : "Install"}</button>
+                    ) : (
+                      <button type="button" className="ps-tog" data-on={(mapAll && cfg?.map) || undefined} aria-pressed={mapAll && !!cfg?.map}
+                        aria-label="project map" disabled={!mapAll || cfg?.map == null} onClick={() => setMap(!cfg?.map)} />
+                    )}
                   </Field>
                   {onOpenSkills && (
                     <Field icon={Puzzle} label="Skills"

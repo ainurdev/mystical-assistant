@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api, type GraphState } from "../../api";
 import { ago } from "../../lib/surfaces";
+import { useGraphify } from "../../lib/ai";
 
 /* MAP tab — the project's graphify knowledge graph (graph.html) inline, with
    staleness header, build/refresh, and a one-line explain query. */
@@ -18,6 +19,7 @@ export function MapTab({ project }: { project: string }) {
   const [gen, setGen] = useState(0); // bump to reload the iframe after a rebuild
   const timer = useRef<number | null>(null);
   const pendingBuild = useRef(false);
+  const gfy = useGraphify();
 
   const load = useCallback(() => {
     if (timer.current) window.clearTimeout(timer.current);
@@ -38,7 +40,7 @@ export function MapTab({ project }: { project: string }) {
   useEffect(() => {
     load();
     return () => { if (timer.current) window.clearTimeout(timer.current); };
-  }, [load]);
+  }, [load, gfy.installed]);   // an install landing turns "not installed" into the map
 
   const build = () => { pendingBuild.current = true; api.graphUpdate(project).then(() => load()); };
   const ask = () => {
@@ -69,9 +71,20 @@ export function MapTab({ project }: { project: string }) {
     return <div style={{ ...mono, color: "var(--txd)" }}>loading…</div>;
   }
   if (!st.available) {
-    return <div style={{ ...mono, color: "var(--txm)" }}>
-      graphify is not installed on the bridge machine.{"\n"}pipx install graphifyy
-    </div>;
+    return (
+      <div style={{ ...mono, color: gfy.error ? "var(--err)" : "var(--txm)", display: "flex", alignItems: "center", gap: 10 }}>
+        <span>{gfy.error || (gfy.installing ? "installing graphify…" : "graphify is not installed on the bridge machine.")}</span>
+        {gfy.installed === false && !gfy.installing && (
+          <button onClick={gfy.install}
+            style={{ appearance: "none", cursor: "pointer",
+              border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)",
+              background: "transparent", color: "var(--txm)", fontFamily: "inherit",
+              fontSize: "var(--t95)", letterSpacing: 1.5, padding: "4px 10px" }}>
+            INSTALL
+          </button>
+        )}
+      </div>
+    );
   }
 
   return (

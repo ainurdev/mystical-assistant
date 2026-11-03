@@ -1574,6 +1574,13 @@ export interface GraphState {
   repo_on?: boolean; // this repo's own switch (SETTINGS ▸ Projects ▸ Project map); absent on an older bridge
 }
 
+// graphify itself on the bridge machine, and the install a PROJECT MAP switch offers while it is missing.
+export interface GraphInstall {
+  installed: boolean;
+  state?: "running" | "error"; // absent: no install running, and the last one (if any) worked
+  error?: string;
+}
+
 // One lesson written after a turn, listed by the LEARN tab. Body is fetched
 // separately — a repo can hold hundreds, and the list only needs their titles.
 export interface Lesson {
@@ -2370,6 +2377,8 @@ export const api = {
     req<GraphState>("/local/graph/update", { method: "POST", body: { project } }),
   graphHtmlUrl: (project: string) =>
     `/local/graph/html?project=${encodeURIComponent(project)}`,
+  graphInstall: () => req<GraphInstall>("/local/graph/install"),
+  installGraphify: () => req<GraphInstall>("/local/graph/install", { method: "POST", body: {} }),
   // --- LEARN tab: per-turn lessons in <repo>/.mystical/learn/ ---
   lessons: (project: string) =>
     req<{ lessons: Lesson[]; repo_enabled: boolean }>(

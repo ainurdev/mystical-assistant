@@ -595,3 +595,66 @@ def test_the_repo_switch_turns_on_and_a_worktree_follows_it(tmp_path, monkeypatc
     assert graphmap.repo_on(wt) is False
     assert project_config.set_map(browser.rel(d), True) is True
     assert graphmap.repo_on(d) is True and graphmap.repo_on(wt) is True
+
+
+# --- install (the Install button that stands in for a switch graphify is missing behind) ---
+
+@pytest.fixture
+def _installer(monkeypatch):
+    """No graphify until the fake installer runs."""
+    box = {"argv": None, "rc": 0, "err": "", "tools": {"uv"}, "here": False}
+
+    def which(name):
+        if name == "graphify":
+            return "/x/bin/graphify" if box["here"] else None
+        return f"/x/bin/{name}" if name in box["tools"] else None
+
+    def run(argv, **kw):
+        box["argv"] = argv
+        box["here"] = box["rc"] == 0
+        return subprocess.CompletedProcess(argv, box["rc"], "", box["err"])
+
+    monkeypatch.setattr(graphmap.shutil, "which", which)
+    monkeypatch.setattr(graphmap.os, "access", lambda *_a, **_k: False)
+    monkeypatch.setattr(graphmap, "_graphify_bin", None)
+    monkeypatch.setattr(graphmap, "_install", {})
+    monkeypatch.setattr(graphmap.subprocess, "run", run)
+    return box
+
+
+def test_install_runs_uv_at_the_pin(_installer):
+    assert graphmap.install_state() == {"installed": False}
+    graphmap._install_worker()
+    assert _installer["argv"] == ["/x/bin/uv", "tool", "install", "--force", graphmap.GRAPHIFY_PIN]
+    assert graphmap.install_state() == {"installed": True}
+
+
+def test_install_falls_back_to_pipx(_installer):
+    _installer["tools"] = {"pipx"}
+    graphmap._install_worker()
+    assert _installer["argv"] == ["/x/bin/pipx", "install", "--force", graphmap.GRAPHIFY_PIN]
+    assert graphmap.install_state() == {"installed": True}
+
+
+def test_install_without_uv_or_pipx_says_so(_installer):
+    _installer["tools"] = set()
+    graphmap._install_worker()
+    st = graphmap.install_state()
+    assert st["state"] == "error" and "uv or pipx" in st["error"] and not st["installed"]
+    assert _installer["argv"] is None
+
+
+def test_install_failure_says_why(_installer):
+    _installer["rc"], _installer["err"] = 2, "resolving...\nerror: no network"
+    graphmap._install_worker()
+    assert graphmap.install_state() == {"installed": False, "state": "error",
+                                        "error": "uv couldn't install graphify: error: no network"}
+
+
+def test_install_a_second_press_joins_the_running_one(_installer, monkeypatch):
+    started = []
+    monkeypatch.setattr(graphmap.threading, "Thread",
+                        lambda target, daemon: type("T", (), {"start": lambda s: started.append(target)})())
+    assert graphmap.install_async()["state"] == "running"
+    assert graphmap.install_async()["state"] == "running"
+    assert started == [graphmap._install_worker]

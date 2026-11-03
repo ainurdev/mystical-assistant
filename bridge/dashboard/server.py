@@ -913,6 +913,8 @@ class Handler(BaseHTTPRequestHandler):
         # subagent viewer, an unrelated feature this must not shadow.
         if path == "/local/acp/agents":
             return self._json(acp_agents.api_info())
+        if path == "/local/graph/install":
+            return self._json(graphmap.install_state())
         if path == "/local/graph/state":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
@@ -1062,6 +1064,8 @@ class Handler(BaseHTTPRequestHandler):
             if abs_p is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json(graphmap.update_async(abs_p))
+        if path == "/local/graph/install":
+            return self._json(graphmap.install_async())
         if path == "/local/learn/toggle":
             from bridge import learn
             abs_p = _abs_project(body.get("project"))
