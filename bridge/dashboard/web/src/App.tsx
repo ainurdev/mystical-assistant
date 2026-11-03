@@ -101,12 +101,12 @@ import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel, requestFileFind } from "./components/hud/FilesPanel";
 import { BranchesPanel, branchMenu } from "./components/hud/BranchesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
-import { RightPanel, type PanelTab } from "./components/RightPanel";
+import { RightPanel, useSettling, type PanelTab } from "./components/RightPanel";
 import { GitPanel } from "./components/hud/GitPanel";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
-import { shellCols } from "./lib/shell";
+import { rightBodyW, shellCols } from "./lib/shell";
 import { notify, PillHost, setLinks, setNeeds, setNoticeEnv, setNoticeSound } from "./components/hud/Notifications";
 import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
@@ -616,6 +616,11 @@ export function App() {
   function toggleRight() {
     setSettings((s) => ({ ...s, rightOpen: !s.rightOpen }));
   }
+  // While the column moves, the right panel and its cap stay where the open
+  // layout puts them and the moving edge sweeps over them (RightPanel.tsx):
+  // the strip leaves the cap for the chat header only once the column is shut.
+  const rightMoving = useSettling(settings.rightOpen);
+  const rightShown = settings.rightOpen || rightMoving;
   function toggleLeft() {
     setSettings((s) => ({ ...s, leftOpen: !s.leftOpen }));
   }
@@ -2896,7 +2901,7 @@ export function App() {
                 edge, and ⌘K sits at the foot of the rail. */}
             <div
               className="hudgrid grid min-h-0 flex-1"
-              data-rbare={settings.rightOpen ? undefined : ""}
+              data-rbare={rightShown ? undefined : ""}
               style={{ gridTemplateColumns: shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0 }}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
@@ -2960,7 +2965,7 @@ export function App() {
                 onStartHere={(text) => { if (sessionProject) void startIn(sessionProject, text, { cwd: selected?.cwd ?? undefined, force: true }); }}
                 // Folded to the rail, the right column can't carry the cluster —
                 // the chat header takes it.
-                chrome={settings.rightOpen ? undefined : strip}
+                chrome={rightShown ? undefined : strip}
                 limit={limitLive} logins={accounts}
                 composer={selected && isDeviceRun(selected.origin) ? (
                   // A teammate's device run: read only, so the plate stands where
@@ -3065,13 +3070,18 @@ export function App() {
                   the body and unmounts the panel (which stops its polling). The
                   cap rides on top: the cluster over the panel, the gear over
                   the rail. */}
-              <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0, minWidth: 0 }}>
+              <div style={{ display: "grid", gridTemplateRows: "auto minmax(0,1fr)", minHeight: 0, minWidth: 0,
+                // Moving, the column is a window onto the open layout pinned to
+                // the rail: cap and panel keep their open width, the edge sweeps,
+                // nothing inside slides or reflows. Only then — the strip's
+                // popovers hang past this column at rest, so it can't clip always.
+                ...(rightMoving && { gridTemplateColumns: `calc(${rightBodyW} + 48px)`, justifyContent: "end", overflow: "hidden" }) }}>
                 <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined}>
-                  {settings.rightOpen && strip}
+                  {rightShown && strip}
                 </RightCap>
                 <RightPanel
                   tabs={rightTabs} activeId={settings.rightTab}
-                  open={settings.rightOpen} onTab={pickRightTab}
+                  open={settings.rightOpen} shown={rightShown} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
                   railHead={isLinuxApp() ? <LinuxRailHead onOpenSettings={() => setSettingsOpen(true)} /> : undefined}
                   railFoot={<>

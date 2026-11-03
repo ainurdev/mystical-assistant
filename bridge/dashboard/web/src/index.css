@@ -340,10 +340,19 @@ body {
 [data-swap] .swapin {
   animation: mfadeup 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+/* Another tab in the open right panel: the frame stays (its divider, its
+   corner, the header strip above) and only the content changes — it fades up
+   from .3, never from nothing, so the column doesn't blank between tabs. No
+   fill mode: once done, the content holds no opacity or transform. */
+[data-tabswap] > * {
+  animation: paneswap 0.16s var(--ease-hud);
+}
+@keyframes paneswap { from { opacity: 0.3; transform: translateY(4px); } }
 /* Collapsing the right panel re-widths the transcript. Animating the column
    (not a transform) is what lets the chat reflow into the space instead of
    jumping a panel-width in one frame; RightPanel clips its own body at a fixed
-   width so the panel's own text doesn't reflow along the way. */
+   width so the panel's own text doesn't reflow along the way. The same 0.26s
+   is the left sidebar's fold, and useSettling (RightPanel.tsx) waits it out. */
 .hudgrid {
   transition: grid-template-columns 0.26s var(--ease-hud);
 }
@@ -1568,6 +1577,7 @@ input {
 @media (prefers-reduced-motion: reduce) {
   .sessdot[data-work="true"] { animation: none; }
   .hudgrid { transition: none; }
+  [data-tabswap] > * { animation: none; }
   .swapscrim,
   .swapline { transition-duration: 0s; }
   .swapwrap[data-swapping] .swapline::after {
