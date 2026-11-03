@@ -340,10 +340,19 @@ body {
 [data-swap] .swapin {
   animation: mfadeup 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }
+/* Another tab in the open right panel: the frame stays (its divider, its
+   corner, the header strip above) and only the content changes — it fades up
+   from .3, never from nothing, so the column doesn't blank between tabs. No
+   fill mode: once done, the content holds no opacity or transform. */
+[data-tabswap] > * {
+  animation: paneswap 0.16s var(--ease-hud);
+}
+@keyframes paneswap { from { opacity: 0.3; transform: translateY(4px); } }
 /* Collapsing the right panel re-widths the transcript. Animating the column
    (not a transform) is what lets the chat reflow into the space instead of
    jumping a panel-width in one frame; RightPanel clips its own body at a fixed
-   width so the panel's own text doesn't reflow along the way. */
+   width so the panel's own text doesn't reflow along the way. The same 0.26s
+   is the left sidebar's fold, and useSettling (RightPanel.tsx) waits it out. */
 .hudgrid {
   transition: grid-template-columns 0.26s var(--ease-hud);
 }
@@ -1568,6 +1577,7 @@ input {
 @media (prefers-reduced-motion: reduce) {
   .sessdot[data-work="true"] { animation: none; }
   .hudgrid { transition: none; }
+  [data-tabswap] > * { animation: none; }
   .swapscrim,
   .swapline { transition-duration: 0s; }
   .swapwrap[data-swapping] .swapline::after {
@@ -6713,15 +6723,15 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* The dock's one frame (.ad-frame, lib/qpreview frameOf): --W x --H is the
    question's largest shot, so the frame keeps its size whichever option or tab
    is on show; a tall frame is capped. Every shot fills the frame as large as it
-   fits (object-fit: contain), hung from the top and stacked with the shown one
-   visible. One scale for every shot came first and drew a page shot at a quarter
+   fits (object-fit: contain), centred and stacked with the shown one visible (a
+   short shot hung from the top above a dark void, 2026-11-03). One scale for every shot came first and drew a page shot at a quarter
    of the frame whenever a phone shot stood beside it (2026-10-26). */
 .qstage-shots { display: grid; container-type: size; overflow: hidden; aspect-ratio: var(--W) / var(--H); max-height: min(56vh, 480px); }
 .qstage-layer { grid-area: 1 / 1; min-width: 0; min-height: 0; width: 100%; height: 100%; transition: opacity .16s ease, visibility .16s; }
 .qstage-layer[data-on="false"] { opacity: 0; visibility: hidden; }
 @media (prefers-reduced-motion: reduce) { .qstage-layer { transition: none; } }
 .qstage-pic { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: none; cursor: zoom-in; }
-.qstage-pic img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: top; }
+.qstage-pic img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
 .qstage-shots .qstage-text { max-height: 100cqh; }
 .qstage-text { margin: 0; padding: 10px 12px; max-height: 320px; overflow: auto; white-space: pre-wrap;
   font: var(--t12, 12px)/1.5 var(--mono); color: var(--txm); }
@@ -7147,12 +7157,19 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ad-th .ad-pre { position: absolute; inset: 0; }
 /* One frame per question (lib/qpreview frameOf, .mystical/design-drafts/ask-pictures-steady):
    --W x --H is the question's largest shot in natural px, --w a shot's own width. Every
-   shot draws at the one scale that fits the largest, hung from the top and stacked with
+   shot draws at the one scale that fits the largest, centred and stacked with
    the shown one visible, so a tab or an option never resizes the dock or zooms the picture. */
 .ad-frame { display: grid; container-type: size; overflow: hidden; }
 .ad-shot { grid-area: 1 / 1; display: block; min-width: 0; min-height: 0; width: 100%; height: 100%; transition: opacity .16s ease, visibility .16s; }
 .ad-shot:not([data-on]) { opacity: 0; visibility: hidden; }
-.ad-shot img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: top; }
+.ad-shot img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: center; }
+/* A shot every option shares (lib/qpreview sharedShot), said on the picture so two
+   identical tiles don't read as a mix-up. A grid item over the shots, bottom-left:
+   the tile's zoom button holds the bottom-right. Also on the transcript stage. */
+.ad-same { grid-area: 1 / 1; align-self: end; justify-self: start; z-index: 1; margin: 7px; padding: 4px 7px; pointer-events: none;
+  border-radius: 6px; border: 1px solid var(--rc-line2, color-mix(in oklab, var(--txl) 35%, transparent));
+  background: color-mix(in oklab, var(--panel3, var(--panel)) 88%, transparent);
+  font: 700 var(--t95, 9.5px)/1 var(--mono); letter-spacing: 1.2px; text-transform: uppercase; color: var(--txb, var(--txm)); }
 .ad-frame > .ad-pre { width: 100%; height: 100%; overflow: auto; }
 @media (prefers-reduced-motion: reduce) { .ad-shot { transition: none; } }
 /* Text-only previews (QuestionCard TextPreview, in the dock, its records and the
@@ -7178,10 +7195,11 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* An option is never clipped: a cut label or description is a choice you can't
    read. Tiles in a row grow to the longest one instead. */
 .ad-meta .ad-lab { line-height: 1.35; padding-top: 2px; }
-/* the tile frame's bottom-right corner: the shots hang from the top, so it is the free one */
+/* the tile frame's bottom-right corner */
 .ad-zm { position: absolute; right: 7px; top: calc(100cqw / var(--ar, 1.6) - 31px); display: grid; place-items: center; width: 26px; height: 24px; padding: 0; border-radius: 6px;
   background: color-mix(in oklab, var(--panel3, var(--panel)) 85%, transparent); border: 1px solid var(--rc-line2); color: var(--txb); }
-.ad-stage { margin-top: 9px; border-radius: max(3px, var(--rc-rs)); border: 1px solid var(--rc-line2); overflow: hidden; background: color-mix(in oklab, var(--panel3, var(--panel)) 70%, #000); }
+/* flex: none — the dock scrolls; squeezed, the stage cut off its frame's bottom edge and whatever sat there */
+.ad-stage { flex: none; margin-top: 9px; border-radius: max(3px, var(--rc-rs)); border: 1px solid var(--rc-line2); overflow: hidden; background: color-mix(in oklab, var(--panel3, var(--panel)) 70%, #000); }
 :root[data-light] .ad-stage { background: var(--panel3, var(--panel)); }
 .ad-sh { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-bottom: 1px solid var(--rc-line); background: var(--panel2); font-size: var(--t13); }
 .ad-sh .ad-key { grid-row: auto; width: 22px; height: 22px; }

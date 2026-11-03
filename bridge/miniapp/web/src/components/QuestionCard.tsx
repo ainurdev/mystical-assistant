@@ -3,7 +3,7 @@ import { flushSync } from "react-dom";
 import { Maximize2 } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
 import type { AnswerSelection, Question } from "../lib/api";
-import { frameOf, optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
+import { frameOf, optionKey, parsePreview, previewTexts, sharedShot, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { ImageLightbox } from "./ImageLightbox";
 import { ToolImage } from "./RunStream";
@@ -13,9 +13,9 @@ import { ToolImage } from "./RunStream";
  *  swaps the picture right above it. The tabs page that option's shots and keep
  *  their place when you switch options. Only an option with pictures takes the
  *  stage (a tapped Revise or Park it leaves the last pictures up), and every shot
- *  fills one frame (lib/qpreview frameOf) as large as it fits, hung from the top,
- *  so a tap never resizes the card. Its viewer has no PICK:
- *  closing it puts the rows back under your thumb. */
+ *  fills one frame (lib/qpreview frameOf) as large as it fits, centred, so a tap
+ *  never resizes the card. A shot every option shares says so (sharedShot). Its
+ *  viewer has no PICK: closing it puts the rows back under your thumb. */
 function StageView({ q, shown }: { q: Question; shown: number }) {
   const [tab, setTab] = useState(0);
   const [zoom, setZoom] = useState<string | null>(null);
@@ -34,6 +34,7 @@ function StageView({ q, shown }: { q: Question; shown: number }) {
   };
   const t = Math.min(tab, Math.max(cur.pv.shots.length - 1, 0));
   const shot = cur.pv.shots[t];
+  const same = sharedShot(opts.filter(has).map((x) => x.pv.shots), tab);
   return (
     <div className="border border-border bg-[var(--tg-bg)]">
       <div className="flex items-center gap-2 border-b border-border px-2.5 py-2">
@@ -69,7 +70,7 @@ function StageView({ q, shown }: { q: Question; shown: number }) {
                 <ToolImage
                   path={s.path}
                   alt={`${x.key} · ${x.name}${s.alt ? ` · ${s.alt}` : ""}`}
-                  className="block h-full w-full object-contain object-top"
+                  className="block h-full w-full object-contain object-center"
                   fallback={<p className="px-3 py-2 text-xs text-[var(--tg-hint)]">{s.alt || "This picture is gone."}</p>}
                   onZoom={(src) => setZoom(src)}
                   onSrc={(src) => { setSrcs((m) => ({ ...m, [s.path]: src })); measure(s.path, src); }}
@@ -80,6 +81,11 @@ function StageView({ q, shown }: { q: Question; shown: number }) {
             </div>
           );
         }))}
+        {same && (
+          <span className="pointer-events-none z-10 col-start-1 row-start-1 m-2 self-end justify-self-start border border-border bg-[var(--tg-bg)] px-1.5 py-1 font-mono text-[9.5px] uppercase tracking-[1.5px] text-[var(--tg-hint)]">
+            Same in every option
+          </span>
+        )}
       </div>
       {zoom && (
         <ImageLightbox

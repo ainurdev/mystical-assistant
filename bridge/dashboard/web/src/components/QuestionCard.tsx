@@ -4,7 +4,7 @@ import { Check, Maximize2 } from "lucide-react";
 import { Button, Card, Spinner } from "./ui";
 import { api, type AnswerSelection, type Question } from "../api";
 import { ImageLightbox } from "./ImageLightbox";
-import { frameOf, optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
+import { frameOf, optionKey, parsePreview, previewTexts, sharedShot, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { RivendellIcon } from "../lib/rivendellicon";
 
@@ -88,6 +88,7 @@ function Stage({ q, chosen, onPick, sending }: {
   const cur = opts[shown] ?? opts[0];
   const t = Math.min(tab, Math.max(cur.pv.shots.length - 1, 0));
   const shot = cur.pv.shots[t];
+  const same = sharedShot(opts.filter(has).map((x) => x.pv.shots), tab);
   // Every option's shots in order (A1 A2 B1 …), named, for the viewer.
   const all = opts.flatMap((x, oi) => x.pv.shots.map((s, k) => ({
     oi, k, src: api.attachmentUrl(s.path), tag: x.key,
@@ -164,6 +165,7 @@ function Stage({ q, chosen, onPick, sending }: {
                   : <pre className="qstage-text">{x.pv.text}</pre>}
               </div>
             )))}
+            {same && <span className="ad-same">Same in every option</span>}
           </div>
         </div>
       </div>

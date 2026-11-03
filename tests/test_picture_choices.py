@@ -123,6 +123,18 @@ def test_preview_images_are_copied_into_the_runs_uploads():
     assert os.path.isfile(a)                     # copied, not moved: the file is not ours
 
 
+def test_a_shot_two_options_share_is_copied_once():
+    shared, a, b = _png("sales.png"), _png("head.png"), _png("head.png")
+    got = runner._adopt_preview_images("job_pc4", "r", _q(
+        f"![Header]({a})\n![Sales]({shared})", f"![Header]({b})\n![Same sales]({shared})"))
+    pa, pb = (o["preview"].splitlines() for o in got[0]["options"])
+    path = lambda line: line.split("](")[1].rstrip(")")
+    assert path(pa[1]) == path(pb[1]) and os.path.isfile(path(pa[1]))
+    assert pb[1].startswith("![Same sales](")         # each keeps its own alt
+    assert path(pa[0]) != path(pb[0])                  # same name, different files: two copies
+    assert len(os.listdir(os.path.join(config.UPLOAD_DIR, "job_pc4"))) == 3
+
+
 def test_anything_that_is_not_a_local_image_stays_as_written():
     txt = os.path.join(tempfile.mkdtemp(), "notes.txt")
     open(txt, "w").close()
