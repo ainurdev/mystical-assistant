@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { CornerDownRight, Gauge, Pause, RefreshCw } from "lucide-react";
+import { Ban, CornerDownRight, Gauge, Pause, RefreshCw } from "lucide-react";
 import { api, type AccountInfo, type SessionStatus } from "../api";
 import type { Turn } from "../chat";
 import { DEFAULT_SLOT } from "../models";
@@ -91,6 +91,79 @@ function useAct() {
 }
 
 const HANDOVER_FAILED = "Couldn't hand the work over — still parked until the reset.";
+
+/** "Leave it" on a card that offers a way out, kept per turn in this browser:
+ *  the bridge has nothing to clear, so leaving only takes the buttons away. */
+export function useLeaveIt(key: string, turnId: string): [boolean, () => void] {
+  const read = (): string[] => { try { return JSON.parse(localStorage.getItem(key) || "[]") as string[]; } catch { return []; } };
+  const [left, setLeft] = useState(() => read().includes(turnId));
+  return [left, () => {
+    setLeft(true);
+    try { localStorage.setItem(key, JSON.stringify([...read().filter((id) => id !== turnId), turnId].slice(-200))); }
+    catch { /* storage off: left for this page's life */ }
+  }];
+}
+
+/** A turn that stopped on credits_required (outcome "credits", design-drafts/
+ *  cli-signals row 2): the paused card's frame in warn, where its answer would
+ *  be. No reset brings the login back, so the chat isn't parked: run it now on
+ *  another login (RUN NOW's own handover), add credits when the login can buy
+ *  them (the refusal's `buy`), or leave it. Claude Code's own words sit dim
+ *  under the sentence. The buttons go once you leave it or the chat moved on.
+ *  shortcut: Leave it is this browser's: no route clears the bridge's NEEDS YOU
+ *  row (limits.clear_credits), which the next turn or a restart drops. */
+export function LimitCredits({ turn, next, session, logins }: {
+  turn: Turn;
+  next?: Turn;
+  /** The open session: Run now hands its work over. */
+  session?: string | null;
+  logins: AccountInfo[];
+}) {
+  const h12 = useClock12();
+  const [busy, act] = useAct();
+  const [left, leave] = useLeaveIt("hud-credits-left", turn.id);
+  const dry = slotOf(turn.runtime, logins);
+  const other = otherLogin(logins, dry);
+  let said = "", buy: boolean | null = null;
+  for (const e of turn.events) {
+    if (e.type === "ratelimit") buy = e.buy;
+    else if (e.type === "result" && e.is_error && e.result.trim()) said = e.result.trim();
+    else if (e.type === "error" && e.message.trim() && !said) said = e.message.trim();
+  }
+  const end = turn.events.at(-1)?.at ?? turn.started;
+  return (
+    <div className="dlimit" data-k="credits">
+      <div className="dlimit-head">
+        <Ban size={14} strokeWidth={2} aria-hidden />
+        <span>Stopped · needs extra-usage credits</span>
+        {end !== undefined && <span className="dlimit-dim">{hhmm(end, h12)}</span>}
+      </div>
+      <p className="dlimit-lead">
+        <b>{loginName(logins.find((a) => a.slot === dry), dry)}</b> can't run this without extra-usage credits.
+        The 5-hour refill won't change that, so this chat isn't parked.
+      </p>
+      {said && <p className="dlimit-said">Claude Code: “{said}”</p>}
+      {!next && !left && session && (
+        <div className="dlimit-acts">
+          {other && (
+            <button type="button" className="dlimit-btn" data-strong disabled={busy} style={{ "--lc": "var(--info)" } as CSSProperties}
+              onClick={() => act(api.noticeLimit(session, other.slot), "Couldn't start it on that login.")}>
+              <CornerDownRight size={13} strokeWidth={2} aria-hidden />
+              Run now on {loginName(other, other.slot)}
+              {other.left !== null && <span className="dlimit-dim">{other.left}% left</span>}
+            </button>
+          )}
+          {buy !== false && (
+            <a className="dlimit-link" href="https://claude.ai/settings/usage" target="_blank" rel="noreferrer"
+              title="claude.ai ▸ Settings ▸ Usage: buy extra-usage credits for this login">Add credits ↗</a>
+          )}
+          <button type="button" className="dlimit-btn" data-quiet disabled={busy} onClick={leave}
+            title="Keep it stopped; the buttons go">Leave it</button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function LimitReceipt({ turn, next, logins, who, win, said }: Ctx & { turn: Turn; next?: Turn; logins: AccountInfo[] }) {
   const h12 = useClock12();

@@ -32,7 +32,7 @@ export function bgView(st?: SessionStatus | null):
 
 // --- row 2: retries -----------------------------------------------------------
 
-type Retry = Extract<RunEvent, { type: "retry" }> & { at?: number };
+export type Retry = Extract<RunEvent, { type: "retry" }> & { at?: number };
 
 /** The retry a running turn waits on: its last event is one. `since` is when
  *  that run of retries began, the live line's clock (undefined on events the

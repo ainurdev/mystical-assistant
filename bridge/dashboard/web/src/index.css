@@ -2785,6 +2785,8 @@ input {
 [data-style="dossier"] .pmeta > b { color: var(--d-you); font-weight: 700; }
 [data-style="dossier"] .pmeta .pacct { color: var(--d-you); }
 [data-style="dossier"] .pmeta .pacct[data-agent] { color: var(--warn); }
+/* a session that drew a Savers trial's saver (PromptBubble): "Concise · trial", in warn */
+[data-style="dossier"] .pmeta .psaver { color: var(--warn); font-weight: 700; }
 [data-style="dossier"] .pmeta .prun { display: inline-flex; align-items: center; gap: 5px; color: var(--txl); }
 [data-style="dossier"] .pmeta .pmodel { color: var(--txm); }
 [data-style="dossier"] .pmeta .prun[data-new] { color: var(--d-you); }
@@ -2898,6 +2900,8 @@ input {
 [data-style="dossier"] .dwork-l1 { grid-column: 2; grid-row: 1; display: flex; align-items: baseline; gap: 10px; min-width: 0; }
 [data-style="dossier"] .dwork-lab { font-size: var(--t95); font-weight: 600; letter-spacing: 2.2px; color: var(--txm); }
 [data-style="dossier"] .dwork-ms { color: var(--txf); letter-spacing: .5px; overflow: hidden; text-overflow: ellipsis; }
+/* the turn's retries, kept quietly on its last plate once a try got through (WorkZone retried) */
+[data-style="dossier"] .dwork-retry { flex: none; letter-spacing: .3px; color: var(--warn); }
 /* live — the last zone of a running turn: the node is the instrument (a ring
    ripples out of it while the model thinks, a comet orbits it while a tool
    runs) and a third line says what it is doing (THE NOW LINE, below) */
@@ -2923,6 +2927,12 @@ input {
 }
 @keyframes dwripple { 0% { transform: scale(.25); opacity: .9; } 100% { transform: scale(1); opacity: 0; } }
 @keyframes dworbit { to { transform: rotate(360deg); } }
+/* answered, background tasks still running (RunStream BgLine): one quiet line where the indicator sat */
+.dbgline { display: flex; align-items: center; gap: 8px; font-family: var(--ui-font, inherit); font-size: var(--t12); color: var(--txd); }
+.dbgline > [role="status"] { color: var(--ok); }
+.dbgline b { font-weight: 600; color: var(--ok); }
+.dbgline .sep { color: var(--txg); }
+.dbgline .tm { font-family: var(--mono); font-size: var(--t11); color: var(--txl); font-variant-numeric: tabular-nums; }
 /* the cat, hosted by the plate: shut, under the header; open, at the foot */
 [data-style="dossier"] .dwork-ind { margin: 6px 2px 1px calc(var(--zn) + 12px); }
 [data-style="dossier"] .dwork[data-open] .dwork-ind { margin-top: 8px; }
@@ -3046,6 +3056,18 @@ input {
   animation: nowshim 2.1s linear infinite;
 }
 @keyframes nowshim { from { background-position: 100% 0; } to { background-position: -80% 0; } }
+/* the CLI retrying a request (NowLine retry): the verb in warn, the node a ring
+   draining toward the next try (--f, what's left of the wait) with its seconds in it */
+[data-style="dossier"] .dwork [data-m="retry"] { --m: var(--warn); }
+[data-style="dossier"] .dwork-now[data-st="retry"] > .now-ic {
+  background: conic-gradient(var(--mc) calc(var(--f, 0) * 1turn), color-mix(in oklab, var(--m) 16%, var(--zg)) 0);
+  box-shadow: 0 0 12px color-mix(in oklab, var(--m) 28%, transparent);
+}
+[data-style="dossier"] .now-cd {
+  position: absolute; inset: 2px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--zg); font: 600 var(--t85) var(--mono); color: var(--mc); font-variant-numeric: tabular-nums;
+}
+[data-style="dossier"] .now-note { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--txd); }
 /* open: under the one-line title, closer to the node */
 [data-style="dossier"] .dwork[data-open][data-now] > .dwork-head { padding-bottom: 6px; }
 /* the header is that much taller, so an open chapter pins that much lower (.wzc-head) */
@@ -3553,6 +3575,17 @@ input {
    words aren't yours; the turn draws none, its empty .dprompt goes too). */
 :is([data-fam] [data-style="dossier"], [data-style="dossier"]) .dturn[data-limit] { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
 [data-style="dossier"] .dturn[data-cont] > .dprompt { display: none; }
+/* A turn a bridge restart cut and the turn Claude Code carried it on in read as
+   one stretch too (Transcript Seam): the seam is the join, so no turn rule. */
+:is([data-fam] [data-style="dossier"], [data-style="dossier"]) .dturn[data-cut] { border-bottom: 0; padding-bottom: 0; margin-bottom: 0; }
+.dseam { --sc: var(--info); display: flex; align-items: center; gap: 10px; margin: 14px 0 12px; min-width: 0;
+  font-family: var(--ui-font, inherit); font-size: var(--t12); line-height: 1.4; color: var(--sc); white-space: nowrap; }
+.dseam::before, .dseam::after { content: ""; flex: 1 1 24px; min-width: 16px; height: 1px; background: color-mix(in oklab, var(--sc) 32%, transparent); }
+.dseam[data-k="declined"] { --sc: var(--warn); }
+.dseam b { flex: none; font-weight: 700; }
+.dseam > span[aria-hidden] { flex: none; color: var(--txd); }
+.dseam > span:last-of-type { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--txd); }
+.dseam-acts { --lc: var(--warn); display: flex; justify-content: center; gap: 10px; margin: 10px 0 4px; }
 :is([data-fam] [data-style="dossier"], [data-style="dossier"]) .dturn[data-cont] .rstream > .dwork:first-child { margin-top: 2px; }
 /* Settled, it is DOSSIER's no-body answer: a receipt that says what the limit
    did (data-limit: account, reset, or "" for neither) where "✓ done" would be,
@@ -3596,6 +3629,15 @@ input {
 .dlimit-btn[data-strong] { color: var(--txb); border-color: color-mix(in oklab, var(--lc) 60%, var(--line2)); background: color-mix(in oklab, var(--lc) 18%, var(--panel)); }
 .dlimit-btn > svg { flex: none; }
 .dlimit-btn .dlimit-dim { margin-left: 0; color: color-mix(in oklab, var(--lc) 70%, var(--txb)); }
+.dlimit-btn[data-quiet] { border-color: transparent; color: var(--txd); }
+/* Stopped on credits_required (LimitCredits): the same card in warn, Claude Code's
+   own words dim under the sentence, and Add credits ↗ as a link (it leaves the app) */
+.dlimit[data-k="credits"] { --lc: var(--warn); }
+.dlimit-said { margin: 9px 0 0; padding-left: 11px; border-left: 2px solid color-mix(in oklab, var(--lc) 40%, transparent);
+  font-size: var(--t12); line-height: 1.5; color: var(--txd); }
+.dlimit-link { align-self: center; padding: 0 4px; font-size: var(--t12); font-weight: 600; color: var(--acc);
+  text-decoration: underline; text-underline-offset: 3px; }
+.dlimit-link:hover { color: var(--txb); }
 /* An open ASK (fallback policy) is a question: the question card's own frame. */
 [data-style="dossier"] .qcard-live.dlimit-ask::before { content: "● YOUR CALL · USAGE LIMIT"; }
 .dlimit-q { font-family: var(--ui-font); font-size: var(--d-big, var(--t13)); line-height: 1.55; color: var(--txb); }

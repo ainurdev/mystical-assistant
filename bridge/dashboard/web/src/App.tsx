@@ -251,6 +251,10 @@ export function App() {
   // "still loading", not "you have no projects".
   const [booted, setBooted] = useState(false);
   const [turns, setTurns] = useState<Turn[]>([]);
+  // The Savers trials the open session drew the saver in (its transcript's
+  // `savers`): its prompts' tag says so. Kept as is while unchanged, so a poll
+  // doesn't redraw the plates.
+  const [savers, setSavers] = useState<string[]>([]);
   const turnsRef = useRef(turns);   // for the checkpoint walk, which outlives a render
   turnsRef.current = turns;
   // What the live turn is waiting on before its first token — a status the poll
@@ -897,6 +901,7 @@ export function App() {
         staleTurns.current = false;
         setTurns((prev) => mergeDelta(held ? [] : prev, t));
         setBoot(t.boot ?? null);
+        setSavers((p) => (p.join() === (t.savers ?? []).join() ? p : t.savers ?? []));
         seqRef.current = t.next_cursor;
         // Every first fetch resets `older` — including to the zero state when
         // the server doesn't speak tail — because openSession left the previous
@@ -2984,7 +2989,7 @@ export function App() {
                 // Folded to the rail, the right column can't carry the cluster —
                 // the chat header takes it.
                 chrome={rightShown ? undefined : strip}
-                limit={limitLive} logins={accounts}
+                limit={limitLive} logins={accounts} status={openStatus} savers={savers}
                 composer={selected && isDeviceRun(selected.origin) ? (
                   // A teammate's device run: read only, so the plate stands where
                   // the composer would. `ended` is its one turn's last event (the

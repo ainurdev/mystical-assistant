@@ -22,6 +22,8 @@ import { chapterStarts, kindsOf, stretchesOf, workTitle, zonesOf, TOP_TYPES, typ
 import { PromptBubble } from "./PromptBubble";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { nowOf } from "../lib/workstate";
+import { retries, retrying, retryLine, type Retry } from "../lib/clisignals";
+import { Spinner } from "./ui";
 import type { HudSettings } from "../lib/theme";
 import { markShotSeen, shotUnseen, useSeenShots } from "../lib/seenshots";
 import { fmtSpan, openAgent, useAgentFor } from "../lib/subagents";
@@ -712,8 +714,9 @@ function KindChip({ m, n, title }: { m: Mark; n: number; title?: string }) {
 
 /** What the live line says (lib/workstate nowOf): a step that is out, or, with
  *  none, Thinking and the agent's latest words (`what`). `key` is the step, so a
- *  new one rolls in. */
-type NowData = { key: string; mark: Mark; verb: string; what: string; code: string; more: number };
+ *  new one rolls in. `retry`: the CLI is retrying a request, and the line says
+ *  which try, why and when the next goes (lib/clisignals retryLine). */
+type NowData = { key: string; mark: Mark; verb: string; what: string; code: string; more: number; retry?: Retry };
 
 const clock = (s: number) => (s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, "0")}s`);
 
@@ -758,14 +761,22 @@ function NowLine({ now, secs, gone, onGone }: { now: NowData; secs: number; gone
     return () => a.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gone]);
-  const think = now.mark === "think";
+  // A retry: the node is a ring draining toward the next try, counted on the
+  // clock of this draw (the zone redraws the line every second).
+  const r = now.retry ? retryLine(now.retry, Date.now() / 1000) : null;
+  const think = now.mark === "think" && !r;
+  const st = r ? "retry" : think ? "think" : "work";
+  const m = r ? "retry" : now.mark;
   return (
-    <span ref={root} className="dwork-now" data-st={think ? "think" : "work"} data-m={now.mark} data-gone={gone ? "" : undefined}>
-      <span ref={ic} className="now-ic">{think ? <i className="now-ring" /> : <MarkIcon mark={now.mark} size={12} />}</span>
+    <span ref={root} className="dwork-now" data-st={st} data-m={m} data-gone={gone ? "" : undefined}>
+      <span ref={ic} className="now-ic" style={r ? ({ "--f": r.frac } as React.CSSProperties) : undefined}>
+        {r ? <span className="now-cd">{r.left}</span> : think ? <i className="now-ring" /> : <MarkIcon mark={now.mark} size={12} />}
+      </span>
       <span ref={tx} className="now-tx">
-        <span key={now.key} className="now-line" data-st={think ? "think" : "work"} data-m={now.mark}>
+        <span key={now.key} className="now-line" data-st={st} data-m={m}>
           <b className="now-v">{now.verb}</b>
-          {think ? (now.what ? <q className="now-q">{now.what}</q> : null) : (
+          {r ? <><span className="now-o">{r.what}</span><span className="now-note">{r.note}</span></>
+            : think ? (now.what ? <q className="now-q">{now.what}</q> : null) : (
             <>
               {now.what || now.code ? <span className="now-o">{now.what ? <span>{now.what}</span> : null}{now.code ? <code>{now.code}</code> : null}</span> : null}
               {now.more ? <span className="now-more">+{now.more}</span> : null}
@@ -800,7 +811,10 @@ function NowLine({ now, secs, gone, onGone }: { now: NowData; secs: number; gone
  *  paint containment clips anything past the plate); the cat draws as a row
  *  inside the plate instead of under the turn; STATUS would only say what the
  *  line already does, so the line stands in for it. */
-function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, now, span, chapters, defaultOpen, animate, children }: {
+function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud, events, started, now, span, chapters, defaultOpen, animate, retried = 0, children }: {
+  /** How many times the CLI retried a request in this turn, once it has moved
+   *  on: the header keeps it quietly (the turn's last zone only). */
+  retried?: number;
   /** What the zone ran, by kind, and how often the agent spoke inside it. */
   cats: StepCat[];
   notes: number;
@@ -1003,6 +1017,11 @@ function WorkZone({ cats, notes, steps, failed, pics, gallery, state, since, hud
           <span className="dwork-ms">
             <Roll n={steps} />{` step${steps === 1 ? "" : "s"}`}{chapters ? ` · ${chapters} chapters` : ""}{span ? ` · ${span}` : ""}
           </span>
+          {retried ? (
+            <span className="dwork-retry" title={`Claude Code retried a request ${retried} time${retried === 1 ? "" : "s"} in this turn`}>
+              ↻ {retried} retr{retried === 1 ? "y" : "ies"}
+            </span>
+          ) : null}
         </span>
         <span className="dwork-l2">
           <span className="dwork-kinds" title={words} aria-label={words}>
@@ -2231,6 +2250,8 @@ export const RunStream = memo(function RunStream({
   compact = false,
   view = null,
   askDocked = false,
+  bgN = 0,
+  bgSince,
 }: {
   events: TimedEvent[];
   pending?: PendingRequest[];
@@ -2276,6 +2297,11 @@ export const RunStream = memo(function RunStream({
   compact?: boolean;
   /** A Rivendell job's first turn: its answer is drawn as the job's view (FinalResult, JobViews). */
   view?: JobViewInput | null;
+  /** The turn answered and Claude Code still runs this many background tasks in
+   *  its process (status `background`, since `bgSince`): no indicator draws,
+   *  one quiet line where it sat says so (BgLine). */
+  bgN?: number;
+  bgSince?: number;
 }) {
   // An ask is drawn by its question card and by nothing else. A live run also
   // emits it as a tool: the bridge answers the control request with a `deny`
@@ -2951,8 +2977,11 @@ export const RunStream = memo(function RunStream({
     // started, nothing out is THINKING since the last thing finished. A card
     // waiting on you is neither — the plate rests until it is answered.
     const state = working && lastZone ? (running ? "work" as const : "think" as const) : null;
-    // What its line says (NowLine): the newest step out, or the agent's newest words.
-    const now: NowData | null = !state ? null : state === "work" && live
+    // What its line says (NowLine): the CLI's retry while it waits on one, else
+    // the newest step out, or the agent's newest words.
+    const now: NowData | null = !state ? null : retry
+      ? { key: `r${retry.e.attempt}`, mark: "think", verb: "Retrying", what: "", code: "", more: 0, retry: retry.e }
+      : state === "work" && live
       ? { key: live.id ?? `${live.at}`, mark: nowMark(live.name), ...nowOf(live), more: out - 1 }
       : { key: `t${said}`, mark: "think", verb: "Thinking", what: said, code: "", more: 0 };
     // A long zone opens on its chapters, and a chapter builds its rows only
@@ -2989,7 +3018,8 @@ export const RunStream = memo(function RunStream({
         pics={pics}
         gallery={galleryAt(zsegs[0].idx[0])}
         state={state}
-        since={running ? openAt : last}
+        since={state && retry ? retry.since ?? last : running ? openAt : last}
+        retried={lastZone && !retry ? retried : 0}
         hud={hud}
         events={events}
         started={turnStarted}
@@ -3018,6 +3048,9 @@ export const RunStream = memo(function RunStream({
   // while it runs); otherwise there's none yet — before the first event, or
   // after a steer the model is still reading.
   const carried = working && zones.length > 0 && zones[zones.length - 1].kind === "work";
+  // The CLI retrying a request: the turn's last event is a retry (lib/clisignals).
+  const retry = working ? retrying(events) : null;
+  const retried = retries(events);
   // The words in the flow, the work under a row each (lib/segments) — or, in
   // DOSSIER, under one WORK zone per stretch (lib/dossier).
   const rows = dossier
@@ -3037,8 +3070,9 @@ export const RunStream = memo(function RunStream({
     const verb = boot ? boot[0].toUpperCase() + boot.slice(1) : up ? "Thinking" : "Starting";
     rows.push(
       <WorkZone key={key} cats={[]} notes={0} steps={0} failed={0} pics={[]} gallery={[]}
-        state="think" since={events.length ? events[events.length - 1].at : turnStarted} hud={hud} events={events}
-        started={turnStarted} now={{ key: up ? "t" : "boot", mark: "think", verb, what: "", code: "", more: 0 }}
+        state="think" since={retry ? retry.since : events.length ? events[events.length - 1].at : turnStarted} hud={hud} events={events}
+        started={turnStarted} now={retry ? { key: `r${retry.e.attempt}`, mark: "think", verb: "Retrying", what: "", code: "", more: 0, retry: retry.e }
+          : { key: up ? "t" : "boot", mark: "think", verb, what: "", code: "", more: 0 }}
         span="" chapters={0} defaultOpen={foldsOpen} animate={animate}>
         {[]}
       </WorkZone>,
@@ -3051,9 +3085,29 @@ export const RunStream = memo(function RunStream({
       {boot && !blank ? <BootRow text={boot} /> : null}
       {rows}
       {working && !carried && !dossier ? <WorkingIndicator hud={hud} events={events} boot={boot} started={turnStarted} /> : null}
+      {bgN ? <BgLine n={bgN} since={bgSince} /> : null}
     </div>
   );
 });
+
+/** Where the working indicator sat, once the turn has answered with background
+ *  tasks still running in its process (status `background`): one quiet line,
+ *  how many and how long since the answer, whichever indicator you picked. It
+ *  goes when they finish. */
+function BgLine({ n, since }: { n: number; since?: number }) {
+  const [at, setAt] = useState(() => Date.now() / 1000);
+  useEffect(() => {
+    const id = setInterval(() => setAt(Date.now() / 1000), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="dbgline">
+      <Spinner className="h-[9px] w-[9px] flex-none border-[1.5px] opacity-100" />
+      <span><b>{n} background task{n === 1 ? "" : "s"}</b> still running</span>
+      {since ? <><span className="sep" aria-hidden>·</span><span className="tm">{clock(Math.max(0, Math.floor(at - since)))}</span></> : null}
+    </div>
+  );
+}
 
 /** "A · TOKEN" (lib/askback's lettered options) wears its key as a badge, the
  *  same one the question card's rows carry. */
