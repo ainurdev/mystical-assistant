@@ -14,7 +14,7 @@ import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 import { ImageLightbox, MediaThumb, isVideo, type Shown } from "../components/ImageLightbox";
-import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
+import { ContextChip, GoalNote, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
 import { useChatBg } from "../lib/toolwidget";
 import { hhmm } from "../lib/utils";
@@ -298,6 +298,7 @@ function RunPage() {
           autocompact={sessions.find((s) => s.id === sessionId)?.autocompact}
         />}
       </div>
+      <GoalNote sessionId={sessionId} />
 
       <RunMonitor />
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Markdown } from "./Markdown";
 import { EFFORTS, PERMS } from "./Composer";
 import type { SlashCommand } from "../api";
@@ -9,6 +9,16 @@ import { leadCommand } from "../lib/slash";
 import { hhmm, useClock12 } from "../lib/surfaces";
 
 type Run = Pick<Turn, "model" | "effort" | "permission_mode">;
+
+/** A goal's re-prompt (bridge/goals.py _NUDGE): the bridge's words to the model,
+ *  so it is drawn as a one-line stamp, not as a prompt of yours. Its first line
+ *  is "[goal n/max] <title>"; older ones say a bare "[goal]" with neither. */
+function parseNudge(text: string): { n?: string; max?: string; title?: string; objective: string } | null {
+  const m = /^\[goal(?: (\d+)\/(\d+))?\]([^\n]*)\n/.exec(text);
+  if (!m) return null;
+  const body = /complete:\n\n([\s\S]*?)\n\nContinue working on it\./.exec(text);
+  return { n: m[1], max: m[2], title: m[1] ? m[3].trim() : undefined, objective: body ? body[1].trim() : text };
+}
 
 /** A /command as the segment the composer drew it as (MarkdownInput's
  *  CmdWidget is its twin): a plugin's namespace a quieter segment in front. */
@@ -60,16 +70,22 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
   // The bridge's wake-up for a session that waited on another (bridge/waits.py):
   // its words, but not yours.
   const wake = !steer && text.startsWith("⧖ ");
-  const purple = wake ? { color: "var(--purple)" } : undefined;
-  const glyph = wake ? "⧖" : steer ? "↳" : null;
-  const cmd = steer || wake || !commands ? null : leadCommand(text, undefined, commands);
+  const nudge = steer || wake ? null : parseNudge(text);
+  const [brief, setBrief] = useState(false);
+  const purple = wake ? { color: "var(--purple)" } : nudge ? { color: "var(--acc)" } : undefined;
+  const glyph = wake ? "⧖" : steer ? "↳" : nudge ? "◎" : null;
+  const cmd = steer || wake || nudge || !commands ? null : leadCommand(text, undefined, commands);
   // Pips lit = the effort's place in the picker (Auto 0 … Max 5); an agent's own
   // effort id isn't on that ladder and reads as its word alone.
   const lvl = run?.effort ? EFFORTS.findIndex((e) => e.id === (run.effort === "auto" ? "" : run.effort)) : -1;
   // Lit only when both turns recorded it: an older turn's unknown is no change.
   const moved = (k: keyof Run) => (prev?.[k] && run?.[k] && prev[k] !== run[k]) || undefined;
   const meta = [
-    (wake || steer || who) && <b key="who" style={purple}>{wake ? "⧖ WAIT OVER" : steer ? "↳ STEER" : who}</b>,
+    (wake || steer || nudge || who) && (
+      <b key="who" style={purple}>
+        {wake ? "⧖ WAIT OVER" : steer ? "↳ STEER" : nudge ? `◎ GOAL${nudge.n ? ` · AUTO ${nudge.n}/${nudge.max}` : ""}` : who}
+      </b>
+    ),
     ran && <span key="acct" className="pacct" data-agent={ran.agent || undefined} title={ran.title}>{ran.text}</span>,
     run?.model && <span key="model" className="prun pmodel" data-new={moved("model")} title="model">{modelName(run.model)}</span>,
     run?.effort && (
@@ -94,8 +110,21 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
           {glyph && <span className="pglyph" aria-hidden style={purple}>{glyph}</span>}
           <div className="min-w-0">
             {cmd && <CmdSeg name={cmd.name} desc={cmd.desc} />}
-            {/* Rendered as the same markdown the composer let you write it in. */}
-            <Markdown breaks className="break-words leading-relaxed text-foreground-bright">{cmd ? text.slice(cmd.end) : wake ? text.slice(2) : text}</Markdown>
+            {nudge ? (
+              <>
+                {/* .md: the face and size the plate gives your own words. */}
+                <div className="md">
+                  <button className="pgoal-line" aria-expanded={brief} onClick={() => setBrief((b) => !b)} title={nudge.objective}>
+                    <span><span className="pgoal-k">Keep going</span> — {nudge.title || nudge.objective}</span>
+                    <span className="pgoal-t">{brief ? "brief ▴" : "brief ▾"}</span>
+                  </button>
+                </div>
+                {brief && <Markdown breaks className="pgoal-brief break-words leading-relaxed">{nudge.objective}</Markdown>}
+              </>
+            ) : (
+              /* Rendered as the same markdown the composer let you write it in. */
+              <Markdown breaks className="break-words leading-relaxed text-foreground-bright">{cmd ? text.slice(cmd.end) : wake ? text.slice(2) : text}</Markdown>
+            )}
             {children}
           </div>
         </div>

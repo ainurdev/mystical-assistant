@@ -43,6 +43,9 @@ BUILTIN = (
     ("claude-api", "Claude API / Anthropic SDK reference — models, pricing, params, tool use"),
     ("fewer-permission-prompts", "Add a prioritized allowlist to settings from your transcripts"),
     ("update-config", "Configure the Claude Code harness via settings.json"),
+    # Not the CLI's: the bridge's own, answered before a prompt is sent
+    # (dashboard App.tsx, Mini App chat.tsx, the bot) — goals.set_by_user.
+    ("goal", "Keep this session working until <objective> is true; /goal alone clears it"),
 )
 _DESC_MAX = 200
 

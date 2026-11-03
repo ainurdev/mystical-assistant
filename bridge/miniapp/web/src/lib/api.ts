@@ -514,9 +514,12 @@ export interface NextUpBoard {
 // The session's objective, if one is running (bridge/goals.py).
 export interface Goal {
   objective: string;
+  title?: string;   // its short name (bridge/goals.py title_of); absent from an older bridge
   state: "active" | "complete" | "blocked";
   iter: number;
   note?: string;
+  at?: number;      // epoch s it was met or blocked
+  seen?: boolean;   // a met goal you have prompted past
 }
 
 // Claude usage — only computed percentages / reset times (no token, ever).
@@ -808,6 +811,12 @@ export const api = {
     request<{ goal: Goal | null; max_iter: number }>(
       `/api/goal?session=${encodeURIComponent(sessionId)}`,
     ),
+  // `/goal <objective>` typed in the composer; a blank objective clears it.
+  setGoal: (sessionId: string, objective: string) =>
+    request<{ ok: boolean; goal: Goal | null }>(`/api/sessions/${encodeURIComponent(sessionId)}/goal`, {
+      method: "POST",
+      body: { objective },
+    }),
 
   agents: (sessionId: string) =>
     request<AgentsInfo>(`/api/agents?session=${encodeURIComponent(sessionId)}`),

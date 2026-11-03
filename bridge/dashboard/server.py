@@ -1408,19 +1408,38 @@ class Handler(BaseHTTPRequestHandler):
             if act not in ("resume", "cancel"):
                 return self._json({"error": "action is resume or cancel"}, 400)
             return self._json({"ok": waits.resume(sid) if act == "resume" else waits.drop(sid)})
-        if path.startswith("/local/sessions/") and path.endswith("/goal"):
+        if path.startswith("/local/sessions/") and path.endswith(("/goal", "/goal/act")):
             from bridge import goals
-            sid = path[len("/local/sessions/"):-len("/goal")]
+            act_path = path.endswith("/goal/act")
+            sid = path[len("/local/sessions/"):-len("/goal/act" if act_path else "/goal")]
             s = store.get_session(sid)
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
-            objective = (body.get("objective") or "").strip()[:2000]
-            if objective and profiles.claude_only_refusal(s, "goal"):   # clearing one is always fine
+            if not act_path:
+                # /goal: an objective sets it, a blank one clears it (goals.set_by_user,
+                # as on every surface).
+                goal, refusal = goals.set_by_user(s, body.get("objective") or "")
+                if refusal:
+                    return self._json({"error": refusal}, 409)
+                return self._json({"ok": True, "goal": goals.brief(goal)})
+            # The goal sheet's buttons (GoalPill). Their own path, so a bridge
+            # older than the dashboard 404s instead of reading {action} as a
+            # blank /goal and clearing it.
+            act = body.get("action")
+            if act == "keep" and profiles.claude_only_refusal(s, "goal"):
                 return self._json({"error": profiles.claude_only_refusal(s, "goal")}, 409)
-            if not objective:
-                goals.clear(sid)          # empty objective = abandon the goal
-                return self._json({"ok": True, "goal": None})
-            return self._json({"ok": True, "goal": goals.create(sid, objective)})
+            if act == "done":
+                goal = goals.mark(sid, goals.COMPLETE, "Marked done by you.")
+            elif act == "keep":                 # Keep going, on a met, stalled or capped goal
+                goal = goals.rearm(sid)
+                goals.kick(sid)
+            elif act == "edit":
+                goal = goals.edit(sid, (body.get("objective") or "")[:2000])
+            else:
+                return self._json({"error": "action is done, keep or edit"}, 400)
+            if not goal:
+                return self._json({"error": "this session has no goal"}, 409)
+            return self._json({"ok": True, "goal": goals.brief(goals.get(sid))})
         if path.startswith("/local/sessions/") and path.endswith("/lifecycle"):
             sid = path[len("/local/sessions/"):-len("/lifecycle")]
             s = store.get_session(sid)

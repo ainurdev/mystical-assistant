@@ -638,6 +638,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   ) {
     const sid = opts?.sessionId ?? sessionId;
     if (!text || !sid) return;
+    // `/goal <objective>` sets this session's goal and a bare `/goal` clears it:
+    // the bridge's own command (goals.set_by_user), never a prompt for Claude.
+    const goalCmd = /^\/goal\b\s*([\s\S]*)$/.exec(text.trim());
+    if (goalCmd) {
+      setSendError(null);
+      try {
+        await api.setGoal(sid, goalCmd[1].trim());
+        onSent?.();
+        void qc.invalidateQueries({ queryKey: ["goal", sid] });
+        refresh();
+      } catch (e) {
+        setSendError(e instanceof ApiError ? e : new ApiError(0, "Couldn't set the goal."));
+      }
+      return;
+    }
     if (!opts?.sessionId && (isRunning || pending.length > 0)) return;
     setSendError(null);
     setChecking(true);
