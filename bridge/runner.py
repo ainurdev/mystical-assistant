@@ -33,7 +33,7 @@ import uuid
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver,
                     git, inspector, integrations, ladder, limits, machine, native_activity, notices,
                     profiles, pubsub, relevance, state, store, team, tgask, tgtopics,
-                    transcript_jsonl, waits)
+                    transcript_jsonl, ux_mcp, waits)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send
 
@@ -105,6 +105,17 @@ _PUSH_NOTE = (
     "command, tool or API. Say what failed, in git's words, and suggest the "
     "human handle it in a new session on that branch: Mystical's dashboard "
     "opens one from its push buttons, with the failure as an unsent draft.")
+
+# Every run is told to ask the UX knowledge base before settling a UI question, and
+# to feed it after research or a pick (bridge/ux_mcp.py): the way to need Mobbin less.
+_UX_NOTE = (
+    "Before you settle a UI or UX question (a layout, a component, a link or button "
+    "style, the words on a control), call mcp__mystical-ux__SearchUx (a deferred tool: "
+    "load it with ToolSearch first). It holds what earlier sessions learned: patterns "
+    "with a verdict, rules, real-app screens and the user's past picks, and every past "
+    "Mobbin search. Open Mobbin only when it finds nothing that answers the question. "
+    "After Mobbin or guideline research, and after the user picks a design option, call "
+    "RecordUx so the next session finds the answer there.")
 
 # Told to every interactive run of a session whose repo is on a Rivendell task
 # board (_rivendell_note_for): the work gets a task, the task's key rides the
@@ -195,7 +206,7 @@ def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
     --append-system-prompt, which sits after the last cache breakpoint, so any
     change re-writes all of it. What protects the cache is only sending the
     volatile packs once per session — see _base_cmd."""
-    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE,
+    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE, _UX_NOTE,
                          _HIDDEN_BROWSER_NOTE if config.AI_BROWSER_HEADLESS else "",
                          rivendell, graph.strip()) if p]
     return "\n\n".join(parts)
@@ -403,6 +414,8 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
                           "args": ["-m", "bridge.goal_mcp"], "env": env},
                 "verify": {"command": sys.executable,
                            "args": ["-m", "bridge.verify_mcp"], "env": env},
+                "mystical-ux": {"command": sys.executable,
+                                "args": ["-m", "bridge.ux_mcp"], "env": env},
             }}, f)
     except BaseException:
         shutil.rmtree(d, ignore_errors=True)   # half-written can already hold a token
@@ -2252,6 +2265,8 @@ def _handle_event(job: Job, d: dict):
                 name, t0 = job.open_tools.pop(rid, (None, 0.0))
                 if (bash := job.bash_cmds.pop(rid, None)) is not None:
                     _note_work_cwd(job, *bash)
+                if name and name.startswith("mcp__mobbin__"):
+                    ux_mcp.capture(name, b.get("content"), job.cwd)
                 made = d.get("tool_use_result") if name == "TaskCreate" else None
                 if (isinstance(made, dict) and isinstance(made.get("task"), dict)
                         and made["task"].get("id")):

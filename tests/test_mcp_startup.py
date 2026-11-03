@@ -52,7 +52,7 @@ def test_unconfigured_session_never_asks_claude_mcp_list(no_mcp_list):
     # case that used to spend 6-9s enumerating servers only to deny them all.
     cmd = _cmd(disabled_tools=None)
     assert "--strict-mcp-config" in cmd
-    assert _mcp_servers(cmd) == ["goals", "verify"]
+    assert _mcp_servers(cmd) == ["goals", "mystical-ux", "verify"]
 
 
 def test_unconfigured_session_emits_no_deny_list(no_mcp_list):
@@ -70,7 +70,7 @@ def test_server_left_on_is_redeclared_under_strict(monkeypatch):
         "figma": {"type": "http", "url": "https://mcp.figma.com/mcp"}})
     cmd = _cmd(disabled_tools=["mcp__figma"])
     assert "--strict-mcp-config" in cmd
-    assert _mcp_servers(cmd) == ["goals", "teamwork", "verify"]
+    assert _mcp_servers(cmd) == ["goals", "mystical-ux", "teamwork", "verify"]
 
 
 def test_mcp_on_beats_the_sessions_toggle_and_extra_args_join_its_one_settings(monkeypatch):

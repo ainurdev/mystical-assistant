@@ -35,6 +35,8 @@ os.environ["TELEGRAM_BOT_TOKEN"] = "12345:TESTTOKEN"
 os.environ["ALLOWED_CHAT_IDS"] = "555"
 os.environ["DASH_TOKEN"] = "test-dash-token"     # non-empty → the CSRF gate is ON
 os.environ["BRIDGE_DB"] = os.path.join(tempfile.mkdtemp(), "bridge-test.db")
+# The UX knowledge base (bridge/ux_mcp.py) lives in ~/.mystical/ux; no test may write there.
+os.environ["MYSTICAL_UX_DIR"] = tempfile.mkdtemp()
 # The MCP allowlist seeds default_disabled_tools(); the bridge exports .env into
 # the shells it hosts, so an unpinned value flips that default under the very
 # sessions that run this suite (tests patch config.MCP_SERVERS when they want one).
