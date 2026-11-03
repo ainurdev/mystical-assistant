@@ -463,7 +463,7 @@ def test_runner_defers_limit_killed_streaming_turn():
     try:
         assert runner._maybe_auto_resume(job, "/tmp/lim", "opus", None) is True
         assert deferred == [((s["id"], CHAT, "/tmp/lim", "opus", None),
-                             {"slot": None})]
+                             {"slot": None, "reset_at": None})]
         assert len(notes) == 1 and "usage limit" in notes[0]
         assert runner._resume_fails.get(s["id"]) is None   # cap untouched
     finally:

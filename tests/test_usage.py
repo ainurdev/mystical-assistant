@@ -1,8 +1,9 @@
 """Unit tests for the usage cache (bridge/usage.py).
 Run directly: `python tests/test_usage.py` (or with pytest).
 
-The upstream endpoint 429s readily, so the contract under test is: a failed
-fetch keeps serving the last good payload instead of blanking the meters.
+The meter reads Claude Code's get_usage, and a failed read keeps serving the
+last good payload instead of blanking the meters. A running turn's
+rate_limit_event fills it in live between reads.
 """
 
 import os
@@ -20,16 +21,15 @@ PAYLOAD = {"five_hour": {"utilization": 7, "resets_at": "2026-07-30T10:00:00+00:
 
 
 def _stub(*fetches):
-    """Patch token/_fetch; _fetch returns each item in turn (None = failure).
+    """Patch _fetch; it returns each item in turn (None = failure).
     Returns (restore, calls) where calls[0] counts fetch attempts."""
     saved_token, saved_fetch = usage._token, usage._fetch
     seq, calls = list(fetches), [0]
 
-    def fetch(_token):
+    def fetch(_path):
         calls[0] += 1
         return seq.pop(0) if seq else None
 
-    usage._token = lambda _path: "sk-ant-oat01-test"
     usage._fetch = fetch
     usage._cache.clear()
     return (lambda: (setattr(usage, "_token", saved_token),
@@ -49,8 +49,9 @@ def test_success_normalizes_and_caches():
         assert first["available"] is True
         assert first["five_hour"]["percent"] == 7
         assert first["seven_day"]["percent"] == 13
-        assert usage.get_usage() is first      # served from cache
+        assert usage.get_usage() == first      # served from cache
         assert calls[0] == 1
+        assert first["live"] is False and first["read_at"]
     finally:
         restore()
 
@@ -76,7 +77,8 @@ def test_failure_serves_last_good():
     try:
         good = usage.get_usage()
         _default_entry()["ts"] = time.time() - usage.CACHE_TTL - 1   # cache expired
-        assert usage.get_usage() == good       # 429 doesn't blank the meter
+        again = usage.get_usage()              # a failed read doesn't blank the meter
+        assert again["five_hour"] == good["five_hour"] and again["seven_day"] == good["seven_day"]
         assert calls[0] == 2
     finally:
         restore()
@@ -122,12 +124,83 @@ def test_last_good_expires():
         restore()
 
 
-def test_no_token_is_unavailable():
+def test_reading_never_touches_the_token():
+    """The CLI reads the plan and renews its own token: an idle login whose
+    access token lapsed still gets a number, and the bridge never holds one."""
     restore, calls = _stub(PAYLOAD)
     try:
-        usage._token = lambda _path: None
-        assert usage.get_usage() == {"available": False}
-        assert calls[0] == 0
+        def boom(_path):
+            raise AssertionError("the meter read a token")
+        usage._token = boom
+        assert usage.get_usage()["five_hour"]["percent"] == 7
+        assert calls[0] == 1
+    finally:
+        restore()
+
+
+class _Ran:
+    def __init__(self, stdout):
+        self.stdout = stdout
+
+
+def _fake_run(reply, seen):
+    import json as _json
+    def run(argv, **kw):
+        seen.append((argv, kw))
+        return _Ran("\n".join(_json.dumps(x) for x in reply))
+    return run
+
+
+def test_fetch_asks_claude_for_get_usage_on_that_login():
+    import json as _json
+    saved = usage.subprocess.run
+    seen = []
+    ok = {"type": "control_response", "response": {"subtype": "success", "request_id": "usage",
+          "response": {"rate_limits_available": True, "rate_limits": PAYLOAD}}}
+    usage.subprocess.run = _fake_run([{"type": "system", "subtype": "hook_started"}, ok], seen)
+    try:
+        assert usage._fetch(usage.CREDENTIALS_FILE) == PAYLOAD
+        argv, kw = seen[0]
+        assert argv[1] == "-p" and "stream-json" in argv
+        req = _json.loads(kw["input"])
+        assert req["request"] == {"subtype": "get_usage", "skip_behaviors": True}
+        assert "CLAUDE_CONFIG_DIR" not in kw["env"]          # the ambient login
+        usage._fetch("/tmp/profiles/2/.credentials.json")
+        assert seen[1][1]["env"]["CLAUDE_CONFIG_DIR"] == "/tmp/profiles/2"
+    finally:
+        usage.subprocess.run = saved
+
+
+def test_fetch_without_plan_limits_is_none():
+    saved = usage.subprocess.run
+    no = {"type": "control_response", "response": {"subtype": "success", "request_id": "usage",
+          "response": {"rate_limits_available": False, "rate_limits": None}}}
+    usage.subprocess.run = _fake_run([no], [])
+    try:
+        assert usage._fetch(usage.CREDENTIALS_FILE) is None
+    finally:
+        usage.subprocess.run = saved
+
+
+def test_a_turns_rate_limit_event_is_a_live_reading():
+    restore, calls = _stub(None)
+    try:
+        usage.note_event(None, {"status": "allowed_warning", "unifiedWindows": {
+            "seven_day": {"utilization": 0.91, "resetsAt": 1793793600, "status": "allowed_warning"}}})
+        m = usage.get_usage()
+        assert m["seven_day"]["percent"] == 91 and m["seven_day"]["severity"] == "warning"
+        assert m["seven_day"]["resets_at"].startswith("2026-11-04")
+        assert m["live"] is True and m["status"] == "allowed_warning"
+    finally:
+        restore()
+
+
+def test_max_age_zero_reads_now():
+    restore, calls = _stub(PAYLOAD, PAYLOAD)
+    try:
+        usage.get_usage()
+        usage.get_usage(max_age=0)
+        assert calls[0] == 2
     finally:
         restore()
 
@@ -153,20 +226,16 @@ def test_an_idle_login_that_can_renew_its_token_is_still_logged_in():
 
 # --- per-account usage (multi-account fallback ladder) -----------------------
 
-def _stub_paths(by_token: dict):
-    """Patch _token to derive a token from the credentials path, and _fetch to
-    answer per token — so one stub can serve several accounts."""
+def _stub_paths(by_path: dict):
+    """Patch _fetch to answer per credentials path, so one stub can serve
+    several accounts."""
     saved_token, saved_fetch = usage._token, usage._fetch
     calls = []
 
-    def token(path):
-        return f"tok:{path}"
+    def fetch(path):
+        calls.append(path)
+        return by_path.get(path)
 
-    def fetch(tok):
-        calls.append(tok)
-        return by_token.get(tok)
-
-    usage._token = token
     usage._fetch = fetch
     usage._cache.clear()
     return (lambda: (setattr(usage, "_token", saved_token),
@@ -178,9 +247,9 @@ def test_two_accounts_do_not_share_a_cache():
     """Slot 2's meter must never show slot 1's numbers — the ladder picks on it."""
     a, b = "/tmp/acct-a.json", "/tmp/acct-b.json"
     restore, calls = _stub_paths({
-        f"tok:{a}": {"five_hour": {"utilization": 5, "resets_at": None},
+        a: {"five_hour": {"utilization": 5, "resets_at": None},
                      "seven_day": None, "limits": []},
-        f"tok:{b}": {"five_hour": {"utilization": 96, "resets_at": None},
+        b: {"five_hour": {"utilization": 96, "resets_at": None},
                      "seven_day": None, "limits": []},
     })
     try:
@@ -195,7 +264,7 @@ def test_two_accounts_do_not_share_a_cache():
 def test_one_accounts_failure_does_not_blank_another():
     a, b = "/tmp/acct-c.json", "/tmp/acct-d.json"
     restore, _ = _stub_paths({
-        f"tok:{a}": {"five_hour": {"utilization": 11, "resets_at": None},
+        a: {"five_hour": {"utilization": 11, "resets_at": None},
                      "seven_day": None, "limits": []},
     })                                     # b has no payload → fetch returns None
     try:

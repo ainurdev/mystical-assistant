@@ -318,6 +318,10 @@ def _run_env(ponytail: "str | None",
     # for never arrives. Without the ceiling it also waits forever for a
     # background shell (a dev server): _watchdog ends those turns.
     over["CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS"] = "0"
+    # Opt in to system/session_state_changed (running | idle | requires_action):
+    # the CLI's own word on whether a turn is done, where the bridge used to
+    # guess from the turn row, the job and the transcript (Job.cli_state).
+    over["CLAUDE_CODE_EMIT_SESSION_STATE_EVENTS"] = "1"
     # The host flag that tells the model AskUserQuestion options can carry a
     # `preview`; under -p it's off unless set. The cards draw an option's
     # preview images as that option's pictures (_adopt_preview_images).
@@ -846,6 +850,20 @@ class Job:
         # tool_use id -> (command, worktrees before it) for a Bash call, judged by
         # _note_work_cwd once its result says it ran.
         self.bash_cmds: dict[str, tuple[str, "set[str] | None"]] = {}
+        # What Claude Code says about itself. cli_state is the last
+        # system/session_state_changed (running | idle | requires_action), None
+        # from a CLI that doesn't emit it, and then every reader falls back to
+        # `status`. bg is the live set from system/background_tasks_changed,
+        # replaced whole on every event (task id -> {type, desc, since}); bg_peak
+        # the most that ran at once, so a fan-out reads as progress.
+        self.cli_state: str | None = None
+        self.bg: dict[str, dict] = {}
+        self.bg_peak = 0
+        self.answered_at: float | None = None   # this turn's first result
+        # The CLI retrying a request (system/api_retry); the next assistant event
+        # means it got through. rate_limit is the last rate_limit_event's info.
+        self.retry: dict | None = None
+        self.rate_limit: dict | None = None
         self._interrupt_timer: threading.Timer | None = None
         self._lock = threading.Lock()
         self._stdin_lock = threading.Lock()
@@ -1358,6 +1376,22 @@ def _running_agents(claude_sid: str) -> int:
     return agents.session_agents({"claude_session_id": claude_sid})["running"]
 
 
+def _background_view(j: "Job") -> "dict | None":
+    """A turn that answered and that Claude Code calls idle, with background
+    tasks still running in its process: not WORKING (the answer is in), not
+    DONE either (the process lives, and a prompt now would queue behind it).
+    None for anything else, a CLI that never reports its state included."""
+    bg = getattr(j, "bg", None)          # a Job built bare (tests) has none of it
+    if getattr(j, "cli_state", None) != "idle" or not bg or j.answered_at is None:
+        return None
+    tasks = sorted(bg.items(), key=lambda kv: kv[1]["since"])
+    n = len(tasks)
+    return {"state": "background", "kind": None, "source": "bridge",
+            "label": f"answered — {n} in background",
+            "bg": [{"id": tid, **t} for tid, t in tasks],
+            "peak": max(j.bg_peak, n), "since": j.answered_at}
+
+
 def _build_status(bridge_running: list, awaiting: list, jobs: list,
                   external: list, native_snap: dict) -> dict:
     """Merge bridge + native liveness into one {session_id: {state, kind, source,
@@ -1369,16 +1403,26 @@ def _build_status(bridge_running: list, awaiting: list, jobs: list,
     awaiting_map = {a["session_id"]: a.get("kind") for a in awaiting}
     job_label = {j["session_id"]: (j.get("activity") or {}).get("label")
                  for j in jobs if j.get("session_id")}
+    latest = _latest_jobs()
     status: dict[str, dict] = {}
     for sid in bridge_running:
+        j = latest.get(sid)
         if sid in awaiting_map:
             kind = awaiting_map[sid]
             label = "awaiting your answer" if kind == "question" else "awaiting your approval"
             status[sid] = {"state": "awaiting", "kind": kind,
                            "source": "bridge", "label": label}
+        elif j is not None and (bg := _background_view(j)) is not None:
+            status[sid] = bg
         else:
             status[sid] = {"state": "working", "kind": None, "source": "bridge",
                            "label": job_label.get(sid) or "working…"}
+            if j is not None and getattr(j, "retry", None):
+                status[sid]["retry"] = dict(j.retry)
+    for sid, c in limits.credits_blocked().items():
+        # Stopped on credits_required: no reset brings it back, so it is yours.
+        status.setdefault(sid, {"state": "credits", "kind": None, "source": "bridge",
+                                "label": "needs extra-usage credits", **c})
     # A prompt being checked against its session (bridge/relevance.py) holds the
     # send for ~10s before any job exists — surface it so the session stays in the
     # active lists instead of vanishing until the prompt is approved.
@@ -1695,6 +1739,14 @@ def _stopping(rc: "int | None") -> bool:
     return state.shutting_down
 
 
+def _refused_reset(job: "Job") -> "float | None":
+    """When the window that refused this turn reopens (epoch s), as Claude Code
+    reported it with the refusal; None without a rejected rate_limit_event."""
+    rl = getattr(job, "rate_limit", None) or {}
+    r = rl.get("resetsAt")
+    return float(r) if rl.get("status") == "rejected" and isinstance(r, (int, float)) else None
+
+
 def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
                        effort: str | None) -> bool:
     """Resume a session whose turn died without the user behind it. Returns True
@@ -1714,6 +1766,19 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         return False
     if job.status != "error" or job.interrupted or job.refusal:
         return False                              # a refused turn is refused again
+    rl = getattr(job, "rate_limit", None) or {}
+    if rl.get("errorCode") == "credits_required" or limits.is_credits_error(job.result or job.error_msg):
+        # Needs purchased credits: no reset clears that, so a park would wait
+        # for nothing. It is yours now; the status map lists it under NEEDS YOU.
+        limits.block_credits(sid, job.account_slot, rl.get("canUserPurchaseCredits"))
+        _notify(job.chat_id,
+                f"⊘ {_session_label(sid)} stopped: its login needs extra-usage credits, "
+                f"and waiting for the reset won't change that.",
+                _session_kb(job.chat_id, sid), kind="credits", sid=sid,
+                body="Its login needs extra-usage credits. Waiting for the reset won't change that.",
+                always=job.tg_live)
+        job.told = True
+        return False
     if job.skip_pack:
         return False                              # tools-off: a resume would run with tools
     if not config.AUTO_RESUME or state.shutting_down:
@@ -1725,7 +1790,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         if not _resumable(job, sess):
             return False                          # died before init — nothing to resume
         d = limits.defer(sid, job.chat_id, cwd, model, effort,
-                         slot=job.account_slot)
+                         slot=job.account_slot, reset_at=_refused_reset(job))
         if d is None:
             return False                          # kept failing past resets — stay stopped
         when, first = d
@@ -2206,6 +2271,35 @@ def _note_work_cwd(job: "Job", command: str, before: "set[str] | None" = None) -
         pass
 
 
+def _task_kind(task_type) -> str:
+    """background_tasks_changed's task_type in a word the pill can print:
+    local_bash is a shell, anything agent-shaped an agent."""
+    t = str(task_type or "")
+    return "shell" if "bash" in t or "shell" in t else "agent" if "agent" in t else "task"
+
+
+def _retry_reason(d: dict) -> str:
+    """api_retry's error class (rate_limit, overloaded, server_error, ...) or,
+    when it names none, the HTTP status behind it; "connection" for a retry
+    with no response at all."""
+    err = d.get("error")
+    if isinstance(err, dict):
+        err = err.get("type") or err.get("error")
+    if err:
+        return str(err)[:40]
+    status = d.get("error_status")
+    return f"http_{status}" if status else "connection"
+
+
+def _note_rate_limit(job: Job, info: dict) -> None:
+    """A login's limits as the CLI just saw them: the composer's meter reads
+    them live instead of waiting for its next poll. Best effort."""
+    try:
+        accounts.note_rate_limit(job.account_slot, info)
+    except Exception as e:  # noqa: BLE001
+        print(f"[usage] rate_limit_event not noted: {e}", file=sys.stderr)
+
+
 def _handle_event(job: Job, d: dict):
     t = d.get("type")
     job.boot = None          # the child is talking; nothing is loading any more
@@ -2226,6 +2320,7 @@ def _handle_event(job: Job, d: dict):
             # to running, or a watchdog kill / crash from here reads as a clean
             # finish: no error row, no timeout notice, no auto-resume.
             job.status, job.elapsed = "running", None
+        job.retry = None              # a reply came, so any retry got through
         usage = d.get("message", {}).get("usage") or {}
         ctx = _ctx_of(usage)
         if ctx:
@@ -2315,6 +2410,35 @@ def _handle_event(job: Job, d: dict):
         job.status, job.elapsed = "running", None
     elif t == "system" and d.get("subtype") == "hook_response":
         _hook_log(job, d)
+    elif t == "system" and d.get("subtype") == "session_state_changed":
+        # "the session's current state rather than a transition": idle and the
+        # result can come in either order, so nothing here pairs them.
+        job.cli_state = d.get("state")
+    elif t == "system" and d.get("subtype") == "background_tasks_changed":
+        now, live = time.time(), {}
+        for task in d.get("tasks") or []:
+            tid = str((task or {}).get("task_id") or "")
+            if tid:
+                live[tid] = job.bg.get(tid) or {
+                    "type": _task_kind(task.get("task_type")),
+                    "desc": str(task.get("description") or "")[:120], "since": now}
+        job.bg = live
+        job.bg_peak = max(job.bg_peak, len(live))
+    elif t == "system" and d.get("subtype") == "api_retry":
+        job.retry = {"attempt": d.get("attempt"), "max": d.get("max_retries"),
+                     "delay_ms": d.get("retry_delay_ms"), "error": _retry_reason(d),
+                     "at": time.time()}
+        job.add({"type": "retry", **{k: job.retry[k] for k in ("attempt", "max", "delay_ms", "error")}})
+    elif t == "rate_limit_event":
+        info = d.get("rate_limit_info") or {}
+        job.rate_limit = info
+        _note_rate_limit(job, info)
+        if info.get("status") == "rejected":
+            # Only a refusal is worth a row: outcomes.py reads credits_required
+            # off it, and a plain limit's park takes its resetsAt.
+            job.add({"type": "ratelimit", "status": "rejected",
+                     "error_code": info.get("errorCode"), "resets_at": info.get("resetsAt"),
+                     "buy": info.get("canUserPurchaseCredits")})
     elif t == "control_response":
         # The CLI's answer to one of ours (interrupt, set_model,
         # set_permission_mode). Only a refusal earns a row: the pick it carried
@@ -2332,6 +2456,7 @@ def _handle_event(job: Job, d: dict):
             job.session_id = d["session_id"]
         # An interrupted turn may report is_error; treat it as a clean stop.
         job.status = "error" if (d.get("is_error") and not job.interrupted) else "done"
+        job.answered_at = job.answered_at or time.time()
         job.elapsed = int(time.time() - job.started)
         job.add({"type": "result", "result": job.result, "cost": job.cost,
                  "elapsed": job.elapsed, "is_error": job.status == "error"})
@@ -3052,6 +3177,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
         waits.drop(session["id"])   # a new turn here ends its wait; Claude can wait again
+        limits.clear_credits(session["id"])   # ...and a credits stop: you chose what's next
         from bridge import goals  # local import: runner<->* cycle
         goals.on_user_turn(session["id"], prompt)   # your reply re-arms a blocked goal
         _ensure_journal_thread()

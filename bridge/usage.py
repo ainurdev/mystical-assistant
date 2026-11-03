@@ -1,31 +1,38 @@
 """Claude usage (5-hour + 7-day limits) for the chat composer.
 
-Reads the local OAuth access token from the login's credentials (the file, or
-the Keychain on a Mac -- bridge/credentials.py), calls the account usage
-endpoint, and returns only computed percentages / reset times / severities. The token never leaves this process and is never returned to a
-client. Results are cached for CACHE_TTL seconds so polling clients can't hammer
-the upstream.
+Read through Claude Code itself, never with the login's token: a `get_usage`
+control request to a short-lived `claude -p` pointed at the login
+(CLAUDE_CONFIG_DIR) answers with the plan's windows, the same keys the OAuth
+usage endpoint returns plus each limit's severity. No prompt and no model call
+(CLI 2.1.316: 0.7 s, 0 tokens), the CLI renews its own token, and all of the
+bridge's Anthropic traffic stays inside the official binary. That is why it
+replaced reading the token and polling /api/oauth/usage, which 429'd readily and
+read UNKNOWN whenever an idle login's access token had lapsed.
 
-The endpoint rate-limits (429) readily — the Claude CLI polls it too — so a
-failed fetch serves the last good payload for up to STALE_MAX rather than
-blanking the clients' meters. {"available": False} means we have nothing at all:
-no token, or no successful call recent enough to still be true. Stdlib only.
+A spawn is dearer than an HTTP call, so a read is kept CACHE_TTL and the turns
+themselves do the rest: every rate_limit_event a running turn sees lands here
+(note_event) as a live reading of the windows it names. Each login's payload
+says when it was read (read_at) and when a turn last reported it (live_at); the
+composer prints "live" or "N min ago" from those. A failed read serves the last
+good payload for up to STALE_MAX. {"available": False} means we have nothing at
+all. Stdlib only.
 """
 
 import json
 import os
+import subprocess
+import tempfile
 import threading
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime, timezone
 
 from bridge import credentials
 
 CREDENTIALS_FILE = os.path.expanduser("~/.claude/.credentials.json")
-USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
-CACHE_TTL = 60.0
-RETRY_TTL = 15.0    # fetch failed and there's nothing to show: probe again sooner
+CACHE_TTL = 300.0   # a read spawns claude: the live events fill in between
+RETRY_TTL = 60.0    # read failed and there's nothing to show: try again sooner
+CLI_TIMEOUT = 20.0  # get_usage answers in under a second; a hung child is killed
+LIVE_WINDOW = 180.0 # a turn's rate_limit_event counts as "live" this long
 STALE_MAX = 900.0   # how long a last-good payload may stand in for a live one
 PACE_SPAN = 3600.0  # pace() reads the last hour of 5-hour readings
 PACE_MIN = 600.0    # under ten minutes of readings is noise, not a pace
@@ -59,17 +66,41 @@ def has_token(path: str) -> bool:
     return bool(oauth.get("refreshToken")) or _token(path) is not None
 
 
-def _fetch(token: str) -> dict | None:
-    req = urllib.request.Request(USAGE_URL, headers={
-        "Authorization": f"Bearer {token}",
-        "anthropic-beta": "oauth-2025-04-20",
-        "Accept": "application/json",
-    })
+def _config_dir(path: str) -> "str | None":
+    """The CLAUDE_CONFIG_DIR a credentials path belongs to; None for the ambient
+    ~/.claude login, which runs with the variable unset."""
+    d = os.path.dirname(path)
+    return None if os.path.abspath(d) == os.path.abspath(os.path.dirname(CREDENTIALS_FILE)) else d
+
+
+def _fetch(path: str) -> dict | None:
+    """The plan's rate limits as Claude Code reads them for this login: the
+    get_usage reply's rate_limits, or None (no CLI, no subscription, a timeout)."""
+    from bridge import runner   # lazy: runner imports the world
+    env = {k: v for k, v in os.environ.items() if k != "CLAUDE_CONFIG_DIR"}
+    if (cfg := _config_dir(path)):
+        env["CLAUDE_CONFIG_DIR"] = cfg
+    req = {"type": "control_request", "request_id": "usage",
+           "request": {"subtype": "get_usage", "skip_behaviors": True}}
     try:
-        with urllib.request.urlopen(req, timeout=5) as r:
-            return json.loads(r.read())
-    except (urllib.error.URLError, OSError, ValueError):
+        out = subprocess.run(
+            [runner.claude_bin(), "-p", "--output-format", "stream-json", "--verbose",
+             "--input-format", "stream-json"],
+            input=json.dumps(req) + "\n", capture_output=True, text=True,
+            timeout=CLI_TIMEOUT, env=env, cwd=tempfile.gettempdir()).stdout
+    except (OSError, subprocess.SubprocessError):
         return None
+    for line in out.splitlines():
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        r = (d.get("response") or {}) if d.get("type") == "control_response" else {}
+        if r.get("subtype") == "success" and r.get("request_id") == "usage":
+            body = r.get("response") or {}
+            rl = body.get("rate_limits")
+            return rl if body.get("rate_limits_available", True) and isinstance(rl, dict) else None
+    return None
 
 
 def resets_epoch(v) -> float | None:
@@ -153,33 +184,70 @@ def pace(creds_path: str | None = None) -> "str | None":
     return _pace(hist, time.time())
 
 
-def _last_good(data: "dict | None", age: float) -> dict:
-    """The previous payload, while it's recent enough to still be true."""
-    return data if data is not None and age < STALE_MAX else {"available": False}
+def _view(e: dict) -> dict:
+    """The cached payload with when it was read and whether a turn is reporting it."""
+    data = e.get("data")
+    if data is None:
+        return {"available": False}
+    live_at = e.get("live_at") or 0.0
+    return {**data, "read_at": max(e.get("ts") or 0.0, live_at) or None,
+            "live": time.time() - live_at < LIVE_WINDOW,
+            "status": e.get("status") if live_at else None}
 
 
-def get_usage(creds_path: str | None = None) -> dict:
-    """Usage for one account. creds_path=None is the ambient ~/.claude login."""
+# rate_limit_event's per-window status -> the meter's severity words
+_SEV_OF = {"allowed": "normal", "allowed_warning": "warning", "rejected": "exceeded"}
+_WINDOW_KEY = {"five_hour": "five_hour", "seven_day": "seven_day"}
+
+
+def note_event(creds_path: "str | None", info: dict) -> None:
+    """A running turn's rate_limit_event, as a live reading of the windows it
+    names. utilization is a fraction there (0.67), resetsAt epoch seconds."""
+    if not isinstance(info, dict):
+        return
+    windows = dict(info.get("unifiedWindows") or {})
+    if not windows and info.get("rateLimitType"):
+        windows[info["rateLimitType"]] = info
+    path, now = creds_path or CREDENTIALS_FILE, time.time()
+    with _lock:
+        e = _entry(path)
+        data = dict(e["data"] or {"available": True, "five_hour": None,
+                                  "seven_day": None, "limits": []})
+        for name, w in windows.items():
+            key, u = _WINDOW_KEY.get(name), (w or {}).get("utilization")
+            if key is None or u is None:
+                continue
+            reset = resets_epoch(w.get("resetsAt"))
+            data[key] = {"percent": round(float(u) * 100),
+                         "resets_at": datetime.fromtimestamp(reset, timezone.utc).isoformat() if reset else None,
+                         "severity": _SEV_OF.get(w.get("status"), "normal")}
+            if key == "five_hour":
+                _remember(e, now, {"five_hour": {"utilization": data[key]["percent"],
+                                                 "resets_at": data[key]["resets_at"]}})
+        e.update(data=data, live_at=now, status=info.get("status"))
+
+
+def get_usage(creds_path: str | None = None, max_age: float = CACHE_TTL) -> dict:
+    """Usage for one account. creds_path=None is the ambient ~/.claude login;
+    max_age=0 reads it now (the PROFILE menu's Check now)."""
     path = creds_path or CREDENTIALS_FILE
     now = time.time()
     with _lock:
         e = _entry(path)
         data, ts, next_try = e["data"], e["ts"], e["next_try"]
-    if data is not None and now - ts < CACHE_TTL:
-        return data
-    if now < next_try:                      # fetched recently and it failed
-        return _last_good(data, now - ts)
-    token = _token(path)
-    payload = _fetch(token) if token else None
-    if isinstance(payload, dict):
-        fresh = _normalize(payload)
-        with _lock:
-            _entry(path).update(ts=now, data=fresh, next_try=0.0)
-            _remember(_entry(path), now, payload)
-        return fresh
+        if data is not None and now - ts < max_age:
+            return _view(e)
+        if now < next_try and max_age:          # read recently and it failed
+            return _view(e) if now - ts < STALE_MAX or e.get("live_at") else {"available": False}
+    payload = _fetch(path)
     with _lock:
-        # A value still on screen buys a full cycle before we try again; an
-        # empty meter is worth retrying sooner.
-        _entry(path)["next_try"] = now + (CACHE_TTL if data is not None
-                                         else RETRY_TTL)
-    return _last_good(data, now - ts)
+        e = _entry(path)
+        if isinstance(payload, dict):
+            e.update(ts=now, data=_normalize(payload), next_try=0.0)
+            _remember(e, now, payload)
+        else:
+            # A value still on screen buys a full cycle before we try again; an
+            # empty meter is worth retrying sooner.
+            e["next_try"] = now + (CACHE_TTL if e["data"] is not None else RETRY_TTL)
+        fresh = e["ts"] and now - e["ts"] < STALE_MAX
+        return _view(e) if fresh or e.get("live_at") else {"available": False}

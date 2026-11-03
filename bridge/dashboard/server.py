@@ -511,9 +511,12 @@ class Handler(BaseHTTPRequestHandler):
             # back=1 → the completed week (what the Monday push covers).
             return self._json(report.weekly(chat, back=_qs_int(qs, "back") or 0))
         if path == "/local/accounts":
-            from bridge import accounts, ladder
+            from bridge import accounts, ladder, usage
+            # ?fresh=N reads any login whose meter is older than N s (0 = now):
+            # the PROFILE menu on open, and its Check now.
+            fresh = _qs_int(qs, "fresh")
             return self._json({
-                "accounts": accounts.with_meters(),
+                "accounts": accounts.with_meters(usage.CACHE_TTL if fresh is None else max(0, fresh)),
                 "default_policy": ladder.default_policy(),
                 "pending_login": accounts.pending_login()})
         if path == "/local/profiles":
