@@ -53,10 +53,19 @@ export function previewTexts(q: Question): string[] | null {
 /** The one frame a question's shots share (.mystical/design-drafts/ask-pictures-steady):
  *  the largest width and the largest height among them, in natural px, so a tab or
  *  an option never resizes the card; each shot then fills it as large as it fits
- *  (object-fit: contain), hung from the top. 16 × 10 until every shot has a size
+ *  (object-fit: contain), centred: a short shot sits in the middle, not on top (2026-11-03). 16 × 10 until every shot has a size
  *  (`undefined` = still loading; leave out the ones that failed), so the frame
  *  settles once, as the card arrives, rather than once per picture. */
 export function frameOf(sizes: ([number, number] | undefined)[]): [number, number] {
   if (!sizes.length || sizes.some((s) => !s)) return [16, 10];
   return [Math.max(...sizes.map((s) => s![0])), Math.max(...sizes.map((s) => s![1]))];
+}
+
+/** Does every pictured option show the same shot on this tab? The runner copies a
+ *  path once per question (runner._adopt_preview_images), so the same file is the
+ *  same path, and the card says so rather than reading as a mix-up (2026-11-03).
+ *  An option with fewer shots shows its last one there, as its own tabs do. */
+export function sharedShot(shots: Shot[][], tab: number): boolean {
+  const at = shots.map((s) => s[Math.min(tab, s.length - 1)]?.path);
+  return at.length > 1 && at.every((p) => p !== undefined && p === at[0]);
 }
