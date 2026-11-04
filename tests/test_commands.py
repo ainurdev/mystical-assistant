@@ -122,6 +122,33 @@ def test_project_settings_can_enable_a_plugin_the_user_settings_do_not(home, tmp
     assert "cf:wrangler" not in _names(commands.available(None))
 
 
+def test_a_plugin_manifest_lists_skills_deeper_than_skills_star(home):
+    # Matt Pocock's pack keeps skills/<group>/<name>/SKILL.md and names each one in
+    # .claude-plugin/plugin.json; an entry can also be a directory of skills.
+    _plugin(home, "mattpocock-skills@claude-plugins-official")
+    root = os.path.join(home, "plugins", "cache", "mattpocock-skills")
+    for rel, desc in (("skills/engineering/grill-with-docs", "interview me"),
+                      ("skills/in-progress/wip", "not listed"),
+                      ("extra/teach", "learn it")):
+        os.makedirs(os.path.join(root, rel))
+        with open(os.path.join(root, rel, "SKILL.md"), "w") as f:
+            f.write(f"---\ndescription: {desc}\n---\nbody\n")
+    manifest = os.path.join(root, ".claude-plugin", "plugin.json")
+    os.makedirs(os.path.dirname(manifest))
+    json.dump({"skills": ["./skills/engineering/grill-with-docs", "./extra/", 7]}, open(manifest, "w"))
+
+    by = {c["name"]: c for c in commands.available(None)}
+    assert by["mattpocock-skills:grill-with-docs"]["description"] == "interview me"
+    assert "mattpocock-skills:teach" in by
+    assert not [n for n in by if n.split(":")[-1] in ("wip", "engineering", "in-progress")]
+
+    json.dump({"skills": "./extra"}, open(manifest, "w"))   # the one-path form
+    assert "mattpocock-skills:teach" in _names(commands.available(None))
+    with open(manifest, "w") as f:
+        f.write("{not json")
+    assert "mattpocock-skills:teach" not in _names(commands.available(None))
+
+
 def test_bundled_commands_are_always_offered_and_never_shadow_disk(home):
     _skill(home, "compact", "my own compact")
     got = commands.available(None)
