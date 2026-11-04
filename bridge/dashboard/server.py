@@ -1223,6 +1223,28 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "features": aifeatures.state()})
+        if path == "/local/route":
+            # Asked after every typing pause (bridge/route.py), so anything that goes
+            # wrong, in the body or in the rules, is "no route", never a 500.
+            from bridge import aifeatures, commands, route
+            picked = None
+            if aifeatures.enabled("router"):
+                try:
+                    # The session's own checkout (a worktree's tickets are there), as _server_cwd reads it.
+                    root = _abs_within((body.get("cwd") or "").strip()) or _abs_project(body.get("project"))
+                    off = {k for k in route.SUBS if not aifeatures.enabled(k)}
+                    if body.get("no_setup") is True:     # Esc on the nudge hid it for this repo
+                        off.add("setupnudge")
+                    picked = route.pick(
+                        body.get("text") or "",
+                        prompts=[p for p in body.get("prompts") or [] if isinstance(p, str)],
+                        last_status=body.get("last_status"), ctx_tokens=body.get("ctx_tokens"),
+                        first=body.get("first") is True,
+                        cmds={c["name"]: c["description"] for c in commands.available(root)},
+                        root=root, off=frozenset(off))
+                except Exception:  # noqa: BLE001 — a body or a rule that fails is just "no route"
+                    pass
+            return self._json({"route": picked})
         if path == "/local/savers":
             from bridge import savers
             try:

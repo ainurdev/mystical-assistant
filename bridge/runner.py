@@ -202,6 +202,15 @@ _HIDDEN_BROWSER_NOTE = (
     "headless (SETTINGS → SYSTEM → BROWSER). Never open a visible browser on this "
     "machine — no `open <url>`, no headed launches; the user is working in front of it.")
 
+# Told to every run while the AI tab's GRILL AS CARDS switch is on: ASK_SYSTEM_PROMPT's
+# "one decision, not an interrogation" fights a grilling skill's rounds of questions,
+# and a round of taps suits a phone. Constant text, so the appended prompt stays
+# byte-identical from turn to turn (see _compose_system_prompt).
+_GRILL_NOTE = (
+    "When a grilling skill runs (grill-with-docs, grill-me, grilling), ask each round as "
+    "one AskUserQuestion card: up to 4 questions, your recommended answer first, worded "
+    "so yes takes it.")
+
 
 def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
     """ASK prompt + the dev-log and push notes (+ the Rivendell note for a
@@ -213,6 +222,7 @@ def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
     volatile packs once per session — see _base_cmd."""
     parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE, _UX_NOTE,
                          _HIDDEN_BROWSER_NOTE if config.AI_BROWSER_HEADLESS else "",
+                         _GRILL_NOTE if aifeatures.enabled("grillcards") else "",
                          rivendell, graph.strip()) if p]
     return "\n\n".join(parts)
 
@@ -1223,11 +1233,17 @@ def _with_images(prompt: str, image_paths: list[str] | None) -> str:
     child can just read the file.
 
     "File(s)", not "screenshot(s)" — the tray takes any file, and telling the
-    model a .csv is a screenshot is how it ends up trying to look at one."""
+    model a .csv is a screenshot is how it ends up trying to look at one.
+
+    A leading /command stays first: the CLI runs a command only from the very
+    start of the prompt, so the note goes after that one token, not before it."""
     if not image_paths:
         return prompt
-    return ("The user attached file(s); open them before responding: "
-            + ", ".join(image_paths) + "\n\n" + prompt)
+    note = "The user attached file(s); open them before responding: " + ", ".join(image_paths)
+    if not prompt.startswith("/"):
+        return note + "\n\n" + prompt
+    cmd, *args = prompt.split(None, 1)
+    return f"{cmd} {note}" + (f"\n\n{args[0]}" if args else "")
 
 
 def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> bool:

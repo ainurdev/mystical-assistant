@@ -1338,8 +1338,9 @@ export interface AccountsInfo {
   default_policy: string;
   pending_login: { slot: number; url: string | null } | null;
 }
-/** One AI-powered extra. Everything here spends a model call nobody asked for,
- *  so each ships off and is switched on from the settings modal's AI tab. */
+/** One AI-powered extra, switched from the settings modal's AI tab. What runs on its
+ *  own ships off; a sub-switch (`parent`: the skill router's six) costs nothing and
+ *  ships on. */
 export interface AiFeature {
   key: string;
   label: string;
@@ -1348,6 +1349,7 @@ export interface AiFeature {
   tokens?: string; // what one unit burns, in + out — absent on a bridge older than the figure
   about: string; // the paragraph under the switch — what it does, what it adds
   enabled: boolean;
+  parent?: string; // a sub-switch: the key it sits under, drawn and obeyed only while that one is on
 }
 /** One Saver (bridge/savers.py): a switch of Claude Code's own that makes a turn
  *  cheaper. TRIAL puts it on every other new session and scores both halves on
@@ -1521,6 +1523,17 @@ export interface SlashCommand {
   description: string;
   scope: "project" | "user" | "plugin" | "builtin";
 }
+
+// The one `/name` POST /local/route (bridge/route.py) offers for what is in the composer.
+// `kind`: start = a command for the typed text, next = the step after a flow command
+// ended, ask = no clear fit (hand it to /ask-matt), setup = once per repo. `arg` goes
+// after the name, `fresh` means open it in a new session, `alts` are the other fits.
+// Acted on by lib/route.ts.
+export type Route = {
+  name: string; desc: string; why: string; auto: boolean; arg: string; fresh: boolean;
+  kind: "start" | "next" | "ask" | "setup";
+  alts: { name: string; desc: string; why: string }[];
+};
 
 // Plugins are the catalog's bigger sibling: Claude Code installs and versions a
 // whole bundle (multi-file skills, agents, MCP servers), so `claude plugin`
@@ -2425,6 +2438,9 @@ export const api = {
   // --- slash commands: what `/` offers in the composer (lib/slash.ts) ---
   commands: (project?: string | null) =>
     req<{ commands: SlashCommand[] }>(`/local/commands${project ? `?project=${encodeURIComponent(project)}` : ""}`),
+  // The /command that fits the composer's text, or null (also when SKILL ROUTER is off).
+  route: (body: { project: string; cwd?: string; text: string; prompts: string[]; last_status?: string; ctx_tokens?: number; first: boolean; no_setup?: boolean }) =>
+    req<{ route: Route | null }>("/local/route", { method: "POST", body }),
   // --- skills (project + system SKILL.md dirs, and the built-in catalog) ---
   skills: (project?: string | null) =>
     req<SkillsInfo>(`/local/skills${project ? `?project=${encodeURIComponent(project)}` : ""}`),

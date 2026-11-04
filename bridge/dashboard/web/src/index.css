@@ -1376,6 +1376,10 @@ input {
 .ctrl-ctx .seg { display: flex; gap: 2px; flex: none; }
 .ctrl-ctx .seg i { display: block; width: 7px; height: 9px; transition: background .3s ease;
                    background: color-mix(in srgb, var(--acc) 10%, transparent); }
+/* SMART ZONE (Composer, design-drafts/skill-router): where ~150k sits on the meter; past it a
+   flow compacts at its next boundary. */
+.ctrl-ctx .seg { position: relative; }
+.ctrl-ctx .seg .zone { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--warn); }
 
 /* 1040px: the verbs fold into a ··· that opens them WITH their names. Five
    unlabelled icons would be worse than none, which is why nothing here sheds
@@ -2815,6 +2819,26 @@ input {
 }
 .cmdseg .ns { --sgc: color-mix(in oklab, var(--acc) 30%, var(--panel)); color: var(--txh); z-index: 1; }
 .cmdseg .ns ~ .sg { border-radius: 0; padding-left: 1.15em; }
+/* The skill router's suggestion (MarkdownInput GhostWidget, design-drafts/skill-router,
+   C · GHOST): the same segment drawn, not filled — accent ink in an outline (the ink eased
+   toward the text colour for contrast), the arrow and the namespace quieter. Its suggested
+   argument is the editor's own placeholder. Tab takes it; until then none of it is in the text. */
+.cmdseg.ghost .sg { background: transparent; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 75%, transparent); }
+.cmdseg.ghost .sg::after { border-left-color: color-mix(in oklab, var(--acc) 45%, transparent); }
+.cmdseg.ghost .ns { color: var(--txm); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 40%, transparent); }
+/* A segment must not change its line's height, or a ghost arriving on its own nudges the box.
+   Chrome grows the line ~1px where the mono segment's ascent or descent passes the editor
+   font's (the side depends on the pair; WebKit doesn't), so the segment gives its share of
+   the line box back, and the editor keeps net-zero room around its text so it isn't clipped. */
+.cmdbox .cm-line .cmdseg { margin-block: -.25em; }
+.cmdbox .cm-editor { margin-block: -.25em; }
+.cmdbox .cm-editor .cm-content { padding-block: .25em; }
+/* The ghost (an empty box's next step) and its argument keep to one line: the argument is cut
+   with an ellipsis, never wrapped, so a long ticket path can't grow the box. inline-size
+   containment keeps the unwrapped line from widening the editor to fit it. */
+.cmdbox .cm-line:has(> .cmdseg.ghost) { display: flex; align-items: baseline; contain: inline-size; }
+.cmdbox .cm-line:has(> .cmdseg.ghost) > .cmdseg { flex: none; }
+.cmdbox .cm-line:has(> .cmdseg.ghost) > .cm-placeholder { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* On the plate the segment floats, so your words run on beside it and wrap under it. */
 [data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
@@ -4933,6 +4957,26 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* the card (TABS): ledger, attachments, the line, the footer */
 .pb-card { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
 .pb-line { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+/* The skill router's caption (Composer, design-drafts/skill-router C · GHOST): one quiet line
+   under the text, saying why the routed /command is there and what Tab, ⌫ or Esc does with it.
+   TABS has it as a row of the card; CONSOLE and CLASSIC hang it under the editor (.pb-ed). Its
+   height holds while SKILL ROUTER is on, empty or not, so a route coming or going never moves the box. */
+.pb-ed { flex: 1; min-width: 0; }
+.pb-ed > .pb-route { margin-top: 7px; }
+.pb-route { display: flex; align-items: center; gap: 8px; height: calc(var(--t10) * 1.7); min-width: 0; overflow: hidden;
+            white-space: nowrap; font-size: var(--t10); letter-spacing: .2px; color: var(--txl); }
+.pb-route > * { flex: none; }
+.pb-route > .why { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pb-route > b { font-size: var(--t8); font-weight: 700; letter-spacing: 1.6px; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.pb-route > b[data-tone="warn"] { color: var(--warn); }
+.pb-route > b[data-tone="dim"] { color: var(--txd); }
+.pb-route > i { font-style: normal; color: var(--txg); }
+/* A suggestion while the box has text: the segment it would become, at caption size; a click lists the other fits. */
+.pb-route > button.cmdseg { appearance: none; border: 0; padding: 0; margin: 0 .67em 0 0; background: none; color: inherit;
+                            font-family: inherit; font-size: .92em; line-height: inherit; cursor: pointer; }
+.pb-route kbd { font-family: inherit; font-size: var(--t8); font-weight: 700; line-height: 1; text-transform: uppercase; color: var(--txm);
+                padding: 2px 5px 1px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 22%, transparent)); border-bottom-width: 2px; border-radius: 4px;
+                background: color-mix(in oklab, black 16%, transparent); }
 /* two groups that wrap as units: the right one (run picker, SEND or the running
    cluster) moves down whole rather than leaving QUEUE alone on a line — but
    only once the PROFILE name has given way. .pb-l offers line breaking its
@@ -5240,6 +5284,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-x { display: flex; flex-direction: column; gap: 7px; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--l); min-width: 0; transition: border-color .15s, background .15s, opacity .15s; }
 .aim-x[data-on] { border-color: color-mix(in oklab, var(--acc) 40%, var(--l)); background: color-mix(in oklab, var(--acc) 6%, var(--panel)); }
 .aim-x[data-busy] { opacity: .55; }
+/* a skill-router sub-switch is a child of the card before it: the first starts a row under it, every one is inset
+   by the grid gap with an accent rule on its left.
+   shortcut: leans on the registry (bridge/aifeatures.py) listing a parent's subs right after it; wrap them per parent if that order ever breaks */
+.aim-x[data-sub] { margin-left: 10px; border-left: 2px solid var(--acc); }
+.aim-x:not([data-sub]) + .aim-x[data-sub] { grid-column-start: 1; }
 .aim-xhd { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .aim-xhd b { font: 600 13px var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .aim-xic { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--panel3); color: var(--txd); flex: none; }

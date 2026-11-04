@@ -28,6 +28,8 @@ import type { SlashCommand } from "../api";
 export type MarkdownInputHandle = {
   focus(): void;
   setSelectionRange(from: number, to: number): void;
+  /** Insert `s` in front of the text, the caret staying with the text it was in. */
+  prepend(s: string): void;
 };
 
 const mdHighlight = HighlightStyle.define([
@@ -103,6 +105,8 @@ class CmdWidget extends WidgetType {
     add("sg", this.name.slice(i + 1));
     return el;
   }
+  // A mousedown reaches the editor's handler (onCmdClick); every other event stays the widget's.
+  ignoreEvent(e: Event) { return e.type !== "mousedown"; }
 }
 
 const cmdDeco = StateField.define<DecorationSet>({
@@ -115,10 +119,47 @@ const cmdDeco = StateField.define<DecorationSet>({
   provide: (f) => [EditorView.decorations.from(f), EditorView.atomicRanges.of((v) => v.state.field(f))],
 });
 
+// The skill router's suggestion (lib/route ghostFor): the same segment, outlined, drawn in
+// front of the text but not in it, so what you send stays what you typed until Tab takes
+// it. A widget at 0 with side -1, so typing at the start never pushes it along. Its
+// suggested argument is the editor's own placeholder (the `ph` effect below).
+type Ghost = { name: string; desc: string; arg: string };
+const setGhost = StateEffect.define<Ghost | null>();
+
+/** CmdWidget's segment, outlined (.cmdseg.ghost). eq is CmdWidget's: same name and desc, same DOM.
+ *  aria-hidden keeps it out of the accessibility tree: it isn't in the doc, so a screen reader
+ *  mustn't take it for typed text (the composer's caption line announces it). */
+class GhostWidget extends CmdWidget {
+  toDOM() {
+    const el = super.toDOM();
+    el.classList.add("ghost");
+    el.setAttribute("aria-hidden", "true");
+    return el;
+  }
+}
+
+const ghostDeco = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update: (v, tr) => {
+    for (const e of tr.effects) {
+      if (e.is(setGhost)) {
+        const g = e.value;
+        return g ? Decoration.set(Decoration.widget({ widget: new GhostWidget(g.name, g.desc), side: -1 }).range(0)) : Decoration.none;
+      }
+    }
+    return v.map(tr.changes);
+  },
+  provide: (f) => EditorView.decorations.from(f),
+});
+
 type Props = {
   value: string;
   /** The bridge's command list, so a leading /command draws as one. */
   commands?: SlashCommand[];
+  /** The router's suggestion, drawn outlined in front of the text (lib/route ghostFor). */
+  ghost?: Ghost | null;
+  /** A mousedown on any /command segment, solid or ghost. The editor keeps its caret and focus. */
+  onCmdClick?: () => void;
   onChange: (text: string, caret: number) => void;
   onCaret: (caret: number) => void;
   /** Runs before the editor's own keys; preventDefault() to take the key. */
@@ -156,6 +197,15 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
               cb.current.onPaste(e);
               return e.defaultPrevented;
             },
+            // Taking the event (true) is what keeps the click from moving the caret or
+            // blurring the editor; focus() covers a click on a segment of an unfocused one.
+            // A right-click and a Mac ctrl+click (a mousedown with button 0) are the context menu's.
+            mousedown: (e, v) => {
+              if (e.button !== 0 || e.ctrlKey || !(e.target as Element).closest(".cmdseg")) return false;
+              cb.current.onCmdClick?.();
+              v.focus();
+              return true;
+            },
           })),
           newlineKeys,
           keymap.of([...defaultKeymap, ...historyKeymap]),
@@ -166,6 +216,7 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
           ph.current.of(cmPlaceholder(cb.current.placeholder)),
           cmdList,
           cmdDeco,
+          ghostDeco,
           mdTheme,
           EditorView.updateListener.of((u) => {
             const head = u.state.selection.main.head;
@@ -207,16 +258,33 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
     });
   }, [props.value]);
 
+  // While a ghost shows, the placeholder is its suggested argument (none if it has none), so the
+  // two never stack. CM's placeholder is aria-hidden and click-through, shows only in an empty doc,
+  // goes in the first keystroke's own transaction, and leaves the caret in front of it.
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: ph.current.reconfigure(cmPlaceholder(props.placeholder)) });
-  }, [props.placeholder]);
+    const g = props.ghost;
+    viewRef.current?.dispatch({ effects: ph.current.reconfigure(g ? (g.arg ? cmPlaceholder(g.arg) : []) : cmPlaceholder(props.placeholder)) });
+  }, [props.placeholder, !!props.ghost, props.ghost?.arg]);
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setCmds.of(props.commands ?? []) });
   }, [props.commands]);
 
+  // ghostFor returns a new object each render; its name and desc are what the segment shows.
+  const ghost = props.ghost;
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: setGhost.of(ghost ?? null) });
+  }, [ghost?.name, ghost?.desc]);
+
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),
+    prepend: (s) => {
+      const v = viewRef.current;
+      if (!v) return;
+      // A cursor at 0 stays in front of an insert at 0 unless the selection is mapped forward.
+      const changes = v.state.changes({ from: 0, insert: s });
+      v.dispatch({ changes, selection: v.state.selection.map(changes, 1) });
+    },
     setSelectionRange: (from, to) => {
       const view = viewRef.current;
       if (!view) return;

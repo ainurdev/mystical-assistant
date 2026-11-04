@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Code2, FlaskConical, GitCommitVertical, GraduationCap, ListTodo, Palette, PenLine,
-  Play, Puzzle, Scissors, ShieldQuestion, Sparkles, Waypoints, Workflow, type LucideIcon,
+  CircleHelp, Code2, FlaskConical, Gauge, GitCommitVertical, GraduationCap, ListTodo, MessagesSquare,
+  Palette, PenLine, Play, Puzzle, Route, Scissors, Settings2, ShieldQuestion, SkipForward, Sparkles,
+  Ticket, Wand2, Waypoints, Workflow, type LucideIcon,
 } from "lucide-react";
 import {
   api, type AiFeature, type CatalogSkill, type InstalledSkill, type SkillCategory, type SkillScope, type SkillsInfo,
@@ -35,6 +36,14 @@ const EXTRA_ICONS: Record<string, LucideIcon> = {
   ponytail: Scissors,
   graph: Waypoints,
   commitmsg: GitCommitVertical,
+  router: Route,
+  askmatt: CircleHelp,
+  autopick: Wand2,
+  nextstep: SkipForward,
+  tickets: Ticket,
+  smartzone: Gauge,
+  setupnudge: Settings2,
+  grillcards: MessagesSquare,
 };
 
 const CAT_ICON: Record<SkillCategory, LucideIcon> = {
@@ -84,7 +93,8 @@ function ExtraCard({ f, busy, err, open, onToggle, onInfo, install }: {
 }) {
   const Icon = EXTRA_ICONS[f.key] ?? Sparkles;
   return (
-    <div className="aim-x" data-on={(f.enabled && !install) || undefined} data-busy={busy || undefined}>
+    <div className="aim-x" data-on={(f.enabled && !install) || undefined} data-busy={busy || undefined}
+      data-sub={f.parent ? "" : undefined}>
       <div className="aim-xhd">
         <span className="aim-xic"><Icon size={14} strokeWidth={1.7} aria-hidden /></span>
         <b>{sentence(f.label)}</b>
@@ -147,19 +157,22 @@ function ExtrasGrid() {
     }
   }
 
-  const on = rows?.filter((f) => f.enabled && !missing(f)).length ?? 0;
+  // A sub-switch (the skill router's six) is drawn, and counted, only while its parent is on.
+  const all = rows ?? [];
+  const shown = all.filter((f) => !f.parent || all.some((p) => p.key === f.parent && p.enabled));
+  const on = shown.filter((f) => f.enabled && !missing(f)).length;
   return (
     <>
       <div className="aim-sub" data-sec="MODEL-SPENDING EXTRAS">
         <b>Extras that spend model calls</b>
-        {rows && rows.length > 0 && <span className="aim-count">{on} of {rows.length} on</span>}
+        {rows && rows.length > 0 && <span className="aim-count">{on} of {shown.length} on</span>}
         <span className="aim-hint">calls you didn't type — each has its switch</span>
       </div>
       {rows === null && <div className="aim-hint">Reading the feature switches…</div>}
       {rows?.length === 0 && <div className="aim-hint">This bridge is running a build without the extras. Restart it.</div>}
       {rows && rows.length > 0 && (
-        <div className="aim-xgrid" data-open={openKey ? "" : undefined}>
-          {rows.map((f) => (
+        <div className="aim-xgrid" data-open={shown.some((f) => f.key === openKey) ? "" : undefined}>
+          {shown.map((f) => (
             <ExtraCard key={f.key} f={f} busy={busy === f.key} err={err?.key === f.key ? err.msg : (missing(f) && gfy.error) || undefined}
               open={openKey === f.key} onToggle={() => void toggle(f)}
               onInfo={() => setOpenKey(openKey === f.key ? null : f.key)}

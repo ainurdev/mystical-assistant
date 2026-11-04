@@ -179,6 +179,26 @@ RELEVANCE_CONTEXT_TURNS = int(os.environ.get("RELEVANCE_CONTEXT_TURNS", "3"))
 # doc guessed. At a tighter timeout every check fails open and the guardrail is a
 # silent no-op, so this is deliberately generous; it only runs on long prompts.
 RELEVANCE_TIMEOUT = int(os.environ.get("RELEVANCE_TIMEOUT", "25"))
+# Skill router (bridge/route.py): rules, not a model call, that put Matt Pocock's
+# /command in front of a prompt. It runs on its own, so the master switch ships
+# OFF; the six sub-switches ship ON but obey it, so they do nothing until it is
+# on. GRILL_CARDS adds a line to every run's system prompt, so it ships OFF too.
+ROUTER_ENABLE = os.environ.get("ROUTER_ENABLE", "0").lower() \
+    not in ("0", "false", "no", "")
+ROUTER_ASK_MATT = os.environ.get("ROUTER_ASK_MATT", "1").lower() \
+    not in ("0", "false", "no", "")
+ROUTER_AUTO = os.environ.get("ROUTER_AUTO", "1").lower() \
+    not in ("0", "false", "no", "")
+ROUTER_NEXT = os.environ.get("ROUTER_NEXT", "1").lower() \
+    not in ("0", "false", "no", "")
+ROUTER_TICKETS = os.environ.get("ROUTER_TICKETS", "1").lower() \
+    not in ("0", "false", "no", "")
+ROUTER_ZONE = os.environ.get("ROUTER_ZONE", "1").lower() \
+    not in ("0", "false", "no", "")
+ROUTER_SETUP = os.environ.get("ROUTER_SETUP", "1").lower() \
+    not in ("0", "false", "no", "")
+GRILL_CARDS = os.environ.get("GRILL_CARDS", "0").lower() \
+    not in ("0", "false", "no", "")
 # --- Next-up board -----------------------------------------------------------
 # Ranked next steps across the repos with recent session activity. One read-only
 # scout per changed repo. See the next-up-board design.
