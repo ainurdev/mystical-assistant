@@ -16,6 +16,7 @@ import json
 import os
 import shutil
 import stat
+import time
 
 import pytest
 
@@ -247,14 +248,14 @@ _BROWSER_DEFS = {
 }
 
 
-def _servers_with(monkeypatch, defs=_BROWSER_DEFS, **settings):
-    """The --mcp-config servers a configured session gets, with `defs` as what
-    ~/.claude.json holds and `settings` written onto config."""
+def _servers_with(monkeypatch, defs=_BROWSER_DEFS, cwd=None, **settings):
+    """The --mcp-config servers a configured session in `cwd` gets, with `defs` as
+    what ~/.claude.json holds and `settings` written onto config."""
     monkeypatch.setattr(toolsets, "servers", lambda: [{"name": n, "rule": f"mcp__{n}"} for n in defs])
     monkeypatch.setattr(runner, "_configured_mcp_servers", lambda cwd: defs)
     for k, v in settings.items():
         monkeypatch.setattr(config, k, v)
-    cmd = _cmd(disabled_tools=[])
+    cmd = _cmd(disabled_tools=[], cwd=cwd)
     with open(cmd[cmd.index("--mcp-config") + 1], encoding="utf-8") as f:
         return json.load(f)["mcpServers"]
 
@@ -283,6 +284,20 @@ def test_a_flag_the_user_set_themselves_is_left_alone(monkeypatch):
     srv = _servers_with(monkeypatch, defs, AI_BROWSER_HEADLESS=False,
                         AI_BROWSER_EXECUTABLE="", AI_BROWSER_PROFILE="/tmp/ai-profile")
     assert srv["playwright"]["args"] == ["-y", "@playwright/mcp@latest", "--user-data-dir=/mine"]
+
+
+def test_playwright_files_land_in_todays_screenshot_folder(monkeypatch, tmp_path):
+    """Playwright writes unnamed files (a screenshot without a file name, page
+    snapshots, console logs) to <cwd>/.playwright-mcp, inside the repo."""
+    off = dict(AI_BROWSER_HEADLESS=False, AI_BROWSER_EXECUTABLE="", AI_BROWSER_PROFILE="")
+    srv = _servers_with(monkeypatch, cwd=str(tmp_path), **off)
+    day = tmp_path / ".mystical" / "screenshots" / time.strftime("%Y-%m-%d")
+    assert srv["playwright"]["args"][2:] == ["--output-dir", str(day)]
+    assert srv["chrome-devtools"]["args"] == _BROWSER_DEFS["chrome-devtools"]["args"]  # no such default
+    mine = {"playwright": {**_BROWSER_DEFS["playwright"],
+                           "args": ["-y", "@playwright/mcp@latest", "--output-dir=/mine"]}}
+    srv = _servers_with(monkeypatch, mine, cwd=str(tmp_path), **off)
+    assert srv["playwright"]["args"] == ["-y", "@playwright/mcp@latest", "--output-dir=/mine"]
 
 
 def test_a_hidden_browser_is_told_to_the_run(monkeypatch):

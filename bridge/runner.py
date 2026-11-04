@@ -85,7 +85,12 @@ _MYSTICAL_NOTE = (
     "screenshots, recordings, scratch scripts, drafts, reports — go in "
     ".mystical/ in the project root. It ignores itself "
     "(.mystical/.gitignore is `*`), so never add .mystical to the project's "
-    ".gitignore and never commit anything from it.")
+    ".gitignore and never commit anything from it. Screenshots go in "
+    ".mystical/screenshots/<YYYY-MM-DD>/<topic>/: today's date, then one short folder "
+    "per task; give that path as the file name (the Playwright MCP's unnamed files "
+    "already land in the day's folder). Never commit a screenshot to the repo, not even "
+    "for a PR description, unless the user asks for it. A project's visual-test "
+    "baselines are test files, not screenshots: they stay where its tests read them.")
 
 _LOG_NOTE = (
     "To run this project (dev server, `npm run dev`, anything long-lived the "
@@ -433,30 +438,38 @@ def _mcp_config(claude_session_id: str, extra: "dict | None" = None) -> str:
 
 
 # The flag each browser MCP takes for the three AI BROWSER settings (hidden,
-# binary, profile folder), keyed by the package in its args rather than by its
-# `claude mcp list` name, so a server someone renamed is still caught.
+# binary, profile folder) and for where its unnamed files go, keyed by the
+# package in its args rather than by its `claude mcp list` name, so a server
+# someone renamed is still caught.
 _BROWSER_MCP_FLAGS = {
-    "@playwright/mcp": ("--headless", "--executable-path", "--user-data-dir"),
-    "chrome-devtools-mcp": ("--headless", "--executablePath", "--userDataDir"),
+    "@playwright/mcp": ("--headless", "--executable-path", "--user-data-dir", "--output-dir"),
+    "chrome-devtools-mcp": ("--headless", "--executablePath", "--userDataDir", None),
 }
 
 
-def _with_browser(defn: dict) -> dict:
+def _with_browser(defn: dict, cwd: "str | None" = None) -> dict:
     """A server definition with the AI BROWSER settings appended as flags, when it
     is one of the two browser MCPs; anything else unchanged. A flag the user's own
     definition already carries is left to them — yargs would turn a repeated
-    --userDataDir into a list."""
+    --userDataDir into a list.
+
+    Playwright writes its unnamed files (a screenshot without a file name, page
+    snapshots, console logs) to <cwd>/.playwright-mcp, loose in the repo; they
+    go to the day's folder under .mystical/screenshots instead, as _MYSTICAL_NOTE
+    asks of named ones. chrome-devtools keeps those in the reply or the temp dir."""
     args = list(defn.get("args") or [])
     flags = next((f for pkg, f in _BROWSER_MCP_FLAGS.items() if any(pkg in a for a in args)), None)
     if not flags:
         return defn
     own = {a.split("=", 1)[0] for a in args}
-    headless, binary, profile = flags
+    headless, binary, profile, output = flags
     extra = [headless] if config.AI_BROWSER_HEADLESS and headless not in own else []
     if config.AI_BROWSER_EXECUTABLE and binary not in own:
         extra += [binary, config.AI_BROWSER_EXECUTABLE]
     if config.AI_BROWSER_PROFILE and profile not in own:
         extra += [profile, config.AI_BROWSER_PROFILE]
+    if output and cwd and output not in own:
+        extra += [output, os.path.join(cwd, ".mystical", "screenshots", time.strftime("%Y-%m-%d"))]
     return {**defn, "args": args + extra} if extra else defn
 
 
@@ -515,7 +528,7 @@ def _external_mcp(disabled_tools: "list[str] | None",
         if s["rule"] in denied:
             continue
         if s["name"] in defs:
-            extra[s["name"]] = _with_browser(defs[s["name"]])
+            extra[s["name"]] = _with_browser(defs[s["name"]], cwd)
         elif s.get("dir"):
             # Local to a different project: this cwd's claude couldn't load it
             # even without strict mode, so skipping it hides nothing.
