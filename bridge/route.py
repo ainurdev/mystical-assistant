@@ -74,13 +74,21 @@ def _re(pattern):
     return re.compile(pattern, re.I)
 
 
+# The grill row's leading verbs: a prompt that starts with one asks for something new.
+_FEATURE = (r"(add|build|create|make|implement|i want|we need|let'?s|can we|could we|should we"
+            r"|how (can|could|should) we)\b")
+
 # (skill, pattern, why), tried in this order; the first hit wins. code-review sits
-# ahead of diagnosing-bugs so "review why it fails" is a review.
+# ahead of diagnosing-bugs so "review why it fails" is a review. A hard bug signal is
+# a bug whatever the prompt asks for; a weak one only when the prompt doesn't start
+# like a feature: "add retry when the upload fails" is one, and auto-picking the
+# wrong flow is the costliest miss.
 _RULES = (
     ("code-review", _re(r"\breview\b"), "review the diff against the standards and the spec"),
     ("diagnosing-bugs",
-     _re(r"traceback|exception|error:|stack trace|\bcrash|\bbroken\b|\bfail(s|ed|ing)?\b|regression"
-         r"|doesn'?t work|not working|find out why|\b(is|are|got) (empty|missing|stuck|wrong)\b"),
+     _re(r"traceback|exception|error:|stack trace|\bcrash(es|ed)\b|\bbroken\b|doesn'?t work|not working"
+         r"|^(?!" + _FEATURE + r")[\s\S]*?(\bcrash|\bfail(s|ed|ing)?\b|regression|find out why"
+         r"|\b(is|are|got) (empty|missing|stuck|wrong)\b)"),
      "something's broken: get a failing loop first"),
     ("triage", _re(r"\btriage\b|incoming issues|bug reports"), "sort what came in before building"),
     ("wayfinder", _re(r"from scratch|greenfield|new app|rewrite (the|it all)|migrate (the whole|everything)"),
@@ -89,17 +97,18 @@ _RULES = (
     ("to-tickets", _re(r"tickets|break (it|this) (down|into)|split (it|this) into"),
      "split it into tickets with blockers"),
     ("tdd", _re(r"test[- ]first|\btdd\b|red[- ]green"), "build it test-first, one slice at a time"),
-    ("prototype", _re(r"prototype|mock ?up|what should .{0,40} look like"), "answer it with throwaway code first"),
-    ("research", _re(r"\bresearch\b|look up|docs for|what'?s the latest|compare .{0,30} (to|with|vs)"),
+    # Both only as a request: "rename the prototype field" and "write docs for X" are mentions.
+    ("prototype",
+     _re(r"^prototype\b|\bprototype (a|an|the|some|two|three|a few|\d+)\b|mock ?up|what should .{0,40} look like"),
+     "answer it with throwaway code first"),
+    ("research",
+     _re(r"\bresearch\b|look up|(find|read) (the )?docs for|what'?s the latest|compare .{0,30} (to|with|vs)"),
      "read primary sources, leave a cited file"),
     ("improve-codebase-architecture", _re(r"architecture|refactor|tangled|deepen"),
      "find where the code wants deeper modules"),
     ("teach", _re(r"teach me|help me (learn|understand)"), "learn it over a few sessions"),
     ("handoff", _re(r"hand ?off|in a (new|fresh|another) session|for codex"), "write it down for the next session"),
-    ("grill-with-docs",
-     _re(r"^(add|build|create|make|implement|i want|we need|let'?s|can we|could we|should we"
-         r"|how (can|could|should) we)\b|new feature"),
-     "a new feature: settle it before building"),
+    ("grill-with-docs", _re("^" + _FEATURE + r"|new feature"), "a new feature: settle it before building"),
 )
 
 # Two whole-message patterns, short by nature, so _MIN does not apply to them.
@@ -109,7 +118,7 @@ _RULES = (
 # A bare "go" must be the whole message ("go with option B" is an answer). The \b guards
 # only the three phrases: after "Go!" the end of the string is no word boundary.
 _WAIT_WHAT = _re(r"^(what\??|huh\??|wait,? what|i don'?t (get|understand)( it| that)?)\W*$")
-_GO_AHEAD = _re(r"^(ok(ay)?[,.!]?\s+)?(go( ahead)?\W*$"
+_GO_AHEAD = _re(r"^((ok(ay)?|yes|yep|sure|sounds good|great|perfect)[,.!]?\s+)?(go( ahead)?\W*$"
                 r"|(implement (it|this)|build (it|this)|let'?s (build|do) (it|this))\b)")
 
 # The reason each skill is offered for, wherever it shows up: the table's, plus the
@@ -289,8 +298,9 @@ def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_toke
     An empty `text` asks for the next step after a turn that finished. `prompts` are
     the session's last prompts, oldest first; `last_status` is how the last turn
     ended; `first` is True before the session's first turn; `cmds` maps every listed
-    command name to its description; `root` is the project's absolute path; `off`
-    holds the sub-switches (SUBS) that are turned off.
+    command name to its description; `root` is the absolute path of the session's
+    checkout (the project's, or its worktree); `off` holds the sub-switches (SUBS)
+    that are turned off.
 
     Returns {"name", "desc", "why", "auto", "arg", "fresh", "kind", "alts"}: kind is
     start | next | ask | setup, `arg` goes after the name, `fresh` means open it in a
@@ -327,7 +337,7 @@ def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_toke
             return compact
     if skill in _NEEDS_SETUP and "setupnudge" not in off and _untracked(root):
         setup = _route(_Step("setup-matt-pocock-skills", "setup",
-                             f"once per repo: tracker, labels, docs (then /{skill})"), cmds)
+                             f"once per repo: tracker, labels, docs (then /{skill})", alts=((skill, step.why),)), cmds)
         if setup:
             return setup
     auto = (step.kind == "start" and skill in _AUTO and "autopick" not in off

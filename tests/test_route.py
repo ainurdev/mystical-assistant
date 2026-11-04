@@ -100,6 +100,11 @@ def test_constants():
     ("the sidebar code is tangled and needs deeper modules", True, "improve-codebase-architecture", False),
     ("help me understand how the runner streams", True, "teach", False),
     ("write a handoff for the next session", True, "handoff", False),
+    # a prompt that starts like a feature beats a weak bug signal, never a hard one
+    ("add retry when the upload fails", True, "grill-with-docs", True),
+    ("build a page listing failed jobs", True, "grill-with-docs", True),
+    ("add a guard because the export crashes with a traceback", True, "diagnosing-bugs", True),
+    ("find docs for the stream-json format", True, "research", True),
 ])
 def test_start(root, text, first, skill, auto):
     r = go(root, text, first=first)
@@ -122,6 +127,7 @@ def test_the_pick_says_why(root):
     "/review the changes in the last commit for bugs",  # a rule would take it, but it is already a command
     "  /mattpocock-skills:grill-me add a weekly digest",
     "ok", "", "   ",
+    "rename the prototype field in the store", "write docs for the route module",  # a mention, not a request
 ])
 def test_nothing_to_route(root, text):
     assert go(root, text, first=True) is None
@@ -201,7 +207,8 @@ def test_wait_what_fires_inside_a_grill_flow(root, prompt):
     assert go(root, "huh?", prompts=[prompt], status="error") is None
 
 
-@pytest.mark.parametrize("text", ["ok, build it", "go ahead", "Okay. implement this", "let's build it", "Go!"])
+@pytest.mark.parametrize("text", ["ok, build it", "go ahead", "Okay. implement this", "let's build it", "Go!",
+                                  "yes, go ahead", "sounds good, build it"])
 def test_go_ahead_inside_a_grill_flow_routes_to_implement(root, text):
     # the way out of the interview: the answer is "enough, build it", a suggestion, never auto
     r = go(root, text, prompts=[GRILL])
@@ -247,6 +254,9 @@ def test_setup_nudge(bare):
     assert (r["fresh"], r["arg"]) == (False, "")
     assert r["why"] == "once per repo: tracker, labels, docs (then /grill-with-docs)"
     assert r["why"].endswith("(then /grill-with-docs)")
+    # the route it stands in for stays one tap away, among the other fits
+    assert r["alts"] == [{"name": NS + "grill-with-docs", "desc": CMDS[NS + "grill-with-docs"],
+                          "why": "a new feature: settle it before building"}]
 
 
 @pytest.mark.parametrize("text, skill", [
@@ -259,6 +269,7 @@ def test_setup_nudge_before_each_engineering_route(bare, text, skill):
     r = go(bare, text)
     assert (r["name"], r["kind"]) == (NS + "setup-matt-pocock-skills", "setup")
     assert r["why"].endswith(f"(then /{skill})")
+    assert r["alts"][0]["name"] == NS + skill
 
 
 def test_setup_nudge_before_implement_and_the_next_step(bare):
@@ -295,6 +306,7 @@ def test_auto_needs_a_first_prompt_or_a_flow_step_that_just_ended(root):
     assert go(root, FEATURE, first=True)["auto"] is True
     assert go(root, FEATURE, prompts=[step])["auto"] is True                    # right after a flow step ended
     assert go(root, FEATURE, prompts=[step], status="error")["auto"] is False   # it did not end well
+    assert go(root, FEATURE, prompts=[step], status="stopped")["auto"] is False  # you stopped it: not done
     assert go(root, FEATURE, prompts=[step, "and the old ones"])["auto"] is False  # a follow-up inside the thread
     assert go(root, FEATURE, prompts=["fix the typo in the README"])["auto"] is False  # no flow command at all
 
@@ -499,7 +511,7 @@ def test_next_retro(root, prompt):
     assert r["why"] == "look back: what would have made this easier"
 
 
-@pytest.mark.parametrize("status", ["error", "running", None])
+@pytest.mark.parametrize("status", ["error", "running", "stopped", None])
 def test_next_only_after_a_turn_that_is_done(root, status):
     assert go(root, "", prompts=[GRILL], status=status) is None
 
