@@ -1230,7 +1230,8 @@ class Handler(BaseHTTPRequestHandler):
             picked = None
             if aifeatures.enabled("router"):
                 try:
-                    root = _abs_project(body.get("project"))
+                    # The session's own checkout (a worktree's tickets are there), as _server_cwd reads it.
+                    root = _abs_within((body.get("cwd") or "").strip()) or _abs_project(body.get("project"))
                     off = {k for k in route.SUBS if not aifeatures.enabled(k)}
                     if body.get("no_setup") is True:     # Esc on the nudge hid it for this repo
                         off.add("setupnudge")

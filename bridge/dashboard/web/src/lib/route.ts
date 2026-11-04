@@ -23,7 +23,7 @@ export function isDropped(text: string, applied: string | null): boolean {
   return applied !== null && !text.startsWith("/" + applied);
 }
 
-/** What the editor draws as the dashed ghost segment, if anything. An auto route with
+/** What the editor draws as the outlined ghost segment, if anything. An auto route with
  *  text is applied solid instead, and a `/` the user typed is theirs. The suggested
  *  `arg` only shows in an empty box; once there is text, the text is the arg. */
 export function ghostFor(text: string, r: Route | null): { name: string; desc: string; arg: string } | null {
@@ -44,7 +44,7 @@ export function isStale(sentText: string, nowText: string, sentSeq: number, nowS
  *  keycap ("" for none). /compact names the step it makes room for, from the arg
  *  bridge/route.py ends with "next: /<step>". */
 export function caption(r: Route, how: "auto" | "inline" | "row"): { tag: string; tone?: "warn" | "dim"; why: string; tail: [string, string][] } {
-  if (how === "auto") return { tag: "AUTO", why: r.why, tail: [["⌫", "drops it"], ["", "click it for other fits"]] };
+  if (how === "auto") return { tag: "AUTO", why: r.why, tail: [["Esc", "drops it"], ["", "click it for other fits"]] };
   if (r.name === "compact") {
     const next = /\/\S+$/.exec(r.arg)?.[0];
     return { tag: "NEXT", tone: "warn", why: r.why, tail: [["Tab", "takes it"], ...(next ? [["", `then ${next}`] as [string, string]] : [])] };

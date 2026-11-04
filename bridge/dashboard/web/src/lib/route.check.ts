@@ -54,7 +54,8 @@ const cap = (r: Route, how: "auto" | "inline" | "row") => { const c = caption(r,
 const ask: Route = { ...base, name: "mattpocock-skills:ask-matt", kind: "ask", why: "x" };
 const setup: Route = { ...base, kind: "setup", why: "once per repo" };
 const compact: Route = { ...next, name: "compact", why: "162k is past the 150k smart zone", arg: "keep the decisions so far; next: /to-spec" };
-console.assert(cap(auto, "auto") === "AUTO||a feature: settle the design first|⌫|drops it||click it for other fits", "auto: why, then ⌫ and the other fits");
+// Esc, not ⌫: the caret sits at the end of the text after the pick, where ⌫ would cost a character of yours
+console.assert(cap(auto, "auto") === "AUTO||a feature: settle the design first|Esc|drops it||click it for other fits", "auto: why, then Esc and the other fits");
 console.assert(cap({ ...auto, kind: "next" }, "auto").startsWith("AUTO|"), "auto wins over the kind");
 // an empty box: the ghost is in front of where the text will go
 console.assert(cap(next, "inline") === "NEXT||the grill is settled|Tab|takes it", "a next step");

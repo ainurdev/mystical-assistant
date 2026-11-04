@@ -589,6 +589,22 @@ def test_endpoint_lists_the_commands_for_the_resolved_project(monkeypatch, repo,
     assert asked == [os.path.join(os.path.realpath(str(tmp_path)), "app"), None]
 
 
+def test_endpoint_reads_the_sessions_own_checkout(monkeypatch, repo, tmp_path):
+    # a worktree session's tickets, tracker and project skills are in its checkout, not the project's
+    base = os.path.realpath(str(tmp_path))
+    wt = os.path.join(base, ".worktrees", "app", "feat")
+    os.makedirs(wt)
+    listed, picked = [], []
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: True)
+    monkeypatch.setattr(commands, "available", lambda project=None: listed.append(project) or [])
+    monkeypatch.setattr(route, "pick", lambda text, **kw: picked.append(kw["root"]))
+    h, _ = handler()
+    for cwd in (wt, os.path.dirname(base), os.path.join(base, "gone"), None):  # inside; outside BASE_PATH; missing; none
+        h._post_api("/local/route", {"project": repo, "cwd": cwd, "text": FEATURE})
+    app = os.path.join(base, "app")
+    assert listed == picked == [wt, app, app, app]
+
+
 @pytest.mark.parametrize("off", [("router",), ("router", *route.SUBS)])
 def test_router_off_routes_nothing(monkeypatch, off):
     assert post(monkeypatch, {"text": FEATURE, "first": True}, off=off) == {"route": None}

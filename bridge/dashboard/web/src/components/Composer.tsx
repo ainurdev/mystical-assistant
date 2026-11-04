@@ -576,9 +576,9 @@ export function Composer({
   onAccounts?: (fresh: number) => Promise<unknown>;
   /** SKILL ROUTER: what is typed gets the Matt Pocock /command that fits (lib/route). */
   routing?: boolean;
-  /** What the router reads besides the text: the session's last prompts, how its last
-   *  turn ended, whether it has had one. Absent: nothing to route against yet. */
-  routeCtx?: { project: string; prompts: string[]; lastStatus?: string; first: boolean };
+  /** What the router reads besides the text: the session's checkout, its last prompts, how
+   *  its last turn ended, whether it has had one. Absent: nothing to route against yet. */
+  routeCtx?: { project: string; cwd?: string; prompts: string[]; lastStatus?: string; first: boolean };
   /** Tab on a route that opens in a fresh session (the next free ticket): its draft. */
   onRouteFresh?: (text: string) => void;
   /** Sub-switches: Ask Matt among the other fits, the 150k mark on the CTX meter. */
@@ -802,8 +802,10 @@ export function Composer({
   // as a ghost on the line the text will start (a next step), and while there is text
   // as a small segment in the caption row under it, so nothing shifts under the caret.
   // Never while a turn runs (steer or queue) or a docked ask takes the text, never over
-  // a /command, never for an agent (its / runs none of these).
-  const routeOn = !!routing && !!routeCtx && !onAgent && !running && !ask?.send;
+  // a /command, never for an agent (its / runs none of these), and not at all (no caption
+  // row either) while the project's / list has none of Matt's commands to offer.
+  const pack = cmds.some((c) => c.name.startsWith("mattpocock-skills:"));
+  const routeOn = !!routing && pack && !!routeCtx && !onAgent && !running && !ask?.send;
   // App memoises routeCtx on its turns; the session is in the key because two fresh ones read alike.
   const ctxKey = useMemo(() => (routeOn ? JSON.stringify([sessionId, routeCtx]) : ""), [routeOn, sessionId, routeCtx]);
   const [held, setHeld] = useState<{ r: Route; for: string; ctx: string } | null>(null);   // the last reply, and what it answered
@@ -814,6 +816,7 @@ export function Composer({
   const [fitPick, setFitPick] = useState(0);
   const fitsId = useId();
   const routeSeq = useRef(0);
+  const landed = useRef<string | null>(null);                   // the text as the auto pick left it, until the next edit
   const now = useRef({ text, dropped });
   now.current = { text, dropped };
   const blank = text.trim() === "";
@@ -826,7 +829,7 @@ export function Composer({
     const stale = () => isStale(text, now.current.text, seq, routeSeq.current);
     const t = window.setTimeout(() => {
       api.route({
-        project: c.project, text, prompts: c.prompts, last_status: c.lastStatus, first: c.first,
+        project: c.project, cwd: c.cwd, text, prompts: c.prompts, last_status: c.lastStatus, first: c.first,
         ctx_tokens: contextTokens === undefined ? undefined : Math.round(contextTokens),
         no_setup: localStorage.getItem(`route.setup.hidden:${c.project}`) === "1",
       }).then(({ route }) => {
@@ -835,6 +838,7 @@ export function Composer({
         if (route && shouldAutoApply(text, route, now.current.dropped)) {
           taRef.current?.prepend(`/${route.name} `);
           setApplied(route);
+          landed.current = `/${route.name} ${text}`;
         }
       }, () => { if (!stale()) setHeld(null); });   // no answer is no route, never the one held for older text
     }, 400);
@@ -842,6 +846,7 @@ export function Composer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, ctxKey, contextTokens, asked]);
   useEffect(() => { if (!blank && isDropped(text, applied?.name ?? null)) setDropped(true); }, [text, applied, blank]);
+  useEffect(() => { if (text !== landed.current) landed.current = null; }, [text]);
   // Hiding lasts until the box empties or fills; an emptied box is a fresh draft.
   useEffect(() => { setHidden(false); if (blank) { setApplied(null); setDropped(false); } }, [blank]);
   // Another session's draft, or one restored after a reload, wasn't typed fresh here: it gets no auto pick.
@@ -854,6 +859,8 @@ export function Composer({
   const ghost = live && blank ? ghostFor("", live) : null;
   const rowRoute = live && !blank && ghostFor(text, live) ? live : null;
   const auto = routeOn && applied && !dropped && !isDropped(text, applied.name) ? applied : null;
+  // What you typed, without the auto pick: DESIGN, GRILL and COMPACT put their own command in front.
+  const typed = auto ? swapLead(text, auto.name, null) : text;
   const shown = auto ?? (ghost ? live : rowRoute);   // what the caption and the list of other fits are about
   const how = auto ? "auto" : ghost ? "inline" : "row";
   // The list of other fits goes with the command it is for (⌫ while it is open), backdrop and all.
@@ -874,21 +881,31 @@ export function Composer({
     else { el.removeAttribute("aria-controls"); el.removeAttribute("aria-activedescendant"); }
   }, [openDrop, fitPick, fitsId]);
 
+  /** Esc or Send as typed: the route on show goes. An auto pick is taken out of the text. An empty
+   *  box's ghost hides until the box fills and is let go, so it doesn't show in the row while the
+   *  next prompt is typed (which may still get its auto pick); a typed draft's goes for the draft. */
+  function dismiss() {
+    if (auto) { setText(swapLead(text, auto.name, null)); setDropped(true); return; }
+    setHidden(true);
+    if (blank) setHeld(null);
+    else setDropped(true);
+  }
+
   /** A row of the other fits: its command swaps in for the one on show; Send as typed (null) takes it out. */
   function pickFit(name: string | null) {
     setOpenDrop("");
-    if (!name) setDropped(true);
-    if (auto) setText(swapLead(text, auto.name, name));
-    else if (!name) setHidden(true);
+    if (!name) dismiss();
+    else if (auto) setText(swapLead(text, auto.name, name));
     else if (blank) setText(`/${name} `);
     else taRef.current?.prepend(`/${name} `);
   }
 
   /** While open, the other fits take ↑/↓, Enter or Tab, and Esc, as the / list does; Alt+↓
-   *  opens them. Tab takes the route on show. Esc hides it: an empty box's next step until the
-   *  box fills (the prompt typed next may still get its auto pick), a typed draft's for the
-   *  draft, the setup nudge for this repo (asking again for the route it stood in for). A key
-   *  taken here goes no further: App's own Esc would close a panel as well. */
+   *  opens them. Tab takes the route on show; Esc dismisses it, the setup nudge for this repo
+   *  (asking again for the route it stood in for). An auto pick goes with Esc too, and with the
+   *  first ⌫ while the text is as the pick left it: the caret is at the end then, where ⌫ would
+   *  cost a character of yours. A key taken here goes no further: App's own Esc would close a
+   *  panel as well. */
   function routeKey(e: KeyboardEvent): boolean {
     const take = () => { e.preventDefault(); e.stopPropagation(); return true; };
     if (openDrop === "fits" && fits.length) {
@@ -897,8 +914,12 @@ export function Composer({
       if (e.key === "Enter" || e.key === "Tab") { pickFit(fits[Math.min(fitPick, fits.length - 1)].name); return take(); }
     }
     if (e.altKey && e.key === "ArrowDown" && shown) { openFits(); return take(); }
+    if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return false;
+    // A selection stays yours to delete: select all + ⌫ still clears the draft.
+    const firstBksp = e.key === "Backspace" && text === landed.current && !!window.getSelection()?.isCollapsed;
+    if (auto && (e.key === "Escape" || firstBksp)) { dismiss(); return take(); }
     const r = ghost ? live : rowRoute;
-    if (!r || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return false;
+    if (!r) return false;
     if (e.key === "Tab") {
       if (r.fresh) onRouteFresh?.(`/${r.name} ${r.arg}`);
       else if (blank) setText(`/${r.name} ${r.arg}`);
@@ -910,10 +931,7 @@ export function Composer({
         localStorage.setItem(`route.setup.hidden:${routeCtx!.project}`, "1");
         setHeld(null);
         setAsked((n) => n + 1);
-      } else {
-        setHidden(true);
-        if (!blank) setDropped(true);
-      }
+      } else dismiss();
       return take();
     }
     return false;
@@ -1009,7 +1027,7 @@ export function Composer({
   // turn. It sits with them rather than in the verb tier because it *is* the
   // send gesture — the verbs are commands that stand on their own.
   function design() {
-    const t = text.trim();
+    const t = typed.trim();
     if (!t) return;
     onSend(`/design-first ${t}`, images);
     setText("");
@@ -1037,7 +1055,7 @@ export function Composer({
       label: "GRILL",
       tip: "GRILL — a relentless interview before any code gets written.\n\nIt asks one question at a time until every open branch of the decision is closed, then you have something worth building from.\n\nType first to grill a specific idea; leave the box empty to grill the conversation so far.\n\nNeeds a grill skill installed — SKILLS ▸ PLUGINS.",
       disabled,
-      onClick: () => { const t = text.trim(); setText(""); onSend(t ? `/grill-me ${t}` : "/grill-me", []); },
+      onClick: () => { const t = typed.trim(); setText(""); onSend(t ? `/grill-me ${t}` : "/grill-me", []); },
     }]),
     ...(showPonytail && !onAgent ? [
       { key: "review", label: "REVIEW", tip: "REVIEW — /ponytail-review over the working tree: what in this diff can be deleted, reused, or replaced by stdlib.", disabled, onClick: () => onSend("/ponytail-review", []) },
@@ -1187,7 +1205,7 @@ export function Composer({
         // Whatever is in the box rides along as compaction instructions ("keep
         // the auth work, drop the log spelunking") — Piebald opens a dialog for
         // this; we already have a text box right there.
-        <button onClick={() => { onCompact(text.trim()); setText(""); }} disabled={disabled || running}
+        <button onClick={() => { onCompact(typed.trim()); setText(""); }} disabled={disabled || running}
           title={text.trim()
             ? "Compact the context, keeping what you've typed in mind"
             : "Compact context (/compact) — type first to steer what the summary keeps"}
@@ -1503,14 +1521,15 @@ export function Composer({
     },
   };
   // The router's caption, directly under the text: why the routed command is there and what
-  // Tab, ⌫ or Esc does with it. It is the ghost's announcement too (the ghost is aria-hidden).
+  // Tab or Esc does with it. It is the ghost's announcement too (the ghost is aria-hidden).
   // While the box has text a suggestion is drawn here, as the segment it would become, not
-  // in the text. The line stays while the router is on, empty or not, so a route coming or
-  // going never moves the box, and a live region that is already there is one screen readers speak.
+  // in the text. The line stays while the router is on and Matt's pack is listed, empty or not,
+  // so a route coming or going never moves the box, and a live region that is already there is
+  // one screen readers speak.
   const capt = shown ? caption(shown, how) : null;
   const seg = shown?.name ?? "";
   const nsAt = seg.lastIndexOf(":");
-  const routeLine = routing && !onAgent && (
+  const routeLine = routing && pack && !onAgent && (
     <div className="pb-route" role="status">
       {capt && (<>
         <b data-tone={capt.tone}>{capt.tag}</b>

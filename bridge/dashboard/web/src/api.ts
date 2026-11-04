@@ -2439,7 +2439,7 @@ export const api = {
   commands: (project?: string | null) =>
     req<{ commands: SlashCommand[] }>(`/local/commands${project ? `?project=${encodeURIComponent(project)}` : ""}`),
   // The /command that fits the composer's text, or null (also when SKILL ROUTER is off).
-  route: (body: { project: string; text: string; prompts: string[]; last_status?: string; ctx_tokens?: number; first: boolean; no_setup?: boolean }) =>
+  route: (body: { project: string; cwd?: string; text: string; prompts: string[]; last_status?: string; ctx_tokens?: number; first: boolean; no_setup?: boolean }) =>
     req<{ route: Route | null }>("/local/route", { method: "POST", body }),
   // --- skills (project + system SKILL.md dirs, and the built-in catalog) ---
   skills: (project?: string | null) =>

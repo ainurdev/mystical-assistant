@@ -2132,10 +2132,16 @@ export function App() {
   const sessionProject = selected?.project ?? activeProject;
   // What SKILL ROUTER reads besides the composer's text (Composer routeCtx), rebuilt when the
   // turns change rather than per keystroke. None while a session loads: its turns are still the last one's.
-  const routeCtx = useMemo(() => (sessionProject && !loadingSession ? {
-    project: sessionProject, prompts: turns.slice(-6).map((t) => t.prompt),
-    lastStatus: turns.at(-1)?.status, first: turns.length === 0,
-  } : undefined), [sessionProject, loadingSession, turns]);
+  // The cwd is the session's checkout, whose tickets a worktree session works on; a turn you
+  // stopped reads "done" but its flow step never finished, so it is "stopped" here.
+  const routeCwd = selected?.work_cwd || selected?.cwd || undefined;
+  const routeCtx = useMemo(() => {
+    const last = turns.at(-1);
+    return sessionProject && !loadingSession ? {
+      project: sessionProject, cwd: routeCwd, prompts: turns.slice(-6).map((t) => t.prompt),
+      lastStatus: last?.events.some((e) => e.type === "stopped") ? "stopped" : last?.status, first: turns.length === 0,
+    } : undefined;
+  }, [sessionProject, routeCwd, loadingSession, turns]);
   const sessionBranch = selected?.branch;
   // What the session wrote, for FILES' ✦ marks, relative to the tree FILES shows:
   // the worktree its shell moved into, else its run dir.
@@ -3092,7 +3098,7 @@ export function App() {
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
                       routing={ai.router} askMatt={ai.askmatt} smartZone={ai.smartzone} routeCtx={routeCtx}
-                      onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t) : undefined}
+                      onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"
                         : openWait ? `message ${agentPick ? agentPick.label.toLowerCase() : "claude"} — sending ends the wait…` : undefined}
