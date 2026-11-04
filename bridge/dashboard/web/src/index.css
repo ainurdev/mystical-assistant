@@ -2815,16 +2815,15 @@ input {
 }
 .cmdseg .ns { --sgc: color-mix(in oklab, var(--acc) 30%, var(--panel)); color: var(--txh); z-index: 1; }
 .cmdseg .ns ~ .sg { border-radius: 0; padding-left: 1.15em; }
-/* On the plate the segment floats, so your words run on beside it and wrap under it. */
-[data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 /* The skill router's suggestion (MarkdownInput GhostWidget, design-drafts/skill-router,
-   C · GHOST): the same segment drawn, not filled — accent ink in an outline, the arrow and
-   the namespace quieter — with the suggested argument after it in the placeholder's
-   colour. Tab takes it; until then none of it is in the text. */
-.cmdseg.ghost .sg { background: transparent; color: var(--acc); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 75%, transparent); }
+   C · GHOST): the same segment drawn, not filled — accent ink in an outline (the ink eased
+   toward the text colour for contrast), the arrow and the namespace quieter. Its suggested
+   argument is the editor's own placeholder. Tab takes it; until then none of it is in the text. */
+.cmdseg.ghost .sg { background: transparent; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 75%, transparent); }
 .cmdseg.ghost .sg::after { border-left-color: color-mix(in oklab, var(--acc) 45%, transparent); }
 .cmdseg.ghost .ns { color: var(--txm); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 40%, transparent); }
-.ghost-arg { color: var(--txd); pointer-events: none; }
+/* On the plate the segment floats, so your words run on beside it and wrap under it. */
+[data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
 /* A teammate's ask, a device run's one prompt (TurnBlock `who`): the device-run
    blue wherever your prompt wears the accent, the families' bar and ground too. */

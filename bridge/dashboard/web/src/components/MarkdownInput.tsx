@@ -119,29 +119,21 @@ const cmdDeco = StateField.define<DecorationSet>({
   provide: (f) => [EditorView.decorations.from(f), EditorView.atomicRanges.of((v) => v.state.field(f))],
 });
 
-// The skill router's suggestion (lib/route ghostFor): the same segment, dashed, drawn in
+// The skill router's suggestion (lib/route ghostFor): the same segment, outlined, drawn in
 // front of the text but not in it, so what you send stays what you typed until Tab takes
-// it. A widget at 0 with side -1, so typing at the start never pushes it along.
+// it. A widget at 0 with side -1, so typing at the start never pushes it along. Its
+// suggested argument is the editor's own placeholder (the `ph` effect below).
 type Ghost = { name: string; desc: string; arg: string };
 const setGhost = StateEffect.define<Ghost | null>();
 
-/** CmdWidget's segment, dashed (.cmdseg.ghost). eq is CmdWidget's: same name and desc, same DOM. */
+/** CmdWidget's segment, outlined (.cmdseg.ghost). eq is CmdWidget's: same name and desc, same DOM.
+ *  aria-hidden keeps it out of the accessibility tree: it isn't in the doc, so a screen reader
+ *  mustn't take it for typed text (the composer's caption line announces it). */
 class GhostWidget extends CmdWidget {
   toDOM() {
     const el = super.toDOM();
     el.classList.add("ghost");
-    return el;
-  }
-}
-
-/** The suggested argument, where the placeholder would be: side 1, so the caret sits before it. */
-class GhostArg extends WidgetType {
-  constructor(readonly arg: string) { super(); }
-  eq(o: GhostArg) { return o.arg === this.arg; }
-  toDOM() {
-    const el = document.createElement("span");
-    el.className = "ghost-arg";
-    el.textContent = this.arg;
+    el.setAttribute("aria-hidden", "true");
     return el;
   }
 }
@@ -152,10 +144,7 @@ const ghostDeco = StateField.define<DecorationSet>({
     for (const e of tr.effects) {
       if (e.is(setGhost)) {
         const g = e.value;
-        return g ? Decoration.set([
-          Decoration.widget({ widget: new GhostWidget(g.name, g.desc), side: -1 }).range(0),
-          ...(g.arg ? [Decoration.widget({ widget: new GhostArg(g.arg), side: 1 }).range(0)] : []),
-        ]) : Decoration.none;
+        return g ? Decoration.set(Decoration.widget({ widget: new GhostWidget(g.name, g.desc), side: -1 }).range(0)) : Decoration.none;
       }
     }
     return v.map(tr.changes);
@@ -167,7 +156,7 @@ type Props = {
   value: string;
   /** The bridge's command list, so a leading /command draws as one. */
   commands?: SlashCommand[];
-  /** The router's suggestion, drawn dashed in front of the text (lib/route ghostFor). */
+  /** The router's suggestion, drawn outlined in front of the text (lib/route ghostFor). */
   ghost?: Ghost | null;
   /** A mousedown on any /command segment, solid or ghost. The editor keeps its caret and focus. */
   onCmdClick?: () => void;
@@ -210,9 +199,10 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
             },
             // Taking the event (true) is what keeps the click from moving the caret or
             // blurring the editor; focus() covers a click on a segment of an unfocused one.
+            // A right-click and a Mac ctrl+click (a mousedown with button 0) are the context menu's.
             mousedown: (e, v) => {
-              if (e.button !== 0 || !cb.current.onCmdClick || !(e.target as Element).closest(".cmdseg")) return false;
-              cb.current.onCmdClick();
+              if (e.button !== 0 || e.ctrlKey || !(e.target as Element).closest(".cmdseg")) return false;
+              cb.current.onCmdClick?.();
               v.focus();
               return true;
             },
@@ -268,20 +258,23 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
     });
   }, [props.value]);
 
-  // While a ghost shows there's no placeholder, or the two would stack.
+  // While a ghost shows, the placeholder is its suggested argument (none if it has none), so the
+  // two never stack. CM's placeholder is aria-hidden and click-through, shows only in an empty doc,
+  // goes in the first keystroke's own transaction, and leaves the caret in front of it.
   useEffect(() => {
-    viewRef.current?.dispatch({ effects: ph.current.reconfigure(props.ghost ? [] : cmPlaceholder(props.placeholder)) });
-  }, [props.placeholder, !!props.ghost]);
+    const g = props.ghost;
+    viewRef.current?.dispatch({ effects: ph.current.reconfigure(g ? (g.arg ? cmPlaceholder(g.arg) : []) : cmPlaceholder(props.placeholder)) });
+  }, [props.placeholder, !!props.ghost, props.ghost?.arg]);
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setCmds.of(props.commands ?? []) });
   }, [props.commands]);
 
-  // ghostFor returns a new object each render; its three strings are what change.
+  // ghostFor returns a new object each render; its name and desc are what the segment shows.
   const ghost = props.ghost;
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setGhost.of(ghost ?? null) });
-  }, [ghost?.name, ghost?.desc, ghost?.arg]);
+  }, [ghost?.name, ghost?.desc]);
 
   useImperativeHandle(ref, () => ({
     focus: () => viewRef.current?.focus(),
