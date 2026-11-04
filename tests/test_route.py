@@ -1,8 +1,9 @@
 """route: the rules that pick Matt Pocock's /command for a prompt, and the next
 step once a flow step ends. Facts in, one route out: no model, no network, only a
 tmp project dir for the two things the rules look at (docs/agents/issue-tracker.md
-and .scratch/*/issues/*.md). The last section drives POST /local/route, the
-endpoint behind the SKILL ROUTER switch, the way tests/test_commands.py drives its routes.
+and .scratch/*/issues/*.md). One section drives POST /local/route, the
+endpoint behind the SKILL ROUTER switch, the way tests/test_commands.py drives its routes;
+the last pins the two run-time fixes in bridge/runner.py (the grill note, _with_images).
 Run: python -m pytest tests/test_route.py -v"""
 
 import os
@@ -12,7 +13,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bridge import aifeatures, commands, config, route  # noqa: E402
+from bridge import aifeatures, commands, config, route, runner  # noqa: E402
 from bridge.dashboard import server as dash  # noqa: E402
 
 NS = "mattpocock-skills:"
@@ -623,3 +624,46 @@ def test_a_rule_that_raises_is_no_route(monkeypatch):
 
 def test_a_body_that_cannot_be_read_is_no_route(monkeypatch):
     assert post(monkeypatch, {"text": FEATURE, "prompts": 5}) == {"route": None}
+
+
+# ── bridge/runner.py: the two run-time fixes every surface's turn picks up ─────
+
+def test_grill_note_rides_every_run_while_grill_cards_is_on(monkeypatch):
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key == "grillcards")
+    prompt = runner._compose_system_prompt()
+    assert "one AskUserQuestion card" in prompt
+    assert runner._GRILL_NOTE in prompt
+    assert prompt == runner._compose_system_prompt()    # constant per run: the prompt cache
+
+
+def test_grill_note_is_left_out_while_grill_cards_is_off(monkeypatch):
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: False)
+    assert runner._GRILL_NOTE not in runner._compose_system_prompt()
+
+
+ATTACHED = "The user attached file(s); open them before responding: /u/a.png"
+
+
+def test_with_images_keeps_a_leading_command_first():
+    """Review Focus 1: the CLI runs a skill only when the prompt starts with its /name."""
+    got = runner._with_images("/mattpocock-skills:grill-with-docs add X", ["/u/a.png"])
+    assert got.startswith("/mattpocock-skills:grill-with-docs ")
+    assert "/u/a.png" in got
+    assert got.endswith("add X")
+
+
+@pytest.mark.parametrize("prompt, want", [
+    ("hi", ATTACHED + "\n\nhi"),                                             # a plain prompt: the note first, as ever
+    ("/mattpocock-skills:retro", "/mattpocock-skills:retro " + ATTACHED),    # a bare command has no args to trail
+    ("/compact keep this\n\nand this",
+     "/compact " + ATTACHED + "\n\nkeep this\n\nand this"),                  # the args stay as typed
+    ("/compact\nkeep this", "/compact " + ATTACHED + "\n\nkeep this"),       # the command may end at a newline
+])
+def test_with_images_exact_shapes(prompt, want):
+    assert runner._with_images(prompt, ["/u/a.png"]) == want
+
+
+@pytest.mark.parametrize("paths", [None, []])
+def test_with_images_without_files_returns_the_prompt_as_typed(paths):
+    prompt = "/mattpocock-skills:grill-with-docs add X"
+    assert runner._with_images(prompt, paths) == prompt
