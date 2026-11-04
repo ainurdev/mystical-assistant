@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Brain, ChevronRight, ChevronsRight, DraftingCompass, Gauge, Merge, Paperclip, Pause, Pin, Scissors, ShieldHalf, SlidersHorizontal, Square, TriangleAlert, UserRound } from "lucide-react";
 import { api, type AccountInfo, type EffortLevel, type GraphState, type ModelId, type Route, type SlashCommand, type UsageInfo } from "../api";
 import { chipWindow, deadLogin, loginSlot, loginWindows, modelRows, type Window } from "../models";
@@ -748,16 +748,24 @@ export function Composer({
   // The list is Claude's (.claude/skills, commands, plugins, CLI builtins): an
   // agent session's / would run none of them, so it gets no list.
   const onAgent = !!agentPick;
-  // With the router on it is read up front too, so a command it puts in front draws as one at once.
   useEffect(() => {
     if (!slashOn) setSlashDismissed(false);
-    if (onAgent || (!slashOn && !leadsSlash && !routing)) return;
+    if (onAgent || (!slashOn && !leadsSlash)) return;
     let live = true;
     void api.commands(project)
       .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
       .catch(() => { if (live) setCmdsStale(true); });
     return () => { live = false; };
-  }, [slashOn, leadsSlash, project, onAgent, routing]);
+  }, [slashOn, leadsSlash, project, onAgent]);
+  // The router has it read up front, once per project, so a command it puts in front draws as one at once.
+  useEffect(() => {
+    if (!routing || onAgent) return;
+    let live = true;
+    void api.commands(project)
+      .then((r) => { if (live) { setCmds(r.commands); setCmdsStale(false); } })
+      .catch(() => { if (live) setCmdsStale(true); });
+    return () => { live = false; };
+  }, [routing, project, onAgent]);
   const shits = slash && !onAgent ? rankCommands(cmds, slash.q) : [];
   const slashOpen = !!slash && !onAgent && !slashDismissed && (shits.length > 0 || cmdsStale);
   useEffect(() => { setSlashPick(0); }, [slash?.q]);
@@ -790,17 +798,21 @@ export function Composer({
   // --- skill router (lib/route, bridge/route.py) ---------------------------
   // 400 ms after the text settles it goes to /local/route, which answers with the one
   // Matt Pocock /command that fits, or none. An auto pick goes in front by itself and
-  // draws solid; any other shows as a ghost that Tab takes. Never while a turn runs
-  // (steer or queue), never over a /command, never for an agent (its / runs none of these).
-  const routeOn = !!routing && !!routeCtx && !onAgent && !running;
-  // Keyed by value (App builds routeCtx afresh on every render), and by session: two fresh ones read alike.
-  const ctxKey = routeOn ? JSON.stringify([sessionId, routeCtx]) : "";
+  // draws solid. Any other waits for Tab, drawn where it moves nothing: in an empty box
+  // as a ghost on the line the text will start (a next step), and while there is text
+  // as a small segment in the caption row under it, so nothing shifts under the caret.
+  // Never while a turn runs (steer or queue) or a docked ask takes the text, never over
+  // a /command, never for an agent (its / runs none of these).
+  const routeOn = !!routing && !!routeCtx && !onAgent && !running && !ask?.send;
+  // App memoises routeCtx on its turns; the session is in the key because two fresh ones read alike.
+  const ctxKey = useMemo(() => (routeOn ? JSON.stringify([sessionId, routeCtx]) : ""), [routeOn, sessionId, routeCtx]);
   const [held, setHeld] = useState<{ r: Route; for: string; ctx: string } | null>(null);   // the last reply, and what it answered
   const [applied, setApplied] = useState<Route | null>(null);   // the auto pick put in front of this draft
-  const [dropped, setDropped] = useState(false);                // ...taken out again (⌫, Esc, Send as typed): never back by itself
-  const [hidden, setHidden] = useState(false);                  // Esc on the ghost, for this draft
+  const [dropped, setDropped] = useState(false);                // no auto pick for this draft: one was taken out, or it wasn't typed fresh here
+  const [hidden, setHidden] = useState(false);                  // Esc on the route on show, until the box empties or fills
   const [asked, setAsked] = useState(0);                        // bumped to ask again
   const [fitPick, setFitPick] = useState(0);
+  const fitsId = useId();
   const routeSeq = useRef(0);
   const now = useRef({ text, dropped });
   now.current = { text, dropped };
@@ -811,31 +823,39 @@ export function Composer({
     if (!routeOn || text.startsWith("/")) { setHeld(null); return; }
     if (blank) setHeld((h) => (h && h.for.trim() !== "" ? null : h));
     const c = routeCtx!;
+    const stale = () => isStale(text, now.current.text, seq, routeSeq.current);
     const t = window.setTimeout(() => {
       api.route({
         project: c.project, text, prompts: c.prompts, last_status: c.lastStatus, first: c.first,
         ctx_tokens: contextTokens === undefined ? undefined : Math.round(contextTokens),
         no_setup: localStorage.getItem(`route.setup.hidden:${c.project}`) === "1",
       }).then(({ route }) => {
-        if (isStale(text, now.current.text, seq, routeSeq.current)) return;
+        if (stale()) return;
         setHeld(route && { r: route, for: text, ctx: ctxKey });
         if (route && shouldAutoApply(text, route, now.current.dropped)) {
           taRef.current?.prepend(`/${route.name} `);
           setApplied(route);
         }
-      }, () => { /* no answer is no route: the prompt goes as typed */ });
+      }, () => { if (!stale()) setHeld(null); });   // no answer is no route, never the one held for older text
     }, 400);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [text, ctxKey, contextTokens, asked]);
   useEffect(() => { if (!blank && isDropped(text, applied?.name ?? null)) setDropped(true); }, [text, applied, blank]);
-  // An emptied box is a new draft, and so is another session's.
-  useEffect(() => { if (blank) { setApplied(null); setDropped(false); setHidden(false); } }, [blank]);
-  useEffect(() => { setApplied(null); setDropped(false); setHidden(false); }, [sessionId]);
-  const ghostRoute = routeOn && held && held.ctx === ctxKey && !hidden && (!blank || held.for.trim() === "") ? held.r : null;
-  const ghost = ghostRoute ? ghostFor(blank ? "" : text, ghostRoute) : null;
+  // Hiding lasts until the box empties or fills; an emptied box is a fresh draft.
+  useEffect(() => { setHidden(false); if (blank) { setApplied(null); setDropped(false); } }, [blank]);
+  // Another session's draft, or one restored after a reload, wasn't typed fresh here: it gets no auto pick.
+  useEffect(() => {
+    setApplied(null); setHidden(false); setDropped(text.trim() !== "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
+  const live = routeOn && held && held.ctx === ctxKey && !hidden && (!blank || held.for.trim() === "") ? held.r : null;
+  // ghostFor: never over a /command, nor for an auto pick that isn't in the text.
+  const ghost = live && blank ? ghostFor("", live) : null;
+  const rowRoute = live && !blank && ghostFor(text, live) ? live : null;
   const auto = routeOn && applied && !dropped && !isDropped(text, applied.name) ? applied : null;
-  const shown = auto ?? (ghost ? ghostRoute : null);   // what the caption and the list of other fits are about
+  const shown = auto ?? (ghost ? live : rowRoute);   // what the caption and the list of other fits are about
+  const how = auto ? "auto" : ghost ? "inline" : "row";
   // The list of other fits goes with the command it is for (⌫ while it is open), backdrop and all.
   useEffect(() => { if (!shown) setOpenDrop((d) => (d === "fits" ? "" : d)); }, [shown]);
   const ASK_MATT = "mattpocock-skills:ask-matt";
@@ -844,6 +864,15 @@ export function Composer({
     ...(askMatt && shown.name !== ASK_MATT ? [{ name: ASK_MATT, label: "Ask Matt", desc: "/ask-matt reads the whole map and names the flow", title: undefined }] : []),
     { name: null, label: "Send as typed", desc: "no command", title: undefined },
   ] : [];
+  const openFits = () => { setFitPick(0); setOpenDrop((d) => (d === "fits" ? "" : "fits")); };
+  // The editor keeps the focus while the list is open, as a combobox's input does: the
+  // highlighted row is its active descendant, so a screen reader reads the row ↑/↓ land on.
+  useEffect(() => {
+    const el = document.querySelector('[data-ctx-type="editor"][data-ctx-id="composer"] .cm-content');
+    if (!el) return;
+    if (openDrop === "fits") { el.setAttribute("aria-controls", fitsId); el.setAttribute("aria-activedescendant", `${fitsId}-${fitPick}`); }
+    else { el.removeAttribute("aria-controls"); el.removeAttribute("aria-activedescendant"); }
+  }, [openDrop, fitPick, fitsId]);
 
   /** A row of the other fits: its command swaps in for the one on show; Send as typed (null) takes it out. */
   function pickFit(name: string | null) {
@@ -855,27 +884,37 @@ export function Composer({
     else taRef.current?.prepend(`/${name} `);
   }
 
-  /** Tab takes the ghost; Esc hides it for this draft (the setup nudge for this repo, which
-   *  asks again for the route it stood in for); Esc also closes the other fits. */
+  /** While open, the other fits take ↑/↓, Enter or Tab, and Esc, as the / list does; Alt+↓
+   *  opens them. Tab takes the route on show. Esc hides it: an empty box's next step until the
+   *  box fills (the prompt typed next may still get its auto pick), a typed draft's for the
+   *  draft, the setup nudge for this repo (asking again for the route it stood in for). A key
+   *  taken here goes no further: App's own Esc would close a panel as well. */
   function routeKey(e: KeyboardEvent): boolean {
-    if (e.key === "Escape" && openDrop === "fits") { e.preventDefault(); setOpenDrop(""); return true; }
-    if (!ghost || !ghostRoute || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return false;
-    const r = ghostRoute;
+    const take = () => { e.preventDefault(); e.stopPropagation(); return true; };
+    if (openDrop === "fits" && fits.length) {
+      if (e.key === "Escape") { setOpenDrop(""); return take(); }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { setFitPick((p) => (p + (e.key === "ArrowDown" ? 1 : fits.length - 1)) % fits.length); return take(); }
+      if (e.key === "Enter" || e.key === "Tab") { pickFit(fits[Math.min(fitPick, fits.length - 1)].name); return take(); }
+    }
+    if (e.altKey && e.key === "ArrowDown" && shown) { openFits(); return take(); }
+    const r = ghost ? live : rowRoute;
+    if (!r || e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return false;
     if (e.key === "Tab") {
-      e.preventDefault();
       if (r.fresh) onRouteFresh?.(`/${r.name} ${r.arg}`);
       else if (blank) setText(`/${r.name} ${r.arg}`);
       else taRef.current?.prepend(`/${r.name} `);
-      return true;
+      return take();
     }
     if (e.key === "Escape") {
-      e.preventDefault();
       if (r.kind === "setup") {
         localStorage.setItem(`route.setup.hidden:${routeCtx!.project}`, "1");
         setHeld(null);
         setAsked((n) => n + 1);
-      } else { setHidden(true); setDropped(true); }
-      return true;
+      } else {
+        setHidden(true);
+        if (!blank) setDropped(true);
+      }
+      return take();
     }
     return false;
   }
@@ -1379,11 +1418,14 @@ export function Composer({
       )}
       {openDrop === "fits" && shown && (
         // The other fits for the routed command, drawn as the / list is.
-        <div aria-label="Other fits" style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 240, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
+        <div id={fitsId} role="listbox" aria-label="Other fits" style={{ position: "absolute", left: 11, right: 11, bottom: "calc(100% + 6px)", zIndex: 30, maxHeight: 240, overflowY: "auto", border: "1px solid color-mix(in srgb, var(--acc) 26%, transparent)", background: "var(--panel3)", boxShadow: "0 -8px 24px rgba(0,0,0,.35)" }}>
           {fits.map((f, i) => (
             <button
               key={f.label}
+              id={`${fitsId}-${i}`}
               type="button"
+              role="option"
+              aria-selected={i === fitPick}
               data-on={i === fitPick ? 1 : 0}
               onMouseDown={(e) => { e.preventDefault(); pickFit(f.name); }}
               onMouseEnter={() => setFitPick(i)}
@@ -1424,7 +1466,7 @@ export function Composer({
       onChange={(t, c) => { setText(t); setCaret(c); }}
       onCaret={setCaret}
       ghost={ghost}
-      onCmdClick={shown ? () => { setFitPick(0); setOpenDrop((d) => (d === "fits" ? "" : "fits")); } : undefined}
+      onCmdClick={shown ? openFits : undefined}
       onKeyDown={(e) => {
         if (mentionKey(e) || slashKey(e) || routeKey(e)) return;
         // Ctrl+R is the browser's reload; in the command line it's the shell's
@@ -1462,14 +1504,26 @@ export function Composer({
   };
   // The router's caption, directly under the text: why the routed command is there and what
   // Tab, ⌫ or Esc does with it. It is the ghost's announcement too (the ghost is aria-hidden).
-  // The line stays while the router is on, empty or not, so a route coming or going never
-  // moves the box, and a live region that is already there is one screen readers speak.
-  const capt = shown ? caption(shown, !!auto) : null;
+  // While the box has text a suggestion is drawn here, as the segment it would become, not
+  // in the text. The line stays while the router is on, empty or not, so a route coming or
+  // going never moves the box, and a live region that is already there is one screen readers speak.
+  const capt = shown ? caption(shown, how) : null;
+  const seg = shown?.name ?? "";
+  const nsAt = seg.lastIndexOf(":");
   const routeLine = routing && !onAgent && (
     <div className="pb-route" role="status">
       {capt && (<>
         <b data-tone={capt.tone}>{capt.tag}</b>
-        <span className="why">{capt.why}</span>
+        {how === "row" && (
+          // CmdWidget's segment at caption size; a click lists the other fits, the editor keeping the focus.
+          <button type="button" className="cmdseg ghost" title={shown?.desc} aria-haspopup="listbox" aria-expanded={openDrop === "fits"}
+            onMouseDown={(e) => e.preventDefault()} onClick={() => { openFits(); taRef.current?.focus(); }}>
+            <span className="sr-only">/</span>
+            {nsAt > 0 && <><span className="sg ns">{seg.slice(0, nsAt)}</span><span className="sr-only">:</span></>}
+            <span className="sg">{seg.slice(nsAt + 1)}</span>
+          </button>
+        )}
+        {capt.why && <span className="why">{capt.why}</span>}
         {capt.tail.map(([k, w]) => <Fragment key={w}><i aria-hidden>·</i>{k && <kbd>{k}</kbd>}<span>{w}</span></Fragment>)}
       </>)}
     </div>

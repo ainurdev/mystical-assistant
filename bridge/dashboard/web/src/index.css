@@ -2833,6 +2833,12 @@ input {
 .cmdbox .cm-line .cmdseg { margin-block: -.25em; }
 .cmdbox .cm-editor { margin-block: -.25em; }
 .cmdbox .cm-editor .cm-content { padding-block: .25em; }
+/* The ghost (an empty box's next step) and its argument keep to one line: the argument is cut
+   with an ellipsis, never wrapped, so a long ticket path can't grow the box. inline-size
+   containment keeps the unwrapped line from widening the editor to fit it. */
+.cmdbox .cm-line:has(> .cmdseg.ghost) { display: flex; align-items: baseline; contain: inline-size; }
+.cmdbox .cm-line:has(> .cmdseg.ghost) > .cmdseg { flex: none; }
+.cmdbox .cm-line:has(> .cmdseg.ghost) > .cm-placeholder { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* On the plate the segment floats, so your words run on beside it and wrap under it. */
 [data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
@@ -4965,6 +4971,9 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .pb-route > b[data-tone="warn"] { color: var(--warn); }
 .pb-route > b[data-tone="dim"] { color: var(--txd); }
 .pb-route > i { font-style: normal; color: var(--txg); }
+/* A suggestion while the box has text: the segment it would become, at caption size; a click lists the other fits. */
+.pb-route > button.cmdseg { appearance: none; border: 0; padding: 0; margin: 0 .67em 0 0; background: none; color: inherit;
+                            font-family: inherit; font-size: .92em; line-height: inherit; cursor: pointer; }
 .pb-route kbd { font-family: inherit; font-size: var(--t8); font-weight: 700; line-height: 1; text-transform: uppercase; color: var(--txm);
                 padding: 2px 5px 1px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 22%, transparent)); border-bottom-width: 2px; border-radius: 4px;
                 background: color-mix(in oklab, black 16%, transparent); }

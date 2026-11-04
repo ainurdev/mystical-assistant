@@ -2130,6 +2130,12 @@ export function App() {
 
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
+  // What SKILL ROUTER reads besides the composer's text (Composer routeCtx), rebuilt when the
+  // turns change rather than per keystroke. None while a session loads: its turns are still the last one's.
+  const routeCtx = useMemo(() => (sessionProject && !loadingSession ? {
+    project: sessionProject, prompts: turns.slice(-6).map((t) => t.prompt),
+    lastStatus: turns.at(-1)?.status, first: turns.length === 0,
+  } : undefined), [sessionProject, loadingSession, turns]);
   const sessionBranch = selected?.branch;
   // What the session wrote, for FILES' ✦ marks, relative to the tree FILES shows:
   // the worktree its shell moved into, else its run dir.
@@ -3085,12 +3091,7 @@ export function App() {
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
-                      // SKILL ROUTER. Not while a session loads: its turns are still the last one's.
-                      routing={ai.router} askMatt={ai.askmatt} smartZone={ai.smartzone}
-                      routeCtx={sessionProject && !loadingSession ? {
-                        project: sessionProject, prompts: turns.slice(-6).map((t) => t.prompt),
-                        lastStatus: turns.at(-1)?.status, first: turns.length === 0,
-                      } : undefined}
+                      routing={ai.router} askMatt={ai.askmatt} smartZone={ai.smartzone} routeCtx={routeCtx}
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"

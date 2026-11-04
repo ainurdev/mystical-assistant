@@ -49,18 +49,24 @@ console.assert(isStale("add x", "", 3, 4), "sent: the box was cleared and a newe
 console.assert(isStale("add x", "", 3, 3), "sent: the box was cleared");
 console.assert(isStale("add x", "add xy", 3, 4), "both changed");
 
-// --- caption: the line under the box, per kind ------------------------------------
-const cap = (r: Route, a = false) => { const c = caption(r, a); return [c.tag, c.tone ?? "", c.why, ...c.tail.flat()].join("|"); };
-console.assert(cap(auto, true) === "AUTO||a feature: settle the design first|⌫|drops it||click it for other fits", "auto: why, then ⌫ and the other fits");
-console.assert(cap(suggest) === "ROUTE||reads like a review|Tab|takes it", "a start ghost: Tab takes it");
-console.assert(cap(next) === "NEXT||the grill is settled|Tab|takes it", "a next step");
-console.assert(cap({ ...next, fresh: true }) === "NEXT||the grill is settled|Tab|opens it in a fresh session", "a ticket opens in a fresh session");
+// --- caption: the line under the box, per kind and per where the command is drawn ---
+const cap = (r: Route, how: "auto" | "inline" | "row") => { const c = caption(r, how); return [c.tag, c.tone ?? "", c.why, ...c.tail.flat()].join("|"); };
+const ask: Route = { ...base, name: "mattpocock-skills:ask-matt", kind: "ask", why: "x" };
+const setup: Route = { ...base, kind: "setup", why: "once per repo" };
 const compact: Route = { ...next, name: "compact", why: "162k is past the 150k smart zone", arg: "keep the decisions so far; next: /to-spec" };
-console.assert(cap(compact) === "NEXT|warn|162k is past the 150k smart zone|Tab|takes it||then /to-spec", "compact: warn, then the step it makes room for");
-console.assert(cap({ ...compact, arg: "" }) === "NEXT|warn|162k is past the 150k smart zone|Tab|takes it", "no step named, no then");
-console.assert(cap({ ...base, name: "mattpocock-skills:ask-matt", kind: "ask", why: "x" }) === "NO CLEAR FIT|dim|Tab hands it to /ask-matt, which names the flow||ignore it to send as typed", "ask: its own copy, not the why");
-console.assert(cap({ ...base, kind: "setup", why: "once per repo" }) === "ONCE||once per repo|Tab|takes it|Esc|hides it for this repo", "setup: Esc hides it for this repo");
-console.assert(cap({ ...auto, kind: "next" }, true).startsWith("AUTO|"), "auto wins over the kind");
+console.assert(cap(auto, "auto") === "AUTO||a feature: settle the design first|⌫|drops it||click it for other fits", "auto: why, then ⌫ and the other fits");
+console.assert(cap({ ...auto, kind: "next" }, "auto").startsWith("AUTO|"), "auto wins over the kind");
+// an empty box: the ghost is in front of where the text will go
+console.assert(cap(next, "inline") === "NEXT||the grill is settled|Tab|takes it", "a next step");
+console.assert(cap({ ...next, fresh: true }, "inline") === "NEXT||the grill is settled|Tab|opens it in a fresh session", "a ticket opens in a fresh session");
+console.assert(cap(compact, "inline") === "NEXT|warn|162k is past the 150k smart zone|Tab|takes it||then /to-spec", "compact: warn, then the step it makes room for");
+console.assert(cap({ ...compact, arg: "" }, "inline") === "NEXT|warn|162k is past the 150k smart zone|Tab|takes it", "no step named, no then");
+console.assert(cap(setup, "inline") === "ONCE||once per repo|Tab|takes it|Esc|hides it for this repo", "setup on an empty box: Esc hides it for this repo");
+// a box with text: the suggestion sits in the caption row, so Tab puts it in front of the text
+console.assert(cap(suggest, "row") === "ROUTE||reads like a review|Tab|puts it in front", "a start suggestion in the row");
+console.assert(cap(ask, "row") === "NO CLEAR FIT|dim||Tab|puts /ask-matt in front, it names the flow||ignore it to send as typed", "ask in the row: no why, its own copy");
+console.assert(cap(setup, "row") === "ONCE||once per repo|Tab|puts it in front|Esc|hides it for this repo", "setup in the row");
+console.assert(cap(next, "row") === cap(next, "inline") && cap(compact, "row") === cap(compact, "inline"), "next steps read the same wherever they are drawn");
 
 // --- swapLead: a pick from the other fits, or Send as typed --------------------------
 console.assert(swapLead(`/${GRILL} add x`, GRILL, "mattpocock-skills:prototype") === "/mattpocock-skills:prototype add x", "swaps the command, keeps the text");

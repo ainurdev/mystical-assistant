@@ -37,20 +37,25 @@ export function isStale(sentText: string, nowText: string, sentSeq: number, nowS
   return sentSeq !== nowSeq || sentText !== nowText;
 }
 
-/** The line under the box for the route on show (`auto`: the pick we put in front is still
- *  there): a tag, the reason, then each [key, words] after a "·", the key drawn as a keycap
- *  ("" for none). /compact names the step it makes room for, from the arg bridge/route.py
- *  ends with "next: /<step>". */
-export function caption(r: Route, auto: boolean): { tag: string; tone?: "warn" | "dim"; why: string; tail: [string, string][] } {
-  if (auto) return { tag: "AUTO", why: r.why, tail: [["⌫", "drops it"], ["", "click it for other fits"]] };
-  if (r.kind === "ask") return { tag: "NO CLEAR FIT", tone: "dim", why: "Tab hands it to /ask-matt, which names the flow", tail: [["", "ignore it to send as typed"]] };
-  if (r.kind === "setup") return { tag: "ONCE", why: r.why, tail: [["Tab", "takes it"], ["Esc", "hides it for this repo"]] };
+/** The line under the box for the route on show, by where its command is drawn: `auto`, the
+ *  pick we put in front, still in the text; `inline`, the ghost in an empty box; `row`, as a
+ *  small segment in this line itself, because the box has text that a ghost would push along.
+ *  A tag, the reason ("" for none), then each [key, words] after a "·", the key drawn as a
+ *  keycap ("" for none). /compact names the step it makes room for, from the arg
+ *  bridge/route.py ends with "next: /<step>". */
+export function caption(r: Route, how: "auto" | "inline" | "row"): { tag: string; tone?: "warn" | "dim"; why: string; tail: [string, string][] } {
+  if (how === "auto") return { tag: "AUTO", why: r.why, tail: [["⌫", "drops it"], ["", "click it for other fits"]] };
   if (r.name === "compact") {
     const next = /\/\S+$/.exec(r.arg)?.[0];
     return { tag: "NEXT", tone: "warn", why: r.why, tail: [["Tab", "takes it"], ...(next ? [["", `then ${next}`] as [string, string]] : [])] };
   }
   if (r.kind === "next") return { tag: "NEXT", why: r.why, tail: [["Tab", r.fresh ? "opens it in a fresh session" : "takes it"]] };
-  return { tag: "ROUTE", why: r.why, tail: [["Tab", "takes it"]] };
+  const take = how === "row" ? "puts it in front" : "takes it";
+  if (r.kind === "ask") return how === "row"
+    ? { tag: "NO CLEAR FIT", tone: "dim", why: "", tail: [["Tab", "puts /ask-matt in front, it names the flow"], ["", "ignore it to send as typed"]] }
+    : { tag: "NO CLEAR FIT", tone: "dim", why: "Tab hands it to /ask-matt, which names the flow", tail: [["", "ignore it to send as typed"]] };
+  if (r.kind === "setup") return { tag: "ONCE", why: r.why, tail: [["Tab", take], ["Esc", "hides it for this repo"]] };
+  return { tag: "ROUTE", why: r.why, tail: [["Tab", take]] };
 }
 
 /** `text`, which leads with `/from`, with that command (and the one space after it) swapped
