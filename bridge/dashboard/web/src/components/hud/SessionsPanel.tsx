@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
+import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { SessionBrief, SessionStatus } from "../../api";
 import { api } from "../../api";
@@ -14,6 +14,8 @@ import { useStickyObj } from "../../lib/prefs";
 import { isDeviceRun, rowAge } from "../../lib/devicerun";
 import { isTeam, readOnly, shareFacts, SHARED_REL } from "../../lib/team";
 import { chatOpenedAt, markChatOpened, shotUnseen, useSeenShots } from "../../lib/seenshots";
+import { isOnlyMine, KINDS, kindsOf, offSay, onlyMine, sameShow, SHOW_ALL, shows } from "../../lib/sessionfilter";
+import type { Kind, Show } from "../../lib/sessionfilter";
 import { TeamTile } from "../TeamBar";
 import { Avatar } from "./TeamPanel";
 import { DeviceTile } from "../DeviceRunPlate";
@@ -39,6 +41,8 @@ interface Props {
   sessions: SessionBrief[]; // full list — RECENT and expanded projects need more than the capped group slices
   groups: ProjectGroup[];
   hidden: Record<string, boolean>; // HIDE's picks, folders and groups: their sessions list in PLUGINS only
+  show: Show;                      // the funnel's filter (lib/sessionfilter)
+  onShow: (next: Show) => void;
   status: Map<string, SessionStatus>;
   done: Set<string>; // finished a turn, not opened since
   flags: Map<string, PromptFlag>; // prompts of yours that haven't run yet
@@ -487,6 +491,66 @@ function DayCut({ label }: { label: string }) {
   );
 }
 
+/** The funnel's menu: a one-click preset, then a tick per kind with its count.
+ *  An empty kind only shows while it's off, so it can always come back on. */
+function ShowMenu({ show, onShow, counts, pluginsTab }: {
+  show: Show; onShow: (next: Show) => void; counts: Record<Kind, number>; pluginsTab: boolean;
+}) {
+  const [hov, setHov] = useState("");
+  const kinds = KINDS.filter(({ k }) => counts[k] > 0 || !show[k]);
+  const away = [!show.jobs && "jobs", !show.team && "shares"].filter(Boolean).join(" and ");
+  const preset = (id: string, label: string, on: boolean, to: Show, tip: string) => (
+    <button
+      key={id} onClick={() => onShow(to)} title={tip} aria-pressed={on}
+      onMouseEnter={() => setHov(id)} onMouseLeave={() => setHov("")}
+      style={{ flex: "1 1 0", minWidth: 0, height: 24, appearance: "none", cursor: "pointer", border: 0, borderRadius: 3, padding: "0 6px",
+               background: on ? "color-mix(in srgb, var(--acc) 13%, transparent)" : hov === id ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent",
+               color: on ? "var(--txb)" : hov === id ? "var(--txm)" : "var(--txd)", fontFamily: "inherit",
+               fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", transition: "background .13s ease, color .13s ease" }}
+    >{label}</button>
+  );
+  return (
+    <div role="menu" aria-label="Show in sidebar"
+         style={{ position: "absolute", top: "calc(100% - 2px)", right: 0, zIndex: 97, width: 226,
+                  border: "1px solid color-mix(in srgb, var(--acc) 28%, transparent)", background: "var(--panel)",
+                  boxShadow: "0 8px 22px var(--shadow-pop)", padding: 3, animation: "mslide .16s ease both" }}>
+      <div style={{ padding: "5px 8px 4px", fontSize: "var(--t8)", letterSpacing: ".18em", color: "var(--txl)" }}>SHOW IN SIDEBAR</div>
+      <div style={{ display: "flex", gap: 2, margin: "2px 5px 5px", padding: 2, borderRadius: 4, background: "color-mix(in srgb, var(--acc) 4%, transparent)" }}>
+        {preset("all", "Everything", sameShow(show, SHOW_ALL), SHOW_ALL, "Every session, jobs and shares included")}
+        {preset("mine", "Only mine", isOnlyMine(show), onlyMine(show), "Sessions you started and wrote in — no jobs, shares or empty rows")}
+      </div>
+      {kinds.map(({ k, label, tip }) => {
+        const on = show[k];
+        return (
+          <button
+            key={k} onClick={() => onShow({ ...show, [k]: !on })} title={tip}
+            role="menuitemcheckbox" aria-checked={on}
+            onMouseEnter={() => setHov(k)} onMouseLeave={() => setHov("")}
+            style={{ width: "100%", appearance: "none", cursor: "pointer", textAlign: "left", border: 0,
+                     display: "flex", alignItems: "center", gap: 8,
+                     background: hov === k ? "color-mix(in srgb, var(--acc) 7%, transparent)" : "transparent",
+                     color: on ? "var(--txb)" : "var(--txd)", fontFamily: "inherit",
+                     fontSize: "var(--t9)", letterSpacing: ".1em", textTransform: "uppercase", padding: "6px 8px" }}
+          >
+            <span style={{ flex: "none", width: 12, height: 12, display: "flex", alignItems: "center", justifyContent: "center",
+                           border: `1px solid ${on ? "var(--acc)" : "color-mix(in srgb, var(--acc) 30%, transparent)"}`,
+                           background: on ? "var(--acc)" : "transparent", color: "var(--acc-on)",
+                           fontSize: "var(--t9)", fontWeight: 700 }}>{on ? "✓" : ""}</span>
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+            <span style={{ flex: "none", color: "var(--txl)", letterSpacing: 0, fontVariantNumeric: "tabular-nums" }}>{counts[k]}</span>
+          </button>
+        );
+      })}
+      {!kinds.length && (
+        <div style={{ padding: "5px 8px 4px", fontSize: "var(--t85)", color: "var(--txf)", letterSpacing: ".04em" }}>every session here is yours</div>
+      )}
+      {pluginsTab && away && (
+        <div style={{ padding: "6px 8px 4px", fontSize: "var(--t85)", color: "var(--txf)", letterSpacing: ".04em" }}>hidden {away} stay in PLUGINS</div>
+      )}
+    </div>
+  );
+}
+
 /** One virtualised entry in a lane list: a lane header, a session row, the
  *  idle lane's fold toggle, or a PLUGINS day label. */
 type LaneItem =
@@ -497,7 +561,7 @@ type LaneItem =
 
 export function SessionsPanel(props: Props) {
   const {
-    sessions, groups, hidden, status, done, flags, pins, selectedSessionId, activeProject, booting,
+    sessions, groups, hidden, show, onShow, status, done, flags, pins, selectedSessionId, activeProject, booting,
     onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
     workspace = "",
   } = props;
@@ -532,6 +596,7 @@ export function SessionsPanel(props: Props) {
     setDetailPrefs((p) => ({ ...p, [mode]: { ...detail, [k]: !detail[k] } }));
   const shownFields = fieldsFor(mode).filter((f) => detail[f.k]).map((f) => f.label).join(" + ");
   const [detailMenu, setDetailMenu] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
   // ATTENTION's idle lane is the long tail — folded to four rows until asked.
   const [folded, setFolded] = useState(true);
   // Projects you collapsed with the header — remembered, because the projects
@@ -656,9 +721,13 @@ export function SessionsPanel(props: Props) {
   // read this map so they can never disagree.
   const views = new Map(sorted.map((s) => [s.id, resolve(status.get(s.id), done.has(s.id), flags.get(s.id))]));
   const laneOf = (s: SessionBrief) => views.get(s.id)?.lane ?? "idle";
-  // What HIDE leaves in the sidebar: a session whose folder and group (Rivendell
-  // jobs, Shared) are both shown.
-  const listed = (s: SessionBrief) => !hidden[s.project] && !hidden[jobGroup(s)];
+  // The open chat (a new one is empty until prompted), a pin, a draft and a
+  // question waiting on you list whatever the filter says.
+  const passes = (s: SessionBrief) =>
+    shows(show, s) || s.id === selectedSessionId || pins.has(s.id) || flags.has(s.id) || laneOf(s) === "ask";
+  // What HIDE and the filter leave in the sidebar: a session whose folder and
+  // group (Rivendell jobs, Shared) are both shown, and that the filter lists.
+  const listed = (s: SessionBrief) => !hidden[s.project] && !hidden[jobGroup(s)] && passes(s);
   // A teammate's device run or share is never yours to attend to, and what you
   // hid is out of your way: both live in PLUGINS only, out of every other tab
   // and the ATTENTION count.
@@ -726,22 +795,29 @@ export function SessionsPanel(props: Props) {
     });
   }
 
+  // Shared lists what teammates sent, which `mine` keeps out of every other group.
+  const rowsOf = (g: ProjectGroup) => (g.rel === SHARED_REL ? sorted.filter(listed) : mine).filter((s) => jobGroup(s) === g.rel);
+  // The jobs and Shared groups aren't folders: with nothing left to list, they go.
+  const gs = groups.filter((g) => (g.rel !== JOBS_REL && g.rel !== SHARED_REL) || rowsOf(g).length > 0);
+
   // PROJECTS: the tree. By default a project ranks the way its rows do: one with
   // a turn the bridge holds over the ones at rest, then by your last prompt in it.
+  // Only rows the filter lists count.
+  const ranked = sessions.filter(passes);
   const lastAsked = new Map<string, number>();
-  for (const s of sessions) {
+  for (const s of ranked) {
     const g = jobGroup(s), t = rankOf(s).asked;
     if (t > (lastAsked.get(g) ?? 0)) lastAsked.set(g, t);
   }
-  const atWork = new Set(sessions.filter((s) => rankOf(s).busy).map(jobGroup));
-  const byRecent = [...groups].sort((a, b) =>
+  const atWork = new Set(ranked.filter((s) => rankOf(s).busy).map(jobGroup));
+  const byRecent = [...gs].sort((a, b) =>
     Number(atWork.has(b.rel)) - Number(atWork.has(a.rel)) || (lastAsked.get(b.rel) ?? 0) - (lastAsked.get(a.rel) ?? 0));
   // CUSTOM: dragged positions first (sort is stable, so anything you never
   // dragged keeps its most-recent order behind them).
   const rank = (rel: string) => { const i = customOrder.indexOf(rel); return i < 0 ? Infinity : i; };
   const ps =
-    order === "alpha" ? [...groups].sort((a, b) => a.name.localeCompare(b.name))
-      : order === "biggest" ? [...groups].sort((a, b) => b.sessionCount - a.sessionCount)
+    order === "alpha" ? [...gs].sort((a, b) => a.name.localeCompare(b.name))
+      : order === "biggest" ? [...gs].sort((a, b) => b.sessionCount - a.sessionCount)
         : order === "custom" ? [...byRecent].sort((a, b) => rank(a.rel) - rank(b.rel))
           : byRecent;
   // A capped project lists every session that is doing something (WORK/WAIT/
@@ -753,9 +829,8 @@ export function SessionsPanel(props: Props) {
   // others step aside, and "← All projects" is the way back.
   // Drilled only into a project this list has: one moved to another workspace
   // while open would otherwise leave the list empty.
-  const drilled = !sq && groups.some((g) => open.has(g.rel));
-  // Shared lists what teammates sent, which `mine` keeps out of every other group.
-  const rowsOf = (g: ProjectGroup) => (g.rel === SHARED_REL ? sorted.filter(listed) : mine).filter((s) => jobGroup(s) === g.rel);
+  // The filter can take a group out from under a drill the same way.
+  const drilled = !sq && gs.some((g) => open.has(g.rel));
   // Newest rows *plus* anything live — a union, not a replacement: selecting
   // an idle row made it "live" and shoved its sibling out of the list.
   const capped = (f: SessionBrief[]) => {
@@ -782,7 +857,8 @@ export function SessionsPanel(props: Props) {
       // Opened, the jobs group reads as a log: newest job first, one kind at a time.
       ? (g.rel === JOBS_REL ? f.filter((s) => !jobKind || (s.job?.kind ?? "") === jobKind).sort(byCreated) : f)
       : capped(f);
-    const rest = Math.max(0, g.sessionCount - vis.length);
+    // What the filter hides is no "more" to open, so not sessionCount.
+    const rest = Math.max(0, f.length - vis.length);
     return [{ g, f, isShut, vis, rest, n: tallyOf(f) }];
   });
 
@@ -927,6 +1003,16 @@ export function SessionsPanel(props: Props) {
   // search doesn't hide it).
   const deviceLive = sessions.some((s) => isDeviceRun(s.origin) && status.get(s.id)?.state === "working");
 
+  // The funnel's counts. HIDE's picks and device runs (PLUGINS only) aren't its business.
+  const inScope = sessions.filter((s) => !isDeviceRun(s.origin) && !hidden[s.project] && !hidden[jobGroup(s)]);
+  const kindN: Record<Kind, number> = { jobs: 0, team: 0, cli: 0, empty: 0 };
+  for (const s of inScope) for (const k of kindsOf(s)) kindN[k] += 1;
+  const cutN = inScope.filter((s) => !passes(s)).length;
+  const off = offSay(show);
+  // The filter emptied this tab: say so and offer the way back, not a blank panel.
+  const showEmpty = !sq && cutN > 0 && groups.length > 0
+    && (mode === "projects" ? tree.length === 0 : mode !== "plugins" && mine.length === 0);
+
   const laneHead = (it: Extract<LaneItem, { k: "head" }>) => (
     <div className="lanehead" style={{ display: "flex", alignItems: "center", gap: 9, height: 24, padding: "0 6px", marginTop: it.first ? 0 : 16 }}>
       <span className="sessdot" data-work={it.pulse}
@@ -972,7 +1058,7 @@ export function SessionsPanel(props: Props) {
     const flyG = fly && ps.find((g) => g.rel === fly.rel);
     const flyRows = flyG ? rowsOf(flyG) : [];
     const flyVis = capped(flyRows);
-    const flyRest = flyG ? Math.max(0, flyG.sessionCount - flyVis.length) : 0;
+    const flyRest = Math.max(0, flyRows.length - flyVis.length);
     return (
       <div ref={railRef} className="srail" onPointerEnter={hold} onPointerLeave={() => setHeld(null)}>
         <button className="srail-btn" aria-label="Search sessions" title="Search sessions  /"
@@ -1104,11 +1190,37 @@ export function SessionsPanel(props: Props) {
               style={{ flex: 1, minWidth: 0, height: "100%", border: 0, outline: "none", background: "transparent", fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t115)", color: "var(--txb)" }}
             />
             <span title="Press / to jump here" style={{ flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>/</span>
-            {/* Job rows print no project, branch or worktree, so PLUGINS has no row details to pick. */}
+            {/* Job rows print no project, branch or worktree, so PLUGINS has no row details to pick,
+                and it lists every job and share whatever the filter says. */}
             {mode !== "plugins" && <span style={{ flex: "none", width: 1, height: 14, background: "color-mix(in srgb, var(--acc) 10%, transparent)" }} />}
+            {mode !== "plugins" && (
+              <button
+                onClick={() => { setOrderMenu(false); setDetailMenu(false); setShowMenu((o) => !o); }}
+                title={!off ? "Filter — showing every session" : cutN ? `Filter — ${cutN} hidden: ${off}` : `Filter — hiding ${off}`}
+                aria-label={off ? `Filter sessions, hiding ${off}` : "Filter sessions"}
+                aria-haspopup="menu" aria-expanded={showMenu}
+                onMouseEnter={() => setHov("show")} onMouseLeave={() => setHov("")}
+                // The dot says "filtered": ⎇ is lit by default, so colour alone can't.
+                style={{ position: "relative", flex: "none", display: "grid", placeItems: "center", border: 0, background: "transparent",
+                         padding: "0 2px", margin: 0, cursor: "pointer",
+                         color: showMenu || hov === "show" || off ? "var(--acc)" : "var(--txl)" }}
+              >
+                <ListFilter size={13} strokeWidth={2} aria-hidden />
+                {off && (
+                  <span aria-hidden style={{ position: "absolute", top: -3, right: -2, width: 5, height: 5, borderRadius: "50%",
+                                             background: "var(--acc)", boxShadow: "0 0 0 1.5px var(--panel2), 0 0 6px var(--acc)" }} />
+                )}
+              </button>
+            )}
+            {showMenu && (
+              <>
+                <div onClick={() => setShowMenu(false)} style={{ position: "fixed", inset: 0, zIndex: 96 }} />
+                <ShowMenu show={show} onShow={onShow} counts={kindN} pluginsTab={!!plugins.rivendell} />
+              </>
+            )}
             {mode === "projects" && (
               <button
-                onClick={() => { setDetailMenu(false); setOrderMenu((o) => !o); }}
+                onClick={() => { setDetailMenu(false); setShowMenu(false); setOrderMenu((o) => !o); }}
                 title={`Project order — ${ORDER_LABEL[order]}`}
                 aria-expanded={orderMenu}
                 onMouseEnter={() => setHov("order")} onMouseLeave={() => setHov("")}
@@ -1144,7 +1256,7 @@ export function SessionsPanel(props: Props) {
               </>
             )}
             {mode !== "plugins" && <button
-              onClick={() => { setOrderMenu(false); setDetailMenu((o) => !o); }}
+              onClick={() => { setOrderMenu(false); setShowMenu(false); setDetailMenu((o) => !o); }}
               title={`Row details in ${mode.toUpperCase()} — ${shownFields || "nothing"}`}
               aria-expanded={detailMenu}
               onMouseEnter={() => setHov("detail")} onMouseLeave={() => setHov("")}
@@ -1243,7 +1355,7 @@ export function SessionsPanel(props: Props) {
               // started the jobs, so that head's All opens the whole log instead.
               // Open, either is the × that shuts it (like the + beside the search).
               const actOn = jobs ? open.has(g.rel) : nsAt === g.rel;
-              const actTitle = jobs ? (actOn ? "Back to all projects" : `All ${g.sessionCount} jobs`)
+              const actTitle = jobs ? (actOn ? "Back to all projects" : `All ${f.length} jobs`)
                 : actOn ? "Close" : `New session in ${g.rel}`;
               return (
                 <div
@@ -1273,7 +1385,7 @@ export function SessionsPanel(props: Props) {
                     }}
                     title={order === "custom" && !sq
                       ? `${g.rel} — drag to reorder, click to ${isShut ? "expand" : "collapse"}`
-                      : `${g.rel} · ${sq ? `${f.length} of ${g.sessionCount} match` : `${g.sessionCount} sessions`} — click to ${isShut ? "expand" : "collapse"}`}
+                      : `${g.rel} · ${sq ? `${f.length} of ${g.sessionCount} match` : `${f.length} sessions`} — click to ${isShut ? "expand" : "collapse"}`}
                     style={{ position: "relative", display: "flex", alignItems: "center", gap: 9, height: 26, padding: "0 6px", userSelect: "none",
                              cursor: order === "custom" && !sq ? "grab" : "pointer",
                              // shut on a question: the head is the only thing left to say so
@@ -1360,6 +1472,18 @@ export function SessionsPanel(props: Props) {
           </>
         )}
 
+        {showEmpty && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 14, padding: "72px 16px" }}>
+            <div style={{ fontSize: "var(--t11)", color: "var(--txf)", textAlign: "center" }}>
+              The filter hides {cutN === 1 ? "the one session" : `all ${cutN} sessions`} here
+            </div>
+            <button
+              onClick={() => onShow(SHOW_ALL)}
+              style={{ border: 0, background: "transparent", padding: 0, cursor: "pointer", fontFamily: "inherit",
+                       fontSize: "var(--t95)", letterSpacing: ".16em", textTransform: "uppercase", color: "var(--acc)" }}
+            >Show everything</button>
+          </div>
+        )}
         {groups.length === 0 && (
           <div style={{ fontSize: "var(--t11)", color: "var(--txl)", padding: "10px 4px" }}>
             {booting ? "LOADING SESSIONS…" : "No projects with sessions yet."}

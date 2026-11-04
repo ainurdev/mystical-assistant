@@ -63,7 +63,9 @@ import { redo, selectAll, undo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
 import { useAiFeatures } from "./lib/ai";
 import { useIntegrations } from "./lib/integrations";
-import { useSessionPins, useStickySet } from "./lib/prefs";
+import { useSessionPins, useStickyObj, useStickySet } from "./lib/prefs";
+import { SHOW_ALL, shows } from "./lib/sessionfilter";
+import type { Show } from "./lib/sessionfilter";
 import { nearBottom, stickOnResize, stickToBottom } from "./lib/stick";
 import { recall, remember, type Anchor } from "./lib/scrollmem";
 import { lastOpen, rememberOpen } from "./lib/lastopen";
@@ -269,6 +271,8 @@ export function App() {
   const [statusMap, setStatusMap] = useState<Map<string, SessionStatus>>(new Map());
   const [doneIds, setDoneIds] = useState<Set<string>>(loadDone);
   const [pins, togglePin] = useSessionPins();
+  // The sidebar's filter, owned here because the workspace switch counts by it too.
+  const [showKinds, setShowKinds] = useStickyObj<Show>("hud-sessions-show", SHOW_ALL);
   // Owned here because the LEARN tab's badge counts what the LEARN panel marks —
   // two copies of the read set would drift apart (same reason as pins).
   const [lessonsRead, setLessonsRead] = useStickySet(READ_KEY);
@@ -2090,7 +2094,8 @@ export function App() {
   // What's new in the workspaces you aren't looking at: per workspace, its chats
   // the sidebar would flag (DONE, finished and unopened; ASK, waiting on you),
   // so the switch can say a hidden one wants you. Read-only runs and what you
-  // hid never count, as in the sidebar's own lanes.
+  // hid never count, as in the sidebar's own lanes; nor does a finish the filter
+  // keeps out of them, unless a pin or a prompt of yours keeps it in.
   const wsNews = useMemo(() => {
     const m = new Map<string, number>();
     for (const s of sessions) {
@@ -2098,10 +2103,11 @@ export function App() {
       const id = workspaceOf(ws.set, jobGroup(s));
       if (id === ws.cur) continue;
       const lane = resolve(statusMap.get(s.id), doneIds.has(s.id), promptFlags.get(s.id)).lane;
-      if (lane === "done" || lane === "ask") m.set(id, (m.get(id) ?? 0) + 1);
+      const listed = shows(showKinds, s) || pins.has(s.id) || promptFlags.has(s.id);
+      if (lane === "ask" || (lane === "done" && listed)) m.set(id, (m.get(id) ?? 0) + 1);
     }
     return m;
-  }, [sessions, ws, hiddenProjects, statusMap, doneIds, promptFlags]);
+  }, [sessions, ws, hiddenProjects, statusMap, doneIds, promptFlags, showKinds, pins]);
 
   // The open session's working tree — its worktree branch when it has one.
   const sessionProject = selected?.project ?? activeProject;
@@ -2906,6 +2912,7 @@ export function App() {
                 <SessionsPanel
                   folded={!settings.leftOpen} onUnfold={() => patchSettings({ leftOpen: true })} workspace={ws.cur}
                   sessions={sidebarSessions} groups={visibleGroups} hidden={hiddenProjects} status={statusMap} done={doneIds}
+                  show={showKinds} onShow={setShowKinds}
                   flags={promptFlags} pins={pins}
                   selectedSessionId={sessionId} booting={!booted}
                   activeProject={activeProject}
