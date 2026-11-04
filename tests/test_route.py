@@ -1,7 +1,8 @@
 """route: the rules that pick Matt Pocock's /command for a prompt, and the next
 step once a flow step ends. Facts in, one route out: no model, no network, only a
 tmp project dir for the two things the rules look at (docs/agents/issue-tracker.md
-and .scratch/*/issues/*.md).
+and .scratch/*/issues/*.md). The last section drives POST /local/route, the
+endpoint behind the SKILL ROUTER switch, the way tests/test_commands.py drives its routes.
 Run: python -m pytest tests/test_route.py -v"""
 
 import os
@@ -11,7 +12,8 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bridge import route  # noqa: E402
+from bridge import aifeatures, commands, config, route  # noqa: E402
+from bridge.dashboard import server as dash  # noqa: E402
 
 NS = "mattpocock-skills:"
 CMDS = {NS + s: f"matt's {s}" for s in (
@@ -506,3 +508,118 @@ def test_next_only_after_a_turn_that_is_done(root, status):
                                      [flow("research", "x")], [flow("tdd", "x")]])
 def test_next_needs_a_flow_step_that_has_a_next(root, prompts):
     assert go(root, "", prompts=prompts) is None
+
+
+# ── POST /local/route: the endpoint behind the SKILL ROUTER switch ────────────
+
+def handler():
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    return h, box
+
+
+def post(monkeypatch, body, *, off=(), listed=CMDS):
+    """The endpoint's answer with every switch on except the keys in `off`.
+    `listed` ({name: description}) is what the project's `/` list holds."""
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key not in off)
+    monkeypatch.setattr(commands, "available", lambda project=None: [
+        {"name": n, "description": d, "scope": "plugin"} for n, d in listed.items()])
+    h, box = handler()
+    h._post_api("/local/route", body)
+    assert box["code"] == 200
+    return box["obj"]
+
+
+@pytest.fixture
+def repo(tmp_path, monkeypatch):
+    """A project the endpoint can resolve (it lives under BASE_PATH) that never ran
+    /setup-matt-pocock-skills. Returns it as the dashboard names projects."""
+    base = os.path.realpath(str(tmp_path))
+    monkeypatch.setattr(config, "BASE_PATH", base)
+    os.mkdir(os.path.join(base, "app"))
+    return "/app"
+
+
+def test_endpoint_routes_a_prompt(monkeypatch):
+    got = post(monkeypatch, {"text": FEATURE, "first": True})["route"]
+    assert (got["name"], got["desc"], got["auto"]) == (NS + "grill-with-docs", CMDS[NS + "grill-with-docs"], True)
+    assert post(monkeypatch, {"text": FEATURE})["route"]["auto"] is False  # not a first prompt: a suggestion
+
+
+def test_endpoint_reads_the_flow_from_the_prompts_and_how_the_last_turn_ended(monkeypatch):
+    body = {"text": "", "prompts": [GRILL], "last_status": "done"}
+    assert post(monkeypatch, body)["route"]["name"] == NS + "to-spec"
+    assert post(monkeypatch, {**body, "last_status": "error"}) == {"route": None}
+
+
+def test_endpoint_reads_the_context_size(monkeypatch):
+    body = {"text": "", "prompts": [GRILL], "last_status": "done", "ctx_tokens": 162_000}
+    assert post(monkeypatch, body)["route"]["name"] == "compact"
+
+
+def test_endpoint_offers_only_what_the_project_lists(monkeypatch):
+    assert post(monkeypatch, {"text": FEATURE}, listed={"compact": "x"}) == {"route": None}
+
+
+def test_endpoint_lists_the_commands_for_the_resolved_project(monkeypatch, repo, tmp_path):
+    asked = []
+
+    def available(project=None):
+        asked.append(project)
+        return []
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: True)
+    monkeypatch.setattr(commands, "available", available)
+    h, _ = handler()
+    h._post_api("/local/route", {"project": repo, "text": FEATURE})
+    h._post_api("/local/route", {"project": "/elsewhere", "text": FEATURE})   # not a project here
+    assert asked == [os.path.join(os.path.realpath(str(tmp_path)), "app"), None]
+
+
+@pytest.mark.parametrize("off", [("router",), ("router", *route.SUBS)])
+def test_router_off_routes_nothing(monkeypatch, off):
+    assert post(monkeypatch, {"text": FEATURE, "first": True}, off=off) == {"route": None}
+
+
+def test_ask_matt_switched_off_leaves_a_long_prompt_as_typed(monkeypatch):
+    assert post(monkeypatch, {"text": LONG})["route"]["name"] == NS + "ask-matt"
+    assert post(monkeypatch, {"text": LONG}, off={"askmatt"}) == {"route": None}
+
+
+@pytest.mark.parametrize("sub", route.SUBS)
+def test_each_sub_switch_that_is_off_reaches_pick(monkeypatch, sub):
+    seen = []
+    monkeypatch.setattr(route, "pick", lambda text, **kw: seen.append(kw["off"]))
+    post(monkeypatch, {"text": FEATURE}, off={sub})
+    post(monkeypatch, {"text": FEATURE})
+    assert seen == [frozenset({sub}), frozenset()]
+
+
+def test_the_sub_switches_pick_obeys_are_the_registered_ones():
+    """A key in route.SUBS that aifeatures doesn't register would read as off for
+    good, and the rule behind it would never fire."""
+    assert {f["key"] for f in aifeatures.FEATURES if f.get("parent") == "router"} == set(route.SUBS)
+
+
+def test_no_setup_brings_back_the_route_the_setup_nudge_stood_in_for(monkeypatch, repo):
+    body = {"project": repo, "text": FEATURE}
+    assert post(monkeypatch, body)["route"]["name"] == NS + "setup-matt-pocock-skills"
+    assert post(monkeypatch, {**body, "no_setup": True})["route"]["name"] == NS + "grill-with-docs"
+    assert post(monkeypatch, {**body, "project": "/elsewhere"})["route"]["name"] == NS + "grill-with-docs"
+
+
+@pytest.mark.parametrize("prompts", [[None, flow("grill-with-docs", "x")], [GRILL, None, 7]])
+def test_prompts_that_are_not_strings_are_dropped(monkeypatch, prompts):
+    body = {"text": "", "prompts": prompts, "last_status": "done"}
+    assert post(monkeypatch, body)["route"]["name"] == NS + "to-spec"
+
+
+def test_a_rule_that_raises_is_no_route(monkeypatch):
+    def boom(*args, **kwargs):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(route, "pick", boom)
+    assert post(monkeypatch, {"text": FEATURE}) == {"route": None}
+
+
+def test_a_body_that_cannot_be_read_is_no_route(monkeypatch):
+    assert post(monkeypatch, {"text": FEATURE, "prompts": 5}) == {"route": None}
