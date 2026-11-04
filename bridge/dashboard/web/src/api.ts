@@ -1522,6 +1522,17 @@ export interface SlashCommand {
   scope: "project" | "user" | "plugin" | "builtin";
 }
 
+// The one `/name` POST /local/route (bridge/route.py) offers for what is in the composer.
+// `kind`: start = a command for the typed text, next = the step after a flow command
+// ended, ask = no clear fit (hand it to /ask-matt), setup = once per repo. `arg` goes
+// after the name, `fresh` means open it in a new session, `alts` are the other fits.
+// Acted on by lib/route.ts.
+export type Route = {
+  name: string; desc: string; why: string; auto: boolean; arg: string; fresh: boolean;
+  kind: "start" | "next" | "ask" | "setup";
+  alts: { name: string; desc: string; why: string }[];
+};
+
 // Plugins are the catalog's bigger sibling: Claude Code installs and versions a
 // whole bundle (multi-file skills, agents, MCP servers), so `claude plugin`
 // owns all of this and the bridge only relays it.
@@ -2425,6 +2436,9 @@ export const api = {
   // --- slash commands: what `/` offers in the composer (lib/slash.ts) ---
   commands: (project?: string | null) =>
     req<{ commands: SlashCommand[] }>(`/local/commands${project ? `?project=${encodeURIComponent(project)}` : ""}`),
+  // The /command that fits the composer's text, or null (also when SKILL ROUTER is off).
+  route: (body: { project: string; text: string; prompts: string[]; last_status?: string; ctx_tokens?: number; first: boolean; no_setup?: boolean }) =>
+    req<{ route: Route | null }>("/local/route", { method: "POST", body }),
   // --- skills (project + system SKILL.md dirs, and the built-in catalog) ---
   skills: (project?: string | null) =>
     req<SkillsInfo>(`/local/skills${project ? `?project=${encodeURIComponent(project)}` : ""}`),
