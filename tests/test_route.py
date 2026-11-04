@@ -183,11 +183,19 @@ def test_inside_a_grill_flow_the_next_moves_still_fire(root, text, skill):
     "research how others do it",
     "review what we have so far",
     "huh? what does that mean",
-    "huh?",
+    "go with option B",                       # an answer: only a bare go is the way out
     LONG,                                     # a long answer is not an Ask Matt prompt
 ])
 def test_inside_a_grill_flow_answers_do_not_route(root, prompt, text):
     assert go(root, text, prompts=[prompt]) is None
+
+
+@pytest.mark.parametrize("prompt", [GRILL, flow("grill-me", "the digest")])
+def test_wait_what_fires_inside_a_grill_flow(root, prompt):
+    # Matt: use it mid-conversation, inside any other skill
+    r = go(root, "huh?", prompts=[prompt])
+    assert (r["name"], r["kind"], r["auto"]) == (NS + "wait-what", "start", False)
+    assert go(root, "huh?", prompts=[prompt], status="error") is None
 
 
 @pytest.mark.parametrize("text", ["ok, build it", "go ahead", "Okay. implement this", "let's build it", "Go!"])
@@ -367,6 +375,25 @@ def test_next_after_an_answered_interview(root):
     assert r["name"] == NS + "to-spec"
 
 
+def test_next_does_not_outlive_the_flow_commands_turn(root):
+    step = flow("diagnosing-bugs", "x")
+    assert go(root, "", prompts=[step])["name"] == NS + "retro"
+    # typed replies came after it: the flow has moved on, so its next step would be a stale ghost
+    assert go(root, "", prompts=[step, "still empty", "ok"]) is None
+
+
+def test_next_compacts_only_at_a_real_boundary(root):
+    assert go(root, "", prompts=[GRILL], ctx=162_000)["name"] == "compact"
+    # a grill that ended on a typed answer is mid-interview, not at a boundary
+    assert go(root, "", prompts=[GRILL, "weekly"], ctx=162_000)["name"] == NS + "to-spec"
+
+
+def test_next_has_no_second_compact_right_after_a_compact(root):
+    # the context size can still read stale right after compacting
+    prompts = [flow("to-spec", "x"), "/compact keep the decisions so far; next: /to-tickets"]
+    assert go(root, "", prompts=prompts, ctx=162_000)["name"] == NS + "to-tickets"
+
+
 def test_next_after_spec(root):
     r = go(root, "", prompts=[flow("to-spec")])
     assert (r["name"], r["kind"], r["fresh"]) == (NS + "to-tickets", "next", False)
@@ -413,6 +440,42 @@ def test_next_after_tickets_with_an_empty_issues_dir(root):
     tickets(root)
     r = go(root, "", prompts=[TICKETS])
     assert (r["arg"], r["fresh"]) == ("", False)
+
+
+def test_next_with_a_root_that_does_not_exist_has_no_tickets():
+    # nothing there can hold a tracker either, so the setup nudge is off to let the step through
+    r = go("/no/such/dir", "", prompts=[TICKETS], off={"setupnudge"})
+    assert (r["name"], r["arg"], r["fresh"]) == (NS + "implement", "", False)
+
+
+def test_next_after_implement_when_the_ticket_dir_is_gone_is_the_retro(root):
+    assert go(root, "", prompts=[flow("implement", ".scratch/gone/issues/01-a.md")])["name"] == NS + "retro"
+
+
+def test_next_after_implement_with_a_nul_byte_in_the_ticket_path_is_the_retro(root):
+    # the path comes from a prompt, and os.listdir raises ValueError on a NUL byte
+    assert go(root, "", prompts=[flow("implement", ".scratch/a\x00b/issues/01-a.md")])["name"] == NS + "retro"
+
+
+def test_next_after_tickets_in_a_root_with_glob_characters(tmp_path):
+    proj = str(tmp_path / "proj[1]")
+    issues = tickets(proj, "01-a.md", "02-b.md")
+    r = go(proj, "", prompts=[TICKETS], off={"setupnudge"})  # the tracker is not what is under test
+    assert r["arg"] == f"{issues}/01-a.md"
+
+
+def test_next_after_tickets_when_an_issues_dir_vanishes_before_its_mtime_is_read(root, monkeypatch):
+    new = tickets(root, "01-new.md", feat="a-new", at=3_000)
+    tickets(root, "01-gone.md", feat="b-gone", at=4_000)  # the newest, but gone by the time it is measured
+    real = os.path.getmtime
+
+    def getmtime(path):
+        if "b-gone" in path:
+            raise FileNotFoundError(path)
+        return real(path)
+
+    monkeypatch.setattr(os.path, "getmtime", getmtime)
+    assert go(root, "", prompts=[TICKETS])["arg"] == f"{new}/01-new.md"
 
 
 def test_next_after_implement_walks_the_tickets_in_order(root):
