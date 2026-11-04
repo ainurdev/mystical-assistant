@@ -189,7 +189,8 @@ FEATURES = (
               "in your typing, rules (no model call) read the prompt and draw the command "
               "that fits in front of it, where it will be sent, with one line under it "
               "saying why. When a step of his flow ends, the empty prompt box offers the "
-              "next one. Esc, or just sending, keeps the prompt as typed. Only commands the "
+              "next one. Ignore a suggestion and the prompt goes as typed; a command AUTO PICKS "
+              "put in front is sent with it, unless Esc takes it out. Only commands the "
               "project's / list has are offered, so without the plugin nothing is. Off, "
               "nothing is drawn or inserted, and the six switches under this one are "
               "hidden."},
@@ -200,9 +201,10 @@ FEATURES = (
      "tokens": "0 (rules only)",
      "about": "Rules guess worst on a long prompt that fits nothing, so from 200 characters "
               "up the router offers /ask-matt, Matt's own router, which reads his whole map "
-              "and says which flow to start. Taking it with Tab sends the prompt as one "
-              "ordinary turn; the offer itself is free. It is never offered inside a grill, "
-              "where your text is an answer. Off, a long prompt nothing fits goes as typed."},
+              "and says which flow to start. Tab only puts /ask-matt in front of your text; "
+              "you send it, as one ordinary turn, and the offer itself is free. It is never "
+              "offered inside a grill, where your text is an answer. Off, a long prompt "
+              "nothing fits goes as typed."},
     {"key": "autopick", "env": "ROUTER_AUTO", "label": "AUTO PICKS",
      "parent": "router",
      "hint": "five safe commands go in front without a tap",
@@ -211,9 +213,9 @@ FEATURES = (
      "about": "/grill-with-docs, /diagnosing-bugs, /research, /prototype and /tdd stay in "
               "this session and leave nothing but local files, so they are cheap to be "
               "wrong about. On a session's first prompt, or right after a flow step ended, "
-              "they go in front of your text by themselves, and Backspace takes them out "
-              "before you send. Every other command is a dashed suggestion that Tab takes. "
-              "Off, those five are dashed suggestions too."},
+              "they go in front of your text by themselves, and Esc takes them out "
+              "before you send. Every other command is an outlined suggestion that Tab takes. "
+              "Off, those five are outlined suggestions too."},
     {"key": "nextstep", "env": "ROUTER_NEXT", "label": "NEXT STEPS",
      "parent": "router",
      "hint": "offers the next command when a flow step ends",
@@ -231,11 +233,13 @@ FEATURES = (
      "hint": "opens each ticket in a session of its own",
      "cost": "no extra call",
      "tokens": "0 (rules only)",
-     "about": "Matt builds a ticket per fresh context. After /to-tickets the next step "
-              "names the first ticket, and Tab opens a new session with /implement and that "
-              "ticket in its prompt box, never sent for you. Finishing a ticket offers the "
-              "next one in file order the same way. Off, /implement is offered in this "
-              "session with no ticket named, and /retro follows each one."},
+     "about": "Matt builds a ticket per fresh context. Tickets are read from the local "
+              ".scratch/<feature>/issues/ files in the session's checkout. After /to-tickets "
+              "the next step names the first one, and Tab opens a new session in that checkout "
+              "with /implement and the ticket in its prompt box, never sent for you. "
+              "Finishing a ticket offers the next one in file order the same way. Off, "
+              "/implement is offered in this session with no ticket named, and /retro "
+              "follows each one."},
     {"key": "smartzone", "env": "ROUTER_ZONE", "label": "SMART ZONE",
      "parent": "router",
      "hint": "marks 150k tokens and offers /compact first past it",
