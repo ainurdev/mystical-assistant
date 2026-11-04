@@ -1338,8 +1338,9 @@ export interface AccountsInfo {
   default_policy: string;
   pending_login: { slot: number; url: string | null } | null;
 }
-/** One AI-powered extra. Everything here spends a model call nobody asked for,
- *  so each ships off and is switched on from the settings modal's AI tab. */
+/** One AI-powered extra, switched from the settings modal's AI tab. What runs on its
+ *  own ships off; a sub-switch (`parent`: the skill router's six) costs nothing and
+ *  ships on. */
 export interface AiFeature {
   key: string;
   label: string;
@@ -1348,6 +1349,7 @@ export interface AiFeature {
   tokens?: string; // what one unit burns, in + out — absent on a bridge older than the figure
   about: string; // the paragraph under the switch — what it does, what it adds
   enabled: boolean;
+  parent?: string; // a sub-switch: the key it sits under, drawn and obeyed only while that one is on
 }
 /** One Saver (bridge/savers.py): a switch of Claude Code's own that makes a turn
  *  cheaper. TRIAL puts it on every other new session and scores both halves on

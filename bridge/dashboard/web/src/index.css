@@ -5284,6 +5284,11 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 .aim-x { display: flex; flex-direction: column; gap: 7px; padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--l); min-width: 0; transition: border-color .15s, background .15s, opacity .15s; }
 .aim-x[data-on] { border-color: color-mix(in oklab, var(--acc) 40%, var(--l)); background: color-mix(in oklab, var(--acc) 6%, var(--panel)); }
 .aim-x[data-busy] { opacity: .55; }
+/* a skill-router sub-switch is a child of the card before it: the first starts a row under it, every one is inset
+   by the grid gap with an accent rule on its left.
+   shortcut: leans on the registry (bridge/aifeatures.py) listing a parent's subs right after it; wrap them per parent if that order ever breaks */
+.aim-x[data-sub] { margin-left: 10px; border-left: 2px solid var(--acc); }
+.aim-x:not([data-sub]) + .aim-x[data-sub] { grid-column-start: 1; }
 .aim-xhd { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .aim-xhd b { font: 600 13px var(--f); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .aim-xic { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 7px; background: var(--panel3); color: var(--txd); flex: none; }
