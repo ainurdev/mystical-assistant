@@ -1376,6 +1376,10 @@ input {
 .ctrl-ctx .seg { display: flex; gap: 2px; flex: none; }
 .ctrl-ctx .seg i { display: block; width: 7px; height: 9px; transition: background .3s ease;
                    background: color-mix(in srgb, var(--acc) 10%, transparent); }
+/* SMART ZONE (Composer, design-drafts/skill-router): where ~150k sits on the meter; past it a
+   flow compacts at its next boundary. */
+.ctrl-ctx .seg { position: relative; }
+.ctrl-ctx .seg .zone { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--warn); }
 
 /* 1040px: the verbs fold into a ··· that opens them WITH their names. Five
    unlabelled icons would be worse than none, which is why nothing here sheds
@@ -2822,6 +2826,13 @@ input {
 .cmdseg.ghost .sg { background: transparent; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 75%, transparent); }
 .cmdseg.ghost .sg::after { border-left-color: color-mix(in oklab, var(--acc) 45%, transparent); }
 .cmdseg.ghost .ns { color: var(--txm); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--acc) 40%, transparent); }
+/* A segment must not change its line's height, or a ghost arriving on its own nudges the box.
+   Chrome grows the line ~1px where the mono segment's ascent or descent passes the editor
+   font's (the side depends on the pair; WebKit doesn't), so the segment gives its share of
+   the line box back, and the editor keeps net-zero room around its text so it isn't clipped. */
+.cmdbox .cm-line .cmdseg { margin-block: -.25em; }
+.cmdbox .cm-editor { margin-block: -.25em; }
+.cmdbox .cm-editor .cm-content { padding-block: .25em; }
 /* On the plate the segment floats, so your words run on beside it and wrap under it. */
 [data-style="dossier"] .pline .cmdseg { float: left; margin: .09em 1.3em 0 0; font-size: calc(var(--d-big) - .5px); }
 [data-style="dossier"] .dprompt > .flex { justify-content: flex-start; margin-top: 8px; }
@@ -4940,6 +4951,23 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 /* the card (TABS): ledger, attachments, the line, the footer */
 .pb-card { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
 .pb-line { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+/* The skill router's caption (Composer, design-drafts/skill-router C · GHOST): one quiet line
+   under the text, saying why the routed /command is there and what Tab, ⌫ or Esc does with it.
+   TABS has it as a row of the card; CONSOLE and CLASSIC hang it under the editor (.pb-ed). Its
+   height holds while SKILL ROUTER is on, empty or not, so a route coming or going never moves the box. */
+.pb-ed { flex: 1; min-width: 0; }
+.pb-ed > .pb-route { margin-top: 7px; }
+.pb-route { display: flex; align-items: center; gap: 8px; height: calc(var(--t10) * 1.7); min-width: 0; overflow: hidden;
+            white-space: nowrap; font-size: var(--t10); letter-spacing: .2px; color: var(--txl); }
+.pb-route > * { flex: none; }
+.pb-route > .why { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pb-route > b { font-size: var(--t8); font-weight: 700; letter-spacing: 1.6px; color: color-mix(in oklab, var(--acc) 70%, var(--txb)); }
+.pb-route > b[data-tone="warn"] { color: var(--warn); }
+.pb-route > b[data-tone="dim"] { color: var(--txd); }
+.pb-route > i { font-style: normal; color: var(--txg); }
+.pb-route kbd { font-family: inherit; font-size: var(--t8); font-weight: 700; line-height: 1; text-transform: uppercase; color: var(--txm);
+                padding: 2px 5px 1px; border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 22%, transparent)); border-bottom-width: 2px; border-radius: 4px;
+                background: color-mix(in oklab, black 16%, transparent); }
 /* two groups that wrap as units: the right one (run picker, SEND or the running
    cluster) moves down whole rather than leaving QUEUE alone on a line — but
    only once the PROFILE name has given way. .pb-l offers line breaking its

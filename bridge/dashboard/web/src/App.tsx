@@ -3085,6 +3085,13 @@ export function App() {
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
+                      // SKILL ROUTER. Not while a session loads: its turns are still the last one's.
+                      routing={ai.router} askMatt={ai.askmatt} smartZone={ai.smartzone}
+                      routeCtx={sessionProject && !loadingSession ? {
+                        project: sessionProject, prompts: turns.slice(-6).map((t) => t.prompt),
+                        lastStatus: turns.at(-1)?.status, first: turns.length === 0,
+                      } : undefined}
+                      onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"
                         : openWait ? `message ${agentPick ? agentPick.label.toLowerCase() : "claude"} — sending ends the wait…` : undefined}

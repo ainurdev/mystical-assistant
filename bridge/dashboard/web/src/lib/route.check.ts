@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/route.check.ts
-import { SMART_ZONE, ghostFor, isDropped, isStale, shouldAutoApply } from "./route.ts";
+import { SMART_ZONE, caption, ghostFor, isDropped, isStale, shouldAutoApply, swapLead } from "./route.ts";
 import type { Route } from "../api.ts";
 
 const base: Route = { name: "", desc: "", why: "", auto: false, arg: "", fresh: false, kind: "start", alts: [] };
@@ -48,5 +48,24 @@ console.assert(isStale("add x", "add x", 3, 4), "a newer fetch went out for the 
 console.assert(isStale("add x", "", 3, 4), "sent: the box was cleared and a newer fetch started");
 console.assert(isStale("add x", "", 3, 3), "sent: the box was cleared");
 console.assert(isStale("add x", "add xy", 3, 4), "both changed");
+
+// --- caption: the line under the box, per kind ------------------------------------
+const cap = (r: Route, a = false) => { const c = caption(r, a); return [c.tag, c.tone ?? "", c.why, ...c.tail.flat()].join("|"); };
+console.assert(cap(auto, true) === "AUTO||a feature: settle the design first|⌫|drops it||click it for other fits", "auto: why, then ⌫ and the other fits");
+console.assert(cap(suggest) === "ROUTE||reads like a review|Tab|takes it", "a start ghost: Tab takes it");
+console.assert(cap(next) === "NEXT||the grill is settled|Tab|takes it", "a next step");
+console.assert(cap({ ...next, fresh: true }) === "NEXT||the grill is settled|Tab|opens it in a fresh session", "a ticket opens in a fresh session");
+const compact: Route = { ...next, name: "compact", why: "162k is past the 150k smart zone", arg: "keep the decisions so far; next: /to-spec" };
+console.assert(cap(compact) === "NEXT|warn|162k is past the 150k smart zone|Tab|takes it||then /to-spec", "compact: warn, then the step it makes room for");
+console.assert(cap({ ...compact, arg: "" }) === "NEXT|warn|162k is past the 150k smart zone|Tab|takes it", "no step named, no then");
+console.assert(cap({ ...base, name: "mattpocock-skills:ask-matt", kind: "ask", why: "x" }) === "NO CLEAR FIT|dim|Tab hands it to /ask-matt, which names the flow||ignore it to send as typed", "ask: its own copy, not the why");
+console.assert(cap({ ...base, kind: "setup", why: "once per repo" }) === "ONCE||once per repo|Tab|takes it|Esc|hides it for this repo", "setup: Esc hides it for this repo");
+console.assert(cap({ ...auto, kind: "next" }, true).startsWith("AUTO|"), "auto wins over the kind");
+
+// --- swapLead: a pick from the other fits, or Send as typed --------------------------
+console.assert(swapLead(`/${GRILL} add x`, GRILL, "mattpocock-skills:prototype") === "/mattpocock-skills:prototype add x", "swaps the command, keeps the text");
+console.assert(swapLead(`/${GRILL} add x`, GRILL, null) === "add x", "Send as typed takes the command and its space out");
+console.assert(swapLead(`/${GRILL} `, GRILL, null) === "" && swapLead(`/${GRILL}`, GRILL, "a") === "/a ", "nothing after the command");
+console.assert(swapLead(`/${GRILL}\nadd x`, GRILL, null) === "\nadd x", "a newline after it stays, as Backspace leaves it");
 
 console.log("route.check: ok");
