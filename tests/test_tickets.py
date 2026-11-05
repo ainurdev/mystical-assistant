@@ -723,3 +723,13 @@ def test_a_refused_merge_retry_keeps_the_path_state(make_set):
     s.refuse = True
     assert tickets.retry(s.folder, "merge") == "the bridge refused the run"
     assert paths.get(sid)["done"] == ["merge"] and s.state["status"] == "fix"
+
+
+def test_a_stopped_set_builds_again_from_its_build_action(make_set, tmp_path):
+    s = make_set({"01": None, "02": "#05", "05": "#02"}, build=False)
+    assert s.build().startswith("cycle:") and s.state["status"] == "stopped"
+    _write(s.folder, "05", "T05")                            # the cycle fixed by hand
+    assert _dpost("/local/tickets/build", {"folder": str(tmp_path)})["code"] == 404
+    assert _dpost("/local/tickets/build", {"folder": s.folder})["obj"] == {"text": "Building."}
+    assert s.state["status"] == "building" and s.running() == ["01", "05"]
+    assert _dpost("/local/tickets/build", {"folder": s.folder})["obj"] == {"text": "x is already building"}

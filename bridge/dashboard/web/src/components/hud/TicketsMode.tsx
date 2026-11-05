@@ -117,6 +117,9 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
   const retry = (n: string) => {
     api.retryTicket(set.folder, n).then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : "retry failed")).then(reload);
   };
+  const build = () => {
+    api.buildTickets(set.folder).then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : "build failed")).then(reload);
+  };
   const running = ns.filter((n) => kinds[n] === "run" || kinds[n] === "ask").length;
   const noteRow = note && <div role="status" style={{ margin: "0 6px 6px", padding: "0 4px", fontSize: "var(--t9)", color: "var(--txd)" }}>{note}</div>;
 
@@ -165,6 +168,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
         <div className="bd">
           <div className="t1"><span>Merge into {set.feature_branch}</span>
             {mfix ? <button className="tk-btn err" onClick={() => retry("merge")} aria-label="Retry the merge">Retry</button>
+              : set.status === "stopped" ? <button className="tk-btn err" onClick={build} aria-label={`Build ${name} again`}>Build</button>
               : <span className="r" style={{ color: "var(--txl)" }}>{merging ? "" : `after all ${ns.length}`}</span>}
           </div>
           <div className="t2"><span>{set.status === "stopped" ? set.error || "stopped" : merging ? "one pass into the feature branch" : "one pass when the last ticket is done"}</span></div>

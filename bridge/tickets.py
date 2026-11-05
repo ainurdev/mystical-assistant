@@ -254,15 +254,16 @@ def _newest(root: str, since: float) -> str:
     return best
 
 
-def start_build(flow_session_id: str) -> str:
-    """BUILD: the newest ticket folder written since the flow's path began becomes a
-    set on top of the feature branch, and its first tickets start. "" once it is
-    building, else why not; a set that can't build stops with a `tickets` notice."""
+def start_build(flow_session_id: str, folder: str = "") -> str:
+    """BUILD: the newest ticket folder written since the flow's path began (or
+    `folder`, a stopped set built again) becomes a set on top of the feature branch,
+    and its first tickets start. "" once it is building, else why not; a set that
+    can't build stops with a `tickets` notice."""
     sess = store.get_session(flow_session_id) or {}
     flow = paths.get(flow_session_id) or {}
     since = flow.get("at") or 0
     co = flowbranch._checkout(sess)  # noqa: SLF001
-    folder = _newest(os.path.join(co, ".mystical", "tickets"), since) if co else ""
+    folder = folder or (_newest(os.path.join(co, ".mystical", "tickets"), since) if co else "")
     if not folder:
         msg = "no ticket files were written since this path began"
         notices.emit("tickets", flow_session_id, body=f"BUILD stopped: {msg}.")

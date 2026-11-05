@@ -2547,6 +2547,9 @@ export const api = {
   tickets: () => req<{ sets: TicketSet[] }>("/local/tickets"),
   retryTicket: (folder: string, n: string) =>
     req<{ text: string }>("/local/tickets/retry", { method: "POST", body: { folder, n } }),
+  /** A stopped set builds again, once what stopped it is fixed. */
+  buildTickets: (folder: string) =>
+    req<{ text: string }>("/local/tickets/build", { method: "POST", body: { folder } }),
   cleanupTickets: (folder: string) =>
     req<{ removed: string[]; skipped: string[] }>("/local/tickets/cleanup", { method: "POST", body: { folder } }),
   clearStorage: (clear: StorageClear[], move_files: string[] = []) =>
