@@ -779,3 +779,13 @@ def test_a_merge_step_done_with_a_branch_left_out_is_fix(make_set, monkeypatch):
     tickets.after_turn(_merge_job(s))
     assert s.state["status"] == "fix"
     assert said == [("tickets", s.flow, "MERGE called StepDone, but tk/x-02 isn't merged into feat/x yet.")]
+
+
+def test_ticket_and_merge_sessions_run_claude_whatever_the_projects_default(make_set, monkeypatch):
+    from bridge import profiles
+    monkeypatch.setattr(profiles, "project_default", lambda project: "kimi-p")
+    monkeypatch.setattr(profiles, "get", lambda pid: {"id": pid, "agent": "kimi"} if pid == "kimi-p" else None)
+    s = make_set({"01": None})
+    assert store.get_session(s.sid("01"))["profile_id"] is None
+    s.finish("01")
+    assert store.get_session(s.state["merge_session"])["profile_id"] is None

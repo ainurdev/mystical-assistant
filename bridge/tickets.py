@@ -360,7 +360,7 @@ def _start_ticket(folder: str, st: dict, n: str) -> None:
                     clash = blockers[1 + i:]   # left mid-merge; the rest come after it
                     break
         project = parent.get("project") or ""
-        pid = profiles.project_default(project)
+        pid = profiles.claude_default(project)   # Claude, never an agent: the steps are Claude skills
         s = store.create_session(parent["chat_id"], project, origin="ticket", cwd=wt,
                                  permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE,
                                  profile_id=pid)
@@ -433,7 +433,7 @@ def start_merge(folder: str) -> None:
             if not parent:
                 raise RuntimeError("its flow session is gone")
             project = parent.get("project") or ""
-            pid = profiles.project_default(project)
+            pid = profiles.claude_default(project)   # Claude, never an agent: the steps are Claude skills
             s = store.create_session(parent["chat_id"], project, origin="ticket-merge",
                                      cwd=st["feature_checkout"],
                                      permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE,
