@@ -136,3 +136,82 @@ def test_unknown_path_rejected(state_dir):
 def test_typed_to_tickets_joins_feature_at_tickets():
     assert paths.path_for_command("to-tickets") == ("feature", "tickets")
     assert paths.path_for_command("research") == ("one", "research")
+
+
+# --- SetPath / StepDone: the tools and the bridge routes ---------------------
+
+def _list_tools():
+    from bridge import goal_mcp
+    out = goal_mcp._handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})  # noqa: SLF001
+    return out["result"]["tools"]
+
+
+@pytest.fixture
+def flow_session(state_dir, monkeypatch):
+    from bridge.dashboard import server as dash
+    monkeypatch.setattr(dash, "_chat", lambda: 1)
+    s = store.create_session(1, "p")
+    store.set_claude_session_id(s["id"], "cf1")
+    store.start_turn(s["id"], "t-" + s["id"], "hi", None)
+    return s["id"]
+
+
+@pytest.fixture
+def server(flow_session):
+    from bridge.dashboard import server as dash
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)   # noqa: SLF001
+
+    class S:
+        def post(self, path, body):
+            h._post_api(path, body)  # noqa: SLF001
+            return dict(box)
+    return S()
+
+
+@pytest.fixture
+def rivendell_origin(monkeypatch):
+    s = store.create_session(1, "p", origin="rivendell:job")
+    store.set_claude_session_id(s["id"], "c-rv")
+    monkeypatch.setenv("MYSTICAL_CLAUDE_SESSION_ID", "c-rv")
+
+
+def test_path_tools_listed_only_when_on(router_on, session_c1, monkeypatch):
+    monkeypatch.setenv("MYSTICAL_CLAUDE_SESSION_ID", "c1")
+    assert {"SetPath", "StepDone"} <= {t["name"] for t in _list_tools()}
+
+
+def test_path_tools_hidden_when_off(router_off, session_c1, monkeypatch):
+    monkeypatch.setenv("MYSTICAL_CLAUDE_SESSION_ID", "c1")
+    assert "SetPath" not in {t["name"] for t in _list_tools()}
+
+
+def test_path_tools_hidden_for_rivendell_origin(router_on, rivendell_origin):
+    assert "SetPath" not in {t["name"] for t in _list_tools()}
+
+
+def test_set_path_and_step_done_idempotent(server, flow_session):
+    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "feature", "why": "new"})["obj"] == \
+        {"text": "Path recorded: feature."}
+    a = server.post("/local/flow/done", {"claude_session_id": "cf1"})
+    b = server.post("/local/flow/done", {"claude_session_id": "cf1"})
+    assert paths.get(flow_session)["next"]["station"] == "spec" and a == b
+    assert a["obj"]["text"].startswith("Step done. Next: spec")
+
+
+def test_step_done_without_a_path_changes_nothing(server, flow_session):
+    r = server.post("/local/flow/done", {"claude_session_id": "cf1"})
+    assert r["obj"] == {"text": "No path is running in this session."} and paths.get(flow_session) is None
+
+
+def test_bad_path_is_a_400(server, flow_session):
+    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "nope", "why": "x"})["code"] == 400
+    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "one", "why": "x"})["code"] == 400
+
+
+def test_auto_route(server, flow_session):
+    paths.set_path(flow_session, "bug", "x", "claude")
+    assert server.post("/local/flow/auto", {"session": flow_session, "on": False})["obj"] == {"ok": True}
+    assert paths.get(flow_session)["auto"] is False
+    assert server.post("/local/flow/auto", {"session": "zzz", "on": True})["code"] == 404

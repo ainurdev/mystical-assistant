@@ -974,6 +974,13 @@ def latest_turn_id(session_id: str) -> "str | None":
     return row["id"] if row else None
 
 
+def running_turn_id(session_id: str) -> "str | None":
+    with closing(_connect()) as c:
+        row = c.execute("SELECT id FROM turns WHERE session_id=? AND status='running' "
+                        "ORDER BY seq DESC LIMIT 1", (session_id,)).fetchone()
+    return row["id"] if row else None
+
+
 def turn_prompt(turn_id: str) -> "str | None":
     with closing(_connect()) as c:
         row = c.execute("SELECT prompt FROM turns WHERE id=?", (turn_id,)).fetchone()

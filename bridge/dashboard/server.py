@@ -510,6 +510,13 @@ class Handler(BaseHTTPRequestHandler):
             sid = (qs.get("session", [""])[0] or "").strip()
             return self._json(queue_manager.snapshot(sid) if sid else
                               {"session_id": "", "seq": 0, "paused": False, "items": []})
+        if path == "/local/flow":
+            from bridge import paths
+            sid = (qs.get("session", [""])[0] or "").strip()
+            s = store.get_session(sid) if sid else None
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            return self._json({"flow": paths.get(sid), "set": None})   # set: tickets, Task 9
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/today":
@@ -1405,6 +1412,35 @@ class Handler(BaseHTTPRequestHandler):
             rules = toolsets.clean(body.get("disabled_tools"))
             store.set_disabled_tools(sid, rules)
             return self._json({"ok": True, "disabled_tools": rules})
+        if path in ("/local/flow/set", "/local/flow/done", "/local/flow/auto"):
+            # The goals MCP's SetPath / StepDone (bridge/goal_mcp.py) and the
+            # dashboard's auto switch (bridge/paths.py). Answers are text for Claude.
+            from bridge import paths
+            if path == "/local/flow/auto":
+                sid = str(body.get("session") or "")
+                s = store.get_session(sid)
+                if not s or s["chat_id"] != chat:
+                    return self._json({"error": "not found"}, 404)
+                paths.set_auto(sid, bool(body.get("on")))
+                return self._json({"ok": True})
+            s = store.get_by_claude_session_id(str(body.get("claude_session_id") or ""))
+            if not s or s["chat_id"] != chat:
+                return self._json({"text": "No session is bound to this tool, so it can't set a path."})
+            if path == "/local/flow/set":
+                p = str(body.get("path") or "")
+                try:
+                    paths.set_path(s["id"], p, str(body.get("why") or ""), "claude",
+                                   str(body.get("skill") or "") or None)
+                except ValueError as e:
+                    return self._json({"error": str(e)}, 400)
+                return self._json({"text": f"Path recorded: {p}."})
+            if not paths.get(s["id"]):
+                return self._json({"text": "No path is running in this session."})
+            turn = store.running_turn_id(s["id"]) or store.latest_turn_id(s["id"]) or ""
+            choice = body.get("choice")
+            nxt = paths.step_done(s["id"], turn, choice if choice in ("here", "tickets") else None)
+            return self._json({"text": f"Step done. Next: {nxt}, which starts when this turn ends."
+                               if nxt else "Step done. That was the last step."})
         if path == "/local/wait":
             # The goals MCP's WaitForSession (bridge/goal_mcp.py). Every answer,
             # a refusal too, is text for Claude.

@@ -133,6 +133,40 @@ _RV_TOOLS = [
     },
 ]
 
+# Listed only where they can work (_paths_on): the skill paths router
+# (bridge/paths.py). The bridge holds the flow state, so these only relay.
+_PATH_TOOLS = [
+    {
+        "name": "SetPath",
+        "description": (
+            "Record which skill path this session's request follows, before you start "
+            "its first skill. Call it once per request, only when a path fits."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "enum": ["feature", "bug", "refactor", "one"]},
+                "why": {"type": "string", "description": "One line: why this path fits."},
+                "skill": {"type": "string", "description": "For path 'one': the skill to run."},
+            },
+            "required": ["path", "why"],
+        },
+    },
+    {
+        "name": "StepDone",
+        "description": (
+            "Mark the current step of the path done when you finish it and need nothing "
+            "more from the user. Never call it while waiting on the user."),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "choice": {"type": "string", "enum": ["here", "tickets"],
+                           "description": "After a grill: 'here' if the work fits this one "
+                                          "session, 'tickets' if it needs several."},
+            },
+        },
+    },
+]
+
 
 def _session_id() -> str:
     """Store session id for the run that spawned us, via the claude session id."""
@@ -170,6 +204,12 @@ def _call(name: str, args: dict) -> str:
                 f"Turns used: {goal.get('iter', 0)}/{goals.MAX_ITER}")
     if name == "WaitForSession":
         return _wait(args)
+    if name == "SetPath":
+        return _bridge("/local/flow/set", {k: str(args[k]) for k in ("path", "why", "skill") if args.get(k)},
+                       "record a path")
+    if name == "StepDone":
+        return _bridge("/local/flow/done", {"choice": str(args["choice"])} if args.get("choice") else {},
+                       "mark a step done")
     if name in ("ListRivendellTasks", "CreateRivendellTask"):
         return _rivendell(name, args)
     return f"Unknown tool: {name}"
@@ -217,6 +257,20 @@ def _rivendell_on() -> bool:
         return False
 
 
+def _paths_on() -> bool:
+    """Whether the path tools are listed: SKILL PATHS on and an attended session
+    (Rivendell's and device runs have nobody to steer)."""
+    try:
+        from bridge import paths
+        if not paths.on():
+            return False
+        csid = os.environ.get("MYSTICAL_CLAUDE_SESSION_ID", "")
+        row = store.get_by_claude_session_id(csid) if csid else None
+        return bool(row) and not str(row.get("origin") or "").startswith(("rivendell", "device-run"))
+    except Exception:  # noqa: BLE001 — tools/list must still answer
+        return False
+
+
 def _rivendell(name: str, args: dict) -> str:
     """The bridge holds the Rivendell connections and their token, so this asks
     it, as _wait does. Only the four fields pass: an `action` in the arguments
@@ -236,7 +290,8 @@ def _handle(req: dict) -> dict | None:
                   "capabilities": {"tools": {}},
                   "serverInfo": {"name": "mystical-goals", "version": "1"}}
     elif method == "tools/list":
-        result = {"tools": _TOOLS + (_RV_TOOLS if _rivendell_on() else [])}
+        result = {"tools": _TOOLS + (_RV_TOOLS if _rivendell_on() else [])
+                          + (_PATH_TOOLS if _paths_on() else [])}
     elif method == "tools/call":
         params = req.get("params") or {}
         text = _call(params.get("name") or "", params.get("arguments") or {})
