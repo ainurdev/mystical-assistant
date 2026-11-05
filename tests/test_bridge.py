@@ -515,7 +515,7 @@ def test_session_brief_shape(monkeypatch):
                         lambda *a, **k: [{"rule": "mcp__github", "name": "github"}])
     s = store.create_session(555, "p6")
     b = _session_brief(s)
-    assert set(b) == {"id", "title", "project", "created", "updated", "asked", "archived",
+    assert set(b) == {"id", "title", "project", "missing", "created", "updated", "asked", "archived",
                       "origin", "cwd", "branch", "fallback_policy", "goal", "job", "device", "team",
                       "lifecycle", "disabled_tools",
                       "ctx_tokens", "ctx_window", "autocompact", "work_cwd",
@@ -967,6 +967,7 @@ def test_ensure_session_existing_ignores_create_args():
 # --- runner: cross-surface run context (cwd + permission per session) --------
 
 def test_resolve_context_new_session_gets_surface_default_permission():
+    os.makedirs("/tmp/ctxnew", exist_ok=True)    # a session's run cwd must exist on disk
     sess, cwd, perm = runner._resolve_run_context(
         572, "/tmp/ctxnew", session_id=None, permission_mode=None, origin="dashboard")
     assert sess["permission_mode"] == config.NEW_SESSION_PERMISSION_MODE
@@ -1078,11 +1079,12 @@ def test_run_context_falls_back_when_session_cwd_removed():
     raises FileNotFoundError, misreported as '`claude` not found on PATH')."""
     from bridge import runner
     chat = 8123
+    os.makedirs(os.path.join(config.BASE_PATH, "wt_proj"), exist_ok=True)
     s = store.create_session(chat, "/wt_proj", origin="dashboard",
                              cwd="/tmp/removed-worktree-zzz")   # does not exist
     sess, cwd, perm = runner._finalize_run_context(
-        s, "/tmp", permission_mode=None, origin="dashboard")    # /tmp = BASE_PATH, exists
-    assert cwd == "/tmp"                                         # fell back to project dir
+        s, "/tmp", permission_mode=None, origin="dashboard")    # the caller's folder: another project's
+    assert cwd == os.path.realpath(os.path.join(config.BASE_PATH, "wt_proj"))   # its own project's folder
 
 
 def test_run_context_resumes_in_the_tree_it_moved_into(tmp_path):

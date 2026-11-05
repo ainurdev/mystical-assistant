@@ -1417,6 +1417,13 @@ export function SessionsPanel(props: Props) {
                     {/* A label, not a destination — a tier under the session titles so they read first. */}
                     <span style={{ flex: "none", maxWidth: 210, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                    fontSize: "var(--t115)", letterSpacing: ".06em", color: isShut ? "var(--txd)" : "var(--txm)" }}>{g.name}</span>
+                    {g.missing && (
+                      <span className="gone-chip" title={`${g.rel} isn't there any more (moved, renamed or deleted). Right-click to move its sessions to one of your projects.`}
+                        style={{ flex: "none", padding: "1px 5px", borderRadius: 4, fontFamily: "var(--mono)", fontSize: "var(--t8)",
+                                 letterSpacing: 0.6, color: "var(--warn)", border: "1px solid color-mix(in srgb, var(--warn) 40%, transparent)" }}>
+                        FOLDER GONE
+                      </span>
+                    )}
                     <span style={{ flex: 1, minWidth: 6 }} />
                     {/* shut, its rows can't say what they're doing; New's open form owns the spot */}
                     {isShut && !actOn && stateDots(n)}

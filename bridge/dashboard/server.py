@@ -602,8 +602,11 @@ class Handler(BaseHTTPRequestHandler):
             # Plugin-worker sessions are exempt: their default workdir is
             # BASE_PATH itself ("/", never a project), and a run the PLUGINS
             # tab exists to show must not be filtered into invisibility.
+            # A real project that moved or was deleted keeps its sessions listed,
+            # marked missing (browser.gone), for MOVE TO PROJECT.
             rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
-                    or browser.project_exists(r["project"]) or _rehome_moved(r)]
+                    or browser.project_exists(r["project"]) or _rehome_moved(r)
+                    or browser.gone(r["project"])]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
         # Before the transcript route below, which would otherwise swallow this
         # (it takes the first path segment and ignores the rest).
@@ -1571,6 +1574,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": team.refusal(s["origin"])}, 409)
             copy = store.duplicate(sid)
             return self._json({"ok": True, "session": _session_brief(copy)})
+        if path.startswith("/local/sessions/") and path.endswith("/move"):
+            # MOVE TO PROJECT: a session whose project folder is gone (browser.gone) into one of
+            # yours, its folder and the paths in its transcript with it (store.relocate).
+            sid = path[len("/local/sessions/"):-len("/move")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            if team.refusal(s["origin"]):
+                return self._json({"error": team.refusal(s["origin"])}, 409)
+            dest = _abs_project(body.get("project")) if isinstance(body.get("project"), str) else None
+            if not dest or not browser.project_exists(browser.rel(dest)):
+                return self._json({"error": "That isn't one of your projects."}, 400)
+            if state.is_running(sid):
+                return self._json({"error": "It has a turn running: move it when that ends."}, 409)
+            store.relocate(sid, dest, project=browser.rel(dest))
+            return self._json({"ok": True, "session": _session_brief(store.get_session(sid))})
         if path.startswith("/local/sessions/") and path.endswith("/relocate"):
             sid = path[len("/local/sessions/"):-len("/relocate")]
             s = store.get_session(sid)
@@ -1918,9 +1937,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "share": share})
         if path in ("/local/rivendell/team/continue", "/local/rivendell/team/clone", "/local/rivendell/team/install",
-                    "/local/rivendell/team/unpack", "/local/rivendell/team/state"):
+                    "/local/rivendell/team/unpack", "/local/rivendell/team/state", "/local/rivendell/team/adopt"):
             share_id = str(body.get("id") or "")
             try:
+                if path.endswith("/adopt"):      # CONTINUE HERE: their session as yours, its history on screen
+                    sid = team.adopt(share_id, str(body.get("project") or ""),
+                                     body.get("cwd") if isinstance(body.get("cwd"), str) else None)
+                    return self._json({"ok": True, "session": _session_brief(store.get_session(sid))})
                 if path.endswith("/continue"):
                     return self._json(team.continue_plan(share_id, into="yours" if body.get("into") == "yours" else None,
                                                           project=body.get("project") if isinstance(body.get("project"), str) else None))

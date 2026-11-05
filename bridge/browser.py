@@ -57,6 +57,17 @@ def project_exists(rel_path: str) -> bool:
             and os.path.realpath(out) != os.path.realpath(os.path.expanduser("~")))
 
 
+def gone(rel_path: str) -> bool:
+    """A project that was a real folder and isn't one any more (moved, renamed,
+    deleted): its sessions stay in the lists, marked, until MOVE TO PROJECT puts
+    them in one of yours. BASE_PATH and home were never projects, and a removed
+    worktree checkout is disposable: those stay out, as before."""
+    r = (rel_path or "").strip()
+    if not r.strip("/") or r.startswith("~") or r.lstrip("/").startswith(".worktrees/"):
+        return False
+    return within_base(os.path.realpath(os.path.join(config.BASE_PATH, r.lstrip("/")))) and not project_exists(r)
+
+
 def within_base(path: str) -> bool:
     real = os.path.realpath(path)
     return real == config.BASE_PATH or real.startswith(config.BASE_PATH + os.sep)

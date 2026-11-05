@@ -465,6 +465,7 @@ def _bot_argv(monkeypatch, sid, extra="--permission-mode acceptEdits"):
     monkeypatch.setattr(learn, "kick", lambda *a, **k: None)
     monkeypatch.setattr(tglive, "_watch", lambda *a, **k: None)
     monkeypatch.setattr(config, "EXTRA_CLAUDE_ARGS", extra)
+    os.makedirs(tglive.project_dir(store.get_session(sid)), exist_ok=True)   # a run never starts in a folder that's gone
     assert tglive.start(CHAT, store.get_session(sid), "hi")
     assert spawned.wait(5)
     deadline = time.time() + 5

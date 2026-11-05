@@ -16,7 +16,8 @@ many times it is sent and in whichever direction.
   - each received share records its thread, the session you continued it into, and the newer share
     that replaced it (`folded_into`).
 - **What carries over.** A share's transcript payload also carries one hop back, as `earlier`: the
-  turns of the share it was continued from, run through the same whitelist and redaction.
+  turns of the share it was continued from, run through the same whitelist and redaction. A
+  session CONTINUE HERE made (2026-11-05) has those turns as its own, so it carries none.
 
 ## 1 · An update replaces the older card (01-team-tab.html)
 
@@ -61,7 +62,8 @@ many times it is sent and in whichever direction.
 - **A plate above the first turn** of a session that came with an earlier hop: EARLIER IN THIS
   THREAD, then whose turns, how many, and when. In this example they are your own turns. SHOW
   expands them in place, dimmed.
-- **`transcript.md`** (CONTINUE HERE's attachment) puts the earlier hop first. A third person then
+- **`transcript.md`** (attached by NEW SESSION FROM IT, and by CONTINUE HERE's first prompt) puts the
+  earlier hop first. A third person then
   gets the context, rather than "read the attached transcript" with nothing attached.
 
 ## 5 · No repository: pick a project (04-no-repo.html)

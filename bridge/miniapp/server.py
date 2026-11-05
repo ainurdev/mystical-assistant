@@ -202,6 +202,8 @@ def _session_brief(s: dict) -> dict:
     work = wt if wt_branch else (cwd or "")
     run = profiles.brief(s)
     return {"id": s["id"], "title": s["title"], "project": s["project"],
+            # Its project's folder is gone (moved, renamed, deleted): MOVE TO PROJECT puts it in one of yours.
+            "missing": browser.gone(s["project"]),
             "created": s.get("created"), "updated": s["updated"], "archived": s["archived"],
             "asked": s.get("asked"),           # its last prompt's time; None before the first
             "origin": s.get("origin"), "cwd": cwd,
@@ -666,7 +668,7 @@ class Handler(BaseHTTPRequestHandler):
         # Plugin-worker sessions are exempt (their workdir may be BASE_PATH
         # itself, whose rel "/" is never a project) — see dashboard/server.py.
         rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
-                or browser.project_exists(r["project"])]
+                or browser.project_exists(r["project"]) or browser.gone(r["project"])]
         self._json({"sessions": [_session_brief(s) for s in rows]})
 
     def _api_sessions_create(self, chat_id: int, body: dict):
