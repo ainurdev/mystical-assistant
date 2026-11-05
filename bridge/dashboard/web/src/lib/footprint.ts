@@ -6,7 +6,7 @@
 export type Footprint = {
   total: number;
   folders: { name: string; count: number }[];
-  recent: { name: string; now: boolean }[];
+  recent: { path: string; name: string; now: boolean }[];
 };
 
 export function footprint(edited: Set<string>, now: string | null, root: string): Footprint {
@@ -24,6 +24,6 @@ export function footprint(edited: Set<string>, now: string | null, root: string)
   return {
     total: files.length,
     folders,
-    recent: files.slice(-3).map((f) => ({ name: f.split("/").pop()!, now: f === now })),
+    recent: files.slice(-3).map((f) => ({ path: f, name: f.split("/").pop()!, now: f === now })),
   };
 }

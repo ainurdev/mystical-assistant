@@ -9,7 +9,7 @@ const mk = (dir: string, n: number) => Array.from({ length: n }, (_, i) => `${di
 const mock = footprint(new Set([...mk("apps/web/src", 9), ...mk("packages/ui/src", 4), ...mk("e2e", 2), "docs/a.md"]), "docs/a.md", R);
 console.assert(mock.total === 16, "mock: 16 files");
 console.assert(same(mock.folders, [{ name: "apps/web", count: 9 }, { name: "packages/ui", count: 4 }, { name: "e2e", count: 2 }, { name: "docs", count: 1 }]), "mock: folders by count");
-console.assert(same(mock.recent, [{ name: "f0.ts", now: false }, { name: "f1.ts", now: false }, { name: "a.md", now: true }]), "mock: last 3 as basenames, live one flagged");
+console.assert(same(mock.recent, [{ path: "e2e/f0.ts", name: "f0.ts", now: false }, { path: "e2e/f1.ts", name: "f1.ts", now: false }, { path: "docs/a.md", name: "a.md", now: true }]), "mock: last 3 as basenames with their paths, live one flagged");
 
 const none = footprint(new Set(), null, R);
 console.assert(none.total === 0 && none.folders.length === 0 && none.recent.length === 0, "empty: nothing");

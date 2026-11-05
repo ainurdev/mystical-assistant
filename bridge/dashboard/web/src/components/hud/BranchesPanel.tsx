@@ -302,7 +302,7 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
         </span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
-      <BranchTrunk base={base} rows={g.worktrees.map((r) => ({ name: keyOf(r), state: trunkState(r) }))} />
+      <BranchTrunk loading={!!project && !err && !data} base={base} rows={g.worktrees.map((r) => ({ name: keyOf(r), state: trunkState(r) }))} />
       {naming && (
         <>
           <form className="bnew" onSubmit={(e) => { e.preventDefault(); make(); }}>

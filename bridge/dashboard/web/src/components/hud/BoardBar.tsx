@@ -4,12 +4,18 @@ import { RailHero } from "./RailHero";
 
 /* The Rivendell tab's hero: the linked project, one box per lane sized by its
    count, and the first open task with the ▶ the task rows already use. */
-export function BoardBar({ project, chip, tone, tasks, total, next, onStart }: {
+export function BoardBar({ project, chip, tone, tasks, total, next, onStart, state }: {
   project: string; chip: string; tone: string;
+  /** the tab's data is still loading, or the fetch failed: one neutral line, nothing claimed */
+  state?: "loading" | "error";
   tasks: Parameters<typeof boardLanes>[0]; total: number;
   next: { id: string; title: string } | null;
   onStart: (id: string) => void;
 }) {
+  if (state) {
+    const line = state === "loading" ? "loading…" : "couldn't reach Rivendell";
+    return <RailHero label={line} top={<span className="bb-k">{line}</span>} />;
+  }
   const lanes = boardLanes(tasks);
   const label = !project ? "no Rivendell project linked"
     : !total ? `${project}: no tasks yet`

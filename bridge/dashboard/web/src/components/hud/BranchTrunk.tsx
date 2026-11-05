@@ -9,14 +9,15 @@ const COLOR: Record<TrunkState, string> = {
 const WORD: Record<TrunkState, string> = { waits: "waiting on you", working: "working", pr: "PR", clean: "to clean", local: "local", base: "base" };
 const W = 260, Y = 14;
 
-export function BranchTrunk({ rows, base }: { rows: { name: string; state: TrunkState }[]; base: string }) {
+export function BranchTrunk({ rows, base, loading }: { rows: { name: string; state: TrunkState }[]; base: string; loading?: boolean }) {
   const t = trunk(rows);
+  if (loading) return <RailHero label="reading…" top={<span className="rh-k">reading…</span>} />;
   const label = t.legend.length
     ? `${rows.length} ${rows.length === 1 ? "worktree" : "worktrees"} off ${base || "main"}: ${t.legend.map((l) => `${l.count} ${WORD[l.state]}`).join(", ")}`
     : `${rows.length ? "Only" : "No"} ${base || "main"}, no other worktrees`;
   return (
     <RailHero label={label} top={<>
-      <span className="bt-k">{base || "main"}</span>
+      <span className="rh-k">{base || "main"}</span>
       {t.more > 0 && <span className="bt-n">+{t.more}</span>}
     </>}>
       <svg className="bt-svg" viewBox={`0 0 ${W} 62`} aria-hidden>

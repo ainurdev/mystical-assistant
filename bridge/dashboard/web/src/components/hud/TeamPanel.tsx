@@ -302,7 +302,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
         <button style={toolBtn} title="refresh" onClick={onRefresh}>⟳</button>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
-      <TeamRoom data={data} sessionTitle={sessionTitle} onSendTo={onSendTo} />
+      <TeamRoom data={data} fail={fail} sessionTitle={sessionTitle} onSendTo={onSendTo} />
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "4px 0 10px" }}>{body()}</div>
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
     </div>

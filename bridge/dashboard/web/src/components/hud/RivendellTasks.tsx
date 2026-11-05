@@ -258,7 +258,8 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     const first = nextUp(todo, new Set(tasks.map((t) => t.id))).find((i) => i.tasks.length);
     const t = first ? tasks.find((x) => x.id === first.tasks[0]) : [...g.needs, ...g.mine, ...g.team][0];
     const c = linkChip(links[0], now);
-    return <BoardBar project={names} chip={c.label} tone={LINK_TONE[c.tone]} tasks={tasks} total={tasks.length}
+    const state = fail || (data?.errors.length && !tasks.length) ? "error" : !data ? "loading" : undefined;
+    return <BoardBar state={state} project={names} chip={c.label} tone={LINK_TONE[c.tone]} tasks={tasks} total={tasks.length}
       next={t ? { id: t.id, title: splitTitle(t.name).title } : null} onStart={(id) => reveal(id, true)} />;
   }
 
