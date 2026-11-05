@@ -20,3 +20,7 @@ export function todayIndex(today: string, first: string): number {
   const n = Math.round((Date.parse(today) - Date.parse(first)) / 86400000);
   return n >= 0 && n < 7 ? n : -1;
 }
+
+/** The hero's caption: a day's turns, or the week's turns and sessions. */
+export const capText = (turns: number, sessions?: number) =>
+  `${turns} ${turns === 1 ? "turn" : "turns"}${sessions === undefined ? "" : ` · ${sessions} ${sessions === 1 ? "session" : "sessions"}`}`;

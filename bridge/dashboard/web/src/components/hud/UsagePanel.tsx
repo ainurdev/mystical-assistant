@@ -49,6 +49,7 @@ export function UsagePanel({ onOpenProject, win }: { onOpenProject: (rel: string
   // A bridge still running pre-restart code has no /local/report route: say
   // "restart" instead of spinning forever.
   const [stale, setStale] = useState(false);
+  const [pick, setPick] = useState<number | null>(null);
   const [all, setAll] = useState(false);
   const [wkClosed, setWkClosed] = useStickyFlag("usage-week-closed");
   const [pjClosed, setPjClosed] = useStickyFlag("usage-projects-closed");
@@ -58,6 +59,8 @@ export function UsagePanel({ onOpenProject, win }: { onOpenProject: (rel: string
   useEffect(() => {
     let live = true;
     setRep(null);
+    setPick(null);
+
     const load = () => api.report(back)
       .then((r) => { if (live) { setRep(r); setStale(false); } })
       .catch(() => { if (live) setStale(true); });
@@ -82,7 +85,8 @@ export function UsagePanel({ onOpenProject, win }: { onOpenProject: (rel: string
       .catch(() => notify("error", "Couldn't reach the clipboard."));
   };
 
-  const hero = <UsageRing win={win} range={range} back={back > 0} elapsed={t ? t.elapsed : null}
+  const hero = <UsageRing win={win} range={range} back={back > 0} elapsed={t ? t.elapsed : null} turns={t?.turns ?? 0} sessions={t?.sessions ?? 0}
+    pick={pick} onPick={setPick}
     days={days} todayIdx={days.length ? todayIndex(today, days[0].key) : -1} />;
   const week = () => {
     if (stale) return <div className="us-note">the bridge needs a restart before it can answer this</div>;

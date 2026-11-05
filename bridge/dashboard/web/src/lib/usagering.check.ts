@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/usagering.check.ts
-import { ringDash, ringText, barHeights, todayIndex, RING_C } from "./usagering.ts";
+import { ringDash, ringText, barHeights, todayIndex, capText, RING_C } from "./usagering.ts";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -10,3 +10,5 @@ console.assert(same(barHeights([0, 10, 5], 40), [2, 40, 20]), "heights scale to 
 console.assert(same(barHeights([0, 0], 40), [2, 2]), "an empty week is all stubs");
 console.assert(todayIndex("2026-11-04", "2026-11-02") === 2, "Wed is the third day of the week from Mon Nov 2");
 console.assert(todayIndex("2026-11-12", "2026-11-02") === -1 && todayIndex("2026-11-01", "2026-11-02") === -1, "outside the week: none lit");
+console.assert(capText(90, 53) === "90 turns · 53 sessions" && capText(1, 1) === "1 turn · 1 session", "week caption");
+console.assert(capText(63) === "63 turns" && capText(0) === "0 turns", "day caption: turns only");
