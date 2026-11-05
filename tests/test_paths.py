@@ -570,3 +570,15 @@ def test_every_resume_nudge_starts_with_the_resume_mark():
     for text in (recovery.CONTINUED, recovery.NUDGE, limits.NUDGE, limits.SERVER_NUDGE, r.RESUME_NUDGE,
                  r.TIMEOUT_NUDGE, r.AUTH_NUDGE, r.AGENT_AUTH_NUDGE, ladder.ACCOUNT_NUDGE):
         assert text.startswith(paths._RESUME), text   # noqa: SLF001
+
+
+def test_merge_is_done_even_while_auto_is_held(fake_queue, nextstep_on, state_dir):
+    paths.set_path("f7", "feature", "x", "claude")
+    for t in ("a", "b", "c", "d"):
+        paths.step_done("f7", t)           # through build
+    paths.set_auto("f7", False)
+    assert paths.advance("f7", "merge") is False and not fake_queue.items
+    f = paths.get("f7")
+    assert f["done"][-1] == "merge" and f["next"]["station"] == "retro"
+    paths.set_auto("f7", True)              # released: RETRO starts now
+    assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"

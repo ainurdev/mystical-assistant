@@ -371,23 +371,20 @@ def mark_done(session_id: str, station: str) -> None:
 
 
 def advance(session_id: str, station: str) -> bool:
-    """`station` finished elsewhere (MERGE in its own session): mark it done here
-    and start this flow's next step."""
+    """`station` finished elsewhere (MERGE in its own session): mark it done here,
+    whatever the switches say, then start this flow's next step if they allow it."""
     try:
-        from bridge import waits
-        if not on() or not aifeatures.enabled("nextstep") or waits.waiting(session_id):
-            return False
         with _lock:
             _load_locked()
             f = _cache.get(session_id)
-            if not f or not f["auto"]:
+            if not f:
                 return False
             if station not in f["done"]:
                 f["done"].append(station)
             rest = [st[0] for st in _stations(f) if st[0] not in f["done"]]
-            f["next"] = {"station": rest[0], "turn_id": ""} if rest else None
+            f["next"] = {"station": rest[0], "turn_id": "", "started": False} if rest else None
             _save_locked()
-        return bool(rest) and _start(session_id, rest[0])
+        return bool(rest) and _go(session_id)
     except Exception as e:  # noqa: BLE001
         print(f"[paths] advance failed: {e}", file=sys.stderr)
         return False
