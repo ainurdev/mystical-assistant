@@ -60,6 +60,9 @@ def flow_files(session_id: str, since: int) -> list[str]:
         p = ev.get("detail") or ev.get("summary") or ""
         if root and os.path.isabs(p) and os.path.realpath(p).startswith(root + os.sep) and p not in out:
             out.append(p)
+    if out:   # git can't stash what it ignores (.mystical/, so the ticket files) or what is gone again
+        ignored = set(git._run(root, "check-ignore", "--", *out)[1].splitlines())  # noqa: SLF001
+        out = [p for p in out if p not in ignored and os.path.exists(p)]
     return out
 
 
@@ -152,6 +155,8 @@ def carry_and_commit(src: str, dst: str, files: list[str], slug: str) -> bool:
     if rc != 0:
         _log(f"add failed: {err.strip()}")
         raise FlowBranchError(f"git add failed: {err.strip()}")
+    if git._run(dst, "diff", "--cached", "--quiet", "--", *rel)[0] == 0:  # noqa: SLF001
+        return False   # already committed there: nothing of the flow's is left to commit
     rc, out, err = git._run(dst, "commit", "-m", f"docs: decisions from the {slug} flow", "--", *rel, timeout=30)  # noqa: SLF001
     if rc != 0:
         _log(f"commit failed: {(err or out).strip()}")

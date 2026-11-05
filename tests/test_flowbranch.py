@@ -113,6 +113,7 @@ def test_nothing_to_stash_leaves_other_stashes_alone(repo):
 
 def test_flow_files_reads_writes_since_and_keeps_checkout_only(repo, monkeypatch):
     inside, outside = repo.path("docs/a.md"), "/elsewhere/b.md"
+    os.makedirs(repo.path("docs")); repo.write("docs/a.md")
     evs = [{"type": "tool", "name": "Write", "summary": inside, "ts": 10},
            {"type": "tool", "name": "Edit", "summary": inside[:5], "detail": inside, "ts": 11},
            {"type": "tool", "name": "Write", "summary": outside, "ts": 12},
@@ -122,6 +123,25 @@ def test_flow_files_reads_writes_since_and_keeps_checkout_only(repo, monkeypatch
     monkeypatch.setattr(store, "timed_events", lambda sid: evs)
     monkeypatch.setattr(store, "get_session", lambda sid: {"cwd": repo.main, "work_cwd": None})
     assert flowbranch.flow_files("sid", 5) == [inside]
+
+
+def test_flow_files_leaves_out_what_git_cannot_carry(repo, monkeypatch):
+    os.makedirs(repo.path(".mystical/tickets/x"))
+    with open(repo.path(".mystical/.gitignore"), "w") as f:
+        f.write("*\n")
+    repo.write(".mystical/tickets/x/01-a.md"); repo.write("GLOSSARY.md")
+    ticket, glossary, gone = (repo.path(p) for p in (".mystical/tickets/x/01-a.md", "GLOSSARY.md", "gone.py"))
+    evs = [{"type": "tool", "name": "Write", "summary": p, "ts": 10} for p in (ticket, glossary, gone)]
+    monkeypatch.setattr(store, "timed_events", lambda sid: evs)
+    monkeypatch.setattr(store, "get_session", lambda sid: {"cwd": repo.main, "work_cwd": None})
+    assert flowbranch.flow_files("sid", 5) == [glossary]       # ignored, and written then deleted, stay out
+
+
+def test_files_already_committed_in_the_feature_checkout_are_nothing_to_carry(repo_on_feature):
+    r = repo_on_feature
+    r.write("GLOSSARY.md", r.wt)
+    _git(r.wt, "add", "GLOSSARY.md"); _git(r.wt, "commit", "-qm", "g")
+    assert flowbranch.carry_and_commit(r.wt, r.wt, [r.path("GLOSSARY.md", r.wt)], "x") is False
 
 
 def test_pop_conflict_restores_files_and_raises(repo):
