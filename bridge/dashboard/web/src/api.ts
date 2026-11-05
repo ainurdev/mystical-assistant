@@ -1363,8 +1363,8 @@ export interface TicketSet {
   tickets: Record<string, TicketRow>;
 }
 /** One AI-powered extra, switched from the settings modal's AI tab. What runs on its
- *  own ships off; a sub-switch (`parent`: the skill router's six) costs nothing and
- *  ships on. */
+ *  own ships off. A sub-switch (`parent`: SKILL PATHS' four) is drawn and obeyed only
+ *  while its parent is on; TICKETS among them ships off, the rest ship on. */
 export interface AiFeature {
   key: string;
   label: string;

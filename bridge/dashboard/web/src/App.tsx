@@ -2411,7 +2411,7 @@ export function App() {
           }} />
       ),
     },
-    // Hidden while SKILL ROUTER is off — no path is being set.
+    // Hidden while SKILL PATHS is off — no path is being set.
     ...(ai.router ? [{
       id: "flow", label: "Flow", icon: <Route {...RAIL} />, ownScroll: true, group: "session",
       hint: "the path this session is on",

@@ -10,8 +10,12 @@ tree: the session's checkout may hold other sessions' half-done edits, and those
 must stay exactly where they are. A stash carries them because it is the one
 git primitive that moves chosen files, untracked ones included, between two
 worktrees of one repo: the stash list is shared across them. That sharing is
-also the hazard: `stash pop` takes the newest entry, so carry_and_commit pops
-only if its own push added one, or it would apply someone else's stash.
+also the hazard: a bare `stash pop` takes the newest entry, which may be someone
+else's, so carry_and_commit pops only when its own push added an entry, and then
+exactly that one, found by its commit id (indexes shift whenever anyone stashes).
+
+ensure_feature_branch also makes `fix/<slug>` for a BUG path's FIX (paths._start):
+the same rule, another prefix.
 """
 
 import os

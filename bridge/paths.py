@@ -13,11 +13,11 @@ installed one needs no disabling.
 
 The routing instructions ride the system prompt as PACK_TEXT, a constant: the
 appended prompt sits after the last cache breakpoint, so text that varied by
-turn would re-write the whole block at cache-write price. Whether a session gets
-it is decided once per session (pack_for) and kept, like the Rivendell note, so
-flipping the switch or a session's origin mid-run can't change a running
-session's prompt. Unattended runs (Rivendell jobs, device runs) never get it:
-nobody is there to answer a grill or press a step button, so a path would stall.
+turn would re-write the whole block at cache-write price. The switch is read every
+run, so flipping it applies from the next turn; only the session's origin is
+decided once (pack_for) and kept, like the Rivendell note. Unattended runs (Rivendell
+jobs, device runs) never get the pack or the plugin: nobody is there to answer a
+grill or press a step button, so a path would stall.
 
 Flow state (which path a session is on, which stations are done) is a small JSON
 file, flows.json, beside the bridge DB, written atomically like waits.json. It is
@@ -25,7 +25,14 @@ a file rather than a table so a path survives a bridge restart without a schema
 change, and a worktree's pinned BRIDGE_DB keeps its flows off the live ones.
 step_done is idempotent per turn_id: a turn can be retried, resumed or replayed
 after a restart, and the same turn must never advance the path twice. The turn
-that finished a station is remembered (`last`) and a repeat returns the same answer.
+that finished a station is remembered (`last`) and a repeat returns the same answer;
+a resume nudge's turn counts as the turn it resumes. A turn sent as
+/mattpocock-skills:x keeps the path only when x is its next station, else x's own
+path replaces it (on_turn_start), and its StepDone marks x's station: an old path
+never takes over an unrelated step. The step StepDone records starts once (`next`
+`started`), at the first clean end of its turn or of a resume of it, or when AUTO is
+released. No auto step commits to the default branch: build-here, and a FIX on it,
+move the session into a worktree of its own first (flowbranch).
 """
 
 import json
@@ -250,9 +257,10 @@ def path_for_command(skill: str) -> tuple:
 
 # --- starting the next step ---------------------------------------------------
 
-# Stations that start a turn by themselves. build starts ticket sessions instead
-# (tickets.start_build) while TICKETS is on; merge waits for its own task, so it
-# returns False: the user moves it (YOU).
+# Stations _start queues a turn for in this session. build starts ticket sessions
+# instead while TICKETS is on (tickets.start_build), and merge runs in a session of
+# its own once every ticket is done (tickets.start_merge, then advance); with
+# TICKETS off both are the user's.
 _AUTO_START = {"spec", "tickets", "retro", "fix", "build-here"}
 ZONE_TOKENS = 150_000
 

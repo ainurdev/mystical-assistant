@@ -270,7 +270,7 @@ mocks are in OSGILIATH (dark). Every hero must be checked in a light theme (PEBB
 
 ## Calls I made (check these)
 
-1. Unlocked starts: the six skills in section 1. Everything that publishes, builds or hands off stays user-only and
+1. Unlocked starts: the four skills in section 1. Everything that publishes, builds or hands off stays user-only and
    is started by Mystical.
 2. `StepDone` as an explicit signal, not "the turn ended".
 3. Several blockers: start from the first blocker's branch and merge the rest in at creation.

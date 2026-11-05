@@ -11,7 +11,7 @@ queued/running/done/fix/missing, its branch, worktree, session and base. State i
 not DB tables, so a set moves with its checkout and a restart loses nothing. A registry
 (`ticketsets.json`, beside the DB like waits.json) lists the folders so we can find sets.
 
-Rules the scheduler (Task 10) and merge (Task 11) follow, decided in the spec:
+Rules the scheduler and the merge follow, decided in the spec:
 - At most 3 tickets run at once.
 - Branching: a ticket with one blocker starts from that blocker's branch; with several,
   from the first blocker's branch with the rest merged in.
