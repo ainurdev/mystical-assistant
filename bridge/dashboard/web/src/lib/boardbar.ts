@@ -5,7 +5,7 @@
    Widths are proportional with a floor so a lane of 1 stays legible. */
 export type Lane = { key: string; name: string; n: number; flex: number; color: string };
 
-const COLORS = ["var(--txl)", "var(--ok)", "var(--acc)", "var(--purple)", "var(--acc2)"];
+const COLORS = ["var(--txl)", "var(--ok)", "var(--acc)", "var(--purple)", "var(--acc2, var(--acc))"];
 const MAX = 5;
 
 export function boardLanes(tasks: { column: string | null }[]): Lane[] {

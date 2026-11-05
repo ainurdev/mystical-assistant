@@ -5,7 +5,7 @@ import { RailHero } from "./RailHero";
 /* The Files tab's hero: where this session's writes landed, one bar of folders
    (each its own theme colour; the 5th is "other") and the last three files
    written, a green dot on the one a running turn is writing now. */
-const COLORS = ["var(--acc)", "var(--info, var(--acc2))", "var(--purple)", "var(--txl)", "color-mix(in srgb, var(--txl) 50%, transparent)"];
+const COLORS = ["var(--acc)", "var(--info, var(--acc2, var(--acc)))", "var(--purple)", "var(--txl)", "color-mix(in srgb, var(--txl) 50%, transparent)"];
 
 export function FilesFootprint({ edited, now }: { edited: Set<string>; now: string | null }) {
   const f = footprint(edited, now, "");
