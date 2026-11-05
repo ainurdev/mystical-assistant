@@ -504,12 +504,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(queue_manager.snapshot(sid) if sid else
                               {"session_id": "", "seq": 0, "paused": False, "items": []})
         if path == "/local/flow":
-            from bridge import paths
+            from bridge import paths, tickets
             sid = (qs.get("session", [""])[0] or "").strip()
             s = store.get_session(sid) if sid else None
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
-            return self._json({"flow": paths.get(sid), "set": None})   # set: tickets, Task 9
+            return self._json({"flow": paths.get(sid), "set": tickets.summary_for(sid)})
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/today":
