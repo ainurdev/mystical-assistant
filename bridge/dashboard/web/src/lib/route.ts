@@ -51,11 +51,13 @@ export function caption(r: Route, how: "auto" | "inline" | "row"): { tag: string
   }
   if (r.kind === "next") return { tag: "NEXT", why: r.why, tail: [["Tab", r.fresh ? "opens it in a fresh session" : "takes it"]] };
   const take = how === "row" ? "puts it in front" : "takes it";
-  if (r.kind === "ask") return how === "row"
-    ? { tag: "NO CLEAR FIT", tone: "dim", why: "", tail: [["Tab", "puts /ask-matt in front, it names the flow"], ["", "ignore it to send as typed"]] }
-    : { tag: "NO CLEAR FIT", tone: "dim", why: "Tab hands it to /ask-matt, which names the flow", tail: [["", "ignore it to send as typed"]] };
-  if (r.kind === "setup") return { tag: "ONCE", why: r.why, tail: [["Tab", take], ["Esc", "hides it for this repo"]] };
   return { tag: "ROUTE", why: r.why, tail: [["Tab", take]] };
+}
+
+/** Is a flow step already waiting in the session's queue (an item added by the flow, not typed)?
+ *  Then the NEXT STEP ghost stays hidden, so the step isn't offered a second time. */
+export function flowQueued(items: { surface: string; status: string }[]): boolean {
+  return items.some((q) => q.surface === "flow" && (q.status === "queued" || q.status === "running"));
 }
 
 /** `text`, which leads with `/from`, with that command (and the one space after it) swapped

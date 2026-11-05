@@ -135,6 +135,7 @@ import { AgentsPill } from "./components/AgentsPill";
 import { GoalPill } from "./components/GoalPill";
 import { WaitPill } from "./components/WaitPill";
 import { useSessionQueue } from "./components/design/useSessionQueue";
+import { flowQueued } from "./lib/route";
 import { Spinner } from "./components/ui";
 
 
@@ -1521,7 +1522,7 @@ export function App() {
     // newAgent: the agent of a session minted for this prompt (startIn), which
     // this render's `sessions` doesn't know yet; picks: that session's own,
     // where the composer's are still the session you left's.
-    opts?: { force?: boolean; sessionId?: string; project?: string; newAgent?: string;
+    opts?: { force?: boolean; noPath?: boolean; sessionId?: string; project?: string; newAgent?: string;
              picks?: { model: string; perm: string; effort: string } },
   ): Promise<boolean> {
     const sid = opts?.sessionId ?? sessionId;
@@ -1580,7 +1581,7 @@ export function App() {
         prompt: text, images, project,
         session_id: sid, model: (knobs && pk.model) || undefined, effort: (knobs && pk.effort) || undefined,
         permission_mode: (knobs && pk.perm) || undefined, ponytail: ponytail || undefined,
-        force: opts?.force || undefined,
+        force: opts?.force || undefined, no_path: opts?.noPath || undefined,
       });
       // Held: this looks like different work from the session it would resume.
       // Nothing ran — park the prompt on the card and let the user route it.
@@ -3171,7 +3172,7 @@ export function App() {
                       onModel={setModel} onEffort={setEffort}
                       perm={permMode} onPerm={setPermMode} ponytail={ponytail} onPonytail={setPonytail}
                       showPonytail={ai.ponytail}
-                      onSend={(t, i) => void send(t, i)} onStop={() => void stop()}
+                      onSend={(t, i, noPath) => void send(t, i, noPath ? { noPath: true } : undefined)} onStop={() => void stop()}
                       // An agent turn can't be steered (the bridge refuses), nor one that has
                       // answered while background tasks run: SEND queues instead.
                       onSteer={agentPick || openBg ? undefined : (t, i) => void queue.steer(t, i).then((ok) => { if (!ok) void send(t, i); })}
@@ -3185,7 +3186,7 @@ export function App() {
                       onOpenMap={ai.graph && mapOn && sessionProject ? () => openAnalyze(sessionProject, undefined, "map") : undefined}
                       fileSink={composerFiles}
                       bg={openBg} onAccounts={loadAccounts}
-                      routing={ai.router} askMatt={ai.askmatt} smartZone={ai.smartzone} routeCtx={routeCtx}
+                      routing={ai.router} flowQueued={flowQueued(queue.items)} smartZone={ai.smartzone} routeCtx={routeCtx}
                       onRouteFresh={sessionProject ? (t) => void newSession(sessionProject, t, selected?.branch, undefined, routeCwd) : undefined}
                       placeholder={selected && isJob(selected) && oneShot(selected.job)
                         ? "ask about this — the answer stays here; Rivendell already has its copy"

@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/route.check.ts
-import { SMART_ZONE, caption, ghostFor, isDropped, isStale, shouldAutoApply, swapLead } from "./route.ts";
+import { SMART_ZONE, caption, flowQueued, ghostFor, isDropped, isStale, shouldAutoApply, swapLead } from "./route.ts";
 import type { Route } from "../api.ts";
 
 const base: Route = { name: "", desc: "", why: "", auto: false, arg: "", fresh: false, kind: "start", alts: [] };
@@ -51,8 +51,6 @@ console.assert(isStale("add x", "add xy", 3, 4), "both changed");
 
 // --- caption: the line under the box, per kind and per where the command is drawn ---
 const cap = (r: Route, how: "auto" | "inline" | "row") => { const c = caption(r, how); return [c.tag, c.tone ?? "", c.why, ...c.tail.flat()].join("|"); };
-const ask: Route = { ...base, name: "mattpocock-skills:ask-matt", kind: "ask", why: "x" };
-const setup: Route = { ...base, kind: "setup", why: "once per repo" };
 const compact: Route = { ...next, name: "compact", why: "162k is past the 150k smart zone", arg: "keep the decisions so far; next: /to-spec" };
 // Esc, not ⌫: the caret sits at the end of the text after the pick, where ⌫ would cost a character of yours
 console.assert(cap(auto, "auto") === "AUTO||a feature: settle the design first|Esc|drops it||click it for other fits", "auto: why, then Esc and the other fits");
@@ -62,11 +60,8 @@ console.assert(cap(next, "inline") === "NEXT||the grill is settled|Tab|takes it"
 console.assert(cap({ ...next, fresh: true }, "inline") === "NEXT||the grill is settled|Tab|opens it in a fresh session", "a ticket opens in a fresh session");
 console.assert(cap(compact, "inline") === "NEXT|warn|162k is past the 150k smart zone|Tab|takes it||then /to-spec", "compact: warn, then the step it makes room for");
 console.assert(cap({ ...compact, arg: "" }, "inline") === "NEXT|warn|162k is past the 150k smart zone|Tab|takes it", "no step named, no then");
-console.assert(cap(setup, "inline") === "ONCE||once per repo|Tab|takes it|Esc|hides it for this repo", "setup on an empty box: Esc hides it for this repo");
 // a box with text: the suggestion sits in the caption row, so Tab puts it in front of the text
 console.assert(cap(suggest, "row") === "ROUTE||reads like a review|Tab|puts it in front", "a start suggestion in the row");
-console.assert(cap(ask, "row") === "NO CLEAR FIT|dim||Tab|puts /ask-matt in front, it names the flow||ignore it to send as typed", "ask in the row: no why, its own copy");
-console.assert(cap(setup, "row") === "ONCE||once per repo|Tab|puts it in front|Esc|hides it for this repo", "setup in the row");
 console.assert(cap(next, "row") === cap(next, "inline") && cap(compact, "row") === cap(compact, "inline"), "next steps read the same wherever they are drawn");
 
 // --- swapLead: a pick from the other fits, or Send as typed --------------------------
@@ -74,5 +69,9 @@ console.assert(swapLead(`/${GRILL} add x`, GRILL, "mattpocock-skills:prototype")
 console.assert(swapLead(`/${GRILL} add x`, GRILL, null) === "add x", "Send as typed takes the command and its space out");
 console.assert(swapLead(`/${GRILL} `, GRILL, null) === "" && swapLead(`/${GRILL}`, GRILL, "a") === "/a ", "nothing after the command");
 console.assert(swapLead(`/${GRILL}\nadd x`, GRILL, null) === "\nadd x", "a newline after it stays, as Backspace leaves it");
+
+// --- flowQueued: a step the flow queued hides the NEXT STEP ghost ---------------------
+console.assert(flowQueued([{ surface: "flow", status: "queued" }]) && flowQueued([{ surface: "flow", status: "running" }]), "a queued or running flow step");
+console.assert(!flowQueued([]) && !flowQueued([{ surface: "dashboard", status: "queued" }]) && !flowQueued([{ surface: "flow", status: "done" }]), "typed or finished items do not hide it");
 
 console.log("route.check: ok");

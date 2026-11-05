@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  CircleHelp, Code2, FlaskConical, Gauge, GitCommitVertical, GraduationCap, ListTodo, MessagesSquare,
-  Palette, PenLine, Play, Puzzle, Route, Scissors, Settings2, ShieldQuestion, SkipForward, Sparkles,
+  Code2, FlaskConical, Gauge, GitCommitVertical, GraduationCap, ListTodo, MessagesSquare,
+  Palette, PenLine, Play, Puzzle, Route, Scissors, ShieldQuestion, SkipForward, Sparkles,
   Ticket, Wand2, Waypoints, Workflow, type LucideIcon,
 } from "lucide-react";
 import {
@@ -37,12 +37,10 @@ const EXTRA_ICONS: Record<string, LucideIcon> = {
   graph: Waypoints,
   commitmsg: GitCommitVertical,
   router: Route,
-  askmatt: CircleHelp,
   autopick: Wand2,
   nextstep: SkipForward,
-  tickets: Ticket,
+  ticketruns: Ticket,
   smartzone: Gauge,
-  setupnudge: Settings2,
   grillcards: MessagesSquare,
 };
 

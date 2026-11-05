@@ -496,7 +496,7 @@ export function Composer({
   disabled, running, model, models, usage, accounts, agentPick, profile, profiles, onProfile, defaultProfile, onDefaultProfile, overrides, effort, perm, onPerm, ponytail, onPonytail, showPonytail, injectedText, injectNonce, sessionId,
   draft, onDraft, contextTokens, contextWindow, onModel, onEffort, onSend, onSteer, onStop, onCompact,
   queued, onCancelQueued, onEjectQueued, onSteerQueued, project, onOpenMap, paused, onTogglePause, pills, fileSink, placeholder,
-  dock, ask, bg = 0, onAccounts, routing, routeCtx, onRouteFresh, askMatt, smartZone,
+  dock, ask, bg = 0, onAccounts, routing, routeCtx, onRouteFresh, flowQueued, smartZone,
 }: {
   disabled: boolean;
   running: boolean;
@@ -545,7 +545,7 @@ export function Composer({
   contextWindow?: number;
   onModel: (m: ModelId) => void;
   onEffort: (e: EffortLevel | "") => void;
-  onSend: (text: string, images: string[]) => void;
+  onSend: (text: string, images: string[], noPath?: boolean) => void;
   onSteer?: (text: string, images: string[]) => void;
   onStop: () => void;
   onCompact?: (instructions?: string) => void;
@@ -581,8 +581,9 @@ export function Composer({
   routeCtx?: { project: string; cwd?: string; prompts: string[]; lastStatus?: string; first: boolean };
   /** Tab on a route that opens in a fresh session (the next free ticket): its draft. */
   onRouteFresh?: (text: string) => void;
-  /** Sub-switches: Ask Matt among the other fits, the 150k mark on the CTX meter. */
-  askMatt?: boolean;
+  /** A flow step sits in the session's queue: the NEXT STEP ghost stays hidden. */
+  flowQueued?: boolean;
+  /** Sub-switch: the 150k mark on the CTX meter. */
   smartZone?: boolean;
 }) {
   const text = draft;
@@ -812,7 +813,7 @@ export function Composer({
   const [applied, setApplied] = useState<Route | null>(null);   // the auto pick put in front of this draft
   const [dropped, setDropped] = useState(false);                // no auto pick for this draft: one was taken out, or it wasn't typed fresh here
   const [hidden, setHidden] = useState(false);                  // Esc on the route on show, until the box empties or fills
-  const [asked, setAsked] = useState(0);                        // bumped to ask again
+  const [noPath, setNoPath] = useState(false);                 // Esc took an auto pick out of this draft: its send says "no path"
   const [fitPick, setFitPick] = useState(0);
   const fitsId = useId();
   const routeSeq = useRef(0);
@@ -831,7 +832,6 @@ export function Composer({
       api.route({
         project: c.project, cwd: c.cwd, text, prompts: c.prompts, last_status: c.lastStatus, first: c.first,
         ctx_tokens: contextTokens === undefined ? undefined : Math.round(contextTokens),
-        no_setup: localStorage.getItem(`route.setup.hidden:${c.project}`) === "1",
       }).then(({ route }) => {
         if (stale()) return;
         setHeld(route && { r: route, for: text, ctx: ctxKey });
@@ -844,19 +844,20 @@ export function Composer({
     }, 400);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text, ctxKey, contextTokens, asked]);
+  }, [text, ctxKey, contextTokens]);
   useEffect(() => { if (!blank && isDropped(text, applied?.name ?? null)) setDropped(true); }, [text, applied, blank]);
   useEffect(() => { if (text !== landed.current) landed.current = null; }, [text]);
   // Hiding lasts until the box empties or fills; an emptied box is a fresh draft.
-  useEffect(() => { setHidden(false); if (blank) { setApplied(null); setDropped(false); } }, [blank]);
+  useEffect(() => { setHidden(false); if (blank) { setApplied(null); setDropped(false); setNoPath(false); } }, [blank]);
   // Another session's draft, or one restored after a reload, wasn't typed fresh here: it gets no auto pick.
   useEffect(() => {
-    setApplied(null); setHidden(false); setDropped(text.trim() !== "");
+    setApplied(null); setHidden(false); setNoPath(false); setDropped(text.trim() !== "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
   const live = routeOn && held && held.ctx === ctxKey && !hidden && (!blank || held.for.trim() === "") ? held.r : null;
   // ghostFor: never over a /command, nor for an auto pick that isn't in the text.
-  const ghost = live && blank ? ghostFor("", live) : null;
+  // A flow step already queued is the next step: its ghost would offer it twice.
+  const ghost = live && blank && !(flowQueued && live.kind === "next") ? ghostFor("", live) : null;
   const rowRoute = live && !blank && ghostFor(text, live) ? live : null;
   const auto = routeOn && applied && !dropped && !isDropped(text, applied.name) ? applied : null;
   // What you typed, without the auto pick: DESIGN, GRILL and COMPACT put their own command in front.
@@ -865,10 +866,8 @@ export function Composer({
   const how = auto ? "auto" : ghost ? "inline" : "row";
   // The list of other fits goes with the command it is for (⌫ while it is open), backdrop and all.
   useEffect(() => { if (!shown) setOpenDrop((d) => (d === "fits" ? "" : d)); }, [shown]);
-  const ASK_MATT = "mattpocock-skills:ask-matt";
   const fits = shown ? [
     ...shown.alts.map((a) => ({ name: a.name as string | null, label: `/${a.name}`, desc: a.why, title: a.desc })),
-    ...(askMatt && shown.name !== ASK_MATT ? [{ name: ASK_MATT, label: "Ask Matt", desc: "/ask-matt reads the whole map and names the flow", title: undefined }] : []),
     { name: null, label: "Send as typed", desc: "no command", title: undefined },
   ] : [];
   const openFits = () => { setFitPick(0); setOpenDrop((d) => (d === "fits" ? "" : "fits")); };
@@ -901,8 +900,7 @@ export function Composer({
   }
 
   /** While open, the other fits take ↑/↓, Enter or Tab, and Esc, as the / list does; Alt+↓
-   *  opens them. Tab takes the route on show; Esc dismisses it, the setup nudge for this repo
-   *  (asking again for the route it stood in for). An auto pick goes with Esc too, and with the
+   *  opens them. Tab takes the route on show; Esc dismisses it. An auto pick goes with Esc too, and with the
    *  first ⌫ while the text is as the pick left it: the caret is at the end then, where ⌫ would
    *  cost a character of yours. A key taken here goes no further: App's own Esc would close a
    *  panel as well. */
@@ -917,7 +915,8 @@ export function Composer({
     if (e.shiftKey || e.altKey || e.ctrlKey || e.metaKey) return false;
     // A selection stays yours to delete: select all + ⌫ still clears the draft.
     const firstBksp = e.key === "Backspace" && text === landed.current && !!window.getSelection()?.isCollapsed;
-    if (auto && (e.key === "Escape" || firstBksp)) { dismiss(); return take(); }
+    // Only Esc on an auto pick says "no path" for the send; Backspace and Send as typed just drop it.
+    if (auto && (e.key === "Escape" || firstBksp)) { if (e.key === "Escape") setNoPath(true); dismiss(); return take(); }
     const r = ghost ? live : rowRoute;
     if (!r) return false;
     if (e.key === "Tab") {
@@ -927,11 +926,7 @@ export function Composer({
       return take();
     }
     if (e.key === "Escape") {
-      if (r.kind === "setup") {
-        localStorage.setItem(`route.setup.hidden:${routeCtx!.project}`, "1");
-        setHeld(null);
-        setAsked((n) => n + 1);
-      } else dismiss();
+      dismiss();
       return take();
     }
     return false;
@@ -1007,7 +1002,7 @@ export function Composer({
       return;
     }
     if (!t || disabled) return;
-    onSend(t, images);
+    onSend(t, images, noPath || undefined);
     setText("");
     setImages([]);
   }

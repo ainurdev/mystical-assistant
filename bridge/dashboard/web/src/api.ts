@@ -1527,12 +1527,11 @@ export interface SlashCommand {
 
 // The one `/name` POST /local/route (bridge/route.py) offers for what is in the composer.
 // `kind`: start = a command for the typed text, next = the step after a flow command
-// ended, ask = no clear fit (hand it to /ask-matt), setup = once per repo. `arg` goes
-// after the name, `fresh` means open it in a new session, `alts` are the other fits.
+// ended. `arg` goes after the name, `fresh` means open it in a new session, `alts` are the other fits.
 // Acted on by lib/route.ts.
 export type Route = {
   name: string; desc: string; why: string; auto: boolean; arg: string; fresh: boolean;
-  kind: "start" | "next" | "ask" | "setup";
+  kind: "start" | "next";
   alts: { name: string; desc: string; why: string }[];
 };
 
@@ -1604,6 +1603,7 @@ export interface RunBody {
   permission_mode?: string; // the picker's mode — the run saves it to the session; omit to keep the session's
   ponytail?: string; // per-run code-minimalism intensity (off/lite/full/ultra); omit for default
   force?: boolean; // skip the "unrelated to this session?" check (user already decided)
+  no_path?: boolean; // Esc took the auto-applied skill out of this prompt: the run is told there is no path
 }
 
 // /local/run either starts a job or holds the prompt because it looks unrelated to
@@ -2444,7 +2444,7 @@ export const api = {
   commands: (project?: string | null) =>
     req<{ commands: SlashCommand[] }>(`/local/commands${project ? `?project=${encodeURIComponent(project)}` : ""}`),
   // The /command that fits the composer's text, or null (also when SKILL ROUTER is off).
-  route: (body: { project: string; cwd?: string; text: string; prompts: string[]; last_status?: string; ctx_tokens?: number; first: boolean; no_setup?: boolean }) =>
+  route: (body: { project: string; cwd?: string; text: string; prompts: string[]; last_status?: string; ctx_tokens?: number; first: boolean }) =>
     req<{ route: Route | null }>("/local/route", { method: "POST", body }),
   // --- skills (project + system SKILL.md dirs, and the built-in catalog) ---
   skills: (project?: string | null) =>
