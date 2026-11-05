@@ -7834,3 +7834,56 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .fl-zone .bar { margin-top: 5px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--txl) 18%, transparent); overflow: hidden; }
 .fl-zone .bar i { display: block; height: 100%; background: var(--acc); }
 .fl-zone.over .bar i { background: var(--warn); }
+
+/* TICKETS mode (components/hud/TicketsMode.tsx): a set's card, its ticket stubs, the folded finished set.
+   --tk-side is the sidebar's own ground, so the stub notches read as holes punched through it. */
+.tk-list { --tk-side: color-mix(in srgb, var(--panel) 86%, var(--canvas)); }
+.tk-set { margin: 8px 6px 10px; border: 1px solid color-mix(in srgb, var(--txl) 20%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--txl) 4%, transparent); overflow: hidden; }
+.tk-set .hd { display: flex; align-items: center; gap: 8px; padding: 9px 10px 2px; }
+.tk-set .nm, .tk-fold .nm { font-size: var(--t9); font-weight: 800; letter-spacing: .18em; color: var(--txb); }
+.tk-set .sub { padding: 0 10px 4px; font-size: var(--t95); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tk-set .sub b { color: var(--txd); font-weight: 600; }
+.tk-pill { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 9px; font-size: var(--t9); font-weight: 700; letter-spacing: .06em; margin-left: auto; color: var(--acc2, var(--acc)); background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.tk-slots { display: inline-flex; gap: 3px; margin-left: auto; }
+.tk-slots i { width: 7px; height: 7px; border-radius: 50%; background: color-mix(in srgb, var(--txl) 30%, transparent); }
+.tk-slots i.on { background: var(--ok); box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 60%, transparent); }
+.tk-dag { display: block; width: calc(100% - 8px); margin: 2px 4px 4px; }
+.tk-dag text { font-family: inherit; }
+.tk-stub { position: relative; display: grid; grid-template-columns: 46px 1fr; width: calc(100% - 12px); margin: 0 6px 6px; min-height: 50px; border-radius: 8px; background: color-mix(in srgb, var(--txl) 6%, transparent); overflow: hidden; }
+.tk-hit { position: absolute; inset: 0; z-index: 0; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.tk-hit:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
+.tk-stub .no, .tk-stub .bd { position: relative; pointer-events: none; }
+.tk-stub .tk-btn { pointer-events: auto; }
+.tk-stub .no { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: var(--t95); font-weight: 800; color: var(--txd); border-right: 2px dashed color-mix(in srgb, var(--canvas) 85%, transparent); font-variant-numeric: tabular-nums; }
+.tk-stub .no small { font-size: var(--t9); font-weight: 700; letter-spacing: .1em; color: var(--txl); }
+.tk-stub::before, .tk-stub::after { content: ""; position: absolute; left: 39px; width: 14px; height: 14px; border-radius: 50%; background: var(--tk-side); }
+.tk-stub::before { top: -7px; }
+.tk-stub::after { bottom: -7px; }
+.tk-stub .bd { padding: 8px 10px 8px 12px; min-width: 0; }
+.tk-stub .t1 { display: flex; align-items: center; gap: 6px; font-size: var(--t105); font-weight: 600; color: var(--txb); white-space: nowrap; }
+.tk-stub .t1 > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+.tk-stub .t1 .r { margin-left: auto; flex: none; font-weight: 600; font-size: var(--t95); }
+.tk-stub .t2 { display: flex; align-items: center; gap: 7px; margin-top: 5px; font-size: var(--t9); color: var(--txl); white-space: nowrap; overflow: hidden; }
+.tk-stub .t2 > span { overflow: hidden; text-overflow: ellipsis; }
+.tk-stub.run { background: color-mix(in srgb, var(--ok) 8%, transparent); }
+.tk-stub.run .no, .tk-stub.done .no { color: var(--ok); }
+.tk-stub.ask { background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.tk-stub.ask .no { color: var(--warn); }
+.tk-stub.fix { background: color-mix(in srgb, var(--err) 9%, transparent); }
+.tk-stub.fix .no { color: var(--err); }
+.tk-stub.q { opacity: .55; }
+.tk-stub.mg { border: 1px dashed color-mix(in srgb, var(--txl) 40%, transparent); background: transparent; }
+.tk-stub.mg.run { border-style: solid; border-color: color-mix(in srgb, var(--acc) 50%, transparent); background: color-mix(in srgb, var(--acc) 7%, transparent); }
+.tk-stub.mg .no { color: var(--acc2, var(--acc)); }
+.tk-btn { margin-left: auto; flex: none; display: inline-flex; align-items: center; height: 17px; padding: 0 7px; border: 0; border-radius: 9px; font-family: inherit; font-size: var(--t9); font-weight: 800; cursor: pointer; color: var(--acc-on); background: var(--warn); }
+.tk-btn.err { background: var(--err); }
+.tk-fold { position: relative; display: flex; align-items: center; gap: 8px; margin: 2px 6px 8px; padding: 9px 10px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--txl) 16%, transparent); font-size: var(--t95); color: var(--txl); }
+.tk-fold .nm { color: var(--txd); }
+.tk-more { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--txl); cursor: pointer; }
+.tk-more:hover { color: var(--txb); background: color-mix(in srgb, var(--acc) 8%, transparent); }
+.tk-menu { position: absolute; right: 8px; top: 100%; z-index: 5; margin-top: 2px; padding: 3px; border: 1px solid color-mix(in srgb, var(--acc) 22%, transparent); border-radius: 6px; background: var(--panel2); }
+.tk-menu button { display: block; border: 0; background: transparent; color: var(--txb); font-family: inherit; font-size: var(--t95); padding: 6px 10px; cursor: pointer; white-space: nowrap; }
+.tk-menu button:hover { background: color-mix(in srgb, var(--acc) 8%, transparent); }
+.tk-live { animation: tkpulse 1.6s ease-in-out infinite; }
+@keyframes tkpulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .tk-live { animation: none; } }

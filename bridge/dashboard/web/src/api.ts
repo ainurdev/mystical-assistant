@@ -1342,6 +1342,16 @@ export interface AccountsInfo {
 /** One AI-powered extra, switched from the settings modal's AI tab. What runs on its
  *  own ships off; a sub-switch (`parent`: the skill router's six) costs nothing and
  *  ships on. */
+/** One ticket in a set (bridge/tickets.py): `session` is its live turn state, "running" or how the last ended. */
+export interface TicketRow {
+  status: "queued" | "running" | "retry" | "done" | "fix" | "missing";
+  title: string; blocked_by: string[]; branch: string; session_id: string; session?: string;
+}
+export interface TicketSet {
+  folder: string; slug: string; parent_session: string; feature_branch: string; merged: number;
+  status: "building" | "merging" | "merged" | "stopped" | "fix"; error?: string;
+  tickets: Record<string, TicketRow>;
+}
 export interface AiFeature {
   key: string;
   label: string;
@@ -2505,6 +2515,12 @@ export const api = {
 
   // --- SETTINGS ▸ System ▸ Storage (bridge/storage.py) ---
   storage: () => req<StorageScan>("/local/storage"),
+  /** Ticket sets, newest first (bridge/tickets.py summaries). */
+  tickets: () => req<{ sets: TicketSet[] }>("/local/tickets"),
+  retryTicket: (folder: string, n: string) =>
+    req<{ text: string }>("/local/tickets/retry", { method: "POST", body: { folder, n } }),
+  cleanupTickets: (folder: string) =>
+    req<{ removed: string[]; skipped: string[] }>("/local/tickets/cleanup", { method: "POST", body: { folder } }),
   clearStorage: (clear: StorageClear[], move_files: string[] = []) =>
     req<{ freed: number; errors: string[] }>("/local/storage/clear", { method: "POST", body: { clear, move_files } }),
 };
