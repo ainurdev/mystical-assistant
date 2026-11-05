@@ -1,9 +1,11 @@
 """paths: the bundled skill pack rides every interactive run while SKILL PATHS
 (the `router` AI switch) is on. Run: python -m pytest tests/test_paths.py -v"""
 
+import os
+
 import pytest
 
-from bridge import aifeatures, paths, runner, store
+from bridge import aifeatures, config, paths, runner, store
 
 store.init()
 SID = "11111111-2222-3333-4444-555555555555"
@@ -63,3 +65,74 @@ def test_no_pack_for_rivendell_jobs(router_on, rivendell_session_c2):
 
 def test_no_pack_when_off(router_off, session_c1):
     assert paths.pack_for("c1") == ""
+
+
+@pytest.fixture
+def state_dir():
+    f = os.path.join(os.path.dirname(config.BRIDGE_DB), "flows.json")
+    paths._cache.clear()
+    if os.path.exists(f):
+        os.remove(f)
+    yield
+    paths._cache.clear()
+
+
+def test_feature_grill_done_goes_to_spec(state_dir):
+    paths.set_path("s1", "feature", "new feature", "claude")
+    assert paths.step_done("s1", "t1") == "spec"
+
+
+def test_choice_here_switches_to_feature_here(state_dir):
+    paths.set_path("s1", "feature", "small", "claude")
+    assert paths.step_done("s1", "t1", choice="here") == "build-here"
+    g = paths.get("s1")
+    assert g["path"] == "feature-here" and g["done"] == ["grill"]
+
+
+def test_step_done_same_turn_twice_is_one_step(state_dir):
+    paths.set_path("s1", "bug", "crash", "rule")
+    assert paths.step_done("s1", "t1") == "fix" and paths.step_done("s1", "t1") == "fix"
+    assert paths.get("s1")["done"] == ["diagnose"]
+
+
+def test_last_station_returns_none(state_dir):
+    paths.set_path("s1", "feature-here", "x", "rule")
+    for i in range(2):
+        paths.step_done("s1", f"t{i}")
+    assert paths.step_done("s1", "t9") is None
+    assert paths.step_done("s1", "t9") is None
+    assert paths.get("s1")["next"] is None and paths.get("s1")["done"][-1] == "retro"
+
+
+def test_flows_survive_reload(state_dir):
+    paths.set_path("s1", "bug", "crash", "rule")
+    paths._cache.clear()
+    g = paths.get("s1")
+    assert g["path"] == "bug" and g["auto"] is True and g["at"] > 0
+    paths.set_auto("s1", False)
+    paths._cache.clear()
+    assert paths.get("s1")["auto"] is False
+
+
+def test_new_path_replaces_old(state_dir):
+    paths.set_path("s1", "bug", "crash", "rule")
+    paths.step_done("s1", "t1")
+    paths.set_path("s1", "refactor", "mess", "claude")
+    g = paths.get("s1")
+    assert g["path"] == "refactor" and g["done"] == [] and g["next"] is None
+
+
+def test_one_path_uses_skill(state_dir):
+    paths.set_path("s1", "one", "dig", "claude", skill="research")
+    assert paths.step_done("s1", "t1") is None
+    assert paths.get("s1")["done"] == ["research"]
+
+
+def test_unknown_path_rejected(state_dir):
+    with pytest.raises(ValueError):
+        paths.set_path("s1", "nope", "", "claude")
+
+
+def test_typed_to_tickets_joins_feature_at_tickets():
+    assert paths.path_for_command("to-tickets") == ("feature", "tickets")
+    assert paths.path_for_command("research") == ("one", "research")
