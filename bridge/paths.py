@@ -301,7 +301,7 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
             return False
         if station == "build-here":
             texts = [f"/mattpocock-skills:implement Work in {moved[1]} on branch {moved[0]}, and commit there."]
-    if aifeatures.enabled("smartzone") and (sess.get("ctx_tokens") or 0) > ZONE_TOKENS:
+    if aifeatures.enabled("smartzone") and (sess.get("ctx_tokens") or 0) >= ZONE_TOKENS:   # as route.SMART_ZONE
         texts.insert(0, f"/compact Keep the decisions so far; the next step is {station}.")
     for text in texts:
         queue_manager.enqueue(

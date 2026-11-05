@@ -112,8 +112,8 @@ export function FlowPanel({ sessionId, turns, ctxTokens }: { sessionId: string |
         ))}
       </div>
       {ctxTokens != null && (
-        <div className={`fl-zone${ctxTokens > ZONE ? " over" : ""}`}>
-          CONTEXT {fmtTokens(ctxTokens)} / {fmtTokens(ZONE)}{ctxTokens > ZONE ? " · PAST THE SMART ZONE" : ""}
+        <div className={`fl-zone${ctxTokens >= ZONE ? " over" : ""}`}>
+          CONTEXT {fmtTokens(ctxTokens)} / {fmtTokens(ZONE)}{ctxTokens >= ZONE ? " · PAST THE SMART ZONE" : ""}
           <div className="bar"><i style={{ width: `${Math.min(100, (ctxTokens / ZONE) * 100)}%` }} /></div>
         </div>
       )}

@@ -352,6 +352,13 @@ def test_compact_first_past_150k(fake_queue, flow_job_with_next_at_160k):
     assert fake_queue.items[1]["prompt"] == "/mattpocock-skills:to-spec"
 
 
+def test_the_smart_zone_starts_at_150k_as_in_route(fake_queue, flow_job_with_next_at_160k, monkeypatch):
+    from bridge import route
+    monkeypatch.setattr(store, "get_session", lambda sid: {"ctx_tokens": route.SMART_ZONE, "chat_id": 1})
+    paths.continue_after_turn(flow_job_with_next_at_160k)
+    assert fake_queue.items[0]["prompt"].startswith("/compact ")
+
+
 def test_advance_from_merge_enqueues_retro(fake_queue, nextstep_on):
     paths.set_path("f3", "feature", "x", "claude")
     for t in ("a", "b", "c", "d"):
