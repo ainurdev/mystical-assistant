@@ -630,7 +630,7 @@ def _merged_set(s):
 def test_cleanup_skips_unmerged(make_set):
     s = make_set({"01": None, "02": None})
     st = _merged_set(s)
-    skipped = tickets.cleanup(s.folder)
+    skipped = tickets.cleanup(s.folder)[1]
     assert skipped == ["tk/x-02"]
     assert not os.path.isdir(st["tickets"]["01"]["worktree"]) and os.path.isdir(st["tickets"]["02"]["worktree"])
     assert "tk/x-01" not in _git(s.main, "branch", "--format=%(refname:short)").split()
@@ -640,14 +640,14 @@ def test_cleanup_skips_unmerged(make_set):
 def test_cleanup_skips_a_dirty_worktree_and_waits_for_merged(make_set):
     s = make_set({"01": None})
     s.finish("01")
-    assert tickets.cleanup(s.folder) == ["tk/x-01"]          # not merged yet: nothing is touched
+    assert tickets.cleanup(s.folder)[1] == ["tk/x-01"]       # not merged yet: nothing is touched
     st = s.state
     _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
     assert tickets.merged_count(st) == 1
     tickets.save(s.folder, {**st, "status": "merged"})
     with open(os.path.join(st["tickets"]["01"]["worktree"], "wip.txt"), "w") as f:
         f.write("x")
-    assert tickets.cleanup(s.folder) == ["tk/x-01"] and os.path.isdir(st["tickets"]["01"]["worktree"])
+    assert tickets.cleanup(s.folder)[1] == ["tk/x-01"] and os.path.isdir(st["tickets"]["01"]["worktree"])
 
 
 def _dpost(path, body, chat=1):

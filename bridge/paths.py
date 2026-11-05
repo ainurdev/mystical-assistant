@@ -38,7 +38,6 @@ import time
 from bridge import aifeatures, config, store
 
 PACK_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "skills", "mattpocock")
-PLUGIN_ID = "mattpocock-skills@claude-plugins-official"
 
 
 def on() -> bool:

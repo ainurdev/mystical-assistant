@@ -1359,7 +1359,6 @@ export interface TicketRow {
 }
 export interface TicketSet {
   folder: string; slug: string; parent_session: string; feature_branch: string; merged: number;
-  max_running?: number; // not sent today; the card falls back to 3 (tickets.MAX_RUNNING)
   status: "building" | "merging" | "merged" | "stopped" | "fix"; error?: string;
   tickets: Record<string, TicketRow>;
 }

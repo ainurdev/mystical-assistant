@@ -142,8 +142,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
     );
   }
 
-  // The summary doesn't send its slot count; 3 mirrors tickets.MAX_RUNNING.
-  const slots = set.max_running ?? 3;
+  const slots = 3;   // mirrors tickets.MAX_RUNNING
   const merging = set.status === "merging";
   const mfix = set.status === "fix";
   return (

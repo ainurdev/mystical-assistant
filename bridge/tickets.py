@@ -534,13 +534,9 @@ def summaries() -> list:
     return out
 
 
-def cleanup(folder: str) -> list:
-    """Remove a merged set's ticket worktrees and branches; the names it skipped.
+def cleanup(folder: str) -> tuple:
+    """Remove a merged set's ticket worktrees and branches: (removed, skipped) names.
     Never forces: a branch git calls unmerged, or a worktree with uncommitted work, stays."""
-    return _cleanup(folder)[1]
-
-
-def _cleanup(folder: str) -> tuple:
     with _build:
         st = load(folder)
         tks = st.get("tickets") or {}

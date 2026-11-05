@@ -1464,7 +1464,7 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:  # noqa: BLE001
                     return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
             try:
-                removed, skipped = tickets._cleanup(folder)  # noqa: SLF001
+                removed, skipped = tickets.cleanup(folder)
             except Exception as e:  # noqa: BLE001
                 return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
             return self._json({"removed": removed, "skipped": skipped})
