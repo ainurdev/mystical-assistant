@@ -164,3 +164,38 @@ def test_detached_linked_worktree_gets_a_feature_worktree(repo):
     _git(repo.main, "worktree", "add", "-q", "--detach", wt)
     branch, co = flowbranch.ensure_feature_branch({"cwd": wt}, "x")
     assert branch == "feat/x" and co != wt and repo.branch_of(co) == "feat/x"
+
+
+def _sha_list(repo):
+    return _git(repo.main, "stash", "list", "--format=%H").split()
+
+
+def test_leftover_same_message_stash_is_not_popped(repo):
+    repo.write("OLD.md")
+    _git(repo.main, "stash", "push", "-u", "-m", "mystical flow x", "--", "OLD.md")
+    old = _sha_list(repo)
+    repo.write("NEW.md")
+    _, co = flowbranch.ensure_feature_branch({"cwd": repo.main}, "x")
+    assert flowbranch.carry_and_commit(repo.main, co, [repo.path("NEW.md")], "x")
+    assert _git(co, "show", "--name-only", "--format=", "HEAD") == "NEW.md"
+    assert _sha_list(repo) == old and not os.path.exists(repo.path("NEW.md"))
+    assert not os.path.exists(repo.path("OLD.md"))
+
+
+def test_two_files_one_conflicts_both_come_back(repo):
+    for n in ("A.md", "B.md"):
+        repo.write(n)
+    _git(repo.main, "add", "-A"); _git(repo.main, "commit", "-qm", "ab")
+    for n in ("A.md", "B.md", "C.md"):
+        with open(repo.path(n), "w") as f:
+            f.write("flow edit")
+    _, co = flowbranch.ensure_feature_branch({"cwd": repo.main}, "x")
+    with open(repo.path("A.md", co), "w") as f:
+        f.write("theirs")
+    with pytest.raises(flowbranch.FlowBranchError):
+        flowbranch.carry_and_commit(repo.main, co, [repo.path(n) for n in ("A.md", "B.md", "C.md")], "x")
+    for n in ("A.md", "B.md", "C.md"):
+        assert open(repo.path(n)).read() == "flow edit"
+    assert _sha_list(repo) == []
+    assert repo.dirty(co) == {"A.md"} and open(repo.path("A.md", co)).read() == "theirs"
+    assert not os.path.exists(repo.path("C.md", co))

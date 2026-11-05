@@ -89,42 +89,65 @@ def ensure_feature_branch(session: dict, slug: str) -> tuple[str, str]:
     return branch, wt
 
 
-def _stash_refs(cwd: str, slug: str) -> list[str]:
-    """Refs of our flow's stash entries, newest first (the list is shared by all worktrees)."""
-    out = git._run(cwd, "stash", "list", "--format=%gd%x09%gs")[1]  # noqa: SLF001
-    return [l.split("\t")[0] for l in out.splitlines() if l.endswith(f"mystical flow {slug}")]
+def _stash_shas(cwd: str) -> list[str]:
+    """Commit ids of every stash entry (the list is shared by all worktrees)."""
+    return git._run(cwd, "stash", "list", "--format=%H")[1].split()  # noqa: SLF001
+
+
+def _ref_of(cwd: str, sha: str) -> str:
+    """The stash@{n} that `sha` is at right now; indexes shift whenever anyone
+    stashes, so a ref is never kept, only looked up when used."""
+    shas = _stash_shas(cwd)
+    return f"stash@{{{shas.index(sha)}}}" if sha in shas else ""
+
+
+def _pop(cwd: str, sha: str) -> tuple[bool, str]:
+    ref = _ref_of(cwd, sha)
+    if not ref:
+        return False, "the stash entry is gone"
+    rc, _, err = git._run(cwd, "stash", "pop", ref, timeout=30)  # noqa: SLF001
+    return rc == 0, err.strip()
 
 
 def carry_and_commit(src: str, dst: str, files: list[str], slug: str) -> bool:
-    """Move `files` from `src` to `dst` (stash push, then pop by ref) and commit
-    only them there. False when there is nothing to move; FlowBranchError when files
-    existed but could not be carried or committed (they are put back in `src`)."""
+    """Move `files` from `src` to `dst` (stash push, then pop) and commit only
+    them there. False when there is nothing to move; FlowBranchError when files
+    existed but could not be carried or committed (they are put back in `src`).
+    Our stash entry is told apart by its commit id, never by its position."""
     if not files:
         return False
     rel = [os.path.relpath(f, src) if os.path.isabs(f) else f for f in files]
     if os.path.realpath(src) != os.path.realpath(dst):
-        before = set(_stash_refs(src, slug))
+        before = set(_stash_shas(src))
         rc, _, err = git._run(src, "stash", "push", "-u", "-m", f"mystical flow {slug}", "--", *rel, timeout=30)  # noqa: SLF001
         if rc != 0:
             _log(f"stash push failed: {err.strip()}")
             raise FlowBranchError(f"git stash push failed: {err.strip()}")
-        new = [r for r in _stash_refs(src, slug) if r not in before]
+        new = [x for x in _stash_shas(src) if x not in before]
         if not new:   # nothing changed in these files: leave other stashes alone
             return False
-        ref = new[0]   # the entry our push created, found by message, not "newest"
-        rc, _, err = git._run(dst, "stash", "pop", ref, timeout=30)  # noqa: SLF001
-        if rc != 0:
-            _log(f"stash pop {ref} into {dst} failed: {err.strip()}")
-            bad = git._run(dst, "diff", "--name-only", "--diff-filter=U")[1].split()
-            if bad:
-                git._run(dst, "reset", "-q", "--", *bad)  # noqa: SLF001
-                git._run(dst, "checkout", "--", *bad)  # noqa: SLF001
-            ref = (_stash_refs(src, slug) or [ref])[0]
-            rc2, _, err2 = git._run(src, "stash", "pop", ref, timeout=30)  # noqa: SLF001
-            if rc2 != 0:
-                _log(f"restore of {ref} into {src} failed, files stay in the stash: {err2.strip()}")
-                raise FlowBranchError(f"{err.strip()}. They are in git stash {ref}")
-            raise FlowBranchError(err.strip() or "git stash pop failed")
+        sha = new[0]
+        # paths dst already changes itself are not ours to touch if the pop fails
+        mine = {l[3:].strip('"') for l in git._run(dst, "status", "--porcelain", "-uall", "--", *rel)[1].splitlines()}  # noqa: SLF001
+        ok, err = _pop(dst, sha)
+        if not ok:
+            _log(f"stash pop of {sha[:10]} into {dst} failed: {err}")
+            for r in rel:
+                if r in mine:
+                    continue
+                if git._run(dst, "cat-file", "-e", f"HEAD:{r}")[0] == 0:  # noqa: SLF001
+                    git._run(dst, "checkout", "HEAD", "--", r)  # noqa: SLF001
+                else:
+                    git._run(dst, "reset", "-q", "--", r)  # noqa: SLF001
+                    try:
+                        os.remove(os.path.join(dst, r))
+                    except OSError:
+                        pass
+            ok2, err2 = _pop(src, sha)
+            if not ok2:
+                _log(f"restore of {sha[:10]} into {src} failed, files stay in the stash: {err2}")
+                raise FlowBranchError(f"{err}. They are in git stash entry {sha[:10]}")
+            raise FlowBranchError(err or "git stash pop failed")
     rc, _, err = git._run(dst, "add", "--", *rel)  # noqa: SLF001
     if rc != 0:
         _log(f"add failed: {err.strip()}")
