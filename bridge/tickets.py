@@ -462,9 +462,15 @@ def start_merge(folder: str) -> None:
 
 
 def _merge_turn(job) -> None:
-    """The merge session's turn ended: StepDone since it started means merged, then the
-    flow goes on to RETRO; an error that isn't a parked limit is `fix`; else it waits on you."""
-    sid = job.store_session_id
+    """The merge session's turn ended (a Stop moves nothing): judged by _merge_end."""
+    if not job.interrupted:
+        _merge_end(job.store_session_id, job.status)
+
+
+def _merge_end(sid: str, status: str) -> None:
+    """The merge session's turn ended `status`: StepDone since it started, with every
+    ticket branch in, means merged, then the flow goes on to RETRO; an error that isn't
+    a parked limit is `fix`; else it waits on you."""
     with _build:
         for r in sets():
             folder = r.get("folder")
@@ -473,13 +479,13 @@ def _merge_turn(job) -> None:
                 break
         else:
             return
-        if st.get("status") != "merging" or job.interrupted:
+        if st.get("status") != "merging":
             return
-        if job.status == "error":
+        if status == "error":
             if sid in limits.parked():
                 return
             st["status"] = "fix"
-        elif job.status == "done" and (paths.get(sid) or {}).get("done"):
+        elif status == "done" and (paths.get(sid) or {}).get("done"):
             have = _merged(st)   # StepDone alone isn't merged: every branch must be in
             left = [t["branch"] for t in st["tickets"].values() if t["branch"] not in have]
             st["status"] = "fix" if left else "merged"
@@ -699,14 +705,31 @@ def retry(folder: str, n: str) -> str:
         return _rerun(folder, st, n)
 
 
+def _boot_merge(folder: str, st: dict) -> None:
+    """A merging set after a restart: no merge session yet (cut between the two saves)
+    opens one; an idle, unparked one is judged as at its turn end (no turn: never began)."""
+    sid = st.get("merge_session")
+    if not sid:
+        if _on():
+            with _build:
+                save(folder, {**st, "status": "building"})   # start_merge opens one only from building
+                start_merge(folder)
+        return
+    if not store.running_turn_id(sid) and sid not in limits.parked():
+        _merge_end(sid, (store.last_turn(sid) or {}).get("status") or "error")
+
+
 def boot() -> None:
     """After a restart: judge every running ticket whose session sits idle and isn't
     parked (its turn ended, or never began, while nothing listened) as at a turn end:
-    done, fix, or still running and waiting on you. Then tick each building set.
-    Nothing here starts a ticket that has a session; only retry() does."""
+    done, fix, or still running and waiting on you. Then tick each building set, and
+    reconcile each merging one (_boot_merge). Nothing here starts a ticket that has a
+    session; only retry() does. Run again when TICKETS or SKILL PATHS comes back on."""
     for r in sets():
         folder = r.get("folder")
         try:
+            if isinstance(folder, str) and load(folder).get("status") == "merging":
+                _boot_merge(folder, load(folder))
             if not isinstance(folder, str) or load(folder).get("status") != "building":
                 continue
             with _build:

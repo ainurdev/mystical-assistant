@@ -822,3 +822,25 @@ def test_build_takes_the_folder_this_flow_wrote(make_set):
     os.utime(os.path.join(other, "01-x.md"), (2e9, 2e9))
     assert s.build() == "" and s.state["status"] == "building"
     assert tickets.load(other) == {}
+
+
+def test_boot_opens_the_merge_a_restart_cut_before_its_session(make_set):
+    s = make_set({"01": None})
+    s.finish("01")
+    tickets.save(s.folder, {**s.state, "merge_session": ""})     # `merging` saved, then the restart
+    tickets.boot()
+    assert len(_merges(s)) == 2 and s.state["merge_session"] and s.state["status"] == "merging"
+
+
+def test_boot_judges_a_merge_turn_that_ended_unheard(make_set):
+    s = make_set({"01": None})
+    s.finish("01")
+    sid = s.state["merge_session"]
+    store.finish_turn(store.latest_turn_id(sid), "done", 0, 1)    # no StepDone: it waits on you
+    paths._cache.clear()
+    tickets.boot()
+    assert s.state["status"] == "merging" and len(_merges(s)) == 1
+    store.start_turn(sid, uuid.uuid4().hex, "go on", [])
+    store.finish_turn(store.latest_turn_id(sid), "error", 0, 1)
+    tickets.boot()
+    assert s.state["status"] == "fix"
