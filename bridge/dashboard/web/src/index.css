@@ -7634,10 +7634,10 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gpp-st > span { font-size: 8px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); white-space: nowrap; }
 .gpp-st.hot { color: var(--acc2, var(--acc)); border-color: color-mix(in srgb, var(--acc) 70%, transparent);
   background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc) 8%, transparent));
-  box-shadow: 0 0 22px -6px var(--acc), inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent); }
+  box-shadow: 0 0 22px -6px var(--acc), inset 0 1px 0 color-mix(in srgb, var(--txb) 12%, transparent); }
 .gpp-st.hot.warm { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 70%, transparent);
   background: linear-gradient(180deg, color-mix(in srgb, var(--warn) 22%, transparent), color-mix(in srgb, var(--warn) 8%, transparent));
-  box-shadow: 0 0 22px -6px var(--warn), inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent); }
+  box-shadow: 0 0 22px -6px var(--warn), inset 0 1px 0 color-mix(in srgb, var(--txb) 12%, transparent); }
 .gpp-st.hot .gpp-big b { color: var(--txb); }
 .gpp-st.hot > span { color: var(--txd); }
 .gpp-gap { display: block; overflow: visible; }
@@ -7651,7 +7651,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* The button lies across the gap it closes, centre of one station to centre of
    the next, with a tick up to each. */
 .gpp-btn { position: absolute; top: 64px; height: 26px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0;
-  border: 0; border-radius: 8px; font: 800 var(--t95)/1 var(--f); color: #fff; background: var(--acc); cursor: pointer;
+  border: 0; border-radius: 8px; font-family: inherit; font-size: var(--t95); font-weight: 800; line-height: 1; color: #fff; background: var(--acc); cursor: pointer;
   box-shadow: 0 6px 16px -8px var(--acc); }
 .gpp-btn.warn { color: #1a1300; background: var(--warn); box-shadow: 0 6px 16px -8px var(--warn); }
 .gpp-btn:disabled { opacity: .5; cursor: not-allowed; }

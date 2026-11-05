@@ -342,15 +342,20 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   // alert box, which stays for a fetch you asked for.
   const autoErr = !fetching && op?.phase !== "failed" && autoFetch?.error
     && !(git?.fetched_at && git.fetched_at >= autoFetch.at) ? autoFetch.error : "";
+  // Never fetched, or the last auto-fetch failed: no "up to date" claim stands.
+  const unchecked = !!git?.upstream && (git.fetched_at === null || !!autoErr);
   // The hero's one button. Commit never commits: it opens the message box.
   const msgRef = useRef<HTMLTextAreaElement>(null);
   function heroAct(verb: "Commit" | "Publish" | "Pull", n: number) {
     if (verb === "Commit") { setChClosed(false); requestAnimationFrame(() => msgRef.current?.focus()); }
-    else void sync(verb === "Pull" ? "pull" : s.kind === "publish" ? "publish" : "push", n);
+    else if (verb === "Pull" && s.kind === "diverged") {
+      // A fast-forward fails here, and a button must not merge by itself: hand off to a session.
+      if (onHandOff && project) onHandOff(project, branch, divergedDraft(branchName, s.upstream, s.ahead, s.behind));
+    } else void sync(verb === "Pull" ? "pull" : s.kind === "publish" ? "publish" : "push", n);
   }
   const right = fetching ? "checking origin…"
     : autoErr ? <>couldn't reach origin <button disabled={busy} onClick={() => void fetchNow()}>retry</button></>
-    : when;
+    : unchecked ? "not checked" : when;
   const pushy = op?.kind === "push" || op?.kind === "publish";
   const act: ReactNode = op?.phase === "failed" ? (
     <div className="gp-fail" role="alert">
@@ -463,7 +468,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
         <div ref={rdRef} className="gp-rdw">
           {(!ready || s.kind !== "none") && (
             <div className="gp-rd">
-              <GitPipe sync={s} changed={changed.size} hasUpstream={!!git?.upstream} busy={busy || fetching}
+              <GitPipe sync={s} changed={changed.size} hasUpstream={!!git?.upstream} unchecked={unchecked} busy={busy || fetching}
                 say={ready ? undefined : "Reading the working tree…"} right={ready ? right : undefined} onAction={heroAct} />
               {autoErr && <div className="gp-roerr" title={autoErr}>{when || "never checked"} · {autoErr.split("\n")[0]}</div>}
               <TaskLine project={project} branch={branchName} onSend={onSend} />

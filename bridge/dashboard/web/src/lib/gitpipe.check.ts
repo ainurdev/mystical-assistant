@@ -30,6 +30,10 @@ console.assert(behind.action?.verb === "Pull" && same(behind.flows, [{ gap: 1, d
 const aheadUp = pipe({ kind: "ahead", n: 2 }, 0, true);
 console.assert(aheadUp.action?.verb === "Publish" && st(aheadUp, "origin").big === "✓", "ahead of an upstream: Publish");
 
+const unch = pipe({ kind: "synced" }, 0, true, true);
+console.assert(unch.say === "Not checked against origin yet" && unch.action === null, "unchecked synced: no claim");
+console.assert(st(unch, "origin").big === "—" && st(unch, "origin").sub === "not checked", "unchecked: origin dimmed, not a green tick");
+console.assert(pipe({ kind: "ahead", n: 2 }, 0, true, true).action?.verb === "Publish", "unchecked ahead still offers Publish");
 console.assert(st(pipe({ kind: "ahead", n: 120 }, 0, true), "branch").big === "99+", "120 ahead reads 99+");
 console.assert(pipe({ kind: "publish", n: 0 }, 0, false).action === null, "no upstream, nothing ahead: no action");
 console.assert(pipe({ kind: "none" }, 0, false).action === null, "no repo: no action");

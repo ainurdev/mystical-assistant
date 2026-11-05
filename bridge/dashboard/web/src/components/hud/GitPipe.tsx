@@ -29,8 +29,8 @@ function Gap({ flows }: { flows: Flow[] }) {
   );
 }
 
-export function GitPipe({ sync, changed, hasUpstream, say, right, busy, onAction }: {
-  sync: PipeSync; changed: number; hasUpstream: boolean;
+export function GitPipe({ sync, changed, hasUpstream, unchecked, say, right, busy, onAction }: {
+  sync: PipeSync; changed: number; hasUpstream: boolean; unchecked: boolean;
   /** replaces the computed line while the status is still loading */
   say?: string;
   /** the top line's right end: how fresh origin is, or what's being checked */
@@ -38,11 +38,12 @@ export function GitPipe({ sync, changed, hasUpstream, say, right, busy, onAction
   busy: boolean;
   onAction: (verb: "Commit" | "Publish" | "Pull", n: number) => void;
 }) {
-  const p = pipe(sync, changed, hasUpstream);
+  const p = pipe(sync, changed, hasUpstream, unchecked);
   const line = say ?? p.say;
   const a = p.action;
   const label = `${line}${a ? `. ${a.verb} ${a.n} available` : ""}`;
   const gapFlows = (g: 0 | 1) => p.flows.filter((f) => f.gap === g);
+  const title = a?.verb === "Pull" && sync.kind === "diverged" ? `Opens a session to bring origin's ${a.n} commits in` : undefined;
   const Verb = a ? VERB[a.verb] : null;
   // Bold the first count in the sentence, as drawn.
   const m = /^(\d+\+?(?: files?| commits?)?)(.*)$/.exec(line);
@@ -67,7 +68,7 @@ export function GitPipe({ sync, changed, hasUpstream, say, right, busy, onAction
         </div>
         {a && Verb ? (
           <>
-            <button type="button" className={`gpp-btn ${a.tone} g${a.gap}`} disabled={busy} onClick={() => onAction(a.verb, a.n)}>
+            <button type="button" className={`gpp-btn ${a.tone} g${a.gap}`} title={title} disabled={busy} onClick={() => onAction(a.verb, a.n)}>
               <Verb size={12} strokeWidth={2.6} aria-hidden />{a.verb} {a.n > 99 ? "99+" : a.n}
             </button>
             <i className={`gpp-tick ${a.tone} g${a.gap} l`} aria-hidden /><i className={`gpp-tick ${a.tone} g${a.gap} r`} aria-hidden />
