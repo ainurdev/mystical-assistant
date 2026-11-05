@@ -159,14 +159,28 @@ def get(session_id: str) -> "dict | None":
 
 
 def set_auto(session_id: str, on: bool) -> None:
+    """Hold or release AUTO. Released with a step pending, the step starts now, or
+    when a turn running here ends: never in the middle of one."""
+    run = store.running_turn_id(session_id) if on else None
+    turn = _carried(session_id, run)[0] if run else None
     with _lock:
         _load_locked()
-        if session_id in _cache:
-            _cache[session_id]["auto"] = bool(on)
-            _save_locked()
+        f = _cache.get(session_id)
+        if not f:
+            return
+        f["auto"] = bool(on)
+        if turn and f["next"] and not f["next"].get("started"):
+            f["next"]["turn_id"] = turn
+        _save_locked()
+    if on and not run:
+        _go(session_id)
 
 
 _CMD = re.compile(r"\s*/mattpocock-skills:([\w-]+)")
+# The first character of every resume nudge (recovery.CONTINUED and NUDGE, limits.NUDGE
+# and SERVER_NUDGE, runner.RESUME_NUDGE, TIMEOUT_NUDGE and the AUTH ones, ladder's
+# ACCOUNT_NUDGE), as goals._BRIDGE_PROMPTS reads them.
+_RESUME = "⏮"
 
 
 def _command(prompt: "str | None") -> "str | None":
@@ -175,11 +189,26 @@ def _command(prompt: "str | None") -> "str | None":
     return m.group(1) if m else None
 
 
+def _carried(session_id: str, turn_id: str) -> tuple:
+    """(id, prompt) of the turn `turn_id` carries on: itself, or for a resume nudge
+    the turn the nudges right before it resume (a restart, a limit or an error cut it)."""
+    rows = store.recent_turns(session_id, 20)
+    i = next((k for k, r in enumerate(rows) if r["id"] == turn_id), None)
+    if i is None:
+        return turn_id, store.turn_prompt(turn_id) or ""
+    for r in rows[i:]:
+        if not (r["prompt"] or "").startswith(_RESUME):
+            return r["id"], r["prompt"] or ""
+    return turn_id, ""
+
+
 def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "str | None":
     """Mark the station this turn worked on done: the one its own /mattpocock-skills:x
     names when x is a station of the path (the ones before it too), else the first one
-    not done. Return the next station, or None at the end."""
-    skill = _command(store.turn_prompt(turn_id))
+    not done. Return the next station, or None at the end. A resume nudge's turn counts
+    as the turn it resumes, so a StepDone said again there moves nothing."""
+    turn_id, prompt = _carried(session_id, turn_id)
+    skill = _command(prompt)
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
@@ -199,7 +228,7 @@ def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "st
             stations = [st[0] for st in _stations(f)]
         f["done"] += [st for st in stations[:stations.index(cur) + 1] if st not in f["done"]]
         rest = [st for st in stations if st not in f["done"]]
-        f["next"] = {"station": rest[0], "turn_id": turn_id} if rest else None
+        f["next"] = {"station": rest[0], "turn_id": turn_id, "started": False} if rest else None
         f["last"] = turn_id
         _save_locked()
         return rest[0] if rest else None
@@ -288,23 +317,43 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
     return True
 
 
+def _go(session_id: str, chat_id=None, effort=None) -> bool:
+    """Start the recorded next step, once: SKILL PATHS and AUTO NEXT STEPS on, AUTO not
+    held, no wait on another session (its wake-up is the next turn). A step that can't
+    start stays pending for the next release or resume. True = started."""
+    from bridge import waits
+    if not on() or not aifeatures.enabled("nextstep") or waits.waiting(session_id):
+        return False
+    with _lock:
+        _load_locked()
+        f = _cache.get(session_id)
+        nxt = f["next"] if f else None
+        if not nxt or nxt.get("started") or not f["auto"]:
+            return False
+        nxt["started"] = True
+        _save_locked()
+    if _start(session_id, nxt["station"], chat_id, effort):
+        return True
+    with _lock:
+        if (_cache.get(session_id) or {}).get("next") is nxt:
+            nxt["started"] = False
+            _save_locked()
+    return False
+
+
 def continue_after_turn(job, effort=None) -> bool:
-    """Called once per finished turn: start the next step StepDone recorded in
-    THIS turn (its turn id is the job's id), if the flow is on auto. True = started."""
+    """Called once per finished turn: start the next step StepDone recorded, when this
+    turn recorded it or resumes the turn that did (the first clean end of either).
+    True = started."""
     try:
         sid = job.store_session_id
         if not sid or job.status != "done" or job.interrupted or (job.runtime or "").startswith("acp:"):
             return False
-        if not on() or not aifeatures.enabled("nextstep"):
-            return False
-        from bridge import waits
-        if waits.waiting(sid):        # it waits on another session; its wake-up is the next turn
-            return False
         flow = get(sid)
         nxt = flow and flow["next"]
-        if not nxt or not flow["auto"] or nxt["turn_id"] != job.id:
+        if not nxt or nxt.get("started") or nxt["turn_id"] != _carried(sid, job.id)[0]:
             return False
-        return _start(sid, nxt["station"], job.chat_id, effort)
+        return _go(sid, job.chat_id, effort)
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[paths] continue failed: {e}", file=sys.stderr)
         return False

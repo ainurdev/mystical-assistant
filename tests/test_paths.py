@@ -506,3 +506,67 @@ def test_no_path_images_only_stays_empty(monkeypatch):
 
 def test_no_path_ignored_for_commands(monkeypatch):
     assert _run_prompt(monkeypatch, {"prompt": "/compact keep it", "no_path": True}) == "/compact keep it"
+
+
+# --- I1: a resume of the recording turn, or releasing AUTO, starts the pending step ---
+
+def _end(sid, t, status="done"):
+    """Turn t ended `status`; the job its end hands on."""
+    store.finish_turn(t, status, 0, 1)
+    job = _job(sid, t)
+    job.status = status
+    return job
+
+
+def test_a_resumed_turn_starts_the_step_its_cut_turn_recorded(sess, fake_queue, nextstep_on):
+    from bridge import runner as r
+    t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
+    paths.step_done(sess, t)
+    _end(sess, t, "error")                              # cut by an error after StepDone
+    n1 = _turn(sess, r.RESUME_NUDGE)
+    _end(sess, n1, "error")                             # the resume dies too
+    n2 = _turn(sess, r.RESUME_NUDGE)
+    assert paths.step_done(sess, n2) == "fix" and paths.get(sess)["done"] == ["diagnose"]   # a repeat moves nothing
+    job = _end(sess, n2)
+    assert paths.continue_after_turn(job) is True
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:tdd"]
+    assert paths.continue_after_turn(job) is False and len(fake_queue.items) == 1   # once per step
+
+
+def test_a_typed_turn_after_the_recording_one_starts_nothing(sess, fake_queue, nextstep_on):
+    t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
+    paths.step_done(sess, t)
+    _end(sess, t, "error")
+    u = _turn(sess, "what did you find?")
+    assert paths.continue_after_turn(_end(sess, u)) is False and not fake_queue.items
+
+
+def test_releasing_auto_starts_the_pending_step(sess, fake_queue, nextstep_on):
+    t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
+    paths.step_done(sess, t)
+    paths.set_auto(sess, False)
+    assert paths.continue_after_turn(_end(sess, t)) is False and not fake_queue.items
+    paths.set_auto(sess, True)
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:tdd"]
+    paths.set_auto(sess, False)
+    paths.set_auto(sess, True)
+    assert len(fake_queue.items) == 1
+
+
+def test_releasing_auto_mid_turn_starts_it_when_that_turn_ends(sess, fake_queue, nextstep_on):
+    t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
+    paths.step_done(sess, t)
+    paths.set_auto(sess, False)
+    paths.continue_after_turn(_end(sess, t))
+    u = _turn(sess, "and the logs?")                    # running
+    paths.set_auto(sess, True)
+    assert not fake_queue.items                         # never in the middle of a turn
+    assert paths.continue_after_turn(_end(sess, u)) is True and len(fake_queue.items) == 1
+
+
+def test_every_resume_nudge_starts_with_the_resume_mark():
+    from bridge import ladder, limits, recovery
+    from bridge import runner as r
+    for text in (recovery.CONTINUED, recovery.NUDGE, limits.NUDGE, limits.SERVER_NUDGE, r.RESUME_NUDGE,
+                 r.TIMEOUT_NUDGE, r.AUTH_NUDGE, r.AGENT_AUTH_NUDGE, ladder.ACCOUNT_NUDGE):
+        assert text.startswith(paths._RESUME), text   # noqa: SLF001
