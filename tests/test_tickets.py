@@ -600,6 +600,7 @@ def test_merge_done_enqueues_retro_in_flow_session(make_set, monkeypatch):
     sid = s.state["merge_session"]
     assert tickets.after_turn(_merge_job(s)) is True       # ended without StepDone: still waiting
     assert s.state["status"] == "merging" and not q
+    _merge_for_real(s)
     paths.step_done(sid, store.latest_turn_id(sid))
     assert tickets.after_turn(_merge_job(s)) is True
     assert s.state["status"] == "merged"
@@ -705,6 +706,7 @@ def test_a_merge_retry_with_fast_step_done_ends_merged(make_set, monkeypatch):
 
     def fast(chat_id, prompt, image_paths, session_id=None, **kw):
         job = real(chat_id, prompt, image_paths, session_id=session_id, **kw)
+        _merge_for_real(s)
         paths.step_done(session_id, job.id)
         return job
     monkeypatch.setattr(runner, "start_streaming_job", fast)
@@ -764,3 +766,16 @@ def test_an_old_set_leaves_a_new_path_in_its_flow_session_alone(make_set, monkey
     assert s.state["status"] == "merged"
     f = paths.get(s.flow)
     assert (f["path"], f["done"], f["next"]) == ("bug", [], None) and not q
+
+
+def test_a_merge_step_done_with_a_branch_left_out_is_fix(make_set, monkeypatch):
+    s = make_set({"01": None, "02": None})
+    _finish_all(s, "01", "02")
+    _git(s.state["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")    # 02 left out
+    said = []
+    monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: said.append((kind, subject, kw.get("body"))))
+    sid = s.state["merge_session"]
+    paths.step_done(sid, store.latest_turn_id(sid))
+    tickets.after_turn(_merge_job(s))
+    assert s.state["status"] == "fix"
+    assert said == [("tickets", s.flow, "MERGE called StepDone, but tk/x-02 isn't merged into feat/x yet.")]

@@ -471,7 +471,12 @@ def _merge_turn(job) -> None:
                 return
             st["status"] = "fix"
         elif job.status == "done" and (paths.get(sid) or {}).get("done"):
-            st["status"] = "merged"
+            have = _merged(st)   # StepDone alone isn't merged: every branch must be in
+            left = [t["branch"] for t in st["tickets"].values() if t["branch"] not in have]
+            st["status"] = "fix" if left else "merged"
+            if left:
+                notices.emit("tickets", st["parent_session"], body=f"MERGE called StepDone, but {', '.join(left)} "
+                             f"{'is' if len(left) == 1 else 'are'}n't merged into {st['feature_branch']} yet.")
         else:
             return
         save(folder, st)
@@ -479,10 +484,15 @@ def _merge_turn(job) -> None:
         paths.advance(st["parent_session"], "merge", st.get("flow_at"))
 
 
+def _merged(st: dict) -> set:
+    """The branches the feature branch already holds."""
+    rc, out, _ = git._run(st["feature_checkout"], "branch", "--merged", st["feature_branch"])  # noqa: SLF001
+    return {b.strip().lstrip("*+ ").strip() for b in out.splitlines()} if rc == 0 else set()
+
+
 def merged_count(st: dict) -> int:
     """How many ticket branches the feature branch already holds."""
-    rc, out, _ = git._run(st["feature_checkout"], "branch", "--merged", st["feature_branch"])  # noqa: SLF001
-    have = {b.strip().lstrip("*+ ").strip() for b in out.splitlines()} if rc == 0 else set()
+    have = _merged(st)
     return sum(t["branch"] in have for t in (st.get("tickets") or {}).values())
 
 
