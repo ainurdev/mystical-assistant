@@ -60,6 +60,9 @@ export interface SessionBrief {
   id: string;
   title: string | null;
   project: string;
+  // Its project's folder is gone (moved, renamed, deleted): it lists under the project's
+  // name, marked, and MOVE TO PROJECT puts it in one of yours. Absent from an older bridge.
+  missing?: boolean;
   created?: number; // epoch seconds the session was created (PLUGINS tab sorts by this)
   updated: number;
   asked?: number | null; // epoch seconds its last prompt went in; null before the first (RECENT sorts by it)
@@ -1060,9 +1063,19 @@ export interface Received {
   yours?: { id: string; title: string } | null;
 }
 
+/** A share still coming in: downloading counts 0–90 by its bytes, filing it the rest. */
+export interface Receiving {
+  id: string;
+  title: string;
+  from: string;
+  stage: "download" | "filing";
+  pct: number;
+}
+
 export interface TeamOverview {
   roster: Teammate[];
   inbox: Received[];
+  receiving?: Receiving[];   // absent from an older bridge
   outbox: Share[];
   error: string | null;     // why the roster couldn't be read (no link, Rivendell down)
 }
@@ -1839,6 +1852,11 @@ export const api = {
         method: "POST",
         body: {},
       }),
+  // MOVE TO PROJECT: a session whose project folder is gone, into one of yours, its
+  // folder and the paths in its transcript with it.
+  moveSession: (id: string, project: string) =>
+    req<{ ok: boolean; session: SessionBrief }>(
+      `/local/sessions/${encodeURIComponent(id)}/move`, { method: "POST", body: { project } }),
   // Move a session to another project/worktree, rewriting the old path through
   // its transcript so the model never sees the move.
   relocateSession: (id: string, project: string, branch?: string) =>
@@ -2186,7 +2204,7 @@ export const api = {
     }),
   // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
   filesTree: (project: string, branch?: string) =>
-    req<{ files: string[]; ignored?: string[] }>(
+    req<{ files: string[]; ignored?: string[]; root?: string }>(
       `/local/files/tree?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
     ),
   fileRead: (project: string, path: string, branch?: string) =>
@@ -2208,6 +2226,9 @@ export const api = {
       method: "POST",
       body: { project, path, content, ...(branch ? { branch } : {}) },
     }),
+  /** Show an absolute path in the OS file manager (lib/reveal). */
+  revealFile: (path: string) =>
+    req<{ ok: boolean }>("/local/files/reveal", { method: "POST", body: { path } }),
   /** Every session's prompts, newest first and deduped — what Ctrl+R searches. */
   promptHistory: () => req<{ prompts: string[] }>("/local/prompts"),
   /** Mint a read-only link to one session, or revoke every link it has. The
@@ -2344,6 +2365,12 @@ export const api = {
     req<{ ok: boolean; share: Share }>("/local/rivendell/team/send", { method: "POST", body }),
   teamContinue: (id: string, opts?: { into?: "yours"; project?: string }) =>
     req<ContinuePlan>("/local/rivendell/team/continue", { method: "POST", body: { id, ...opts } }),
+  // CONTINUE HERE: their session as yours in `project` (or the new worktree `cwd` their code went
+  // into), its history on screen and the composer empty. NEW SESSION FROM IT is teamContinue's template.
+  teamAdopt: (id: string, project: string, cwd?: string) =>
+    req<{ ok: boolean; session: SessionBrief }>("/local/rivendell/team/adopt", {
+      method: "POST", body: { id, project, ...(cwd ? { cwd } : {}) },
+    }),
   teamEarlier: (id: string) =>
     req<TeamEarlier>(`/local/rivendell/team/earlier?id=${encodeURIComponent(id)}`),
   teamClone: (id: string) =>

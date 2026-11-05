@@ -127,6 +127,30 @@ def _rehome_moved(s: dict) -> bool:
     return True
 
 
+def _reveal_target(path) -> str | None:
+    """The real path behind an absolute one the OS file manager may be shown, or
+    None. The roots are the ones the dashboard already serves files from: the
+    editor reads any tree under BASE_PATH, and UPLOAD_DIR (the attachments) sits
+    inside it. exists() comes first because realpath() raises on a NUL byte."""
+    if not isinstance(path, str) or not os.path.isabs(path) or not os.path.exists(path):
+        return None
+    real = os.path.realpath(path)
+    return real if browser.within_base(real) else None
+
+
+def _reveal_argv(real: str) -> list[str]:
+    """The file manager's command for a checked path: an argv, never a shell."""
+    if sys.platform == "darwin":
+        return ["open", "-R", real]    # -R selects it in Finder; plain `open` would launch it
+    from bridge import startup
+    if startup._wsl():                 # a Windows bridge runs in WSL: hand Explorer a Windows path
+        win = subprocess.run(["wslpath", "-w", real], capture_output=True, text=True,
+                             timeout=10, check=True).stdout.strip()
+        # Windows exes aren't on a WSL PATH (startup._POWERSHELL says the same).
+        return ["/mnt/c/Windows/explorer.exe", "/select,", win]
+    return ["xdg-open", os.path.dirname(real)]
+
+
 def _server_cwd(chat, body) -> str:
     """The run directory a dev-server request targets: an absolute
     worktree cwd if given, else a project rel, else the chat's active project.
@@ -585,8 +609,11 @@ class Handler(BaseHTTPRequestHandler):
             # Plugin-worker sessions are exempt: their default workdir is
             # BASE_PATH itself ("/", never a project), and a run the PLUGINS
             # tab exists to show must not be filtered into invisibility.
+            # A real project that moved or was deleted keeps its sessions listed,
+            # marked missing (browser.gone), for MOVE TO PROJECT.
             rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
-                    or browser.project_exists(r["project"]) or _rehome_moved(r)]
+                    or browser.project_exists(r["project"]) or _rehome_moved(r)
+                    or browser.gone(r["project"])]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
         # Before the transcript route below, which would otherwise swallow this
         # (it takes the first path segment and ignores the rest).
@@ -694,7 +721,8 @@ class Handler(BaseHTTPRequestHandler):
             if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json({"files": git.list_tree(cwd),
-                               "ignored": git.ignored_paths(cwd)})
+                               "ignored": git.ignored_paths(cwd),
+                               "root": cwd})   # absolute, for Show in Finder
         if path == "/local/files/read":
             cwd = _worktree_cwd(qs.get("project", [None])[0],
                                 (qs.get("branch", [""])[0] or "").strip())
@@ -1598,6 +1626,22 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": team.refusal(s["origin"])}, 409)
             copy = store.duplicate(sid)
             return self._json({"ok": True, "session": _session_brief(copy)})
+        if path.startswith("/local/sessions/") and path.endswith("/move"):
+            # MOVE TO PROJECT: a session whose project folder is gone (browser.gone) into one of
+            # yours, its folder and the paths in its transcript with it (store.relocate).
+            sid = path[len("/local/sessions/"):-len("/move")]
+            s = store.get_session(sid)
+            if not s or s["chat_id"] != chat:
+                return self._json({"error": "not found"}, 404)
+            if team.refusal(s["origin"]):
+                return self._json({"error": team.refusal(s["origin"])}, 409)
+            dest = _abs_project(body.get("project")) if isinstance(body.get("project"), str) else None
+            if not dest or not browser.project_exists(browser.rel(dest)):
+                return self._json({"error": "That isn't one of your projects."}, 400)
+            if state.is_running(sid):
+                return self._json({"error": "It has a turn running: move it when that ends."}, 409)
+            store.relocate(sid, dest, project=browser.rel(dest))
+            return self._json({"ok": True, "session": _session_brief(store.get_session(sid))})
         if path.startswith("/local/sessions/") and path.endswith("/relocate"):
             sid = path[len("/local/sessions/"):-len("/relocate")]
             s = store.get_session(sid)
@@ -1734,6 +1778,14 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 return self._json({"error": "unknown op"}, 400)
             return self._json({"ok": ok, "path": output} if ok else {"ok": False, "error": output})
+        if path == "/local/files/reveal":
+            # Right-click › Show in Finder: a file the dashboard shows, in the OS file manager
+            real = _reveal_target(body.get("path"))
+            if real is None:
+                return self._json({"error": "no such file in the workspace"}, 404)
+            subprocess.Popen(_reveal_argv(real), start_new_session=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return self._json({"ok": True})
         if path == "/local/github/issue":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:
@@ -1937,9 +1989,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e)}, 400)
             return self._json({"ok": True, "share": share})
         if path in ("/local/rivendell/team/continue", "/local/rivendell/team/clone", "/local/rivendell/team/install",
-                    "/local/rivendell/team/unpack", "/local/rivendell/team/state"):
+                    "/local/rivendell/team/unpack", "/local/rivendell/team/state", "/local/rivendell/team/adopt"):
             share_id = str(body.get("id") or "")
             try:
+                if path.endswith("/adopt"):      # CONTINUE HERE: their session as yours, its history on screen
+                    sid = team.adopt(share_id, str(body.get("project") or ""),
+                                     body.get("cwd") if isinstance(body.get("cwd"), str) else None)
+                    return self._json({"ok": True, "session": _session_brief(store.get_session(sid))})
                 if path.endswith("/continue"):
                     return self._json(team.continue_plan(share_id, into="yours" if body.get("into") == "yours" else None,
                                                           project=body.get("project") if isinstance(body.get("project"), str) else None))

@@ -34,7 +34,7 @@ from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devse
                     git, inspector, integrations, ladder, limits, machine, native_activity, notices,
                     paths, profiles, pubsub, relevance, savers, state, store, team, tgask, tgtopics,
                     transcript_jsonl, ux_mcp, waits)
-from bridge.browser import rel
+from bridge.browser import rel, within_base
 from bridge.telegram import panel_kb, send
 
 
@@ -3157,13 +3157,23 @@ def _finalize_run_context(session: dict, project_dir: str, *,
     # A stored cwd can be a git worktree that was later removed; spawning there
     # raises FileNotFoundError (which the bridge misreports as "`claude` not found
     # on PATH"). Fall back to the tree the session moved into while it is still
-    # there (the project dir may be that removed tree), else the project dir.
+    # there (its own project folder may be that removed tree), else to its own
+    # project folder. Never to the caller's: that is the project the composer has
+    # open, another project's folder when this one's is gone (2026-11-05: nr-kantoor
+    # moved, and its session's turn ran in osanwe). Nothing of its own left: None,
+    # and start_streaming_job refuses the run (FOLDER_GONE).
     if not os.path.isdir(cwd):
         wt = session.get("work_cwd")
-        cwd = wt if wt and os.path.isdir(wt) else project_dir
-    if not session.get("cwd"):
+        own = os.path.realpath(os.path.join(config.BASE_PATH, (session.get("project") or "").lstrip("/")))
+        cwd = (wt if wt and os.path.isdir(wt)
+               else own if within_base(own) and os.path.isdir(own) else None)
+    if cwd and not session.get("cwd"):
         store.set_cwd(session["id"], cwd)
     return session, cwd, permission_mode or profiles.effective(session)["permission_mode"]
+
+
+FOLDER_GONE = ("This session's folder is gone: {where}. Move it to one of your projects first "
+               "(right-click it in the sidebar ▸ Move to project…), then send again.")
 
 
 def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
@@ -3229,6 +3239,9 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
     try:
         session, cwd, perm = _finalize_run_context(
             session, project_dir, permission_mode=permission_mode, origin=origin)
+        gone = cwd is None
+        if gone:
+            cwd = config.BASE_PATH      # bookkeeping only (the turn's sha): a refused run spawns nothing
         # The session's own model unless the caller brought one: the /run routes
         # save theirs to the row; internal callers (Rivendell, goals)
         # run theirs without writing it. Neither = no --model, the CLI default.
@@ -3251,6 +3264,10 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
             # A teammate's device run or a session a teammate sent (bridge/device_view.py,
             # bridge/team.py): read only, on every account.
             refusal, account_slot = team.refusal(session.get("origin")), None
+        if gone and not refusal:
+            home = os.path.expanduser("~")
+            where = session.get("cwd") or session.get("project") or "?"
+            refusal = FOLDER_GONE.format(where="~" + where[len(home):] if where.startswith(home + os.sep) else where)
         if account_slot is not None:
             profiles.follow_account(session, account_slot)
         is_acp = (runtime or "").startswith("acp:")
@@ -3278,6 +3295,13 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         job.runtime = runtime
         job.hang_timeout = hang_timeout
         _register(job)
+        # A session CONTINUE HERE made from a teammate's: their turns are on screen, not in
+        # Claude, so its runs carry them until one of yours has finished (bridge/team.py seed).
+        run_prompt = prompt
+        if not refusal and not is_acp:
+            note, extra = team.seed(session["id"], job.id)
+            if note:
+                run_prompt, image_paths = f"{prompt}\n\n{note}", list(image_paths) + extra
         store.start_turn(session["id"], job.id, prompt,
                          [os.path.basename(p) for p in image_paths], model=model,
                          runtime=runtime, sha=git.head_sha(cwd),
@@ -3292,7 +3316,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         paths.on_turn_start(session["id"], prompt)  # a typed flow command joins its path
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
-                         args=(job, prompt, image_paths, cwd, model, effort, perm,
+                         args=(job, run_prompt, image_paths, cwd, model, effort, perm,
                                ponytail),
                          daemon=True).start()
         return job

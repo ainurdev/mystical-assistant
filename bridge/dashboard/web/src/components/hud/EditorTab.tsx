@@ -29,6 +29,7 @@ import { ChangesView, kindOf, OutlineView, RefsView } from "./EditorSide";
 import { clampFont, loadPrefs, savePrefs, type EditorPrefs } from "../../lib/editorprefs";
 import { askConfirm } from "../ui/Ask";
 import { registerEditor } from "../../lib/editorctx";
+import { revealItems } from "../../lib/reveal";
 
 /* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
    the whole working tree of the selected branch/worktree, opens any file into an
@@ -396,7 +397,7 @@ const crtTheme = EditorView.theme({
    ~130ms of empty explorer. The last tree per project+branch paints straight
    away; the fresh walk still runs and replaces it.
    ponytail: unbounded — one file list per project+branch opened this session. */
-const treeCache = new Map<string, { files: string[]; ignored: string[] }>();
+const treeCache = new Map<string, { files: string[]; ignored: string[]; root?: string }>();
 const treeKey = (project: string, branch: string) => `${project}\n${branch}`;
 
 export function EditorTab({ project, branch, initialFile, initialLine, initialMode, bus, edited, onAsk, onOpenGit, mapView, drawer, onToggleTerm }: Props) {
@@ -499,10 +500,16 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
   const loadTree = () =>
     api.filesTree(project, branch || undefined)
       .then((r) => {
-        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [] });
+        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [], root: r.root });
         setPaths(r.files); setIgnored(r.ignored ?? []);
       })
       .catch(() => { setPaths([]); setIgnored([]); });
+
+  // A row's absolute path, for Show in Finder: the tree's dir comes with its file list.
+  const abs = (p: string) => {
+    const root = treeCache.get(treeKey(project, branch))?.root;
+    return root && (p ? `${root}/${p}` : root);
+  };
 
   // Load the file list whenever the project/branch changes. An `initialFile`
   // (opened from the sidebar explorer) starts open — its ancestors are the one
@@ -525,7 +532,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     void api.filesTree(project, branch || undefined)
       .then((r) => {
         if (!live) return;
-        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [] });
+        treeCache.set(treeKey(project, branch), { files: r.files, ignored: r.ignored ?? [], root: r.root });
         setPaths(r.files);
         setIgnored(r.ignored ?? []);
         if (!seed) setCollapsed(shut(r.files));   // a seeded tree keeps folders you opened
@@ -644,6 +651,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     const unregister = registerEditor("editor", {
       view,
       path: () => open,
+      file: () => abs(open),
       actions: {
         ...(meta.formatter === false ? {} : { format: () => fmtRef.current() }),
         symbol: () => setPalQ("@"),
@@ -1350,6 +1358,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
     const head: CtxItem[] = [
       { icon: "+", label: "New File…", hint: "Alt+N", onClick: () => startNew("new", target.path, target.dir) },
       { icon: "▤", label: "New Folder…", hint: "⇧Alt+N", onClick: () => startNew("newdir", target.path, target.dir) },
+      ...revealItems(abs(target.path)),
     ];
     if (!target.path) return head;   // right-click on empty space → repo root
     return [
@@ -1598,7 +1607,7 @@ export function EditorTab({ project, branch, initialFile, initialLine, initialMo
                 const mod = isDirty(p);
                 const name = labels[ti];
                 return (
-                  <div key={p} title={p} {...hp(`tab:${p}`)} onDoubleClick={() => openTab(p)}
+                  <div key={p} title={p} {...hp(`tab:${p}`)} onDoubleClick={() => openTab(p)} onContextMenu={(e) => onRowCtx(e, p, false)}
                     onMouseDown={(e) => { if (e.button === 1) { e.preventDefault(); void closeTab(p); } }}
                     style={{ display: "flex", alignItems: "center", gap: 6, flex: "none", maxWidth: 190, padding: "5px 8px 5px 10px", cursor: "pointer", borderRight: "1px solid color-mix(in srgb, var(--acc) 10%, transparent)", borderTop: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--panel3) 70%, transparent)" : hov === `tab:${p}` ? "color-mix(in srgb, var(--acc) 6%, transparent)" : "transparent" }}>
                     <span onClick={() => { setOpen(p); setMapOpen(false); }} style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>

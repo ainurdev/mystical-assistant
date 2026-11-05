@@ -47,11 +47,12 @@ def _handler():
 
 
 def test_tree_endpoint_lists_files():
-    name, _ = _mkproject("proj_tree")
+    name, d = _mkproject("proj_tree")
     h, box = _handler()
     h._get_api("/local/files/tree", {"project": [name], "branch": [""]})
     assert box["code"] == 200
     assert "a.txt" in box["obj"]["files"]
+    assert box["obj"]["root"] == os.path.realpath(d)   # Show in Finder joins rows onto it
 
 
 def test_tree_lists_ignored_files_and_flags_them():

@@ -20,9 +20,13 @@ What arrives is a teammate's, so nothing of it runs here without a tap:
     here. runner.start_streaming_job refuses a turn in it, store.claim_orphaned_turns
     leaves it alone, and store.latest_session never picks it, the same as a
     teammate's device run (bridge/device_view.py).
-  - CONTINUE HERE starts your own session: the transcript as Markdown and the
-    pictures go into the composer as attachments, the code (when it came) into a
-    new worktree branch, and the opening prompt is an unsent draft.
+  - CONTINUE HERE makes their session yours (adopt): a session of yours in the
+    project you pick, their turns and pictures copied in, the composer empty. Claude
+    has none of that history, so your first prompt there carries it as an attached
+    transcript.md (seed), until a turn of yours has finished. NEW SESSION FROM IT
+    is the other way: a new session, the transcript as Markdown and the pictures as
+    attachments, the opening prompt an unsent draft. Either way the code (when it
+    came) goes into a new worktree branch.
   - When their repository isn't cloned here, CONTINUE HERE offers CLONE & INSTALL:
     `gh repo clone` with your own login, beside your other checkouts from the same
     GitHub owner (your layout, not theirs), then each lockfile's installer in the
@@ -33,17 +37,22 @@ What arrives is a teammate's, so nothing of it runs here without a tap:
     worktree of a checkout you already had.
   - A file is kept in the bridge's state folder, never in a project, and the
     dashboard hands it out only as a download.
+  - A session goes whole: every turn's words and work (2026-11-05: an update of 95
+    turns arrived with results in its last five only). Past the 9 MB a share takes,
+    tool output goes first, then tool calls, never the words (pack_session). While
+    a big one downloads and is filed, the TEAM tab shows it COMING IN (receiving).
 
 A thread ties the sends of one piece of work together, whichever way they travel:
-every session sent carries `meta.thread`, and a session CONTINUE HERE makes inherits
-its share's (thread_of). Rivendell never reads it. On the way in, a newer version from
+every session sent carries `meta.thread`, and a session continued from a share (either
+button) inherits its share's (thread_of). Rivendell never reads it. On the way in, a newer version from
 the same person folds the older one in (its read-only copy goes, its record stays),
 your own session coming back reads as SENT BACK, and CONTINUE IN YOURS opens the
 session of yours in that thread with only the new turns attached (update.md). A
-session continued from a share carries that share's turns one hop back (`earlier`),
-so whoever gets it next reads where it started. A send can wait for the turn that
-is running (team_out.json beside team.json: the queue, and which of your sessions
-each thread you sent is).
+session NEW SESSION FROM IT made carries that share's turns one hop back (`earlier`),
+so whoever gets it next reads where it started; one CONTINUE HERE made has those
+turns as its own and sends them once. A send can wait for the turn that
+is running (team_out.json beside team.json: the queue, which of your sessions each
+thread you sent is, and the sessions CONTINUE HERE made).
 
 Token-shaped text is blanked out before anything leaves (redact, broader than
 device_side.redact: Rivendell and GitHub tokens, AWS keys, private-key blocks,
@@ -93,7 +102,10 @@ _ATTACH = 8                        # the composer's own ceiling (UPLOAD_MAX_COUN
 _TITLE_MAX, _NOTE_MAX = 200, 2000
 _TEXT_MAX = 20000                  # one field of one event
 _OUT_MAX = 8000                    # one tool's output
-_EVENTS_MAX = 4000                 # share.py's ceiling for a page
+# A guard against a payload built to flood the DB, not a budget: a real session is bounded by the
+# 9 MB of one upload (_RAW_MAX), and a share carries all of it (2026-11-05: one 4,000-event budget,
+# spent newest first, let Mahdi's 95-turn session arrive with the words of 5).
+_EVENTS_MAX = 100000
 _TURNS_MAX = 500
 _TTL = 20                          # seconds the roster and the out-box are cached
 _SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,100}")
@@ -141,6 +153,9 @@ _FIELDS = {
 
 _lock = threading.RLock()
 _busy: set = set()                 # share ids being taken in now: a frame and a catch-up can bring one twice
+_progress: dict = {}               # share id -> how far its taking in has come (receiving())
+_WORDS = ("text", "result", "error", "divider", "steer")    # what was said: every turn keeps these first
+_LEVELS = ("full", "outputs", "tools")    # what a share too big for one upload leaves out, step by step
 _cloning = threading.Lock()        # one clone at a time: a second of the same repository then finds the first
 _queue_lock = threading.Lock()     # one drain of the send queue at a time
 _queue_thread: "threading.Thread | None" = None
@@ -311,7 +326,9 @@ def _session_dir(s: dict) -> str:
 
 def pack_session(session_id: str, pictures: bool = True) -> dict:
     """A session of yours, packed to send: {payload (gzipped transcript JSON),
-    pictures [(name, path)], meta, title}. Raises TeamError."""
+    pictures [(name, path)], meta, title}. All of it when it fits one upload (9 MB);
+    else its tool output goes, then its tools, never what was said, and meta.trimmed
+    says which. Raises TeamError."""
     from bridge import git, github
     s = store.get_session(session_id or "")
     if not s:
@@ -319,6 +336,35 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
     if refusal(s.get("origin")):
         raise TeamError(NOT_YOURS)
     t = store.transcript(session_id)
+    home, thread = _home(), thread_of(session_id)
+    title, n = redact((s.get("title") or "Session")[:_TITLE_MAX])
+    for level in _LEVELS:
+        pics, picture, left = _picture_taker(pictures)
+        budget = [0]
+        turns, redacted = _pack_turns(t, picture, home, budget, level)
+        doc = {"v": 1, "title": title, "turns": turns}
+        earlier = _earlier_hop(session_id, thread, home, budget, level)
+        if earlier:
+            doc["earlier"] = earlier
+        payload = gzip.compress(json.dumps(doc).encode())
+        if len(payload) <= _RAW_MAX:
+            break
+    else:
+        raise TeamError(f"This session packs to {len(payload) / 1048576:.1f} MB; a share takes up to 9 MB.")
+    cwd = _session_dir(s)
+    meta = {"project": s.get("project"), "repo": github.remote_slug(cwd) if cwd else None,
+            "branch": (git.current_branch_cached(cwd) or None) if cwd else None, "turns": len(turns),
+            "pictures": len(pics), "pictures_total": len(pics) + left[0], "code": False, "commitSha": None,
+            "redacted": redacted + n, "thread": thread,
+            "unfinished": sum(1 for x in turns if x["status"] == "running"),
+            "trimmed": None if level == "full" else level}
+    return {"payload": payload, "pictures": pics, "meta": meta, "title": title,
+            "earlier": {"from": earlier["from"].get("name"), "turns": len(earlier["turns"])} if earlier else None}
+
+
+def _picture_taker(pictures: bool):
+    """(the pictures taken, the function _pack_turns hands each one to, how many the cap kept out):
+    a picture in the upload folder by a name made here, at most _PICS of them, each once."""
     up = os.path.realpath(config.UPLOAD_DIR) + os.sep
     pics: list = []
     names: dict = {}
@@ -343,46 +389,39 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
         names[path] = f"pic-{len(pics) + 1}{ext}"
         pics.append((names[path], real))
         return names[path]
-
-    home, budget = _home(), [0]
-    turns, redacted = _pack_turns(t, picture, home, budget)
-    title, n = redact((s.get("title") or "Session")[:_TITLE_MAX])
-    redacted += n
-    thread = thread_of(session_id)
-    doc = {"v": 1, "title": title, "turns": turns}
-    earlier = _earlier_hop(session_id, thread, home, budget)
-    if earlier:
-        doc["earlier"] = earlier
-    payload = gzip.compress(json.dumps(doc).encode())
-    if len(payload) > _RAW_MAX:
-        raise TeamError(f"This session packs to {len(payload) / 1048576:.1f} MB; a share takes up to 9 MB.")
-    cwd = _session_dir(s)
-    meta = {"project": s.get("project"), "repo": github.remote_slug(cwd) if cwd else None,
-            "branch": (git.current_branch_cached(cwd) or None) if cwd else None, "turns": len(turns),
-            "pictures": len(pics), "pictures_total": len(pics) + left[0], "code": False, "commitSha": None,
-            "redacted": redacted, "thread": thread,
-            "unfinished": sum(1 for x in turns if x["status"] == "running")}
-    return {"payload": payload, "pictures": pics, "meta": meta, "title": title,
-            "earlier": {"from": earlier["from"].get("name"), "turns": len(earlier["turns"])} if earlier else None}
+    return pics, picture, left
 
 
-def _pack_turns(t: dict, picture, home: "str | None", budget: list) -> "tuple[list, int]":
+def _pack_turns(t: dict, picture, home: "str | None", budget: list, level: str = "full") -> "tuple[list, int]":
     """A transcript's turns as a share carries them: each prompt redacted, each event through
-    the whitelist, at most _EVENTS_MAX events across everything packed (`budget`), the newest
-    turns first: in a long session they are what an update is about."""
-    by_turn: dict = {}
-    for ev in t["events"]:
-        by_turn.setdefault(ev.get("turn_id"), []).append(ev)
+    the whitelist. Every event, unless the session is past _EVENTS_MAX across everything packed
+    (`budget`, shared with the earlier hop): then what was said comes first, every turn's, and the
+    tools take what is left, newest turn first. `level` "outputs" leaves out what tools printed,
+    "tools" the tools themselves (pack_session's steps down to one upload). Turns are cleaned newest
+    first, so the newest turns' pictures are the ones the picture cap keeps."""
+    by_turn = _by_turn(t["events"])
+    picked = t["turns"][-_TURNS_MAX:]
+    keep: set = set()
+    for tools in (False, True):
+        if tools and level == "tools":
+            break
+        for turn in (reversed(picked) if tools else picked):
+            for i, ev in enumerate(by_turn.get(turn["id"], [])):
+                kind = ev.get("type")
+                if kind in _FIELDS and (kind not in _WORDS) == tools and budget[0] < _EVENTS_MAX:
+                    keep.add((turn["id"], i))
+                    budget[0] += 1
     turns, redacted = [], 0
-    for turn in reversed(t["turns"][-_TURNS_MAX:]):
+    for turn in reversed(picked):
         events, ids = [], {}
-        for ev in by_turn.get(turn["id"], []):
-            if budget[0] >= _EVENTS_MAX:
-                break
+        for i, ev in enumerate(by_turn.get(turn["id"], [])):
+            if (turn["id"], i) not in keep:
+                continue
+            if level != "full" and ev.get("type") == "tool_done":
+                ev = {k: v for k, v in ev.items() if k != "output"}
             clean, n = _clean_event(ev, picture, ids, home)
             if clean:
                 events.append(clean)
-                budget[0] += 1
                 redacted += n
         prompt, n = redact((turn.get("prompt") or "")[:_TEXT_MAX])
         redacted += n
@@ -406,20 +445,22 @@ def thread_of(session_id: str) -> str:
     return got if isinstance(got, str) and _THREAD.fullmatch(got) else _thread_hash(session_id or "")
 
 
-def _earlier_hop(session_id: str, thread: str, home: str, budget: list) -> "dict | None":
+def _earlier_hop(session_id: str, thread: str, home: str, budget: list, level: str = "full") -> "dict | None":
     """One hop back, for a session CONTINUE HERE made: the turns of the teammate's session it was
     continued from (the newest version of it here), so whoever gets it next reads where it
     started. Without its pictures: the plate shows words. None for a session of your own."""
     if thread == _thread_hash(session_id):
         return None          # the thread's own first session: nothing came before it, whatever came back into it
     with _lock:
+        if session_id in _out()["adopted"]:
+            return None      # CONTINUE HERE copied their turns in: it sends them as its own
         shares = _load()
     recs = sorted((r for r in shares.values() if r.get("thread") == thread and r.get("kind") == "session"
                    and r.get("session") and store.get_session(r["session"])), key=lambda r: r.get("at") or 0)
     if not recs:
         return None
     src = recs[-1]
-    turns, _ = _pack_turns(store.transcript(src["session"]), lambda path: None, home, budget)
+    turns, _ = _pack_turns(store.transcript(src["session"]), lambda path: None, home, budget, level)
     return {"from": dict(src["from"]), "title": src["title"], "sent": src["sent"], "turns": turns}
 
 
@@ -542,7 +583,8 @@ def _out() -> dict:
     got = got if isinstance(got, dict) else {}
     return {"threads": got["threads"] if isinstance(got.get("threads"), dict) else {},
             "continued": got["continued"] if isinstance(got.get("continued"), dict) else {},
-            "queue": got["queue"] if isinstance(got.get("queue"), list) else []}
+            "queue": got["queue"] if isinstance(got.get("queue"), list) else [],
+            "adopted": got["adopted"] if isinstance(got.get("adopted"), dict) else {}}
 
 
 def _enqueue(session_id: str, to: str, note: str, pictures: bool, code: bool) -> dict:
@@ -752,7 +794,8 @@ def _receive(worker, row: dict) -> None:
         _busy.add(share_id)
     try:
         frm = row.get("from") if isinstance(row.get("from"), dict) else {}
-        files = [{"id": f["id"], "role": f.get("role"), "name": _clean_name(f.get("name"))}
+        files = [{"id": f["id"], "role": f.get("role"), "name": _clean_name(f.get("name")),
+                  "bytes": int(f["bytes"]) if _num(f.get("bytes")) and f["bytes"] > 0 else 0}
                  for f in (row.get("files") or [])[:_PICS + 2]
                  if isinstance(f, dict) and isinstance(f.get("id"), str) and _SAFE_ID.fullmatch(f["id"])]
         rec = {"instance": worker.id, "kind": kind,
@@ -780,13 +823,20 @@ def _receive(worker, row: dict) -> None:
         try:
             if newer:
                 rec["folded_into"] = newer
-            elif kind == "session":
-                _materialize(worker, share_id, rec)
             else:
-                _keep_file(worker, share_id, rec)
+                with _lock:     # the TEAM tab shows it coming (receiving), by its bytes
+                    _progress[share_id] = {"id": share_id, "title": rec["title"], "from": rec["from"]["name"],
+                                           "stage": "download", "done": 0, "total": sum(f["bytes"] for f in files)}
+                if kind == "session":
+                    _materialize(worker, share_id, rec)
+                else:
+                    _keep_file(worker, share_id, rec)
         except Exception:
             _drop_local(share_id, rec)
             raise
+        finally:
+            with _lock:
+                _progress.pop(share_id, None)
         if not _put_and_fold(share_id, rec):
             _announce(worker, share_id, rec)
         _stamp(worker, share_id, "delivered")
@@ -836,9 +886,19 @@ def _download(worker, share_id: str, f: dict, cap: int) -> bytes:
     url = got.get("url") if isinstance(got, dict) else None
     if not isinstance(url, str) or not url.startswith(("https://", "http://")):
         raise ValueError("no download link")
+    got, size = [], 0
     try:
         with urllib.request.urlopen(url, timeout=60) as r:
-            data = r.read(cap + 1)
+            while size <= cap:
+                chunk = r.read(min(262144, cap + 1 - size))
+                if not chunk:
+                    break
+                got.append(chunk)
+                size += len(chunk)
+                with _lock:
+                    if share_id in _progress:
+                        _progress[share_id]["done"] += len(chunk)
+        data = b"".join(got)
     except urllib.error.HTTPError as e:     # the bucket's answer: _why would read its 404 as a Rivendell without shares
         raise ValueError(f"Rivendell's storage answered {e.code} for {f['name']}") from None
     if len(data) > cap:
@@ -946,6 +1006,9 @@ def _materialize(worker, share_id: str, rec: dict) -> None:
     if earlier:
         _write_new(os.path.join(_files_dir(share_id), "earlier.json"), json.dumps(earlier).encode())
         facts["earlier"] = {"from": earlier["from"], "turns": len(earlier["turns"]), "sent": earlier["sent"]}
+    with _lock:
+        if share_id in _progress:
+            _progress[share_id]["stage"] = "filing"
     store.create_session(config.DASH_CHAT_ID, "/", session_id=sid, origin=f"{ORIGIN}:{worker.id}", cwd=config.BASE_PATH)
     store.set_ref(sid, f"share:{share_id}")
     store.rename(sid, rec["title"][:60])
@@ -1099,9 +1162,19 @@ def _yours(thread: str, shares: dict, threads: dict) -> "dict | None":
     return {"id": best["id"], "title": best.get("title") or "Session"} if best else None
 
 
+def receiving() -> list:
+    """What is still coming in, for the TEAM tab's bars: downloading counts 0 to 90 by its bytes,
+    filing it (pictures linked, turns written) is the rest."""
+    with _lock:
+        now = [dict(p) for p in _progress.values()]
+    return [{"id": p["id"], "title": p["title"], "from": p["from"], "stage": p["stage"],
+             "pct": 95 if p["stage"] == "filing" else min(90, int(90 * p["done"] / p["total"])) if p["total"] else 0}
+            for p in now]
+
+
 def overview() -> dict:
-    """The TEAM tab: the roster, what you were sent, and what you sent."""
-    out = {"roster": [], "outbox": [], "inbox": inbox(), "error": None}
+    """The TEAM tab: the roster, what you were sent, what is still coming in, and what you sent."""
+    out = {"roster": [], "outbox": [], "inbox": inbox(), "receiving": receiving(), "error": None}
     try:
         out["roster"] = _cached("roster", "/plugin/teammates")
         out["outbox"] = _cached("outbox", "/plugin/shares?box=out")
@@ -1297,9 +1370,9 @@ def continue_plan(share_id: str, into: "str | None" = None, project: "str | None
         while git._run(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}")[0] == 0:
             branch, n = f"{stem}-{n}", n + 1
     if yours:
-        n = rec.get("new_turns") or 0
-        what = (f"{name} sent this session back: {n} new turn{'s' * (n != 1)} on top of mine" if back
-                else f"{name} sent an update to this session: {n} new turn{'s' * (n != 1)}")
+        n = _new_turns(rec.get("new_turns") or 0, len(rec.get("turns") or []))
+        what = (f"{name} sent this session back: {n} on top of mine" if back
+                else f"{name} sent an update to this session: {n}")
         pics = [os.path.join(config.UPLOAD_DIR, rec["session"], p) for p in rec.get("new_pictures") or []] \
             if rec.get("session") else []
         return {"project": project if code else (store.get_session(yours["id"]) or {}).get("project"),
@@ -1321,6 +1394,103 @@ def continue_plan(share_id: str, into: "str | None" = None, project: "str | None
                      + (", then look at their code on this branch." if code else ".") + said + " "
                      + _AS_DATA.format(name=name),
             "attachments": attach}
+
+
+def adopt(share_id: str, project: str, cwd: "str | None" = None) -> str:
+    """CONTINUE HERE: a session a teammate sent, as a session of yours in one of your projects,
+    its history on screen and the composer empty. Its turns and events are copied (their read-only
+    copy stays in TEAM, where dismiss and expiry take it), its pictures linked into folders of its
+    own. It has no history in Claude yet, so each run carries it (seed) until a turn of yours has
+    finished. `cwd`: the new worktree their code went into. Returns its id. Raises TeamError.
+    NEW SESSION FROM IT is the other way on: continue_plan's template (a new session, the
+    transcript attached, the prompt drafted)."""
+    from bridge import browser, profiles
+    rec = _get(share_id or "")
+    if not rec or rec.get("dismissed") or rec.get("kind") != "session" or not rec.get("session") \
+            or not store.get_session(rec["session"]):
+        raise TeamError("That share is gone.")
+    if rec.get("folded_into"):
+        raise TeamError("A newer version of it came since: it's in your TEAM tab.")
+    if not isinstance(project, str) or not project.strip("/") or not browser.project_exists(project):
+        raise TeamError("That isn't one of your projects.")
+    where = os.path.realpath(os.path.join(config.BASE_PATH, project.lstrip("/")))
+    if cwd:
+        wts = os.path.join(os.path.realpath(config.BASE_PATH), ".worktrees") + os.sep
+        real = os.path.realpath(cwd) if isinstance(cwd, str) and os.path.isabs(cwd) else ""
+        if not real.startswith(wts) or not os.path.isdir(real):
+            raise TeamError("It continues in that project's checkout, or in a new worktree under .worktrees.")
+        where = real
+    theirs = store.get_session(rec["session"])
+    pid = profiles.project_default(project)
+    mine = store.create_session(theirs["chat_id"], project, origin="dashboard", cwd=where,
+                                permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE, profile_id=pid)
+    store.rename(mine["id"], rec["title"][:60])
+    src, dst = os.path.join(config.UPLOAD_DIR, theirs["id"]), os.path.join(config.UPLOAD_DIR, mine["id"])
+    idmap = store.copy_turns(theirs["id"], mine["id"], rewrite=(src + os.sep, dst + os.sep))
+    _link_dir(src, dst)
+    for old, new in idmap.items():
+        _link_dir(os.path.join(config.UPLOAD_DIR, old), os.path.join(config.UPLOAD_DIR, new))
+    with _lock:
+        out = _out()
+        out["adopted"][mine["id"]] = {"share": share_id, "turns": len(idmap), "from": rec["from"]["name"],
+                                    "title": rec["title"]}
+        _write(_out_path(), out)
+    mark(share_id, "continued", session=mine["id"])
+    return mine["id"]
+
+
+def _link_dir(src: str, dst: str) -> None:
+    """One upload folder's files in another, as links: a share's pictures are written once."""
+    try:
+        names = os.listdir(src)
+    except OSError:
+        return
+    for name in names:
+        a, b = os.path.join(src, name), os.path.join(dst, name)
+        if os.path.islink(a) or not os.path.isfile(a) or os.path.lexists(b):
+            continue
+        os.makedirs(dst, mode=0o700, exist_ok=True)
+        try:
+            os.link(a, b)
+        except OSError:
+            shutil.copy2(a, b)
+
+
+def seed(session_id: str, job_id: str) -> "tuple[str | None, list]":
+    """For runner.start_streaming_job: a session CONTINUE HERE made shows its teammate's turns but
+    Claude has none of them, so a run in it carries them: transcript.md in the run's upload folder,
+    and a line saying what it is. Until a turn of yours has finished; then (None, []) for good."""
+    with _lock:
+        sd = _out()["adopted"].get(session_id)
+    if not isinstance(sd, dict) or not _SAFE_ID.fullmatch(job_id or ""):
+        return None, []
+    copied = sd["turns"] if isinstance(sd.get("turns"), int) else 0
+    if any(seq >= copied and status == "done" for seq, status in store.turn_statuses(session_id)):
+        return None, []
+    name = _one_line(sd.get("from"), 80) or "A teammate"
+    path = os.path.join(config.UPLOAD_DIR, job_id, "transcript.md")
+    try:
+        _write_new(path, _seed_md(session_id, sd, copied, name).encode())
+    except FileExistsError:
+        pass
+    return (f"This session continues {name}'s session “{_one_line(sd.get('title'), _TITLE_MAX)}”, which ran on "
+            f"their machine: what happened in it so far is in the attached transcript.md. "
+            + _AS_DATA.format(name=name)), [path]
+
+
+def _seed_md(session_id: str, sd: dict, copied: int, name: str) -> str:
+    """The turns a continued share came with, from your copy (theirs may be gone by now), with the
+    hop it was itself continued from when that came along."""
+    t = store.transcript(session_id)
+    by_turn = _by_turn(t["events"])
+    out = [f"# {sd.get('title') or 'Session'}", "", f"{name}'s session, as it was when you continued it here.",
+           "", "> " + _AS_DATA.format(name=name)]
+    hop = _earlier_doc(sd["share"]) if isinstance(sd.get("share"), str) else None
+    if hop:
+        out += ["", f"## Earlier, from {hop['from']['name']}", "", f"What {hop['from']['name']} did before {name} picked it up."]
+        out += _md_turns([{"prompt": x["prompt"], "events": x["events"]} for x in hop["turns"]], "### Earlier turn")
+    out += _md_turns([{"prompt": x["prompt"], "events": by_turn.get(x["id"], [])} for x in t["turns"][:copied]], "## Turn")
+    return "\n".join(out).rstrip() + "\n"
 
 
 def _session_pictures(rec: dict) -> list:
@@ -1509,15 +1679,24 @@ def update_md(share_id: str) -> "str | None":
     t = store.transcript(rec["session"])
     by_turn, seen = _by_turn(t["events"]), rec.get("seen_at") or 0
     new = [(i, x) for i, x in enumerate(t["turns"], 1) if (x.get("started") or 0) > seen]
-    name = rec["from"]["name"]
+    name, had = rec["from"]["name"], len(t["turns"]) - len(new)
     out = [f"# {rec['title']}: what's new", "",
-           f"{len(new)} new turn{'s' * (len(new) != 1)} {name} sent on {rec['sent'][:10] or 'an earlier day'}, after what you had.",
+           f"{_new_turns(len(new), len(t['turns']))} {name} sent on {rec['sent'][:10] or 'an earlier day'}, "
+           f"after {f'the {had} you had' if had else 'what you had'}.",
            "", "> " + _UPDATE_AS_DATA.format(name=name)]
     if rec["note"]:
         out += ["", f"Their note: “{rec['note']}”"]
     for i, x in new:
         out += _md_turns([{"prompt": x["prompt"], "events": by_turn.get(x["id"], [])}], f"## Turn {i}", number=False)
     return "\n".join(out).rstrip() + "\n"
+
+
+def _new_turns(n: int, total: int) -> str:
+    """"42 new turns (54–95 of 95)": which ones, so the count reads against the TURNS tab's."""
+    if not n or n > total:
+        return f"{n} new turn{'s' * (n != 1)}"
+    first = total - n + 1
+    return f"{n} new turn{'s' * (n != 1)} ({first if n == 1 else f'{first}–{total}'} of {total})"
 
 
 def earlier(share_id: str) -> "dict | None":

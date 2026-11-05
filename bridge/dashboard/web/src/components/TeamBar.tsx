@@ -11,11 +11,13 @@ export function TeamTile() {
 
 /** In place of the composer on a session a teammate sent (lib/team): there is
  *  nothing to type into someone else's session, so the bar says whose it is and
- *  what they asked, and offers the two ways on: DISMISS, or CONTINUE HERE, which
- *  starts a session of your own with their work attached and the prompt unsent.
- *  Styled with JobBar's classes. */
-export function TeamBar({ s, src, row, onContinue, onContinueYours, onDismiss, step }: {
+ *  what they asked, and offers the ways on: DISMISS; CONTINUE HERE, their session
+ *  as yours, its history on screen and the composer empty; NEW SESSION FROM IT, a
+ *  session of your own with their work attached and the prompt drafted; and, for a
+ *  newer state of a thread you have, CONTINUE IN YOURS. Styled with JobBar's classes. */
+export function TeamBar({ s, src, row, onContinue, onNewSession, onContinueYours, onDismiss, step }: {
   s: SessionBrief; src?: string | null; onContinue: () => void; onDismiss: () => void;
+  onNewSession: () => void;
   row?: Received | null;          // its TEAM row: a newer state of a thread you have goes into yours
   onContinueYours?: () => void;
   step?: string | null;      // CLONE & INSTALL's progress, in place of CONTINUE HERE
@@ -50,21 +52,18 @@ export function TeamBar({ s, src, row, onContinue, onContinueYours, onDismiss, s
       <button type="button" className="jobbar-btn" style={{ flex: "none" }} onClick={onDismiss} title="It leaves your list; nothing ran">
         <X size={12} strokeWidth={2} aria-hidden />DISMISS
       </button>
-      {yours ? (
-        <>
-          <button type="button" className="jobbar-btn" style={{ flex: "none" }} onClick={onContinue}
-            title="A new session of yours: their work attached, the prompt left for you to send">
-            <Plus size={12} strokeWidth={2} aria-hidden />NEW SESSION
-          </button>
-          <button type="button" className="jobbar-btn" data-pri style={{ flex: "none" }} onClick={onContinueYours}
-            title={`Your session “${row?.yours?.title}”: what's new attached, the prompt left for you to send`}>
-            <CornerUpLeft size={12} strokeWidth={2} aria-hidden />{step ?? "CONTINUE IN YOURS"}
-          </button>
-        </>
-      ) : (
-        <button type="button" className="jobbar-btn" data-pri style={{ flex: "none" }} onClick={onContinue}
-          title="Your own session: their work attached, the prompt left for you to send">
-          <Forward size={12} strokeWidth={2} aria-hidden />{step ?? "CONTINUE HERE"}
+      <button type="button" className="jobbar-btn" style={{ flex: "none" }} onClick={onNewSession}
+        title="A new session of yours: their transcript attached, the prompt drafted for you to send">
+        <Plus size={12} strokeWidth={2} aria-hidden />NEW SESSION FROM IT
+      </button>
+      <button type="button" className="jobbar-btn" data-pri={yours ? undefined : true} style={{ flex: "none" }} onClick={onContinue}
+        title="Their session as yours: its history stays here and you type the next prompt">
+        <Forward size={12} strokeWidth={2} aria-hidden />{!yours && step ? step : "CONTINUE HERE"}
+      </button>
+      {yours && (
+        <button type="button" className="jobbar-btn" data-pri style={{ flex: "none" }} onClick={onContinueYours}
+          title={`Your session “${row?.yours?.title}”: what's new attached, the prompt left for you to send`}>
+          <CornerUpLeft size={12} strokeWidth={2} aria-hidden />{step ?? "CONTINUE IN YOURS"}
         </button>
       )}
     </div>

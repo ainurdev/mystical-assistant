@@ -2,6 +2,7 @@ import type { CtxItem } from "../components/hud/ContextMenu";
 import { confirmLeave } from "./leaveGuard";
 import { selectionMd } from "./selmd";
 import { isNativeApp } from "./mac";
+import { attachmentPath, revealItems } from "./reveal";
 
 /* The browser's own context-menu entries, rebuilt for the custom HUD menu —
    preventDefault() takes the native one away, so anything it offered has to be
@@ -69,6 +70,8 @@ export function nativeCtxItems(e: MouseEvent): { top: CtxItem[]; page: CtxItem[]
     top.push({ icon: "⧉", label: "Copy image address", onClick: () => copy(src) });
     top.push({ icon: "↓", label: "Save image as…", onClick: () => saveAs(src) });
   }
+  // A chat screenshot or clip is a file in the bridge's upload dir.
+  top.push(...revealItems(attachmentPath((el.closest?.("img, video") as HTMLImageElement | HTMLVideoElement | null)?.src)));
 
   const page: CtxItem[] = [
     { icon: "☰", label: "Select all", hint: "⌘A", onClick: selectAll },
