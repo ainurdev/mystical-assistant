@@ -2,9 +2,10 @@
 
 A feature path's TICKETS step runs Matt's skill, which writes one markdown file per
 ticket under `.mystical/tickets/<feature-slug>/<NN>-<slug>.md` in the session's
-checkout, beside the SPEC.md its SPEC step wrote (no ticket: not an NN- name). We read those files as they are (`# NN: Title`, `**Blocked by:** ...`) rather
-than keep a second copy of the plan in the DB: the files are what the user and Claude
-both edit, so they can't drift.
+checkout, beside the SPEC.md its SPEC step wrote (no NN- name, so no ticket). We read
+those files as they are (`# NN: Title`, `**Blocked by:** ...`) rather than keep a
+second copy of the plan in the DB: the files are what the user and Claude both edit,
+so they can't drift.
 
 What the bridge adds is state, in `set.json` beside the ticket files: per ticket
 queued/running/done/fix/missing, its branch, worktree, session and base. State is files,
