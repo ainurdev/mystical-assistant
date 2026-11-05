@@ -25,6 +25,7 @@ unreadable or malformed contributes nothing, never an error.
 import json
 import os
 
+from bridge import paths
 from bridge.skills import _front_matter
 
 USER_DIR = os.path.expanduser("~/.claude")
@@ -165,7 +166,10 @@ def available(abs_project: "str | None" = None) -> "list[dict]":
                         ("user", USER_DIR)):
         if root:
             sources.append((scope, _skills(os.path.join(root, "skills")) + _commands(os.path.join(root, "commands"))))
-    for short, path in _plugin_roots(abs_project):
+    roots = _plugin_roots(abs_project)
+    if paths.on():  # the bundled copy stands in for any installed one
+        roots = [r for r in roots if r[0] != "mattpocock-skills"] + [("mattpocock-skills", paths.PACK_DIR)]
+    for short, path in roots:
         found = (_skills(os.path.join(path, "skills")) + _manifest_skills(path)
                  + _commands(os.path.join(path, "commands")))
         sources.append(("plugin", [(f"{short}:{n}", d) for n, d in found]))

@@ -200,3 +200,13 @@ def test_miniapp_route_serves_the_active_projects_list(home, tmp_path, monkeypat
     h._api_commands(1)
     assert box["code"] == 200
     assert "proj-only" in _names(box["obj"]["commands"])
+
+
+def test_available_lists_bundled_pack_once(home, monkeypatch):
+    from bridge import aifeatures, paths
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key == "router")
+    _plugin(home, "mattpocock-skills@claude-plugins-official", skills=["grill-with-docs"])
+    names = [c["name"] for c in commands.available(None)]
+    assert names.count("mattpocock-skills:grill-with-docs") == 1
+    entry = next(c for c in commands.available(None) if c["name"] == "mattpocock-skills:grill-with-docs")
+    assert "from mattpocock-skills" not in entry["description"]  # the bundled copy won, not the installed

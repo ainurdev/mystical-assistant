@@ -32,7 +32,7 @@ import uuid
 
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver,
                     git, inspector, integrations, ladder, limits, machine, native_activity, notices,
-                    profiles, pubsub, relevance, savers, state, store, team, tgask, tgtopics,
+                    paths, profiles, pubsub, relevance, savers, state, store, team, tgask, tgtopics,
                     transcript_jsonl, ux_mcp, waits)
 from bridge.browser import rel
 from bridge.telegram import panel_kb, send
@@ -628,6 +628,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
                     # deny — and settling it here is what keeps the fallback
                     # below (and its `claude mcp list` call) off this path.
                     disabled_tools = []
+            if paths.on():
+                cmd += ["--plugin-dir", paths.PACK_DIR]
     if model:
         cmd += ["--model", model]
     if effort:
