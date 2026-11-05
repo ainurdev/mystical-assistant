@@ -134,6 +134,18 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
         return dict(_cache[session_id])
 
 
+def restore(session_id: str, snap: "dict | None") -> None:
+    """Put back what get() returned before a set_path (a run that was refused)."""
+    if not snap:
+        return
+    with _lock:
+        _load_locked()
+        f = _cache.get(session_id)
+        if f:
+            f.update(snap)
+            _save_locked()
+
+
 def get(session_id: str) -> "dict | None":
     with _lock:
         _load_locked()

@@ -409,7 +409,8 @@ def tick(folder: str) -> None:
 def _merge_prompt(st: dict, tks: dict) -> str:
     branches = ", ".join(tks[n]["branch"] for n in order([Ticket(n, "", "", tuple(t["blocked_by"]))
                                                            for n, t in tks.items()]))
-    return (f"Merge these branches into {st['feature_branch']}, in this order, each with git merge --no-ff: "
+    return ("No path for this message.\n\n"   # else the paths pack has Claude pick a path
+            f"Merge these branches into {st['feature_branch']}, in this order, each with git merge --no-ff: "
             f"{branches}\nResolve any clash so both tickets' work survives, run the project's full test "
             "suite, fix what breaks, and commit. Then call StepDone.")
 
@@ -522,9 +523,10 @@ def _cleanup(folder: str) -> tuple:
         merged = git._run(fc, "branch", "--merged", st["feature_branch"])[1]  # noqa: SLF001
         merged = {b.strip().lstrip("*+ ").strip() for b in merged.splitlines()}
         removed, skipped = [], []
+        have = set(git.branches(fc))
         for t in tks.values():
             b, wt = t["branch"], t.get("worktree") or ""
-            if b not in git.branches(fc):
+            if b not in have:
                 continue   # an earlier clean-up got it
             if b not in merged:
                 skipped.append(b)
@@ -602,14 +604,16 @@ def after_turn(job) -> bool:
 
 def _rerun(folder: str, st: dict, n: str) -> str:
     """A new turn in ticket n's own session and worktree: "" once it runs, else why
-    not, and it is fix again. Its StepDone is forgotten only once that turn started,
-    so a refused run (your own turn still going) keeps the one your turn recorded."""
+    not, and it is fix again. Its StepDone is forgotten before the turn starts (a fast one must count)
+    and put back if the run is refused (your own turn still going)."""
     from bridge import runner  # local import: runner<->tickets cycle
     t = st["tickets"][n]
     t["status"] = "running"
     save(folder, st)
+    snap = paths.get(t["session_id"])
     try:
         s = store.get_session(t["session_id"]) or {}
+        _one_step(t["session_id"], st, n)   # before the turn: a StepDone it records at once must count
         job = runner.start_streaming_job(s.get("chat_id"), _again(st, n), [], project=t["worktree"],
                                          session_id=t["session_id"], origin="ticket")
         err = "" if job else "the bridge refused the run"
@@ -617,9 +621,8 @@ def _rerun(folder: str, st: dict, n: str) -> str:
         err = str(e) or type(e).__name__
     if err:
         print(f"[tickets] #{n} of {st['slug']} didn't start again: {err}", file=sys.stderr)
+        paths.restore(t["session_id"], snap)   # a refused run keeps the StepDone you recorded
         t["status"] = "fix"
-    else:
-        _one_step(t["session_id"], st, n)
     save(folder, st)
     return err
 
@@ -635,18 +638,18 @@ def _retry_merge(folder: str, st: dict) -> str:
         return "" if load(folder).get("status") == "merging" else "the merge didn't start"
     st["status"] = "merging"
     save(folder, st)
+    snap = paths.get(sid)
     try:
         s = store.get_session(sid) or {}
-        job = runner.start_streaming_job(s.get("chat_id"), "No path for this message.\n\n"
-                                         + _merge_prompt(st, st["tickets"]), [],
+        paths.set_path(sid, "one", f"merge {st['slug']}", "rule", skill="merge")   # before the turn: its StepDone must count
+        job = runner.start_streaming_job(s.get("chat_id"), _merge_prompt(st, st["tickets"]), [],
                                          project=st["feature_checkout"], session_id=sid, origin="ticket-merge")
         err = "" if job else "the bridge refused the run"
     except Exception as e:  # noqa: BLE001
         err = str(e) or type(e).__name__
     if err:
+        paths.restore(sid, snap)
         st["status"] = "fix"
-    else:
-        paths.set_path(sid, "one", f"merge {st['slug']}", "rule", skill="merge")
     save(folder, st)
     return err
 

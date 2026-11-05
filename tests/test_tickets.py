@@ -569,7 +569,7 @@ def test_merge_prompt_lists_branches_in_dependency_order(make_set):
     s = make_set({"01": "#03", "02": None, "03": None})
     _finish_all(s, "02", "03", "01")
     (m,) = _merges(s)
-    assert m["prompt"] == ("Merge these branches into feat/x, in this order, each with git merge --no-ff: "
+    assert m["prompt"] == ("No path for this message.\n\nMerge these branches into feat/x, in this order, each with git merge --no-ff: "
                            "tk/x-02, tk/x-03, tk/x-01\nResolve any clash so both tickets' work survives, run the "
                            "project's full test suite, fix what breaks, and commit. Then call StepDone.")
     sess = store.get_session(m["sid"])
@@ -678,3 +678,48 @@ def test_get_tickets_lists_sets_with_live_ticket_status(make_set):
     (one,) = box["obj"]["sets"]
     assert one["folder"] == s.folder and one["merged"] == 2 and one["status"] == "building"
     assert one["tickets"]["01"]["session"] == "running"
+
+
+def test_a_retry_whose_turn_records_step_done_at_once_still_finishes(make_set, monkeypatch):
+    s = make_set({"01": None})
+    s.finish("01", commit=False)
+    real = runner.start_streaming_job
+
+    def fast(chat_id, prompt, image_paths, session_id=None, **kw):
+        job = real(chat_id, prompt, image_paths, session_id=session_id, **kw)
+        s.commit("01")
+        paths.step_done(session_id, job.id)       # StepDone before start returns
+        return job
+    monkeypatch.setattr(runner, "start_streaming_job", fast)
+    assert tickets.retry(s.folder, "01") == ""
+    assert paths.get(s.sid("01"))["done"] == ["implement"]
+    assert s.end("01", "done") and s.status("01") == "done"
+
+
+def test_a_merge_retry_with_fast_step_done_ends_merged(make_set, monkeypatch):
+    s = make_set({"01": None})
+    s.finish("01")
+    sid = s.state["merge_session"]
+    tickets.after_turn(_merge_job(s, "error"))
+    real = runner.start_streaming_job
+
+    def fast(chat_id, prompt, image_paths, session_id=None, **kw):
+        job = real(chat_id, prompt, image_paths, session_id=session_id, **kw)
+        paths.step_done(session_id, job.id)
+        return job
+    monkeypatch.setattr(runner, "start_streaming_job", fast)
+    assert tickets.retry(s.folder, "merge") == ""
+    tickets.after_turn(_merge_job(s))
+    assert s.state["status"] == "merged"
+    assert s.starts[-1]["prompt"].startswith("No path for this message.\n\nMerge these")
+
+
+def test_a_refused_merge_retry_keeps_the_path_state(make_set):
+    s = make_set({"01": None})
+    s.finish("01")
+    sid = s.state["merge_session"]
+    paths.step_done(sid, "t1")
+    tickets.after_turn(_merge_job(s, "error"))
+    s.refuse = True
+    assert tickets.retry(s.folder, "merge") == "the bridge refused the run"
+    assert paths.get(sid)["done"] == ["merge"] and s.state["status"] == "fix"
