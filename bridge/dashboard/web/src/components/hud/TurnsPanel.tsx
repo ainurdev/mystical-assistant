@@ -47,10 +47,10 @@ export function stepRow(rows: TurnRow[], root: HTMLElement | null, nav: Transcri
 }
 
 // The right rail's panel frame, as GitPanel and UsagePanel draw it.
-const FRAME = { border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)",
+export const FRAME = { border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)",
   display: "flex", flexDirection: "column", flex: 1, minHeight: 0 } as const;
 // The rule under the header, as the other tabs draw it: the hero's top edge starts right under it.
-const RULE = { height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" } as const;
+export const RULE = { height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" } as const;
 const CUT: Record<Resume, string> = { limit: "usage limit", restart: "restart", error: "error" };
 const AFTER: Record<Resume, string> = { limit: "the usage limit", restart: "a bridge restart", error: "an error" };
 const day = (sec: number) => new Date(sec * 1000).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });

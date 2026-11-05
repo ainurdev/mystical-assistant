@@ -7773,3 +7773,64 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .ur-bars .dim i { opacity: .45; }
 .ur-cap { font-size: var(--t9); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .us-cap .us-sub { display: block; }
+
+/* FLOW tab: the path map hero, then the steps under it. Colours are tokens only;
+   the pulse is the shared rhpulse, which .rh switches off under reduced motion. */
+.fl-none { position: absolute; inset: 28px 12px 10px; display: grid; place-items: center; text-align: center; font: italic 400 var(--t115)/1.4 var(--f); color: var(--txl); }
+.fl-n { flex: none; }
+.rh-k b { color: var(--acc); font-weight: 800; }
+.fl-auto { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 4px; height: 16px; padding: 0 7px; border-radius: 8px; border: 0; cursor: pointer;
+  font: 800 var(--t9)/1 var(--f); letter-spacing: .06em; color: var(--txl); background: color-mix(in srgb, var(--txl) 14%, transparent); }
+.fl-auto.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 16%, transparent); }
+.fl-map { list-style: none; margin: 14px 0 0; padding: 0; display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.fl-st { position: relative; display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.fl-tag { height: 11px; display: flex; align-items: center; font-size: var(--t8); font-weight: 800; color: var(--acc); }
+.fl-st.you .fl-tag { color: var(--warn); }
+.fl-mk { position: relative; z-index: 1; width: 16px; height: 16px; box-sizing: border-box; border-radius: 50%; display: grid; place-items: center;
+  background: var(--canvas); border: 1.6px solid color-mix(in srgb, var(--txl) 60%, transparent); }
+.fl-st.done .fl-mk { background: var(--ok); border-color: var(--ok); color: var(--canvas); }
+.fl-st.now .fl-mk { border-color: var(--acc); background: radial-gradient(circle, var(--acc-on) 0 2.5px, var(--acc) 3px); }
+.fl-st.now .fl-mk::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--acc); animation: rhpulse 1.6s ease-in-out infinite; }
+.fl-st.you .fl-mk { border-color: var(--warn); background: radial-gradient(circle, var(--warn) 0 2.5px, var(--canvas) 3px); }
+/* the line from the step before, centred on the markers (tag 11px + marker 8px) */
+.fl-st + .fl-st::before { content: ""; position: absolute; top: 18px; left: calc(-50% + 11px); right: calc(50% + 11px); border-top: 2px dotted color-mix(in srgb, var(--txl) 40%, transparent); }
+.fl-st.done::before { border-top: 2px solid var(--ok); }
+.fl-st.now::before { border-top: 2px dashed var(--acc); }
+.fl-lb { max-width: 100%; margin-top: 5px; font-size: var(--t8); font-weight: 800; letter-spacing: .02em; text-transform: uppercase; color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.fl-st.done .fl-lb { color: var(--ok); }
+.fl-st.now .fl-lb { color: var(--acc); }
+.fl-st.you .fl-lb { color: var(--warn); }
+/* a narrow rail has no room for six names: only the running step keeps its own */
+@container (max-width: 215px) { .fl-st:not(.now) .fl-lb { display: none; } }
+.fl-cap { position: absolute; left: 12px; right: 12px; bottom: 9px; display: flex; align-items: baseline; gap: 6px; font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; }
+.fl-cap b { color: var(--txb); font-weight: 800; text-transform: uppercase; }
+.fl-cap span { overflow: hidden; text-overflow: ellipsis; }
+.fl-dot { flex: none; align-self: center; width: 6px; height: 6px; border-radius: 50%; background: var(--acc); animation: rhpulse 1.4s ease-in-out infinite; }
+.fl-body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 12px 10px; display: flex; flex-direction: column; gap: 8px; }
+.fl-why { display: flex; gap: 7px; font-size: var(--t11); line-height: 1.4; color: var(--txd); }
+.fl-why svg { flex: none; margin-top: 2px; color: var(--acc); }
+.fl-why b { color: var(--txb); font-weight: 600; }
+.fl-done { display: flex; align-items: center; gap: 7px; font-size: var(--t10); color: var(--txl); min-width: 0; }
+.fl-done svg { flex: none; color: var(--ok); }
+.fl-done b { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.fl-done span { margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fl-now { border: 1px solid var(--acc); border-radius: 8px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; background: color-mix(in srgb, var(--acc) 8%, transparent); }
+.fl-now .t { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fl-now .n { font-size: var(--t10); font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: var(--acc); }
+.fl-now .cmd { font: 400 var(--t10)/1 var(--m); color: var(--txl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.fl-now .r { margin-left: auto; }
+.fl-now .act { font-size: var(--t11); color: var(--txb); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-now .act i { font-style: normal; color: var(--txl); margin-right: 4px; }
+.fl-now .chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.fl-pill { display: inline-flex; align-items: center; gap: 4px; flex: none; height: 16px; padding: 0 7px; border-radius: 8px; font-size: var(--t9); font-weight: 700; white-space: nowrap;
+  color: var(--txl); background: color-mix(in srgb, var(--txl) 14%, transparent); }
+.fl-pill.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 16%, transparent); }
+.fl-pill.you { color: var(--warn); background: color-mix(in srgb, var(--warn) 16%, transparent); }
+.fl-next { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px dashed color-mix(in srgb, var(--txl) 25%, transparent); min-width: 0; }
+.fl-next .n { font-size: var(--t10); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); }
+.fl-next .d { flex: 1; min-width: 0; font: 400 var(--t10)/1 var(--m); color: var(--txl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fl-zone { flex: none; padding: 8px 12px 10px; font-size: var(--t9); letter-spacing: .08em; text-transform: uppercase; color: var(--txl); }
+.fl-zone.over { color: var(--warn); }
+.fl-zone .bar { margin-top: 5px; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--txl) 18%, transparent); overflow: hidden; }
+.fl-zone .bar i { display: block; height: 100%; background: var(--acc); }
+.fl-zone.over .bar i { background: var(--warn); }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Users,
+  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Route, Users,
 } from "lucide-react";
 import {
   api,
@@ -96,6 +96,7 @@ import { TeamPanel } from "./components/hud/TeamPanel";
 import { UsagePanel } from "./components/hud/UsagePanel";
 import { ringWindow } from "./lib/usagering";
 import { stepRow, TurnsPanel } from "./components/hud/TurnsPanel";
+import { FlowPanel } from "./components/hud/FlowPanel";
 import { TeamSendSheet, type SendWhat } from "./components/TeamSendSheet";
 import { BackPill, TeamBar } from "./components/TeamBar";
 import { ProjectPick } from "./components/ProjectPick";
@@ -2377,6 +2378,12 @@ export function App() {
           }} />
       ),
     },
+    // Hidden while SKILL ROUTER is off — no path is being set.
+    ...(ai.router ? [{
+      id: "flow", label: "Flow", icon: <Route {...RAIL} />, ownScroll: true, group: "session",
+      hint: "the path this session is on",
+      render: () => <FlowPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} ctxTokens={contextTokens} />,
+    }] : []),
     {
       id: "files", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree", group: "session",
       hint: filesEdits.edited.size ? `${filesEdits.edited.size} edited this session` : undefined,
