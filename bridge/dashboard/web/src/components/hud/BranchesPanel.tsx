@@ -6,6 +6,8 @@ import { conflictsMessage } from "../../lib/prchip";
 import { askConfirm } from "../ui/Ask";
 import type { CtxItem } from "./ContextMenu";
 import { notify } from "./Notifications";
+import { BranchTrunk } from "./BranchTrunk";
+import { trunkState } from "../../lib/trunk";
 
 /* BRANCHES — the right rail's view of the open session's repo, for working on
    every branch from one place (.mystical/design-drafts/branches-actions, A).
@@ -300,6 +302,7 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
         </span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
+      <BranchTrunk base={base} rows={g.worktrees.map((r) => ({ name: keyOf(r), state: trunkState(r) }))} />
       {naming && (
         <>
           <form className="bnew" onSubmit={(e) => { e.preventDefault(); make(); }}>

@@ -7702,3 +7702,9 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   background: color-mix(in srgb, var(--txl) 12%, transparent); }
 .ff-live { font-style: normal; color: var(--ok); animation: ffpulse 1.4s ease-in-out infinite; }
 @keyframes ffpulse { 50% { opacity: .35; } }
+/* Branches TRUNK. */
+.bt-k { font-size: var(--t9); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bt-n { margin-left: auto; flex: none; font-size: var(--t9); color: var(--txl); }
+.bt-svg { display: block; width: 100%; height: 62px; margin-top: 4px; }
+.bt-live { animation: ffpulse 1.4s ease-in-out infinite; }
+.bt-leg { position: absolute; left: 12px; right: 12px; bottom: 10px; display: flex; gap: 10px; overflow: hidden; white-space: nowrap; font-size: var(--t9); color: var(--txd); }
