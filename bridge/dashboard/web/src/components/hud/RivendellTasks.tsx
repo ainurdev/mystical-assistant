@@ -249,7 +249,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     </div>
   );
 
-  /** The board bar: lanes from the same grouping the list uses; ▶ arms the first open task like its row's ▶. */
+  /** The board bar: one lane per board column; ▶ arms the first open task like its row's ▶. */
   function hero(): ReactNode {
     const tasks = (data?.tasks ?? []).map((t) => queued[t.id] && t.implementation?.id !== queued[t.id]
       ? { ...t, implementation: { id: queued[t.id], status: "PENDING" as const, createdAt: now.toISOString(), completedAt: null } }
@@ -258,7 +258,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     const first = nextUp(todo, new Set(tasks.map((t) => t.id))).find((i) => i.tasks.length);
     const t = first ? tasks.find((x) => x.id === first.tasks[0]) : [...g.needs, ...g.mine, ...g.team][0];
     const c = linkChip(links[0], now);
-    return <BoardBar project={names} chip={c.label} tone={LINK_TONE[c.tone]} groups={g} total={tasks.length}
+    return <BoardBar project={names} chip={c.label} tone={LINK_TONE[c.tone]} tasks={tasks} total={tasks.length}
       next={t ? { id: t.id, title: splitTitle(t.name).title } : null} onStart={(id) => reveal(id, true)} />;
   }
 

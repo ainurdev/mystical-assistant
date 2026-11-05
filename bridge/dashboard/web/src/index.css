@@ -7723,3 +7723,4 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .bb-go { flex: none; appearance: none; cursor: pointer; display: inline-flex; padding: 4px; background: transparent; color: var(--acc2, var(--acc));
   border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); border-radius: 6px; }
 .bb-go:hover, .bb-go:focus-visible { background: color-mix(in srgb, var(--acc) 18%, transparent); }
+.bb-lane span { max-width: 100%; padding: 0 3px; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

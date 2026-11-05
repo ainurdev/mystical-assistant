@@ -4,15 +4,15 @@ import { RailHero } from "./RailHero";
 
 /* The Rivendell tab's hero: the linked project, one box per lane sized by its
    count, and the first open task with the ▶ the task rows already use. */
-export function BoardBar({ project, chip, tone, groups, total, next, onStart }: {
+export function BoardBar({ project, chip, tone, tasks, total, next, onStart }: {
   project: string; chip: string; tone: string;
-  groups: Parameters<typeof boardLanes>[0]; total: number;
+  tasks: Parameters<typeof boardLanes>[0]; total: number;
   next: { id: string; title: string } | null;
   onStart: (id: string) => void;
 }) {
-  const lanes = boardLanes(groups);
+  const lanes = boardLanes(tasks);
   const label = !project ? "no Rivendell project linked"
-    : !total && !lanes[3].n ? `${project}: no tasks yet`
+    : !total ? `${project}: no tasks yet`
     : `${project}, ${chip}. ${lanes.map((l) => `${l.n} ${l.name.toLowerCase()}`).join(", ")}.${next ? ` Next up: ${next.title}` : ""}`;
   return (
     <RailHero label={label} top={project ? <>
@@ -23,7 +23,7 @@ export function BoardBar({ project, chip, tone, groups, total, next, onStart }: 
       <div className="bb-bar">
         {lanes.map((l) => (
           <div key={l.key} className="bb-lane" style={{ flex: l.flex, ["--lc" as string]: l.color }}>
-            <b>{l.n}</b><span>{l.name}</span>
+            <b>{l.n}</b><span title={l.name}>{l.name}</span>
           </div>
         ))}
       </div>
