@@ -10,6 +10,7 @@ import { Skeleton } from "../ui";
 import { FilesFootprint } from "./FilesFootprint";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import { findFiles } from "../../lib/filefind";
+import { revealItems } from "../../lib/reveal";
 
 /* FILES — a VS Code-ish explorer for the ACTIVE SESSION's working tree
    (project + its branch's worktree). Git-changed files carry their status
@@ -84,6 +85,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
   const [paths, setPaths] = useState<string[]>([]);
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
   const [ignored, setIgnored] = useState<string[]>([]);
+  const [root, setRoot] = useState("");   // the tree's absolute dir, for Show in Finder
   const [files, setFiles] = useState<GitFile[]>([]);
   // Folders start closed — a repo tree is thousands of rows in a 358px column.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -114,6 +116,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
       const r = await api.filesTree(project, branch || undefined);
       setPaths(r.files);
       setIgnored(r.ignored ?? []);
+      setRoot(r.root ?? "");
       setCollapsed(new Set(dirsOf(r.files)));
     } catch { setPaths([]); setIgnored([]); }
     finally { setTreeReady(true); }
@@ -188,7 +191,8 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
   /* Row menu. A changed file can be staged or discarded from here; the GIT
      tab is where the index is worked in full. */
   function ctxItems(t: NonNullable<typeof ctx>): CtxItem[] {
-    if (t.dir) return [{ icon: "⧉", label: "Copy Path", onClick: () => copyPath(t.path) }];
+    const reveal = revealItems(root && `${root}/${t.path}`);
+    if (t.dir) return [{ icon: "⧉", label: "Copy Path", onClick: () => copyPath(t.path) }, ...reveal];
     const st = changed.get(t.path);
     const untracked = st === "?";
     const items: CtxItem[] = [
@@ -212,7 +216,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
     // TEAM (bridge/team.py): never a .env file, which the bridge refuses anyway.
     if (onSendFile && !/^\.env/i.test(t.path.split("/").pop() ?? ""))
       items.push({ icon: "➤", label: "Send to teammate…", hint: "through Rivendell", onClick: () => onSendFile(t.path) });
-    items.push({ icon: "⧉", label: "Copy Path", onClick: () => copyPath(t.path) });
+    items.push({ icon: "⧉", label: "Copy Path", onClick: () => copyPath(t.path) }, ...reveal);
     items.push({
       icon: "✕", label: "Delete File", danger: true,
       onClick: () => void askConfirm(`Delete ${t.path} from disk?`, { ok: "Delete", danger: true })
