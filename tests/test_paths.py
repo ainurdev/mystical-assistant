@@ -431,5 +431,9 @@ def test_no_path_prefix(monkeypatch):
     assert _run_prompt(monkeypatch, {"prompt": "add a digest", "no_path": "yes"}) == "add a digest"
 
 
+def test_no_path_images_only_stays_empty(monkeypatch):
+    assert _run_prompt(monkeypatch, {"prompt": "", "images": ["x"], "no_path": True}) == ""
+
+
 def test_no_path_ignored_for_commands(monkeypatch):
     assert _run_prompt(monkeypatch, {"prompt": "/compact keep it", "no_path": True}) == "/compact keep it"

@@ -240,6 +240,7 @@ interface HeldPrompt {
   images: string[];
   reason: string;
   title: string | null;
+  noPath?: boolean;   // Esc had taken the auto pick out: the forced resend still says so
 }
 
 export function App() {
@@ -1589,7 +1590,7 @@ export function App() {
         setHeldMap((m) => ({
           ...m,
           [sid]: { sid, project, cwd: sessions.find((s) => s.id === sid)?.cwd,
-                   text, images, reason: res.reason, title: res.suggested_title },
+                   text, images, reason: res.reason, title: res.suggested_title, noPath: opts?.noPath },
         }));
         if (sessionIdRef.current !== sid)
           notify("info", `Held a prompt in “${sessionName()}” — it may be different work.`);
@@ -3118,7 +3119,7 @@ export function App() {
                         onStartNew={() => void heldStartNew(held)}
                         onContinue={() => {
                           setHeldMap((m) => omit(m, held.sid));
-                          void send(held.text, held.images, { force: true, sessionId: held.sid });
+                          void send(held.text, held.images, { force: true, noPath: held.noPath, sessionId: held.sid });
                         }}
                         onDismiss={() => { feed([held.text]); setHeldMap((m) => omit(m, held.sid)); }}
                       />

@@ -2222,9 +2222,6 @@ class Handler(BaseHTTPRequestHandler):
         images = body.get("images") or []
         if not prompt and not images:
             return self._json({"error": "empty prompt"}, 400)
-        # Esc took an auto-applied skill out of this prompt: tell the run there is no path.
-        if body.get("no_path") is True and not prompt.startswith("/"):
-            prompt = "No path for this message.\n\n" + prompt
         if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
             return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
         project_path = _abs_project(body.get("project"))
@@ -2260,6 +2257,10 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError as e:
             runner._cleanup_uploads(job_id)
             return self._json({"error": str(e)}, 413)
+        # Esc took an auto-applied skill out of this prompt: tell the run there is no path.
+        # After the gate and the empty check, so neither sees the prefix.
+        if prompt and body.get("no_path") is True and not prompt.startswith("/"):
+            prompt = "No path for this message.\n\n" + prompt
         job = runner.start_streaming_job(chat, prompt, paths, project_path, job_id=job_id,
                                          model=model, effort=effort,
                                          permission_mode=permission_mode,
