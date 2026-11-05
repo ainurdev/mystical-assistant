@@ -215,3 +215,122 @@ def test_auto_route(server, flow_session):
     assert server.post("/local/flow/auto", {"session": flow_session, "on": False})["obj"] == {"ok": True}
     assert paths.get(flow_session)["auto"] is False
     assert server.post("/local/flow/auto", {"session": "zzz", "on": True})["code"] == 404
+
+
+# --- the next step starts by itself -------------------------------------------
+
+from types import SimpleNamespace  # noqa: E402
+
+
+@pytest.fixture
+def fake_queue(monkeypatch):
+    from bridge import queue_manager
+    q = SimpleNamespace(items=[])
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.items.append(dict(kw, sid=sid)))
+    return q
+
+
+@pytest.fixture
+def nextstep_on(monkeypatch):
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep"))
+
+
+def _job(sid, turn="t1", **kw):
+    return SimpleNamespace(store_session_id=sid, id=turn, status="done", interrupted=False,
+                           runtime=None, chat_id=1, **kw)
+
+
+@pytest.fixture
+def flow_job(state_dir, nextstep_on):
+    paths.set_path("f1", "feature", "new", "claude")
+    return _job("f1")
+
+
+@pytest.fixture
+def plain_job(state_dir, nextstep_on):
+    return _job("nopath")
+
+
+@pytest.fixture
+def flow_job_with_next(flow_job):
+    paths.step_done("f1", "t1")
+    return flow_job
+
+
+@pytest.fixture
+def flow_job_with_next_at_160k(flow_job_with_next, monkeypatch):
+    monkeypatch.setattr(store, "get_session", lambda sid: {"ctx_tokens": 160_000, "chat_id": 1})
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "smartzone"))
+    return flow_job_with_next
+
+
+def test_grill_step_done_enqueues_to_spec(router_on, nextstep_on, fake_queue, flow_job):
+    paths.step_done(flow_job.store_session_id, flow_job.id)
+    assert paths.continue_after_turn(flow_job) is True
+    assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:to-spec"
+    assert fake_queue.items[-1]["surface"] == "flow"
+
+
+def test_no_step_done_no_enqueue(fake_queue, flow_job):
+    assert paths.continue_after_turn(flow_job) is False and not fake_queue.items
+
+
+def test_no_path_no_enqueue(fake_queue, plain_job):
+    assert paths.continue_after_turn(plain_job) is False
+
+
+def test_router_off_no_enqueue(fake_queue, flow_job_with_next, router_off):
+    assert paths.continue_after_turn(flow_job_with_next) is False
+
+
+def test_nextstep_off_no_enqueue(fake_queue, flow_job_with_next, monkeypatch):
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key == "router")
+    assert paths.continue_after_turn(flow_job_with_next) is False
+
+
+def test_held_auto_no_enqueue(fake_queue, flow_job_with_next):
+    paths.set_auto(flow_job_with_next.store_session_id, False)
+    assert paths.continue_after_turn(flow_job_with_next) is False
+
+
+def test_next_from_an_earlier_turn_does_not_start(fake_queue, flow_job_with_next):
+    flow_job_with_next.id = "t2"
+    assert paths.continue_after_turn(flow_job_with_next) is False
+
+
+def test_interrupted_or_failed_turn_does_not_start(fake_queue, flow_job_with_next):
+    flow_job_with_next.interrupted = True
+    assert paths.continue_after_turn(flow_job_with_next) is False
+    flow_job_with_next.interrupted, flow_job_with_next.status = False, "error"
+    assert paths.continue_after_turn(flow_job_with_next) is False
+
+
+def test_build_station_is_left_to_the_user(fake_queue, nextstep_on):
+    paths.set_path("f2", "feature", "x", "claude")
+    for t in ("a", "b", "c"):
+        paths.step_done("f2", t)           # grill, spec, tickets done; build is next
+    assert paths.continue_after_turn(_job("f2", "c")) is False and not fake_queue.items
+
+
+def test_compact_first_past_150k(fake_queue, flow_job_with_next_at_160k):
+    paths.continue_after_turn(flow_job_with_next_at_160k)
+    assert fake_queue.items[0]["prompt"].startswith("/compact ")
+    assert fake_queue.items[1]["prompt"] == "/mattpocock-skills:to-spec"
+
+
+def test_advance_from_merge_enqueues_retro(fake_queue, nextstep_on):
+    paths.set_path("f3", "feature", "x", "claude")
+    for t in ("a", "b", "c", "d"):
+        paths.step_done("f3", t)           # through build
+    assert paths.advance("f3", "merge") is True
+    assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"
+
+
+def test_typed_flow_command_joins_its_path(state_dir):
+    paths.on_turn_start("s9", "/mattpocock-skills:diagnosing-bugs the crash")
+    f = paths.get("s9")
+    assert f["path"] == "bug" and f["by"] == "rule"
+    paths.on_turn_start("s9", "/mattpocock-skills:retro")
+    assert paths.get("s9")["path"] == "bug"       # already on a path
+    paths.on_turn_start("s8", "fix the typo")
+    assert paths.get("s8") is None

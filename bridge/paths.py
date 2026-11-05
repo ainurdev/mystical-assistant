@@ -182,3 +182,90 @@ def path_for_command(skill: str) -> tuple:
             if sk == skill:
                 return name, station
     return "one", skill
+
+
+# --- starting the next step ---------------------------------------------------
+
+# Stations that start a turn by themselves. build/merge wait for tickets (a later
+# task) and build-here for its own, so they return False: the user moves them (YOU).
+_AUTO_START = {"spec", "tickets", "retro", "fix"}
+ZONE_TOKENS = 150_000
+
+
+def on_turn_start(session_id: str, prompt: str) -> None:
+    """A typed /mattpocock-skills:<x> in a session without a path joins the path holding x."""
+    try:
+        head = (prompt or "").lstrip()
+        if not head.startswith("/mattpocock-skills:") or get(session_id):
+            return
+        skill = head[len("/mattpocock-skills:"):].split(None, 1)[0]
+        if not skill:
+            return
+        from bridge import route
+        path, _ = path_for_command(skill)
+        set_path(session_id, path, route._WHY.get(skill) or f"started with /{skill}", "rule",  # noqa: SLF001
+                 skill if path == "one" else None)
+    except Exception as e:  # noqa: BLE001 — never break a turn start
+        print(f"[paths] on_turn_start failed: {e}", file=sys.stderr)
+
+
+def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
+    flow = get(session_id)
+    if not flow or station not in _AUTO_START:
+        return False
+    skill = next((sk for st, sk, _ in _stations(_cache[session_id]) if st == station), None)
+    if not skill:
+        return False
+    from bridge import queue_manager
+    sess = store.get_session(session_id) or {}
+    texts = [f"/mattpocock-skills:{skill}"]
+    if aifeatures.enabled("smartzone") and (sess.get("ctx_tokens") or 0) > ZONE_TOKENS:
+        texts.insert(0, f"/compact Keep the decisions so far; the next step is {station}.")
+    for text in texts:
+        queue_manager.enqueue(
+            session_id, text=text, prompt=text, images=[], model=None,
+            effort=effort, permission_mode=None, width=None, sel=[], surface="flow",
+            chat_id=chat_id if chat_id is not None else sess.get("chat_id"),
+            project=sess.get("project") or "")
+    return True
+
+
+def continue_after_turn(job, effort=None) -> bool:
+    """Called once per finished turn: start the next step StepDone recorded in
+    THIS turn (its turn id is the job's id), if the flow is on auto. True = started."""
+    try:
+        sid = job.store_session_id
+        if not sid or job.status != "done" or job.interrupted or (job.runtime or "").startswith("acp:"):
+            return False
+        if not on() or not aifeatures.enabled("nextstep"):
+            return False
+        flow = get(sid)
+        nxt = flow and flow["next"]
+        if not nxt or not flow["auto"] or nxt["turn_id"] != job.id:
+            return False
+        return _start(sid, nxt["station"], job.chat_id, effort)
+    except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
+        print(f"[paths] continue failed: {e}", file=sys.stderr)
+        return False
+
+
+def advance(session_id: str, station: str) -> bool:
+    """`station` finished elsewhere (MERGE in its own session): mark it done here
+    and start this flow's next step."""
+    try:
+        if not on() or not aifeatures.enabled("nextstep"):
+            return False
+        with _lock:
+            _load_locked()
+            f = _cache.get(session_id)
+            if not f or not f["auto"]:
+                return False
+            if station not in f["done"]:
+                f["done"].append(station)
+            rest = [st[0] for st in _stations(f) if st[0] not in f["done"]]
+            f["next"] = {"station": rest[0], "turn_id": ""} if rest else None
+            _save_locked()
+        return bool(rest) and _start(session_id, rest[0])
+    except Exception as e:  # noqa: BLE001
+        print(f"[paths] advance failed: {e}", file=sys.stderr)
+        return False

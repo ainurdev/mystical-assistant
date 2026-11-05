@@ -3068,6 +3068,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # nudge reads the session's model and mode when it starts.
             from bridge import goals  # local import: runner<->* cycle
             resumed = goals.continue_after_turn(job, effort) or resumed
+            resumed = paths.continue_after_turn(job, effort) or resumed
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
@@ -3281,6 +3282,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         savers.assign(session["id"])          # a new session draws its half of each trial
         from bridge import goals  # local import: runner<->* cycle
         goals.on_user_turn(session["id"], prompt)   # your reply re-arms a blocked goal
+        paths.on_turn_start(session["id"], prompt)  # a typed flow command joins its path
         _ensure_journal_thread()
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort, perm,
