@@ -133,6 +133,7 @@ _ALTS = {"grill-with-docs": _pairs("prototype", "implement", "grill-me"), "diagn
 _FLOW = re.compile("/" + re.escape(_NS) + r"([\w-]+)\s*(.*)", re.S)
 _COMPACT = re.compile(r"/compact\b")
 _TICKET = re.compile(r"\.mystical/tickets/[^/\s]+/[^/\s]+\.md")
+_NN = re.compile(r"\d+-")
 
 
 class _Step(NamedTuple):
@@ -200,10 +201,10 @@ def _typed(t, last, done, cmds):
 
 
 def _md(path):
-    """The ticket files in a directory, in file order."""
+    """The ticket files in a directory, in file order: NN-*.md, so the SPEC.md beside them is none."""
     try:
         # Ticket order is name order: it relies on Matt's zero-padded NN- names (01-, 02-, ... 10-).
-        return sorted(f for f in os.listdir(path) if f.endswith(".md"))
+        return sorted(f for f in os.listdir(path) if f.endswith(".md") and _NN.match(f))
     except (OSError, ValueError):  # ValueError: a NUL byte in a path that came from a prompt
         return []
 

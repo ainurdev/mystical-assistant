@@ -803,3 +803,11 @@ def test_turning_tickets_or_skill_paths_on_resumes_the_sets(monkeypatch):
         booted.clear()
         assert _dpost("/local/aifeatures", {"key": key, "enabled": True})["obj"]["ok"] is True
         assert booted.wait(5), key
+
+
+def test_the_spec_beside_the_tickets_is_no_ticket(tmp_path):
+    d = str(tmp_path)
+    _write(d, "01", "A")
+    with open(os.path.join(d, "SPEC.md"), "w") as f:
+        f.write("# 1: Problem Statement\n\n**Blocked by:** nothing\n")
+    assert [t.n for t in tickets.parse_dir(d)] == ["01"]

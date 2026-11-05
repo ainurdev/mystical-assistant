@@ -2,7 +2,7 @@
 
 A feature path's TICKETS step runs Matt's skill, which writes one markdown file per
 ticket under `.mystical/tickets/<feature-slug>/<NN>-<slug>.md` in the session's
-checkout. We read those files as they are (`# NN: Title`, `**Blocked by:** ...`) rather
+checkout, beside the SPEC.md its SPEC step wrote (no ticket: not an NN- name). We read those files as they are (`# NN: Title`, `**Blocked by:** ...`) rather
 than keep a second copy of the plan in the DB: the files are what the user and Claude
 both edit, so they can't drift.
 
@@ -79,6 +79,7 @@ class Ticket(NamedTuple):
     blocked_by: tuple
 
 
+_FILE = re.compile(r"\d+-")   # <NN>-<slug>.md
 _HEAD = re.compile(r"^#\s+(\d{1,2})\s*:\s*(.+?)\s*$", re.M)
 # Label with an optional list marker and bold, colon inside or outside the bold.
 _BLOCK = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?blocked by(?:\*\*[ \t]*:|[ \t]*:(?:\*\*)?)[ \t]*(.*?)\s*$",
@@ -92,7 +93,7 @@ _SPLIT = re.compile(r"\s*,\s*|\s+and\s+", re.I)
 def parse_dir(folder: str) -> list:
     raw = []   # (n, title, path, refs)
     for name in sorted(os.listdir(folder)):
-        if not name.endswith(".md"):
+        if not (name.endswith(".md") and _FILE.match(name)):   # the SPEC.md beside them is no ticket
             continue
         path = os.path.join(folder, name)
         with open(path, encoding="utf-8") as f:

@@ -35,3 +35,15 @@ def test_unlocked_and_user_only_flags():
 
 def test_licence_is_mit():
     assert "MIT License" in open(os.path.join(PACK, "LICENSE")).read()
+
+
+def test_spec_and_tickets_go_to_the_mystical_tickets_folder():
+    """Two edits from upstream (README): BUILD reads what these two skills write, so the
+    skills, PACK_TEXT and bridge/tickets.py must name one place."""
+    tk = open(_skill_md("to-tickets")).read()
+    assert "write one file per ticket under `.mystical/tickets/<feature-slug>/<NN>-<slug>.md`" in tk
+    assert ".scratch" not in tk
+    assert "(local files: `.mystical/tickets/<feature-slug>/SPEC.md`)" in open(_skill_md("to-spec")).read()
+    from bridge import paths
+    assert ".mystical/tickets/<feature-slug>/SPEC.md" in paths.PACK_TEXT
+    assert "<NN>-<slug>.md" in paths.PACK_TEXT

@@ -601,3 +601,9 @@ def test_with_images_exact_shapes(prompt, want):
 def test_with_images_without_files_returns_the_prompt_as_typed(paths):
     prompt = "/mattpocock-skills:grill-with-docs add X"
     assert runner._with_images(prompt, paths) == prompt
+
+
+def test_the_spec_beside_the_tickets_is_no_ticket(root):
+    issues = tickets(root, "01-a.md", "02-b.md", "SPEC.md")
+    assert go(root, "", prompts=[TICKETS])["arg"] == f"{issues}/01-a.md"
+    assert go(root, "", prompts=[flow("implement", f"{issues}/02-b.md")])["name"] == NS + "retro"

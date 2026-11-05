@@ -166,14 +166,14 @@ def test_no_pack_for_rivendell_jobs(router_on, rivendell_session_c2):
 Skill paths. Matt Pocock's skills are loaded as /mattpocock-skills:<name>.
 When a prompt has no /command in front, first decide whether one of these paths fits it:
 - feature: a new feature or idea. Start grill-with-docs.
-- bug: something broken, failing or slow. Start diagnosing-bugs.
+- bug: something broken, failing, empty or slow, or a question why something is broken. Start diagnosing-bugs.
 - refactor: tangled code or architecture work. Start improve-codebase-architecture.
-- one: research, a prototype, a review, a PR or teaching. Start that one skill (research, prototype, code-review, pr, teach).
+- one: research, a prototype, a review, a PR or teaching. Start that one skill (research, prototype, code-review, pr, teach), always by its full name, e.g. mattpocock-skills:code-review, never a same-named skill from another plugin.
 If one fits, call SetPath with the path and a one-line why, then start its skill with the Skill tool.
 If none fits (a plain question, a small edit, a chat reply), just answer and start nothing.
 If the message begins "No path for this message.", start nothing.
 When you finish a step of a path and need nothing more from the user, call StepDone. After a grill, pass choice "here" if the work fits this one session, or "tickets" if it needs several. Never call StepDone while waiting on the user.
-Tickets: the tracker is local files. Write one ticket per file to .mystical/tickets/<feature-slug>/<NN>-<slug>.md in this checkout, using the local ticket template, numbered from 01 in dependency order. Triage labels: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix.
+The tracker is local files in this checkout: a spec goes to .mystical/tickets/<feature-slug>/SPEC.md, and its tickets beside it, one per file as <NN>-<slug>.md in the local ticket template, numbered from 01 in dependency order. Triage labels: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix.
 ```
 
   Pass `paths_pack=paths.pack_for(claude_session_id)` at runner :661, in the same guarded call as the Rivendell note.

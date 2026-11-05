@@ -6,7 +6,7 @@ Licence: MIT, see `LICENSE`.
 This folder is a Claude Code plugin root, loaded with `claude --plugin-dir`. It holds the
 27 skills listed in `.claude-plugin/plugin.json`, copied whole.
 
-Four edits differ from upstream. In each `SKILL.md` frontmatter the line
+Six edits differ from upstream. In four `SKILL.md` frontmatters the line
 `disable-model-invocation: true` is deleted, so the model can call these four itself:
 
 - `skills/engineering/grill-with-docs/SKILL.md`
@@ -14,5 +14,13 @@ Four edits differ from upstream. In each `SKILL.md` frontmatter the line
 - `skills/engineering/improve-codebase-architecture/SKILL.md`
 - `skills/productivity/teach/SKILL.md`
 
+And two local-files locations name the folder BUILD reads (bridge/tickets.py), the one
+the paths pack names too (bridge/paths.py PACK_TEXT):
+
+- `skills/engineering/to-tickets/SKILL.md`: tickets go to
+  `.mystical/tickets/<feature-slug>/<NN>-<slug>.md` (upstream: `.scratch/<feature-slug>/issues/`).
+- `skills/engineering/to-spec/SKILL.md`: step 3 names the spec's place on a local tracker,
+  `.mystical/tickets/<feature-slug>/SPEC.md` (upstream names none).
+
 Refresh: copy the 27 manifest-listed skill folders and `LICENSE` again from the new
-upstream version, then redo the four edits above.
+upstream version, then redo the six edits above.
