@@ -69,7 +69,7 @@ def test_set_json_round_trip(tmp_path):
 
 
 @pytest.mark.parametrize("line", ["Blocked by: #1, #3", "**Blocked by**: 01 and 3", "- **Blocked by:** 01, 03",
-                                  "* blocked by: #1.", "**Blocked by:** #01 (Base), #3 (Ui)."])
+                                  "* blocked by: #1, 03.", "**Blocked by:** #01 (Base), #3 (Ui)."])
 def test_blocked_by_variants(tmp_path, line):
     d = str(tmp_path)
     _write(d, "01", "A")
@@ -77,7 +77,7 @@ def test_blocked_by_variants(tmp_path, line):
     with open(os.path.join(d, "04-x.md"), "w") as f:
         f.write(f"# 04: D\n\n{line}\n\n**Status:** ready-for-agent\n")
     t = {t.n: t for t in tickets.parse_dir(d)}["04"]
-    assert t.blocked_by and set(t.blocked_by) <= {"01", "03"}
+    assert set(t.blocked_by) == {"01", "03"}
 
 
 def test_unreadable_blocked_by_raises(tmp_path):
@@ -111,3 +111,38 @@ def test_wrong_shape_files_give_none(tmp_path, body):
     with open(tickets._path(), "w") as f:
         json.dump([{"slug": "x"}, 5, {"folder": 3}], f)
     assert tickets.summary_for("zz") is None
+
+
+def _t4(tmp_path, body):
+    d = str(tmp_path)
+    _write(d, "01", "A")
+    _write(d, "03", "C")
+    with open(os.path.join(d, "04-x.md"), "w") as f:
+        f.write(body)
+    return {t.n: t for t in tickets.parse_dir(d)}["04"]
+
+
+def test_list_under_empty_label(tmp_path):
+    t = _t4(tmp_path, "# 04: D\n\n**Blocked by:**\n- #1\n* 3\n\n- #9\n**Status:** x\n")
+    assert set(t.blocked_by) == {"01", "03"}
+    t = _t4(tmp_path / "n", "# 04: D\n\n**Blocked by:**\n1. #1\n2. #3\n") if os.makedirs(tmp_path / "n") is None else None
+    assert set(t.blocked_by) == {"01", "03"}
+
+
+def test_comma_in_parenthetical(tmp_path):
+    assert _t4(tmp_path, "# 04: D\n\n**Blocked by:** #1 (Base, shared)\n").blocked_by == ("01",)
+
+
+def test_no_line_and_empty_label_mean_no_blockers(tmp_path):
+    assert _t4(tmp_path, "# 04: D\n\nstuff\n").blocked_by == ()
+    assert _t4(tmp_path / "e", "# 04: D\n\n**Blocked by:**\n\n**Status:** x\n").blocked_by == () \
+        if os.makedirs(tmp_path / "e") is None else None
+
+
+def test_bad_created_does_not_break_summary(tmp_path):
+    d = str(tmp_path)
+    tickets.save(d, {"parent_session": "cr", "slug": "good"})
+    with open(tickets._path(), "w") as f:
+        json.dump([{"folder": "/nope", "created": "x"}, {"folder": d, "created": None},
+                   {"folder": d, "created": 5}], f)
+    assert tickets.summary_for("cr")["slug"] == "good"

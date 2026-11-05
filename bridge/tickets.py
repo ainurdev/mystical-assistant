@@ -53,6 +53,7 @@ _BLOCK = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?blocked by(?:\*\*[ \t]*:|[
                     re.M | re.I)
 _TAIL = re.compile(r"(?:\.+|\s*\([^)]*\))+\s*$")
 _NUM = re.compile(r"^#?(\d{1,2})$")
+_ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(.+?)\s*$")
 _SPLIT = re.compile(r"\s*,\s*|\s+and\s+", re.I)
 
 
@@ -69,8 +70,17 @@ def parse_dir(folder: str) -> list:
             continue
         b = _BLOCK.search(text)
         val = b.group(1).strip().strip("*").strip() if b else ""
+        if b and not val:   # refs may be a list on the lines under the label
+            items = []
+            for line in text[b.end():].lstrip(" \t").lstrip("\n").split("\n"):
+                m = _ITEM.match(line)
+                if not m:
+                    break
+                items.append(m.group(1))
+            val = ", ".join(items)
         refs = [] if not val or val.lower().startswith("none") else \
-            [r for r in (_TAIL.sub("", x.strip()).strip() for x in _SPLIT.split(val)) if r]
+            [r for r in (_TAIL.sub("", x.strip()).strip()
+                         for x in _SPLIT.split(re.sub(r"\([^)]*\)", "", val) + "")) if r]
         if val and not val.lower().startswith("none") and not refs:
             raise TicketError(f"#{h.group(1).zfill(2)} has an unreadable Blocked by: {val!r}")
         if any(r[0] == h.group(1).zfill(2) for r in raw):
@@ -175,7 +185,7 @@ def sets() -> list:
 
 def summary_for(session_id: str):
     """The newest set whose parent session is this one, with its folder, or None."""
-    for r in sorted(sets(), key=lambda r: r.get("created", 0), reverse=True):
+    for r in sorted(sets(), key=lambda r: r["created"] if isinstance(r.get("created"), (int, float)) else 0, reverse=True):
         if not isinstance(r.get("folder"), str):
             continue
         st = load(r["folder"])

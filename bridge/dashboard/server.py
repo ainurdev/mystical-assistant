@@ -509,7 +509,11 @@ class Handler(BaseHTTPRequestHandler):
             s = store.get_session(sid) if sid else None
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "not found"}, 404)
-            return self._json({"flow": paths.get(sid), "set": tickets.summary_for(sid)})
+            try:
+                tset = tickets.summary_for(sid)
+            except Exception:
+                tset = None
+            return self._json({"flow": paths.get(sid), "set": tset})
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/today":
