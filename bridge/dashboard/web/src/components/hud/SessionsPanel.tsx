@@ -56,6 +56,8 @@ interface Props {
   activeProject: string | null;
   onTogglePin: (id: string) => void;
   onSelectSession: (s: SessionBrief) => void;
+  /** Open a session by id alone, listed in the sidebar or not (TICKETS: an archived ticket session). */
+  onOpenSessionId: (id: string) => void;
   onAnalyze: (rel: string) => void;
   onNewSession: (rel: string) => void;
   /** Start a typed session: the form's fields, already composed into a prompt. */
@@ -586,7 +588,7 @@ type LaneItem =
 export function SessionsPanel(props: Props) {
   const {
     sessions, groups, hidden, show, onShow, status, done, flags, pins, selectedSessionId, activeProject, booting,
-    onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
+    onTogglePin, onSelectSession, onOpenSessionId, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
     workspace = "",
   } = props;
 
@@ -1345,7 +1347,7 @@ export function SessionsPanel(props: Props) {
         {/* Pending plugin requests sit above the sessions they become on accept. */}
         {plugins.rivendell && <RivendellQueue active={mode === "plugins"} />}
 
-        {mode === "tickets" ? <TicketsMode sessions={sessions} status={status} onSelectSession={onSelectSession} /> : mode !== "projects" ? (
+        {mode === "tickets" ? <TicketsMode sessions={sessions} status={status} onSelectSession={onSelectSession} onOpenSessionId={onOpenSessionId} /> : mode !== "projects" ? (
           <div ref={listRef} style={{ position: "relative", height: rowV.getTotalSize() }}>
             {rowV.getVirtualItems().map((vi) => {
               const it = laneItems[vi.index];

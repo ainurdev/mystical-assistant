@@ -3041,6 +3041,7 @@ export function App() {
                   activeProject={activeProject}
                   onTogglePin={togglePin}
                   onSelectSession={(s) => void selectSession(s)}
+                  onOpenSessionId={(id) => openSession(id)}
                   onAnalyze={(rel) => openAnalyze(rel)}
                   onNewSession={(rel) => void newSession(rel)}
                   onWorktreeSession={(rel, branch, create, parent) => void worktreeSession(rel, branch, create, parent)}

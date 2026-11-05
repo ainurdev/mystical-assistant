@@ -1339,9 +1339,6 @@ export interface AccountsInfo {
   default_policy: string;
   pending_login: { slot: number; url: string | null } | null;
 }
-/** One AI-powered extra, switched from the settings modal's AI tab. What runs on its
- *  own ships off; a sub-switch (`parent`: the skill router's six) costs nothing and
- *  ships on. */
 /** One ticket in a set (bridge/tickets.py): `session` is its live turn state, "running" or how the last ended. */
 export interface TicketRow {
   status: "queued" | "running" | "retry" | "done" | "fix" | "missing";
@@ -1349,9 +1346,13 @@ export interface TicketRow {
 }
 export interface TicketSet {
   folder: string; slug: string; parent_session: string; feature_branch: string; merged: number;
+  max_running?: number; // not sent today; the card falls back to 3 (tickets.MAX_RUNNING)
   status: "building" | "merging" | "merged" | "stopped" | "fix"; error?: string;
   tickets: Record<string, TicketRow>;
 }
+/** One AI-powered extra, switched from the settings modal's AI tab. What runs on its
+ *  own ships off; a sub-switch (`parent`: the skill router's six) costs nothing and
+ *  ships on. */
 export interface AiFeature {
   key: string;
   label: string;

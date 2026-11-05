@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { GitMerge, Hourglass, MoreHorizontal, Ticket } from "lucide-react";
 import { api, type SessionBrief, type SessionStatus, type TicketRow, type TicketSet } from "../../api";
 import { dagLayout } from "../../lib/ticketdag";
@@ -88,18 +88,37 @@ function Stub({ n, t, kind, st, onOpen, onRetry }: {
   );
 }
 
-function SetCard({ set, parent, sessions, status, onOpenSession, reload }: {
+function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reload }: {
   set: TicketSet; parent?: string; sessions: Map<string, SessionBrief>; status: Map<string, SessionStatus>;
-  onOpenSession: (s: SessionBrief) => void; reload: () => void;
+  onOpenSession: (s: SessionBrief) => void; onOpenId: (id: string) => void; reload: () => void;
 }) {
   const [menu, setMenu] = useState(false);
-  const [note, setNote] = useState("");
+  const [note, setNoteNow] = useState("");
+  const noteT = useRef(0);
+  // What a retry or clean-up answered, for a few seconds: the bridge's replies ("3 tickets are running…") are the only feedback.
+  const setNote = (text: string) => {
+    setNoteNow(text);
+    window.clearTimeout(noteT.current);
+    if (text) noteT.current = window.setTimeout(() => setNoteNow(""), 8000);
+  };
+  useEffect(() => () => window.clearTimeout(noteT.current), []);
+  const menuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: Event) => { if (e.type === "keydown" ? (e as KeyboardEvent).key === "Escape" : !menuRef.current?.contains(e.target as Node)) setMenu(false); };
+    document.addEventListener("keydown", away); document.addEventListener("pointerdown", away);
+    return () => { document.removeEventListener("keydown", away); document.removeEventListener("pointerdown", away); };
+  }, [menu]);
   const ns = Object.keys(set.tickets).sort();
   const kinds = Object.fromEntries(ns.map((n) => [n, kindOf(set.tickets[n], status.get(set.tickets[n].session_id))])) as Record<string, Kind>;
   const name = set.slug.replace(/-/g, " ").toUpperCase();
-  const open = (sid: string) => { const s = sessions.get(sid); if (s) onOpenSession(s); };
-  const retry = (n: string) => { void api.retryTicket(set.folder, n).then(reload, reload); };
+  // A session the sidebar doesn't list (archived, another workspace) still opens, by its id.
+  const open = (sid: string) => { const s = sessions.get(sid); if (s) onOpenSession(s); else onOpenId(sid); };
+  const retry = (n: string) => {
+    api.retryTicket(set.folder, n).then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : "retry failed")).then(reload);
+  };
   const running = ns.filter((n) => kinds[n] === "run" || kinds[n] === "ask").length;
+  const noteRow = note && <div role="status" style={{ margin: "0 6px 6px", padding: "0 4px", fontSize: "var(--t9)", color: "var(--txd)" }}>{note}</div>;
 
   if (set.status === "merged") {
     const clean = async () => {
@@ -115,11 +134,13 @@ function SetCard({ set, parent, sessions, status, onOpenSession, reload }: {
         <Ticket size={13} aria-hidden /><span className="nm">{name}</span><span>{ns.length} tickets</span>
         <span style={{ marginLeft: "auto", color: "var(--ok)" }}>{note || "merged ✓"}</span>
         <button className="tk-more" aria-label={`More for ${name}`} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)}><MoreHorizontal size={14} aria-hidden /></button>
-        {menu && <div className="tk-menu" role="menu"><button role="menuitem" onClick={clean}>Clean up worktrees</button></div>}
+        {menu && <div className="tk-menu" role="menu" ref={menuRef}><button role="menuitem" onClick={clean}>Clean up worktrees</button></div>}
       </div>
     );
   }
 
+  // The summary doesn't send its slot count; 3 mirrors tickets.MAX_RUNNING.
+  const slots = set.max_running ?? 3;
   const merging = set.status === "merging";
   const mfix = set.status === "fix";
   return (
@@ -128,7 +149,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, reload }: {
         <div className="hd">
           <span style={{ color: "var(--acc2, var(--acc))", display: "inline-flex" }}><Ticket size={14} aria-hidden /></span><span className="nm">{name}</span>
           {merging ? <span className="tk-pill">MERGING</span>
-            : <span className="tk-slots" role="img" aria-label={`${running} of 3 running`}>{[0, 1, 2].map((i) => <i key={i} className={i < running ? "on" : ""} />)}</span>}
+            : <span className="tk-slots" role="img" aria-label={`${running} of ${slots} running`}>{Array.from({ length: slots }, (_, i) => <i key={i} className={i < running ? "on" : ""} />)}</span>}
         </div>
         <div className="sub">{parent && <>from <b>{parent}</b> · </>}⎇ {set.feature_branch}</div>
         <Dag set={set} kinds={kinds} />
@@ -138,6 +159,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, reload }: {
         return <Stub key={`${set.folder}#${n}`} n={n} t={t} kind={kinds[n]} st={status.get(t.session_id)}
                      onOpen={() => open(t.session_id)} onRetry={() => retry(n)} />;
       })}
+      {noteRow}
       <div className={`tk-stub mg ${merging ? "run" : mfix ? "fix" : ""}`}>
         <div className="no"><GitMerge size={15} aria-hidden /><small>{merging ? `${set.merged} / ${ns.length}` : mfix ? "FIX" : "LAST"}</small></div>
         <div className="bd">
@@ -152,25 +174,32 @@ function SetCard({ set, parent, sessions, status, onOpenSession, reload }: {
   );
 }
 
-export function TicketsMode({ sessions, status, onSelectSession }: {
-  sessions: SessionBrief[]; status: Map<string, SessionStatus>; onSelectSession: (s: SessionBrief) => void;
+export function TicketsMode({ sessions, status, onSelectSession, onOpenSessionId }: {
+  sessions: SessionBrief[]; status: Map<string, SessionStatus>; onSelectSession: (s: SessionBrief) => void; onOpenSessionId: (id: string) => void;
 }) {
   const [sets, setSets] = useState<TicketSet[] | null>(null);
   const [gen, setGen] = useState(0);
   useEffect(() => {
     let live = true;
-    const load = () => { api.tickets().then((r) => { if (live) setSets(r.sets); }).catch(() => { /* keep the last answer */ }); };
-    load();
-    const t = setInterval(load, 4000);
-    return () => { live = false; clearInterval(t); };
+    // Quick while a set builds or merges, lazy when all rest; nothing while the tab is hidden.
+    let t = 0;
+    const next = (fast: boolean) => { t = window.setTimeout(tick, fast ? 4000 : 15000); };
+    const tick = () => {
+      if (document.hidden) return next(false);
+      api.tickets().then((r) => { if (live) { setSets(r.sets); next(r.sets.some((x) => x.status === "building" || x.status === "merging")); } })
+        .catch(() => { if (live) next(false); });
+    };
+    tick();
+    return () => { live = false; window.clearTimeout(t); };
   }, [gen]);
   const byId = new Map(sessions.map((s) => [s.id, s]));
-  if (sets && sets.length === 0) return <div style={{ padding: "18px 12px", fontSize: "var(--t95)", color: "var(--txl)" }}>No ticket sets yet. A feature path's TICKETS step makes one.</div>;
+  if (sets === null) return <div style={{ padding: "18px 12px", fontSize: "var(--t95)", color: "var(--txl)" }}>LOADING TICKETS…</div>;
+  if (sets.length === 0) return <div style={{ padding: "18px 12px", fontSize: "var(--t95)", color: "var(--txl)" }}>No ticket sets yet. A feature path's TICKETS step makes one.</div>;
   return (
     <div className="tk-list">
-      {(sets ?? []).map((set) => (
+      {sets.map((set) => (
         <SetCard key={set.folder} set={set} parent={byId.get(set.parent_session)?.title ?? undefined} sessions={byId} status={status}
-                 onOpenSession={onSelectSession} reload={() => setGen((g) => g + 1)} />
+                 onOpenSession={onSelectSession} onOpenId={onOpenSessionId} reload={() => setGen((g) => g + 1)} />
       ))}
     </div>
   );
