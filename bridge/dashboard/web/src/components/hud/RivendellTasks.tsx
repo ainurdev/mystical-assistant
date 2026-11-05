@@ -624,22 +624,6 @@ function IconBtn({ title, onClick, children }: { title: string; onClick: () => v
   );
 }
 
-/** The connection beside the project name (lib/rivendelltasks linkChip). */
-function Chip({ link, now }: { link: RivendellLink; now: Date }) {
-  const c = linkChip(link, now);
-  const color = LINK_TONE[c.tone];
-  return (
-    <span title={link.detail || c.label} style={{
-      flex: "none", display: "inline-flex", alignItems: "center", gap: 5, padding: "1px 6px",
-      fontSize: "var(--t85)", letterSpacing: 1, color, border: `1px solid ${mix(color, 40)}`,
-    }}>
-      {c.tone === "ok" && <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, boxShadow: `0 0 6px ${color}` }} />}
-      {c.tone === "warn" && "◌"}{c.tone === "err" && "✕"}
-      <span>{c.label}</span>
-    </span>
-  );
-}
-
 /** TOKEN REJECTED: nothing Rivendell sends can arrive and IMPLEMENT can't start
  *  until the token is replaced. REPLACE TOKEN opens Settings ▸ PLUGINS editing
  *  this connection; TEST LINK re-dials it once (a 4401 can be Rivendell's own
