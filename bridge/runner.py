@@ -212,7 +212,7 @@ _GRILL_NOTE = (
     "so yes takes it.")
 
 
-def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
+def _compose_system_prompt(graph: str = "", rivendell: str = "", paths_pack: str = "") -> str:
     """ASK prompt + the dev-log and push notes (+ the Rivendell note for a
     session that gets it), then the graph pack.
 
@@ -223,7 +223,7 @@ def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
     parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE, _UX_NOTE,
                          _HIDDEN_BROWSER_NOTE if config.AI_BROWSER_HEADLESS else "",
                          _GRILL_NOTE if aifeatures.enabled("grillcards") else "",
-                         rivendell, graph.strip()) if p]
+                         rivendell, paths_pack, graph.strip()) if p]
     return "\n\n".join(parts)
 
 
@@ -660,7 +660,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
     # Only runs that get the goals server (below) can act on the note.
     rv_note = (_rivendell_note_for(chat_id, claude_session_id, cwd)
                if interactive and claude_session_id and not skip_pack else "")
-    cmd += ["--append-system-prompt", _compose_system_prompt(graph, rv_note)]
+    pp = paths.pack_for(claude_session_id) if interactive and claude_session_id and not skip_pack else ""
+    cmd += ["--append-system-prompt", _compose_system_prompt(graph, rv_note, pp)]
     hooks = {}
     if interactive and not skip_pack:
         # bridge/askhook.py: options offered in prose go back once to be asked

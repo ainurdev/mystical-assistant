@@ -119,3 +119,16 @@ def test_acp_first_prompt_carries_mystical_note(tmp_path, monkeypatch):
         runner._consume_acp(job, "hi", [], str(tmp_path), None, None, None)
     assert sent == [runner._MYSTICAL_NOTE + "\n\n" + runner._PUSH_NOTE + "\n\nhi", "hi"]
     assert (tmp_path / ".mystical" / ".gitignore").read_text() == "*\n"
+
+
+def test_paths_pack_is_in_every_turn_and_byte_stable(monkeypatch):
+    from bridge import paths
+    monkeypatch.setattr(paths, "on", lambda: True)
+    monkeypatch.setattr(paths, "_pack_ok", {})
+    _stub_pack(monkeypatch, "G")
+    sid = str(uuid.uuid4())
+    one = _sysprompt(runner._base_cmd("hi", 555, stream=True, interactive=True,
+                                      claude_session_id=sid, new_session=True))
+    two = _sysprompt(runner._base_cmd("hi", 555, stream=True, interactive=True,
+                                      claude_session_id=sid))
+    assert paths.PACK_TEXT in one and one == two
