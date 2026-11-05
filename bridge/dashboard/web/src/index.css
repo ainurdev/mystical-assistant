@@ -7610,3 +7610,59 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    marks the caps as the title bar to drag. */
 :root[data-wco="linux"] { --wco-l: 0px; --wco-r: 0px; }
 .lxclose:hover { color: var(--err) !important; background: color-mix(in srgb, var(--err) 12%, transparent) !important; }
+
+/* RailHero: the 132px box atop every right-rail tab. Its height never changes,
+   in any state, so switching tabs never moves the list under it. */
+.rh { position: relative; flex: none; height: 132px; box-sizing: border-box; margin: 4px 12px 10px; padding: 10px 12px; overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--txl) 20%, transparent); border-radius: 10px;
+  background: radial-gradient(260px 120px at 85% -20%, color-mix(in srgb, var(--acc) 12%, transparent), transparent 70%),
+    color-mix(in srgb, var(--txl) 4%, transparent); }
+.rh-top { display: flex; align-items: center; gap: 7px; height: 16px; min-width: 0; }
+@media (prefers-reduced-motion: reduce) { .rh *, .rh { animation: none !important; transition: none !important; } }
+/* Git PIPE. Columns: station, 28px gap, station, 28px gap, station. */
+.gpp { --w: calc((100% - 56px) / 3); position: relative; margin-top: 8px; height: 90px; }
+.gpp-say { font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.gpp-say b { color: var(--txb); font-weight: 700; }
+.gpp-right { margin-left: auto; font-size: var(--t9); color: var(--txl); white-space: nowrap; flex: none; display: inline-flex; align-items: center; gap: 4px; }
+.gpp-right button { all: unset; cursor: pointer; color: var(--acc2, var(--acc)); text-decoration: underline; }
+.gpp-row { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr) 28px minmax(0, 1fr); height: 54px; }
+.gpp-st { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-width: 0; border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--txl) 24%, transparent); background: color-mix(in srgb, var(--txl) 5%, transparent); color: var(--txl); }
+.gpp-big { display: flex; align-items: center; gap: 6px; }
+.gpp-big b { font-size: 17px; line-height: 1; font-weight: 800; color: var(--txd); }
+.gpp-big b.ok { color: var(--ok); }
+.gpp-st > span { font-size: 8px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); white-space: nowrap; }
+.gpp-st.hot { color: var(--acc2, var(--acc)); border-color: color-mix(in srgb, var(--acc) 70%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 22%, transparent), color-mix(in srgb, var(--acc) 8%, transparent));
+  box-shadow: 0 0 22px -6px var(--acc), inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent); }
+.gpp-st.hot.warm { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 70%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--warn) 22%, transparent), color-mix(in srgb, var(--warn) 8%, transparent));
+  box-shadow: 0 0 22px -6px var(--warn), inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent); }
+.gpp-st.hot .gpp-big b { color: var(--txb); }
+.gpp-st.hot > span { color: var(--txd); }
+.gpp-gap { display: block; overflow: visible; }
+.gpp-calm { stroke: var(--txl); stroke-width: 1.5; stroke-dasharray: 2 4; }
+.gpp-fl { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.gpp-fl.acc { stroke: var(--acc); }
+.gpp-fl.warn { stroke: var(--warn); }
+.gpp-fl path { stroke-width: 1.8; }
+.gpp-dash { stroke-width: 2.4; stroke-dasharray: 0.1 5; animation: gppdash .6s linear infinite; }
+@keyframes gppdash { to { stroke-dashoffset: -12; } }
+/* The button lies across the gap it closes, centre of one station to centre of
+   the next, with a tick up to each. */
+.gpp-btn { position: absolute; top: 64px; height: 26px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 0;
+  border: 0; border-radius: 8px; font: 800 var(--t95)/1 var(--f); color: #fff; background: var(--acc); cursor: pointer;
+  box-shadow: 0 6px 16px -8px var(--acc); }
+.gpp-btn.warn { color: #1a1300; background: var(--warn); box-shadow: 0 6px 16px -8px var(--warn); }
+.gpp-btn:disabled { opacity: .5; cursor: not-allowed; }
+.gpp-btn.g0 { left: calc(var(--w) / 2 - 4px); width: calc(var(--w) + 36px); }
+.gpp-btn.g1 { left: calc(var(--w) * 1.5 + 24px); width: calc(var(--w) + 36px); }
+.gpp-tick { position: absolute; top: 55px; height: 8px; width: 0; border-left: 1.5px solid color-mix(in srgb, var(--acc) 60%, transparent); }
+.gpp-tick.warn { border-color: color-mix(in srgb, var(--warn) 60%, transparent); }
+.gpp-tick.g0.l { left: calc(var(--w) / 2); }
+.gpp-tick.g0.r { left: calc(var(--w) * 1.5 + 28px); }
+.gpp-tick.g1.l { left: calc(var(--w) * 1.5 + 28px); }
+.gpp-tick.g1.r { left: calc(var(--w) * 2.5 + 56px); }
+.gpp-none { position: absolute; left: 0; right: 0; top: 66px; text-align: center; font-size: var(--t9); letter-spacing: .14em; text-transform: uppercase; color: var(--txl); }
+.gp-rd > .rh { margin: 0 0 8px; }
+.gpp-st > span { letter-spacing: .06em; }
