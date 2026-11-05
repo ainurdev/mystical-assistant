@@ -187,8 +187,8 @@ def path_for_command(skill: str) -> tuple:
 # --- starting the next step ---------------------------------------------------
 
 # Stations that start a turn by themselves. build/merge wait for tickets (a later
-# task) and build-here for its own, so they return False: the user moves them (YOU).
-_AUTO_START = {"spec", "tickets", "retro", "fix"}
+# task), so they return False: the user moves them (YOU).
+_AUTO_START = {"spec", "tickets", "retro", "fix", "build-here"}
 ZONE_TOKENS = 150_000
 
 
@@ -219,6 +219,14 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
     from bridge import queue_manager
     sess = store.get_session(session_id) or {}
     texts = [f"/mattpocock-skills:{skill}"]
+    if station == "build-here":
+        # never build on the default branch: feature worktree first, the flow's own files in
+        from bridge import flowbranch, git
+        slug = git.slug((sess.get("title") or "flow").lower())[:40]
+        branch, co = flowbranch.ensure_feature_branch(sess, slug)
+        flowbranch.carry_and_commit(flowbranch._checkout(sess), co,  # noqa: SLF001
+                                    flowbranch.flow_files(session_id, flow["at"]), slug)
+        texts = [f"/mattpocock-skills:implement Work in {co} on branch {branch}, and commit there."]
     if aifeatures.enabled("smartzone") and (sess.get("ctx_tokens") or 0) > ZONE_TOKENS:
         texts.insert(0, f"/compact Keep the decisions so far; the next step is {station}.")
     for text in texts:

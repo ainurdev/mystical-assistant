@@ -137,19 +137,13 @@ def _server_cwd(chat, body) -> str:
             or state.project_dir(chat))
 
 
-# Managed git worktrees live under a hidden dir at the workspace root, so the
-# project browser (which skips dotdirs) never surfaces them as projects.
-_WT_ROOT = os.path.join(config.BASE_PATH, ".worktrees")
-_SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
-
-
-def _slug(s: str) -> str:
-    return _SLUG_RE.sub("-", (s or "").strip().strip("/")).strip("-") or "wt"
+# Managed git worktrees live under a hidden dir at the workspace root (see
+# git.worktree_path_for), so the project browser never surfaces them as projects.
+_slug = git.slug
 
 
 def _worktree_path(project_rel: str, branch: str) -> str:
-    repo = _slug(os.path.basename((project_rel or "").rstrip("/")) or "repo")
-    return os.path.join(_WT_ROOT, repo, _slug(branch))
+    return git.worktree_path_for(project_rel, branch)
 
 
 def _worktree_for_branch(abs_p: str, branch: str) -> "str | None":
@@ -2105,10 +2099,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": True, "path": existing,
                                "rel": browser.rel(existing), "branch": branch,
                                "output": f"branch already checked out at {existing}"})
-        wt = base = _worktree_path(project, branch)
-        n = 2
-        while os.path.isdir(wt):     # taken by another branch — pick a free path
-            wt, n = f"{base}-{n}", n + 1
+        wt = git.worktree_path_for(project, branch, free=True)   # taken by another branch → -2, -3
         rel = browser.rel(wt)
         os.makedirs(os.path.dirname(wt), exist_ok=True)
         parent = (body.get("parent") or git.current_branch(abs_p) or "main").strip()
@@ -2116,19 +2107,12 @@ class Handler(BaseHTTPRequestHandler):
         ok, output = git.worktree_add(abs_p, wt, branch, parent, create=bool(create))
         if not ok:
             return self._json({"ok": False, "output": output})
-        # git checks out tracked files only, so everything git-ignored is missing —
-        # .env above all, without which this repo's own bin/mystical dies on every
-        # command. Copying it is what the worktree skill tells a human to do by
-        # hand; doing it here is why a worktree session isn't born broken.
+        # .env above all is missing from a fresh worktree; without it this repo's own
+        # bin/mystical dies on every command, so a worktree session isn't born broken.
         # ponytail: .env only. node_modules is a build concern — symlink the launch
         # checkout's if you must build inside the worktree.
-        src_env = os.path.join(abs_p, ".env")
-        dst_env = os.path.join(wt, ".env")
-        if os.path.isfile(src_env) and not os.path.exists(dst_env):
-            try:
-                shutil.copy2(src_env, dst_env)
-            except OSError as e:
-                output = f"{output}\nworktree created, .env not copied: {e}".strip()
+        if (err := git.copy_env(abs_p, wt)):
+            output = f"{output}\n{err}".strip()
         return self._json({"ok": True, "path": wt, "rel": rel, "branch": branch,
                            "output": output})
 

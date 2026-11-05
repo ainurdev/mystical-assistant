@@ -11,6 +11,8 @@ import shutil
 import subprocess
 import time
 
+from bridge import config
+
 
 def _run(cwd: str, *args: str, timeout: int = 8,
          env: dict | None = None) -> tuple[int, str, str]:
@@ -1021,6 +1023,37 @@ def worktree_add(cwd: str, path: str, branch: str, start: str = "",
         args = ["worktree", "add", "--end-of-options", path, branch]
     rc, out, err = _run(cwd, *args, timeout=30)
     return rc == 0, (out + err).strip()
+
+
+_SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def slug(s: str) -> str:
+    return _SLUG_RE.sub("-", (s or "").strip().strip("/")).strip("-") or "wt"
+
+
+def worktree_path_for(repo_root: str, branch: str, free: bool = False) -> str:
+    """Where the bridge keeps `branch`'s worktree of the repo at `repo_root`:
+    <BASE_PATH>/.worktrees/<repo>/<branch>, a hidden dir so the project browser
+    never lists it. free=True adds -2, -3, ... until the directory is unused."""
+    repo = slug(os.path.basename((repo_root or "").rstrip("/")) or "repo")
+    wt = base = os.path.join(config.BASE_PATH, ".worktrees", repo, slug(branch))
+    n = 2
+    while free and os.path.isdir(wt):
+        wt, n = f"{base}-{n}", n + 1
+    return wt
+
+
+def copy_env(src: str, dst: str) -> str:
+    """git checks out tracked files only, so a new worktree lacks .env. Copy it;
+    returns an error text, "" on success or when there is nothing to copy."""
+    s, d = os.path.join(src, ".env"), os.path.join(dst, ".env")
+    if os.path.isfile(s) and not os.path.exists(d):
+        try:
+            shutil.copy2(s, d)
+        except OSError as e:
+            return f"worktree created, .env not copied: {e}"
+    return ""
 
 
 def worktree_remove(cwd: str, path: str, force: bool = True) -> tuple[bool, str]:

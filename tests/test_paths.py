@@ -349,3 +349,21 @@ def test_waiting_session_queues_nothing(fake_queue, flow_job_with_next, monkeypa
     monkeypatch.setattr(waits, "waiting", lambda sid: True)
     assert paths.continue_after_turn(flow_job_with_next) is False
     assert paths.advance("f1", "spec") is False and not fake_queue.items
+
+
+def test_build_here_makes_branch_carries_files_then_implements(fake_queue, nextstep_on, state_dir, monkeypatch):
+    from bridge import flowbranch
+    calls = []
+    sess = {"cwd": "/p", "chat_id": 1, "title": "My Feature", "project": "p"}
+    monkeypatch.setattr(store, "get_session", lambda sid: sess)
+    monkeypatch.setattr(flowbranch, "flow_files", lambda sid, since: ["/p/GLOSSARY.md"])
+    monkeypatch.setattr(flowbranch, "ensure_feature_branch",
+                        lambda s, slug: calls.append(("ensure", slug)) or ("feat/my-feature", "/wt"))
+    monkeypatch.setattr(flowbranch, "carry_and_commit",
+                        lambda src, dst, files, slug: calls.append(("carry", src, dst, files, slug)) or True)
+    paths.set_path("b1", "feature-here", "new", "claude")
+    paths.step_done("b1", "t1")
+    assert paths.continue_after_turn(_job("b1")) is True
+    assert calls == [("ensure", "my-feature"), ("carry", "/p", "/wt", ["/p/GLOSSARY.md"], "my-feature")]
+    assert fake_queue.items[-1]["prompt"] == \
+        "/mattpocock-skills:implement Work in /wt on branch feat/my-feature, and commit there."
