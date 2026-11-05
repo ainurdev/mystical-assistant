@@ -15,7 +15,8 @@ import { UsageRing } from "./UsageRing";
  *
  *  What each login has left lives in the composer's PROFILE and MODEL menus;
  *  this tab's limits and Logins fold repeated them and went (drafts/usage-time).
- *  The readout is the GIT tab's (`.gp-ro`). The week is bridge/report.py's:
+ *  The hero (hud/UsageRing) sits under the header, outside any fold, and
+ *  carries the This/Last toggle. The week is bridge/report.py's:
  *  worktrees already folded into their repo, days, failures by outcome.
  *
  *  Time and tokens, never dollars (9f612a4). "Agent time" because turn wall
@@ -85,7 +86,7 @@ export function UsagePanel({ onOpenProject, win }: { onOpenProject: (rel: string
       .catch(() => notify("error", "Couldn't reach the clipboard."));
   };
 
-  const hero = <UsageRing win={win} range={range} back={back > 0} elapsed={t ? t.elapsed : null} turns={t?.turns ?? 0} sessions={t?.sessions ?? 0}
+  const hero = <UsageRing win={win} range={range} back={back > 0} onBack={(n) => setBack(n)} elapsed={t ? t.elapsed : null} turns={t?.turns ?? 0} sessions={t?.sessions ?? 0}
     pick={pick} onPick={setPick}
     days={days} todayIdx={days.length ? todayIndex(today, days[0].key) : -1} />;
   const week = () => {
@@ -110,15 +111,10 @@ export function UsagePanel({ onOpenProject, win }: { onOpenProject: (rel: string
         <span className="gp-title">USAGE</span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
+      {hero}
       <div className="mscroll" style={{ flex: 1, minHeight: 0 }}>
-        <Fold title={back ? "Last week" : "This week"} em={range} closed={wkClosed} onToggle={() => setWkClosed((v) => !v)}
-          acts={
-            <span className="us-seg">
-              <button type="button" aria-pressed={back === 0} onClick={() => setBack(0)}>This</button>
-              <button type="button" aria-pressed={back === 1} onClick={() => setBack(1)}>Last</button>
-            </span>
-          }>
-          <div className="gp-rd">{hero}{week()}</div>
+        <Fold title="Week" closed={wkClosed} onToggle={() => setWkClosed((v) => !v)}>
+          <div className="gp-rd">{week()}</div>
         </Fold>
 
         {rep && rep.projects.length > 0 && (

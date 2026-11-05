@@ -1,5 +1,5 @@
 import type { Window } from "../../models";
-import { barHeights, capText, ringDash, ringText, RING_C, RING_R } from "../../lib/usagering";
+import { barHeights, capText, ofWeek, ringDash, ringText, RING_C, RING_R } from "../../lib/usagering";
 import { dur } from "../../lib/week";
 import { hhmm } from "../../lib/surfaces";
 import { RailHero } from "./RailHero";
@@ -8,8 +8,10 @@ import { RailHero } from "./RailHero";
    composer's PROFILE chip reads, `left` and the refill time), and the week's
    agent time as seven day bars, today lit. Amber is the window, accent the days.
    No reading for the login: the ring says "—" at the same size. */
-export function UsageRing({ win, range, back, elapsed, turns, sessions, days, todayIdx, pick, onPick }: {
+export function UsageRing({ win, range, back, onBack, elapsed, turns, sessions, days, todayIdx, pick, onPick }: {
   win: Window | null; range: string; back: boolean;
+  /** This (0) / Last (1) week */
+  onBack: (n: 0 | 1) => void;
   /** the week's agent time, seconds; null while it loads */
   elapsed: number | null; turns: number; sessions: number;
   days: { key: string; date: Date; label: string; elapsed: number; turns: number }[]; todayIdx: number;
@@ -26,7 +28,12 @@ export function UsageRing({ win, range, back, elapsed, turns, sessions, days, to
   const label = `${who} ${shown === null ? "loading" : `${dur(shown)} of agent time`}. 5-hour window ${
     left === null ? "not read" : `${left}% left${reset ? `, resets ${reset}` : ""}`}`;
   return (
-    <RailHero label={label} top={<><span className="ur-range">{day ? dayName : `${back ? "Last" : "This"} week · ${range}`}</span><b className="ur-total">{shown === null ? "" : dur(shown)}</b></>}>
+    <RailHero label={label} top={<>
+      <span className="us-seg">
+        <button type="button" aria-pressed={!back} onClick={() => onBack(0)}>This</button>
+        <button type="button" aria-pressed={back} onClick={() => onBack(1)}>Last</button>
+      </span>
+      <span className="rh-k">{day ? dayName : range}</span><b className="ur-total">{shown === null ? "" : dur(shown)}</b></>}>
       <div className="ur">
         <div className="ur-ring">
           <svg viewBox="0 0 60 60" width="60" height="60" aria-hidden>
@@ -50,7 +57,7 @@ export function UsageRing({ win, range, back, elapsed, turns, sessions, days, to
               );
             })}
           </div>
-          <div className="ur-cap">{day ? capText(day.turns) : capText(turns, sessions)}</div>
+          <div className="ur-cap">{day ? `${capText(day.turns)} · ${ofWeek(day.elapsed, elapsed ?? 0)}% of the week` : capText(turns, sessions)}</div>
         </div>
       </div>
     </RailHero>

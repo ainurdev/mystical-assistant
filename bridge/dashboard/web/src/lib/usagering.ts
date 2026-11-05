@@ -21,6 +21,9 @@ export function todayIndex(today: string, first: string): number {
   return n >= 0 && n < 7 ? n : -1;
 }
 
+/** A day's share of the week's agent time, whole percent; 0 for an empty week. */
+export const ofWeek = (day: number, week: number) => (week > 0 ? Math.round((100 * day) / week) : 0);
+
 /** The hero's caption: a day's turns, or the week's turns and sessions. */
 export const capText = (turns: number, sessions?: number) =>
   `${turns} ${turns === 1 ? "turn" : "turns"}${sessions === undefined ? "" : ` · ${sessions} ${sessions === 1 ? "session" : "sessions"}`}`;
