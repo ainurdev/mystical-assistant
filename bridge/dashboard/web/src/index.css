@@ -7687,3 +7687,18 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tc-cap { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: baseline; gap: 5px; font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; }
 .tc-cap b { color: var(--txb); font-weight: 800; }
 .tc-cap span { color: var(--txl); }
+/* Files FOOTPRINT. */
+.ff-k { font-size: var(--t9); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ff-n { margin-left: auto; flex: none; font-size: var(--t9); color: var(--txl); white-space: nowrap; }
+.ff-n b { font-size: 15px; font-weight: 800; color: var(--txb); }
+.ff-bar { display: flex; gap: 2px; height: 12px; margin-top: 12px; border-radius: 3px; background: color-mix(in srgb, var(--txl) 12%, transparent); overflow: hidden; }
+.ff-bar i { min-width: 3px; border-radius: 3px; }
+.ff-leg { display: flex; flex-wrap: nowrap; gap: 4px 10px; margin-top: 8px; height: 14px; overflow: hidden; font-size: var(--t9); color: var(--txd); white-space: nowrap; }
+.ff-leg span { display: inline-flex; align-items: center; gap: 4px; }
+.ff-leg i { width: 7px; height: 7px; border-radius: 2px; flex: none; }
+.ff-leg b { color: var(--txb); }
+.ff-cap { position: absolute; left: 12px; right: 12px; bottom: 10px; display: flex; gap: 6px; overflow: hidden; }
+.ff-chip { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 1px 6px; border-radius: 6px; font-size: var(--t9); font-weight: 600; color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--txl) 12%, transparent); }
+.ff-live { font-style: normal; color: var(--ok); animation: ffpulse 1.4s ease-in-out infinite; }
+@keyframes ffpulse { 50% { opacity: .35; } }

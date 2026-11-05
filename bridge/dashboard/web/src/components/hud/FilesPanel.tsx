@@ -7,6 +7,7 @@ import { askConfirm } from "../ui/Ask";
 import { FileIcon } from "../../lib/fileicon";
 import { ignoredMatcher } from "../../lib/gitignored";
 import { Skeleton } from "../ui";
+import { FilesFootprint } from "./FilesFootprint";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import { findFiles } from "../../lib/filefind";
 
@@ -306,6 +307,8 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
         ))}
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
+
+      {project && <FilesFootprint edited={edited ?? new Set()} now={editing ?? null} />}
 
       {project && (
         // The sidebar's search, so every theme family draws it the same way.

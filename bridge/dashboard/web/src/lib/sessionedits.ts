@@ -21,6 +21,7 @@ export function sessionEdits(turns: T[], root: string | null | undefined): { edi
       // `detail` is the path whole when the 120-char summary cut it.
       const p = e.detail ?? e.summary ?? "";
       if (!p.startsWith(pre)) continue;
+      edited.delete(p.slice(pre.length)); // a rewrite is the latest edit: move it to the end
       edited.add(p.slice(pre.length));
       if (t.status === "running") now = p.slice(pre.length);
     }
