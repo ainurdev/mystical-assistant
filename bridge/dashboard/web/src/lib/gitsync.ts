@@ -39,3 +39,16 @@ export function syncBadge(s: Sync): string | null {
     default: return null;
   }
 }
+
+/** Auto-fetch's rule (/design-first auto-fetch): the open tree's repo fetches
+    itself once its last fetch, from any checkout, is FETCH_EVERY seconds old or
+    never happened, and not again within FETCH_EVERY of the last try, so a remote
+    that keeps failing costs one try a window. Only a branch with an upstream; a
+    backend too old to send fetched_at gets none. */
+export const FETCH_EVERY = 300;
+
+export function needsFetch(git: GitStatus | null | undefined, now: number, triedAt?: number): boolean {
+  if (!git?.is_repo || !git.upstream || git.fetched_at === undefined) return false;
+  if (triedAt !== undefined && now - triedAt < FETCH_EVERY) return false;
+  return git.fetched_at === null || now - git.fetched_at >= FETCH_EVERY;
+}

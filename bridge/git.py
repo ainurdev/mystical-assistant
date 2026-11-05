@@ -12,10 +12,11 @@ import subprocess
 import time
 
 
-def _run(cwd: str, *args: str, timeout: int = 8) -> tuple[int, str, str]:
+def _run(cwd: str, *args: str, timeout: int = 8,
+         env: dict | None = None) -> tuple[int, str, str]:
     try:
         p = subprocess.run(["git", "-C", cwd, *args], capture_output=True,
-                           text=True, timeout=timeout)
+                           text=True, timeout=timeout, env=env)
         return p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired:
         return 124, "", "git timed out"
@@ -579,8 +580,11 @@ def push(cwd: str, timeout: int = 30) -> tuple[bool, str]:
 
 
 def fetch(cwd: str, timeout: int = 20) -> tuple[bool, str]:
-    """Refresh the remote-tracking refs, so status()'s behind count is current."""
-    rc, out, err = _run(cwd, "fetch", "--quiet", timeout=timeout)
+    """Refresh the remote-tracking refs, so status()'s behind count is current.
+    The dashboard also runs it unasked (auto-fetch), so a remote that wants a
+    password fails at once instead of prompting on a hand-launched bridge's tty."""
+    rc, out, err = _run(cwd, "fetch", "--quiet", timeout=timeout,
+                        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"})
     return rc == 0, (out + err).strip()
 
 

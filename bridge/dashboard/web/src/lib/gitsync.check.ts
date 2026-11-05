@@ -2,7 +2,7 @@
 //
 // The GIT tab's sync state and the rail badge it lends: every state names the
 // one thing a button can do, and nothing is offered that git would refuse.
-import { syncBadge, syncOf } from "./gitsync.ts";
+import { needsFetch, syncBadge, syncOf } from "./gitsync.ts";
 import type { GitStatus } from "../api.ts";
 
 const ok = (cond: boolean, what: string) => {
@@ -31,3 +31,12 @@ ok(badge({ ahead: 1, behind: 1 }) === "↑↓", "diverged");
 ok(badge({ upstream: "", unpublished: 2 }) === "↑2", "unpublished commits");
 ok(badge({ upstream: "", unpublished: 0 }) === null, "a fresh branch with nothing of its own: no badge");
 ok(badge({ ahead: 250 }) === "↑99+", "capped for the pill");
+
+const NOW = 1_000_000;
+const due = (o: Partial<GitStatus>, tried?: number) => needsFetch(st(o), NOW, tried);
+ok(due({ fetched_at: null }), "never fetched: due");
+ok(due({ fetched_at: NOW - 300 }) && !due({ fetched_at: NOW - 299 }), "due at 5 minutes, not before");
+ok(!due({ fetched_at: null }, NOW - 60), "a try a minute ago holds the next one");
+ok(due({ fetched_at: null }, NOW - 300), "a remote that keeps failing is tried once a window");
+ok(!due({ upstream: "", fetched_at: null }) && !due({ fetched_at: undefined }), "no upstream, or an old backend: no auto-fetch");
+ok(!needsFetch(null, NOW) && !due({ is_repo: false, fetched_at: null }), "no status yet, or no repo: wait");

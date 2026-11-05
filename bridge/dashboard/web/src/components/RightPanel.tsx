@@ -32,6 +32,9 @@ export interface PanelTab {
   // A dot in the theme's waits-on-you colour (--ask): a turn of the open
   // session is blocked on you (TURNS). Shows open or shut, like the others.
   ask?: boolean;
+  // A small spinning ring in the badge's place while something runs for this
+  // tab unasked (the GIT tab's auto-fetch). A badge wins.
+  busy?: boolean;
   // Panel owns its scroller — the wrapper must not add a second one.
   ownScroll?: boolean;
   // Panel's WHOLE body is one session's data — "project" for the repo-wide
@@ -201,7 +204,7 @@ export function RightPanel({
                   className="absolute right-[3px] top-[1px] h-[15px] min-w-[15px] rounded-full px-[3px] text-center text-[length:var(--t7)] leading-[15px]"
                   style={{ background: "var(--acc)", color: "var(--acc-on)" }}
                 >{t.badge}</span>
-              ) : null}
+              ) : t.busy ? <span className="rail-spin" aria-hidden /> : null}
               {t.alert || t.ask ? (
                 <span className="absolute right-[5px] top-[4px] h-[8px] w-[8px] rounded-full"
                   style={{ background: t.alert ? "var(--err)" : "var(--ask, var(--warn))", boxShadow: `0 0 6px ${t.alert ? "var(--err)" : "var(--ask, var(--warn))"}` }} />

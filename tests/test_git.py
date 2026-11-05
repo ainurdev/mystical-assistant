@@ -285,6 +285,18 @@ def test_fetch_says_why_it_failed():
     assert ok is False and out, out
 
 
+def test_fetch_never_waits_on_a_password_prompt(monkeypatch):
+    """Auto-fetch runs it unasked: a remote that wants a password must fail, not prompt."""
+    seen = {}
+
+    def fake_run(cmd, **kw):
+        seen.update(kw.get("env") or {})
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+    monkeypatch.setattr(g.subprocess, "run", fake_run)
+    assert g.fetch(tempfile.mkdtemp())[0] is True
+    assert seen.get("GIT_TERMINAL_PROMPT") == "0"
+
+
 def test_fetched_at_counts_a_fetch_from_any_worktree():
     """FETCH_HEAD is per worktree but the remote refs it moves are shared, so a
     fetch run in a worktree is as fresh for the main checkout, and back."""

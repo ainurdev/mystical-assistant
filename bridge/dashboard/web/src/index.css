@@ -6388,6 +6388,19 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-rosub.warn b { color: inherit; }
 .gp-rosub.ok svg { flex: none; color: var(--ok); }
 .gp-rosub.warn { color: var(--warn); }
+/* when origin was last checked, in its own slot so the ellipsis never eats it;
+   retry and git's words for an auto-fetch that failed (/design-first auto-fetch) */
+.gp-rotime { flex: none; margin-left: auto; padding-left: 8px; font: 400 var(--t10)/1 var(--m); color: var(--txl); }
+.gp-rosub.warn .gp-rotime { color: var(--txd); }
+.gp-rolink { appearance: none; border: 0; padding: 0; background: none; font: inherit; color: var(--acc); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.gp-rolink:hover:not(:disabled) { color: var(--txb); }
+.gp-rolink:disabled { opacity: .4; cursor: not-allowed; }
+.gp-roerr { margin: 5px 2px 0; font: 400 var(--t10)/1.3 var(--m); color: var(--txl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the rail's GIT icon while an auto-fetch runs (RightPanel's busy), in the badge's place */
+.rail-spin { position: absolute; right: 5px; top: 3px; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--acc) 22%, transparent); border-top-color: var(--acc); border-right-color: var(--acc);
+  animation: gpspin .9s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .rail-spin { animation: none; } }
 /* The branch's Rivendell task (TaskChip.tsx TaskLine), under the readout's line. */
 .gp-task { margin-top: 6px; gap: 7px; }
 .gp-task b { color: var(--ask); }

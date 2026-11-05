@@ -37,6 +37,9 @@ interface Props {
   branch?: string;
   // App's status poll for this worktree; null until its first answer.
   git: GitStatus | null;
+  // App's auto-fetch of this tree (lib/gitsync needsFetch): busy while it runs,
+  // and git's words from a failed one until a fetch after `at` lands.
+  autoFetch?: { at: number; busy: boolean; error?: string } | null;
   // Re-read the status now — after a commit, a stage, a push.
   onGitChanged: () => void;
   // `changed` lands a dirty file in the editor's diff view, not the file.
@@ -136,7 +139,7 @@ function Roll({ slot, v }: { slot: string; v: string | null }) {
   );
 }
 
-export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onReveal, onHandOff, onSend }: Props) {
+export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpenFile, onReveal, onHandOff, onSend }: Props) {
   const files = git?.files ?? [];
   // A file is staged when the index half of porcelain's pair moved, and
   // unstaged when the working-tree half did. An old backend sends neither, so
@@ -331,9 +334,16 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
      branch, where git would refuse both. Zeros dim; "—" is a count that can't
      exist here (no upstream). Before the status lands, the last figures hold,
      dimmed, and roll to this tree's when it does. */
-  const fetching = op?.kind === "fetch" && op.phase === "busy";
+  const fetching = (op?.kind === "fetch" && op.phase === "busy") || !!autoFetch?.busy;
   const t = git?.fetched_at ? ago(git.fetched_at) : "";
-  const when = !t ? "" : t === "now" ? " · checked just now" : ` · checked ${t} ago`;
+  const when = !t ? "" : t === "now" ? "checked just now" : `checked ${t} ago`;
+  // An auto-fetch failure no fetch has retired since: one quiet line, not the
+  // alert box, which stays for a fetch you asked for.
+  const autoErr = !fetching && op?.phase !== "failed" && autoFetch?.error
+    && !(git?.fetched_at && git.fetched_at >= autoFetch.at) ? autoFetch.error : "";
+  // Push and pull counts no successful check stands behind (never fetched, or
+  // the last auto-fetch failed): dimmed, and never "up to date".
+  const unchecked = !!git?.upstream && (git.fetched_at === null || !!autoErr);
   const toPush = s.kind === "ahead" || s.kind === "publish" ? s.n : s.kind === "diverged" ? s.ahead
     : s.kind === "synced" || s.kind === "behind" ? 0 : null;
   const toPull = s.kind === "behind" ? s.n : s.kind === "diverged" ? s.behind
@@ -342,17 +352,24 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
     : s.kind === "behind" ? { kind: "pull" as const, n: s.n }
     : s.kind === "publish" && s.n > 0 ? { kind: "publish" as const, n: s.n }
     : null;
-  const cell = (slot: string, icon: ReactNode, value: number | null, label: string, tone: string) => (
-    <div className={`gp-roc ${ready && value ? tone : "z"}`}>
+  const cell = (slot: string, icon: ReactNode, value: number | null, label: string, tone: string, dim = false) => (
+    <div className={`gp-roc ${ready && value && !dim ? tone : "z"}`}>
       <b>{icon}<Roll slot={slot} v={ready ? String(value ?? "—") : null} /></b><span>{label}</span>
     </div>
   );
   const warn = s.kind === "diverged" ? "warn" : "";
-  const sub = fetching ? <span>checking origin…</span>
+  // When origin was last checked sits in its own slot: the ellipsis takes the
+  // upstream's name, never the time.
+  const time = (v: string) => <span className="gp-rotime">{v}</span>;
+  const sub = fetching ? <><span>checking origin…</span>{time(!t ? "first check" : t === "now" ? "last just now" : `last ${t} ago`)}</>
+    : autoErr ? <><TriangleAlert size={12} strokeWidth={2.2} /><span>couldn't reach origin</span>
+        <span className="gp-rotime"><button className="gp-rolink" disabled={busy} onClick={() => void fetchNow()}>retry</button></span></>
     : !ready ? <span>reading the working tree…</span>
-    : s.kind === "synced" ? <><Check size={12} strokeWidth={2.4} /><span>up to date with <b>{s.upstream}</b>{when}</span></>
-    : s.kind === "ahead" || s.kind === "behind" ? <span><b>{s.upstream}</b>{when}</span>
-    : s.kind === "diverged" ? <span>diverged from <b>{s.upstream}</b>{when}</span>
+    : unchecked && "upstream" in s ? <span>not checked against <b>{s.upstream}</b> yet</span>
+    : s.kind === "synced" ? <><Check size={12} strokeWidth={2.4} /><span>up to date with <b>{s.upstream}</b></span>{when && time(when)}</>
+    : s.kind === "behind" ? <><span><b>{s.n}</b> new on <b>{s.upstream}</b></span>{when && time(when)}</>
+    : s.kind === "ahead" ? <><span><b>{s.upstream}</b></span>{when && time(when)}</>
+    : s.kind === "diverged" ? <><span>diverged from <b>{s.upstream}</b></span>{when && time(when)}</>
     : s.kind === "publish" ? <span>not on <b>origin</b> yet · only in this checkout</span>
     : s.kind === "local" ? <span>no remote · this repo lives only here</span>
     : <span>detached HEAD · no branch to push</span>;
@@ -398,7 +415,7 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
       )}
     </>
   ) : action ? (
-    <button className="gp-pb" disabled={busy} onClick={() => void sync(action.kind, action.n)}
+    <button className="gp-pb" disabled={busy || fetching} onClick={() => void sync(action.kind, action.n)}
       title={action.kind === "publish" ? `publish ${branchName} to origin and track it`
         : action.kind === "pull" ? `fast-forward ${plural(action.n, "commit")} from ${s.kind === "behind" ? s.upstream : ""}`
         : `push ${plural(action.n, "commit")} to ${s.kind === "ahead" ? s.upstream : ""}`}>
@@ -466,7 +483,7 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
         {branchName && (
           <span ref={brRef} className="gp-branch" title={branchName}><i>⎇</i><Roll slot="branch" v={branchName} /></span>
         )}
-        <button className={`gp-ib${fetching ? " spin" : ""}`} disabled={busy}
+        <button className={`gp-ib${fetching ? " spin" : ""}`} disabled={busy || fetching}
           title={s.kind === "none" ? "refresh" : "fetch from origin, then re-read"} onClick={() => void fetchNow()}>
           <RefreshCw size={13} />
         </button>
@@ -478,12 +495,13 @@ export function GitPanel({ project, branch, git, onGitChanged, onOpenFile, onRev
           {(!ready || s.kind !== "none") && (
             <div className="gp-rd">
               <div className="gp-ro">
-                {cell("push", <ArrowUp size={15} strokeWidth={2.2} />, toPush, s.kind === "publish" ? "to publish" : "to push", warn || (action && action.kind !== "pull" ? "on" : ""))}
-                {cell("pull", <ArrowDown size={15} strokeWidth={2.2} />, toPull, "to pull", warn || (action?.kind === "pull" ? "on" : ""))}
+                {cell("push", <ArrowUp size={15} strokeWidth={2.2} />, toPush, s.kind === "publish" ? "to publish" : "to push", warn || (action && action.kind !== "pull" ? "on" : ""), unchecked)}
+                {cell("pull", <ArrowDown size={15} strokeWidth={2.2} />, toPull, "to pull", warn || (action?.kind === "pull" ? "on" : ""), unchecked)}
                 {cell("changed", <CircleDot size={14} strokeWidth={2.2} />, changed.size, "changed", "dirty")}
-                {op?.phase === "busy" && op.kind !== "fetch" && <div className="gp-robar"><i /></div>}
+                {(fetching || op?.phase === "busy") && <div className="gp-robar"><i /></div>}
               </div>
-              <div className={`gp-rosub${fetching ? "" : s.kind === "synced" ? " ok" : warn ? " warn" : ""}`}>{sub}</div>
+              <div className={`gp-rosub${fetching ? "" : autoErr || warn ? " warn" : s.kind === "synced" && !unchecked ? " ok" : ""}`}>{sub}</div>
+              {autoErr && <div className="gp-roerr" title={autoErr}>{when || "never checked"} · {autoErr.split("\n")[0]}</div>}
               <TaskLine project={project} branch={branchName} onSend={onSend} />
               {act && <div className="gp-act">{act}</div>}
             </div>

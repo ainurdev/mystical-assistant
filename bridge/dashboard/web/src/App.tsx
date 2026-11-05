@@ -71,7 +71,7 @@ import { recall, remember, type Anchor } from "./lib/scrollmem";
 import { lastOpen, rememberOpen } from "./lib/lastopen";
 import { branchForSession } from "./lib/issuebranch";
 import { pushFailedDraft } from "./lib/pushfailed";
-import { syncBadge, syncOf } from "./lib/gitsync";
+import { needsFetch, syncBadge, syncOf } from "./lib/gitsync";
 import { chime, pushGranted } from "./lib/push";
 import { isLinuxApp, isMacApp, isNativeApp, linuxWindow, macAppearance, macDrag, useMacSettings } from "./lib/mac";
 import { watchWco } from "./lib/wco";
@@ -2223,6 +2223,31 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [sessionProject, sessionBranch, gitNonce]);
 
+  // Auto-fetch (/design-first auto-fetch): behind is only as true as the last
+  // fetch, so every status read checks whether the open tree's repo is due
+  // (lib/gitsync needsFetch) and fetches it while the window is visible. The GIT
+  // tab's readout and its rail icon show it; `at` lets any later fetch that
+  // lands, ⟳'s included, retire a failure. Keyed by project, not tree: a fetch
+  // moves refs every worktree of the repo shares, and the branch half of the
+  // tree's key can still be resolving when the first status lands.
+  const [autoFetch, setAutoFetch] = useState<{ project: string; at: number; busy: boolean; error?: string } | null>(null);
+  const fetchTried = useRef(new Map<string, number>());
+  useEffect(() => {
+    if (!sessionProject || document.hidden) return;
+    const at = Date.now() / 1000;
+    if (!needsFetch(sessionGit, at, fetchTried.current.get(sessionProject))) return;
+    fetchTried.current.set(sessionProject, at);
+    const project = sessionProject;
+    setAutoFetch({ project, at, busy: true });
+    void api.gitFetch(project, sessionBranch || undefined)
+      .then((r) => (r.ok ? "" : r.output || "Fetch failed."), (e: Error) => e.message || "Fetch failed.")
+      .then((error) => {
+        setAutoFetch((cur) => (cur?.project !== project || cur.at !== at ? cur : error ? { project, at, busy: false, error } : null));
+        setGitNonce((n) => n + 1);
+      });
+  }, [sessionGit]);
+  const treeFetch = autoFetch?.project === sessionProject ? autoFetch : null;
+
   // Unread lessons, for the LEARN tab's badge — the whole reason to open a tab
   // you are not already looking at. Every repo's, because the panel reads that
   // way too. One listdir per repo, so a slow tick is plenty.
@@ -2360,12 +2385,13 @@ export function App() {
       ),
     },
     {
-      id: "git", label: dirtyFiles ? `Git (${dirtyFiles} changed)` : gitSync ? `Git (${gitSync})` : "Git",
+      id: "git", label: dirtyFiles ? `Git (${dirtyFiles} changed)` : gitSync ? `Git (${gitSync})`
+        : treeFetch?.busy ? "Git (checking origin)" : "Git",
       icon: <GitBranch {...RAIL} />, ownScroll: true, scope: "worktree",
-      badge: dirtyFiles ? railCount(dirtyFiles) : gitSync,
+      badge: dirtyFiles ? railCount(dirtyFiles) : gitSync, busy: !!treeFetch?.busy,
       render: () => (
         <GitPanel
-          project={sessionProject} branch={sessionBranch} git={sessionGit}
+          project={sessionProject} branch={sessionBranch} git={sessionGit} autoFetch={treeFetch}
           onGitChanged={() => setGitNonce((n) => n + 1)}
           onOpenFile={openFileFromPanel}
           onHandOff={handOffSession}
