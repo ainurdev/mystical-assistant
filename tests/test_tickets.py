@@ -789,3 +789,17 @@ def test_ticket_and_merge_sessions_run_claude_whatever_the_projects_default(make
     assert store.get_session(s.sid("01"))["profile_id"] is None
     s.finish("01")
     assert store.get_session(s.state["merge_session"])["profile_id"] is None
+
+
+def test_turning_tickets_or_skill_paths_on_resumes_the_sets(monkeypatch):
+    import threading
+    booted = threading.Event()
+    monkeypatch.setattr(aifeatures, "set_enabled", lambda key, on: None)   # nothing persisted
+    monkeypatch.setattr(tickets, "boot", booted.set)
+    _dpost("/local/aifeatures", {"key": "autopick", "enabled": True})
+    _dpost("/local/aifeatures", {"key": "ticketruns", "enabled": False})
+    assert not booted.wait(0.2)
+    for key in ("ticketruns", "router"):
+        booted.clear()
+        assert _dpost("/local/aifeatures", {"key": key, "enabled": True})["obj"]["ok"] is True
+        assert booted.wait(5), key

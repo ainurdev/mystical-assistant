@@ -1270,6 +1270,10 @@ class Handler(BaseHTTPRequestHandler):
                 aifeatures.set_enabled(str(body.get("key") or ""), body.get("enabled"))
             except ValueError as e:
                 return self._json({"error": str(e)}, 400)
+            if body.get("key") in ("router", "ticketruns") and body.get("enabled"):
+                # Switched back on: ticket sets carry on where they stopped (idempotent, as at a restart).
+                from bridge import tickets
+                threading.Thread(target=tickets.boot, daemon=True).start()
             return self._json({"ok": True, "features": aifeatures.state()})
         if path == "/local/route":
             # Asked after every typing pause (bridge/route.py), so anything that goes
