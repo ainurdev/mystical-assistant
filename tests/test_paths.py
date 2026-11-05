@@ -349,14 +349,83 @@ def test_advance_from_merge_enqueues_retro(fake_queue, nextstep_on):
     assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"
 
 
-def test_typed_flow_command_joins_its_path(state_dir):
+def test_typed_flow_command_joins_its_path(state_dir, router_on):
     paths.on_turn_start("s9", "/mattpocock-skills:diagnosing-bugs the crash")
     f = paths.get("s9")
     assert f["path"] == "bug" and f["by"] == "rule"
     paths.on_turn_start("s9", "/mattpocock-skills:retro")
-    assert paths.get("s9")["path"] == "bug"       # already on a path
+    assert (paths.get("s9")["path"], paths.get("s9")["skill"]) == ("one", "retro")   # not bug's next station
     paths.on_turn_start("s8", "fix the typo")
     assert paths.get("s8") is None
+
+
+# --- C1: a typed or auto-picked command joins mid-path, or replaces a stale path ---
+
+def _turn(sid, prompt):
+    """A turn of `sid` sent as `prompt`, as start_streaming_job records it and tells paths."""
+    t = "t-" + os.urandom(4).hex()
+    store.start_turn(sid, t, prompt, None)
+    paths.on_turn_start(sid, prompt)
+    return t
+
+
+@pytest.fixture
+def sess(state_dir):
+    return store.create_session(1, "p")["id"]
+
+
+def test_typed_tdd_is_a_one_step_path(sess, fake_queue, nextstep_on):
+    t = _turn(sess, "/mattpocock-skills:tdd the parser")
+    assert (paths.get(sess)["path"], paths.get(sess)["skill"]) == ("one", "tdd")
+    assert paths.step_done(sess, t) is None
+    assert paths.continue_after_turn(_job(sess, t)) is False and not fake_queue.items
+
+
+def test_a_typed_command_replaces_a_stale_path(sess, fake_queue, nextstep_on):
+    paths.set_path(sess, "feature", "new", "claude")
+    paths.step_done(sess, "t0")                          # grill done; stuck at SPEC
+    t = _turn(sess, "/mattpocock-skills:diagnosing-bugs the crash")
+    assert paths.get(sess)["path"] == "bug" and paths.get(sess)["done"] == []
+    assert paths.step_done(sess, t) == "fix"
+    assert paths.continue_after_turn(_job(sess, t)) is True
+    assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:tdd"
+
+
+def test_a_typed_to_spec_joins_feature_at_spec(sess, nextstep_on):
+    _turn(sess, "/mattpocock-skills:to-spec")
+    f = paths.get(sess)
+    assert (f["path"], f["done"]) == ("feature", ["grill"])
+    assert paths.path_for_command("to-tickets") == ("feature", "tickets")
+    assert paths.path_for_command("improve-codebase-architecture") == ("refactor", "improve")
+    assert paths.path_for_command("tdd") == paths.path_for_command("implement")[:1] + ("tdd",) == ("one", "tdd")
+
+
+def test_a_typed_implement_starts_nothing_after_it(sess, fake_queue, nextstep_on):
+    t = _turn(sess, "/mattpocock-skills:implement .mystical/tickets/x/01-a.md")
+    assert (paths.get(sess)["path"], paths.get(sess)["skill"]) == ("one", "implement")
+    assert paths.step_done(sess, t) is None
+    assert paths.continue_after_turn(_job(sess, t)) is False and not fake_queue.items
+
+
+def test_the_next_station_typed_keeps_the_path(sess, nextstep_on):
+    paths.set_path(sess, "feature", "new", "claude")
+    paths.step_done(sess, "t0")
+    before = paths.get(sess)
+    _turn(sess, "/mattpocock-skills:to-spec")
+    assert paths.get(sess) == before
+
+
+def test_step_done_marks_the_station_its_turn_named(sess, nextstep_on):
+    paths.set_path(sess, "feature", "new", "claude")
+    t = "t-spec"
+    store.start_turn(sess, t, "/mattpocock-skills:to-spec", None)   # SKILL PATHS came on mid-turn: no join
+    assert paths.step_done(sess, t) == "tickets"
+    assert paths.get(sess)["done"] == ["grill", "spec"]
+
+
+def test_no_join_while_paths_are_off(sess, router_off):
+    _turn(sess, "/mattpocock-skills:tdd x")
+    assert paths.get(sess) is None
 
 
 def test_flow_step_wins_over_an_active_goal(fake_queue, flow_job_with_next, monkeypatch):

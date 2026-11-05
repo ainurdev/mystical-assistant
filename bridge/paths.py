@@ -30,6 +30,7 @@ that finished a station is remembered (`last`) and a repeat returns the same ans
 
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -121,7 +122,9 @@ def _stations(flow: dict) -> list:
     return PATHS[flow["path"]]
 
 
-def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" = None) -> dict:
+def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" = None,
+             done: "list | None" = None) -> dict:
+    """`done`: stations already behind it (a path joined mid-way)."""
     if path != "one" and path not in PATHS:
         raise ValueError(f"unknown path {path!r}")
     if path == "one" and not skill:
@@ -129,7 +132,7 @@ def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" 
     with _lock:
         _load_locked()
         _cache[session_id] = {"path": path, "skill": skill, "by": by, "why": why, "auto": True,
-                              "at": int(time.time()), "done": [], "next": None, "last": None}
+                              "at": int(time.time()), "done": list(done or []), "next": None, "last": None}
         _save_locked()
         return dict(_cache[session_id])
 
@@ -163,8 +166,20 @@ def set_auto(session_id: str, on: bool) -> None:
             _save_locked()
 
 
+_CMD = re.compile(r"\s*/mattpocock-skills:([\w-]+)")
+
+
+def _command(prompt: "str | None") -> "str | None":
+    """x of a prompt that leads with /mattpocock-skills:x, else None."""
+    m = _CMD.match(prompt or "")
+    return m.group(1) if m else None
+
+
 def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "str | None":
-    """Mark the current station done; return the next station, or None at the end."""
+    """Mark the station this turn worked on done: the one its own /mattpocock-skills:x
+    names when x is a station of the path (the ones before it too), else the first one
+    not done. Return the next station, or None at the end."""
+    skill = _command(store.turn_prompt(turn_id))
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
@@ -173,13 +188,16 @@ def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "st
         if f["last"] == turn_id:
             return (f["next"] or {}).get("station")
         stations = [st[0] for st in _stations(f)]
-        cur = next((st for st in stations if st not in f["done"]), None)
+        named = next((st for st, sk, _ in _stations(f) if skill and sk == skill), None)
+        if named in f["done"]:
+            return (f["next"] or {}).get("station")   # a re-run of a finished step moves nothing
+        cur = named or next((st for st in stations if st not in f["done"]), None)
         if cur is None:
             return None
         if choice == "here" and f["path"] == "feature" and cur == "grill":
             f["path"] = "feature-here"
             stations = [st[0] for st in _stations(f)]
-        f["done"].append(cur)
+        f["done"] += [st for st in stations[:stations.index(cur) + 1] if st not in f["done"]]
         rest = [st for st in stations if st not in f["done"]]
         f["next"] = {"station": rest[0], "turn_id": turn_id} if rest else None
         f["last"] = turn_id
@@ -187,13 +205,18 @@ def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "st
         return rest[0] if rest else None
 
 
+# Where a typed /x joins: a path's first station, or one a user may enter mid-path.
+# Anything else, /tdd and /implement among them, is a one-step path of its own.
+_JOINS = {"grill-with-docs": "feature", "to-spec": "feature", "to-tickets": "feature",
+          "diagnosing-bugs": "bug", "improve-codebase-architecture": "refactor"}
+
+
 def path_for_command(skill: str) -> tuple:
-    """(path, station) a typed flow command joins: first path holding that skill, else a one-skill path."""
-    for name, stations in PATHS.items():
-        for station, sk, _ in stations:
-            if sk == skill:
-                return name, station
-    return "one", skill
+    """(path, station) a typed /skill joins, else ("one", skill)."""
+    path = _JOINS.get(skill)
+    if not path:
+        return "one", skill
+    return path, next(st for st, sk, _ in PATHS[path] if sk == skill)
 
 
 # --- starting the next step ---------------------------------------------------
@@ -206,18 +229,22 @@ ZONE_TOKENS = 150_000
 
 
 def on_turn_start(session_id: str, prompt: str) -> None:
-    """A typed /mattpocock-skills:<x> in a session without a path joins the path holding x."""
+    """A turn sent as /mattpocock-skills:<x> (typed, auto-picked or queued by the flow)
+    keeps the session's path when x is its next station. Otherwise x's own path replaces
+    it, joined at x with the stations before x done, so a stale path can't take over an
+    unrelated step. Only while SKILL PATHS is on."""
     try:
-        head = (prompt or "").lstrip()
-        if not head.startswith("/mattpocock-skills:") or get(session_id):
+        skill = _command(prompt)
+        if not skill or not on():
             return
-        skill = head[len("/mattpocock-skills:"):].split(None, 1)[0]
-        if not skill:
+        f = get(session_id)
+        if f and next((sk for st, sk, _ in _stations(f) if st not in f["done"]), None) == skill:
             return
         from bridge import route
-        path, _ = path_for_command(skill)
+        path, station = path_for_command(skill)
+        before = [] if path == "one" else [st for st, _, _ in PATHS[path]]
         set_path(session_id, path, route._WHY.get(skill) or f"started with /{skill}", "rule",  # noqa: SLF001
-                 skill if path == "one" else None)
+                 skill if path == "one" else None, before[:before.index(station)] if before else [])
     except Exception as e:  # noqa: BLE001 — never break a turn start
         print(f"[paths] on_turn_start failed: {e}", file=sys.stderr)
 

@@ -987,6 +987,13 @@ def turn_prompt(turn_id: str) -> "str | None":
     return row["prompt"] if row else None
 
 
+def recent_turns(session_id: str, limit: int) -> list[dict]:
+    """The session's newest turns, newest first: id and prompt."""
+    with closing(_connect()) as c:
+        return [dict(r) for r in c.execute("SELECT id, prompt FROM turns WHERE session_id=? "
+                                           "ORDER BY seq DESC LIMIT ?", (session_id, limit))]
+
+
 def set_lifecycle(session_id: str, state: str | None) -> None:
     """Move a session to done/abandoned/backlog, or None to make it active again.
     `archived` is the derived 'hidden' flag — every existing query and the
