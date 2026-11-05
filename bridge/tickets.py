@@ -279,11 +279,15 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
         return msg
     slug = flowbranch.feature_slug(os.path.basename(folder))
     with _build:
-        was = load(folder).get("status")
+        old = load(folder)
+        was = old.get("status")
         if was not in (None, "stopped"):
             return f"{slug} is already {was}"
-        # flow_at: the flow's path this set builds for; a new path there is left alone
-        st = {"slug": slug, "parent_session": flow_session_id, "flow_at": flow.get("at"), "checkout": co,
+        # flow_at: the flow's path this set builds for, kept when a stopped set builds again;
+        # a new path in that session since is left alone (mark_done, advance)
+        at = old.get("flow_at", flow.get("at"))
+        since = at or 0
+        st = {"slug": slug, "parent_session": flow_session_id, "flow_at": at, "checkout": co,
               "feature_branch": "", "feature_checkout": "", "status": "building", "tickets": {}, "merge_session": ""}
         try:
             tks = parse_dir(folder)

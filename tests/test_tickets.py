@@ -879,3 +879,17 @@ def test_checkboxes_under_an_empty_label_are_no_blockers(tmp_path):
         (tmp_path / sub).mkdir()
     assert _t4(tmp_path / "a", "# 04: D\n\n**Blocked by:**\n\n- [ ] it works\n- [x] tested\n").blocked_by == ()
     assert _t4(tmp_path / "b", "# 04: D\n\n**Blocked by:**\n- #1\n- [ ] it works\n").blocked_by == ("01",)
+
+
+def test_a_rebuilt_set_stays_with_the_path_it_was_written_for(make_set, monkeypatch):
+    import time
+    s = make_set({"01": None, "02": "#05", "05": "#02"}, build=False)
+    s.build()
+    at = s.state["flow_at"]
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() + 100)
+    paths.set_path(s.flow, "bug", "a new crash", "claude")      # the flow session moved on
+    monkeypatch.setattr(time, "time", real)
+    _write(s.folder, "05", "T05")
+    assert _dpost("/local/tickets/build", {"folder": s.folder})["obj"] == {"text": "Building."}
+    assert s.state["flow_at"] == at
