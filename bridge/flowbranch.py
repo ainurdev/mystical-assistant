@@ -45,12 +45,13 @@ def _checkout(session: dict) -> str:
     return session.get("work_cwd") or session.get("cwd") or ""
 
 
-def flow_files(session_id: str, since: int) -> list[str]:
+def written(session_id: str, since: int) -> list[str]:
     """Files the session's Write/Edit/MultiEdit/NotebookEdit calls touched since
-    `since`, inside its checkout. Tool events keep the call's first input field as
-    `summary` (cut at 120 chars, the whole text in `detail`), which for these tools
-    is file_path. shortcut: NotebookEdit's notebook_path isn't a summary key, so
-    notebooks are missed; add it if a flow ever writes one."""
+    `since`, inside its checkout, in the order first written. Tool events keep the
+    call's first input field as `summary` (cut at 120 chars, the whole text in
+    `detail`), which for these tools is file_path. shortcut: NotebookEdit's
+    notebook_path isn't a summary key, so notebooks are missed; add it if a flow
+    ever writes one."""
     s = store.get_session(session_id) or {}
     root = os.path.realpath(_checkout(s))
     out: list[str] = []
@@ -60,6 +61,14 @@ def flow_files(session_id: str, since: int) -> list[str]:
         p = ev.get("detail") or ev.get("summary") or ""
         if root and os.path.isabs(p) and os.path.realpath(p).startswith(root + os.sep) and p not in out:
             out.append(p)
+    return out
+
+
+def flow_files(session_id: str, since: int) -> list[str]:
+    """written(), less what git can't carry: the files a carry moves."""
+    out = written(session_id, since)
+    s = store.get_session(session_id) or {}
+    root = os.path.realpath(_checkout(s))
     if out:   # git can't stash what it ignores (.mystical/, so the ticket files) or an untracked file gone again
         # quotePath=false, as git.py does: a C-quoted "caf\303\251" would never match (-z needs --stdin)
         ignored = set(git._run(root, "-c", "core.quotePath=false", "check-ignore", "--", *out)[1].splitlines())  # noqa: SLF001

@@ -811,3 +811,14 @@ def test_the_spec_beside_the_tickets_is_no_ticket(tmp_path):
     with open(os.path.join(d, "SPEC.md"), "w") as f:
         f.write("# 1: Problem Statement\n\n**Blocked by:** nothing\n")
     assert [t.n for t in tickets.parse_dir(d)] == ["01"]
+
+
+def test_build_takes_the_folder_this_flow_wrote(make_set):
+    s = make_set({"01": None}, build=False)
+    store.append_event(s.flow, "t-tk", {"type": "tool", "name": "Write", "summary": s.path("01")})
+    other = os.path.join(s.main, ".mystical", "tickets", "y")    # newer, from another session
+    os.makedirs(other)
+    _write(other, "01", "Not ours")
+    os.utime(os.path.join(other, "01-x.md"), (2e9, 2e9))
+    assert s.build() == "" and s.state["status"] == "building"
+    assert tickets.load(other) == {}

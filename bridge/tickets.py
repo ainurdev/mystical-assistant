@@ -237,6 +237,14 @@ def _on() -> bool:
     return paths.on() and aifeatures.enabled("ticketruns")
 
 
+def _flow_folder(flow_session_id: str, co: str, since: float) -> str:
+    """The ticket folder under `co` this flow's turns wrote last, else the newest one."""
+    root = os.path.join(co, ".mystical", "tickets")
+    mine = [os.path.basename(os.path.dirname(p)) for p in flowbranch.written(flow_session_id, since)
+            if os.path.dirname(os.path.dirname(os.path.realpath(p))) == os.path.realpath(root)]
+    return os.path.join(root, mine[-1]) if mine else _newest(root, since)
+
+
 def _newest(root: str, since: float) -> str:
     """The ticket folder under `root` whose newest .md was written last, at or after `since`."""
     best, at = "", since
@@ -256,15 +264,15 @@ def _newest(root: str, since: float) -> str:
 
 
 def start_build(flow_session_id: str, folder: str = "") -> str:
-    """BUILD: the newest ticket folder written since the flow's path began (or
-    `folder`, a stopped set built again) becomes a set on top of the feature branch,
+    """BUILD: the ticket folder this flow wrote since its path began (or `folder`,
+    a stopped set built again) becomes a set on top of the feature branch,
     and its first tickets start. "" once it is building, else why not; a set that
     can't build stops with a `tickets` notice."""
     sess = store.get_session(flow_session_id) or {}
     flow = paths.get(flow_session_id) or {}
     since = flow.get("at") or 0
     co = flowbranch._checkout(sess)  # noqa: SLF001
-    folder = folder or (_newest(os.path.join(co, ".mystical", "tickets"), since) if co else "")
+    folder = folder or (_flow_folder(flow_session_id, co, since) if co else "")
     if not folder:
         msg = "no ticket files were written since this path began"
         notices.emit("tickets", flow_session_id, body=f"BUILD stopped: {msg}.")
