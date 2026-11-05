@@ -206,9 +206,18 @@ def test_step_done_without_a_path_changes_nothing(server, flow_session):
     assert r["obj"] == {"text": "No path is running in this session."} and paths.get(flow_session) is None
 
 
-def test_bad_path_is_a_400(server, flow_session):
-    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "nope", "why": "x"})["code"] == 400
-    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "one", "why": "x"})["code"] == 400
+def test_a_bad_path_is_told_to_claude(server, flow_session):
+    # an HTTP error reaches Claude as "Could not reach the bridge"; the reason must get through
+    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "nope", "why": "x"}) == \
+        {"obj": {"text": "Path not recorded: unknown path 'nope'."}, "code": 200}
+    assert server.post("/local/flow/set", {"claude_session_id": "cf1", "path": "one", "why": "x"})["obj"] == \
+        {"text": "Path not recorded: path 'one' needs a skill."}
+    assert paths.get(flow_session) is None
+
+
+def test_a_full_skill_name_is_kept_short(state_dir):
+    paths.set_path("s1", "one", "review", "claude", skill="mattpocock-skills:code-review")
+    assert paths.get("s1")["skill"] == "code-review"
 
 
 def test_auto_route(server, flow_session):

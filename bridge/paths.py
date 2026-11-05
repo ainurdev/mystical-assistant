@@ -125,6 +125,7 @@ def _stations(flow: dict) -> list:
 def set_path(session_id: str, path: str, why: str, by: str, skill: "str | None" = None,
              done: "list | None" = None) -> dict:
     """`done`: stations already behind it (a path joined mid-way)."""
+    skill = (skill or "").removeprefix("mattpocock-skills:") or None   # the pack's full name, as PACK_TEXT asks
     if path != "one" and path not in PATHS:
         raise ValueError(f"unknown path {path!r}")
     if path == "one" and not skill:

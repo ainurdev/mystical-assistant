@@ -1485,8 +1485,8 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     paths.set_path(s["id"], p, str(body.get("why") or ""), "claude",
                                    str(body.get("skill") or "") or None)
-                except ValueError as e:
-                    return self._json({"error": str(e)}, 400)
+                except ValueError as e:   # an HTTP error would reach Claude as "Could not reach the bridge"
+                    return self._json({"text": f"Path not recorded: {e}."})
                 return self._json({"text": f"Path recorded: {p}."})
             if not paths.get(s["id"]):
                 return self._json({"text": "No path is running in this session."})
