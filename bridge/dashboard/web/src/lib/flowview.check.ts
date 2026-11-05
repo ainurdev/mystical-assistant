@@ -23,3 +23,21 @@ console.assert(none.stations.length === 0 && none.step === 0 && none.total === 0
 const one = { ...flow("one", []), skill: "research" };
 console.assert(flowView(one, []).stations[0].label === "research", "one path: labelled by its skill");
 console.assert(flowView({ ...one, done: ["research"] }, []).stations[0].state === "done", "one path: done matches the skill");
+
+// The ticket set behind BUILD and MERGE (GET /local/flow `set`), and the TICKETS switch.
+const atBuild = flow("feature", ["grill", "spec", "tickets"]);
+const building = { status: "building", tickets: { "01": { status: "done" }, "02": { status: "running" }, "03": { status: "queued" } } };
+const b = flowView(atBuild, [], building);
+console.assert(b.stations[3].state === "now" && b.stations[4].state === "auto", `building: BUILD runs (${b.stations.map((x) => x.state).join()})`);
+console.assert(b.note === "1 of 3 tickets done, 1 running", `building note: ${b.note}`);
+const m = flowView(flow("feature", ["grill", "spec", "tickets", "build"]), [], { status: "merging", tickets: {} });
+console.assert(m.stations[4].state === "now" && m.note === "one session merges the tickets", `merging: ${m.note}`);
+const stopped = flowView(atBuild, [], { status: "stopped", error: "cycle: #01 → #02 → #01", tickets: {} });
+console.assert(stopped.stations[3].state === "auto" && stopped.note === "stopped: cycle: #01 → #02 → #01", `stopped: ${stopped.note}`);
+console.assert(flowView(atBuild, [], null).note === undefined, "no set: no note");
+const off = flowView(atBuild, [], null, false);
+console.assert(off.stations[3].state === "you" && off.stations[3].who === "you", "TICKETS off: BUILD waits for you");
+console.assert(off.stations[4].who === "you", "TICKETS off: MERGE is yours too");
+console.assert(flowView(atBuild, [], building, false).stations[3].state === "now", "a set already building still shows running");
+console.assert(flowView(atBuild, [], { ...building, flow_at: 2 }).stations[3].state === "auto", "a set built for an earlier path is not this one's");
+console.assert(flowView(atBuild, [], { ...building, flow_at: 1 }).stations[3].state === "now", "the set this path built is");

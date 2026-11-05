@@ -1,5 +1,5 @@
 import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
-import type { Flow } from "./lib/flowview";
+import type { Flow, FlowSet } from "./lib/flowview";
 import type { BranchPr, BranchStatus } from "./lib/branchrows";
 
 // The dashboard server hands out a per-process token in the URL the user opens
@@ -1948,7 +1948,7 @@ export const api = {
         body: { disabled_tools: rules },
       }),
   // The FLOW tab: the session's skill path, and the switch that holds or releases its auto-start.
-  getFlow: (id: string) => req<{ flow: Flow | null }>(`/local/flow?session=${encodeURIComponent(id)}`),
+  getFlow: (id: string) => req<{ flow: Flow | null; set: FlowSet | null }>(`/local/flow?session=${encodeURIComponent(id)}`),
   setFlowAuto: (id: string, on: boolean) =>
     req<{ ok: boolean }>("/local/flow/auto", { method: "POST", body: { session: id, on } }),
   // The goal sheet's buttons: Mark done, Keep going, Edit. A bridge older than

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Check, Hand, Sparkles, Zap } from "lucide-react";
 import { api } from "../../api";
 import type { Turn } from "../../chat";
-import { flowView, type Flow, type StationState } from "../../lib/flowview";
+import { useAiFeatures } from "../../lib/ai";
+import { flowView, type Flow, type FlowSet, type StationState } from "../../lib/flowview";
 import { fmtTokens, dur } from "../../lib/week";
 import { FRAME, RULE } from "./TurnsPanel";
 import { RailHero } from "./RailHero";
@@ -16,19 +17,22 @@ const SAY: Record<StationState, string> = { done: "done", now: "running now", yo
  *  ahead. Reads GET /local/flow; the bridge owns the path, the panel only draws it. */
 export function FlowPanel({ sessionId, turns, ctxTokens }: { sessionId: string | null; turns: Turn[]; ctxTokens?: number }) {
   const [flow, setFlow] = useState<Flow | null>(null);
+  const [set, setSet] = useState<FlowSet | null>(null);
   const [now, setNow] = useState(() => Date.now() / 1000);
-  const running = turns.some((t) => t.status === "running");
-  // A path moves mid-turn (StepDone) and again when the turn ends: read it on a turn's edges, and every few seconds while one runs.
+  const ai = useAiFeatures();
+  // Tickets build and merge in sessions of their own: no turn here says when they move.
+  const busy = turns.some((t) => t.status === "running") || set?.status === "building" || set?.status === "merging";
+  // A path moves mid-turn (StepDone) and again when the turn ends: read it on a turn's edges, and every few seconds while one runs or its tickets do.
   useEffect(() => {
-    if (!sessionId) { setFlow(null); return; }
+    if (!sessionId) { setFlow(null); setSet(null); return; }
     let live = true;
-    const read = () => api.getFlow(sessionId).then((r) => { if (live) setFlow(r.flow); }).catch(() => {});
+    const read = () => api.getFlow(sessionId).then((r) => { if (live) { setFlow(r.flow); setSet(r.set ?? null); } }).catch(() => {});
     void read();
-    if (!running) return () => { live = false; };
+    if (!busy) return () => { live = false; };
     const id = setInterval(() => { setNow(Date.now() / 1000); void read(); }, 3000);
     return () => { live = false; clearInterval(id); };
-  }, [sessionId, running]);
-  const v = useMemo(() => flowView(flow, turns), [flow, turns]);
+  }, [sessionId, busy]);
+  const v = useMemo(() => flowView(flow, turns, set, !!ai.ticketruns), [flow, turns, set, ai.ticketruns]);
 
   const head = (
     <>
@@ -53,7 +57,7 @@ export function FlowPanel({ sessionId, turns, ctxTokens }: { sessionId: string |
   const cur = v.stations.find((s) => s.state === "now");
   const secs = v.nowTurn?.started ? Math.max(0, now - v.nowTurn.started) : null;
   const name = flow.path === "one" ? "one skill" : flow.path.replace(/-/g, " ");
-  const label = `${name} path, step ${v.step} of ${v.total}: ${v.stations.map((s) => `${s.label} ${SAY[s.state]}`).join(", ")}. Auto ${flow.auto ? "on" : "held"}.`;
+  const label = `${name} path, step ${v.step} of ${v.total}: ${v.stations.map((s) => `${s.label} ${SAY[s.state]}`).join(", ")}.${v.note ? ` ${v.note}.` : ""} Auto ${flow.auto ? "on" : "held"}.`;
   const toggle = () => {
     const on = !flow.auto;
     setFlow({ ...flow, auto: on });
@@ -84,8 +88,8 @@ export function FlowPanel({ sessionId, turns, ctxTokens }: { sessionId: string |
           ))}
         </ol>
         <div className="fl-cap">
-          {cur ? <><i className="fl-dot" /><b>{cur.label}</b><span>{secs != null ? `${dur(secs)} running` : "running"}</span></>
-            : at && at.state !== "done" ? <><b>{at.label}</b><span>{at.who === "you" ? "waits for you" : flow.auto ? "starts after this turn" : "held"}</span></>
+          {cur ? <><i className="fl-dot" /><b>{cur.label}</b><span>{v.note ?? (secs != null ? `${dur(secs)} running` : "running")}</span></>
+            : at && at.state !== "done" ? <><b>{at.label}</b><span>{v.note ?? (at.who === "you" ? "waits for you" : flow.auto ? "starts after this turn" : "held")}</span></>
             : <span>path complete</span>}
         </div>
       </RailHero>
@@ -98,8 +102,9 @@ export function FlowPanel({ sessionId, turns, ctxTokens }: { sessionId: string |
           <div className="fl-now">
             <div className="t"><span className="n">{cur.label}</span>{cur.skill && <span className="cmd">/{cur.skill}</span>}
               {cur.who === "auto" && <span className="r fl-pill on"><Zap size={10} strokeWidth={2.4} aria-hidden /> BY ITSELF</span>}</div>
-            {v.nowTurn?.activity && <div className="act"><i>now</i> {v.nowTurn.activity}</div>}
-            <div className="chips">{cur.skill && <span className="fl-pill">{cur.skill}</span>}<span className="fl-pill">{v.nowTurn?.tools ?? 0} tools</span></div>
+            {v.note ? <div className="act">{v.note}</div>
+              : v.nowTurn?.activity && <div className="act"><i>now</i> {v.nowTurn.activity}</div>}
+            {!v.note && <div className="chips">{cur.skill && <span className="fl-pill">{cur.skill}</span>}<span className="fl-pill">{v.nowTurn?.tools ?? 0} tools</span></div>}
           </div>
         )}
         {ahead.filter((s) => s !== cur).map((s) => (
