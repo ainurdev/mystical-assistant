@@ -7744,3 +7744,22 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tr-send .tr-n { color: var(--acc2, var(--acc)); font-weight: 700; }
 .tr-send:hover .tr-av, .tr-send:focus-visible .tr-av { background: color-mix(in srgb, var(--acc) 18%, transparent); }
 .tr-cap { height: 14px; margin-top: 4px; font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* UsageRing: the Usage hero. Amber is the 5-hour window, accent the week's days. */
+.ur-range { font-size: var(--t9); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.ur-total { margin-left: auto; flex: none; font-size: 15px; font-weight: 800; color: var(--txb); }
+.ur { display: flex; align-items: flex-start; gap: 14px; margin-top: 4px; height: 82px; }
+.ur-ring { position: relative; flex: none; width: 60px; height: 60px; }
+.ur-trk { fill: none; stroke: color-mix(in srgb, var(--txl) 22%, transparent); stroke-width: 5; }
+.ur-arc { fill: none; stroke: var(--warn); stroke-width: 5; stroke-linecap: round; }
+.ur-in { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.1; }
+.ur-in b { font-size: 13px; font-weight: 800; color: var(--txb); }
+.ur-in i { font-style: normal; font-size: 8px; letter-spacing: .02em; color: var(--txl); }
+.ur-rs { position: absolute; left: 50%; transform: translateX(-50%); top: 64px; font-size: var(--t9); color: var(--txd); white-space: nowrap; }
+.ur-bars { flex: 1; min-width: 0; height: 100%; display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; align-items: end; }
+.ur-bars > span { display: flex; flex-direction: column; align-items: stretch; gap: 4px; }
+.ur-bars i { display: block; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--acc) 38%, transparent); }
+.ur-bars em { font-style: normal; font-size: var(--t9); font-weight: 600; text-align: center; color: var(--txl); }
+.ur-bars .on i { background: var(--acc); }
+.ur-bars .on em { color: var(--txb); }
+.us-cap { margin-top: -4px; }
+.us-cap .us-sub { display: block; }

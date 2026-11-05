@@ -1,11 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarDays, ChevronDown, ChevronRight, Clock, Copy, GitBranch, LayoutGrid, MessageSquare } from "lucide-react";
+import { CalendarDays, ChevronDown, ChevronRight, Copy, GitBranch } from "lucide-react";
 import { api, type WeeklyReport } from "../../api";
 import { projectName, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
 import { ProjectTile } from "../ui/ProjectTile";
 import { notify } from "./Notifications";
 import { daysOf, dur, fmtTokens, pct, timesheet } from "../../lib/week";
+import { todayIndex } from "../../lib/usagering";
+import type { Window } from "../../models";
+import { UsageRing } from "./UsageRing";
 
 /** The USAGE tab (drafts/usage-rail): where the week went. It replaced the week
  *  report that hung off the brand cap as a popover over the sessions list.
@@ -40,21 +43,12 @@ function Fold({ title, em, acts, closed, onToggle, children }: {
   );
 }
 
-function Cell({ icon, value, label, t }: { icon: ReactNode; value: ReactNode; label: string; t?: string }) {
-  return (
-    <div className={`gp-roc${t ? ` ${t}` : ""}`}>
-      <b>{icon}<span>{value}</span></b><span>{label}</span>
-    </div>
-  );
-}
-
-export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => void }) {
+export function UsagePanel({ onOpenProject, win }: { onOpenProject: (rel: string) => void; win: Window | null }) {
   const [back, setBack] = useState(0);
   const [rep, setRep] = useState<WeeklyReport | null>(null);
   // A bridge still running pre-restart code has no /local/report route: say
   // "restart" instead of spinning forever.
   const [stale, setStale] = useState(false);
-  const [pick, setPick] = useState<number | null>(null);
   const [all, setAll] = useState(false);
   const [wkClosed, setWkClosed] = useStickyFlag("usage-week-closed");
   const [pjClosed, setPjClosed] = useStickyFlag("usage-projects-closed");
@@ -64,7 +58,6 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
   useEffect(() => {
     let live = true;
     setRep(null);
-    setPick(null);
     const load = () => api.report(back)
       .then((r) => { if (live) { setRep(r); setStale(false); } })
       .catch(() => { if (live) setStale(true); });
@@ -75,8 +68,6 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
 
   const days = rep ? daysOf(rep) : [];
   const today = new Date().toLocaleDateString("sv-SE");
-  const peak = Math.max(...days.map((d) => d.elapsed), 1);
-  const day = pick !== null ? days[pick] : null;
   const t = rep?.totals;
   const share = (n: number) => (t?.elapsed ? Math.round((100 * n) / t.elapsed) : 0);
   const top = rep?.projects[0]?.elapsed || 1;
@@ -91,43 +82,18 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
       .catch(() => notify("error", "Couldn't reach the clipboard."));
   };
 
+  const hero = <UsageRing win={win} range={range} back={back > 0} elapsed={t ? t.elapsed : null}
+    days={days} todayIdx={days.length ? todayIndex(today, days[0].key) : -1} />;
   const week = () => {
     if (stale) return <div className="us-note">the bridge needs a restart before it can answer this</div>;
     if (!rep || !t) return <div className="us-note">reading…</div>;
     if (!rep.projects.length) return <div className="us-note">nothing ran {back ? "last" : "this"} week</div>;
     return (
-      <div className="gp-rd">
-        <div className="gp-ro">
-          <Cell icon={<Clock size={14} strokeWidth={2.2} />} value={dur(day ? day.elapsed : t.elapsed)} label="agent time" t="on" />
-          <Cell icon={<MessageSquare size={14} strokeWidth={2.2} />} value={day ? day.turns : t.turns} label="turns" />
-          {day ? <Cell icon={<LayoutGrid size={14} strokeWidth={2.2} />} value={`${share(day.elapsed)}%`} label="of the week" />
-            : <Cell icon={<LayoutGrid size={14} strokeWidth={2.2} />} value={t.sessions} label="sessions" />}
-        </div>
-        <div className="us-sub">
-          {day ? <span>{day.date.toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })} · <b>{day.turns}</b> turns · <b>{dur(day.elapsed)}</b> agent time</span>
-            : rep.prev.turns > 0 ? <span>vs the week before: {rep.prev.elapsed > 0 && <><b>{pct(t.elapsed, rep.prev.elapsed)}</b> time · </>}<b>{pct(t.turns, rep.prev.turns)}</b> turns</span>
-            : null}
-        </div>
-        <div className="us-days">
-          {days.map((d) => {
-            const future = d.key > today;
-            return (
-              <button key={d.key} type="button" className="us-day" disabled={future}
-                data-today={d.key === today || undefined} data-future={future || undefined}
-                data-pick={pick === d.i || undefined} data-dim={(pick !== null && pick !== d.i) || undefined}
-                title={`${d.key} — ${plural(d.turns, "turn")} · ${dur(d.elapsed)}`}
-                onClick={() => setPick((p) => (p === d.i ? null : d.i))}>
-                <em>{future ? "" : d.elapsed ? dur(d.elapsed) : "0"}</em>
-                <i style={{ height: future ? 4 : Math.max(3, Math.round((d.elapsed / peak) * 46)) }} />
-                <span>{d.label}</span>
-              </button>
-            );
-          })}
-        </div>
+      <div className="us-cap">
+        {rep.prev.turns > 0 && <div className="us-sub">vs the week before: {rep.prev.elapsed > 0 && <><b>{pct(t.elapsed, rep.prev.elapsed)}</b> time · </>}<b>{pct(t.turns, rep.prev.turns)}</b> turns</div>}
         <div className="us-today">
           <CalendarDays size={12} strokeWidth={2} />
-          {day ? <span>tap the day again for the whole week</span>
-            : back ? <span>tap a day for its numbers</span>
+          {back ? <span><b>{t.turns}</b> turns · <b>{t.sessions}</b> sessions</span>
             : <span>today <b>{days.find((d) => d.key === today)?.turns ?? 0}</b> turns · <b>{dur(days.find((d) => d.key === today)?.elapsed ?? 0)}</b> agent time</span>}
         </div>
       </div>
@@ -148,7 +114,7 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
               <button type="button" aria-pressed={back === 1} onClick={() => setBack(1)}>Last</button>
             </span>
           }>
-          {week()}
+          <div className="gp-rd">{hero}{week()}</div>
         </Fold>
 
         {rep && rep.projects.length > 0 && (

@@ -26,7 +26,7 @@ import {
   type TeamOverview,
   type InstallStep,
 } from "./api";
-import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot } from "./models";
+import { modelOptions, latestPerFamily, runPicks, snapModel, DEFAULT_SLOT, loginUsage, spendingSlot, chipWindow, loginWindows } from "./models";
 import type { ProfilesInfo } from "./lib/profiles";
 import { agentPickers, NO_PICKS, sendPicks, setAgentLabels } from "./lib/agents";
 import { activeOf, mergeDelta, type Turn } from "./chat";
@@ -2450,7 +2450,7 @@ export function App() {
     {
       id: "usage", label: "Usage", icon: <Gauge {...RAIL} />, ownScroll: true,
       render: () => (
-        <UsagePanel onOpenProject={(rel) => openAnalyze(rel)} />
+        <UsagePanel onOpenProject={(rel) => openAnalyze(rel)} win={chipWindow(loginWindows(spender))} />
       ),
     },
   ];
