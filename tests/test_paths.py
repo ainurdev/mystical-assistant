@@ -334,3 +334,18 @@ def test_typed_flow_command_joins_its_path(state_dir):
     assert paths.get("s9")["path"] == "bug"       # already on a path
     paths.on_turn_start("s8", "fix the typo")
     assert paths.get("s8") is None
+
+
+def test_flow_step_wins_over_an_active_goal(fake_queue, flow_job_with_next, monkeypatch):
+    from bridge import goals
+    monkeypatch.setattr(goals, "continue_after_turn",
+                        lambda job, effort=None: fake_queue.items.append({"prompt": "goal"}) or True)
+    assert runner._continue_after_turn(flow_job_with_next) is True    # noqa: SLF001
+    assert [i["prompt"] for i in fake_queue.items] == ["/mattpocock-skills:to-spec"]
+
+
+def test_waiting_session_queues_nothing(fake_queue, flow_job_with_next, monkeypatch):
+    from bridge import waits
+    monkeypatch.setattr(waits, "waiting", lambda sid: True)
+    assert paths.continue_after_turn(flow_job_with_next) is False
+    assert paths.advance("f1", "spec") is False and not fake_queue.items

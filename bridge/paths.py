@@ -239,6 +239,9 @@ def continue_after_turn(job, effort=None) -> bool:
             return False
         if not on() or not aifeatures.enabled("nextstep"):
             return False
+        from bridge import waits
+        if waits.waiting(sid):        # it waits on another session; its wake-up is the next turn
+            return False
         flow = get(sid)
         nxt = flow and flow["next"]
         if not nxt or not flow["auto"] or nxt["turn_id"] != job.id:
@@ -253,7 +256,8 @@ def advance(session_id: str, station: str) -> bool:
     """`station` finished elsewhere (MERGE in its own session): mark it done here
     and start this flow's next step."""
     try:
-        if not on() or not aifeatures.enabled("nextstep"):
+        from bridge import waits
+        if not on() or not aifeatures.enabled("nextstep") or waits.waiting(session_id):
             return False
         with _lock:
             _load_locked()

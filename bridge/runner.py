@@ -801,6 +801,13 @@ INTERRUPT_GRACE = 5.0   # seconds to wait for a graceful interrupt before SIGTER
 INTERRUPT_KILL = 2.0    # seconds after SIGTERM before SIGKILL
 
 
+def _continue_after_turn(job, effort=None) -> bool:
+    """The flow's recorded next step goes first; a goal re-prompts at the end of
+    that step's turn instead, so one turn end never queues two."""
+    from bridge import goals  # local import: runner<->* cycle
+    return paths.continue_after_turn(job, effort) or goals.continue_after_turn(job, effort)
+
+
 class Job:
     def __init__(self, job_id: str, chat_id: int, store_session_id: str | None = None):
         self.id = job_id
@@ -3066,9 +3073,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # limit-parked turn is picked up by the ladder rather than raced by
             # a nudge that would run against the same exhausted account. The
             # nudge reads the session's model and mode when it starts.
-            from bridge import goals  # local import: runner<->* cycle
-            resumed = goals.continue_after_turn(job, effort) or resumed
-            resumed = paths.continue_after_turn(job, effort) or resumed
+            resumed = _continue_after_turn(job, effort) or resumed
         if not job.interrupted and job.status == "done" and job.store_session_id:
             _graph_refresh_after_turn(job.chat_id, cwd)
         if not job.interrupted and not resumed and not restart_killed:
