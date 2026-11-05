@@ -117,6 +117,30 @@ def _abs_within(path: str) -> str | None:
     return cand if browser.within_base(cand) and os.path.isdir(cand) else None
 
 
+def _reveal_target(path) -> str | None:
+    """The real path behind an absolute one the OS file manager may be shown, or
+    None. The roots are the ones the dashboard already serves files from: the
+    editor reads any tree under BASE_PATH, and UPLOAD_DIR (the attachments) sits
+    inside it. exists() comes first because realpath() raises on a NUL byte."""
+    if not isinstance(path, str) or not os.path.isabs(path) or not os.path.exists(path):
+        return None
+    real = os.path.realpath(path)
+    return real if browser.within_base(real) else None
+
+
+def _reveal_argv(real: str) -> list[str]:
+    """The file manager's command for a checked path: an argv, never a shell."""
+    if sys.platform == "darwin":
+        return ["open", "-R", real]    # -R selects it in Finder; plain `open` would launch it
+    from bridge import startup
+    if startup._wsl():                 # a Windows bridge runs in WSL: hand Explorer a Windows path
+        win = subprocess.run(["wslpath", "-w", real], capture_output=True, text=True,
+                             timeout=10, check=True).stdout.strip()
+        # Windows exes aren't on a WSL PATH (startup._POWERSHELL says the same).
+        return ["/mnt/c/Windows/explorer.exe", "/select,", win]
+    return ["xdg-open", os.path.dirname(real)]
+
+
 def _server_cwd(chat, body) -> str:
     """The run directory a dev-server request targets: an absolute
     worktree cwd if given, else a project rel, else the chat's active project.
@@ -674,7 +698,8 @@ class Handler(BaseHTTPRequestHandler):
             if cwd is None:
                 return self._json({"error": "invalid project"}, 400)
             return self._json({"files": git.list_tree(cwd),
-                               "ignored": git.ignored_paths(cwd)})
+                               "ignored": git.ignored_paths(cwd),
+                               "root": cwd})   # absolute, for Show in Finder
         if path == "/local/files/read":
             cwd = _worktree_cwd(qs.get("project", [None])[0],
                                 (qs.get("branch", [""])[0] or "").strip())
@@ -1669,6 +1694,14 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 return self._json({"error": "unknown op"}, 400)
             return self._json({"ok": ok, "path": output} if ok else {"ok": False, "error": output})
+        if path == "/local/files/reveal":
+            # Right-click › Show in Finder: a file the dashboard shows, in the OS file manager
+            real = _reveal_target(body.get("path"))
+            if real is None:
+                return self._json({"error": "no such file in the workspace"}, 404)
+            subprocess.Popen(_reveal_argv(real), start_new_session=True, stdin=subprocess.DEVNULL,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return self._json({"ok": True})
         if path == "/local/github/issue":
             abs_p = _abs_project(body.get("project"))
             if abs_p is None:
