@@ -599,6 +599,14 @@ def set_work_cwd(session_id: str, path: "str | None") -> None:
         c.execute("UPDATE sessions SET work_cwd=? WHERE id=?", (path, session_id))
 
 
+def rehome(session_id: str, project: str, cwd: str) -> None:
+    """File a session under the tree it moved into once the dir it started in is
+    gone: that tree becomes its project and cwd, and the detour ends."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET project=?, cwd=?, work_cwd=NULL WHERE id=?",
+                  (project, cwd, session_id))
+
+
 def set_ref(session_id: str, ref: str) -> None:
     """File a plugin run's session under the job that started it (see init)."""
     with closing(_connect()) as c:

@@ -238,6 +238,31 @@ def test_brief_falls_back_when_the_worktree_is_gone(repo):
     assert brief["work_cwd"] is None
 
 
+def test_list_refiles_a_session_whose_own_tree_was_removed(monkeypatch):
+    """A session that moved into another tree, then removed the one it started in,
+    stays in the dashboard list, re-filed under the tree it moved into."""
+    from bridge import config
+    from bridge.dashboard import server as dash
+    monkeypatch.setattr(dash.native, "refresh", lambda chat: 0)
+    base = os.path.join(config.BASE_PATH, ".worktrees", "rehome-proj")
+    moved = os.path.join(base, "new")
+    os.makedirs(moved)
+    try:
+        s = store.create_session(config.DASH_CHAT_ID, "/.worktrees/rehome-proj/old",
+                                 origin="dashboard", cwd=os.path.join(base, "old"))
+        store.set_work_cwd(s["id"], moved)
+        h, box = dash.Handler.__new__(dash.Handler), {}
+        h._json = lambda obj, code=200: box.update(obj=obj)
+        h._get_api("/local/sessions", {})
+        listed = {b["id"]: b for b in box["obj"]["sessions"]}
+        assert listed[s["id"]]["project"] == "/.worktrees/rehome-proj/new"
+        row = store.get_session(s["id"])
+        assert (row["project"], row["cwd"], row["work_cwd"]) == (
+            "/.worktrees/rehome-proj/new", moved, None)
+    finally:
+        shutil.rmtree(base, ignore_errors=True)
+
+
 def test_relocate_clears_the_detour(repo):
     s = store.create_session(555, "/proj", origin="test", cwd=repo["proj"])
     store.set_work_cwd(s["id"], repo["wt"])
