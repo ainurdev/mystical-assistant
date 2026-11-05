@@ -273,8 +273,9 @@ def start_build(flow_session_id: str, folder: str = "") -> str:
         was = load(folder).get("status")
         if was not in (None, "stopped"):
             return f"{slug} is already {was}"
-        st = {"slug": slug, "parent_session": flow_session_id, "checkout": co, "feature_branch": "",
-              "feature_checkout": "", "status": "building", "tickets": {}, "merge_session": ""}
+        # flow_at: the flow's path this set builds for; a new path there is left alone
+        st = {"slug": slug, "parent_session": flow_session_id, "flow_at": flow.get("at"), "checkout": co,
+              "feature_branch": "", "feature_checkout": "", "status": "building", "tickets": {}, "merge_session": ""}
         try:
             tks = parse_dir(folder)
             order(tks)
@@ -403,7 +404,7 @@ def tick(folder: str) -> None:
         save(folder, st)
         if all(t["status"] == "done" for t in tks.values()):
             # only now: FLOW shows BUILD running while tickets build, and after MERGE comes RETRO
-            paths.mark_done(st["parent_session"], "build")
+            paths.mark_done(st["parent_session"], "build", st.get("flow_at"))
             start_merge(folder)
 
 
@@ -475,7 +476,7 @@ def _merge_turn(job) -> None:
             return
         save(folder, st)
     if st["status"] == "merged":
-        paths.advance(st["parent_session"], "merge")
+        paths.advance(st["parent_session"], "merge", st.get("flow_at"))
 
 
 def merged_count(st: dict) -> int:

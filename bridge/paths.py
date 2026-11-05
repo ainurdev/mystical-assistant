@@ -359,25 +359,27 @@ def continue_after_turn(job, effort=None) -> bool:
         return False
 
 
-def mark_done(session_id: str, station: str) -> None:
+def mark_done(session_id: str, station: str, at: "int | None" = None) -> None:
     """`station` is done without a turn of its own here (BUILD runs in ticket
-    sessions): mark it, start nothing. Idempotent; step_done counts turns instead."""
+    sessions): mark it, start nothing. Idempotent; step_done counts turns instead.
+    `at`: only while the session is still on the path that began then."""
     with _lock:
         _load_locked()
         f = _cache.get(session_id)
-        if f and station not in f["done"]:
+        if f and (at is None or f["at"] == at) and station not in f["done"]:
             f["done"].append(station)
             _save_locked()
 
 
-def advance(session_id: str, station: str) -> bool:
+def advance(session_id: str, station: str, at: "int | None" = None) -> bool:
     """`station` finished elsewhere (MERGE in its own session): mark it done here,
-    whatever the switches say, then start this flow's next step if they allow it."""
+    whatever the switches say, then start this flow's next step if they allow it.
+    `at`: only while the session is still on the path that began then."""
     try:
         with _lock:
             _load_locked()
             f = _cache.get(session_id)
-            if not f:
+            if not f or at is not None and f["at"] != at:
                 return False
             if station not in f["done"]:
                 f["done"].append(station)

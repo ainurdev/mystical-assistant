@@ -733,3 +733,34 @@ def test_a_stopped_set_builds_again_from_its_build_action(make_set, tmp_path):
     assert _dpost("/local/tickets/build", {"folder": s.folder})["obj"] == {"text": "Building."}
     assert s.state["status"] == "building" and s.running() == ["01", "05"]
     assert _dpost("/local/tickets/build", {"folder": s.folder})["obj"] == {"text": "x is already building"}
+
+
+def _merge_for_real(s):
+    """What the merge session does: every ticket branch onto the feature branch."""
+    st = s.state
+    for t in st["tickets"].values():
+        _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", t["branch"])
+
+
+def test_an_old_set_leaves_a_new_path_in_its_flow_session_alone(make_set, monkeypatch):
+    import time
+    from bridge import queue_manager
+    q = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append(kw["prompt"]))
+    s = make_set({"01": None}, build=False)
+    for t in ("a", "b", "c"):
+        paths.step_done(s.flow, t)                 # build is next
+    assert s.build() == ""
+    real = time.time
+    monkeypatch.setattr(time, "time", lambda: real() + 100)
+    paths.set_path(s.flow, "bug", "a new crash", "claude")      # the flow session moved on
+    monkeypatch.setattr(time, "time", real)
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
+    s.finish("01")                                 # BUILD done, merge starts
+    _merge_for_real(s)
+    sid = s.state["merge_session"]
+    paths.step_done(sid, store.latest_turn_id(sid))
+    tickets.after_turn(_merge_job(s))
+    assert s.state["status"] == "merged"
+    f = paths.get(s.flow)
+    assert (f["path"], f["done"], f["next"]) == ("bug", [], None) and not q
