@@ -49,6 +49,8 @@ export function stepRow(rows: TurnRow[], root: HTMLElement | null, nav: Transcri
 // The right rail's panel frame, as GitPanel and UsagePanel draw it.
 const FRAME = { border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)",
   display: "flex", flexDirection: "column", flex: 1, minHeight: 0 } as const;
+// The rule under the header, as the other tabs draw it: the hero's top edge starts right under it.
+const RULE = { height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" } as const;
 const CUT: Record<Resume, string> = { limit: "usage limit", restart: "restart", error: "error" };
 const AFTER: Record<Resume, string> = { limit: "the usage limit", restart: "a bridge restart", error: "an error" };
 const day = (sec: number) => new Date(sec * 1000).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
@@ -147,7 +149,8 @@ export function TurnsPanel({
     return (
       <div className="panel gp tn" style={FRAME}>
         <div className="gp-head"><span className="gp-title">TURNS</span></div>
-        <div className="gp-rd"><TurnClock rows={[]} now={now} range="this session" pill={null} say="" /></div>
+        <div style={RULE} />
+        <TurnClock rows={[]} now={now} range="this session" pill={null} say="" />
         <div className="tn-none">no turns yet — speak, and the first lands here.</div>
       </div>
     );
@@ -191,6 +194,7 @@ export function TurnsPanel({
         <button className={`gp-ib${following ? " on" : ""}`} title={following ? "on the latest turn" : "go to the latest turn"}
           aria-label="go to the latest turn" onClick={onLatest}><ListEnd size={14} /></button>
       </div>
+      <div style={RULE} />
       {find !== null ? (
         <>
           <label className="tn-find">
@@ -203,7 +207,7 @@ export function TurnsPanel({
           <div className="tn-hint"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>↵</kbd> jump · <kbd>esc</kbd> close</div>
         </>
       ) : (
-        <div className="gp-rd"><TurnClock rows={rows} now={now} range={range} pill={pill} say={say} /></div>
+        <TurnClock rows={rows} now={now} range={range} pill={pill} say={say} />
       )}
       <div ref={listRef} className="mscroll tn-list"
         onWheel={() => { browsed.current = Date.now(); }} onPointerDown={() => { browsed.current = Date.now(); }}>
@@ -259,7 +263,7 @@ export function TurnsPanel({
 }
 
 /** Where the session's time went, by kind — the part of the old header TIME
- *  readout this tab didn't already have (its Working cell is the total, the rows
+ *  readout this tab didn't already have (the hero's caption is the total, the rows
  *  each turn's time). Pinned under the list, always in view; a tap raises the
  *  tools that took it and the tokens over the list's foot (drafts/usage-time,
  *  B · DOCK). Loads per session and as a turn starts or ends; polls only while

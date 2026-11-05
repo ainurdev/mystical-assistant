@@ -27,7 +27,7 @@ export function TurnClock({ rows, now, range, pill, say }: {
     ? `${rows.length} ${rows.length === 1 ? "turn" : "turns"}, ${dur(work)} working, ${asks} ${asks === 1 ? "ask" : "asks"}. ${say}`
     : "No turns yet";
   return (
-    <RailHero label={label} top={<><span className="tc-range">{range}</span><span className="tc-right">{pill}</span></>}>
+    <RailHero label={label} top={<><span className="rh-k">{range}</span><span className="tc-right">{pill}</span></>}>
       <div className="tc">
         <div className="tc-strip">
           {c.blocks.map((b, i) => {

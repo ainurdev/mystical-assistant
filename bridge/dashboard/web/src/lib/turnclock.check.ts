@@ -2,7 +2,7 @@
 import { turnClock } from "./turnclock.ts";
 
 const at = (h: number, m: number, d = 5) => new Date(2026, 10, d, h, m).getTime() / 1000;
-const MIN = 4 / 275;
+const MIN = 0;   // the visible floor is CSS now
 
 const now = at(17, 25);
 const c = turnClock([
@@ -22,7 +22,7 @@ console.assert(one.blocks.length === 1 && one.blocks[0].w >= MIN && one.blocks[0
 
 const many = Array.from({ length: 60 }, (_, i) => ({ started: at(9, 0) + i * 4320, secs: 30, asks: 0, running: false }));
 const m = turnClock(many, at(9, 0) + 3 * 86400);
-console.assert(m.blocks.length === 60 && m.blocks.every((b) => b.w >= MIN && b.x + b.w <= 1 + 1e-9), "60 turns: none under 4px");
+console.assert(m.blocks.length === 60 && m.blocks.every((b) => b.w >= MIN && b.x + b.w <= 1 + 1e-9), "60 turns: all inside the strip");
 console.assert(m.ticks.length >= 2 && m.ticks.every((t) => !/:/.test(t.label)), `60 turns: day ticks, got ${m.ticks.map((t) => t.label)}`);
 
 console.assert(turnClock([], now).blocks.length === 0, "none: nothing");
