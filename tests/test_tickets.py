@@ -863,3 +863,19 @@ def test_ticket_endpoints_show_only_the_chats_own_sets(make_set, monkeypatch):
     assert box["obj"] == {"sets": []}
     for p in ("/local/tickets/retry", "/local/tickets/cleanup", "/local/tickets/build"):
         assert _dpost(p, {"folder": s.folder, "n": "01"}, chat=2)["code"] == 404, p
+
+
+def test_a_ticket_file_without_its_header_raises(tmp_path):
+    d = str(tmp_path)
+    _write(d, "01", "A")
+    with open(os.path.join(d, "02-b.md"), "w") as f:
+        f.write("## 2. B\n\n**Blocked by:** None\n")
+    with pytest.raises(tickets.TicketError, match=r"02-b\.md has no '# NN: Title' line"):
+        tickets.parse_dir(d)
+
+
+def test_checkboxes_under_an_empty_label_are_no_blockers(tmp_path):
+    for sub in ("a", "b"):
+        (tmp_path / sub).mkdir()
+    assert _t4(tmp_path / "a", "# 04: D\n\n**Blocked by:**\n\n- [ ] it works\n- [x] tested\n").blocked_by == ()
+    assert _t4(tmp_path / "b", "# 04: D\n\n**Blocked by:**\n- #1\n- [ ] it works\n").blocked_by == ("01",)

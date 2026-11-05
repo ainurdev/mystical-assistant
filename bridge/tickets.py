@@ -86,7 +86,7 @@ _BLOCK = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?blocked by(?:\*\*[ \t]*:|[
                     re.M | re.I)
 _TAIL = re.compile(r"(?:\.+|\s*\([^)]*\))+\s*$")
 _NUM = re.compile(r"^#?(\d{1,2})$")
-_ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(.+?)\s*$")
+_ITEM = re.compile(r"^[ \t]*(?:[-*+]|\d+[.)])[ \t]+(?!\[[ xX]\])(.+?)\s*$")   # a checkbox is no ref
 _SPLIT = re.compile(r"\s*,\s*|\s+and\s+", re.I)
 
 
@@ -99,8 +99,8 @@ def parse_dir(folder: str) -> list:
         with open(path, encoding="utf-8") as f:
             text = f.read()
         h = _HEAD.search(text)
-        if not h:
-            continue
+        if not h:   # silently skipped, a ticket would vanish from the set
+            raise TicketError(f"{name} has no '# NN: Title' line")
         b = _BLOCK.search(text)
         val = b.group(1).strip().strip("*").strip() if b else ""
         if b and not val:   # refs may be a list on the lines under the label
@@ -113,7 +113,7 @@ def parse_dir(folder: str) -> list:
             val = ", ".join(items)
         refs = [] if not val or val.lower().startswith("none") else \
             [r for r in (_TAIL.sub("", x.strip()).strip()
-                         for x in _SPLIT.split(re.sub(r"\([^)]*\)", "", val) + "")) if r]
+                         for x in _SPLIT.split(re.sub(r"\([^)]*\)", "", val))) if r]
         if val and not val.lower().startswith("none") and not refs:
             raise TicketError(f"#{h.group(1).zfill(2)} has an unreadable Blocked by: {val!r}")
         if any(r[0] == h.group(1).zfill(2) for r in raw):
