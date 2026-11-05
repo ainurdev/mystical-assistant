@@ -47,11 +47,12 @@ Never twice: a ticket gets its session_id in set.json before its first turn star
 tick starts as new only tickets that never had one (`queued`, or `missing` once its
 file is back), and it runs one with a session again only when retry() asked (`retry`).
 boot() judges what a restart left unheard: a running ticket whose session sits idle,
-and isn't parked, ended its turn (or never got one) while nothing listened. With
-nothing left to drive it, it is done or `fix`, even one that was waiting on you. A set
-builds once: a finished one would start every ticket again, so only a new set or one
-that stopped before building starts, and the flow's BUILD is marked done as it does, so
-the step after MERGE is RETRO. One lock serializes tick and every set.json write, since
+and isn't parked, ended its turn (or never got one) while nothing listened, and is
+judged as at a turn end; one that ended without StepDone keeps its slot, waiting on
+you, as it would have. A set builds once: a finished one would start every ticket
+again, so only a new set or one that stopped before building starts. The flow's BUILD
+is marked done once the last ticket is, so FLOW shows it running while tickets build
+and the step after MERGE is RETRO. One lock serializes tick and every set.json write, since
 turn ends arrive on several threads at once; it is held across git and session
 creation, which takes seconds only when tickets are starting.
 """
@@ -292,7 +293,6 @@ def start_build(flow_session_id: str) -> str:
                                "worktree": "", "session_id": "", "base": ""} for t in tks}
         save(folder, st)
         register(folder, sess.get("project") or "", slug)
-        paths.mark_done(flow_session_id, "build")   # else the flow's next step after MERGE is BUILD again
         tick(folder)
     return ""
 
@@ -401,6 +401,8 @@ def tick(folder: str) -> None:
                 _start_ticket(folder, st, n)
         save(folder, st)
         if all(t["status"] == "done" for t in tks.values()):
+            # only now: FLOW shows BUILD running while tickets build, and after MERGE comes RETRO
+            paths.mark_done(st["parent_session"], "build")
             start_merge(folder)
 
 
@@ -508,9 +510,9 @@ def retry(folder: str, n: str) -> str:
 
 def boot() -> None:
     """After a restart: judge every running ticket whose session sits idle and isn't
-    parked (its turn ended, or never began, while nothing listened): done, or fix,
-    since nothing is left to drive it. Then tick each building set. Nothing here
-    starts a ticket that has a session; only retry() does."""
+    parked (its turn ended, or never began, while nothing listened) as at a turn end:
+    done, fix, or still running and waiting on you. Then tick each building set.
+    Nothing here starts a ticket that has a session; only retry() does."""
     for r in sets():
         folder = r.get("folder")
         try:
@@ -523,7 +525,7 @@ def boot() -> None:
                     if t["status"] != "running" or not sid or store.running_turn_id(sid) or sid in limits.parked():
                         continue
                     last = (store.last_turn(sid) or {}).get("status") or "error"   # no turn at all: never began
-                    _settle(st, n, _verdict(st, t, last) or "fix")
+                    _settle(st, n, _verdict(st, t, last) or "running")
                 save(folder, st)
                 tick(folder)
         except Exception as e:  # noqa: BLE001 — one bad set never stops the boot

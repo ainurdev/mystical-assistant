@@ -520,13 +520,22 @@ def test_boot_fixes_a_ticket_whose_turn_never_began(make_set):
     assert s.status("01") == "fix" and s.start_calls("01") == 1
 
 
-def test_boot_fixes_an_idle_ticket_without_step_done(make_set):
+def test_boot_keeps_an_idle_ticket_without_step_done_waiting(make_set):
     s = make_set({"01": None})
     s.commit("01")
     store.finish_turn(store.latest_turn_id(s.sid("01")), "done", 0, 1)    # ended, no StepDone, unheard
     paths._cache.clear()
     tickets.boot()
-    assert s.status("01") == "fix" and s.start_calls("01") == 1
+    assert s.status("01") == "running" and s.start_calls("01") == 1      # waiting on you, as at runtime
+
+
+def test_build_is_done_on_the_flow_once_every_ticket_is(make_set):
+    s = make_set({"01": None, "02": None})
+    assert "build" not in paths.get(s.flow)["done"]      # FLOW shows BUILD running while tickets build
+    s.finish("01")
+    assert "build" not in paths.get(s.flow)["done"]
+    s.finish("02")
+    assert "build" in paths.get(s.flow)["done"]
 
 
 def test_boot_leaves_a_parked_ticket_alone(make_set, monkeypatch):
