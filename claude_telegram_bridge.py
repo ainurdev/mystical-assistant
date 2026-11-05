@@ -43,7 +43,7 @@ import sys
 from bridge import (acp_setup, config, devserver, dream, envsettings, landing, limits,
                     native_activity, notices, onboard, profiles, pubsub, queue_manager, recovery,
                     report, rivendell, runner, selfupdate, state, store,
-                    tgtopics, toolsets, tunnel, whatsnew)
+                    tgtopics, tickets, toolsets, tunnel, whatsnew)
 from bridge.dispatch import handle_callback, menu, on_message, on_stop
 from bridge.telegram import get_updates, set_commands, tg
 
@@ -185,6 +185,7 @@ def main():
             print(f"↻ Auto-resumed {resumed} interrupted session(s) after restart.")
         limits.boot()                  # re-arm sessions parked on a usage-limit reset
         queue_manager.get().kick()     # start what a restart left queued (a wake refused mid-shutdown)
+        tickets.boot()                 # judge ticket turns that ended unheard, then start what's ready
         if config.TOKEN:
             report.boot()              # Monday-morning weekly report (catches up a dark Monday)
             notices.watch_quiet()      # what quiet hours held, in one message as they end

@@ -146,3 +146,303 @@ def test_bad_created_does_not_break_summary(tmp_path):
         json.dump([{"folder": "/nope", "created": "x"}, {"folder": d, "created": None},
                    {"folder": d, "created": 5}], f)
     assert tickets.summary_for("cr")["slug"] == "good"
+
+
+# --- the scheduler: BUILD, 3 at once -----------------------------------------
+
+import subprocess  # noqa: E402
+import uuid  # noqa: E402
+from types import SimpleNamespace  # noqa: E402
+
+from bridge import aifeatures, config, git, notices, paths, runner, store  # noqa: E402
+
+
+def _git(cwd, *a):
+    return subprocess.run(["git", "-C", cwd, *a], capture_output=True, text=True, check=True).stdout.strip()
+
+
+class BuiltSet:
+    """A repo whose flow session sits on master with ticket files written by the
+    flow, and recorders for the runs, worktrees and notices the scheduler makes.
+    Git is real; runs and notices are fakes."""
+
+    def __init__(self, root, monkeypatch, graph):
+        self.mp, self.main = monkeypatch, os.path.join(root, "proj")
+        os.makedirs(self.main)
+        for a in (("init", "-q", "-b", "master"), ("config", "user.email", "t@t"), ("config", "user.name", "t")):
+            _git(self.main, *a)
+        with open(os.path.join(self.main, "README.md"), "w") as f:
+            f.write("x\n")
+        _git(self.main, "add", "-A")
+        _git(self.main, "commit", "-qm", "init")
+        self.flow = store.create_session(1, "proj", cwd=self.main)["id"]
+        paths.set_path(self.flow, "feature", "new", "claude")
+        self.folder = os.path.join(self.main, ".mystical", "tickets", "x")
+        os.makedirs(self.folder)
+        with open(os.path.join(self.main, ".mystical", ".gitignore"), "w") as f:
+            f.write("*\n")
+        for n, blocked in graph.items():
+            _write(self.folder, n, f"T{n}", blocked or "None")
+        self.starts, self.adds, self.kinds = [], [], []
+        real_add = git.worktree_add
+
+        def add(cwd, path, branch, start="", create=True):
+            self.adds.append({"branch": branch, "start": start, "create": create})
+            return real_add(cwd, path, branch, start, create)
+
+        def start(chat_id, prompt, image_paths, project=None, session_id=None, origin=None, **kw):
+            self.starts.append({"sid": session_id, "prompt": prompt, "project": project, "origin": origin})
+            turn = uuid.uuid4().hex
+            store.start_turn(session_id, turn, prompt, [])
+            paths.on_turn_start(session_id, prompt)
+            return SimpleNamespace(id=turn, store_session_id=session_id)
+
+        monkeypatch.setattr(git, "worktree_add", add)
+        monkeypatch.setattr(runner, "start_streaming_job", start)
+        monkeypatch.setattr(notices, "emit", lambda kind, subject, **kw: self.kinds.append(kind))
+        monkeypatch.setattr(config, "BASE_PATH", os.path.join(root, "base"))
+        monkeypatch.setattr(tickets, "_path", lambda: os.path.join(root, "ticketsets.json"))
+
+    def switch(self, on):
+        self.mp.setattr(aifeatures, "enabled", lambda key: key in ({"router", "ticketruns"} if on else {"router"}))
+
+    def build(self):
+        return tickets.start_build(self.flow)
+
+    @property
+    def state(self):
+        return tickets.load(self.folder)
+
+    def status(self, n):
+        return self.state["tickets"][n]["status"]
+
+    def running(self):
+        return sorted(n for n, t in self.state["tickets"].items() if t["status"] == "running")
+
+    def path(self, n):
+        return os.path.join(self.folder, f"{n}-x.md")
+
+    def sid(self, n):
+        return self.state["tickets"][n]["session_id"]
+
+    def start_calls(self, n):
+        return sum(s["sid"] == self.sid(n) for s in self.starts)
+
+    def worktree_add_calls(self, n):
+        return [a for a in self.adds if a["branch"] == f"tk/x-{n}"]
+
+    def git_log_for(self, n):
+        return _git(self.main, "log", "--format=%s", f"tk/x-{n}")
+
+    def job(self, n, status="done"):
+        return SimpleNamespace(store_session_id=self.sid(n), id=store.latest_turn_id(self.sid(n)), status=status,
+                               interrupted=False, runtime=None, chat_id=1, result="",
+                               error_msg="claude exited 1" if status == "error" else None)
+
+    def end(self, n, status):
+        store.finish_turn(store.latest_turn_id(self.sid(n)), status, 0, 1)
+        return tickets.after_turn(self.job(n, status))
+
+    def commit(self, n, file=None):
+        wt = self.state["tickets"][n]["worktree"]
+        with open(os.path.join(wt, file or f"{n}.txt"), "w") as f:
+            f.write(n)
+        _git(wt, "add", "-A")
+        _git(wt, "commit", "-qm", f"ticket {n}")
+
+    def finish(self, n, commit=True, file=None):
+        if commit:
+            self.commit(n, file)
+        paths.step_done(self.sid(n), store.latest_turn_id(self.sid(n)))
+        return self.end(n, "done")
+
+    def fail(self, n):
+        return self.end(n, "error")
+
+
+@pytest.fixture
+def make_set(tmp_path, monkeypatch):
+    store.init()
+
+    def make(graph, build=True, on=True):
+        s = BuiltSet(str(tmp_path), monkeypatch, graph)
+        s.switch(on)
+        if build:
+            assert s.build() == ""
+        return s
+    return make
+
+
+FIVE = {n: None for n in ("01", "02", "03", "04", "05")}
+
+
+def test_at_most_three_run(make_set):
+    s = make_set(FIVE)
+    assert s.running() == ["01", "02", "03"]
+    s.finish("02")
+    assert s.running() == ["01", "03", "04"]      # a done ticket frees its slot, lowest number first
+
+
+def test_dependent_waits_then_bases_on_blocker(make_set):
+    s = make_set({"01": None, "04": "#01"})
+    assert s.status("04") == "queued"
+    s.finish("01")
+    assert s.status("01") == "done" and s.status("04") == "running"
+    assert s.state["tickets"]["04"]["base"] == "tk/x-01"
+    _git(s.main, "merge-base", "--is-ancestor", "tk/x-01", "tk/x-04")     # raises if 04 isn't built on 01
+
+
+def test_two_blockers_merge_second_in(make_set):
+    s = make_set({"02": None, "03": None, "06": "#02, #03"})
+    s.finish("02")
+    s.finish("03")
+    assert s.state["tickets"]["06"]["base"] == "tk/x-02"
+    assert "Merge branch 'tk/x-03'" in s.git_log_for("06")
+    assert "First resolve" not in s.starts[-1]["prompt"]
+
+
+def test_a_merge_clash_is_the_first_job(make_set):
+    s = make_set({"02": None, "03": None, "06": "#02, #03"})
+    s.finish("02", file="same.txt")
+    s.finish("03", file="same.txt")
+    assert s.status("06") == "running"
+    assert s.starts[-1]["prompt"].endswith("\nFirst resolve the merge of tk/x-03 left in this checkout.")
+
+
+def test_error_marks_fix_and_holds_dependents(make_set):
+    s = make_set({"01": None, "04": "#01"})
+    s.fail("01")
+    assert s.status("01") == "fix" and s.status("04") == "queued"
+
+
+def test_step_done_without_a_commit_is_fix(make_set):
+    s = make_set({"01": None, "04": "#01"})
+    s.finish("01", commit=False)
+    assert s.status("01") == "fix" and s.status("04") == "queued"
+
+
+def test_a_turn_without_step_done_keeps_its_slot(make_set):
+    s = make_set({"01": None})
+    s.commit("01")
+    s.end("01", "done")                           # it asked something in prose: waiting on you
+    assert s.status("01") == "running"
+
+
+def test_a_stopped_turn_starts_nothing(make_set):
+    s = make_set({"01": None, "02": "#01"})
+    s.commit("01")
+    paths.step_done(s.sid("01"), store.latest_turn_id(s.sid("01")))
+    job = s.job("01")
+    job.interrupted = True                        # you pressed Stop: nothing moves by itself
+    tickets.after_turn(job)
+    assert s.status("01") == "running" and s.status("02") == "queued"
+
+
+def test_a_parked_limit_is_not_a_fix(make_set, monkeypatch):
+    from bridge import limits
+    s = make_set({"01": None})
+    monkeypatch.setattr(limits, "parked", lambda: {s.sid("01"): {"kind": "limit"}})
+    s.fail("01")
+    assert s.status("01") == "running"
+
+
+def test_boot_never_double_starts(make_set):
+    s = make_set({"01": None, "04": "#01"})
+    paths._cache.clear()                          # a restart: nothing in memory, set.json and the DB stay
+    tickets.boot()
+    assert s.start_calls("01") == 1 and s.status("01") == "running" and s.status("04") == "queued"
+
+
+def test_boot_judges_turns_that_ended_unheard(make_set):
+    s = make_set({"01": None, "02": None, "04": "#01"})
+    s.commit("01")
+    paths.step_done(s.sid("01"), store.latest_turn_id(s.sid("01")))
+    for n, st in (("01", "done"), ("02", "error")):          # ended while nothing listened
+        store.finish_turn(store.latest_turn_id(s.sid(n)), st, 0, 1)
+    paths._cache.clear()
+    tickets.boot()
+    assert (s.status("01"), s.status("02"), s.status("04")) == ("done", "fix", "running")
+    assert s.start_calls("01") == s.start_calls("02") == 1
+
+
+def test_missing_ticket_file_is_held_not_fatal(make_set):
+    s = make_set({"01": None, "04": "#01"}, on=False)        # approved while TICKETS was off
+    os.remove(s.path("01"))
+    s.switch(True)
+    tickets.tick(s.folder)
+    assert s.status("01") == "missing" and s.status("04") == "queued" and not s.starts
+
+
+def test_existing_branch_is_reused(make_set):
+    s = make_set({"01": None}, build=False)
+    _git(s.main, "branch", "tk/x-01")
+    assert s.build() == ""
+    assert s.worktree_add_calls("01")[0]["create"] is False and s.status("01") == "running"
+
+
+def test_tick_starts_nothing_when_off(make_set):
+    s = make_set(FIVE, on=False)
+    assert s.running() == [] and not s.starts
+
+
+def test_cycle_stops_the_set_with_a_notice(make_set):
+    s = make_set({"01": None, "02": "#05", "05": "#02"}, build=False)
+    assert s.build().startswith("cycle:") and s.kinds == ["tickets"]
+    assert s.state["status"] == "stopped" and not s.starts
+
+
+def test_first_prompt_title_and_path(make_set):
+    s = make_set({"01": None})
+    t = s.state["tickets"]["01"]
+    assert s.starts == [{"sid": t["session_id"], "project": t["worktree"], "origin": "ticket", "prompt":
+                         f"/mattpocock-skills:implement {s.path('01')}\n\nThis is ticket #01 of x. Work on branch "
+                         "tk/x-01 in this checkout and commit there. When it is done and the tests pass, "
+                         "call StepDone."}]
+    sess = store.get_session(t["session_id"])
+    assert (sess["title"], sess["cwd"], sess["origin"]) == ("#01 T01", t["worktree"], "ticket")
+    assert s.state["feature_branch"] == "feat/x" and _git(t["worktree"], "rev-parse", "--abbrev-ref", "HEAD") == "tk/x-01"
+    f = paths.get(t["session_id"])
+    assert (f["path"], f["skill"]) == ("one", "implement")
+
+
+def test_ticket_step_done_starts_no_flow_step(make_set, monkeypatch):
+    from bridge import queue_manager
+    s = make_set({"01": None})
+    q = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append(kw))
+    paths.step_done(s.sid("01"), store.latest_turn_id(s.sid("01")))
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: True)       # AUTO NEXT STEPS too
+    assert paths.continue_after_turn(s.job("01")) is False and not q
+
+
+def test_retry_is_a_new_turn_in_its_own_session(make_set):
+    s = make_set({"01": None})
+    s.finish("01", commit=False)
+    tickets.retry(s.folder, "01")
+    assert s.status("01") == "running" and s.start_calls("01") == 2 and paths.get(s.sid("01"))["done"] == []
+    s.finish("01")
+    assert s.status("01") == "done"
+
+
+def test_merge_starts_once_every_ticket_is_done(make_set, monkeypatch):
+    merged = []
+    monkeypatch.setattr(tickets, "start_merge", merged.append)
+    s = make_set({"01": None, "02": "#01"})
+    s.finish("01")
+    assert not merged
+    s.finish("02")
+    assert merged == [s.folder]
+
+
+def test_other_sessions_are_not_tickets(make_set):
+    s = make_set({"01": None})
+    job = SimpleNamespace(store_session_id=s.flow, id="x", status="error", interrupted=False)
+    assert tickets.after_turn(job) is False and s.status("01") == "running"
+
+
+def test_turn_end_reaches_the_scheduler(monkeypatch):
+    seen = []
+    monkeypatch.setattr(tickets, "after_turn", seen.append)
+    job = SimpleNamespace(store_session_id=None, id="t", status="done", interrupted=False, runtime=None, chat_id=1)
+    runner._continue_after_turn(job)  # noqa: SLF001
+    assert seen == [job]

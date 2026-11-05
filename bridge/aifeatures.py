@@ -240,6 +240,16 @@ FEATURES = (
               "Finishing a ticket offers the next one in file order the same way. Off, "
               "/implement is offered in this session with no ticket named, and /retro "
               "follows each one."},
+    {"key": "ticketruns", "env": "TICKET_RUNS", "label": "TICKETS",
+     "parent": "router",
+     "hint": "approved tickets build as sessions, 3 at once, merged at the end",
+     "cost": "one session per ticket",
+     "tokens": "a normal run per ticket",
+     "about": "Once you approve the tickets /to-tickets wrote, each one builds in a session "
+              "of its own, in its own worktree on a branch off the feature branch, at most 3 "
+              "at once, and a ticket waits until the ones blocking it are done. When the last "
+              "one is done, one session merges them all onto the feature branch. Off, the "
+              "path stops once the ticket files are written."},
     {"key": "smartzone", "env": "ROUTER_ZONE", "label": "SMART ZONE",
      "parent": "router",
      "hint": "marks 150k tokens and offers /compact first past it",

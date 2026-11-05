@@ -627,7 +627,8 @@ def test_each_sub_switch_that_is_off_reaches_pick(monkeypatch, sub):
 def test_the_sub_switches_pick_obeys_are_the_registered_ones():
     """A key in route.SUBS that aifeatures doesn't register would read as off for
     good, and the rule behind it would never fire."""
-    assert {f["key"] for f in aifeatures.FEATURES if f.get("parent") == "router"} == set(route.SUBS)
+    subs = {f["key"] for f in aifeatures.FEATURES if f.get("parent") == "router"}
+    assert subs - {"ticketruns"} == set(route.SUBS)   # TICKETS is the scheduler's (bridge/tickets.py), no rule's
 
 
 def test_no_setup_brings_back_the_route_the_setup_nudge_stood_in_for(monkeypatch, repo):

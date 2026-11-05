@@ -313,6 +313,19 @@ def test_build_station_is_left_to_the_user(fake_queue, nextstep_on):
     assert paths.continue_after_turn(_job("f2", "c")) is False and not fake_queue.items
 
 
+def test_build_station_starts_tickets_when_on(fake_queue, state_dir, monkeypatch):
+    from bridge import tickets
+    calls = []
+    monkeypatch.setattr(tickets, "start_build", lambda sid: calls.append(sid) or "")
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
+    paths.set_path("f5", "feature", "x", "claude")
+    for t in ("a", "b", "c"):
+        paths.step_done("f5", t)           # build is next
+    assert paths.continue_after_turn(_job("f5", "c")) is True and calls == ["f5"] and not fake_queue.items
+    monkeypatch.setattr(tickets, "start_build", lambda sid: "cycle: #01 → #02 → #01")
+    assert paths._start("f5", "build") is False  # noqa: SLF001
+
+
 def test_compact_first_past_150k(fake_queue, flow_job_with_next_at_160k):
     paths.continue_after_turn(flow_job_with_next_at_160k)
     assert fake_queue.items[0]["prompt"].startswith("/compact ")

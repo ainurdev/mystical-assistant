@@ -77,6 +77,7 @@ CATALOG = {
     "style_failed": ("bridge", "news", "bridge"),
     "weekly": ("weekly", "fyi", "bridge"),
     "saver_trial": ("bridge", "news", "bridge"),    # a Savers trial reached its sessions (savers.py)
+    "tickets": ("tickets", "news", "session"),      # a ticket set stopped before BUILD (tickets.py)
     "updated": ("updates", "news", "bridge"),
     "coming": ("updates", "news", "bridge"),       # an update waiting upstream, before it is taken
 }
@@ -93,6 +94,7 @@ VERBS = {
     "rv_brief": "BRIEF READY", "team_in": "SENT YOU",
     "pr_failing": "CHECKS FAILING", "pr_changes": "CHANGES ASKED", "move_done": "MOVED",
     "move_failed": "MOVE FAILED", "styled": "STYLED", "style_failed": "STYLE FAILED", "weekly": "WEEKLY REPORT", "saver_trial": "TRIAL DONE",
+    "tickets": "TICKETS",
     "updated": "UPDATED", "coming": "UPDATE READY",
 }
 _RV_DONE = {"review": "REVIEWED", "impl": "IMPLEMENTED", "conflict": "RESOLVED", "design-build": "BUILT"}
@@ -124,6 +126,7 @@ DEFAULTS = {
     "bridge": {"pop": True, "sound": "none", "tg": "off"},
     "weekly": {"pop": False, "sound": "none", "tg": "always"},
     "updates": {"pop": True, "sound": "none", "tg": "off"},
+    "tickets": {"pop": True, "sound": "knock", "tg": "away"},
 }
 SOUNDS = ("blip", "chime", "ping", "knock", "none")
 ROUTES = ("off", "away", "always")

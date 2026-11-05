@@ -41,6 +41,9 @@ os.environ["MYSTICAL_UX_DIR"] = tempfile.mkdtemp()
 # the shells it hosts, so an unpinned value flips that default under the very
 # sessions that run this suite (tests patch config.MCP_SERVERS when they want one).
 os.environ["MCP_SERVERS"] = ""
+# TICKETS starts ticket sessions by itself; a developer's .env turning it on must not
+# reach the suite, which switches it per test (aifeatures.enabled).
+os.environ["TICKET_RUNS"] = "0"
 # Hard-pin a canonical project root before config freezes it, so within_base()
 # is deterministic suite-wide (config.BASE_PATH is read once, at first import).
 # Tests that assert on containment should build fixtures under config.BASE_PATH.

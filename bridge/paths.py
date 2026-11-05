@@ -186,8 +186,9 @@ def path_for_command(skill: str) -> tuple:
 
 # --- starting the next step ---------------------------------------------------
 
-# Stations that start a turn by themselves. build/merge wait for tickets (a later
-# task), so they return False: the user moves them (YOU).
+# Stations that start a turn by themselves. build starts ticket sessions instead
+# (tickets.start_build) while TICKETS is on; merge waits for its own task, so it
+# returns False: the user moves it (YOU).
 _AUTO_START = {"spec", "tickets", "retro", "fix", "build-here"}
 ZONE_TOKENS = 150_000
 
@@ -211,6 +212,9 @@ def on_turn_start(session_id: str, prompt: str) -> None:
 
 def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
     flow = get(session_id)
+    if flow and station == "build" and aifeatures.enabled("ticketruns"):
+        from bridge import tickets  # local import: tickets imports paths
+        return not tickets.start_build(session_id)
     if not flow or station not in _AUTO_START:
         return False
     skill = next((sk for st, sk, _ in _stations(_cache[session_id]) if st == station), None)

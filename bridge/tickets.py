@@ -23,6 +23,32 @@ another ticket's title (trimmed, case-insensitive). "None..." or empty is no blo
 Several are separated by commas or "and".
 
 Not built: titles containing a comma or " and " can't be referenced by title; use the number.
+
+The scheduler. BUILD (start_build) freezes the graph into set.json at approval, so a
+ticket file edited later can't rewire a running set; one deleted or renamed is
+`missing` when its turn to start comes, and holds its dependents. A ticket session is
+an ordinary session (origin "ticket", "#NN Title") in its own worktree, put on a
+one-step `implement` path before its first turn: that way its StepDone lands in
+flows.json like any path's, and its typed /implement can't join the FEATURE path
+(paths.on_turn_start), whose next station would build a second time. A one-step path
+has no next station, so StepDone never starts a flow step there either.
+
+Done means StepDone was called since the ticket last (re)started and its branch has
+a commit of its own, merges aside: the merge of a second blocker is not work. Since
+StepDone rather than this exact turn: a turn that dies after StepDone is resumed by
+the runner, and the resumed turn ends without calling it again. A failed turn the
+runner gave up on (a usage limit parks and resumes by itself) and a StepDone with
+nothing committed are both `fix`: the slot frees, dependents wait, retry() runs it
+again in the same session. A turn that just ends (a question in prose, a Stop) keeps
+its slot: it is waiting on you.
+
+Never twice: a ticket gets its session_id in set.json before its first turn starts,
+and tick only starts tickets that never had one (`queued`, or `missing` once its file
+is back), so after a restart only an explicit retry() runs a ticket again. boot() judges what a restart
+left unheard: a running ticket whose session sits idle ended its turn (or never got
+one) while nothing listened. One lock serializes tick and every set.json write, since
+turn ends arrive on several threads at once; it is held across git and session
+creation, which takes seconds only when tickets are starting.
 """
 
 import json
@@ -33,7 +59,7 @@ import threading
 import time
 from typing import NamedTuple
 
-from bridge import config
+from bridge import aifeatures, config, flowbranch, git, limits, notices, paths, profiles, state, store
 
 
 class TicketError(ValueError):
@@ -192,3 +218,253 @@ def summary_for(session_id: str):
         if st.get("parent_session") == session_id:
             return {**st, "folder": r["folder"]}
     return None
+
+
+# --- the scheduler: BUILD, MAX_RUNNING at once ---------------------------------
+
+MAX_RUNNING = 3
+_build = threading.RLock()   # tick and every set.json write; re-entered by start_build/after_turn -> tick
+
+
+def _on() -> bool:
+    return paths.on() and aifeatures.enabled("ticketruns")
+
+
+def _newest(root: str, since: float) -> str:
+    """The ticket folder under `root` whose newest .md was written last, at or after `since`."""
+    best, at = "", since
+    try:
+        names = os.listdir(root)
+    except OSError:
+        return ""
+    for name in names:
+        d = os.path.join(root, name)
+        try:
+            m = max(os.path.getmtime(os.path.join(d, f)) for f in os.listdir(d) if f.endswith(".md"))
+        except (OSError, ValueError):   # not a folder, or no ticket in it
+            continue
+        if m >= at:
+            best, at = d, m
+    return best
+
+
+def start_build(flow_session_id: str) -> str:
+    """BUILD: the newest ticket folder written since the flow's path began becomes a
+    set on top of the feature branch, and its first tickets start. "" once it is
+    building, else why not; a set that can't build stops with a `tickets` notice."""
+    sess = store.get_session(flow_session_id) or {}
+    flow = paths.get(flow_session_id) or {}
+    since = flow.get("at") or 0
+    co = flowbranch._checkout(sess)  # noqa: SLF001
+    folder = _newest(os.path.join(co, ".mystical", "tickets"), since) if co else ""
+    if not folder:
+        msg = "no ticket files were written since this path began"
+        notices.emit("tickets", flow_session_id, body=f"BUILD stopped: {msg}.")
+        return msg
+    slug = flowbranch.feature_slug(os.path.basename(folder))
+    with _build:
+        if load(folder).get("status") in ("building", "merging"):
+            return f"{slug} is already building"
+        st = {"slug": slug, "parent_session": flow_session_id, "checkout": co, "feature_branch": "",
+              "feature_checkout": "", "status": "building", "tickets": {}, "merge_session": ""}
+        try:
+            tks = parse_dir(folder)
+            order(tks)
+            if not tks:
+                raise TicketError(f"no tickets in {folder}")
+            st["feature_branch"], st["feature_checkout"] = flowbranch.ensure_feature_branch(sess, slug)
+            flowbranch.carry_and_commit(co, st["feature_checkout"],
+                                        flowbranch.flow_files(flow_session_id, since), slug)
+        except Exception as e:  # noqa: BLE001 — a cycle, a missing blocker or git: nothing starts
+            st.update(status="stopped", error=str(e))
+            save(folder, st)
+            register(folder, sess.get("project") or "", slug)
+            notices.emit("tickets", flow_session_id, body=f"BUILD stopped: {e}")
+            return str(e)
+        st["tickets"] = {t.n: {"status": "queued", "title": t.title, "path": t.path,
+                               "blocked_by": list(t.blocked_by), "branch": f"tk/{slug}-{t.n}",
+                               "worktree": "", "session_id": "", "base": ""} for t in tks}
+        save(folder, st)
+        register(folder, sess.get("project") or "", slug)
+        tick(folder)
+    return ""
+
+
+def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
+    t = st["tickets"][n]
+    return (f"/mattpocock-skills:implement {t['path']}\n\nThis is ticket #{n} of {st['slug']}. "
+            f"Work on branch {t['branch']} in this checkout and commit there. "
+            "When it is done and the tests pass, call StepDone."
+            + (f"\nFirst resolve the merge of {', '.join(clash)} left in this checkout." if clash else ""))
+
+
+def _start_ticket(folder: str, st: dict, n: str) -> None:
+    """Worktree, session and first turn for ticket n: running after, or fix when it
+    couldn't start. Base: the feature branch, its one blocker's branch, or with
+    several the first's with the others merged in (--no-ff); a clash is its first job."""
+    from bridge import runner  # local import: runner<->tickets cycle
+    t = st["tickets"][n]
+    try:
+        parent = store.get_session(st["parent_session"])
+        if not parent:
+            raise RuntimeError("its flow session is gone")
+        main = git.main_checkout(st["feature_checkout"])
+        blockers = [st["tickets"][b]["branch"] for b in t["blocked_by"]]
+        t["base"] = blockers[0] if blockers else st["feature_branch"]
+        clash: list = []
+        wt = next((w["path"] for w in git.worktrees(main)
+                   if w["branch"] == t["branch"] and os.path.isdir(w["path"])), "")
+        if not wt:   # a branch from an earlier run of this set is reused, never remade
+            wt = git.worktree_path_for(main, t["branch"], free=True)
+            os.makedirs(os.path.dirname(wt), exist_ok=True)
+            new = t["branch"] not in git.branches(main)
+            ok, out = git.worktree_add(main, wt, t["branch"], start=t["base"] if new else "", create=new)
+            if not ok:
+                raise RuntimeError(f"worktree failed: {out}")
+            git.copy_env(main, wt)
+            for i, b in enumerate(blockers[1:] if new else []):
+                if git._run(wt, "merge", "--no-ff", "--no-edit", b, timeout=60)[0] != 0:  # noqa: SLF001
+                    clash = blockers[1 + i:]   # left mid-merge; the rest come after it
+                    break
+        project = parent.get("project") or ""
+        pid = profiles.project_default(project)
+        s = store.create_session(parent["chat_id"], project, origin="ticket", cwd=wt,
+                                 permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE,
+                                 profile_id=pid)
+        store.rename(s["id"], f"#{n} {t['title']}")
+        paths.set_path(s["id"], "one", f"ticket #{n} of {st['slug']}", "rule", skill="implement")
+        t.update(status="running", worktree=wt, session_id=s["id"])
+        save(folder, st)   # before the turn: from here on a restart never starts it again
+        if runner.start_streaming_job(parent["chat_id"], _prompt(st, n, clash), [], project=wt,
+                                      session_id=s["id"], origin="ticket") is None:
+            raise RuntimeError("the bridge refused the run")
+    except Exception as e:  # noqa: BLE001 — one ticket failing to start never stops the others
+        print(f"[tickets] #{n} of {st['slug']} didn't start: {e}", file=sys.stderr)
+        t["status"] = "fix"
+    save(folder, st)
+
+
+def tick(folder: str) -> None:
+    """Start ready tickets, lowest number first, until MAX_RUNNING run, and MERGE once
+    every one is done. Only while SKILL PATHS and TICKETS are on: switched off,
+    running tickets finish and nothing new starts."""
+    with _build:
+        if state.shutting_down or not _on():
+            return
+        st = load(folder)
+        tks = st.get("tickets") or {}
+        if st.get("status") != "building" or not tks:
+            return
+        for n in sorted(tks):
+            if sum(t["status"] == "running" for t in tks.values()) >= MAX_RUNNING:
+                break
+            t = tks[n]
+            if t["status"] not in ("queued", "missing") or any(tks[b]["status"] != "done" for b in t["blocked_by"]):
+                continue
+            if not os.path.isfile(t["path"]):
+                t["status"] = "missing"   # deleted or renamed after approval: held, and its dependents
+                continue
+            _start_ticket(folder, st, n)
+        save(folder, st)
+        if all(t["status"] == "done" for t in tks.values()):
+            start_merge(folder)
+
+
+def start_merge(folder: str) -> None:
+    """MERGE: one session merges every ticket branch onto the feature branch (Task 11)."""
+
+
+def _verdict(st: dict, t: dict, status: str) -> "str | None":
+    """done | fix for a ticket whose turn ended `status`; None while it still runs
+    or waits on you."""
+    sid = t["session_id"]
+    if status == "error":
+        return None if sid in limits.parked() else "fix"
+    if status != "done" or not (paths.get(sid) or {}).get("done"):
+        return None
+    nots = [st["feature_branch"]] + [st["tickets"][b]["branch"] for b in t["blocked_by"]]
+    rc, out, _ = git._run(st["feature_checkout"], "rev-list", "--count", "--no-merges",  # noqa: SLF001
+                          t["branch"], "--not", *nots)
+    return "done" if rc == 0 and out.strip() not in ("", "0") else "fix"
+
+
+def _find(sid: str):
+    """(folder, set, n) of the ticket this session runs, or None."""
+    for r in sets():
+        folder = r.get("folder")
+        if not isinstance(folder, str):
+            continue
+        st = load(folder)
+        for n, t in (st.get("tickets") or {}).items():
+            if isinstance(t, dict) and t.get("session_id") == sid:
+                return folder, st, n
+    return None
+
+
+def after_turn(job) -> bool:
+    """A turn ended in a ticket's session: judge its ticket, then start what that
+    frees. True when the session was a ticket's."""
+    try:
+        sid = job.store_session_id
+        if not sid or (store.get_session(sid) or {}).get("origin") != "ticket":
+            return False
+        with _build:
+            hit = _find(sid)
+            if not hit:
+                return False
+            folder, st, n = hit
+            t = st["tickets"][n]
+            if t["status"] in ("running", "fix") and not job.interrupted:   # after a Stop nothing moves by itself
+                t["status"] = _verdict(st, t, job.status) or t["status"]
+                save(folder, st)
+            tick(folder)
+        return True
+    except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
+        print(f"[tickets] after_turn failed: {e}", file=sys.stderr)
+        return False
+
+
+def retry(folder: str, n: str) -> None:
+    """A fix ticket runs again: a new turn in its own session and worktree, or a
+    fresh start when it never got as far as a session."""
+    from bridge import runner  # local import: runner<->tickets cycle
+    with _build:
+        st = load(folder)
+        t = (st.get("tickets") or {}).get(n)
+        if not t or t["status"] != "fix":
+            return
+        if not t.get("session_id"):
+            t["status"] = "queued"
+            save(folder, st)
+            tick(folder)
+            return
+        paths.set_path(t["session_id"], "one", f"ticket #{n} of {st['slug']}", "rule", skill="implement")
+        t["status"] = "running"
+        save(folder, st)
+        s = store.get_session(t["session_id"]) or {}
+        if runner.start_streaming_job(s.get("chat_id"), _prompt(st, n), [], project=t["worktree"],
+                                      session_id=t["session_id"], origin="ticket") is None:
+            t["status"] = "fix"
+            save(folder, st)
+
+
+def boot() -> None:
+    """After a restart: judge every running ticket whose session sits idle (its turn
+    ended, or never began, while nothing listened), then tick each building set.
+    Nothing here starts a ticket that has a session; only retry() does."""
+    for r in sets():
+        folder = r.get("folder")
+        try:
+            if not isinstance(folder, str) or load(folder).get("status") != "building":
+                continue
+            with _build:
+                st = load(folder)
+                for t in st["tickets"].values():
+                    sid = t.get("session_id")
+                    if t["status"] == "running" and sid and not store.running_turn_id(sid):
+                        t["status"] = _verdict(st, t, (store.last_turn(sid) or {}).get("status") or "error") \
+                            or "running"
+                save(folder, st)
+                tick(folder)
+        except Exception as e:  # noqa: BLE001 — one bad set never stops the boot
+            print(f"[tickets] boot of {folder} failed: {e}", file=sys.stderr)

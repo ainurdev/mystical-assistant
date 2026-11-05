@@ -197,6 +197,9 @@ ROUTER_ZONE = os.environ.get("ROUTER_ZONE", "1").lower() \
     not in ("0", "false", "no", "")
 ROUTER_SETUP = os.environ.get("ROUTER_SETUP", "1").lower() \
     not in ("0", "false", "no", "")
+# TICKETS (bridge/tickets.py) starts sessions by itself, so it ships OFF as well.
+TICKET_RUNS = os.environ.get("TICKET_RUNS", "0").lower() \
+    not in ("0", "false", "no", "")
 GRILL_CARDS = os.environ.get("GRILL_CARDS", "0").lower() \
     not in ("0", "false", "no", "")
 # --- Next-up board -----------------------------------------------------------
