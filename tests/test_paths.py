@@ -367,3 +367,19 @@ def test_build_here_makes_branch_carries_files_then_implements(fake_queue, nexts
     assert calls == [("ensure", "my-feature"), ("carry", "/p", "/wt", ["/p/GLOSSARY.md"], "my-feature")]
     assert fake_queue.items[-1]["prompt"] == \
         "/mattpocock-skills:implement Work in /wt on branch feat/my-feature, and commit there."
+
+
+def test_build_here_failure_enqueues_nothing_and_tells_the_user(fake_queue, nextstep_on, state_dir, monkeypatch):
+    from bridge import flowbranch, runner
+    sent = []
+    monkeypatch.setattr(store, "get_session", lambda sid: {"cwd": "/p", "chat_id": 1, "title": "T", "project": "p"})
+    monkeypatch.setattr(flowbranch, "flow_files", lambda sid, since: ["/p/G.md"])
+    monkeypatch.setattr(flowbranch, "ensure_feature_branch", lambda s, slug: ("feat/t", "/wt"))
+    def boom(*a):
+        raise flowbranch.FlowBranchError("pop conflict")
+    monkeypatch.setattr(flowbranch, "carry_and_commit", boom)
+    monkeypatch.setattr(runner, "_notify", lambda chat, text, *a, **k: sent.append((chat, text)))
+    paths.set_path("b2", "feature-here", "new", "claude")
+    paths.step_done("b2", "t1")
+    assert paths.continue_after_turn(_job("b2")) is False
+    assert not fake_queue.items and "pop conflict" in sent[0][1] and "feat/t" in sent[0][1]

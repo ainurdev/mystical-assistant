@@ -42,7 +42,9 @@ class Repo:
         return _git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
 
     def dirty(self, cwd):
-        return {l[3:] for l in _git(cwd, "status", "--porcelain", "-uall").splitlines()}
+        out = subprocess.run(["git", "-C", cwd, "status", "--porcelain", "-uall"],
+                             capture_output=True, text=True, check=True).stdout
+        return {l[3:] for l in out.splitlines()}
 
     def last_subject(self, cwd):
         return _git(cwd, "log", "-1", "--format=%s")
@@ -120,3 +122,45 @@ def test_flow_files_reads_writes_since_and_keeps_checkout_only(repo, monkeypatch
     monkeypatch.setattr(store, "timed_events", lambda sid: evs)
     monkeypatch.setattr(store, "get_session", lambda sid: {"cwd": repo.main, "work_cwd": None})
     assert flowbranch.flow_files("sid", 5) == [inside]
+
+
+def test_pop_conflict_restores_files_and_raises(repo):
+    repo.write("GLOSSARY.md")
+    _git(repo.main, "add", "GLOSSARY.md"); _git(repo.main, "commit", "-qm", "g")
+    repo.start = repo.rev("master")
+    with open(repo.path("GLOSSARY.md"), "w") as f:
+        f.write("flow edit")
+    _, co = flowbranch.ensure_feature_branch({"cwd": repo.main}, "x")
+    with open(repo.path("GLOSSARY.md", co), "w") as f:   # dst already changes the same file
+        f.write("someone else's edit")
+    with pytest.raises(flowbranch.FlowBranchError):
+        flowbranch.carry_and_commit(repo.main, co, [repo.path("GLOSSARY.md")], "x")
+    assert open(repo.path("GLOSSARY.md")).read() == "flow edit"
+    assert repo.dirty(repo.main) == {"GLOSSARY.md"} and _git(repo.main, "stash", "list") == ""
+    assert repo.last_subject(co) == "g"
+
+
+@pytest.mark.parametrize("title", ["v1.2..", "x.lock", "...", "a" * 39 + ".b", "", "Fix: the *thing*"])
+def test_slug_is_always_a_valid_branch(title):
+    s = flowbranch.feature_slug(title)
+    assert s and subprocess.run(["git", "check-ref-format", "--branch", f"feat/{s}"]).returncode == 0
+    assert not s.endswith((".", ".lock", "-"))
+
+
+def test_slug_values():
+    assert flowbranch.feature_slug("v1.2..") == "v1.2"
+    assert flowbranch.feature_slug("x.lock") == "x"
+    assert flowbranch.feature_slug("...") == "flow"
+
+
+def test_subdir_of_main_gets_a_feature_worktree(repo):
+    os.makedirs(repo.path("sub"))
+    branch, co = flowbranch.ensure_feature_branch({"cwd": repo.path("sub")}, "x")
+    assert branch == "feat/x" and repo.branch_of(co) == "feat/x"
+
+
+def test_detached_linked_worktree_gets_a_feature_worktree(repo):
+    wt = os.path.join(os.path.dirname(repo.main), "det")
+    _git(repo.main, "worktree", "add", "-q", "--detach", wt)
+    branch, co = flowbranch.ensure_feature_branch({"cwd": wt}, "x")
+    assert branch == "feat/x" and co != wt and repo.branch_of(co) == "feat/x"

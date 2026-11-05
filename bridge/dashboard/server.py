@@ -19,7 +19,6 @@ import json
 import mimetypes
 import os
 import queue
-import shutil
 import socket
 import subprocess
 import sys

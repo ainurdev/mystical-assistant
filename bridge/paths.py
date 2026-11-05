@@ -221,11 +221,18 @@ def _start(session_id: str, station: str, chat_id=None, effort=None) -> bool:
     texts = [f"/mattpocock-skills:{skill}"]
     if station == "build-here":
         # never build on the default branch: feature worktree first, the flow's own files in
-        from bridge import flowbranch, git
-        slug = git.slug((sess.get("title") or "flow").lower())[:40]
-        branch, co = flowbranch.ensure_feature_branch(sess, slug)
-        flowbranch.carry_and_commit(flowbranch._checkout(sess), co,  # noqa: SLF001
-                                    flowbranch.flow_files(session_id, flow["at"]), slug)
+        from bridge import flowbranch, runner
+        slug = flowbranch.feature_slug(sess.get("title") or "")
+        branch = f"feat/{slug}"
+        try:
+            branch, co = flowbranch.ensure_feature_branch(sess, slug)
+            flowbranch.carry_and_commit(flowbranch._checkout(sess), co,  # noqa: SLF001
+                                        flowbranch.flow_files(session_id, flow["at"]), slug)
+        except Exception as e:  # noqa: BLE001 — the step waits for the user instead
+            print(f"[paths] build-here stopped: {e}", file=sys.stderr)
+            runner._notify(chat_id if chat_id is not None else sess.get("chat_id"),  # noqa: SLF001
+                           f"Couldn't move this flow's files to {branch}: {e}. They are back where they were.")
+            return False
         texts = [f"/mattpocock-skills:implement Work in {co} on branch {branch}, and commit there."]
     if aifeatures.enabled("smartzone") and (sess.get("ctx_tokens") or 0) > ZONE_TOKENS:
         texts.insert(0, f"/compact Keep the decisions so far; the next step is {station}.")
