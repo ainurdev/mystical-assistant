@@ -545,3 +545,136 @@ def test_boot_leaves_a_parked_ticket_alone(make_set, monkeypatch):
     monkeypatch.setattr(limits, "parked", lambda: {s.sid("01"): {"kind": "limit"}})
     tickets.boot()
     assert s.status("01") == "running"
+
+
+# --- MERGE, RETRO, clean-up ----------------------------------------------------
+
+def _merges(s):
+    return [x for x in s.starts if x["origin"] == "ticket-merge"]
+
+
+def _finish_all(s, *ns):
+    for n in ns:
+        s.finish(n)
+
+
+def _merge_job(s, status="done"):
+    sid = s.state["merge_session"]
+    store.finish_turn(store.latest_turn_id(sid), status, 0, 1)
+    return SimpleNamespace(store_session_id=sid, id=store.latest_turn_id(sid), status=status, interrupted=False,
+                           runtime=None, chat_id=1, result="", error_msg=None)
+
+
+def test_merge_prompt_lists_branches_in_dependency_order(make_set):
+    s = make_set({"01": "#03", "02": None, "03": None})
+    _finish_all(s, "02", "03", "01")
+    (m,) = _merges(s)
+    assert m["prompt"] == ("Merge these branches into feat/x, in this order, each with git merge --no-ff: "
+                           "tk/x-02, tk/x-03, tk/x-01\nResolve any clash so both tickets' work survives, run the "
+                           "project's full test suite, fix what breaks, and commit. Then call StepDone.")
+    sess = store.get_session(m["sid"])
+    assert (sess["title"], sess["origin"], sess["cwd"]) == ("Merge x", "ticket-merge", s.state["feature_checkout"])
+    assert (s.state["status"], s.state["merge_session"]) == ("merging", m["sid"])
+    assert paths.get(m["sid"])["path"] == "one"
+
+
+def test_start_merge_is_idempotent(make_set):
+    s = make_set({"01": None})
+    s.finish("01")
+    tickets.tick(s.folder)
+    tickets.start_merge(s.folder)
+    tickets.boot()
+    assert len(_merges(s)) == 1
+
+
+def test_merge_done_enqueues_retro_in_flow_session(make_set, monkeypatch):
+    from bridge import queue_manager
+    s = make_set({"01": None}, build=False)
+    for t in ("a", "b", "c"):
+        paths.step_done(s.flow, t)
+    assert s.build() == ""
+    s.finish("01")
+    q = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append((sid, kw["prompt"])))
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
+    sid = s.state["merge_session"]
+    assert tickets.after_turn(_merge_job(s)) is True       # ended without StepDone: still waiting
+    assert s.state["status"] == "merging" and not q
+    paths.step_done(sid, store.latest_turn_id(sid))
+    assert tickets.after_turn(_merge_job(s)) is True
+    assert s.state["status"] == "merged"
+    assert q == [(s.flow, "/mattpocock-skills:retro")]
+
+
+def test_a_merge_error_is_fix_and_retry_runs_it_again(make_set):
+    s = make_set({"01": None})
+    s.finish("01")
+    sid = s.state["merge_session"]
+    tickets.after_turn(_merge_job(s, "error"))
+    assert s.state["status"] == "fix"
+    assert tickets.retry(s.folder, "merge") == ""
+    assert s.state["status"] == "merging" and len(_merges(s)) == 2 and s.state["merge_session"] == sid
+
+
+def _merged_set(s):
+    s.finish("01")
+    s.finish("02")
+    st = s.state
+    # 01 merges onto the feature branch; 02 does not
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    tickets.save(s.folder, {**st, "status": "merged"})
+    return st
+
+
+def test_cleanup_skips_unmerged(make_set):
+    s = make_set({"01": None, "02": None})
+    st = _merged_set(s)
+    skipped = tickets.cleanup(s.folder)
+    assert skipped == ["tk/x-02"]
+    assert not os.path.isdir(st["tickets"]["01"]["worktree"]) and os.path.isdir(st["tickets"]["02"]["worktree"])
+    assert "tk/x-01" not in _git(s.main, "branch", "--format=%(refname:short)").split()
+    assert tickets.merged_count(s.state) == 0               # 01's branch is gone now
+
+
+def test_cleanup_skips_a_dirty_worktree_and_waits_for_merged(make_set):
+    s = make_set({"01": None})
+    s.finish("01")
+    assert tickets.cleanup(s.folder) == ["tk/x-01"]          # not merged yet: nothing is touched
+    st = s.state
+    _git(st["feature_checkout"], "merge", "--no-ff", "-m", "m", "tk/x-01")
+    assert tickets.merged_count(st) == 1
+    tickets.save(s.folder, {**st, "status": "merged"})
+    with open(os.path.join(st["tickets"]["01"]["worktree"], "wip.txt"), "w") as f:
+        f.write("x")
+    assert tickets.cleanup(s.folder) == ["tk/x-01"] and os.path.isdir(st["tickets"]["01"]["worktree"])
+
+
+def _dpost(path, body):
+    from bridge.dashboard import server as dash
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    h._post_api(path, body)
+    return box
+
+
+def test_ticket_endpoints_only_take_registered_folders(make_set, tmp_path):
+    s = make_set({"01": None})
+    for p in ("/local/tickets/retry", "/local/tickets/cleanup"):
+        for body in ({"folder": str(tmp_path), "n": "01"}, {"n": "01"}, {"folder": 5}):
+            r = _dpost(p, body)
+            assert r["code"] == 404 and "error" in r["obj"]
+    assert _dpost("/local/tickets/retry", {"folder": s.folder, "n": "01"})["obj"] == {"text": "#01 isn't waiting for a retry"}
+    assert _dpost("/local/tickets/cleanup", {"folder": s.folder})["obj"] == {"removed": [], "skipped": ["tk/x-01"]}
+
+
+def test_get_tickets_lists_sets_with_live_ticket_status(make_set):
+    from bridge.dashboard import server as dash
+    s = make_set({"01": None, "02": None})
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    h._get_api("/local/tickets", {})
+    (one,) = box["obj"]["sets"]
+    assert one["folder"] == s.folder and one["merged"] == 2 and one["status"] == "building"
+    assert one["tickets"]["01"]["session"] == "running"

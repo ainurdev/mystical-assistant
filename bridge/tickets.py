@@ -406,8 +406,142 @@ def tick(folder: str) -> None:
             start_merge(folder)
 
 
+def _merge_prompt(st: dict, tks: dict) -> str:
+    branches = ", ".join(tks[n]["branch"] for n in order([Ticket(n, "", "", tuple(t["blocked_by"]))
+                                                           for n, t in tks.items()]))
+    return (f"Merge these branches into {st['feature_branch']}, in this order, each with git merge --no-ff: "
+            f"{branches}\nResolve any clash so both tickets' work survives, run the project's full test "
+            "suite, fix what breaks, and commit. Then call StepDone.")
+
+
 def start_merge(folder: str) -> None:
-    """MERGE: one session merges every ticket branch onto the feature branch (Task 11)."""
+    """MERGE: one session merges every ticket branch onto the feature branch. Idempotent:
+    `merging` is saved before the session opens, and only a `building` set starts one
+    (tick calls this on every later tick and boot too)."""
+    from bridge import runner  # local import: runner<->tickets cycle
+    with _build:
+        st = load(folder)
+        if st.get("status") != "building":
+            return
+        st["status"] = "merging"
+        save(folder, st)
+        try:
+            parent = store.get_session(st["parent_session"])
+            if not parent:
+                raise RuntimeError("its flow session is gone")
+            project = parent.get("project") or ""
+            pid = profiles.project_default(project)
+            s = store.create_session(parent["chat_id"], project, origin="ticket-merge",
+                                     cwd=st["feature_checkout"],
+                                     permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE,
+                                     profile_id=pid)
+            store.rename(s["id"], f"Merge {st['slug']}")
+            paths.set_path(s["id"], "one", f"merge {st['slug']}", "rule", skill="merge")
+            st["merge_session"] = s["id"]
+            save(folder, st)   # before the turn: a restart never opens a second merge session
+            if runner.start_streaming_job(parent["chat_id"], _merge_prompt(st, st["tickets"]), [],
+                                          project=st["feature_checkout"], session_id=s["id"],
+                                          origin="ticket-merge") is None:
+                raise RuntimeError("the bridge refused the run")
+        except Exception as e:  # noqa: BLE001 — the merge didn't start: fix, retry() starts it again
+            print(f"[tickets] merge of {st['slug']} didn't start: {e}", file=sys.stderr)
+            st["status"] = "fix"
+            save(folder, st)
+
+
+def _merge_turn(job) -> None:
+    """The merge session's turn ended: StepDone since it started means merged, then the
+    flow goes on to RETRO; an error that isn't a parked limit is `fix`; else it waits on you."""
+    sid = job.store_session_id
+    with _build:
+        for r in sets():
+            folder = r.get("folder")
+            st = load(folder) if isinstance(folder, str) else {}
+            if st.get("merge_session") == sid:
+                break
+        else:
+            return
+        if st.get("status") != "merging" or job.interrupted:
+            return
+        if job.status == "error":
+            if sid in limits.parked():
+                return
+            st["status"] = "fix"
+        elif job.status == "done" and (paths.get(sid) or {}).get("done"):
+            st["status"] = "merged"
+        else:
+            return
+        save(folder, st)
+    if st["status"] == "merged":
+        paths.advance(st["parent_session"], "merge")
+
+
+def merged_count(st: dict) -> int:
+    """How many ticket branches the feature branch already holds."""
+    rc, out, _ = git._run(st["feature_checkout"], "branch", "--merged", st["feature_branch"])  # noqa: SLF001
+    have = {b.strip().lstrip("*+ ").strip() for b in out.splitlines()} if rc == 0 else set()
+    return sum(t["branch"] in have for t in (st.get("tickets") or {}).values())
+
+
+def summaries() -> list:
+    """Every registered set, newest first: set.json plus its folder, how many branches
+    are merged (one git call per set) and each ticket's session state: running, or
+    how its last turn ended."""
+    out = []
+    for r in sorted(sets(), key=lambda r: r["created"] if isinstance(r.get("created"), (int, float)) else 0,
+                    reverse=True):
+        folder = r.get("folder")
+        st = load(folder) if isinstance(folder, str) else {}
+        if not st:
+            continue
+        for t in (st.get("tickets") or {}).values():
+            sid = t.get("session_id")
+            t["session"] = ("running" if store.running_turn_id(sid) else
+                            (store.last_turn(sid) or {}).get("status") or "") if sid else ""
+        try:
+            merged = merged_count(st)
+        except Exception:  # noqa: BLE001 — a set whose checkout is gone still lists
+            merged = 0
+        out.append({**st, "folder": folder, "merged": merged})
+    return out
+
+
+def cleanup(folder: str) -> list:
+    """Remove a merged set's ticket worktrees and branches; the names it skipped.
+    Never forces: a branch git calls unmerged, or a worktree with uncommitted work, stays."""
+    return _cleanup(folder)[1]
+
+
+def _cleanup(folder: str) -> tuple:
+    with _build:
+        st = load(folder)
+        tks = st.get("tickets") or {}
+        if st.get("status") != "merged":
+            return [], [t["branch"] for t in tks.values()]
+        fc = st["feature_checkout"]   # branch -d judges "merged" against HEAD: the feature branch's
+        merged = git._run(fc, "branch", "--merged", st["feature_branch"])[1]  # noqa: SLF001
+        merged = {b.strip().lstrip("*+ ").strip() for b in merged.splitlines()}
+        removed, skipped = [], []
+        for t in tks.values():
+            b, wt = t["branch"], t.get("worktree") or ""
+            if b not in git.branches(fc):
+                continue   # an earlier clean-up got it
+            if b not in merged:
+                skipped.append(b)
+                continue
+            if wt and os.path.isdir(wt):
+                if git._run(wt, "status", "--porcelain")[1].strip():  # noqa: SLF001
+                    skipped.append(b)
+                    continue
+                ok, _ = git.worktree_remove(fc, wt, force=False)
+                if not ok:
+                    skipped.append(b)
+                    continue
+            if git._run(fc, "branch", "-d", b)[0] != 0:  # noqa: SLF001
+                skipped.append(b)
+            else:
+                removed.append(b)
+        return removed, skipped
 
 
 def _verdict(st: dict, t: dict, status: str) -> "str | None":
@@ -442,7 +576,11 @@ def after_turn(job) -> bool:
     frees. True when the session was a ticket's."""
     try:
         sid = job.store_session_id
-        if not sid or (store.get_session(sid) or {}).get("origin") != "ticket":
+        origin = (store.get_session(sid) or {}).get("origin") if sid else None
+        if origin == "ticket-merge":
+            _merge_turn(job)
+            return True
+        if origin != "ticket":
             return False
         with _build:
             hit = _find(sid)
@@ -486,6 +624,33 @@ def _rerun(folder: str, st: dict, n: str) -> str:
     return err
 
 
+def _retry_merge(folder: str, st: dict) -> str:
+    """The merge asked for fix runs again: a new turn in its own session, or a fresh start."""
+    from bridge import runner  # local import: runner<->tickets cycle
+    sid = st.get("merge_session")
+    if not sid:
+        st["status"] = "building"
+        save(folder, st)
+        start_merge(folder)
+        return "" if load(folder).get("status") == "merging" else "the merge didn't start"
+    st["status"] = "merging"
+    save(folder, st)
+    try:
+        s = store.get_session(sid) or {}
+        job = runner.start_streaming_job(s.get("chat_id"), "No path for this message.\n\n"
+                                         + _merge_prompt(st, st["tickets"]), [],
+                                         project=st["feature_checkout"], session_id=sid, origin="ticket-merge")
+        err = "" if job else "the bridge refused the run"
+    except Exception as e:  # noqa: BLE001
+        err = str(e) or type(e).__name__
+    if err:
+        st["status"] = "fix"
+    else:
+        paths.set_path(sid, "one", f"merge {st['slug']}", "rule", skill="merge")
+    save(folder, st)
+    return err
+
+
 def retry(folder: str, n: str) -> str:
     """A fix ticket runs again: a new turn in its own session and worktree, or a fresh
     start when it never got a session. "" once that is under way; with MAX_RUNNING
@@ -493,6 +658,8 @@ def retry(folder: str, n: str) -> str:
     with _build:
         st = load(folder)
         tks = st.get("tickets") or {}
+        if n == "merge":
+            return _retry_merge(folder, st) if st.get("status") == "fix" else "the merge isn't waiting for a retry"
         t = tks.get(n)
         if not t or t.get("status") != "fix":
             return f"#{n} isn't waiting for a retry"

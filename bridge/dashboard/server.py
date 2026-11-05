@@ -514,6 +514,9 @@ class Handler(BaseHTTPRequestHandler):
             except Exception:
                 tset = None
             return self._json({"flow": paths.get(sid), "set": tset})
+        if path == "/local/tickets":
+            from bridge import tickets
+            return self._json({"sets": tickets.summaries()})
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/today":
@@ -1409,6 +1412,24 @@ class Handler(BaseHTTPRequestHandler):
             rules = toolsets.clean(body.get("disabled_tools"))
             store.set_disabled_tools(sid, rules)
             return self._json({"ok": True, "disabled_tools": rules})
+        if path in ("/local/tickets/retry", "/local/tickets/cleanup"):
+            from bridge import tickets
+            folder = body.get("folder")
+            if not isinstance(folder, str) or folder not in {r.get("folder") for r in tickets.sets()}:
+                return self._json({"error": "not a registered ticket set"}, 404)
+            if path == "/local/tickets/retry":
+                n = body.get("n")
+                if not isinstance(n, str) or not n:
+                    return self._json({"error": "n is required"}, 400)
+                try:
+                    return self._json({"text": tickets.retry(folder, n) or "Started."})
+                except Exception as e:  # noqa: BLE001
+                    return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
+            try:
+                removed, skipped = tickets._cleanup(folder)  # noqa: SLF001
+            except Exception as e:  # noqa: BLE001
+                return self._json({"error": f"{type(e).__name__}: {e}"}, 400)
+            return self._json({"removed": removed, "skipped": skipped})
         if path in ("/local/flow/set", "/local/flow/done", "/local/flow/auto"):
             # The goals MCP's SetPath / StepDone (bridge/goal_mcp.py) and the
             # dashboard's auto switch (bridge/paths.py). Answers are text for Claude.
