@@ -441,6 +441,13 @@ def test_step_done_marks_the_station_its_turn_named(sess, nextstep_on):
     assert paths.get(sess)["done"] == ["grill", "spec"]
 
 
+def test_wait_what_mid_grill_keeps_the_path(sess, nextstep_on):
+    _turn(sess, "/mattpocock-skills:grill-with-docs add X")
+    before = paths.get(sess)
+    _turn(sess, "/mattpocock-skills:wait-what what?")      # route.py offers it inside any step
+    assert paths.get(sess) == before
+
+
 def test_no_join_while_paths_are_off(sess, router_off):
     _turn(sess, "/mattpocock-skills:tdd x")
     assert paths.get(sess) is None

@@ -245,6 +245,8 @@ def step_done(session_id: str, turn_id: str, choice: "str | None" = None) -> "st
 # Anything else, /tdd and /implement among them, is a one-step path of its own.
 _JOINS = {"grill-with-docs": "feature", "to-spec": "feature", "to-tickets": "feature",
           "diagnosing-bugs": "bug", "improve-codebase-architecture": "refactor"}
+# Used inside whatever step runs (route.py offers it mid-grill): never a path of its own.
+_INSIDE = {"wait-what"}
 
 
 def path_for_command(skill: str) -> tuple:
@@ -272,7 +274,7 @@ def on_turn_start(session_id: str, prompt: str) -> None:
     unrelated step. Only while SKILL PATHS is on."""
     try:
         skill = _command(prompt)
-        if not skill or not on():
+        if not skill or skill in _INSIDE or not on():
             return
         f = get(session_id)
         if f and next((sk for st, sk, _ in _stations(f) if st not in f["done"]), None) == skill:
