@@ -66,3 +66,48 @@ def test_set_json_round_trip(tmp_path):
     assert tickets.sets()[0]["folder"] == d
     assert tickets.summary_for("s1")["slug"] == "f"
     assert tickets.summary_for("nope") is None
+
+
+@pytest.mark.parametrize("line", ["Blocked by: #1, #3", "**Blocked by**: 01 and 3", "- **Blocked by:** 01, 03",
+                                  "* blocked by: #1.", "**Blocked by:** #01 (Base), #3 (Ui)."])
+def test_blocked_by_variants(tmp_path, line):
+    d = str(tmp_path)
+    _write(d, "01", "A")
+    _write(d, "03", "C")
+    with open(os.path.join(d, "04-x.md"), "w") as f:
+        f.write(f"# 04: D\n\n{line}\n\n**Status:** ready-for-agent\n")
+    t = {t.n: t for t in tickets.parse_dir(d)}["04"]
+    assert t.blocked_by and set(t.blocked_by) <= {"01", "03"}
+
+
+def test_unreadable_blocked_by_raises(tmp_path):
+    d = str(tmp_path)
+    with open(os.path.join(d, "01-x.md"), "w") as f:
+        f.write("# 01: A\n\n**Blocked by:** (see above)\n")
+    with pytest.raises(tickets.TicketError, match=r"#01.*see above"):
+        tickets.parse_dir(d)
+
+
+def test_duplicate_number_raises(tmp_path):
+    d = str(tmp_path)
+    _write(d, "01", "A")
+    with open(os.path.join(d, "01-y.md"), "w") as f:
+        f.write("# 1: B\n")
+    with pytest.raises(tickets.TicketError, match="two tickets are numbered #01"):
+        tickets.parse_dir(d)
+
+
+@pytest.mark.parametrize("body", ["[1]", "not json", '"x"'])
+def test_wrong_shape_files_give_none(tmp_path, body):
+    d = str(tmp_path)
+    with open(os.path.join(d, "set.json"), "w") as f:
+        f.write(body)
+    assert tickets.load(d) == {}
+    tickets.register(d, "p", "s")
+    assert tickets.summary_for("zz") is None
+    with open(tickets._path(), "w") as f:
+        f.write(body)
+    assert tickets.summary_for("zz") is None
+    with open(tickets._path(), "w") as f:
+        json.dump([{"slug": "x"}, 5, {"folder": 3}], f)
+    assert tickets.summary_for("zz") is None

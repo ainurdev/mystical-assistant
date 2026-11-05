@@ -48,7 +48,10 @@ class Ticket(NamedTuple):
 
 
 _HEAD = re.compile(r"^#\s+(\d{1,2})\s*:\s*(.+?)\s*$", re.M)
-_BLOCK = re.compile(r"^\*\*Blocked by:\*\*[ \t]*(.*?)\s*$", re.M | re.I)
+# Label with an optional list marker and bold, colon inside or outside the bold.
+_BLOCK = re.compile(r"^[ \t]*(?:[-*+][ \t]+)?(?:\*\*)?blocked by(?:\*\*[ \t]*:|[ \t]*:(?:\*\*)?)[ \t]*(.*?)\s*$",
+                    re.M | re.I)
+_TAIL = re.compile(r"(?:\.+|\s*\([^)]*\))+\s*$")
 _NUM = re.compile(r"^#?(\d{1,2})$")
 _SPLIT = re.compile(r"\s*,\s*|\s+and\s+", re.I)
 
@@ -67,7 +70,11 @@ def parse_dir(folder: str) -> list:
         b = _BLOCK.search(text)
         val = b.group(1).strip().strip("*").strip() if b else ""
         refs = [] if not val or val.lower().startswith("none") else \
-            [r.strip() for r in _SPLIT.split(val) if r.strip()]
+            [r for r in (_TAIL.sub("", x.strip()).strip() for x in _SPLIT.split(val)) if r]
+        if val and not val.lower().startswith("none") and not refs:
+            raise TicketError(f"#{h.group(1).zfill(2)} has an unreadable Blocked by: {val!r}")
+        if any(r[0] == h.group(1).zfill(2) for r in raw):
+            raise TicketError(f"two tickets are numbered #{h.group(1).zfill(2)}")
         raw.append((h.group(1).zfill(2), h.group(2), path, refs))
     by_title = {t.strip().lower(): n for n, t, _, _ in raw}
     known = {n for n, *_ in raw}
@@ -121,9 +128,10 @@ def _atomic(path: str, data) -> None:
 def load(folder: str) -> dict:
     try:
         with open(os.path.join(folder, "set.json"), encoding="utf-8") as f:
-            return json.load(f) or {}
+            d = json.load(f)
     except (OSError, ValueError):
         return {}
+    return d if isinstance(d, dict) else {}
 
 
 def save(folder: str, state: dict) -> None:
@@ -140,9 +148,10 @@ def _path() -> str:
 def _load_locked() -> list:
     try:
         with open(_path(), encoding="utf-8") as f:
-            return json.load(f) or []
+            d = json.load(f)
     except (OSError, ValueError):
         return []
+    return [r for r in d if isinstance(r, dict)] if isinstance(d, list) else []
 
 
 def _save_locked(rows: list) -> None:
@@ -167,6 +176,8 @@ def sets() -> list:
 def summary_for(session_id: str):
     """The newest set whose parent session is this one, with its folder, or None."""
     for r in sorted(sets(), key=lambda r: r.get("created", 0), reverse=True):
+        if not isinstance(r.get("folder"), str):
+            continue
         st = load(r["folder"])
         if st.get("parent_session") == session_id:
             return {**st, "folder": r["folder"]}
