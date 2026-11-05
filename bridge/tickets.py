@@ -38,15 +38,20 @@ a commit of its own, merges aside: the merge of a second blocker is not work. Si
 StepDone rather than this exact turn: a turn that dies after StepDone is resumed by
 the runner, and the resumed turn ends without calling it again. A failed turn the
 runner gave up on (a usage limit parks and resumes by itself) and a StepDone with
-nothing committed are both `fix`: the slot frees, dependents wait, retry() runs it
-again in the same session. A turn that just ends (a question in prose, a Stop) keeps
-its slot: it is waiting on you.
+nothing committed are both `fix`: the slot frees, dependents wait, and the StepDone is
+forgotten, so only a new one finishes it. retry() runs it again in the same session,
+or with MAX_RUNNING running marks it `retry`, first in line for the next free slot. A
+turn that just ends (a question in prose, a Stop) keeps its slot: it is waiting on you.
 
 Never twice: a ticket gets its session_id in set.json before its first turn starts,
-and tick only starts tickets that never had one (`queued`, or `missing` once its file
-is back), so after a restart only an explicit retry() runs a ticket again. boot() judges what a restart
-left unheard: a running ticket whose session sits idle ended its turn (or never got
-one) while nothing listened. One lock serializes tick and every set.json write, since
+tick starts as new only tickets that never had one (`queued`, or `missing` once its
+file is back), and it runs one with a session again only when retry() asked (`retry`).
+boot() judges what a restart left unheard: a running ticket whose session sits idle,
+and isn't parked, ended its turn (or never got one) while nothing listened. With
+nothing left to drive it, it is done or `fix`, even one that was waiting on you. A set
+builds once: a finished one would start every ticket again, so only a new set or one
+that stopped before building starts, and the flow's BUILD is marked done as it does, so
+the step after MERGE is RETRO. One lock serializes tick and every set.json write, since
 turn ends arrive on several threads at once; it is held across git and session
 creation, which takes seconds only when tickets are starting.
 """
@@ -263,8 +268,9 @@ def start_build(flow_session_id: str) -> str:
         return msg
     slug = flowbranch.feature_slug(os.path.basename(folder))
     with _build:
-        if load(folder).get("status") in ("building", "merging"):
-            return f"{slug} is already building"
+        was = load(folder).get("status")
+        if was not in (None, "stopped"):
+            return f"{slug} is already {was}"
         st = {"slug": slug, "parent_session": flow_session_id, "checkout": co, "feature_branch": "",
               "feature_checkout": "", "status": "building", "tickets": {}, "merge_session": ""}
         try:
@@ -286,6 +292,7 @@ def start_build(flow_session_id: str) -> str:
                                "worktree": "", "session_id": "", "base": ""} for t in tks}
         save(folder, st)
         register(folder, sess.get("project") or "", slug)
+        paths.mark_done(flow_session_id, "build")   # else the flow's next step after MERGE is BUILD again
         tick(folder)
     return ""
 
@@ -296,6 +303,30 @@ def _prompt(st: dict, n: str, clash: "list | None" = None) -> str:
             f"Work on branch {t['branch']} in this checkout and commit there. "
             "When it is done and the tests pass, call StepDone."
             + (f"\nFirst resolve the merge of {', '.join(clash)} left in this checkout." if clash else ""))
+
+
+def _again(st: dict, n: str) -> str:
+    """A retry's prompt. With no /command in front, the paths pack would have Claude
+    pick a path for it, hence the pack's own "No path" line first."""
+    t = st["tickets"][n]
+    return ("No path for this message.\n\n"
+            f"Try this ticket again: {t['path']}\n"
+            f"Work on branch {t['branch']} in this checkout and commit there. "
+            "When it is done and the tests pass, call StepDone.")
+
+
+def _one_step(sid: str, st: dict, n: str) -> None:
+    """Ticket n's session on a fresh one-step `implement` path: StepDone counts from now."""
+    paths.set_path(sid, "one", f"ticket #{n} of {st['slug']}", "rule", skill="implement")
+
+
+def _settle(st: dict, n: str, status: str) -> None:
+    """Ticket n is `status` now. A fix forgets its StepDone, so a later turn that
+    commits half the work can't finish it, and start its dependents, without a new one."""
+    t = st["tickets"][n]
+    t["status"] = status
+    if status == "fix" and t.get("session_id"):
+        _one_step(t["session_id"], st, n)
 
 
 def _start_ticket(folder: str, st: dict, n: str) -> None:
@@ -332,7 +363,7 @@ def _start_ticket(folder: str, st: dict, n: str) -> None:
                                  permission_mode=None if pid else config.NEW_SESSION_PERMISSION_MODE,
                                  profile_id=pid)
         store.rename(s["id"], f"#{n} {t['title']}")
-        paths.set_path(s["id"], "one", f"ticket #{n} of {st['slug']}", "rule", skill="implement")
+        _one_step(s["id"], st, n)
         t.update(status="running", worktree=wt, session_id=s["id"])
         save(folder, st)   # before the turn: from here on a restart never starts it again
         if runner.start_streaming_job(parent["chat_id"], _prompt(st, n, clash), [], project=wt,
@@ -355,16 +386,19 @@ def tick(folder: str) -> None:
         tks = st.get("tickets") or {}
         if st.get("status") != "building" or not tks:
             return
-        for n in sorted(tks):
+        for n in sorted(tks, key=lambda k: (tks[k]["status"] != "retry", k)):   # a retry was promised the next slot
             if sum(t["status"] == "running" for t in tks.values()) >= MAX_RUNNING:
                 break
             t = tks[n]
-            if t["status"] not in ("queued", "missing") or any(tks[b]["status"] != "done" for b in t["blocked_by"]):
+            if t["status"] not in ("queued", "missing", "retry") or \
+                    any(tks[b]["status"] != "done" for b in t["blocked_by"]):
                 continue
-            if not os.path.isfile(t["path"]):
+            if t["status"] == "retry":
+                _rerun(folder, st, n)
+            elif not os.path.isfile(t["path"]):
                 t["status"] = "missing"   # deleted or renamed after approval: held, and its dependents
-                continue
-            _start_ticket(folder, st, n)
+            else:
+                _start_ticket(folder, st, n)
         save(folder, st)
         if all(t["status"] == "done" for t in tks.values()):
             start_merge(folder)
@@ -414,8 +448,10 @@ def after_turn(job) -> bool:
                 return False
             folder, st, n = hit
             t = st["tickets"][n]
-            if t["status"] in ("running", "fix") and not job.interrupted:   # after a Stop nothing moves by itself
-                t["status"] = _verdict(st, t, job.status) or t["status"]
+            # after a Stop nothing moves by itself
+            v = _verdict(st, t, job.status) if t["status"] in ("running", "fix") and not job.interrupted else None
+            if v:
+                _settle(st, n, v)
                 save(folder, st)
             tick(folder)
         return True
@@ -424,34 +460,57 @@ def after_turn(job) -> bool:
         return False
 
 
-def retry(folder: str, n: str) -> None:
-    """A fix ticket runs again: a new turn in its own session and worktree, or a
-    fresh start when it never got as far as a session."""
+def _rerun(folder: str, st: dict, n: str) -> str:
+    """A new turn in ticket n's own session and worktree: "" once it runs, else why
+    not, and it is fix again. Its StepDone is forgotten only once that turn started,
+    so a refused run (your own turn still going) keeps the one your turn recorded."""
     from bridge import runner  # local import: runner<->tickets cycle
+    t = st["tickets"][n]
+    t["status"] = "running"
+    save(folder, st)
+    try:
+        s = store.get_session(t["session_id"]) or {}
+        job = runner.start_streaming_job(s.get("chat_id"), _again(st, n), [], project=t["worktree"],
+                                         session_id=t["session_id"], origin="ticket")
+        err = "" if job else "the bridge refused the run"
+    except Exception as e:  # noqa: BLE001 — a retry that can't start is fix again
+        err = str(e) or type(e).__name__
+    if err:
+        print(f"[tickets] #{n} of {st['slug']} didn't start again: {err}", file=sys.stderr)
+        t["status"] = "fix"
+    else:
+        _one_step(t["session_id"], st, n)
+    save(folder, st)
+    return err
+
+
+def retry(folder: str, n: str) -> str:
+    """A fix ticket runs again: a new turn in its own session and worktree, or a fresh
+    start when it never got a session. "" once that is under way; with MAX_RUNNING
+    running it waits as `retry` and tick gives it the next free slot."""
     with _build:
         st = load(folder)
-        t = (st.get("tickets") or {}).get(n)
-        if not t or t["status"] != "fix":
-            return
+        tks = st.get("tickets") or {}
+        t = tks.get(n)
+        if not t or t.get("status") != "fix":
+            return f"#{n} isn't waiting for a retry"
         if not t.get("session_id"):
-            t["status"] = "queued"
+            t["status"] = "queued"   # tick starts it as new, within the cap
             save(folder, st)
             tick(folder)
-            return
-        paths.set_path(t["session_id"], "one", f"ticket #{n} of {st['slug']}", "rule", skill="implement")
-        t["status"] = "running"
-        save(folder, st)
-        s = store.get_session(t["session_id"]) or {}
-        if runner.start_streaming_job(s.get("chat_id"), _prompt(st, n), [], project=t["worktree"],
-                                      session_id=t["session_id"], origin="ticket") is None:
-            t["status"] = "fix"
+            return ""
+        if sum(x["status"] == "running" for x in tks.values()) >= MAX_RUNNING:
+            t["status"] = "retry"
             save(folder, st)
+            return f"{MAX_RUNNING} tickets are running; #{n} starts when one finishes."
+        return _rerun(folder, st, n)
 
 
 def boot() -> None:
-    """After a restart: judge every running ticket whose session sits idle (its turn
-    ended, or never began, while nothing listened), then tick each building set.
-    Nothing here starts a ticket that has a session; only retry() does."""
+    """After a restart: judge every running ticket whose session sits idle and isn't
+    parked (its turn ended, or never began, while nothing listened): done, or fix,
+    since nothing is left to drive it. Then tick each building set. Nothing here
+    starts a ticket that has a session; only retry() does."""
     for r in sets():
         folder = r.get("folder")
         try:
@@ -459,11 +518,12 @@ def boot() -> None:
                 continue
             with _build:
                 st = load(folder)
-                for t in st["tickets"].values():
+                for n, t in st["tickets"].items():
                     sid = t.get("session_id")
-                    if t["status"] == "running" and sid and not store.running_turn_id(sid):
-                        t["status"] = _verdict(st, t, (store.last_turn(sid) or {}).get("status") or "error") \
-                            or "running"
+                    if t["status"] != "running" or not sid or store.running_turn_id(sid) or sid in limits.parked():
+                        continue
+                    last = (store.last_turn(sid) or {}).get("status") or "error"   # no turn at all: never began
+                    _settle(st, n, _verdict(st, t, last) or "fix")
                 save(folder, st)
                 tick(folder)
         except Exception as e:  # noqa: BLE001 — one bad set never stops the boot

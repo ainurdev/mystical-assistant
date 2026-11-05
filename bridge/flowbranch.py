@@ -60,9 +60,20 @@ def flow_files(session_id: str, since: int) -> list[str]:
         p = ev.get("detail") or ev.get("summary") or ""
         if root and os.path.isabs(p) and os.path.realpath(p).startswith(root + os.sep) and p not in out:
             out.append(p)
-    if out:   # git can't stash what it ignores (.mystical/, so the ticket files) or what is gone again
-        ignored = set(git._run(root, "check-ignore", "--", *out)[1].splitlines())  # noqa: SLF001
-        out = [p for p in out if p not in ignored and os.path.exists(p)]
+    if out:   # git can't stash what it ignores (.mystical/, so the ticket files) or an untracked file gone again
+        # quotePath=false, as git.py does: a C-quoted "caf\303\251" would never match (-z needs --stdin)
+        ignored = set(git._run(root, "-c", "core.quotePath=false", "check-ignore", "--", *out)[1].splitlines())  # noqa: SLF001
+        keep = []
+        for p in out:
+            if p in ignored:
+                why = "ignored"
+            elif not os.path.lexists(p) and git._run(root, "ls-files", "--error-unmatch", "--", p)[0] != 0:  # noqa: SLF001
+                why = "missing"   # a tracked file gone again is a deletion, and is carried
+            else:
+                keep.append(p)
+                continue
+            _log(f"{p} stays out of the carry: {why}")
+        out = keep
     return out
 
 

@@ -184,6 +184,7 @@ class BuiltSet:
         for n, blocked in graph.items():
             _write(self.folder, n, f"T{n}", blocked or "None")
         self.starts, self.adds, self.kinds = [], [], []
+        self.refuse = self.no_turn = False     # the run is refused (busy) / no turn row (cut before it)
         real_add = git.worktree_add
 
         def add(cwd, path, branch, start="", create=True):
@@ -191,9 +192,12 @@ class BuiltSet:
             return real_add(cwd, path, branch, start, create)
 
         def start(chat_id, prompt, image_paths, project=None, session_id=None, origin=None, **kw):
+            if self.refuse:
+                return None
             self.starts.append({"sid": session_id, "prompt": prompt, "project": project, "origin": origin})
             turn = uuid.uuid4().hex
-            store.start_turn(session_id, turn, prompt, [])
+            if not self.no_turn:
+                store.start_turn(session_id, turn, prompt, [])
             paths.on_turn_start(session_id, prompt)
             return SimpleNamespace(id=turn, store_session_id=session_id)
 
@@ -238,6 +242,9 @@ class BuiltSet:
         return SimpleNamespace(store_session_id=self.sid(n), id=store.latest_turn_id(self.sid(n)), status=status,
                                interrupted=False, runtime=None, chat_id=1, result="",
                                error_msg="claude exited 1" if status == "error" else None)
+
+    def hand_turn(self, n):
+        store.start_turn(self.sid(n), uuid.uuid4().hex, "commit what you have", [])
 
     def end(self, n, status):
         store.finish_turn(store.latest_turn_id(self.sid(n)), status, 0, 1)
@@ -420,6 +427,9 @@ def test_retry_is_a_new_turn_in_its_own_session(make_set):
     s.finish("01", commit=False)
     tickets.retry(s.folder, "01")
     assert s.status("01") == "running" and s.start_calls("01") == 2 and paths.get(s.sid("01"))["done"] == []
+    assert s.starts[-1]["prompt"] == (f"No path for this message.\n\nTry this ticket again: {s.path('01')}\n"
+                                      "Work on branch tk/x-01 in this checkout and commit there. When it is done "
+                                      "and the tests pass, call StepDone.")
     s.finish("01")
     assert s.status("01") == "done"
 
@@ -446,3 +456,83 @@ def test_turn_end_reaches_the_scheduler(monkeypatch):
     job = SimpleNamespace(store_session_id=None, id="t", status="done", interrupted=False, runtime=None, chat_id=1)
     runner._continue_after_turn(job)  # noqa: SLF001
     assert seen == [job]
+
+
+# --- fix round 1 ----------------------------------------------------------------
+
+def test_a_retry_at_the_cap_waits_then_goes_first(make_set):
+    s = make_set({"01": None, "02": None, "03": None, "04": "#01", "06": None, "07": None})
+    s.fail("03")                                   # 06 takes its slot
+    s.fail("06")                                   # 07 takes that one
+    assert s.running() == ["01", "02", "07"]
+    sid = s.sid("06")
+    assert tickets.retry(s.folder, "06") == "3 tickets are running; #06 starts when one finishes."
+    assert s.status("06") == "retry" and s.running() == ["01", "02", "07"] and s.start_calls("06") == 1
+    s.finish("01")                                 # frees a slot and readies 04; the retry goes first
+    assert s.running() == ["02", "06", "07"] and s.status("04") == "queued"
+    assert s.sid("06") == sid and s.start_calls("06") == 2
+    assert s.starts[-1]["prompt"].startswith(f"No path for this message.\n\nTry this ticket again: {s.path('06')}")
+
+
+def test_a_refused_retry_keeps_the_step_done_you_recorded(make_set):
+    s = make_set({"01": None})
+    s.fail("01")
+    s.hand_turn("01")                              # you drive it by hand, and that turn calls StepDone
+    paths.step_done(s.sid("01"), store.latest_turn_id(s.sid("01")))
+    s.refuse = True                                # ...while it still runs, you tap retry
+    assert tickets.retry(s.folder, "01") != ""
+    assert s.status("01") == "fix" and paths.get(s.sid("01"))["done"] == ["implement"]
+
+
+def test_a_fix_forgets_its_step_done(make_set):
+    s = make_set({"01": None, "04": "#01"})
+    s.finish("01", commit=False)                   # said done, committed nothing
+    assert s.status("01") == "fix" and paths.get(s.sid("01"))["done"] == []
+    s.hand_turn("01")                              # it commits half of it, with no new StepDone
+    s.commit("01")
+    s.end("01", "done")
+    assert s.status("01") == "fix" and s.status("04") == "queued"
+
+
+def test_a_merged_set_goes_on_to_retro_and_builds_nothing_again(make_set, monkeypatch):
+    from bridge import queue_manager
+    s = make_set({"01": None}, build=False)
+    for t in ("a", "b", "c"):
+        paths.step_done(s.flow, t)                 # grill, spec, tickets: build is next
+    assert s.build() == ""
+    s.finish("01")
+    tickets.save(s.folder, {**s.state, "status": "merged"})      # what the merge session ends with
+    q = []
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: q.append(kw["prompt"]))
+    monkeypatch.setattr(aifeatures, "enabled", lambda key: key in ("router", "nextstep", "ticketruns"))
+    starts = len(s.starts)
+    assert paths.advance(s.flow, "merge") is True
+    assert q == ["/mattpocock-skills:retro"] and len(s.starts) == starts
+    assert s.build() == "x is already merged" and len(s.starts) == starts
+
+
+def test_boot_fixes_a_ticket_whose_turn_never_began(make_set):
+    s = make_set({"01": None}, build=False)
+    s.no_turn = True                               # the restart came between its session and its turn
+    assert s.build() == ""
+    paths._cache.clear()
+    tickets.boot()
+    assert s.status("01") == "fix" and s.start_calls("01") == 1
+
+
+def test_boot_fixes_an_idle_ticket_without_step_done(make_set):
+    s = make_set({"01": None})
+    s.commit("01")
+    store.finish_turn(store.latest_turn_id(s.sid("01")), "done", 0, 1)    # ended, no StepDone, unheard
+    paths._cache.clear()
+    tickets.boot()
+    assert s.status("01") == "fix" and s.start_calls("01") == 1
+
+
+def test_boot_leaves_a_parked_ticket_alone(make_set, monkeypatch):
+    from bridge import limits
+    s = make_set({"01": None})
+    store.finish_turn(store.latest_turn_id(s.sid("01")), "error", 0, 1)   # hit the limit and parked
+    monkeypatch.setattr(limits, "parked", lambda: {s.sid("01"): {"kind": "limit"}})
+    tickets.boot()
+    assert s.status("01") == "running"

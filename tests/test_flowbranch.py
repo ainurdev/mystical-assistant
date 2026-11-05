@@ -125,16 +125,21 @@ def test_flow_files_reads_writes_since_and_keeps_checkout_only(repo, monkeypatch
     assert flowbranch.flow_files("sid", 5) == [inside]
 
 
-def test_flow_files_leaves_out_what_git_cannot_carry(repo, monkeypatch):
+def test_flow_files_leaves_out_what_git_cannot_carry(repo, monkeypatch, capsys):
     os.makedirs(repo.path(".mystical/tickets/x"))
     with open(repo.path(".mystical/.gitignore"), "w") as f:
         f.write("*\n")
-    repo.write(".mystical/tickets/x/01-a.md"); repo.write("GLOSSARY.md")
-    ticket, glossary, gone = (repo.path(p) for p in (".mystical/tickets/x/01-a.md", "GLOSSARY.md", "gone.py"))
-    evs = [{"type": "tool", "name": "Write", "summary": p, "ts": 10} for p in (ticket, glossary, gone)]
+    repo.write(".mystical/tickets/x/01-é.md"); repo.write("GLOSSARY.md")
+    os.remove(repo.path("README.md"))              # tracked, then deleted: a deletion to carry
+    ticket, glossary, gone, readme = (repo.path(p) for p in
+                                      (".mystical/tickets/x/01-é.md", "GLOSSARY.md", "gone.py", "README.md"))
+    evs = [{"type": "tool", "name": "Write", "summary": p, "ts": 10} for p in (ticket, glossary, gone, readme)]
     monkeypatch.setattr(store, "timed_events", lambda sid: evs)
     monkeypatch.setattr(store, "get_session", lambda sid: {"cwd": repo.main, "work_cwd": None})
-    assert flowbranch.flow_files("sid", 5) == [glossary]       # ignored, and written then deleted, stay out
+    assert flowbranch.flow_files("sid", 5) == [glossary, readme]
+    err = capsys.readouterr().err
+    assert f"[flowbranch] {ticket} stays out of the carry: ignored" in err
+    assert f"[flowbranch] {gone} stays out of the carry: missing" in err
 
 
 def test_files_already_committed_in_the_feature_checkout_are_nothing_to_carry(repo_on_feature):

@@ -326,6 +326,15 @@ def test_build_station_starts_tickets_when_on(fake_queue, state_dir, monkeypatch
     assert paths._start("f5", "build") is False  # noqa: SLF001
 
 
+def test_mark_done_marks_once_and_starts_nothing(fake_queue, state_dir):
+    paths.set_path("f6", "feature", "x", "claude")
+    paths.mark_done("f6", "build")
+    paths.mark_done("f6", "build")
+    assert paths.get("f6")["done"] == ["build"] and not fake_queue.items
+    paths.mark_done("nopath", "build")
+    assert paths.get("nopath") is None
+
+
 def test_compact_first_past_150k(fake_queue, flow_job_with_next_at_160k):
     paths.continue_after_turn(flow_job_with_next_at_160k)
     assert fake_queue.items[0]["prompt"].startswith("/compact ")
