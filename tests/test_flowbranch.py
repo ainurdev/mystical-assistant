@@ -224,3 +224,27 @@ def test_two_files_one_conflicts_both_come_back(repo):
     assert _sha_list(repo) == []
     assert repo.dirty(co) == {"A.md"} and open(repo.path("A.md", co)).read() == "theirs"
     assert not os.path.exists(repo.path("C.md", co))
+
+
+def test_a_subdir_cwd_carries_files_by_their_repo_path(repo):
+    os.makedirs(repo.path("sub"))
+    os.makedirs(repo.path("docs/adr"))
+    repo.write("docs/adr/0001.md")
+    _, co = flowbranch.ensure_feature_branch({"cwd": repo.path("sub")}, "x")
+    assert flowbranch.carry_and_commit(repo.path("sub"), co, [repo.path("docs/adr/0001.md")], "x")
+    assert _git(co, "show", "--name-only", "--format=", "HEAD") == "docs/adr/0001.md"
+    assert repo.head_moved("master") is False and repo.dirty(co) == set()
+
+
+def test_a_failed_pop_keeps_dsts_own_edit_of_a_non_ascii_file(repo):
+    _git(repo.main, "config", "core.quotePath", "true")     # git's default: "\303\251.md" in status
+    repo.write("é.md")
+    _git(repo.main, "add", "-A"); _git(repo.main, "commit", "-qm", "e")
+    with open(repo.path("é.md"), "w") as f:
+        f.write("flow edit")
+    _, co = flowbranch.ensure_feature_branch({"cwd": repo.main}, "x")
+    with open(repo.path("é.md", co), "w") as f:
+        f.write("theirs")
+    with pytest.raises(flowbranch.FlowBranchError):
+        flowbranch.carry_and_commit(repo.main, co, [repo.path("é.md")], "x")
+    assert open(repo.path("é.md", co)).read() == "theirs" and open(repo.path("é.md")).read() == "flow edit"

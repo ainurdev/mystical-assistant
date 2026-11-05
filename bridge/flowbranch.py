@@ -146,8 +146,12 @@ def carry_and_commit(src: str, dst: str, files: list[str], slug: str) -> bool:
     Our stash entry is told apart by its commit id, never by its position."""
     if not files:
         return False
-    rel = [os.path.relpath(f, src) if os.path.isabs(f) else f for f in files]
-    if os.path.realpath(src) != os.path.realpath(dst):
+    # Pathspecs from each repo's top: a session's cwd can be a subdir, and git reads them from where it runs.
+    src, dst = (os.path.realpath(git._run(d, "rev-parse", "--show-toplevel")[1].strip() or d)  # noqa: SLF001
+                for d in (src, dst))
+    rel = [os.path.relpath(os.path.join(os.path.realpath(os.path.dirname(f)), os.path.basename(f)), src)
+           if os.path.isabs(f) else f for f in files]
+    if src != dst:
         before = set(_stash_shas(src))
         rc, _, err = git._run(src, "stash", "push", "-u", "-m", f"mystical flow {slug}", "--", *rel, timeout=30)  # noqa: SLF001
         if rc != 0:
@@ -158,7 +162,8 @@ def carry_and_commit(src: str, dst: str, files: list[str], slug: str) -> bool:
             return False
         sha = new[0]
         # paths dst already changes itself are not ours to touch if the pop fails
-        mine = {l[3:].strip('"') for l in git._run(dst, "status", "--porcelain", "-uall", "--", *rel)[1].splitlines()}  # noqa: SLF001
+        mine = {l[3:].strip('"') for l in git._run(dst, "-c", "core.quotePath=false", "status", "--porcelain",  # noqa: SLF001
+                                                    "-uall", "--", *rel)[1].splitlines()}
         ok, err = _pop(dst, sha)
         if not ok:
             _log(f"stash pop of {sha[:10]} into {dst} failed: {err}")
