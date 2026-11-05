@@ -59,7 +59,9 @@ export function Tip({ text, anchor = "center", pin = true, children }: {
 // never shows a box for these, so leave them alone.
 const KEEP = new Set(["IFRAME", "SVG", "TITLE", "LINK", "OPTION", "OPTGROUP"]);
 
-type Live = { text: string; x: number; y: number; below: boolean };
+// `left`: beside the trigger, for a column of them (the right rail), where a box
+// above would sit on the tile above it.
+type Live = { text: string; x: number; y: number; below: boolean; left?: boolean };
 
 const TIP_ID = "hud-tip";
 
@@ -107,11 +109,13 @@ export function NativeTips() {
         // is what `position: fixed` inside it resolves against
         const host = t.closest("[data-theme]")?.getBoundingClientRect();
         const below = r.top < 130;
+        const left = t.dataset.tipSide === "left";
         setTip({
           text,
-          x: r.left + r.width / 2 - (host?.left ?? 0),
-          y: (below ? r.bottom : r.top) - (host?.top ?? 0),
+          x: (left ? r.left : r.left + r.width / 2) - (host?.left ?? 0),
+          y: (left ? r.top + r.height / 2 : below ? r.bottom : r.top) - (host?.top ?? 0),
           below,
+          left,
         });
       }, DELAY);
     };
@@ -146,8 +150,8 @@ export function NativeTips() {
   return (
     <span role="tooltip" id={TIP_ID}
       style={{ position: "fixed", left: tip.x, top: tip.y, zIndex: 98, pointerEvents: "none",
-               transform: `translateX(-50%)${tip.below ? "" : " translateY(-100%)"}`,
-               [tip.below ? "paddingTop" : "paddingBottom"]: 7 }}>
+               transform: tip.left ? "translate(-100%, -50%)" : `translateX(-50%)${tip.below ? "" : " translateY(-100%)"}`,
+               [tip.left ? "paddingRight" : tip.below ? "paddingTop" : "paddingBottom"]: tip.left ? 9 : 7 }}>
       <Bubble text={tip.text} inner={bub} />
     </span>
   );

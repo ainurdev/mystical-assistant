@@ -4838,6 +4838,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button {
   width: 36px; height: 36px; margin: 0 auto; border: 0 !important; border-radius: 999px; transition: background .15s ease, color .15s ease;
 }
+[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile { width: 40px; height: 46px; }
 [data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"] {
   background: color-mix(in oklab, var(--acc) 18%, var(--panel)) !important; color: var(--acc) !important;
 }
@@ -6396,11 +6397,43 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gp-rolink:hover:not(:disabled) { color: var(--txb); }
 .gp-rolink:disabled { opacity: .4; cursor: not-allowed; }
 .gp-roerr { margin: 5px 2px 0; font: 400 var(--t10)/1.3 var(--m); color: var(--txl); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* the rail's GIT icon while an auto-fetch runs (RightPanel's busy), in the badge's place */
-.rail-spin { position: absolute; right: 5px; top: 3px; width: 12px; height: 12px; border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--acc) 22%, transparent); border-top-color: var(--acc); border-right-color: var(--acc);
-  animation: gpspin .9s linear infinite; }
-@media (prefers-reduced-motion: reduce) { .rail-spin { animation: none; } }
+/* The right rail's tiles (RightPanel, /design-first right-rail-shell): an icon,
+   and under it only what wants you, in that thing's tone. Every tile is one
+   height, so a word appearing never moves the rail. */
+.rtile-ico { position: relative; display: flex; }
+.rtile-v { font-size: var(--t9); font-weight: 800; line-height: 1; letter-spacing: .02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rtile[data-tone="acc"] .rtile-v { color: color-mix(in srgb, var(--acc) 72%, var(--txb)); }
+.rtile[data-tone="warn"] .rtile-v { color: var(--warn); }
+.rtile[data-tone="ask"] { --tone: var(--ask, var(--warn)); }
+.rtile[data-tone="err"] { --tone: var(--err); }
+/* past every family's own rail fill: a tile that waits on you glows, open or not */
+[data-theme] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile:is([data-tone="ask"], [data-tone="err"]) {
+  color: var(--tone) !important; background: color-mix(in srgb, var(--tone) 11%, transparent) !important;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 50%, transparent), 0 0 18px -5px var(--tone);
+}
+.rtile:is([data-tone="ask"], [data-tone="err"]) .rtile-v { color: var(--tone); letter-spacing: .08em; }
+.rtile[data-drag] { opacity: .85; cursor: grabbing; }
+/* the open tile plugs into the panel: a bar on the seam. AURORA's tiles carry it
+   as their left border already; the families that inset their tiles draw it. */
+:is([data-fam="middle-earth"], [data-fam="pebble"]) .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile[aria-current="true"]::before {
+  content: ""; position: absolute; left: -4px; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--acc); box-shadow: 0 0 10px var(--acc);
+}
+/* something runs for the tab unasked (GIT's auto-fetch): an orbit, the working indicator's shape */
+.rail-orbit { position: absolute; left: 50%; top: 50%; width: 28px; height: 28px; margin: -14px 0 0 -14px; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); animation: gpspin 2.4s linear infinite; pointer-events: none; }
+.rail-orbit::after { content: ""; position: absolute; left: 50%; top: -3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%;
+  background: var(--acc); box-shadow: 0 0 6px var(--acc); }
+@media (prefers-reduced-motion: reduce) { .rail-orbit { animation: none; } }
+/* the session's tabs, the project's, yours: a short rule where one meets the next */
+.rail-rule { flex: none; align-self: center; width: 16px; height: 1px; margin: 5px 0; background: color-mix(in srgb, var(--txl) 34%, transparent); }
+/* the foot (go live, changelog, update, ⌘K) apart from the tabs, in its own well */
+.rail-well { margin: auto 4px 0; padding: 2px 0; border-radius: var(--f-rad, 0); background: var(--side-well, color-mix(in srgb, var(--acc) 5%, transparent)); }
+/* the panel's left seam: drag to resize, double-click to reset (RightPanel startResize) */
+.rpane-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; z-index: 5; cursor: col-resize; touch-action: none; }
+.rpane-grip::after { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--acc); opacity: 0; transition: opacity .15s; }
+.rpane-grip:hover::after, .hudgrid[data-resizing] .rpane-grip::after { opacity: .7; }
+.hudgrid[data-resizing] { transition: none !important; cursor: col-resize; user-select: none; }
 /* The branch's Rivendell task (TaskChip.tsx TaskLine), under the readout's line. */
 .gp-task { margin-top: 6px; gap: 7px; }
 .gp-task b { color: var(--ask); }
@@ -6839,8 +6872,9 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   background: color-mix(in oklab, var(--acc) 14%, transparent) !important; color: var(--txb) !important;
 }
 /* the rail's foot (changelog, update, ⌘K) wears the rail's circles */
-[data-fam="pebble"] .hudgrid > div:last-child .mt-auto button { border-left: 0 !important; border-radius: 999px !important; }
-[data-fam="pebble"] .hudgrid > div:last-child .mt-auto button[aria-label="Command palette"] { width: 30px !important; border-color: var(--line2) !important; }
+[data-fam="pebble"] .hudgrid > div:last-child .rail-well button { border-left: 0 !important; border-radius: 999px !important; }
+[data-fam="pebble"] .hudgrid > div:last-child .rail-well button[aria-label="Command palette"] { width: 30px !important; border-color: var(--line2) !important; }
+[data-fam="pebble"] .hudgrid > div:last-child .rail-well { border-radius: 999px; }
 /* a rail badge sits on the circle's edge with a ring of the slab round it */
 [data-fam="pebble"] .hudgrid > div:last-child button > span.rounded-full { box-shadow: 0 0 0 2px var(--panel2); }
 
@@ -7095,7 +7129,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"] {
   background: var(--side-row) !important; color: var(--acc) !important;
 }
-[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"]::before { display: none !important; }
+[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile { width: 40px !important; height: 46px !important; }
 [data-fam="middle-earth"] .hudgrid > div:last-child button > span.rounded-full { box-shadow: 0 0 0 2px var(--side); }
 [data-fam="middle-earth"] .rcap > div:last-child button { color: var(--txm) !important; }
 

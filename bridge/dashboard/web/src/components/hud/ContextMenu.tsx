@@ -22,7 +22,7 @@ export interface CtxItem {
 const TYPE_LABEL: Record<string, string> = {
   session: "SESSION", project: "PROJECT", issue: "ISSUE",
   branch: "BRANCH", terminal: "TERMINAL", surface: "DASHBOARD",
-  file: "FILE", folder: "FOLDER", turn: "MESSAGE", editor: "EDITOR", task: "TASK",
+  file: "FILE", folder: "FOLDER", turn: "MESSAGE", editor: "EDITOR", task: "TASK", railtab: "RAIL TAB",
 };
 
 // A short hint ("TOP", "⌘K") rides on the title's row; a prose one would eat
