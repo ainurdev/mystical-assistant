@@ -450,13 +450,13 @@ def test_build_here_makes_branch_carries_files_then_implements(fake_queue, nexts
     monkeypatch.setattr(store, "get_session", lambda sid: sess)
     monkeypatch.setattr(flowbranch, "flow_files", lambda sid, since: ["/p/GLOSSARY.md"])
     monkeypatch.setattr(flowbranch, "ensure_feature_branch",
-                        lambda s, slug: calls.append(("ensure", slug)) or ("feat/my-feature", "/wt"))
+                        lambda s, slug, prefix: calls.append(("ensure", slug, prefix)) or ("feat/my-feature", "/wt"))
     monkeypatch.setattr(flowbranch, "carry_and_commit",
                         lambda src, dst, files, slug: calls.append(("carry", src, dst, files, slug)) or True)
     paths.set_path("b1", "feature-here", "new", "claude")
     paths.step_done("b1", "t1")
     assert paths.continue_after_turn(_job("b1")) is True
-    assert calls == [("ensure", "my-feature"), ("carry", "/p", "/wt", ["/p/GLOSSARY.md"], "my-feature")]
+    assert calls == [("ensure", "my-feature", "feat"), ("carry", "/p", "/wt", ["/p/GLOSSARY.md"], "my-feature")]
     assert fake_queue.items[-1]["prompt"] == \
         "/mattpocock-skills:implement Work in /wt on branch feat/my-feature, and commit there."
 
@@ -466,7 +466,7 @@ def test_build_here_failure_enqueues_nothing_and_tells_the_user(fake_queue, next
     sent = []
     monkeypatch.setattr(store, "get_session", lambda sid: {"cwd": "/p", "chat_id": 1, "title": "T", "project": "p"})
     monkeypatch.setattr(flowbranch, "flow_files", lambda sid, since: ["/p/G.md"])
-    monkeypatch.setattr(flowbranch, "ensure_feature_branch", lambda s, slug: ("feat/t", "/wt"))
+    monkeypatch.setattr(flowbranch, "ensure_feature_branch", lambda s, slug, prefix: ("feat/t", "/wt"))
     def boom(*a):
         raise flowbranch.FlowBranchError("pop conflict")
     monkeypatch.setattr(flowbranch, "carry_and_commit", boom)
@@ -582,3 +582,74 @@ def test_merge_is_done_even_while_auto_is_held(fake_queue, nextstep_on, state_di
     assert f["done"][-1] == "merge" and f["next"]["station"] == "retro"
     paths.set_auto("f7", True)              # released: RETRO starts now
     assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:retro"
+
+
+# --- I10: no auto step commits to the default branch ------------------------------
+
+import subprocess  # noqa: E402
+
+
+def _git(cwd, *a):
+    return subprocess.run(["git", "-C", cwd, *a], capture_output=True, text=True, check=True).stdout.strip()
+
+
+@pytest.fixture
+def repo_session(tmp_path, monkeypatch, state_dir):
+    """A session titled "My Feature" in a repo's main checkout, on master."""
+    monkeypatch.setattr(config, "BASE_PATH", str(tmp_path / "base"))
+    main = str(tmp_path / "proj")
+    os.makedirs(main)
+    for a in (("init", "-q", "-b", "master"), ("config", "user.email", "t@t"), ("config", "user.name", "t")):
+        _git(main, *a)
+    with open(os.path.join(main, "README.md"), "w") as f:
+        f.write("x\n")
+    _git(main, "add", "-A")
+    _git(main, "commit", "-qm", "init")
+    sid = store.create_session(1, "proj", cwd=main)["id"]
+    store.rename(sid, "My Feature")
+    return sid, main
+
+
+def _wrote(sid, t, path):
+    with open(path, "w") as f:
+        f.write("flow")
+    store.append_event(sid, t, {"type": "tool", "name": "Write", "summary": path})
+
+
+def test_build_here_moves_the_session_into_its_feature_worktree(repo_session, fake_queue, nextstep_on):
+    sid, main = repo_session
+    master = _git(main, "rev-parse", "master")
+    t = _turn(sid, "/mattpocock-skills:grill-with-docs add X")
+    _wrote(sid, t, os.path.join(main, "GLOSSARY.md"))
+    paths.step_done(sid, t, choice="here")
+    assert paths.continue_after_turn(_end(sid, t)) is True
+    cwd = store.get_session(sid)["cwd"]
+    assert cwd != main and _git(cwd, "rev-parse", "--abbrev-ref", "HEAD") == "feat/my-feature"
+    assert _git(cwd, "log", "-1", "--format=%s") == "docs: decisions from the my-feature flow"
+    assert _git(main, "rev-parse", "master") == master
+    assert fake_queue.items[-1]["prompt"] == \
+        f"/mattpocock-skills:implement Work in {cwd} on branch feat/my-feature, and commit there."
+
+
+def test_an_auto_fix_on_the_default_branch_moves_to_a_fix_worktree(repo_session, fake_queue, nextstep_on):
+    sid, main = repo_session
+    master = _git(main, "rev-parse", "master")
+    t = _turn(sid, "/mattpocock-skills:diagnosing-bugs the crash")
+    _wrote(sid, t, os.path.join(main, "test_crash.py"))
+    paths.step_done(sid, t)
+    assert paths.continue_after_turn(_end(sid, t)) is True
+    cwd = store.get_session(sid)["cwd"]
+    assert cwd != main and _git(cwd, "rev-parse", "--abbrev-ref", "HEAD") == "fix/my-feature"
+    assert os.path.isfile(os.path.join(cwd, "test_crash.py")) and _git(main, "rev-parse", "master") == master
+    assert fake_queue.items[-1]["prompt"] == "/mattpocock-skills:tdd"
+
+
+def test_an_auto_fix_off_the_default_branch_stays_put(repo_session, fake_queue, nextstep_on):
+    sid, main = repo_session
+    wt = os.path.join(os.path.dirname(main), "wt")
+    _git(main, "worktree", "add", "-q", "-b", "feat/y", wt)
+    store.set_cwd(sid, wt)
+    t = _turn(sid, "/mattpocock-skills:diagnosing-bugs the crash")
+    paths.step_done(sid, t)
+    assert paths.continue_after_turn(_end(sid, t)) is True
+    assert store.get_session(sid)["cwd"] == wt and fake_queue.items[-1]["prompt"] == "/mattpocock-skills:tdd"

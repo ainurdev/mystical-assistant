@@ -77,9 +77,16 @@ def flow_files(session_id: str, since: int) -> list[str]:
     return out
 
 
-def ensure_feature_branch(session: dict, slug: str) -> tuple[str, str]:
+def on_default(session: dict) -> bool:
+    """Whether the session's checkout has its repo's default branch checked out."""
+    co = _checkout(session)
+    cur = git._run(co, "symbolic-ref", "-q", "--short", "HEAD")[1].strip() if co else ""  # noqa: SLF001
+    return bool(cur) and cur == git.default_branch(git.main_checkout(co))
+
+
+def ensure_feature_branch(session: dict, slug: str, prefix: str = "feat") -> tuple[str, str]:
     """(branch, checkout) BUILD works in. A linked worktree already on a non-default
-    branch is used as is; otherwise `feat/<slug>` gets its own worktree."""
+    branch is used as is; otherwise `<prefix>/<slug>` gets its own worktree."""
     co = _checkout(session)
     main = git.main_checkout(co)
     default = git.default_branch(main)
@@ -89,7 +96,7 @@ def ensure_feature_branch(session: dict, slug: str) -> tuple[str, str]:
         cur = git._run(co, "symbolic-ref", "-q", "--short", "HEAD")[1].strip()  # noqa: SLF001
         if cur and cur != default:
             return cur, co
-    branch = f"feat/{slug}"
+    branch = f"{prefix}/{slug}"
     for w in git.worktrees(main):
         if w["branch"] == branch:
             return branch, w["path"]
