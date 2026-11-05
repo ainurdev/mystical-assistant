@@ -14,11 +14,14 @@ this machine, because the dashboard binds 127.0.0.1. Pictures and files have no 
 
 - **TEAM tab.** A new right-rail tab with a lucide `Users` icon, shown while a Rivendell instance is
   linked. It covers the whole bridge rather than one project. The rail badge counts unopened items
-  sent to you. It has four parts:
+  sent to you. It has five parts:
+  - **COMING IN:** a share still downloading or being filed, with a bar: its bytes up to 90%,
+    then filing. The tab checks every second while one is coming.
   - **SENT TO YOU:** one card per item: who sent it and when, the kind label (SESSION, PICTURE or
     FILE), the title, the note as a quote, and its facts. For a session the facts are project,
     branch, turns, pictures and code. For a picture there is a thumbnail. For a file, name and
-    size. The buttons are OPEN, CONTINUE HERE and ✕.
+    size. The buttons are OPEN, CONTINUE HERE and ✕; a session also has "or start a new session
+    from it" (NEW SESSION FROM IT).
   - **ON NOW:** teammates whose Mystical is connected, with "since HH:MM", a `MAC` chip when they
     share a device with you, and SEND on hover, which sends the open session.
   - **AWAY:** "last on …", or "no Mystical linked yet". Sending still works; the item waits.
@@ -39,14 +42,22 @@ this machine, because the dashboard binds 127.0.0.1. Pictures and files have no 
   - A bell row, plus Telegram where Settings ▸ NOTIFY routes "From teammates" (at once by default,
     not only when you're away from the dashboard).
   - OPEN on a session shows it read-only. A bar replaces the composer, styled with JobBar's classes:
-    FROM <NAME>, how long ago, "read-only · it ran on <name>'s machine", the note, DISMISS and
-    CONTINUE HERE. Each prompt's tag starts with the sender's name.
+    FROM <NAME>, how long ago, "read-only · it ran on <name>'s machine", the note, DISMISS,
+    NEW SESSION FROM IT and CONTINUE HERE. Each prompt's tag starts with the sender's name.
   - OPEN on a picture opens the lightbox. OPEN on a file downloads it through the browser.
-- **CONTINUE HERE** never sends anything. It opens a new session in your checkout of the same
-  repository. When code came along, that session sits on a new worktree branch
-  `from-<first name>/<slug>`. The transcript (as Markdown) and the pictures arrive as attachments,
-  and the opening prompt is an unsent draft. For a picture or a file, CONTINUE HERE opens a new
-  session in the active project with the item attached and a draft that quotes the note.
+- **CONTINUE HERE** never sends anything. For a session (2026-11-05) it makes their session
+  yours, in your checkout of the same repository or a project you pick: a session of yours with
+  their turns and pictures on screen and the composer empty. Claude has none of that history, so
+  your first prompt there carries it as an attached `transcript.md`, until a turn of yours has
+  finished. When code came along, the session sits on a new worktree branch
+  `from-<first name>/<slug>`.
+- **NEW SESSION FROM IT** is the template: a new session, the transcript (as Markdown) and the
+  pictures as attachments, and the opening prompt an unsent draft. For a picture or a file,
+  CONTINUE HERE does this in the active project, with the item attached and a draft that quotes
+  the note.
+- **A session goes whole.** Every turn carries its words and its work (tool calls and their
+  output). 2026-11-05: an update of 95 turns arrived with results in its last five only, because a
+  4000-event budget went to the newest turns first.
 
 ## Rules
 
@@ -68,7 +79,7 @@ this machine, because the dashboard binds 127.0.0.1. Pictures and files have no 
 
   | What | Cap |
   |---|---|
-  | Transcript | 8 MB gzipped |
+  | Transcript | 9 MB gzipped; past it, tool output goes first, then tool calls, never the words |
   | Pictures | 100, at 5 MB each |
   | File | 25 MB |
   | Code | 9 MB |

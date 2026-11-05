@@ -4338,6 +4338,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
    its tile (18px tile, 6px row padding → rail centre at 15px) */
 [data-fam] .projhead { height: 30px !important; padding: 0 6px !important; gap: 0 !important; border-radius: var(--f-rad-s); }
 [data-fam] .projhead .ptile { width: 18px; height: 18px; margin-right: 9px; }
+[data-fam] .projhead .gone-chip { margin-left: 8px; }
 [data-fam] .projhead > span:nth-of-type(2) {
   font-family: var(--ui-font) !important; font-size: var(--t12) !important; font-weight: 600; letter-spacing: 0 !important;
   color: color-mix(in oklab, var(--pc, var(--txb)) 0%, var(--txb)) !important;

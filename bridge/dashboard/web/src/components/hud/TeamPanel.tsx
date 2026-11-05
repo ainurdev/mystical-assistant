@@ -1,10 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { CornerUpLeft, Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Laptop, Layers, MessageSquare, Send, Users, X } from "lucide-react";
-import type { Received, Share, TeamOverview, Teammate } from "../../api";
+import type { Received, Receiving, Share, TeamOverview, Teammate } from "../../api";
 import { initials } from "../../lib/rivendelltasks";
 import { useClock12 } from "../../lib/surfaces";
 import { KIND_LABEL, byPresence, foldSent, personTint, presence, relationLine, seen, sentAgo, sentBefore, sentStatus, shareFacts, type SentTone } from "../../lib/team";
 import { ImageLightbox } from "../ImageLightbox";
+import { Bar } from "./MoveDock";
 
 const UI = "var(--ui-font, inherit)";
 const MONO = "var(--mono)";
@@ -75,14 +76,15 @@ const Sect = ({ label, right, top = 12 }: { label: string; right?: ReactNode; to
  *  App owns the data (it polls, and the rail badge and the session menu read it
  *  too). SEND on a teammate sends the session you have open: `sessionTitle` is
  *  null when it isn't yours to send. */
-export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onContinueYours, onDismiss, step }: {
+export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpen, onContinue, onNewSession, onContinueYours, onDismiss, step }: {
   data: TeamOverview | null;
   fail: string | null;
   sessionTitle: string | null;
   onRefresh: () => void;
   onSendTo: (t: Teammate) => void;
   onOpen: (r: Received) => void;
-  onContinue: (r: Received) => void;
+  onContinue: (r: Received) => void;         // CONTINUE HERE: a session, as yours with its history; else into a new one
+  onNewSession: (r: Received) => void;       // NEW SESSION FROM IT: a new session, their work attached, the prompt drafted
   onContinueYours: (r: Received) => void;     // a newer state of a thread you have: into your session in it
   onDismiss: (r: Received) => void;
   step?: { id: string; text: string } | null;    // CLONE & INSTALL's progress, on the share it is for
@@ -177,19 +179,20 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
               <Download size={11} strokeWidth={2} />DOWNLOAD
             </a>
           )}
-          {r.yours ? (
+          <Btn icon={<Forward size={11} strokeWidth={2} />} label={!r.yours && step?.id === r.id ? step.text : "CONTINUE HERE"} pri={!r.yours}
+            onClick={() => onContinue(r)}
+            title={r.kind === "session" ? "Their session as yours: its history stays and you type the next prompt"
+              : "A new session of yours with it attached, the prompt left for you to send"} />
+          {r.yours && (
             <Btn icon={<CornerUpLeft size={11} strokeWidth={2} />} label={step?.id === r.id ? step.text : "CONTINUE IN YOURS"} pri onClick={() => onContinueYours(r)}
               title={`Your session “${r.yours.title}”: what's new attached, the prompt left for you to send`} />
-          ) : (
-            <Btn icon={<Forward size={11} strokeWidth={2} />} label={step?.id === r.id ? step.text : "CONTINUE HERE"} pri onClick={() => onContinue(r)}
-              title="Your own session: their work attached, the prompt left for you to send" />
           )}
         </div>
-        {r.yours && (
-          <button type="button" onClick={() => onContinue(r)} style={{
+        {r.kind === "session" && (
+          <button type="button" onClick={() => onNewSession(r)} style={{
             appearance: "none", border: 0, background: "transparent", padding: "6px 0 0", cursor: "pointer", fontFamily: UI, fontSize: "var(--t105)",
             color: "var(--txl)", textDecoration: "underline", textDecorationColor: mix("var(--txl)", 40), textUnderlineOffset: 3,
-          }}>or start a new session with it</button>
+          }}>or start a new session from it</button>
         )}
       </div>
     );
@@ -252,6 +255,27 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     );
   };
 
+  /** A share still arriving (bridge/team.py receiving): its bytes, then its turns filed. The tab
+   *  looks again each second while one is here (App), so the bar moves as it comes. */
+  const incoming = (r: Receiving) => (
+    <div key={r.id} title={`${r.title} · from ${r.from}`} style={{ margin: "0 10px 8px", padding: "9px 10px 10px 11px", borderRadius: 10,
+      border: `1px solid ${mix("var(--purple)", 30)}`, background: "color-mix(in srgb, var(--purple) 4%, var(--panel2))" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span style={{ flex: "none", color: "var(--purple)", display: "flex" }}><Download size={11} strokeWidth={2} /></span>
+        <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: UI, fontSize: "var(--t115)", color: "var(--txh)" }}>{r.title}</span>
+        <span style={{ flex: "none", fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 0.8, color: "var(--txm)" }}>
+          {r.stage === "filing" ? "FILING" : "COMING IN"} {r.pct}%
+        </span>
+      </div>
+      <div style={{ marginTop: 8, display: "flex" }}>
+        <Bar style="sweep" pct={r.pct} color="var(--purple)" h={3} />
+      </div>
+      <div style={{ marginTop: 6, fontFamily: UI, fontSize: "var(--t105)", color: "var(--txl)" }}>
+        from {r.from}{r.stage === "filing" ? " · writing its turns" : ""}
+      </div>
+    </div>
+  );
+
   const body = (): ReactNode => {
     // A dashboard newer than the running bridge: the route is missing.
     if (fail === "not found") return <Empty title="The bridge needs a restart" text="This dashboard is newer than the running bridge, which can't show the team yet." />;
@@ -259,7 +283,8 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     if (!data) return [100, 100, 60].map((w, i) => <div key={i} style={{ height: 30, margin: "8px 12px", width: `calc(${w}% - 24px)`, background: mix("var(--acc)", 7) }} />);
     return (
       <>
-        {fresh.length > 0 && <><Sect label="SENT TO YOU" right={fresh.length} top={10} />{fresh.map(card)}</>}
+        {(data.receiving?.length ?? 0) > 0 && <><Sect label="COMING IN" right={data.receiving!.length} top={10} />{data.receiving!.map(incoming)}</>}
+        {fresh.length > 0 && <><Sect label="SENT TO YOU" right={fresh.length} top={data.receiving?.length ? 12 : 10} />{fresh.map(card)}</>}
         {data.error ? (
           <Empty title="No roster right now" text={data.error} />
         ) : (

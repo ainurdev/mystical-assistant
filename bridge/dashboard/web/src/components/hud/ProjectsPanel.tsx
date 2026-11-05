@@ -10,4 +10,5 @@ export interface ProjectGroup {
   sessions: SessionBrief[]; // most-recent few, for display (capped)
   sessionCount: number; // true total, for the count label
   running: boolean;
+  missing?: boolean; // its folder is gone (moved, renamed, deleted): its sessions wait for MOVE TO PROJECT
 }

@@ -1072,25 +1072,25 @@ def import_transcript(session_id: str, turns: list[dict], events: list[dict]) ->
         if have:
             c.execute("COMMIT")
             return False
-        for t in turns:
-            tok = t.get("tokens") or {}
-            c.execute(
-                "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
-                "elapsed,started,model,tok_in,tok_out,tok_cache_w,tok_cache_r) "
-                "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (t["id"], session_id, t["seq"], t.get("prompt", ""),
-                 json.dumps(t.get("attachments") or []), t.get("status", "done"),
-                 t.get("cost"), t.get("elapsed"), t.get("started") or time.time(),
-                 t.get("model"),
-                 # NULL, not 0, when the transcript never reported usage.
-                 tok.get("in"), tok.get("out"),
-                 tok.get("cache_w"), tok.get("cache_r")))
-        for e in events:
-            payload = {k: v for k, v in e.items() if k not in ("seq", "turn_id")}
-            c.execute("INSERT INTO events(session_id,turn_id,seq,type,payload,ts) "
-                      "VALUES(?,?,?,?,?,?)",
-                      (session_id, e["turn_id"], e["seq"], e.get("type", ""),
-                       json.dumps(payload), e.get("ts") or time.time()))
+        # executemany: a teammate's whole session can be tens of thousands of events
+        # (bridge/team.py), and this holds the write lock while it runs.
+        c.executemany(
+            "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,"
+            "elapsed,started,model,tok_in,tok_out,tok_cache_w,tok_cache_r) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [(t["id"], session_id, t["seq"], t.get("prompt", ""),
+              json.dumps(t.get("attachments") or []), t.get("status", "done"),
+              t.get("cost"), t.get("elapsed"), t.get("started") or time.time(),
+              t.get("model"),
+              # NULL, not 0, when the transcript never reported usage.
+              (t.get("tokens") or {}).get("in"), (t.get("tokens") or {}).get("out"),
+              (t.get("tokens") or {}).get("cache_w"), (t.get("tokens") or {}).get("cache_r"))
+             for t in turns])
+        c.executemany(
+            "INSERT INTO events(session_id,turn_id,seq,type,payload,ts) VALUES(?,?,?,?,?,?)",
+            [(session_id, e["turn_id"], e["seq"], e.get("type", ""),
+              json.dumps({k: v for k, v in e.items() if k not in ("seq", "turn_id")}),
+              e.get("ts") or time.time()) for e in events])
         c.execute("COMMIT")
     return True
 
@@ -1144,9 +1144,45 @@ def duplicate(session_id: str) -> dict | None:
     return get_session(copy["id"])
 
 
-def relocate(session_id: str, new_cwd: str) -> int:
+def copy_turns(src_id: str, dst_id: str, rewrite: "tuple[str, str] | None" = None) -> dict:
+    """Copy one session's turns and events into another, each turn under a new id
+    (turn ids are the rows' keys, and name the turn's upload folder). `rewrite`
+    (old, new) is replaced in the events' payloads: the folder their pictures were
+    linked into. Returns {old turn id: new}. Used by CONTINUE HERE (bridge/team.py),
+    whose copy is an ordinary session of yours, so no claude id comes along."""
+    with closing(_connect()) as c:
+        c.execute("BEGIN IMMEDIATE")
+        turns = c.execute("SELECT * FROM turns WHERE session_id=? ORDER BY seq", (src_id,)).fetchall()
+        events = c.execute("SELECT * FROM events WHERE session_id=? ORDER BY seq", (src_id,)).fetchall()
+        idmap = {t["id"]: uuid.uuid4().hex for t in turns}
+        c.executemany(
+            "INSERT INTO turns(id,session_id,seq,prompt,attachments,status,cost,elapsed,started,"
+            "model,runtime,sha,effort,permission_mode) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            [(idmap[t["id"]], dst_id, t["seq"], t["prompt"], t["attachments"], t["status"], t["cost"],
+              t["elapsed"], t["started"], t["model"], t["runtime"], t["sha"], t["effort"],
+              t["permission_mode"]) for t in turns])
+        old, new = rewrite or ("", "")
+        c.executemany(
+            "INSERT INTO events(session_id,turn_id,seq,type,payload,ts) VALUES(?,?,?,?,?,?)",
+            [(dst_id, idmap.get(e["turn_id"], e["turn_id"]), e["seq"], e["type"],
+              e["payload"].replace(old, new) if old else e["payload"], e["ts"]) for e in events])
+        c.execute("COMMIT")
+    return idmap
+
+
+def turn_statuses(session_id: str) -> "list[tuple[int, str]]":
+    """(seq, status) of each of a session's turns, oldest first: what a transcript would
+    say about them, without reading its events."""
+    with closing(_connect()) as c:
+        return [(r["seq"], r["status"]) for r in c.execute(
+            "SELECT seq, status FROM turns WHERE session_id=? ORDER BY seq", (session_id,))]
+
+
+def relocate(session_id: str, new_cwd: str, project: "str | None" = None) -> int:
     """Point a session at a different directory and rewrite the old path wherever
     it appears in prompts and event payloads, so the model never sees the move.
+    `project` moves it to that project too (MOVE TO PROJECT, for a session whose
+    project folder is gone).
 
     Returns the number of rows rewritten. Plain string substitution on the old cwd
     — the paths in a transcript are literal, and anything cleverer would have to
@@ -1159,8 +1195,8 @@ def relocate(session_id: str, new_cwd: str) -> int:
     with closing(_connect()) as c:
         c.execute("BEGIN IMMEDIATE")
         # work_cwd goes too: it named a detour from the *old* checkout.
-        c.execute("UPDATE sessions SET cwd=?, work_cwd=NULL, updated=? WHERE id=?",
-                  (new, time.time(), session_id))
+        c.execute("UPDATE sessions SET cwd=?, work_cwd=NULL, project=COALESCE(?, project), updated=? "
+                  "WHERE id=?", (new, project, time.time(), session_id))
         n = 0
         # No old cwd, or a no-op move: retarget the session and stop. Substituting
         # an empty string would splice `new` between every character.

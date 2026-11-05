@@ -1878,7 +1878,7 @@ export function App() {
   const [pick, setPick] = useState<{ title: string; text: string; done: (rel: string | null) => void } | null>(null);
   const pickProject = (title: string, text: string) =>
     new Promise<string | null>((done) => setPick({ title, text, done: (rel) => { setPick(null); done(rel); } }));
-  async function continueShare(id: string, kind: ShareKind = "session", into?: "yours") {
+  async function continueShare(id: string, kind: ShareKind = "session", into?: "yours" | "new") {
     if (continuing.current.has(id)) return;      // a second click while the first sets up
     continuing.current.add(id);
     try {
@@ -1904,7 +1904,7 @@ export function App() {
         const who = (plan.from ?? "A teammate").split(" ")[0];
         const rel = await pickProject(`Where should ${who}'s session continue?`,
           `It ran in ${typeof where === "string" && where ? where : "a folder"} on ${who}'s machine, a folder with no git repository, `
-          + "so there's no checkout of it here to find. Pick one of your projects; it continues there as a new session.");
+          + "so there's no checkout of it here to find. Pick one of your projects to continue it in.");
         if (!rel) { notify("info", "Nothing was continued."); return; }
         plan = await api.teamContinue(id, { project: rel });
       }
@@ -1919,6 +1919,7 @@ export function App() {
         if (!activeProject) { notify("error", "Pick a project to continue it in first."); return; }
         project = activeProject;
       }
+      let tree: string | undefined;              // the worktree their code went into
       if (branch) {
         const wt = await api.worktreeAdd(project, branch, plan.base ?? undefined);
         if (!wt.ok || !wt.path) {
@@ -1926,6 +1927,7 @@ export function App() {
           return;
         }
         await api.teamUnpack(id, wt.path).catch((e: Error) => notify("info", e.message));
+        tree = wt.path;
         if (cwd) cwd = wt.path;
       }
       if (cwd) {
@@ -1937,6 +1939,17 @@ export function App() {
           else notify("info", steps.length ? `Installed: ${steps.map(where).join(", ")}` : "Cloned. No lockfile here, so nothing was installed.");
         }, (e: Error) => notify("error", e.message));
       }
+      if (kind === "session" && into !== "new") {
+        // CONTINUE HERE: their session as yours, its history here and the composer empty. The
+        // bridge carries that history to Claude with your first prompt (bridge/team.py seed).
+        const { session } = await api.teamAdopt(id, project, tree);
+        await loadSessions();
+        openSession(session.id);
+        toChat();
+        void loadTeam();
+        return;
+      }
+      // NEW SESSION FROM IT (and a picture or a file): a new session, their work attached, the prompt drafted.
       const sid = await newSession(project, plan.draft, branch, plan.title ?? undefined);
       if (!sid) { notify("error", "Couldn't start the session; nothing was marked continued."); return; }
       setAttachFor({ sid, files: plan.attachments });
@@ -2086,6 +2099,7 @@ export function App() {
         // the group, not the row.
         rel, name: rel === JOBS_REL ? JOBS_NAME : rel === SHARED_REL ? SHARED_NAME : projectName(rel),
         badge: gitBadges.get(rel), sessions: ss.slice(0, 3), sessionCount: ss.length, running,
+        missing: ss.length > 0 && ss.every((s) => s.missing),
       });
     }
     // Alphabetical by path — a fixed order. Activity sorting reshuffled rows
@@ -2295,8 +2309,15 @@ export function App() {
     const id = setInterval(() => void loadTeam(), 30000);
     return () => clearInterval(id);
   }, [rivendellOn, loadTeam]);
+  // A share coming in has a bar (TeamPanel): each second until it's in, the 30 s look otherwise.
+  const coming = team?.receiving?.length ?? 0;
+  useEffect(() => {
+    if (!coming) return;
+    const id = setInterval(() => void loadTeam(), 1000);
+    return () => clearInterval(id);
+  }, [coming, loadTeam]);
   const teammates = team && !team.error ? team.roster : [];
-  const teamNew = team?.inbox.filter((r) => !seen(r)).length ?? 0;     // what SENT TO YOU shows
+  const teamNew = (team?.inbox.filter((r) => !seen(r)).length ?? 0) + coming;     // what SENT TO YOU shows, and what is coming
   // The lightbox's SEND, and a bell row for a picture or a file, reach here.
   const picTitle = useRef<string | null>(null);     // a picture sent from the lightbox is named after the open session
   picTitle.current = selected && !isReadOnly(selected.origin) && selected.title ? `${selected.title} · screenshot` : null;
@@ -2443,6 +2464,7 @@ export function App() {
           onRefresh={() => void loadTeam()}
           onSendTo={(t) => { if (selected) setSendWhat({ what: { kind: "session", session: selected.id, title: selected.title || "session" }, to: t.id }); }}
           onOpen={openReceived} onContinue={(r) => void continueShare(r.id, r.kind)} step={contStep}
+          onNewSession={(r) => void continueShare(r.id, r.kind, "new")}
           onContinueYours={(r) => void continueShare(r.id, r.kind, "yours")}
           onDismiss={(r) => void dismissShare(r.id, !!r.session && r.session === sessionId)} />
       ),
@@ -2565,6 +2587,8 @@ export function App() {
       // fork-based duplicate don't reach them (the bridge refuses them too).
       const onAgent = !!s?.agent && s.agent !== "claude";
       if (!readOnly) items.push({ icon: "▸", label: "Attach & resume", onClick: () => s && openSession(s.id) });
+      if (!readOnly && s?.missing) items.push({ icon: "⇉", label: "Move to project…",
+        hint: "its folder is gone", onClick: () => void moveToProject([s]) });
       items.push(lc === null
         ? { icon: "⊘", label: "Abandon session", danger: true,
             hint: "gave up — hides it, HISTORY tags it abandoned",
@@ -2660,6 +2684,9 @@ export function App() {
       ] });
       items.push({ divider: true });
     } else if (ctxMenu.type === "project") {
+      const gone = sessions.filter((x) => x.project === ctxMenu.id && x.missing && !isReadOnly(x.origin));
+      if (gone.length) items.push({ icon: "⇉", label: `Move its ${gone.length === 1 ? "session" : `${gone.length} sessions`} to a project…`,
+        hint: "its folder is gone", onClick: () => void moveToProject(gone) });
       items.push({ icon: "⊞", label: "Analyze project", onClick: () => openAnalyze(ctxMenu.id) });
       // The chat header's project name opens this menu; its DESIGN SYSTEM link
       // folded in here, and lands on the repo's row in SETTINGS ▸ Projects.
@@ -2869,6 +2896,26 @@ export function App() {
     }
   }
 
+  /** MOVE TO PROJECT: sessions whose project folder is gone (moved, renamed, deleted), into the
+   *  project you pick, their folder and the paths in their transcripts with them. Until then a
+   *  run in one is refused rather than borrowing the open project's folder. */
+  async function moveToProject(list: SessionBrief[]) {
+    if (!list.length) return;
+    const from = list[0].project;
+    const rel = await pickProject(list.length === 1 ? `Where should “${list[0].title || "this session"}” go?`
+      : `Where should these ${list.length} sessions go?`,
+      `Their folder ${from} isn't there any more: it moved, was renamed, or was deleted. `
+      + "Pick the project they belong to now; they continue there.");
+    if (!rel) return;
+    let moved = 0;
+    for (const s of list) {
+      try { await api.moveSession(s.id, rel); moved++; }
+      catch (e) { notify("error", `${s.title || "A session"}: ${(e as Error).message}`); }
+    }
+    await loadSessions();
+    if (moved) notify("info", `Moved ${moved === 1 ? "it" : `${moved} sessions`} to ${projectName(rel)}.`);
+  }
+
   async function relocateSession(id: string, project: string, branch: string) {
     try {
       const r = await api.relocateSession(id, project, branch);
@@ -3048,6 +3095,7 @@ export function App() {
                     row={team?.inbox.find((r) => r.id === selected.team?.share) ?? null}
                     onContinueYours={() => { if (selected.team) void continueShare(selected.team.share, "session", "yours"); }}
                     onContinue={() => { if (selected.team) void continueShare(selected.team.share); }}
+                    onNewSession={() => { if (selected.team) void continueShare(selected.team.share, "session", "new"); }}
                     step={contStep && contStep.id === selected.team?.share ? contStep.text : null}
                     onDismiss={() => { if (selected.team) void dismissShare(selected.team.share, true); }} />
                 ) : (
