@@ -342,7 +342,9 @@ function VideoLightbox({ src, name, title, strip, clip, onClose }: { src: string
           playsInline
           onTimeUpdate={panel ? (e) => setAt(e.currentTarget.currentTime) : undefined}
           onLoadedMetadata={panel ? (e) => setDur(e.currentTarget.duration || 0) : undefined}
-          style={{ maxWidth: "100%", maxHeight: cap, border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "#000" }}
+          // centre, not the default stretch: WebKit (Mystical.app) keeps a stretched video at the
+          // 150px-tall box it had before its size loaded — a 1440×900 clip played at 242×152.
+          style={{ alignSelf: "center", maxWidth: "100%", maxHeight: cap, border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "#000" }}
         />
         {!!clip?.chapters?.length && (
           <ChapterBar chapters={clip.chapters} at={at} dur={dur} onSeek={seek} />

@@ -117,6 +117,17 @@ def _abs_within(path: str) -> str | None:
     return cand if browser.within_base(cand) and os.path.isdir(cand) else None
 
 
+def _rehome_moved(s: dict) -> bool:
+    """Re-file a session whose own dir is gone under the tree its shell moved into
+    (runner._note_work_cwd), when that tree still exists. True if it was."""
+    wt = _abs_within(s.get("work_cwd") or "")
+    if wt is None:
+        return False
+    s.update(project=browser.rel(wt), cwd=wt, work_cwd=None)
+    store.rehome(s["id"], s["project"], wt)
+    return True
+
+
 def _server_cwd(chat, body) -> str:
     """The run directory a dev-server request targets: an absolute
     worktree cwd if given, else a project rel, else the chat's active project.
@@ -562,11 +573,13 @@ class Handler(BaseHTTPRequestHandler):
                     else store.list_sessions_all(chat))
             # Sessions of a since-deleted dir (e.g. a removed worktree checkout)
             # stay out of the lists; their transcripts remain viewable by id.
+            # One that had moved into a tree that still exists is re-filed there
+            # instead: removing the tree it started in must not hide its work.
             # Plugin-worker sessions are exempt: their default workdir is
             # BASE_PATH itself ("/", never a project), and a run the PLUGINS
             # tab exists to show must not be filtered into invisibility.
             rows = [r for r in rows if integrations.is_plugin_origin(r.get("origin"))
-                    or browser.project_exists(r["project"])]
+                    or browser.project_exists(r["project"]) or _rehome_moved(r)]
             return self._json({"sessions": [_session_brief(s) for s in rows]})
         # Before the transcript route below, which would otherwise swallow this
         # (it takes the first path segment and ignores the rest).

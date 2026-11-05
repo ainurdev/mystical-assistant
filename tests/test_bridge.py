@@ -1085,6 +1085,18 @@ def test_run_context_falls_back_when_session_cwd_removed():
     assert cwd == "/tmp"                                         # fell back to project dir
 
 
+def test_run_context_resumes_in_the_tree_it_moved_into(tmp_path):
+    """With its cwd removed, a session that moved into a still-existing worktree
+    resumes there, not in the project dir (which may be the removed tree)."""
+    from bridge import runner
+    s = store.create_session(8123, "/wt_proj", origin="dashboard",
+                             cwd="/tmp/removed-worktree-zzz")   # does not exist
+    store.set_work_cwd(s["id"], str(tmp_path))
+    _, cwd, _ = runner._finalize_run_context(
+        store.get_session(s["id"]), "/tmp", permission_mode=None, origin="dashboard")
+    assert cwd == str(tmp_path)
+
+
 # --- websocket framing (terminal transport) ---------------------------------
 
 def test_ws_accept_key_rfc_example():

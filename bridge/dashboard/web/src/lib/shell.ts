@@ -5,8 +5,14 @@ import type { CSSProperties } from "react";
 
 /** The right panel's body width. RightPanel sizes the body from this too — it
  *  used to re-type the clamp, and drifted a track-width behind, leaving a dead
- *  column between the transcript and the panel's left border. */
-export const rightBodyW = "clamp(230px,20vw,340px)";
+ *  column between the transcript and the panel's left border. `--rbody` is the
+ *  width you dragged the panel's seam to (App sets it on .hudgrid); without one
+ *  the layout's own clamp holds. */
+export const rightBodyW = "var(--rbody, clamp(230px,20vw,340px))";
+
+/** A dragged width as `--rbody`: never more than 40% of the window, so a wide
+ *  panel dragged on a big screen doesn't crush the transcript on a small one. */
+export const rbody = (px: number) => `clamp(230px, ${px}px, 40vw)`;
 
 /** Folded, the sessions column is the project rail: 72px, so a tile has a
  *  16px margin each side and the Mac app's traffic lights (13 + 3×12 + 2×8 =

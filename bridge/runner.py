@@ -3145,9 +3145,11 @@ def _finalize_run_context(session: dict, project_dir: str, *,
     cwd = cwd or project_dir
     # A stored cwd can be a git worktree that was later removed; spawning there
     # raises FileNotFoundError (which the bridge misreports as "`claude` not found
-    # on PATH"). Fall back to the project dir so the run still proceeds.
+    # on PATH"). Fall back to the tree the session moved into while it is still
+    # there (the project dir may be that removed tree), else the project dir.
     if not os.path.isdir(cwd):
-        cwd = project_dir
+        wt = session.get("work_cwd")
+        cwd = wt if wt and os.path.isdir(wt) else project_dir
     if not session.get("cwd"):
         store.set_cwd(session["id"], cwd)
     return session, cwd, permission_mode or profiles.effective(session)["permission_mode"]

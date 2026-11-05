@@ -130,6 +130,7 @@ def test_scan_groups_a_worktree_session_under_its_repo():
 def test_rescan_heals_a_stale_worktree_project():
     """Rows indexed before the fold existed carry the worktree's own rel; the
     next cold scan re-derives project from cwd and folds them."""
+    os.makedirs(os.path.join(_BASE, ".worktrees", "folded", "side"), exist_ok=True)
     store.upsert_native_session("uuid-stale-wt", OWNER, "/.worktrees/folded/side",
                                 os.path.join(_BASE, ".worktrees", "folded", "side"),
                                 title="old row", origin="terminal")
@@ -138,6 +139,18 @@ def test_rescan_heals_a_stale_worktree_project():
                                 os.path.join(_BASE, ".worktrees", "folded", "side"),
                                 title="old row", origin="terminal")
     assert store.get_by_claude_session_id("uuid-stale-wt")["project"] == "/folded"
+
+
+def test_rescan_keeps_the_project_when_the_cwd_is_gone():
+    """A transcript whose first folder was a since-removed worktree can't be
+    folded, so the rescan keeps the row's project instead of re-filing it under
+    that dead dir, which every list hides."""
+    store.upsert_native_session("uuid-gone-wt", OWNER, "/folded", os.path.join(_BASE, "folded"),
+                                title="moved on", origin="terminal")
+    store.upsert_native_session("uuid-gone-wt", OWNER, "/.worktrees/folded/removed",
+                                os.path.join(_BASE, ".worktrees", "folded", "removed"),
+                                title="moved on", origin="terminal")
+    assert store.get_by_claude_session_id("uuid-gone-wt")["project"] == "/folded"
 
 
 def test_scan_labels_origin_from_entrypoint():

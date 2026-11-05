@@ -34,7 +34,7 @@ import { ckId, turnRows } from "./lib/checkpoints";
 import type { TranscriptNav } from "./components/Transcript";
 import { useTelemetry } from "./lib/telemetry";
 import { isJob, jobGroup, JOBS_NAME, JOBS_REL, oneShot } from "./lib/jobs";
-import { ago, forgetLegacyTints, legacyTints, projectMark, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
+import { ago, fmtReset, forgetLegacyTints, legacyTints, projectMark, projectName, putProjectMark, setProjectMarks, setProjectNames, setSelfProject,
          useProjectTints } from "./lib/surfaces";
 import { noteStyling } from "./lib/stylerun";
 import { offerUsageSharing } from "./components/hud/UsageSharing";
@@ -103,12 +103,13 @@ import type { ProjectGroup } from "./components/hud/ProjectsPanel";
 import { FilesPanel, requestFileFind } from "./components/hud/FilesPanel";
 import { BranchesPanel, branchMenu } from "./components/hud/BranchesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
-import { RightPanel, useSettling, type PanelTab } from "./components/RightPanel";
+import { RailRing, RightPanel, useSettling, type PanelTab } from "./components/RightPanel";
+import { arrange } from "./lib/rail";
 import { GitPanel } from "./components/hud/GitPanel";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
-import { rightBodyW, shellCols } from "./lib/shell";
+import { rbody, rightBodyW, shellCols } from "./lib/shell";
 import { notify, PillHost, setLinks, setNeeds, setNoticeEnv, setNoticeSound } from "./components/hud/Notifications";
 import { MoveDock } from "./components/hud/MoveDock";
 import { openSettings } from "./lib/opensettings";
@@ -2345,11 +2346,21 @@ export function App() {
     }
   };
 
+  // The login the open session spends: its turn in flight's, else the one its
+  // next turn takes. The MODEL menu shows that login, so
+  // a profile pick or a fallback handover moves them at once: every login's
+  // meter is already in `accounts`. The default login still reads /local/usage,
+  // which carries its per-model caps on an older bridge too.
+  const spendSlot = spendingSlot(selected);
+  const spender = accounts.find((a) => a.slot === spendSlot) ?? null;
+  // USAGE's tile is that login's window as a ring: the PROFILE chip's window
+  // (chipWindow), printed as a number only once it runs low.
+  const usageWin = chipWindow(loginWindows(spender));
   const waitsOnYou = turns.some((t) => t.pending.length > 0);
   const rightTabs: PanelTab[] = [
     {
-      id: "turns", label: waitsOnYou ? "Turns (one waits on you)" : "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true,
-      ask: waitsOnYou,
+      id: "turns", label: "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true, group: "session",
+      ask: waitsOnYou, hint: waitsOnYou ? "one waits on you" : undefined,
       render: () => (
         <TurnsPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
           onJump={(id, key) => { toChat(); void jumpTo(id, key); }} onLatest={() => { toChat(); jumpToBottom(); }}
@@ -2366,7 +2377,8 @@ export function App() {
       ),
     },
     {
-      id: "files", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree",
+      id: "files", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree", group: "session",
+      hint: filesEdits.edited.size ? `${filesEdits.edited.size} edited this session` : undefined,
       render: () => (
         <FilesPanel
           project={sessionProject} branch={sessionBranch}
@@ -2385,8 +2397,9 @@ export function App() {
       ),
     },
     {
-      id: "git", label: dirtyFiles ? `Git (${dirtyFiles} changed)` : gitSync ? `Git (${gitSync})`
-        : treeFetch?.busy ? "Git (checking origin)" : "Git",
+      id: "git", label: "Git", group: "session",
+      hint: [dirtyFiles ? `${dirtyFiles} changed` : "", gitSync ?? "", treeFetch?.busy ? "checking origin" : ""]
+        .filter(Boolean).join(" · ") || undefined,
       icon: <GitBranch {...RAIL} />, ownScroll: true, scope: "worktree",
       badge: dirtyFiles ? railCount(dirtyFiles) : gitSync, busy: !!treeFetch?.busy,
       render: () => (
@@ -2403,7 +2416,7 @@ export function App() {
     },
     // Every branch and its next step (lib/branchrows); ⋯ and right-click hold the rest.
     {
-      id: "branches", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project",
+      id: "branches", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project", group: "project",
       render: () => (
         <BranchesPanel project={sessionProject} branch={sessionBranch}
           sessions={sessions} status={statusMap} nonce={gitNonce}
@@ -2419,15 +2432,15 @@ export function App() {
     },
     // Hidden while LESSONS is off — nothing is being written.
     ...(ai.learn ? [{
-      id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true,
-      badge: unreadLessons ? railCount(unreadLessons) : null,
+      id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true, group: "project",
+      badge: unreadLessons ? railCount(unreadLessons) : null, hint: unreadLessons ? `${unreadLessons} unread` : undefined,
       render: () => (
         <LearnPanel project={sessionProject} read={lessonsRead}
           onRead={(k) => setLessonsRead((r) => new Set(r).add(k))} />
       ),
     }] : []),
     ...(rivendellOn ? [{
-      id: "rivendell", label: rivendellDown ? "Rivendell tasks — link broken" : "Rivendell tasks",
+      id: "rivendell", label: "Rivendell tasks", hint: rivendellDown ? "link broken" : undefined, group: "project",
       icon: <RivendellIcon {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
       render: () => (
         <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
@@ -2435,7 +2448,7 @@ export function App() {
       ),
     }] : []),
     ...(rivendellOn ? [{
-      id: "team", label: teamNew ? `Team (${teamNew} new)` : "Team",
+      id: "team", label: "Team", hint: teamNew ? `${teamNew} new` : undefined, group: "you",
       icon: <Users {...RAIL} />, ownScroll: true, badge: teamNew ? railCount(teamNew) : null,
       render: () => (
         <TeamPanel data={team} fail={teamFail}
@@ -2448,20 +2461,38 @@ export function App() {
       ),
     }] : []),
     {
-      id: "usage", label: "Usage", icon: <Gauge {...RAIL} />, ownScroll: true,
+      id: "usage", label: "Usage", group: "you", ownScroll: true,
+      icon: usageWin ? <RailRing left={usageWin.left} /> : <Gauge {...RAIL} />,
+      badge: usageWin && usageWin.left < 25 ? `${usageWin.left}%` : null, low: true,
+      hint: usageWin ? `${usageWin.left}% of the ${usageWin.tag === "WK" ? "week" : "5-hour window"} left · refills in ${fmtReset(usageWin.resets_at)}` : undefined,
       render: () => (
         <UsagePanel onOpenProject={(rel) => openAnalyze(rel)} win={chipWindow(loginWindows(spender))} />
       ),
     },
   ];
+  // The rail as you arranged it (lib/rail). The open tab stays on it while open
+  // even if you hid it, so a deep link to it (⌘P, the clock menu's Usage, a
+  // changelog Open ›) never lands on some other tab.
+  const railTabs = arrange(rightTabs, settings.rightOrder, settings.rightHidden.filter((id) => id !== settings.rightTab));
+  const railKeys = railTabs.map((t) => t.id).join();
+  // ⌥1–9: the rail's tabs in its own order, as a click on the tile (the open one
+  // shuts). Not inside a text field, where ⌥+digit types a character (¡™£, or a
+  // bracket on some keyboard layouts).
+  useEffect(() => {
+    const ids = railKeys.split(",");
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.metaKey || e.ctrlKey || e.shiftKey || !/^Digit[1-9]$/.test(e.code)) return;
+      if ((e.target as HTMLElement | null)?.closest?.("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) return;
+      const id = ids[Number(e.code.slice(5)) - 1];
+      if (!id) return;
+      e.preventDefault();
+      pickRightTab(id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pickRightTab is a setter
+  }, [railKeys]);
 
-  // The login the open session spends: its turn in flight's, else the one its
-  // next turn takes. The MODEL menu shows that login, so
-  // a profile pick or a fallback handover moves them at once: every login's
-  // meter is already in `accounts`. The default login still reads /local/usage,
-  // which carries its per-model caps on an older bridge too.
-  const spendSlot = spendingSlot(selected);
-  const spender = accounts.find((a) => a.slot === spendSlot) ?? null;
   const spentUsage = spendSlot === DEFAULT_SLOT ? usage : spender ? loginUsage(spender) : null;
   // Model picker options — the live list served from /local/state (Models API).
   const modelOpts = useMemo(() => modelOptions(state?.models), [state?.models]);
@@ -2551,6 +2582,20 @@ export function App() {
     // An edit box has its own Copy, so the selection rows would only repeat it.
     const items: CtxItem[] = nativeCtx.top.length && ctxMenu.type !== "editor" ? [...nativeCtx.top, { divider: true }] : [];
     const copy = (t: string) => { try { void navigator.clipboard?.writeText(t); } catch { /* ignore */ } };
+    if (ctxMenu.type === "railtab") {
+      const hidden = settings.rightHidden;
+      // The open tab stays on the rail while it's open (railTabs), so hiding it
+      // moves you to the first other tab rather than doing nothing you can see.
+      const next = railTabs.find((t) => t.id !== ctxMenu.id)?.id;
+      if (next) items.push({ icon: "⊘", label: `Hide ${ctxMenu.label}`, hint: "right-click any tile to bring it back",
+        onClick: () => patchSettings({ rightHidden: [...hidden, ctxMenu.id],
+                                       ...(ctxMenu.id === settings.rightTab && { rightTab: next as RightTab }) }) });
+      const back = rightTabs.filter((t) => hidden.includes(t.id));
+      if (back.length) items.push({ icon: "+", label: "Show a hidden tab", children: back.map((t) => ({
+        icon: "+", label: t.label, onClick: () => patchSettings({ rightHidden: hidden.filter((x) => x !== t.id) }) })) });
+      if (settings.rightOrder.length) items.push({ icon: "↺", label: "Reset the order", hint: "back to the app's",
+        onClick: () => patchSettings({ rightOrder: [] }) });
+    }
     if (ctxMenu.type === "session") {
       const s = sessions.find((x) => x.id === ctxMenu.id);
       const pinned = pins.has(ctxMenu.id);
@@ -2786,7 +2831,8 @@ export function App() {
       items.push({ divider: true }, { icon: "⌾", label: "Browser", children: nativeCtx.page });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai, plugins, hiddenProjects]);
+  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai, plugins, hiddenProjects,
+      settings.rightHidden, settings.rightOrder, railKeys]);
 
   /** Your own name for a session. */
   async function renameSession(id: string, current: string) {
@@ -2969,7 +3015,8 @@ export function App() {
             <div
               className="hudgrid grid min-h-0 flex-1"
               data-rbare={rightShown ? undefined : ""}
-              style={{ gridTemplateColumns: shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0 }}
+              style={{ gridTemplateColumns: shellCols(settings.rightOpen, settings.leftOpen), gridTemplateRows: "minmax(0,1fr)", minWidth: 0,
+                       ...(settings.rightW ? { "--rbody": rbody(settings.rightW) } : {}) } as CSSProperties}
             >
               {/* LEFT — no scroller here: SessionsPanel owns the only scroll. */}
               <div className="shellcol flex min-h-0 min-w-0 flex-col" style={{ borderRight: "1px solid var(--border)" }}>
@@ -3155,7 +3202,9 @@ export function App() {
                   {rightShown && strip}
                 </RightCap>
                 <RightPanel
-                  tabs={rightTabs} activeId={settings.rightTab}
+                  tabs={railTabs} activeId={settings.rightTab}
+                  onReorder={(ids) => patchSettings({ rightOrder: ids })}
+                  onResize={(w) => patchSettings({ rightW: w })}
                   open={settings.rightOpen} shown={rightShown} onTab={pickRightTab}
                   project={sessionProject} branch={sessionBranch}
                   railHead={isLinuxApp() ? <LinuxRailHead onOpenSettings={() => setSettingsOpen(true)} /> : undefined}

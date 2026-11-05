@@ -20,6 +20,7 @@ import { toIntro, type Intro } from "./intro";
 import { NYAN_KEYS, type NyanMode, type NyanSound } from "./nyan";
 import { TONES, type ToneKey } from "./push";
 import { toChatBg, type ChatBg } from "./toolwidget";
+import { RIGHT_W } from "./rail";
 
 export type ThemeKey =
   | "aqua" | "green" | "amber" | "magenta" | "blueprint" | "void"
@@ -352,6 +353,11 @@ export interface HudSettings {
   rightOpen: boolean; // right sidebar expanded
   leftOpen: boolean; // sessions column expanded; folded, it is the project rail
   rightTab: RightTab; // which sidebar tab it opens on
+  // The rail as you arranged it (lib/rail.ts): tab ids in your drag order, the
+  // ones you hid, and the panel width you dragged (0 = the layout's own).
+  rightOrder: string[];
+  rightHidden: string[];
+  rightW: number;
   indicator: Indicator; // which working-indicator form is live
   nyan: NyanMode; // which cat, when indicator === "nyan"
   nyanSound: NyanSound; // "match" = the picked cat's own track
@@ -432,6 +438,7 @@ function urlLayout(): ChatLayout | null {
 const KEY = "hud-settings";
 const DEFAULTS: HudSettings = {
   theme: "aqua", scanlines: true, sweep: true, glow: true, rightOpen: true, leftOpen: true, rightTab: "files",
+  rightOrder: [], rightHidden: [], rightW: 0,
   indicator: "orbit", nyan: "original", nyanSound: "match", nyanVolume: 0.4, nyanExtra: true, intro: "shuffle",
   font: "", baseFont: 0, openResults: false, foldsOpen: false,
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
@@ -479,6 +486,8 @@ export function toTheme(v: unknown): ThemeKey {
   return THEMES.includes(k as ThemeKey) ? (k as ThemeKey) : "aqua";
 }
 
+const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+
 export function loadSettings(): HudSettings {
   try {
     const raw = localStorage.getItem(KEY);
@@ -493,6 +502,9 @@ export function loadSettings(): HudSettings {
         leftOpen: p.leftOpen ?? true,
         // "changes" was its own tab until the GIT tab took it in (2026-10-18)
         rightTab: (p.rightTab as string) === "changes" ? "git" : RIGHT_TABS.includes(p.rightTab as RightTab) ? (p.rightTab as RightTab) : "files",
+        rightOrder: strs(p.rightOrder),
+        rightHidden: strs(p.rightHidden),
+        rightW: typeof p.rightW === "number" && p.rightW >= RIGHT_W.min && p.rightW <= RIGHT_W.max ? p.rightW : 0,
         indicator: toIndicator(p.indicator),
         nyan: NYAN_KEYS.includes(p.nyan as string) ? (p.nyan as NyanMode) : "original",
         nyanSound:

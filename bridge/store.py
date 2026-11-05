@@ -337,7 +337,9 @@ def upsert_native_session(claude_sid: str, chat_id: int, project: str, cwd: str,
     (native.scan folds a worktree cwd into its parent repo), so rows indexed
     before that fold existed heal themselves instead of keeping a sidebar group
     per branch. Nothing lets you move a native row to another project by hand,
-    so there is no human choice here to clobber."""
+    so there is no human choice here to clobber. A cwd that no longer exists
+    re-derives nothing: main_checkout can't fold a removed worktree, so it would
+    re-file the row under a dir that's gone, and the lists hide those."""
     now = updated if updated is not None else time.time()
     existing = get_by_claude_session_id(claude_sid)
     with closing(_connect()) as c:
@@ -353,7 +355,8 @@ def upsert_native_session(claude_sid: str, chat_id: int, project: str, cwd: str,
                 "THEN ? ELSE title END, "
                 "origin=CASE WHEN origin IN ('vscode','terminal') THEN ? ELSE origin END "
                 "WHERE id=?",
-                (now, cwd, project, title, origin, existing["id"]))
+                (now, cwd, project if os.path.isdir(cwd) else existing["project"],
+                 title, origin, existing["id"]))
             return get_session(existing["id"])
         c.execute(
             "INSERT INTO sessions(id,chat_id,project,claude_session_id,title,"
@@ -597,6 +600,14 @@ def set_work_cwd(session_id: str, path: "str | None") -> None:
     stores."""
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET work_cwd=? WHERE id=?", (path, session_id))
+
+
+def rehome(session_id: str, project: str, cwd: str) -> None:
+    """File a session under the tree it moved into once the dir it started in is
+    gone: that tree becomes its project and cwd, and the detour ends."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET project=?, cwd=?, work_cwd=NULL WHERE id=?",
+                  (project, cwd, session_id))
 
 
 def set_ref(session_id: str, ref: str) -> None:
