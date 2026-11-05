@@ -183,6 +183,8 @@ function FileRefSpan({
       }}
       title={`Open ${path}${line ? ` at line ${line}` : ""}`}
       className="md-fileref"
+      // App's right-click menu: Show in Finder, once the path is found in the session's tree
+      data-ctx-type="file" data-ctx-id={path} data-ctx-label={label}
     >
       <FileIcon name={path} size={13} />
       <code>{label}</code>

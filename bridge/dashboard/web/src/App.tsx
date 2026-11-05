@@ -58,6 +58,7 @@ import {
 } from "./lib/theme";
 import { useHostVitals, useWeather } from "./lib/ambient";
 import { nativeCtxItems } from "./lib/nativeCtx";
+import { revealFile, revealItems } from "./lib/reveal";
 import { copySelection, cutSelection, editorFor, pasteInto, selectedText } from "./lib/editorctx";
 import { redo, selectAll, undo } from "@codemirror/commands";
 import type { EditorView } from "@codemirror/view";
@@ -356,7 +357,8 @@ export function App() {
   // Set only when the modal is opened as a deep-link on a file (sidebar FILES).
   const [analyzeFile, setAnalyzeFile] = useState<{ path: string; branch?: string; line?: number } | null>(null);
   // Same-named files the click could have meant, waiting to be picked between.
-  const [filePick, setFilePick] = useState<{ x: number; y: number; name: string; line?: number; paths: string[] } | null>(null);
+  // `root` set: picking one shows it in the OS file manager instead of opening it.
+  const [filePick, setFilePick] = useState<{ x: number; y: number; name: string; line?: number; paths: string[]; root?: string } | null>(null);
   // Set only when something opens the modal straight onto a tab (composer MAP).
   const [analyzeTab, setAnalyzeTab] = useState<AnalyzeTab | undefined>(undefined);
   // Set only by re-run on a transcript terminal block — typed into the PTY.
@@ -1677,15 +1679,16 @@ export function App() {
 
   /** A path the model mentioned, opened in the editor — at the line it named,
    *  if it named one. Routed through the same call the file browser uses, so it
-   *  lands on the session's own branch. */
-  async function openFileRef(path: string, line?: number, at?: { x: number; y: number }) {
+   *  lands on the session's own branch. `reveal`: shown in the OS file manager instead. */
+  async function openFileRef(path: string, line?: number, at?: { x: number; y: number }, reveal = false) {
     if (!sessionProject) { notify("info", "No project open for this session."); return; }
     // The path came out of prose, so check it against the tree we're about to
     // open it in — a file the model invented, or named from another directory,
     // would otherwise open an empty editor.
-    let target = path;
+    let target = path, root = "";
     try {
-      const { files } = await api.filesTree(sessionProject, sessionBranch);
+      const { files, root: r } = await api.filesTree(sessionProject, sessionBranch);
+      root = r ?? "";
       // A bare `App.tsx` matches one per package, so break the tie with what
       // this session has already said and done: tool summaries (a Bash command
       // with the path inside it) and the model's own prose, which names files in
@@ -1701,7 +1704,7 @@ export function App() {
         // Undecidable is a question, not an error: the candidates open as a menu
         // under the link. A toast listing them would name the right file and
         // still leave you to go find it in the tree yourself.
-        if (many.length > 1 && at) { setFilePick({ ...at, name: path, line, paths: many }); return; }
+        if (many.length > 1 && at) { setFilePick({ ...at, name: path, line, paths: many, ...(reveal ? { root } : {}) }); return; }
         notify("info", many.length > 1
           ? `Several files named ${path} — ${many.join("  ·  ")}`
           : `No such file in this branch — ${path}`);
@@ -1709,7 +1712,8 @@ export function App() {
       }
       target = hit;
     } catch { /* tree unreachable: open anyway, the editor reports its own error */ }
-    openAnalyze(sessionProject, { path: target, branch: sessionBranch, line });
+    if (reveal) void revealFile(root && `${root}/${target}`);
+    else openAnalyze(sessionProject, { path: target, branch: sessionBranch, line });
   }
 
   /** A line of the model's prose → a markdown blockquote in the prompt box, the
@@ -2719,6 +2723,10 @@ export function App() {
     } else if (ctxMenu.type === "branch") {
       // a BRANCHES row: the panel builds its items, the same list its ⋯ opens
       items.push(...(branchMenu.items?.(ctxMenu.id) ?? []));
+    } else if (ctxMenu.type === "file") {
+      // a file named in a reply (Markdown's FileRefSpan), looked up in the session's tree when picked
+      const row = revealItems(() => void openFileRef(ctxMenu.id, undefined, { x: ctxMenu.x, y: ctxMenu.y }, true));
+      if (row.length) items.push(...row, { divider: true });
     } else if (ctxMenu.type === "editor" && editorFor(ctxMenu.id)) {
       // The prompt box and the EDITOR body are CodeMirror, a contenteditable the
       // browser-menu exemption misses (lib/editorctx). The registry hands back
@@ -2753,6 +2761,7 @@ export function App() {
         if (act.def) items.push({ icon: "↗", label: "Go to definition", hint: "⌘-click · F12", onClick: act.def });
         if (act.peek) items.push({ icon: "◫", label: "Peek definition", hint: "⌥F12", onClick: act.peek });
         if (act.refs) items.push({ icon: "≡", label: "Find all references", hint: "⇧F12", onClick: act.refs });
+        items.push(...revealItems(ed.file?.()));
         if (sel) {
           const from = v.state.selection.main.from;
           items.push({ icon: "❞", label: "Send selection to chat", hint: "quotes path:line into the prompt",
@@ -3238,7 +3247,8 @@ export function App() {
                 items={distinctDirs(filePick.paths).map((dir, i) => ({
                   icon: "▤", label: dir,
                   onClick: () => {
-                    if (sessionProject)
+                    if (filePick.root !== undefined) void revealFile(filePick.root && `${filePick.root}/${filePick.paths[i]}`);
+                    else if (sessionProject)
                       openAnalyze(sessionProject, { path: filePick.paths[i], branch: sessionBranch, line: filePick.line });
                   },
                 }))}

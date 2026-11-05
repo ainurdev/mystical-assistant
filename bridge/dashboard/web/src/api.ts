@@ -2170,7 +2170,7 @@ export const api = {
     }),
   // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
   filesTree: (project: string, branch?: string) =>
-    req<{ files: string[]; ignored?: string[] }>(
+    req<{ files: string[]; ignored?: string[]; root?: string }>(
       `/local/files/tree?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
     ),
   fileRead: (project: string, path: string, branch?: string) =>
@@ -2192,6 +2192,9 @@ export const api = {
       method: "POST",
       body: { project, path, content, ...(branch ? { branch } : {}) },
     }),
+  /** Show an absolute path in the OS file manager (lib/reveal). */
+  revealFile: (path: string) =>
+    req<{ ok: boolean }>("/local/files/reveal", { method: "POST", body: { path } }),
   /** Every session's prompts, newest first and deduped — what Ctrl+R searches. */
   promptHistory: () => req<{ prompts: string[] }>("/local/prompts"),
   /** Mint a read-only link to one session, or revoke every link it has. The
