@@ -10,8 +10,10 @@ const t = (id: string, online: boolean, ago?: number): Teammate => ({
 let r = room([t("b", false, 120), t("a", true, 30), t("c", false)], now);
 console.assert(r.shown.map((x) => x.id).join() === "a,b,c" && r.on === 1, "on now first");
 console.assert(r.caption.startsWith("a is on now") && r.caption.endsWith("b left 2m ago"), "caption: " + r.caption);
-r = room(Array.from({ length: 8 }, (_, i) => t("p" + i, i < 2)), now);
-console.assert(r.shown.length === 5 && r.more === 3 && r.shown[0].online && r.shown[1].online, "5 shown, +3");
+for (const [n, shown, more] of [[4, 4, 0], [5, 3, 2], [9, 3, 6]]) {
+  r = room(Array.from({ length: n }, (_, i) => t("p" + i, i < 2)), now);
+  console.assert(r.shown.length === shown && r.more === more && r.shown[0].online && r.shown[1].online, `${n} people: ${r.shown.length} shown, +${r.more}`);
+}
 r = room([t("x", false, 7200)], now);
 console.assert(r.caption === "nobody is on right now" && r.on === 0 && !r.lead, "nobody on, left long ago: " + r.caption);
 console.assert(room([], now).shown.length === 0 && room([], now).caption === "", "empty");

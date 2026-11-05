@@ -7727,9 +7727,9 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* Team ROOM (inside .rh). */
 .tr-k { font-size: var(--t95); color: var(--purple-h, var(--txd)); white-space: nowrap; }
 .tr-pill { margin-left: auto; flex: none; font-size: var(--t9); letter-spacing: 1px; padding: 0 6px; border: 1px solid currentColor; border-radius: 8px; white-space: nowrap; }
-.tr-row { display: flex; gap: 7px; height: 62px; margin-top: 8px; }
-.tr-p { flex: none; width: 44px; display: flex; flex-direction: column; align-items: center; gap: 4px; appearance: none; background: transparent; border: 0; padding: 0; font: inherit; }
-.tr-av { position: relative; display: grid; place-items: center; width: 40px; height: 40px; box-sizing: border-box; border-radius: 50%; padding: 0;
+.tr-row { display: flex; gap: 8px; height: 62px; margin-top: 8px; }
+.tr-p { flex: none; width: 42px; display: flex; flex-direction: column; align-items: center; gap: 4px; appearance: none; background: transparent; border: 0; padding: 0; font: inherit; }
+.tr-av { position: relative; display: grid; place-items: center; width: 38px; height: 38px; box-sizing: border-box; border-radius: 50%; padding: 0;
   border: 2px solid color-mix(in srgb, var(--txl) 40%, transparent); }
 .tr-p:not(.on):not(.tr-send) .tr-av { opacity: .55; }
 .tr-p.on .tr-av { border-color: var(--ok); }

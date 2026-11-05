@@ -26,7 +26,7 @@ export function TeamRoom({ data, sessionTitle, onSendTo }: {
       <div className="tr-row">
         {r.shown.map((t) => (
           <div key={t.id} className={`tr-p${t.online ? " on" : ""}`} title={t.name}>
-            <span className="tr-av"><Avatar id={t.id} name={t.name} src={t.avatarUrl} size={36} />{t.online && <i className="tr-live" />}</span>
+            <span className="tr-av"><Avatar id={t.id} name={t.name} src={t.avatarUrl} size={34} />{t.online && <i className="tr-live" />}</span>
             <span className="tr-n">{t.name.trim().split(/\s+/)[0]}</span>
           </div>
         ))}
