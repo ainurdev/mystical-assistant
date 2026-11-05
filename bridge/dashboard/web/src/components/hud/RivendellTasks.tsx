@@ -231,7 +231,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
 
   return (
     <div className="panel" style={{ border: `1px solid ${mix("var(--acc)", 16)}`, background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", height: 36, boxSizing: "border-box", flex: "none" }}>
         <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>RIVENDELL</span>
         <span style={{ display: "flex", gap: 6 }}>
           {projects[0]?.url && (
@@ -241,7 +241,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
           <button style={toolBtn} title="refresh" onClick={refresh}>⟳</button>
         </span>
       </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
+      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
       {hero()}
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "4px 0 10px" }}>
         {body()}

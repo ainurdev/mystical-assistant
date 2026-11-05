@@ -286,7 +286,7 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
 
   return (
     <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 12px", height: 36, boxSizing: "border-box", flex: "none" }}>
         <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>BRANCHES</span>
         {base && <span className="bhead-base swapin"><GitBranch size={10} strokeWidth={2.2} aria-hidden />{base}</span>}
         <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
@@ -301,7 +301,7 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
             style={{ ...btn, background: hov ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent" }}>⟳</button>
         </span>
       </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
+      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
       <BranchTrunk loading={!!project && !err && !data} base={base} rows={g.worktrees.map((r) => ({ name: keyOf(r), state: trunkState(r) }))} />
       {naming && (
         <>
