@@ -5,6 +5,7 @@ import { initials } from "../../lib/rivendelltasks";
 import { useClock12 } from "../../lib/surfaces";
 import { KIND_LABEL, byPresence, foldSent, personTint, presence, relationLine, seen, sentAgo, sentBefore, sentStatus, shareFacts, type SentTone } from "../../lib/team";
 import { ImageLightbox } from "../ImageLightbox";
+import { TeamRoom } from "./TeamRoom";
 
 const UI = "var(--ui-font, inherit)";
 const MONO = "var(--mono)";
@@ -301,13 +302,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
         <button style={toolBtn} title="refresh" onClick={onRefresh}>⟳</button>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
-      {data && !data.error && (
-        <div className="swapin" style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px 2px", fontSize: "var(--t95)", color: "var(--purple-h)", minWidth: 0 }}>
-          <span style={{ color: "var(--purple)", flex: "none" }}>◆</span>
-          <span>Rivendell</span>
-          <span style={{ marginLeft: "auto", flex: "none", color: on.length ? "var(--ok)" : "var(--txl)" }}>{on.length} ON NOW</span>
-        </div>
-      )}
+      <TeamRoom data={data} sessionTitle={sessionTitle} onSendTo={onSendTo} />
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "4px 0 10px" }}>{body()}</div>
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
     </div>

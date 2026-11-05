@@ -7724,3 +7724,23 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); border-radius: 6px; }
 .bb-go:hover, .bb-go:focus-visible { background: color-mix(in srgb, var(--acc) 18%, transparent); }
 .bb-lane span { max-width: 100%; padding: 0 3px; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Team ROOM (inside .rh). */
+.tr-k { font-size: var(--t95); color: var(--purple-h, var(--txd)); white-space: nowrap; }
+.tr-pill { margin-left: auto; flex: none; font-size: var(--t9); letter-spacing: 1px; padding: 0 6px; border: 1px solid currentColor; border-radius: 8px; white-space: nowrap; }
+.tr-row { display: flex; gap: 7px; height: 62px; margin-top: 8px; }
+.tr-p { flex: none; width: 44px; display: flex; flex-direction: column; align-items: center; gap: 4px; appearance: none; background: transparent; border: 0; padding: 0; font: inherit; }
+.tr-av { position: relative; display: grid; place-items: center; width: 40px; height: 40px; box-sizing: border-box; border-radius: 50%; padding: 0;
+  border: 2px solid color-mix(in srgb, var(--txl) 40%, transparent); }
+.tr-p:not(.on):not(.tr-send) .tr-av { opacity: .55; }
+.tr-p.on .tr-av { border-color: var(--ok); }
+.tr-live { position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); border: 2px solid var(--panel);
+  animation: tr-pulse 2s ease-in-out infinite; }
+@keyframes tr-pulse { 50% { opacity: .45; } }
+.tr-n { max-width: 100%; font-size: var(--t9); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-p.on .tr-n { color: var(--txb); font-weight: 600; }
+.tr-more { font-size: var(--t95); color: var(--txd); }
+.tr-send { margin-left: auto; cursor: pointer; color: var(--acc2, var(--acc)); }
+.tr-send .tr-av { border: 1.5px dashed color-mix(in srgb, var(--acc) 60%, transparent); }
+.tr-send .tr-n { color: var(--acc2, var(--acc)); font-weight: 700; }
+.tr-send:hover .tr-av, .tr-send:focus-visible .tr-av { background: color-mix(in srgb, var(--acc) 18%, transparent); }
+.tr-cap { height: 14px; margin-top: 4px; font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
