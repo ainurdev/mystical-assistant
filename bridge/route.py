@@ -52,8 +52,9 @@ import re
 from typing import NamedTuple
 
 SMART_ZONE = 150_000  # tokens: past it, a phase boundary offers /compact first
-# The sub-switches pick() obeys, each named in `off` when it is turned off.
-SUBS = ("autopick", "nextstep", "smartzone")
+# The sub-switches pick() obeys, each named in `off` when it is turned off. AUTO NEXT
+# STEPS isn't one: off, the step doesn't start by itself, so the ghost offers it.
+SUBS = ("autopick", "smartzone")
 
 _NS = "mattpocock-skills:"
 _MIN = 12      # a start rule needs this many characters to go on
@@ -238,8 +239,9 @@ def _num(path):
     return re.match(r"\d*", name).group() or name
 
 
-def _next(last, root):
-    """The step after the flow command `last`, or None when that command has none."""
+def _next(last, root, ticketruns=False):
+    """The step after the flow command `last`, or None when that command has none.
+    With TICKETS on (`ticketruns`) the bridge builds the tickets, so no ticket step."""
     skill, rest = last
     tickets = bool(root)
     if skill in _GRILLS:
@@ -247,6 +249,8 @@ def _next(last, root):
                      alts=(("implement", "or build it here if one session holds it"),))
     if skill == "to-spec":
         return _Step("to-tickets", "next", _WHY["to-tickets"])
+    if ticketruns and (skill == "to-tickets" or skill == "implement" and _TICKET.search(rest)):
+        return None
     if skill == "to-tickets":
         # shortcut: tickets are walked in file order, one at a time. That honours the
         # blockers-first numbering but ignores a parallel frontier, so upgrade when
@@ -277,7 +281,7 @@ def _route(step, cmds, auto=False):
 
 def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_tokens: "int | None",
          first: bool, cmds: "dict[str, str]", root: "str | None",
-         off: "frozenset[str]" = frozenset()) -> "dict | None":
+         off: "frozenset[str]" = frozenset(), ticketruns: bool = False) -> "dict | None":
     """The one route to offer for `text` (what is in the composer), or None.
 
     An empty `text` asks for the next step after a turn that finished. `prompts` are
@@ -285,7 +289,7 @@ def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_toke
     ended; `first` is True before the session's first turn; `cmds` maps every listed
     command name to its description; `root` is the absolute path of the session's
     checkout (the project's, or its worktree); `off` holds the sub-switches (SUBS)
-    that are turned off.
+    that are turned off; `ticketruns` is the TICKETS switch.
 
     Returns {"name", "desc", "why", "auto", "arg", "fresh", "kind", "alts"}: kind is
     start | next, `arg` goes after the name, `fresh` means open it in a
@@ -301,8 +305,8 @@ def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_toke
     # spans typed turns.
     if t:
         step = _typed(t, last, done, cmds)
-    elif done and last and "nextstep" not in off and (last[0] in _GRILLS or _boundary(prompts)):
-        step = _next(last, root)
+    elif done and last and (last[0] in _GRILLS or _boundary(prompts)):
+        step = _next(last, root, ticketruns)
     else:
         step = None
     if step is None or _resolve(step.skill, cmds) is None:

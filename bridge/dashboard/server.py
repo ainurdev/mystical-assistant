@@ -1291,7 +1291,7 @@ class Handler(BaseHTTPRequestHandler):
                         last_status=body.get("last_status"), ctx_tokens=body.get("ctx_tokens"),
                         first=body.get("first") is True,
                         cmds={c["name"]: c["description"] for c in commands.available(root)},
-                        root=root, off=frozenset(off))
+                        root=root, off=frozenset(off), ticketruns=aifeatures.enabled("ticketruns"))
                 except Exception:  # noqa: BLE001 — a body or a rule that fails is just "no route"
                     pass
             return self._json({"route": picked})

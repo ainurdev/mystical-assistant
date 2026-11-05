@@ -48,9 +48,9 @@ def root(tmp_path):
     return str(tmp_path)
 
 
-def go(root, text="", *, prompts=(), status="done", ctx=None, first=False, cmds=CMDS, off=()):
+def go(root, text="", *, prompts=(), status="done", ctx=None, first=False, cmds=CMDS, off=(), ticketruns=False):
     return route.pick(text, prompts=list(prompts), last_status=status, ctx_tokens=ctx,
-                      first=first, cmds=cmds, root=root, off=frozenset(off))
+                      first=first, cmds=cmds, root=root, off=frozenset(off), ticketruns=ticketruns)
 
 
 def tickets(root, *names, feat="feat", at=None):
@@ -67,7 +67,7 @@ def tickets(root, *names, feat="feat", at=None):
 
 def test_constants():
     assert route.SMART_ZONE == 150_000
-    assert route.SUBS == ("autopick", "nextstep", "smartzone")
+    assert route.SUBS == ("autopick", "smartzone")
     assert len(LONG) == 220
 
 
@@ -240,8 +240,17 @@ def test_off_autopick(root):
 
 
 def test_off_nextstep(root):
-    assert go(root, "", prompts=[GRILL], off={"nextstep"}) is None
+    # AUTO NEXT STEPS off: the step doesn't start by itself, so the ghost offers it
+    assert go(root, "", prompts=[GRILL], off={"nextstep"})["name"] == NS + "to-spec"
     assert go(root, FEATURE, off={"nextstep"})["name"] == NS + "grill-with-docs"  # typed routes stay
+
+
+def test_with_tickets_on_the_ghost_offers_no_ticket_steps(root):
+    issues = tickets(root, "01-a.md", "02-b.md")
+    assert go(root, "", prompts=[TICKETS], ticketruns=True) is None        # BUILD runs them
+    assert go(root, "", prompts=[flow("implement", f"{issues}/01-a.md")], ticketruns=True) is None
+    assert go(root, "", prompts=[flow("to-spec")], ticketruns=True)["name"] == NS + "to-tickets"
+    assert go(root, "", prompts=[flow("implement", "the digest card")], ticketruns=True)["name"] == NS + "retro"
 
 
 def test_off_smartzone(root):
@@ -518,11 +527,20 @@ def test_each_sub_switch_that_is_off_reaches_pick(monkeypatch, sub):
     assert seen == [frozenset({sub}), frozenset()]
 
 
+def test_the_tickets_switch_reaches_pick(monkeypatch):
+    seen = []
+    monkeypatch.setattr(route, "pick", lambda text, **kw: seen.append(kw["ticketruns"]))
+    post(monkeypatch, {"text": FEATURE}, off={"ticketruns"})
+    post(monkeypatch, {"text": FEATURE})
+    assert seen == [False, True]
+
+
 def test_the_sub_switches_pick_obeys_are_the_registered_ones():
     """A key in route.SUBS that aifeatures doesn't register would read as off for
     good, and the rule behind it would never fire."""
     subs = {f["key"] for f in aifeatures.FEATURES if f.get("parent") == "router"}
-    assert subs - {"ticketruns"} == set(route.SUBS)   # TICKETS is the scheduler's (bridge/tickets.py), no rule's
+    # AUTO NEXT STEPS is paths' (the ghost shows either way), TICKETS a pick() argument of its own
+    assert subs - {"nextstep", "ticketruns"} == set(route.SUBS)
 
 
 @pytest.mark.parametrize("prompts", [[None, flow("grill-with-docs", "x")], [GRILL, None, 7]])
