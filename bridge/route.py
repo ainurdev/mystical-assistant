@@ -16,13 +16,9 @@ prompt would wait on it. The patterns follow ask-matt's own map. A miss costs
 nothing (no ghost, the prompt goes as typed) and a wrong hit costs one keystroke:
 an auto pick is removed with Backspace, a suggestion is ignored.
 
-The Ask Matt fallback. A long prompt (200+ characters) that no rule fits is the
-case rules are worst at. Rather than guess, it offers /ask-matt, Matt's own router,
-which reads the whole map. That is one ordinary turn the user chooses to take, so
-the model call is paid for on request and never per keystroke. Inside a grill the
-typed text is an answer to the interview: only the moves that follow a grill fire
-(to-spec, to-tickets, implement, prototype, handoff) and wait-what, which Matt means
-for use inside any other skill; Ask Matt does not.
+Inside a grill the typed text is an answer to the interview: only the moves that
+follow a grill fire (to-spec, to-tickets, implement, prototype, handoff) and
+wait-what, which Matt means for use inside any other skill.
 
 Next steps stay at a boundary. A step is offered only while its flow command is the
 newest prompt (a /compact doesn't count): after a typed reply the flow has moved on
@@ -47,7 +43,7 @@ nothing.
 
 A "flow command" is a prompt that starts with /mattpocock-skills:. Flow state is
 read from the prompts the caller passes. Pure apart from two lookups under `root`:
-docs/agents/issue-tracker.md and .scratch/*/issues/*.md. Stdlib only.
+.mystical/tickets/*/*.md. Stdlib only.
 """
 
 import glob
@@ -57,17 +53,13 @@ from typing import NamedTuple
 
 SMART_ZONE = 150_000  # tokens: past it, a phase boundary offers /compact first
 # The sub-switches pick() obeys, each named in `off` when it is turned off.
-SUBS = ("askmatt", "autopick", "nextstep", "tickets", "smartzone", "setupnudge")
+SUBS = ("autopick", "nextstep", "smartzone")
 
 _NS = "mattpocock-skills:"
 _MIN = 12      # a start rule needs this many characters to go on
-_ASK_AT = 200  # and Ask Matt this many
 _AUTO = frozenset({"grill-with-docs", "diagnosing-bugs", "research", "prototype", "tdd"})
 _GRILLS = ("grill-with-docs", "grill-me")
 _IN_GRILL = frozenset({"to-spec", "to-tickets", "implement", "prototype", "handoff"})
-_NEEDS_SETUP = frozenset({"grill-with-docs", "to-spec", "to-tickets", "implement", "implement-spec",
-                          "triage", "wayfinder"})
-_TRACKER = os.path.join("docs", "agents", "issue-tracker.md")
 
 
 def _re(pattern):
@@ -139,7 +131,7 @@ _ALTS = {"grill-with-docs": _pairs("prototype", "implement", "grill-me"), "diagn
 
 _FLOW = re.compile("/" + re.escape(_NS) + r"([\w-]+)\s*(.*)", re.S)
 _COMPACT = re.compile(r"/compact\b")
-_TICKET = re.compile(r"\.scratch/[^/\s]+/issues/[^/\s]+\.md")
+_TICKET = re.compile(r"\.mystical/tickets/[^/\s]+/[^/\s]+\.md")
 
 
 class _Step(NamedTuple):
@@ -185,11 +177,6 @@ def _boundary(prompts):
     return _FLOW.match(newest) is not None
 
 
-def _untracked(root):
-    """True when the project is known and never ran /setup-matt-pocock-skills."""
-    return bool(root) and not os.path.isfile(os.path.join(root, _TRACKER))
-
-
 def _hits(t, grill, done):
     """(skill, why) for every rule the typed text hits, in the order they are tried."""
     if grill and _GO_AHEAD.search(t):
@@ -202,14 +189,12 @@ def _hits(t, grill, done):
                 yield skill, why
 
 
-def _typed(t, last, done, cmds, off):
-    """The first installed rule the typed text hits, else Ask Matt for a long one."""
+def _typed(t, last, done, cmds):
+    """The first installed rule the typed text hits, else None."""
     grill = last is not None and last[0] in _GRILLS
     for skill, why in _hits(t, grill, done):
         if _resolve(skill, cmds):
             return _Step(skill, "start", why, alts=_ALTS.get(skill, ()))
-    if len(t) >= _ASK_AT and not grill and "askmatt" not in off:
-        return _Step("ask-matt", "ask", "no clear fit: /ask-matt reads the whole map")
     return None
 
 
@@ -231,8 +216,8 @@ def _mtime(path):
 
 
 def _first_ticket(root):
-    """The first ticket in the newest .scratch/*/issues dir, relative to root, else None."""
-    dirs = [d for d in glob.glob(os.path.join(glob.escape(root), ".scratch", "*", "issues")) if os.path.isdir(d)]
+    """The first ticket in the newest .mystical/tickets/* dir, relative to root, else None."""
+    dirs = [d for d in glob.glob(os.path.join(glob.escape(root), ".mystical", "tickets", "*")) if os.path.isdir(d)]
     if not dirs:
         return None
     newest = max(sorted(dirs), key=_mtime)
@@ -253,10 +238,10 @@ def _num(path):
     return re.match(r"\d*", name).group() or name
 
 
-def _next(last, root, off):
+def _next(last, root):
     """The step after the flow command `last`, or None when that command has none."""
     skill, rest = last
-    tickets = bool(root) and "tickets" not in off  # off: behave as if there were no .scratch dir
+    tickets = bool(root)
     if skill in _GRILLS:
         return _Step("to-spec", "next", "many sessions of work: write it up",
                      alts=(("implement", "or build it here if one session holds it"),))
@@ -303,7 +288,7 @@ def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_toke
     that are turned off.
 
     Returns {"name", "desc", "why", "auto", "arg", "fresh", "kind", "alts"}: kind is
-    start | next | ask | setup, `arg` goes after the name, `fresh` means open it in a
+    start | next, `arg` goes after the name, `fresh` means open it in a
     new session, and `alts` (at most 3) are {"name", "desc", "why"}.
     """
     t = text.strip()
@@ -315,9 +300,9 @@ def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_toke
     # just ended, so a typed reply since retires it, except in a grill, whose interview
     # spans typed turns.
     if t:
-        step = _typed(t, last, done, cmds, off)
+        step = _typed(t, last, done, cmds)
     elif done and last and "nextstep" not in off and (last[0] in _GRILLS or _boundary(prompts)):
-        step = _next(last, root, off)
+        step = _next(last, root)
     else:
         step = None
     if step is None or _resolve(step.skill, cmds) is None:
@@ -326,20 +311,14 @@ def pick(text: str, *, prompts: "list[str]", last_status: "str | None", ctx_toke
     # Two things can stand in for the step, compact first: past the smart zone a next
     # step is preceded by /compact, unless it opens a fresh session (which starts clean)
     # or the flow command is not the very last prompt (mid-interview is no boundary, and
-    # right after a /compact ctx_tokens can still read stale). A missing tracker puts
-    # /setup-matt-pocock-skills before any engineering route. Either one is skipped when
-    # its command isn't listed.
+    # right after a /compact ctx_tokens can still read stale). Skipped when /compact
+    # isn't listed.
     if (step.kind == "next" and not step.fresh and "smartzone" not in off and (ctx_tokens or 0) >= SMART_ZONE
             and _flow_done(prompts, last_status)):
         compact = _route(_Step("compact", "next", f"{ctx_tokens // 1000}k is past the {SMART_ZONE // 1000}k smart zone",
                                f"keep the decisions so far; next: /{skill}"), cmds)
         if compact:
             return compact
-    if skill in _NEEDS_SETUP and "setupnudge" not in off and _untracked(root):
-        setup = _route(_Step("setup-matt-pocock-skills", "setup",
-                             f"once per repo: tracker, labels, docs (then /{skill})", alts=((skill, step.why),)), cmds)
-        if setup:
-            return setup
     auto = (step.kind == "start" and skill in _AUTO and "autopick" not in off
             and (first or _flow_done(prompts, last_status)))
     return _route(step, cmds, auto)

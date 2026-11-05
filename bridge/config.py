@@ -181,21 +181,15 @@ RELEVANCE_CONTEXT_TURNS = int(os.environ.get("RELEVANCE_CONTEXT_TURNS", "3"))
 RELEVANCE_TIMEOUT = int(os.environ.get("RELEVANCE_TIMEOUT", "25"))
 # Skill router (bridge/route.py): rules, not a model call, that put Matt Pocock's
 # /command in front of a prompt. It runs on its own, so the master switch ships
-# OFF; the six sub-switches ship ON but obey it, so they do nothing until it is
+# OFF; the sub-switches ship ON but obey it, so they do nothing until it is
 # on. GRILL_CARDS adds a line to every run's system prompt, so it ships OFF too.
 ROUTER_ENABLE = os.environ.get("ROUTER_ENABLE", "0").lower() \
-    not in ("0", "false", "no", "")
-ROUTER_ASK_MATT = os.environ.get("ROUTER_ASK_MATT", "1").lower() \
     not in ("0", "false", "no", "")
 ROUTER_AUTO = os.environ.get("ROUTER_AUTO", "1").lower() \
     not in ("0", "false", "no", "")
 ROUTER_NEXT = os.environ.get("ROUTER_NEXT", "1").lower() \
     not in ("0", "false", "no", "")
-ROUTER_TICKETS = os.environ.get("ROUTER_TICKETS", "1").lower() \
-    not in ("0", "false", "no", "")
 ROUTER_ZONE = os.environ.get("ROUTER_ZONE", "1").lower() \
-    not in ("0", "false", "no", "")
-ROUTER_SETUP = os.environ.get("ROUTER_SETUP", "1").lower() \
     not in ("0", "false", "no", "")
 # TICKETS (bridge/tickets.py) starts sessions by itself, so it ships OFF as well.
 TICKET_RUNS = os.environ.get("TICKET_RUNS", "0").lower() \

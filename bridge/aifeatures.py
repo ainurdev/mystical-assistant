@@ -180,31 +180,19 @@ FEATURES = (
               "checkout's own work) still pays one call. A call that fails (a login at its "
               "limit) is asked again hourly for a week, and its row is rewritten in place. "
               "Off, the bullets are read from the commit subjects instead."},
-    {"key": "router", "env": "ROUTER_ENABLE", "label": "SKILL ROUTER",
-     "hint": "puts Matt Pocock's /command in front of a prompt it fits",
-     "cost": "no extra call",
-     "tokens": "0 (rules only)",
-     "about": "Most of Matt Pocock's skills start only when a prompt begins with their "
-              "/command, and Claude seldom reaches for the rest on its own. After a pause "
-              "in your typing, rules (no model call) read the prompt and draw the command "
-              "that fits in front of it, where it will be sent, with one line under it "
-              "saying why. When a step of his flow ends, the empty prompt box offers the "
-              "next one. Ignore a suggestion and the prompt goes as typed; a command AUTO PICKS "
-              "put in front is sent with it, unless Esc takes it out. Only commands the "
-              "project's / list has are offered, so without the plugin nothing is. Off, "
-              "nothing is drawn or inserted, and the six switches under this one are "
-              "hidden."},
-    {"key": "askmatt", "env": "ROUTER_ASK_MATT", "label": "ASK MATT",
-     "parent": "router",
-     "hint": "offers /ask-matt for a long prompt no rule fits",
-     "cost": "a normal turn, only when you take it",
-     "tokens": "0 (rules only)",
-     "about": "Rules guess worst on a long prompt that fits nothing, so from 200 characters "
-              "up the router offers /ask-matt, Matt's own router, which reads his whole map "
-              "and says which flow to start. Tab only puts /ask-matt in front of your text; "
-              "you send it, as one ordinary turn, and the offer itself is free. It is never "
-              "offered inside a grill, where your text is an answer. Off, a long prompt "
-              "nothing fits goes as typed."},
+    {"key": "router", "env": "ROUTER_ENABLE", "label": "SKILL PATHS",
+     "hint": "gives every prompt a path through Matt Pocock's skills, bundled in Mystical",
+     "cost": "~300 tokens in every run's system prompt",
+     "tokens": "~300 tokens a run",
+     "about": "Matt Pocock's skills ship bundled with Mystical, so every project has them. "
+              "Rules (no model call) read a prompt first and draw the skill that fits in "
+              "front of it, with one line saying why; when no rule fits, Claude picks the "
+              "path itself. The FLOW tab shows where a session is on its path, and the "
+              "next steps can start by themselves (AUTO NEXT STEPS). Ignore a suggestion "
+              "and the prompt goes as typed; a command AUTO PICKS put in front is sent "
+              "with it, unless Esc takes it out, and then that prompt goes with a line "
+              "saying no path. Costs about 300 tokens in every run's system prompt. Off, "
+              "nothing is drawn or inserted, and the switches under this one are hidden."},
     {"key": "autopick", "env": "ROUTER_AUTO", "label": "AUTO PICKS",
      "parent": "router",
      "hint": "five safe commands go in front without a tap",
@@ -216,30 +204,15 @@ FEATURES = (
               "they go in front of your text by themselves, and Esc takes them out "
               "before you send. Every other command is an outlined suggestion that Tab takes. "
               "Off, those five are outlined suggestions too."},
-    {"key": "nextstep", "env": "ROUTER_NEXT", "label": "NEXT STEPS",
+    {"key": "nextstep", "env": "ROUTER_NEXT", "label": "AUTO NEXT STEPS",
      "parent": "router",
-     "hint": "offers the next command when a flow step ends",
-     "cost": "no extra call",
-     "tokens": "0 (rules only)",
-     "about": "When a turn that started with one of Matt's commands finishes, the empty "
-              "prompt box offers what his map puts next: a grill leads to /to-spec (or "
-              "/implement here), /to-spec to /to-tickets, /to-tickets to /implement, and "
-              "/implement or /diagnosing-bugs to /retro. Tab takes it. A turn that failed "
-              "or is still running offers nothing, and a reply you type retires it, except "
-              "inside a grill, whose interview runs over several replies. Off, the box "
-              "stays empty after a step and you type the next command yourself."},
-    {"key": "tickets", "env": "ROUTER_TICKETS", "label": "TICKETS IN FRESH SESSIONS",
-     "parent": "router",
-     "hint": "opens each ticket in a session of its own",
-     "cost": "no extra call",
-     "tokens": "0 (rules only)",
-     "about": "Matt builds a ticket per fresh context. Tickets are read from the local "
-              ".scratch/<feature>/issues/ files in the session's checkout. After /to-tickets "
-              "the next step names the first one, and Tab opens a new session in that checkout "
-              "with /implement and the ticket in its prompt box, never sent for you. "
-              "Finishing a ticket offers the next one in file order the same way. Off, "
-              "/implement is offered in this session with no ticket named, and /retro "
-              "follows each one."},
+     "hint": "a step starts by itself when the last one ends",
+     "cost": "a normal turn per step",
+     "tokens": "a normal run per step",
+     "about": "On, when a step of a path ends by calling StepDone, the next step starts by "
+              "itself as a queued turn in the same session. Off, the empty prompt box "
+              "offers the next step as a ghost suggestion and Tab takes it, as before. A "
+              "turn that failed or is still running starts or offers nothing."},
     {"key": "ticketruns", "env": "TICKET_RUNS", "label": "TICKETS",
      "parent": "router",
      "hint": "approved tickets build as sessions, 3 at once, merged at the end",
@@ -261,17 +234,6 @@ FEATURES = (
               "next step is preceded by /compact, told to keep the decisions so far. A step "
               "that opens a fresh session skips it, since that starts clean. Off, no mark "
               "and no /compact offer."},
-    {"key": "setupnudge", "env": "ROUTER_SETUP", "label": "SETUP NUDGE",
-     "parent": "router",
-     "hint": "offers the one-time repo setup before the first flow",
-     "cost": "no extra call",
-     "tokens": "0 (rules only)",
-     "about": "Matt's skills read a tracker config, docs/agents/issue-tracker.md, which "
-              "/setup-matt-pocock-skills writes once per repo. In a repo without that file, "
-              "the first route that needs it (grill-with-docs, to-spec, to-tickets, "
-              "implement, implement-spec, triage, wayfinder) becomes the setup command, and "
-              "says which one comes after. Esc hides it for that repo. Off, you get the "
-              "route you asked for, set up or not."},
     {"key": "grillcards", "env": "GRILL_CARDS", "label": "GRILL AS CARDS",
      "hint": "a grilling skill asks each round as one card",
      "cost": "no extra call, one line in every run's system prompt",

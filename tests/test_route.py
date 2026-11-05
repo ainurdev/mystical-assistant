@@ -1,7 +1,6 @@
 """route: the rules that pick Matt Pocock's /command for a prompt, and the next
 step once a flow step ends. Facts in, one route out: no model, no network, only a
-tmp project dir for the two things the rules look at (docs/agents/issue-tracker.md
-and .scratch/*/issues/*.md). One section drives POST /local/route, the
+tmp project dir for the one thing the rules look at (.mystical/tickets/*/*.md). One section drives POST /local/route, the
 endpoint behind the SKILL ROUTER switch, the way tests/test_commands.py drives its routes;
 the last pins the two run-time fixes in bridge/runner.py (the grill note, _with_images).
 Run: python -m pytest tests/test_route.py -v"""
@@ -45,16 +44,7 @@ TICKETS = flow("to-tickets")
 
 @pytest.fixture
 def root(tmp_path):
-    """A project that ran /setup-matt-pocock-skills: the tracker file the setup nudge looks for."""
-    f = tmp_path / "docs" / "agents" / "issue-tracker.md"
-    f.parent.mkdir(parents=True)
-    f.write_text("tracker\n")
-    return str(tmp_path)
-
-
-@pytest.fixture
-def bare(tmp_path):
-    """A project that never ran it."""
+    """An empty project."""
     return str(tmp_path)
 
 
@@ -64,8 +54,8 @@ def go(root, text="", *, prompts=(), status="done", ctx=None, first=False, cmds=
 
 
 def tickets(root, *names, feat="feat", at=None):
-    """What /to-tickets leaves behind: .scratch/<feat>/issues/<names>. Returns the dir, relative to root."""
-    rel = f".scratch/{feat}/issues"
+    """What /to-tickets leaves behind: .mystical/tickets/<feat>/<names>. Returns the dir, relative to root."""
+    rel = f".mystical/tickets/{feat}"
     d = os.path.join(root, rel)
     os.makedirs(d)
     for n in names:
@@ -77,7 +67,7 @@ def tickets(root, *names, feat="feat", at=None):
 
 def test_constants():
     assert route.SMART_ZONE == 150_000
-    assert route.SUBS == ("askmatt", "autopick", "nextstep", "tickets", "smartzone", "setupnudge")
+    assert route.SUBS == ("autopick", "nextstep", "smartzone")
     assert len(LONG) == 220
 
 
@@ -159,20 +149,6 @@ def test_wait_what_after_a_finished_turn(root, text):
     assert go(root, text, status=None) is None
 
 
-# ── Ask Matt ──────────────────────────────────────────────────────────────────
-
-def test_ask_matt_when_nothing_fits_a_long_prompt(root):
-    r = go(root, LONG, first=True)
-    assert (r["name"], r["kind"], r["auto"]) == (NS + "ask-matt", "ask", False)
-    assert r["why"] == "no clear fit: /ask-matt reads the whole map"
-    assert r["alts"] == []
-
-
-def test_ask_matt_starts_at_two_hundred_characters(root):
-    assert go(root, "q" * 199) is None
-    assert go(root, "q" * 200)["kind"] == "ask"
-
-
 # ── inside a grill flow: the text is an answer to the interview ───────────────
 
 @pytest.mark.parametrize("text, skill", [
@@ -193,7 +169,7 @@ def test_inside_a_grill_flow_the_next_moves_still_fire(root, text, skill):
     "review what we have so far",
     "huh? what does that mean",
     "go with option B",                       # an answer: only a bare go is the way out
-    LONG,                                     # a long answer is not an Ask Matt prompt
+    LONG,                                 
 ])
 def test_inside_a_grill_flow_answers_do_not_route(root, prompt, text):
     assert go(root, text, prompts=[prompt]) is None
@@ -246,59 +222,6 @@ def test_an_uninstalled_rule_is_skipped_not_fatal(root):
     assert go(root, "review why the build fails", cmds=only)["name"] == NS + "diagnosing-bugs"
 
 
-# ── setup nudge ───────────────────────────────────────────────────────────────
-
-def test_setup_nudge(bare):
-    r = go(bare, FEATURE, first=True)
-    assert (r["name"], r["kind"], r["auto"]) == (NS + "setup-matt-pocock-skills", "setup", False)
-    assert (r["fresh"], r["arg"]) == (False, "")
-    assert r["why"] == "once per repo: tracker, labels, docs (then /grill-with-docs)"
-    assert r["why"].endswith("(then /grill-with-docs)")
-    # the route it stands in for stays one tap away, among the other fits
-    assert r["alts"] == [{"name": NS + "grill-with-docs", "desc": CMDS[NS + "grill-with-docs"],
-                          "why": "a new feature: settle it before building"}]
-
-
-@pytest.mark.parametrize("text, skill", [
-    ("write it up as a spec", "to-spec"),
-    ("break this into tickets", "to-tickets"),
-    ("triage the incoming issues from this week", "triage"),
-    ("rewrite the whole thing from scratch", "wayfinder"),
-])
-def test_setup_nudge_before_each_engineering_route(bare, text, skill):
-    r = go(bare, text)
-    assert (r["name"], r["kind"]) == (NS + "setup-matt-pocock-skills", "setup")
-    assert r["why"].endswith(f"(then /{skill})")
-    assert r["alts"][0]["name"] == NS + skill
-
-
-def test_setup_nudge_before_implement_and_the_next_step(bare):
-    assert go(bare, "go ahead", prompts=[GRILL])["why"].endswith("(then /implement)")
-    r = go(bare, "", prompts=[GRILL])
-    assert (r["name"], r["kind"]) == (NS + "setup-matt-pocock-skills", "setup")
-    assert r["why"].endswith("(then /to-spec)")
-
-
-@pytest.mark.parametrize("text, kind, skill", [
-    (BUG, "start", "diagnosing-bugs"),
-    (REVIEW, "start", "code-review"),
-    ("research how other bridges send push notifications", "start", "research"),
-    (LONG, "ask", "ask-matt"),
-])
-def test_no_setup_nudge_for_the_rest(bare, text, kind, skill):
-    r = go(bare, text)
-    assert (r["name"], r["kind"]) == (NS + skill, kind)
-
-
-def test_no_setup_nudge_when_the_project_is_unknown():
-    assert go(None, FEATURE, first=True)["name"] == NS + "grill-with-docs"
-
-
-def test_setup_nudge_missing_from_the_pack_leaves_the_route(bare):
-    only = {k: v for k, v in CMDS.items() if k != NS + "setup-matt-pocock-skills"}
-    assert go(bare, FEATURE, cmds=only)["name"] == NS + "grill-with-docs"
-
-
 # ── auto ──────────────────────────────────────────────────────────────────────
 
 def test_auto_needs_a_first_prompt_or_a_flow_step_that_just_ended(root):
@@ -311,12 +234,6 @@ def test_auto_needs_a_first_prompt_or_a_flow_step_that_just_ended(root):
     assert go(root, FEATURE, prompts=["fix the typo in the README"])["auto"] is False  # no flow command at all
 
 
-# ── the six switches ──────────────────────────────────────────────────────────
-
-def test_off_askmatt(root):
-    assert go(root, LONG, off={"askmatt"}) is None
-
-
 def test_off_autopick(root):
     r = go(root, FEATURE, first=True, off={"autopick"})
     assert (r["name"], r["auto"]) == (NS + "grill-with-docs", False)
@@ -327,21 +244,8 @@ def test_off_nextstep(root):
     assert go(root, FEATURE, off={"nextstep"})["name"] == NS + "grill-with-docs"  # typed routes stay
 
 
-def test_off_tickets(root):
-    issues = tickets(root, "01-a.md", "02-b.md")
-    r = go(root, "", prompts=[TICKETS], off={"tickets"})
-    assert (r["name"], r["arg"], r["fresh"]) == (NS + "implement", "", False)
-    assert r["why"] == "pick the first ticket with no blockers"
-    r = go(root, "", prompts=[flow("implement", f"{issues}/01-a.md")], off={"tickets"})
-    assert r["name"] == NS + "retro"  # after an implement, straight to the look back
-
-
 def test_off_smartzone(root):
     assert go(root, "", prompts=[GRILL], ctx=162_000, off={"smartzone"})["name"] == NS + "to-spec"
-
-
-def test_off_setupnudge(bare):
-    assert go(bare, FEATURE, off={"setupnudge"})["name"] == NS + "grill-with-docs"
 
 
 # ── the next step, from the last flow command ─────────────────────────────────
@@ -380,10 +284,6 @@ def test_next_without_compact_listed_goes_straight_to_the_step(root):
     assert go(root, "", prompts=[GRILL], ctx=162_000, cmds=cmds)["name"] == NS + "to-spec"
 
 
-def test_next_compact_comes_before_the_setup_nudge(bare):
-    assert go(bare, "", prompts=[GRILL], ctx=162_000)["name"] == "compact"
-
-
 def test_next_after_an_answered_interview(root):
     # typed answers after the grill command don't hide it
     r = go(root, "", prompts=[GRILL, "weekly, on friday", "yes, one message"])
@@ -420,7 +320,7 @@ def test_next_after_tickets_opens_the_first_one_in_a_fresh_session(root):
     r = go(root, "", prompts=[TICKETS])
     assert (r["name"], r["kind"], r["auto"]) == (NS + "implement", "next", False)
     assert (r["arg"], r["fresh"], r["why"]) == (f"{issues}/01-a.md", True, "#01 has no blockers")
-    assert r["arg"] == ".scratch/feat/issues/01-a.md"
+    assert r["arg"] == ".mystical/tickets/feat/01-a.md"
     # a fresh session starts clean: no compact first, however big this one is
     assert go(root, "", prompts=[TICKETS], ctx=200_000)["name"] == NS + "implement"
 
@@ -438,7 +338,7 @@ def test_next_after_tickets_takes_the_newest_issues_dir(root):
     assert go(root, "", prompts=[TICKETS])["arg"] == f"{new}/01-new.md"
 
 
-def test_next_after_tickets_with_no_scratch_dir(root):
+def test_next_after_tickets_with_no_ticket_dir(root):
     r = go(root, "", prompts=[TICKETS])
     assert (r["name"], r["arg"], r["fresh"]) == (NS + "implement", "", False)
     assert r["why"] == "pick the first ticket with no blockers"
@@ -448,7 +348,7 @@ def test_next_after_tickets_with_no_scratch_dir(root):
 def test_next_with_an_unknown_project_has_no_tickets():
     r = go(None, "", prompts=[TICKETS])
     assert (r["name"], r["arg"], r["fresh"]) == (NS + "implement", "", False)
-    assert go(None, "", prompts=[flow("implement", ".scratch/feat/issues/01-a.md")])["name"] == NS + "retro"
+    assert go(None, "", prompts=[flow("implement", ".mystical/tickets/feat/01-a.md")])["name"] == NS + "retro"
 
 
 def test_next_after_tickets_with_an_empty_issues_dir(root):
@@ -458,24 +358,23 @@ def test_next_after_tickets_with_an_empty_issues_dir(root):
 
 
 def test_next_with_a_root_that_does_not_exist_has_no_tickets():
-    # nothing there can hold a tracker either, so the setup nudge is off to let the step through
-    r = go("/no/such/dir", "", prompts=[TICKETS], off={"setupnudge"})
+    r = go("/no/such/dir", "", prompts=[TICKETS])
     assert (r["name"], r["arg"], r["fresh"]) == (NS + "implement", "", False)
 
 
 def test_next_after_implement_when_the_ticket_dir_is_gone_is_the_retro(root):
-    assert go(root, "", prompts=[flow("implement", ".scratch/gone/issues/01-a.md")])["name"] == NS + "retro"
+    assert go(root, "", prompts=[flow("implement", ".mystical/tickets/gone/01-a.md")])["name"] == NS + "retro"
 
 
 def test_next_after_implement_with_a_nul_byte_in_the_ticket_path_is_the_retro(root):
     # the path comes from a prompt, and os.listdir raises ValueError on a NUL byte
-    assert go(root, "", prompts=[flow("implement", ".scratch/a\x00b/issues/01-a.md")])["name"] == NS + "retro"
+    assert go(root, "", prompts=[flow("implement", ".mystical/tickets/a\x00b/01-a.md")])["name"] == NS + "retro"
 
 
 def test_next_after_tickets_in_a_root_with_glob_characters(tmp_path):
     proj = str(tmp_path / "proj[1]")
     issues = tickets(proj, "01-a.md", "02-b.md")
-    r = go(proj, "", prompts=[TICKETS], off={"setupnudge"})  # the tracker is not what is under test
+    r = go(proj, "", prompts=[TICKETS])
     assert r["arg"] == f"{issues}/01-a.md"
 
 
@@ -547,7 +446,7 @@ def post(monkeypatch, body, *, off=(), listed=CMDS):
 @pytest.fixture
 def repo(tmp_path, monkeypatch):
     """A project the endpoint can resolve (it lives under BASE_PATH) that never ran
-    /setup-matt-pocock-skills. Returns it as the dashboard names projects."""
+    Returns it as the dashboard names projects."""
     base = os.path.realpath(str(tmp_path))
     monkeypatch.setattr(config, "BASE_PATH", base)
     os.mkdir(os.path.join(base, "app"))
@@ -610,11 +509,6 @@ def test_router_off_routes_nothing(monkeypatch, off):
     assert post(monkeypatch, {"text": FEATURE, "first": True}, off=off) == {"route": None}
 
 
-def test_ask_matt_switched_off_leaves_a_long_prompt_as_typed(monkeypatch):
-    assert post(monkeypatch, {"text": LONG})["route"]["name"] == NS + "ask-matt"
-    assert post(monkeypatch, {"text": LONG}, off={"askmatt"}) == {"route": None}
-
-
 @pytest.mark.parametrize("sub", route.SUBS)
 def test_each_sub_switch_that_is_off_reaches_pick(monkeypatch, sub):
     seen = []
@@ -629,13 +523,6 @@ def test_the_sub_switches_pick_obeys_are_the_registered_ones():
     good, and the rule behind it would never fire."""
     subs = {f["key"] for f in aifeatures.FEATURES if f.get("parent") == "router"}
     assert subs - {"ticketruns"} == set(route.SUBS)   # TICKETS is the scheduler's (bridge/tickets.py), no rule's
-
-
-def test_no_setup_brings_back_the_route_the_setup_nudge_stood_in_for(monkeypatch, repo):
-    body = {"project": repo, "text": FEATURE}
-    assert post(monkeypatch, body)["route"]["name"] == NS + "setup-matt-pocock-skills"
-    assert post(monkeypatch, {**body, "no_setup": True})["route"]["name"] == NS + "grill-with-docs"
-    assert post(monkeypatch, {**body, "project": "/elsewhere"})["route"]["name"] == NS + "grill-with-docs"
 
 
 @pytest.mark.parametrize("prompts", [[None, flow("grill-with-docs", "x")], [GRILL, None, 7]])

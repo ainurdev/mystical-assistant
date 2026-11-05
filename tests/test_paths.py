@@ -406,3 +406,30 @@ def test_build_here_failure_enqueues_nothing_and_tells_the_user(fake_queue, next
     paths.step_done("b2", "t1")
     assert paths.continue_after_turn(_job("b2")) is False
     assert not fake_queue.items and "pop conflict" in sent[0][1] and "feat/t" in sent[0][1]
+
+
+# --- "No path" on Esc: /local/run prefixes the prompt ---------------------------
+
+def _run_prompt(monkeypatch, body):
+    from types import SimpleNamespace
+
+    from bridge import relevance
+    from bridge.dashboard import server as dash
+    seen = []
+    monkeypatch.setattr(runner, "start_streaming_job",
+                        lambda chat, prompt, *a, **kw: seen.append(prompt) or SimpleNamespace(id="j", store_session_id=SID))
+    monkeypatch.setattr(relevance, "gate", lambda *a, **k: None)
+    h = dash.Handler.__new__(dash.Handler)
+    h._json = lambda obj, code=200: None
+    h._run(555, {"session_id": SID, **body})
+    return seen[0]
+
+
+def test_no_path_prefix(monkeypatch):
+    assert _run_prompt(monkeypatch, {"prompt": "add a digest", "no_path": True}) == "No path for this message.\n\nadd a digest"
+    assert _run_prompt(monkeypatch, {"prompt": "add a digest"}) == "add a digest"
+    assert _run_prompt(monkeypatch, {"prompt": "add a digest", "no_path": "yes"}) == "add a digest"
+
+
+def test_no_path_ignored_for_commands(monkeypatch):
+    assert _run_prompt(monkeypatch, {"prompt": "/compact keep it", "no_path": True}) == "/compact keep it"

@@ -1253,8 +1253,6 @@ class Handler(BaseHTTPRequestHandler):
                     # The session's own checkout (a worktree's tickets are there), as _server_cwd reads it.
                     root = _abs_within((body.get("cwd") or "").strip()) or _abs_project(body.get("project"))
                     off = {k for k in route.SUBS if not aifeatures.enabled(k)}
-                    if body.get("no_setup") is True:     # Esc on the nudge hid it for this repo
-                        off.add("setupnudge")
                     picked = route.pick(
                         body.get("text") or "",
                         prompts=[p for p in body.get("prompts") or [] if isinstance(p, str)],
@@ -2224,6 +2222,9 @@ class Handler(BaseHTTPRequestHandler):
         images = body.get("images") or []
         if not prompt and not images:
             return self._json({"error": "empty prompt"}, 400)
+        # Esc took an auto-applied skill out of this prompt: tell the run there is no path.
+        if body.get("no_path") is True and not prompt.startswith("/"):
+            prompt = "No path for this message.\n\n" + prompt
         if not isinstance(images, list) or len(images) > config.UPLOAD_MAX_COUNT:
             return self._json({"error": f"too many images (max {config.UPLOAD_MAX_COUNT})"}, 413)
         project_path = _abs_project(body.get("project"))
