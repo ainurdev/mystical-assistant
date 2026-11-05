@@ -22,7 +22,7 @@ import { GitPipe } from "./GitPipe";
 
 /* GIT — the right rail's one git tab, and the dashboard's only git status
    (the header's git icon went, 2026-10-18): a repo header (branch, ⟳ fetch),
-   a readout (to push / to pull / changed, how fresh that is, and the one move
+   the PIPE hero (Mac -> branch -> origin, how fresh that is, and the one move
    the state allows), then two folds in VS Code's Source Control shape.
    CHANGES is the working tree with the commit box; GRAPH is the commit graph
    (CommitGraph). Each fold remembers whether it is open.
@@ -58,7 +58,7 @@ interface Props {
 }
 
 type OpKind = "push" | "publish" | "pull" | "fetch";
-// The readout's sync op, in flight or just over: done shows a few seconds,
+// The hero's sync op, in flight or just over: done shows a few seconds,
 // failed stays with git's own words until dismissed or retried.
 type Op = { kind: OpKind; n: number; phase: "busy" }
   | { kind: OpKind; n: number; phase: "done"; text: string }
@@ -172,7 +172,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   const branchName = git?.branch || branch || "";
   const ahead = git?.ahead ?? 0;
   const behind = git?.behind ?? 0;
-  // Whatever can resize the readout, the CHANGES fold or the branch pill.
+  // Whatever can resize the hero's strip below it, the CHANGES fold or the branch pill.
   const rdRef = useGlide<HTMLDivElement>("readout", "height", !ready, [git, op]);
   const chRef = useGlide<HTMLDivElement>("changes", "height", !ready, [git, note, chClosed, grClosed]);
   const brRef = useGlide<HTMLSpanElement>("branch", "width", false, [branchName]);
@@ -195,7 +195,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     return () => clearTimeout(t);
   }, [op]);
 
-  // The readout's one move: PUSH, PUBLISH (push() adds -u) or PULL (ff-only).
+  // The hero's one move: PUSH, PUBLISH (push() adds -u) or PULL (ff-only).
   async function sync(kind: "push" | "publish" | "pull", n: number) {
     if (!project) return;
     const to = s.kind === "ahead" || s.kind === "behind" ? s.upstream : "origin";
@@ -330,11 +330,9 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
 
   const noCommit = busy || !msg.trim() || !changed.size;
 
-  /* The readout: what a push and a pull would move and what's changed, how
-     fresh that is, then the one move this state allows — none on a diverged
-     branch, where git would refuse both. Zeros dim; "—" is a count that can't
-     exist here (no upstream). Before the status lands, the last figures hold,
-     dimmed, and roll to this tree's when it does. */
+  /* The hero's inputs: how fresh the status is (`when`), and the one move this
+     state allows. Diverged, git would refuse both push and pull, so the hero's
+     button hands off to a session instead. */
   const fetching = (op?.kind === "fetch" && op.phase === "busy") || !!autoFetch?.busy;
   const t = git?.fetched_at ? ago(git.fetched_at) : "";
   const when = !t ? "" : t === "now" ? "checked just now" : `checked ${t} ago`;
@@ -356,6 +354,8 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   const right = fetching ? "checking origin…"
     : autoErr ? <>couldn't reach origin <button disabled={busy} onClick={() => void fetchNow()}>retry</button></>
     : unchecked ? "not checked" : when;
+  // Only a running push or pull locks the hero: Commit just opens the message box, and an auto-fetch is no reason to wait.
+  const syncing = op?.phase === "busy" && op.kind !== "fetch";
   const pushy = op?.kind === "push" || op?.kind === "publish";
   const act: ReactNode = op?.phase === "failed" ? (
     <div className="gp-fail" role="alert">
@@ -464,12 +464,15 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
 
+      {project && (!ready || s.kind !== "none") && (
+        <GitPipe sync={s} changed={changed.size} hasUpstream={!!git?.upstream} unchecked={unchecked} busy={syncing}
+          where={git?.upstream && git.upstream !== `origin/${branchName}` ? git.upstream : undefined}
+          loading={!ready} right={ready ? right : undefined} onAction={heroAct} />
+      )}
       {project && (
         <div ref={rdRef} className="gp-rdw">
           {(!ready || s.kind !== "none") && (
             <div className="gp-rd">
-              <GitPipe sync={s} changed={changed.size} hasUpstream={!!git?.upstream} unchecked={unchecked} busy={busy || fetching}
-                say={ready ? undefined : "Reading the working tree…"} right={ready ? right : undefined} onAction={heroAct} />
               {autoErr && <div className="gp-roerr" title={autoErr}>{when || "never checked"} · {autoErr.split("\n")[0]}</div>}
               <TaskLine project={project} branch={branchName} onSend={onSend} />
               {act && <div className="gp-act">{act}</div>}

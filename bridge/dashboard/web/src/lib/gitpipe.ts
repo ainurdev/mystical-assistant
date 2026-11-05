@@ -2,19 +2,22 @@
    stations, the arrows that would carry work along, and the one button that
    closes the first open gap. An upstream never fetched (or whose last fetch failed) is `unchecked`: it never claims "on origin". Pure, so gitpipe.check.ts pins it. Counts come
    from the panel's own syncOf(); nothing here re-reads git.
+   `where` names the upstream when it is not origin/<same branch>.
    Amber (warn) is what came from origin, accent is yours to move. */
 
 export type PipeSync = { kind: string; n?: number; ahead?: number; behind?: number };
 export type Station = { key: "mac" | "branch" | "origin"; big: string; sub: string; hot: boolean; warm: boolean };
 export type Flow = { gap: 0 | 1; dir: 1 | -1; tone: "acc" | "warn" };
 export type PipeAction = { verb: "Commit" | "Publish" | "Pull"; n: number; gap: 0 | 1; tone: "acc" | "warn" };
-export type Pipe = { stations: Station[]; flows: Flow[]; action: PipeAction | null; say: string };
+/** Push/Publish kept reachable while Commit is the primary: edits plus unpushed commits, nothing incoming. */
+export type PipePush = { verb: "Publish" | "Push"; n: number };
+export type Pipe = { stations: Station[]; flows: Flow[]; action: PipeAction | null; push: PipePush | null; say: string };
 
 const cap = (n: number) => (n > 99 ? "99+" : String(n));
 const files = (n: number) => `${n} file${n === 1 ? "" : "s"}`;
 const commits = (n: number) => `${n} commit${n === 1 ? "" : "s"}`;
 
-export function pipe(sync: PipeSync, changed: number, hasUpstream: boolean, unchecked = false): Pipe {
+export function pipe(sync: PipeSync, changed: number, hasUpstream: boolean, unchecked = false, where = "origin"): Pipe {
   const up = sync.kind === "diverged" ? sync.ahead ?? 0 : sync.kind === "ahead" || sync.kind === "publish" ? sync.n ?? 0 : 0;
   const down = sync.kind === "diverged" ? sync.behind ?? 0 : sync.kind === "behind" ? sync.n ?? 0 : 0;
   // Whichever end has work waiting lights up: edits first, then origin's, then yours.
@@ -31,17 +34,20 @@ export function pipe(sync: PipeSync, changed: number, hasUpstream: boolean, unch
   if (changed) flows.push({ gap: 0, dir: 1, tone: "acc" });
   if (up) flows.push({ gap: 1, dir: 1, tone: "acc" });
   if (down) flows.push({ gap: 1, dir: -1, tone: "warn" });
-  const action: PipeAction | null = changed ? { verb: "Commit", n: changed, gap: 0, tone: "acc" }
+  // Edits come first, except when only origin is ahead: a fast-forward is the move git allows, and the
+  // hero is the only pull entry. Diverged keeps Commit (the pull hand-off is not a button's job).
+  const action: PipeAction | null = changed ? (down && !up ? { verb: "Pull", n: down, gap: 1, tone: "warn" } : { verb: "Commit", n: changed, gap: 0, tone: "acc" })
     : down ? { verb: "Pull", n: down, gap: 1, tone: "warn" }
     : up ? { verb: "Publish", n: up, gap: 1, tone: "acc" }
     : null;
+  const push: PipePush | null = changed && up && !down ? { verb: sync.kind === "publish" ? "Publish" : "Push", n: up } : null;
   const say = changed ? `${files(changed)} edited, not committed`
     : down && up ? `${down} new on origin, then publish ${up}`
     : down ? `${down} new on origin`
     : up ? `${commits(up)} only on this Mac`
-    : sync.kind === "synced" ? (unchecked ? "Not checked against origin yet" : "Everything is on origin")
+    : sync.kind === "synced" ? (unchecked ? "Not checked against origin yet" : `Everything is on ${where}`)
     : sync.kind === "local" ? "No remote, this repo lives only here"
     : sync.kind === "detached" ? "Detached HEAD, no branch to push"
     : "Nothing to push";
-  return { stations, flows, action, say };
+  return { stations, flows, action, push, say };
 }

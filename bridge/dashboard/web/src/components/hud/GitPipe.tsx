@@ -29,20 +29,23 @@ function Gap({ flows }: { flows: Flow[] }) {
   );
 }
 
-export function GitPipe({ sync, changed, hasUpstream, unchecked, say, right, busy, onAction }: {
+export function GitPipe({ sync, changed, hasUpstream, unchecked, where, loading, right, busy, onAction }: {
   sync: PipeSync; changed: number; hasUpstream: boolean; unchecked: boolean;
-  /** replaces the computed line while the status is still loading */
-  say?: string;
+  /** the upstream's name when it is not origin/<same branch> */
+  where?: string;
+  /** the status has not arrived: no station claims anything yet */
+  loading?: boolean;
   /** the top line's right end: how fresh origin is, or what's being checked */
   right?: ReactNode;
   busy: boolean;
   onAction: (verb: "Commit" | "Publish" | "Pull", n: number) => void;
 }) {
-  const p = pipe(sync, changed, hasUpstream, unchecked);
-  const line = say ?? p.say;
-  const a = p.action;
+  const p = pipe(sync, changed, hasUpstream, unchecked, where);
+  const line = loading ? "reading…" : p.say;
+  const a = loading ? null : p.action;
+  const pu = loading ? null : p.push;
   const label = `${line}${a ? `. ${a.verb} ${a.n} available` : ""}`;
-  const gapFlows = (g: 0 | 1) => p.flows.filter((f) => f.gap === g);
+  const gapFlows = (g: 0 | 1) => loading ? [] : p.flows.filter((f) => f.gap === g);
   const title = a?.verb === "Pull" && sync.kind === "diverged" ? `Opens a session to bring origin's ${a.n} commits in` : undefined;
   const Verb = a ? VERB[a.verb] : null;
   // Bold the first count in the sentence, as drawn.
@@ -57,10 +60,10 @@ export function GitPipe({ sync, changed, hasUpstream, unchecked, say, right, bus
           {p.stations.flatMap((s, i) => {
             const Icon = ICON[s.key];
             const st = (
-              <div key={s.key} className={`gpp-st${s.hot ? " hot" : ""}${s.warm ? " warm" : ""}`}>
+              <div key={s.key} className={`gpp-st${s.hot && !loading ? " hot" : ""}${s.warm && !loading ? " warm" : ""}`}>
                 <div className="gpp-big"><Icon size={13} strokeWidth={2} aria-hidden />
-                  <b className={s.big === "✓" && !s.hot ? "ok" : ""}>{s.big}</b></div>
-                <span>{s.sub}</span>
+                  {!loading && <b className={s.big === "✓" && !s.hot ? "ok" : ""}>{s.big}</b>}</div>
+                <span title={loading ? undefined : s.sub}>{loading ? "" : s.sub}</span>
               </div>
             );
             return i < 2 ? [st, <Gap key={`g${i}`} flows={gapFlows(i as 0 | 1)} />] : [st];
@@ -73,7 +76,8 @@ export function GitPipe({ sync, changed, hasUpstream, unchecked, say, right, bus
             </button>
             <i className={`gpp-tick ${a.tone} g${a.gap} l`} aria-hidden /><i className={`gpp-tick ${a.tone} g${a.gap} r`} aria-hidden />
           </>
-        ) : <div className="gpp-none">Nothing to move</div>}
+        ) : !loading && <div className="gpp-none">Nothing to move</div>}
+        {pu && <button type="button" className="gpp-sec" disabled={busy} onClick={() => onAction("Publish", pu.n)}>{pu.verb} {pu.n > 99 ? "99+" : pu.n}</button>}
       </div>
     </RailHero>
   );

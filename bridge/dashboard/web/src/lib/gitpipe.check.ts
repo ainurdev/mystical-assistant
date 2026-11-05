@@ -37,4 +37,14 @@ console.assert(pipe({ kind: "ahead", n: 2 }, 0, true, true).action?.verb === "Pu
 console.assert(st(pipe({ kind: "ahead", n: 120 }, 0, true), "branch").big === "99+", "120 ahead reads 99+");
 console.assert(pipe({ kind: "publish", n: 0 }, 0, false).action === null, "no upstream, nothing ahead: no action");
 console.assert(pipe({ kind: "none" }, 0, false).action === null, "no repo: no action");
+
+const dBehind = pipe({ kind: "behind", n: 3 }, 2, true);
+console.assert(same(dBehind.action, { verb: "Pull", n: 3, gap: 1, tone: "warn" }) && dBehind.push === null, "dirty + behind: Pull is primary");
+const dAhead = pipe({ kind: "ahead", n: 2 }, 4, true);
+console.assert(dAhead.action?.verb === "Commit" && same(dAhead.push, { verb: "Push", n: 2 }), "dirty + ahead: Commit primary, Push 2 secondary");
+console.assert(pipe({ kind: "publish", n: 1 }, 4, false).push?.verb === "Publish", "dirty + unpublished: Publish secondary");
+const dDiv = pipe({ kind: "diverged", ahead: 1, behind: 2 }, 3, true);
+console.assert(dDiv.action?.verb === "Commit" && dDiv.push === null, "dirty + diverged: Commit, no secondary");
+console.assert(pipe({ kind: "ahead", n: 2 }, 0, true).push === null && pipe({ kind: "synced" }, 4, true).push === null, "no secondary when clean or nothing ahead");
+console.assert(pipe({ kind: "synced" }, 0, true, false, "fork/x").say === "Everything is on fork/x", "a non-origin upstream is named");
 console.log("gitpipe.check ok");
