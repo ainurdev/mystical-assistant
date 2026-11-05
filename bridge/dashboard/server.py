@@ -540,7 +540,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"flow": paths.get(sid), "set": tset})
         if path == "/local/tickets":
             from bridge import tickets
-            return self._json({"sets": tickets.summaries()})
+            return self._json({"sets": [x for x in tickets.summaries()   # this chat's flows' sets only
+                                        if (store.get_session(x.get("parent_session") or "") or {}).get("chat_id") == chat]})
         if path == "/local/usage":
             return self._json(usage.get_usage())
         if path == "/local/today":
@@ -1445,7 +1446,8 @@ class Handler(BaseHTTPRequestHandler):
         if path in ("/local/tickets/retry", "/local/tickets/cleanup", "/local/tickets/build"):
             from bridge import tickets
             folder = body.get("folder")
-            if not isinstance(folder, str) or folder not in {r.get("folder") for r in tickets.sets()}:
+            if not isinstance(folder, str) or folder not in {r.get("folder") for r in tickets.sets()} \
+                    or (store.get_session(tickets.load(folder).get("parent_session") or "") or {}).get("chat_id") != chat:
                 return self._json({"error": "not a registered ticket set"}, 404)
             if path == "/local/tickets/build":   # a stopped set, once what stopped it is fixed
                 try:

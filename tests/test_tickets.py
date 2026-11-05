@@ -650,12 +650,17 @@ def test_cleanup_skips_a_dirty_worktree_and_waits_for_merged(make_set):
     assert tickets.cleanup(s.folder) == ["tk/x-01"] and os.path.isdir(st["tickets"]["01"]["worktree"])
 
 
-def _dpost(path, body):
+def _dpost(path, body, chat=1):
+    """POST as the dashboard of `chat` (the sets here are chat 1's)."""
     from bridge.dashboard import server as dash
     h = dash.Handler.__new__(dash.Handler)
     box = {}
     h._json = lambda obj, code=200: box.update(obj=obj, code=code)
-    h._post_api(path, body)
+    real, dash._chat = dash._chat, lambda: chat
+    try:
+        h._post_api(path, body)
+    finally:
+        dash._chat = real
     return box
 
 
@@ -669,8 +674,9 @@ def test_ticket_endpoints_only_take_registered_folders(make_set, tmp_path):
     assert _dpost("/local/tickets/cleanup", {"folder": s.folder})["obj"] == {"removed": [], "skipped": ["tk/x-01"]}
 
 
-def test_get_tickets_lists_sets_with_live_ticket_status(make_set):
+def test_get_tickets_lists_sets_with_live_ticket_status(make_set, monkeypatch):
     from bridge.dashboard import server as dash
+    monkeypatch.setattr(dash, "_chat", lambda: 1)
     s = make_set({"01": None, "02": None})
     h = dash.Handler.__new__(dash.Handler)
     box = {}
@@ -844,3 +850,16 @@ def test_boot_judges_a_merge_turn_that_ended_unheard(make_set):
     store.finish_turn(store.latest_turn_id(sid), "error", 0, 1)
     tickets.boot()
     assert s.state["status"] == "fix"
+
+
+def test_ticket_endpoints_show_only_the_chats_own_sets(make_set, monkeypatch):
+    from bridge.dashboard import server as dash
+    s = make_set({"01": None})
+    monkeypatch.setattr(dash, "_chat", lambda: 2)
+    h = dash.Handler.__new__(dash.Handler)
+    box = {}
+    h._json = lambda obj, code=200: box.update(obj=obj, code=code)
+    h._get_api("/local/tickets", {})
+    assert box["obj"] == {"sets": []}
+    for p in ("/local/tickets/retry", "/local/tickets/cleanup", "/local/tickets/build"):
+        assert _dpost(p, {"folder": s.folder, "n": "01"}, chat=2)["code"] == 404, p
