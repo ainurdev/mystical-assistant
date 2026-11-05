@@ -24,3 +24,10 @@ export function todayIndex(today: string, first: string): number {
 /** The hero's caption: a day's turns, or the week's turns and sessions. */
 export const capText = (turns: number, sessions?: number) =>
   `${turns} ${turns === 1 ? "turn" : "turns"}${sessions === undefined ? "" : ` · ${sessions} ${sessions === 1 ? "session" : "sessions"}`}`;
+
+/** The ring's window: the 5-hour one only (never the week's, which the composer chip falls back to),
+ *  and none once its reset time has passed, since its figure is stale. */
+export function ringWindow<T extends { tag: string; resets_at: string | null }>(ws: T[], nowMs: number): T | null {
+  const w = ws.find((x) => x.tag === "5H");
+  return w && !(w.resets_at && Date.parse(w.resets_at) <= nowMs) ? w : null;
+}
