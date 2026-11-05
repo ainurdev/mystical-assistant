@@ -12,6 +12,7 @@ import {
 } from "../../lib/rivendelltasks";
 import { hhmm } from "../../lib/surfaces";
 import { Markdown } from "../Markdown";
+import { BoardBar } from "./BoardBar";
 
 const POLL_MS = 10_000;
 const LATER_KEY = "mystical:rivendell-later";   // "closed" while LATER is folded
@@ -241,19 +242,25 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
         </span>
       </div>
       <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)" }} />
-      {names && (
-        <div className="swapin" style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px 2px", fontSize: "var(--t95)", color: "var(--purple-h)", minWidth: 0 }}>
-          <span style={{ color: "var(--purple)", flex: "none" }}>◆</span>
-          <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{names}</span>
-          {links.map((l) => <Chip key={l.instance_id} link={l} now={now} />)}
-          <span style={{ marginLeft: "auto", flex: "none", color: "var(--txl)" }}>{data?.tasks.length ?? 0} OPEN</span>
-        </div>
-      )}
+      {hero()}
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "4px 0 10px" }}>
         {body()}
       </div>
     </div>
   );
+
+  /** The board bar: lanes from the same grouping the list uses; ▶ arms the first open task like its row's ▶. */
+  function hero(): ReactNode {
+    const tasks = (data?.tasks ?? []).map((t) => queued[t.id] && t.implementation?.id !== queued[t.id]
+      ? { ...t, implementation: { id: queued[t.id], status: "PENDING" as const, createdAt: now.toISOString(), completedAt: null } }
+      : t);
+    const g = groupTasks(tasks);
+    const first = nextUp(todo, new Set(tasks.map((t) => t.id))).find((i) => i.tasks.length);
+    const t = first ? tasks.find((x) => x.id === first.tasks[0]) : [...g.needs, ...g.mine, ...g.team][0];
+    const c = linkChip(links[0], now);
+    return <BoardBar project={names} chip={c.label} tone={LINK_TONE[c.tone]} groups={g} total={tasks.length}
+      next={t ? { id: t.id, title: splitTitle(t.name).title } : null} onStart={(id) => reveal(id, true)} />;
+  }
 
   function body(): ReactNode {
     // A dashboard built from newer code than the running bridge: the route is

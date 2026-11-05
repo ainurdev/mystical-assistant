@@ -7708,3 +7708,18 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .bt-svg { display: block; width: 100%; height: 62px; margin-top: 4px; }
 .bt-live { animation: ffpulse 1.4s ease-in-out infinite; }
 .bt-leg { position: absolute; left: 12px; right: 12px; bottom: 10px; display: flex; gap: 10px; overflow: hidden; white-space: nowrap; font-size: var(--t9); color: var(--txd); }
+/* Rivendell BOARD BAR (inside .rh). */
+.bb-k { font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.bb-pill { flex: none; font-size: var(--t9); letter-spacing: 1px; padding: 0 6px; border: 1px solid currentColor; border-radius: 8px; white-space: nowrap; }
+.bb-r { margin-left: auto; flex: none; font-size: var(--t9); color: var(--txl); white-space: nowrap; }
+.bb-bar { display: flex; gap: 3px; height: 40px; margin-top: 12px; }
+.bb-lane { min-width: 0; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  background: color-mix(in srgb, var(--lc) 22%, transparent); border: 1px solid color-mix(in srgb, var(--lc) 55%, transparent); }
+.bb-lane b { font-size: var(--t11); line-height: 1; font-weight: 800; color: var(--txb); }
+.bb-lane span { font-size: 7.5px; font-weight: 700; letter-spacing: .08em; color: var(--txd); }
+.bb-cap { display: flex; align-items: center; gap: 8px; height: 24px; margin-top: 8px; min-width: 0; font-size: var(--t95); }
+.bb-up { flex: none; font-size: var(--t9); letter-spacing: 1px; color: var(--acc2, var(--acc)); }
+.bb-t { flex: 1; min-width: 0; color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bb-go { flex: none; appearance: none; cursor: pointer; display: inline-flex; padding: 4px; background: transparent; color: var(--acc2, var(--acc));
+  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); border-radius: 6px; }
+.bb-go:hover, .bb-go:focus-visible { background: color-mix(in srgb, var(--acc) 18%, transparent); }
