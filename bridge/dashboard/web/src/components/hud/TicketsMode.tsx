@@ -126,7 +126,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
   if (set.status === "merged") {
     const clean = async () => {
       setMenu(false);
-      if (!(await askConfirm(`Remove ${name}'s ticket worktrees and branches? Anything unmerged or uncommitted stays.`, { ok: "Clean up" }))) return;
+      if (!(await askConfirm(`Remove ${name}'s ticket worktrees and branches? Anything unmerged or uncommitted stays; ignored files in those worktrees (.env, .mystical/) go with them.`, { ok: "Clean up" }))) return;
       try {
         const r = await api.cleanupTickets(set.folder);
         setNote(`removed ${r.removed.length}${r.skipped.length ? `, skipped ${r.skipped.length}` : ""}`);

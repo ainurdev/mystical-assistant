@@ -604,9 +604,10 @@ export function SessionsPanel(props: Props) {
   const [picked, setPicked] = useState<Mode>(() => loadPrefs().mode);
   // A saved PLUGINS pick renders as ATTENTION while Rivendell isn't installed,
   // and stays saved: installing it again puts you back on the tab you chose.
-  // Likewise TICKETS while its AI switch is off.
+  // Likewise TICKETS while its AI switch, or SKILL PATHS above it, is off.
   const ai = useAiFeatures();
-  const mode: Mode = (picked === "plugins" && !plugins.rivendell) || (picked === "tickets" && !ai.ticketruns) ? "attention" : picked;
+  const tickets = !!(ai.router && ai.ticketruns);
+  const mode: Mode = (picked === "plugins" && !plugins.rivendell) || (picked === "tickets" && !tickets) ? "attention" : picked;
   const [order, setOrder] = useState<OrderMode>(() => loadPrefs().order);
   const [customOrder, setCustomOrder] = useState<string[]>(() => loadPrefs().custom);
   const [orderMenu, setOrderMenu] = useState(false);
@@ -1024,7 +1025,7 @@ export function SessionsPanel(props: Props) {
       count: attnOn.reduce((t, x) => t + attn[x.k]!, 0),
       tip: attnSay ? `Attention — ${attnSay}` : "Attention — grouped by what each session wants from you" },
     { id: "projects", label: "Projects", Icon: FolderTree, count: groups.length, tip: "Projects — grouped by project" },
-    ...(ai.ticketruns ? [{ id: "tickets" as Mode, label: "Tickets", Icon: Ticket, count: 0, tip: "Tickets — a feature's ticket sets, building and merging" }] : []),
+    ...(tickets ? [{ id: "tickets" as Mode, label: "Tickets", Icon: Ticket, count: 0, tip: "Tickets — a feature's ticket sets, building and merging" }] : []),
     ...(plugins.rivendell ? [{ id: "plugins" as Mode, label: "Plugins", Icon: Puzzle, count: pluginRows.length, tip: "Plugins — sessions started by configured plugin workers" }] : []),
     { id: "recent", label: "Recent", Icon: History, count: mine.length, tip: "Recent — one flat stream, newest first" },
   ];
