@@ -6604,12 +6604,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tn-sp { flex: 1; }
 .tn .gp-ib.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 13%, transparent); }
 .tn .mscroll { flex: 1; min-height: 0; overflow-y: auto; }
-.tn .gp-roc b { font-size: calc(var(--fsu) * 18); }
-.tn .gp-roc.ask { background: color-mix(in srgb, var(--askc) 9%, transparent); }
-.tn .gp-roc.ask b, .tn .gp-roc.ask b svg { color: var(--askc); }
-.tn .gp-rosub:is(.run, .ask) b { color: inherit; }
-.tn .gp-rosub.run { color: var(--warn); }
-.tn .gp-rosub.ask { color: var(--askc); }
 .tn-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: tnpulse 1.4s ease-in-out infinite; }
 @keyframes tnpulse { 50% { opacity: .35; } }
 .tn-none { padding: 18px 14px; font: italic 400 var(--t115)/1.5 var(--f); color: var(--txl); }
@@ -7666,3 +7660,30 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gpp-none { position: absolute; left: 0; right: 0; top: 66px; text-align: center; font-size: var(--t9); letter-spacing: .14em; text-transform: uppercase; color: var(--txl); }
 .gp-rd > .rh { margin: 0 0 8px; }
 .gpp-st > span { letter-spacing: .06em; }
+/* TurnClock: the Turns hero. Green is a turn at work, amber one that waits on you. */
+.tc-range { font-size: var(--t9); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tc-right { margin-left: auto; flex: none; display: inline-flex; }
+.tc-pill { display: inline-flex; align-items: center; gap: 5px; height: 16px; padding: 0 7px; border-radius: 8px; font-size: var(--t9); font-weight: 700; white-space: nowrap;
+  color: var(--txd); background: color-mix(in srgb, var(--txl) 14%, transparent); }
+.tc-pill b { font-weight: 800; color: inherit; }
+.tc-pill.run { color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
+.tc-pill.ask { color: var(--askc, var(--warn)); background: color-mix(in srgb, var(--askc, var(--warn)) 16%, transparent); }
+.tc-pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.tc { position: relative; margin-top: 4px; height: 82px; }
+.tc-strip { position: absolute; left: 6px; right: 6px; top: 0; height: 58px; }
+.tc-blk-w { position: absolute; top: 0; height: 40px; }
+.tc-dots { position: absolute; left: 3px; top: 0; height: 6px; display: flex; gap: 3px; }
+.tc-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--txl); }
+.tc-dots i.ask { background: var(--askc, var(--warn)); }
+.tc-blk { position: absolute; left: 0; right: 0; top: 10px; height: 28px; box-sizing: border-box; padding: 0 0 0 5px; display: flex; align-items: center; overflow: hidden;
+  font-size: 10px; font-weight: 800; color: var(--acc2, var(--acc)); border: 1px solid color-mix(in srgb, var(--acc) 80%, transparent); border-radius: 4px;
+  background: color-mix(in srgb, var(--acc) 22%, transparent); }
+.tc-blk.run { color: var(--ok); border-color: var(--ok); background: color-mix(in srgb, var(--ok) 24%, transparent); animation: tcbreath 1.8s ease-in-out infinite; }
+.tc-blk.ask { color: var(--askc, var(--warn)); border-color: var(--askc, var(--warn)); background: color-mix(in srgb, var(--askc, var(--warn)) 24%, transparent); animation: tcbreath 1.8s ease-in-out infinite; }
+@keyframes tcbreath { 50% { opacity: .55; } }
+.tc-axis { position: absolute; left: -6px; right: -6px; top: 44px; border-top: 1px solid color-mix(in srgb, var(--txl) 30%, transparent); }
+.tc-tick { position: absolute; top: 40px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 8.5px; color: var(--txl); white-space: nowrap; }
+.tc-tick i { width: 0; height: 8px; border-left: 1px solid color-mix(in srgb, var(--txl) 50%, transparent); }
+.tc-cap { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: baseline; gap: 5px; font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; }
+.tc-cap b { color: var(--txb); font-weight: 800; }
+.tc-cap span { color: var(--txl); }

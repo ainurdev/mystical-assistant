@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
-import { Check, ChevronDown, ChevronRight, ChevronUp, CircleHelp, Copy, CornerDownLeft, ListEnd, ListOrdered, RotateCw, Search, Timer, X } from "lucide-react";
+import { ChevronDown, ChevronRight, ChevronUp, Copy, CornerDownLeft, ListEnd, RotateCw, Search, X } from "lucide-react";
 import { api, type SessionBreakdown } from "../../api";
 import type { Turn } from "../../chat";
 import { ckId, fmtElapsed, timeSplit, turnRows, type Resume, type Sub, type TurnRow } from "../../lib/checkpoints";
@@ -8,6 +8,7 @@ import { dur, fmtTokens } from "../../lib/week";
 import { modelName } from "../../models";
 import type { TranscriptNav } from "../Transcript";
 import { SteerIcon } from "../Composer";
+import { TurnClock } from "./TurnClock";
 
 // Where a jump parks a turn: under the header island (Transcript's scroll-mt-[86px]).
 const AIM = 86;
@@ -146,14 +147,12 @@ export function TurnsPanel({
     return (
       <div className="panel gp tn" style={FRAME}>
         <div className="gp-head"><span className="gp-title">TURNS</span></div>
+        <div className="gp-rd"><TurnClock rows={[]} now={now} range="this session" pill={null} say="" /></div>
         <div className="tn-none">no turns yet — speak, and the first lands here.</div>
       </div>
     );
 
   const max = Math.max(1, ...rows.map((r) => r.secs ?? 0));
-  const work = rows.reduce((s, r) => s + (r.secs ?? 0), 0);
-  const asks = rows.reduce((s, r) => s + r.subs.filter((x) => x.kind === "question").length, 0);
-  const waits = rows.filter((r) => r.waiting).length;
   const live = [...rows].reverse().find((r) => r.status === "running");
   const last = rows[rows.length - 1];
   const cut = rows.reduce((s, r) => s + r.resumes.length, 0);
@@ -170,13 +169,15 @@ export function TurnsPanel({
     else if (e.key === "Enter") { e.preventDefault(); pick(sel); }
   };
 
-  const status = live
-    ? <div className={`gp-rosub ${live.waiting ? "ask" : "run"}`}><span className="tn-dot" />
-        <span><b>#{live.n}</b> {live.waiting === "question" ? "asked you a question" : live.waiting === "permission" ? "needs your permission" : "running"}
-          {live.secs != null && <> · <b>{fmtElapsed(live.secs)}</b></>}</span></div>
-    : <div className="gp-rosub ok"><Check size={13} strokeWidth={2.4} />
-        <span>{ended != null ? <>idle since <b>{hhmm(ended)}</b></> : "idle"}
-          {cut > 0 && rows.every((r) => !r.resumes.length || r.status === "done") && <> · {cut} cut off, all resumed</>}</span></div>;
+  const isToday = rows[0].started != null && day(rows[0].started) === day(now);
+  const range = rows[0].started == null ? "this session"
+    : `${isToday ? "today" : day(rows[0].started)} · ${hhmm(rows[0].started)} → ${live || ended == null ? "now" : hhmm(ended)}`;
+  const say = live ? `#${live.n} ${live.waiting ? "waits on you" : "running"}` : "idle";
+  const pill = live
+    ? <span className={`tc-pill ${live.waiting ? "ask" : "run"}`}><span className="tn-dot" />
+        <span><b>#{live.n}</b> {live.waiting === "permission" ? "needs you" : live.waiting ? "waits on you" : "running"}
+          {!live.waiting && live.secs != null && <> · {fmtElapsed(live.secs)}</>}</span></span>
+    : <span className="tc-pill ok">{cut > 0 && rows.every((r) => !r.resumes.length || r.status === "done") ? `idle · ${cut} resumed` : "idle"}</span>;
 
   let lastDay = "";
   return (
@@ -202,16 +203,7 @@ export function TurnsPanel({
           <div className="tn-hint"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>↵</kbd> jump · <kbd>esc</kbd> close</div>
         </>
       ) : (
-        <div className="gp-rdw"><div className="gp-rd">
-          <div className="gp-ro">
-            <div className="gp-roc"><b><ListOrdered size={15} /><span>{rows.length}</span></b><span>turns</span></div>
-            <div className="gp-roc"><b><Timer size={15} /><span>{dur(work)}</span></b><span>working</span></div>
-            {waits
-              ? <div className="gp-roc ask"><b><CircleHelp size={15} /><span>{waits}</span></b><span>waits on you</span></div>
-              : <div className="gp-roc"><b><CircleHelp size={15} /><span>{asks}</span></b><span>asks</span></div>}
-          </div>
-          {status}
-        </div></div>
+        <div className="gp-rd"><TurnClock rows={rows} now={now} range={range} pill={pill} say={say} /></div>
       )}
       <div ref={listRef} className="mscroll tn-list"
         onWheel={() => { browsed.current = Date.now(); }} onPointerDown={() => { browsed.current = Date.now(); }}>
