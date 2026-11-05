@@ -125,6 +125,7 @@ def test_new_path_replaces_old(state_dir):
 def test_one_path_uses_skill(state_dir):
     paths.set_path("s1", "one", "dig", "claude", skill="research")
     assert paths.step_done("s1", "t1") is None
+    assert paths.get("s1")["skill"] == "research"
     assert paths.get("s1")["done"] == ["research"]
 
 

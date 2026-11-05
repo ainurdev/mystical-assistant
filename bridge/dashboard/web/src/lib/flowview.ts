@@ -8,7 +8,7 @@ import type { Turn } from "../chat";
    own kind (you / auto) instead, since nothing is working on it yet. */
 
 export interface Flow {
-  path: string; by: "rule" | "claude"; why: string; auto: boolean; at: number;
+  path: string; skill?: string | null; by: "rule" | "claude"; why: string; auto: boolean; at: number;
   done: string[]; next: { station: string; turn_id: string } | null;
 }
 export type StationState = "done" | "now" | "you" | "auto" | "next";
@@ -30,8 +30,7 @@ export const PATHS: Record<string, [string, string | null, "you" | "auto"][]> = 
 
 export function flowView(flow: Flow | null, turns: Turn[]): FlowView {
   if (!flow) return { stations: [], step: 0, total: 0, why: "", by: "rule" };
-  // shortcut: a one-skill path's skill isn't in GET /local/flow, so it draws as one station named "skill"; send it with the flow to name it.
-  const table = PATHS[flow.path] ?? [["skill", null, "auto"] as [string, string | null, "you" | "auto"]];
+  const table = PATHS[flow.path] ?? [[flow.skill ?? "skill", flow.skill ?? null, "auto"] as [string, string | null, "you" | "auto"]];
   const running = [...turns].reverse().find((t) => t.status === "running");
   const first = table.findIndex(([k]) => !flow.done.includes(k));
   const stations = table.map(([key, skill, who], i) => ({

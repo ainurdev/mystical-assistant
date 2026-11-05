@@ -140,7 +140,7 @@ def get(session_id: str) -> "dict | None":
         f = _cache.get(session_id)
         if not f:
             return None
-        return {k: f[k] for k in ("path", "by", "why", "auto", "at", "done", "next")}
+        return {k: f[k] for k in ("path", "by", "why", "auto", "at", "done", "next", "skill")}
 
 
 def set_auto(session_id: str, on: bool) -> None:

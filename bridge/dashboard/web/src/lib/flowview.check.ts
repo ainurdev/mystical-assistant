@@ -19,3 +19,7 @@ console.assert(flowView(flow("feature-here", []), []).stations.length === 3, "fe
 console.assert(flowView(flow("bug", ["diagnose", "fix", "retro"]), []).step === 3, "all done keeps step at total");
 const none = flowView(null, [run]);
 console.assert(none.stations.length === 0 && none.step === 0 && none.total === 0, "null flow: nothing");
+
+const one = { ...flow("one", []), skill: "research" };
+console.assert(flowView(one, []).stations[0].label === "research", "one path: labelled by its skill");
+console.assert(flowView({ ...one, done: ["research"] }, []).stations[0].state === "done", "one path: done matches the skill");
