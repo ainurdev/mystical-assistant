@@ -1715,6 +1715,12 @@ export function App() {
     if (reveal) void revealFile(root && `${root}/${target}`);
     else openAnalyze(sessionProject, { path: target, branch: sessionBranch, line });
   }
+  // One identity for the transcript: Markdown is memoized, and a fresh function
+  // each render would re-parse every file-linked reply on every poll.
+  const openFileRefNow = useRef(openFileRef);
+  openFileRefNow.current = openFileRef;
+  const onOpenFile = useCallback((p: string, line?: number, at?: { x: number; y: number }) =>
+    void openFileRefNow.current(p, line, at), []);
 
   /** A line of the model's prose → a markdown blockquote in the prompt box, the
    *  way you'd quote a mail. Appended, not substituted: you quote a sentence
@@ -3028,7 +3034,7 @@ export function App() {
                 // A reply to a question asked in prose (answerAsk); none once it's dismissed.
                 onAnswer={lastTurnId && droppedAsks.has(lastTurnId) ? undefined : answerAsk}
                 askDocked={!!dock && !(selected && (isDeviceRun(selected.origin) || isTeam(selected.origin)))}
-                onOpenFile={openFileRef}
+                onOpenFile={onOpenFile}
                 run={sessionRun}
                 onOpenRun={sessionProject ? () => openAnalyze(sessionProject, undefined, "terminal") : undefined}
                 onDropFiles={(f) => composerFiles.current?.(f)}

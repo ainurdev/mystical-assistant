@@ -2476,6 +2476,7 @@ export const RunStream = memo(function RunStream({
               animate={animate}
               idKey={`${turnId}:${i}`}
               view={i === finalText ? view : null}
+              onOpenFile={onOpenFile}
             />
           );
         const pause = dossier ? pauseAt(i - 1) : 0;
@@ -2709,6 +2710,7 @@ export const RunStream = memo(function RunStream({
             dossier={dossier}
             onAnswer={onAnswer}
             onQuote={onQuote}
+            onOpenFile={onOpenFile}
             view={view}
             askDocked={askDocked}
           />
@@ -3208,6 +3210,7 @@ export function FinalResult({
   dossier = false,
   onAnswer,
   onQuote,
+  onOpenFile,
   view,
   askDocked = false,
 }: {
@@ -3225,6 +3228,8 @@ export function FinalResult({
   dossier?: boolean;
   onAnswer?: (text: string) => void;
   onQuote?: (text: string) => void;
+  /** A path in the answer is a file link, as it is in the notes above it. */
+  onOpenFile?: OpenFile;
   /** Set on a Rivendell job's turn: an answer its kind can read is drawn as the
    *  job's view (a brief, minutes, a review, the newspaper…) instead of as text. */
   view?: JobViewInput | null;
@@ -3287,7 +3292,7 @@ export function FinalResult({
         {drawn ?? (body && (
           <div className="res-body relative">
             <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
-              <Markdown className="leading-relaxed text-foreground-bright">{body}</Markdown>
+              <Markdown className="leading-relaxed text-foreground-bright" onOpenFile={onOpenFile}>{body}</Markdown>
             </div>
             {!open && <div className="res-fade" aria-hidden />}
           </div>
