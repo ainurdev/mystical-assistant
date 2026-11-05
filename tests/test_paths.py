@@ -61,6 +61,8 @@ def test_pack_is_constant(router_on, session_c1):
 
 def test_no_pack_for_rivendell_jobs(router_on, rivendell_session_c2):
     assert paths.pack_for("c2") == ""
+    cmd = runner._base_cmd("hi", 1, stream=True, interactive=True, claude_session_id="c2")
+    assert "--plugin-dir" not in cmd                 # nobody there to walk a path either
 
 
 def test_no_pack_when_off(router_off, session_c1):

@@ -628,7 +628,7 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
                     # deny — and settling it here is what keeps the fallback
                     # below (and its `claude mcp list` call) off this path.
                     disabled_tools = []
-            if paths.on():
+            if paths.pack_for(claude_session_id):   # the pack's gate: on, and an attended origin
                 cmd += ["--plugin-dir", paths.PACK_DIR]
     if model:
         cmd += ["--model", model]
