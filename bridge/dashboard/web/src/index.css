@@ -6576,6 +6576,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    tab's bones (.gp root, .gp-fold folds) plus these and the WeekGrid. */
 /* TabKick: the right-rail kicker, small caps. The pebble and middle-earth panel-head rules
    above also match its first span and buttons; the .tabkick selectors here out-weigh them (doubled classes, as the later family rules tie otherwise). */
+/* the kicker reads --f, which only .gp roots define: without it BRANCHES and RIVENDELL fall to 16px */
+.tabkick { --f: var(--ui-font, inherit); }
 .tk-name { font: 800 var(--t10)/1 var(--f); letter-spacing: 1.6px; text-transform: uppercase; color: var(--txl); }
 .tabkick button { font-family: var(--f); }
 [data-fam] .hudgrid > div:last-child .panel > .tabkick.tabkick { padding: 0 12px !important; }
