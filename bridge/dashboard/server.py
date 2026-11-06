@@ -444,7 +444,7 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "no such session"}, 404)
             full = qs.get("full", ["0"])[0] == "1"
-            cwd = s.get("work_cwd") or s.get("cwd") or ""
+            cwd = team._session_dir(s)  # noqa: SLF001 - its worktree while that exists, as its turns
             if full and not os.path.isdir(cwd):
                 return self._json({"error": "the session has no checkout"}, 400)
             return self._json(council.brief(sid, cwd, full))
@@ -1579,7 +1579,7 @@ class Handler(BaseHTTPRequestHandler):
             act = body.get("action")
             try:
                 if act == "run":
-                    cwd = s.get("work_cwd") or s.get("cwd") or ""
+                    cwd = team._session_dir(s)  # noqa: SLF001 - as the GET above
                     if not os.path.isdir(cwd):
                         return self._json({"error": "the session has no checkout"}, 400)
                     return self._json(council.start(s, cwd))

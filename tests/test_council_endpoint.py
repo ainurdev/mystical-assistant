@@ -78,3 +78,17 @@ def test_no_checkout_is_400(tmp_path):
     assert (box["code"], box["obj"]) == (400, {"error": "the session has no checkout"})
     h._get_api(f"/local/council/{sid}", {"full": ["1"]})               # noqa: SLF001
     assert box["code"] == 400
+
+
+def test_a_removed_worktree_falls_back_to_the_session_folder(monkeypatch, tmp_path):
+    """#8: as the session's own turns do (runner): a gone work_cwd means its cwd, not a 400."""
+    sid, got = _sid(), []
+    store.set_cwd(sid, str(tmp_path))
+    store.set_work_cwd(sid, str(tmp_path / "gone"))
+    monkeypatch.setattr(council, "start", lambda s, cwd: got.append(cwd) or {"status": "reviewing"})
+    monkeypatch.setattr(council, "brief", lambda s, cwd=None, full=False: got.append(cwd) or {})
+    h, box = _handler()
+    h._post_api(f"/local/council/{sid}", {"action": "run"})            # noqa: SLF001
+    assert box["code"] == 200
+    h._get_api(f"/local/council/{sid}", {"full": ["1"]})               # noqa: SLF001
+    assert box["code"] == 200 and got == [str(tmp_path), str(tmp_path)]
