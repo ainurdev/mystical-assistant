@@ -214,3 +214,83 @@ def test_a_timeline():
 def test_diagrams_refuse_with_a_sentence(spec, word):
     with pytest.raises(dv.Refused, match=word):
         dv.build(spec)
+
+
+TRIP = {"view": "chart", "kind": "projection", "title": "Laptop money", "currency": "eur", "start": 1000, "from": "2026-11-07",
+        "until": "2027-02-01", "events": [{"x": "2026-11-25", "amount": 3000, "label": "Salary"}, {"x": "2026-12-25", "amount": 3000, "label": "Salary"},
+                                          {"x": "2026-12-01", "amount": -2500, "label": "Rent"}],
+        "scenarios": [{"label": "Buy in December", "events": [{"x": "2026-12-05", "amount": -4000, "label": "Laptop"}]},
+                      {"label": "Buy in January", "events": [{"x": "2027-01-05", "amount": -4000, "label": "Laptop"}]}]}
+
+
+def test_a_projection_works_out_the_money():
+    ev, notes = dv.build(TRIP)
+    assert ev["kind"] == "step" and not notes and [s["dashed"] for s in ev["series"]] == [True, True]
+    assert [p["x"] for p in ev["points"]] == ["2026-11-07", "2026-11-25", "2026-12-01", "2026-12-05", "2026-12-25", "2027-01-05", "2027-02-01"]
+    assert [p["s0"] for p in ev["points"]] == [1000, 4000, 1500, -2500, 500, 500, 500]
+    assert [p["s1"] for p in ev["points"]] == [1000, 4000, 1500, 1500, 4500, 500, 500]
+    assert ev["outlook"][0] == {"series": "s0", "label": "Buy in December", "end": 500, "low": -2500, "low_x": "2026-12-05"}
+    assert ev["outlook"][1]["low"] == 500 and ev["xs"][1] - ev["xs"][0] == 18
+
+
+def test_every_event_is_a_pin_saying_whose_it_is():
+    ev, _ = dv.build(TRIP)
+    pins = ev["annotations"]
+    assert [p["i"] for p in pins] == sorted(p["i"] for p in pins) and len(pins) == 5
+    laptop = [p for p in pins if p["label"] == "Laptop"]
+    assert [(p["series"], p["amount"]) for p in laptop] == [("s0", -4000), ("s1", -4000)]
+    assert next(p for p in pins if p["label"] == "Rent")["series"] == ""
+
+
+def test_a_projection_tells_the_agent_what_it_worked_out():
+    ev, _ = dv.build(TRIP)
+    said = dv.describe(ev)
+    assert "Buy in December ends at 500.00, lowest -2,500.00 on 2026-12-05" in said
+
+
+def test_one_line_with_no_scenarios_and_money_as_written():
+    ev, _ = dv.build({"view": "chart", "kind": "projection", "title": "T", "start": "1.000,00", "from": "2026-01-01",
+                      "events": [{"date": "2026-01-02", "amount": "-250,50", "label": "Bill"}]})
+    assert ev["points"][1]["s0"] == 749.5 and ev["series"][0]["label"] == "Balance"
+
+
+@pytest.mark.parametrize("change,word", [
+    ({"start": None}, "start"), ({"events": [], "scenarios": []}, "events"),
+    ({"events": [{"x": "soon", "amount": 1}]}, "date"), ({"events": [{"x": "2026-12-01", "amount": "lots"}]}, "amount"),
+    ({"scenarios": [{"label": str(i)} for i in range(dv.MAX_SERIES + 1)]}, "scenarios"),
+])
+def test_a_projection_refuses_with_a_sentence(change, word):
+    with pytest.raises(dv.Refused, match=word):
+        dv.build({**TRIP, **change})
+
+
+def test_pins_lines_and_a_forecast_on_any_chart():
+    ev, notes = dv.build({"view": "chart", "kind": "line", "title": "T", "x": "m", "series": [{"key": "v", "dashed_from": "Mar"}, {"key": "w", "dashed": True}],
+                          "rows": [{"m": "Jan", "v": 1, "w": 1}, {"m": "Feb", "v": 2, "w": 1}, {"m": "Mar", "v": 3, "w": 1}],
+                          "annotations": [{"x": "Feb", "label": "Launch", "note": "went well", "series": "v"}, {"x": "Dec", "label": "Lost"}],
+                          "lines": [{"y": 5, "label": "Goal"}, {"y": "x"}]})
+    assert ev["annotations"] == [{"i": 1, "label": "Launch", "note": "went well", "series": "v"}]
+    assert ev["lines"] == [{"y": 5.0, "label": "Goal"}] and ev["series"][0]["dash_from"] == 2 and ev["series"][1]["dashed"] is True
+    assert any("Lost" in n for n in notes) and "xs" not in ev
+
+
+def test_dates_get_a_time_axis_and_pins_follow_them():
+    ev, _ = dv.build({"view": "chart", "kind": "line", "title": "T", "x": "d", "series": ["v"],
+                      "rows": [{"d": "2026-03-01", "v": 3}, {"d": "2026-01-01", "v": 1}, {"d": "2026-01-02", "v": 2}],
+                      "annotations": [{"x": "2026-03-01", "label": "Late"}]})
+    assert [p["x"] for p in ev["points"]] == ["2026-01-01", "2026-01-02", "2026-03-01"]
+    assert ev["xs"][1] - ev["xs"][0] == 1 and ev["annotations"][0]["i"] == 2
+    bars, _ = dv.build({"view": "chart", "kind": "bar", "title": "T", "x": "d", "series": ["v"], "rows": [{"d": "2026-03-01", "v": 3}, {"d": "2026-01-01", "v": 1}]})
+    assert "xs" not in bars and bars["points"][0]["x"] == "2026-03-01"       # bars keep the order given
+
+
+def test_a_marker_never_leaves_the_chat():
+    assert dv.strip_refs("Here it is.\n\n[[view:v1]]\n\nAnd [[view:v2]] more.") == "Here it is.\n\n\n\nAndmore."
+    assert dv.strip_refs(None) == ""
+
+
+def test_views_are_named_for_placing_in_the_answer(session):
+    job = Job()
+    res = gt.call(session, job, "show_data", {"view": "stats", "title": "A", "items": [{"label": "a", "value": 1}]})
+    gt.call(session, job, "show_data", {"view": "stats", "title": "B", "items": [{"label": "a", "value": 1}]})
+    assert [e["ref"] for e in job.events] == ["v1", "v2"] and "[[view:v1]]" in res["content"][0]["text"]

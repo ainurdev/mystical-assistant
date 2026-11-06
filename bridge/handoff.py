@@ -68,7 +68,8 @@ def _turn_block(s: dict, t: dict, *, tools: bool) -> str:
         if k == "text" and e.get("text"):
             words.append(e["text"].strip())
         elif k == "result" and e.get("result"):
-            closing = e["result"].strip()
+            from bridge import data_views
+            closing = data_views.strip_refs(e["result"]).strip()
         elif k == "steer" and e.get("text"):
             words.append(f"(the user added: {e['text'].strip()})")
         elif k == "tool":

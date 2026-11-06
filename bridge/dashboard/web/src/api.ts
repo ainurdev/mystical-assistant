@@ -270,7 +270,7 @@ export type RunEvent =
   // What the bridge's own tools record (bridge/gateway_tools.py, bridge/rules.py).
   // A figure is the agent showing you something, with a caption: `images` are upload-dir
   // paths, served by /local/attachment. `compare` is [before, after].
-  | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string }
+  | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string; ref?: string }
   // show_data: a sheet, chart, board or figures (lib/dataview.ts, bridge/data_views.py).
   | DataEv
   // run_checks. A count the runner's output didn't show is null. `new`: failures not on

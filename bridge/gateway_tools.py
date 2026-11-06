@@ -55,7 +55,7 @@ DATA = {"name": "show_data", "description": (
     "Draw a live sheet, chart, board or diagram in the chat. Use it in any conversation, whenever numbers or items "
     "would otherwise be a list or a Markdown table: test coverage or bundle size by folder, benchmarks, options side "
     "by side, a plan's status as a board, tasks, finances, a burndown; or a flowchart for how something works and a "
-    "timeline for what happened. Call it once per view; several in one answer are "
+    "timeline for what happened, or a projection of a balance from dated amounts. Call it once per view; several in one answer are "
     "fine. Totals, burndown lines and counts are computed for you. Then keep your reply to what stands out. Use real "
     "data only, and say when it's partial."),
     "inputSchema": {"type": "object", "required": ["view", "title"], "properties": {
@@ -78,16 +78,28 @@ DATA = {"name": "show_data", "description": (
                   "diagram, flow: [{id, label, note, shape: process|decision|terminal, group}]. Laid out for you."},
         "edges": {"type": "array", "items": {"type": "object"}, "description": "diagram, flow: [{from, to, label}]."},
         "direction": {"type": "string", "enum": ["right", "down"], "description": "diagram, flow. Default: fits the screen."},
-        "kind": {"type": "string", "enum": ["bar", "bar_stacked", "line", "area", "donut", "burndown", "flow", "timeline"], "description":
-                 "diagram: flow or timeline. chart: bar to compare, line or area over time, bar_stacked for parts of a whole over time, donut for "
+        "kind": {"type": "string", "enum": ["bar", "bar_horizontal", "bar_stacked", "line", "step", "area", "donut", "burndown", "projection",
+                                                   "flow", "timeline"], "description":
+                 "diagram: flow or timeline. chart: projection works out a balance from start, events and scenarios, "
+                 "so don't compute it yourself; step for values that jump; bar_horizontal for long labels; bar to compare, line or area over time, bar_stacked for parts of a whole over time, donut for "
                  "a few parts of one whole, burndown for work remaining (the ideal line is computed)."},
         "x": {"type": "string", "description": "chart: the row key for the x axis."},
         "series": {"type": "array", "items": {}, "description":
-                   "chart: row keys to plot, or [{key, label}]. All on one axis, so same unit. Two different units "
+                   "chart: row keys to plot, or [{key, label, dashed, dashed_from}]; dashed_from is the x where a forecast starts. All on one axis, so same unit. Two different units "
                    "are two charts."},
         "format": {"type": "string", "enum": ["number", "money", "percent"], "description":
                    "chart: how values read. For percent, 12 means 12%."},
         "x_label": _S, "y_label": _S,
+        "annotations": {"type": "array", "items": {"type": "object"}, "description":
+                        "chart: pins explaining points, [{x, label, note, series}]."},
+        "lines": {"type": "array", "items": {"type": "object"}, "description": "chart: reference lines, [{y, label}], like a goal or a limit."},
+        "start": {"type": "number", "description": "projection: the balance it starts from."},
+        "events": {"type": "array", "items": {"type": "object"}, "description":
+                   "projection: amounts in every scenario, [{x: date, amount, label}], negative for money out."},
+        "scenarios": {"type": "array", "items": {"type": "object"}, "description":
+                      "projection: what-ifs to compare, [{label, events: [...]}]."},
+        "from": {"type": "string", "description": "projection: first date. Default today."},
+        "until": {"type": "string", "description": "projection: run on to this date."},
         "ideal_end": {"type": "number", "description": "burndown: where the ideal line ends. Default 0."},
         "items": {"type": "array", "items": {"type": "object"}, "description":
                   "stats: [{label, value, format: number|money|percent|text, currency, delta, note}]. "
@@ -200,9 +212,10 @@ def _figure(s: dict, job, items: list, caption: str, kind: str) -> dict:
         if why:
             return _text(why, error=True)
         images.append(got)
-    job.add({"type": "figure", "kind": kind, "images": images, "caption": caption})
+    ref = _next_ref(job)
+    job.add({"type": "figure", "kind": kind, "images": images, "caption": caption, "ref": ref})
     _send_figure(s, job, images, caption)
-    return _text("It's in the chat, with your caption. The user can see it now.")
+    return _text(f"It's in the chat, with your caption. The user can see it now. {_placing(ref)}")
 
 
 def _send_figure(s: dict, job, images: list, caption: str) -> None:
@@ -219,6 +232,16 @@ def _send_figure(s: dict, job, images: list, caption: str) -> None:
         print(f"[gateway_tools] telegram figure: {e!r}", file=sys.stderr)
 
 
+def _next_ref(job) -> str:
+    """A view's name within its turn, for placing it in the answer."""
+    job.view_refs = getattr(job, "view_refs", 0) + 1
+    return f"v{job.view_refs}"
+
+
+def _placing(ref: str) -> str:
+    return f"It goes above your answer; to put it mid-answer instead, write [[view:{ref}]] on its own line there."
+
+
 def _show_data(s: dict, job, a: dict) -> dict:
     """A sheet, chart or board on the turn (bridge/data_views.py)."""
     from bridge import data_views
@@ -228,8 +251,9 @@ def _show_data(s: dict, job, a: dict) -> dict:
         ev, notes = data_views.build(a)
     except data_views.Refused as e:
         return _text(str(e), error=True)
+    ev["ref"] = _next_ref(job)
     job.add(ev)
-    said = f"It's in the chat: {data_views.describe(ev)}. Keep your reply short and don't repeat the data."
+    said = f"It's in the chat: {data_views.describe(ev)}. {_placing(ev['ref'])} Keep your reply short and don't repeat the data."
     if notes:
         said += f"\n{len(notes)} value(s) couldn't be read and show blank:\n" + "\n".join(notes[:10])
     return _text(said)

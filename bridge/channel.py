@@ -636,7 +636,8 @@ def _helper_turn_ended(job, s: dict, chat: dict) -> None:
         state, body = "failed", f"{name} failed: {(job.error_msg or 'no reason given')[:600]}"
     else:
         state = "done"
-        words = (job.result or (job.texts[-1] if job.texts else "") or "").strip()
+        from bridge import data_views
+        words = data_views.strip_refs(job.result or (job.texts[-1] if job.texts else "") or "").strip()
         body = words[:_RESULT_MAX] or f"{name} finished without saying anything."
     _set_state(s["id"], state, ended=time.time())
     if (m.get("copy") or {}).get("path") and state == "done" and not m.get("merged"):

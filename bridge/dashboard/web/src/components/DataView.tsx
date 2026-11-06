@@ -1,7 +1,7 @@
 import { Component, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
-  chartSheet, delimited, domain, flatten, fmt, layoutFlow, matches, nodePath, overdue, sorted, sumOf, ticks,
+  chartSheet, delimited, domain, flatten, fmt, layoutFlow, matches, nodePath, overdue, pinsAt, pinText, sorted, splitViews, sumOf, ticks, xLabel,
   type BoardCol, type Card, type ChartEv, type Col, type DataEv, type FlowEv, type KanbanEv, type Row, type StatsEv, type TableEv, type TimelineEv,
 } from "../lib/dataview";
 import { saveView, sendFile, useRefSession } from "../lib/readapi";
@@ -94,8 +94,8 @@ function SheetTable({ cols, st, full }: { cols: Col[]; st: SheetState; full: boo
               const on = st.sort?.key === c.key;
               return (
                 <th key={c.key} data-n={numeric(c) || undefined} aria-sort={on ? (st.sort!.dir === 1 ? "ascending" : "descending") : undefined}>
-                  <button type="button" onClick={() => st.toggle(c.key)}>
-                    {c.label}<span className="dv-sort" aria-hidden>{on ? (st.sort!.dir === 1 ? "▲" : "▼") : ""}</span>
+                  <button type="button" title={`Sort by ${c.label || "this column"}`} onClick={() => st.toggle(c.key)}>
+                    {c.label}<span className="dv-sort" data-on={on || undefined} aria-hidden>{on ? (st.sort!.dir === 1 ? "▲" : "▼") : "↕"}</span>
                   </button>
                 </th>
               );
@@ -146,11 +146,12 @@ function barPath(x: number, y0: number, y1: number, w: number, round: boolean): 
     + (r ? `Q${x + w},${yEnd} ${x + w},${yEnd + s * r}` : "") + `V${y0}Z`;
 }
 
-function lines(pts: ([number, number] | null)[]): string {
+function lines(pts: ([number, number] | null)[], step = false): string {
   let d = "", open = false;
   for (const p of pts) {
     if (!p) { open = false; continue; }
-    d += `${open ? "L" : "M"}${p[0]},${p[1]}`;
+    // A step holds its value until the moment it changes.
+    d += !open ? `M${p[0]},${p[1]}` : step ? `H${p[0]}V${p[1]}` : `L${p[0]},${p[1]}`;
     open = true;
   }
   return d;
@@ -160,7 +161,7 @@ function Legend({ items }: { items: { label: string; color: string; dashed?: boo
   return (
     <ul className="dv-legend">
       {items.map((it) => (
-        <li key={it.label}><span className="dv-swatch" data-dashed={it.dashed || undefined} style={{ background: it.dashed ? undefined : it.color }} />{it.label}</li>
+        <li key={it.label}><span className="dv-swatch" data-dashed={it.dashed || undefined} style={it.dashed ? { borderTopColor: it.color } : { background: it.color }} />{it.label}</li>
       ))}
     </ul>
   );
@@ -175,20 +176,24 @@ function Plot({ ev, full }: { ev: ChartEv; full: boolean }) {
   const marks = ticks(lo, hi, H < 240 ? 4 : 5);
   const yLo = marks[0], yHi = marks[marks.length - 1];
   const axis = (v: number) => fmt(v, ev.format, ev.currency, true);
-  const flowing = ev.kind === "line" || ev.kind === "area" || ev.kind === "burndown";
+  const flowing = ev.kind === "line" || ev.kind === "step" || ev.kind === "area" || ev.kind === "burndown";
+  const pins = ev.annotations ?? [];
   const labelled = flowing && w >= 480 && ev.series.length <= 4;
-  const m = { l: Math.max(...marks.map((t) => axis(t).length)) * 6.6 + 10, r: labelled ? 96 : 12, t: 10, b: ev.x_label ? 42 : 24 };
+  const m = { l: Math.max(...marks.map((t) => axis(t).length)) * 6.6 + 10, r: labelled ? 96 : 12, t: pins.length ? 26 : 10, b: ev.x_label ? 42 : 24 };
   const pw = Math.max(w - m.l - m.r, 10), ph = H - m.t - m.b;
   const y = (v: number) => m.t + ph - ((v - yLo) / (yHi - yLo || 1)) * ph;
   const band = pw / Math.max(n, 1);
-  const x = (i: number) => (flowing ? (n === 1 ? m.l + pw / 2 : m.l + (pw * i) / (n - 1)) : m.l + band * (i + 0.5));
+  const xs = flowing ? ev.xs : undefined;
+  const span = xs ? xs[xs.length - 1] - xs[0] || 1 : 1;
+  const x = (i: number) => (!flowing ? m.l + band * (i + 0.5) : n === 1 ? m.l + pw / 2
+    : xs ? m.l + (pw * (xs[i] - xs[0])) / span : m.l + (pw * i) / (n - 1));
   const nearest = (px: number) => {
-    const i = flowing ? Math.round(n === 1 ? 0 : ((px - m.l) / pw) * (n - 1)) : Math.floor((px - m.l) / band);
-    return Math.min(n - 1, Math.max(0, i));
+    if (!flowing) return Math.min(n - 1, Math.max(0, Math.floor((px - m.l) / band)));
+    let best = 0;
+    for (let i = 1; i < n; i++) if (Math.abs(x(i) - px) < Math.abs(x(best) - px)) best = i;
+    return best;
   };
   const pos = (e: React.PointerEvent<SVGSVGElement>) => e.clientX - e.currentTarget.getBoundingClientRect().left;
-  const longest = ev.points.reduce((t, p) => Math.max(t, String(p.x).length), 1);
-  const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(pw / (Math.min(longest, 14) * 6.6 + 10)))));
   const clip = (s: string, c: number) => (s.length > c ? `${s.slice(0, c - 1)}…` : s);
   const num = (v: unknown): number | null => (typeof v === "number" ? v : null);
 
@@ -236,11 +241,19 @@ function Plot({ ev, full }: { ev: ChartEv; full: boolean }) {
         }
         flows.push(<path key={`f${j}`} d={fills.join("")} fill={series(j)} opacity={0.16} />);
       }
-      flows.push(<path key={`l${j}`} d={lines(pts)} fill="none" stroke={series(j)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />);
+      const stepped = ev.kind === "step";
+      const dash = s.dashed ? "6 5" : undefined;
+      if (s.dash_from !== undefined) {
+        // What happened is solid; from here on it's a forecast.
+        flows.push(<path key={`l${j}`} d={lines(pts.slice(0, s.dash_from + 1), stepped)} fill="none" stroke={series(j)} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />);
+        flows.push(<path key={`lf${j}`} d={lines(pts.slice(s.dash_from), stepped)} fill="none" stroke={series(j)} strokeWidth={2} strokeDasharray="6 5" strokeLinejoin="round" />);
+      } else {
+        flows.push(<path key={`l${j}`} d={lines(pts, stepped)} fill="none" stroke={series(j)} strokeWidth={2} strokeDasharray={dash} strokeLinejoin="round" strokeLinecap={dash ? undefined : "round"} />);
+      }
       if (n <= 16) pts.forEach((p, i) => { if (p) flows.push(<circle key={`d${j}-${i}`} cx={p[0]} cy={p[1]} r={4} fill={series(j)} stroke="var(--dv-surface)" strokeWidth={2} />); });
       const last = pts.filter(Boolean).pop();
       // at the line's own end: a burndown stops at today, well short of the axis
-      if (last) ends.push({ x: last[0], y: last[1], label: s.label });
+      if (last && !ev.outlook) ends.push({ x: last[0], y: last[1], label: s.label });
     });
     if (ev.ideal) {
       flows.unshift(<path key="ideal" d={lines(ev.ideal.map((v, i) => [x(i), y(v)]))} fill="none" stroke="var(--txd)" strokeWidth={1.5} strokeDasharray="4 4" />);
@@ -257,7 +270,28 @@ function Plot({ ev, full }: { ev: ChartEv; full: boolean }) {
     const d = e.key === "ArrowRight" ? 1 : -1;
     setAt((i) => (i === null ? (d > 0 ? 0 : n - 1) : Math.min(n - 1, Math.max(0, i + d))));
   };
-  const legend = ev.series.map((s, i) => ({ label: s.label, color: series(i) }));
+  const legend: { label: string; color: string; dashed?: boolean }[] = ev.series.map((s, i) => ({ label: s.label, color: series(i), dashed: s.dashed }));
+  // Labels along the axis wherever they fit: on a time axis some dates sit close together.
+  let lastEnd = -Infinity;
+  const xMarks = w ? ev.points.flatMap((p, i) => {
+    const text = clip(xLabel(ev, p.x), 14);
+    const half = text.length * 3.3;
+    if (x(i) - half < lastEnd + 8 || x(i) + half > w) return [];
+    lastEnd = x(i) + half;
+    return [{ i, text }];
+  }) : [];
+  // Where each pin stands: over its value, stacked if a point has several.
+  const seat = new Map<number, number>();
+  const pinAt = pins.map((p, k) => {
+    const pt = ev.points[p.i];
+    const keys = p.series ? [p.series] : ev.series.map((s) => s.key);
+    const vals = keys.map((key) => num(pt?.[key])).filter((v): v is number => v !== null);
+    const v = ev.kind === "bar_stacked" ? vals.reduce((t, a) => t + Math.max(a, 0), 0) : vals.length ? Math.max(...vals) : yLo;
+    const nth = seat.get(p.i) ?? 0;
+    seat.set(p.i, nth + 1);
+    const color = p.series ? series(ev.series.findIndex((s) => s.key === p.series)) : "var(--txm)";
+    return { n: k + 1, x: x(p.i), y: y(v), cy: Math.max(m.t - 16, y(v) - 16 - nth * 19), color };
+  });
   if (ev.ideal) legend.push({ label: "Ideal", color: "var(--txd)", dashed: true } as (typeof legend)[number]);
 
   return (
@@ -277,11 +311,24 @@ function Plot({ ev, full }: { ev: ChartEv; full: boolean }) {
                 <text x={m.l - 8} y={y(t) + 3.5} textAnchor="end" className="dv-tick">{axis(t)}</text>
               </g>
             ))}
-            {ev.points.map((p, i) => (i % every === 0 ? <text key={i} x={x(i)} y={m.t + ph + 16} textAnchor="middle" className="dv-tick">{clip(String(p.x), 14)}</text> : null))}
+            {xMarks.map((l) => <text key={l.i} x={x(l.i)} y={m.t + ph + 16} textAnchor="middle" className="dv-tick">{l.text}</text>)}
+            {(ev.lines ?? []).map((l, i) => (
+              <g key={`r${i}`}>
+                <line x1={m.l} x2={m.l + pw} y1={y(l.y)} y2={y(l.y)} stroke="var(--txm)" strokeWidth={1} strokeDasharray="2 4" />
+                {l.label ? <text x={m.l + pw} y={y(l.y) - 4} textAnchor="end" className="dv-tick">{l.label}</text> : null}
+              </g>
+            ))}
             {ev.x_label ? <text x={m.l + pw / 2} y={H - 4} textAnchor="middle" className="dv-tick">{ev.x_label}</text> : null}
             {at !== null && !flowing ? <rect x={m.l + band * at} y={m.t} width={band} height={ph} fill="var(--dv-hover)" /> : null}
             {bars}
             {flows}
+            {pinAt.map((p) => (
+              <g key={`p${p.n}`}>
+                <line x1={p.x} x2={p.x} y1={p.cy + 8} y2={p.y} stroke={p.color} strokeWidth={1} />
+                <circle cx={p.x} cy={p.cy} r={8} fill="var(--dv-surface)" stroke={p.color} strokeWidth={1.5} />
+                <text x={p.x} y={p.cy + 3.5} textAnchor="middle" className="dv-pin">{p.n}</text>
+              </g>
+            ))}
             {labelled ? ends.map((e) => <text key={e.label} x={e.x + 8} y={e.y + 3.5} className="dv-end">{clip(e.label, 12)}</text>) : null}
             {at !== null && flowing ? (
               <g>
@@ -293,16 +340,85 @@ function Plot({ ev, full }: { ev: ChartEv; full: boolean }) {
         ) : null}
         {point && at !== null ? (
           <div className="dv-tip" style={x(at) > w / 2 ? { right: w - x(at) + 12 } : { left: x(at) + 12 }}>
-            <div className="dv-tip-x">{String(point.x)}</div>
+            <div className="dv-tip-x">{xLabel(ev, point.x)}</div>
             {ev.series.map((s, j) => (
               <div key={s.key} className="dv-tip-row"><span className="dv-swatch" style={{ background: series(j) }} /><span>{s.label}</span><b>{num(point[s.key]) === null ? "–" : fmt(point[s.key], ev.format, ev.currency)}</b></div>
             ))}
             {sum !== null && ev.series.length > 1 ? <div className="dv-tip-row dv-tip-sum"><span className="dv-swatch" data-none /><span>Total</span><b>{fmt(sum, ev.format, ev.currency)}</b></div> : null}
             {ev.ideal ? <div className="dv-tip-row"><span className="dv-swatch" data-dashed /><span>Ideal</span><b>{fmt(ev.ideal[at], ev.format, ev.currency)}</b></div> : null}
+            {pinsAt(ev, at).map((p, k) => (
+              <div key={k} className="dv-tip-pin">{pinText(ev, p)}{p.note ? <span> {p.note}</span> : null}</div>
+            ))}
           </div>
         ) : null}
       </div>
+      {pins.length ? (
+        <ol className="dv-pins">
+          {pins.map((p, k) => {
+            const owner = p.series ? ev.series.find((s) => s.key === p.series)?.label : "";
+            return (
+              <li key={k} data-on={at === p.i || undefined} onPointerEnter={() => setAt(p.i)} onPointerLeave={() => setAt(null)}>
+                <span className="dv-pin-n">{k + 1}</span>
+                <span className="dv-pin-x">{xLabel(ev, ev.points[p.i]?.x)}</span>
+                <span className="dv-pin-what">{pinText(ev, p)}{owner ? <em> {owner}</em> : null}{p.note ? <span className="dv-pin-note"> {p.note}</span> : null}</span>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
     </div>
+  );
+}
+
+/** Long labels read along a row. Each value is written out, as there's no axis to read it off. */
+function HBars({ ev }: { ev: ChartEv }) {
+  const [lo, hi] = domain(ev);
+  const range = hi - lo || 1;
+  const zero = ((0 - lo) / range) * 100;
+  return (
+    <div className="dv-chart">
+      {ev.series.length > 1 ? <Legend items={ev.series.map((s, i) => ({ label: s.label, color: series(i) }))} /> : null}
+      <div className="dv-hbars" role="img" aria-label={ev.title}>
+        {ev.points.map((p, i) => (
+          <div key={i} className="dv-hrow">
+            <div className="dv-hlabel" title={String(p.x)}>{String(p.x)}</div>
+            <div className="dv-hgroup">
+              {ev.series.map((s, j) => {
+                const v = typeof p[s.key] === "number" ? (p[s.key] as number) : null;
+                const size = v === null ? 0 : (Math.abs(v) / range) * 100;
+                return (
+                  <div key={s.key} className="dv-hline">
+                    <div className="dv-htrack">
+                      <i style={{ left: `${v !== null && v < 0 ? zero - size : zero}%`, width: `${size}%`, background: series(j) }} />
+                    </div>
+                    <span className="dv-hval">{v === null ? "–" : fmt(v, ev.format, ev.currency)}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** The numbers a projection worked out, in words: what's left, and how close it gets to nothing. */
+function Summaries({ ev }: { ev: ChartEv }) {
+  return (
+    <ul className="dv-sums">
+      {(ev.outlook ?? []).map((s) => {
+        const j = ev.series.findIndex((c) => c.key === s.series);
+        return (
+          <li key={s.series}>
+            <span className="dv-swatch" style={{ background: series(j) }} />
+            <span className="dv-sum-name">{s.label}</span>
+            <span>ends at <b>{fmt(s.end, ev.format, ev.currency)}</b></span>
+            <span data-low={s.low < 0 || undefined}>{s.low < 0 ? "⚠ goes below zero: " : "lowest "}<b>{fmt(s.low, ev.format, ev.currency)}</b> on {xLabel(ev, s.low_x)}</span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -481,7 +597,11 @@ const nameOf = (title: string, ext: string) => `${title.replace(/[^\w-]+/g, "-")
 
 function Body({ ev, sheet, st, full, asTable, print }: { ev: DataEv; sheet: Sheet; st: SheetState; full: boolean; asTable: boolean; print?: boolean }) {
   if (ev.view === "table" || (ev.view === "chart" && asTable)) return <SheetTable cols={sheet.columns} st={st} full={full} />;
-  if (ev.view === "chart") return ev.kind === "donut" ? <Donut ev={ev} /> : <Plot ev={ev} full={full} />;
+  if (ev.view === "chart") {
+    if (ev.kind === "donut") return <Donut ev={ev} />;
+    if (ev.kind === "bar_horizontal") return <HBars ev={ev} />;
+    return <>{ev.outlook?.length ? <Summaries ev={ev} /> : null}<Plot ev={ev} full={full} /></>;
+  }
   if (ev.view === "kanban") return <Board ev={ev} full={full} />;
   if (ev.view === "stats") return <Tiles ev={ev} />;
   if (ev.view === "diagram") return ev.kind === "flow" ? <Flow ev={ev} full={full} print={print} /> : <Timeline ev={ev} />;
@@ -634,13 +754,14 @@ function Frame({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemo
     window.dispatchEvent(new Event("mystical:saved-views"));
     return "Saved to this project's views";
   });
+  const tabular = ev.view === "table" || (ev.view === "chart" && asTable);
   const panel = (
     <section className="dv" data-view={ev.view} data-full={full || undefined}>
       <header className="dv-head">
         <h4>{ev.title}</h4>
         <div className="dv-tools">
           {said ? <span className="dv-said" role="status">{said}</span> : null}
-          {ev.view === "table" && sheet.rows.length > 8 ? <input className="dv-filter" type="search" placeholder="Filter" aria-label="Filter rows" value={st.q} onChange={(e) => st.setQ(e.target.value)} /> : null}
+          {tabular && sheet.rows.length > 3 ? <input className="dv-filter" type="search" placeholder="Search" aria-label="Search rows" value={st.q} onChange={(e) => st.setQ(e.target.value)} /> : null}
           {ev.view === "chart" ? <button type="button" className="dv-btn" aria-pressed={asTable} onClick={() => setAsTable((v) => !v)}>{asTable ? "CHART" : "TABLE"}</button> : null}
           {savedId ? <button type="button" className="dv-btn" onClick={() => onRemove?.(savedId)}>REMOVE</button>
             : <button type="button" className="dv-btn" disabled={savedHere} onClick={() => void save()}>{savedHere ? "SAVED" : "SAVE"}</button>}
@@ -664,6 +785,12 @@ class Quiet extends Component<{ title: string; children: ReactNode }, { failed: 
   render() {
     return this.state.failed ? <div className="dv-failed">Couldn't draw {this.props.title || "this view"}.</div> : this.props.children;
   }
+}
+
+/** An answer with its views where the agent named them ([[view:v1]]). */
+export function AnswerParts({ text, views, draw }: { text: string; views?: Map<string, ReactNode>; draw: (md: string, key: number) => ReactNode }) {
+  if (!views?.size) return <>{draw(text, 0)}</>;
+  return <>{splitViews(text).map((p, i) => (typeof p === "string" ? draw(p, i) : <div key={i} className="dv-inline">{views.get(p.ref) ?? null}</div>))}</>;
 }
 
 export function DataView({ ev, savedId, onRemove }: { ev: DataEv; savedId?: string; onRemove?: (id: string) => void }) {

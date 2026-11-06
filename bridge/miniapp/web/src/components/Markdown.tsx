@@ -8,6 +8,7 @@ import { widgetLang, widgetValue } from "../lib/widgetblock";
 import type { ToolStyle } from "../lib/toolwidget";
 import { ChatImage } from "./ChatImage";
 import { useExperimental } from "../lib/multi";
+import { stripViews } from "../lib/dataview";
 import { refOf, remarkFileRefs } from "../lib/refs";
 import { FileRef, RefImages } from "./FileRef";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
@@ -240,7 +241,7 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
           },
         }}
       >
-        {children}
+        {stripViews(children)}
       </ReactMarkdown>
       {multiOn ? <RefImages text={children} /> : null}
     </div>

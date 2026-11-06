@@ -5,7 +5,8 @@ import type { ProofItem } from "../lib/pictures";
 
 /* What the agent is showing you (lib/pictures): drawn large with the answer, outside
    the WORK zone, each with its caption. A running turn draws one in place as it lands;
-   a finished turn gathers them under its answer, in order. */
+   a finished turn draws them above its answer, or where the answer names them
+   ([[view:v1]], components/DataView AnswerParts). */
 
 /** One picture, or the quiet note a pruned upload leaves. */
 function Picture({ path, alt, onOpen, onGone, gone }: {

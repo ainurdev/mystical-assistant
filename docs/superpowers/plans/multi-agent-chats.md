@@ -283,6 +283,13 @@ Run through the whole build, as a regression suite written before workstream 2:
 - A live Kimi smoke per workstream that touches it.
 - `bridge-eyes` screenshots of the tree, grid and picker on dashboard and Mini App.
 
+## Where views go, and what charts can say (added after the second round)
+
+A finished turn draws what it showed above its answer. An agent can place a view or picture
+mid-answer with `[[view:v1]]`, which the clients cut the answer at and everything else strips.
+`kind: projection` works out a balance from a start, dated amounts and what-if scenarios, and
+any chart can carry numbered pins, reference lines and a dashed forecast.
+
 ## Reading what an agent wrote (added after the second round)
 
 Paths an agent names become links once the bridge confirms the file (bridge/chat_files.py), with

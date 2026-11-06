@@ -55,7 +55,8 @@
 .dv-sheet th button:focus-visible { outline: 1px solid var(--border-bright); outline-offset: -1px; }
 .dv-sheet [data-n], .dv-sheet [data-n] button { text-align: right; }
 /* takes no width, so a numeric header lines up with its numbers; the arrow sits in the padding */
-.dv-sort { display: inline-block; width: 0; margin-left: 2px; font-size: 8px; text-align: left; }
+.dv-sort { display: inline-block; width: 0; margin-left: 3px; font-size: 9px; text-align: left; color: var(--txl); }
+.dv-sort[data-on] { color: var(--acc); font-size: 8px; }
 .dv-sheet th:first-child, .dv-sheet td:first-child { position: sticky; left: 0; z-index: 1; border-right: 1px solid var(--dv-grid); }
 .dv-sheet thead th:first-child { z-index: 3; }
 .dv-sheet tbody tr:hover td { background: color-mix(in srgb, var(--acc) 6%, var(--dv-surface)); color: var(--txb); }
@@ -160,3 +161,33 @@
 .dv[data-print] .dv-card-note { display: block; }
 .dv-saved { padding: 8px 10px; }
 .dv-saved-none { padding: 14px 4px; font-size: var(--t115, 11.5px); line-height: 1.5; color: var(--txd); font-family: var(--ui-font, var(--page-font, inherit)); }
+
+/* a pin's number on the chart, what each pin says under it, what a projection worked out */
+.dv-pin { font-size: var(--t95, 9.5px); fill: var(--txb); font-weight: 500; }
+.dv-tip-pin { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); color: var(--txb); overflow-wrap: anywhere; }
+.dv-tip-pin span { color: var(--txm); }
+.dv-pins { list-style: none; margin: 8px 0 0; padding: 6px 0 0; border-top: 1px solid var(--dv-grid); max-height: 220px; overflow-y: auto; font-size: var(--t115, 11.5px); }
+.dv-pins li { display: flex; gap: 8px; align-items: baseline; padding: 3px 4px; border-radius: var(--dv-r); }
+.dv-pins li[data-on] { background: var(--dv-hover); }
+.dv-pin-n { flex: none; width: 17px; height: 17px; line-height: 15px; text-align: center; border: 1px solid var(--txd); border-radius: 50%; font-size: var(--t95, 9.5px); color: var(--txb); box-sizing: border-box; }
+.dv-pin-x { flex: none; min-width: 48px; color: var(--txd); font-variant-numeric: tabular-nums; }
+.dv-pin-what { min-width: 0; color: var(--txb); overflow-wrap: anywhere; }
+.dv-pin-what em { font-style: normal; color: var(--txd); }
+.dv-pin-note { color: var(--txm); }
+.dv-sums { list-style: none; margin: 0; padding: 2px 12px 8px; font-size: var(--t115, 11.5px); color: var(--txm); }
+.dv-sums li { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; padding: 2px 0; }
+.dv-sums b { font-weight: 500; color: var(--txb); font-variant-numeric: tabular-nums; }
+.dv-sum-name { color: var(--txb); }
+.dv-sums [data-low] { color: var(--warn); }
+.dv[data-print] .dv-pins { max-height: none; overflow: visible; }
+
+/* bars along a row */
+.dv-hbars { display: flex; flex-direction: column; gap: 6px; padding: 2px 0 4px; }
+.dv-hrow { display: grid; grid-template-columns: minmax(70px, 30%) 1fr; gap: 10px; align-items: center; font-size: var(--t115, 11.5px); }
+.dv-hlabel { color: var(--txm); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-hgroup { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dv-hline { display: flex; align-items: center; gap: 8px; }
+.dv-htrack { position: relative; flex: 1; height: 12px; min-width: 0; }
+.dv-htrack i { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.dv-hval { flex: none; min-width: 3.4em; text-align: right; color: var(--txb); font-variant-numeric: tabular-nums; }
+.dv-inline { margin: 12px 0; }

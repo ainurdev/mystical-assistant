@@ -11,7 +11,9 @@ This module is the contract, because a model writes the input. It normalizes the
 clients draw one shape, and the refusals are sentences the agent can act on. A value that won't
 read as its column's type is left blank and counted, and the agent is told how many.
 Totals are computed here, never taken from the agent: a total in a finance sheet shouldn't be a
-number a model added up. Likewise a burndown's ideal line and a kanban's counts.
+number a model added up. Likewise a burndown's ideal line, a kanban's counts and a projection's
+balances. Each view gets a ref, so the agent can place it in its answer with [[view:v1]]; a view
+it doesn't place is drawn above the answer.
 
 Size is capped because the event goes in the store and down every SSE stream. Past the cap, the
 agent is told to aggregate, which is usually the better chart anyway. ponytail: a view is a
@@ -28,7 +30,8 @@ import math
 import re
 
 VIEWS = ("table", "chart", "kanban", "stats", "diagram")
-CHARTS = ("bar", "bar_stacked", "line", "area", "donut", "burndown")
+CHARTS = ("bar", "bar_horizontal", "bar_stacked", "line", "step", "area", "donut", "burndown", "projection")
+_FLOWING = ("line", "step", "area", "burndown")
 COLUMN_TYPES = ("text", "number", "money", "percent", "progress", "date", "link")
 FORMATS = ("number", "money", "percent", "text")
 MAX_ROWS, MAX_COLUMNS, MAX_SERIES = 5000, 60, 8
@@ -37,6 +40,10 @@ MAX_BYTES = 768 * 1024
 DIAGRAMS = ("flow", "timeline")
 SHAPES = ("process", "decision", "terminal")
 MAX_NODES, MAX_EDGES, MAX_EVENTS = 60, 120, 100
+MAX_NOTES, MAX_LINES, MAX_MONEY_EVENTS = 40, 8, 300
+# Where an agent wants a view inside its answer. The clients cut the answer there; everywhere
+# else (Telegram, a chat's history) it's noise, so strip_refs takes it out.
+REF = re.compile(r"[ \t]*\[\[view:[\w-]+\]\][ \t]*")
 _TEXT = 2000
 _NUM = re.compile(r"^[^\d\-+.,]*([-+]?)\s*([\d.,'\s]+?)\s*([%a-zA-Z€$£¥]*)$")
 _NEGATIVE_PARENS = re.compile(r"^\(\s*(.+?)\s*\)$")
@@ -183,10 +190,149 @@ def _table(spec: dict) -> "tuple[dict, list]":
     return {"columns": clean_cols, "rows": out, "totals": totals}, notes
 
 
+def strip_refs(text: str) -> str:
+    return REF.sub("", text or "")
+
+
+def _epoch_days(iso: str) -> int:
+    return dt.date.fromisoformat(iso).toordinal()
+
+
+def _extras(spec: dict, out: dict, notes: list) -> None:
+    """What any chart can say beyond its values: pins on points, lines across it, dashes."""
+    points = out["points"]
+    where = {p["x"]: i for i, p in enumerate(points)}
+    keys = {s["key"] for s in out["series"]}
+    raw = spec.get("annotations") if isinstance(spec.get("annotations"), list) else []
+    if len(raw) > MAX_NOTES:
+        raise Refused(f"A chart reads with at most {MAX_NOTES} annotations. Keep the ones that matter.")
+    pins = []
+    for a in raw:
+        a = a if isinstance(a, dict) else {}
+        x, label = _s(a.get("x"), 120), _s(a.get("label"), 160)
+        iso = to_date(x) if x not in where else None
+        i = where.get(x, where.get(iso))
+        if i is None or not label:
+            notes.append(f"annotation {label or x!r}: its x isn't on the chart, so it isn't shown")
+            continue
+        series = _s(a.get("series"), 100)
+        pins.append({"i": i, "label": label, "note": _s(a.get("note"), 300), "series": series if series in keys else ""})
+    out["annotations"] = sorted(pins, key=lambda p: p["i"])
+    raw = spec.get("lines") if isinstance(spec.get("lines"), list) else []
+    if len(raw) > MAX_LINES:
+        raise Refused(f"A chart reads with at most {MAX_LINES} reference lines.")
+    lines = []
+    for ln in raw:
+        y = to_number((ln or {}).get("y")) if isinstance(ln, dict) else None
+        if y is not None:
+            lines.append({"y": y, "label": _s(ln.get("label"), 80)})
+    out["lines"] = lines
+    for s, given in zip(out["series"], spec.get("series") or []):
+        if isinstance(given, dict):
+            s["dashed"] = given.get("dashed") is True
+            start = _s(given.get("dashed_from"), 120)
+            if start:
+                i = where.get(start, where.get(to_date(start)))
+                if i is None:
+                    notes.append(f"{s['label']}: dashed_from {start!r} isn't on the chart")
+                else:
+                    s["dash_from"] = i
+
+
+def _time_axis(out: dict) -> None:
+    """Dates spaced as they are: a week and a month apart shouldn't look the same. Only when
+    every x is a whole date, in the charts where distance along the axis means time."""
+    if out["kind"] not in _FLOWING or len(out["points"]) < 2:
+        return
+    dates = [to_date(p["x"]) for p in out["points"]]
+    if not all(d and len(d) == 10 for d in dates):
+        return
+    for p, d in zip(out["points"], dates):
+        p["x"] = d
+    out["points"].sort(key=lambda p: p["x"])
+    out["xs"] = [_epoch_days(p["x"]) for p in out["points"]]
+
+
+def _money_events(raw, whose: str) -> list:
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for e in raw:
+        e = e if isinstance(e, dict) else {}
+        when = to_date(e.get("x") or e.get("date"))
+        amount = to_number(e.get("amount"))
+        if not when or len(when) != 10 or amount is None:
+            raise Refused(f"{whose}: each event needs x as a date like 2026-12-01 and amount as a number "
+                          f"(negative for money out). {_s(e.get('label'), 60) or e!r} doesn't.")
+        out.append({"x": when, "amount": amount, "label": _s(e.get("label"), 120)})
+    return out
+
+
+def _projection(spec: dict) -> "tuple[dict, list]":
+    """A balance over time, worked out here from a start and dated amounts, so "what would I have
+    if I buy it in March instead" is arithmetic and not a model's guess. Each scenario is the shared
+    events plus its own. Every event becomes a pin, so the chart says what happens at each point."""
+    start = to_number(spec.get("start"))
+    if start is None:
+        raise Refused("A projection needs start: the balance it begins from, as a number.")
+    common = _money_events(spec.get("events"), "events")
+    raw = spec.get("scenarios") if isinstance(spec.get("scenarios"), list) else []
+    if len(raw) > MAX_SERIES:
+        raise Refused(f"A projection reads with at most {MAX_SERIES} scenarios.")
+    scenarios = []
+    for k, sc in enumerate(raw or [{"label": "Balance"}]):
+        sc = sc if isinstance(sc, dict) else {"label": sc}
+        label = _s(sc.get("label"), 100) or f"Scenario {k + 1}"
+        scenarios.append({"key": f"s{k}", "label": label, "events": _money_events(sc.get("events"), label),
+                          "start": to_number(sc.get("start"))})
+    total = len(common) + sum(len(s["events"]) for s in scenarios)
+    if not total:
+        raise Refused("A projection needs events: [{x, amount, label}], in events or in a scenario.")
+    if total > MAX_MONEY_EVENTS:
+        raise Refused(f"A projection reads with at most {MAX_MONEY_EVENTS} events. Group them by month.")
+    dates = {e["x"] for e in common} | {e["x"] for s in scenarios for e in s["events"]}
+    begin = to_date(spec.get("from")) or dt.date.today().isoformat()
+    begin = min(begin, min(dates))
+    end = to_date(spec.get("until"))
+    dates |= {begin, *([end] if end and len(end) == 10 else [])}
+    ordered = sorted(dates)
+    index = {d: i for i, d in enumerate(ordered)}
+    points = [{"x": d} for d in ordered]
+    pins, outlook = [], []
+    for e in common:
+        pins.append({"i": index[e["x"]], "label": e["label"] or "Change", "amount": e["amount"], "note": "", "series": ""})
+    for s in scenarios:
+        for e in s["events"]:
+            pins.append({"i": index[e["x"]], "label": e["label"] or "Change", "amount": e["amount"], "note": "", "series": s["key"]})
+        bal = start if s["start"] is None else s["start"]
+        low, low_x = None, begin
+        for d, p in zip(ordered, points):
+            bal = math.fsum([bal, *(e["amount"] for e in common + s["events"] if e["x"] == d)])
+            p[s["key"]] = round(bal, 2)
+            if low is None or p[s["key"]] < low:
+                low, low_x = p[s["key"]], d
+        outlook.append({"series": s["key"], "label": s["label"], "end": round(bal, 2), "low": low, "low_x": low_x})
+    fmt = spec.get("format") if spec.get("format") in ("number", "money") else "money"
+    out = {"kind": "step", "projection": True, "x_label": _s(spec.get("x_label"), 100), "y_label": _s(spec.get("y_label"), 100),
+           "format": fmt, "currency": _currency(spec.get("currency")),
+           "series": [{"key": s["key"], "label": s["label"], "dashed": True} for s in scenarios],
+           "points": points, "xs": [_epoch_days(d) for d in ordered], "annotations": sorted(pins, key=lambda p: p["i"]),
+           "lines": [], "outlook": outlook}
+    notes: list = []
+    lines = spec.get("lines") if isinstance(spec.get("lines"), list) else []
+    for ln in lines[:MAX_LINES]:
+        y = to_number(ln.get("y")) if isinstance(ln, dict) else None
+        if y is not None:
+            out["lines"].append({"y": y, "label": _s(ln.get("label"), 80)})
+    return out, notes
+
+
 def _chart(spec: dict) -> "tuple[dict, list]":
     kind = spec.get("kind") or "bar"
     if kind not in CHARTS:
         raise Refused(f"kind must be one of {', '.join(CHARTS)}.")
+    if kind == "projection":
+        return _projection(spec)
     rows = _rows(spec)
     if len(rows) > MAX_POINTS:
         raise Refused(f"That's {len(rows)} points and a chart holds {MAX_POINTS}. Bucket it by week or month.")
@@ -227,8 +373,11 @@ def _chart(spec: dict) -> "tuple[dict, list]":
     out = {"kind": kind, "x_label": _s(spec.get("x_label"), 100), "y_label": _s(spec.get("y_label"), 100),
            "format": spec.get("format") if spec.get("format") in FORMATS else "number",
            "currency": _currency(spec.get("currency")), "series": series, "points": points}
-    if kind == "burndown":
+    if kind == "burndown":      # its ideal line is by position, so it keeps its points in order
         out["ideal"] = _ideal(points, series[0]["key"], spec)
+    else:
+        _time_axis(out)
+    _extras(spec, out, notes)
     return out, notes
 
 
@@ -388,7 +537,10 @@ def describe(ev: dict) -> str:
         totals = ", ".join(f"{names[k]} total {t:,.2f}" for k, t in ev["totals"].items())
         return f"a sheet, {ev['title']}: {n}" + (f" ({totals})" if totals else "")
     if v == "chart":
-        kind = {"bar_stacked": "stacked bar", "area": "filled area"}.get(ev["kind"], ev["kind"])
+        if ev.get("outlook"):
+            said = "; ".join(f"{s['label']} ends at {s['end']:,.2f}, lowest {s['low']:,.2f} on {s['low_x']}" for s in ev["outlook"])
+            return f"a projection, {ev['title']}: {said}"
+        kind = {"bar_stacked": "stacked bar", "bar_horizontal": "horizontal bar", "area": "filled area"}.get(ev["kind"], ev["kind"])
         return f"a {kind} chart, {ev['title']}: {len(ev['points'])} points"
     if v == "kanban":
         cards = "1 card" if ev["count"] == 1 else f"{ev['count']} cards"

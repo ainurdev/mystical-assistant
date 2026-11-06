@@ -13,6 +13,7 @@ import type { ToolStyle } from "../lib/toolwidget";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
 import { MdImage, MdLinked, MdTyped } from "./MdImage";
 import { useMultiOn } from "../lib/multistore";
+import { stripViews } from "../lib/dataview";
 import { refOf, remarkFileRefs } from "../lib/refs";
 import { FileRef, RefImages } from "./FileRef";
 
@@ -356,7 +357,7 @@ export const Markdown = memo(function Markdown({
           },
         }}
       >
-        {children}
+        {typed ? children : stripViews(children)}
       </ReactMarkdown>
       {multiOn && !typed ? <RefImages text={children} /> : null}
       </MdTyped.Provider>

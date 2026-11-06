@@ -7,12 +7,18 @@ export type Row = Record<string, string | number | null>;
 export type Card = { title: string; key?: string; assignee?: string; due?: string | null; priority?: string;
   note?: string; tags?: string[]; url?: string | null };
 export type BoardCol = { name: string; cards: Card[]; limit?: number | null };
-export type Series = { key: string; label: string };
+export type Series = { key: string; label: string; dashed?: boolean; dash_from?: number };
+export type Pin = { i: number; label: string; note?: string; series?: string; amount?: number };
+export type RefLine = { y: number; label: string };
+export type Outlook = { series: string; label: string; end: number; low: number; low_x: string };
 export type Stat = { label: string; value: number | string; format: string; currency?: string; delta?: number | null; note?: string };
-type Head = { type: "data"; title: string; caption?: string; source?: string; as_of?: string };
+type Head = { type: "data"; title: string; caption?: string; source?: string; as_of?: string; ref?: string };
 export type TableEv = Head & { view: "table"; columns: Col[]; rows: Row[]; totals: Record<string, number> };
-export type ChartEv = Head & { view: "chart"; kind: "bar" | "bar_stacked" | "line" | "area" | "donut" | "burndown";
-  x_label?: string; y_label?: string; format: string; currency?: string; series: Series[]; points: Row[]; ideal?: number[] };
+export type ChartEv = Head & { view: "chart"; kind: "bar" | "bar_horizontal" | "bar_stacked" | "line" | "step" | "area" | "donut" | "burndown";
+  x_label?: string; y_label?: string; format: string; currency?: string; series: Series[]; points: Row[]; ideal?: number[];
+  /** Whole days, when x is a date and distance along the axis means time. */
+  xs?: number[];
+  annotations?: Pin[]; lines?: RefLine[]; outlook?: Outlook[] };
 export type KanbanEv = Head & { view: "kanban"; columns: BoardCol[]; count: number };
 export type StatsEv = Head & { view: "stats"; items: Stat[] };
 export type FlowNode = { id: string; label: string; note: string; shape: "process" | "decision" | "terminal"; group: string };
@@ -93,6 +99,24 @@ export function delimited(cols: Col[], rows: Row[], sep: "," | "\t"): string {
   return [cols.map((c) => cell(c.label)).join(sep), ...rows.map((r) => cols.map((c) => cell(r[c.key], c)).join(sep))].join("\n");
 }
 
+export const pinsAt = (ev: ChartEv, i: number): Pin[] => (ev.annotations ?? []).filter((p) => p.i === i);
+
+/** A pin in words: "Salary (+€3,000.00)". */
+export function pinText(ev: ChartEv, p: Pin): string {
+  if (typeof p.amount !== "number") return p.label;
+  return `${p.label} (${p.amount > 0 ? "+" : ""}${fmt(p.amount, ev.format, ev.currency)})`;
+}
+
+/** An x as it reads. A date on a time axis says "Nov 15". */
+export function xLabel(ev: ChartEv, raw: unknown): string {
+  const s = String(raw ?? "");
+  if (!ev.xs) return s;
+  const d = new Date(`${s}T00:00:00`);
+  if (Number.isNaN(d.getTime())) return s;
+  const wide = (ev.xs[ev.xs.length - 1] ?? 0) - (ev.xs[0] ?? 0) > 330;
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", ...(wide ? { year: "2-digit" } : {}) }).format(d);
+}
+
 /** A chart's numbers as a sheet: the table view every chart has. */
 export function chartSheet(ev: ChartEv): { columns: Col[]; rows: Row[]; totals: Record<string, number> } {
   const type = ev.format === "money" ? "money" : ev.format === "percent" ? "percent" : "number";
@@ -100,7 +124,9 @@ export function chartSheet(ev: ChartEv): { columns: Col[]; rows: Row[]; totals: 
   const columns: Col[] = [{ key: "x", label: ev.x_label || "", type: "text" }, ...series];
   const rows = ev.points.map((p, i) => (ev.ideal ? { ...p, __ideal: ev.ideal[i] } : p));
   if (ev.ideal) columns.push({ key: "__ideal", label: "Ideal", type, currency: ev.currency });
-  return { columns, rows, totals: {} };
+  if (!ev.annotations?.length) return { columns, rows, totals: {} };
+  columns.push({ key: "__notes", label: "What happens", type: "text" });
+  return { columns, rows: rows.map((r, i) => ({ ...r, __notes: pinsAt(ev, i).map((p) => pinText(ev, p)).join("; ") })), totals: {} };
 }
 
 /** Domain of the y axis. Bars and filled areas start from zero, or they lie about size. */
@@ -117,6 +143,7 @@ export function domain(ev: ChartEv): [number, number] {
     }
   }
   if (ev.ideal) vals.push(...ev.ideal);
+  for (const l of ev.lines ?? []) vals.push(l.y);
   if (!vals.length) return [0, 1];
   const lo = Math.min(...vals), hi = Math.max(...vals);
   if (ev.kind !== "line") return [Math.min(lo, 0), Math.max(hi, 0)];
@@ -131,6 +158,31 @@ export function overdue(due: string | null | undefined, column: string, asOf?: s
   const today = asOf && /^\d{4}-\d{2}-\d{2}/.test(asOf) ? asOf.slice(0, 10) : new Date().toISOString().slice(0, 10);
   return due < today;
 }
+
+// ---- views placed in an answer ------------------------------------------------------
+
+const VIEW_REF = /[ \t]*\[\[view:([\w-]+)\]\][ \t]*/g;
+
+export const stripViews = (md: string) => md.replace(VIEW_REF, "");
+
+/** An answer cut where it names a view. A marker in code is being talked about, so it stays. */
+export function splitViews(md: string): (string | { ref: string })[] {
+  const out: (string | { ref: string })[] = [];
+  const code = [...md.matchAll(/```[\s\S]*?(?:```|$)|`[^`\n]*`/g)].map((m) => [m.index ?? 0, (m.index ?? 0) + m[0].length]);
+  let at = 0;
+  for (const m of md.matchAll(VIEW_REF)) {
+    const i = m.index ?? 0;
+    if (code.some(([a, b]) => i >= a && i < b)) continue;
+    if (md.slice(at, i).trim()) out.push(md.slice(at, i));
+    out.push({ ref: m[1] });
+    at = i + m[0].length;
+  }
+  if (md.slice(at).trim()) out.push(md.slice(at));
+  return out.length ? out : [md];
+}
+
+export const viewsNamed = (md: string): Set<string> =>
+  new Set(splitViews(md).flatMap((p) => (typeof p === "string" ? [] : [p.ref])));
 
 // ---- diagrams -----------------------------------------------------------------------
 

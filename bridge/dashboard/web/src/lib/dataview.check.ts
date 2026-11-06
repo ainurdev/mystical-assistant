@@ -1,6 +1,6 @@
 // node --experimental-strip-types src/lib/dataview.check.ts
 import assert from "node:assert/strict";
-import { chartSheet, delimited, domain, fmt, matches, overdue, sorted, sumOf, ticks, type ChartEv, type Col } from "./dataview.ts";
+import { chartSheet, delimited, domain, fmt, matches, overdue, pinsAt, pinText, sorted, splitViews, stripViews, sumOf, ticks, viewsNamed, xLabel, type ChartEv, type Col } from "./dataview.ts";
 
 const t = ticks(0, 87);
 assert.equal(t[0], 0);
@@ -43,4 +43,19 @@ assert.equal(overdue("2026-01-01", "To do", "2026-11-07"), true);
 assert.equal(overdue("2026-01-01", "Done", "2026-11-07"), false);
 assert.equal(overdue("2027-01-01", "To do", "2026-11-07"), false);
 assert.equal(overdue(null, "To do"), false);
+assert.deepEqual(splitViews("Before\n\n[[view:v1]]\n\nAfter"), ["Before\n\n", { ref: "v1" }, "\n\nAfter"]);
+assert.deepEqual(splitViews("[[view:v1]]"), [{ ref: "v1" }]);
+assert.deepEqual(splitViews("no views"), ["no views"]);
+assert.deepEqual(splitViews("say `[[view:v1]]` and\n```\n[[view:v2]]\n```"), ["say `[[view:v1]]` and\n```\n[[view:v2]]\n```"]);
+assert.deepEqual([...viewsNamed("a [[view:v1]] b [[view:v2]]")], ["v1", "v2"]);
+assert.equal(stripViews("a [[view:v1]] b"), "ab");
+
+const pinned = chart({ kind: "step", format: "money", currency: "EUR", annotations: [{ i: 1, label: "Salary", amount: 3000 }, { i: 1, label: "Rent", amount: -900 }], lines: [{ y: 500, label: "Goal" }] });
+assert.deepEqual(domain(pinned), [0, 500]);
+assert.equal(pinsAt(pinned, 1).length, 2);
+assert.match(pinText(pinned, pinned.annotations![0]), /^Salary \(\+€3,000\.00\)$/);
+assert.match(pinText(pinned, pinned.annotations![1]), /^Rent \(-€900\.00\)$/);
+assert.equal(chartSheet(pinned).rows[1].__notes, `${pinText(pinned, pinned.annotations![0])}; ${pinText(pinned, pinned.annotations![1])}`);
+assert.match(xLabel(chart({ xs: [1, 2] }), "2026-11-15"), /Nov/);
+assert.equal(xLabel(chart({}), "Jan"), "Jan");
 console.log("dataview ok");

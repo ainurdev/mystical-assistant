@@ -384,7 +384,7 @@ export type RunEvent =
   // absolute paths served by /api/attachment. A recorded test run; a Markdown file
   // presented as a card, its path relative to the project; a request for a key, and
   // whether one was given (never its value). `rule`: bridge/rules.py fired.
-  | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string }
+  | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string; ref?: string }
   | DataEv
   | { type: "checks"; command: string; ok: boolean; code: number; ms: number;
       passed: number | null; failed: number | null; skipped: number | null;
