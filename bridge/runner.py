@@ -2314,6 +2314,7 @@ def _handle_event(job: Job, d: dict):
                                            job.read_paths.pop(rid, None))
                 if (clip := _save_result_file(job.id, rid, name, b.get("content"))):
                     imgs = imgs + [clip]
+                    _telegram_shown(job, clip, name)
                     # Only on the event that actually carries a file: a panel
                     # with nothing to sit beside is not worth streaming.
                     if (meta := job.clip_meta.pop(rid, None)) is not None:
@@ -2456,6 +2457,16 @@ def _clip_chapters(content) -> list:
 
 
 _MCP_FILE_BYTES = 64 * 1024 * 1024  # one clip or attachment, on disk
+
+
+def _telegram_shown(job: "Job", path: str, name: "str | None") -> None:
+    """A picture the agent showed you reaches a chat started on Telegram; one it only read
+    to look at doesn't. On its own thread: an upload must not hold the stream up."""
+    if not (job.tg_live and experimental.enabled() and (mimetypes.guess_type(path)[0] or "").startswith("image/")):
+        return
+    from bridge import telegram as tg
+    threading.Thread(target=tg.send_photo, args=(job.chat_id, path), daemon=True,
+                     kwargs={"thread": tgtopics.thread_for(job.chat_id, job.store_session_id)}).start()
 
 
 def _save_result_file(job_id: str, rid: str, name: "str | None",
