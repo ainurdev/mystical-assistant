@@ -49,7 +49,7 @@ def save_settings(patch: dict) -> dict:
         bar = float(patch["bar"])
         if math.isfinite(bar):
             s["bar"] = round(min(10.0, max(1.0, bar)) * 2) / 2
-    except (KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError, OverflowError):
         pass
     try:
         s["max_rounds"] = min(10, max(1, int(patch["max_rounds"])))
