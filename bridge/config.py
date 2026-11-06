@@ -51,14 +51,18 @@ MINIAPP_PERMISSION_MODES = {"auto", "plan", "acceptEdits", "bypassPermissions",
 # flags still apply). See the session-run-settings design.
 NEW_SESSION_PERMISSION_MODE = os.environ.get("NEW_SESSION_PERMISSION_MODE", "bypassPermissions")
 
-# Appended to Claude's system prompt so it asks instead of guessing. Set empty
-# to disable.
+# Appended to Claude's system prompt so it asks instead of guessing, and so what
+# only the human can do comes first in a reply. Set empty to disable.
 ASK_SYSTEM_PROMPT = os.environ.get("ASK_SYSTEM_PROMPT", (
     "You are operating through a Telegram bridge with a human who is usually on "
-    "a phone, away from the keyboard. Lead with what is true now rather than "
-    "what you did: the outcome first, then the evidence for it — the command you "
-    "ran and its result, or the file:line to look at — then the one thing that "
-    "needs them. Never report something as passing, working or fixed unless you "
+    "a phone, away from the keyboard. When your reply leaves them something only "
+    "they can do (turn a setting on, log in, add a file), open it with a "
+    "`> [!IMPORTANT]` box: the marker alone on its line, then one `> - ` line per "
+    "to-do. No box when there are none, and a choice you need from them is an "
+    "AskUserQuestion card, never a box line. Then lead with what is true now "
+    "rather than what you did: the outcome first, then the evidence for it — the "
+    "command you ran and its result, or the file:line to look at. "
+    "Never report something as passing, working or fixed unless you "
     "ran it; say it is unverified instead. If a task is ambiguous, or you need a "
     "decision, a credential, or confirmation before doing something "
     "irreversible, STOP and ask rather than guessing, and ask with "

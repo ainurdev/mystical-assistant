@@ -166,6 +166,15 @@ def _fold_code(md: str) -> str:
     return _FENCED.sub(fold, md)
 
 
+# A GitHub callout's marker (`> [!IMPORTANT]`, the to-do box an answer opens with)
+# is plain text to Telegram: it becomes the type's word in bold, in the same quote.
+_CALLOUT = re.compile(r"^(>[ \t]*)\[!(note|tip|important|warning|caution)\][ \t]*$", re.M | re.I)
+
+
+def _callouts(md: str) -> str:
+    return _CALLOUT.sub(lambda m: f"{m[1]}**{m[2].upper()}**", md)
+
+
 def _plain(html_text: str) -> str:
     """Telegram HTML as the text it shows: what a refused message falls back to."""
     return _html.unescape(re.sub(r"<[^>]+>", "", html_text))
@@ -196,6 +205,8 @@ def _send(chat_id: int, text: str, reply_markup: dict | None = None, markdown: b
     silent: no sound or vibration. thread: the topic, in a private chat with
     threads (bridge/tgtopics.py)."""
     text = text or "(empty)"
+    if rich:
+        text = _callouts(text)
     base = {**({"disable_notification": "true"} if silent else {}),
             **({"message_thread_id": thread} if thread else {})}
     extra = {"reply_markup": json.dumps(reply_markup)} if reply_markup else {}
@@ -247,6 +258,7 @@ def draft(chat_id: int, draft_id: int, text: str, *, thread: "int | None" = None
     (10.3), which comes back as a stopped_message_generation update. Telegram
     keeps it 30 seconds unless it is sent again, and drops it when the bot sends
     a message. "" shows Telegram's "Thinking…". False when refused."""
+    text = _callouts(text)
     base = dict(chat_id=chat_id, draft_id=draft_id, can_stop="true",
                 **({"message_thread_id": thread} if thread and (chat_id, thread) not in gone_threads else {}))
     if text and config.TG_RICH and tg("sendRichMessageDraft",
