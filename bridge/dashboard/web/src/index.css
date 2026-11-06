@@ -7975,3 +7975,27 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .int-note { font: 400 var(--t95, var(--t9))/1.6 var(--ui-font); color: var(--txd); }
 .int-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 @media (max-width: 600px) { .int-exp { margin-left: 14px; } }
+
+/* ── SKILLS · one line per installed skill (2026-11-06, A · DENSE LIST) ── */
+.sk-bar { display: flex; flex-direction: column; gap: 8px; margin: 12px 0 10px; }
+.sk-bar .aim-search { height: 32px; padding: 0 12px; font: 400 13px var(--ui-font); border-radius: 8px; border: 1px solid var(--line, var(--border)); background: var(--panel2); color: var(--txb); outline: none; }
+.sk-bar .aim-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sk-bar .aim-chipbtn { appearance: none; cursor: pointer; height: 26px; padding: 0 10px; border-radius: 99px; border: 0; background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line2, var(--border-bright)); color: var(--txm); font: 500 12px var(--ui-font); letter-spacing: 0; }
+.sk-bar .aim-chipbtn[data-on] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--acc); }
+.sk-bar .aim-chipbtn em { font-style: normal; opacity: .6; margin-left: 2px; }
+.sk-list { border: 1px solid var(--line, var(--border)); background: var(--panel2); border-radius: var(--f-rad, 0); overflow: hidden; }
+.sk-row { display: grid; grid-template-columns: 22px minmax(120px, 210px) minmax(0, 1fr) 62px 62px 26px; align-items: center; gap: 10px;
+  height: 38px; padding: 0 10px 0 14px; border-top: 1px solid var(--line, var(--border)); font: 400 var(--t10) var(--ui-font); }
+.sk-row:first-child { border-top: 0; }
+.sk-row:hover { background: var(--ac-06, color-mix(in srgb, var(--acc) 6%, transparent)); }
+.sk-row[data-busy] { opacity: .5; }
+.sk-ic { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; background: color-mix(in srgb, var(--txl) 12%, transparent); }
+.sk-row b { font-weight: 500; color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-ds { color: var(--txl); font-size: var(--t95, var(--t9)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sk-chip { justify-self: start; font: 500 var(--t85) var(--ui-font); padding: 2px 7px; border-radius: 6px; color: var(--txm); background: color-mix(in srgb, var(--txl) 12%, transparent); white-space: nowrap; }
+.sk-chip[data-own] { color: var(--acc); background: color-mix(in srgb, var(--acc) 13%, transparent); }
+.sk-act { display: flex; align-items: center; justify-content: flex-end; gap: 4px; }
+.sk-x { appearance: none; border: 0; background: none; cursor: pointer; color: var(--txg, var(--txl)); width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; }
+button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+@media (max-width: 600px) { .sk-row { grid-template-columns: 22px minmax(0, 1fr) auto 26px; } .sk-ds, .sk-row .sk-chip:nth-of-type(1) { display: none; } }
