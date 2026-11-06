@@ -3243,18 +3243,20 @@ function Stepper({ label, text, onStep }: { label: string; text: string; onStep:
 
 function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; projects: ProjectsSettingsProps; onSignIn: () => void }) {
   const [s, setS] = useState<CouncilSettings | null>(null);
+  // Each click steps from the latest value, not the rendered one, so fast clicks
+  // accumulate; only the newest request's answer (the clamped value) lands, and a
+  // failed save falls back to the last value the bridge confirmed.
+  const latest = useRef<CouncilSettings | null>(null);
+  const confirmed = useRef<CouncilSettings | null>(null);
+  const seq = useRef(0);
   const [err, setErr] = useState<string | null>(null);
   // null = not read; the Codex seat's login as the last TEST or turn found it.
   const [codexIn, setCodexIn] = useState<boolean | null>(null);
   useEffect(() => {
-    void api.councilSettings().then((r) => { latest.current = r; setS(r); }).catch(() => setErr("Couldn't read the council's settings."));
+    void api.councilSettings().then((r) => { latest.current = confirmed.current = r; setS(r); }).catch(() => setErr("Couldn't read the council's settings."));
     void api.acpAgents().then((r) => setCodexIn(
       Object.entries(r.options).some(([k, o]) => k.startsWith("codex|") && o.signed_in === true))).catch(() => {});
   }, []);
-  // Each click steps from the latest value, not the rendered one, so fast clicks
-  // accumulate; only the newest request's answer (the clamped value) lands.
-  const latest = useRef<CouncilSettings | null>(null);
-  const seq = useRef(0);
   async function save(patch: (c: CouncilSettings) => Partial<CouncilSettings>) {
     if (!latest.current) return;
     setErr(null);
@@ -3263,8 +3265,13 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
     const id = ++seq.current;
     try {
       const r = await api.saveCouncilSettings(latest.current);
-      if (id === seq.current) { latest.current = r; setS(r); }
-    } catch { if (id === seq.current) setErr("Couldn't save that."); }
+      if (id === seq.current) { latest.current = confirmed.current = r; setS(r); }
+    } catch {
+      if (id !== seq.current) return;
+      latest.current = confirmed.current;
+      setS(confirmed.current);
+      setErr("Couldn't save that.");
+    }
   }
   const name = (rel: string) => projects.groups.find((g) => g.rel === rel)?.name ?? rel;
   const free = s ? projects.groups.filter((g) => !s.codex_projects.includes(g.rel)) : [];
