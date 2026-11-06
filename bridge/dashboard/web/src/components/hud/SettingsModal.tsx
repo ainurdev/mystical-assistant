@@ -4067,9 +4067,11 @@ function MoveImport({ jobs, busy }: { jobs: MoveJob[]; busy: boolean }) {
 
 function MovePanel() {
   // The dock's SETTINGS ▸ and REVIEW ▸ name the page to land on.
-  const [sub, setSub] = useState<MoveSub>(() => {
+  // MOVE opens on its two ways side by side (2026-11-06, B · TWO WAYS); the dock's
+  // SETTINGS ▸ and REVIEW ▸ still land straight on the page they name.
+  const [sub, setSub] = useState<MoveSub | "home">(() => {
     const f = takeSettingsFocus();
-    return f === "import" ? "import" : "export";
+    return f === "import" ? "import" : f === "export" ? "export" : "home";
   });
   const [jobs, setJobs] = useState<MoveJob[]>([]);
   useEffect(() => {
@@ -4088,24 +4090,99 @@ function MovePanel() {
     return () => { live = false; window.clearTimeout(t); window.removeEventListener(MOVE_EVENT, tick); };
   }, []);
   const running = jobs.find((j) => j.status === "running");
+  if (sub === "home") return <MoveHome jobs={jobs} running={running} onGo={setSub} />;
+  const way = MOVE_SUBS.find((t) => t.key === sub)!;
   return (
     <>
-      <div style={{ display: "flex", gap: 2, border: "1px solid color-mix(in srgb, var(--acc) 14%, transparent)", background: "color-mix(in srgb, var(--panel) 92%, transparent)", marginBottom: 26 }}>
-        {MOVE_SUBS.map((t) => {
-          const on = sub === t.key;
-          const dot = running && (t.key === "export" ? running.kind === "export" : t.key === "import" && running.kind !== "export");
-          return (
-            <button key={t.key} onClick={() => setSub(t.key)} aria-pressed={on}
-              style={{ flex: 1, appearance: "none", cursor: "pointer", border: 0, borderBottom: `2px solid ${on ? "var(--acc)" : "transparent"}`, background: on ? "color-mix(in srgb, var(--acc) 14%, transparent)" : "transparent", color: on ? "var(--txb)" : "var(--txd)", fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: 1.5, padding: "9px 4px", display: "flex", alignItems: "center", justifyContent: "center", gap: 7 }}>
-              <t.icon size={12} strokeWidth={1.7} aria-hidden />
-              {t.label}
-              {dot && <i style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--purple)", boxShadow: "0 0 6px var(--purple)" }} />}
-            </button>
-          );
-        })}
+      <div className="mv-back">
+        <button onClick={() => setSub("home")}><ChevronRight size={13} aria-hidden style={{ transform: "rotate(180deg)" }} />Both ways</button>
+        <span><way.icon size={13} strokeWidth={1.7} aria-hidden />{sub === "export" ? "Send this machine away" : "Bring a bridge here"}</span>
       </div>
       {sub === "export" && <MoveExport busy={!!running} />}
       {sub === "import" && <MoveImport jobs={jobs} busy={!!running} />}
+    </>
+  );
+}
+
+/** MOVE's landing: what leaving would carry, what is waiting to come in, and the
+ *  moves already made — with the file one left behind, which still takes disk. */
+function MoveHome({ jobs, running, onGo }: { jobs: MoveJob[]; running?: MoveJob; onGo: (s: MoveSub) => void }) {
+  const [plan, setPlan] = useState<MovePlan | null | undefined>(undefined);
+  const [files, setFiles] = useState<MoveFile[] | null>(null);
+  const [gone, setGone] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let live = true;
+    void api.movePlan().then((r) => { if (live) setPlan(r); }, () => { if (live) setPlan(null); });
+    void api.moveFiles().then((r) => { if (live) setFiles(r.files); }, () => { if (live) setFiles([]); });
+    return () => { live = false; };
+  }, []);
+  const sec = (k: MoveSectionKey) => plan?.sections.find((x) => x.key === k)?.items ?? [];
+  const sum = (k: MoveSectionKey, f: (i: MoveItem) => number) => sec(k).reduce((a, i) => a + f(i), 0);
+  const unpushed = sum("repos", (i) => i.unpushed ?? 0);
+  const withWork = sec("repos").filter((i) => (i.unpushed ?? 0) > 0).length;
+  const plugins = sec("plugins").filter((i) => !i.marketplace && !i.ref.startsWith("marketplace")).length;
+  const day = (t: number) => new Date(t * 1000).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+  const past = [...jobs].filter((j) => j.status !== "running").reverse();
+  const shown = (files ?? []).filter((f) => !gone.has(f.path));
+  async function drop(f: MoveFile) {
+    if (!(await askConfirm(`Delete ${f.name}? It frees ${fmtBytes(f.bytes)}; a move that already ran keeps everything it brought in.`, { ok: "Delete" }))) return;
+    try { await api.moveDelete(f.path); setGone((g) => new Set(g).add(f.path)); }
+    catch (e) { notify("error", (e as Error).message); }
+  }
+  return (
+    <>
+      <div className="mv-ways">
+        <div className="mv-way">
+          <span className="mv-ic"><HardDriveUpload size={18} strokeWidth={1.7} aria-hidden /></span>
+          <h3>Send this machine away</h3>
+          <p>One file with everything a new machine needs. Sign-ins stay behind.</p>
+          {plan === undefined && <div className="mv-wait">looking at this machine: its repos, MCP servers, history…</div>}
+          {plan === null && <div className="mv-wait">couldn't read this machine; the export page says why.</div>}
+          {plan && (
+            <ul>
+              <li><b>{unpushed}</b>unpushed commit{unpushed === 1 ? "" : "s"}{withWork ? ` in ${withWork} repo${withWork === 1 ? "" : "s"}` : ""}</li>
+              <li><b>{fmtBytes(sum("history", (i) => i.bytes ?? 0))}</b>chat history, {sec("history").length} project{sec("history").length === 1 ? "" : "s"}</li>
+              <li><b>{sec("mcp").length} + {plugins}</b>MCP servers and plugins</li>
+              <li><b>{fmtBytes(sum("bridge", (i) => i.bytes ?? 0))}</b>bridge settings and accounts</li>
+            </ul>
+          )}
+          <div className="mv-foot"><MiniBtn primary disabled={!!running} onClick={() => onGo("export")}>Choose what goes</MiniBtn></div>
+        </div>
+        <div className="mv-way">
+          <span className="mv-ic"><HardDriveDownload size={18} strokeWidth={1.7} aria-hidden /></span>
+          <h3>Bring a bridge here</h3>
+          <p>Read a move file first: you see what it holds before anything is written.</p>
+          {files === null ? <div className="mv-wait">looking for move files…</div>
+            : shown.length === 0 ? <div className="mv-wait">No move file on this machine yet. Copy one into your home folder.</div>
+            : shown.slice(0, 2).map((f) => (
+              <div key={f.path} className="mv-file">
+                <FileArchive size={16} strokeWidth={1.7} aria-hidden />
+                <div><b title={f.path}>{f.name}</b><span>{f.dir} · {fmtBytes(f.bytes)} · {day(f.mtime)}</span></div>
+              </div>
+            ))}
+          <div className="mv-foot"><MiniBtn disabled={!!running} onClick={() => onGo("import")}>{shown.length ? "Read it" : "Import"}</MiniBtn></div>
+        </div>
+      </div>
+      <Section title="PAST MOVES" top desc={past.length ? undefined : shown.length ? "No move ran from this dashboard yet; a file one left is still here." : "None yet."}>
+        {(past.length > 0 || shown.length > 0) && (
+          <div className="mv-past">
+            {past.map((j) => (
+              <div key={j.id} className="mv-row">
+                <span className={`mv-st ${j.status}`}>{j.status === "done" ? "✓" : j.status === "failed" ? "✕" : "–"}</span>
+                <div><b>{j.kind === "export" ? "Exported" : j.kind === "read" ? "Read" : "Imported"} {j.title}</b>
+                  <span>{day(j.ended ?? j.started)}{j.result?.bytes ? ` · ${fmtBytes(j.result.bytes)}` : ""}{j.status !== "done" ? ` · ${j.status}` : ""}</span></div>
+              </div>
+            ))}
+            {shown.map((f) => (
+              <div key={f.path} className="mv-row">
+                <span className="mv-st"><FileArchive size={13} strokeWidth={1.7} aria-hidden /></span>
+                <div><b>{f.name}</b><span>still on disk · {fmtBytes(f.bytes)}</span></div>
+                <MiniBtn danger onClick={() => void drop(f)}>Delete file</MiniBtn>
+              </div>
+            ))}
+          </div>
+        )}
+      </Section>
     </>
   );
 }

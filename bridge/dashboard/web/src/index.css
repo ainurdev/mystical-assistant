@@ -8018,3 +8018,33 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .sys-tabs button[data-on] { color: var(--txb); }
 .sys-tabs button[data-on]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--acc); }
 [data-fam="aurora"] .sys-tabs button { text-transform: uppercase; letter-spacing: .14em; font-size: 11.5px; }
+
+/* ── MOVE · two ways and the moves made (2026-11-06, B · TWO WAYS) ── */
+.mv-ways { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.mv-way { display: flex; flex-direction: column; gap: 10px; padding: 16px; min-height: 280px; min-width: 0;
+  background: var(--panel2); border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad, 0); }
+.mv-ic { width: 38px; height: 38px; border-radius: 10px; display: grid; place-items: center; color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.mv-way h3 { margin: 0; font: 600 17px var(--f-disp, var(--ui-font)); color: var(--txb); }
+.mv-way p { margin: 0; font: 400 var(--t95, var(--t9))/1.5 var(--ui-font); color: var(--txd); }
+.mv-way ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; font: 400 var(--t95, var(--t9)) var(--ui-font); color: var(--txm); }
+.mv-way li b { display: inline-block; min-width: 68px; color: var(--txh); font-weight: 600; }
+.mv-wait { font: 400 var(--t95, var(--t9)) var(--ui-font); color: var(--txl); }
+.mv-file { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 9px; min-width: 0;
+  background: var(--panel3, var(--panel)); box-shadow: inset 0 0 0 1px var(--line2, var(--border-bright)); color: var(--purple, var(--acc)); }
+.mv-file > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mv-file b { font: 500 11.5px var(--mono); color: var(--txh); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mv-file span { font: 400 var(--t85) var(--ui-font); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mv-foot { margin-top: auto; display: flex; gap: 8px; }
+.mv-past { border: 1px solid var(--line, var(--border)); background: var(--panel2); border-radius: var(--f-rad, 0); overflow: hidden; }
+.mv-row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; min-height: 46px; }
+.mv-row + .mv-row { border-top: 1px solid var(--line, var(--border)); }
+.mv-row > div { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.mv-row b { font: 500 var(--t10) var(--ui-font); color: var(--txb); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mv-row span { font: 400 var(--t95, var(--t9)) var(--ui-font); color: var(--txd); white-space: nowrap; }
+.mv-st { width: 18px; flex: none; text-align: center; color: var(--txl); }
+.mv-st.done { color: var(--ok); } .mv-st.failed { color: var(--err); }
+.mv-back { display: flex; align-items: center; gap: 12px; margin: -4px 0 18px; }
+.mv-back button { appearance: none; cursor: pointer; border: 1px solid var(--line2, var(--border-bright)); background: transparent; color: var(--txm);
+  border-radius: 8px; font: 500 var(--t95, var(--t9)) var(--ui-font); padding: 4px 10px 4px 6px; display: inline-flex; align-items: center; gap: 4px; }
+.mv-back span { display: inline-flex; align-items: center; gap: 7px; font: 600 var(--t10) var(--ui-font); color: var(--txh); }
+@media (max-width: 760px) { .mv-ways { grid-template-columns: 1fr; } .mv-way { min-height: 0; } }
