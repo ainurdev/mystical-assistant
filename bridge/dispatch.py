@@ -26,6 +26,8 @@ HELP = (
     "/accounts — Claude logins and their usage · /accounts add\n"
     "/policy — what to do when a chat hits the usage limit\n"
     "/profile [name|none] — show or set this chat's run profile\n"
+    "/agents — this chat's agents, if experimental is on · /agents stop|hold|release\n"
+    "/tell <agent> <text> — message one agent in this chat (experimental)\n"
     "/status — everything at a glance\n"
     "/help — this message\n\n"
     "Send a file or photo too (20 MB max): its caption is the prompt, or it goes "
@@ -342,6 +344,9 @@ def on_message(msg: dict):
     if cmd0 == "/profile":
         handle_profile_command(chat_id, text)
         return
+    if cmd0 in ("/agents", "/tell"):
+        send(chat_id, handle_agents_command(chat_id, text, thread), thread=thread)
+        return
     if text == "/status":
         running = state.running_chats()
         st = f"busy · {len(running)} run(s)" if running else "idle"
@@ -356,6 +361,39 @@ def on_message(msg: dict):
         return
 
     _run_prompt(chat_id, text, thread=thread, msg_id=msg.get("message_id"))
+
+
+def handle_agents_command(chat_id: int, text: str, thread=None) -> str:
+    """/agents and /tell: the same channel the grid drives (bridge/channel.py)."""
+    from bridge import agent_tree, channel, experimental
+    if not experimental.enabled():
+        return "Multi-agent chats are experimental. Turn them on in the dashboard's Settings."
+    s = (store.session_by_thread(chat_id, thread) if thread else None) \
+        or store.latest_session(chat_id, state.project_key(chat_id))
+    if not s:
+        return "No chat here yet."
+    cmd, _, rest = text.strip().partition(" ")
+    rest = rest.strip()
+    if cmd == "/tell":
+        to, _, words = rest.partition(" ")
+        if not to or not words.strip():
+            return "Usage: /tell <agent> <text>"
+        if channel._target(s, to) is None and to != "all":
+            return f"No agent is called {to}. /agents lists them."
+        channel.human_message(s, to, words.strip())
+        return f"Sent to {to}."
+    if rest == "stop":
+        return f"Stopped {channel.stop_all(s)} running."
+    if rest in ("hold", "release"):
+        channel.set_held(s, rest == "hold")
+        return "The channel is on hold." if rest == "hold" else "The channel is released."
+    rows = [r for r in agent_tree.tree(s)]
+    if not rows:
+        return "Only the main agent is working in this chat."
+    lines = [f"{'⏳' if r['status'] == 'running' else '·'} {r['name']} · {r['provider']} · "
+             f"{r['status']}{' · needs you' if r['needs'] else ''}" for r in rows]
+    held = " The channel is on hold." if channel.config_for(s).get("held") else ""
+    return "\n".join(lines) + f"\n\n/tell <agent> <text> · /agents stop|hold|release.{held}"
 
 
 def _run_prompt(chat_id: int, text: str, files: list[str] | None = None, *,

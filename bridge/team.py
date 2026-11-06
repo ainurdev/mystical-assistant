@@ -137,6 +137,10 @@ _FIELDS = {
     "error": ("message",),
     "divider": ("text",),
     "steer": ("text",),
+    # Multi-agent chats (bridge/channel.py, bridge/handoff.py): who ran what.
+    "switch": ("from", "to"),
+    "delegation": ("name", "brief", "agent", "profile"),
+    "merge": ("name", "state"),
 }
 
 _lock = threading.RLock()
@@ -346,6 +350,12 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
 
     home, budget = _home(), [0]
     turns, redacted = _pack_turns(t, picture, home, budget)
+    # A chat's helpers go with it, after its own turns and labelled by who ran them.
+    for m in store.members_of(session_id):
+        name, _ = redact((m.get("title") or "helper")[:_TITLE_MAX])
+        more, n = _pack_turns(store.transcript(m["id"]), picture, home, budget)
+        redacted += n
+        turns += [{**x, "prompt": f"[helper: {name}] {x.get('prompt') or ''}"} for x in more]
     title, n = redact((s.get("title") or "Session")[:_TITLE_MAX])
     redacted += n
     thread = thread_of(session_id)

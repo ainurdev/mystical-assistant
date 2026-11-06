@@ -54,6 +54,7 @@ CATALOG = {
     "resumed": ("resumed", "fyi", "session"),
     "retrying": ("resumed", "fyi", "session"),
     "waiting": ("resumed", "fyi", "session"),
+    "channel_held": ("ask", "needs", "session"),   # bridge/channel.py: agents hit the hop limit
     "started": ("started", "fyi", "session"),
     "rv_started": ("started", "fyi", "rivendell"),
     "rv_ended": ("started", "fyi", "rivendell"),    # a teammate's device run ending (device_side)

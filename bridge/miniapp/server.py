@@ -19,7 +19,8 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
-from bridge import (accounts, agents, browser, config, devserver, git, github,
+from bridge import (accounts, agent_caps, agents, browser, channel, config, devserver, experimental,
+                    git, github, multi_api,
                     httpgz, integrations, models, native, profiles, project_config, projectmarks,
                     relevance, runner, state, store, transcript_jsonl,
                     transcript_page, usage)
@@ -186,6 +187,16 @@ def _run_slot(s: dict, run: dict) -> "int | None":
     return profiles.claude_slot(run) or accounts.DEFAULT_SLOT
 
 
+def _multi_brief(s: dict, run: dict) -> dict:
+    """The EXPERIMENTAL switch's part of a brief: nothing while it's off, so the payload
+    is what it was. What this agent can do, and this chat's helper limits."""
+    if not experimental.enabled():
+        return {}
+    return {"caps": agent_caps.caps(run.get("agent")), "helpers": channel.config_for(s),
+            "parent_session": s.get("parent_session"),
+            "member": store.parse_member(s.get("member"))}
+
+
 def _session_brief(s: dict) -> dict:
     cwd = s.get("cwd")
     # The branch the session is *working* on: the worktree its shell moved into
@@ -214,6 +225,7 @@ def _session_brief(s: dict) -> dict:
             **run,
             "slot": _run_slot(s, run),
             "goal": store.parse_goal(s.get("goal")),
+            **_multi_brief(s, run),
             # A Rivendell job's kind and facts (rivendell_jobs): its tag, plate and bar.
             "job": store.parse_job(s.get("job")),
             # A teammate's device run: who asked, for what, how it ended (None = not one).
@@ -386,6 +398,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_history(chat_id, qs)
                 if path == "/api/running":
                     return self._api_running(chat_id)
+                if (multi := multi_api.get(path[len("/api/"):], qs, chat_id)) is not None:
+                    return self._json(*multi)
                 if path == "/api/agents":
                     return self._api_agents(chat_id, qs)
                 if path == "/api/agents/activity":
@@ -442,6 +456,8 @@ class Handler(BaseHTTPRequestHandler):
             body = self._read_json()
             if body is None:
                 return self._json({"error": "bad json"}, 400)
+            if (multi := multi_api.post(path[len("/api/"):], body, chat_id)) is not None:
+                return self._json(*multi)
             if path == "/api/select":
                 return self._api_select(chat_id, body)
             if path == "/api/sessions":
@@ -750,7 +766,7 @@ class Handler(BaseHTTPRequestHandler):
         s = self._owned_session(chat_id, (body.get("session_id") or "").strip())
         if not s:
             return self._json({"error": "not found"}, 404)
-        out, code = profiles.bind(s, body.get("profile_id"))
+        out, code = profiles.bind(s, body.get("profile_id"), str(body.get("scope") or "whole"))
         if code == 200:
             out["session"] = _session_brief(store.get_session(s["id"]))
         self._json(out, code)

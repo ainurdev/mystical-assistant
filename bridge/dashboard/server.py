@@ -32,9 +32,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Thread
 from urllib.parse import parse_qs, quote, urlparse
 
+import html
 import re
 
-from bridge import (acp_agents, acp_setup, agents, attribution, browser, config,
+from bridge import (acp_agents, acp_setup, agents, attribution, browser, config, multi_api,
                     device_ask, device_setup, device_share, device_side, device_view,
                     devserver, fmt, git,
                     github, graphmap, httpgz, integrations, logostyle,
@@ -382,9 +383,19 @@ class Handler(BaseHTTPRequestHandler):
             origin = self.headers.get("Origin")
             if origin is not None and origin not in _ORIGINS:
                 return self._json({"error": "bad origin"}, 403)
+            path = urlparse(self.path).path
+            if path == "/local/gateway":
+                # An agent's own relay (bridge/gateway_relay.py): its token reaches this
+                # route and this one session, not the dashboard token's anything.
+                from bridge import gateway
+                body = self._read_json()
+                if body is None:
+                    return self._json({"error": "bad json"}, 400)
+                out, code = gateway.handle(self.headers.get("X-Gateway-Token"),
+                                           str(body.get("method") or ""), body.get("params") or {})
+                return self._json(out, code)
             if not _tok_ok(self.headers.get("X-Dash-Token", "")):
                 return self._json({"error": "unauthorized"}, 401)
-            path = urlparse(self.path).path
             body = self._read_json()
             if body is None:
                 return self._json({"error": "bad json"}, 400)
@@ -407,6 +418,10 @@ class Handler(BaseHTTPRequestHandler):
         if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
             return self._json({"error": "not installed"}, 404)
         chat = _chat()
+        if path == "/local/mcp-share/callback":
+            return self._html_text(multi_api.oauth_callback(qs))
+        if (multi := multi_api.get(path[len("/local/"):], qs, chat)) is not None:
+            return self._json(*multi)
         if path == "/local/state":
             pd = state.project_dir(chat)
             return self._json({
@@ -1016,10 +1031,22 @@ class Handler(BaseHTTPRequestHandler):
         return self._json({"error": "not found"}, 404)
 
     # --- POST control (Host + Origin + token gated) ---
+    def _html_text(self, text: str):
+        """A browser's landing page: one plain line, escaped."""
+        body = ("<!doctype html><meta charset=utf-8><title>Mystical</title>"
+                f"<p style='font:16px system-ui;padding:2em'>{html.escape(text)}</p>").encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _post_api(self, path, body):
         if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
             return self._json({"error": "not installed"}, 404)
         chat = _chat()
+        if (multi := multi_api.post(path[len("/local/"):], body, chat)) is not None:
+            return self._json(*multi)
         if path == "/local/notices":
             if body.get("op") == "read" and (body.get("all") is True or isinstance(body.get("ids"), list)):
                 return self._json({"ok": True, "n": notices.mark_read(
@@ -2172,7 +2199,7 @@ class Handler(BaseHTTPRequestHandler):
         s = store.get_session(sid) if sid else None
         if not s or s["chat_id"] != chat:
             return self._json({"error": "not found"}, 404)
-        out, code = profiles.bind(s, body.get("profile_id"))
+        out, code = profiles.bind(s, body.get("profile_id"), str(body.get("scope") or "whole"))
         if code == 200:
             out["session"] = _session_brief(store.get_session(sid))
         self._json(out, code)
