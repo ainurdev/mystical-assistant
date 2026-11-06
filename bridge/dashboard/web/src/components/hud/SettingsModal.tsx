@@ -289,7 +289,7 @@ function search(q: string, env: EnvSetting[], hidden: Set<string>, multi: boolea
   if (!words.length) return [];
   const label = (t: Tab) => TABS.find((x) => x.key === t)!.label;
   const all: (Hit & { hay: string })[] = [
-    ...INDEX.filter((e) => !hidden.has(e.sec) && (e.tab !== "mac" || isNativeApp()) && (e.tab !== "agenttools" || multi)).map((e) => {
+    ...INDEX.filter((e) => !hidden.has(e.sec) && (e.tab !== "mac" || isNativeApp()) && (e.tab !== "agenttools" || multi) && (e.sec !== "IMAGES" || multi)).map((e) => {
       const tab = multi && AT_SECS.has(e.sec) ? "agenttools" : e.tab;
       return { tab, sec: e.sec, hay: `${label(tab)} ${e.sec} ${e.terms}`.toLowerCase() };
     }),

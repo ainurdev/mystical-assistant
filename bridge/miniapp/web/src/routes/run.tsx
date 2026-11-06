@@ -465,7 +465,7 @@ function RunPage({ barKey }: { barKey: string }) {
                 {resumed && <div className="ma-resumed" role="note">↻ {resumed}</div>}
                 {turn.prompt && !resumed && !(framed && !framed.own) && (
                   <div className="pbub whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
-                    <PromptText text={framed ? framed.body : turn.prompt} />
+                    {experimental ? <PromptText text={framed ? framed.body : turn.prompt} /> : turn.prompt}
                     {turn.started != null && <span className="pstamp">{hhmm(turn.started)}</span>}
                   </div>
                 )}

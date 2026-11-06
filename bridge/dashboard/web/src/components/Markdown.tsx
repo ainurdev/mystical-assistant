@@ -12,6 +12,7 @@ import { collapseProgress, type Progress } from "../lib/progressline";
 import type { ToolStyle } from "../lib/toolwidget";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
 import { MdImage, MdLinked, MdTyped } from "./MdImage";
+import { useMultiOn } from "../lib/multistore";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
 // `.md` block in index.css. Links open in a new tab. Images go through MdImage,
@@ -222,6 +223,7 @@ export const Markdown = memo(function Markdown({
    *  other result does. Callers outside a transcript keep the default. */
   toolStyle?: ToolStyle;
 }) {
+  const multiOn = useMultiOn();
   return (
     <div
       className={`md ${className}`}
@@ -239,7 +241,7 @@ export const Markdown = memo(function Markdown({
         components={{
           // One component, not a closure here: this object is rebuilt on every streamed
           // chunk, and a new function would remount (and reload) each image each time.
-          img: MdImage,
+          ...(multiOn ? { img: MdImage } : {}),
           // The glyph after a link copies its URL; a footnote's own `#fn1` hop
           // is not a link anyone wants on the clipboard.
           // A `#t=` link is a moment in a recording (a video ASK answer, JobViews): a chip, not a link.

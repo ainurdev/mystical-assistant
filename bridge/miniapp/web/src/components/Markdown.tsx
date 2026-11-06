@@ -7,6 +7,7 @@ import { selectionMd } from "../lib/selmd";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
 import type { ToolStyle } from "../lib/toolwidget";
 import { ChatImage } from "./ChatImage";
+import { useExperimental } from "../lib/multi";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
@@ -120,6 +121,7 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
    *  other result does. Callers outside a transcript keep the default. */
   toolStyle?: ToolStyle;
 }) {
+  const multiOn = useExperimental();
   return (
     <div
       className={`md ${className}`}
@@ -133,9 +135,9 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
-        urlTransform={keepImageAddress}
+        urlTransform={multiOn ? keepImageAddress : undefined}
         components={{
-          img: MdImage,
+          ...(multiOn ? { img: MdImage } : {}),
           // The glyph after a link copies its URL; a footnote's own `#fn1` hop
           // is not a link anyone wants on the clipboard.
           a: ({ node, href, children, ...props }) => (

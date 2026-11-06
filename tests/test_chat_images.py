@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from bridge import chat_images, config, multi_api, runner, store, team
+from bridge import chat_images, config, experimental, multi_api, runner, store, team
 
 store.init()
 CHAT = config.DASH_CHAT_ID
@@ -21,6 +21,9 @@ def isolated(monkeypatch, tmp_path):
     monkeypatch.setattr(chat_images, "_path", lambda: str(tmp_path / "chat_images.json"))
     monkeypatch.setattr(config, "BASE_PATH", str(tmp_path))
     monkeypatch.setattr(config, "UPLOAD_DIR", str(tmp_path / "up"))
+    monkeypatch.setattr(experimental, "_path", lambda: str(tmp_path / "experimental.json"))
+    monkeypatch.setattr(experimental, "_cache", None)
+    experimental.set_enabled(True)
 
 
 def _repo(tmp_path):
@@ -184,3 +187,22 @@ def test_a_turn_starts_with_the_note_in_front_of_the_prompt(tmp_path, monkeypatc
     assert "open them before responding" in seen["prefix"]
     # The stored prompt stays what was typed.
     assert store.turns_of(s["id"])[-1]["prompt"] == f"![image]({rel})"
+
+
+def test_off_with_the_experimental_switch(tmp_path):
+    """Images in the chat are experimental: off, it's attachments, and nothing is reachable."""
+    r = _repo(tmp_path)
+    rel = chat_images.save_data_url(URL, str(r))
+    chat_images.set_mode("inline")
+    s = store.create_session(CHAT, "/proj", cwd=str(r))
+    experimental.set_enabled(False)
+    assert chat_images.mode() == "attachment"
+    assert multi_api.get("chat-images", {}, CHAT)[0]["mode"] == "attachment"
+    assert multi_api.post("chat-images", {"mode": "inline"}, CHAT)[1] == 409
+    assert multi_api.post("chat-images/upload", {"session_id": s["id"], "data": URL}, CHAT)[1] == 409
+    assert multi_api.image_file({"path": [rel], "session": [s["id"]]}, CHAT) is None
+    assert chat_images.note(f"![image]({rel})", str(r)) == ""
+    keep, prompt = chat_images.adopt_files(["/tmp/x.png"], "hi", str(r))
+    assert keep == ["/tmp/x.png"] and prompt == "hi"
+    experimental.set_enabled(True)
+    assert chat_images.mode() == "inline"       # the choice waits for it

@@ -12,6 +12,7 @@ import { registerEditor } from "../lib/editorctx";
 import { leadCommand } from "../lib/slash";
 import type { SlashCommand } from "../api";
 import { EmbedPopover } from "./EmbedPopover";
+import { useMultiOn } from "../lib/multistore";
 
 // The composer's command line: a live markdown editor, not a preview pane. The
 // symbols stay in the text you edit — dimmed to the ghost tier so they read as
@@ -157,6 +158,9 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
   const cb = useRef(props);
   cb.current = props;
   const ph = useRef(new Compartment());
+  // Live images in the text are behind the EXPERIMENTAL switch.
+  const images = useRef(new Compartment());
+  const multiOn = useMultiOn();
   // The embed whose address popover is open: its start, kept current as the text moves.
   const [pop, setPop] = useState<number | null>(null);
   const popRef = useRef(pop);
@@ -194,7 +198,7 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
           ph.current.of(cmPlaceholder(cb.current.placeholder)),
           cmdList,
           cmdDeco,
-          imageEmbeds(),
+          images.current.of([]),
           mdTheme,
           EditorView.updateListener.of((u) => {
             for (const tr of u.transactions) for (const e of tr.effects) if (e.is(openEmbed)) setPop(e.value);
@@ -247,6 +251,10 @@ export const MarkdownInput = forwardRef<MarkdownInputHandle, Props>(function Mar
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setCmds.of(props.commands ?? []) });
   }, [props.commands]);
+
+  useEffect(() => {
+    viewRef.current?.dispatch({ effects: images.current.reconfigure(multiOn ? imageEmbeds() : []) });
+  }, [multiOn]);
 
   useEffect(() => {
     viewRef.current?.dispatch({ effects: setImageScope.of({ session: props.imageSession, project: props.imageProject }) });

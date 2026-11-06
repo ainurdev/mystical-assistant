@@ -366,7 +366,8 @@ class Turn:
             self.tools[tid] = (name, time.time(), u.get("kind"))
             # Kimi Code streams the input as text and only states it (rawInput) in a later
             # update, so a row written now could only say "Bash". It waits for that.
-            if u.get("rawInput") or u.get("locations") or u.get("status") in ("completed", "failed"):
+            if (not experimental.enabled() or u.get("rawInput") or u.get("locations")
+                    or u.get("status") in ("completed", "failed")):
                 self._add(self._tool_row(tid, name, u))
             else:
                 self.held_rows[tid] = name

@@ -2537,8 +2537,9 @@ export const RunStream = memo(function RunStream({
   // A turn can hold several results: a background agent's wake-up carries on in the
   // same process and turn. Only the last is the answer; the rest read as updates.
   const lastResult = multiOn ? events.map((e) => e.type).lastIndexOf("result") : -1;
-  const resultTexts = new Set(events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : [])));
   const resultText = (events.find((e) => e.type === "result")?.result ?? "").trim();
+  const resultTexts = new Set(multiOn ? events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : []))
+    : resultText ? [resultText] : []);
   // A native session emits no result event, so its closing words are a plain
   // `text`. DOSSIER still has to draw them as the answer — the answer is half of
   // tier 1 — so in a finished turn with no result, the last text that nothing

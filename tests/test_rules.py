@@ -336,3 +336,16 @@ def test_a_rule_on_in_one_chat_reaches_kimis_block(tmp_path):
     assert rules.evaluate(store.get_session(s["id"]), "PreToolUse", bash("rm -rf x")).get("block")
     other = _s(tmp_path, "kimi")
     assert rules.evaluate(other, "PreToolUse", bash("rm -rf x")) == {}
+
+
+def test_the_switch_takes_kimis_block_with_it(tmp_path):
+    from bridge import multi_api
+    home = tmp_path / "kimi"
+    home.mkdir()
+    (home / "config.toml").write_text(BODY)
+    multi_api.post("experimental", {"enabled": False}, CHAT)
+    assert "mystical" not in (home / "config.toml").read_text()
+    multi_api.post("experimental", {"enabled": True}, CHAT)
+    assert rules.KIMI_BEGIN in (home / "config.toml").read_text()    # subagent status and the pack are on by default
+    multi_api.post("experimental", {"enabled": False}, CHAT)
+    assert tomllib.loads((home / "config.toml").read_text()) == tomllib.loads(BODY)

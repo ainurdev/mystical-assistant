@@ -56,6 +56,8 @@ def image_root(chat_id: int, session: "str | None", project: "str | None") -> "s
 def image_file(qs: dict, chat_id: int) -> "tuple[bytes, str] | None":
     """The bytes behind an address in a message (GET chat-images/file), or None. Binary,
     so each server sends it; only the checks live here."""
+    if not experimental.enabled():
+        return None
     root = image_root(chat_id, _one(qs, "session"), _one(qs, "project"))
     real = chat_images.resolve(_one(qs, "path"), root)
     if not real:
@@ -157,12 +159,15 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
     if path == "experimental":
         if "enabled" in body:
             experimental.set_enabled(body["enabled"] is True)
+            rules.sync_agents()     # Kimi's managed block goes in or comes out with the switch
         if isinstance(body.get("defaults"), dict):
             try:
                 experimental.set_defaults(body["defaults"])
             except ValueError as e:
                 return {"error": str(e)}, 400
         return experimental.state(), 200
+    if path.startswith("chat-images") and not experimental.enabled():
+        return _OFF
     if path == "chat-images":
         try:
             return {"mode": chat_images.set_mode(str(body.get("mode") or ""))}, 200

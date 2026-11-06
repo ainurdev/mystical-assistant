@@ -1,5 +1,9 @@
 """Images that live in the conversation: saved in the project and written into the text.
 
+Everything here is behind the EXPERIMENTAL switch: off, mode() reads attachment whatever
+was chosen, the routes refuse, and no note goes to an agent. The choice is kept for when
+it's turned back on.
+
 An attachment goes to UPLOAD_DIR/<turn id>/, is listed beside the prompt and is pruned
 after a week, so an old chat loses its pictures. With this mode on (SYSTEM ▸ Send
 images: In the chat; off by default) a pasted image is saved at once as
@@ -33,7 +37,7 @@ import subprocess
 import threading
 import time
 
-from bridge import config
+from bridge import config, experimental
 
 MODES = ("attachment", "inline")
 SERVABLE = ("image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "image/bmp")
@@ -51,6 +55,8 @@ def _path() -> str:
 
 
 def mode() -> str:
+    if not experimental.enabled():
+        return "attachment"
     try:
         with open(_path(), encoding="utf-8") as f:
             m = json.load(f).get("mode")
@@ -188,7 +194,7 @@ def embeds(text: "str | None") -> list:
 
 def note(prompt: "str | None", cwd: "str | None") -> str:
     """What the agent is told on top of the text: where those images really are."""
-    addresses = embeds(prompt)
+    addresses = embeds(prompt) if experimental.enabled() else []
     if not addresses:
         return ""
     root = root_of(cwd)

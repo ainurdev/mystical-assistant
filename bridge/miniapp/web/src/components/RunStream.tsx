@@ -1194,7 +1194,9 @@ export const RunStream = memo(function RunStream({
   // A turn can hold several results (a background agent's wake-up carries on in the
   // same turn): only the last is the answer.
   const lastResult = multiOn ? events.map((e) => e.type).lastIndexOf("result") : -1;
-  const resultTexts = new Set(events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : [])));
+  const firstResult = (events.find((e) => e.type === "result") as { result?: string } | undefined)?.result?.trim();
+  const resultTexts = new Set(multiOn ? events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : []))
+    : firstResult ? [firstResult] : []);
 
   // Is the next thing the model does asking a question card?
   const asksNext = (i: number): boolean => {

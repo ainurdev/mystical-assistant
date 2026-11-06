@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Image as ImageIcon } from "lucide-react";
+import { useMultiOn } from "../../lib/multistore";
 import { setChatImagesMode, useChatImages, type ChatImagesMode } from "../../lib/chatimages";
 import { CARD, Row, Section, Segmented } from "./SettingsModal";
 
@@ -13,11 +14,13 @@ const OPTIONS: { label: string; value: ChatImagesMode }[] = [
 
 export function ChatImagesSection() {
   const st = useChatImages();
+  const on = useMultiOn();
   const [error, setError] = useState<string | null>(null);
   const pick = (mode: ChatImagesMode) => {
     setError(null);
     setChatImagesMode(mode).catch((e: Error) => setError(e.message));
   };
+  if (!on) return null;
   return (
     <Section title="IMAGES" icon={ImageIcon} top desc="How an image you paste, drop or attach reaches the chat.">
       <div style={CARD}>

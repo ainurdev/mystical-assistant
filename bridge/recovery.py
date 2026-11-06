@@ -72,8 +72,10 @@ def recover(*, run=None, notify=None) -> int:
     try:
         from bridge import channel                    # lazy: channel reaches the runner
         channel.resume_pending()                      # channel messages a restart left undelivered
-        from bridge import timed_waits
-        timed_waits.resume()                          # and wait_for's watchers
+        from bridge import experimental, rules, timed_waits
+        if experimental.enabled():
+            timed_waits.resume()                      # and wait_for's watchers
+        rules.sync_agents()                           # Kimi's managed block matches the switch and the rules
     except Exception as e:  # noqa: BLE001
         print(f"[recovery] channel: {e}", file=sys.stderr)
     return count

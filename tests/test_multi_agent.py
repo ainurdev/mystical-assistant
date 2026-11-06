@@ -142,6 +142,24 @@ def test_off_agent_turn_sends_the_old_prompt_and_no_servers(tmp_path, monkeypatc
     assert text.startswith(runner._MYSTICAL_NOTE) and "Mystical's instructions" not in text
 
 
+def test_off_a_tool_row_doesnt_wait_and_the_bot_help_is_as_it_was(tmp_path):
+    from bridge import acp, dispatch
+
+    class J:
+        events = []
+        boot, last_at, pending, interrupted, texts = None, 0, [], False, []
+
+        def add(self, e):
+            self.events.append(e)
+    job = J()
+    job.events = []
+    acp.Turn(job, "Kimi")._update("tool_call", {"toolCallId": "a", "title": "Bash", "status": "pending"})
+    assert job.events[0]["type"] == "tool"
+    assert "/agents" not in dispatch.help_text() and "agents" not in [c for c, _ in dispatch.menu()]
+    experimental.set_enabled(True)
+    assert "/agents" in dispatch.help_text() and "agents" in [c for c, _ in dispatch.menu()]
+
+
 # ---- provider switching ---------------------------------------------------------
 
 def test_switch_after_a_turn_tells_the_new_agent_everything(tmp_path, monkeypatch, on):

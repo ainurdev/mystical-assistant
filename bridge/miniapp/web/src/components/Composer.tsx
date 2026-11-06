@@ -543,7 +543,7 @@ export function Composer() {
       {uploading > 0 && (
         <div role="status" className="mb-1.5 px-1 text-[10px] tracking-wide text-[var(--muted-2)]">SAVING IMAGE…</div>
       )}
-      <ComposerImages draft={draft} setDraft={setDraft} scope={imgScope} />
+      {experimental && <ComposerImages draft={draft} setDraft={setDraft} scope={imgScope} />}
       <Textarea
         ref={taRef}
         value={draft}

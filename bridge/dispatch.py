@@ -26,17 +26,27 @@ HELP = (
     "/accounts — Claude logins and their usage · /accounts add\n"
     "/policy — what to do when a chat hits the usage limit\n"
     "/profile [name|none] — show or set this chat's run profile\n"
-    "/agents — this chat's agents, if experimental is on · /agents stop|hold|release\n"
-    "/tell <agent> <text> — message one agent in this chat (experimental)\n"
     "/status — everything at a glance\n"
     "/help — this message\n\n"
     "Send a file or photo too (20 MB max): its caption is the prompt, or it goes "
     "with your next message.")
 
 
+_EXPERIMENTAL_HELP = ("/agents — this chat's agents · /agents stop|hold|release\n"
+                      "/tell <agent> <text> — message one agent in this chat\n")
+
+
+def help_text() -> str:
+    """HELP, with the multi-agent commands while the EXPERIMENTAL switch is on."""
+    from bridge import experimental
+    if not experimental.enabled():
+        return HELP
+    return HELP.replace("/status — ", _EXPERIMENTAL_HELP + "/status — ", 1)
+
+
 def menu() -> "list[tuple[str, str]]":
-    """The menu "/" opens (telegram.set_commands): HELP's command lines."""
-    return [(ln.split()[0][1:], ln.split(" — ", 1)[1]) for ln in HELP.splitlines()
+    """The menu "/" opens (telegram.set_commands): the help's command lines."""
+    return [(ln.split()[0][1:], ln.split(" — ", 1)[1]) for ln in help_text().splitlines()
             if ln.startswith("/") and " — " in ln]
 
 
@@ -294,7 +304,7 @@ def on_message(msg: dict):
 
     cmd0 = text.split()[0]
     if text in ("/start", "/help"):
-        send(chat_id, HELP)
+        send(chat_id, help_text())
         return
     if cmd0 == "/projects":
         open_browser(chat_id)

@@ -367,7 +367,8 @@ def pack_session(session_id: str, pictures: bool = True) -> dict:
         return chat_images.EMBED.sub("", prompt).strip(), carried
 
     home, budget = _home(), [0]
-    turns, redacted = _pack_turns(t, picture, home, budget, in_text)
+    from bridge import experimental
+    turns, redacted = _pack_turns(t, picture, home, budget, in_text if experimental.enabled() else None)
     # A chat's helpers go with it, after its own turns and labelled by who ran them.
     for m in store.members_of(session_id):
         name, _ = redact((m.get("title") or "helper")[:_TITLE_MAX])
