@@ -40,13 +40,23 @@ The loop: start -> _round -> fixing -> after_turn -> _round ...
   (your turn ended and the queue just started the fix), means wait.
 - One lock guards every read-modify-write of a run, and seats never read under
   it. A round lands only if the run is still on it (since, round), so a Stop or
-  a new run while the seats read is never written over. Enqueueing happens
-  under it, so a fix turn that ends at once (a refused run) still finds the run
-  waiting on it.
-- Restarts: the state outlives the process, its threads don't. "reviewing" in
-  another pid is stopped as "interrupted by a restart"; so is "fixing" in
-  another pid whose item the persisted queue no longer has. One whose item
+  a new run while the seats read is never written over. Every turn end in the
+  bridge calls after_turn, so it looks first without the lock and goes on only
+  for a run that is fixing; a round can hold the lock across an enqueue. That
+  is safe because "fixing" is saved before any fix prompt is enqueued, and the
+  item id lands under the same lock: a fix turn that ends at once (a refused
+  run) still finds the run waiting on it.
+- Restarts: the state outlives the process, its threads don't. The bridge
+  restarts by os.execv in place (selfupdate.exec_self), so the pid survives;
+  each run carries the _BOOT token minted at import instead. "reviewing" from
+  another boot is stopped as "interrupted by a restart"; so is "fixing" from
+  another boot whose item the persisted queue no longer has. One whose item
   survived goes on when it runs.
+- A run that passes or stops says so once (council_passed / council_stopped),
+  and wakes the sessions waiting on this one (waits.target_ended): the turn end
+  that would have woken them led into the council. Your Stop wakes no one, as
+  waits keeps the waiters of a turn you stopped; a failed fix turn's own end
+  wakes them. A seat still reading when a run stops reads "stopped".
 - "2 more rounds" after a stop that left findings unsent (no gain, the cap, a
   failed fix turn) sends them first: the same code read again scores the same.
 - Findings you side with the session on are marked dismissed and left out of
@@ -66,7 +76,7 @@ import threading
 import time
 import types
 
-from . import acp, acp_agents, git, native, profiles, queue_manager, runner, state, store
+from . import acp, acp_agents, git, native, profiles, queue_manager, runner, state, store, waits
 
 DEFAULTS = {"bar": 9.0, "max_rounds": 5, "stop_early": True,
             "claude": True, "codex": True, "codex_projects": []}
@@ -389,6 +399,8 @@ def seats_for(session: dict, s: dict) -> dict:
 # --- the loop ------------------------------------------------------------
 
 _lock = threading.Lock()
+# This boot of the bridge. A restart execs in place and keeps the pid; this doesn't survive it.
+_BOOT = f"{os.getpid()}:{time.time_ns()}"
 
 
 def _spawn(fn, *args) -> None:
@@ -412,14 +424,21 @@ def _busy(c) -> bool:
     return bool(c) and c.get("status") in ("reviewing", "fixing")
 
 
+def _stop(c: dict, reason: str) -> dict:
+    """Stopped, with no seat left spinning: one still reading says "stopped"."""
+    c.update(status="stopped", reason=reason, at=time.time(),
+             seats={k: dict(v, state="stopped") if v.get("state") == "running" else v
+                    for k, v in (c.get("seats") or {}).items()})
+    return c
+
+
 def _settle(sid: str) -> "dict | None":
     """The stored run with the restart rules applied and saved. Under _lock."""
     c = store.get_council(sid)
-    if c and c.get("pid") != os.getpid() and (
+    if c and c.get("boot") != _BOOT and (
             c.get("status") == "reviewing"
             or c.get("status") == "fixing" and _queued(sid, c.get("item")) is None):
-        c.update(status="stopped", reason="interrupted by a restart", at=time.time())
-        store.set_council(sid, c)
+        store.set_council(sid, _stop(c, "interrupted by a restart"))
     return c
 
 
@@ -444,11 +463,18 @@ def _enqueue(sid: str, text: str) -> str:
         chat_id=sess.get("chat_id"), project=sess.get("project") or "")
 
 
-def _fix(sid: str, c: dict) -> None:
-    """Queue the last round's open findings for the session to fix. Under _lock;
-    `sent` keeps which ones, in the prompt's numbering, for after_turn."""
-    c.update(status="fixing", reason="", item=_enqueue(sid, fix_prompt(c)),
-             sent=[i for i, _ in _todo(c["rounds"][-1])])
+def _fix(sid: str, c: dict, text: str = "", sent: "list | None" = None) -> None:
+    """Queue a fix prompt, the last round's open findings unless given, and wait
+    on it; `sent` keeps which findings, in the prompt's numbering, for
+    after_turn. Under _lock. "fixing" is saved before the enqueue, so
+    after_turn's unlocked first look sees it even for a turn that ends at once."""
+    c.update(status="fixing", reason="", item=None, boot=_BOOT, at=time.time(),
+             sent=[i for i, _ in _todo(c["rounds"][-1])] if sent is None else sent)
+    store.set_council(sid, c)
+    try:
+        c["item"] = _enqueue(sid, text or fix_prompt(c))
+    except Exception as e:  # noqa: BLE001 - a fix that never queued can't be waited on
+        _stop(c, f"couldn't queue the fix: {e}")
 
 
 def start(session: dict, cwd: str) -> dict:
@@ -464,7 +490,7 @@ def start(session: dict, cwd: str) -> dict:
     except RuntimeError:
         pass                        # a git failure is the round's to report, as its stop reason
     s, now = settings(), time.time()
-    c = {"status": "reviewing", "round": 1, "rounds": [], "pid": os.getpid(), "cwd": cwd,
+    c = {"status": "reviewing", "round": 1, "rounds": [], "boot": _BOOT, "cwd": cwd,
          "bar": s["bar"], "max_rounds": s["max_rounds"], "stop_early": s["stop_early"],
          "dismissed": [], "item": None, "since": now, "at": now, "seats": _seats(session, s)}
     with _lock:
@@ -481,15 +507,18 @@ def _mine(sid: str, key: tuple) -> "dict | None":
     return c if c and c.get("status") == "reviewing" and (c.get("since"), c.get("round")) == key else None
 
 
-def _land(sid: str, key: tuple, tell: bool = False, **kw) -> None:
+def _land(sid: str, key: tuple, stop: str = "", **kw) -> None:
+    """Write onto round `key` if the run is still on it; with `stop`, the run ends there."""
     with _lock:
         c = _mine(sid, key)
         if not c:
             return
         c.update(kw, at=time.time())
+        if stop:
+            _stop(c, stop)
         store.set_council(sid, c)
-    if tell:
-        _notice(sid, c)
+    if stop:
+        _ended(sid, c)
 
 
 def _told(c: dict) -> tuple:
@@ -526,8 +555,8 @@ def _round(sid: str) -> None:
         seats = _seats(session, settings())
         _land(sid, key, seats=seats)
         m = material(c["cwd"])
-        if m is None:               # pushed, or committed elsewhere: nothing for you to do, so no ping
-            return _land(sid, key, status="stopped", reason="nothing left to review")
+        if m is None:               # pushed or committed elsewhere while the loop ran
+            return _land(sid, key, stop="nothing left to review")
         on = [k for k in SEATS if seats.get(k, {}).get("state") == "running"]
         got = _sit(on, review_prompt(m, *_told(c)), c["cwd"], session)
         for k in on:
@@ -537,7 +566,7 @@ def _round(sid: str) -> None:
         ran = [k for k in on if got[k]["ok"]]
         if not ran:
             why = next((got[k]["error"] for k in on), "no reviewer is switched on")
-            return _land(sid, key, True, seats=seats, status="stopped", reason=f"no reviewer answered: {why}")
+            return _land(sid, key, seats=seats, stop=f"no reviewer answered: {why}")
         findings = merge({k: got[k] for k in ran})
         with _lock:
             c = _mine(sid, key)
@@ -553,16 +582,16 @@ def _round(sid: str) -> None:
             v = decide(c)
             if v == "fixing":
                 _fix(sid, c)
+            elif v == "passed":
+                c.update(status="passed", reason="", at=time.time())
             else:
-                c.update(status=v.split(":")[0], reason={
-                    "stopped:max_rounds": f"it used all {c['max_rounds']} rounds",
-                    "stopped:stalled": f"round {key[1]} didn't raise the score"}.get(v, ""))
-            c["at"] = time.time()
+                _stop(c, {"stopped:max_rounds": f"it used all {c['max_rounds']} rounds",
+                          "stopped:stalled": f"round {key[1]} didn't raise the score"}[v])
             store.set_council(sid, c)
         if c["status"] != "fixing":
-            _notice(sid, c)
+            _ended(sid, c)
     except Exception as e:  # noqa: BLE001 - material's git failure is the reason; nothing stays "reviewing"
-        _land(sid, key, True, status="stopped", reason=str(e) or type(e).__name__)
+        _land(sid, key, stop=str(e) or type(e).__name__)
 
 
 def after_turn(job) -> bool:
@@ -571,8 +600,9 @@ def after_turn(job) -> bool:
     the verdict. Best-effort: never raises into the turn's end."""
     try:
         sid = job.store_session_id
-        if not sid:
-            return False
+        c = store.get_council(sid) if sid else None
+        if not c or c.get("status") != "fixing":
+            return False            # nearly every turn: no lock, so none waits on a round's enqueue
         with _lock:
             c = _settle(sid)
             if not c or c.get("status") != "fixing":
@@ -581,17 +611,17 @@ def after_turn(job) -> bool:
             if it and it.get("job_id") != job.id and it.get("status") in ("queued", "running"):
                 return False        # another turn: the fix waits, or has only just begun
             if job.status != "done" or job.interrupted:
-                c.update(status="stopped", reason="the fix turn stopped")
+                _stop(c, "the fix turn stopped")
             else:
                 said, found = answers(job.result or ""), c["rounds"][-1]["findings"]
                 for n, i in enumerate(c.get("sent") or [], 1):     # the prompt's numbering
                     found[i]["state"], found[i]["answer"] = (
                         ("answered", said[n]) if n in said else ("fixed", ""))
-                c.update(status="reviewing", round=c["round"] + 1, pid=os.getpid(), item=None, sent=[])
-            c["at"] = time.time()
+                c.update(status="reviewing", round=c["round"] + 1, boot=_BOOT, item=None, sent=[],
+                         at=time.time())
             store.set_council(sid, c)
         if c["status"] == "stopped":
-            _spawn(_notice, sid, c)
+            _spawn(_ended, sid, c, False)   # False below: the turn's own end wakes its waiters
             return False
         _spawn(_round, sid)
         return True
@@ -608,7 +638,7 @@ def act(session: dict, action: str, key: str = "") -> dict:
     if then == "round":
         _spawn(_round, sid)
     elif then == "tell":
-        _spawn(_notice, sid, c)
+        _spawn(_ended, sid, c)
     return brief(sid)
 
 
@@ -623,7 +653,7 @@ def _act(sid: str, action: str, key: str) -> tuple:
         it = _queued(sid, c.get("item"))
         if it and it.get("status") == "queued":
             queue_manager.remove(sid, it["id"])
-        c.update(status="stopped", reason="you stopped it")
+        _stop(c, "you stopped it")
     elif action == "advice":
         if _busy(c):
             raise ValueError("busy")
@@ -640,7 +670,7 @@ def _act(sid: str, action: str, key: str) -> tuple:
         if last and _todo(last):
             _fix(sid, c)            # its findings were never sent: send them, then read again
         else:
-            c.update(status="reviewing", reason="", round=c["round"] + 1, pid=os.getpid())
+            c.update(status="reviewing", reason="", round=c["round"] + 1, boot=_BOOT)
             then = "round"
     else:
         i = next((i for i, f in enumerate(last["findings"]) if f["id"] == key), None) if last else None
@@ -657,9 +687,8 @@ def _act(sid: str, action: str, key: str) -> tuple:
                 then = "tell"
         else:
             c["max_rounds"] += 1
-            text = (f"[council {c['round']}/{c['max_rounds']}] the user wants this fixed\n"
-                    + _line(1, last["findings"][i]))
-            c.update(status="fixing", reason="", item=_enqueue(sid, text), sent=[i])
+            _fix(sid, c, f"[council {c['round']}/{c['max_rounds']}] the user wants this fixed\n"
+                 + _line(1, last["findings"][i]), [i])
     if c["status"] != was:
         c["at"] = time.time()       # `at` is when the status moved: a passed run's elapsed stays put
     store.set_council(sid, c)
@@ -714,16 +743,20 @@ def brief(sid: str, cwd: "str | None" = None, full: bool = False) -> dict:
     return out
 
 
-def _notice(sid: str, c: dict) -> None:
-    """A run that passed or stopped says so once, through the house notifier, so
-    Telegram follows NOTIFY's choices. Best-effort."""
+def _ended(sid: str, c: dict, wake: bool = True) -> None:
+    """A run passed or stopped: one notice through the house notifier (Telegram
+    follows NOTIFY's choices), then the sessions waiting on this one are woken,
+    since the turn end that would have woken them led into the council.
+    Best-effort."""
+    rs = c.get("rounds") or []
+    score = rs[-1]["score"] if rs else None
+    passed = c.get("status") == "passed"
+    rounds = f"{len(rs)} round{'s' * (len(rs) != 1)}"
     try:
-        rs = c.get("rounds") or []
-        score = rs[-1]["score"] if rs else None
         label = runner._session_label(sid)                                  # noqa: SLF001
         chat = (store.get_session(sid) or {}).get("chat_id")
-        if c["status"] == "passed":
-            body = f"{score:.1f} of {c['bar']:.1f} in {len(rs)} round{'s' * (len(rs) != 1)}"
+        if passed:
+            body = f"{score:.1f} of {c['bar']:.1f} in {rounds}"
             runner._notify(chat, f"⚖ Council passed — {label}\n{body}", None,       # noqa: SLF001
                            kind="council_passed", sid=sid, body=body, meta={"score": score})
         else:
@@ -731,3 +764,11 @@ def _notice(sid: str, c: dict) -> None:
                            kind="council_stopped", sid=sid, body=c["reason"], meta={"score": score})
     except Exception as e:  # noqa: BLE001 - the verdict stands either way
         print(f"[council] notice failed: {e}", file=sys.stderr)
+    if not wake:
+        return
+    try:
+        said = f"Council passed · {score:.1f} in {rounds}" if passed else f"Council stopped · {c['reason']}"
+        waits.target_ended(types.SimpleNamespace(store_session_id=sid, status="done", result=said,
+                                                 texts=[], elapsed=int(time.time() - c["since"])))
+    except Exception as e:  # noqa: BLE001
+        print(f"[council] wake failed: {e}", file=sys.stderr)

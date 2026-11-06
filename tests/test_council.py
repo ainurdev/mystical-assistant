@@ -245,7 +245,7 @@ def test_material_survives_latin1_bytes(tmp_path):
 import os
 from types import SimpleNamespace
 
-from bridge import goals, notices, paths, queue_manager, state, tickets
+from bridge import goals, notices, paths, queue_manager, state, tickets, waits
 
 _MAT = {"base": "b", "head": "h", "commits": [["abc", "fix push"]], "files": 2, "add": 9, "del": 3,
         "untracked": [], "diff": "DIFF", "truncated": False, "left_out": []}
@@ -261,13 +261,14 @@ def _said(score, *found):
 def rig(monkeypatch):
     """No real reviewer, queue, turn or ping: rounds run inline, each seat answers
     from its list, and the queue's snapshot lists `items`."""
-    r = SimpleNamespace(queued=[], items=[], removed=[], kinds=[], mat=_MAT, claude=[], codex=[])
+    r = SimpleNamespace(queued=[], items=[], removed=[], kinds=[], woke=[], mat=_MAT, claude=[], codex=[])
     monkeypatch.setattr(council, "_spawn", lambda fn, *a: fn(*a))
     monkeypatch.setattr(council, "settings", lambda: dict(council.DEFAULTS))
     monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: r.queued.append(kw) or "item-1")
     monkeypatch.setattr(queue_manager, "snapshot", lambda sid: {"items": list(r.items)})
     monkeypatch.setattr(queue_manager, "remove", lambda sid, iid: r.removed.append(iid))
     monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None, **kw: r.kinds.append(kw["kind"]))
+    monkeypatch.setattr(waits, "target_ended", r.woke.append)
     monkeypatch.setattr(council, "material", lambda cwd: r.mat)
     monkeypatch.setattr(council, "seat_claude", lambda *a, **k: r.claude.pop(0))
     monkeypatch.setattr(council, "seat_codex", lambda *a, **k: r.codex.pop(0))
@@ -275,6 +276,10 @@ def rig(monkeypatch):
     r.session = store.create_session(555, "/counciltest", origin="dashboard")
     r.sid = r.session["id"]
     return r
+
+
+def _spinning(b):
+    return [k for k, v in b["seats"].items() if v["state"] == "running"]
 
 
 def _job(rig, jid, result="", status="done"):
@@ -349,29 +354,36 @@ def test_one_seat_failing_scores_on_the_other(rig, monkeypatch):
 
 
 def test_restart_marks_a_live_looking_run_stopped(rig):
-    store.set_council(rig.sid, {"status": "reviewing", "pid": -1, "round": 2, "rounds": []})
+    # The bridge restarts by os.execv in place: same pid, a new boot.
+    old = f"{os.getpid()}:1"
+    running = {"claude": {"state": "running", "score": None, "summary": "", "error": ""}}
+    store.set_council(rig.sid, {"status": "reviewing", "pid": os.getpid(), "boot": old, "round": 2,
+                                "rounds": [], "seats": running})
     c = council.get(rig.sid)
     assert c["status"] == "stopped" and "restart" in c["reason"]
     assert store.get_council(rig.sid)["status"] == "stopped"          # saved
-    store.set_council(rig.sid, {"status": "fixing", "pid": -1, "item": "gone", "round": 1, "rounds": []})
-    assert council.get(rig.sid)["status"] == "stopped"
+    assert c["seats"]["claude"]["state"] == "stopped"                 # no spinner on a dead round
+    store.set_council(rig.sid, {"status": "fixing", "boot": old, "item": "gone", "round": 1, "rounds": []})
+    c = council.get(rig.sid)
+    assert c["status"] == "stopped" and "restart" in c["reason"]
     # The queue outlives a restart: a fix prompt still in it runs, and its end goes on.
     rig.items = [{"id": "kept", "status": "queued", "job_id": None}]
-    store.set_council(rig.sid, {"status": "fixing", "pid": -1, "item": "kept", "round": 1, "rounds": []})
+    store.set_council(rig.sid, {"status": "fixing", "boot": old, "item": "kept", "round": 1, "rounds": []})
     assert council.get(rig.sid)["status"] == "fixing"
-    # In this process an item gone from the queue was steered in or removed: after_turn's to judge.
-    store.set_council(rig.sid, {"status": "fixing", "pid": os.getpid(), "item": "gone", "round": 1, "rounds": []})
+    # In this boot an item gone from the queue was steered in or removed: after_turn's to judge.
+    store.set_council(rig.sid, {"status": "fixing", "boot": council._BOOT, "item": "gone", "round": 1, "rounds": []})
     assert council.get(rig.sid)["status"] == "fixing"
 
 
-def test_nothing_left_to_review_stops_quietly(rig):
+def test_nothing_left_to_review_stops_and_says_so(rig):
+    """Round 2 finds nothing: the fix turn's DONE went to the council, so the stop is the news."""
     rig.claude, rig.codex = [_said(7.0)], [_said(7.0)]
     council.start(rig.session, "/tmp")
     rig.mat = None
     council.after_turn(_job(rig, "j1"))
-    c = council.get(rig.sid)
-    assert c["status"] == "stopped" and c["reason"] == "nothing left to review"
-    assert "council_stopped" not in rig.kinds
+    b = council.brief(rig.sid)
+    assert b["status"] == "stopped" and b["reason"] == "nothing left to review"
+    assert rig.kinds[-1] == "council_stopped" and _spinning(b) == []
 
 
 def test_a_git_failure_stops_the_round_with_its_message(rig, monkeypatch):
@@ -380,6 +392,7 @@ def test_a_git_failure_stops_the_round_with_its_message(rig, monkeypatch):
     monkeypatch.setattr(council, "material", boom)
     b = council.start(rig.session, "/tmp")
     assert b["status"] == "stopped" and b["reason"] == "git diff: git timed out"
+    assert _spinning(b) == [] and b["seats"]["claude"]["state"] == "stopped"
 
 
 def test_start_refuses_when_running_busy_or_empty(rig, monkeypatch):
@@ -388,7 +401,7 @@ def test_start_refuses_when_running_busy_or_empty(rig, monkeypatch):
         council.start(rig.session, "/tmp")
     monkeypatch.setattr(state, "is_running", lambda sid: False)
     rig.items = [{"id": "item-1", "status": "queued", "job_id": None}]
-    store.set_council(rig.sid, {"status": "fixing", "pid": os.getpid(), "item": "item-1", "round": 1, "rounds": []})
+    store.set_council(rig.sid, {"status": "fixing", "boot": council._BOOT, "item": "item-1", "round": 1, "rounds": []})
     with pytest.raises(ValueError, match="busy"):
         council.start(rig.session, "/tmp")
     store.set_council(rig.sid, None)
@@ -446,7 +459,7 @@ def test_a_round_stopped_while_seats_read_is_dropped(rig, monkeypatch):
     rig.codex = [_said(9.5)]
     b = council.start(rig.session, "/tmp")
     assert b["status"] == "stopped" and b["reason"] == "you stopped it" and b["rounds"] == []
-    assert rig.kinds == []
+    assert rig.kinds == [] and _spinning(b) == []                     # Stop: no ping, no spinner
 
 
 def test_a_fix_turn_that_fails_stops_the_run(rig, monkeypatch):
@@ -493,3 +506,43 @@ def test_runner_asks_the_council_first(monkeypatch):
     monkeypatch.setattr(paths, "continue_after_turn", boom)
     monkeypatch.setattr(goals, "continue_after_turn", boom)
     assert runner._continue_after_turn(SimpleNamespace(store_session_id="s")) is True   # noqa: SLF001
+
+
+def test_after_turn_leaves_the_lock_alone_without_a_live_run(rig, monkeypatch):
+    """Every turn end in the bridge asks; only a fixing run may wait on the lock."""
+    class Tripwire:
+        hits = 0
+
+        def __enter__(self):
+            Tripwire.hits += 1
+            raise AssertionError("took the council lock")
+
+        def __exit__(self, *a):
+            return False
+    monkeypatch.setattr(council, "_lock", Tripwire())
+    assert council.after_turn(_job(rig, "j0")) is False                # no council here
+    store.set_council(rig.sid, {"status": "passed", "boot": council._BOOT, "rounds": []})
+    assert council.after_turn(_job(rig, "j0")) is False                # one that's over
+    assert Tripwire.hits == 0
+    store.set_council(rig.sid, {"status": "fixing", "boot": council._BOOT, "item": "item-1", "rounds": []})
+    council.after_turn(_job(rig, "j0"))                                # a live one still asks
+    assert Tripwire.hits == 1
+
+
+def test_a_finished_run_wakes_the_sessions_waiting_on_it(rig):
+    """A council's True skipped the turn's end, where waits are woken: the verdict wakes them."""
+    rig.claude, rig.codex = [_said(9.4)], [_said(9.2)]
+    council.start(rig.session, "/tmp")
+    assert [j.store_session_id for j in rig.woke] == [rig.sid]
+    j = rig.woke[0]
+    assert (j.status, j.result, j.texts) == ("done", "Council passed · 9.3 in 1 round", [])
+    assert isinstance(j.elapsed, int) and j.elapsed >= 0
+    rig.claude, rig.codex = [_said(7.0), _said(6.9)], [_said(7.0), _said(6.9)]
+    council.start(rig.session, "/tmp")
+    council.after_turn(_job(rig, "j1"))
+    assert [j.store_session_id for j in rig.woke] == [rig.sid, rig.sid]
+    assert rig.woke[1].result == "Council stopped · round 2 didn't raise the score"
+    rig.claude, rig.codex = [_said(7.0)], [_said(7.0)]
+    council.start(rig.session, "/tmp")
+    council.after_turn(_job(rig, "j2", status="error"))               # its own end wakes them
+    assert len(rig.woke) == 2
