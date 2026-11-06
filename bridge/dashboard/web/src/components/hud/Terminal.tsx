@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { AgentGrid, type MainCard } from "../AgentGrid";
+import { ChatSearch } from "../ChatSearch";
 import { openSession as openAgentSession } from "../../lib/devicerun";
 import { promptLabel } from "../../lib/multi";
 import { useMultiOn, useTreeRows } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
-import { type AccountInfo, type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
+import { type AccountInfo, type CardAnswer, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
 import type { Anchor } from "../../lib/scrollmem";
 import { projectName, projectTint } from "../../lib/surfaces";
@@ -218,7 +219,7 @@ function RunChip({ run, onClick }: { run: DevServerInfo; onClick?: () => void })
 
 export function Terminal({
   view, onView, selected, activeProject, branch, turns, activeId, onRespond,
-  scrollRef, contentRef, atBottom, onJumpBottom, composer, onOpenFromHistory, onStartNext, freshLocal,
+  scrollRef, contentRef, atBottom, onJumpBottom, onJumpTo, composer, onOpenFromHistory, onStartNext, freshLocal,
   liveTurns, trailingWorking, boot,
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
@@ -238,11 +239,13 @@ export function Terminal({
   turnCount: number;
   turns: Turn[];
   activeId: string | null;
-  onRespond: (requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] }) => void;
+  onRespond: (requestId: string, opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[] }) => void;
   scrollRef: RefObject<HTMLDivElement | null>;
   contentRef: RefObject<HTMLDivElement | null>;
   atBottom: boolean;
   onJumpBottom: () => void;
+  /** Go to a turn, and with an event's seq to that event in it (ChatSearch). */
+  onJumpTo?: (turnId: string, seq?: number) => void;
   composer: ReactNode;
   onOpenFromHistory: (s: EnrichedSession) => void;
   onStartNext: (item: NextItem) => void;
@@ -652,6 +655,7 @@ export function Terminal({
   // (FILES, BRANCHES, DESIGN) and in SETTINGS (Skills, Projects ▸ Project map).
   const readouts = (
       <div className="isle-reads" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+        {isChat && !empty && sessionId && multiOn && onJumpTo && <ChatSearch sessionId={sessionId} turns={turns} onJump={onJumpTo} />}
         {isChat && hasAgents && (
           <span className="ma-viewsw" role="group" aria-label="Chat or grid">
             <button type="button" aria-pressed={!grid} onClick={() => setGridFor(null)}>CHAT</button>

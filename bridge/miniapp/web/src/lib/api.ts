@@ -373,7 +373,19 @@ export type RunEvent =
   | { type: "switch"; from: string; to: string; turns: number; whole: boolean }
   | { type: "delegation"; session_id: string; name: string; brief: string; agent: string;
       profile?: string | null; write?: boolean }
-  | { type: "merge"; name: string; state: string; session_id?: string };
+  | { type: "merge"; name: string; state: string; session_id?: string }
+  // The Mystical tools (bridge/gateway_tools.py). A picture shown to you: `images` are
+  // absolute paths served by /api/attachment. A recorded test run; a Markdown file
+  // presented as a card, its path relative to the project; a request for a key, and
+  // whether one was given (never its value). `rule`: bridge/rules.py fired.
+  | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string }
+  | { type: "checks"; command: string; ok: boolean; code: number; ms: number;
+      passed: number | null; failed: number | null; skipped: number | null;
+      new: string[]; known: string[]; log: string; tail: string }
+  | { type: "report"; path: string; title: string; summary?: string; bytes?: number }
+  | { type: "secret_request"; request_id: string; name: string; why: string }
+  | { type: "secret_answered"; request_id: string; given: boolean }
+  | { type: "rule"; rule: string; decision: string; tool?: string; why?: string };
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -387,10 +399,12 @@ export type PermissionMode =
 
 export interface PendingRequest {
   request_id: string;
-  kind: "permission" | "question";
+  kind: "permission" | "question" | "secret";
   tool_name: string;
   summary?: string;
   questions?: Question[];
+  /** A card a Mystical tool put up rather than Claude Code (bridge/gateway.py). */
+  gateway?: boolean;
 }
 
 export interface RunStatus {
@@ -404,10 +418,15 @@ export interface RunStatus {
   session_id?: string;
 }
 
+/** What a secret card answers with. `answers: []` declines. */
+export interface SecretAnswer {
+  value: string;
+}
+
 export interface RespondBody {
   request_id: string;
   behavior?: "allow" | "deny";
-  answers?: AnswerSelection[];
+  answers?: (AnswerSelection | SecretAnswer)[];
   cursor?: number;
 }
 
@@ -976,6 +995,14 @@ export const api = {
   // Multi-agent chats (bridge/multi_api.py). All but the first answer 409 while the
   // switch is off; a bridge older than them 404s every one.
   experimental: () => request<ExperimentalState>("/api/experimental"),
+  /** Words said in one chat, with the turn each is in (bridge/chat_search.in_chat). */
+  chatSearch: (session: string, q: string) =>
+    request<{ hits: { turn: string; kind: string; seq: number | null; snippet: string; at?: number }[] }>(
+      `/api/chat-search?session=${encodeURIComponent(session)}&q=${encodeURIComponent(q)}`),
+  /** A `report` event's Markdown file. */
+  chatReport: (session: string, path: string) =>
+    request<{ text: string }>(
+      `/api/chat-report?session=${encodeURIComponent(session)}&path=${encodeURIComponent(path)}`),
   agentTrees: (ids: string[]) =>
     request<{ trees: Record<string, TreeRow[]> }>(`/api/tree?ids=${ids.map(encodeURIComponent).join(",")}`),
   channel: (sessionId: string) =>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { api, type AccountInfo, type AnswerSelection, type RivendellJob, type SlashCommand, type TurnOutcome } from "../api";
+import { api, type AccountInfo, type CardAnswer, type RivendellJob, type SlashCommand, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
@@ -158,7 +158,7 @@ export function AgentRail() {
 
 type Respond = (
   requestId: string,
-  opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
+  opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[] },
 ) => void;
 
 /** One turn, exactly as it has always rendered — prompt bubble, attachments,
@@ -167,9 +167,11 @@ type Respond = (
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
   turn, prev, next, isActive, isLast, promptIdx, hud, liveTurns, boot, who, unfinishedBy,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked, job, jobTitle, cmds, limit, logins, agentSession,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked, job, jobTitle, cmds, limit, logins, agentSession, sessionId,
 }: {
   turn: Turn;
+  /** The session it's in, for what a card has to read back (a report). */
+  sessionId?: string | null;
   /** The session runs on another agent: its running turn may not carry a runtime yet. */
   agentSession?: boolean;
   /** The turn before it, whose run your prompt's tag compares against. */
@@ -293,6 +295,10 @@ function TurnBlock({
               hud={hud}
               view={view}
               saidTier={saidTier}
+              sessionId={sessionId}
+              turnNo={promptIdx + 1}
+              runtime={turn.runtime}
+              elapsed={turn.elapsed}
             />
           )}
         </div>
@@ -614,6 +620,7 @@ export function Transcript({
         limit={row.turn.id === turns[turns.length - 1]?.id ? limit : null}
         logins={logins}
         isActive={row.turn.id === activeId}
+        sessionId={sessionKey}
         agentSession={agentSession}
         boot={boot}
         isLast={index === visible.length - 1}

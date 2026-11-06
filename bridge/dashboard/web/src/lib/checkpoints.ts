@@ -44,7 +44,7 @@ export interface TurnRow {
   stopped: boolean;
   model: string | null;
   tools: number;
-  waiting: "question" | "permission" | null;
+  waiting: "question" | "permission" | "secret" | null;
   resumes: Resume[];
   subs: Sub[];
   ids: string[];               // every turn in the chain, for "which row am I reading"

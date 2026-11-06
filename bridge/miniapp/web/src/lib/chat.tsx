@@ -2,6 +2,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type MutableRefObject,
@@ -11,6 +12,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, ApiError } from "./api";
 import type {
   AnswerSelection,
+  SecretAnswer,
   EffortLevel,
   ModelId,
   PendingRequest,
@@ -80,7 +82,7 @@ export function readAsDataUrl(file: File): Promise<string> {
 function derivePending(events: RunEvent[]): PendingRequest[] {
   const resolved = new Set<string>();
   for (const e of events) {
-    if (e.type === "permission_resolved" || e.type === "question_answered")
+    if (e.type === "permission_resolved" || e.type === "question_answered" || e.type === "secret_answered")
       resolved.add(e.request_id);
   }
   const out: PendingRequest[] = [];
@@ -98,6 +100,13 @@ function derivePending(events: RunEvent[]): PendingRequest[] {
         kind: "question",
         tool_name: "AskUserQuestion",
         questions: e.questions,
+      });
+    else if (e.type === "secret_request" && !resolved.has(e.request_id))
+      out.push({
+        request_id: e.request_id,
+        kind: "secret",
+        tool_name: "request_secret",
+        gateway: true,
       });
   }
   return out;
@@ -251,7 +260,7 @@ export interface ChatContextValue {
   stop: () => Promise<void>;
   respond: (
     requestId: string,
-    opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
+    opts: { behavior?: "allow" | "deny"; answers?: (AnswerSelection | SecretAnswer)[] },
   ) => Promise<boolean>;
   /** The open session's transcript hasn't arrived yet (first load or a switch). */
   loadingSession: boolean;
@@ -425,7 +434,11 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const lastTurn = turns.length ? turns[turns.length - 1] : null;
   const activeTurn = lastTurn && lastTurn.status === "running" ? lastTurn : null;
   const isRunning = activeTurn !== null;
-  const pending = activeTurn?.pending ?? [];
+  // A secret card only draws with the switch on; off, it can't be what you're waiting on.
+  const pending = useMemo(() => {
+    const all = activeTurn?.pending ?? [];
+    return experimental ? all : all.filter((p) => p.kind !== "secret");
+  }, [activeTurn?.pending, experimental]);
 
   // Unified status (shared ["running"] cache with ActiveSessions / the header). Tells
   // us when the open session is a live native (VS Code) session so we both stream
@@ -765,7 +778,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
   async function respond(
     requestId: string,
-    opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
+    opts: { behavior?: "allow" | "deny"; answers?: (AnswerSelection | SecretAnswer)[] },
   ): Promise<boolean> {
     if (!activeTurn) return false;
     try {

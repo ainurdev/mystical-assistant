@@ -64,6 +64,15 @@ function TranscriptSkeleton() {
   );
 }
 
+/** Who ran a turn, for its receipt. No runtime means default Claude, except on the live
+ *  turn, whose row may not be filled in yet. */
+function agentOfTurn(runtime: string | undefined, isActive: boolean, sessionAgent: string): string {
+  if (!runtime) return providerName(isActive ? sessionAgent : "claude");
+  if (runtime.startsWith("acp:")) return providerName(runtime.slice(4));
+  if (runtime.startsWith("opencode:")) return runtime.split(":")[1];
+  return "Claude";
+}
+
 /** Who ran a turn, on the line over its reply. */
 function runtimeLine(runtime: string, multi: boolean): string {
   if (multi && runtime.startsWith("acp:")) return `\u25c7 ${providerName(runtime.slice(4))}`;
@@ -199,6 +208,7 @@ function RunPage({ barKey }: { barKey: string }) {
   // While a jump settles, scroll anchoring is off (see below). ponytail: a
   // deadline, not a "landed" signal — scrollToIndex doesn't report one.
   const jumpT = useRef(0);
+  const jumpPad = useRef(0);
   // The list sits below the chips/monitor block inside <main>; the virtualizer
   // needs that offset so row coordinates line up with real scroll positions.
   const [listOffset, setListOffset] = useState(0);
@@ -222,6 +232,10 @@ function RunPage({ barKey }: { barKey: string }) {
       ?? Math.min(20000, 80 + Math.min(visibleTurns[i].events.length, TURN_TAIL) * 20),
     overscan: 2,
     scrollMargin: listOffset,
+    // A jump lands clear of the bar floating over the list: a search hit in a prompt
+    // would otherwise land under it. Only while one settles, since a restored place is
+    // an offset from the row's own top.
+    scrollPaddingStart: experimental && Date.now() < jumpT.current ? jumpPad.current : 0,
     measureElement: (el) => {
       const h = el.getBoundingClientRect().height;
       const k = el.getAttribute("data-key");
@@ -254,14 +268,19 @@ function RunPage({ barKey }: { barKey: string }) {
     if (!list) return;
     const onLoad = (e: Event) => {
       const img = e.target as Element;
-      if (!img.closest?.(".chat-img")) return;
+      if (!img.closest?.(".chat-img, .fg-media")) return;
       const row = img.closest<HTMLElement>("[data-index]");
       if (row) virtualizer.measureElement(row);
       // The next frame: the list's height comes from the render that measure causes.
       if (stick.current) requestAnimationFrame(() => toBottom());
     };
     list.addEventListener("load", onLoad, true);
-    return () => list.removeEventListener("load", onLoad, true);
+    // A clip shown with the answer has its height from its metadata, not a load.
+    list.addEventListener("loadedmetadata", onLoad, true);
+    return () => {
+      list.removeEventListener("load", onLoad, true);
+      list.removeEventListener("loadedmetadata", onLoad, true);
+    };
   }, [virtualizer, toBottom]);
 
   keepPlace.current = () => {
@@ -315,6 +334,11 @@ function RunPage({ barKey }: { barKey: string }) {
         const i = visibleTurns.findIndex((t) => t.id === turnId);
         if (i < 0) return false;
         jumpT.current = Date.now() + 1000;
+        if (experimental && scrollEl) {
+          const bar = document.querySelector(".chead")?.getBoundingClientRect().bottom ?? 0;
+          jumpPad.current = Math.max(0, bar - scrollEl.getBoundingClientRect().top) + 8;
+          virtualizer.options.scrollPaddingStart = jumpPad.current;
+        }
         virtualizer.scrollToIndex(i, { align: "start" });
         stick.current = false;
         setParked(false);
@@ -322,7 +346,7 @@ function RunPage({ barKey }: { barKey: string }) {
       },
     };
     return () => { transcriptNav.current = null; };
-  }, [visibleTurns, virtualizer, transcriptNav]);
+  }, [visibleTurns, virtualizer, transcriptNav, experimental, scrollEl]);
 
   return (
     // OUTPUT STYLE is the whole session's idiom, not just its widgets — one
@@ -380,7 +404,8 @@ function RunPage({ barKey }: { barKey: string }) {
         const turn = visibleTurns[vi.index];
         const i = vi.index;
         const isActive = turn.jobId === activeTurn?.jobId;
-        const working = isActive && turn.status === "running" && activeTurn.pending.length === 0;
+        const working = isActive && turn.status === "running"
+          && !activeTurn.pending.some((p) => experimental || p.kind !== "secret");
         // A turn another agent's message started: its prompt isn't your words.
         const framed = experimental ? parseFrame(turn.prompt) : null;
         const resumed = experimental ? resumeLine(turn.prompt) : null;
@@ -488,6 +513,7 @@ function RunPage({ barKey }: { barKey: string }) {
                   ended={turn.status !== "running"}
                   multi={experimental}
                   said={said}
+                  agent={experimental ? agentOfTurn(turn.runtime ?? undefined, isActive, sessionAgent) : undefined}
                   onOpenAgent={experimental ? openAgent : undefined}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}

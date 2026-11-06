@@ -172,7 +172,7 @@ export function TurnsPanel({
 
   const status = live
     ? <div className={`gp-rosub ${live.waiting ? "ask" : "run"}`}><span className="tn-dot" />
-        <span><b>#{live.n}</b> {live.waiting === "question" ? "asked you a question" : live.waiting === "permission" ? "needs your permission" : "running"}
+        <span><b>#{live.n}</b> {live.waiting === "question" ? "asked you a question" : live.waiting === "permission" ? "needs your permission" : live.waiting === "secret" ? "needs a secret" : "running"}
           {live.secs != null && <> · <b>{fmtElapsed(live.secs)}</b></>}</span></div>
     : <div className="gp-rosub ok"><Check size={13} strokeWidth={2.4} />
         <span>{ended != null ? <>idle since <b>{hhmm(ended)}</b></> : "idle"}

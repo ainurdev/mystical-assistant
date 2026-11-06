@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { ArrowLeftRight, ChevronDown, ChevronRight, GitMerge, MessageCircle, UserPlus } from "lucide-react";
 import { openSession } from "../lib/devicerun";
 import { hhmm } from "../lib/surfaces";
@@ -18,13 +18,16 @@ export function RowTag({ text, tone, title }: { text: string; tone: string; titl
 /** What a non-Claude agent told you on the way (lib/dossier zonesWithSaid): its
  *  newest note on show, older ones behind a count. `ending`: this note is all the
  *  turn left, because it was stopped or cut off, and it says so. */
-export function SaidTier({ count, latest, older, ending }: {
+export function SaidTier({ count, latest, older, ending, reveal = 0 }: {
+  /** Changes when a note in here was asked for: the earlier ones open. */
+  reveal?: number;
   count: number;
   latest: ReactNode;
   older: () => ReactNode;
   ending?: "stopped" | "cut" | null;
 }) {
   const [open, setOpen] = useState(false);
+  useEffect(() => { if (reveal) setOpen(true); }, [reveal]);
   const earlier = count - 1;
   return (
     <section className="ma-said" aria-label="Said to you">

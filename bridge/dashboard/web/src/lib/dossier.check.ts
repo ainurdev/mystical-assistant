@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/dossier.check.ts
-import { chapterStarts, kindsOf, noteEnding, splitSaid, stretchesOf, workTitle, zonesOf, zonesWithSaid, TOP_TYPES } from "./dossier.ts";
+import { chapterStarts, kindsByPurpose, kindsOf, noteEnding, splitSaid, stretchesOf, workTitle, zonesOf, zonesWithSaid, TOP_TYPES } from "./dossier.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -108,4 +108,11 @@ ok(workTitle("1 command", 0) === "1 command", "steps only");
   ok(noteEnding(["text", "result"], true, true) === null, "an answered turn's notes are just notes");
   ok(noteEnding(["text"], false, false) === null, "a running turn isn't cut off");
   ok(TOP_TYPES.has("switch") && TOP_TYPES.has("delegation") && TOP_TYPES.has("merge"), "chat events stay out of the work");
+}
+
+// The commands chip splits by purpose, in its place; the rest keep their order.
+{
+  const k = kindsByPurpose(["command", "command", "command", "edit", "read"], ["read", "tests", "tests"], 2);
+  if (JSON.stringify(k) !== JSON.stringify([{ m: "p-tests", n: 2 }, { m: "p-read", n: 1 }, { m: "edit", n: 1 }, { m: "read", n: 1 }, { m: "note", n: 2 }])) throw new Error("kindsByPurpose: " + JSON.stringify(k));
+  console.log("ok - commands split by purpose");
 }

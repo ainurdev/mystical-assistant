@@ -18,6 +18,7 @@
 // run of the rest in one zone. An error or a stop ends the turn, and lib/segments
 // already refuses to hide those in a fold; a zone is a fold, so they stay out too.
 
+import { BASH_ORDER, type BashKind } from "./bashkind.ts";
 import { CAT_ORDER, type Seg, type StepCat } from "./segments.ts";
 
 /** What a segment's head event is, for the cut — the renderer's own view of it
@@ -91,7 +92,7 @@ export function noteEnding(types: string[], ended: boolean, answered: boolean): 
 /** One mark per kind of thing a zone holds: the header's chips count them
  *  (kindsOf), and the same marks head the rows inside, on the spine — drawn as
  *  icons (RunStream MARK_ICON), so this module stays free of React. */
-export type Mark = "think" | "note" | "hook" | StepCat | "fail";
+export type Mark = "think" | "note" | "hook" | StepCat | "fail" | `p-${BashKind}`;
 
 /** The header's chips: one per kind of step the zone ran, in the STEPS title's
  *  order (lib/segments CAT_ORDER), then one for the notes — the count sentence
@@ -102,6 +103,16 @@ export function kindsOf(cats: StepCat[], notes: number): { m: Mark; n: number }[
   const out: { m: Mark; n: number }[] = CAT_ORDER.filter((c) => n.has(c)).map((c) => ({ m: c, n: n.get(c)! }));
   if (notes) out.push({ m: "note", n: notes });
   return out;
+}
+
+/** The same chips with the one "commands" chip split by what the commands were for
+ *  (lib/bashkind): 41 commands says nothing, 3 tests, 2 builds and 36 reads does. The
+ *  split takes the commands chip's place, first in the order. */
+export function kindsByPurpose(cats: StepCat[], purposes: BashKind[], notes: number): { m: Mark; n: number }[] {
+  const n = new Map<BashKind, number>();
+  for (const p of purposes) n.set(p, (n.get(p) ?? 0) + 1);
+  const split: { m: Mark; n: number }[] = BASH_ORDER.filter((k) => n.has(k)).map((k) => ({ m: `p-${k}` as Mark, n: n.get(k)! }));
+  return [...split, ...kindsOf(cats.filter((c) => c !== "command"), notes)];
 }
 
 /** The header's words, now its tooltip: what it ran (stepsTitle's own words,

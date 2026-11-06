@@ -1,14 +1,15 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   ArrowDown, Ban, Check, ChevronLeft, ChevronRight, CircleQuestionMark, ListChecks, Maximize2, MessageCircleQuestion,
-  Minimize2, Plug, SquareTerminal, X,
+  KeyRound, Minimize2, Plug, SquareTerminal, X,
 } from "lucide-react";
-import { api, type AnswerSelection, type Question } from "../api";
+import { api, type AnswerSelection, type CardAnswer, type Question } from "../api";
 import { splitAsk, waited, type Docked } from "../lib/askdock";
 import { frameOf, optionKey, parsePreview, previewTexts, staged } from "../lib/qpreview";
 import { clearDraft, readDraft, saveDraft } from "../lib/questionDraft";
 import { hhmm as clock, useClock12 } from "../lib/surfaces";
 import { mcpParts } from "../lib/tools";
+import { SecretForm } from "./EvidenceRows";
 import { ImageLightbox } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { REC, TaskQuestion, TextPreview, isTask, taskLabel, taskVerb } from "./QuestionCard";
@@ -42,7 +43,7 @@ export interface AskMode {
   send?: (text: string) => void;
 }
 
-type Respond = (requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[]; message?: string })
+type Respond = (requestId: string, opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string })
   => Promise<false | { noted?: boolean }>;
 
 const Key = ({ k, on }: { k: string; on?: boolean }) => (
@@ -118,7 +119,9 @@ export function AskDock({ d, draft, setDraft, onRespond, onAnswer, onSteer, bind
         ? <QuestionDock key={key} d={d} draft={draft} setDraft={setDraft} onRespond={onRespond} bind={bind} />
         : d.kind === "permission"
           ? <PermissionDock key={key} d={d} draft={draft} setDraft={setDraft} onRespond={onRespond} onSteer={onSteer} bind={bind} />
-          : <ProseDock key={key} d={d} onAnswer={onAnswer} bind={bind} />}
+          : d.kind === "secret"
+            ? <SecretDock key={key} d={d} onRespond={onRespond} bind={bind} />
+            : <ProseDock key={key} d={d} onAnswer={onAnswer} bind={bind} />}
       {stashed && <p className="ad-note">Your draft is set aside: it comes back after you answer.</p>}
     </div>
   );
@@ -549,6 +552,28 @@ function PermissionDock({ d, draft, setDraft, onRespond, onSteer, bind }: {
   );
 }
 
+/* ── a secret (request_secret): typed here and nowhere else, so the box stays out of it ── */
+
+function SecretDock({ d, onRespond, bind }: {
+  d: Extract<Docked, { kind: "secret" }>;
+  onRespond: Respond;
+  bind: (mode: AskMode | null) => void;
+}) {
+  const mode = useMemo<AskMode>(() => ({ placeholder: "Answer in the card above…" }), []);
+  useEffect(() => { bind(mode); }, [mode, bind]);
+  return (
+    <>
+      <Head icon={<KeyRound size={13} strokeWidth={2.2} />} kind="Secret" topic={d.name} at={d.at} word="asked">
+        {d.of > 1 && <span className="ad-more">+{d.of - 1} more after this</span>}
+      </Head>
+      <div className="ad-b">
+        {d.why && <p className="ad-ask">{d.why}</p>}
+        <SecretForm requestId={d.requestId} name={d.name} onRespond={onRespond} autoFocus />
+      </div>
+    </>
+  );
+}
+
 /* ── a question the answer ended on, asked in prose (lib/askback) ── */
 
 function ProseDock({ d, onAnswer, bind }: {
@@ -590,10 +615,10 @@ function ProseDock({ d, onAnswer, bind }: {
 /* ── in the transcript ── */
 
 /** Where a docked ask was asked. */
-export function AskMarker({ kind, topic }: { kind: "question" | "permission" | "plan" | "prose"; topic: string }) {
-  const icon = kind === "permission" ? <SquareTerminal size={12} strokeWidth={2.2} /> : kind === "plan" ? <ListChecks size={12} strokeWidth={2.2} />
+export function AskMarker({ kind, topic }: { kind: "question" | "permission" | "plan" | "prose" | "secret"; topic: string }) {
+  const icon = kind === "secret" ? <KeyRound size={12} strokeWidth={2.2} /> : kind === "permission" ? <SquareTerminal size={12} strokeWidth={2.2} /> : kind === "plan" ? <ListChecks size={12} strokeWidth={2.2} />
     : kind === "prose" ? <MessageCircleQuestion size={12} strokeWidth={2.2} /> : <CircleQuestionMark size={12} strokeWidth={2.2} />;
-  const word = kind === "permission" ? "Permission" : kind === "plan" ? "Plan" : kind === "prose" ? "Asked" : "Question";
+  const word = kind === "secret" ? "Secret" : kind === "permission" ? "Permission" : kind === "plan" ? "Plan" : kind === "prose" ? "Asked" : "Question";
   return (
     <div className="ask-mark" data-kind={kind}>
       <span className="ad-g" aria-hidden>{icon}</span>

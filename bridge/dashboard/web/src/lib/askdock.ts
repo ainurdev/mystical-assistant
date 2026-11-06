@@ -10,6 +10,7 @@ import { askBack, type AskBack } from "./askback.ts";
 export type Docked =
   | { kind: "question"; turnId: string; requestId: string; questions: Question[]; at?: number; of: number }
   | { kind: "permission"; turnId: string; requestId: string; tool: string; summary: string; detail?: string; at?: number; of: number }
+  | { kind: "secret"; turnId: string; requestId: string; name: string; why: string; at?: number; of: number }
   | { kind: "prose"; turnId: string; ask: AskBack; at?: number };
 
 /** `prose` is off where a reply makes no sense: a job whose answer is drawn as
@@ -19,12 +20,14 @@ export function docked(turns: Turn[], prose: boolean): Docked | null {
   if (!last) return null;
   if (last.status === "running") {
     const ids = new Set(last.pending.map((p) => p.request_id));
-    const open = last.events.filter((e) => (e.type === "question" || e.type === "permission") && ids.has(e.request_id));
+    const open = last.events.filter((e) => (e.type === "question" || e.type === "permission" || e.type === "secret_request") && ids.has(e.request_id));
     const e = open[0];
     if (e?.type === "question")
       return { kind: "question", turnId: last.id, requestId: e.request_id, questions: e.questions, at: e.at, of: open.length };
     if (e?.type === "permission")
       return { kind: "permission", turnId: last.id, requestId: e.request_id, tool: e.tool_name, summary: e.summary, detail: e.detail, at: e.at, of: open.length };
+    if (e?.type === "secret_request")
+      return { kind: "secret", turnId: last.id, requestId: e.request_id, name: e.name, why: e.why, at: e.at, of: open.length };
     return null;
   }
   if (!prose || last.status !== "done") return null;

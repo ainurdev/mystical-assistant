@@ -1,4 +1,4 @@
-import { memo, useEffect, useState, type ReactNode } from "react";
+import { Fragment, memo, useEffect, useState, type ReactNode } from "react";
 import {
   PenLine,
   BookOpen,
@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { ToolWidget } from "./ResultWidgets";
 import { widgetForRun, type ToolStyle, type WebSource } from "../lib/toolwidget";
-import { api, type AnswerSelection, type PendingRequest, type RunEvent } from "../lib/api";
+import { api, type AnswerSelection, type PendingRequest, type RunEvent, type SecretAnswer } from "../lib/api";
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
@@ -44,6 +44,13 @@ import { useFoldsOpen } from "../lib/folds";
 import { ImageLightbox, MediaThumb, isVideo, type Clip } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { useExperimental } from "../lib/multi";
+import { bashKind, bashLine, parseTests, testWords } from "../lib/bashkind";
+import { failureState, type Ev as FailEv } from "../lib/failures";
+import { figuresOf, isShowTool, nextNote, type Ev as FigEv } from "../lib/figures";
+import { receiptEmpty, receiptOf } from "../lib/receipt";
+import { ChecksRow, ReportCard, RuleLine, SecretCard } from "./EvidenceRows";
+import { Figures, LookedAt, type FigureItem } from "./Figure";
+import { TurnReceipt, UnresolvedFailures } from "./TurnReceipt";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { askBack } from "../lib/askback";
@@ -660,6 +667,11 @@ function ToolImages({ paths, clip }: { paths: string[]; clip?: Clip }) {
 /** Multi-agent rows: each its own line in the flow, never inside a work fold. */
 const MULTI_ROW = new Set(["switch", "delegation", "merge"]);
 
+/** The Mystical tools' rows: drawn only with the switch on, and each its own line in the
+ *  flow. `secret_answered` is bookkeeping for its card, so it cuts nothing. */
+const EVIDENCE_ROW = new Set(["figure", "checks", "report", "secret_request", "rule"]);
+const NEW_ROW = new Set([...EVIDENCE_ROW, "secret_answered"]);
+
 /** Tool kinds that draw a block of their own, so they never fold into a
  *  "N steps" chip with the quiet lookups. */
 const BLOCK_KINDS = new Set(["bash", "agent", "web", "mcp"]);
@@ -707,9 +719,12 @@ const CMD_ICON: Record<CmdKind, typeof Terminal> = {
 function TerminalBlock({
   command,
   done,
+  purpose = false,
 }: {
   command: string;
   done?: Done;
+  /** Say what the command was for (lib/bashkind), and what its tests came to. */
+  purpose?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -723,6 +738,9 @@ function TerminalBlock({
   const hidden = lines.length - shown.length;
   const accent = failed ? "var(--danger)" : running ? "var(--warning)" : "var(--success)";
   const CmdIcon = CMD_ICON[cmdKind(command)];
+  const kind = purpose ? bashKind(command) : "other";
+  const tag = kind === "other" ? "BASH" : kind.toUpperCase();
+  const counts = kind === "tests" && done ? parseTests(done.output) : null;
 
   return (
     <div
@@ -745,7 +763,7 @@ function TerminalBlock({
         </span>
         <span className="flex flex-none items-center gap-1 text-[9.5px] tracking-[2px]" style={{ color: accent }}>
           <Terminal size={11} aria-hidden />
-          BASH // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
+          {tag} // {running ? "RUNNING" : failed ? "FAILED" : "OK"}
         </span>
         {slow(done?.ms) ? (
           <span className="flex-none text-[9.5px] tracking-[1px] text-[var(--muted-2)]">· {dur(done?.ms)}</span>
@@ -793,6 +811,11 @@ function TerminalBlock({
             )}
           </span>
         </div>
+        {counts && (
+          <div className="mt-1 text-[11px]" style={{ color: counts.failed ? "var(--danger)" : "var(--success)" }}>
+            {testWords(counts)}
+          </div>
+        )}
         {shown.length > 0 && (
           <pre
             className="mt-1.5 break-all whitespace-pre-wrap text-[11px] leading-[1.55]"
@@ -935,8 +958,11 @@ function FinalResult({
   tokens,
   onAnswer,
   onWrite,
+  noMeta = false,
 }: {
   result: string;
+  /** The receipt carries the clock, the time and the tokens. */
+  noMeta?: boolean;
   /** Epoch seconds the answer landed, for the clock on the meta line. */
   at?: number;
   elapsed?: number;
@@ -993,7 +1019,7 @@ function FinalResult({
           </div>
         </div>
       )}
-      {typeof elapsed === "number" && (
+      {typeof elapsed === "number" && !noMeta && (
         <div className="text-xs text-[var(--tg-hint)]">
           {at != null ? `${hhmm(at)} · ` : ""}{elapsed.toFixed(1)}s
           {typeof tokens === "number" && tokens > 0
@@ -1007,7 +1033,7 @@ function FinalResult({
 
 type RespondFn = (
   requestId: string,
-  opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
+  opts: { behavior?: "allow" | "deny"; answers?: (AnswerSelection | SecretAnswer)[] },
 ) => void | Promise<boolean | void>;
 
 // Memoized: a long session's past turns keep the same `events`/`pending` arrays
@@ -1027,6 +1053,7 @@ export const RunStream = memo(function RunStream({
   multi = false,
   said = false,
   onOpenAgent,
+  agent,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
@@ -1057,7 +1084,10 @@ export const RunStream = memo(function RunStream({
   said?: boolean;
   /** Tapped a delegation row. Stable, or every past turn re-renders per poll. */
   onOpenAgent?: (sessionId: string) => void;
+  /** Who ran this turn, for its receipt. */
+  agent?: string;
 }) {
+  const multiOn = useExperimental();
   // An ask is drawn by its question card and by nothing else. A live run also
   // emits it as a tool: the bridge answers the control request with a `deny`
   // carrying the user's choice (runner.py _format_answers), so the row lands as
@@ -1067,7 +1097,8 @@ export const RunStream = memo(function RunStream({
   // and dropped before folding/grouping so a phantom can't head a run.
   // The native reader already omits the row (transcript_jsonl.py, tool_use).
   const events = allEvents.filter(
-    (e) => !(e.type === "tool" && e.name === "AskUserQuestion") && (multi || !MULTI_ROW.has(e.type)),
+    (e) => !(e.type === "tool" && e.name === "AskUserQuestion") && (multi || !MULTI_ROW.has(e.type))
+      && (multiOn || !NEW_ROW.has(e.type)),
   );
   // Read here rather than threaded down: the Mini App has no settings blob
   // to ride along with (the dashboard passes it as a prop from HudSettings).
@@ -1083,12 +1114,14 @@ export const RunStream = memo(function RunStream({
   // A card still waiting on you draws at the turn's foot (lib/segments atFoot).
   const waiting = (i: number) => {
     const e = events[i];
-    return (e.type === "question" || e.type === "permission") && pendingIds.has(e.request_id);
+    return (e.type === "question" || e.type === "permission" || e.type === "secret_request") && pendingIds.has(e.request_id);
   };
   const permResolved = new Map<string, "allow" | "deny">();
   const qAnswered = new Map<string, AnswerSelection[]>();
+  const secretGiven = new Map<string, boolean>();
   const toolDone = new Map<string, Done>();
   for (const e of events) {
+    if (e.type === "secret_answered") secretGiven.set(e.request_id, e.given);
     if (e.type === "permission_resolved") permResolved.set(e.request_id, e.behavior);
     if (e.type === "question_answered") qAnswered.set(e.request_id, e.answers);
     if (e.type === "tool_done" && e.id) toolDone.set(e.id, e);
@@ -1097,6 +1130,16 @@ export const RunStream = memo(function RunStream({
   // as finished commands instead of stuck carets.
   const doneOf = (e: RunEvent): Done | undefined =>
     e.type === "tool" ? (e.id ? toolDone.get(e.id) : {}) : undefined;
+  // A picture you're being shown, as opposed to one the agent looked at (lib/figures).
+  const shows = (i: number): boolean => {
+    const e = events[i];
+    return multiOn && e.type === "tool" && isShowTool(e.name) && !!doneOf(e)?.images?.length;
+  };
+  const figures: FigureItem[] = multiOn
+    ? figuresOf(events as FigEv[], (e) => doneOf(e as RunEvent)) as FigureItem[]
+    : [];
+  const figureAt = new Map(figures.map((f) => [f.at, f]));
+  const fails = multiOn ? failureState(events as unknown as FailEv[]) : null;
 
   // Only the quiet steps fold away. A terminal, a diff, a delegated run, a fetch
   // or an MCP call each carry their own block and break the run instead —
@@ -1116,6 +1159,7 @@ export const RunStream = memo(function RunStream({
   const groupKey = (i: number): string | null => {
     const e = events[i];
     if (e.type !== "tool") return null;
+    if (shows(i)) return null;               // each drawn large, on its own
     if (e.name === "Bash") return null;      // a terminal per command, as before
     // Edits group so their card can merge them by file — a run of them is the
     // same file over and over far more often than it is many files.
@@ -1132,8 +1176,11 @@ export const RunStream = memo(function RunStream({
   // A picture is the result, so a run that came back with one is drawn in the
   // flow with the words — a shut STEPS fold would hide it. The whole run goes:
   // its head draws every member, and a member left behind would head an empty fold.
-  const inFlow = (i: number) => MULTI_ROW.has(events[i].type)
-    || (groups.get(groupOf.get(i) ?? i) ?? [i]).some((j) => !!doneOf(events[j])?.images?.length);
+  // With the switch on that's only a picture you're being shown. One the agent looked
+  // at is its evidence, and stays with the work.
+  const inFlow = (i: number) => MULTI_ROW.has(events[i].type) || EVIDENCE_ROW.has(events[i].type)
+    || (multiOn ? shows(i)
+                : (groups.get(groupOf.get(i) ?? i) ?? [i]).some((j) => !!doneOf(events[j])?.images?.length));
 
   // Never cut a folded run away from the head that draws it. A cut that ends up
   // hiding only a handful buys nothing and reads as a button in front of
@@ -1146,7 +1193,6 @@ export const RunStream = memo(function RunStream({
   // emits no result event, so its final text keeps rendering as text.
   // A turn can hold several results (a background agent's wake-up carries on in the
   // same turn): only the last is the answer.
-  const multiOn = useExperimental();
   const lastResult = multiOn ? events.map((e) => e.type).lastIndexOf("result") : -1;
   const resultTexts = new Set(events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : [])));
 
@@ -1155,8 +1201,8 @@ export const RunStream = memo(function RunStream({
     for (let j = i + 1; j < events.length; j++) {
       const t = events[j].type;
       if (t === "tool_done" || t === "permission_resolved" || t === "question_answered"
-          || t === "thinking" || t === "log") continue;
-      return t === "question";
+          || t === "secret_answered" || t === "thinking" || t === "log") continue;
+      return t === "question" || t === "secret_request";
     }
     return false;
   };
@@ -1198,6 +1244,11 @@ export const RunStream = memo(function RunStream({
         );
       }
       case "tool": {
+        // Shown to you: under the answer once there is one, here until then.
+        if (shows(i)) {
+          const f = figureAt.get(i);
+          return f && lastResult < 0 ? <Figures key={i} items={[f]} /> : null;
+        }
         const head = headOf.get(i);
         if (head !== undefined && !openFolds.has(head)) return null;
         const fold = folds.get(i);
@@ -1222,13 +1273,17 @@ export const RunStream = memo(function RunStream({
         // Every style draws its widget now: PLAIN, the one that opted out
         // of them, has no column on the sheet and was replaced by a fifth
         // look (lib/toolwidget TOOL_STYLES).
-        const extra = spec ? (
+        const members = run ?? [i];
+        const looked = multiOn ? members.flatMap((j) => doneOf(events[j])?.images ?? []) : [];
+        const extra = looked.length ? (
+          <LookedAt paths={looked} note={nextNote(events as FigEv[], members[members.length - 1])} />
+        ) : spec ? (
           <ToolWidget spec={spec} accent={toolAccent(event.name)} style={toolStyle} />
         ) : done?.images?.length ? <ToolImages paths={done.images} clip={done.clip} /> : null;
         const withExtra = (node: ReactNode) =>
           extra ? <div key={i} className="space-y-2">{node}{extra}</div> : node;
         if (event.name === "Bash")
-          return <TerminalBlock key={i} command={event.detail ?? event.summary} done={done} />;
+          return <TerminalBlock key={i} command={event.detail ?? event.summary} done={done} purpose={multiOn} />;
         if (groupOf.has(i)) return null;   // drawn by the run's head
         // A delegation is a turn nested inside this one, so it is drawn as
         // its own framed block — and a run of them as one fan, not as N
@@ -1339,9 +1394,11 @@ export const RunStream = memo(function RunStream({
           );
         }
         return (
-          <div key={i} className="relative -ml-3 pl-3">
+          <Fragment key={i}>
+          <div className="relative -ml-3 pl-3">
             <RailNode />
             <FinalResult
+              noMeta={multiOn}
               result={event.result}
               // The Mini App's events carry no timestamp of their own, so
               // the turn's start plus the result's wall time is the answer's.
@@ -1352,7 +1409,33 @@ export const RunStream = memo(function RunStream({
               onWrite={onWrite}
             />
           </div>
+          {i === lastResult && figures.length > 0 ? <Figures items={figures} /> : null}
+          </Fragment>
         );
+      case "figure": {
+        const f = figureAt.get(i);
+        return f && lastResult < 0 ? <Figures key={i} items={[f]} /> : null;
+      }
+      case "checks":
+        return <ChecksRow key={i} ev={event} />;
+      case "report":
+        return <ReportCard key={i} path={event.path} title={event.title} summary={event.summary} bytes={event.bytes} />;
+      case "secret_request":
+        return (
+          <SecretCard
+            key={i}
+            name={event.name}
+            why={event.why}
+            active={!!onRespond && pendingIds.has(event.request_id)}
+            given={secretGiven.get(event.request_id)}
+            stale={ended && !secretGiven.has(event.request_id)}
+            onAnswer={(answers) => onRespond?.(event.request_id, { answers })}
+          />
+        );
+      case "secret_answered":
+        return null; // shown inside its card
+      case "rule":
+        return <RuleLine key={i} rule={event.rule} decision={event.decision} tool={event.tool} why={event.why} />;
       case "error":
         return (
           <div
@@ -1429,17 +1512,27 @@ export const RunStream = memo(function RunStream({
 
   const stepsFold = (seg: Seg) => {
     const cats: StepCat[] = [];
+    const commands: { command: string; output?: string }[] = [];
+    let pictures = 0;
     let ms = 0, failed = 0, running = false, now = "";
     for (const i of seg.idx) {
       const e = events[i];
       if (e.type === "log") { cats.push("log"); if (e.error) failed++; continue; }
       if (e.type !== "tool") continue;
       const d = doneOf(e);
-      cats.push(catOf(e, d));
+      const images = multiOn ? d?.images?.length ?? 0 : 0;
+      if (multiOn && e.name === "Bash") commands.push({ command: e.detail ?? e.summary, output: d?.output });
+      else if (images) pictures += images;
+      else cats.push(catOf(e, d));
       if (!d) { running = true; now = e.summary; }
-      else { ms += d.ms ?? 0; if (d.is_error) failed++; }
+      // A failure a later try made good isn't one any more (lib/failures).
+      else { ms += d.ms ?? 0; if (d.is_error && !fails?.resolved.has(i)) failed++; }
     }
-    const title = stepsTitle(cats);
+    const title = [
+      bashLine(commands),
+      stepsTitle(cats),
+      pictures ? `Looked at ${pictures} picture${pictures === 1 ? "" : "s"}` : "",
+    ].filter(Boolean).join(" \u00b7 ");
     return (
       <Fold
         // Keyed by where the stretch starts (lib/segments), not by its first row
@@ -1461,6 +1554,11 @@ export const RunStream = memo(function RunStream({
   const drawSeg = (seg: Seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg));
   // A non-Claude turn: its notes pulled out to the tier, the work closed up (lib/said).
   const tier = said ? saidLayout(events, from, inFlow, waiting) : null;
+  // Under a finished turn: what's still broken, then its receipt.
+  const finished = multiOn && (ended || lastResult >= 0);
+  const receipt = finished
+    ? receiptOf(events as never, { tokens, agent, started: turnStarted })
+    : null;
 
   return (
     // vskip-card: off-screen event cards skip layout/paint (see index.css).
@@ -1489,6 +1587,8 @@ export const RunStream = memo(function RunStream({
           {tier.segs.slice(tier.at).map(drawSeg)}
         </>
       ) : segmentsOf(events, from, inFlow, waiting).map(drawSeg)}
+      {finished && fails ? <UnresolvedFailures failures={fails.open} /> : null}
+      {receipt && !receiptEmpty(receipt) ? <TurnReceipt receipt={receipt} /> : null}
     </div>
   );
 });

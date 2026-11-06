@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { List, X } from "lucide-react";
 import { useChat, type Turn } from "../lib/chat";
+import { useExperimental } from "../lib/multi";
 
 /* CHECKPOINTS — every prompt in this chat as one list, so a long conversation is
    navigable without scrolling through it. A turn that asked you something shows
@@ -17,7 +18,7 @@ interface Mark {
   tone: "" | "waiting" | "running" | "failed";
 }
 
-function turnMarks(turn: Turn, n: number): Mark[] {
+function turnMarks(turn: Turn, n: number, multi: boolean): Mark[] {
   const tools = turn.events.filter((e) => e.type === "tool").length;
   const result = turn.events.find((e) => e.type === "result");
   const bits: string[] = [];
@@ -51,6 +52,23 @@ function turnMarks(turn: Turn, n: number): Mark[] {
       tone: open.has(e.request_id) ? "waiting" : "",
     });
   }
+  // A key the agent asked for waits on you the same way.
+  if (multi) {
+    const given = new Map<string, boolean>();
+    for (const e of turn.events) if (e.type === "secret_answered") given.set(e.request_id, e.given);
+    for (const e of turn.events) {
+      if (e.type !== "secret_request") continue;
+      const said = given.get(e.request_id);
+      marks.push({
+        turnId: turn.id,
+        n: null,
+        kind: "question",
+        text: `Needs ${e.name}`,
+        meta: open.has(e.request_id) ? "WAITING ON YOU" : said === true ? "SAVED" : said === false ? "DECLINED" : "NOT ANSWERED",
+        tone: open.has(e.request_id) ? "waiting" : "",
+      });
+    }
+  }
   return marks;
 }
 
@@ -65,7 +83,8 @@ const TONE: Record<Mark["tone"], string> = {
 export function CheckpointsButton() {
   const [open, setOpen] = useState(false);
   const { turns, pending } = useChat();
-  const waiting = pending.some((p) => p.kind === "question");
+  // `pending` holds a secret only with the experimental switch on (lib/chat).
+  const waiting = pending.some((p) => p.kind === "question" || p.kind === "secret");
 
   return (
     <>
@@ -87,10 +106,11 @@ export function CheckpointsButton() {
 
 function CheckpointsSheet({ turns, onClose }: { turns: Turn[]; onClose: () => void }) {
   const { jumpToTurn } = useChat();
+  const multi = useExperimental();
   const [filter, setFilter] = useState("");
   const marks = useMemo(
-    () => turns.flatMap((t, i) => turnMarks(t, i + 1)),
-    [turns],
+    () => turns.flatMap((t, i) => turnMarks(t, i + 1, multi)),
+    [turns, multi],
   );
   const q = filter.trim().toLowerCase();
   const shown = q ? marks.filter((m) => m.text.toLowerCase().includes(q)) : marks;

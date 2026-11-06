@@ -78,7 +78,7 @@ export function MediaThumb(
 /** One member of a set the lightbox can page through. `src` is what the viewer
  *  loads — for the Mini App that is a blob URL, which is why `video` travels
  *  beside it: the extension is gone by then. */
-export type Shown = { src: string; video?: boolean };
+export type Shown = { src: string; video?: boolean; caption?: string };
 
 /** After the viewer closes, eat the next click for a moment. A phone fires
  *  pointerdown → pointerup → click; anything that unmounts the viewer before
@@ -123,6 +123,11 @@ export function ImageLightbox(
     return () => window.removeEventListener("keydown", onKey);
   }, [many, list.length]);
 
+  // A clip with its own sheet says what it shows there.
+  const caption = cur.caption && !((cur.video ?? isVideo(cur.src)) && hasPanel(clip)) ? cur.caption : "";
+  // Room under the picture for what's fixed over the bottom: caption, filmstrip, or both.
+  const roomy = many || !!caption;
+
   // key={cur.src}: each image opens at fit, rather than inheriting the pan and
   // zoom of the one before it.
   return (
@@ -130,8 +135,12 @@ export function ImageLightbox(
       {/* Only the video carries the sheet — stepping the gallery to a still
           must not leave a clip's chapters sitting under a screenshot. */}
       {(cur.video ?? isVideo(cur.src))
-        ? <VideoLightbox key={cur.src} src={cur.src} alt={alt} strip={many} clip={clip} onClose={close} />
-        : <StillLightbox key={cur.src} src={cur.src} alt={alt} strip={many} onClose={close} />}
+        ? <VideoLightbox key={cur.src} src={cur.src} alt={alt} strip={roomy} tall={many && !!caption} clip={clip} onClose={close} />
+        : <StillLightbox key={cur.src} src={cur.src} alt={alt} strip={roomy} tall={many && !!caption} onClose={close} />}
+      {caption && createPortal(
+        <div className="lb-cap" data-strip={many ? "" : undefined}>{caption}</div>,
+        document.body,
+      )}
       {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go}
                           high={hasPanel(clip) && (cur.video ?? isVideo(cur.src))} />}
     </>
@@ -197,7 +206,7 @@ const hasPanel = (c?: Clip) =>
  *  room beside the clip, so the panel sits under it, as tall as its words and at
  *  most 40vh, and the clip takes the rest: a fixed 46vh share left a tall phone
  *  recording about 150px wide under a two-line note. */
-function VideoLightbox({ src, alt, strip, clip, onClose }: { src: string; alt?: string; strip?: boolean; clip?: Clip; onClose: () => void }) {
+function VideoLightbox({ src, alt, strip, tall, clip, onClose }: { src: string; alt?: string; strip?: boolean; tall?: boolean; clip?: Clip; onClose: () => void }) {
   const vid = useRef<HTMLVideoElement>(null);
   const [at, setAt] = useState(0);
   const [dur, setDur] = useState(0);
@@ -227,7 +236,7 @@ function VideoLightbox({ src, alt, strip, clip, onClose }: { src: string; alt?: 
       aria-label={alt || "Attachment"}
       // touch-none so a drag on the backdrop isn't read as Telegram's
       // swipe-down-to-close, the same reason the still viewer sets it.
-      className={`fixed inset-0 z-50 flex touch-none justify-center bg-black/85 ${panel ? "flex-col p-0" : "items-center p-4"} ${strip ? "pb-24" : ""}`}
+      className={`fixed inset-0 z-50 flex touch-none justify-center bg-black/85 ${panel ? "flex-col p-0" : "items-center p-4"} ${tall ? "pb-40" : strip ? "pb-24" : ""}`}
     >
       {/* autoPlay + loop, muted so a browser will actually honour it: these are
           short screen recordings, and a clip that needs a tap to start reads as
@@ -415,7 +424,7 @@ function ClipSheet(
  *  Portaled to <body>: rendered inline it can sit under a transformed ancestor
  *  (virtualized rows are translateY'd), which would make position:fixed resolve
  *  against that ancestor instead of the viewport. */
-function StillLightbox({ src, alt, strip, onClose }: { src: string; alt?: string; strip?: boolean; onClose: () => void }) {
+function StillLightbox({ src, alt, strip, tall, onClose }: { src: string; alt?: string; strip?: boolean; tall?: boolean; onClose: () => void }) {
   const [v, setV] = useState<View>(FIT);
   const box = useRef<HTMLDivElement>(null);
   const img = useRef<HTMLImageElement>(null);
@@ -526,7 +535,7 @@ function StillLightbox({ src, alt, strip, onClose }: { src: string; alt?: string
       aria-label={alt || "Attachment"}
       // touch-action:none so the pinch scales the image instead of the page —
       // and so a drag isn't read as Telegram's swipe-down-to-close.
-      className={`fixed inset-0 z-50 flex touch-none items-center justify-center overflow-hidden bg-black/85 p-4 ${strip ? "pb-24" : ""}`}
+      className={`fixed inset-0 z-50 flex touch-none items-center justify-center overflow-hidden bg-black/85 p-4 ${tall ? "pb-40" : strip ? "pb-24" : ""}`}
     >
       <img
         ref={img}

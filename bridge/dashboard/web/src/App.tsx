@@ -6,7 +6,7 @@ import {
   api,
   AUTH_REQUIRED,
   TOKEN,
-  type AnswerSelection,
+  type CardAnswer,
   type DashState,
   type EffortLevel,
   type EnrichedSession,
@@ -91,6 +91,7 @@ import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath"
 import { Composer } from "./components/Composer";
 import { AskDock, type AskMode } from "./components/AskDock";
 import { docked } from "./lib/askdock";
+import { requestReveal, revealKey } from "./lib/reveal";
 import { JobBar } from "./components/JobBar";
 import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
@@ -1764,7 +1765,7 @@ export function App() {
     toChat();
   }
 
-  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[]; message?: string }): Promise<false | { noted?: boolean }> {
+  async function respond(requestId: string, opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string }): Promise<false | { noted?: boolean }> {
     if (!active) return false;
     let res: { noted?: boolean };
     try { res = await api.respond(active.id, { request_id: requestId, ...opts }); } catch { return false; }
@@ -3037,6 +3038,10 @@ export function App() {
                 activeId={active?.id ?? null} onRespond={respond}
                 scrollRef={scrollRef} contentRef={contentRef}
                 atBottom={atBottom} onJumpBottom={jumpToBottom}
+                onJumpTo={(id, seq) => {
+                  if (seq != null) requestReveal(id, seq);
+                  void jumpTo(id, seq != null ? revealKey(0, seq) : undefined);
+                }}
                 gridMain={gridMain}
                 onOpenFromHistory={(s) => void openFromHistory(s)}
                 onStartNext={(it) => void startIn(it.project, it.prompt,

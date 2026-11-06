@@ -1746,3 +1746,105 @@ button.ms-del:active { background: var(--ac-06); }
 .ma-resumed { padding: 2px 0 6px; font-size: 11px; letter-spacing: .03em; color: var(--muted-2); }
 .ma-update { margin: 4px 0; font-size: 13px; color: var(--tg-hint); }
 .ma-update > summary { cursor: pointer; padding: 4px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Pictures shown to you (components/Figure): the column's full width, under the answer. */
+.fg { display: block; border: 1px solid var(--border); background: var(--ac-03); }
+.fg-one + .fg-one { border-top: 1px solid var(--border); }
+.fg-label { padding: 4px 8px; font-size: 9.5px; letter-spacing: .14em; color: var(--txd); }
+.fg-label[data-side="after"] { color: var(--ok); }
+.fg-media { display: block; width: 100%; background: rgb(0 0 0 / .25); }
+.fg-media > span { display: block !important; }
+.fg-img { display: block; width: 100%; height: auto; max-height: 72vh; object-fit: contain; }
+.fg-wait { min-height: 160px; background: var(--ac-06); animation: pulse 2s cubic-bezier(.4, 0, .6, 1) infinite; }
+.fg-gone { padding: 18px 10px; text-align: center; font-size: 11.5px; color: var(--muted-2); }
+.fg-cap { padding: 7px 10px 8px; border-top: 1px solid var(--border); font-size: 13px; line-height: 1.4; color: var(--foreground-bright); overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { .fg-wait { animation: none; } }
+
+/* Pictures the agent looked at: small, in the steps fold, beside what it said next. */
+.lk { padding: 2px 0; }
+.lk-lab { display: flex; align-items: center; gap: 5px; margin-bottom: 4px; font-size: 10px; letter-spacing: .08em; color: var(--muted-2); }
+.lk-strip { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.lk-thumb { flex: none; width: 72px; height: 54px; overflow: hidden; border: 1px solid var(--border); background: var(--ac-06); }
+.lk-thumb > span { display: block !important; width: 100%; height: 100%; }
+.lk-gone { display: grid; place-items: center; color: var(--muted-2); }
+.lk-note { margin: 5px 0 0; font-size: 12px; line-height: 1.4; color: var(--tg-hint); overflow-wrap: anywhere; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.lk[data-one] .lk-body { display: flex; align-items: flex-start; gap: 8px; }
+.lk[data-one] .lk-strip { flex: none; }
+.lk[data-one] .lk-note { margin: 0; min-width: 0; flex: 1; }
+
+/* A turn's receipt (components/TurnReceipt). */
+.rc { border-top: 1px solid var(--border); padding-top: 2px; }
+.rc-top { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 0 6px; }
+.rc-row { display: flex; min-width: 0; overflow: hidden; flex: 1 1 200px; align-items: flex-start; justify-content: space-between; gap: 6px; padding: 6px 0; min-height: 32px; text-align: left; color: var(--muted-2); }
+/* Each part leads with its dot, in a margin the row clips: a wrapped line starts clean. */
+.rc-bits { display: flex; min-width: 0; flex: 1; flex-wrap: wrap; margin-left: -12px; font-size: 11px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.rc-bits > span { overflow-wrap: anywhere; }
+.rc-bits > span::before { content: "\00b7"; display: inline-block; width: 12px; text-align: center; opacity: .6; }
+.rc-bits > span[data-tone="ok"] { color: var(--ok); }
+.rc-bits > span[data-tone="err"] { color: var(--err); }
+.rc-pr { display: inline-flex; min-height: 32px; align-items: center; gap: 4px; padding: 0 8px; font-size: 11px; color: var(--acc); border: 1px solid var(--border); }
+.rc-pr:active { background: var(--ac-06); }
+.rc-detail { display: grid; gap: 10px; padding: 4px 0 8px; }
+.rc-lab { margin-bottom: 3px; font-size: 9.5px; letter-spacing: .14em; color: var(--brand-soft); }
+.rc-file { display: flex; min-width: 0; gap: 0; padding: 2px 0; font-family: var(--font-mono, monospace); font-size: 11px; }
+.rc-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-2); }
+.rc-name { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--foreground-bright); }
+.rc-nums { flex: none; margin-left: auto; padding-left: 8px; font-size: 10.5px; }
+.rc-check { padding: 3px 0; font-size: 11px; color: var(--foreground); }
+.rc-sub { padding-top: 1px; font-size: 10.5px; color: var(--muted-2); overflow-wrap: anywhere; }
+.rc-check .rc-sub { padding-left: 18px; }
+.rc-commit { padding: 3px 0; font-size: 12px; color: var(--foreground); overflow-wrap: anywhere; }
+.rc-commit code { color: var(--acc); }
+.rc-fails { display: grid; gap: 5px; }
+.rc-fail { display: block; width: 100%; padding: 5px 8px; text-align: left; border-left: 2px solid var(--err); background: color-mix(in srgb, var(--err) 7%, transparent); }
+.rc-fail-what { display: flex; min-width: 0; align-items: center; gap: 5px; font-family: var(--font-mono, monospace); font-size: 11px; color: var(--foreground-bright); }
+.rc-fail-err { display: block; margin-top: 3px; max-height: 50vh; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono, monospace); font-size: 10.5px; line-height: 1.5; color: var(--err); }
+.rc-more { display: block; margin-top: 3px; font-size: 9.5px; letter-spacing: .1em; color: var(--txd); }
+
+/* The evidence rows (components/EvidenceRows). */
+.ck { border: 1px solid var(--border); background: var(--ac-03); }
+.ck:not([data-ok]) { border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+.ck-row { display: flex; width: 100%; min-height: 38px; align-items: center; gap: 6px; padding: 0 8px; text-align: left; font-size: 12px; color: var(--foreground); }
+.ck-tag { flex: none; font-size: 9.5px; letter-spacing: .12em; color: var(--muted-2); }
+.ck:not([data-ok]) .ck-tag { color: var(--err); }
+.ck-sub { padding: 0 8px 6px; font-size: 11px; line-height: 1.4; color: var(--muted-2); overflow-wrap: anywhere; }
+.ck-new { display: grid; gap: 2px; padding: 0 8px 7px; font-size: 11px; color: var(--err); }
+.ck-new code { overflow-wrap: anywhere; font-size: 10.5px; }
+.ck-more { display: grid; gap: 4px; padding: 6px 8px 8px; border-top: 1px solid var(--border); font-size: 11px; color: var(--foreground); }
+.ck-more pre { max-height: 40vh; overflow: auto; margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 10.5px; line-height: 1.5; color: var(--tg-hint); }
+.rp-card { display: flex; width: 100%; min-height: 56px; gap: 9px; padding: 9px 10px; text-align: left; border: 1px solid var(--border-bright, var(--border)); background: var(--ac-03); }
+.rp-card:active { background: var(--ac-06); }
+.rp-open { flex: none; align-self: center; font-size: 9.5px; letter-spacing: .14em; color: var(--acc); }
+.rp-sheet { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; background: var(--tg-bg); }
+.rp-head { display: flex; flex: none; align-items: center; gap: 8px; padding: calc(env(safe-area-inset-top, 0px) + 6px) 6px 6px 14px; border-bottom: 1px solid var(--border); }
+.rp-close { display: grid; flex: none; place-items: center; width: 44px; height: 44px; color: var(--tg-hint); }
+.rp-close:active { opacity: .6; }
+.rp-body { min-height: 0; flex: 1; overflow-y: auto; overscroll-behavior: contain; padding: 14px 14px calc(env(safe-area-inset-bottom, 0px) + 24px); }
+.rp-empty { padding: 32px 8px; text-align: center; font-size: 13px; color: var(--tg-hint); }
+.sc-input { display: block; width: 100%; height: 44px; padding: 0 10px; font-family: var(--font-mono, monospace); font-size: 16px; color: var(--foreground-bright); background: var(--tg-bg); border: 1px solid var(--border-bright, var(--border)); outline: none; }
+.sc-input:focus { border-color: var(--acc); }
+.sc-input:disabled { opacity: .5; }
+.sc-input::placeholder { color: var(--muted-2); }
+.sc-done { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 3px 0; font-size: 12px; color: var(--tg-hint); }
+.rl { display: flex; width: 100%; align-items: flex-start; gap: 6px; padding: 3px 0; min-height: 24px; text-align: left; font-size: 11.5px; line-height: 1.4; color: var(--muted-2); }
+.rl[data-tone="err"] { color: var(--warn); }
+.rl-why { display: block; margin-top: 2px; font-size: 11px; color: var(--tg-hint); overflow-wrap: anywhere; }
+
+/* Search in this chat (components/ChatSearch). A top sheet: the keyboard has the bottom. */
+.cs-back { position: fixed; inset: 0; z-index: 50; background: rgb(0 0 0 / .5); }
+.cs-sheet { display: flex; max-height: 100dvh; flex-direction: column; padding-top: env(safe-area-inset-top, 0px); background: var(--tg-bg); border-bottom: 1px solid var(--border-bright, var(--border)); box-shadow: 0 16px 44px rgb(0 0 0 / .6); }
+.cs-bar { display: flex; flex: none; align-items: center; gap: 8px; padding: 2px 4px 2px 12px; border-bottom: 1px solid var(--border); }
+.cs-input { min-width: 0; flex: 1; height: 44px; background: transparent; font-size: 16px; color: var(--foreground-bright); outline: none; }
+.cs-input::placeholder { color: var(--tg-hint); }
+.cs-input::-webkit-search-cancel-button { display: none; }
+.cs-list { min-height: 0; max-height: 70dvh; flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+.cs-empty { padding: 20px 14px; text-align: center; font-size: 12px; color: var(--tg-hint); }
+.cs-hit { display: block; width: 100%; padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+.cs-hit:active { background: var(--ac-06); }
+.cs-who { display: flex; gap: 8px; margin-bottom: 2px; font-size: 9.5px; letter-spacing: .12em; color: var(--brand-soft); }
+.cs-snip { display: block; font-size: 12.5px; line-height: 1.4; color: var(--foreground); overflow-wrap: anywhere; }
+.cs-snip mark { background: color-mix(in srgb, var(--acc) 28%, transparent); color: var(--foreground-bright); }
+
+/* The caption in the viewer: its own strip, over the filmstrip when there is one. */
+.lb-cap { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; max-height: 24vh; overflow-y: auto; padding: 9px 14px calc(env(safe-area-inset-bottom, 0px) + 10px); touch-action: pan-y; font-size: 13px; line-height: 1.4; color: rgb(255 255 255 / .92); background: rgb(0 0 0 / .86); overflow-wrap: anywhere; }
+.lb-cap[data-strip] { bottom: 72px; padding-bottom: 9px; }

@@ -191,10 +191,13 @@ export interface AnswerSelection {
   labels: string[];
   notes?: string;   // free text when the prepared options don't fit
 }
+/** What a respond can carry: a question's selections, or a gateway card's value
+ *  (request_secret). The value goes to the route and nowhere else. */
+export type CardAnswer = AnswerSelection | { value: string };
 /** One card a running job is blocked on (runner.py Job.pending). */
 export interface PendingCard {
   request_id: string;
-  kind: "permission" | "question";
+  kind: "permission" | "question" | "secret";
   tool_name?: string;
   summary?: string;       // permission: what the tool would do
   questions?: Question[]; // question: the ask itself
@@ -263,6 +266,21 @@ export type RunEvent =
   | { type: "switch"; from: string; to: string; turns?: number; whole?: boolean }
   | { type: "delegation"; session_id: string; name: string; brief?: string; agent?: string; profile?: string | null; write?: boolean }
   | { type: "merge"; name: string; state: string; session_id?: string }
+  // What the bridge's own tools record (bridge/gateway_tools.py, bridge/rules.py).
+  // A figure is the agent showing you something, with a caption: `images` are upload-dir
+  // paths, served by /local/attachment. `compare` is [before, after].
+  | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string }
+  // run_checks. A count the runner's output didn't show is null. `new`: failures not on
+  // the project's known list; `known`: the ones that are. `log` is relative to the project.
+  | { type: "checks"; command: string; ok: boolean; code: number; ms: number; passed: number | null;
+      failed: number | null; skipped: number | null; new: string[]; known: string[]; log: string; tail: string }
+  // show_report: `path` is relative to the project, read with api.chatReport.
+  | { type: "report"; path: string; title: string; summary: string; bytes: number }
+  // request_secret, and whether it was given. Never the value, in either.
+  | { type: "secret_request"; request_id: string; name: string; why: string }
+  | { type: "secret_answered"; request_id: string; given: boolean }
+  // A rule of yours acted on a tool call.
+  | { type: "rule"; rule: string; decision: string; tool: string; why: string }
   // `images`: screenshots sent with the steer, as upload-dir paths (same as
   // tool_done's). Steers recorded before this landed carry none.
   | { type: "steer"; text: string; images?: string[] }
@@ -1961,8 +1979,15 @@ export const api = {
   // says the bridge passed it to the model (an older bridge drops it).
   respond: (
     jobId: string,
-    body: { request_id: string; behavior?: "allow" | "deny"; answers?: AnswerSelection[]; message?: string },
+    body: { request_id: string; behavior?: "allow" | "deny"; answers?: CardAnswer[]; message?: string },
   ) => req<{ noted?: boolean }>(`/local/run/${encodeURIComponent(jobId)}/respond`, { method: "POST", body }),
+  // Search within one chat (bridge/chat_search.in_chat): prompts and the agent's words.
+  chatSearch: (session: string, q: string) =>
+    req<{ hits: { turn: string; kind: string; seq: number | null; snippet: string; at?: number }[] }>(
+      `/local/chat-search?session=${encodeURIComponent(session)}&q=${encodeURIComponent(q)}`),
+  // A report a show_report card points at.
+  chatReport: (session: string, path: string) =>
+    req<{ text: string }>(`/local/chat-report?session=${encodeURIComponent(session)}&path=${encodeURIComponent(path)}`),
   interrupt: (jobId: string) =>
     req(`/local/run/${encodeURIComponent(jobId)}/interrupt`, { method: "POST", body: {} }),
   // A live job without its events (the cursor is past them all): the pending
