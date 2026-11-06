@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, memo, useEffect, useState, type ReactNode } from "react";
+import { memo, useEffect, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
@@ -6,6 +6,7 @@ import { Check, Copy, Play } from "lucide-react";
 import { selectionMd } from "../lib/selmd";
 import { tokenize, type Tok } from "../lib/hl";
 import { parseFileRef } from "../lib/filepath";
+import { ADMONITION_RE, stripMarker } from "../lib/admonition";
 import { FileIcon } from "../lib/fileicon";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
 import { collapseProgress, type Progress } from "../lib/progressline";
@@ -135,27 +136,9 @@ const ADMONITIONS: Record<string, { label: string; color: string }> = {
   warning: { label: "WARNING", color: "var(--warn)" },
   caution: { label: "CAUTION", color: "var(--err)" },
 };
-const ADMONITION_RE = /^\s*\[!(note|tip|important|warning|caution)\]\s*\n?/i;
 
 /** A bold that is really a label: short, one line, ending in a colon. */
 const LEAD_RE = /^[^\n]{2,24}:$/;
-
-/** The same tree with the `[!NOTE]` marker cut out of its first text node. The
- *  marker is always the leading text of the leading paragraph, so only the first
- *  branch needs rewriting. */
-function stripMarker(node: unknown): unknown {
-  if (typeof node === "string") return node.replace(ADMONITION_RE, "");
-  if (Array.isArray(node)) {
-    const i = node.findIndex((n) => n !== null && n !== undefined && n !== "");
-    return i < 0 ? node : node.map((n, k) => (k === i ? stripMarker(n) : n));
-  }
-  if (isValidElement(node)) {
-    const props = node.props as { children?: unknown };
-    if (props.children === undefined) return node;
-    return cloneElement(node, undefined, stripMarker(props.children) as ReactNode);
-  }
-  return node;
-}
 
 /** Opening a file from prose: the path, the line it named, and where on screen
  *  the link sits (so an ambiguous name can be asked about in place). */
