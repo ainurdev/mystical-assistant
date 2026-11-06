@@ -6380,9 +6380,10 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* The right rail's tiles (RightPanel, /design-first right-rail-shell): an icon,
    and under it only what wants you, in that thing's tone. Every tile is one
    height, so a word appearing never moves the rail. */
+.rtile-n, .rtile-v { max-width: 38px; text-align: center; }
 .rtile-ico { position: relative; display: flex; }
-.rtile-v { font-size: var(--t9); font-weight: 800; line-height: 1; letter-spacing: .02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.rtile-n { font-size: var(--t85); font-weight: 800; line-height: 1; letter-spacing: .6px; white-space: nowrap; color: var(--txg); }
+.rtile-v { font-size: var(--t8); font-weight: 800; line-height: 1; letter-spacing: .2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rtile-n { font-size: var(--t8); font-weight: 800; line-height: 1; letter-spacing: .2px; white-space: nowrap; color: var(--txg); }
 .rtile[aria-current="true"] .rtile-n { color: var(--acc); }
 .capdate { min-width: 0; border-left: 1px solid var(--line2); padding-left: 9px; flex-direction: column; align-items: flex-start !important; justify-content: center; gap: 1px; text-align: left; }
 .capdate > span { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -6395,7 +6396,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   color: var(--tone) !important; background: color-mix(in srgb, var(--tone) 11%, transparent) !important;
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--tone) 50%, transparent), 0 0 18px -5px var(--tone);
 }
-.rtile:is([data-tone="ask"], [data-tone="err"]) .rtile-v { color: var(--tone); letter-spacing: .08em; }
+.rtile:is([data-tone="ask"], [data-tone="err"]) .rtile-v { color: var(--tone); }
 .rtile[data-drag] { opacity: .85; cursor: grabbing; }
 /* the open tile plugs into the panel: a bar on the seam. AURORA's tiles carry it
    as their left border already; the families that inset their tiles draw it. */

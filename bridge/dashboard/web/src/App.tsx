@@ -2442,7 +2442,7 @@ export function App() {
       hint: [dirtyFiles ? `${dirtyFiles} changed` : "", gitSync ?? "", treeFetch?.busy ? "checking origin" : ""]
         .filter(Boolean).join(" · ") || undefined,
       icon: <GitBranch {...RAIL} />, ownScroll: true, scope: "worktree",
-      badge: dirtyFiles ? `${railCount(dirtyFiles)} EDITS` : gitSync, busy: !!treeFetch?.busy,
+      badge: dirtyFiles ? dirtyFiles > 9 ? railCount(dirtyFiles) : `${dirtyFiles} EDITS` : gitSync, busy: !!treeFetch?.busy,
       render: () => (
         <GitPanel
           project={sessionProject} branch={sessionBranch} git={sessionGit} autoFetch={treeFetch}
@@ -2490,7 +2490,7 @@ export function App() {
     }] : []),
     ...(rivendellOn ? [{
       id: "team", short: "TEAM", label: "Team", hint: teamNew ? `${teamNew} new` : undefined, group: "you",
-      icon: <Users {...RAIL} />, ownScroll: true, badge: teamNew ? `${railCount(teamNew)} NEW` : null,
+      icon: <Users {...RAIL} />, ownScroll: true, badge: teamNew ? teamNew > 9 ? railCount(teamNew) : `${teamNew} NEW` : null,
       render: () => (
         <TeamPanel data={team} fail={teamFail}
           sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}
