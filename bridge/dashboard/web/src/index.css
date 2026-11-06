@@ -7890,3 +7890,147 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tk-live { animation: tkpulse 1.6s ease-in-out infinite; }
 @keyframes tkpulse { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .tk-live { animation: none; } }
+
+/* ---- The Almanac (components/hud/Almanac.tsx): the Clock's drop-down ------
+   Picked per part on 2026-11-06 (.mystical/design-drafts/almanac/SPEC.md): the
+   month over the world clocks on the left, the weather and the limit resets on
+   the right. The month keeps one height in every state (month, year view, keys),
+   so nothing under it jumps. Radii follow the theme family (--f-rad). No CSS
+   filters on the SVG: WebKit (Mystical.app) ignores them on SVG children. */
+.alm { position: absolute; top: calc(100% + 8px); right: 0; z-index: 60; box-sizing: border-box; width: 560px; cursor: default;
+       border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); border-radius: var(--f-rad, 0);
+       background: color-mix(in srgb, var(--panel2) 99%, transparent); box-shadow: 0 16px 44px var(--shadow-pop);
+       padding: 11px 15px 15px; animation: mslide .16s ease both; }
+.alm button { appearance: none; border: 0; background: none; padding: 0; font-family: inherit; color: inherit; cursor: pointer; }
+.alm-top { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+.alm-k { flex: none; font-size: var(--t9); letter-spacing: 2px; color: var(--acc); }
+.alm-date { flex: 1; min-width: 0; font-size: var(--t10); color: var(--txm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.alm-date span { color: var(--txd); }
+.alm .alm-ib { flex: none; width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; border-radius: var(--f-rad-s, 0); color: var(--txd); }
+.alm .alm-ib:hover { color: var(--txb); background: color-mix(in srgb, var(--acc) 12%, transparent); }
+.alm-body { display: flex; gap: 18px; }
+.alm-col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.alm-col:first-child { flex: none; width: 262px; }
+.alm-side { flex: 1; padding-left: 18px; border-left: 1px solid var(--line); }
+.alm-sp { flex: 1; }
+
+/* the month: C1 · TILES */
+.alm-nav { display: flex; align-items: center; gap: 4px; height: 28px; margin-bottom: 8px; }
+.alm .alm-title { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px 0 6px; border-radius: var(--f-rad-s, 0);
+                  font-family: var(--ui-font); font-weight: 800; font-size: var(--t14); color: var(--txb); }
+.alm .alm-title svg { color: var(--txl); }
+.alm .alm-title:hover, .alm .alm-title[data-open] { background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.alm .alm-title[data-open], .alm .alm-title[data-open] svg { color: var(--acc); }
+.alm .alm-today { height: 22px; padding: 0 9px; margin-right: 2px; border-radius: 99px; background: color-mix(in srgb, var(--acc) 16%, transparent);
+                  color: var(--acc); font-weight: 800; font-size: var(--t9); letter-spacing: .8px; }
+.alm .alm-today:hover { background: color-mix(in srgb, var(--acc) 26%, transparent); }
+.alm-grid { display: grid; grid-template-columns: 22px repeat(7, 1fr); row-gap: 3px; text-align: center;
+            font-family: var(--mono); font-size: var(--t11); font-variant-numeric: tabular-nums; }
+.alm-h { padding: 2px 0 6px; font-family: var(--ui-font); font-weight: 700; font-size: var(--t85); letter-spacing: 1px; color: var(--txl); }
+.alm-h[data-we] { color: var(--txg); }
+.alm-wk { font-size: var(--t85); color: var(--txg); text-align: left; }
+.alm-grid > .alm-wk:not(.alm-h) { line-height: 28px; }
+.alm-d { position: relative; height: 28px; line-height: 28px; margin: 0 1px; border-radius: var(--f-rad-s, 0); color: var(--txb); }
+.alm-d[data-we] { color: var(--txm); }
+.alm-d[data-out] { color: var(--txg); }
+.alm-d[data-today] { background: var(--acc); color: var(--acc-on); font-weight: 800;
+                     box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08), 0 0 18px -2px color-mix(in srgb, var(--acc) 75%, transparent); }
+.alm-d[data-focus] { box-shadow: inset 0 0 0 2px var(--acc); }
+.alm-d[data-today][data-focus] { box-shadow: inset 0 0 0 2px var(--acc-on), 0 0 18px -2px color-mix(in srgb, var(--acc) 75%, transparent); }
+.alm-dots { position: absolute; left: 0; right: 0; bottom: 3px; display: flex; justify-content: center; gap: 2px; line-height: 0; }
+.alm-dots b { width: 4px; height: 4px; border-radius: 50%; }
+.alm-stage { position: relative; }
+.alm-grid[data-hide] { visibility: hidden; }
+.alm-months { position: absolute; inset: 0; display: grid; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(3, 1fr); gap: 6px; }
+.alm .alm-months button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; border-radius: var(--f-rad, 0);
+                          background: color-mix(in srgb, var(--txb) 3%, transparent); font-family: var(--ui-font); font-weight: 700; font-size: var(--t11); color: var(--txm); }
+.alm .alm-months button:hover { background: color-mix(in srgb, var(--acc) 14%, transparent); color: var(--txb); }
+.alm .alm-months button[data-cur] { background: var(--acc); color: var(--acc-on); box-shadow: 0 0 18px -4px color-mix(in srgb, var(--acc) 80%, transparent); }
+.alm-months .alm-dots { position: static; }
+.alm-foot { display: flex; align-items: center; gap: 4px; height: 31px; margin-top: 10px; padding-top: 9px; box-sizing: border-box;
+            border-top: 1px solid var(--line); white-space: nowrap; overflow: hidden; font-size: var(--t95); color: var(--txl); }
+.alm-foot span { display: inline-flex; align-items: center; gap: 5px; margin-right: 6px; font-weight: 600; color: var(--txm); }
+.alm-foot span i { width: 7px; height: 7px; border-radius: 50%; }
+.alm-foot em { font-style: normal; }
+.alm-foot kbd { display: inline-flex; align-items: center; justify-content: center; min-width: 17px; height: 17px; padding: 0 4px; box-sizing: border-box;
+                border: 1px solid var(--line2); border-radius: 4px; font-family: var(--mono); font-size: var(--t8); color: var(--txm); }
+
+/* the side's sections */
+.alm-sec h4 { margin: 0 0 8px; font-family: var(--ui-font); font-weight: 700; font-size: var(--t85); letter-spacing: 1.3px; color: var(--txl); }
+.alm-sec h4 span { font-weight: 600; letter-spacing: .3px; text-transform: none; color: var(--txg); }
+.alm-note { margin-top: 7px; font-size: var(--t95); line-height: 1.4; color: var(--txl); }
+.alm-note b { font-weight: 700; color: var(--ok); }
+.alm .alm-add { font-size: var(--t10); color: var(--acc); text-align: left; }
+.alm .alm-add:hover { text-decoration: underline; }
+
+/* world clocks: W1 · OVERLAP */
+.alm-zone + .alm-zone { margin-top: 9px; }
+.alm-zrow { display: flex; align-items: baseline; gap: 6px; }
+.alm-city { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: var(--t11); color: var(--txm); }
+.alm-city em { font-style: normal; font-weight: 400; color: var(--txl); }
+.alm-zrow b { margin-left: auto; font-family: var(--mono); font-weight: 600; font-size: var(--t13); color: var(--txb); white-space: nowrap; }
+.alm-zrow small { font-size: var(--t8); color: var(--txd); }
+.alm-off { flex: none; min-width: 34px; text-align: right; font-family: var(--mono); font-size: var(--t9); color: var(--txl); white-space: nowrap; }
+.alm-band { position: relative; height: 8px; margin-top: 5px; border-radius: 4px; overflow: hidden; background: color-mix(in srgb, var(--txb) 5%, transparent); }
+.alm-band i { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: color-mix(in srgb, var(--acc) 45%, transparent); }
+.alm-band[data-you] i { background: color-mix(in srgb, var(--ok) 45%, transparent); }
+.alm-band b { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--txb); box-shadow: 0 0 8px var(--txb); }
+.alm-axis { display: flex; justify-content: space-between; margin-top: 6px; font-family: var(--mono); font-size: var(--t8); color: var(--txg); }
+
+/* weather: X1 · SUN ARC */
+.alm-wxtop { display: flex; align-items: flex-end; gap: 10px; }
+.alm-temp { font-family: var(--ui-font); font-weight: 300; font-size: var(--t26); line-height: 1; letter-spacing: -1px; color: var(--txb); }
+.alm-cond { display: flex; flex-direction: column; gap: 4px; padding-bottom: 2px; font-weight: 700; font-size: var(--t11); color: var(--txh); }
+.alm-cond span { font-family: var(--mono); font-weight: 500; font-size: var(--t9); color: var(--txl); white-space: pre; }
+.alm-wxic { flex: none; margin-left: auto; align-self: flex-start; color: var(--txm); }
+.alm-arc { display: block; width: 100%; height: auto; margin-top: 10px; overflow: visible; }
+.alm-arc-fill { fill: color-mix(in srgb, var(--ask) 6%, transparent); }
+.alm-arc-ground { stroke: var(--line2); }
+.alm-arc-path { fill: none; stroke: var(--ask); stroke-width: 2.4; stroke-opacity: .85; }
+.alm-sun { fill: var(--ask); }
+.alm-halo { fill: var(--ask); fill-opacity: .22; }
+.alm-moon { fill: var(--acc); }
+.alm-ends { display: flex; justify-content: space-between; margin-top: 3px; font-family: var(--mono); font-size: var(--t9); color: var(--txm); }
+.alm-wx .alm-note { margin-top: 5px; text-align: center; }
+.alm-wx .alm-note b { color: var(--txm); }
+.alm-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.alm-chips span { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: var(--f-rad-s, 0);
+                  background: color-mix(in srgb, var(--txb) 5%, transparent); font-weight: 600; font-size: var(--t95); color: var(--txm); }
+
+/* limit resets: L2 · NEXT UP */
+.alm-ev { display: grid; grid-template-columns: 76px 8px minmax(0, 1fr); align-items: center; gap: 8px; height: 27px; }
+.alm-ev + .alm-ev { border-top: 1px solid var(--line); }
+.alm-when { font-family: var(--mono); font-weight: 600; font-size: var(--t10); color: var(--txb); white-space: nowrap; }
+.alm-when[data-soon] { color: var(--acc); }
+.alm-ev i { width: 8px; height: 8px; border-radius: 50%; }
+.alm-what { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: var(--t10); color: var(--txh); }
+.alm-what em { font-style: normal; font-weight: 400; color: var(--txl); }
+.alm-ready { margin-top: 9px; padding: 7px 9px; border-radius: var(--f-rad-s, 0); background: color-mix(in srgb, var(--ok) 9%, transparent);
+             font-weight: 600; font-size: var(--t95); color: var(--ok); }
+.alm-ready span { font-weight: 400; color: var(--txm); }
+
+/* The world clocks pinned beside the Clock (Strip.tsx). The box takes the row's
+   spare width; when that is too narrow for them they go whole, before the
+   clock or the bell move. A query container has no width of its own, so it
+   borrows 84px: in the chat header (the right panel folded), whose row is only
+   as wide as what's in it, that is the room the pins get.
+   shortcut: fixed 84/74px fit two 12H pins at the default type size, measure if pins clip at big base fonts. */
+.stp-pinbox { flex: 1 1 auto; min-width: 0; height: 26px; display: flex; align-items: center; container-type: inline-size; contain-intrinsic-inline-size: 84px; }
+.stp-pins { display: flex; flex-direction: column; justify-content: center; gap: 2px; font-family: var(--mono); font-size: var(--t85); line-height: 1; color: var(--txm); }
+.stp-pins > span { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+.stp-pins em { font-style: normal; font-size: var(--t75); letter-spacing: 1px; color: var(--txd); }
+.stp-pins small { font-size: var(--t7); color: var(--txd); }
+@container (max-width: 74px) { .stp-pins { display: none; } }
+
+/* SETTINGS' search-as-you-type picker (SettingsModal SearchPick): the weather city, the world clocks' zones. */
+.set-pick { position: relative; flex: none; }
+.set-pick input { width: 100%; box-sizing: border-box; background: color-mix(in srgb, var(--panel3) 60%, transparent); border: 1px solid color-mix(in srgb, var(--acc) 22%, transparent);
+                  outline: none; color: var(--txb); font-family: inherit; font-size: var(--t11); padding: 6px 9px; }
+.set-pick input:focus { border-color: color-mix(in srgb, var(--acc) 55%, transparent); }
+.set-pick-list { position: absolute; top: calc(100% + 4px); left: 0; right: 0; z-index: 5; max-height: 232px; overflow-y: auto; overscroll-behavior: contain;
+                 border: 1px solid color-mix(in srgb, var(--acc) 30%, transparent); background: var(--panel2); box-shadow: 0 10px 28px var(--shadow-pop); }
+.set-pick-list [role="option"] { display: flex; align-items: baseline; gap: 8px; padding: 6px 9px; font-size: var(--t11); color: var(--txb); cursor: pointer; }
+.set-pick-list [role="option"] > span { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.set-pick-list [role="option"][aria-selected="true"] { background: color-mix(in srgb, var(--acc) 14%, transparent); }
+.set-pick-list small { flex: none; font-size: var(--t9); color: var(--txd); font-family: var(--mono); }
+.set-pick-why { padding: 7px 9px; font-size: var(--t10); color: var(--txd); }

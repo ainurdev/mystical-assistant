@@ -1,7 +1,7 @@
 // Ambient widgets for the WORKSPACE panel + strip: host vitals (psutil), weather
 // (open-meteo) and a locally-persisted focus timer.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, type HostStats, type Weather } from "../api";
+import { api, type HostStats, type Place, type Weather } from "../api";
 
 const EMPTY_HOST: HostStats = {
   available: false, host: "host", cpu: 0, mem_used: 0, mem_total: 16, mem_pct: 0,
@@ -31,11 +31,11 @@ export function useHostVitals(): HostStats {
   return host;
 }
 
-/** Poll weather (cached server-side) every 10 minutes; setCity geocodes + refetches,
- *  setUnit switches °C/°F. Both persist server-side. */
+/** Poll weather (cached server-side) every 10 minutes; setPlace moves it to a
+ *  place the city picker offered, setUnit switches °C/°F. Both persist server-side. */
 export function useWeather(): {
   weather: Weather;
-  setCity: (city: string) => Promise<string | null>;
+  setPlace: (p: Place) => Promise<string | null>;
   setUnit: (unit: string) => Promise<string | null>;
 } {
   const [wx, setWx] = useState<Weather>(EMPTY_WX);
@@ -53,9 +53,9 @@ export function useWeather(): {
     const id = setInterval(tick, 600_000);
     return () => { live = false; clearInterval(id); };
   }, []);
-  const setCity = useCallback(async (city: string): Promise<string | null> => {
+  const setPlace = useCallback(async (p: Place): Promise<string | null> => {
     try {
-      const r = await api.setWeatherCity(city);
+      const r = await api.setWeatherPlace(p);
       if (r.error) return r.error;
       setWx(r);
       return null;
@@ -73,7 +73,7 @@ export function useWeather(): {
       return (e as Error).message;
     }
   }, []);
-  return { weather: wx, setCity, setUnit };
+  return { weather: wx, setPlace, setUnit };
 }
 
 export interface Focus {
