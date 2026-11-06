@@ -112,6 +112,15 @@ def test_a_login_a_turn_died_on_reads_expired_until_it_signs_in_again(monkeypatc
     assert accounts.meter(2)["logged_in"]
 
 
+def test_the_dashboard_answers_the_usage_meter(monkeypatch):
+    # The /local/accounts branch imports usage inside the same handler, which
+    # made the name local to all of it: this route raised on every call (11-03).
+    monkeypatch.setattr(usage, "get_usage", lambda: {"available": True, "left": 42})
+    h, box = _handler(dash)
+    h._get_api("/local/usage", {})
+    assert box == {"obj": {"available": True, "left": 42}, "code": 200}
+
+
 def test_both_servers_list_the_same_logins_with_their_meters():
     h, box = _handler(dash)
     h._get_api("/local/accounts", {})

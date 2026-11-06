@@ -543,6 +543,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"sets": [x for x in tickets.summaries()   # this chat's flows' sets only
                                         if (store.get_session(x.get("parent_session") or "") or {}).get("chat_id") == chat]})
         if path == "/local/usage":
+            from bridge import usage
             return self._json(usage.get_usage())
         if path == "/local/today":
             # Local midnight, not "24h ago" — the header chip reads "TODAY".
