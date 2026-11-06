@@ -70,4 +70,14 @@ ok(t4.stops[2].value === "3 new" && t4.stops[2].tone === "warn" && t4.at === 2 &
 ok(tr({ kind: "publish", n: 2 }, 0, false).stops[2].value === "not pushed", "no upstream: origin not pushed");
 ok(tr({ kind: "synced" }, 0, true, true).stops[2].tone === "dim", "unchecked: origin dim");
 ok(tr({ kind: "ahead", n: 2 }, 4).stops[0].tone === "acc" && tr({ kind: "ahead", n: 120 }, 0).stops[1].value === "120 commits", "real counts, not the 99+ cap");
+// dirty + behind: sentence, lit stop, next line and buttons agree; Commit stays reachable behind Pull.
+const tdb = tr({ kind: "behind", n: 3 }, 2);
+ok(tdb.at === 2 && tdb.say === "3 new on origin, your 2 files still here", `dirty+behind: say (${tdb.say})`);
+ok(tdb.next === "next hop: pull 3 commits, then commit 2 files" && same(tdb.then, { verb: "Commit", n: 2 }), "dirty+behind: next, then");
+ok(tr({ kind: "behind", n: 3 }, 0).then === null && tr({ kind: "ahead", n: 2 }, 4).then === null, "then only under a Pull with edits");
+// landed but not everywhere ok: no action, yet the dim stop is not a tick
+const tnu = tr({ kind: "publish", n: 0 }, 0, false);
+ok(tnu.at === -1 && tnu.stops[2].value === "not pushed" && tnu.stops[2].tone === "dim" && tnu.stops[1].tone === "ok", "no upstream, nothing to publish: origin dim");
+const tun = tr({ kind: "synced" }, 0, true, true);
+ok(tun.at === -1 && tun.stops[2].value === "not checked" && tun.stops[2].tone === "dim", "synced, never fetched: origin dim");
 console.log("gitpipe.check ok");

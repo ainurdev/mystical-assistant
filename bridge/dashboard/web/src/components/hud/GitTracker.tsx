@@ -21,16 +21,21 @@ export function GitTracker({ t, p, loading, busy, title, onAction }: {
   const a = loading ? null : p.action;
   const pu = loading ? null : p.push;
   const Verb = a ? VERB[a.verb] : null;
+  // Landed: lit only across the leading run of ok stops.
+  let run = 0;
+  while (run < 3 && t.stops[run].tone === "ok") run++;
+  const lit = t.at === -1 ? Math.max(0, (run - 1) * 50) : LIT[t.at];
   const num = (n: number) => (n > 99 ? "99+" : n);
   return (
     <section className={`gt-trk${loading ? " load" : ""}`} aria-label={loading ? "Reading git" : `${t.say}. ${t.next}`}>
       <div className="gt-say">{loading ? "Reading…" : t.say}</div>
       <div className="gt-next">{loading ? "" : t.next}</div>
       <div className="gt-steps">
-        <span className="gt-ln"><b style={{ width: loading ? 0 : `${LIT[t.at]}%` }} /></span>
+        <span className="gt-ln"><b style={{ width: loading ? 0 : `${lit}%` }} /></span>
         {t.stops.map((s, i) => {
           const Icon = ICON[s.key];
-          const done = !loading && (t.at === -1 || i < t.at || s.tone === "ok");
+          // Landed (-1) counts only the stops that really are ok: "not pushed" and "not checked" are not.
+          const done = !loading && (t.at === -1 ? s.tone === "ok" : i < t.at || s.tone === "ok");
           const on = !loading && i === t.at;
           return (
             <span key={s.key} className={`gt-s${on ? ` on ${s.tone === "warn" ? "warn" : ""}` : done ? " done" : ""}`}>
@@ -46,6 +51,11 @@ export function GitTracker({ t, p, loading, busy, title, onAction }: {
           <button type="button" className={`gt-btn pri ${a.tone}`} title={title} disabled={busy} onClick={() => onAction(a.verb, a.n)}>
             <Verb size={13} strokeWidth={2.4} aria-hidden /><span>{a.verb} {num(a.n)}</span>
           </button>
+          {t.then && (
+            <button type="button" className="gt-btn soft" disabled={busy} onClick={() => onAction("Commit", t.then!.n)}>
+              <Check size={13} strokeWidth={2.4} aria-hidden /><span>Commit {num(t.then.n)}</span>
+            </button>
+          )}
           {pu && (
             <button type="button" className="gt-btn soft" disabled={busy} onClick={() => onAction("Publish", pu.n)}>
               <ArrowUp size={13} strokeWidth={2.4} aria-hidden /><span>{pu.verb} {num(pu.n)}</span>

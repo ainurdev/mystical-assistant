@@ -6359,6 +6359,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    auto-fetch) git's words. The hero's one move is the panel's only solid button:
    agents commit, you push. */
 .gp-rdw { flex: none; }
+.gp-rd:empty { display: none; }
 .gp-rd { flex: none; padding: 10px; }
 .rh + .gp-rdw .gp-rd { padding-top: 0; }
 /* A figure that changes rolls (Roll in GitPanel): the old one leaves upward as
