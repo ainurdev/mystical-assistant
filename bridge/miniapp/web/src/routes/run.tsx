@@ -16,6 +16,11 @@ import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 import { ImageLightbox, MediaThumb, isVideo, type Shown } from "../components/ImageLightbox";
 import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
+import { AgentBar, type AgentTab } from "../components/AgentSwitch";
+import { AgentGrid } from "../components/AgentGrid";
+import { IncomingNote } from "../components/MultiRows";
+import { parseFrame } from "../lib/frame";
+import { providerName, useChannel } from "../lib/multi";
 import { useChatBg } from "../lib/toolwidget";
 import { hhmm } from "../lib/utils";
 
@@ -58,15 +63,35 @@ function TranscriptSkeleton() {
   );
 }
 
-function RunPage() {
+/** Who ran a turn, on the line over its reply. */
+function runtimeLine(runtime: string, multi: boolean): string {
+  if (multi && runtime.startsWith("acp:")) return `\u25c7 ${providerName(runtime.slice(4))}`;
+  return runtime.startsWith("opencode:")
+    ? `⚡ free agent · ${runtime.split(":")[1]}`
+    : `⇄ account ${runtime.split(":")[1]}`;
+}
+
+function RunPage({ barKey }: { barKey: string }) {
   const {
     turns, activeTurn, sessionWorking, respond, sendError, sessionId, isRunning, loadingSession, boot,
     runPrompt, setDraft,
     sessions, held, heldBusy, checking, heldStartNew, heldContinue, heldDismiss,
     hasOlder, olderLoading, loadOlder, renderFrom, transcriptNav, sessionAgent,
+    experimental, openBrief, openHelper,
   } = useChat();
   // Kimi, Codex…: the limit ladder and compaction are Claude's (the bridge refuses them).
   const onAgent = sessionAgent !== "claude";
+  // With the switch on, the capability table answers instead.
+  const caps = experimental ? openBrief?.caps : undefined;
+  const hasPolicy = caps ? caps.usage : !onAgent;
+  const hasContext = caps ? caps.compact : !onAgent;
+  const hasGoals = caps ? caps.goals : true;
+  const agentWord = caps ? (openBrief?.parent_session && openBrief.title) || providerName(sessionAgent) : "Claude";
+  // Opening a delegation row. Through a ref, so the callback that reaches every
+  // memoized RunStream never changes.
+  const openRef = useRef(openHelper);
+  openRef.current = openHelper;
+  const openAgent = useCallback((id: string) => openRef.current(id), []);
   // A cached session has its turns already, so this never fires for one; only a
   // transcript that is genuinely still coming gets a skeleton.
   const slowLoad = useLoadingPhase(loadingSession);
@@ -181,7 +206,8 @@ function RunPage() {
     if (!scrollEl || !list) return;
     setListOffset(list.getBoundingClientRect().top
       - scrollEl.getBoundingClientRect().top + scrollEl.scrollTop);
-  }, [scrollEl, hasOlder, turns.length > 0]);
+    // The bar over the page appearing moves the list too.
+  }, [scrollEl, hasOlder, turns.length > 0, barKey]);
 
   const virtualizer = useVirtualizer({
     count: visibleTurns.length,
@@ -286,12 +312,12 @@ function RunPage() {
 
       {/* What this session is for, and what a usage limit does to it. */}
       <div className="flex items-center gap-1.5">
-        <GoalPill sessionId={sessionId} />
-        {!onAgent && <PolicyChip
+        {hasGoals && <GoalPill sessionId={sessionId} />}
+        {hasPolicy && <PolicyChip
           sessionId={sessionId}
           stored={sessions.find((s) => s.id === sessionId)?.fallback_policy ?? null}
         />}
-        {!onAgent && <ContextChip
+        {hasContext && <ContextChip
           sessionId={sessionId}
           tokens={sessions.find((s) => s.id === sessionId)?.ctx_tokens}
           window={sessions.find((s) => s.id === sessionId)?.ctx_window}
@@ -308,7 +334,7 @@ function RunPage() {
         <TranscriptSkeleton />
       ) : loadingSession ? null : (
         <div className="flex items-center justify-center gap-2 pt-10 text-center text-sm text-[var(--tg-hint)]">
-          Start a conversation with Claude.
+          Start a conversation with {agentWord}.
         </div>
       ))}
 
@@ -334,6 +360,11 @@ function RunPage() {
         const i = vi.index;
         const isActive = turn.jobId === activeTurn?.jobId;
         const working = isActive && turn.status === "running" && activeTurn.pending.length === 0;
+        // A turn another agent's message started: its prompt isn't your words.
+        const framed = experimental ? parseFrame(turn.prompt) : null;
+        // Per turn, because a chat can change provider. No runtime means default
+        // Claude, except on the live turn, which may not have its row filled in yet.
+        const said = experimental && (turn.runtime ? turn.runtime.startsWith("acp:") : isActive && onAgent);
         return (
           <div
             key={vi.key}
@@ -347,6 +378,7 @@ function RunPage() {
           >
           {/* id: what a checkpoint scrolls to (CheckpointsSheet). */}
           <div id={`turn-${turn.id}`} className="turnbox space-y-2">
+            {framed && !framed.own && <IncomingNote from={framed.from} label={framed.label} body={framed.body} />}
             {/* user message */}
             <div className="pbub-row flex justify-end">
               <div className="max-w-[85%] space-y-1">
@@ -383,9 +415,9 @@ function RunPage() {
                     ))}
                   </div>
                 )}
-                {turn.prompt && (
+                {turn.prompt && !(framed && !framed.own) && (
                   <div className="pbub whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
-                    {turn.prompt}
+                    {framed ? framed.body : turn.prompt}
                     {turn.started != null && <span className="pstamp">{hhmm(turn.started)}</span>}
                   </div>
                 )}
@@ -407,9 +439,7 @@ function RunPage() {
                 />
                 {turn.runtime && (
                   <div className="text-[11px] text-[var(--tg-hint)]">
-                    {turn.runtime.startsWith("opencode:")
-                      ? `⚡ free agent · ${turn.runtime.split(":")[1]}`
-                      : `⇄ account ${turn.runtime.split(":")[1]}`}
+                    {runtimeLine(turn.runtime, experimental)}
                   </div>
                 )}
                 <RunStream
@@ -433,6 +463,9 @@ function RunPage() {
                   }
                   onWrite={setDraft}
                   ended={turn.status !== "running"}
+                  multi={experimental}
+                  said={said}
+                  onOpenAgent={experimental ? openAgent : undefined}
                 />
                 {working && <div className="text-xs text-[var(--tg-hint)]">Working…</div>}
               </div>
@@ -469,7 +502,7 @@ function RunPage() {
       {sendError && (
         <Banner tone="error">
           {sendError.busy
-            ? "Claude is busy with another task."
+            ? `${agentWord} is busy with another task.`
             : sendError.unauthorized
               ? "Unauthorized"
               : "Failed to send."}
@@ -521,8 +554,35 @@ function RunPage() {
   );
 }
 
+/** The chat's screen. With agents under it, a bar picks between the transcript and
+ *  the grid. The transcript unmounts when you go, as it does for any other tab, and
+ *  comes back where you left it (lib/scrollmem). */
+function RunRoute() {
+  const { sessionId, experimental, openBrief } = useChat();
+  const [picked, setPicked] = useState<{ sid: string | null; tab: AgentTab }>({ sid: null, tab: "chat" });
+  // A tab belongs to the session you picked it in: opening a helper lands on its chat.
+  const asked = picked.sid === sessionId ? picked.tab : "chat";
+  const { data } = useChannel(sessionId, experimental, asked !== "chat");
+  const showTabs = experimental && !!data && (data.rows.length > 0 || data.messages.length > 0);
+  const tab: AgentTab = showTabs ? asked : "chat";
+  return (
+    <>
+      <AgentBar
+        tab={tab}
+        onTab={(t) => setPicked({ sid: sessionId, tab: t })}
+        showTabs={showTabs}
+        needs={data?.rows.filter((r) => r.needs).length ?? 0}
+        held={data?.messages.filter((m) => m.state === "held").length ?? 0}
+      />
+      {tab === "chat"
+        ? <RunPage barKey={`${showTabs}:${experimental && !!openBrief?.parent_session}`} />
+        : <AgentGrid tab={tab} />}
+    </>
+  );
+}
+
 export const runRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: RunPage,
+  component: RunRoute,
 });

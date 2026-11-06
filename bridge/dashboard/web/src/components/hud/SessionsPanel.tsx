@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { AgentTree } from "./AgentTree";
+import { useTreeWant } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { BellRing, FolderTree, History, Hourglass, Image as ImageIcon, ListFilter, PanelLeftOpen, Plus, Puzzle, Search } from "lucide-react";
@@ -560,6 +562,16 @@ type LaneItem =
   | { k: "day"; label: string };
 
 export function SessionsPanel(props: Props) {
+  // AgentTree's poll: the chats the last render drew. A ref filled while rendering,
+  // then settled after the commit, because the rows are built past every hook.
+  const drawn = useRef<string[]>([]);
+  drawn.current = [];
+  const [treeChats, setTreeChats] = useState<string[]>([]);
+  useEffect(() => {
+    const ids = drawn.current;
+    setTreeChats((cur) => (cur.join() === ids.join() ? cur : [...ids]));
+  });
+  useTreeWant("sidebar", treeChats);
   const {
     sessions, groups, hidden, show, onShow, status, done, flags, pins, selectedSessionId, activeProject, booting,
     onTogglePin, onSelectSession, onNewSession, onWorktreeSession, onCreateProject, folded: asRail, onUnfold,
@@ -870,9 +882,12 @@ export function SessionsPanel(props: Props) {
     return { needs: t.lane === "ask" };
   };
 
-  const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean, i?: number) => (
+  const rowFor = (s: SessionBrief, showDot: boolean, showProj: boolean, i?: number) => {
+    drawn.current.push(s.id);
+    return (
+    <Fragment key={s.id}>
     <SessionRow
-      key={s.id} s={s} i={i} showDot={showDot} showProj={showProj} detail={detail}
+      s={s} i={i} showDot={showDot} showProj={showProj} detail={detail}
       on={s.id === selectedSessionId}
       v={views.get(s.id) ?? SV.idle} st={status.get(s.id)} flag={flags.get(s.id)} wait={waitOf(s)} shots={unseen.get(s.id) ?? 0}
       pulse={(status.get(s.id)?.state ?? "idle") === "working"}
@@ -880,7 +895,10 @@ export function SessionsPanel(props: Props) {
       pinned={pins.has(s.id)} onPin={() => onTogglePin(s.id)}
       onAttach={() => onSelectSession(s)}
     />
-  );
+    <AgentTree chatId={s.id} selectedId={selectedSessionId} />
+    </Fragment>
+    );
+  };
 
   // Virtualize the lane list against the shared .mscroll scroller.
   const scrollRef = useRef<HTMLDivElement>(null);

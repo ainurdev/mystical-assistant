@@ -31,6 +31,8 @@ Status: built, behind Settings > Experimental, off by default. Approved in chat
 Ask mode: a message of yours that clearly asks for a helper needs no card ("get a subagent to
 review"). Anything else gets one card listing what would start.
 
+Sections below are the original plan; where they differ, this list and the module docstrings win.
+
 Findings since the plan was written: the 16 "cut off" Kimi turns were all bridge restarts, each
 resumed by recovery. Kimi Code times an MCP call out at 60 s, so a card pauses the turn with the
 same cancel instead of blocking the call. `delegation_grants` wasn't needed: the rule reads your

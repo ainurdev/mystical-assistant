@@ -19,6 +19,7 @@ import type {
   RunPick,
   SessionBrief,
   StoreTurn,
+  SwitchScope,
   Transcript,
   TurnOutcome,
 } from "./api";
@@ -26,6 +27,7 @@ import { usePersistentState } from "./persistentState";
 import { lastOpen, rememberOpen } from "./lastopen";
 import { modelOptions, runPicks, snapModel } from "./models";
 import { spendingSlot } from "./accounts";
+import { useExperimental, withHelperFields } from "./multi";
 import { withName } from "../components/ImageLightbox";
 
 export interface Attachment {
@@ -214,7 +216,8 @@ export interface ChatContextValue {
   // bridge too old for the route (its 404) — either way the PROFILE row hides.
   profiles: Profile[] | undefined;
   profileId: string;
-  pickProfile: (id: string) => Promise<void>;
+  // True when it took. `scope` is how much history a provider switch sends along.
+  pickProfile: (id: string, scope?: SwitchScope) => Promise<boolean>;
   // A non-404 profiles load failure, or the last pick's error (incl. a 409 —
   // the session already ran on another agent). Cleared by the next success.
   profilesError: string | null;
@@ -231,7 +234,14 @@ export interface ChatContextValue {
   sessionSlot: number | null;
   sessions: SessionBrief[];
   sessionId: string | null;
+  /** The open session's brief, the one the pickers read; undefined until it loads.
+   *  The only source for a helper, which no list carries. */
+  openBrief: SessionBrief | undefined;
+  /** The EXPERIMENTAL switch (lib/multi): off, every multi-agent thing draws nothing. */
+  experimental: boolean;
   selectSession: (id: string) => void;
+  /** Open a helper, from its chat or from anywhere else in the list. */
+  openHelper: (id: string, project?: string | null) => void;
   openSessionInProject: (project: string, id: string) => Promise<void>;
   send: () => Promise<void>;
   runPrompt: (text: string, attachments: Attachment[]) => Promise<void>;
@@ -317,6 +327,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // panel_kb). Held until the project switch lands, so the auto-resolver below
   // can't race it and drop us on the repo's latest session instead.
   const pinnedRef = useRef<string | null>(null);
+  // The helper opened by hand. The lists leave helpers out, so the resolver would
+  // take "not in this repo's list" for a chat that's gone, and move you off it.
+  const helperRef = useRef<string | null>(null);
+  const experimental = useExperimental();
 
   const stateQuery = useQuery({
     queryKey: ["state"],
@@ -359,19 +373,21 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // The open session's PROFILE pick. The bridge binds it whatever the session
   // has run on before (another agent excepted: a 409, whose message says so)
   // and answers with its new brief — the pickers follow from that.
-  async function pickProfile(pid: string) {
-    if (!sessionId) return;
+  async function pickProfile(pid: string, scope?: SwitchScope): Promise<boolean> {
+    if (!sessionId) return false;
     const sid = sessionId;
     try {
-      const { session } = await api.setSessionProfile(sid, pid);
+      const { session } = await api.setSessionProfile(sid, pid, scope);
       setSessions((prev) => prev.map((s) => (s.id === sid ? session : s)));
       // `brief` reads the 5s poll's copy first, so the answer goes there too:
       // the pill and the usage strip move now, not on the next beat.
       qc.setQueryData<{ sessions: SessionBrief[] }>(["sessions", project], (d) =>
         d && { ...d, sessions: d.sessions.map((s) => (s.id === sid ? session : s)) });
       setPickProfileErr(null);
+      return true;
     } catch (e) {
       setPickProfileErr(e instanceof Error ? e.message : "Failed to set profile.");
+      return false;
     }
   }
   // A pick: shown now, remembered as this phone's default, and saved to the
@@ -514,13 +530,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     })();
   }, []);
 
-  // Remember it for that: the brief's repo, not the active one, which lags a
-  // beat behind the session during a switch.
-  useEffect(() => {
-    const proj = sessions.find((s) => s.id === sessionId)?.project ?? project;
-    if (sessionId && proj) rememberOpen(sessionId, proj);
-  }, [sessionId, sessions, project]);
-
   // Resolve the current session for the active project (latest, or create one).
   useEffect(() => {
     if (!project || restoring) return;
@@ -539,6 +548,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         // project changes; only auto-resolve when the current one isn't here.
         if (sessionIdRef.current && list.some((s) => s.id === sessionIdRef.current))
           return;
+        if (sessionIdRef.current && sessionIdRef.current === helperRef.current) return;
         if (list.length) {
           openSession(list[0].id);
         } else {
@@ -586,11 +596,12 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   // carries, so a send can't save this phone's defaults over the session's own.
   // Keyed on the values, so a poll that left before a pick made here can't put
   // the old one back.
-  const brief = briefsQ.data?.sessions.find((s) => s.id === sessionId)
+  const rawBrief = briefsQ.data?.sessions.find((s) => s.id === sessionId)
     ?? sessions.find((s) => s.id === sessionId)
     ?? (transcriptQ.data?.session?.id === sessionId ? transcriptQ.data?.session : undefined);
   // The open session's profile, which the pickers read through (runPicks).
-  const boundProfile = profilesQ.data?.profiles.find((p) => p.id === brief?.profile_id) ?? null;
+  const boundProfile = profilesQ.data?.profiles.find((p) => p.id === rawBrief?.profile_id) ?? null;
+  const brief = rawBrief && experimental ? withHelperFields(rawBrief, boundProfile) : rawBrief;
   const sessionAgent = brief?.agent ?? "claude";
   const sessionSlot = spendingSlot(brief);
   useEffect(() => {
@@ -601,6 +612,17 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setEffortState(r.effort as EffortLevel | "");
   }, [sessionId, brief?.model, brief?.permission_mode, brief?.effort, brief?.profile_id,
       brief?.overrides?.join(), boundProfile?.model, boundProfile?.mode, boundProfile?.effort]);
+
+  // Remember it for a cold start: the brief's repo, not the active one, which lags a
+  // beat behind the session during a switch. A helper remembers its chat: no list can
+  // find a helper to reopen it, and its chat is the way back to it.
+  const parentId = brief?.parent_session ?? null;
+  useEffect(() => {
+    const proj = sessions.find((s) => s.id === sessionId)?.project ?? project;
+    if (sessionId && sessionId === helperRef.current && !parentId) return;   // its row hasn't come yet
+    const id = parentId ?? sessionId;
+    if (id && proj) rememberOpen(id, proj);
+  }, [sessionId, sessions, project, parentId]);
 
   // The very first fetch for this session — a poll refetch keeps the transcript
   // on screen, so only the load with nothing to show yet counts as loading. Each
@@ -821,6 +843,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     openSession(id);
   }
 
+  function openHelper(id: string, proj?: string | null) {
+    helperRef.current = id;
+    if (id === sessionId) return;
+    if (proj && proj !== project) void openSessionInProject(proj, id);
+    else openSession(id);
+  }
+
   const value: ChatContextValue = {
     turns,
     hasOlder: older.has,
@@ -856,7 +885,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     sessionSlot,
     sessions,
     sessionId,
+    openBrief: brief,
+    experimental,
     selectSession,
+    openHelper,
     openSessionInProject,
     send,
     runPrompt,

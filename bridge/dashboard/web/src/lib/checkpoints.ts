@@ -1,6 +1,7 @@
 import type { SessionBreakdown, ToolSpend } from "../api";
 import type { Turn } from "../chat";
 import { limitNudge } from "./limit.ts";
+import { promptLabel } from "./multi.ts";
 
 /** Anchor id for a checkpoint: a turn's prompt, or a question/steer inside it. */
 export function ckId(turnId: string, key?: string): string {
@@ -93,7 +94,7 @@ function outline(t: Turn) {
     } else if (e.type === "question_answered") {
       const s = asks.get(e.request_id);
       if (s) { s.pick = chosen(e.answers[0]?.labels[0]); s.note = e.answers[0]?.notes || null; }
-    } else if (e.type === "steer") subs.push({ kind: "steer", turnId: t.id, key: steerKey(i), label: e.text });
+    } else if (e.type === "steer") subs.push({ kind: "steer", turnId: t.id, key: steerKey(i), label: promptLabel(e.text) });
   });
   // A native session's turns never carry a result: their answer is their prose.
   return { answer: answer || prose, tools, ended, ran, failed, stopped, subs };
@@ -117,7 +118,7 @@ export function turnRows(turns: Turn[], now = Date.now() / 1000): TurnRow[] {
     const secs = spanOf(t, o, now);
     const end = t.status === "running" ? null
       : t.started != null && secs != null ? t.started + secs : o.ended;
-    const prompt = (t.prompt || "").replace(/\s+/g, " ").trim();
+    const prompt = promptLabel(t.prompt || "").replace(/\s+/g, " ").trim();
     const why = resumeOf(prompt);
     const waiting = t.pending[0]?.kind ?? null;
     const row = rows[rows.length - 1];

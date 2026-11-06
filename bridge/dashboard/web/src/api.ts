@@ -1,4 +1,5 @@
 import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
+import type { Caps, HelperConfig, MemberInfo } from "./lib/multi";
 import type { BranchPr, BranchStatus } from "./lib/branchrows";
 
 // The dashboard server hands out a per-process token in the URL the user opens
@@ -70,6 +71,12 @@ export interface SessionBrief {
   disabled_tools?: string[]; // claude deny rules — tools/MCP servers switched off here
   goal?: Goal | null;
   job?: RivendellJob | null; // a Rivendell job's kind and facts (bridge/rivendell_jobs.py); null = not one
+  // Multi-agent chats (lib/multi), present only while Settings ▸ Experimental is on:
+  // what its agent can do, its chat's limits, and whose helper it is.
+  caps?: Caps;
+  helpers?: HelperConfig;
+  parent_session?: string | null;
+  member?: MemberInfo | null;
   lifecycle?: Lifecycle | null; // null = active; anything else is why it's hidden
   // What the session's next run gets (bridge profiles.brief): a knob set by
   // hand in it, else its profile's, else the default. Loaded into the
@@ -251,6 +258,11 @@ export type RunEvent =
   // A line in a teammate's device run that isn't the run's own: "Mystical
   // restarted HH:MM · this run kept going" (bridge/device_view.py).
   | { type: "divider"; text: string }
+  // Multi-agent chats: the chat moved to another provider, a helper started, a
+  // helper's changes moved (bridge/handoff.py, bridge/channel.py).
+  | { type: "switch"; from: string; to: string; turns?: number; whole?: boolean }
+  | { type: "delegation"; session_id: string; name: string; brief?: string; agent?: string; profile?: string | null; write?: boolean }
+  | { type: "merge"; name: string; state: string; session_id?: string }
   // `images`: screenshots sent with the steer, as upload-dir paths (same as
   // tool_done's). Steers recorded before this landed carry none.
   | { type: "steer"; text: string; images?: string[] }
@@ -1483,7 +1495,7 @@ export interface PluginsInfo {
 export type PluginAction =
   | "market/add" | "market/remove" | "install" | "uninstall" | "update" | "enable";
 
-async function req<T>(
+export async function req<T>(
   path: string,
   opts: { method?: string; body?: unknown } = {},
 ): Promise<T> {
@@ -1797,10 +1809,10 @@ export const api = {
     req<{ ok: boolean; profile?: Profile }>("/local/profiles", { method: "POST", body }),
   /** Bind the session to a profile ("" unbinds). A 409 means it already ran
    *  on another agent. */
-  setSessionProfile: (id: string, profileId: string) =>
+  setSessionProfile: (id: string, profileId: string, scope?: "whole" | "recent") =>
     req<{ ok: boolean; profile_id: string | null; session: SessionBrief }>("/local/session/profile", {
       method: "POST",
-      body: { session_id: id, profile_id: profileId },
+      body: { session_id: id, profile_id: profileId, ...(scope ? { scope } : {}) },
     }),
   /** The profile new sessions in a project are bound to ("" = none). */
   setProjectProfile: (project: string, profileId: string) =>

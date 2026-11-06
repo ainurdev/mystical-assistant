@@ -26,7 +26,7 @@ function Dot({ state }: { state: SessionState }) {
  *  dashboard's sidebar as a screen (routes/chats) — and back comes here. */
 export function ChatSwitcher() {
   const navigate = useNavigate();
-  const { sessions, sessionId } = useChat();
+  const { sessions, sessionId, openBrief, experimental } = useChat();
   // Both queries share the header's caches — no extra polling.
   const { data } = useQuery({
     queryKey: ["running"],
@@ -41,7 +41,10 @@ export function ChatSwitcher() {
   const projectName = state?.project?.name ?? null;
   const status = data?.status ?? {};
 
-  const current = sessions.find((s) => s.id === sessionId);
+  // A helper is in no list, so its row is the only name it has.
+  const current = sessions.find((s) => s.id === sessionId) ?? (experimental ? openBrief : undefined);
+  const helperOf = experimental && current?.parent_session
+    ? sessions.find((s) => s.id === current.parent_session)?.title || "A CHAT" : null;
   const curState: SessionState = (sessionId && status[sessionId]?.state) || "idle";
   // The checkout this chat runs in — a worktree session is not on the repo's
   // current branch, and that difference is worth a word in the header.
@@ -66,6 +69,7 @@ export function ChatSwitcher() {
             {current?.title || "New chat"}
           </span>
           <span className="truncate text-[10px] tracking-wider text-[var(--tg-hint)]">
+            {helperOf ? `HELPER IN ${helperOf.toUpperCase()} · ` : ""}
             {(projectName ?? "NO PROJECT").toUpperCase()}
             {branch ? ` · ${branch.toUpperCase()}` : ""}
             {worktree ? ` ⧉${worktree.toUpperCase()}` : ""}

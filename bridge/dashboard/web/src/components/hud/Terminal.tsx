@@ -1,4 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type MutableRefObject, type ReactNode, type RefObject } from "react";
+import { AgentGrid, type MainCard } from "../AgentGrid";
+import { openSession as openAgentSession } from "../../lib/devicerun";
+import { promptLabel } from "../../lib/multi";
+import { useMultiOn, useTreeRows } from "../../lib/multistore";
 import { ProjectTile } from "../ui/ProjectTile";
 import { type AccountInfo, type AnswerSelection, type DevServerInfo, type EnrichedSession, type NextItem, type SessionBrief } from "../../api";
 import type { Turn } from "../../chat";
@@ -218,8 +222,10 @@ export function Terminal({
   loading, sessionId, hud, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked,
   hasOlder, olderLoading, onLoadOlder, renderFrom, navRef, restoringRef, correctingRef,
   run, onOpenRun, onDropFiles, chrome, onSendText, onArchive, onStartHere, teamMe,
-  limit, logins,
+  limit, logins, gridMain,
 }: {
+  /** The chat behind the open session, as the grid's main card: null with no multi-agent chats. */
+  gridMain?: MainCard | null;
   view: View;
   onView: (v: View) => void;
   selected: SessionBrief | null;
@@ -301,6 +307,26 @@ export function Terminal({
   const [titleHov, setTitleHov] = useState(false);
   const [cntHov, setCntHov] = useState(false);
   const isChat = view === "chat";
+  // Multi-agent chats (plan §6): the switch appears once a chat has agents, and a
+  // helper's session wears the path back to its chat. A chat with none draws neither.
+  const multiOn = useMultiOn();
+  const helperChat = selected?.parent_session ?? null;
+  const chatId = helperChat ?? sessionId ?? null;
+  const agentRows = useTreeRows(multiOn ? chatId : null);
+  const [gridFor, setGridFor] = useState<string | null>(null);
+  const hasAgents = multiOn && !!chatId && agentRows.length > 0;
+  const grid = isChat && hasAgents && gridFor === chatId;
+  // Opening a helper or the chat from a card lands on its conversation.
+  const openedFrom = useRef(sessionId);
+  useEffect(() => {
+    if (openedFrom.current !== sessionId) { openedFrom.current = sessionId; setGridFor(null); }
+  }, [sessionId]);
+  // ...even the one already open: a card for it has nothing else to change.
+  useEffect(() => {
+    const toChat = () => setGridFor(null);
+    window.addEventListener("hud:open-session", toChat);
+    return () => window.removeEventListener("hud:open-session", toChat);
+  }, []);
   const empty = isChat && turns.length === 0;
   // COMPACT: the nameplate leaves the header for the composer's control row,
   // and the header shrinks to a pill of readouts on the right.
@@ -361,7 +387,7 @@ export function Terminal({
   const peeked = peekIdx !== null ? turns[peekIdx] : null;
   if (peeked?.prompt?.trim()) {
     held.current = {
-      text: peeked.prompt.trim(),
+      text: promptLabel(peeked.prompt.trim()),
       label: `${(peekIdx ?? 0) + 1}/${turns.length}`,
     };
   }
@@ -435,7 +461,7 @@ export function Terminal({
   // The transcript itself, so both readings of it — the page and the board —
   // render the same scroller, the same virtualiser and the same rails.
   const body = (
-    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    <div ref={swapRef} className="swapwrap" style={{ position: "relative", display: grid ? "none" : "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <div aria-hidden className="swapline" />
       {dropping && (
         <div aria-hidden style={{ position: "absolute", inset: 10, zIndex: 7, pointerEvents: "none", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: 26, border: "1px dashed color-mix(in srgb, var(--acc) 55%, transparent)", background: "color-mix(in srgb, var(--acc) 5%, transparent)", fontSize: "var(--t10)", letterSpacing: 3, color: "var(--acc)" }}>
@@ -468,7 +494,7 @@ export function Terminal({
               step={empty ? boot : null} leaving={!empty} onLeft={() => setLeaving(false)} />
           ) : null}
           {empty ? null : (
-            <Transcript turns={turns} activeId={activeId} boot={boot} who={who} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={theirs ? undefined : onRunCommand} onQuote={theirs ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={theirs ? undefined : onAnswer} askDocked={!theirs && !!askDocked} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
+            <Transcript agentSession={!!selected?.agent && selected.agent !== "claude"} turns={turns} activeId={activeId} boot={boot} who={who} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={theirs ? undefined : onRunCommand} onQuote={theirs ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={theirs ? undefined : onAnswer} askDocked={!theirs && !!askDocked} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
               job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject}
               top={theirs && selected?.team?.earlier
                 ? <EarlierPlate share={selected.team.share} facts={selected.team.earlier} by={selected.team.from.name} me={teamMe} /> : undefined}
@@ -541,20 +567,25 @@ export function Terminal({
         )}
         <button
           className="np-title-btn"
-          title={sessionId ? "session — rename, pin, move to a worktree…" : undefined}
-          data-ctx-type={sessionId ? "session" : undefined}
-          data-ctx-id={sessionId ?? undefined}
+          title={helperChat ? "a helper of this chat" : sessionId ? "session — rename, pin, move to a worktree…" : undefined}
+          data-ctx-type={sessionId && !helperChat ? "session" : undefined}
+          data-ctx-id={helperChat ? undefined : sessionId ?? undefined}
           data-ctx-label={selected?.title || undefined}
-          disabled={!sessionId}
+          disabled={!sessionId || !!helperChat}
           onClick={openMenu}
           onMouseEnter={() => setTitleHov(true)} onMouseLeave={() => setTitleHov(false)}
           style={{ display: "flex", alignItems: "baseline", gap: 7, minWidth: 0, maxWidth: "100%", padding: 0, border: 0, appearance: "none", background: "transparent", fontFamily: "inherit", textAlign: "left", cursor: sessionId ? "pointer" : "default" }}>
           <span className="np-title" style={{ fontSize: "var(--t13)", lineHeight: "16px", letterSpacing: ".3px", color: "var(--txb)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>
             {selected?.title || "new session"}
           </span>
-          {sessionId && <span aria-hidden style={{ flex: "none", fontSize: "var(--t9)", color: titleHov ? "var(--txb)" : "var(--txl)" }}>▾</span>}
+          {sessionId && !helperChat && <span aria-hidden style={{ flex: "none", fontSize: "var(--t9)", color: titleHov ? "var(--txb)" : "var(--txl)" }}>▾</span>}
         </button>
         <div className="np-meta" style={flat ? { display: "contents" } : { display: "flex", alignItems: "center", gap: 9, height: 12, minWidth: 0, overflow: "hidden" }}>
+          {helperChat && (
+            <button type="button" className="ma-crumb" title={`Back to ${gridMain?.title || "its chat"}`} onClick={() => openAgentSession(helperChat)}>
+              <span aria-hidden>‹</span> {gridMain?.title || "chat"}
+            </button>
+          )}
           <button
             className="np-proj"
             title={sessionProject ? "project — analyze, design system, new session here" : undefined}
@@ -616,6 +647,12 @@ export function Terminal({
   // (FILES, BRANCHES, DESIGN) and in SETTINGS (Skills, Projects ▸ Project map).
   const readouts = (
       <div className="isle-reads" style={{ display: "flex", alignItems: "center", gap: 10, flex: "none" }}>
+        {isChat && hasAgents && (
+          <span className="ma-viewsw" role="group" aria-label="Chat or grid">
+            <button type="button" aria-pressed={!grid} onClick={() => setGridFor(null)}>CHAT</button>
+            <button type="button" aria-pressed={grid} onClick={() => setGridFor(chatId)}>GRID</button>
+          </span>
+        )}
         <ViewTabs view={view} onView={onView} />
         {chrome && (
           <>
@@ -719,6 +756,7 @@ export function Terminal({
       ) : (
         <>
           {body}
+          {grid && chatId && <AgentGrid sessionId={chatId} main={gridMain ?? null} top={compact ? ISLE_TOP + 40 : ISLE_EDGE + 8} />}
           <ChatChromeContext.Provider value={{ compact, lead: compact ? nameplate : null, composer: hud?.composer ?? "tabs", sendKey: hud?.sendKey ?? "enter" }}>
             {composer}
           </ChatChromeContext.Provider>

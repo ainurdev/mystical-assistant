@@ -22,6 +22,7 @@ import { ExtrasFold, SkillsPage } from "./SkillsFold";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
 import { StorageSection } from "./StorageSection";
+import { ExperimentalSection } from "./ExperimentalSection";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WorkspacesSettings } from "./WorkspacesSettings";
 import {
@@ -90,6 +91,8 @@ import { PromptBubble } from "../PromptBubble";
 import { FinalResult } from "../RunStream";
 
 export interface SettingsModalProps {
+  /** The open session's folder: which project's servers and skills EXPERIMENTAL lists. */
+  cwd?: string | null;
   host: string;
   port: string;
   /** Which tab to land on, when the opener asked for one by name (a dead-login
@@ -234,6 +237,9 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "integrations", sec: "CLAUDE DESIGN", terms: "claude design system link pull sync skill tokens components" },
   { tab: "integrations", sec: "AVAILABLE", terms: "install integration plugin add rivendell claude design" },
   { tab: "system", sec: "STORAGE", terms: "storage disk space cache caches clear delete clean up free files mystical screenshots pictures uploads drafts scratch" },
+  { tab: "system", sec: "EXPERIMENTAL", terms: "experimental multi agent chats helpers subagents switch provider kimi delegate limits hops channel" },
+  { tab: "system", sec: "SHARED MCP SERVERS", terms: "share mcp server model vendor kimi codex login tools secret sensitive" },
+  { tab: "system", sec: "SHARED SKILLS", terms: "share skill skills agents kimi codex claude only conflict" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "system", sec: "USAGE SHARING", terms: "share usage telemetry analytics posthog privacy tracking anonymous opt in out replay recording" },
@@ -2767,7 +2773,7 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
   );
 }
 
-function MiniBtn({
+export function MiniBtn({
   children,
   onClick,
   disabled,
@@ -4470,6 +4476,8 @@ export function SettingsModal(props: SettingsModalProps) {
             {shown === "system" && (
               <>
                 <StorageSection />
+
+                <ExperimentalSection cwd={props.cwd} top />
 
                 <Section title="BRIDGE" top>
                   <div style={CARD}>

@@ -11,6 +11,7 @@ import "@fontsource/geist/600.css";
 import "@fontsource/geist-mono/400.css";
 import "@fontsource/geist-mono/500.css";
 import "./index.css";
+import "./multi.css";
 // Side-effect import: `beforeinstallprompt` fires once, before React mounts, so
 // the listener has to be installed here rather than in the SETTINGS component.
 import "./lib/installprompt";

@@ -97,7 +97,118 @@ export interface SessionBrief {
   // in flight's (a fallback handover moves it off the profile's), else the one
   // its next turn takes. null = it runs on another agent. Absent from an older bridge.
   slot?: number | null;
+  // Multi-agent chats (bridge _multi_brief): all absent while the EXPERIMENTAL
+  // switch is off, so a client keeps its old rules. A helper is opened from its
+  // transcript row, which has none of the brief's fields (lib/multi withHelperFields).
+  caps?: AgentCaps;
+  helpers?: HelpersConfig;
+  parent_session?: string | null; // set on a helper: the chat it works under
+  member?: MemberInfo | null; // a helper's facts (store.parse_member)
 }
+
+/** What this session's agent can do (bridge/agent_caps.py). The UI reads this
+ *  instead of asking whether the agent is Claude. */
+export interface AgentCaps {
+  steer: "native" | "soft" | string;
+  ask: string;
+  block: boolean;
+  system_prompt: boolean;
+  subagents: string;
+  usage: boolean;
+  compact: boolean;
+  tools_switch: boolean;
+  goals: boolean;
+  duplicate: boolean;
+  skills_prefix: string;
+}
+
+/** A chat's helper limits (channel.config_for). Apply live; lowering one stops nothing. */
+export interface HelpersConfig {
+  helpers: "off" | "ask" | "auto";
+  max_agents: number;
+  max_hops: number;
+  per_account: number;
+  held: boolean;
+}
+
+export interface MemberInfo {
+  name?: string;
+  write?: boolean;
+  brief?: string;
+  state?: string;
+  agent?: string;
+  account?: string;
+  started?: number;
+}
+
+export interface ExperimentalState {
+  enabled: boolean;
+  defaults: Partial<HelpersConfig>;
+}
+
+/** One agent under a chat (bridge/agent_tree.py): a helper Mystical started
+ *  (`member`), Claude's own subagent or workflow step (`subagent`), or another
+ *  provider's sub-agent we can only see exists (`opaque`, detail false). */
+export interface TreeRow {
+  key: string;
+  kind: "member" | "subagent" | "opaque";
+  name: string;
+  provider: string;
+  account?: string;
+  model?: string | null;
+  status: string;
+  needs: boolean;
+  detail: boolean;
+  session_id?: string;
+  agent_id?: string;
+  workflow?: string | null;
+  started?: number | null;
+  updated?: number | null;
+  owner?: string;
+  activity?: string;
+  write?: boolean;
+  brief?: string;
+  conflict?: boolean;
+  merged?: boolean;
+  has_copy?: boolean;
+}
+
+export interface ChannelMessage {
+  id: string;
+  chat: string;
+  sender: string;
+  recipient: string;
+  kind: string;
+  body: string;
+  state: "queued" | "held" | "delivered" | "read" | "dropped" | string;
+  at: number;
+  meta?: Record<string, unknown>;
+}
+
+export interface ChannelView {
+  config: HelpersConfig;
+  messages: ChannelMessage[];
+  chat: string; // the parent chat's id, also when asked for a helper
+  rows: TreeRow[];
+}
+
+/** What the provider-switch dialog shows (handoff.preview). */
+export interface HandoffPreview {
+  needs_dialog: boolean;
+  from: string;
+  to: string;
+  resumes: boolean;
+  turns: number;
+  tokens: number;
+  with_tools: number;
+  budget: number;
+  fits: boolean;
+  recent: number;
+  refusal: string | null;
+}
+
+export type SwitchScope = "whole" | "recent";
+export type MergeAction = "merge" | "discard" | "undo" | "review";
 
 /** Which half of the picker a settings POST was for: the only half a running
  *  turn is switched to (the pair is saved either way; effort waits for the
@@ -255,7 +366,14 @@ export type RunEvent =
   | { type: "permission"; request_id: string; tool_name: string; summary: string; detail?: string }
   | { type: "question"; request_id: string; questions: Question[] }
   | { type: "permission_resolved"; request_id: string; behavior: "allow" | "deny" }
-  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] };
+  | { type: "question_answered"; request_id: string; answers: AnswerSelection[] }
+  // Multi-agent chats. A provider switch took effect on this turn (handoff.consume);
+  // a helper started (channel.start); a writer's copy merged, conflicted, went back
+  // out or was thrown away (channel.merge & co).
+  | { type: "switch"; from: string; to: string; turns: number; whole: boolean }
+  | { type: "delegation"; session_id: string; name: string; brief: string; agent: string;
+      profile?: string | null; write?: boolean }
+  | { type: "merge"; name: string; state: string; session_id?: string };
 
 export type ModelId = string; // full model id from the Models API, or a short CLI alias
 export type EffortLevel = "low" | "medium" | "high" | "xhigh" | "max";
@@ -368,7 +486,8 @@ export type AgentInfo = {
   started_at: number;
   updated_at: number;
 };
-export type AgentsInfo = { running: number; total: number; agents: AgentInfo[] };
+export type AgentsInfo = { running: number; total: number; agents: AgentInfo[];
+  workflows?: { run_id: string; agents: AgentInfo[] }[] };
 export type AgentActivityEvent =
   | { type: "text"; text: string }
   | { type: "tool"; name: string; summary: string };
@@ -764,10 +883,10 @@ export const api = {
   profiles: () => request<ProfilesInfo>("/api/profiles"),
   /** Bind (or "" unbind) a session's profile. A 409 means it already ran on
    *  another agent. */
-  setSessionProfile: (id: string, profileId: string) =>
+  setSessionProfile: (id: string, profileId: string, scope?: SwitchScope) =>
     request<{ ok: boolean; profile_id: string | null; session: SessionBrief }>("/api/session/profile", {
       method: "POST",
-      body: { session_id: id, profile_id: profileId },
+      body: { session_id: id, profile_id: profileId, ...(scope ? { scope } : {}) },
     }),
 
   runStatus: (jobId: string, cursor: number) =>
@@ -811,10 +930,49 @@ export const api = {
 
   agents: (sessionId: string) =>
     request<AgentsInfo>(`/api/agents?session=${encodeURIComponent(sessionId)}`),
-  agentActivity: (sessionId: string, agentId: string, cursor: number) =>
+  agentActivity: (sessionId: string, agentId: string, cursor: number, workflow?: string | null) =>
     request<AgentActivity>(
       `/api/agents/activity?session=${encodeURIComponent(sessionId)}` +
-        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}`,
+        `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}` +
+        (workflow ? `&workflow=${encodeURIComponent(workflow)}` : ""),
     ),
+
+  // Multi-agent chats (bridge/multi_api.py). All but the first answer 409 while the
+  // switch is off; a bridge older than them 404s every one.
+  experimental: () => request<ExperimentalState>("/api/experimental"),
+  agentTrees: (ids: string[]) =>
+    request<{ trees: Record<string, TreeRow[]> }>(`/api/tree?ids=${ids.map(encodeURIComponent).join(",")}`),
+  channel: (sessionId: string) =>
+    request<ChannelView>(`/api/channel?session=${encodeURIComponent(sessionId)}`),
+  handoffPreview: (sessionId: string, profileId: string) =>
+    request<HandoffPreview>(`/api/session/handoff?session=${encodeURIComponent(sessionId)}` +
+      `&profile=${encodeURIComponent(profileId)}`),
+  setChatConfig: (sessionId: string, config: Partial<HelpersConfig>) =>
+    request<{ ok: boolean; config: HelpersConfig }>("/api/chat/config", {
+      method: "POST", body: { session_id: sessionId, config },
+    }),
+  channelSend: (sessionId: string, to: string, text: string) =>
+    request<{ ok: boolean; message: ChannelMessage }>("/api/channel/send", {
+      method: "POST", body: { session_id: sessionId, to, text },
+    }),
+  channelHold: (sessionId: string, held: boolean) =>
+    request<{ ok: boolean; config: HelpersConfig }>("/api/channel/hold", {
+      method: "POST", body: { session_id: sessionId, held },
+    }),
+  channelEdit: (sessionId: string, id: string, edit: { body?: string; drop?: boolean }) =>
+    request<{ ok: boolean }>("/api/channel/edit", {
+      method: "POST", body: { session_id: sessionId, id, ...edit },
+    }),
+  channelStop: (sessionId: string) =>
+    request<{ ok: boolean; stopped: number }>("/api/channel/stop", {
+      method: "POST", body: { session_id: sessionId },
+    }),
+  channelMerge: (sessionId: string, name: string, action: MergeAction) =>
+    request<{ ok: boolean; text: string }>("/api/channel/merge", {
+      method: "POST", body: { session_id: sessionId, name, action },
+    }),
+  skillShare: (cwd?: string | null) =>
+    request<{ skills: { key: string; name: string; on: boolean; conflict: boolean }[] }>(
+      `/api/skill-share${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`),
 
 };

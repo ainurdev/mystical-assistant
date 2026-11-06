@@ -39,7 +39,8 @@ def _agents() -> list:
 def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
     if path == "experimental":
         return experimental.state(), 200
-    if path not in ("tree", "channel", "session/handoff", "mcp-share", "skill-share"):
+    if path not in ("tree", "channel", "session/handoff", "session/brief", "project/helper",
+                    "mcp-share", "skill-share"):
         return None
     if not experimental.enabled():
         return _OFF
@@ -57,6 +58,15 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
         chat = _chat_of(s)
         return {**channel.view(chat), "chat": chat["id"], "main": agent_tree.main_row(chat),
                 "rows": agent_tree.tree(chat)}, 200
+    if path == "session/brief":
+        # A helper is in no list, so opening one by id reads it here.
+        s = _owned(chat_id, _one(qs, "session"))
+        if not s:
+            return {"error": "not found"}, 404
+        from bridge.miniapp.server import _session_brief   # lazy: that server imports this
+        return {"session": _session_brief(s)}, 200
+    if path == "project/helper":
+        return {"profile_id": project_config.helper(_one(qs, "project")) or ""}, 200
     if path == "session/handoff":
         s = _owned(chat_id, _one(qs, "session"))
         if not s:

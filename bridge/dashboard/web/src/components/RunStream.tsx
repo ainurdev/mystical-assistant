@@ -18,7 +18,9 @@ import { hhmm, useClock12, wall } from "../lib/surfaces";
 import { ckId, steerKey } from "../lib/checkpoints";
 import { foldChips, runsOf, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
-import { chapterStarts, kindsOf, stretchesOf, workTitle, zonesOf, TOP_TYPES, type Mark } from "../lib/dossier";
+import { chapterStarts, kindsOf, noteEnding, splitSaid, stretchesOf, workTitle, zonesOf, zonesWithSaid, TOP_TYPES, type Mark } from "../lib/dossier";
+import { parseFrame } from "../lib/multi";
+import { DelegationRow, IncomingNote, MergeLine, SaidTier, SwitchLine } from "./MultiRows";
 import { PromptBubble } from "./PromptBubble";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
 import { nowOf } from "../lib/workstate";
@@ -2231,8 +2233,13 @@ export const RunStream = memo(function RunStream({
   compact = false,
   view = null,
   askDocked = false,
+  saidTier = false,
 }: {
   events: TimedEvent[];
+  /** A non-Claude agent's turn with the experimental switch on: its interim notes
+   *  are addressed to you, so in DOSSIER they sit outside the WORK zone (lib/dossier
+   *  zonesWithSaid). Other languages draw them in the flow already. */
+  saidTier?: boolean;
   pending?: PendingRequest[];
   onRespond?: RespondFn;
   /** The open ask sits on the prompt box (AskDock): a live card is a marker here. */
@@ -2393,6 +2400,8 @@ export const RunStream = memo(function RunStream({
   // but bookkeeping follows is it.
   const finalText = (() => {
     if (!dossier || !ended || resultText || unfinished) return -1;
+    // A stopped turn's last words were on the way somewhere: not its answer.
+    if (saidTier && events.some((e) => e.type === "stopped")) return -1;
     for (let j = events.length - 1; j >= 0; j--) {
       const t = events[j].type;
       if (t === "text") return (events[j] as { text?: string }).text ? j : -1;
@@ -2656,17 +2665,29 @@ export const RunStream = memo(function RunStream({
         );
       case "tool_done":
         return null;
-      case "steer":
+      case "switch":
+        return <SwitchLine key={i} to={event.to} from={event.from} turns={event.turns} whole={event.whole} />;
+      case "delegation":
+        return <DelegationRow key={i} sessionId={event.session_id} name={event.name} brief={event.brief}
+          agent={event.agent} profile={event.profile} write={event.write} />;
+      case "merge":
+        return <MergeLine key={i} name={event.name} state={event.state} />;
+      case "steer": {
+        // A ⇄ steer is the channel delivering another agent's message, not you.
+        const frame = parseFrame(event.text);
+        if (frame && frame.kind !== "user")
+          return <div key={i} id={ckId(turnId, steerKey(i))} className="scroll-mt-[94px]"><IncomingNote frame={frame} at={event.at} /></div>;
         // Sent into this turn while it was already running — still you, so it
         // reads the way your prompt does (lib/dossier TOP_TYPES keeps it out of
         // the work), between the work it interrupted and the work it caused.
         return (
           <div key={i} id={ckId(turnId, steerKey(i))} className="dprompt scroll-mt-[94px]">
-            <PromptBubble steer text={event.text} at={event.at}>
+            <PromptBubble steer text={frame ? frame.body : event.text} at={event.at}>
               {event.images && event.images.length > 0 && <ToolImages paths={event.images} all={galleryAt(i)} />}
             </PromptBubble>
           </div>
         );
+      }
       case "result":
         return (
           <FinalResult
@@ -2959,7 +2980,8 @@ export const RunStream = memo(function RunStream({
     // while open (lib/dossier chapterStarts); a chapter opens on a note.
     const starts = chapterStarts(
       zsegs.map((s) => s.idx.filter((i) => isStep(events[i])).length),
-      zsegs.map((s) => s.kind === "prose" && events[s.idx[0]].type === "text"),
+      // With the notes in their own tier, a thought is what's left to open a chapter on.
+      zsegs.map((s) => s.kind === "prose" && (events[s.idx[0]].type === "text" || (saidTier && events[s.idx[0]].type === "thinking"))),
     );
     const rows = !starts.length ? rowsOf(zsegs, !!state) : starts.map((at, k) => {
       const segs = zsegs.slice(at, starts[k + 1]);
@@ -3004,7 +3026,24 @@ export const RunStream = memo(function RunStream({
     );
   };
 
-  const zones = dossier ? zonesOf(segs, isTop) : [];
+  // An interim note on an agent's turn: words with something to read that aren't
+  // the answer, and not the streamed copy of a result, which draws nothing.
+  const isNote = (seg: Seg): boolean => {
+    const e = events[seg.idx[0]];
+    return seg.kind === "prose" && e.type === "text" && !!e.text && !(resultText && e.text.trim() === resultText);
+  };
+  const zones = !dossier ? [] : saidTier ? zonesWithSaid(segs, isTop, isNote) : zonesOf(segs, isTop);
+  // The last note of a turn that left no answer says so.
+  const lastSaid = zones.reduce((m, z, i) => (z.kind === "said" ? i : m), -1);
+  const ending = saidTier && !unfinished ? noteEnding(events.map((e) => e.type), ended, !!resultText || finalText >= 0) : null;
+  const said = (z: { segs: Seg[] }, i: number) => {
+    const { latest, older } = splitSaid(z.segs);
+    return (
+      <SaidTier key={`said${z.segs[0].start}`} count={z.segs.length} ending={i === lastSaid ? ending : null}
+        latest={latest ? renderEvent(latest.idx[0]) : null}
+        older={() => older.map((s) => renderEvent(s.idx[0]))} />
+    );
+  };
   // Each zone's pictures, for every event in it: a lightbox opened in a WORK
   // zone (or on a steer) pages through those, never another zone's.
   const zoneShots = new Map<number, Shown[]>();
@@ -3022,7 +3061,7 @@ export const RunStream = memo(function RunStream({
   // DOSSIER, under one WORK zone per stretch (lib/dossier).
   const rows = dossier
     ? zones.map((z, i) =>
-        z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : workZone(z.segs, i === zones.length - 1))
+        z.kind === "top" ? renderEvent(z.segs[0].idx[0]) : z.kind === "said" ? said(z, i) : workZone(z.segs, i === zones.length - 1))
     : segs.map((seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg)));
   // DOSSIER: with no zone to carry it, the card is there anyway, live and
   // empty, its line saying what the turn waits on (the boot step). It is keyed

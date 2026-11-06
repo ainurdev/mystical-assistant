@@ -37,6 +37,9 @@ import { api, type AnswerSelection, type PendingRequest, type RunEvent } from ".
 import { Card } from "./ui";
 import { foldChips, runsOf, headSafeCut, insideRun, byFile, type EditEv } from "../lib/toolfold";
 import { segmentsOf, stepsTitle, type Seg, type StepCat } from "../lib/segments";
+import { endedWithout, saidLayout } from "../lib/said";
+import { parseFrame } from "../lib/frame";
+import { DelegationRow, IncomingNote, MergeLine, SaidTier, SwitchDivider } from "./MultiRows";
 import { useFoldsOpen } from "../lib/folds";
 import { ImageLightbox, MediaThumb, isVideo, type Clip } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
@@ -653,6 +656,9 @@ function ToolImages({ paths, clip }: { paths: string[]; clip?: Clip }) {
   );
 }
 
+/** Multi-agent rows: each its own line in the flow, never inside a work fold. */
+const MULTI_ROW = new Set(["switch", "delegation", "merge"]);
+
 /** Tool kinds that draw a block of their own, so they never fold into a
  *  "N steps" chip with the quiet lookups. */
 const BLOCK_KINDS = new Set(["bash", "agent", "web", "mcp"]);
@@ -1017,6 +1023,9 @@ export const RunStream = memo(function RunStream({
   live = false,
   turnStarted,
   foldsOpen: foldsOpenProp,
+  multi = false,
+  said = false,
+  onOpenAgent,
 }: {
   events: RunEvent[];
   pending?: PendingRequest[];
@@ -1040,6 +1049,13 @@ export const RunStream = memo(function RunStream({
    *  setting (lib/folds); the OUTPUT STYLE previews pass true, because a tile
    *  exists to show the ledger. */
   foldsOpen?: boolean;
+  /** The EXPERIMENTAL switch: draw the multi-agent rows and read ⇄ frames. Off, a
+   *  chat that used them while it was on reads as it always did. */
+  multi?: boolean;
+  /** This turn ran on a non-Claude agent: its notes go in the said-to-you tier. */
+  said?: boolean;
+  /** Tapped a delegation row. Stable, or every past turn re-renders per poll. */
+  onOpenAgent?: (sessionId: string) => void;
 }) {
   // An ask is drawn by its question card and by nothing else. A live run also
   // emits it as a tool: the bridge answers the control request with a `deny`
@@ -1050,7 +1066,7 @@ export const RunStream = memo(function RunStream({
   // and dropped before folding/grouping so a phantom can't head a run.
   // The native reader already omits the row (transcript_jsonl.py, tool_use).
   const events = allEvents.filter(
-    (e) => !(e.type === "tool" && e.name === "AskUserQuestion"),
+    (e) => !(e.type === "tool" && e.name === "AskUserQuestion") && (multi || !MULTI_ROW.has(e.type)),
   );
   // Read here rather than threaded down: the Mini App has no settings blob
   // to ride along with (the dashboard passes it as a prop from HudSettings).
@@ -1115,8 +1131,8 @@ export const RunStream = memo(function RunStream({
   // A picture is the result, so a run that came back with one is drawn in the
   // flow with the words — a shut STEPS fold would hide it. The whole run goes:
   // its head draws every member, and a member left behind would head an empty fold.
-  const inFlow = (i: number) =>
-    (groups.get(groupOf.get(i) ?? i) ?? [i]).some((j) => !!doneOf(events[j])?.images?.length);
+  const inFlow = (i: number) => MULTI_ROW.has(events[i].type)
+    || (groups.get(groupOf.get(i) ?? i) ?? [i]).some((j) => !!doneOf(events[j])?.images?.length);
 
   // Never cut a folded run away from the head that draws it. A cut that ends up
   // hiding only a handful buys nothing and reads as a button in front of
@@ -1276,7 +1292,12 @@ export const RunStream = memo(function RunStream({
         );
       case "tool_done":
         return null;
-      case "steer":
+      case "steer": {
+        // ⇄ is the channel's: another agent's words aren't yours, so they come in as
+        // a note. Yours sent through it are yours, without the frame.
+        const framed = multi ? parseFrame(event.text) : null;
+        if (framed && !framed.own)
+          return <IncomingNote key={i} from={framed.from} label={framed.label} body={framed.body} />;
         // Sent into this turn while it was already running — drawn as your
         // bubble (right-aligned, button color, out of the agent rail) so
         // mid-turn words read as yours; the tag marks them as a steer.
@@ -1286,13 +1307,23 @@ export const RunStream = memo(function RunStream({
               <div className="mb-0.5 flex items-center justify-end gap-1 text-[11px] uppercase tracking-wide opacity-70">
                 steer <Merge size={11} strokeWidth={1.8} style={{ transform: "rotate(90deg)" }} aria-hidden />
               </div>
-              {event.text}
+              {framed ? framed.body : event.text}
               {event.images && event.images.length > 0 && (
                 <ToolImages paths={event.images} />
               )}
             </div>
           </div>
         );
+      }
+      case "switch":
+        return <SwitchDivider key={i} from={event.from} to={event.to} turns={event.turns} whole={event.whole} />;
+      case "delegation":
+        return (
+          <DelegationRow key={i} name={event.name} brief={event.brief} agent={event.agent} profile={event.profile}
+            write={event.write} onOpen={onOpenAgent && event.session_id ? () => onOpenAgent(event.session_id) : undefined} />
+        );
+      case "merge":
+        return <MergeLine key={i} name={event.name} state={event.state} />;
       case "result":
         return (
           <div key={i} className="relative -ml-3 pl-3">
@@ -1414,6 +1445,10 @@ export const RunStream = memo(function RunStream({
     );
   };
 
+  const drawSeg = (seg: Seg) => (seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg));
+  // A non-Claude turn: its notes pulled out to the tier, the work closed up (lib/said).
+  const tier = said ? saidLayout(events, from, inFlow, waiting) : null;
+
   return (
     // vskip-card: off-screen event cards skip layout/paint (see index.css).
     <div className="space-y-2 vskip-card">
@@ -1429,8 +1464,18 @@ export const RunStream = memo(function RunStream({
         </button>
       )}
       {/* The words in the flow, the work under a row each (lib/segments). */}
-      {segmentsOf(events, from, inFlow, waiting).map((seg) =>
-        seg.kind === "prose" ? renderEvent(seg.idx[0]) : stepsFold(seg))}
+      {tier ? (
+        <>
+          {tier.segs.slice(0, tier.at).map(drawSeg)}
+          <SaidTier
+            notes={tier.notes.map((i) => (events[i] as { text: string }).text)}
+            end={endedWithout(events, ended)}
+            rail={<RailNode />}
+            toolStyle={toolStyle}
+          />
+          {tier.segs.slice(tier.at).map(drawSeg)}
+        </>
+      ) : segmentsOf(events, from, inFlow, waiting).map(drawSeg)}
     </div>
   );
 });

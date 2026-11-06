@@ -1628,6 +1628,94 @@ a.flc-path { color: var(--txh); text-decoration: none; border-bottom: 1px solid 
 .sb-seg > button { flex: 1; padding: 6px; border-radius: max(var(--f-rad-s, 0px) - 1px, 0px); font-size: 12.5px; color: var(--txd); }
 .sb-seg > button[aria-pressed="true"] { background: var(--panel); color: var(--txb); box-shadow: inset 0 0 0 1px var(--line2, var(--border)); }
 
+/* ---- MULTI-AGENT CHATS. A chat's agents under its row (AgentTree), the switch and
+   grid (AgentSwitch, AgentGrid), the said-to-you tier and new transcript rows
+   (MultiRows). The sidebar's own grammar throughout: state dots, tracked caps. */
+.at { margin: 0 0 4px 12px; padding-left: 8px; border-left: 1px solid var(--line2, var(--border)); }
+.at-head { display: flex; align-items: center; gap: 6px; min-height: 36px; }
+.at-tog { display: flex; min-width: 0; flex: 1; min-height: 36px; align-items: center; gap: 5px; text-align: left; font-size: 10px; letter-spacing: .08em; color: var(--txd); }
+.at-sort { flex: none; min-height: 36px; padding: 0 8px; font-size: 9.5px; letter-spacing: .1em; color: var(--acc); }
+.at-sort:active, .at-tog:active, .at-more:active { opacity: .7; }
+.at-row {
+  display: flex; width: 100%; min-height: 44px; align-items: flex-start; gap: 9px;
+  padding: 7px 8px; border-radius: var(--f-rad-s, 0); text-align: left;
+}
+button.at-row:active { background: var(--ac-06); }
+.at-row[data-on] { background: var(--ac-06); box-shadow: inset 2px 0 0 var(--acc); }
+.at-row[data-flat] { opacity: .75; }
+.at-name { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 13px var(--ui-font, inherit); color: var(--txh); }
+.at-nodetail { font-style: italic; }
+.at-needs { flex: none; margin-top: 1px; padding: 1px 5px; font-size: 9px; letter-spacing: .08em; color: var(--warn); border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent); }
+.at-more { display: inline-flex; min-height: 36px; align-items: center; gap: 4px; padding: 0 8px; font-size: 12px; color: var(--txd); }
+
+/* top is from the scroller's content edge, which already sits below the header (its
+   padding is the header's height plus py-3's 12px), so this lands just under the header. */
+.ag-bar { position: sticky; top: -12px; z-index: 20; margin: -12px -12px 12px; padding: 6px 12px; background: var(--tg-bg); border-bottom: 1px solid var(--border); }
+.ag-tabs { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--border); background: var(--panel3); }
+.ag-tabs > button { flex: 1; min-width: 0; min-height: 36px; font-size: 11px; letter-spacing: .12em; color: var(--txd); }
+.ag-tabs > button[aria-selected="true"] { background: var(--panel); color: var(--acc); box-shadow: inset 0 0 0 1px var(--border-bright, var(--border)); }
+.ag-tabs b { margin-left: 5px; font-weight: 500; color: var(--warn); }
+.ag-back { display: flex; width: 100%; min-height: 40px; align-items: center; gap: 6px; text-align: left; font-size: 12px; color: var(--acc); }
+.ag-back:active { opacity: .7; }
+.ag-back span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ag-card { border: 1px solid var(--border); border-left: 3px solid var(--ag, var(--border)); background: var(--ac-03); }
+.ag-card[data-needs] { border-color: color-mix(in srgb, var(--warn) 45%, transparent); border-left-color: var(--warn); }
+.ag-open { display: block; width: 100%; padding: 10px 11px; text-align: left; }
+button.ag-open:active { background: var(--ac-06); }
+.ag-who { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.ag-who > b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 13.5px var(--ui-font, inherit); color: var(--txb); }
+.ag-tag { flex: none; padding: 0 5px; font-size: 9px; letter-spacing: .1em; color: var(--txd); border: 1px solid var(--border); }
+.ag-sub { margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--txd); }
+.ag-act { margin-top: 6px; display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow-wrap: anywhere; font-size: 12.5px; line-height: 1.4; color: var(--tx); }
+.ag-btns { display: flex; flex-wrap: wrap; gap: 1px; border-top: 1px solid var(--border); background: var(--border); }
+.ag-btns > button { flex: 1 1 22%; min-width: 64px; min-height: 42px; background: var(--tg-bg); font-size: 10.5px; letter-spacing: .1em; color: var(--acc); }
+.ag-btns > button:active { opacity: .7; }
+.ag-btns > button:disabled { opacity: .4; }
+.ag-btns > button[data-arm] { color: var(--acc-on); background: var(--warn); }
+.ag-btns > button[data-tone="err"] { color: var(--err); }
+
+.ag-msg { padding: 9px 11px; border: 1px solid var(--border); background: var(--ac-03); }
+.ag-msg[data-state="held"] { border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
+.ag-msg[data-state="dropped"] { opacity: .55; }
+.ag-msg[data-state="dropped"] .ag-body { text-decoration: line-through; }
+.ag-route { display: flex; min-width: 0; align-items: center; gap: 5px; font-size: 11px; color: var(--txd); }
+.ag-route b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--txh); }
+.ag-state { flex: none; margin-left: auto; font-size: 9.5px; letter-spacing: .1em; }
+.ag-body { margin-top: 5px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.45; color: var(--tx); }
+
+.ag-dock { position: fixed; left: 0; right: 0; bottom: var(--tabbar-h); z-index: 10; margin: 0 auto; max-width: 640px; padding: 8px 12px; background: var(--tg-bg); border-top: 1px solid var(--border); }
+.ag-chips { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; margin-bottom: 6px; }
+.ag-chips > button { flex: none; max-width: 150px; min-height: 36px; padding: 0 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--txd); border: 1px solid var(--border); }
+.ag-chips > button[aria-checked="true"] { color: var(--acc); border-color: var(--acc); }
+.ag-actions { display: flex; gap: 6px; margin-top: 6px; }
+.ag-actions > button { flex: 1; min-height: 42px; font-size: 11px; letter-spacing: .12em; color: var(--acc); border: 1px solid var(--border-bright, var(--border)); }
+.ag-actions > button:active { opacity: .7; }
+.ag-actions > button:disabled { opacity: .4; }
+.ag-actions > button[data-on] { color: var(--acc-on); background: var(--warn); border-color: var(--warn); }
+.ag-actions > button[data-tone="err"] { color: var(--err); border-color: color-mix(in srgb, var(--err) 50%, transparent); }
+.ag-actions > button[data-tone="err"][data-arm] { color: var(--acc-on); background: var(--err); }
+
+.ms-note { border: 1px solid var(--border); border-left: 3px solid var(--purple); background: var(--ac-03); padding: 7px 10px; }
+.ms-who { display: flex; align-items: center; gap: 6px; font-size: 9.5px; letter-spacing: .12em; color: var(--purple); }
+.ms-who b { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.ms-rule { display: flex; align-items: center; gap: 8px; font-size: 10px; letter-spacing: .1em; color: var(--acc); }
+.ms-rule i { height: 1px; min-width: 12px; flex: 1; background: color-mix(in srgb, var(--acc) 30%, transparent); }
+.ms-rule span { min-width: 0; text-align: center; overflow-wrap: anywhere; }
+.ms-del { display: flex; width: 100%; min-height: 44px; align-items: center; gap: 8px; padding: 7px 10px; text-align: left; border: 1px solid var(--border); background: var(--ac-03); }
+button.ms-del:active { background: var(--ac-06); }
+.ms-said-lab { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 9.5px; letter-spacing: .12em; color: var(--brand-soft); }
+.ms-said-lab[data-end] { color: var(--warn); }
+.ms-said-more { display: inline-flex; min-height: 32px; align-items: center; gap: 5px; padding: 0 2px; font-size: 10.5px; letter-spacing: .08em; color: var(--txd); }
+
+.sw-step { display: flex; min-width: 0; flex: 1; flex-direction: column; align-items: center; gap: 2px; }
+.sw-step > span { font-size: 9px; letter-spacing: .1em; color: var(--muted-foreground, var(--txd)); }
+.sw-step > div { display: flex; width: 100%; align-items: center; border: 1px solid var(--border); }
+.sw-step button { flex: 1; min-width: 30px; height: 36px; font-size: 15px; color: var(--acc); }
+.sw-step button:active { background: var(--ac-08); }
+.sw-step button:disabled { opacity: .3; }
+.sw-step b { flex: none; min-width: 26px; text-align: center; font-weight: 500; font-size: 13px; font-variant-numeric: tabular-nums; color: var(--txb); }
+
 /* The image viewer's ✕: a full thumb target, clear of Telegram's own top bar. */
 .lb-close {
   position: absolute; z-index: 1; right: 12px; top: calc(env(safe-area-inset-top, 0px) + 12px);

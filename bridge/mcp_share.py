@@ -40,7 +40,7 @@ _FILE = os.path.expanduser(os.environ.get("MCP_SHARE_FILE", "~/.mystical/mcp-sha
 _lock = threading.RLock()
 
 # Matched on the server's command, package or URL, never on the name you gave it.
-KNOWN = re.compile(r"(@playwright/mcp|playwright-mcp|chrome-devtools-mcp|context7|"
+KNOWN = re.compile(r"(@playwright/mcp|playwright-mcp|playwright run-mcp-server|chrome-devtools-mcp|context7|"
                    r"mcp\.deepwiki\.com|@modelcontextprotocol/server-(memory|sequential-thinking|time|fetch))", re.I)
 SENSITIVE = re.compile(r"secret|credential|password|passwd|api[_-]?key|token|infrastructure|"
                        r"deploy|service[_-]?action|service[_-]?variables|impersonat", re.I)

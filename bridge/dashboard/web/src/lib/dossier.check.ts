@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/dossier.check.ts
-import { chapterStarts, kindsOf, stretchesOf, workTitle, zonesOf, TOP_TYPES } from "./dossier.ts";
+import { chapterStarts, kindsOf, noteEnding, splitSaid, stretchesOf, workTitle, zonesOf, zonesWithSaid, TOP_TYPES } from "./dossier.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -87,4 +87,25 @@ ok(workTitle("1 command", 0) === "1 command", "steps only");
     const a = stretchesOf(full.slice(0, n)), b = stretchesOf(full);
     ok(a.slice(0, -1).every((x, k) => JSON.stringify(x) === JSON.stringify(b[k])), `prefix of ${n} keeps every closed stretch`);
   }
+}
+
+// The "said to you" tier: an agent's notes leave the work, said before the work
+// of the same stretch; a top row still cuts, and tools stay in the work.
+{
+  const types = ["text", "tool", "text", "tool", "question", "text", "tool", "result"];
+  const segs = [p(0), st(1), p(2), st(3), p(4), p(5), st(6), p(7)];
+  const zs = zonesWithSaid(segs, (s) => TOP_TYPES.has(types[s.idx[0]]), (s) => s.kind === "prose" && types[s.idx[0]] === "text");
+  ok(shape(zs) === "said:0|2 work:1|3 top:4 said:5 work:6 top:7", `said splits by stretch: ${shape(zs)}`);
+  const none = zonesWithSaid([st(0), p(1)], (s) => s.idx[0] === 1, () => false);
+  ok(shape(none) === "work:0 top:1", "no note: the zones it always had");
+  const words = zonesWithSaid([p(0)], () => false, () => true);
+  ok(shape(words) === "said:0", "notes alone: no empty work zone");
+  const { latest, older } = splitSaid(["a", "b", "c"]);
+  ok(latest === "c" && older.join() === "a,b", "the latest shows, the rest wait");
+  ok(splitSaid([]).latest === null, "no notes");
+  ok(noteEnding(["text", "stopped"], true, false) === "stopped", "a stopped turn's last note");
+  ok(noteEnding(["text", "tool"], true, false) === "cut", "cut off with no answer");
+  ok(noteEnding(["text", "result"], true, true) === null, "an answered turn's notes are just notes");
+  ok(noteEnding(["text"], false, false) === null, "a running turn isn't cut off");
+  ok(TOP_TYPES.has("switch") && TOP_TYPES.has("delegation") && TOP_TYPES.has("merge"), "chat events stay out of the work");
 }

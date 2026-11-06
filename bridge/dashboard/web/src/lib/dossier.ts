@@ -23,7 +23,7 @@ import { CAT_ORDER, type Seg, type StepCat } from "./segments.ts";
 /** What a segment's head event is, for the cut — the renderer's own view of it
  *  (a `text` that a question card follows reads as the answer, so the caller
  *  says which segments are tier 1/2; this module never sees event payloads). */
-export type Zone = { kind: "top" | "work"; segs: Seg[] };
+export type Zone = { kind: "top" | "work" | "said"; segs: Seg[] };
 
 /** Event types that are tier 1 or 2 by type alone: the answer and what ends a
  *  turn, what waits on you, and your steer — yours, so never inside the work
@@ -32,6 +32,9 @@ export type Zone = { kind: "top" | "work"; segs: Seg[] };
  *  follows introduces it), so it is not here. */
 export const TOP_TYPES: ReadonlySet<string> = new Set([
   "result", "question", "permission", "error", "stopped", "steer",
+  // Multi-agent chats: a provider switch, a helper started, a merge. Each says
+  // something happened to the chat, so none hides in the work around it.
+  "switch", "delegation", "merge",
 ]);
 
 /** Cut segments into zones: every `isTop` segment is its own zone, and each
@@ -45,6 +48,44 @@ export function zonesOf(segs: Seg[], isTop: (s: Seg) => boolean): Zone[] {
     else out.push({ kind: "work", segs: [s] });
   }
   return out;
+}
+
+/** The "said to you" tier: a non-Claude agent's interim notes. Kimi writes
+ *  hundreds of these in a turn, addressed to you, and in the work fold they
+ *  were lost behind one header. They leave the work here: each stretch between
+ *  two tier-1/2 rows becomes a `said` zone (only when it holds a note) and then
+ *  the `work` zone of what's left. Said first, so a live work zone stays last
+ *  and keeps hosting the working indicator, and the note doesn't change places
+ *  when the turn ends. Order inside each is the turn's. */
+export function zonesWithSaid(segs: Seg[], isTop: (s: Seg) => boolean, isNote: (s: Seg) => boolean): Zone[] {
+  const out: Zone[] = [];
+  let said: Seg[] = [], work: Seg[] = [];
+  const flush = () => {
+    if (said.length) out.push({ kind: "said", segs: said });
+    if (work.length) out.push({ kind: "work", segs: work });
+    said = [];
+    work = [];
+  };
+  for (const s of segs) {
+    if (isTop(s)) { flush(); out.push({ kind: "top", segs: [s] }); }
+    else if (isNote(s)) said.push(s);
+    else work.push(s);
+  }
+  flush();
+  return out;
+}
+
+/** The newest note is on show, the rest wait behind a count. */
+export function splitSaid<T>(notes: T[]): { latest: T | null; older: T[] } {
+  return { latest: notes.length ? notes[notes.length - 1] : null, older: notes.slice(0, -1) };
+}
+
+/** How a turn ended, for the last note it left: a stopped turn, or one that ended
+ *  with no answer at all, has that note instead of one. null: it's still running
+ *  or it answered. `types` is the turn's event types. */
+export function noteEnding(types: string[], ended: boolean, answered: boolean): "stopped" | "cut" | null {
+  if (types.includes("stopped")) return "stopped";
+  return ended && !answered ? "cut" : null;
 }
 
 /** One mark per kind of thing a zone holds: the header's chips count them
