@@ -1978,6 +1978,7 @@ function IntegrationsPanel() {
   const [down, setDown] = useState("");   // why the list can't be read; "not found" is a bridge from before integrations
   const [busy, setBusy] = useState("");   // the plugin being installed or removed
   const [err, setErr] = useState<{ id: string; msg: string } | null>(null);   // shown on the card it belongs to
+  const [open, setOpen] = useState<string | null>("rivendell");   // the one row whose settings are showing
 
   // Every answer also goes to the shared store, so the tabs and buttons a
   // plugin brings appear or leave in the same frame.
@@ -2016,22 +2017,58 @@ function IntegrationsPanel() {
   const offers = OFFERS.filter((o) => list.some((p) => p.id === o.id && !p.installed));
   const errLine = (id: string) => (err?.id === id ? <div style={{ color: "var(--err)", marginTop: 4 }}>{err.msg}</div> : undefined);
 
+  // CONNECTED as one list (2026-11-06, A · CONNECTED LIST): a row per integration
+  // saying where it stands; Configure opens its own panel in place, one at a time.
+  // Rivendell starts open, so a deep link to one of its instances still lands.
+  const rows: { id: string; chip: string; color: string; name: string; line: string; body: ReactNode; plugin?: Integration }[] = [];
+  for (const p of installed) {
+    const offer = OFFERS.find((o) => o.id === p.id);
+    rows.push({
+      id: p.id, chip: offer?.chip ?? p.label.slice(0, 2).toUpperCase(), color: offer?.color ?? "var(--acc)", name: p.label,
+      line: p.summary, plugin: p,
+      body: p.id === "rivendell" ? <RivendellPanel onChange={recount} />
+        : p.id === "design" ? <div className="int-note">Adds a Design system row to each repo in SETTINGS ▸ Projects (link · pull · sync), the composer's DESIGN button and the project menu's Design system.</div>
+        : <div className="int-note">{p.blurb}</div>,
+    });
+    // Device runs ride on Rivendell (teammates there ask for them), so they list beside it.
+    if (p.id === "rivendell")
+      rows.push({ id: "devices", chip: "DR", color: "var(--info, var(--acc))", name: "Device runs",
+        line: "teammates' iOS runs on this device", body: <DeviceRunsPanel /> });
+  }
+
   return (
     <>
-      {installed.map((p, i) => (
-        <Section key={p.id} title={PLUGIN_SEC[p.id] ?? p.label} desc={p.blurb} info={PLUGIN_INFO[p.id]} top={i > 0}>
-          <div style={CARD}>
-            <Row first label={p.summary}
-              desc={p.id === "design"
-                ? <>Adds a Design system row to each repo in SETTINGS ▸ Projects (link · pull · sync), the composer's DESIGN button and the project menu's Design system.{errLine(p.id)}</>
-                : errLine(p.id)}>
-              <MiniBtn danger disabled={!!busy} onClick={() => void remove(p)} title={`Remove ${p.label}`}>REMOVE</MiniBtn>
-            </Row>
-          </div>
-          {p.id === "rivendell" && <div style={{ marginTop: 11 }}><RivendellPanel onChange={recount} /><DeviceRunsPanel /></div>}
-        </Section>
-      ))}
-      <Section title="AVAILABLE" top={installed.length > 0}
+      <Section title="CONNECTED" desc={`${rows.length} here, each with its own settings.`}>
+        <div className="int-list">
+          {rows.map((r) => (
+            <div key={r.id} className="int-item" data-sec={r.plugin ? (PLUGIN_SEC[r.id] ?? undefined) : undefined}>
+              <div className="int-row">
+                <span className="int-chip" aria-hidden style={{ color: r.color, background: `color-mix(in oklab, ${r.color} 16%, var(--panel))` }}>{r.chip}</span>
+                <div className="int-who">
+                  <b>{r.name}</b>
+                  <span><i className="int-dot" aria-hidden />{r.line}</span>
+                </div>
+                <button className="int-cfg" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
+                  {open === r.id ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}Configure
+                </button>
+              </div>
+              {open === r.id && (
+                <div className="int-exp">
+                  {r.body}
+                  {r.plugin && (
+                    <div className="int-foot">
+                      {errLine(r.id) ?? <span />}
+                      <MiniBtn danger disabled={!!busy} onClick={() => void remove(r.plugin!)} title={`Remove ${r.name}`}>Remove {r.name}</MiniBtn>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+          {rows.length === 0 && <div className="int-note" style={{ padding: "14px 16px" }}>Nothing installed yet.</div>}
+        </div>
+      </Section>
+      <Section title="AVAILABLE" top
         desc={offers.length ? "Install one to connect it. Nothing is downloaded; the code is already here, switched off." : "Everything that ships with Mystical is installed."}>
         {offers.length > 0 && (
           // .aim scopes the card tokens (--l, --l2, --f) the aim-* classes read.
