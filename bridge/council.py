@@ -43,9 +43,11 @@ The loop: start -> _round -> fixing -> after_turn -> _round ...
   its job_id, until you clear it, and notify_job_done runs before
   _continue_after_turn. So the fix turn is the job that ran the item. An item
   already done counts too: an auto-resume ends that turn without asking us, and
-  the resumed turn carries the fix on. So does one gone from the queue (steered
-  into the running turn, or removed). Queued, or running under another job
-  (your turn ended and the queue just started the fix), means wait.
+  the resumed turn carries the fix on. One gone from the queue counts only if
+  this turn took it as a steer (a steer event with its text); otherwise you
+  removed or moved it, and the run stops there, this turn keeping its DONE.
+  Queued, or running under another job (your turn ended and the queue just
+  started the fix), means wait.
 - One lock guards every read-modify-write of a run, and seats never read under
   it. A round lands only if the run is still on it (since, round), so a Stop or
   a new run while the seats read is never written over. Every turn end in the
@@ -609,7 +611,9 @@ def _round(sid: str) -> None:
                                 "seats": seats, "findings": findings, "at": time.time()})
             c["seats"] = seats
             v = decide(c)
-            if v == "fixing":
+            if v == "fixing" and not _todo(c["rounds"][-1]):
+                _stop(c, "under the bar, but they listed nothing to fix")     # never an empty fix prompt
+            elif v == "fixing":
                 _fix(sid, c)
             elif v == "passed":
                 c.update(status="passed", reason="", at=time.time())
@@ -639,10 +643,14 @@ def after_turn(job) -> bool:
             it = _queued(sid, c.get("item"))
             if it and it.get("job_id") != job.id and it.get("status") in ("queued", "running"):
                 return False        # another turn: the fix waits, or has only just begun
-            if job.status != "done" or job.interrupted:
+            if it is None and not any(e.get("type") == "steer" and str(e.get("text") or "").startswith("[council")
+                                      for e in list(job.events)):
+                _stop(c, "the fix prompt left the queue")       # removed or moved: this turn isn't the fix
+            elif job.status != "done" or job.interrupted:
                 _stop(c, "the fix turn stopped")
             else:
-                said, found = answers(job.result or ""), c["rounds"][-1]["findings"]
+                said = answers("\n".join(job.texts) or job.result or "")   # an objection may come mid-turn
+                found = c["rounds"][-1]["findings"]
                 for n, i in enumerate(c.get("sent") or [], 1):     # the prompt's numbering
                     found[i]["state"], found[i]["answer"] = (
                         ("answered", said[n]) if n in said else ("fixed", ""))

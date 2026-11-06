@@ -272,8 +272,10 @@ def _said(score, *found):
 @pytest.fixture
 def rig(monkeypatch):
     """No real reviewer, queue, turn or ping: rounds run inline, each seat answers
-    from its list, and the queue's snapshot lists `items`."""
-    r = SimpleNamespace(queued=[], items=[], removed=[], kinds=[], woke=[], mat=_MAT, claude=[], codex=[])
+    from its list, and the queue's snapshot lists `items`: by default the fix
+    prompt, run and done (the queue keeps an item that ran)."""
+    r = SimpleNamespace(queued=[], items=[{"id": "item-1", "status": "done", "job_id": None}], removed=[],
+                        kinds=[], woke=[], mat=_MAT, claude=[], codex=[])
     monkeypatch.setattr(council, "_spawn", lambda fn, *a: fn(*a))
     monkeypatch.setattr(council, "settings", lambda: dict(council.DEFAULTS))
     monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: r.queued.append(kw) or "item-1")
@@ -295,9 +297,12 @@ def _spinning(b):
     return [k for k, v in b["seats"].items() if v["state"] == "running"]
 
 
-def _job(rig, jid, result="", status="done"):
+def _job(rig, jid, result="", status="done", texts=(), events=()):
     return SimpleNamespace(id=jid, store_session_id=rig.sid, status=status, interrupted=False,
-                           result=result, chat_id=555, runtime=None)
+                           result=result, texts=list(texts), events=list(events), chat_id=555, runtime=None)
+
+
+_FIX = ("should", "s.py", 5)    # something to fix: a round under the bar with nothing in it stops
 
 
 def test_start_scores_a_round_and_queues_the_fix_prompt(rig):
@@ -316,7 +321,7 @@ def test_round_that_passes_notifies_once(rig):
 
 
 def test_a_round_without_gain_stops_and_notifies(rig):
-    rig.claude, rig.codex = [_said(7.0), _said(6.9)], [_said(7.0), _said(6.9)]
+    rig.claude, rig.codex = [_said(7.0, _FIX), _said(6.9)], [_said(7.0, _FIX), _said(6.9)]
     council.start(rig.session, "/tmp")
     assert council.after_turn(_job(rig, "j1")) is True
     c = council.get(rig.sid)
@@ -325,7 +330,7 @@ def test_a_round_without_gain_stops_and_notifies(rig):
 
 
 def test_after_turn_waits_for_the_council_turn(rig):
-    rig.claude, rig.codex = [_said(7.0), _said(7.6), _said(8.2)], [_said(7.0), _said(7.6), _said(8.2)]
+    rig.claude, rig.codex = [_said(7.0, _FIX), _said(7.6, _FIX), _said(8.2)], [_said(7.0, _FIX), _said(7.6, _FIX), _said(8.2)]
     council.start(rig.session, "/tmp")
     rig.items = [{"id": "item-1", "status": "queued", "job_id": None}]
     assert council.after_turn(_job(rig, "j-yours")) is False          # your turn; the fix still waits
@@ -335,8 +340,9 @@ def test_after_turn_waits_for_the_council_turn(rig):
     rig.items = [{"id": "item-1", "status": "done", "job_id": "j-fix"}]
     assert council.after_turn(_job(rig, "j-fix")) is True             # the fix turn's own end
     assert council.get(rig.sid)["round"] == 2
-    rig.items = []                                                    # gone: steered in, or removed
-    assert council.after_turn(_job(rig, "j-other")) is True
+    rig.items = []                                                    # gone: steered into this turn
+    steer = {"type": "steer", "text": "[council 2/5] 7.6 of 9.0\n1. SHOULD · s.py:5", "images": []}
+    assert council.after_turn(_job(rig, "j-other", events=[steer])) is True
     assert council.get(rig.sid)["round"] == 3
 
 
@@ -390,7 +396,7 @@ def test_restart_marks_a_live_looking_run_stopped(rig):
 
 def test_nothing_left_to_review_stops_and_says_so(rig):
     """Round 2 finds nothing: the fix turn's DONE went to the council, so the stop is the news."""
-    rig.claude, rig.codex = [_said(7.0)], [_said(7.0)]
+    rig.claude, rig.codex = [_said(7.0, _FIX)], [_said(7.0, _FIX)]
     council.start(rig.session, "/tmp")
     rig.mat = None
     council.after_turn(_job(rig, "j1"))
@@ -456,7 +462,7 @@ def test_more_after_a_stall_sends_the_fix_first(rig):
     """The stop left the last round's findings unsent: a re-read of the same code
     would only stall again, so the loop goes on with the fix."""
     must = ("must", "a.py", 1)
-    rig.claude, rig.codex = [_said(7.0), _said(6.9, must)], [_said(7.0), _said(6.9, must)]
+    rig.claude, rig.codex = [_said(7.0, _FIX), _said(6.9, must)], [_said(7.0, _FIX), _said(6.9, must)]
     council.start(rig.session, "/tmp")
     council.after_turn(_job(rig, "j1"))
     b = council.act(rig.session, "more")
@@ -466,7 +472,7 @@ def test_more_after_a_stall_sends_the_fix_first(rig):
 
 def test_more_waits_for_the_session_turn(rig, monkeypatch):
     """2 more rounds can start a review at once, so like RUN it never does mid-turn."""
-    rig.claude, rig.codex = [_said(7.0), _said(7.0)], [_said(7.0), _said(7.0)]
+    rig.claude, rig.codex = [_said(7.0, _FIX), _said(7.0)], [_said(7.0, _FIX), _said(7.0)]
     council.start(rig.session, "/tmp")
     council.after_turn(_job(rig, "j1"))                               # round 2 didn't raise it: stopped
     monkeypatch.setattr(state, "is_running", lambda sid: True)
@@ -488,7 +494,7 @@ def test_a_round_stopped_while_seats_read_is_dropped(rig, monkeypatch):
 
 
 def test_a_fix_turn_that_fails_stops_the_run(rig, monkeypatch):
-    rig.claude, rig.codex = [_said(7.0)], [_said(7.0)]
+    rig.claude, rig.codex = [_said(7.0, _FIX)], [_said(7.0, _FIX)]
     council.start(rig.session, "/tmp")
     assert council.after_turn(_job(rig, "j1", status="error")) is False
     c = council.get(rig.sid)
@@ -562,12 +568,12 @@ def test_a_finished_run_wakes_the_sessions_waiting_on_it(rig):
     j = rig.woke[0]
     assert (j.status, j.result, j.texts) == ("done", "Council passed · 9.3 in 1 round", [])
     assert isinstance(j.elapsed, int) and j.elapsed >= 0
-    rig.claude, rig.codex = [_said(7.0), _said(6.9)], [_said(7.0), _said(6.9)]
+    rig.claude, rig.codex = [_said(7.0, _FIX), _said(6.9)], [_said(7.0, _FIX), _said(6.9)]
     council.start(rig.session, "/tmp")
     council.after_turn(_job(rig, "j1"))
     assert [j.store_session_id for j in rig.woke] == [rig.sid, rig.sid]
     assert rig.woke[1].result == "Council stopped · round 2 didn't raise the score"
-    rig.claude, rig.codex = [_said(7.0)], [_said(7.0)]
+    rig.claude, rig.codex = [_said(7.0, _FIX)], [_said(7.0, _FIX)]
     council.start(rig.session, "/tmp")
     council.after_turn(_job(rig, "j2", status="error"))               # its own end wakes them
     assert len(rig.woke) == 2
@@ -632,3 +638,38 @@ def test_a_git_failure_leaves_the_material_out_of_the_brief(rig, monkeypatch):
     rig.mat = None
     monkeypatch.setattr(council, "counts", lambda cwd: rig.mat)
     assert council.brief(rig.sid, "/tmp", full=True)["material"] is None
+
+
+def test_under_the_bar_with_nothing_to_fix_stops(rig):
+    """#5: never an empty fix prompt. The stop says so, like any other."""
+    rig.claude, rig.codex = [_said(7.0)], [_said(7.5)]
+    b = council.start(rig.session, "/tmp")
+    assert b["status"] == "stopped" and b["reason"] == "under the bar, but they listed nothing to fix"
+    assert not rig.queued and rig.kinds == ["council_stopped"] and _spinning(b) == []
+
+
+def test_a_fix_prompt_that_left_the_queue(rig):
+    """#3: removed (× in QUEUE) or moved, the next turn isn't the fix: the run stops
+    and that turn keeps its DONE (False). Steered into a turn, that turn is the fix."""
+    rig.claude, rig.codex = [_said(7.0, _FIX), _said(8.0, _FIX)], [_said(7.0, _FIX), _said(8.0, _FIX)]
+    council.start(rig.session, "/tmp")
+    rig.items = []
+    assert council.after_turn(_job(rig, "j-yours")) is False
+    c = council.get(rig.sid)
+    assert (c["status"], c["reason"], c["round"]) == ("stopped", "the fix prompt left the queue", 1)
+    assert rig.kinds == ["council_stopped"] and rig.woke == []        # the turn's own end wakes its waiters
+    council.act(rig.session, "more")                                  # its finding was never sent: sent now
+    steer = {"type": "steer", "text": rig.queued[-1]["prompt"], "images": []}
+    assert council.after_turn(_job(rig, "j-steered", events=[steer])) is True
+    assert council.get(rig.sid)["round"] == 2
+
+
+def test_an_objection_anywhere_in_the_fix_turn_is_recorded(rig):
+    """#9: the whole turn's text, not only its last."""
+    rig.claude = [_said(7.0, ("must", "git.py", 584), ("should", "x.py", 10)), _said(8.0)]
+    rig.codex = [_said(7.0, ("must", "git.py", 584)), _said(8.0)]
+    council.start(rig.session, "/tmp")
+    texts = ["1. NO: not a bug, see runner.py:271", "Now x.py.", "Done: fixed x.py."]
+    council.after_turn(_job(rig, "j1", result=texts[-1], texts=texts))
+    f = council.get(rig.sid)["rounds"][0]["findings"]
+    assert [(x["state"], x["answer"]) for x in f] == [("answered", "not a bug, see runner.py:271"), ("fixed", "")]
