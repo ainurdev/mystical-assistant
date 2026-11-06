@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, ListOrdered, Route, Users,
+  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, ListOrdered, Route, Scale, Users,
 } from "lucide-react";
 import {
   api,
   AUTH_REQUIRED,
   TOKEN,
   type AnswerSelection,
+  type CouncilBrief,
   type DashState,
   type EffortLevel,
   type EnrichedSession,
@@ -110,6 +111,8 @@ import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RailRing, RightPanel, useSettling, type PanelTab } from "./components/RightPanel";
 import { arrange } from "./lib/rail";
 import { GitPanel } from "./components/hud/GitPanel";
+import { CouncilPanel } from "./components/hud/CouncilPanel";
+import { hero as councilHero, railTile, tileKey } from "./lib/council";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
 import type { View } from "./components/hud/ViewTabs";
@@ -2252,6 +2255,30 @@ export function App() {
     return () => { live = false; clearInterval(id); };
   }, [sessionProject, sessionBranch, gitNonce]);
 
+  // The open session's council run, for the COUNCIL tile (lib/council railTile):
+  // a light read (no git), every 3 s while it reviews or fixes, else every 15 s.
+  // Held by session, so a switch never shows the last one's. While the tab is
+  // open its panel reads the run and hands each read up (onBrief), so this poll
+  // rests: one poller, not two. A read that changes nothing on the rail
+  // (lib/council tileKey) keeps the brief held, so it doesn't re-render App.
+  const [councilOf, setCouncilOf] = useState<{ sid: string; c: CouncilBrief } | null>(null);
+  const council = councilOf && councilOf.sid === sessionId ? councilOf.c : null;
+  const councilLive = council?.status === "reviewing" || council?.status === "fixing";
+  const councilOpen = settings.rightOpen && settings.rightTab === "council";
+  const keepCouncil = (sid: string, c: CouncilBrief) =>
+    setCouncilOf((p) => (p && p.sid === sid && tileKey(p.c) === tileKey(c) ? p : { sid, c }));
+  useEffect(() => {
+    if (!sessionId || councilOpen) return;
+    let live = true;
+    const tick = () => api.council(sessionId)
+      .then((c) => { if (live) keepCouncil(sessionId, c); })
+      .catch(() => { /* a bridge from before the council: the tile stays calm */ });
+    void tick();
+    const id = setInterval(tick, councilLive ? 3000 : 15000);
+    return () => { live = false; clearInterval(id); };
+  }, [sessionId, councilLive, councilOpen]);
+  const councilTile = railTile(council);
+
   // Auto-fetch (/design-first auto-fetch): behind is only as true as the last
   // fetch, so every status read checks whether the open tree's repo is due
   // (lib/gitsync needsFetch) and fetches it while the window is visible. The GIT
@@ -2462,6 +2489,22 @@ export function App() {
           // A "commit message ready" click lands back here: this session, this tab.
           onReveal={() => { if (selected) selectSession(selected); patchSettings({ rightTab: "git", rightOpen: true }); }}
         />
+      ),
+    },
+    // The council on the open session's work (lib/council): its round while a run goes, its score once it passed or stopped.
+    {
+      id: "council", short: "COUNCIL", label: "Council", group: "session",
+      hint: council && council.status !== "idle" ? councilHero(council).pill.toLowerCase() : undefined,
+      icon: <Scale {...RAIL} />, ownScroll: true,
+      badge: councilTile.badge, tone: councilTile.tone, busy: councilTile.busy,
+      render: () => (
+        // The session's own project, never activeProject: its push must not land in another repo.
+        <CouncilPanel key={sessionId ?? ""} sid={sessionId} project={selected?.project ?? null} branch={sessionBranch}
+          busy={running || openWorking} initial={council}
+          onBrief={(c) => { if (sessionId) keepCouncil(sessionId, c); }}
+          onOpenChat={() => { toChat(); jumpToBottom(); }}
+          onSend={(text) => void send(text, [], { force: true })}
+          onPushed={() => setGitNonce((n) => n + 1)} />
       ),
     },
     // Every branch and its next step (lib/branchrows); ⋯ and right-click hold the rest.

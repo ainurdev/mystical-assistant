@@ -52,6 +52,8 @@ CATALOG = {
     "done": ("done", "news", "session"),
     "goal_met": ("done", "news", "session"),        # the turn that met its goal (runner.notify_goal)
     "goal_blocked": ("ask", "needs", "session"),    # ...or stopped it on something only you can give
+    "council_passed": ("done", "news", "session"),  # a council run reached its bar (council.py)
+    "council_stopped": ("ask", "needs", "session"),  # ...or stopped short of it and waits on you
     "failed": ("failed", "news", "session"),
     "parked": ("parked", "news", "session"),
     "resumed": ("resumed", "fyi", "session"),
@@ -88,6 +90,7 @@ VERBS = {
     "limit_choice": "LIMIT", "credits": "NEEDS CREDITS", "rv_offer": "OFFERED", "done": "DONE", "failed": "FAILED",
     "parked": "PARKED", "resumed": "RESUMED", "retrying": "RETRYING", "waiting": "WAITING",
     "goal_met": "GOAL MET", "goal_blocked": "GOAL NEEDS YOU",
+    "council_passed": "COUNCIL PASSED", "council_stopped": "COUNCIL NEEDS YOU",
     "started": "STARTED", "rv_started": "STARTED", "rv_ended": "ENDED",
     "rv_held": "HELD", "rv_dismissed": "DISMISSED", "rv_done": "DONE", "rv_failed": "FAILED",
     "rv_refused": "REFUSED", "rv_link": "LINK DOWN", "rv_link_back": "LINK BACK",
