@@ -1501,7 +1501,8 @@ class Handler(BaseHTTPRequestHandler):
             turn = store.running_turn_id(s["id"]) or store.latest_turn_id(s["id"]) or ""
             choice = body.get("choice")
             nxt = paths.step_done(s["id"], turn, choice if choice in ("here", "tickets") else None)
-            return self._json({"text": f"Step done. Next: {nxt}, which starts when this turn ends."
+            return self._json({"text": f"Step done. Next: {nxt}, which starts when this turn ends. "
+                               f"Make this your last tool call: {nxt} does its own work."
                                if nxt else "Step done. That was the last step."})
         if path == "/local/wait":
             # The goals MCP's WaitForSession (bridge/goal_mcp.py). Every answer,
