@@ -83,3 +83,19 @@ export function hero(c: CouncilBrief): { pill: string; tone: "dim" | "acc" | "ok
   }
   return { pill: "NOT REVIEWED", tone: "dim", l1: "Ready when you are", l2: `bar ${bar} · ${c.max_rounds} rounds` };
 }
+
+/** The three prompts bridge/council.py writes into the session, so the chat can
+ *  stamp them instead of drawing them as yours: a round's fix prompt, a finding
+ *  you asked to have fixed, and the advice list. null for anything else. */
+export type CouncilPrompt =
+  | { round: number; max: number; score: number; bar: number; body: string }
+  | { round: number; max: number; fix: true; body: string }
+  | { advice: true; body: string };
+export function parseCouncilPrompt(text: string): CouncilPrompt | null {
+  let m = /^\[council (\d+)\/(\d+)\] ([\d.]+) of ([\d.]+)\n([\s\S]+)/.exec(text);
+  if (m) return { round: +m[1], max: +m[2], score: +m[3], bar: +m[4], body: m[5] };
+  m = /^\[council (\d+)\/(\d+)\] the user wants this fixed\n([\s\S]+)/.exec(text);
+  if (m) return { round: +m[1], max: +m[2], fix: true, body: m[3] };
+  m = /^\[council advice\]\n([\s\S]+)/.exec(text);
+  return m ? { advice: true, body: m[1] } : null;
+}

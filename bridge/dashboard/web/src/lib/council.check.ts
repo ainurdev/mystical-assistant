@@ -2,7 +2,7 @@
 // How the COUNCIL tab reads a run: the rail tile, the chart's columns, the two
 // pass rules and the hero's pill (design: council-tab, A · SCOREBOARD).
 import type { CouncilBrief, CouncilRound } from "../api.ts";
-import { columns, hero, railTile, rules, tileKey } from "./council.ts";
+import { columns, hero, parseCouncilPrompt, railTile, rules, tileKey } from "./council.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -84,3 +84,13 @@ eq(hero(stopped), { pill: "STOPPED · NEEDS YOU", tone: "ask", l1: "No gain in r
   "stopped: the stall in the mockup's words");
 eq(hero(brief({ status: "stopped", round: 1, reason: "you stopped it" })), { pill: "STOPPED · NEEDS YOU", tone: "ask",
   l1: "You stopped it", l2: "bar 9.0" }, "stopped before a score: any other reason as it is, and just the bar");
+
+// --- the prompts the council writes into the chat ----------------------------------
+eq(parseCouncilPrompt("[council 2/5] 8.1 of 9.0\nFix the null check in save()."),
+  { round: 2, max: 5, score: 8.1, bar: 9, body: "Fix the null check in save()." }, "a round's fix prompt");
+eq(parseCouncilPrompt("[council 2/5] the user wants this fixed\n- save() null check"),
+  { round: 2, max: 5, fix: true, body: "- save() null check" }, "a finding the user asked to fix");
+eq(parseCouncilPrompt("[council advice]\n1. rename x\n2. add a test"),
+  { advice: true, body: "1. rename x\n2. add a test" }, "the advice list");
+eq(parseCouncilPrompt("fix the council tab"), null, "a plain prompt is none of these");
+eq(parseCouncilPrompt("[council 2/5] 8.1 of 9.0"), null, "a header with no body is not one");
