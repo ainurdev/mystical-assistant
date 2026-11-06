@@ -4649,7 +4649,11 @@ export function SettingsModal(props: SettingsModalProps) {
             )}
 
             {shown === "transcript" && (
-              <>
+              // Rows on the left, the transcript they draw on the right (2026-11-06,
+              // A · SIDE PREVIEW): the same sample turn TYPE previews, so a change
+              // shows on a real prompt and answer, not in a caption.
+              <div className="tr-two">
+                <div className="tr-rows">
                 {/* Its own tab, again. It was folded into APPEARANCE when it
                     held one switch and a dropdown and left 700px of void; the
                     dropdown is now five previews, which is the page that void
@@ -4807,7 +4811,12 @@ export function SettingsModal(props: SettingsModalProps) {
                     )}
                   </div>
                 </Section>
-              </>
+                </div>
+                <aside className="tr-pv" aria-label="preview">
+                  <div className="tp-bar"><b>Preview</b><span>{settings.layout} · {settings.composer} · {settings.chatBg}</span></div>
+                  <TypePreview stack={faceStack(settings.font, settings.theme)} size={settings.baseFont || autoBase} settings={settings} />
+                </aside>
+              </div>
             )}
 
 

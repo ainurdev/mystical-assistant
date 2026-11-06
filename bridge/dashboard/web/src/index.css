@@ -8048,3 +8048,13 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
   border-radius: 8px; font: 500 var(--t95, var(--t9)) var(--ui-font); padding: 4px 10px 4px 6px; display: inline-flex; align-items: center; gap: 4px; }
 .mv-back span { display: inline-flex; align-items: center; gap: 7px; font: 600 var(--t10) var(--ui-font); color: var(--txh); }
 @media (max-width: 760px) { .mv-ways { grid-template-columns: 1fr; } .mv-way { min-height: 0; } }
+
+/* ── TRANSCRIPT · rows beside their preview (2026-11-06, A · SIDE PREVIEW) ── */
+.tr-two { display: grid; grid-template-columns: minmax(0, 1fr) 290px; gap: 18px; align-items: start; }
+.tr-rows { min-width: 0; }
+.tr-rows > .set-sec:first-child { margin-top: 0 !important; }
+.tr-pv { position: sticky; top: 0; display: flex; flex-direction: column; gap: 0; }
+.tr-pv .tp-bar { font: 400 var(--t95, var(--t9)) var(--ui-font); color: var(--txl); }
+.tr-pv .tp-bar b { font-weight: 600; color: var(--txh); }
+.tr-pv .typepv { height: 460px; margin-top: 8px; }
+@media (max-width: 900px) { .tr-two { grid-template-columns: 1fr; } .tr-pv { position: static; order: -1; } .tr-pv .typepv { height: 260px; } }
