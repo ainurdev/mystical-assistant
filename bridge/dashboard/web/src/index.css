@@ -7657,19 +7657,28 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gpp-tick.g1.l { left: calc(var(--w) * 1.5 + 28px); }
 .gpp-tick.g1.r { left: calc(var(--w) * 2.5 + 56px); }
 .gpp-none { position: absolute; left: 0; right: 0; top: 66px; text-align: center; font-size: var(--t9); letter-spacing: .14em; text-transform: uppercase; color: var(--txl); }
-/* Files FOOTPRINT. */
-.ff-n { margin-left: auto; flex: none; font-size: var(--t9); color: var(--txl); white-space: nowrap; }
-.ff-n b { font-size: calc(var(--fsu) * 15); line-height: 1; font-weight: 800; color: var(--txb); }
-.ff-bar { display: flex; gap: 2px; height: 12px; margin-top: 12px; border-radius: 3px; background: color-mix(in srgb, var(--txl) 12%, transparent); overflow: hidden; }
-.ff-bar i { min-width: 3px; border-radius: 3px; }
-.ff-leg { display: flex; flex-wrap: nowrap; gap: 4px 10px; margin-top: 8px; height: 14px; overflow: hidden; font-size: var(--t9); color: var(--txd); white-space: nowrap; }
-.ff-leg span { display: inline-flex; align-items: center; gap: 4px; }
-.ff-leg i { width: 7px; height: 7px; border-radius: 2px; flex: none; }
-.ff-leg b { color: var(--txb); }
-.ff-cap { position: absolute; left: 12px; right: 12px; bottom: 10px; display: flex; gap: 6px; overflow: hidden; }
-.ff-chip { display: inline-flex; align-items: center; gap: 4px; min-width: 0; padding: 1px 6px; border-radius: 6px; font-size: var(--t9); font-weight: 600; color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  background: color-mix(in srgb, var(--txl) 12%, transparent); }
-.ff-live { font-style: normal; color: var(--ok); animation: rhpulse 1.4s ease-in-out infinite; }
+/* Files WRITING card. */
+.wr-card { margin: 4px 12px 2px; border-radius: 12px; overflow: hidden; flex: none; background: var(--panel);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 38%, transparent), 0 14px 30px -22px color-mix(in srgb, var(--acc) 80%, transparent); }
+.wr-h { display: flex; align-items: center; gap: 7px; padding: 9px 10px 8px; min-width: 0; }
+.wr-badge { display: grid; place-items: center; width: 20px; height: 20px; flex: none; border-radius: 5px; background: var(--wash); color: var(--txb); }
+.wr-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t115); font-weight: 800; color: var(--txb); }
+.wr-dir { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t10); color: var(--txl); }
+.wr-k { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 5px; font-size: var(--t9); font-weight: 800; letter-spacing: 1.2px; color: var(--txl); }
+.wr-k.live { color: var(--acc); }
+.wr-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent); animation: rhpulse 1.4s ease-in-out infinite; }
+.wr-pre { margin: 0; padding: 6px 0 7px; font: 500 var(--t10)/1.6 var(--mono); color: var(--txm); background: color-mix(in srgb, var(--txb) 5%, transparent); }
+.wr-pre span { display: block; padding: 0 10px; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.wr-pre .ad { background: color-mix(in srgb, var(--ok) 11%, transparent); color: var(--txb); }
+.wr-pre .dl { background: color-mix(in srgb, var(--err) 10%, transparent); color: var(--txb); }
+.wr-ln { display: inline-block; width: 28px; font-style: normal; color: var(--txl); }
+.wr-sg { display: inline-block; width: 12px; font-style: normal; }
+.wr-pre .ad .wr-sg { color: var(--ok); } .wr-pre .dl .wr-sg { color: var(--err); }
+.wr-f { display: flex; width: 100%; padding: 8px 10px; border: 0; background: none; cursor: pointer; font: 800 var(--t105)/1 var(--f); color: var(--acc); text-align: left; }
+.wr-f:hover { background: var(--wash); }
+.wr-f span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.wr-f .wr-when { margin-left: auto; padding-left: 8px; flex: none; color: var(--txl); font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .wr-dot { animation: none; } }
 /* Branches TRUNK. */
 .bt-n { margin-left: auto; flex: none; font-size: var(--t9); color: var(--txl); }
 .bt-svg { display: block; width: 100%; height: 62px; margin-top: 4px; }

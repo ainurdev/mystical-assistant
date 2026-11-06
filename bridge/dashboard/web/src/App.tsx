@@ -2427,6 +2427,7 @@ export function App() {
             ? (file) => setSendWhat({ what: { kind: "file", project: sessionProject, branch: sessionBranch || undefined, file } })
             : undefined}
           edited={filesEdits.edited} editing={filesEdits.now}
+          turns={turns} cwd={selected?.work_cwd || selected?.cwd}
           onAddToPrompt={(path) => {
             // After whatever you were writing, as TURNS' reuse does, but inline.
             setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")} \`${path}\` ` : `\`${path}\` `);

@@ -7,7 +7,8 @@ import { askConfirm } from "../ui/Ask";
 import { FileIcon } from "../../lib/fileicon";
 import { ignoredMatcher } from "../../lib/gitignored";
 import { Skeleton } from "../ui";
-import { FilesFootprint } from "./FilesFootprint";
+import { TabKick } from "./TabKick";
+import { WritingCard } from "./WritingCard";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import { findFiles } from "../../lib/filefind";
 import { revealItems } from "../../lib/reveal";
@@ -50,6 +51,9 @@ interface Props {
   editing?: string | null;
   // Puts the path in the prompt box (a row's @, and its menu).
   onAddToPrompt?: (path: string) => void;
+  // The opened session's turns and its checkout, for the writing card.
+  turns?: Parameters<typeof WritingCard>[0]["turns"];
+  cwd?: string | null;
 }
 
 type Row = { key: string; dir: boolean; depth: number; name: string; path: string };
@@ -81,7 +85,7 @@ function countAbove(paths: Iterable<string>): Map<string, number> {
   return out;
 }
 
-export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, editing, onAddToPrompt }: Props) {
+export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, editing, onAddToPrompt, turns, cwd }: Props) {
   const [paths, setPaths] = useState<string[]>([]);
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
   const [ignored, setIgnored] = useState<string[]>([]);
@@ -302,17 +306,12 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
 
   return (
     <div className="panel gp" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      {/* GIT's head (.gp root + gp-*), so the two tabs read alike in every theme. */}
-      <div className="gp-head">
-        <span className="gp-title">FILES</span>
-        {branch && <span className="gp-branch" title={branch}><i>⎇</i><span>{branch}</span></span>}
-        {tools.map((t) => (
+      <TabKick name="FILES"
+        chip={branch ? <span className="gp-branch" title={branch}><i>⎇</i><span>{branch}</span></span> : undefined}
+        tools={tools.map((t) => (
           <button key={t.k} className="gp-ib" onClick={t.on} title={t.t} aria-label={t.t}>{t.g}</button>
-        ))}
-      </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
-
-      {project && <FilesFootprint edited={edited ?? new Set()} now={editing ?? null} />}
+        ))} />
+      {project && turns && <WritingCard turns={turns} root={cwd} onOpen={(p) => onOpenFile(p, false)} />}
 
       {project && (
         // The sidebar's search, so every theme family draws it the same way.
