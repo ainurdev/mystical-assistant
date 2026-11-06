@@ -1362,6 +1362,22 @@ def week_by_day(chat_id: int, since: float, until: float) -> list[dict]:
             "GROUP BY day ORDER BY day", (chat_id, since, until)).fetchall()]
 
 
+def week_by_hour(chat_id: int, since: float, until: float) -> list[list[int]]:
+    """Turn counts as a 7x24 grid: rows Monday..Sunday, columns local hour.
+    Local time for the same reason as week_by_day."""
+    grid = [[0] * 24 for _ in range(7)]
+    with closing(_connect()) as c:
+        for r in c.execute(
+                "SELECT CAST(strftime('%w', t.started, 'unixepoch', 'localtime') AS INT) AS wd, "
+                "CAST(strftime('%H', t.started, 'unixepoch', 'localtime') AS INT) AS hr, "
+                "COUNT(t.id) AS n "
+                "FROM turns t JOIN sessions s ON s.id = t.session_id "
+                "WHERE s.chat_id=? AND t.started >= ? AND t.started < ? "
+                "GROUP BY wd, hr", (chat_id, since, until)):
+            grid[(r["wd"] + 6) % 7][r["hr"]] = r["n"]  # SQLite Sunday=0 -> row 6
+    return grid
+
+
 def turn_metrics(session_id: str) -> list[dict]:
     """Per-turn status, wall time and token spend — the numbers a breakdown adds
     up. Ordered by seq so a caller can attribute per turn as well as per session."""

@@ -1496,6 +1496,7 @@ export interface WeeklyReport {
     tokens: { in: number; out: number; cache_w: number; cache_r: number } | null;
   };
   days: { day: string; turns: number; elapsed: number }[];
+  hours?: number[][]; // turns per weekday (Mon..Sun) x local hour; absent on an older bridge
   prev: { turns: number; elapsed: number; tokens: number | null };
   failures?: { code: string; label: string; n: number }[]; // failed turns by outcome, commonest first
 }
