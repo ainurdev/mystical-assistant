@@ -55,7 +55,8 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
         if not s:
             return {"error": "not found"}, 404
         chat = _chat_of(s)
-        return {**channel.view(chat), "chat": chat["id"], "rows": agent_tree.tree(chat)}, 200
+        return {**channel.view(chat), "chat": chat["id"], "main": agent_tree.main_row(chat),
+                "rows": agent_tree.tree(chat)}, 200
     if path == "session/handoff":
         s = _owned(chat_id, _one(qs, "session"))
         if not s:

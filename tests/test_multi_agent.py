@@ -761,6 +761,25 @@ def test_brief_carries_caps_and_limits_when_on(tmp_path, on):
     assert dash._session_brief is mini._session_brief
 
 
+def test_a_helpers_transcript_says_what_it_runs_on(tmp_path, on):
+    chat = _session(tmp_path)
+    kid = store.create_member(chat, name="k", cwd=str(tmp_path), profile_id=chat["profile_id"],
+                              permission_mode=None, member={"name": "k", "state": "done"})
+    got = mini.transcript_for(kid, 0)
+    assert got["session"]["agent"] == "fake" and got["session"]["caps"]["steer"] == "soft"
+    assert got["session"]["member"]["name"] == "k" and got["session"]["parent_session"] == chat["id"]
+
+
+def test_has_copy_is_whats_on_disk(tmp_path, monkeypatch, on):
+    repo, chat, kid, copy = _writer(tmp_path, monkeypatch)
+    open(os.path.join(copy["path"], "n.txt"), "w").write("x\n")
+    assert agent_tree.tree(chat)[0]["has_copy"] is True
+    channel.merge(chat, "w")
+    assert agent_tree.tree(chat)[0]["has_copy"] is False
+    channel.undo_merge(chat, "w")
+    assert agent_tree.tree(chat)[0]["has_copy"] is False
+
+
 def test_goal_is_offered_on_an_agent_only_when_on(tmp_path):
     s = _session(tmp_path)
     assert profiles.claude_only_refusal(s, "goal")

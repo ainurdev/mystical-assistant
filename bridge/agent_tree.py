@@ -41,7 +41,21 @@ def _member_row(m: dict) -> dict:
             "started": info.get("started") or m.get("created"), "updated": m.get("updated"),
             "write": bool(info.get("write")), "brief": (info.get("brief") or "")[:300],
             "conflict": bool(info.get("conflict")), "merged": bool(info.get("merged")),
-            "has_copy": bool((info.get("copy") or {}).get("path")) and not info.get("merged"),
+            # What's on disk: merging or discarding removes the copy, and undoing a merge
+            # doesn't bring it back.
+            "has_copy": os.path.isdir((info.get("copy") or {}).get("path") or ""),
+            "activity": _activity(job)}
+
+
+def main_row(chat: dict) -> dict:
+    """The chat's main agent, in the same shape, for the grid's first card."""
+    from bridge import runner
+    job = runner.live_job(chat["id"])
+    eff = profiles.effective(chat)
+    return {"key": chat["id"], "kind": "main", "name": "main", "provider": handoff.label(eff["agent"]),
+            "account": eff["account"], "model": eff["model"], "status": "running" if job else "idle",
+            "needs": bool(job and job.pending), "detail": True, "session_id": chat["id"],
+            "started": job.started if job else None, "updated": chat.get("updated"),
             "activity": _activity(job)}
 
 

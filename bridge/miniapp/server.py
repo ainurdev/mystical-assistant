@@ -274,6 +274,11 @@ def transcript_for(session: dict, cursor: int = 0,
         # reads as a hang. Say what it is waiting on — live, so it disappears on
         # the first token rather than being journaled into the transcript.
         boot = runner.boot_phase(session["id"])
+        if experimental.enabled() and isinstance(d.get("session"), dict):
+            # A helper is in no list, so this is the only place a client hears what it
+            # runs on and what it can do (the same fields a brief carries).
+            run = profiles.brief(session)
+            d = {**d, "session": {**d["session"], "agent": run.get("agent"), **_multi_brief(session, run)}}
         return {**d, "boot": boot} if boot else d
     if session.get("origin") in ("vscode", "terminal"):
         path = transcript_jsonl.find_transcript(session.get("claude_session_id"))
