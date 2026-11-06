@@ -19,7 +19,7 @@ import glob
 import os
 import sys
 
-from bridge import agents, handoff, profiles, store
+from bridge import agents, handoff, profiles, rules, store
 
 _KIMI_HOME = "~/.kimi-code"
 _RECENT_S = 120
@@ -116,8 +116,12 @@ def _opaque_rows(s: dict, owner_name: str) -> list:
         except OSError:
             continue
         import time
+        # A hook, when the rule's on, knows better than the folder's clock (bridge/rules.py).
+        seen = rules.subagents_of(s["id"]).get(name)
+        status = ("running" if not seen["ended"] else "done") if seen else (
+            "running" if time.time() - at < _RECENT_S else "unknown")
         rows.append({"key": f"{s['id']}:opaque:{name}", "kind": "opaque", "name": name,
-                     "provider": "Kimi Code", "status": "running" if time.time() - at < _RECENT_S else "unknown",
+                     "provider": "Kimi Code", "status": status,
                      "needs": False, "detail": False, "started": at, "updated": at,
                      "owner": owner_name, "activity": ""})
     return rows

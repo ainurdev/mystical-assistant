@@ -466,6 +466,9 @@ class Handler(BaseHTTPRequestHandler):
             body = self._read_json()
             if body is None:
                 return self._json({"error": "bad json"}, 400)
+            if path == "/api/hooks":
+                # A hook is a shell command that runs on every tool call: dashboard only.
+                return self._json({"error": "Change hooks on the dashboard."}, 403)
             if (multi := multi_api.post(path[len("/api/"):], body, chat_id)) is not None:
                 return self._json(*multi)
             if path == "/api/select":

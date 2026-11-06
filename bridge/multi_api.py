@@ -13,8 +13,9 @@ import mimetypes
 import os
 import urllib.parse
 
-from bridge import (acp_agents, agent_tree, channel, chat_images, config, experimental, handoff, mcp_oauth, mcp_share,
-                    profiles, project_config, skill_share, store)
+from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_images, chat_search, config, experimental,
+                    handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, skill_share, store,
+                    tool_policy)
 
 _OFF = ({"error": "The experimental features are off. Turn them on in Settings."}, 409)
 _AGENTS_EXTRA = ("claude",)
@@ -72,7 +73,8 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
     if path == "chat-images":
         return {"mode": chat_images.mode()}, 200
     if path not in ("tree", "channel", "session/handoff", "session/brief", "project/helper",
-                    "mcp-share", "skill-share"):
+                    "mcp-share", "skill-share", "agent-tools", "rules", "rules/log", "mystical-dir",
+                    "mystical-dir/read", "chat-search", "chat-report", "hooks"):
         return None
     if not experimental.enabled():
         return _OFF
@@ -108,6 +110,42 @@ def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
         if pid and target is None:
             return {"error": "no such profile"}, 404
         return handoff.preview(s, target or {}), 200
+    if path == "hooks":
+        s = _owned(chat_id, _one(qs, "session"))
+        return hooks_config.listing(_cwd_of(s, _one(qs, "project") or (s or {}).get("project"))), 200
+    if path == "agent-tools":
+        s = _owned(chat_id, _one(qs, "session"))
+        project = _one(qs, "project") or (s or {}).get("project")
+        return agent_tools.grid(_cwd_of(s, project), project, s), 200
+    if path == "rules":
+        s = _owned(chat_id, _one(qs, "session"))
+        return {"rules": rules.listing(_one(qs, "project") or (s or {}).get("project"), s)}, 200
+    if path == "rules/log":
+        return {"rows": rules.recent(_one(qs, "session") or None)}, 200
+    if path in ("mystical-dir", "mystical-dir/read"):
+        root = image_root(chat_id, _one(qs, "session"), _one(qs, "project"))
+        if not root:
+            return {"error": "no project"}, 404
+        if path.endswith("/read"):
+            text = mystical_dir.read_text(root, _one(qs, "path"))
+            return ({"text": text}, 200) if text is not None else ({"error": "not readable here"}, 404)
+        return {**mystical_dir.listing(root, _one(qs, "sub")),
+                "stale": [r["path"] for r in mystical_dir.stale(root)] if not _one(qs, "sub") else []}, 200
+    if path == "chat-search":
+        s = _owned(chat_id, _one(qs, "session"))
+        if not s:
+            return {"error": "not found"}, 404
+        return {"hits": chat_search.in_chat(s["id"], _one(qs, "q"))}, 200
+    if path == "chat-report":
+        root = image_root(chat_id, _one(qs, "session"), _one(qs, "project"))
+        real = os.path.realpath(os.path.join(root or "", _one(qs, "path")))
+        if not root or not real.startswith(os.path.realpath(root) + os.sep) or not real.endswith((".md", ".markdown", ".txt")):
+            return {"error": "not found"}, 404
+        try:
+            with open(real, encoding="utf-8", errors="replace") as f:
+                return {"text": f.read(400_000)}, 200
+        except OSError:
+            return {"error": "not found"}, 404
     if path == "mcp-share":
         return {"servers": mcp_share.state(_one(qs, "cwd") or None, _agents()), "agents": _agents()}, 200
     if path == "skill-share":
@@ -132,10 +170,17 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             return {"error": str(e)}, 400
     if path == "chat-images/upload":
         return chat_images.upload(body, image_root(chat_id, body.get("session_id"), body.get("project")))
-    if not path.startswith(("chat/", "channel/", "mcp-share", "skill-share", "project/helper")):
+    if not path.startswith(("chat/", "channel/", "mcp-share", "skill-share", "project/helper", "tool-policy",
+                            "rules", "mystical-dir", "hooks")):
         return None
     if not experimental.enabled():
         return _OFF
+    if path.startswith(("tool-policy", "rules")):
+        return _post_policy(path, body, chat_id)
+    if path.startswith("mystical-dir"):
+        return _post_dir(path, body, chat_id)
+    if path == "hooks":
+        return _post_hooks(body, chat_id)
     if path == "project/helper":
         pid = str(body.get("profile_id") or "")
         if pid and not profiles.get(pid):
@@ -179,6 +224,74 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             return {"error": "action must be merge, discard, undo or review"}, 400
         return {"ok": True, "text": fn(chat, name)}, 200
     return None
+
+
+def _cwd_of(s: "dict | None", project: "str | None") -> "str | None":
+    if s:
+        return s.get("cwd")
+    rel = (project or "").lstrip("/")
+    return os.path.join(config.BASE_PATH, rel) if rel else None
+
+
+def _post_policy(path: str, body: dict, chat_id: int) -> "tuple[dict, int]":
+    """SETTINGS > Agent Tools: a level's pick. `on` null clears it."""
+    s = _owned(chat_id, body.get("session_id"))
+    project = body.get("project") or (s or {}).get("project")
+    level = str(body.get("level") or "machine")
+    on = body.get("on")
+    try:
+        if path == "tool-policy":
+            tool_policy.set_pick(level, str(body.get("section")), str(body.get("name")), str(body.get("agent")),
+                                 None if on is None else on is True, project, s)
+            return {"ok": True}, 200
+        if path == "tool-policy/patterns":
+            return {"patterns": tool_policy.set_patterns(level, body.get("patterns") or [], project, s)}, 200
+        if path == "rules":
+            rules.set_rule(level, str(body.get("id")), None if on is None else on is True, body.get("fields"), project, s)
+            return {"ok": True, "rules": rules.listing(project, _owned(chat_id, body.get("session_id")))}, 200
+    except ValueError as e:
+        return {"error": str(e)}, 400
+    return {"error": "not found"}, 404
+
+
+def _post_hooks(body: dict, chat_id: int) -> "tuple[dict, int]":
+    s = _owned(chat_id, body.get("session_id"))
+    cwd = _cwd_of(s, body.get("project") or (s or {}).get("project"))
+    act = str(body.get("action") or "")
+    try:
+        if act == "add":
+            hooks_config.add(str(body.get("agent")), str(body.get("scope") or "user"), str(body.get("event")),
+                             str(body.get("matcher") or ""), str(body.get("command") or ""), cwd, body.get("timeout"))
+        elif act == "edit":
+            hooks_config.edit(str(body.get("id")), str(body.get("event")), str(body.get("matcher") or ""),
+                              str(body.get("command") or ""), cwd, body.get("timeout"))
+        elif act == "remove":
+            hooks_config.remove(str(body.get("id")), cwd)
+        elif act == "copy":
+            hooks_config.copy_to(str(body.get("id")), str(body.get("agent")), cwd)
+        else:
+            return {"error": "action must be add, edit, remove or copy"}, 400
+    except ValueError as e:
+        return {"error": str(e)}, 400
+    return hooks_config.listing(cwd), 200
+
+
+def _post_dir(path: str, body: dict, chat_id: int) -> "tuple[dict, int]":
+    root = image_root(chat_id, body.get("session_id"), body.get("project"))
+    if not root:
+        return {"error": "no project"}, 404
+    try:
+        if path == "mystical-dir/delete":
+            mystical_dir.delete(root, str(body.get("path") or ""), body.get("confirm") is True)
+            return {"ok": True}, 200
+        if path == "mystical-dir/keep":
+            mystical_dir.set_keep(root, str(body.get("path") or ""), body.get("on") is True)
+            return {"ok": True}, 200
+        if path == "mystical-dir/clear":
+            return mystical_dir.clear_stale(root, int(body.get("days") or 30)), 200
+    except (ValueError, OSError) as e:
+        return {"error": str(e)}, 400
+    return {"error": "not found"}, 404
 
 
 def _post_mcp(path: str, body: dict) -> "tuple[dict, int]":

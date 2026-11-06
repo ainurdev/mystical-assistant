@@ -187,6 +187,16 @@ _HIDDEN_BROWSER_NOTE = (
     "machine — no `open <url>`, no headed launches; the user is working in front of it.")
 
 
+_EXPERIMENTAL_NOTE = (
+    "Keep .mystical/ tidy: .mystical/scratch/ for throwaway scripts and probes, .mystical/docs/ for reports and "
+    "Markdown written to be read, .mystical/drafts/ for design drafts and mockups. .mystical/images/ holds the "
+    "pictures in the user's messages: leave it alone.\n\n"
+    "To show the user a picture as proof, call show_image from the mystical MCP server with a one-line caption "
+    "saying what it proves, or compare_images for a before and after. A picture you only read to check something "
+    "stays in your work log, out of their way. run_checks runs the tests and records the result against known "
+    "failures; drive_page replaces writing a browser script; find_tools lists the rest.")
+
+
 def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
     """ASK prompt + the dev-log and push notes (+ the Rivendell note for a
     session that gets it), then the graph pack.
@@ -195,7 +205,10 @@ def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:
     --append-system-prompt, which sits after the last cache breakpoint, so any
     change re-writes all of it. What protects the cache is only sending the
     volatile packs once per session — see _base_cmd."""
-    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE,
+    # With the switch on: where things go, and the tools for showing proof. One cache rewrite
+    # when it's turned on, then as byte-stable as the rest.
+    extra = _EXPERIMENTAL_NOTE if experimental.enabled() else ""
+    parts = [p for p in (config.ASK_SYSTEM_PROMPT.strip(), _LOG_NOTE, _PUSH_NOTE, extra,
                          _HIDDEN_BROWSER_NOTE if config.AI_BROWSER_HEADLESS else "",
                          rivendell, graph.strip()) if p]
     return "\n\n".join(parts)
@@ -529,7 +542,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
               claude_session_id: str | None = None, cwd: str | None = None,
               skip_pack: bool = False, new_session: bool = False,
               fork: bool = False, disabled_tools: list[str] | None = None,
-              autocompact: str | None = None, gateway: "dict | None" = None) -> list[str]:
+              autocompact: str | None = None, gateway: "dict | None" = None,
+              rule_hooks: "dict | None" = None, policy_denied: "list | None" = None) -> list[str]:
     """Build the `claude` argv.
 
     interactive=True (Mini App chat) drives Claude over the stream-json control
@@ -626,6 +640,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         hooks["Stop"] = [{"hooks": [{"type": "command", "command": ask}]}]
     if rv_note:
         hooks.update(_push_gate(cwd or state.project_dir(chat_id)) or {})
+    for event, rows in (rule_hooks or {}).items():
+        hooks[event] = hooks.get(event, []) + rows       # bridge/rules.py, beside ours
     if hooks:
         cmd += ["--settings", json.dumps({"hooks": hooks})]
     if skip_pack and not (permission_mode and not interactive):
@@ -658,6 +674,8 @@ def _base_cmd(prompt: str, chat_id: int, *, stream: bool,
         # as ON is the UI lying.
         cmd.append("--strict-mcp-config")
         disabled_tools = []
+    if policy_denied:
+        disabled_tools = [*(disabled_tools or []), *[r for r in policy_denied if r not in (disabled_tools or [])]]
     if disabled_tools:
         # Bare tool/server names, so a switched-off tool leaves the model's
         # context entirely rather than being offered and then refused.
@@ -2608,6 +2626,11 @@ def _watchdog(job: Job, proc) -> None:
             return
 
 
+def gateway_hook_env(job: Job) -> dict:
+    from bridge import gateway
+    return gateway.hook_env(job.gateway_token) if job.gateway_token else {}
+
+
 def _agent_extras(job: AcpJob, sess: dict, cwd: str, env: dict, prompt: str) -> "tuple[str, list]":
     """With the EXPERIMENTAL switch on, what an agent turn gets beyond its prompt: the
     gateway, Mystical's instructions (when due), shared skills and the Rivendell push
@@ -2622,6 +2645,7 @@ def _agent_extras(job: AcpJob, sess: dict, cwd: str, env: dict, prompt: str) -> 
             job.gateway_token = gateway.issue(job.store_session_id)
             servers = [gateway.acp_server(job.gateway_token)]
             tools = gateway.tool_names(sess)
+            env.update(gateway.hook_env(job.gateway_token))      # bridge/rules.py's managed hooks
     except Exception as e:  # noqa: BLE001
         print(f"[runner] agent gateway: {e!r}", file=sys.stderr)
     rivendell_on = "list_rivendell_tasks" in tools
@@ -2724,13 +2748,15 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             _consume_acp(job, prompt, image_paths, cwd, model, effort, permission_mode)
             return
         full_prompt = job.prefix + _with_images(prompt, image_paths)
-        gateway_def = None
+        gateway_def, rule_hooks, policy_denied = None, None, None
         if experimental.enabled() and job.store_session_id and not job.skip_pack:
-            from bridge import gateway
+            from bridge import gateway, rules, tool_policy
             sess_row = store.get_session(job.store_session_id)
             if gateway.eligible(sess_row):
                 job.gateway_token = gateway.issue(job.store_session_id)
                 gateway_def = gateway.server_def(job.gateway_token)
+                rule_hooks = rules.claude_hooks(sess_row)
+                policy_denied = tool_policy.claude_denied(sess_row.get("project"), sess_row)
         # The gap before the first token is two waits, and an empty stream makes
         # both read as a hang. Name whichever one we are actually in: the health
         # check only blocks while the cache is still cold (see toolsets.warm).
@@ -2749,7 +2775,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                         new_session=job.new_session, disabled_tools=denied,
                         autocompact=store.get_autocompact(job.store_session_id)
                         if job.store_session_id else None,
-                        skip_pack=job.skip_pack, gateway=gateway_def)
+                        skip_pack=job.skip_pack, gateway=gateway_def, rule_hooks=rule_hooks,
+                        policy_denied=policy_denied)
         if "--mcp-config" in cmd:
             # Its file holds tokens (see _mcp_config); it goes with the child.
             mcp_dir = os.path.dirname(cmd[cmd.index("--mcp-config") + 1])
@@ -2758,7 +2785,8 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             proc = subprocess.Popen(cmd, cwd=cwd, stdin=subprocess.PIPE,
                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                     text=True, bufsize=1,
-                                    env=_run_env(ponytail, job.account_slot))
+                                    env={**_run_env(ponytail, job.account_slot),
+                                         **(gateway_hook_env(job) if rule_hooks else {})})
         except FileNotFoundError:
             job.add({"type": "error", "message": "`claude` not found on PATH."})
             job.status = "error"
@@ -3119,6 +3147,9 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         from bridge import titler  # local import: runner<->* cycle
         titler.kick(chat_id, session, job.id)
         waits.drop(session["id"])   # a new turn here ends its wait; Claude can wait again
+        if experimental.enabled():
+            from bridge import timed_waits      # same rule for wait_for
+            timed_waits.drop(session["id"])
         _ensure_journal_thread()
         if experimental.enabled() and not refusal:
             _multi_agent_turn_start(job, session, cwd, model, prompt)

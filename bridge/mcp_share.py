@@ -147,8 +147,13 @@ def holds_key(d: dict) -> bool:
     return any(_CRED_KEY.search(str(k)) for k in [*env, *hdr])
 
 
-def shared_with(name: str, d: dict, agent: str) -> bool:
-    """Whether this agent gets this server through the bridge."""
+def shared_with(name: str, d: dict, agent: str, project: "str | None" = None, session: "dict | None" = None) -> bool:
+    """Whether this agent gets this server through the bridge. A project's or a chat's pick
+    (bridge/tool_policy.py) comes first, then the machine's, then known or not."""
+    from bridge import tool_policy
+    near, _level = tool_policy.lookup("mcp", name, agent, project, session)
+    if near is not None:
+        return near
     pick = (_load().get(name) or {}).get("agents") or {}
     if agent in pick:
         return bool(pick[agent])
@@ -161,13 +166,13 @@ def tool_allowed(name: str, tool: str) -> bool:
     return bool(((_load().get(name) or {}).get("tools") or {}).get(tool))
 
 
-def for_agent(agent: str, cwd: "str | None") -> dict:
+def for_agent(agent: str, cwd: "str | None", project: "str | None" = None, session: "dict | None" = None) -> dict:
     """server name -> definition, for what this agent gets from the bridge. Its own
     servers aren't repeated: it already has them."""
     if not experimental.enabled():
         return {}
     return {n: v["def"] for n, v in definitions(cwd).items()
-            if v["home"] != agent and shared_with(n, v["def"], agent)}
+            if v["home"] != agent and shared_with(n, v["def"], agent, project, session)}
 
 
 def set_share(name: str, agent: str, on: bool) -> None:

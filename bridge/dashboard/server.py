@@ -394,6 +394,14 @@ class Handler(BaseHTTPRequestHandler):
                 out, code = gateway.handle(self.headers.get("X-Gateway-Token"),
                                            str(body.get("method") or ""), body.get("params") or {})
                 return self._json(out, code)
+            if path == "/local/hook":
+                # An agent's hook (bridge/hook_dispatch.py), on the same scoped token.
+                from bridge import gateway
+                body = self._read_json()
+                if body is None:
+                    return self._json({"error": "bad json"}, 400)
+                out, code = gateway.hook(self.headers.get("X-Gateway-Token"), body)
+                return self._json(out, code)
             if not _tok_ok(self.headers.get("X-Dash-Token", "")):
                 return self._json({"error": "unauthorized"}, 401)
             body = self._read_json()
