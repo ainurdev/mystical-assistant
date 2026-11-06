@@ -7703,22 +7703,48 @@ button.gt-wrow { width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
 .wr-f .wr-when { margin-left: auto; padding-left: 8px; flex: none; color: var(--txl); font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .wr-dot { animation: none; } }
 /* Branches TRUNK. */
-/* Rivendell BOARD BAR (inside .rh). */
-.bb-k { font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.bb-pill { flex: none; font-size: var(--t9); letter-spacing: 1px; padding: 0 6px; border: 1px solid currentColor; border-radius: 8px; white-space: nowrap; }
-.bb-r { margin-left: auto; flex: none; font-size: var(--t9); color: var(--txl); white-space: nowrap; }
-.bb-bar { display: flex; gap: 3px; height: 40px; margin-top: 12px; }
-.bb-lane { min-width: 0; border-radius: 6px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  background: color-mix(in srgb, var(--lc) 22%, transparent); border: 1px solid color-mix(in srgb, var(--lc) 55%, transparent); }
-.bb-lane b { font-size: var(--t11); line-height: 1; font-weight: 800; color: var(--txb); }
-.bb-lane span { font-size: var(--t75); font-weight: 700; letter-spacing: .08em; color: var(--txd); }
-.bb-cap { display: flex; align-items: center; gap: 8px; height: 24px; margin-top: 8px; min-width: 0; font-size: var(--t95); }
-.bb-up { flex: none; font-size: var(--t9); letter-spacing: 1px; color: var(--acc); }
-.bb-t { flex: 1; min-width: 0; color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.bb-go { flex: none; appearance: none; cursor: pointer; display: inline-flex; padding: 4px; background: transparent; color: var(--acc);
-  border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent); border-radius: 6px; }
-.bb-go:hover, .bb-go:focus-visible { background: color-mix(in srgb, var(--acc) 18%, transparent); }
-.bb-lane span { max-width: 100%; padding: 0 3px; box-sizing: border-box; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Rivendell DECK: the next task as a card on two offset cards, the running
+   tasks as mini cards, the next titles plain. Panel-scoped (dk-). */
+.dk { position: relative; margin: 14px 18px 0 12px; }
+.dk-bk { position: absolute; left: 10px; right: -6px; top: -8px; bottom: 8px; border-radius: 12px; background: var(--panel3); border: 1px solid var(--line, color-mix(in srgb, var(--acc) 14%, transparent)); }
+.dk-b2 { left: 20px; right: -12px; top: -15px; bottom: 16px; opacity: .6; }
+.dk-card { position: relative; overflow: hidden; border-radius: 12px; padding: 12px 12px 11px 16px; background: var(--panel2);
+  border: 1px solid color-mix(in srgb, var(--acc) 22%, transparent); box-shadow: 0 14px 28px -20px #000; }
+.dk-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; background: var(--dk-edge); }
+.dk-k { display: flex; align-items: center; gap: 6px; font-size: var(--t9); font-weight: 800; letter-spacing: 1.3px; color: var(--acc); }
+.dk-k span { margin-left: auto; letter-spacing: .3px; font-weight: 600; color: var(--txl); }
+.dk-tt { margin-top: 8px; font-size: var(--t13, var(--t115)); font-weight: 800; line-height: 1.3; color: var(--txb);
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.dk-key { display: flex; align-items: center; gap: 6px; margin-top: 6px; min-width: 0; font: 600 var(--t95)/1.2 var(--mono); color: var(--txl); }
+.dk-key span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dk-ln { flex: none; appearance: none; cursor: pointer; background: none; border: 0; padding: 0 2px; color: var(--txl); font: inherit; }
+.dk-ln:hover, .dk-ln:focus-visible { color: var(--txh); }
+.dk-ex { margin-top: 8px; font-size: var(--t105); line-height: 1.45; color: var(--txm); display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.dk-a { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 11px; }
+.dk-btn { appearance: none; cursor: pointer; flex: none; display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 11px; border-radius: 8px;
+  font-family: inherit; font-weight: 700; font-size: var(--t10); line-height: 1; color: var(--txh); background: transparent; border: 1px solid color-mix(in srgb, var(--acc) 28%, transparent); white-space: nowrap; }
+.dk-btn:hover, .dk-btn:focus-visible { background: var(--wash); }
+.dk-pri { color: var(--acc-on, var(--txb)); background: var(--acc); border-color: var(--acc); }
+.dk-pri:hover, .dk-pri:focus-visible { background: color-mix(in srgb, var(--acc) 85%, var(--txb)); }
+.dk-skip { appearance: none; cursor: pointer; background: none; border: 0; padding: 0 4px; font-family: inherit; font-weight: 600; font-size: var(--t10); line-height: 1; color: var(--txl); }
+.dk-skip:hover, .dk-skip:focus-visible { color: var(--txh); }
+.dk-card > :last-child:not(.dk-a) { margin-top: 10px; }
+.dk-sec { display: flex; gap: 8px; padding: 18px 12px 6px; font-size: var(--t9); letter-spacing: 1.8px; color: var(--txl); }
+.dk-sec span + span { color: var(--txg); letter-spacing: .4px; }
+.dk-mini { margin: 0 12px 6px; padding: 9px 10px; border-radius: 10px; background: var(--panel2); border: 1px solid color-mix(in srgb, var(--acc) 35%, transparent); }
+.dk-mt { font-size: var(--t11); font-weight: 700; color: var(--txh); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dk-pips { display: flex; gap: 3px; margin-top: 8px; }
+.dk-pips b { flex: 1; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--acc) 18%, transparent); }
+.dk-pips b.on { background: var(--acc); }
+.dk-live { margin-top: 6px; font-size: var(--t9); color: var(--txm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dk-mf { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: var(--t9); font-weight: 700; color: var(--txl); }
+.dk-mf span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dk-mf button { flex: none; appearance: none; cursor: pointer; background: none; border: 0; padding: 0; font: inherit; color: var(--acc); }
+.dk-mf button:hover, .dk-mf button:focus-visible { color: var(--txb); }
+.dk-then { display: flex; align-items: center; gap: 8px; width: 100%; height: 28px; box-sizing: border-box; padding: 0 12px; appearance: none; border: 0; background: none; cursor: pointer; text-align: left; font-family: inherit; font-weight: 600; font-size: var(--t105); line-height: 1; color: var(--txm); }
+.dk-then:hover, .dk-then:focus-visible { background: var(--wash); color: var(--txh); }
+.dk-then span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dk-then small { flex: none; font: 600 var(--t9)/1 var(--mono); color: var(--txg); }
 /* Team ROOM (inside .rh). */
 .tr-k { font-size: var(--t95); color: var(--purple-h, var(--txd)); white-space: nowrap; }
 .tr-pill { margin-left: auto; flex: none; font-size: var(--t9); letter-spacing: 1px; padding: 0 6px; border: 1px solid currentColor; border-radius: 8px; white-space: nowrap; }
