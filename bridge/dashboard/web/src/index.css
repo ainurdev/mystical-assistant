@@ -8058,3 +8058,23 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .tr-pv .tp-bar b { font-weight: 600; color: var(--txh); }
 .tr-pv .typepv { height: 460px; margin-top: 8px; }
 @media (max-width: 900px) { .tr-two { grid-template-columns: 1fr; } .tr-pv { position: static; order: -1; } .tr-pv .typepv { height: 260px; } }
+
+/* ── PROJECTS · tiles beside the picked one's drawer (2026-11-06, B · TILES + DRAWER) ──
+   The list becomes tiles grouped by folder; the panel of the picked project is the
+   drawer on the right. SETTINGS only: the same list elsewhere keeps its rows. */
+.setpane .prj-split { grid-template-columns: minmax(0, 1fr) 340px; }
+.setpane .prj-list { border: 0; background: transparent; border-radius: 0; }
+.setpane .prj-grp { display: grid; grid-template-columns: repeat(auto-fill, minmax(156px, 1fr)); gap: 8px; padding: 0 2px 12px; }
+.setpane .prj-grp > .prj-fold { grid-column: 1 / -1; border-top: 0 !important; padding-left: 0; padding-right: 0; }
+.setpane .prj-grp + .prj-grp .prj-fold { border-top: 0 !important; }
+.setpane .prj-row { height: 52px; padding: 0 10px; gap: 10px; border-radius: 10px; background: var(--panel); border: 1px solid var(--l); }
+.setpane .prj-row:hover { background: color-mix(in oklab, var(--acc) 6%, var(--panel)); }
+.setpane .prj-row .ptile { width: 30px; height: 30px; border-radius: 8px; font-size: 12px; }
+.setpane .prj-row[data-on] { background: color-mix(in oklab, var(--acc) 10%, var(--panel)); box-shadow: 0 0 0 1.5px var(--acc); }
+.setpane .prj-row[data-hidden] { opacity: .6; }
+.setpane .prj-det { position: sticky; top: 0; }
+/* the drawer is narrow: a label keeps its line, and a wide control drops under it */
+.setpane .prj-det .prj-field { flex-wrap: wrap; row-gap: 6px; }
+.setpane .prj-det .prj-lbl { flex: 1 1 180px; }
+.setpane .prj-det .prj-field > :nth-child(n+3):not(button):not(.set-toggle) { flex: 1 1 100%; margin-left: 27px; min-width: 0; }
+@media (max-width: 900px) { .setpane .prj-split { grid-template-columns: 1fr; } }
