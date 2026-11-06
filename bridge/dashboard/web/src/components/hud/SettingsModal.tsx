@@ -3600,7 +3600,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
       <CouncilFold openSec={openSec} projects={projects} onSignIn={() => {
         setGoto("AGENTS");
         setTimeout(() => document.querySelector("[data-sec=\"ACCOUNTS\"]")?.scrollIntoView({ block: "start" }), 50);
-        setTimeout(() => setGoto(null), 0);
+        setTimeout(() => setGoto(null), 100);
       }} />
       {/* Claude's servers (`claude mcp`). Kimi Code reads its own ~/.kimi-code/mcp.json;
           a project's .mcp.json reaches both. */}
