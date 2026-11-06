@@ -10,6 +10,9 @@ const dir = await fs.mkdtemp(`${os.tmpdir()}/cdp-`);
 // Port 0: Chrome picks a free port and writes it to DevToolsActivePort, so two runs never share a Chrome.
 const proc = spawn(BIN, ["--headless=new", "--no-first-run", "--no-default-browser-check", "--hide-scrollbars",
   `--window-size=${w},${h}`, "--remote-debugging-port=0", `--user-data-dir=${dir}`, "about:blank"], { stdio: "ignore" });
+// Chrome writes its profile until it has exited: remove it sooner and the folder (up to ~170 MB) stays behind.
+const exited = new Promise(r => proc.once("exit", r));
+const quit = async () => { proc.kill(); await exited; await fs.rm(dir, { recursive: true, force: true }).catch(() => {}); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 let tab;
 for (let i = 0; i < 60 && !tab; i++) {
@@ -19,7 +22,7 @@ for (let i = 0; i < 60 && !tab; i++) {
     tab = (await (await fetch(`http://127.0.0.1:${port}/json/list`)).json()).find(t => t.type === "page");
   } catch {}
 }
-if (!tab) { proc.kill(); throw new Error("chrome never opened its debug port"); }
+if (!tab) { await quit(); throw new Error("chrome never opened its debug port"); }
 const ws = new WebSocket(tab.webSocketDebuggerUrl);
 await new Promise(r => ws.onopen = r);
 let id = 0; const waiting = new Map();
@@ -42,6 +45,6 @@ const jpg = /\.jpe?g$/i.test(out);
 const clip = process.env.CLIP ? (([x, y, width, height]) => ({ x, y, width, height, scale: 1 }))(process.env.CLIP.split(",").map(Number)) : undefined;
 const { data } = await send("Page.captureScreenshot", { ...(jpg ? { format: "jpeg", quality: 84 } : { format: "png" }), ...(clip ? { clip, captureBeyondViewport: true } : {}) });
 await fs.writeFile(out, Buffer.from(data, "base64"));
-ws.close(); proc.kill(); await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+ws.close(); await quit();
 console.log(`${out} ${(Buffer.from(data, "base64").length / 1024 | 0)}KB`);
 process.exit(0);
