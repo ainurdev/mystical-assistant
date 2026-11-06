@@ -7745,26 +7745,35 @@ button.gt-wrow { width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
 .dk-then:hover, .dk-then:focus-visible { background: var(--wash); color: var(--txh); }
 .dk-then span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .dk-then small { flex: none; font: 600 var(--t9)/1 var(--mono); color: var(--txg); }
-/* Team ROOM (inside .rh). */
-.tr-k { font-size: var(--t95); color: var(--purple-h, var(--txd)); white-space: nowrap; }
-.tr-pill { margin-left: auto; flex: none; font-size: var(--t9); letter-spacing: 1px; padding: 0 6px; border: 1px solid currentColor; border-radius: 8px; white-space: nowrap; }
-.tr-row { display: flex; gap: 8px; height: 62px; margin-top: 8px; }
-.tr-avs { display: flex; gap: 8px; flex: 1; min-width: 0; overflow: hidden; }
-.tr-p { flex: none; width: 42px; display: flex; flex-direction: column; align-items: center; gap: 4px; appearance: none; background: transparent; border: 0; padding: 0; font: inherit; }
-.tr-av { position: relative; display: grid; place-items: center; width: 38px; height: 38px; box-sizing: border-box; border-radius: 50%; padding: 0;
-  border: 2px solid color-mix(in srgb, var(--txl) 40%, transparent); }
-.tr-p:not(.on):not(.tr-send) .tr-av { opacity: .55; }
-.tr-p.on .tr-av { border-color: var(--ok); }
-.tr-live { position: absolute; right: -2px; bottom: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--ok); border: 2px solid var(--panel);
-  animation: rhpulse 2s ease-in-out infinite; }
-.tr-n { max-width: 100%; font-size: var(--t9); color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tr-p.on .tr-n { color: var(--txb); font-weight: 600; }
-.tr-more { font-size: var(--t95); color: var(--txd); }
-.tr-send { flex: none; margin-left: auto; cursor: pointer; color: var(--acc); }
-.tr-send .tr-av { border: 1.5px dashed color-mix(in srgb, var(--acc) 60%, transparent); }
-.tr-send .tr-n { color: var(--acc); font-weight: 700; }
-.tr-send:hover .tr-av, .tr-send:focus-visible .tr-av { background: color-mix(in srgb, var(--acc) 18%, transparent); }
-.tr-cap { height: 14px; margin-top: 4px; font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* TEAM tab: faces row, TODAY / EARLIER feed (a card, then one-line events), the send bar at the foot.
+   Colours are tokens; the live dot's pulse is the shared rhpulse and stops under reduced motion. */
+.tf-pres { display: flex; align-items: center; gap: 6px; flex: none; padding: 4px 12px 2px; min-width: 0; }
+.tf-face { position: relative; flex: none; display: grid; place-items: center; width: 34px; height: 34px; box-sizing: border-box; border-radius: 50%; }
+.tf-face:not(.on) { opacity: .6; }
+.tf-face.on { box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--ok); }
+.tf-more { font-size: var(--t95); color: var(--txd); border: 1px solid var(--line2); }
+.tf-t { flex: 1; min-width: 0; margin-left: 6px; display: flex; flex-direction: column; gap: 3px; }
+.tf-t b, .tf-t small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf-t b { font-size: var(--t11); font-weight: 700; color: var(--txh); }
+.tf-t small { min-height: 12px; font-size: var(--t9); color: var(--txl); }
+.tf-line { display: flex; align-items: center; gap: 9px; height: 34px; box-sizing: border-box; padding: 0 12px; min-width: 0; border-bottom: 1px solid var(--line); }
+.tf-line[data-act] { cursor: pointer; }
+.tf-line[data-act]:hover { background: var(--wash); }
+.tf-ic { flex: none; display: flex; color: var(--txl); }
+.tf-tx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--t11); font-weight: 600; color: var(--txm); }
+.tf-tx b { color: var(--txh); font-weight: 700; }
+.tf-r { flex: none; min-width: 52px; display: flex; justify-content: flex-end; font: 700 var(--t8)/1 var(--mono); letter-spacing: .8px; white-space: nowrap; }
+button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12px; border: 0; background: transparent; font-family: inherit; font-size: var(--t95); letter-spacing: .1em; color: var(--txl); }
+.tf-send { flex: none; display: flex; align-items: center; gap: 8px; height: 40px; box-sizing: border-box; margin: 6px 12px 12px; padding: 0 5px 0 12px; border-radius: 12px;
+  background: var(--panel2); box-shadow: inset 0 0 0 1px var(--line2); font-size: var(--t11); font-weight: 600; color: var(--txl); }
+.tf-lbl { flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf-to { position: relative; flex: 0 1 auto; min-width: 0; max-width: 46%; display: flex; align-items: center; gap: 5px; padding: 4px 8px 4px 4px; border-radius: 99px;
+  background: var(--wash); color: var(--txh); font-weight: 700; cursor: pointer; }
+.tf-nm { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tf-to select { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
+.tf-to:focus-within { outline: 2px solid var(--acc); outline-offset: 1px; }
+.tf-go { flex: none; appearance: none; cursor: pointer; display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 9px; background: var(--acc); color: var(--acc-on, var(--canvas)); }
+.tf-go:hover, .tf-go:focus-visible { filter: brightness(1.12); }
 
 /* FLOW tab: the path map hero, then the steps under it. Colours are tokens only;
    the pulse is the shared rhpulse, which .rh switches off under reduced motion. */
