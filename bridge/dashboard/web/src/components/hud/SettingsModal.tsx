@@ -3226,6 +3226,7 @@ function SaversFold({ openSec }: { openSec: string | null }) {
   }
   return (
     <AimFold id="savers" title="Savers" secs={["SAVERS"]} openSec={openSec}
+      count={Array.isArray(rows) && rows.length ? `${rows.filter((r) => r.mode !== "off").length} of ${rows.length} on` : null}
       hint="Claude Code's own switches that make every turn cheaper" right={<span className="aim-chip">NEW</span>}>
       <p className="aim-svlead">
         <b>TRIAL</b> turns one on for every other new session, picked by a coin flip, and compares their first
@@ -3283,6 +3284,17 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
 }) {
   const aiFeatures = useAiFeatures();
   const acc = useAccounts(onAccountsChanged);
+  // Each fold head says where it stands without opening it (2026-11-06, A ·
+  // SPEAKING FOLDS): every login's week left, extras on, MCP servers that wait.
+  const [mcp, setMcp] = useState<McpInfo | null>(null);
+  useEffect(() => { void api.mcp().then(setMcp).catch(() => { /* the fold still opens */ }); }, []);
+  const mcpN = mcp && {
+    ok: mcp.servers.filter((x) => x.ok).length,
+    auth: mcp.servers.filter((x) => !x.ok && x.status.trim().startsWith("!")).length,
+    bad: mcp.servers.filter((x) => !x.ok && !x.status.trim().startsWith("!")).length,
+  };
+  const extrasAll = Object.keys(aiFeatures).length;
+  const extrasOn = Object.values(aiFeatures).filter(Boolean).length;
   // Opened on one login (the composer's PROFILE menu, on a profile whose login
   // has expired) or on a blank profile (its + NEW PROFILE): read once.
   const [focus] = useState(() => takeSettingsFocus());
@@ -3528,18 +3540,34 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
     <div className="aim">
       <AimFold id="accounts" title="Accounts" secs={["ACCOUNTS", "ON USAGE LIMIT", "CLAUDE LOGINS", "AGENTS"]} openSec={signIn ? "AGENTS" : openSec}
         count={acc.rows ? `${acc.rows.length} login${acc.rows.length === 1 ? "" : "s"} · ${list.length} profile${list.length === 1 ? "" : "s"}` : null}
-        right={policyPick}>
+        right={<>
+          {acc.rows && acc.rows.length > 0 && (
+            <span className="aim-mini" aria-label="each login's week left">
+              {acc.rows.map((a) => (
+                <span key={a.slot} title={`${a.email}: ${a.left == null ? "no reading" : `${a.left}% left`}`}
+                  data-low={(a.left != null && a.left < 20) || !a.logged_in || undefined}>
+                  {a.slot} · {!a.logged_in ? "out" : a.left == null ? "—" : `${a.left}%`}
+                  <i><b style={{ width: `${a.logged_in ? a.left ?? 0 : 0}%` }} /></i>
+                </span>
+              ))}
+            </span>
+          )}
+          {policyPick}
+        </>}>
         {accountsBody}
       </AimFold>
       <AimFold id="extras" title="Extras" secs={["MODEL-SPENDING EXTRAS"]} openSec={openSec}
-        hint="the model calls the bridge makes on top of your turns, each with its switch">
+        count={extrasAll ? `${extrasOn} of ${extrasAll} on` : null}
+        hint="model calls the bridge makes on top of your turns">
         <ExtrasFold />
       </AimFold>
       <SaversFold openSec={openSec} />
       {/* Claude's servers (`claude mcp`). Kimi Code reads its own ~/.kimi-code/mcp.json;
           a project's .mcp.json reaches both. */}
       <AimFold id="mcp" title="Claude MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec}
-        hint="servers Claude sessions load · Kimi Code keeps its own, a project's .mcp.json reaches both">
+        count={mcpN ? [`${mcpN.ok} connected`, mcpN.auth ? `${mcpN.auth} need a sign-in` : "", mcpN.bad ? `${mcpN.bad} failed` : ""].filter(Boolean).join(" · ") : null}
+        hint={mcpN ? undefined : "servers Claude sessions load"}
+        right={mcpN && mcpN.bad > 0 ? <span className="aim-chip warn">{mcpN.bad} failed</span> : undefined}>
         <McpPanel />
       </AimFold>
       <AimFold id="defprofile" title="Default profile" secs={["PROFILES", "RUN DEFAULTS"]} openSec={openSec}
