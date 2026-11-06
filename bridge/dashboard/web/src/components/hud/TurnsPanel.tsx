@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
-import { ArrowUp, Check, Copy, CornerDownLeft, Ellipsis, GitCommitHorizontal, GitMerge, GitPullRequest, ListEnd, Search, Square, X } from "lucide-react";
+import { ArrowUp, Check, Copy, CornerDownLeft, Ellipsis, GitCommitHorizontal, GitMerge, GitPullRequest, ListEnd, Search, X } from "lucide-react";
 import { activeOf, type Turn } from "../../chat";
 import { ckId, fmtElapsed, turnRows, type TurnRow } from "../../lib/checkpoints";
 import { span } from "../../lib/limit";
@@ -56,14 +56,14 @@ const took = (s: number) => (s < 60 ? `${Math.round(s)}s` : span(s));
 // What a moment line says before its text, and how the text joins on.
 const SAY: Record<Moment["kind"], [string, string]> = {
   ask: ["asked you", " · "], steer: ["you steered", " · "], commit: ["committed", " "], merge: ["merged", " "],
-  push: ["pushed", " "], pr: ["opened PR", " "], tests: ["tests", " · "], end: ["", ""],
+  push: ["pushed", " "], pr: ["opened PR", " "], tests: ["tests", " · "],
 };
 
 function glyph(m: Moment): ReactNode {
   if (m.kind === "ask") return "?";
   if (m.kind === "steer") return <SteerIcon size={10} />;
   const I = m.kind === "commit" ? GitCommitHorizontal : m.kind === "merge" ? GitMerge : m.kind === "push" ? ArrowUp
-    : m.kind === "pr" ? GitPullRequest : m.tone === "ok" ? Check : m.text === "stopped" ? Square : X;
+    : m.kind === "pr" ? GitPullRequest : m.tone === "ok" ? Check : X;
   return <I size={10} strokeWidth={2.6} aria-hidden />;
 }
 
@@ -84,7 +84,7 @@ function hit(r: TurnRow, q: string): boolean {
  *  the latest turn waits on you or works, then the open session's turns newest
  *  first on one line — your prompt heading each, and under it the moments that
  *  mattered (lib/moments): it asked you, committed, merged, pushed, opened a PR,
- *  ran the tests, stopped. The three newest turns with moments list up to three
+ *  ran the tests. The three newest turns with moments list up to three
  *  of them, older ones fold theirs into a count; a gap over half an hour says how
  *  long you were away. Every line jumps the chat to its place; the turn on screen
  *  is lit and followed. It replaced the B · LEDGER list, its TurnClock hero and
@@ -235,7 +235,7 @@ export function TurnsPanel({
         </>
       )}
       {bar}
-      <div ref={listRef} className="mscroll tn-list"
+      <div ref={listRef} className="mscroll"
         onWheel={() => { browsed.current = Date.now(); }} onPointerDown={() => { browsed.current = Date.now(); }}>
         {q && !shown.length && <div className="tn-none">nothing answers to “{find?.trim()}”.</div>}
         <div className={`tn-st${find === null && between(null, last) ? " day" : ""}`}>
@@ -265,7 +265,7 @@ export function TurnsPanel({
                 {list.map((m, j) => (
                   <div key={j} className={`tn-m ${m.tone}`} onClick={() => onJump(m.jump, m.key)}>
                     <span className="tn-i">{glyph(m)}</span>
-                    <span className="tn-x">{SAY[m.kind][0] ? <><b>{SAY[m.kind][0]}</b>{m.text && SAY[m.kind][1] + m.text}</> : <b>{m.text}</b>}</span>
+                    <span className="tn-x"><b>{SAY[m.kind][0]}</b>{m.text && SAY[m.kind][1] + m.text}</span>
                     {m.at != null && <small>{hhmm(m.at)}</small>}
                   </div>
                 ))}

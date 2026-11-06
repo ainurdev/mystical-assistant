@@ -39,6 +39,13 @@ eq(brief(of(...bash('cd /repo && git add -A && git commit -qm "dashboard: Usage 
 eq(brief(of(...bash(`git add -A && git commit -q -m "$(cat <<'EOF'\nrunner: load the bundled skill pack\n\nWhy it moved.\nEOF\n)"`, ""))),
   ["commit runner: load the bundled skill pack acc"], "a heredoc message's first line is the subject");
 eq(of(...bash('git add -A && git commit -qm "x"', "Exit code 1\nOn branch master\nnothing to commit", true)), [], "a commit that failed is no moment");
+eq(of(...bash('git commit -qm "wip" 2>&1 | tail -3', "husky - pre-commit hook exited with code 1 (error)")), [],
+  "a commit a hook stopped is no moment, even when a pipe hid its exit code");
+eq(of(...bash('git commit -qm "x" 2>&1 | tail -1', "fatal: Unable to create '/repo/.git/index.lock': File exists.")), [],
+  "a commit git refused (fatal:) is no moment, even when a pipe hid its exit code");
+eq(of(...bash("git commit --amend --no-edit", "[master abc1234] dashboard: Turns shows the moments\n Date: Thu Nov 5\n 1 file changed")), [],
+  "an amend is not a new commit");
+eq(of(...bash('git commit --amend -qm "dashboard: reword"', "")), [], "an amend with a new message is not a new commit either");
 eq(of(...bash("T=$(git write-tree) && C=$(git commit-tree $T -p HEAD -m wip) && echo $C", "2ddf6db2")), [], "git commit-tree is not a commit");
 eq(of(...bash('echo "then run git commit -m later"', "then run git commit -m later")), [], "a command that only names git commit runs none");
 eq(brief(of(...bash(`cd ${"/Users/someone/Projects/.worktrees/a-very-long-project-name/feat-something-long".repeat(2)} && git commit -qm "far past the summary cut"`, ""))),
@@ -52,6 +59,9 @@ eq(brief(of(...bash('msg="transcript: paths are file links" && echo "${#msg} cha
 eq(brief(of(...bash("git merge feat/skill-paths", "Updating 1a2b3c4..5d6e7f8\nFast-forward\n bridge/paths.py | 4 ++--"))),
   ["merge feat/skill-paths acc"], "a merge names its branch");
 eq(of(...bash("git merge feat/skill-paths", "CONFLICT (content): Merge conflict in bridge/paths.py", true)), [], "a merge that failed is no moment");
+eq(of(...bash("git merge --no-edit feat/x 2>&1 | tail -3",
+  "CONFLICT (content): Merge conflict in bridge/a.py\nAutomatic merge failed; fix conflicts and then commit the result.")), [],
+  "a conflicted merge is no moment, even when a pipe hid its exit code");
 eq(brief(of(...bash("git merge --no-edit master 2>&1 | tail -2", " create mode 100644 docs/a.md"))), ["merge master acc"],
   "flags and redirects are not the branch");
 eq(brief(of(...bash('git merge -X subtree=apps/dashboard -m "take it" nr/main', "Merge made by the 'ort' strategy."))), ["merge nr/main acc"],
@@ -71,6 +81,10 @@ eq(of(...bash("git push 2>&1 | tail -2", " ! [rejected]        main -> main (fet
   "a rejected push is no moment, even when a pipe hid its exit code");
 eq(of(...bash("git push", "Everything up-to-date")), [], "a push with nothing to send is no moment");
 eq(of(...bash("git push origin --delete feat/x", " - [deleted]         feat/x")), [], "deleting a remote branch is not a push of work");
+eq(of(...bash("git push --dry-run origin main", "To github.com:o/r.git\n   dafb2e9..6a87309  main -> main")), [], "a dry run pushes nothing");
+eq(of(...bash("git push -n -u origin feat/x", " * [new branch]      feat/x -> feat/x")), [], "nor does -n");
+eq(of(...bash("git push 2>&1 | tail -3", "fatal: The current branch feat/x has no upstream branch.")), [],
+  "a push git refused (fatal:) is no moment, even when a pipe hid its exit code");
 eq(brief(of(...bash('gh pr create --title "x" --body-file b.md', "https://github.com/o/r/pull/112"))), ["pr #112 acc"], "a PR is its number");
 eq(of(...bash("gh pr create --fill 2>&1 | tail -2", 'a pull request for branch "x" into branch "main" already exists:\nhttps://github.com/o/r/pull/12')), [],
   "a PR that already existed was not opened");
@@ -84,6 +98,12 @@ eq(brief(of(...bash("python3 -m pytest tests/ -q", "FAILED tests/test_x.py::test
   ["tests 2 failed, 10 passed err"], "pytest failed");
 eq(of(...bash("python3 -m pytest tests/ -q", "........................\n…")), [], "a run cut before its result line is no moment");
 eq(of(...bash('grep -rn "pytest" src', "Exit code 1", true)), [], "a failed call with no result line is no test result (a grep that found nothing)");
+eq(of(...bash("tail -1 /tmp/pytest.log", "3564 passed in 19.1s")), [], "a test log read back is not a test run");
+eq(of(...bash('grep -E "vitest|Tests " .mystical/ci.log | tail -1', "      Tests  7 failed | 1745 passed (1752)")), [], "nor is one grepped");
+eq(brief(of(...bash("cd apps/web && VITE_API_BASE= npx vitest run 2>&1 | tail -3", "      Tests  13 passed (13)"))), ["tests 13 passed ok"],
+  "a run behind cd, an env var and a pipe into tail still is one");
+eq(brief(of(...bash(".mystical/t.sh php artisan test --compact", "  Tests:    11 skipped, 63 passed (159 assertions)"))), ["tests 63 passed ok"],
+  "so is one through a wrapper script");
 eq(brief(of(...bash("npx vitest run", " Test Files  1 failed | 3 passed (4)\n      Tests  1 failed | 12 passed (13)"))),
   ["tests 1 failed, 12 passed err"], "vitest: its Tests line, not its Test Files line");
 eq(brief(of(...bash("pnpm test", "Test Suites: 3 passed, 3 total\nTests:       3 skipped, 5247 passed, 5250 total"))),
@@ -97,10 +117,17 @@ const ask = (): TimedEvent => ({ type: "question", request_id: "q1", at: 1200,
   const t = turn("t1", [{ type: "text", text: "merging" }, ask()],
     { status: "running", pending: [{ request_id: "q1", kind: "question", tool_name: "AskUserQuestion" }] });
   const [m] = run(t);
-  eq([m.kind, m.text, m.tone, m.at, m.jump, m.key], ["ask", "Worktree", "ask", 1200, "t1", "q1"], "an open question waits on you, and jumps to its card");
+  eq([m.kind, m.text, m.tone, m.at, m.jump, m.key], ["ask", "Keep the skill-paths worktree after the merge?", "ask", 1200, "t1", "q1"],
+    "an open question waits on you, says what it asks, and jumps to its card");
 }
 eq(brief(of(ask(), { type: "question_answered", request_id: "q1", answers: [{ header: "Worktree", labels: ["Keep it (Recommended)"] }] })),
-  ["ask Worktree → Keep it acc"], "an answered one says what you picked, out of the ask colour");
+  ["ask Keep the skill-paths worktree after the merge? → Keep it acc"], "an answered one says what you picked, out of the ask colour");
+eq(brief(of({ type: "question", request_id: "q2", at: 1200, questions: [
+    { question: "Which tabs?", header: "Tabs", options: [], multiSelect: true },
+    { question: "Ship it\n  today?", header: "When", options: [] }] },
+  { type: "question_answered", request_id: "q2", answers: [{ header: "When", labels: [], notes: "after lunch" }, { header: "Tabs", labels: ["Turns", "Git"] }] })),
+  ["ask Which tabs? → Turns, Git acc", "ask Ship it today? → “after lunch” acc"],
+  "an ask with two questions is two lines in the card's order, each with its own answer (paired by header)");
 {
   const t = turn("t1", [{ type: "text", text: "on it" }, { type: "steer", text: "use the  merge\ncommit", at: 1300 }]);
   const steer = turnRows([t])[0].subs.find((s) => s.kind === "steer");
@@ -109,19 +136,17 @@ eq(brief(of(ask(), { type: "question_answered", request_id: "q1", answers: [{ he
     "a steer jumps to the anchor the transcript draws it at");
 }
 
-// --- how it ended, and what has none ---------------------------------------------------
-{
-  const [m] = of({ type: "text", text: "working" }, { type: "stopped", at: 1500 });
-  eq([m.kind, m.text, m.tone, m.jump], ["end", "stopped", "err", "t1"], "a stopped turn ends on a red moment");
-}
-eq(brief(run(turn("t1", [{ type: "error", message: "limit" }], { status: "error", outcome: { code: "limit", label: "USAGE LIMIT", detail: "" } }))),
-  ["end errored · usage limit err"], "an errored turn says why");
+// --- what has none ------------------------------------------------------------------------
+// How a turn ended is its header's (red stopped / error), never a line under it.
+eq(of({ type: "text", text: "working" }, { type: "stopped", at: 1500 }), [], "a stopped turn has no moment for it");
+eq(run(turn("t1", [{ type: "error", message: "limit" }], { status: "error", outcome: { code: "limit", label: "USAGE LIMIT", detail: "" } })), [],
+  "nor an errored one");
 eq(run(turn("t1", [], { status: "error", sum: { answer: "", tools: 3, ended: 1200, marks: [{ kind: "question", id: "q1", label: "x", pick: "y", note: null }] } })), [],
   "a turn behind the tail cut (summary only) has no moments");
 
 // --- order, and a chain of turns ---------------------------------------------------------
 eq(brief(of(...bash('git commit -qm "a"', "", false, 1100), ...bash("pytest -q", "3 passed in 1s", false, 1200), ask())),
-  ["ask Worktree acc", "tests 3 passed ok", "commit a acc"], "newest first");
+  ["ask Keep the skill-paths worktree after the merge? acc", "tests 3 passed ok", "commit a acc"], "newest first");
 {
   const LIMIT = "⏮ Your previous turn was cut off because the Claude usage limit was reached — not by the user. It has been resumed on another account. Review your recent transcript and continue exactly where you left off; finish the task you were doing. Don't start over.";
   const [call, done] = bash("git merge feat/x", "Fast-forward");

@@ -60,7 +60,7 @@ const firstLine = (text: string) => text.split("\n").map((l) => l.trim()).find(B
 // The head of an answer as a line of plain text: its markdown marks would print raw.
 const clean = (line: string) => line.replace(/^(#+|>|[-*+]|\d+[.)])\s+/, "").replace(/\*\*|__|`/g, "").trim();
 // An option's "(Recommended)" is the model's tag on it, not part of what you chose.
-const chosen = (label: string | null | undefined) => label ? label.replace(/\s*\(Recommended\)\s*$/i, "") : null;
+export const chosen = (label: string | null | undefined) => label ? label.replace(/\s*\(Recommended\)\s*$/i, "") : null;
 
 /** A turn's outline: off its events when the chat holds them (current, and live
  *  while it runs), else off the bridge's summary (transcript_page.summarize). */
