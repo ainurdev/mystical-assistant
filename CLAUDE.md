@@ -32,10 +32,15 @@ the user at it rather than restarting. Details: the **bridge-ship** skill.
 ## Tests
 
 ```sh
-python3 -m pytest tests/ -q      # 1007 passing, ~19s (2026-08-18)
+python3 -m pytest tests/ -q   # backend; takes minutes, so run it in the background
+npm run check                 # in bridge/dashboard/web or bridge/miniapp/web: tsc + every *.check.ts
 ```
 
-Fully green. Anything red is your change — there is no known-failure floor.
+Anything red is your change, except on macOS, where clean master fails three tests:
+`test_clip_panel.py::test_clip_marks_round_trip` (rec.mjs never gets Chrome's debug
+port) and two in `test_startup.py` (no `systemctl`, no Windows side). There the suite
+also hangs on `test_device_setup.py::test_a_wall_the_hidden_user_gets_through_comes_down_and_set_up_fails_closed[8787]`
+while the live Mini App holds port 8787: `--deselect` it.
 
 `tests/conftest.py` pins the environment **before** `bridge.config` is imported,
 because config freezes every setting into module constants at import time. A
