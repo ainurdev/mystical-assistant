@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "check": "tsc -b && node --test 'src/**/*.check.ts'",
+    "check": "tsc -b && node --import ../../dashboard/web/tools/strict-assert.mjs --test 'src/**/*.check.ts'",
     "preview": "vite preview"
   },
   "dependencies": {

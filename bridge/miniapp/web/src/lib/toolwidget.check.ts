@@ -62,7 +62,7 @@ console.assert(widgetForRun([{}, { done: {} }]) === null, "a run that carried no
 // --- the ground -------------------------------------------------------------
 // A key with no CSS rule behind it is a tile that draws nothing and reads
 // exactly like NONE, so the list is checked against the stylesheet.
-console.assert(CHAT_BGS.length === 5, `four grounds and NONE, got ${CHAT_BGS.length}`);
+console.assert(CHAT_BGS.length === 8, `four hairlines, three tones and NONE, got ${CHAT_BGS.length}`);
 console.assert(toChatBg("grid") === "grid", "a current ground passes through");
 console.assert(toChatBg("wallpaper") === "none", "an unknown ground falls back");
 {
