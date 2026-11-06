@@ -30,9 +30,12 @@ missing:
 
 - **`.env`** — `cp ~/projects/mystical-assistant/.env <wt>/.env`. Without it
   `bin/mystical` dies on any command except `build`/`doctor`.
-- **`node_modules`** — only if you must build web *in* the worktree:
-  `cd <wt>/bridge/dashboard/web && npm ci`. Usually you don't; build from master
-  at ship time instead.
+- **`node_modules`** — `npm run check` and `vite build` need it. Link the main
+  checkout's instead of `npm ci`:
+  `ln -s ~/projects/mystical-assistant/bridge/dashboard/web/node_modules <wt>/bridge/dashboard/web/`
+  (the same for `bridge/miniapp/web`). The root `.gitignore` already covers the
+  link. To drop it, `rm` the link itself, with no trailing slash:
+  on macOS `rm -rf …/node_modules/` deletes the main checkout's `node_modules`.
 
 ## New data goes in a scratch DB
 
