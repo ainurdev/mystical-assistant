@@ -120,6 +120,9 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
   const build = () => {
     api.buildTickets(set.folder).then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : "build failed")).then(reload);
   };
+  const approve = () => {
+    api.approveTickets(set.folder).then((r) => setNote(r.text), (e) => setNote(e instanceof Error ? e.message : "approve failed")).then(reload);
+  };
   const running = ns.filter((n) => kinds[n] === "run" || kinds[n] === "ask").length;
   const noteRow = note && <div role="status" style={{ margin: "0 6px 6px", padding: "0 4px", fontSize: "var(--t9)", color: "var(--txd)" }}>{note}</div>;
 
@@ -153,8 +156,11 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
           {merging ? <span className="tk-pill">MERGING</span>
             : <span className="tk-slots" role="img" aria-label={`${running} of ${slots} running`}>{Array.from({ length: slots }, (_, i) => <i key={i} className={i < running ? "on" : ""} />)}</span>}
         </div>
-        <div className="sub">{parent && <>from <b>{parent}</b> · </>}⎇ {set.feature_branch}</div>
+        <div className="sub">{parent && <>from <b>{parent}</b> · </>}{set.feature_branch ? `⎇ ${set.feature_branch}` : "waiting for your approval"}</div>
         <Dag set={set} kinds={kinds} />
+        {set.status === "approve" && (
+          <button className="tk-btn acc tk-go" onClick={approve} aria-label={`Approve and build ${name}`}>Approve &amp; build</button>
+        )}
       </div>
       {ns.map((n) => {
         const t = set.tickets[n];
@@ -165,7 +171,7 @@ function SetCard({ set, parent, sessions, status, onOpenSession, onOpenId, reloa
       <div className={`tk-stub mg ${merging ? "run" : mfix ? "fix" : ""}`}>
         <div className="no"><GitMerge size={15} aria-hidden /><small>{merging ? `${set.merged} / ${ns.length}` : mfix ? "FIX" : "LAST"}</small></div>
         <div className="bd">
-          <div className="t1"><span>Merge into {set.feature_branch}</span>
+          <div className="t1"><span>Merge into {set.feature_branch || "the feature branch"}</span>
             {mfix ? <button className="tk-btn err" onClick={() => retry("merge")} aria-label="Retry the merge">Retry</button>
               : set.status === "stopped" ? <button className="tk-btn err" onClick={build} aria-label={`Build ${name} again`}>Build</button>
               : <span className="r" style={{ color: "var(--txl)" }}>{merging ? "" : `after all ${ns.length}`}</span>}

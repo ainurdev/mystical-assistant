@@ -41,3 +41,15 @@ console.assert(off.stations[4].who === "you", "TICKETS off: MERGE is yours too")
 console.assert(flowView(atBuild, [], building, false).stations[3].state === "now", "a set already building still shows running");
 console.assert(flowView(atBuild, [], { ...building, flow_at: 2 }).stations[3].state === "auto", "a set built for an earlier path is not this one's");
 console.assert(flowView(atBuild, [], { ...building, flow_at: 1 }).stations[3].state === "now", "the set this path built is");
+
+// APPROVE BEFORE BUILD: the set waits on the user's tap.
+const ap = flowView(atBuild, [], { status: "approve", tickets: {} });
+console.assert(ap.stations[3].state === "you" && ap.stations[3].who === "you", `approve: BUILD is yours (${ap.stations.map((x) => x.state).join()})`);
+console.assert(ap.note === "waiting for your approval", `approve note: ${ap.note}`);
+
+// A started step whose turn ended with no StepDone (a question) waits on you, not "running".
+const asked = flowView({ ...flow("feature", ["grill", "spec", "tickets", "build", "merge"]), next: { station: "retro", turn_id: "t", started: true } }, []);
+console.assert(asked.stations[5].state === "you", `retro asked: ${asked.stations[5].state}`);
+const answering = flowView({ ...flow("feature", ["grill", "spec", "tickets", "build", "merge"]), next: { station: "retro", turn_id: "t", started: true } }, [run]);
+console.assert(answering.stations[5].state === "now", "a running turn is still now");
+console.assert(flowView({ ...flow("feature", ["grill"]), next: { station: "spec", turn_id: "t", started: false } }, []).stations[1].state === "auto", "not started: still its own kind");

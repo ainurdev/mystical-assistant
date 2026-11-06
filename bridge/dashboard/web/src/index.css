@@ -7878,6 +7878,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tk-stub.mg .no { color: var(--acc2, var(--acc)); }
 .tk-btn { margin-left: auto; flex: none; display: inline-flex; align-items: center; height: 17px; padding: 0 7px; border: 0; border-radius: 9px; font-family: inherit; font-size: var(--t9); font-weight: 800; cursor: pointer; color: var(--acc-on); background: var(--warn); }
 .tk-btn.err { background: var(--err); }
+.tk-btn.acc { background: var(--acc); color: var(--acc-on); }
+.tk-set .tk-go { width: calc(100% - 16px); margin: 6px 8px 8px; height: 26px; justify-content: center; border-radius: 6px; font-size: var(--t95); }
 .tk-fold { position: relative; display: flex; align-items: center; gap: 8px; margin: 2px 6px 8px; padding: 9px 10px; border-radius: 10px; border: 1px solid color-mix(in srgb, var(--txl) 16%, transparent); font-size: var(--t95); color: var(--txl); }
 .tk-fold .nm { color: var(--txd); }
 .tk-more { display: inline-grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--txl); cursor: pointer; }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Code2, FlaskConical, Gauge, GitCommitVertical, GraduationCap, ListTodo, MessagesSquare,
   Palette, PenLine, Play, Puzzle, Route, Scissors, ShieldQuestion, SkipForward, Sparkles,
-  Ticket, Wand2, Waypoints, Workflow, type LucideIcon,
+  ShieldCheck, Ticket, Wand2, Waypoints, Workflow, type LucideIcon,
 } from "lucide-react";
 import {
   api, type AiFeature, type CatalogSkill, type InstalledSkill, type SkillCategory, type SkillScope, type SkillsInfo,
@@ -40,6 +40,7 @@ const EXTRA_ICONS: Record<string, LucideIcon> = {
   autopick: Wand2,
   nextstep: SkipForward,
   ticketruns: Ticket,
+  ticketapprove: ShieldCheck,
   smartzone: Gauge,
   grillcards: MessagesSquare,
 };
@@ -157,7 +158,12 @@ function ExtrasGrid() {
 
   // A sub-switch (the skill router's six) is drawn, and counted, only while its parent is on.
   const all = rows ?? [];
-  const shown = all.filter((f) => !f.parent || all.some((p) => p.key === f.parent && p.enabled));
+  // A grandchild (APPROVE BEFORE BUILD under TICKETS under the router) needs every ancestor on.
+  const visible = (f: AiFeature): boolean => {
+    const p = f.parent ? all.find((x) => x.key === f.parent) : undefined;
+    return !f.parent || (!!p && p.enabled && visible(p));
+  };
+  const shown = all.filter(visible);
   const on = shown.filter((f) => f.enabled && !missing(f)).length;
   return (
     <>

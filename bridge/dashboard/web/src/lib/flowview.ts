@@ -11,7 +11,7 @@ import type { Turn } from "../chat";
 
 export interface Flow {
   path: string; skill?: string | null; by: "rule" | "claude"; why: string; auto: boolean; at: number;
-  done: string[]; next: { station: string; turn_id: string } | null;
+  done: string[]; next: { station: string; turn_id: string; started?: boolean } | null;
 }
 /** The flow's ticket set, as GET /local/flow sends it (bridge/tickets.py summary_for). */
 export interface FlowSet { status: string; error?: string; flow_at?: number; tickets: Record<string, { status: string }> }
@@ -40,13 +40,16 @@ export function flowView(flow: Flow | null, turns: Turn[], set: FlowSet | null =
   const running = [...turns].reverse().find((t) => t.status === "running");
   const first = table.findIndex(([k]) => !flow.done.includes(k));
   const elsewhere: Record<string, boolean> = { build: set?.status === "building", merge: set?.status === "merging" };
+  const approving = set?.status === "approve";   // APPROVE BEFORE BUILD: the set waits for the user's tap
   const stations = table.map(([key, skill, kind], i) => {
-    const who = !ticketruns && (key === "build" || key === "merge") ? "you" : kind;
+    // a started step with no turn running ended without StepDone (a question): it waits on you
+    const asked = i === first && !running && !!flow.next?.started && flow.next.station === key;
+    const who = !ticketruns && (key === "build" || key === "merge") || approving && key === "build" || asked ? "you" : kind;
     const now = key in elsewhere ? elsewhere[key] : i === first && !!running;
     return { key, label: key.replace(/-/g, " "), skill, who, state: (flow.done.includes(key) ? "done" : now ? "now" : who) as StationState };
   });
   const tks = Object.values(set?.tickets ?? {});
-  const note = set?.status === "building" ? `${tks.filter((t) => t.status === "done").length} of ${tks.length} tickets done, ${tks.filter((t) => t.status === "running").length} running`
+  const note = approving ? "waiting for your approval" : set?.status === "building" ? `${tks.filter((t) => t.status === "done").length} of ${tks.length} tickets done, ${tks.filter((t) => t.status === "running").length} running`
     : set?.status === "merging" ? "one session merges the tickets"
     : set?.status === "stopped" ? `stopped: ${set.error || "the set couldn't build"}` : undefined;
   const tools = running?.events.filter((e) => e.type === "tool") ?? [];

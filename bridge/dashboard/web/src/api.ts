@@ -1359,7 +1359,7 @@ export interface TicketRow {
 }
 export interface TicketSet {
   folder: string; slug: string; parent_session: string; feature_branch: string; merged: number;
-  status: "building" | "merging" | "merged" | "stopped" | "fix"; error?: string;
+  status: "approve" | "building" | "merging" | "merged" | "stopped" | "fix"; error?: string;
   tickets: Record<string, TicketRow>;
 }
 /** One AI-powered extra, switched from the settings modal's AI tab. What runs on its
@@ -2549,6 +2549,9 @@ export const api = {
   /** A stopped set builds again, once what stopped it is fixed. */
   buildTickets: (folder: string) =>
     req<{ text: string }>("/local/tickets/build", { method: "POST", body: { folder } }),
+  /** A set waiting in `approve` (APPROVE BEFORE BUILD) is approved and builds. */
+  approveTickets: (folder: string) =>
+    req<{ text: string }>("/local/tickets/approve", { method: "POST", body: { folder } }),
   cleanupTickets: (folder: string) =>
     req<{ removed: string[]; skipped: string[] }>("/local/tickets/cleanup", { method: "POST", body: { folder } }),
   clearStorage: (clear: StorageClear[], move_files: string[] = []) =>
