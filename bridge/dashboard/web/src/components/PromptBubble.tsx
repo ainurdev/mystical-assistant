@@ -8,6 +8,7 @@ import { runtimeBadge } from "../lib/agents";
 import { leadCommand } from "../lib/slash";
 import { hhmm, useClock12 } from "../lib/surfaces";
 import { saverTag } from "../lib/savers";
+import { parseCouncilPrompt, sevCount } from "../lib/council";
 
 type Run = Pick<Turn, "model" | "effort" | "permission_mode">;
 
@@ -76,19 +77,23 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
   // its words, but not yours.
   const wake = !steer && text.startsWith("⧖ ");
   const nudge = steer || wake ? null : parseNudge(text);
+  // The council's own prompts (bridge/council.py): stamped like a goal's re-prompt.
+  const council = steer || wake || nudge ? null : parseCouncilPrompt(text);
+  const councilTag = !council ? "" : "advice" in council ? "⚖ COUNCIL · ADVICE"
+    : `⚖ COUNCIL ${council.round}/${council.max} · ${"fix" in council ? "FIX" : `${council.score.toFixed(1)} of ${council.bar.toFixed(1)}`}`;
   const [brief, setBrief] = useState(false);
-  const purple = wake ? { color: "var(--purple)" } : nudge ? { color: "var(--acc)" } : undefined;
-  const glyph = wake ? "⧖" : steer ? "↳" : nudge ? "◎" : null;
-  const cmd = steer || wake || nudge || !commands ? null : leadCommand(text, undefined, commands);
+  const purple = wake ? { color: "var(--purple)" } : nudge || council ? { color: "var(--acc)" } : undefined;
+  const glyph = wake ? "⧖" : steer ? "↳" : nudge ? "◎" : council ? "⚖" : null;
+  const cmd = steer || wake || nudge || council || !commands ? null : leadCommand(text, undefined, commands);
   // Pips lit = the effort's place in the picker (Auto 0 … Max 5); an agent's own
   // effort id isn't on that ladder and reads as its word alone.
   const lvl = run?.effort ? EFFORTS.findIndex((e) => e.id === (run.effort === "auto" ? "" : run.effort)) : -1;
   // Lit only when both turns recorded it: an older turn's unknown is no change.
   const moved = (k: keyof Run) => (prev?.[k] && run?.[k] && prev[k] !== run[k]) || undefined;
   const meta = [
-    (wake || steer || nudge || who) && (
+    (wake || steer || nudge || council || who) && (
       <b key="who" style={purple}>
-        {wake ? "⧖ WAIT OVER" : steer ? "↳ STEER" : nudge ? `◎ GOAL${nudge.n ? ` · AUTO ${nudge.n}/${nudge.max}` : ""}` : who}
+        {wake ? "⧖ WAIT OVER" : steer ? "↳ STEER" : nudge ? `◎ GOAL${nudge.n ? ` · AUTO ${nudge.n}/${nudge.max}` : ""}` : council ? councilTag : who}
       </b>
     ),
     ...(run ? savers ?? [] : []).map((k) => (
@@ -130,6 +135,16 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
                   </button>
                 </div>
                 {brief && <Markdown breaks className="pgoal-brief break-words leading-relaxed">{nudge.objective}</Markdown>}
+              </>
+            ) : council ? (
+              <>
+                <div className="md">
+                  <button className="pgoal-line" aria-expanded={brief} onClick={() => setBrief((b) => !b)}>
+                    <span><span className="pgoal-k">{"advice" in council ? "Council advice" : "fix" in council ? "Fix this" : "Fix the findings"}</span> — {("score" in council && sevCount(council.body)) || council.body.split("\n")[0]}</span>
+                    <span className="pgoal-t">{brief ? "prompt ▴" : "prompt ▾"}</span>
+                  </button>
+                </div>
+                {brief && <Markdown breaks className="pgoal-brief break-words leading-relaxed">{council.body}</Markdown>}
               </>
             ) : (
               /* Rendered as the same markdown the composer let you write it in. */

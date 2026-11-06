@@ -26,9 +26,11 @@ import { UsageSharingSection } from "./UsageSharing";
 import { StorageSection } from "./StorageSection";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WorkspacesSettings } from "./WorkspacesSettings";
+import { MARK } from "./CouncilPanel";
 import {
   api,
   type AccountInfo,
+  type CouncilSettings,
   type EnvSetting,
   type Integration,
   type AcpAccount,
@@ -242,6 +244,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "aimgmt", sec: "PROFILES", terms: "model mode effort ponytail permission plan bypass opus sonnet run defaults default profile preset saved knobs tools agent account login bind" },
   { tab: "aimgmt", sec: "MODEL-SPENDING EXTRAS", terms: "ai features extras titles guard next-up scout summaries lessons dreaming cost tokens spending" },
   { tab: "aimgmt", sec: "SAVERS", terms: "savers cheaper turns cost tokens concise replies subagent effort trim test output pytest vitest jest cache one-shot trial coin flip experiment" },
+  { tab: "aimgmt", sec: "COUNCIL", terms: "council review reviewers codex claude bar score pass rounds stop early origin push code-review" },
   { tab: "aimgmt", sec: "MCP SERVERS", terms: "mcp server tool connect authenticate auth oauth token expired reconnect logout remove playwright github notion figma" },
   { tab: "aimgmt", sec: "ADD A SERVER", terms: "mcp add new server url command stdio http sse scope install connector" },
   { tab: "aimgmt", sec: "ACCOUNTS", terms: "policy wait switch fallback reset quota account add sign in oauth profile login agent acp codex opencode gemini kimi moonshot api key install test other agent" },
@@ -3282,8 +3285,121 @@ function ProjectsPage({ projects, current, onAccountsChanged, onOpenSkills }: {
   return <ProjectsSettings {...projects} logins={acc.rows ?? []} current={current} onOpenSkills={onOpenSkills} />;
 }
 
+/** Council (design-drafts/council-tab; bridge/council.py): who reviews a session's
+ *  work before origin, and what score lets it through. Every change saves at once
+ *  and the row shows what the bridge answered, which has clamped it. Codex's
+ *  sign-in is ACCOUNTS ▸ AGENTS: the button deep-links there. */
+function Stepper({ label, text, onStep }: { label: string; text: string; onStep: (d: number) => void }) {
+  // The Type tab's size stepper (.tp-step). A span: the row's `> div` rule would stretch a div to half the row.
+  return (
+    <span className="tp-step" role="group" aria-label={label}>
+      <button type="button" aria-label={`Lower ${label}`} onClick={() => onStep(-1)}>−</button>
+      <output className="tp-val" style={{ minWidth: 40 }} aria-live="polite">{text}</output>
+      <button type="button" aria-label={`Raise ${label}`} onClick={() => onStep(1)}>+</button>
+    </span>
+  );
+}
+
+function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; projects: ProjectsSettingsProps; onSignIn: () => void }) {
+  const [s, setS] = useState<CouncilSettings | null>(null);
+  // Each click steps from the latest value, not the rendered one, so fast clicks
+  // accumulate; only the newest request's answer (the clamped value) lands, and a
+  // failed save falls back to the last value the bridge confirmed.
+  const latest = useRef<CouncilSettings | null>(null);
+  const confirmed = useRef<CouncilSettings | null>(null);
+  const seq = useRef(0);
+  const [err, setErr] = useState<string | null>(null);
+  // null = not read; the Codex seat's login as the last TEST or turn found it.
+  const [codexIn, setCodexIn] = useState<boolean | null>(null);
+  useEffect(() => {
+    void api.councilSettings().then((r) => { latest.current = confirmed.current = r; setS(r); }).catch(() => setErr("Couldn't read the council's settings."));
+    void api.acpAgents().then((r) => setCodexIn(
+      Object.entries(r.options).some(([k, o]) => k.startsWith("codex|") && o.signed_in === true))).catch(() => {});
+  }, []);
+  async function save(patch: (c: CouncilSettings) => Partial<CouncilSettings>) {
+    if (!latest.current) return;
+    setErr(null);
+    latest.current = { ...latest.current, ...patch(latest.current) };
+    setS(latest.current);
+    const id = ++seq.current;
+    try {
+      const r = await api.saveCouncilSettings(latest.current);
+      if (id === seq.current) { latest.current = confirmed.current = r; setS(r); }
+    } catch {
+      if (id !== seq.current) return;
+      latest.current = confirmed.current;
+      setS(confirmed.current);
+      setErr("Couldn't save that.");
+    }
+  }
+  const name = (rel: string) => projects.groups.find((g) => g.rel === rel)?.name ?? rel;
+  const free = s ? projects.groups.filter((g) => !s.codex_projects.includes(g.rel)) : [];
+  return (
+    <AimFold id="council" title="Council" secs={["COUNCIL"]} openSec={openSec} hint="reviews a session's work before origin"
+      count={s ? `${s.bar.toFixed(1)} · ${s.max_rounds} rounds · ${[s.claude && "Claude", s.codex && codexIn && "Codex"].filter(Boolean).join(" + ") || "no reviewers"}` : null}
+      right={<span className="aim-chip">NEW</span>}>
+      {err && <div className="aim-xerr">{err}</div>}
+      {s && (
+        <div className="aim-vfields" style={{ gridTemplateColumns: "1fr" }}>
+          <div className="aim-vfield row">
+            <div><b>Pass at</b><span>the average both reviewers have to reach, out of 10</span></div>
+            <Stepper label="the bar" text={s.bar.toFixed(1)} onStep={(d) => void save((c) => ({ bar: c.bar + d * 0.5 }))} />
+          </div>
+          <div className="aim-vfield row">
+            <div><b>Rounds at most</b><span>a round is two reviews, then one fix turn in the session</span></div>
+            <Stepper label="the rounds" text={String(s.max_rounds)} onStep={(d) => void save((c) => ({ max_rounds: c.max_rounds + d }))} />
+          </div>
+          <div className="aim-vfield row">
+            <div><b>Stop early</b><span>when a round doesn't raise the score, and ask you</span></div>
+            <Switch on={s.stop_early} label="Stop early" onClick={() => void save((c) => ({ stop_early: !c.stop_early }))} />
+          </div>
+          <div className="aim-vfield">
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              <b>Reviewers</b>
+              <span>each reads the work fresh, in a session of its own</span>
+            </div>
+            <div className="aim-vfield row" style={{ border: 0, padding: 0 }}>
+              <span className="cn-mk claude">{MARK.claude}</span>
+              {/* council.py seat_claude: its own rubric prompt in plan mode, on the session's login slot */}
+              <div><b>Claude</b><span>the session's own login · every project</span></div>
+              <Switch on={s.claude} label="Claude reviews" onClick={() => void save((c) => ({ claude: !c.claude }))} />
+            </div>
+            <div className="aim-vfield row" style={{ border: 0, padding: 0 }}>
+              <span className="cn-mk codex">{MARK.codex}</span>
+              <div>
+                <b>Codex</b>
+                <span>{codexIn ? "signed in" : codexIn === false ? "not signed in" : "sign in to use Codex"} · one sign-in with your ChatGPT plan</span>
+              </div>
+              {!codexIn && <button type="button" className="aim-xbtn" onClick={onSignIn}>Sign in</button>}
+              <Switch on={s.codex} label="Codex reviews" onClick={() => void save((c) => ({ codex: !c.codex }))} />
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+              <b>Codex may review</b>
+              {s.codex_projects.length === 0 && <span className="aim-hint">none yet</span>}
+              {s.codex_projects.map((rel) => (
+                <span key={rel} className="aim-chip">
+                  {name(rel)}{" "}
+                  <button type="button" aria-label={`Stop Codex reviewing ${name(rel)}`} onClick={() => void save((c) => ({ codex_projects: c.codex_projects.filter((r) => r !== rel) }))}
+                    style={{ all: "unset", cursor: "pointer" }}>×</button>
+                </span>
+              ))}
+              <select className="aim-sel" aria-label="Pick projects Codex may review" value=""
+                style={{ width: 150, height: 26, padding: "0 8px", fontSize: 12, color: "var(--acc)" }}
+                onChange={(e) => { const v = e.target.value; if (v) void save((c) => ({ codex_projects: [...c.codex_projects, v] })); }}>
+                <option value="">+ Pick projects</option>
+                {free.map((g) => <option key={g.rel} value={g.rel}>{g.name}</option>)}
+              </select>
+              <span className="aim-hint">client code stays with Claude</span>
+            </div>
+          </div>
+        </div>
+      )}
+    </AimFold>
+  );
+}
+
 function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, profilesAvailable, profilesError,
-  onProfilesChanged, onAccountsChanged, openSec }: {
+  onProfilesChanged, onAccountsChanged, openSec, projects }: {
   settings: HudSettings;
   onPatch: (patch: Partial<HudSettings>) => void;
   models: { id: string; label: string }[];
@@ -3294,6 +3410,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   onProfilesChanged: () => void;
   onAccountsChanged: () => void;
   openSec: string | null;
+  projects: ProjectsSettingsProps;
 }) {
   const aiFeatures = useAiFeatures();
   const acc = useAccounts(onAccountsChanged);
@@ -3308,6 +3425,8 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   };
   const extrasAll = Object.keys(aiFeatures).length;
   const extrasOn = Object.values(aiFeatures).filter(Boolean).length;
+  // Council's Codex "Sign in": opens the Accounts fold on its AGENTS list.
+  const [goto, setGoto] = useState<string | null>(null);
   // Opened on one login (the composer's PROFILE menu, on a profile whose login
   // has expired) or on a blank profile (its + NEW PROFILE): read once.
   const [focus] = useState(() => takeSettingsFocus());
@@ -3551,7 +3670,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
 
   return (
     <div className="aim">
-      <AimFold id="accounts" title="Accounts" secs={["ACCOUNTS", "ON USAGE LIMIT", "CLAUDE LOGINS", "AGENTS"]} openSec={signIn ? "AGENTS" : openSec}
+      <AimFold id="accounts" title="Accounts" secs={["ACCOUNTS", "ON USAGE LIMIT", "CLAUDE LOGINS", "AGENTS"]} openSec={signIn ? "AGENTS" : goto ?? openSec}
         count={acc.rows ? `${acc.rows.length} login${acc.rows.length === 1 ? "" : "s"} · ${list.length} profile${list.length === 1 ? "" : "s"}` : null}
         right={<>
           {acc.rows && acc.rows.length > 0 && (
@@ -3575,6 +3694,11 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
         <ExtrasFold />
       </AimFold>
       <SaversFold openSec={openSec} />
+      <CouncilFold openSec={openSec} projects={projects} onSignIn={() => {
+        setGoto("AGENTS");
+        setTimeout(() => document.querySelector("[data-sec=\"ACCOUNTS\"]")?.scrollIntoView({ block: "start" }), 50);
+        setTimeout(() => setGoto(null), 100);
+      }} />
       {/* Claude's servers (`claude mcp`). Kimi Code reads its own ~/.kimi-code/mcp.json;
           a project's .mcp.json reaches both. */}
       <AimFold id="mcp" title="Claude MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec}
@@ -4983,7 +5107,7 @@ export function SettingsModal(props: SettingsModalProps) {
               <AiManagementPanel settings={settings} onPatch={onPatch} models={models} sessionTools={sessionTools}
                 profiles={profiles} profilesAvailable={profilesAvailable} profilesError={profilesError}
                 onProfilesChanged={onProfilesChanged} onAccountsChanged={onAccountsChanged}
-                openSec={jump?.sec ?? startSec} />
+                openSec={jump?.sec ?? startSec} projects={projects} />
             )}
             {shown === "integrations" && <IntegrationsPanel />}
             {shown === "move" && <MovePanel />}
