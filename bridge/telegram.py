@@ -168,11 +168,14 @@ def _fold_code(md: str) -> str:
 
 # A GitHub callout's marker (`> [!IMPORTANT]`, the to-do box an answer opens with)
 # is plain text to Telegram: it becomes the type's word in bold, in the same quote.
+# Fenced code, closed or still streaming in, keeps its text: a marker there is an example.
 _CALLOUT = re.compile(r"^(>[ \t]*)\[!(note|tip|important|warning|caution)\][ \t]*$", re.M | re.I)
+_CODE = re.compile(r"(```.*?(?:```|\Z))", re.S)
 
 
 def _callouts(md: str) -> str:
-    return _CALLOUT.sub(lambda m: f"{m[1]}**{m[2].upper()}**", md)
+    return "".join(p if i % 2 else _CALLOUT.sub(lambda m: f"{m[1]}**{m[2].upper()}**", p)
+                   for i, p in enumerate(_CODE.split(md)))
 
 
 def _plain(html_text: str) -> str:

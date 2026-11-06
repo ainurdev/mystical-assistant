@@ -1,8 +1,9 @@
-import { cloneElement, isValidElement, memo, useState, type ReactNode } from "react";
+import { memo, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
 import { selectionMd } from "../lib/selmd";
+import { ADMONITION_RE, stripMarker } from "../lib/admonition";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
 import type { ToolStyle } from "../lib/toolwidget";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
@@ -68,36 +69,10 @@ const ADMONITIONS: Record<string, { label: string; color: string }> = {
   warning: { label: "WARNING", color: "var(--warn)" },
   caution: { label: "CAUTION", color: "var(--err)" },
 };
-const ADMONITION_RE = /^\s*\[!(note|tip|important|warning|caution)\]\s*\n?/i;
 
 /** A bold that is really a label: short, one line, ending in a colon. Mirrors
  *  the dashboard's rule — the same reply has to read the same on both. */
 const LEAD_RE = /^[^\n]{2,24}:$/;
-
-const blank = (n: unknown) => n === null || n === undefined || (typeof n === "string" && !n.trim());
-
-/** The same tree with the `[!NOTE]` marker cut out. Mirrors the dashboard's
- *  lib/admonition.ts: the newline between blocks is skipped, a paragraph that
- *  held only the marker goes, and so does a <br> right after it. */
-function stripMarker(node: unknown): unknown {
-  if (typeof node === "string") return node.replace(ADMONITION_RE, "");
-  if (Array.isArray(node)) {
-    const i = node.findIndex((n) => !blank(n));
-    if (i < 0) return node;
-    const head = stripMarker(node[i]);
-    let rest = node.slice(i + 1);
-    const next = rest.findIndex((n) => !blank(n));
-    if (!head && isValidElement(rest[next]) && rest[next].type === "br") rest = rest.slice(next + 1);
-    return [...node.slice(0, i), head, ...rest];
-  }
-  if (isValidElement(node)) {
-    const props = node.props as { children?: unknown };
-    if (props.children === undefined) return node;
-    const kids = stripMarker(props.children);
-    return kids === "" ? null : cloneElement(node, undefined, kids as ReactNode);
-  }
-  return node;
-}
 
 export const Markdown = memo(function Markdown({ children, className = "", toolStyle = "stamp" }: {
   children: string;

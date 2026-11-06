@@ -9,7 +9,8 @@ observed 34 rows) and the dashboard's TURNS tab needs them all, while
 next_cursor must keep meaning "the live head" so forward polling is unaffected.
 summarize() gives each turn the outline that tab draws before its events are
 cut, so a turn behind the tail still says what it answered and asked.
-Stdlib only."""
+first_line() is the one line of an answer that outline shows, and so do the
+bell's done line and Rivendell's pings. Stdlib only."""
 import re
 
 
@@ -44,7 +45,7 @@ def tail_slice(data: dict, tail: int, before: int | None = None) -> dict:
 
 ANSWER_MAX = 240
 
-_BOX = re.compile(r">\s*\[!(?:note|tip|important|warning|caution)\]", re.I)
+_MARKER = re.compile(r">\s*\[!(?:note|tip|important|warning|caution)\]", re.I)
 
 
 def first_line(text: str) -> str:
@@ -53,7 +54,7 @@ def first_line(text: str) -> str:
     do) isn't the answer, so the line under the box is; a reply that is only the
     box gives its first item."""
     lines = (text or "").strip().splitlines()
-    if lines and _BOX.fullmatch(lines[0].strip()):
+    if lines and _MARKER.fullmatch(lines[0].strip()):
         end = next((i for i, ln in enumerate(lines) if not ln.lstrip().startswith(">")), len(lines))
         lines = lines[end:] + [re.sub(r"^>\s*(?:[-*+]\s+)?", "", ln.strip()) for ln in lines[1:end]]
     return next((ln.strip() for ln in lines if ln.strip()), "")

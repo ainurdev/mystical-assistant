@@ -1,3 +1,6 @@
+// GitHub callouts as Markdown.tsx draws them: the marker that names a box, and
+// the quote's children with that marker cut out. Kept out of the component so
+// admonition.check.ts runs it under node; the Mini App's lib/admonition.ts is a copy.
 import { cloneElement, isValidElement, type ReactNode } from "react";
 
 /** A GitHub callout's marker, `> [!NOTE]` and friends, at the head of a quote. */
