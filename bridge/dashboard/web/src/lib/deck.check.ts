@@ -3,7 +3,7 @@
 // The Rivendell deck's order and its spec excerpt. Quiet breakages: a skip that
 // never expires (a task buried for good), a skip that is ignored, and markdown
 // marks leaking into the card's excerpt.
-import { deck, excerpt } from "./deck.ts";
+import { deck, excerpt, liveSkips } from "./deck.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -18,6 +18,10 @@ ok(ids(deck(open, [], {}, NOW)) === "b,d,a,c", "no todolist: mine, then team");
 ok(ids(deck(open, ["c", "a"], {}, NOW)) === "c,a,b,d", "next-up ids first, in their order, then the rest");
 ok(ids(deck(open, ["zz", "c"], {}, NOW)) === "c,b,d,a", "an id that is not open is ignored");
 ok(ids(deck(open, ["c", "a"], { c: NOW - H }, NOW)) === "a,b,d,c", "a 1h-old skip moves that task last");
+const st = { sig: "c,a", at: { c: NOW - H, d: NOW - 25 * H } };
+ok(JSON.stringify(liveSkips(st, "c,a", NOW)) === JSON.stringify({ c: NOW - H }), "same order: a fresh skip holds, a 25h one drops");
+ok(JSON.stringify(liveSkips(st, "a,c", NOW)) === "{}", "the todolist changed order: skips are ignored");
+ok(JSON.stringify(liveSkips(null, "", NOW)) === "{}", "nothing stored");
 ok(ids(deck(open, ["c", "a"], { c: NOW - 25 * H }, NOW)) === "c,a,b,d", "a 25h-old skip is ignored");
 
 ok(excerpt("## Why\n**p95** went from 380 ms…", 40) === "Why p95 went from 380 ms…", "markdown stripped, short text kept");

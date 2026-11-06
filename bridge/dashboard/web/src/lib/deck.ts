@@ -4,7 +4,14 @@
 // skip never buries a task for good.
 import { groupTasks } from "./rivendelltasks.ts";
 
-const SKIP_MS = 24 * 3_600_000;
+export const SKIP_MS = 24 * 3_600_000;
+
+/** A project's stored skips ({sig: the next-up order they were made under, at: id -> when}),
+ *  as the ones still in force: none once the todolist's order has changed, none older than a day. */
+export function liveSkips(stored: { sig: string; at: Record<string, number> } | null, sig: string, now: number): Record<string, number> {
+  if (!stored || stored.sig !== sig) return {};
+  return Object.fromEntries(Object.entries(stored.at).filter(([, at]) => now - at < SKIP_MS));
+}
 
 export function deck<T extends Parameters<typeof groupTasks>[0][number] & { id: string }>(
   open: T[], nextIds: string[], skipped: Record<string, number>, now: number,

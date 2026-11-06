@@ -12,7 +12,7 @@ import {
 } from "../../lib/rivendelltasks";
 import { hhmm } from "../../lib/surfaces";
 import { Markdown } from "../Markdown";
-import { deck, excerpt } from "../../lib/deck";
+import { deck, excerpt, liveSkips } from "../../lib/deck";
 import { RunMini, TaskDeck } from "./TaskDeck";
 import { TabKick } from "./TabKick";
 
@@ -38,13 +38,10 @@ const toolBtn = {
 
 type Peek = { state: "loading" } | { state: "ok"; d: RivendellTaskDetail } | { state: "err"; msg: string };
 
-const SKIP_MS = 24 * 3_600_000;
-// Skips live per project, each ignored after a day (lib/deck).
-const readSkips = (project: string | null): Record<string, number> => {
-  try {
-    const m = JSON.parse(localStorage.getItem(`rv-skip:${project}`) ?? "{}") as Record<string, number>;
-    return Object.fromEntries(Object.entries(m).filter(([, at]) => Date.now() - at < SKIP_MS));
-  } catch { return {}; }
+// Skips live per project, with the next-up order they were made under (lib/deck liveSkips).
+type Stored = { sig: string; at: Record<string, number> };
+const readSkips = (project: string | null): Stored | null => {
+  try { return JSON.parse(localStorage.getItem(`rv-skip:${project}`) ?? "null") as Stored | null; } catch { return null; }
 };
 
 const key = (t: Pick<RivendellTask, "instance_id" | "id">) => `${t.instance_id}|${t.id}`;
@@ -89,7 +86,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
   const [todo, setTodo] = useState<RivendellTodolist | null>(null);
   const [todoTick, setTodoTick] = useState(0);
   const [laterOpen, setLaterOpen] = useState(() => localStorage.getItem(LATER_KEY) !== "closed");
-  const [skips, setSkips] = useState(() => readSkips(project));
+  const [stored, setStored] = useState(() => readSkips(project));
   const [allOpen, setAllOpen] = useState(false);   // the grouped board under the deck
   const cards = useRef(new Map<string, HTMLDivElement>());
   // TEST LINK on the TOKEN REJECTED banner: the connection being tested, and
@@ -181,9 +178,12 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     requestAnimationFrame(() => cards.current.get(key(t))?.scrollIntoView({ block: "start", behavior: "smooth" }));
   }
 
+  // The panel is not remounted when the session's project changes: read that project's skips.
+  useEffect(() => { setStored(readSkips(project)); }, [project]);
+
   function skip(t: RivendellTask) {
-    const next = { ...skips, [t.id]: Date.now() };
-    setSkips(next);
+    const next = { sig: nextSig, at: { ...skips, [t.id]: Date.now() } };
+    setStored(next);
     localStorage.setItem(`rv-skip:${project}`, JSON.stringify(next));
   }
 
@@ -252,6 +252,8 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     : t);
   const g = groupTasks(tasks);
   const nextIds = nextUp(todo, new Set(tasks.map((t) => t.id)), 50).flatMap((i) => i.tasks);
+  const nextSig = nextIds.join(",");
+  const skips = liveSkips(stored, nextSig, now.getTime());
   const line = deck([...g.mine, ...g.team], nextIds, skips, now.getTime());
   const top = line[0] ?? null;
   const topKey = top ? key(top) : "";
