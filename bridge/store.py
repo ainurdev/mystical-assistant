@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   title_source      TEXT DEFAULT 'auto',
   fallback_policy   TEXT,
   goal              TEXT,
+  council           TEXT,
   lifecycle         TEXT,
   fork_from         TEXT,
   ctx_tokens        INTEGER,
@@ -176,6 +177,9 @@ def init() -> None:
         # because the three fields are only ever read and written together.
         if "goal" not in scols:
             c.execute("ALTER TABLE sessions ADD COLUMN goal TEXT")
+        # Council run as JSON (see bridge/council.py); NULL = never run.
+        if "council" not in scols:
+            c.execute("ALTER TABLE sessions ADD COLUMN council TEXT")
         # Why a session is hidden: done | abandoned | backlog (NULL = active).
         # Old rows carry archived=1 with no reason — backfill them as 'done'.
         if "lifecycle" not in scols:
@@ -926,6 +930,21 @@ def set_goal(session_id: str, goal: dict | None) -> None:
     with closing(_connect()) as c:
         c.execute("UPDATE sessions SET goal=? WHERE id=?",
                   (json.dumps(goal) if goal else None, session_id))
+
+
+def get_council(session_id: str) -> dict | None:
+    """This session's council run state, or None if it has none."""
+    with closing(_connect()) as c:
+        row = c.execute("SELECT council FROM sessions WHERE id=?",
+                        (session_id,)).fetchone()
+    return parse_goal(row["council"]) if row else None
+
+
+def set_council(session_id: str, council: dict | None) -> None:
+    """Replace this session's council state; None clears it."""
+    with closing(_connect()) as c:
+        c.execute("UPDATE sessions SET council=? WHERE id=?",
+                  (json.dumps(council) if council else None, session_id))
 
 
 def set_cwd(session_id: str, cwd: str | None) -> None:
