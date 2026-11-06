@@ -1544,7 +1544,11 @@ def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str,
     `request_id` the card it belongs to, so a button answers that card only."""
     what = "has a question" if kind == "question" else "needs your approval"
     job = get_job(job_id) if job_id else None
-    _notify(chat_id, f"❓ Claude {what} — {_session_label(session_id)}",
+    who = "Claude"
+    if experimental.enabled() and session_id:
+        from bridge import handoff           # lazy: it imports profiles, as this does
+        who = handoff.label(profiles.effective(store.get_session(session_id))["agent"])
+    _notify(chat_id, f"❓ {who} {what} — {_session_label(session_id)}",
             _session_kb(chat_id, session_id, "❓ Answer in Panel"),
             kind="question" if kind == "question" else "approve", sid=session_id,
             body=body, meta={"job_id": job_id, "request_id": request_id} if job_id else None,
@@ -2639,7 +2643,7 @@ def _multi_agent_turn_start(job: Job, session: dict, cwd: str, model: "str | Non
     and its row, and a direct prompt to a helper going on the channel's log."""
     from bridge import channel, handoff
     try:
-        job.prefix, row = handoff.consume(session, cwd, model)
+        job.prefix, row = handoff.consume(session, cwd, model, job.id)
         if row:
             job.add(row)
         channel.note_direct_prompt(session, prompt)

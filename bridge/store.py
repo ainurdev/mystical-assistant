@@ -1232,7 +1232,7 @@ def history(chat_id: int, include_archived: bool = False,
          "COALESCE(MAX(t.started), s.updated) AS last_activity, "
          "GROUP_CONCAT(DISTINCT t.model) AS models "
          "FROM sessions s LEFT JOIN turns t ON t.session_id = s.id "
-         "WHERE s.chat_id=?")
+         "WHERE s.chat_id=? AND s.parent_session IS NULL")
     params: list = [chat_id]
     if not include_archived:
         q += " AND s.archived=0"

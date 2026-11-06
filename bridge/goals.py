@@ -89,6 +89,8 @@ def continue_after_turn(job, effort=None) -> bool:
         store.set_goal(sid, goal)
         sess = store.get_session(sid) or {}
         text = _NUDGE.format(objective=goal["objective"])
+        if (job.runtime or "").startswith("acp:"):
+            text = text.replace("UpdateGoal", "update_goal")   # the gateway's name for it
         queue_manager.enqueue(
             sid, text=text, prompt=text, images=[], model=None,
             effort=effort, permission_mode=None,

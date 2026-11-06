@@ -44,6 +44,8 @@ Messages persist in the DB, so a restart loses none (resume_pending at boot), an
 cut off by one resumes like any turn does (bridge/recovery.py).
 
 Not built: an agent starting helpers on a teammate's machine, and helpers of helpers.
+ponytail: archiving a chat leaves an unmerged writer's copy on disk (it can hold the only copy
+of that work). It stays in the WORKTREES tab until removed there; sweep on delete if it piles up.
 """
 
 import json
@@ -56,7 +58,7 @@ import threading
 import time
 import uuid
 
-from bridge import config, experimental, git, handoff, profiles, store
+from bridge import config, experimental, git, handoff, profiles, prompt_pack, store
 
 MAIN = "main"
 USER = "you"
@@ -294,9 +296,10 @@ def _make_copy(chat: dict, cwd: str, short: str) -> "tuple[dict | None, str | No
             "cwd": os.path.normpath(os.path.join(path, rel))}, None
 
 
-def _brief_prompt(chat: dict, name: str, brief: str) -> str:
+def _brief_prompt(chat: dict, name: str, brief: str, write: bool) -> str:
     title = chat.get("title") or "this chat"
-    return f"{FRAME} You were started as a helper by the main agent of \"{title}\".\n\n{brief.strip()}"
+    return (f"{FRAME} You were started as a helper by the main agent of \"{title}\".\n"
+            f"{prompt_pack.member_rules(name, write)}\n\nYour brief:\n{brief.strip()}")
 
 
 def _unique_name(chat: dict, wanted: str, agent: str) -> str:
@@ -393,7 +396,7 @@ def start(chat: dict, plan: list) -> list:
             store.set_fallback_policy(s["id"], "auto")   # a limit moves it to another login if one has room
         post(chat, MAIN, name, "brief", t["brief"], deliver=False,
              meta={"profile": (t["profile"] or {}).get("name"), "write": t["write"]})
-        job = runner.start_streaming_job(chat["chat_id"], _brief_prompt(chat, name, t["brief"]), [],
+        job = runner.start_streaming_job(chat["chat_id"], _brief_prompt(chat, name, t["brief"], t["write"]), [],
                                          project=cwd, session_id=s["id"], origin="helper",
                                          permission_mode=mode)
         _journal(chat, {"type": "delegation", "session_id": s["id"], "name": name,

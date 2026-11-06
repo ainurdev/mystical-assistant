@@ -58,7 +58,8 @@ MEMBER = (
 WORK_WRITER = ("You have your own copy of the code, so edit freely here and don't push: "
                "your changes are reviewed and merged for you.")
 WORK_READER = ("You are read-only: inspect and report, and change no files, even if a "
-               "message asks you to.")
+               "message asks you to. Your report is your final reply: don't present a plan for "
+               "approval or ask to leave plan mode.")
 
 RIVENDELL = (
     "This repo's work is tracked on a Rivendell task board. Before you change code for "
@@ -73,13 +74,9 @@ RIVENDELL = (
 
 def _fragments(session: dict, cwd: "str | None", tools: set, graph: str, rivendell: bool,
                extra: "tuple[str, ...]") -> list:
-    member = store.parse_member(session.get("member"))
     rows = [(ASK, "ask_user"), (RUN, "run_project"), *((e, None) for e in extra),
             (RIVENDELL if rivendell else "", "list_rivendell_tasks"), (HELPERS, "delegate")]
     out = [text for text, need in rows if text and (need is None or need in tools)]
-    if member:
-        out.insert(0, MEMBER.format(name=member.get("name") or "helper",
-                                    work=WORK_WRITER if member.get("write") else WORK_READER))
     if graph.strip():
         out.append(graph.strip())
     return out
@@ -93,6 +90,12 @@ def agent_pack(session: dict, cwd: "str | None", tools: set, *, graph: str = "",
     except Exception as e:  # noqa: BLE001 - instructions never block a turn
         print(f"[prompt_pack] {e!r}", file=sys.stderr)
         return "\n\n".join(extra)
+
+
+def member_rules(name: str, write: bool) -> str:
+    """What a helper is told, in its brief so it reaches every provider alike (Claude's
+    appended prompt stays as it was)."""
+    return MEMBER.format(name=name, work=WORK_WRITER if write else WORK_READER)
 
 
 def wrap(pack: str, prompt: str) -> str:

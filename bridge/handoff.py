@@ -87,10 +87,11 @@ def _turn_block(s: dict, t: dict, *, tools: bool) -> str:
     return "\n\n".join(out)
 
 
-def _since(s: dict, agent: str, account: str = "") -> list:
+def _since(s: dict, agent: str, account: str = "", current: "str | None" = None) -> list:
     """The turns this agent hasn't seen: after its last one, or all of them when it
-    has no session here to resume."""
-    turns = store.turns_of(s["id"])
+    has no session here to resume. `current` is the turn being started, which is
+    already in the table and on this agent, so it counts for neither."""
+    turns = [t for t in store.turns_of(s["id"]) if t["id"] != current]
     if not _has_native(s, agent, account):
         return turns
     last = -1
@@ -190,7 +191,8 @@ def _write_file(s: dict, cwd: str, turns: list) -> "str | None":
         return None
 
 
-def consume(s: dict, cwd: str, model: "str | None") -> "tuple[str, dict | None]":
+def consume(s: dict, cwd: str, model: "str | None",
+            current: "str | None" = None) -> "tuple[str, dict | None]":
     """(text to lead this turn's prompt with, the switch row for the transcript).
     Empty when no change is waiting. The change stays recorded until the turn is
     done (finished), so a turn that dies before its agent read it retries it."""
@@ -199,7 +201,7 @@ def consume(s: dict, cwd: str, model: "str | None") -> "tuple[str, dict | None]"
         return "", None
     try:
         agent = raw.get("to") or profiles.CLAUDE
-        turns = _since(s, agent, raw.get("account") or "")
+        turns = _since(s, agent, raw.get("account") or "", current)
         resumed = _has_native(s, agent, raw.get("account"))
         shown = turns[-RECENT_TURNS:] if raw.get("scope") == "recent" else turns
         blocks = [b for b in (_turn_block(s, t, tools=False) for t in shown) if b]
@@ -208,7 +210,7 @@ def consume(s: dict, cwd: str, model: "str | None") -> "tuple[str, dict | None]"
                "turns": len(kept), "whole": whole and len(shown) == len(turns)}
         if not kept:
             return "", row
-        path = _write_file(s, cwd, store.turns_of(s["id"]))
+        path = _write_file(s, cwd, [t for t in store.turns_of(s["id"]) if t["id"] != current])
         head = (f"This chat was running on {label(raw.get('from'))} and has moved to you. "
                 if not resumed else
                 f"You are back in this chat. While you were away {label(raw.get('from'))} ran it. ")

@@ -191,6 +191,24 @@ def test_returning_keeps_the_claude_session_and_tells_only_what_it_missed(tmp_pa
     assert store.get_session(s["id"])["agent_session_id"] == "fake-1"
 
 
+def test_the_turn_being_started_isnt_history(tmp_path, on):
+    """Live test, Claude to Kimi and back: Kimi was told it had missed nothing, because
+    the new turn is already in the table and on Kimi."""
+    s = _session(tmp_path, prompts=("kimi did this",))
+    store.set_session_field(s["id"], "agent_session_id", "k-1")
+    s = store.get_session(s["id"])
+    store.set_native_id(s["id"], profiles.effective(s)["agent"], "", "k-1")
+    pid = s["profile_id"]
+    assert profiles.bind(s, "")[1] == 200
+    store.start_turn(s["id"], "c-1", "claude did that", [])
+    store.finish_turn("c-1", "done", None, 1)
+    assert profiles.bind(store.get_session(s["id"]), pid)[1] == 200
+    store.start_turn(s["id"], "k-2", "new question", [], runtime="acp:fake")
+    text, row = handoff.consume(store.get_session(s["id"]), str(tmp_path), None, "k-2")
+    assert row["turns"] == 1 and "claude did that" in text
+    assert "new question" not in text and "kimi did this" not in text
+
+
 def test_too_big_keeps_the_newest_and_says_so(tmp_path, on, monkeypatch):
     s = _session(tmp_path, agent=None, prompts=("OLD" + "x" * 4000, "NEW" + "y" * 100))
     target = profiles.create({"name": "T", "agent": "fake"})
