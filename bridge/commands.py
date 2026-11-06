@@ -84,9 +84,9 @@ def _manifest_skills(path: str) -> "list[tuple[str, str]]":
     An entry is one skill's directory (Matt Pocock's pack names each
     skills/<group>/<name>) or a directory of skills; one path or a list."""
     m = _json(os.path.join(path, ".claude-plugin", "plugin.json"))
-    paths = m.get("skills") if isinstance(m, dict) else None
+    listed = m.get("skills") if isinstance(m, dict) else None
     out = []
-    for p in [paths] if isinstance(paths, str) else paths if isinstance(paths, list) else []:
+    for p in [listed] if isinstance(listed, str) else listed if isinstance(listed, list) else []:
         if isinstance(p, str):
             d = os.path.normpath(os.path.join(path, p))
             one = _skill_at(d)

@@ -178,7 +178,9 @@ def merge(by_seat: dict) -> list:
                         m["sev"] = f["sev"]
                     break
             else:
-                out.append({"id": f"{f['file']}:{f['line'] or 0}", "sev": f["sev"],
+                # A line-less finding's id carries its title (same() tells them apart by it), so siding against one leaves the rest.
+                fid = f"{f['file']}:{f['line']}" if f["line"] else f"{f['file']}:0:{f['title'].lower()}"
+                out.append({"id": fid, "sev": f["sev"],
                             "file": f["file"], "line": f["line"], "title": f["title"],
                             "by": [seat], "state": "open", "answer": ""})
     out.sort(key=lambda f: (_SEV.index(f["sev"]), f["file"], f["line"] or 0))
@@ -191,7 +193,7 @@ def _from_id(i: str) -> dict:
 
 
 def _gone(f: dict, dismissed: list) -> bool:
-    # A line-less finding has id file:0, which only an identical id can dismiss.
+    # A line-less finding (id file:0:<title>) is dismissed only by its own id.
     return f["id"] in dismissed or any(g["line"] and same(f, g) for g in map(_from_id, dismissed))
 
 

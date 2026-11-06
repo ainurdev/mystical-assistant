@@ -253,7 +253,7 @@ FEATURES = (
               "AskUserQuestion card, up to 4 questions, the recommended answer first, "
               "worded so yes takes it. That is taps instead of typing, which suits a "
               "phone. It shapes any grilling run, typed or routed, so it stands apart from "
-              "SKILL ROUTER. Off, the line is left out and a skill asks its rounds its own "
+              "SKILL PATHS. Off, the line is left out and a skill asks its rounds its own "
               "way."},
 )
 

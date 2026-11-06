@@ -72,6 +72,14 @@ def test_lineless_finding_can_be_dismissed_by_its_id():
     assert council.blocking([f], ["claude"], []) == [f]
 
 
+def test_dismissing_one_lineless_finding_leaves_the_others():
+    m = council.merge({"claude": {"score": 6, "findings": [{"sev": "must", "file": "a.py", "line": None, "title": "T"},
+                                                           {"sev": "nit", "file": "a.py", "line": None, "title": "U"}]}})
+    must, nit = m
+    assert must["id"] != nit["id"]
+    assert council.blocking(m, ["claude"], [nit["id"]]) == [must]
+
+
 def test_answers_do_not_cross_lines():
     assert council.answers("1. NO:\n2. fixed") == {}
     assert council.answers("1. NO: why\n2. NO: other") == {1: "why", 2: "other"}
