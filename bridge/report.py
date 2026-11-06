@@ -144,6 +144,7 @@ def weekly(chat_id: int, now: "float | None" = None, back: int = 0) -> dict:
         } for r in rows]),
         "totals": _totals(rows),
         "days": store.week_by_day(chat_id, since, until),
+        "hours": store.week_by_hour(chat_id, since, until),
         # What went wrong, by outcome code (bridge/outcomes.py). Derived, so an
         # older week re-reads with today's taxonomy instead of a frozen label.
         "failures": _by_code(store.week_failures(chat_id, since, until)),

@@ -170,6 +170,29 @@ def test_weekly_days_bucket_by_local_date():
     ]
 
 
+def test_week_by_hour_counts_turns_per_weekday_and_hour():
+    chat, other = _fresh_chat(), _fresh_chat()
+    sid = store.create_session(chat, "/proj")["id"]
+    osid = store.create_session(other, "/proj")["id"]
+    _turn(sid, f"{sid}:1", datetime(2026, 8, 17, 0, 30).timestamp())
+    _turn(sid, f"{sid}:2", datetime(2026, 8, 18, 14, 5).timestamp())
+    _turn(sid, f"{sid}:3", datetime(2026, 8, 18, 14, 50).timestamp())
+    _turn(sid, f"{sid}:4", datetime(2026, 8, 23, 23, 59).timestamp())
+    _turn(osid, f"{osid}:1", datetime(2026, 8, 18, 14, 10).timestamp())
+
+    since, until = report.week_bounds(NOW)
+    grid = store.week_by_hour(chat, since, until)
+
+    assert len(grid) == 7 and all(len(r) == 24 for r in grid)
+    assert grid[0][0] == 1 and grid[1][14] == 2 and grid[6][23] == 1
+    assert sum(map(sum, grid)) == 4
+
+
+def test_weekly_report_carries_hours():
+    rep = report.weekly(_fresh_chat(), now=NOW)
+    assert len(rep["hours"]) == 7 and all(len(r) == 24 for r in rep["hours"])
+
+
 def test_weekly_carries_previous_week_totals_for_the_delta():
     chat = _fresh_chat()
     sid = store.create_session(chat, "/proj")["id"]

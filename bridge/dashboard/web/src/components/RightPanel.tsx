@@ -38,6 +38,7 @@ export function RailRing({ left }: { left: number }) {
 
 export interface PanelTab {
   id: string;
+  short?: string; // the name printed under the icon; defaults to the label, upper-cased
   label: string; // the tab's name; what it says right now goes in `hint`
   icon: ReactNode;
   // The rail prints under a tile's icon only what wants you (/design-first
@@ -301,14 +302,14 @@ export function RightPanel({
                 title={[t.label + key, t.hint, on ? "click to collapse" : ""].filter(Boolean).join("\n")}
                 aria-label={t.hint ? `${t.label}, ${t.hint}` : t.label}
                 aria-current={on}
-                className={`rtile relative flex h-[46px] flex-col items-center justify-start gap-[3px] border-l-2 pt-[11px] text-[length:var(--t13)] hover:bg-accent ${
+                className={`rtile relative flex h-[50px] flex-col items-center justify-start gap-[2px] border-l-2 pt-[7px] text-[length:var(--t13)] hover:bg-accent ${
                   on
                     ? "border-primary bg-[var(--ac-06)] text-foreground-bright"
                     : "border-transparent text-muted-2 hover:text-primary"
                 }`}
               >
                 <span className="rtile-ico">{t.icon}{t.busy && <span className="rail-orbit" aria-hidden />}</span>
-                {word && <span className="rtile-v">{word}</span>}
+                {word ? <span className="rtile-v">{word}</span> : <span className="rtile-n">{t.short ?? t.label.toUpperCase().slice(0, 6)}</span>}
               </button>
             </Fragment>
           );

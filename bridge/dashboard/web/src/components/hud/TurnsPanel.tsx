@@ -1,14 +1,13 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
-import { ChevronDown, ChevronRight, ChevronUp, Copy, CornerDownLeft, ListEnd, RotateCw, Search, X } from "lucide-react";
-import { api, type SessionBreakdown } from "../../api";
-import type { Turn } from "../../chat";
-import { ckId, fmtElapsed, timeSplit, turnRows, type Resume, type Sub, type TurnRow } from "../../lib/checkpoints";
+import { ArrowUp, Check, Copy, CornerDownLeft, Ellipsis, GitCommitHorizontal, GitMerge, GitPullRequest, ListEnd, Search, X } from "lucide-react";
+import { activeOf, type Turn } from "../../chat";
+import { ckId, fmtElapsed, turnRows, type TurnRow } from "../../lib/checkpoints";
+import { span } from "../../lib/limit";
+import { moments, type Moment } from "../../lib/moments";
 import { hhmm, useClock12 } from "../../lib/surfaces";
-import { dur, fmtTokens } from "../../lib/week";
-import { modelName } from "../../models";
 import type { TranscriptNav } from "../Transcript";
 import { SteerIcon } from "../Composer";
-import { TurnClock } from "./TurnClock";
+import { TabKick } from "./TabKick";
 
 // Where a jump parks a turn: under the header island (Transcript's scroll-mt-[86px]).
 const AIM = 86;
@@ -51,9 +50,22 @@ export const FRAME = { border: "1px solid color-mix(in srgb, var(--acc) 16%, tra
   display: "flex", flexDirection: "column", flex: 1, minHeight: 0 } as const;
 // The rule under the header, as the other tabs draw it: the hero's top edge starts right under it.
 export const RULE = { height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" } as const;
-const CUT: Record<Resume, string> = { limit: "usage limit", restart: "restart", error: "error" };
-const AFTER: Record<Resume, string> = { limit: "the usage limit", restart: "a bridge restart", error: "an error" };
 const day = (sec: number) => new Date(sec * 1000).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
+// A turn's length the way the stream says it: 40s, 44m, 1h 21m.
+const took = (s: number) => (s < 60 ? `${Math.round(s)}s` : span(s));
+// What a moment line says before its text, and how the text joins on.
+const SAY: Record<Moment["kind"], [string, string]> = {
+  ask: ["asked you", " · "], steer: ["you steered", " · "], commit: ["committed", " "], merge: ["merged", " "],
+  push: ["pushed", " "], pr: ["opened PR", " "], tests: ["tests", " · "],
+};
+
+function glyph(m: Moment): ReactNode {
+  if (m.kind === "ask") return "?";
+  if (m.kind === "steer") return <SteerIcon size={10} />;
+  const I = m.kind === "commit" ? GitCommitHorizontal : m.kind === "merge" ? GitMerge : m.kind === "push" ? ArrowUp
+    : m.kind === "pr" ? GitPullRequest : m.tone === "ok" ? Check : X;
+  return <I size={10} strokeWidth={2.6} aria-hidden />;
+}
 
 function marked(text: string, q: string): ReactNode {
   if (!q) return text;
@@ -68,18 +80,18 @@ function hit(r: TurnRow, q: string): boolean {
   return words.some((w) => w.toLowerCase().includes(q));
 }
 
-/** The TURNS tab (design: .mystical/design-drafts/turns-tab, B · LEDGER): the
- *  open session's turns as one spine, a node per turn and three even lines each
- *  — what you asked, the first line of what came back, when and how long, over
- *  a bar sized to the session's longest turn. Asks hang off the spine with the
- *  label you picked; the bridge's resumes fold into the turn they carried on.
- *  The turn on screen is lit and follows the transcript's scroll; a tap jumps.
- *  It replaced the header's TURNS dropdown, which closed on every jump and knew
- *  only the turns the chat had loaded. */
+/** The TURNS tab (spec right-rail-reimagine, Turns · MOMENTS): a now bar while
+ *  the latest turn waits on you or works, then the open session's turns newest
+ *  first on one line — your prompt heading each, and under it the moments that
+ *  mattered (lib/moments): it asked you, committed, merged, pushed, opened a PR,
+ *  ran the tests. The three newest turns with moments list up to three
+ *  of them, older ones fold theirs into a count; a gap over half an hour says how
+ *  long you were away. Every line jumps the chat to its place; the turn on screen
+ *  is lit and followed. It replaced the B · LEDGER list and
+ *  the TIME dock (the Mini App's spend sheet still reads that breakdown). */
 export function TurnsPanel({
-  sessionId, turns, scrollRef, nav, following, onJump, onLatest, onCopy, onReuse,
+  turns, scrollRef, nav, following, onJump, onLatest, onCopy, onReuse,
 }: {
-  sessionId: string | null;
   turns: Turn[];
   scrollRef: RefObject<HTMLDivElement | null>;
   nav: MutableRefObject<TranscriptNav | null>;
@@ -101,8 +113,13 @@ export function TurnsPanel({
     return () => clearInterval(id);
   }, [running]);
   const rows = useMemo(() => turnRows(turns, now), [turns, now]);
+  // Off the turns alone: a running turn's clock changes no moment, and a long
+  // session's Bash calls are megabytes to read every second.
+  const said = useMemo(() => new Map(turnRows(turns).map((r) => [r.id, moments(r, turns)])), [turns]);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  // The rows whose moments you unfolded (+N more, N moments).
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(() => new Set());
 
   const [reading, setReading] = useState(-1);
   useEffect(() => {
@@ -119,47 +136,41 @@ export function TurnsPanel({
     return () => { document.removeEventListener("scroll", onScroll, { capture: true }); cancelAnimationFrame(raf); };
   }, [scrollRef, nav, turns]);
 
-  // Keep the lit row in sight with what hangs under it (an ask waiting on you
-  // is the part that matters), unless you're browsing the list yourself.
+  // Keep the lit header in sight with the moments under it, unless you're
+  // browsing the list yourself.
   const listRef = useRef<HTMLDivElement>(null);
   const browsed = useRef(0);
-  const subsOf = rows[reading]?.subs.length ?? 0;
+  const under = said.get(rows[reading]?.id ?? "")?.length ?? 0;
   useEffect(() => {
     const list = listRef.current;
     const row = list?.querySelector<HTMLElement>(`[data-row="${reading}"]`);
     if (!list || !row || Date.now() - browsed.current < 2500) return;
     let end: HTMLElement = row;
-    for (let n = row.nextElementSibling as HTMLElement | null; n?.classList.contains("tn-s"); n = n.nextElementSibling as HTMLElement | null) end = n;
-    const top = row.offsetTop - 4, bottom = end.offsetTop + end.offsetHeight + 4;
+    for (let n = row.nextElementSibling as HTMLElement | null; n?.classList.contains("tn-m"); n = n.nextElementSibling as HTMLElement | null) end = n;
+    const y = (el: HTMLElement) => el.getBoundingClientRect().top - list.getBoundingClientRect().top + list.scrollTop;
+    const top = y(row) - 4, bottom = y(end) + end.offsetHeight + 4;
     if (top < list.scrollTop) list.scrollTop = top;
     else if (bottom > list.scrollTop + list.clientHeight) list.scrollTop = Math.min(top, bottom - list.clientHeight);
-  }, [reading, subsOf]);
+  }, [reading, under]);
 
   const [find, setFind] = useState<string | null>(null);
   const [pickAt, setSel] = useState(0);
   const q = (find ?? "").trim().toLowerCase();
-  const shown = rows.map((r, i) => ({ r, i })).filter(({ r }) => hit(r, q));
+  const newest = rows.map((r, i) => ({ r, i })).reverse();
+  const shown = find === null ? newest : newest.filter(({ r }) => hit(r, q));
   const sel = Math.min(pickAt, shown.length - 1);
   useEffect(() => {
     if (find === null) return;
-    listRef.current?.querySelector<HTMLElement>(".tn-t.sel")?.scrollIntoView({ block: "nearest" });
+    listRef.current?.querySelector<HTMLElement>(".tn-h.sel")?.scrollIntoView({ block: "nearest" });
   }, [find === null, sel, q]);
 
   if (!rows.length)
     return (
       <div className="panel gp tn" style={FRAME}>
-        <div className="gp-head"><span className="gp-title">TURNS</span></div>
-        <div style={RULE} />
-        <TurnClock rows={[]} now={now} range="this session" pill={null} say="" />
+        <TabKick name="TURNS" />
         <div className="tn-none">no turns yet — speak, and the first lands here.</div>
       </div>
     );
-
-  const max = Math.max(1, ...rows.map((r) => r.secs ?? 0));
-  const live = [...rows].reverse().find((r) => r.status === "running");
-  const last = rows[rows.length - 1];
-  const cut = rows.reduce((s, r) => s + r.resumes.length, 0);
-  const ended = last.ended;
 
   const pick = (i: number) => {
     const m = shown[i];
@@ -172,30 +183,46 @@ export function TurnsPanel({
     else if (e.key === "Enter") { e.preventDefault(); pick(sel); }
   };
 
-  const isToday = rows[0].started != null && day(rows[0].started) === day(now);
-  const range = rows[0].started == null ? "this session"
-    : `${isToday ? "today" : day(rows[0].started)} · ${hhmm(rows[0].started)} → ${live || ended == null ? "now" : hhmm(ended)}`;
-  const say = live ? `#${live.n} ${live.waiting ? "waits on you" : "running"}` : "idle";
-  const pill = live
-    ? <span className={`tc-pill ${live.waiting ? "ask" : "run"}`}><span className="tn-dot" />
-        <span><b>#{live.n}</b> {live.waiting === "permission" ? "needs you" : live.waiting ? "waits on you" : "running"}
-          {!live.waiting && live.secs != null && <> · {fmtElapsed(live.secs)}</>}</span></span>
-    : <span className="tc-pill ok">{cut > 0 && rows.every((r) => !r.resumes.length || r.status === "done") ? `idle · ${cut} resumed` : "idle"}</span>;
+  // The now bar: only the latest turn can run, and only a running one waits on you.
+  const last = rows[rows.length - 1];
+  const live = last.status === "running" ? last : null;
+  const wants = activeOf(turns)?.pending[0];
+  const ask = live?.subs.find((s) => s.kind === "question" && s.open);
+  const bar = live && find === null && (live.waiting ? (
+    <div className="tn-now ask">
+      <span className="tn-nq" aria-hidden>?</span>
+      <span className="tn-nt">Turn {live.n} waits on you
+        {wants && <small>{wants.kind === "question" ? wants.questions?.[0]?.question
+          : `Allow ${wants.tool_name}${wants.summary ? `: ${wants.summary}` : "?"}`}</small>}</span>
+      <button type="button" onClick={() => (ask?.kind === "question" ? onJump(ask.turnId, ask.key) : onLatest())}>Answer ›</button>
+    </div>
+  ) : (
+    <div className="tn-now run">
+      <span className="tn-dot" aria-hidden />
+      {/* the elapsed on its own line: beside the title and the button it never fits */}
+      <span className="tn-nt">Turn {live.n} is working
+        <small>{fmtElapsed(live.secs ?? 0)} · {live.tools} {live.tools === 1 ? "tool" : "tools"} so far</small></span>
+      <button type="button" onClick={onLatest}>Go to it ›</button>
+    </div>
+  ));
 
-  let lastDay = "";
+  // The line between a turn and the one before it: how long you were away,
+  // and the day when it changes (the times on the lines are clock times).
+  const between = (newer: TurnRow | null, older: TurnRow) => {
+    const away = newer?.started != null && older.ended != null ? newer.started - older.ended : 0;
+    const d = older.started == null ? "" : day(older.started);
+    return [away > 1800 && `away ${span(away)}`, d && d !== day(newer?.started ?? now) && d].filter(Boolean).join(" · ");
+  };
+  let listing = 0;   // turns with moments that list them: the three newest
   return (
     <div className="panel gp tn" style={FRAME} onKeyDown={find !== null ? onKey : undefined}>
-      <div className="gp-head">
-        <span className="gp-title">TURNS</span>
-        <span className="tn-cnt">{rows.length}</span>
-        <span className="tn-sp" />
+      <TabKick name="TURNS" chip={<span className="tn-cnt">{rows.length}</span>} tools={<>
         <button className={`gp-ib${find !== null ? " on" : ""}`} title="find a turn" aria-label="find a turn"
           onClick={() => { setFind(find === null ? "" : null); setSel(0); }}><Search size={14} /></button>
         <button className={`gp-ib${following ? " on" : ""}`} title={following ? "on the latest turn" : "go to the latest turn"}
           aria-label="go to the latest turn" onClick={onLatest}><ListEnd size={14} /></button>
-      </div>
-      <div style={RULE} />
-      {find !== null ? (
+      </>} />
+      {find !== null && (
         <>
           <label className="tn-find">
             <Search size={13} />
@@ -206,28 +233,28 @@ export function TurnsPanel({
           </label>
           <div className="tn-hint"><kbd>↑</kbd><kbd>↓</kbd> move · <kbd>↵</kbd> jump · <kbd>esc</kbd> close</div>
         </>
-      ) : (
-        <TurnClock rows={rows} now={now} range={range} pill={pill} say={say} />
       )}
-      <div ref={listRef} className="mscroll tn-list"
+      {bar}
+      <div ref={listRef} className="mscroll"
         onWheel={() => { browsed.current = Date.now(); }} onPointerDown={() => { browsed.current = Date.now(); }}>
         {q && !shown.length && <div className="tn-none">nothing answers to “{find?.trim()}”.</div>}
-        {shown.map(({ r, i }, k) => {
-          const d = r.started != null ? day(r.started) : "";
-          const head = d && d !== lastDay ? <div className="tn-day">{d}</div> : null;
-          if (d) lastDay = d;
-          const prevModel = i > 0 ? rows[i - 1].model : null;
-          const run = r.status === "running";
-          const cls = ["tn-t", i === reading && !q && "on", r.status === "error" && "err", run && !r.waiting && "run",
-                       r.waiting && "ask", find !== null && k === sel && "sel"].filter(Boolean).join(" ");
-          return (
-            <Fragment key={r.id}>
-              {head}
-              <div className={cls} data-row={i} onClick={() => onJump(r.id)} onMouseEnter={find !== null ? () => setSel(k) : undefined}>
-                <span className="tn-o" />
-                <div className="tn-l1">
+        <div className={`tn-st${find === null && between(null, last) ? " day" : ""}`}>
+          {shown.map(({ r, i }, k) => {
+            const ms = find === null ? said.get(r.id) ?? [] : [];
+            const lists = ms.length > 0 && listing++ < 3;
+            const list = unfolded.has(r.id) ? ms : lists ? ms.slice(0, 3) : [];
+            const sep = find === null ? between(k ? rows[i + 1] : null, r) : "";
+            const ended = r.status === "error" ? "error" : r.stopped ? "stopped" : "";
+            const cls = ["tn-h", i === reading && !q && "on", ended && "err", r.status === "running" && (r.waiting ? "ask" : "run"),
+                         find !== null && k === sel && "sel"].filter(Boolean).join(" ");
+            return (
+              <Fragment key={r.id}>
+                {sep && <div className="tn-gap">{sep}</div>}
+                <div className={cls} data-row={i} data-ctx-type="turn" data-ctx-id={r.id} onClick={() => onJump(r.id)}
+                  onMouseEnter={find !== null ? () => setSel(k) : undefined}>
                   <i className="tn-n">{r.n}</i>
                   <span className="tn-p">{marked(r.prompt || "(no words)", q)}</span>
+                  <small className="tn-w">{ended || [r.started != null && hhmm(r.started), r.secs != null && took(r.secs)].filter(Boolean).join(" · ")}</small>
                   <span className="tn-acts">
                     <button className="gp-ib" title="copy the prompt" aria-label="copy the prompt"
                       onClick={(e) => { e.stopPropagation(); onCopy(r.prompt); }}><Copy size={12} /></button>
@@ -235,122 +262,24 @@ export function TurnsPanel({
                       onClick={(e) => { e.stopPropagation(); onReuse(r.prompt); }}><CornerDownLeft size={12} /></button>
                   </span>
                 </div>
-                {run ? <div className="tn-l2 run">{r.waiting ? "waits on you" : "working"} · {r.tools} {r.tools === 1 ? "tool" : "tools"} so far</div>
-                  : r.answer ? <div className="tn-l2"><i>↳</i>{marked(r.answer, q)}</div>
-                  : <div className="tn-l2 none">{r.status === "error" ? "no answer — cut off before it finished" : "no answer"}</div>}
-                <div className="tn-l3">
-                  {r.started != null && <><span>{hhmm(r.started)}</span><span className="s">·</span></>}
-                  <span>{r.secs != null ? fmtElapsed(r.secs) : "—"}</span>
-                  {r.model && r.model !== prevModel && <span className="tn-tag">{modelName(r.model)}</span>}
-                  {r.status === "error" && <span className="tn-tag err">{r.outcome?.toLowerCase() ?? "failed"}</span>}
-                  {r.stopped && r.status !== "error" && <span className="tn-tag">stopped</span>}
-                  {r.resumes.length > 0 && <span className="tn-tag re"><RotateCw size={9} strokeWidth={2.6} />
-                    {r.resumes.length > 1 ? `${r.resumes.length} ${r.resumes.every((x) => x === r.resumes[0]) ? `${CUT[r.resumes[0]]}s` : "resumes"}` : CUT[r.resumes[0]]}</span>}
-                  {r.waiting && <span className="tn-tag ask">waits on you</span>}
-                  {run && !r.waiting && <span className="tn-tag run">running</span>}
-                  {i === reading && !q && <em className="tn-here">reading</em>}
-                </div>
-                <span className="tn-bar">{r.parts.map((p, j) => <i key={j} style={{ width: `${Math.max(1.2, (p / max) * 100)}%` }} />)}</span>
-              </div>
-              {r.subs.map((s, j) => <SubRow key={j} s={s} q={q} onJump={onJump} />)}
-            </Fragment>
-          );
-        })}
-      </div>
-      <TimeDock sessionId={sessionId} running={running} />
-    </div>
-  );
-}
-
-/** Where the session's time went, by kind — the part of the old header TIME
- *  readout this tab didn't already have (the hero's caption is the total, the rows
- *  each turn's time). Pinned under the list, always in view; a tap raises the
- *  tools that took it and the tokens over the list's foot (drafts/usage-time,
- *  B · DOCK). Loads per session and as a turn starts or ends; polls only while
- *  raised on a live turn. */
-function TimeDock({ sessionId, running }: { sessionId: string | null; running: boolean }) {
-  // undefined while it loads: the dock is drawn at once, so the list never shrinks under you.
-  const [b, setB] = useState<SessionBreakdown | null | undefined>(undefined);
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!sessionId) return;
-    let live = true;
-    // A bridge older than the route answers with the transcript's shape: draw nothing.
-    const load = () => void api.sessionBreakdown(sessionId)
-      .then((r) => { if (live) setB(r && typeof r.wall === "number" && r.tools ? r : null); })
-      .catch(() => {});
-    load();
-    if (!open || !running) return () => { live = false; };
-    const id = setInterval(load, 5000);
-    return () => { live = false; clearInterval(id); };
-  }, [sessionId, running, open]);
-  if (b === null || !sessionId) return null;
-
-  const { kinds, tools, rest, restSecs } = timeSplit(b ?? EMPTY);
-  const peak = tools[0]?.union_s || 1;
-  const t = b?.tokens;
-  const tin = t ? t.in + t.cache_w + t.cache_r : 0;
-  return (
-    <div className="tt">
-      {open && b && (
-        <div className="tt-sheet">
-          <div className="tt-sh">Tools</div>
-          {tools.length ? tools.map((x) => (
-            <div key={x.name} className="tt-tr" title={`${x.calls} calls, avg ${fmtElapsed(x.avg_s)}${x.naive_s - x.union_s >= 1
-              ? ` — ${fmtElapsed(x.naive_s)} summed, ${fmtElapsed(x.union_s)} of real time (they overlapped)` : ""}`}>
-              <span>{x.name}<em>{[`${x.calls}×`, x.calls > 1 && x.naive_s - x.union_s < 1 ? "serial" : null,
-                x.unfinished ? `${x.unfinished} killed` : null].filter(Boolean).join(" · ")}</em></span>
-              <i><i style={{ width: `${Math.max(2, (100 * x.union_s) / peak)}%` }} /></i>
-              <b>{fmtElapsed(x.union_s)}</b>
-            </div>
-          )) : <div className="tt-more">no tool calls yet</div>}
-          {rest > 0 && <div className="tt-more">+{rest} more · {fmtElapsed(restSecs)} between them</div>}
-          <div className="tt-tok">
-            <span>Tokens</span>
-            {t ? <b title={`in ${t.in} · out ${t.out} · cache write ${t.cache_w} · cache read ${t.cache_r}`}>
-                {fmtTokens(tin)} in · {fmtTokens(t.out)} out <small>· {Math.round((100 * t.cache_r) / Math.max(1, tin + t.out))}% cache reads</small></b>
-              : <b title="no turn in this session reported usage — unknown, not zero">—</b>}
-          </div>
+                {list.map((m, j) => (
+                  <div key={j} className={`tn-m ${m.tone}`} onClick={() => onJump(m.jump, m.key)}>
+                    <span className="tn-i">{glyph(m)}</span>
+                    <span className="tn-x"><b>{SAY[m.kind][0]}</b>{m.text && SAY[m.kind][1] + m.text}</span>
+                    {m.at != null && <small>{hhmm(m.at)}</small>}
+                  </div>
+                ))}
+                {list.length < ms.length && (
+                  <button type="button" className="tn-m more" onClick={() => setUnfolded(new Set(unfolded).add(r.id))}>
+                    <span className="tn-i"><Ellipsis size={10} strokeWidth={2.6} aria-hidden /></span>
+                    <span className="tn-x">{lists ? `+${ms.length - list.length} more` : `${ms.length} ${ms.length === 1 ? "moment" : "moments"}`}</span>
+                  </button>
+                )}
+              </Fragment>
+            );
+          })}
         </div>
-      )}
-      <button type="button" className="tt-dock" aria-expanded={open} disabled={!b} onClick={() => setOpen((v) => !v)}
-        title={open ? "hide the tools and tokens" : "the tools and tokens behind this time"}>
-        <span className="tt-d1">
-          <b>Time</b>
-          <span className="tt-bar">{kinds.filter((k) => k.secs > 0).map((k) => <i key={k.k} data-k={k.k} style={{ flexGrow: k.secs }} />)}</span>
-          {open ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
-        </span>
-        <span className="tt-leg">
-          {kinds.map((k) => <span key={k.k} data-k={k.k}><i /><span>{k.label}</span><b>{b ? dur(k.secs) : "…"}</b></span>)}
-        </span>
-      </button>
-    </div>
-  );
-}
-
-const EMPTY: SessionBreakdown = { wall: 0, tools: {}, thinking_s: 0, waiting_s: 0, model_s: 0, tokens: null, capped: 0, turns: 0 };
-
-function SubRow({ s, q, onJump }: { s: Sub; q: string; onJump: (turnId: string, key?: string) => void }) {
-  if (s.kind === "resume")
-    return (
-      <div className="tn-s re" onClick={() => onJump(s.turnId)}>
-        <RotateCw size={11} strokeWidth={2.2} />
-        <span className="t">resumed after {AFTER[s.why]}{s.at != null && <> · {hhmm(s.at)}</>}</span>
       </div>
-    );
-  if (s.kind === "steer")
-    return (
-      <div className="tn-s steer" onClick={() => onJump(s.turnId, s.key)}>
-        <SteerIcon size={12} /><span className="t">{marked(s.label, q)}</span>
-      </div>
-    );
-  return (
-    <div className={`tn-s${s.open ? " open" : ""}`} onClick={() => onJump(s.turnId, s.key)}>
-      <span className="tn-q">?</span>
-      <span className="t"><b>{marked(s.label, q)}</b>
-        {s.open ? " · waits on you" : s.pick ? <> · {marked(s.pick, q)}</> : s.note ? <> · <span className="note">“{marked(s.note, q)}”</span></> : null}
-      </span>
-      {s.open && <span className="tn-go">Answer<ChevronRight size={11} strokeWidth={2.4} /></span>}
     </div>
   );
 }

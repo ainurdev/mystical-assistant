@@ -1,31 +1,28 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { CalendarDays, ChevronDown, ChevronRight, Copy, GitBranch } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { api, type WeeklyReport } from "../../api";
 import { projectName, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
-import { ProjectTile } from "../ui/ProjectTile";
 import { notify } from "./Notifications";
+import { TabKick } from "./TabKick";
+import { WeekGrid } from "./WeekGrid";
 import { daysOf, dur, fmtTokens, pct, timesheet } from "../../lib/week";
-import { todayIndex } from "../../lib/usagering";
-import type { Window } from "../../models";
-import { UsageRing } from "./UsageRing";
 
 /** The USAGE tab (drafts/usage-rail): where the week went. It replaced the week
  *  report that hung off the brand cap as a popover over the sessions list.
  *
  *  What each login has left lives in the composer's PROFILE and MODEL menus;
  *  this tab's limits and Logins fold repeated them and went (drafts/usage-time).
- *  The hero (hud/UsageRing) sits under the header, outside any fold, and
- *  carries the This/Last toggle. The week is bridge/report.py's:
+ *  Your week leads (day x hour grid, two numbers each for today and the
+ *  week, one stacked bar for where it went); no battery, since the rail's
+ *  ring already says what's left. The week is bridge/report.py's:
  *  worktrees already folded into their repo, days, failures by outcome.
  *
  *  Time and tokens, never dollars (9f612a4). "Agent time" because turn wall
  *  time adds up across parallel sessions, so a day can hold 48h of it. */
 
 const POLL_MS = 60_000;
-const TOP = 6;   // projects shown before "N more"
-
-const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const TOP = 5;   // projects named in the legend before "N more"
 
 
 function Fold({ title, em, acts, closed, onToggle, children }: {
@@ -44,23 +41,19 @@ function Fold({ title, em, acts, closed, onToggle, children }: {
   );
 }
 
-export function UsagePanel({ onOpenProject, win }: { onOpenProject: (rel: string) => void; win: Window | null }) {
+export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => void }) {
   const [back, setBack] = useState(0);
   const [rep, setRep] = useState<WeeklyReport | null>(null);
   // A bridge still running pre-restart code has no /local/report route: say
   // "restart" instead of spinning forever.
   const [stale, setStale] = useState(false);
-  const [pick, setPick] = useState<number | null>(null);
-  const [all, setAll] = useState(false);
-  const [wkClosed, setWkClosed] = useStickyFlag("usage-week-closed");
-  const [pjClosed, setPjClosed] = useStickyFlag("usage-projects-closed");
+  const [more, setMore] = useState(false);   // "N more" opens the legend in place
   const [stClosed, setStClosed] = useStickyFlag("usage-stopped-closed");
   const [tkClosed, setTkClosed] = useStickyFlag("usage-tokens-closed");
 
   useEffect(() => {
     let live = true;
     setRep(null);
-    setPick(null);
 
     const load = () => api.report(back)
       .then((r) => { if (live) { setRep(r); setStale(false); } })
@@ -73,11 +66,16 @@ export function UsagePanel({ onOpenProject, win }: { onOpenProject: (rel: string
   const days = rep ? daysOf(rep) : [];
   const today = new Date().toLocaleDateString("sv-SE");
   const t = rep?.totals;
-  const share = (n: number) => (t?.elapsed ? Math.round((100 * n) / t.elapsed) : 0);
-  const top = rep?.projects[0]?.elapsed || 1;
   const stops = (rep?.failures ?? []).filter((f) => f.code !== "delivered");   // a delivered answer reached you
-  const range = rep ? `${new Date(rep.since * 1000).toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${
-    new Date((rep.until - 43200) * 1000).toLocaleDateString(undefined, { day: "numeric" })}` : "";
+  const td = days.find((d) => d.key === today);
+  const vs = !back && rep && t && rep.prev.elapsed > 0 ? `${pct(t.elapsed, rep.prev.elapsed)} vs last` : "";
+  // Five segments at most: the tail folds into one grey "N more".
+  const shown = rep ? (rep.projects.length > TOP && !more ? rep.projects.slice(0, TOP - 1) : rep.projects) : [];
+  const rest = rep ? rep.projects.slice(shown.length) : [];
+  const restT = rest.reduce((n, p) => n + p.elapsed, 0);
+  const cards: [string | number, string][] = t ? (back
+    ? [[t.turns, "turns"], [dur(t.elapsed), "agent time"], [t.sessions, "sessions"], [days.filter((d) => d.turns).length, "days active"]]
+    : [[td?.turns ?? 0, "turns today"], [dur(td?.elapsed ?? 0), "agent time today"], [t.turns, "turns this week"], [dur(t.elapsed), `this week${vs ? ` · ${vs}` : ""}`]]) : [];
 
   const copy = () => {
     if (!rep) return;
@@ -86,77 +84,52 @@ export function UsagePanel({ onOpenProject, win }: { onOpenProject: (rel: string
       .catch(() => notify("error", "Couldn't reach the clipboard."));
   };
 
-  const hero = <UsageRing win={win} range={range} back={back > 0} onBack={(n) => setBack(n)} elapsed={t ? t.elapsed : null} turns={t?.turns ?? 0} sessions={t?.sessions ?? 0}
-    pick={pick} onPick={setPick}
-    days={days} todayIdx={days.length ? todayIndex(today, days[0].key) : -1} />;
-  const week = () => {
+  const body = () => {
     if (stale) return <div className="us-note">the bridge needs a restart before it can answer this</div>;
     if (!rep || !t) return <div className="us-note">reading…</div>;
-    if (!rep.projects.length) return <div className="us-note">nothing ran {back ? "last" : "this"} week</div>;
     return (
-      <div className="us-cap">
-        {rep.prev.turns > 0 && <div className="us-sub">vs the week before: {rep.prev.elapsed > 0 && <><b>{pct(t.elapsed, rep.prev.elapsed)}</b> time · </>}<b>{pct(t.turns, rep.prev.turns)}</b> turns</div>}
-        <div className="us-today">
-          <CalendarDays size={12} strokeWidth={2} />
-          {back ? <span><b>{t.turns}</b> turns · <b>{t.sessions}</b> sessions</span>
-            : <span>today <b>{days.find((d) => d.key === today)?.turns ?? 0}</b> turns · <b>{dur(days.find((d) => d.key === today)?.elapsed ?? 0)}</b> agent time</span>}
-        </div>
-      </div>
+      <>
+        <WeekGrid hours={rep.hours} back={back} />
+        <div className="us-cards">{cards.map(([n, l]) => <div key={l}><b>{n}</b><small>{l}</small></div>)}</div>
+        {rep.projects.length > 0 ? (
+          <>
+            <div className="us-lbl us-went">WHERE IT WENT</div>
+            <div className="us-stack">
+              {shown.map((p) => <i key={p.project} title={projectName(p.project) || "No project"} style={{ flex: p.elapsed, background: projectTint(p.project).color }} />)}
+              {restT > 0 && <i title={`${rest.length} more`} style={{ flex: restT, background: "var(--txl)" }} />}
+            </div>
+            <div className="us-lg">
+              {shown.map((p) => {
+                const root = p.project.replace(/\/+$/, "") === "";
+                return (
+                  <button key={p.project} type="button" disabled={root} title={p.project} onClick={() => onOpenProject(p.project)}>
+                    <i style={{ background: projectTint(p.project).color }} /><span>{projectName(p.project) || "No project"}</span><b>{dur(p.elapsed)}</b>
+                  </button>
+                );
+              })}
+              {rest.length > 0 && <button type="button" onClick={() => setMore(true)}><i style={{ background: "var(--txl)" }} /><span>{rest.length} more</span><b>{dur(restT)}</b></button>}
+            </div>
+          </>
+        ) : <div className="us-note">nothing ran {back ? "last" : "this"} week</div>}
+      </>
     );
   };
 
+  const seg = (
+    <>
+    {rep && rep.projects.length > 0 && <button className="gp-ib" title="copy the week as a timesheet (markdown)" onClick={copy}><Copy size={13} /></button>}
+    <span className="us-seg">
+      <button type="button" aria-pressed={back === 0} onClick={() => setBack(0)}>This</button>
+      <button type="button" aria-pressed={back > 0} onClick={() => setBack(1)}>Last</button>
+    </span>
+    </>
+  );
+
   return (
     <div className="panel gp us" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div className="gp-head">
-        <span className="gp-title">USAGE</span>
-      </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
-      {hero}
+      <TabKick name="USAGE" tools={seg} />
       <div className="mscroll" style={{ flex: 1, minHeight: 0 }}>
-        <Fold title="Week" closed={wkClosed} onToggle={() => setWkClosed((v) => !v)}>
-          <div className="gp-rd">{week()}</div>
-        </Fold>
-
-        {rep && rep.projects.length > 0 && (
-          <Fold title="Projects" em={rep.projects.length} closed={pjClosed} onToggle={() => setPjClosed((v) => !v)}
-            acts={<button className="gp-ib" title="copy the week as a timesheet (markdown)" onClick={copy}><Copy size={13} /></button>}>
-            <div className="us-plist">
-              {(all ? rep.projects : rep.projects.slice(0, TOP)).map((p) => {
-                const root = p.project.replace(/\/+$/, "") === "";
-                return (
-                  <div key={p.project} className="us-prow" role={root ? undefined : "button"} tabIndex={root ? undefined : 0}
-                    title={`${p.project}${p.models.length ? ` — ${p.models.join(", ")}` : ""}`}
-                    onClick={root ? undefined : () => onOpenProject(p.project)}
-                    onKeyDown={root ? undefined : (e) => { if (e.key === "Enter") onOpenProject(p.project); }}>
-                    <ProjectTile project={p.project} />
-                    <span className="us-pn">{projectName(p.project) || "No project"}</span>
-                    <span className="us-pt">{dur(p.elapsed)}</span>
-                    <span className="us-pm">
-                      {plural(p.sessions, "session")} · {plural(p.turns, "turn")}
-                      {p.worktrees?.length ? ` · ${plural(p.worktrees.length, "worktree")}` : ""}
-                    </span>
-                    <span className="us-ps">{share(p.elapsed)}%</span>
-                    <i className="us-pbar"><i style={{ width: `${(100 * p.elapsed) / top}%`, ["--pc" as string]: projectTint(p.project).color }} /></i>
-                    {!!p.worktrees?.length && (
-                      <div className="us-wt">
-                        {p.worktrees.map((w) => (
-                          <div key={w.project} title={w.project}>
-                            <GitBranch size={11} strokeWidth={2} /><span>{w.branch}</span><em>{dur(w.elapsed)}</em>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {rep.projects.length > TOP && (
-                <button type="button" className="us-more" onClick={() => setAll((v) => !v)}>
-                  {all ? "show less ↑" : `${rep.projects.length - TOP} more ↓`}
-                </button>
-              )}
-            </div>
-          </Fold>
-        )}
+        {body()}
 
         {stops.length > 0 && (
           <Fold title="Stopped turns" em={stops.reduce((n, f) => n + f.n, 0)} closed={stClosed} onToggle={() => setStClosed((v) => !v)}>

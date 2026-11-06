@@ -1,23 +1,21 @@
 import { useState, type ReactNode } from "react";
-import { CornerUpLeft, Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Laptop, Layers, MessageSquare, Send, Users, X } from "lucide-react";
-import type { Received, Receiving, Share, TeamOverview, Teammate } from "../../api";
+import { CornerUpLeft, Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Layers, MessageSquare, RefreshCw, Send, Users, X } from "lucide-react";
+import type { Received, Receiving, TeamOverview, Teammate } from "../../api";
 import { initials } from "../../lib/rivendelltasks";
-import { useClock12 } from "../../lib/surfaces";
-import { KIND_LABEL, byPresence, foldSent, personTint, presence, relationLine, seen, sentAgo, sentBefore, sentStatus, shareFacts, type SentTone } from "../../lib/team";
+import { hhmm, useClock12 } from "../../lib/surfaces";
+import { room } from "../../lib/room";
+import { teamFeed, type FeedItem } from "../../lib/teamfeed";
+import { KIND_LABEL, byPresence, personTint, presence, relationLine, sentBefore, shareFacts } from "../../lib/team";
 import { ImageLightbox } from "../ImageLightbox";
-import { TeamRoom } from "./TeamRoom";
+import { TabKick } from "./TabKick";
+import { SendBar } from "./SendBar";
 import { Bar } from "./MoveDock";
 
 const UI = "var(--ui-font, inherit)";
 const MONO = "var(--mono)";
 const mix = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
-const TONE: Record<SentTone, string> = { ok: "var(--ok)", purple: "var(--purple)", warn: "var(--warn)", dim: "var(--txl)", err: "var(--err)" };
 const KIND_ICON = { session: MessageSquare, picture: ImageIcon, file: FileIcon } as const;
-const SEEN_ROWS = 3;       // SEEN shows this many, the rest behind "N more"
-const toolBtn = {
-  appearance: "none", cursor: "pointer", background: "transparent", color: "var(--txm)",
-  border: `1px solid ${mix("var(--acc)", 20)}`, fontFamily: "inherit", fontSize: "var(--t95)", lineHeight: 1.3, padding: "2px 6px",
-} as const;
+const EARLIER_ROWS = 6;    // EARLIER shows this many, the rest behind "N more"
 
 /** A teammate's picture from Rivendell (their photo or a Middle-earth one), else
  *  their initials in their colour, with a presence dot when it is known. A
@@ -92,36 +90,12 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
 }) {
   const h12 = useClock12();
   const now = Date.now() / 1000;
-  const [hov, setHov] = useState<string | null>(null);
+  const [hov, setHov] = useState<string | null>(null);   // the EARLIER line the pointer or focus is on
   const [zoom, setZoom] = useState<string | null>(null);
   const [allSeen, setAllSeen] = useState(false);
   const roster = [...(data?.roster ?? [])].sort(byPresence);
-  const on = roster.filter((t) => t.online);
-  const away = roster.filter((t) => !t.online);
   const face = (id: string) => roster.find((t) => t.id === id)?.avatarUrl;
-  const fresh = (data?.inbox ?? []).filter((r) => !seen(r));
-  const old = (data?.inbox ?? []).filter(seen);
-
-  const mate = (t: Teammate) => (
-    <div key={t.id} onMouseEnter={() => setHov(t.id)} onMouseLeave={() => setHov(null)} style={{
-      display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", margin: "0 6px", borderRadius: 8,
-      background: hov === t.id ? mix("var(--acc)", 7) : "transparent",
-    }}>
-      <Avatar id={t.id} name={t.name} src={t.avatarUrl} size={28} state={t.online ? "on" : "away"} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontFamily: UI, fontSize: "var(--t12)", fontWeight: 500, color: t.online ? "var(--txh)" : "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{t.name}</div>
-        <div style={{ marginTop: 2, fontFamily: MONO, fontSize: "var(--t9)", color: t.online ? "var(--ok)" : "var(--txl)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{presence(t, now, h12)}</div>
-      </div>
-      {hov === t.id && sessionTitle ? (
-        <Btn icon={<Send size={11} strokeWidth={2} />} label="SEND" pri onClick={() => onSendTo(t)} title={`Send “${sessionTitle}” to ${t.name}`} />
-      ) : t.device && (
-        <span title={`${t.name} shares ${t.device.name} with you for device runs`} style={{
-          flex: "none", display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 6px", borderRadius: 5,
-          border: "1px solid var(--line2)", fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 0.5, color: t.online ? "var(--txd)" : "var(--txl)",
-        }}><Laptop size={10} strokeWidth={2} />MAC</span>
-      )}
-    </div>
-  );
+  const feed = data ? teamFeed(data, now) : { today: [], earlier: [] };
 
   const card = (r: Received) => {
     const f = shareFacts(r.kind, r.meta);
@@ -130,15 +104,15 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     const rel = relationLine(r, now, r.relation === "back" ? sentBefore(data?.outbox ?? [], thread, r.from.id)?.last : null, h12);
     return (
       <div key={r.id} style={{
-        margin: "0 10px 8px", padding: "10px 10px 10px 11px", borderRadius: 10,
-        border: `1px solid ${mix("var(--acc)", 30)}`, background: "color-mix(in srgb, var(--acc) 5%, var(--panel2))",
+        margin: "0 12px 8px", padding: "11px", borderRadius: 13,
+        border: `1px solid ${mix("var(--acc)", 38)}`, background: "color-mix(in srgb, var(--acc) 5%, var(--panel2))",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <Avatar id={r.from.id || r.from.name} name={r.from.name} src={face(r.from.id)} size={22} />
-          <span style={{ fontFamily: UI, fontSize: "var(--t115)", fontWeight: 500, color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.from.name}</span>
-          <span style={{ fontFamily: MONO, fontSize: "var(--t9)", color: "var(--txl)", whiteSpace: "nowrap" }}>{sentAgo(r.sent, now) || ""}</span>
+          <span style={{ minWidth: 0, fontFamily: UI, fontSize: "var(--t115)", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <b style={{ color: "var(--txh)", fontWeight: 600 }}>{r.from.name}</b> sent you{r.at ? ` · ${stamp(r.at)}` : ""}
+          </span>
           <span style={{ flex: 1 }} />
-          <i title="new" style={{ flex: "none", width: 7, height: 7, borderRadius: "50%", background: "var(--acc)", boxShadow: `0 0 8px ${mix("var(--acc)", 60)}` }} />
           <button type="button" title="Dismiss — it leaves your list; nothing ran" onClick={() => onDismiss(r)} style={{
             appearance: "none", cursor: "pointer", display: "grid", placeItems: "center", width: 22, height: 22, flex: "none", border: 0, borderRadius: 6,
             background: "transparent", color: "var(--txl)", padding: 0,
@@ -199,19 +173,6 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     );
   };
 
-  const sent = (s: Share) => {
-    const st = sentStatus(s, now);
-    return (
-      <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", minWidth: 0 }}
-        title={`${s.title} → ${s.to.name}${s.queued ? (s.error ? ` · not sent: ${s.error}` : " · goes when its running turn ends") : ""}`}>
-        <span style={{ flex: "none", color: "var(--txl)", display: "flex" }}><Send size={11} strokeWidth={2} /></span>
-        <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: UI, fontSize: "var(--t11)", color: "var(--txm)" }}>{s.title}</span>
-        <Avatar id={s.to.id} name={s.to.name} src={face(s.to.id)} size={16} />
-        <span style={{ flex: "none", minWidth: 72, textAlign: "right", fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 0.8, color: TONE[st.tone] }}>{st.text}</span>
-      </div>
-    );
-  };
-
   /** A SEEN row opens what it was again: the session read only, the picture large, the file downloaded. */
   const reopen = (r: Received) => {
     if (r.kind === "picture" && r.url) setZoom(r.url);
@@ -219,47 +180,44 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     onOpen(r);
   };
 
-  // One quiet line, as YOU SENT's are. Hovered or focused, its stamp gives way to
-  // CONTINUE HERE and remove (dismiss: your copy goes).
-  const seenRow = (r: Received) => {
-    const Icon = KIND_ICON[r.kind];
-    const key = `seen:${r.id}`;
-    const busy = step?.id === r.id ? step.text : null;
-    const ago = sentAgo(r.sent, now);
+  const stamp = (at: number) => !at ? "" : new Date(at * 1000).toDateString() === new Date(now * 1000).toDateString()
+    ? hhmm(at, h12) : new Date(at * 1000).toLocaleDateString([], { month: "short", day: "numeric" });
+
+  // One line per event; the verb or title is the line's own words, `who` leads in bold. A line
+  // from the inbox (opened or continued) keeps its old actions: click reopens, hover offers
+  // CONTINUE HERE and remove (your copy goes).
+  const line = (it: Extract<FeedItem, { kind: "line" }>) => {
+    const r = it.r, key = it.id;
+    const Icon = it.icon === "send" ? Send : MessageSquare;
+    const busy = r && step?.id === r.id ? step.text : null;
+    const rest = it.text.startsWith(it.who) ? it.text.slice(it.who.length) : it.text;
+    const text = <><b>{it.who}</b>{rest}</>;
+    const col = it.tone === "ok" ? "var(--ok)" : it.tone === "warn" ? "var(--warn)" : it.tone === "err" ? "var(--err)" : "var(--txl)";
     return (
-      <div key={r.id} onClick={() => reopen(r)} onMouseEnter={() => setHov(key)} onMouseLeave={() => setHov(null)}
-        onFocus={() => setHov(key)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHov(null); }}
-        title={`${r.title} · from ${r.from.name}${ago ? ` · sent ${ago === "now" ? "just now" : `${ago} ago`}` : ""}`}
-        style={{ display: "flex", alignItems: "center", gap: 8, padding: 6, margin: "0 6px", minWidth: 0, borderRadius: 8, cursor: "pointer",
-                 background: hov === key ? mix("var(--acc)", 7) : "transparent" }}>
-        <span style={{ flex: "none", color: "var(--txl)", display: "flex" }}><Icon size={11} strokeWidth={2} /></span>
-        <button type="button" style={{
-          flex: 1, minWidth: 0, appearance: "none", border: 0, padding: 0, background: "transparent", cursor: "pointer", textAlign: "left",
-          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", fontFamily: UI, fontSize: "var(--t11)", color: hov === key ? "var(--txh)" : "var(--txm)",
-        }}>{r.title}</button>
-        {(r.version ?? 1) > 1 && <Pill c="var(--txl)">V{r.version}</Pill>}
-        <Avatar id={r.from.id || r.from.name} name={r.from.name} src={face(r.from.id)} size={16} />
-        {hov === key && !busy ? (
-          <span style={{ flex: "none", minWidth: 72, display: "flex", justifyContent: "flex-end", gap: 2 }}>
+      <div key={key} className="tf-line" data-act={r ? "" : undefined} title={`${it.text}${it.tip ? ` · ${it.tip}` : ""} · ${stamp(it.at)}`}
+        onClick={r ? () => reopen(r) : undefined} onMouseEnter={() => setHov(key)} onMouseLeave={() => setHov(null)}
+        onFocus={() => setHov(key)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHov(null); }}>
+        <span className="tf-ic"><Icon size={13} strokeWidth={2} /></span>
+        {r ? <button type="button" className="tf-tx tf-btn">{text}</button> : <span className="tf-tx">{text}</span>}
+        {r && hov === key && !busy ? (
+          <span className="tf-r" style={{ display: "flex", gap: 2 }}>
             {r.yours
               ? <RowBtn label={`Continue in yours: “${r.yours.title}”`} color="var(--acc)" onClick={() => onContinueYours(r)}><CornerUpLeft size={12} strokeWidth={2} /></RowBtn>
               : <RowBtn label="Continue here" color="var(--acc)" onClick={() => onContinue(r)}><Forward size={12} strokeWidth={2} /></RowBtn>}
             <RowBtn label="Remove: your copy goes" color="var(--txl)" onClick={() => onDismiss(r)}><X size={12} strokeWidth={2} /></RowBtn>
           </span>
         ) : (
-          <span style={{ flex: "none", minWidth: 72, textAlign: "right", fontFamily: MONO, fontSize: "var(--t8)", letterSpacing: 0.8,
-                         color: busy ? "var(--txm)" : r.continued ? "var(--purple)" : "var(--ok)" }}>
-            {busy ?? (r.continued ? "CONTINUED" : "OPENED")}
-          </span>
+          <span className="tf-r" style={{ color: it.status ? col : "var(--txl)" }}>{busy ?? it.status ?? stamp(it.at)}</span>
         )}
       </div>
     );
   };
+  const feedRow = (it: FeedItem) => it.kind === "share" ? card(it.r) : line(it);
 
   /** A share still arriving (bridge/team.py receiving): its bytes, then its turns filed. The tab
    *  looks again each second while one is here (App), so the bar moves as it comes. */
   const incoming = (r: Receiving) => (
-    <div key={r.id} title={`${r.title} · from ${r.from}`} style={{ margin: "0 10px 8px", padding: "9px 10px 10px 11px", borderRadius: 10,
+    <div key={r.id} title={`${r.title} · from ${r.from}`} style={{ margin: "0 12px 8px", padding: "9px 10px 10px 11px", borderRadius: 13,
       border: `1px solid ${mix("var(--purple)", 30)}`, background: "color-mix(in srgb, var(--purple) 4%, var(--panel2))" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{ flex: "none", color: "var(--purple)", display: "flex" }}><Download size={11} strokeWidth={2} /></span>
@@ -285,34 +243,15 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     return (
       <>
         {(data.receiving?.length ?? 0) > 0 && <><Sect label="COMING IN" right={data.receiving!.length} top={10} />{data.receiving!.map(incoming)}</>}
-        {fresh.length > 0 && <><Sect label="SENT TO YOU" right={fresh.length} top={data.receiving?.length ? 12 : 10} />{fresh.map(card)}</>}
-        {data.error ? (
-          <Empty title="No roster right now" text={data.error} />
-        ) : (
+        {data.error && <Empty title="No roster right now" text={data.error} />}
+        {!data.error && !roster.length && !feed.today.length && !feed.earlier.length && <Empty title="No teammates yet" text="Everyone on your Rivendell shows here once they're added to it." />}
+        {feed.today.length > 0 && <><Sect label="TODAY" top={10} />{feed.today.map(feedRow)}</>}
+        {feed.earlier.length > 0 && (
           <>
-            <Sect label="ON NOW" right={on.length} top={fresh.length ? 12 : 10} />
-            {on.length ? on.map(mate) : (
-              <>
-                <div style={{ padding: "4px 12px 2px", fontFamily: UI, fontSize: "var(--t115)", color: "var(--txm)" }}>Nobody else is on right now.</div>
-                <div style={{ padding: "3px 12px 12px", fontFamily: UI, fontSize: "var(--t105)", lineHeight: 1.45, color: "var(--txl)", maxWidth: 262 }}>
-                  A session you send now waits in Rivendell, and reaches them the moment their Mystical comes back.
-                </div>
-              </>
-            )}
-            {away.length > 0 && <><Sect label="AWAY" right={away.length} />{away.map(mate)}</>}
-            {data.outbox.length > 0 && <><Sect label="YOU SENT" top={14} />{foldSent(data.outbox).slice(0, 3).map(sent)}</>}
-            {!roster.length && <Empty title="No teammates yet" text="Everyone on your Rivendell shows here once they're added to it." />}
-          </>
-        )}
-        {old.length > 0 && (
-          <>
-            <Sect label="SEEN" right={old.length} top={16} />
-            {(allSeen ? old : old.slice(0, SEEN_ROWS)).map(seenRow)}
-            {old.length > SEEN_ROWS && (
-              <button type="button" onClick={() => setAllSeen((v) => !v)} style={{
-                display: "block", width: "100%", textAlign: "left", padding: "7px 12px", border: 0, background: "transparent", cursor: "pointer",
-                fontFamily: "inherit", fontSize: "var(--t95)", letterSpacing: ".1em", color: "var(--txl)",
-              }}>{allSeen ? "show less ↑" : `${old.length - SEEN_ROWS} more ↓`}</button>
+            <Sect label="EARLIER" top={14} />
+            {(allSeen ? feed.earlier : feed.earlier.slice(0, EARLIER_ROWS)).map(feedRow)}
+            {feed.earlier.length > EARLIER_ROWS && (
+              <button type="button" onClick={() => setAllSeen((v) => !v)} className="tf-fold">{allSeen ? "show less ↑" : `${feed.earlier.length - EARLIER_ROWS} more ↓`}</button>
             )}
           </>
         )}
@@ -320,15 +259,31 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     );
   };
 
+  const r = room(data && !data.error ? roster : [], now, h12);
+  const first = (n: string) => n.trim().split(/\s+/)[0] || n;
+  const others = roster.filter((t) => t.id !== r.lead?.id && !t.online).slice(0, 2).map((t) => {
+    const at = t.lastSeenAt ? Date.parse(t.lastSeenAt) / 1000 : NaN;
+    return Number.isNaN(at) ? null : `${first(t.name)} ${stamp(at)}`;
+  }).filter(Boolean);
   return (
-    <div className="panel" style={{ border: `1px solid ${mix("var(--acc)", 16)}`, background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", height: 36, boxSizing: "border-box", flex: "none" }}>
-        <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>TEAM</span>
-        <button style={toolBtn} title="refresh" onClick={onRefresh}>⟳</button>
-      </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
-      <TeamRoom data={data} fail={fail} sessionTitle={sessionTitle} onSendTo={onSendTo} />
+    <div className="panel gp tf" style={{ border: `1px solid ${mix("var(--acc)", 16)}`, background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+      <TabKick name="TEAM" tools={<button className="gp-ib" title="refresh" aria-label="refresh" onClick={onRefresh}><RefreshCw size={14} /></button>} />
+      {data && !data.error && roster.length > 0 && (
+        <div className="tf-pres">
+          {r.shown.map((t) => (
+            <span key={t.id} className={`tf-face${t.online ? " on" : ""}`} title={`${t.name} · ${presence(t, now, h12)}${t.device ? ` · shares ${t.device.name} (Mac)` : ""}`}>
+              <Avatar id={t.id} name={t.name} src={t.avatarUrl} size={30} />
+            </span>
+          ))}
+          {r.more > 0 && <span className="tf-face tf-more">+{r.more}</span>}
+          <span className="tf-t">
+            <b>{r.lead ? `${first(r.lead.name)} is on now` : "Nobody is on right now"}</b>
+            <small>{others.join(" · ") || (r.lead ? "" : "A session you send now waits for them")}</small>
+          </span>
+        </div>
+      )}
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "4px 0 10px" }}>{body()}</div>
+      {sessionTitle && roster.length > 0 && <SendBar roster={roster} sessionTitle={sessionTitle} onSend={onSendTo} />}
       {zoom && <ImageLightbox src={zoom} onClose={() => setZoom(null)} />}
     </div>
   );
