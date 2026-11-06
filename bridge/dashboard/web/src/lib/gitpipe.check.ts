@@ -1,5 +1,5 @@
 // Run: node bridge/dashboard/web/src/lib/gitpipe.check.ts
-import { pipe } from "./gitpipe.ts";
+import { pipe, track, type PipeSync } from "./gitpipe.ts";
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const st = (p: ReturnType<typeof pipe>, k: string) => p.stations.find((s) => s.key === k)!;
@@ -47,4 +47,37 @@ const dDiv = pipe({ kind: "diverged", ahead: 1, behind: 2 }, 3, true);
 console.assert(dDiv.action?.verb === "Commit" && dDiv.push === null, "dirty + diverged: Commit, no secondary");
 console.assert(pipe({ kind: "ahead", n: 2 }, 0, true).push === null && pipe({ kind: "synced" }, 4, true).push === null, "no secondary when clean or nothing ahead");
 console.assert(pipe({ kind: "synced" }, 0, true, false, "fork/x").say === "Everything is on fork/x", "a non-origin upstream is named");
+
+// track(): the delivery tracker's sentence, next hop, lit stop and three stops (these throw).
+const ok = (c: boolean, m: string) => { if (!c) throw new Error(`gitpipe.check: ${m}`); };
+const tr = (sync: PipeSync, changed: number, hasUp = true, unchecked = false) => {
+  const up = sync.kind === "diverged" ? sync.ahead ?? 0 : sync.kind === "ahead" || sync.kind === "publish" ? sync.n ?? 0 : 0;
+  const down = sync.kind === "diverged" ? sync.behind ?? 0 : sync.kind === "behind" ? sync.n ?? 0 : 0;
+  return track(pipe(sync, changed, hasUp, unchecked), { changed, up, down });
+};
+const vals = (t: ReturnType<typeof tr>) => t.stops.map((s) => s.value);
+const t1 = tr({ kind: "ahead", n: 12 }, 3);
+ok(t1.say === "Your work is still on this Mac" && t1.at === 0, "dirty+ahead: say, at 0");
+ok(t1.next === "next hop: commit 3 files, then publish 12 commits", `dirty+ahead: next (${t1.next})`);
+ok(same(vals(t1), ["3 files", "12 commits", "up to date"]) && same(t1.stops.map((s) => s.key), ["mac", "branch", "origin"]), "dirty+ahead: stops");
+const t2 = tr({ kind: "ahead", n: 2 }, 0);
+ok(t2.say === "Committed, not on origin yet" && t2.at === 1 && t2.next === "next hop: publish 2 commits", "clean+ahead: say, at 1, next");
+const t3 = tr({ kind: "synced" }, 0);
+ok(t3.say === "Everything is on origin" && t3.at === -1 && t3.next === "", "clean synced: all landed, no next hop");
+ok(t3.stops.every((s) => s.tone === "ok"), "clean synced: every stop settled");
+const t4 = tr({ kind: "behind", n: 3 }, 0);
+ok(t4.stops[2].value === "3 new" && t4.stops[2].tone === "warn" && t4.at === 2 && t4.next === "next hop: pull 3 commits", "behind: origin 3 new, warn, at 2");
+ok(tr({ kind: "publish", n: 2 }, 0, false).stops[2].value === "not pushed", "no upstream: origin not pushed");
+ok(tr({ kind: "synced" }, 0, true, true).stops[2].tone === "dim", "unchecked: origin dim");
+ok(tr({ kind: "ahead", n: 2 }, 4).stops[0].tone === "acc" && tr({ kind: "ahead", n: 120 }, 0).stops[1].value === "120 commits", "real counts, not the 99+ cap");
+// dirty + behind: sentence, lit stop, next line and buttons agree; Commit stays reachable behind Pull.
+const tdb = tr({ kind: "behind", n: 3 }, 2);
+ok(tdb.at === 2 && tdb.say === "3 new on origin, your 2 files still here", `dirty+behind: say (${tdb.say})`);
+ok(tdb.next === "next hop: pull 3 commits, then commit 2 files" && same(tdb.then, { verb: "Commit", n: 2 }), "dirty+behind: next, then");
+ok(tr({ kind: "behind", n: 3 }, 0).then === null && tr({ kind: "ahead", n: 2 }, 4).then === null, "then only under a Pull with edits");
+// landed but not everywhere ok: no action, yet the dim stop is not a tick
+const tnu = tr({ kind: "publish", n: 0 }, 0, false);
+ok(tnu.at === -1 && tnu.stops[2].value === "not pushed" && tnu.stops[2].tone === "dim" && tnu.stops[1].tone === "ok", "no upstream, nothing to publish: origin dim");
+const tun = tr({ kind: "synced" }, 0, true, true);
+ok(tun.at === -1 && tun.stops[2].value === "not checked" && tun.stops[2].tone === "dim", "synced, never fetched: origin dim");
 console.log("gitpipe.check ok");

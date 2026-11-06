@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Route, Users,
+  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, ListOrdered, Route, Users,
 } from "lucide-react";
 import {
   api,
@@ -88,6 +88,8 @@ import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, LinuxClose, LinuxRailHead, RightCap, Strip } from "./components/hud/Strip";
+import { HomePanel } from "./components/hud/HomePanel";
+import { skyFor } from "./lib/home";
 import { PaletteButton } from "./components/hud/PaletteButton";
 import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
@@ -95,7 +97,6 @@ import { LiveButton } from "./components/hud/LiveButton";
 import { RivendellTasks } from "./components/hud/RivendellTasks";
 import { TeamPanel } from "./components/hud/TeamPanel";
 import { UsagePanel } from "./components/hud/UsagePanel";
-import { ringWindow } from "./lib/usagering";
 import { stepRow, TurnsPanel } from "./components/hud/TurnsPanel";
 import { FlowPanel } from "./components/hud/FlowPanel";
 import { TeamSendSheet, type SendWhat } from "./components/TeamSendSheet";
@@ -521,8 +522,7 @@ export function App() {
 
   // Ambient widgets.
   const host = useHostVitals();
-  const { weather, setCity, setUnit } = useWeather();
-  const [wxSettings, setWxSettings] = useState(0); // nonce — opens the weather settings editor from the context menu
+  const { weather, setPlace, setUnit } = useWeather();
   // Server-side per-session prompt queue: lets a new prompt be queued while a
   // turn is in flight (runs after it) instead of forcing a STOP first.
   const queue = useSessionQueue(sessionId);
@@ -663,8 +663,8 @@ export function App() {
 
   // A changed file opens on the GIT tab (diff view) — an editor buffer hides
   // which lines actually changed. Clean files still open in the editor.
-  function openFileFromPanel(path: string, changed: boolean) {
-    if (sessionProject) openAnalyze(sessionProject, { path, branch: sessionBranch }, changed ? "changes" : undefined);
+  function openFileFromPanel(path: string, changed: boolean, line?: number) {
+    if (sessionProject) openAnalyze(sessionProject, { path, branch: sessionBranch, line }, changed ? "changes" : undefined);
   }
 
   // A session opened from outside the sidebar (a notification, ⌘K, NEXT UP,
@@ -2392,12 +2392,20 @@ export function App() {
   // (chipWindow), printed as a number only once it runs low.
   const usageWin = chipWindow(loginWindows(spender));
   const waitsOnYou = turns.some((t) => t.pending.length > 0);
+  // HOME's sky follows the hour; the cap wears its top while HOME is open.
+  const [almanacAsk, setAlmanacAsk] = useState(0); // HOME's big clock bumps it: the cap's Almanac opens
+  const homeSky = skyFor(parseInt(tele.clock.slice(0, 2), 10) || 0);
   const rightTabs: PanelTab[] = [
     {
-      id: "turns", label: "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true, group: "session",
+      id: "home", label: "Home", icon: <House {...RAIL} />, ownScroll: true, group: "home",
+      hint: "the time, the sky and what shipped today",
+      render: () => <HomePanel clock={tele.clock} weather={weather} sky={homeSky} onClock={() => setAlmanacAsk((n) => n + 1)} onOpen={(id) => { openSession(id); toChat(); }} />,
+    },
+    {
+      id: "turns", short: "TURNS", label: "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true, group: "session",
       ask: waitsOnYou, hint: waitsOnYou ? "one waits on you" : undefined,
       render: () => (
-        <TurnsPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
+        <TurnsPanel key={sessionId ?? ""} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
           onJump={(id, key) => { toChat(); void jumpTo(id, key); }} onLatest={() => { toChat(); jumpToBottom(); }}
           onCopy={(text) => {
             try { void navigator.clipboard?.writeText(text); notify("info", "Prompt copied."); }
@@ -2413,12 +2421,12 @@ export function App() {
     },
     // Hidden while SKILL PATHS is off — no path is being set.
     ...(ai.router ? [{
-      id: "flow", label: "Flow", icon: <Route {...RAIL} />, ownScroll: true, group: "session",
+      id: "flow", short: "FLOW", label: "Flow", icon: <Route {...RAIL} />, ownScroll: true, group: "session",
       hint: "the path this session is on",
       render: () => <FlowPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} ctxTokens={contextTokens} />,
     }] : []),
     {
-      id: "files", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree", group: "session",
+      id: "files", short: "FILES", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree", group: "session",
       hint: filesEdits.edited.size ? `${filesEdits.edited.size} edited this session` : undefined,
       render: () => (
         <FilesPanel
@@ -2428,6 +2436,7 @@ export function App() {
             ? (file) => setSendWhat({ what: { kind: "file", project: sessionProject, branch: sessionBranch || undefined, file } })
             : undefined}
           edited={filesEdits.edited} editing={filesEdits.now}
+          turns={turns} cwd={selected?.work_cwd || selected?.cwd}
           onAddToPrompt={(path) => {
             // After whatever you were writing, as TURNS' reuse does, but inline.
             setDraft(draft.trim() ? `${draft.replace(/\s+$/, "")} \`${path}\` ` : `\`${path}\` `);
@@ -2438,11 +2447,11 @@ export function App() {
       ),
     },
     {
-      id: "git", label: "Git", group: "session",
+      id: "git", short: "GIT", label: "Git", group: "session",
       hint: [dirtyFiles ? `${dirtyFiles} changed` : "", gitSync ?? "", treeFetch?.busy ? "checking origin" : ""]
         .filter(Boolean).join(" · ") || undefined,
       icon: <GitBranch {...RAIL} />, ownScroll: true, scope: "worktree",
-      badge: dirtyFiles ? railCount(dirtyFiles) : gitSync, busy: !!treeFetch?.busy,
+      badge: dirtyFiles ? dirtyFiles > 9 ? railCount(dirtyFiles) : `${dirtyFiles} EDITS` : gitSync, busy: !!treeFetch?.busy,
       render: () => (
         <GitPanel
           project={sessionProject} branch={sessionBranch} git={sessionGit} autoFetch={treeFetch}
@@ -2457,7 +2466,7 @@ export function App() {
     },
     // Every branch and its next step (lib/branchrows); ⋯ and right-click hold the rest.
     {
-      id: "branches", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project", group: "project",
+      id: "branches", short: "BRANCH", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project", group: "project",
       render: () => (
         <BranchesPanel project={sessionProject} branch={sessionBranch}
           sessions={sessions} status={statusMap} nonce={gitNonce}
@@ -2473,7 +2482,7 @@ export function App() {
     },
     // Hidden while LESSONS is off — nothing is being written.
     ...(ai.learn ? [{
-      id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true, group: "project",
+      id: "learn", short: "LEARN", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true, group: "project",
       badge: unreadLessons ? railCount(unreadLessons) : null, hint: unreadLessons ? `${unreadLessons} unread` : undefined,
       render: () => (
         <LearnPanel project={sessionProject} read={lessonsRead}
@@ -2481,7 +2490,7 @@ export function App() {
       ),
     }] : []),
     ...(rivendellOn ? [{
-      id: "rivendell", label: "Rivendell tasks", hint: rivendellDown ? "link broken" : undefined, group: "project",
+      id: "rivendell", short: "TASKS", label: "Rivendell tasks", hint: rivendellDown ? "link broken" : undefined, group: "project",
       icon: <RivendellIcon {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
       render: () => (
         <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
@@ -2489,8 +2498,8 @@ export function App() {
       ),
     }] : []),
     ...(rivendellOn ? [{
-      id: "team", label: "Team", hint: teamNew ? `${teamNew} new` : undefined, group: "you",
-      icon: <Users {...RAIL} />, ownScroll: true, badge: teamNew ? railCount(teamNew) : null,
+      id: "team", short: "TEAM", label: "Team", hint: teamNew ? `${teamNew} new` : undefined, group: "you",
+      icon: <Users {...RAIL} />, ownScroll: true, badge: teamNew ? teamNew > 9 ? railCount(teamNew) : `${teamNew} NEW` : null,
       render: () => (
         <TeamPanel data={team} fail={teamFail}
           sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}
@@ -2503,12 +2512,12 @@ export function App() {
       ),
     }] : []),
     {
-      id: "usage", label: "Usage", group: "you", ownScroll: true,
+      id: "usage", short: "USAGE", label: "Usage", group: "you", ownScroll: true,
       icon: usageWin ? <RailRing left={usageWin.left} /> : <Gauge {...RAIL} />,
       badge: usageWin && usageWin.left < 25 ? `${usageWin.left}%` : null, low: true,
       hint: usageWin ? `${usageWin.left}% of the ${usageWin.tag === "WK" ? "week" : "5-hour window"} left · refills in ${fmtReset(usageWin.resets_at)}` : undefined,
       render: () => (
-        <UsagePanel onOpenProject={(rel) => openAnalyze(rel)} win={ringWindow(loginWindows(spender), Date.now())} />
+        <UsagePanel onOpenProject={(rel) => openAnalyze(rel)} />
       ),
     },
   ];
@@ -2799,15 +2808,6 @@ export function App() {
       items.push({ icon: "⊙", label: "Copy session title", onClick: () => copy(selected?.title || "session") });
       items.push({ icon: "↥", label: "Scroll to top", onClick: () => { if (scrollRef.current) scrollRef.current.scrollTop = 0; } });
       items.push({ divider: true });
-    } else if (ctxMenu.type === "weather") {
-      // The clock's menu — a plain click on the clock opens it too — so it
-      // carries what used to sit around the clock in the strip: usage (the
-      // rail's USAGE tab), the clock & weather settings.
-      const other = weather.unit === "F" ? "C" : "F";
-      items.push({ icon: "▤", label: "Usage", onClick: () => patchSettings({ rightTab: "usage", rightOpen: true }) });
-      items.push({ icon: "✎", label: "Clock & weather…", onClick: () => setWxSettings((n) => n + 1) });
-      items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
-      items.push({ divider: true });
     } else if (ctxMenu.type === "branch") {
       // a BRANCHES row: the panel builds its items, the same list its ⋯ opens
       items.push(...(branchMenu.items?.(ctxMenu.id) ?? []));
@@ -2865,8 +2865,7 @@ export function App() {
     // Dashboard-wide rows. When you right-clicked *something* — a card, a turn,
     // a file — these five are never the reason, so they collapse to one row and
     // stop pushing that thing's own options off the bottom. On bare surface,
-    // where there is nothing else, they are the menu — and under the clock,
-    // whose menu is the dashboard's own.
+    // where there is nothing else, they are the menu.
     const globals: CtxItem[] = [
       { icon: "⊕", label: "Command palette", hint: "⌘K", onClick: () => setPaletteOpen(true) },
       { icon: "⚙", label: "Dashboard settings", onClick: () => setSettingsOpen(true) },
@@ -2875,7 +2874,7 @@ export function App() {
         hint: "picks up code on disk; running turns resume",
         onClick: () => void restartBridge() },
     ];
-    if (ctxMenu.type === "surface" || ctxMenu.type === "weather") items.push(...globals);
+    if (ctxMenu.type === "surface") items.push(...globals);
     else items.push({ icon: "⌗", label: "Dashboard", children: globals });
     // The browser-level block (back/reload/print) is never the reason you opened
     // the menu — it goes behind one row.
@@ -2883,7 +2882,7 @@ export function App() {
       items.push({ divider: true }, { icon: "⌾", label: "Browser", children: nativeCtx.page });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai, plugins, hiddenProjects,
+  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, relocTargets, ai, plugins, hiddenProjects,
       settings.rightHidden, settings.rightOrder, railKeys]);
 
   /** Your own name for a session. */
@@ -3035,16 +3034,11 @@ export function App() {
   }
 
   const td = themeDef(settings.theme);
+  const homeOpen = settings.rightTab === "home" && rightShown;
   // One cluster, two homes: the right column's cap while the panel is open,
   // the chat header's end while it's folded to the rail (see Strip.tsx).
   const strip = (
-    <Strip
-      clock={tele.clock}
-      weather={weather}
-      onSetCity={setCity}
-      onSetUnit={setUnit}
-      openSettings={wxSettings}
-    />
+    <Strip clock={tele.clock} weather={weather} accounts={accounts} clocks={settings.clocks} hideClock={homeOpen} openAlmanac={almanacAsk} />
   );
 
   return (
@@ -3272,7 +3266,7 @@ export function App() {
                 // nothing inside slides or reflows. Only then — the strip's
                 // popovers hang past this column at rest, so it can't clip always.
                 ...(rightMoving && { gridTemplateColumns: `calc(${rightBodyW} + 48px)`, justifyContent: "end", overflow: "hidden" }) }}>
-                <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined}>
+                <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined} sky={homeOpen ? homeSky.bg : undefined}>
                   {rightShown && strip}
                 </RightCap>
                 <RightPanel
@@ -3352,6 +3346,7 @@ export function App() {
                     ? (texts, rel) => { setSettingsOpen(false); setSettingsTab(undefined); feed(texts, rel); }
                     : undefined,
                 }}
+                weather={weather} onSetUnit={setUnit} onSetPlace={setPlace}
                 onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}

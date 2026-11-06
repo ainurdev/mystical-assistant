@@ -70,7 +70,8 @@ by data the panel already holds, and its decisions are a pure function in `lib/`
   - `loc: "rio de janeiro, RJ, BR"` → city `"Rio De Janeiro"` (first comma part, title case)
 - [ ] **Step 2: Run** `node src/lib/capdate.check.ts` — expect FAIL (module missing).
 - [ ] **Step 3: Implement** `capDate`; replace the temperature button with a two-line date window inside the same
-  button (same click → clock menu; `data-ctx-type="weather"` kept), `date` at t9/800/1.4px tracking, `line2` at
+  button (same click → the Almanac, as `Strip.tsx` does since the clock-overlay branch: no clock menu, no
+  `data-ctx-type`; the pinned world clocks' `.stp-pinbox` stays between the date window and the bell), `date` at t9/800/1.4px tracking, `line2` at
   t11 `--txl`, both `white-space: nowrap; overflow: hidden; text-overflow: ellipsis`, a 1px `--line2` rule left of it.
 - [ ] **Step 4: Named rail.** Add `short` to every tab in `App.tsx`: TURNS, FILES, GIT, BRANCH, LEARN, TASKS (rivendell),
   TEAM, USAGE. In `RightPanel`, under the icon print `word` when there is one, else

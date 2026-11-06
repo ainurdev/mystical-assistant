@@ -340,7 +340,7 @@ export const THEME_TOKEN_KEYS: string[] = Array.from(
   new Set(THEME_DEFS.flatMap((t) => Object.keys(t.pal))),
 ).map((k) => `--${k}`);
 
-export const RIGHT_TABS = ["turns", "flow", "files", "git", "branches", "learn", "rivendell", "team", "usage"] as const;
+export const RIGHT_TABS = ["home", "turns", "flow", "files", "git", "branches", "learn", "rivendell", "team", "usage"] as const;
 export type RightTab = (typeof RIGHT_TABS)[number];
 
 export { INDICATORS, type Indicator } from "./indicator";
@@ -397,7 +397,12 @@ export interface HudSettings {
   // Which key sends from the composer. "enter": Enter sends, Shift+Enter is a
   // newline. "ctrl-enter": Enter is a newline, Ctrl/Cmd+Enter sends.
   sendKey: SendKey;
+  // The Almanac's world clocks (components/hud/Almanac.tsx), at most two.
+  clocks: WorldClock[];
 }
+
+/** A world clock: an IANA zone, and whether the header shows it beside the Clock too. */
+export interface WorldClock { zone: string; pin: boolean }
 
 export type ChatLayout = "default" | "compact";
 export type SendKey = "enter" | "ctrl-enter";
@@ -444,7 +449,7 @@ const DEFAULTS: HudSettings = {
   model: "opus", allModels: false, effort: "", perm: "", ponytail: "",
   push: false, pushSound: true,
   pushTone: "blip", pushVolume: 0.6, chatBg: "none",
-  layout: "default", composer: "tabs", sendKey: "enter",
+  layout: "default", composer: "tabs", sendKey: "enter", clocks: [],
 };
 
 /** The base every size in the type scale is authored against (index.css --fs). */
@@ -485,6 +490,16 @@ export function toTheme(v: unknown): ThemeKey {
   const k = typeof v === "string" ? MOVED[v] ?? v : "";
   return THEMES.includes(k as ThemeKey) ? (k as ThemeKey) : "aqua";
 }
+
+// A zone this browser can't draw would throw in every render of the header, so a
+// stored one is checked here, once.
+const knownZone = (z: string): boolean => {
+  try { new Intl.DateTimeFormat("en", { timeZone: z }); return true; } catch { return false; }
+};
+const toClocks = (v: unknown): WorldClock[] =>
+  (Array.isArray(v) ? v : [])
+    .filter((c): c is WorldClock => typeof c?.zone === "string" && knownZone(c.zone))
+    .slice(0, 2).map((c) => ({ zone: c.zone, pin: c.pin === true }));
 
 const strs = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
 
@@ -539,6 +554,7 @@ export function loadSettings(): HudSettings {
         pushVolume: clamp01(p.pushVolume, 0.6),
         chatBg: toChatBg(p.chatBg),
         sendKey: p.sendKey === "ctrl-enter" ? "ctrl-enter" : "enter",
+        clocks: toClocks(p.clocks),
         layout: urlLayout() ?? (CHAT_LAYOUTS.includes(p.layout as ChatLayout) ? (p.layout as ChatLayout) : "default"),
         composer: urlComposer() ?? (COMPOSER_STYLES.includes(p.composer as ComposerStyle) ? (p.composer as ComposerStyle) : "tabs"),
       };

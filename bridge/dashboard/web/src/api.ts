@@ -833,7 +833,13 @@ export interface Weather {
   hum: string;
   unit: "C" | "F";
   loc: string;
+  // "07:12" in the place's own time; absent from an older bridge
+  sunrise?: string | null;
+  sunset?: string | null;
+  tz?: string | null; // the place's IANA zone, the clock sunrise and sunset are on
 }
+/** A geocoder match the weather city picker offers (bridge/weather.search). */
+export interface Place { name: string; lat: number; lon: number }
 export interface Worktree {
   path: string;
   rel: string | null;
@@ -1189,30 +1195,6 @@ export interface EnrichedSession {
   model?: string | null;
   permission_mode?: string;
 }
-/** One tool's share of a session's wall clock. `union_s` counts overlapping calls
- *  once; `naive_s` just adds durations. Equal values mean the tool never ran
- *  concurrently with itself — which is what says whether parallelising is on the
- *  table. */
-export interface ToolSpend {
-  calls: number;
-  union_s: number;
-  naive_s: number;
-  avg_s: number;
-  unfinished: number; // started, never finished — the turn was killed mid-call
-}
-
-/** Where a session's time and tokens went. Dollars are deliberately absent: the
- *  CLI prices runs off API list rates while these go through a subscription. */
-export interface SessionBreakdown {
-  wall: number; // seconds across the session's turns
-  tools: Record<string, ToolSpend>;
-  thinking_s: number;
-  waiting_s: number; // AskUserQuestion — a human deciding, not the session being slow
-  model_s: number; // the remainder: generating
-  tokens: { in: number; out: number; cache_w: number; cache_r: number } | null;
-  capped: number; // turns the hang watchdog killed
-  turns: number;
-}
 export interface UsageBucket {
   percent: number;
   resets_at: string | null;
@@ -1473,6 +1455,29 @@ export interface TodayInfo {
   cost: number | null;
 }
 
+/** Something that shipped today (bridge/wins.py): a merge, a commit (or a
+ *  turn's commits folded into one), a push, a PR opened, a test run that passed. */
+export interface Win {
+  ts: number;
+  kind: "merge" | "commit" | "commits" | "push" | "pr" | "tests";
+  text: string; // the branch, the subject, the PR number, the test count, or how many commits
+  detail?: string | null; // "commits": the last one's subject
+  project: string;
+  session: string;
+  turn: string;
+  big: boolean;
+}
+
+/** HOME's spine: today since local midnight, newest win first. */
+export interface TodayWins {
+  since: number;
+  now: number;
+  wins: Win[];
+  work: { project: string; start: number; end: number }[];
+  away: { start: number; end: number }[];
+  worked: number; // wall seconds
+}
+
 /** One week, grouped per project — time and tokens, no dollars (9f612a4). */
 export interface WeekProject {
   project: string;
@@ -1496,6 +1501,7 @@ export interface WeeklyReport {
     tokens: { in: number; out: number; cache_w: number; cache_r: number } | null;
   };
   days: { day: string; turns: number; elapsed: number }[];
+  hours?: number[][]; // turns per weekday (Mon..Sun) x local hour; absent on an older bridge
   prev: { turns: number; elapsed: number; tokens: number | null };
   failures?: { code: string; label: string; n: number }[]; // failed turns by outcome, commonest first
 }
@@ -1826,8 +1832,6 @@ export const api = {
     req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +
       (opts?.tail ? `&tail=${opts.tail}` : "") +
       (opts?.before ? `&before=${opts.before}` : "")),
-  sessionBreakdown: (id: string) =>
-    req<SessionBreakdown>(`/local/sessions/${encodeURIComponent(id)}/breakdown`),
   // A rehydrated turn's attachments are server paths, not blobs — load them back
   // through the upload dir so the transcript can render (and zoom) them.
   attachmentUrl: (path: string) =>
@@ -2138,6 +2142,7 @@ export const api = {
     req<{ prefs: NoticePrefs }>("/local/notices", { method: "POST", body: { op: "prefs", patch } }),
   usage: () => req<UsageInfo>("/local/usage"),
   today: () => req<TodayInfo>("/local/today"),
+  wins: () => req<TodayWins>("/local/wins"),
   report: (back = 0) =>
     req<WeeklyReport>(`/local/report${back ? "?back=1" : ""}`),
   history: (archived = false) =>
@@ -2387,11 +2392,10 @@ export const api = {
   // --- host vitals + weather (WORKSPACE panel ambient widgets) ---
   sysinfo: () => req<HostStats>("/local/sysinfo"),
   weather: () => req<Weather>("/local/weather"),
-  setWeatherCity: (city: string) =>
-    req<Weather & { error?: string }>("/local/weather/city", {
-      method: "POST",
-      body: { city },
-    }),
+  weatherSearch: (q: string) =>
+    req<{ results?: Place[]; error?: string }>(`/local/weather/search?q=${encodeURIComponent(q)}`),
+  setWeatherPlace: (p: Place) =>
+    req<Weather & { error?: string }>("/local/weather/place", { method: "POST", body: p }),
   setWeatherUnit: (unit: string) =>
     req<Weather & { error?: string }>("/local/weather/unit", {
       method: "POST",

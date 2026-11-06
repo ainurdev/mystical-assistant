@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowUp, BrushCleaning, ChevronDown, Ellipsis, ExternalLink, GitBranch, MessageSquare, Plus, Sparkle } from "lucide-react";
+import { ArrowUp, BrushCleaning, ChevronDown, Ellipsis, ExternalLink, GitBranch, MessageSquare, Plus, RefreshCw, Sparkle } from "lucide-react";
 import { api, type SessionBrief, type SessionStatus } from "../../api";
 import { branchGroups, facts, nextStep, type Activity, type BranchPr, type BranchStatus, type ShownRow, type Step } from "../../lib/branchrows";
 import { conflictsMessage } from "../../lib/prchip";
 import { askConfirm } from "../ui/Ask";
 import type { CtxItem } from "./ContextMenu";
 import { notify } from "./Notifications";
-import { BranchTrunk } from "./BranchTrunk";
-import { trunkState } from "../../lib/trunk";
+import { TabKick } from "./TabKick";
+import { divergence } from "../../lib/divergence";
 
 /* BRANCHES — the right rail's view of the open session's repo, for working on
    every branch from one place (.mystical/design-drafts/branches-actions, A).
@@ -19,6 +19,8 @@ import { trunkState } from "../../lib/trunk";
    and clean up are git, behind a confirm when they delete anything.
    A click opens the branch's live session, else its newest; a branch with no
    session opens the menu. Hover a row for + Session.
+   The base is a card on top; each other row carries a bar centred on it, behind
+   to the left, ahead to the right (lib/divergence).
    Rows and groups: lib/branchrows. Two bridge calls: git.branch_status, then
    the PRs (prstatus.branch_prs) for a repo with anything pushed. */
 
@@ -48,8 +50,20 @@ function stepLook(s: Step, r: ShownRow): { t: string; c?: string; ai?: boolean; 
   }
 }
 
-function Row({ r, base, sess, live, busy, onOpen, onNew, onStep }: {
-  r: ShownRow; base: string; sess: SessionBrief[]; live: SessionBrief | undefined; busy: boolean;
+/** Behind (grey) left, ahead (accent) right of a centre rule; a landed branch says "merged". */
+function DBar({ r }: { r: ShownRow }) {
+  const d = divergence(r);
+  return (
+    <span className="dv-bar" aria-hidden>
+      {d.left > 0 && <><span className="bh" style={{ width: d.left }} /><em style={{ right: 59 + d.left }}>{d.behind}</em></>}
+      {d.right > 0 && <><span className="ah" style={{ width: d.right }} /><em className="a" style={{ left: 62 + d.right }}>{d.ahead}</em></>}
+      {d.merged && <em className="m">merged</em>}
+    </span>
+  );
+}
+
+function Row({ r, base, card, sess, live, busy, onOpen, onNew, onStep }: {
+  r: ShownRow; base: string; card?: boolean; sess: SessionBrief[]; live: SessionBrief | undefined; busy: boolean;
   onOpen: (s: SessionBrief) => void; onNew: (r: ShownRow) => void; onStep: (s: Step) => void;
 }) {
   const dot = r.activity === "asking" ? "var(--ask, var(--warn))" : r.activity === "working" ? "var(--ok)" : null;
@@ -60,17 +74,18 @@ function Row({ r, base, sess, live, busy, onOpen, onNew, onStep }: {
   // The menu is the app's right-click menu, opened where asked: the window listener reads data-ctx-* off the row.
   const menu = (el: HTMLElement, x: number, y: number) => el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: x, clientY: y }));
   return (
-    <div className="brow" data-here={r.here || undefined} data-ctx-type="branch" data-ctx-id={keyOf(r)} data-ctx-label={r.name || r.label}
+    <div className={card ? "brow dv-base" : "brow"} data-merged={r.landed || undefined} data-here={r.here || undefined} data-ctx-type="branch" data-ctx-id={keyOf(r)} data-ctx-label={r.name || r.label}
       onClick={(e) => { if (go) onOpen(go); else menu(e.currentTarget, e.clientX, e.clientY); }}
       title={[r.name || `detached at ${r.head}`, r.worktree, go ? `click: ${live ? "its session" : "its newest session"}` : "click: its actions"].filter(Boolean).join("\n")}>
       <div className="brow-l1">
-        {dot ? (
+        {card ? <GitBranch size={14} strokeWidth={2} aria-hidden style={{ flex: "none", color: "var(--purple)" }} /> : dot ? (
           <span className={r.activity === "working" ? "sessdot" : undefined} data-work={r.activity === "working" || undefined}
             style={{ flex: "none", width: 7, height: 7, borderRadius: "50%", background: dot, boxShadow: `0 0 6px color-mix(in srgb, ${dot} 50%, transparent)` }} />
         ) : (
           <span style={{ flex: "none", width: 7, height: 7, boxSizing: "border-box", borderRadius: "50%", border: "1.5px solid color-mix(in srgb, var(--txd) 80%, transparent)" }} />
         )}
-        <span style={{ fontFamily: MONO, fontSize: "var(--t105)", color: "var(--txb)", flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.label}</span>
+        <span style={{ fontFamily: MONO, fontSize: card ? "var(--t12)" : "var(--t105)", color: "var(--txb)", flex: card ? "0 1 auto" : 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.label}</span>
+        {card && <span className="dv-tag">base</span>}
         <span className="brow-acts">
           {/* + Session sits over the name's tail while you hover, so nothing moves */}
           <button className="rowact brow-plus" onClick={(e) => { e.stopPropagation(); onNew(r); }} aria-label="New session"
@@ -89,11 +104,15 @@ function Row({ r, base, sess, live, busy, onOpen, onNew, onStep }: {
           </button>
         </span>
       </div>
-      <div className="brow-l2">
+      <div className="brow-l2 dv-l2">
+        {!card && <DBar r={r} />}
         {live ? (
           <>
-            <MessageSquare size={12} strokeWidth={2} aria-hidden style={{ flex: "none", color: tone }} />
-            <span className="t" style={{ color: tone }}>{live.title || "fresh session"}</span>
+            <span className="t" style={{ color: tone }}>
+              {card && <MessageSquare size={12} strokeWidth={2} aria-hidden style={{ display: "inline-block", verticalAlign: -2, marginRight: 6 }} />}
+              {live.title || "fresh session"}
+            </span>
+            {/* the status never truncates: only the title gives way */}
             <span style={{ flex: "none", color: tone }}>{r.activity === "asking" ? "waits on you" : "working"}</span>
           </>
         ) : (
@@ -140,7 +159,6 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
   const [data, setData] = useState<BranchStatus | null>(null);
   const [prs, setPrs] = useState<Record<string, BranchPr>>({});
   const [err, setErr] = useState("");
-  const [hov, setHov] = useState(false);
   const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [from, setFrom] = useState("");
@@ -178,7 +196,12 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
   }, [sessions, status, project]);
 
   const base = data?.base ?? "";
-  const g = useMemo(() => branchGroups(data?.branches ?? [], base, branch ?? null, activity, prs), [data, base, branch, activity, prs]);
+  const g = useMemo(() => {
+    const all = branchGroups(data?.branches ?? [], base, branch ?? null, activity, prs);
+    // the base is the card on top, not a row: out of every list
+    const rest = (rows: ShownRow[]) => rows.filter((r) => !r.base);
+    return { ...all, baseRow: all.all.find((r) => r.base), worktrees: rest(all.worktrees), branches: rest(all.branches), merged: rest(all.merged) };
+  }, [data, base, branch, activity, prs]);
 
   // A git step: say how it went, then read the branches again.
   async function run(r: ShownRow, p: Promise<{ ok: boolean; output: string }>, done: string, what: string) {
@@ -272,8 +295,8 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
     return () => { branchMenu.items = null; };
   });
 
-  const row = (r: ShownRow) => (
-    <Row key={keyOf(r)} r={r} base={base} sess={(r.name && byBranch.get(r.name)) || []} live={r.name ? live.get(r.name) : undefined}
+  const row = (r: ShownRow, card?: boolean) => (
+    <Row key={keyOf(r)} r={r} base={base} card={card} sess={(r.name && byBranch.get(r.name)) || []} live={r.name ? live.get(r.name) : undefined}
       busy={busy === keyOf(r)} onOpen={onOpen} onNew={onNew} onStep={(s) => onStep(r, s)} />
   );
   const make = () => {
@@ -282,27 +305,19 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
     onNewBranch(n, from || base);
     setNaming(false); setName("");
   };
-  const btn: React.CSSProperties = { appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 20%, transparent)", background: "transparent", color: "var(--txm)", fontFamily: "inherit", fontSize: "var(--t95)", lineHeight: 1.3, padding: "2px 6px" };
 
   return (
     <div className="panel" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 12px", height: 36, boxSizing: "border-box", flex: "none" }}>
-        <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>BRANCHES</span>
-        {base && <span className="bhead-base swapin"><GitBranch size={10} strokeWidth={2.2} aria-hidden />{base}</span>}
-        <span style={{ display: "inline-flex", alignItems: "center", gap: 6, marginLeft: "auto" }}>
-          {project && data && data.branches.length > 0 && (
-            <button onClick={() => setNaming((v) => !v)} aria-expanded={naming} title="A new branch in its own worktree, and a session there"
-              style={{ ...btn, display: "inline-flex", alignItems: "center", gap: 5, fontSize: "var(--t9)",
-                       ...(naming ? { color: "var(--acc)", background: "color-mix(in srgb, var(--acc) 12%, transparent)" } : {}) }}>
-              <Plus size={10} strokeWidth={2.6} aria-hidden />Branch
-            </button>
-          )}
-          <button onClick={() => void load()} title="refresh" onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}
-            style={{ ...btn, background: hov ? "color-mix(in srgb, var(--acc) 10%, transparent)" : "transparent" }}>⟳</button>
-        </span>
-      </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
-      <BranchTrunk loading={!!project && !err && !data} base={base} rows={g.worktrees.map((r) => ({ name: keyOf(r), state: trunkState(r) }))} />
+      <TabKick name="BRANCHES" tools={<>
+        {project && data && data.branches.length > 0 && (
+          <button className="br-add" onClick={() => setNaming((v) => !v)} aria-expanded={naming} title="A new branch in its own worktree, and a session there">
+            <Plus size={12} strokeWidth={2.4} aria-hidden />Branch
+          </button>
+        )}
+        <button className="gp-ib" onClick={() => void load()} title="refresh" aria-label="Refresh"><RefreshCw size={13} aria-hidden /></button>
+      </>} />
+      {g.baseRow && row(g.baseRow, true)}
+      {g.baseRow && <div className="dv-legend" aria-hidden><span>◀ Behind {base}</span><span>Ahead ▶</span></div>}
       {naming && (
         <>
           <form className="bnew" onSubmit={(e) => { e.preventDefault(); make(); }}>
@@ -330,9 +345,9 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
           <div style={{ fontSize: "var(--t105)", color: "var(--txl)", padding: "8px 14px" }}>No branches: not a git repo?</div>
         )}
         <div className="swapin">
-          <Group title="WORKTREES" rows={g.worktrees} render={row} />
-          <Group title="BRANCHES" rows={g.branches} render={row} fold />
-          <Group title="MERGED" rows={g.merged} render={row} fold
+          <Group title="WORKTREES" rows={g.worktrees} render={(r) => row(r)} />
+          <Group title="BRANCHES" rows={g.branches} render={(r) => row(r)} fold />
+          <Group title="MERGED" rows={g.merged} render={(r) => row(r)} fold
             bulk={g.merged.length > 1 && (
               <button className="brow-step bsec-bulk" data-tone style={{ ["--c" as string]: "var(--purple-h)" }} onClick={() => void cleanAll(g.merged)}>
                 <BrushCleaning size={10} strokeWidth={2.2} aria-hidden />Clean up all

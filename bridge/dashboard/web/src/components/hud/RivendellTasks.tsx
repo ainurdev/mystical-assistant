@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { ListTodo, Play, SquarePen } from "lucide-react";
+import { ExternalLink, ListTodo, Play, RefreshCw, SquarePen } from "lucide-react";
 import type {
   RivendellLink, RivendellTask, RivendellTaskDetail, RivendellTasks as TasksAnswer, RivendellTodolist,
 } from "../../api";
@@ -12,7 +12,9 @@ import {
 } from "../../lib/rivendelltasks";
 import { hhmm } from "../../lib/surfaces";
 import { Markdown } from "../Markdown";
-import { BoardBar } from "./BoardBar";
+import { deck, excerpt, liveSkips } from "../../lib/deck";
+import { RunMini, TaskDeck } from "./TaskDeck";
+import { TabKick } from "./TabKick";
 
 const POLL_MS = 10_000;
 const LATER_KEY = "mystical:rivendell-later";   // "closed" while LATER is folded
@@ -25,8 +27,6 @@ const LINK_TONE: Record<LinkTone, string> = {
 };
 // A checks word's colour, by its glyph (lib/rivendelltasks resultBits).
 const CHECK_TONE: Record<string, string> = { "✓": "var(--ok)", "✕": "var(--err)", "◷": "var(--warn)" };
-// NEXT UP's priority letter.
-const PRIO: Record<string, string> = { high: "var(--warn)", medium: "var(--acc)", low: "var(--txl)" };
 
 const mix = (c: string, pct: number) => `color-mix(in srgb, ${c} ${pct}%, transparent)`;
 
@@ -37,6 +37,12 @@ const toolBtn = {
 } as const;
 
 type Peek = { state: "loading" } | { state: "ok"; d: RivendellTaskDetail } | { state: "err"; msg: string };
+
+// Skips live per project, with the next-up order they were made under (lib/deck liveSkips).
+type Stored = { sig: string; at: Record<string, number> };
+const readSkips = (project: string | null): Stored | null => {
+  try { return JSON.parse(localStorage.getItem(`rv-skip:${project}`) ?? "null") as Stored | null; } catch { return null; }
+};
 
 const key = (t: Pick<RivendellTask, "instance_id" | "id">) => `${t.instance_id}|${t.id}`;
 const day = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "");
@@ -80,6 +86,8 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
   const [todo, setTodo] = useState<RivendellTodolist | null>(null);
   const [todoTick, setTodoTick] = useState(0);
   const [laterOpen, setLaterOpen] = useState(() => localStorage.getItem(LATER_KEY) !== "closed");
+  const [stored, setStored] = useState(() => readSkips(project));
+  const [allOpen, setAllOpen] = useState(false);   // the grouped board under the deck
   const cards = useRef(new Map<string, HTMLDivElement>());
   // TEST LINK on the TOKEN REJECTED banner: the connection being tested, and
   // what each test said.
@@ -163,10 +171,20 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     const t = data?.tasks.find((x) => x.id === taskId);
     if (!t) return;
     if (splitTitle(t.name).later && !laterOpen) setLater(true);
+    setAllOpen(true);
     if (andArm) arm(t); else if (open !== key(t)) toggle(t);
     // To the top: the card grows once its spec arrives, and "nearest" would
     // leave that growth (and the confirm) below the fold.
     requestAnimationFrame(() => cards.current.get(key(t))?.scrollIntoView({ block: "start", behavior: "smooth" }));
+  }
+
+  // The panel is not remounted when the session's project changes: read that project's skips.
+  useEffect(() => { setStored(readSkips(project)); }, [project]);
+
+  function skip(t: RivendellTask) {
+    const next = { sig: nextSig, at: { ...skips, [t.id]: Date.now() } };
+    setStored(next);
+    localStorage.setItem(`rv-skip:${project}`, JSON.stringify(next));
   }
 
   function setLater(on: boolean) {
@@ -228,40 +246,45 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
   const projects = data?.projects ?? [];
   const links = data?.links ?? [];
   const names = [...new Set(projects.map((p) => p.name))].join(" · ") || links.map((l) => l.instance).join(" · ");
+  // IMPLEMENT's request shows QUEUED (and groups as RUNNING) before the list has caught up with it.
+  const tasks = (data?.tasks ?? []).map((t) => queued[t.id] && t.implementation?.id !== queued[t.id]
+    ? { ...t, implementation: { id: queued[t.id], status: "PENDING" as const, createdAt: now.toISOString(), completedAt: null } }
+    : t);
+  const g = groupTasks(tasks);
+  const nextIds = nextUp(todo, new Set(tasks.map((t) => t.id)), 50).flatMap((i) => i.tasks);
+  const nextSig = nextIds.join(",");
+  const skips = liveSkips(stored, nextSig, now.getTime());
+  const line = deck([...g.mine, ...g.team], nextIds, skips, now.getTime());
+  const top = line[0] ?? null;
+  const topKey = top ? key(top) : "";
+  const topPeeked = !!peeks[topKey];
+  // The top card's spec excerpt: fetched once per task (again after ⟳), never awaited.
+  useEffect(() => { if (top && !topPeeked) void fetchPeek(top); }, [topKey, topPeeked]); // eslint-disable-line react-hooks/exhaustive-deps
+  const c = linkChip(links[0], now);
 
   return (
     <div className="panel" style={{ border: `1px solid ${mix("var(--acc)", 16)}`, background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", height: 36, boxSizing: "border-box", flex: "none" }}>
-        <span style={{ fontSize: "var(--t105)", letterSpacing: 2.5, color: "var(--txl)" }}>RIVENDELL</span>
-        <span style={{ display: "flex", gap: 6 }}>
+      <TabKick name="RIVENDELL"
+        chip={links.length > 0 && <span style={{ flex: "none", fontSize: "var(--t9)", letterSpacing: 1, padding: "0 6px", border: "1px solid currentColor", borderRadius: 8, whiteSpace: "nowrap", color: LINK_TONE[c.tone] }}>{c.label}</span>}
+        tools={<>
           {projects[0]?.url && (
-            <button style={toolBtn} title="Open the project in Rivendell"
-              onClick={() => window.open(projects[0].url, "_blank", "noopener")}>↗</button>
+            <button className="gp-ib" title="Open the project in Rivendell" aria-label="Open the project in Rivendell"
+              onClick={() => window.open(projects[0].url, "_blank", "noopener")}><ExternalLink size={13} aria-hidden /></button>
           )}
-          <button style={toolBtn} title="refresh" onClick={refresh}>⟳</button>
-        </span>
-      </div>
-      <div style={{ height: 1, background: "linear-gradient(90deg,var(--acc),transparent)", flex: "none" }} />
-      {hero()}
+          <button className="gp-ib" title="refresh" aria-label="Refresh" onClick={refresh}><RefreshCw size={13} aria-hidden /></button>
+        </>} />
+      {data && names && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 12px 2px", fontSize: "var(--t105)", color: "var(--txh)" }}>
+          <span aria-hidden style={{ color: "var(--purple-h, var(--acc))" }}>◆</span>
+          <span style={{ minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{names}</span>
+          {projects.length > 0 && <span style={{ marginLeft: "auto", flex: "none", fontSize: "var(--t9)", color: "var(--txl)" }}>{tasks.length} task{tasks.length === 1 ? "" : "s"}</span>}
+        </div>
+      )}
       <div className="mscroll" style={{ flex: 1, minHeight: 0, padding: "4px 0 10px" }}>
         {body()}
       </div>
     </div>
   );
-
-  /** The board bar: one lane per board column; ▶ arms the first open task like its row's ▶. */
-  function hero(): ReactNode {
-    const tasks = (data?.tasks ?? []).map((t) => queued[t.id] && t.implementation?.id !== queued[t.id]
-      ? { ...t, implementation: { id: queued[t.id], status: "PENDING" as const, createdAt: now.toISOString(), completedAt: null } }
-      : t);
-    const g = groupTasks(tasks);
-    const first = nextUp(todo, new Set(tasks.map((t) => t.id))).find((i) => i.tasks.length);
-    const t = first ? tasks.find((x) => x.id === first.tasks[0]) : [...g.needs, ...g.mine, ...g.team][0];
-    const c = linkChip(links[0], now);
-    const state = fail || (data?.errors.length && !tasks.length) ? "error" : !data ? "loading" : undefined;
-    return <BoardBar state={state} project={names} chip={c.label} tone={LINK_TONE[c.tone]} tasks={tasks} total={tasks.length}
-      next={t ? { id: t.id, title: splitTitle(t.name).title } : null} onStart={(id) => reveal(id, true)} />;
-  }
 
   function body(): ReactNode {
     // A dashboard built from newer code than the running bridge: the route is
@@ -285,77 +308,81 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     }
     if (!projects.length) return <>{paused}<Empty title="No Rivendell project links this repo" text={<>Nothing in Rivendell links <code style={{ color: "var(--purple-h)" }}>{data.slug}</code>. Link it to a project there and its tasks show up here.</>} /></>;
     if (!data.tasks.length) return <>{paused}<Empty icon={<ListTodo size={26} strokeWidth={1.3} />} title="No open tasks" text={`Every task of ${names} is done.`} /></>;
-    // IMPLEMENT's request shows QUEUED (and groups as RUNNING) before the list has caught up with it.
-    const tasks = data.tasks.map((t) => queued[t.id] && t.implementation?.id !== queued[t.id]
-      ? { ...t, implementation: { id: queued[t.id], status: "PENDING" as const, createdAt: now.toISOString(), completedAt: null } }
-      : t);
-    const g = groupTasks(tasks);
     const last = data.tasks.some((t) => t.stale) ? " · LAST KNOWN" : "";
     const showCol = new Set(data.tasks.map((t) => t.column).filter(Boolean)).size > 1;
     const targets = [...new Set(g.later.map((t) => splitTitle(t.name).later))];
     const laterLabel = targets.length === 1 && targets[0] !== "later" ? `LATER · ${targets[0]!.toUpperCase()}` : "LATER";
     const card = (later: boolean) => (t: RivendellTask) => cardView(t, later, showCol);
+    // Todolist items that name no open task but a Sentry issue: FIX IT, as before.
+    const sentry = nextUp(todo, new Set(tasks.map((t) => t.id))).filter((i) => !i.tasks.length && i.sentry);
+    const forced = !top && !g.running.length && !g.needs.length;   // nothing else to show: the board can't close
+    const board = allOpen || forced;
     return (
       <>
         {paused}
         {data.errors.filter((e) => e.error !== "token_rejected").map((e) => (
           <div key={e.instance_id} style={{ margin: "6px 12px 0", fontSize: "var(--t9)", color: "var(--warn)" }}>⚠ {e.instance}: {e.detail}</div>
         ))}
-        {nextUpView(new Set(data.tasks.map((t) => t.id)))}
         {g.needs.length > 0 && <Section label="NEEDS YOU" n={g.needs.length} color="var(--warn)" />}
         {g.needs.map(card(false))}
-        {g.running.length > 0 && <Section label={`RUNNING${last}`} n={g.running.length} />}
-        {g.running.map(card(false))}
-        {g.done.length > 0 && <Section label={`DONE${last}`} n={g.done.length} />}
-        {g.done.map(card(false))}
-        {g.mine.length > 0 && <Section label={`YOURS${last}`} n={g.mine.length} />}
-        {g.mine.map(card(false))}
-        {g.team.length > 0 && <Section label={`TEAM${last}`} n={g.team.length} />}
-        {g.team.map(card(false))}
-        {g.later.length > 0 && (
-          <Section label={laterLabel} n={g.later.length} onClick={() => setLater(!laterOpen)} chev={laterOpen ? "▾" : "▸"} />
-        )}
-        {laterOpen && g.later.map(card(true))}
+        {top && deckView(top, line.length)}
+        {g.running.length > 0 && <div className="dk-sec"><span>RUNNING{last}</span><span>{g.running.length}</span></div>}
+        {g.running.map(runView)}
+        {line.length > 1 && <div className="dk-sec"><span>THEN</span><span>{line.length - 1} more</span></div>}
+        {line.slice(1, 5).map((t) => (
+          <button key={key(t)} type="button" className="dk-then" onClick={() => reveal(t.id)} title="Show the task">
+            <span>{splitTitle(t.name).title}</span>{t.key && <small>{t.key}</small>}
+          </button>
+        ))}
+        {sentry.map((i) => (
+          <div key={i.id} className="dk-then" style={{ cursor: "default" }}>
+            <span title={i.title}>{i.title}</span>
+            <Btn tone="ghost" onClick={() => onWorkOn(sentryPrompt(i.title, i.sentry!))} title={`Work on ${i.sentry!.label ?? "the Sentry issue"} in a new session`}>FIX IT</Btn>
+          </div>
+        ))}
+        <Section label="ALL TASKS" n={tasks.length} onClick={forced ? undefined : () => setAllOpen(!board)} chev={forced ? undefined : board ? "▾" : "▸"} />
+        {board && <>
+          {g.done.length > 0 && <Section label={`DONE${last}`} n={g.done.length} />}
+          {g.done.map(card(false))}
+          {g.mine.length > 0 && <Section label={`YOURS${last}`} n={g.mine.length} />}
+          {g.mine.map(card(false))}
+          {g.team.length > 0 && <Section label={`TEAM${last}`} n={g.team.length} />}
+          {g.team.map(card(false))}
+          {g.later.length > 0 && (
+            <Section label={laterLabel} n={g.later.length} onClick={() => setLater(!laterOpen)} chev={laterOpen ? "▾" : "▸"} />
+          )}
+          {laterOpen && g.later.map(card(true))}
+        </>}
       </>
     );
   }
 
-  function nextUpView(openIds: Set<string>): ReactNode {
-    const rows = nextUp(todo, openIds);
-    if (!rows.length) return null;
-    const pr = todo?.progress;
+  /** The top card: the next task, its excerpt once the spec has arrived, IMPLEMENT's confirm in place. */
+  function deckView(t: RivendellTask, n: number): ReactNode {
+    const p = peeks[key(t)];
+    const d = p?.state === "ok" ? p.d : null;
+    const st = cardState({ implementation: t.implementation, session_id: t.session_id }, now);
+    const go = st.action === "implement" ? "Implement" : st.action === "again" ? "Run again" : st.action === "retry" ? "Retry" : null;
+    const href = t.url ?? t.htmlUrl;
     return (
-      <>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 8, padding: "10px 12px 6px", fontSize: "var(--t9)", letterSpacing: 1.8, color: "var(--txl)" }}>
-          <span>NEXT UP</span>
-          <span style={{ letterSpacing: 0.4, color: "var(--txg)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            Rivendell’s todolist{todo?.generatedAt ? ` · ${day(todo.generatedAt)}` : ""}
-          </span>
-          {pr && <span style={{ marginLeft: "auto", flex: "none", letterSpacing: 0.6 }}>{pr.done}/{pr.total} DONE</span>}
-        </div>
-        <div style={{ margin: "0 8px 6px", padding: "2px 10px", border: `1px solid ${mix("var(--acc)", 12)}`, background: "color-mix(in srgb, var(--panel3) 80%, transparent)" }}>
-          {rows.map((i, n) => (
-            <div key={i.id} onClick={() => i.tasks[0] && reveal(i.tasks[0])}
-              title={i.tasks.length ? "Show the task" : i.title}
-              style={{
-                display: "flex", alignItems: "center", gap: 8, padding: "6px 0", minHeight: 30,
-                borderTop: n ? `1px solid ${mix("var(--acc)", 7)}` : "none", cursor: i.tasks.length ? "pointer" : "default",
-              }}>
-              <span style={{ flex: "none", width: 10, fontFamily: "var(--mono)", fontSize: "var(--t9)", color: PRIO[i.priority ?? ""] ?? "var(--txl)" }}>
-                {(i.priority ?? "·")[0].toUpperCase()}
-              </span>
-              <span style={{ flex: 1, minWidth: 0, fontSize: "var(--t11)", color: "var(--txh)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{i.title}</span>
-              {i.tasks.length === 1 && (
-                <IconBtn title="Implement it — asks first" onClick={() => reveal(i.tasks[0], true)}><Play size={8} strokeWidth={2.6} /></IconBtn>
-              )}
-              {i.tasks.length > 1 && <span style={{ flex: "none", fontSize: "var(--t85)", letterSpacing: 1, color: "var(--txm)" }}>{i.tasks.length} TASKS ›</span>}
-              {!i.tasks.length && i.sentry && (
-                <Btn tone="ghost" onClick={() => onWorkOn(sentryPrompt(i.title, i.sentry!))} title={`Work on ${i.sentry.label ?? "the Sentry issue"} in a new session`}>FIX IT</Btn>
-              )}
-            </div>
-          ))}
-        </div>
-      </>
+      <TaskDeck task={t} n={n} text={d ? excerpt(d.spec?.body || d.description || "") : ""} go={go} frozen={!!t.stale}
+        onGo={() => arm(t)} onWork={() => void workOn(t)} onSkip={() => skip(t)}
+        onLink={href ? () => window.open(href, "_blank", "noopener") : null}>
+        {armed === key(t) && armedView(t, busy.has(t.id))}
+        {errs[t.id] && <div style={{ fontSize: "var(--t9)", color: "var(--err)" }}>{errs[t.id]}</div>}
+      </TaskDeck>
+    );
+  }
+
+  /** A running task as a mini card: step pips, its live line, Open ›. */
+  function runView(t: RivendellTask): ReactNode {
+    const st = cardState({ implementation: t.implementation, session_id: t.session_id }, now);
+    const live = t.implementation?.status === "IN_PROGRESS" ? t.run?.live ?? null : null;
+    const todos = live?.todos ?? null;
+    const foot = [t.key, todos && `step ${todos.done} of ${todos.total}`, st.line].filter(Boolean).join(" · ");
+    return (
+      <RunMini key={key(t)} title={splitTitle(t.name).title} pips={todos} live={live?.line ?? null} foot={foot}
+        onOpen={st.action === "open" && t.session_id ? () => onOpenSession(t.session_id!) : null} />
     );
   }
 
@@ -368,7 +395,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     const frozen = !!t.stale;                 // last known: nothing new may start from it
     const on = hov === id;
     const isOpen = open === id;
-    const isArmed = armed === id;
+    const isArmed = armed === id && !(top && id === key(top));   // the deck shows the top task's confirm
     const folded = later && !isOpen;
     const ask = t.run?.ask ?? null;
     const live = req?.status === "IN_PROGRESS" && !ask ? t.run?.live ?? null : null;
