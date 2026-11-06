@@ -2232,6 +2232,13 @@ export const api = {
       method: "POST",
       body: { project, op, paths, ...(branch ? { branch } : {}) },
     }),
+  council: (sid: string, full = false) =>
+    req<CouncilBrief>(`/local/council/${encodeURIComponent(sid)}${full ? "?full=1" : ""}`),
+  councilAct: (sid: string, action: string, key?: string) =>
+    req<CouncilBrief>(`/local/council/${encodeURIComponent(sid)}`, { method: "POST", body: { action, key } }),
+  councilSettings: () => req<CouncilSettings>("/local/council/settings"),
+  saveCouncilSettings: (patch: Partial<CouncilSettings>) =>
+    req<CouncilSettings>("/local/council/settings", { method: "POST", body: patch }),
   gitPush: (project: string, branch?: string) =>
     req<{ ok: boolean; output: string }>("/local/git/push", {
       method: "POST",
@@ -2654,11 +2661,3 @@ export function sessionStream(
   };
   return () => es.close();
 }
-
-export const council = (sid: string, full = false) =>
-  req<CouncilBrief>(`/local/council/${encodeURIComponent(sid)}${full ? "?full=1" : ""}`);
-export const councilAct = (sid: string, action: string, key?: string) =>
-  req<CouncilBrief>(`/local/council/${encodeURIComponent(sid)}`, { method: "POST", body: { action, key } });
-export const councilSettings = () => req<CouncilSettings>("/local/council/settings");
-export const saveCouncilSettings = (patch: Partial<CouncilSettings>) =>
-  req<CouncilSettings>("/local/council/settings", { method: "POST", body: patch });

@@ -444,7 +444,10 @@ class Handler(BaseHTTPRequestHandler):
             if not s or s["chat_id"] != chat:
                 return self._json({"error": "no such session"}, 404)
             full = qs.get("full", ["0"])[0] == "1"
-            return self._json(council.brief(sid, _worktree_cwd(s.get("project"), s.get("branch")), full))
+            cwd = s.get("work_cwd") or s.get("cwd") or ""
+            if full and not os.path.isdir(cwd):
+                return self._json({"error": "the session has no checkout"}, 400)
+            return self._json(council.brief(sid, cwd, full))
         if path == "/local/state":
             pd = state.project_dir(chat)
             return self._json({
@@ -1576,9 +1579,9 @@ class Handler(BaseHTTPRequestHandler):
             act = body.get("action")
             try:
                 if act == "run":
-                    cwd = _worktree_cwd(s.get("project"), s.get("branch"))
-                    if cwd is None:
-                        return self._json({"error": "invalid project"}, 400)
+                    cwd = s.get("work_cwd") or s.get("cwd") or ""
+                    if not os.path.isdir(cwd):
+                        return self._json({"error": "the session has no checkout"}, 400)
                     return self._json(council.start(s, cwd))
                 return self._json(council.act(s, act, body.get("key") or ""))
             except ValueError as e:     # running | busy | nothing | action

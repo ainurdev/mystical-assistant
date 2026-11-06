@@ -28,17 +28,17 @@ def test_settings_routes():
 
 def test_brief_route_idle():
     h, box = _handler()
-    h._get_api(f"/local/council/{_sid()}", {"full": ["1"]})            # noqa: SLF001
+    h._get_api(f"/local/council/{_sid()}", {})            # noqa: SLF001
     assert box["code"] == 200 and box["obj"]["status"] == "idle"
 
 
-def test_run_route_calls_start_and_maps_errors(monkeypatch):
+def test_run_route_calls_start_and_maps_errors(monkeypatch, tmp_path):
     sid, calls = _sid(), []
-    monkeypatch.setattr(dash, "_worktree_cwd", lambda p, b: "/tmp")
-    monkeypatch.setattr(council, "start", lambda s, cwd: calls.append(s["id"]) or {"status": "reviewing"})
+    store.set_work_cwd(sid, str(tmp_path))
+    monkeypatch.setattr(council, "start", lambda s, cwd: calls.append((s["id"], cwd)) or {"status": "reviewing"})
     h, box = _handler()
     h._post_api(f"/local/council/{sid}", {"action": "run"})            # noqa: SLF001
-    assert box["code"] == 200 and box["obj"] == {"status": "reviewing"} and calls == [sid]
+    assert box["code"] == 200 and box["obj"] == {"status": "reviewing"} and calls == [(sid, str(tmp_path))]
     for code in ("running", "busy", "nothing", "action"):
         def boom(*a, code=code):
             raise ValueError(code)
@@ -59,3 +59,22 @@ def test_unknown_session_is_404(method):
         else:
             h._post_api(f"/local/council/{sid}", {"action": "run"})    # noqa: SLF001
         assert box["code"] == 404 and box["obj"] == {"error": "no such session"}
+
+
+def test_full_brief_uses_the_session_checkout(monkeypatch, tmp_path):
+    sid, got = _sid(), []
+    store.set_work_cwd(sid, str(tmp_path))
+    monkeypatch.setattr(council, "brief", lambda s, cwd=None, full=False: got.append((cwd, full)) or {})
+    h, box = _handler()
+    h._get_api(f"/local/council/{sid}", {"full": ["1"]})               # noqa: SLF001
+    assert box["code"] == 200 and got == [(str(tmp_path), True)]
+
+
+def test_no_checkout_is_400(tmp_path):
+    sid = _sid()
+    store.set_work_cwd(sid, str(tmp_path / "gone"))
+    h, box = _handler()
+    h._post_api(f"/local/council/{sid}", {"action": "run"})            # noqa: SLF001
+    assert (box["code"], box["obj"]) == (400, {"error": "the session has no checkout"})
+    h._get_api(f"/local/council/{sid}", {"full": ["1"]})               # noqa: SLF001
+    assert box["code"] == 400
