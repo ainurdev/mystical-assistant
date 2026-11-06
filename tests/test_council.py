@@ -50,7 +50,7 @@ def test_settings_clamp_and_round_trip():
     assert council.save_settings({"bar": 8.7, "max_rounds": 5})["bar"] == 8.5
 
 def test_store_council_column_round_trip():
-    sid = store.create_session(555, "/counciltest", origin="dashboard")
+    sid = store.create_session(555, "/counciltest", origin="dashboard")["id"]
     store.set_council(sid, {"status": "passed"})
     assert store.get_council(sid) == {"status": "passed"}
     store.set_council(sid, None)
