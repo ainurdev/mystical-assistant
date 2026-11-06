@@ -10,7 +10,7 @@ import {
   Monitor, Moon, Network, Palette, Play, Plug, Puzzle,
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
-  Upload, Waypoints, type LucideIcon,
+  Upload, Waypoints, RotateCw, Send, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDrive, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, AlignLeft, Clock3, GitFork,
 } from "lucide-react";
@@ -84,7 +84,7 @@ import { NYAN_MODES, nyanLabel, nyanThumb, type NyanSound } from "../../lib/nyan
 import { useAiFeatures } from "../../lib/ai";
 import { setIntegrations, useIntegrations } from "../../lib/integrations";
 import { askConfirm } from "../ui/Ask";
-import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
+import { TONES, chime, push, pushGranted, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isNativeApp, isWinApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
@@ -171,44 +171,46 @@ export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec
 // `about` is the page's own first line: what the category is FOR, in a
 // sentence. The rail's hint names what's inside; nothing said why you'd open
 // it, so every page began on its first block and left you to work that out.
-const TABS: { key: Tab; label: string; hint: string; about: string; icon: LucideIcon; group: string }[] = [
-  { key: "appearance", label: "APPEARANCE", hint: "theme · type", icon: Palette, group: "THE HUD",
+// `lede` is the page head's one line (2026-11-06, LIVE RAIL): `about` ran two or three
+// lines on every page and pushed its first block below the fold; it now waits behind the ⓘ.
+const TABS: { key: Tab; label: string; hint: string; lede: string; about: string; icon: LucideIcon; group: string }[] = [
+  { key: "appearance", label: "APPEARANCE", hint: "theme · type", lede: "How the dashboard looks: theme, typeface, size.", icon: Palette, group: "THE HUD",
     about: "How the dashboard looks: its theme and colour, its typeface and size." },
-  { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD",
+  { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", lede: "How a session reads, and what shows while it works.", icon: ScrollText, group: "THE HUD",
     about: "How a session reads: the chat layout, the composer's send key, the ground every turn is drawn on, whether results start open, and what shows while it works." },
-  { key: "notifications", label: "NOTIFY", hint: "events · quiet · sound", icon: Bell, group: "THE HUD",
+  { key: "notifications", label: "NOTIFY", hint: "events · quiet · sound", lede: "What interrupts you, and where.", icon: Bell, group: "THE HUD",
     about: "What interrupts you, and how: for each kind of news — a session, a Rivendell job, a PR — a pop-up, a sound, a Telegram message, or only the bell." },
   // Only inside the native app — Mystical.app or Mystical.exe (RAIL and the
   // search both skip it elsewhere): the switches that are the app's, not the
   // page's (lib/mac). One tab, named for the shell it's in.
-  { key: "mac", label: isWinApp() ? "WINDOWS APP" : "MAC APP", hint: isWinApp() ? "window · tray · hotkey" : "window · dock · panel",
+  { key: "mac", label: isWinApp() ? "WINDOWS APP" : "MAC APP", hint: isWinApp() ? "window · tray · hotkey" : "window · dock · panel", lede: isWinApp() ? "What only the Windows app can do." : "What only the Mac app can do.",
     icon: isWinApp() ? AppWindow : AppWindowMac, group: "THE HUD",
     about: isWinApp()
       ? "What only the Windows app can do: the window's title, the floating WAITING ON YOU panel, the Win+Ctrl+A summon, and rebuilding the app after an update."
       : "What only the Mac app can do: the window's title, the Dock icon, the floating WAITING ON YOU panel, and rebuilding the app after an update." },
   // First under THE WORK: where the work happens. It was the last fold of AI
   // MANAGEMENT, where a long list of repos had to share a page with logins.
-  { key: "projects", label: "PROJECTS", hint: "names · marks · sidebar", icon: FolderGit2, group: "THE WORK",
+  { key: "projects", label: "PROJECTS", hint: "names · marks · sidebar", lede: "Every repo the bridge can run in.", icon: FolderGit2, group: "THE WORK",
     about: "Every repo the bridge can run in, and what each keeps for itself: its name and mark, the profile its sessions start on, whether the sidebar lists it, its run command, design link and lessons." },
   // Beside PROJECTS: which of them the sidebar shows together. Right-clicking
   // the sidebar's workspace button lands here.
-  { key: "workspaces", label: "WORKSPACES", hint: "sidebar · project sets", icon: Layers, group: "THE WORK",
+  { key: "workspaces", label: "WORKSPACES", hint: "sidebar · project sets", lede: "Sets of projects the sidebar shows one at a time.", icon: Layers, group: "THE WORK",
     about: "Split the sidebar into sets of projects, like a browser's workspaces: personal and work apart. The sidebar shows one at a time; Default takes every project you haven't moved." },
   // Who runs a session. One page, four folds — it was tabs (SESSION, MCP,
   // ACCOUNTS, AI) that each held a piece of the same question, and the
   // sidebar's SKILLS panel besides.
-  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · agents · extras · claude mcp", icon: KeyRound, group: "THE WORK",
+  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · agents · extras · claude mcp", lede: "Who runs your sessions, and with what.", icon: KeyRound, group: "THE WORK",
     about: "Who runs your sessions and with what: the logins and the profiles bound to them, the extras and MCP servers they can reach, and the default profile." },
   // A fold of AI MANAGEMENT and a tab of the project window before; one page now,
   // with any repo's skills a pick away (.mystical/design-drafts/project-split).
   // Claude's: Kimi Code reads its own (~/.agents/skills, a project's .agents/skills).
-  { key: "skills", label: "CLAUDE SKILLS", hint: "project · machine · catalog", icon: Puzzle, group: "THE WORK",
+  { key: "skills", label: "CLAUDE SKILLS", hint: "project · machine · catalog", lede: "SKILL.md files a session can reach without you typing them.", icon: Puzzle, group: "THE WORK",
     about: "What a Claude session can reach that you didn't type: the SKILL.md files in a project or on this machine, the catalog to install from, and Claude Code plugins. Other agents keep their own — Kimi Code reads ~/.agents/skills and a project's .agents/skills." },
-  { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", icon: Waypoints, group: "THE WORK",
+  { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", lede: "Other systems the bridge does work for.", icon: Waypoints, group: "THE WORK",
     about: "Other systems the bridge does work for. Each one ships with Mystical but stays silent until you install it: no tab, no card, no rows, no worker." },
-  { key: "system", label: "SYSTEM", hint: "storage · bridge · updates", icon: Server, group: "THE WORK",
+  { key: "system", label: "SYSTEM", hint: "storage · bridge · updates", lede: "The bridge itself: startup, storage, updates, environment.", icon: Server, group: "THE WORK",
     about: "The bridge itself: what its sessions left on disk, its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
-  { key: "move", label: "MOVE", hint: "export · import", icon: Truck, group: "THE WORK",
+  { key: "move", label: "MOVE", hint: "export · import", lede: "Carry this bridge to another machine in one file.", icon: Truck, group: "THE WORK",
     about: "Carry this bridge to another machine. EXPORT packs your repos' unpushed work, MCP servers, plugins, Claude Code settings and chat history into one file; IMPORT replays a file from another machine here." },
 ];
 const RAIL = TABS.filter((t) => t.key !== "mac" || isNativeApp());
@@ -536,6 +538,7 @@ export function Row({ label, desc, info, first, children }: {
  *  for. The rail already said the first; nothing said the second. */
 function PageHead({ tab }: { tab: (typeof TABS)[number] }) {
   const voice = useVoice();
+  const [more, setMore] = useState(false);
   return (
     <div className="set-head" style={{ marginBottom: 30 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -544,9 +547,11 @@ function PageHead({ tab }: { tab: (typeof TABS)[number] }) {
           {voice(tab.label)}
         </h2>
       </div>
-      <p style={{ margin: "9px 0 0", maxWidth: 600, fontSize: "var(--t10)", lineHeight: 1.7, color: "var(--txm)" }}>
-        {tab.about}
+      <p style={{ margin: "9px 0 0", maxWidth: 600, fontSize: "var(--t10)", lineHeight: 1.7, color: "var(--txm)", display: "flex", alignItems: "center", gap: 8 }}>
+        <span>{tab.lede}</span>
+        <InfoDot on={more} about={`the ${tab.label.toLowerCase()} page`} onClick={() => setMore(!more)} />
       </p>
+      {more && <div style={{ ...ASIDE, maxWidth: 600 }}>{tab.about}</div>}
       {/* The panel's drawline: teal under the title, gone by the far edge. */}
       <div className="set-drawline" style={{
         height: 1, marginTop: 16,
@@ -1220,9 +1225,81 @@ function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p
   const save = (p: NoticePrefsPatch) =>
     void api.noticePrefs(p).then((r) => setPrefs(r.prefs), (e: Error) => notify("error", e.message));
   const q = prefs?.quiet;
+  // Where news can reach you comes first (2026-11-06, A · CHANNELS + GRID): this
+  // browser's banner, its sound, Telegram, each with its state and a way to try it.
+  // What each kind of news may do is the grid under them, as before.
+  const granted = settings.push && pushGranted();
   return (
     <>
-      <Section title="WHAT INTERRUPTS YOU">
+      <div className="ntf-ch" data-sec="THIS BROWSER">
+        <div className="ntf-chc">
+          <div className="t"><Monitor size={15} strokeWidth={1.7} aria-hidden />Pop-up
+            <span className="ntf-st" data-ok={granted || undefined}>{!pushSupported() ? "not here" : granted ? "allowed" : settings.push ? "blocked" : "off"}</span></div>
+          <div className="s">{pushSupported() ? "the system banner, while no dashboard window has focus" : "this browser has no banners; pop-ups stay inside"}</div>
+          <div className="f">
+            <Switch on={settings.push} label="system banners" onClick={() => {
+              if (settings.push) { onPatch({ push: false }); return; }
+              // Ask only on switch-on; a denial can't be re-asked, so the
+              // switch goes back off rather than sitting on and silent.
+              void requestPush().then((ok) => onPatch({ push: ok }));
+            }} />
+            <MiniBtn disabled={!granted} onClick={() => push("Mystical", "This is how a pop-up lands.", "ntf-test")}>Test</MiniBtn>
+          </div>
+        </div>
+        <div className="ntf-chc">
+          <div className="t"><AudioLines size={15} strokeWidth={1.7} aria-hidden />Sound
+            <span className="ntf-st" data-ok={settings.pushSound || undefined}>{settings.pushSound ? `${Math.round(settings.pushVolume * 100)}%` : "muted"}</span></div>
+          <div className="s">each event plays the tone picked in the grid</div>
+          <div className="f">
+            <Switch on={settings.pushSound} label="sounds" onClick={() => {
+              // Switching it on plays one — otherwise you find out how loud it
+              // is at the wrong moment.
+              if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
+              onPatch({ pushSound: !settings.pushSound });
+            }} />
+            {/* Preview when the drag ends, not on every step. */}
+            <span className="ntf-vol" onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
+              onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
+              <Volume value={settings.pushVolume} disabled={!settings.pushSound} onChange={(pushVolume) => onPatch({ pushVolume })} />
+            </span>
+          </div>
+        </div>
+        <div className="ntf-chc">
+          <div className="t"><Send size={15} strokeWidth={1.7} aria-hidden />Telegram
+            <span className="ntf-st" data-ok={(prefs && tg) || undefined}>{!prefs ? "…" : tg ? "on" : "off"}</span></div>
+          {prefs && tg ? (
+            <div className="s">“away” = no click or key in any dashboard for{" "}
+              <select value={prefs.away_min} aria-label="away after" style={{ ...field, padding: "1px 4px", letterSpacing: 0 }}
+                onChange={(e) => save({ away_min: Number(e.target.value) })}>
+                {[2, 5, 10, 15, 30].map((m) => <option key={m} value={m}>{m} min</option>)}
+              </select>
+            </div>
+          ) : (
+            <div className="s">{prefs ? "pings are off in System ▸ Telegram, so its column waits" : "reading…"}</div>
+          )}
+        </div>
+      </div>
+
+      {q && (
+        <div className="ntf-quiet" data-sec="QUIET HOURS">
+          <div className="k"><Moon size={14} strokeWidth={1.7} aria-hidden />Quiet hours</div>
+          <span className="h">{q.on ? `nothing pops up, sounds or reaches Telegram${q.needs ? " but what needs you" : ""}` : "off"}</span>
+          {q.on && (
+            <>
+              <input type="time" value={q.from} aria-label="quiet from" style={{ ...field, letterSpacing: 0 }}
+                onChange={(e) => e.target.value && save({ quiet: { from: e.target.value } })} />
+              <span className="h">–</span>
+              <input type="time" value={q.to} aria-label="quiet to" style={{ ...field, letterSpacing: 0 }}
+                onChange={(e) => e.target.value && save({ quiet: { to: e.target.value } })} />
+              <button className={`ntf-needs${q.needs ? " on" : ""}`} aria-pressed={q.needs} title="an approval at 23:00 still reaches you"
+                onClick={() => save({ quiet: { needs: !q.needs } })}>needs you gets through</button>
+            </>
+          )}
+          <Switch on={q.on} label="quiet hours" onClick={() => save({ quiet: { on: !q.on } })} />
+        </div>
+      )}
+
+      <Section title="WHAT INTERRUPTS YOU" top>
         {old || !prefs ? (
           <div style={{ ...CARD, fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.6 }}>
             {old ? "This bridge started before per-event notifications. Restart it to choose them here." : "Reading…"}
@@ -1243,13 +1320,14 @@ function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p
                           <td><span className="ev">{label}{desc && <small>{desc}</small>}</span></td>
                           <td><button className={`ntf-ck${r.pop ? " on" : ""}`} role="checkbox" aria-checked={r.pop} aria-label={`${label}: pop up`}
                             onClick={() => save({ events: { [key]: { pop: !r.pop } } })}>{r.pop ? "✓" : ""}</button></td>
-                          <td><select value={r.sound} aria-label={`${label}: sound`} style={{ ...field, padding: "3px 6px", letterSpacing: 0 }}
+                          <td><select value={r.sound} aria-label={`${label}: sound`} className="ntf-tone" data-none={r.sound === "none" || undefined}
+                            style={{ ...field, padding: "3px 6px", letterSpacing: 0 }}
                             onChange={(e) => {
                               const sound = e.target.value as (typeof SOUND_OPTS)[number];
                               if (sound !== "none") chime(sound, settings.pushVolume);
                               save({ events: { [key]: { sound } } });
                             }}>
-                            {SOUND_OPTS.map((t) => <option key={t} value={t}>{t === "none" ? "none" : TONES[t].label.toLowerCase()}</option>)}
+                            {SOUND_OPTS.map((t) => <option key={t} value={t}>{t === "none" ? "—" : TONES[t].label.toLowerCase()}</option>)}
                           </select></td>
                           <td><span className={`ntf-tg${tg ? "" : " off"}`}>
                             {ROUTE_OPTS.map((o) => (
@@ -1265,82 +1343,10 @@ function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p
               </tbody>
             </table>
             <div className="ntf-mxnote">
-              <b>Pop up</b> means a toast while a dashboard window has focus, and the system banner when none does — never both.{" "}
-              <b>Away</b> means no click or keypress in any dashboard window for{" "}
-              <select value={prefs.away_min} aria-label="away after" style={{ ...field, padding: "2px 4px", letterSpacing: 0 }}
-                onChange={(e) => save({ away_min: Number(e.target.value) })}>
-                {[2, 5, 10, 15, 30].map((m) => <option key={m} value={m}>{m} min</option>)}
-              </select>.
-              {!tg && <> Telegram pings are off in System ▸ Telegram, so that column waits.</>}
+              <b>Pop up</b> is a toast while a dashboard window has focus, and the system banner when none does — never both.
             </div>
           </div>
         )}
-      </Section>
-
-      {q && (
-        <Section title="QUIET HOURS" top>
-          <div style={CARD}>
-            <Row first label="QUIET HOURS" desc={q.on ? `Nothing pops up, sounds or reaches Telegram from ${q.from} to ${q.to}.` : undefined}>
-              <Switch on={q.on} onClick={() => save({ quiet: { on: !q.on } })} />
-            </Row>
-            {q.on && (
-              <>
-                <Row label="FROM · TO">
-                  <input type="time" value={q.from} aria-label="quiet from" style={{ ...field, letterSpacing: 0 }}
-                    onChange={(e) => e.target.value && save({ quiet: { from: e.target.value } })} />
-                  <input type="time" value={q.to} aria-label="quiet to" style={{ ...field, letterSpacing: 0 }}
-                    onChange={(e) => e.target.value && save({ quiet: { to: e.target.value } })} />
-                </Row>
-                <Row label="LET NEEDS YOU THROUGH" desc="An approval at 23:00 still reaches you.">
-                  <Switch on={q.needs} onClick={() => save({ quiet: { needs: !q.needs } })} />
-                </Row>
-              </>
-            )}
-          </div>
-        </Section>
-      )}
-
-      <Section title="THIS BROWSER" top>
-        <div style={CARD}>
-          <Row
-            first
-            label="OS NOTIFICATIONS"
-            info={pushSupported()
-              ? "The system banner for news that pops up while no dashboard window has focus. Telegram is set per event above."
-              : "This browser has no Notification API — pop-ups stay inside the dashboard."}
-          >
-            <Switch
-              on={settings.push}
-              onClick={() => {
-                if (settings.push) { onPatch({ push: false }); return; }
-                // Ask only on switch-on; a denial can't be re-asked, so the
-                // switch goes back off rather than sitting on and silent.
-                void requestPush().then((ok) => onPatch({ push: ok }));
-              }}
-            />
-          </Row>
-          <Row label="SOUNDS" desc="Each event plays the tone picked above; off mutes them all here.">
-            <Switch
-              on={settings.pushSound}
-              onClick={() => {
-                // Switching it on plays one — otherwise you find out how loud it
-                // is at the wrong moment.
-                if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
-                onPatch({ pushSound: !settings.pushSound });
-              }}
-            />
-          </Row>
-          {settings.pushSound && (
-            <Row label="VOLUME">
-              {/* Preview when the drag ends, not on every step. */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}
-                onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
-                onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
-                <Volume value={settings.pushVolume} onChange={(pushVolume) => onPatch({ pushVolume })} />
-              </div>
-            </Row>
-          )}
-        </div>
       </Section>
     </>
   );
@@ -1562,7 +1568,7 @@ function StartupSection() {
  *  restart to reach. Same precedence as the AI tab: what you set here beats
  *  .env, and RESET puts a row back to whatever .env said rather than to a
  *  hardcoded default — so the file stays the floor under all of this. */
-function EnvPanel() {
+function EnvPanel({ only }: { only?: string[] }) {
   const [rows, setRows] = useState<EnvSetting[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   // Which row was refused, and why. A rejection belongs beside the field that
@@ -1591,7 +1597,7 @@ function EnvPanel() {
     return <Placeholder icon={TriangleAlert}>This bridge is running a build without the settings registry. Restart it.</Placeholder>;
 
   const shown = rows.filter((r) => !tunesOff(r.key, ai));
-  const groups = [...new Set(shown.map((r) => r.group))];
+  const groups = [...new Set(shown.map((r) => r.group))].filter((g) => !only || only.includes(g));
   const pending = rows.some((r) => r.source === "saved" && !r.live);
 
   return (
@@ -1985,6 +1991,7 @@ function IntegrationsPanel() {
   const [down, setDown] = useState("");   // why the list can't be read; "not found" is a bridge from before integrations
   const [busy, setBusy] = useState("");   // the plugin being installed or removed
   const [err, setErr] = useState<{ id: string; msg: string } | null>(null);   // shown on the card it belongs to
+  const [open, setOpen] = useState<string | null>("rivendell");   // the one row whose settings are showing
 
   // Every answer also goes to the shared store, so the tabs and buttons a
   // plugin brings appear or leave in the same frame.
@@ -2023,22 +2030,58 @@ function IntegrationsPanel() {
   const offers = OFFERS.filter((o) => list.some((p) => p.id === o.id && !p.installed));
   const errLine = (id: string) => (err?.id === id ? <div style={{ color: "var(--err)", marginTop: 4 }}>{err.msg}</div> : undefined);
 
+  // CONNECTED as one list (2026-11-06, A · CONNECTED LIST): a row per integration
+  // saying where it stands; Configure opens its own panel in place, one at a time.
+  // Rivendell starts open, so a deep link to one of its instances still lands.
+  const rows: { id: string; chip: string; color: string; name: string; line: string; body: ReactNode; plugin?: Integration }[] = [];
+  for (const p of installed) {
+    const offer = OFFERS.find((o) => o.id === p.id);
+    rows.push({
+      id: p.id, chip: offer?.chip ?? p.label.slice(0, 2).toUpperCase(), color: offer?.color ?? "var(--acc)", name: p.label,
+      line: p.summary, plugin: p,
+      body: p.id === "rivendell" ? <RivendellPanel onChange={recount} />
+        : p.id === "design" ? <div className="int-note">Adds a Design system row to each repo in SETTINGS ▸ Projects (link · pull · sync), the composer's DESIGN button and the project menu's Design system.</div>
+        : <div className="int-note">{p.blurb}</div>,
+    });
+    // Device runs ride on Rivendell (teammates there ask for them), so they list beside it.
+    if (p.id === "rivendell")
+      rows.push({ id: "devices", chip: "DR", color: "var(--info, var(--acc))", name: "Device runs",
+        line: "teammates' iOS runs on this device", body: <DeviceRunsPanel /> });
+  }
+
   return (
     <>
-      {installed.map((p, i) => (
-        <Section key={p.id} title={PLUGIN_SEC[p.id] ?? p.label} desc={p.blurb} info={PLUGIN_INFO[p.id]} top={i > 0}>
-          <div style={CARD}>
-            <Row first label={p.summary}
-              desc={p.id === "design"
-                ? <>Adds a Design system row to each repo in SETTINGS ▸ Projects (link · pull · sync), the composer's DESIGN button and the project menu's Design system.{errLine(p.id)}</>
-                : errLine(p.id)}>
-              <MiniBtn danger disabled={!!busy} onClick={() => void remove(p)} title={`Remove ${p.label}`}>REMOVE</MiniBtn>
-            </Row>
-          </div>
-          {p.id === "rivendell" && <div style={{ marginTop: 11 }}><RivendellPanel onChange={recount} /><DeviceRunsPanel /></div>}
-        </Section>
-      ))}
-      <Section title="AVAILABLE" top={installed.length > 0}
+      <Section title="CONNECTED" desc={`${rows.length} here, each with its own settings.`}>
+        <div className="int-list">
+          {rows.map((r) => (
+            <div key={r.id} className="int-item" data-sec={r.plugin ? (PLUGIN_SEC[r.id] ?? undefined) : undefined}>
+              <div className="int-row">
+                <span className="int-chip" aria-hidden style={{ color: r.color, background: `color-mix(in oklab, ${r.color} 16%, var(--panel))` }}>{r.chip}</span>
+                <div className="int-who">
+                  <b>{r.name}</b>
+                  <span><i className="int-dot" aria-hidden />{r.line}</span>
+                </div>
+                <button className="int-cfg" aria-expanded={open === r.id} onClick={() => setOpen(open === r.id ? null : r.id)}>
+                  {open === r.id ? <ChevronDown size={13} aria-hidden /> : <ChevronRight size={13} aria-hidden />}Configure
+                </button>
+              </div>
+              {open === r.id && (
+                <div className="int-exp">
+                  {r.body}
+                  {r.plugin && (
+                    <div className="int-foot">
+                      {errLine(r.id) ?? <span />}
+                      <MiniBtn danger disabled={!!busy} onClick={() => void remove(r.plugin!)} title={`Remove ${r.name}`}>Remove {r.name}</MiniBtn>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+          {rows.length === 0 && <div className="int-note" style={{ padding: "14px 16px" }}>Nothing installed yet.</div>}
+        </div>
+      </Section>
+      <Section title="AVAILABLE" top
         desc={offers.length ? "Install one to connect it. Nothing is downloaded; the code is already here, switched off." : "Everything that ships with Mystical is installed."}>
         {offers.length > 0 && (
           // .aim scopes the card tokens (--l, --l2, --f) the aim-* classes read.
@@ -3196,6 +3239,7 @@ function SaversFold({ openSec }: { openSec: string | null }) {
   }
   return (
     <AimFold id="savers" title="Savers" secs={["SAVERS"]} openSec={openSec}
+      count={Array.isArray(rows) && rows.length ? `${rows.filter((r) => r.mode !== "off").length} of ${rows.length} on` : null}
       hint="Claude Code's own switches that make every turn cheaper" right={<span className="aim-chip">NEW</span>}>
       <p className="aim-svlead">
         <b>TRIAL</b> turns one on for every other new session, picked by a coin flip, and compares their first
@@ -3253,6 +3297,17 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
 }) {
   const aiFeatures = useAiFeatures();
   const acc = useAccounts(onAccountsChanged);
+  // Each fold head says where it stands without opening it (2026-11-06, A ·
+  // SPEAKING FOLDS): every login's week left, extras on, MCP servers that wait.
+  const [mcp, setMcp] = useState<McpInfo | null>(null);
+  useEffect(() => { void api.mcp().then(setMcp).catch(() => { /* the fold still opens */ }); }, []);
+  const mcpN = mcp && {
+    ok: mcp.servers.filter((x) => x.ok).length,
+    auth: mcp.servers.filter((x) => !x.ok && x.status.trim().startsWith("!")).length,
+    bad: mcp.servers.filter((x) => !x.ok && !x.status.trim().startsWith("!")).length,
+  };
+  const extrasAll = Object.keys(aiFeatures).length;
+  const extrasOn = Object.values(aiFeatures).filter(Boolean).length;
   // Opened on one login (the composer's PROFILE menu, on a profile whose login
   // has expired) or on a blank profile (its + NEW PROFILE): read once.
   const [focus] = useState(() => takeSettingsFocus());
@@ -3498,18 +3553,34 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
     <div className="aim">
       <AimFold id="accounts" title="Accounts" secs={["ACCOUNTS", "ON USAGE LIMIT", "CLAUDE LOGINS", "AGENTS"]} openSec={signIn ? "AGENTS" : openSec}
         count={acc.rows ? `${acc.rows.length} login${acc.rows.length === 1 ? "" : "s"} · ${list.length} profile${list.length === 1 ? "" : "s"}` : null}
-        right={policyPick}>
+        right={<>
+          {acc.rows && acc.rows.length > 0 && (
+            <span className="aim-mini" aria-label="each login's week left">
+              {acc.rows.map((a) => (
+                <span key={a.slot} title={`${a.email}: ${a.left == null ? "no reading" : `${a.left}% left`}`}
+                  data-low={(a.left != null && a.left < 20) || !a.logged_in || undefined}>
+                  {a.slot} · {!a.logged_in ? "out" : a.left == null ? "—" : `${a.left}%`}
+                  <i><b style={{ width: `${a.logged_in ? a.left ?? 0 : 0}%` }} /></i>
+                </span>
+              ))}
+            </span>
+          )}
+          {policyPick}
+        </>}>
         {accountsBody}
       </AimFold>
       <AimFold id="extras" title="Extras" secs={["MODEL-SPENDING EXTRAS"]} openSec={openSec}
-        hint="the model calls the bridge makes on top of your turns, each with its switch">
+        count={extrasAll ? `${extrasOn} of ${extrasAll} on` : null}
+        hint="model calls the bridge makes on top of your turns">
         <ExtrasFold />
       </AimFold>
       <SaversFold openSec={openSec} />
       {/* Claude's servers (`claude mcp`). Kimi Code reads its own ~/.kimi-code/mcp.json;
           a project's .mcp.json reaches both. */}
       <AimFold id="mcp" title="Claude MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec}
-        hint="servers Claude sessions load · Kimi Code keeps its own, a project's .mcp.json reaches both">
+        count={mcpN ? [`${mcpN.ok} connected`, mcpN.auth ? `${mcpN.auth} need a sign-in` : "", mcpN.bad ? `${mcpN.bad} failed` : ""].filter(Boolean).join(" · ") : null}
+        hint={mcpN ? undefined : "servers Claude sessions load"}
+        right={mcpN && mcpN.bad > 0 ? <span className="aim-chip warn">{mcpN.bad} failed</span> : undefined}>
         <McpPanel />
       </AimFold>
       <AimFold id="defprofile" title="Default profile" secs={["PROFILES", "RUN DEFAULTS"]} openSec={openSec}
@@ -4177,6 +4248,95 @@ function ClockWeather({ settings, onPatch, weather, onSetUnit, onSetPlace }: {
   );
 }
 
+// ---- SYSTEM's tabs ------------------------------------------------------------
+// SYSTEM was fifteen sections in one 8-screen scroll; five tabs now (2026-11-06,
+// B · TABS): the bridge itself, how runs start, Telegram, disk, and the tuning
+// nobody needs daily. A search hit or a deep link names a section; it opens the
+// tab that holds it.
+type SysTab = "overview" | "runs" | "telegram" | "storage" | "advanced";
+const SYS_TABS: { key: SysTab; label: string }[] = [
+  { key: "overview", label: "Overview" }, { key: "runs", label: "Runs" }, { key: "telegram", label: "Telegram" },
+  { key: "storage", label: "Storage" }, { key: "advanced", label: "Advanced" },
+];
+const SYS_ENV: Record<SysTab, string[]> = {
+  overview: [], storage: [],
+  runs: ["RUNS", "PROJECTS", "BROWSER", "DEV SERVER", "UPLOADS"],
+  telegram: ["ACCESS", "SERVERS", "TUNNEL"],
+  advanced: ["AI TUNING"],
+};
+function sysTabOf(sec: string | null | undefined): SysTab {
+  if (!sec) return "overview";
+  if (sec === "STORAGE") return "storage";
+  if (sec === "HTTP INSPECTOR") return "advanced";
+  return (Object.keys(SYS_ENV) as SysTab[]).find((t) => SYS_ENV[t].includes(sec)) ?? "overview";
+}
+
+// ---- LIVE RAIL ----------------------------------------------------------------
+// Each rail row says what its page is set to, so you can read your setup without
+// opening ten pages (2026-11-06, .mystical/design-drafts/settings-pages, A · LIVE RAIL).
+// Quiet grey text; amber only when the page wants you (a login signed out).
+// Fetched once per open, from the same GETs the pages make themselves.
+type Readout = { text: string; want?: boolean };
+// The storage scan walks every repo's .mystical/ (~2 s); once per page load is plenty.
+let storageScan: Promise<number> | null = null;
+const titled = (s: string) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+
+function useRailReadouts(settings: HudSettings, projectCount: number, plugins: Record<string, boolean>,
+  project: string | null): Partial<Record<Tab, Readout>> {
+  const [live, setLive] = useState<{ accounts?: AccountInfo[]; workspaces?: number; skills?: number; storage?: number }>({});
+  useEffect(() => {
+    let on = true;
+    const put = (part: typeof live) => { if (on) setLive((l) => ({ ...l, ...part })); };
+    void api.accounts().then((r) => put({ accounts: r.accounts })).catch(() => {});
+    void api.workspaces().then((r) => put({ workspaces: r.workspaces.length })).catch(() => {});
+    void api.skills(project).then((r) => put({ skills: r.project.length + r.system.length })).catch(() => {});
+    void (storageScan ??= api.storage().then((r) => r.bytes))
+      .then((b) => put({ storage: b }))
+      .catch(() => { storageScan = null; });
+    return () => { on = false; };
+  }, [project]);
+  const out: Partial<Record<Tab, Readout>> = {
+    appearance: { text: titled(themeDef(settings.theme).name) },
+    transcript: { text: settings.layout === "compact" ? "Compact" : "Default" },
+    notifications: { text: settings.push ? (settings.pushSound ? "Pop-up · sound" : "Pop-up") : "Bell only" },
+    projects: { text: String(projectCount) },
+  };
+  const installed = Object.values(plugins).filter(Boolean).length;
+  if (installed) out.integrations = { text: `${installed} on` };
+  if (live.workspaces !== undefined) out.workspaces = { text: String(live.workspaces) };
+  if (live.skills !== undefined) out.skills = { text: String(live.skills) };
+  if (live.storage !== undefined) out.system = { text: fmtBytes(live.storage) };
+  if (live.accounts) {
+    const out_ = live.accounts.filter((a) => !a.disabled && !a.logged_in).length;
+    const n = live.accounts.length;
+    out.aimgmt = out_ ? { text: "sign in", want: true } : { text: `${n} login${n === 1 ? "" : "s"}` };
+  }
+  return out;
+}
+
+/** The rail's foot: the bridge you are talking to, and the way to restart it
+ *  (restartBridge asks first, as SYSTEM's own button does). */
+function RailFoot({ onOpen }: { onOpen: () => void }) {
+  const [branch, setBranch] = useState<string | null>(null);
+  useEffect(() => {
+    let on = true;
+    void api.update().then((u) => { if (on) setBranch(u.branch || null); }).catch(() => {});
+    return () => { on = false; };
+  }, []);
+  return (
+    <div className="set-railfoot">
+      <button className="set-railfoot-who" onClick={onOpen} title="open System">
+        <i aria-hidden />
+        <span>Bridge online</span>
+        {branch && <em>· {branch}</em>}
+      </button>
+      <button className="set-railfoot-go" onClick={() => void restartBridge()} title="restart the bridge" aria-label="restart the bridge">
+        <RotateCw size={14} strokeWidth={1.8} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
 export function SettingsModal(props: SettingsModalProps) {
   const {
     host,
@@ -4208,6 +4368,7 @@ export function SettingsModal(props: SettingsModalProps) {
   const [start] = useState(() => normalizeTab(startTab));
   const startSec = start.sec;
   const [tab, setTab] = useState<Tab>(start.tab ?? "appearance");
+  const [sysTab, setSysTab] = useState<SysTab>(() => sysTabOf(start.sec));
   // SETTINGS ▸ Skills' repo: Projects ▸ a project ▸ Skills ▸ Open… picks it; else the session's.
   const [skillsFor, setSkillsFor] = useState<string | null>(null);
   const aiFeatures = useAiFeatures();   // the PONYTAIL level hides with its switch
@@ -4230,9 +4391,20 @@ export function SettingsModal(props: SettingsModalProps) {
   const hidden = new Set(Object.entries(PLUGIN_SEC).filter(([id]) => !plugins[id]).map(([, sec]) => sec));
   if (!plugins.rivendell) hidden.add("ADD AN INSTANCE");
   const hits = search(q, env.filter((s) => !tunesOff(s.key, aiFeatures)), hidden);
+  const readouts = useRailReadouts(settings, props.projects.groups.length, plugins, project);
+  // The search sits at the top of the rail now; ⌘F (Ctrl+F) lands in it from anywhere in the dialog.
+  const searchBox = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") { e.preventDefault(); searchBox.current?.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const shown: Tab | "search" = q.trim() ? "search" : tab;
   function go(h: Hit) {
     setTab(h.tab);
+    if (h.tab === "system") setSysTab(sysTabOf(h.sec));
     setQ("");
     setJump(h);
   }
@@ -4345,19 +4517,6 @@ export function SettingsModal(props: SettingsModalProps) {
           <span className="set-crumb">Settings{crumbTab && <i><u>/</u> {sentence(crumbTab.label)}</i>}</span>
           <InfoDot on={scopeOpen} about="where these are stored" onClick={() => setScopeOpen(!scopeOpen)} />
           <span style={{ flex: 1 }}></span>
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && hits.length) go(hits[0]);
-              // Otherwise Escape would close the whole modal from inside the box.
-              if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
-            }}
-            placeholder="Search settings"
-            className="set-search"
-            style={{ ...field, flex: "0 1 220px", minWidth: 140 }}
-          />
           <button
             className="set-close"
             title="close (Esc)"
@@ -4400,6 +4559,23 @@ export function SettingsModal(props: SettingsModalProps) {
             lets it turn from a side rail into a top strip on a phone. */}
         <div className="setbody">
           <div className="setrail" ref={rail}>
+            <label className="set-railsearch">
+              <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && hits.length) go(hits[0]);
+                // Otherwise Escape would close the whole modal from inside the box.
+                if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
+              }}
+              placeholder="Search settings"
+              className="set-search"
+              ref={searchBox}
+              style={{ ...field }}
+              />
+              <kbd aria-hidden>⌘F</kbd>
+            </label>
             {RAIL.map((t, i) => (
               <Fragment key={t.key}>
                 {t.group !== RAIL[i - 1]?.group && <div className="setgroup">{sentence(t.group)}</div>}
@@ -4417,9 +4593,15 @@ export function SettingsModal(props: SettingsModalProps) {
                       {t.hint}
                     </div>
                   </div>
+                  {readouts[t.key] && (
+                    <span className="set-railro" data-want={readouts[t.key]!.want || undefined}>
+                      {readouts[t.key]!.want && <i aria-hidden />}{readouts[t.key]!.text}
+                    </span>
+                  )}
                 </button>
               </Fragment>
             ))}
+            <RailFoot onOpen={() => { setQ(""); setTab("system"); }} />
           </div>
 
           <div ref={pane} className={`mscroll mcol setpane${shown === "projects" ? " prj-fill" : ""}`} style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
@@ -4723,51 +4905,57 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "system" && (
               <>
-                <StorageSection />
+                <div className="sys-tabs" role="tablist">
+                  {SYS_TABS.map((t) => (
+                    <button key={t.key} role="tab" aria-selected={sysTab === t.key} data-on={sysTab === t.key || undefined}
+                      onClick={() => setSysTab(t.key)}>{t.label}</button>
+                  ))}
+                </div>
 
-                <Section title="BRIDGE" top>
-                  <div style={CARD}>
-                    <Row first label="HOST">
-                      <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{host}</span>
-                    </Row>
-                    <Row label="PORT">
-                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--tx)" }}>
-                        {port}
-                      </span>
-                    </Row>
-                  </div>
-                </Section>
-
-                <StartupSection />
-
-                <UsageSharingSection />
-
-                <Section title="HTTP INSPECTOR" top>
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="API TRAFFIC"
-                      info="Every request a run makes to the Anthropic API — its token accounting, its SSE frames, its timings — through a local pass-through proxy. Off by default: it sits on the critical path of the turns it watches."
+                {sysTab === "overview" && (
+                  <>
+                    <Section title="BRIDGE">
+                      <div style={CARD}>
+                        <Row first label="HOST">
+                          <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{host}</span>
+                        </Row>
+                        <Row label="PORT">
+                          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--tx)" }}>
+                            {port}
+                          </span>
+                        </Row>
+                      </div>
+                    </Section>
+                    <Section
+                      title="PLATFORM"
+                      top
+                      info="Updating pulls the bridge's own checkout, rebuilds this dashboard and restarts the bridge; running turns resume on their own."
                     >
-                      <button onClick={onOpenInspector}
-                        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none" }}>
-                        OPEN
-                      </button>
-                    </Row>
-                  </div>
-                </Section>
+                      <UpdatePanel onFeed={onFeed} />
+                    </Section>
+                    <StartupSection />
+                    <UsageSharingSection />
+                  </>
+                )}
 
-                <Section
-                  title="PLATFORM"
-                  top
-                  info="Updating pulls the bridge's own checkout, rebuilds this dashboard and restarts the bridge; running turns resume on their own."
-                >
-                  <UpdatePanel onFeed={onFeed} />
-                </Section>
+                {sysTab === "storage" && <StorageSection />}
 
-                {/* Everything config.py reads from the environment, which until
-                    now meant a text editor and a restart to change. */}
-                <EnvPanel />
+                {sysTab === "advanced" && (
+                  <Section title="HTTP INSPECTOR">
+                    <div style={CARD}>
+                      <Row
+                        first
+                        label="API TRAFFIC"
+                        info="Every request a run makes to the Anthropic API — its token accounting, its SSE frames, its timings — through a local pass-through proxy. Off by default: it sits on the critical path of the turns it watches."
+                      >
+                        <MiniBtn onClick={onOpenInspector}>Open</MiniBtn>
+                      </Row>
+                    </div>
+                  </Section>
+                )}
+
+                {/* Everything config.py reads from the environment, split by the tab it belongs to. */}
+                {SYS_ENV[sysTab].length > 0 && <EnvPanel key={sysTab} only={SYS_ENV[sysTab]} />}
               </>
             )}
             </div>

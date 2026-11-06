@@ -934,7 +934,7 @@ class Job:
     def _write_stdin(self, obj: dict) -> bool:
         """Write one JSON line to the live process's stdin (control channel).
         False when nothing took it: no child yet, or its stdin is gone (closed
-        at the turn's `result`, or the child exited)."""
+        once the turn is over, or the child exited)."""
         proc = self.proc
         if proc is None or proc.stdin is None:
             return False
@@ -2984,6 +2984,7 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                               "message": {"role": "user", "content": full_prompt}})
 
         assert proc.stdout is not None
+        answered = False
         for line in proc.stdout:
             line = line.strip()
             if not line:
@@ -2996,12 +2997,20 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
                 _handle_control_request(job, d)
                 continue
             _handle_event(job, d)
-            if d.get("type") == "result" and (d.get("num_turns") or d.get("result")):
-                # Turn finished; close stdin so the stream-json process exits
-                # (it otherwise stays alive awaiting more input). Not on the
-                # empty no-op a replayed notice gets (see _handle_event's init):
-                # our prompt runs after it and answers its cards over stdin.
-                # A lone one is ended by _watchdog's shell grace instead.
+            t = d.get("type")
+            # Not the empty no-op a replayed notice gets (see _handle_event's
+            # init): our prompt runs after it and answers its cards over stdin.
+            # A lone one is ended by _watchdog's shell grace instead.
+            answered = answered or (t == "result" and bool(d.get("num_turns") or d.get("result")))
+            if answered and (t == "result" or d.get("subtype") == "session_state_changed") \
+                    and not job.bg and job.cli_state in (None, "idle"):
+                # Turn over: close stdin so the stream-json process exits (it
+                # otherwise stays alive awaiting more input). Only once the CLI
+                # is idle with no background task out: one that reports wakes
+                # the model in this process, even straight after the result,
+                # and the woken turn asks over stdin -- closed, its
+                # AskUserQuestion failed with "Stream closed" (CLI 2.1.319). A
+                # CLI without state events (cli_state None) ends on its result.
                 job.close_stdin()
         proc.wait()
 

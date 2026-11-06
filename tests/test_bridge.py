@@ -1850,6 +1850,100 @@ def test_a_replayed_notice_leaves_stdin_open_for_the_real_turn(monkeypatch):
     assert (job.status, job.result, job.proc.stdin.closed) == ("done", "pineapple", True)
 
 
+def _scripted(monkeypatch, project, script):
+    """A started turn whose claude child plays script(job, stdin), a generator of
+    stream events that can read what the bridge wrote, then exits. Returns the
+    job and whether stdin was closed when the script ran out: the CLI exits on
+    EOF, and not before."""
+    exited = []
+
+    class Child(_child(0)):
+        def __init__(self, cmd, **kw):
+            super().__init__(cmd, **kw)
+            self.stdin = _FakeStdin()
+
+            def out():
+                for d in script(job, self.stdin):
+                    yield json.dumps(d) + "\n"
+                exited.append(self.stdin.closed)
+            self.stdout = out()
+
+    sid, job = _dying_turn(monkeypatch, project, 0)
+    monkeypatch.setattr(runner.subprocess, "Popen", Child)
+    monkeypatch.setattr(runner, "notify_awaiting", lambda *a, **k: None)   # a card's ping is a real sendMessage
+    runner._run_streaming(job, "p", [], config.BASE_PATH)
+    return job, exited
+
+
+_ASK = {"questions": [{"question": "Which color?", "header": "Color", "multiSelect": False,
+                       "options": [{"label": "Red"}, {"label": "Blue"}]}]}
+_INIT = {"type": "system", "subtype": "init", "session_id": "c1"}
+_BG = {"type": "system", "subtype": "background_tasks_changed",
+       "tasks": [{"task_id": "b1", "task_type": "local_bash", "description": "sleep 6"}]}
+_BG_DONE = [{"type": "system", "subtype": "task_notification", "task_id": "b1", "status": "completed"},
+            {"type": "system", "subtype": "background_tasks_changed", "tasks": []}]
+
+
+def _state(s):
+    return {"type": "system", "subtype": "session_state_changed", "state": s}
+
+
+def _said(text):
+    return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}], "usage": {}}}
+
+
+def _result(text):
+    return {"type": "result", "subtype": "success", "result": text, "num_turns": 2}
+
+
+def _woken_ask(before):
+    """The CLI plays `before`, then the woken model asks the color question."""
+    def script(job, stdin):
+        yield from before
+        yield {"type": "assistant", "message": {"usage": {}, "content": [
+            {"type": "tool_use", "id": "t1", "name": "AskUserQuestion", "input": _ASK}]}}
+        yield _state("requires_action")
+        if stdin.closed:   # the CLI's own answer when it has no stdin to ask over
+            answer = "Tool permission request failed: AbortError: Stream closed"
+        else:
+            yield {"type": "control_request", "request_id": "q1", "request": {
+                "subtype": "can_use_tool", "tool_name": "AskUserQuestion", "input": _ASK}}
+            job.respond("q1", answers=[{"header": "Color", "labels": ["Blue"]}])
+            answer = json.loads(stdin.data[-1])["response"]["response"]["message"]
+        yield from (_state("running"), _said(answer), _result(answer), _state("idle"))
+    return script
+
+
+@pytest.mark.parametrize("project, before", [
+    # claude 2.1.319's order (haiku, 2026-11-06): the task still runs at the result...
+    ("p-bg-running-at-result",
+     [_state("running"), _INIT, _BG, _said("WAITING"), _result("WAITING"), _state("idle"),
+      *_BG_DONE, _state("running"), _INIT]),
+    # ...or it ends while the reply is being written, and the wake follows the
+    # result with no idle in between.
+    ("p-bg-done-mid-reply",
+     [_state("running"), _INIT, _BG, *_BG_DONE, _said("one, two"), _result("one, two"), _INIT]),
+])
+def test_a_background_task_wake_can_still_ask(monkeypatch, project, before):
+    """A turn that ends with a background task out (a survey agent, a
+    run_in_background command) gets its result, and the CLI wakes the model in
+    the same process when the task reports. Closed at that first result, stdin
+    left the woken turn nothing to ask over: its AskUserQuestion failed at once
+    with "Tool permission request failed: AbortError: Stream closed", no card
+    opened, and the questions came back as prose (2026-11-06)."""
+    job, exited = _scripted(monkeypatch, project, _woken_ask(before))
+    assert job.result == 'The user answered. For "Color": Blue'
+    assert exited == [True]          # and the turn's real end still lets the CLI go
+
+
+def test_a_cli_without_state_events_exits_on_its_result(monkeypatch):
+    """No session_state_changed (an older CLI): its result is the only end there
+    is, and stdin closes on it as it always did."""
+    job, exited = _scripted(monkeypatch, "p-no-state",
+                            lambda job, stdin: iter([_INIT, _said("hi"), _result("hi")]))
+    assert (job.result, exited) == ("hi", [True])
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]
