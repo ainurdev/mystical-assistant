@@ -1,5 +1,5 @@
 import {
-  Fragment, useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore,
+  Fragment, useCallback, useEffect, useId, useLayoutEffect, useRef, useState, useSyncExternalStore,
   type CSSProperties, type ReactNode,
 } from "react";
 import {
@@ -17,7 +17,8 @@ import {
 import { CHAT_BGS, type ChatBg } from "../../lib/toolwidget";
 import { toolAccent } from "../../lib/tools";
 
-import { ago, projectName, windowLabels } from "../../lib/surfaces";
+import { ago, projectName, setClock12, useClock12, windowLabels } from "../../lib/surfaces";
+import { fmtOffset, matchZones, placeName, zoneCity, zoneList, zoneTime } from "../../lib/almanac";
 import { ExtrasFold, SkillsPage } from "./SkillsFold";
 import { saverFoot } from "../../lib/savers";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
@@ -52,6 +53,8 @@ import {
   type MoveRead,
   type MoveSection,
   type MoveSectionKey,
+  type Place,
+  type Weather,
 } from "../../api";
 import { fmtBytes, fmtDur, nextAction, nextLabel } from "./MoveDock";
 import {
@@ -72,6 +75,7 @@ import {
   type Family,
   type HudSettings,
   type ThemeKey,
+  type WorldClock,
 } from "../../lib/theme";
 import { describe, importLegacy, type Profile, type ProfilesInfo, type ProfileWrite } from "../../lib/profiles";
 import { AGENT_DEFAULT, agentLabel, optionRows, setAgentLabels } from "../../lib/agents";
@@ -120,6 +124,10 @@ export interface SettingsModalProps {
   projects: ProjectsSettingsProps;
   /** The open session's project — where SETTINGS ▸ Skills starts. */
   project: string | null;
+  // APPEARANCE ▸ CLOCK & WEATHER: App's weather (lib/ambient useWeather) and its two setters.
+  weather: Weather;
+  onSetUnit: (unit: string) => Promise<string | null>;
+  onSetPlace: (p: Place) => Promise<string | null>;
 }
 
 // ---- CATEGORIES -------------------------------------------------------------
@@ -145,6 +153,8 @@ export type Tab = "appearance" | "transcript" | "notifications"
 const LEGACY_TAB: Record<string, string> = { session: "PROFILES", accounts: "ACCOUNTS", mcp: "MCP SERVERS", ai: "MODEL-SPENDING EXTRAS" };
 export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec: string | null } {
   if (t === "plugins") return { tab: "integrations", sec: "RIVENDELL" };
+  // The Almanac's ⚙ (openSettings("clock")).
+  if (t === "clock") return { tab: "appearance", sec: "CLOCK & WEATHER" };
   if (t && t in LEGACY_TAB) return { tab: "aimgmt", sec: LEGACY_TAB[t] };
   return { tab: t as Tab | undefined, sec: null };
 }
@@ -216,6 +226,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "appearance", sec: "THEME", terms: "colour color palette scheme aurora claude flint phosphor dark light day bright" },
   { tab: "appearance", sec: "CRT EFFECTS", terms: "scanlines scan sweep text glow bloom raster" },
   { tab: "appearance", sec: "TYPE", terms: "font typeface monospace family text size zoom bigger smaller scale px auto base preview" },
+  { tab: "appearance", sec: "CLOCK & WEATHER", terms: "clock time format 12h 24h am pm almanac calendar weather city location place celsius fahrenheit units temperature world clock time zone timezone header pin" },
   { tab: "appearance", sec: "LOADING SCREEN", terms: "loading screen boot intro splash startup restart scene emblem gandalf balrog you shall not pass khazad-dum bridge durin door moria mellon speak friend enter shuffle random lord of the rings lotr middle-earth" },
   { tab: "transcript", sec: "WHILE IT WORKS", terms: "working indicator status line nyan cat orbit" },
   { tab: "transcript", sec: "LAYOUT", terms: "layout compact default chat bubbles right side header pill composer model popover effort slider permissions prompt box tabs console classic" },
@@ -365,6 +376,7 @@ const SEC_ICONS: Record<string, LucideIcon> = {
   "CRT EFFECTS": ScanLine,
   TYPE: Type,
   "LOADING SCREEN": Hourglass,
+  "CLOCK & WEATHER": Clock3,
   "WORKING INDICATOR": AudioLines,
   RESULTS: ListTree,
   "WHAT INTERRUPTS YOU": Bell,
@@ -406,6 +418,7 @@ const SEC_DESC: Record<string, string> = {
   "CRT EFFECTS": "The tube laid over the screen: raster lines, a roaming glow, bloom on headings.",
   TYPE: "The typeface the HUD is set in, and the base size every other size scales from.",
   "LOADING SCREEN": "What fills the screen while the dashboard starts, and while it restarts.",
+  "CLOCK & WEATHER": "What the Clock at the top shows, and its Almanac: the time format, the weather city and units, and up to two world clocks.",
   "THE GROUND": "The texture the transcript sits on.",
   RESULTS: "Whether command output and diffs start open or folded.",
   "WORKING INDICATOR": "The tab you pick is the one the dashboard shows while it works.",
@@ -4187,6 +4200,131 @@ function MoveHome({ jobs, running, onGo }: { jobs: MoveJob[]; running?: MoveJob;
   );
 }
 
+/** A search box that lists matches as you type and sets nothing until one is
+ *  picked, by click or ↑↓ + Enter: the weather city and the world clocks'
+ *  zones. A bare box that waited for Enter read as "how do I put this in". */
+function SearchPick<T>({ placeholder, find, label, hint, onPick, width = 240 }: {
+  placeholder: string;
+  /** The matches, or why there are none ("No match", a lookup error). */
+  find: (q: string) => Promise<T[] | string>;
+  label: (x: T) => string;
+  hint?: (x: T) => string;
+  onPick: (x: T) => void;
+  width?: number;
+}) {
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<T[]>([]);
+  const [why, setWhy] = useState<string | null>(null);
+  const [at, setAt] = useState(0);
+  const id = useId();
+  useEffect(() => {
+    if (!q.trim()) { setHits([]); setWhy(null); return; }
+    let live = true;
+    const t = window.setTimeout(() => void find(q).then((r) => {
+      if (!live) return;
+      const list = typeof r === "string" ? [] : r;
+      setHits(list);
+      setAt(0);
+      setWhy(typeof r === "string" ? r : list.length ? null : "No match");
+    }), 220);
+    return () => { live = false; clearTimeout(t); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+  const pick = (x: T) => { onPick(x); setQ(""); };
+  return (
+    <div className="set-pick" style={{ width }}>
+      <input value={q} onChange={(e) => setQ(e.target.value)} onBlur={() => setQ("")} placeholder={placeholder}
+        role="combobox" aria-expanded={hits.length > 0} aria-controls={id} aria-autocomplete="list"
+        aria-activedescendant={hits.length ? `${id}-${at}` : undefined}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown" && hits.length) { e.preventDefault(); setAt((i) => Math.min(i + 1, hits.length - 1)); }
+          else if (e.key === "ArrowUp" && hits.length) { e.preventDefault(); setAt((i) => Math.max(i - 1, 0)); }
+          else if (e.key === "Enter" && hits[at]) { e.preventDefault(); pick(hits[at]); }
+          else if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }   // the box, not the dialog
+        }} />
+      {q && (hits.length > 0 || why) && (
+        <div id={id} role="listbox" className="set-pick-list">
+          {why ? <div className="set-pick-why">{why}</div> : hits.map((x, i) => (
+            <div key={label(x) + i} id={`${id}-${i}`} role="option" aria-selected={i === at}
+              onMouseEnter={() => setAt(i)} onMouseDown={(e) => { e.preventDefault(); pick(x); }}>
+              <span>{label(x)}</span>{hint && <small>{hint(x)}</small>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** APPEARANCE ▸ CLOCK & WEATHER: what the Clock and its Almanac show. The
+ *  12H switch is the store the transcript's turn clocks read too
+ *  (lib/surfaces); the city and units live on the bridge (bridge/weather.py);
+ *  the world clocks are this browser's (HudSettings.clocks). */
+function ClockWeather({ settings, onPatch, weather, onSetUnit, onSetPlace }: {
+  settings: HudSettings;
+  onPatch: (p: Partial<HudSettings>) => void;
+  weather: Weather;
+  onSetUnit: (unit: string) => Promise<string | null>;
+  onSetPlace: (p: Place) => Promise<string | null>;
+}) {
+  const h12 = useClock12();
+  const voice = useVoice();
+  const [err, setErr] = useState<string | null>(null);
+  const clocks = settings.clocks;
+  const put = (i: number, c: WorldClock | null) => {
+    const next = [...clocks];
+    if (c) next[i] = c; else next.splice(i, 1);
+    onPatch({ clocks: next.filter(Boolean) });
+  };
+  const findPlace = async (q: string) => {
+    const r = await api.weatherSearch(q).catch((e: Error) => ({ error: e.message, results: undefined }));
+    return r.error ?? r.results ?? [];
+  };
+  // Not one already picked, nor this browser's own zone, which the Almanac shows as "you".
+  const home = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const findZone = async (q: string) => matchZones(q, zoneList().filter((z) => z !== home && !clocks.some((c) => c.zone === z)));
+  const zoneHint = (z: string) => { const t = zoneTime(z, Date.now(), h12); return `${t.time}${t.ampm && ` ${t.ampm}`} · ${fmtOffset(t.offset)}`; };
+  return (
+    <div style={CARD}>
+      <Row first label="TIME FORMAT" desc="the Clock, the Almanac and every time in the transcript">
+        <div style={{ width: 160 }}>
+          <Segmented options={[{ label: "24H", value: "24" }, { label: "12H", value: "12" }]}
+            value={h12 ? "12" : "24"} onPick={(v) => setClock12(v === "12")} />
+        </div>
+      </Row>
+      <Row label="UNITS" desc="temperature and wind speed">
+        <div style={{ width: 160 }}>
+          <Segmented options={[{ label: "°C", value: "C" }, { label: "°F", value: "F" }]}
+            value={weather.unit} onPick={(u) => void onSetUnit(u === "F" ? "fahrenheit" : "celsius")} />
+        </div>
+      </Row>
+      <Row label="WEATHER CITY"
+        desc={err ? <span style={{ color: "var(--err)" }}>{err}</span> : <>Now {placeName(weather.loc)}. Type a few letters, then pick the place.</>}>
+        <SearchPick placeholder="Search a city…" find={findPlace} label={(p) => p.name}
+          onPick={(p) => void onSetPlace(p).then(setErr)} />
+      </Row>
+      {[0, 1].map((i) => {
+        const c = clocks[i];
+        return (
+          <Row key={i} label={`WORLD CLOCK ${i + 1}`}
+            desc={c ? <>{zoneCity(c.zone)}, {zoneHint(c.zone)}{c.pin ? " · in the header" : ""}</> : "Search a city or a region: Amsterdam, New York, Europe…"}>
+            <SearchPick width={200} placeholder={c ? `Change ${zoneCity(c.zone)}…` : "Search a time zone…"}
+              find={findZone} label={(z) => z.replace(/_/g, " ")} hint={zoneHint}
+              onPick={(zone) => put(i, { zone, pin: c?.pin ?? false })} />
+            {c && (
+              <>
+                <span style={KEY_TX}>{voice("HEADER")}</span>
+                <Switch on={c.pin} onClick={() => put(i, { ...c, pin: !c.pin })} label={`Show ${zoneCity(c.zone)} in the header`} />
+                <MiniBtn onClick={() => put(i, null)} title={`Remove ${zoneCity(c.zone)}`}>REMOVE</MiniBtn>
+              </>
+            )}
+          </Row>
+        );
+      })}
+    </div>
+  );
+}
+
 // ---- SYSTEM's tabs ------------------------------------------------------------
 // SYSTEM was fifteen sections in one 8-screen scroll; five tabs now (2026-11-06,
 // B · TABS): the bridge itself, how runs start, Telegram, disk, and the tuning
@@ -4297,6 +4435,9 @@ export function SettingsModal(props: SettingsModalProps) {
     projects,
     project,
     startTab,
+    weather,
+    onSetUnit,
+    onSetPlace,
   } = props;
 
   // A caller may still name one of the tabs AI MANAGEMENT replaced; it lands
@@ -4311,7 +4452,8 @@ export function SettingsModal(props: SettingsModalProps) {
   // Search. A query replaces the panel with its results; picking one puts the
   // tab back and scrolls to the setting, so `q` is also "which view is this".
   const [q, setQ] = useState("");
-  const [jump, setJump] = useState<Hit | null>(null);
+  // Opened for an APPEARANCE block (the Almanac's ⚙), it scrolls there as a search hit would.
+  const [jump, setJump] = useState<Hit | null>(() => start.tab === "appearance" && startSec ? { tab: "appearance", sec: startSec } : null);
   const [env, setEnv] = useState<EnvSetting[]>([]);
   const asked = useRef(false);
   const pane = useRef<HTMLDivElement>(null);
@@ -4618,6 +4760,10 @@ export function SettingsModal(props: SettingsModalProps) {
                   }
                 >
                   <TypePicker settings={settings} autoBase={autoBase} onPatch={onPatch} />
+                </Section>
+
+                <Section title="CLOCK & WEATHER" top>
+                  <ClockWeather settings={settings} onPatch={onPatch} weather={weather} onSetUnit={onSetUnit} onSetPlace={onSetPlace} />
                 </Section>
 
                 {/* lib/intro, drawn by BootIntro + BootScenes. The boot is the

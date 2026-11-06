@@ -833,7 +833,13 @@ export interface Weather {
   hum: string;
   unit: "C" | "F";
   loc: string;
+  // "07:12" in the place's own time; absent from an older bridge
+  sunrise?: string | null;
+  sunset?: string | null;
+  tz?: string | null; // the place's IANA zone, the clock sunrise and sunset are on
 }
+/** A geocoder match the weather city picker offers (bridge/weather.search). */
+export interface Place { name: string; lat: number; lon: number }
 export interface Worktree {
   path: string;
   rel: string | null;
@@ -2362,11 +2368,10 @@ export const api = {
   // --- host vitals + weather (WORKSPACE panel ambient widgets) ---
   sysinfo: () => req<HostStats>("/local/sysinfo"),
   weather: () => req<Weather>("/local/weather"),
-  setWeatherCity: (city: string) =>
-    req<Weather & { error?: string }>("/local/weather/city", {
-      method: "POST",
-      body: { city },
-    }),
+  weatherSearch: (q: string) =>
+    req<{ results?: Place[]; error?: string }>(`/local/weather/search?q=${encodeURIComponent(q)}`),
+  setWeatherPlace: (p: Place) =>
+    req<Weather & { error?: string }>("/local/weather/place", { method: "POST", body: p }),
   setWeatherUnit: (unit: string) =>
     req<Weather & { error?: string }>("/local/weather/unit", {
       method: "POST",

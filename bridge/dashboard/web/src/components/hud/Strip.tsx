@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { type Weather } from "../../api";
+import { type AccountInfo, type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
+import { Almanac } from "./Almanac";
 import { capDate } from "../../lib/capdate";
-import { setClock12 } from "../../lib/surfaces";
+import { zoneTag, zoneTime } from "../../lib/almanac";
+import { useClock12 } from "../../lib/surfaces";
+import type { WorldClock } from "../../lib/theme";
 import { isMacApp, linuxWindow, macWindow } from "../../lib/mac";
 import { Minus, PanelLeftClose, Plus, Settings, Square, X, type LucideIcon } from "lucide-react";
 
@@ -19,9 +22,11 @@ import { Minus, PanelLeftClose, Plus, Settings, Square, X, type LucideIcon } fro
  * as order, and the gap between the halves takes up whatever width a theme's
  * font adds or saves, so no theme moves an edge. Every text sits on a trimmed
  * box (`.trim`, index.css) so Consolas and Courier New centre like JetBrains.
- * The clock is the handle for everything that used to sit beside it: a click
- * opens the dashboard's context menu (App builds the `weather` rows — usage,
- * clock & weather settings, next station, the dashboard rows).
+ * A click on the clock (or the weather beside it) drops the Almanac under it
+ * (Almanac.tsx); the world clocks you pinned sit beside it, and are the first
+ * thing to go when the row runs out of width. The clock's own menu and its
+ * CLOCK & WEATHER popover are gone: the settings moved to SETTINGS ▸
+ * APPEARANCE, and right-click here is the plain dashboard menu.
  *
  * Collapsed, the right column is the rail's 48px, too narrow for the cluster,
  * so App hands it to the chat header instead (Terminal's `chrome`). */
@@ -35,18 +40,9 @@ const CAP_IN = "enterDown .55s cubic-bezier(.2,.8,.2,1) both";
 export interface StripProps {
   clock: string; // "HH:MM:SS" 24h, from telemetry
   weather: Weather;
-  onSetCity: (city: string) => Promise<string | null>;
-  onSetUnit: (unit: string) => Promise<string | null>;
-  openSettings?: number; // nonce — bump to open the clock & weather popover (from the menu)
+  accounts: AccountInfo[]; // every login, for the Almanac's limit resets
+  clocks: WorldClock[]; // the world clocks (HudSettings.clocks)
 }
-
-// Segmented-control button style for the popover's 24H/12H and °C/°F pickers.
-const seg = (on: boolean): CSSProperties => ({
-  flex: 1, appearance: "none", cursor: "pointer", border: 0,
-  background: on ? "color-mix(in srgb, var(--acc) 16%, transparent)" : "transparent",
-  color: on ? "var(--txb)" : "var(--txd)",
-  fontFamily: "inherit", fontSize: "var(--t10)", letterSpacing: "1px", padding: "7px",
-});
 
 /** Left column cap: mark + wordmark, on the SESSIONS head's own gutter, and at
  *  its end the fold. The week report that hung off its end moved to the right
@@ -245,68 +241,34 @@ export function RightCap({ onOpenSettings, children, railTop }: {
   );
 }
 
-/** SHIP, clock & weather, the bell — the old strip's middle and
- *  right, as one row that sits wherever App puts it (RightCap, or the chat
- *  header while the right panel is collapsed). */
-export function Strip(props: StripProps) {
-  const { clock, weather, onSetCity, onSetUnit, openSettings } = props;
+/** The clock & weather, the pinned world clocks, the bell: one row that sits
+ *  wherever App puts it (RightCap, or the chat header while the right panel is
+ *  collapsed). */
+export function Strip({ clock, weather, accounts, clocks }: StripProps) {
   const [clockHover, setClockHover] = useState(false);
-  const [clockOpen, setClockOpen] = useState(false);
-  // Kept in localStorage: the cluster remounts every time the right panel
-  // folds (it moves into the chat header), and 12H must survive the move.
-  const [fmt12, setFmt12] = useState(() => localStorage.getItem("hud-clock12") === "1");
-  const [city, setCityInput] = useState("");
-  const [cityErr, setCityErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [open, setOpen] = useState(false);
+  const h12 = useClock12();
   const anchorRef = useRef<HTMLSpanElement>(null);
-  // The menu's nonces as they stood at mount. Compared, not truth-tested: on a
-  // remount, a nonce bumped an hour ago would reopen its popover.
-  const asked = useRef({ settings: openSettings });
 
-  // Through the store, not straight to localStorage: the turn clocks in the
-  // transcript read the same switch and have to hear it flick.
-  useEffect(() => { setClock12(fmt12); }, [fmt12]);
-
+  // It closes on a press anywhere outside the clock and its drop-down; Esc is the
+  // Almanac's own, since there it first leaves the year view.
   useEffect(() => {
-    if (openSettings === asked.current.settings) return;
-    asked.current.settings = openSettings;
-    setCityInput(weather.loc); setCityErr(null); setClockOpen(true);
-  }, [openSettings]);
-
-  // The popover closes on a press anywhere outside the clock.
-  useEffect(() => {
-    if (!clockOpen) return;
+    if (!open) return;
     const onDown = (e: PointerEvent) => {
-      if (!anchorRef.current?.contains(e.target as Node)) setClockOpen(false);
+      if (!anchorRef.current?.contains(e.target as Node)) setOpen(false);
     };
     document.addEventListener("pointerdown", onDown);
     return () => document.removeEventListener("pointerdown", onDown);
-  }, [clockOpen]);
-
-  async function submitCity() {
-    if (!city.trim() || saving) return;
-    setSaving(true);
-    setCityErr(null);
-    const err = await onSetCity(city.trim());
-    setSaving(false);
-    if (err) setCityErr(err);
-  }
+  }, [open]);
 
   const [hh = "00", mm = "00"] = clock.split(":");
   const h24 = parseInt(hh, 10) || 0;
-  const clockMini = fmt12 ? `${h24 % 12 || 12}:${mm}` : `${hh}:${mm}`;
+  const clockMini = h12 ? `${h24 % 12 || 12}:${mm}` : `${hh}:${mm}`;
   const ampm = h24 < 12 ? "AM" : "PM";
-  const wxTempStr = weather.temp === null ? "—" : `${weather.temp}°${weather.unit}`;
   const cap = capDate(new Date(), weather); // re-renders with the clock prop, so the date turns at midnight
+  const pins = clocks.filter((c) => c.pin);
 
-  // The clock and the weather line beside it are one handle: a click re-fires
-  // as a contextmenu under the instrument and App builds the rows. A popover
-  // already open just closes — one thing under the clock at a time.
-  const openMenu = (el: HTMLElement) => {
-    if (clockOpen) { setClockOpen(false); return; }
-    const r = (anchorRef.current ?? el).getBoundingClientRect();
-    el.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, clientX: r.left, clientY: r.bottom + 8 }));
-  };
+  const toggle = { onClick: () => setOpen((o) => !o), "aria-haspopup": "dialog" as const, "aria-expanded": open };
   const clockHov = { onMouseEnter: () => setClockHover(true), onMouseLeave: () => setClockHover(false) };
   const bare: CSSProperties = {
     appearance: "none", cursor: "pointer", border: 0, background: "transparent", padding: 0,
@@ -314,34 +276,29 @@ export function Strip(props: StripProps) {
   };
 
   return (
-    // Relative here, not on the clock: both popovers hang off the cluster's
+    // Relative here, not on the clock: the Almanac hangs off the cluster's
     // right edge, which stays inside the right column (or at the chat header's
     // end) wherever the clock itself sits.
     <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flex: "1 1 auto", minWidth: 0 }}>
-      <span
-        ref={anchorRef}
-        style={{ display: "flex", alignItems: "center", gap: 9, flex: "0 1 auto", minWidth: 0 }}
-        data-ctx-type="weather" data-ctx-id="weather"
-        data-ctx-label={[weather.cond, weather.loc].filter(Boolean).join(" · ")}
-      >
+      {/* "surface": right-click here is the plain dashboard menu in both homes,
+          not the chat column's, whose root holds the clock while the panel is folded. */}
+      <span ref={anchorRef} data-ctx-type="surface" style={{ display: "flex", alignItems: "center", gap: 9, flex: "0 1 auto", minWidth: 0 }}>
         {/* The one big readout. At t17 it outranks the chat's t14 title —
             chosen over a quieter split, 2026-09-11. */}
-        <button onClick={(e) => openMenu(e.currentTarget)} aria-haspopup="menu" title="clock & weather — click for the menu" {...clockHov} style={{ ...bare, gap: 4, height: 26 }}>
+        <button {...toggle} title="the Almanac: calendar, weather, limit resets, world clocks" {...clockHov} style={{ ...bare, gap: 4, height: 26 }}>
           <span className="trim" style={{ fontFamily: "var(--mono)", fontSize: "var(--t17)", color: "var(--txb)", letterSpacing: ".4px" }}>
             {clockMini}
           </span>
-          {fmt12 && (
+          {h12 && (
             <span className="trim" style={{ fontSize: "var(--t8)", letterSpacing: "1px", color: "var(--txd)" }}>{ampm}</span>
           )}
         </button>
-        {/* Two small readouts stacked beside it: the weather (the clock's
-            handle again) over Claude·FM. */}
+        {/* The date window beside it is the same handle. */}
         <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
           <button
             className="wx capdate"
-            onClick={(e) => openMenu(e.currentTarget)}
-            aria-haspopup="menu"
-            title={`${[weather.cond, weather.loc].filter(Boolean).join(" · ") || "weather"} — click for the menu`}
+            {...toggle}
+            title={`${[weather.cond, weather.loc].filter(Boolean).join(" · ") || "weather"} — the Almanac`}
             {...clockHov}
             style={{ ...bare, flex: "0 1 auto", height: 26 }}
           >
@@ -349,53 +306,21 @@ export function Strip(props: StripProps) {
             {cap.line2 && <span style={{ fontSize: "var(--t11)", color: "var(--txl)" }}>{cap.line2}</span>}
           </button>
         </span>
-        {clockOpen && (
-          <div
-            style={{
-              position: "absolute",
-              top: "calc(100% + 8px)",
-              right: 0,
-              zIndex: 60,
-              width: "240px",
-              border: "1px solid color-mix(in srgb, var(--acc) 40%, transparent)",
-              background: "color-mix(in srgb, var(--panel2) 99%, transparent)",
-              boxShadow: "0 16px 44px var(--shadow-pop)",
-              padding: "13px",
-              animation: "mslide .16s ease both",
-            }}
-          >
-            <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "11px" }}>
-              <span style={{ fontSize: "var(--t9)", letterSpacing: "2px", color: "var(--acc)" }}>CLOCK &amp; WEATHER</span>
-              <span style={{ flex: 1 }}></span>
-              <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t9)", color: "var(--txf)" }}>
-                {weather.cond} {wxTempStr}
-              </span>
-            </div>
-            <div style={{ fontSize: "var(--t8)", letterSpacing: "1.5px", color: "var(--txl)", marginBottom: "6px" }}>LOCATION</div>
-            <input
-              value={city}
-              onChange={(e) => setCityInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") void submitCity(); }}
-              placeholder="City"
-              disabled={saving}
-              style={{ width: "100%", boxSizing: "border-box", background: "color-mix(in srgb, var(--panel3) 60%, transparent)", border: `1px solid ${cityErr ? "var(--err)" : "color-mix(in srgb, var(--acc) 22%, transparent)"}`, outline: "none", color: "var(--txb)", fontFamily: "inherit", fontSize: "var(--t12)", padding: "7px 9px" }}
-            />
-            {cityErr && (
-              <div style={{ fontSize: "var(--t85)", color: "var(--err)", marginTop: "4px" }}>{cityErr}</div>
-            )}
-            <div style={{ fontSize: "var(--t8)", letterSpacing: "1.5px", color: "var(--txl)", margin: "12px 0 6px" }}>TIME FORMAT</div>
-            <div style={{ display: "flex", gap: "2px", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}>
-              <button onClick={() => setFmt12(false)} style={seg(!fmt12)}>24H</button>
-              <button onClick={() => setFmt12(true)} style={seg(fmt12)}>12H</button>
-            </div>
-            <div style={{ fontSize: "var(--t8)", letterSpacing: "1.5px", color: "var(--txl)", margin: "12px 0 6px" }}>UNITS</div>
-            <div style={{ display: "flex", gap: "2px", border: "1px solid color-mix(in srgb, var(--acc) 18%, transparent)" }}>
-              <button onClick={() => void onSetUnit("celsius")} style={seg(weather.unit === "C")}>°C</button>
-              <button onClick={() => void onSetUnit("fahrenheit")} style={seg(weather.unit === "F")}>°F</button>
-            </div>
-          </div>
-        )}
+        {open && <Almanac weather={weather} accounts={accounts} clocks={clocks} h12={h12} onClose={() => setOpen(false)} />}
       </span>
+
+      {/* The pinned world clocks take the row's spare width, and drop out
+          whole when it's too narrow for them (index.css .stp-pinbox). */}
+      {pins.length > 0 && (
+        <span className="stp-pinbox">
+          <span className="stp-pins">
+            {pins.map((c) => {
+              const t = zoneTime(c.zone, Date.now(), h12);
+              return <span key={c.zone}><em>{zoneTag(c.zone)}</em>{t.time}{t.ampm && <small>{t.ampm}</small>}</span>;
+            })}
+          </span>
+        </span>
+      )}
 
       {/* The bell, by the gear. Git lives in the rail's GIT tab, and the
           platform's own UPDATE on the rail, above ⌘K. */}

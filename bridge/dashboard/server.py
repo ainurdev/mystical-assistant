@@ -899,6 +899,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(sysinfo.host_stats())
         if path == "/local/weather":
             return self._json(weather.current())
+        if path == "/local/weather/search":
+            return self._json(weather.search((qs.get("q", [""])[0] or "")[:80]))
         if path == "/local/git/branches":
             abs_p = _abs_project(qs.get("project", [None])[0])
             if abs_p is None:
@@ -2133,10 +2135,10 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"ok": ok, **info})
         if path == "/local/projects/create":
             return self._create_project(chat, body)
-        if path == "/local/weather/city":
-            return self._json(weather.set_location((body.get("city") or "")[:120]))
         if path == "/local/weather/unit":
             return self._json(weather.set_unit((body.get("unit") or "")[:20]))
+        if path == "/local/weather/place":
+            return self._json(weather.set_place(body.get("lat"), body.get("lon"), body.get("name")))
         if path == "/local/skills/check":
             # Network sweep (one request per installed catalog skill), so it is
             # a POST behind the token rather than a free GET.

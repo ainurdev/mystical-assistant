@@ -520,8 +520,7 @@ export function App() {
 
   // Ambient widgets.
   const host = useHostVitals();
-  const { weather, setCity, setUnit } = useWeather();
-  const [wxSettings, setWxSettings] = useState(0); // nonce — opens the weather settings editor from the context menu
+  const { weather, setPlace, setUnit } = useWeather();
   // Server-side per-session prompt queue: lets a new prompt be queued while a
   // turn is in flight (runs after it) instead of forcing a STOP first.
   const queue = useSessionQueue(sessionId);
@@ -2799,15 +2798,6 @@ export function App() {
       items.push({ icon: "⊙", label: "Copy session title", onClick: () => copy(selected?.title || "session") });
       items.push({ icon: "↥", label: "Scroll to top", onClick: () => { if (scrollRef.current) scrollRef.current.scrollTop = 0; } });
       items.push({ divider: true });
-    } else if (ctxMenu.type === "weather") {
-      // The clock's menu — a plain click on the clock opens it too — so it
-      // carries what used to sit around the clock in the strip: usage (the
-      // rail's USAGE tab), the clock & weather settings.
-      const other = weather.unit === "F" ? "C" : "F";
-      items.push({ icon: "▤", label: "Usage", onClick: () => patchSettings({ rightTab: "usage", rightOpen: true }) });
-      items.push({ icon: "✎", label: "Clock & weather…", onClick: () => setWxSettings((n) => n + 1) });
-      items.push({ icon: "°", label: `Use °${other} (${other === "F" ? "Fahrenheit" : "Celsius"})`, onClick: () => void setUnit(other === "F" ? "fahrenheit" : "celsius") });
-      items.push({ divider: true });
     } else if (ctxMenu.type === "branch") {
       // a BRANCHES row: the panel builds its items, the same list its ⋯ opens
       items.push(...(branchMenu.items?.(ctxMenu.id) ?? []));
@@ -2865,8 +2855,7 @@ export function App() {
     // Dashboard-wide rows. When you right-clicked *something* — a card, a turn,
     // a file — these five are never the reason, so they collapse to one row and
     // stop pushing that thing's own options off the bottom. On bare surface,
-    // where there is nothing else, they are the menu — and under the clock,
-    // whose menu is the dashboard's own.
+    // where there is nothing else, they are the menu.
     const globals: CtxItem[] = [
       { icon: "⊕", label: "Command palette", hint: "⌘K", onClick: () => setPaletteOpen(true) },
       { icon: "⚙", label: "Dashboard settings", onClick: () => setSettingsOpen(true) },
@@ -2875,7 +2864,7 @@ export function App() {
         hint: "picks up code on disk; running turns resume",
         onClick: () => void restartBridge() },
     ];
-    if (ctxMenu.type === "surface" || ctxMenu.type === "weather") items.push(...globals);
+    if (ctxMenu.type === "surface") items.push(...globals);
     else items.push({ icon: "⌗", label: "Dashboard", children: globals });
     // The browser-level block (back/reload/print) is never the reason you opened
     // the menu — it goes behind one row.
@@ -2883,7 +2872,7 @@ export function App() {
       items.push({ divider: true }, { icon: "⌾", label: "Browser", children: nativeCtx.page });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, weather, setUnit, relocTargets, ai, plugins, hiddenProjects,
+  }, [ctxMenu, nativeCtx, sessions, turns, pins, analyzeProject, activeProject, selected, relocTargets, ai, plugins, hiddenProjects,
       settings.rightHidden, settings.rightOrder, railKeys]);
 
   /** Your own name for a session. */
@@ -3038,13 +3027,7 @@ export function App() {
   // One cluster, two homes: the right column's cap while the panel is open,
   // the chat header's end while it's folded to the rail (see Strip.tsx).
   const strip = (
-    <Strip
-      clock={tele.clock}
-      weather={weather}
-      onSetCity={setCity}
-      onSetUnit={setUnit}
-      openSettings={wxSettings}
-    />
+    <Strip clock={tele.clock} weather={weather} accounts={accounts} clocks={settings.clocks} />
   );
 
   return (
@@ -3352,6 +3335,7 @@ export function App() {
                     ? (texts, rel) => { setSettingsOpen(false); setSettingsTab(undefined); feed(texts, rel); }
                     : undefined,
                 }}
+                weather={weather} onSetUnit={setUnit} onSetPlace={setPlace}
                 onClose={() => { setSettingsOpen(false); setSettingsTab(undefined); }} />
             )}
             {ctxMenu && <ContextMenu ctx={ctxMenu} items={ctxItems} closing={ctxClosing} onClose={closeCtx} />}

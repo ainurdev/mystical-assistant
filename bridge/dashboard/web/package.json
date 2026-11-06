@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check": "tsc -b && node --test 'src/**/*.check.ts' 'tools/*.check.mjs'",
     "preview": "vite preview"
   },
   "dependencies": {

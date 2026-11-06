@@ -258,7 +258,8 @@ export function projectTint(name: string | null | undefined): ProjectTint {
 /* --- the wall clock -------------------------------------------------------
    12H is the header clock's switch, and a turn's two times have to answer to
    it as well — so the flag is a store, not a prop threaded down through the
-   transcript. Strip writes it; PromptBubble and the RESULT box read it, and
+   transcript. SETTINGS ▸ CLOCK & WEATHER writes it; the Clock, the Almanac,
+   PromptBubble and the RESULT box read it, and
    subscribe so a flick of the switch re-stamps a transcript already on screen. */
 const CLOCK12_KEY = "hud-clock12";
 let clock12 = (() => {
