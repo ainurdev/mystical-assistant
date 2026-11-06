@@ -15,10 +15,10 @@ from bridge import config
 
 
 def _run(cwd: str, *args: str, timeout: int = 8,
-         env: dict | None = None) -> tuple[int, str, str]:
+         env: dict | None = None, errors: str | None = None) -> tuple[int, str, str]:
     try:
         p = subprocess.run(["git", "-C", cwd, *args], capture_output=True,
-                           text=True, timeout=timeout, env=env)
+                           text=True, timeout=timeout, env=env, errors=errors)
         return p.returncode, p.stdout, p.stderr
     except subprocess.TimeoutExpired:
         return 124, "", "git timed out"

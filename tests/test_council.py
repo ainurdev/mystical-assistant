@@ -92,6 +92,8 @@ def test_save_settings_survives_bad_input():
 import subprocess
 import threading
 
+import pytest
+
 from bridge import acp, acp_agents, native, runner
 
 _G = ["git", "-c", "user.email=t@t", "-c", "user.name=t"]
@@ -157,10 +159,14 @@ def test_seat_claude_parses_or_reports(monkeypatch):
     assert not r["ok"] and "no score" in r["error"]
 
 
+_MODES = {"mode": [{"value": "auto"}, {"value": "read-only"}]}
+
+
 def test_seat_codex_times_out_and_denies_requests(monkeypatch):
     stop, asked = threading.Event(), []
     monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [])
     monkeypatch.setattr(acp_agents, "argv", lambda p: ["x"])
+    monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: _MODES)
     monkeypatch.setattr(acp, "answer", lambda job, rid, allow: asked.append((rid, allow)))
     monkeypatch.setattr(acp, "cancel", lambda job, grace: stop.set())
 
@@ -182,13 +188,54 @@ def test_seats_for(monkeypatch):
     st = {"installed": True}
     monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [])
     monkeypatch.setattr(acp_agents, "available", lambda: [{"id": "codex", **st}])
-    signed = {}
+    signed = {"mode": [{"value": "read-only"}]}
     monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: signed)
     s, sess = dict(council.DEFAULTS, codex_projects=["p"]), {"project": "p"}
     assert council.seats_for(sess, s) == {"claude": "on", "codex": "sign-in"}
     signed["signed_in"] = True
     assert council.seats_for(sess, s)["codex"] == "on"
+    signed["mode"] = []
+    assert council.seats_for(sess, s)["codex"] == "sign-in"
+    signed["mode"] = [{"value": "read-only"}]
     st["installed"] = False
     assert council.seats_for(sess, s)["codex"] == "sign-in"
     assert council.seats_for({"project": "q"}, s)["codex"] == "not-allowed"
     assert council.seats_for(sess, dict(s, codex=False, claude=False)) == {"claude": "off", "codex": "off"}
+
+
+def test_seat_codex_needs_a_read_only_mode_and_passes_it(monkeypatch):
+    called = []
+    monkeypatch.setattr(acp_agents, "accounts", lambda a=None: [])
+    monkeypatch.setattr(acp_agents, "argv", lambda p: ["x"])
+    monkeypatch.setattr(acp, "run_turn", lambda job, **kw: (called.append(kw), setattr(job, "status", "done"),
+                                                            setattr(job, "result", '{"score": 9}')))
+    monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: {"mode": []})
+    r = council.seat_codex("p", "/tmp")
+    assert not r["ok"] and "no read-only mode" in r["error"] and not called
+    monkeypatch.setattr(acp_agents, "options_for", lambda a, acct: _MODES)
+    assert council.seat_codex("p", "/tmp")["ok"]
+    assert called[0]["opts"]["permission_mode"] == "read-only"
+
+
+def test_seats_never_raise(monkeypatch):
+    def boom(*a, **k):
+        raise OSError("disk")
+    monkeypatch.setattr(acp_agents, "options_for", boom)
+    monkeypatch.setattr(runner, "run_blocking", boom)
+    assert council.seat_codex("p", "/tmp") == {"ok": False, "error": "disk"}
+    assert council.seat_claude("p", "/tmp", 1, None) == {"ok": False, "error": "disk"}
+
+
+def test_material_raises_on_a_git_failure(tmp_path, monkeypatch):
+    c = _clone(tmp_path)
+    (c / "a.txt").write_text("changed\n")
+    real = council.git._run
+    monkeypatch.setattr(council.git, "_run", lambda cwd, *a, **k: (124, "", "git timed out") if a[0] == "diff" else real(cwd, *a, **k))
+    with pytest.raises(RuntimeError, match="git diff: git timed out"):
+        council.material(str(c))
+
+
+def test_material_survives_latin1_bytes(tmp_path):
+    c = _clone(tmp_path)
+    (c / "a.txt").write_bytes(b"caf\xe9\n")
+    assert "\ufffd" in council.material(str(c))["diff"]

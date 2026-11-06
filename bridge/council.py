@@ -192,12 +192,17 @@ def material(cwd: str) -> "dict | None":
             base = out.strip()
             break
     base = base or head     # shortcut: no base found reviews only uncommitted work
-    _, log, _ = git._run(cwd, "log", "--format=%h%x00%s", f"{base}..HEAD")
+    def must(rc_out_err, what):    # a failed git call is not "nothing to review"
+        rc, out, err = rc_out_err
+        if rc != 0:
+            raise RuntimeError(f"git {what}: {err.strip() or rc}")
+        return out
+    log = must(git._run(cwd, "log", "--format=%h%x00%s", f"{base}..HEAD"), "log")
     commits = [l.split("\0", 1) for l in log.splitlines() if "\0" in l]
-    _, diff, _ = git._run(cwd, "diff", base, timeout=60)
-    _, stat, _ = git._run(cwd, "diff", "--numstat", base, timeout=60)
+    diff = must(git._run(cwd, "diff", base, timeout=60, errors="replace"), "diff")
+    stat = must(git._run(cwd, "diff", "--numstat", base, timeout=60, errors="replace"), "diff --numstat")
     nums = [l.split("\t", 2) for l in stat.splitlines() if l.count("\t") == 2]
-    _, un, _ = git._run(cwd, "ls-files", "--others", "--exclude-standard")
+    un = must(git._run(cwd, "ls-files", "--others", "--exclude-standard", errors="replace"), "ls-files")
     untracked = [u for u in un.splitlines() if u]
     if not (commits or diff.strip() or untracked):
         return None
@@ -251,10 +256,13 @@ def _result(text: str, err: bool) -> dict:
 
 
 def seat_claude(prompt: str, cwd: str, chat_id: int, slot) -> dict:
-    text, _sid, _cost, err = runner.run_blocking(
-        chat_id, prompt, cwd=cwd, timeout=SEAT_TIMEOUT, skip_pack=True,
-        permission_mode="plan", new_session=True, account_slot=slot)
-    return _result(text, err)
+    try:
+        text, _sid, _cost, err = runner.run_blocking(
+            chat_id, prompt, cwd=cwd, timeout=SEAT_TIMEOUT, skip_pack=True,
+            permission_mode="plan", new_session=True, account_slot=slot)
+        return _result(text, err)
+    except Exception as e:  # noqa: BLE001 - a seat never raises into the round
+        return {"ok": False, "error": str(e)}
 
 
 def _codex_acct() -> str:
@@ -267,10 +275,25 @@ class _Awaiting(dict):
         pass
 
 
-def seat_codex(prompt: str, cwd: str, timeout: float = SEAT_TIMEOUT) -> dict:
-    p, acct = acp_agents.preset("codex"), _codex_acct()
+def _read_only_mode(acct) -> "str | None":
+    """Codex's cached read-only mode id. acp.Turn.apply shrugs off a mode the agent
+    doesn't list and runs in its default, which may write, so no id means no run."""
     modes = acp_agents.options_for("codex", acct).get("mode") or []
-    ro = next((m["value"] for m in modes if "read" in m["value"].lower()), None)
+    return next((m["value"] for m in modes if "read" in m["value"].lower()), None)
+
+
+def seat_codex(prompt: str, cwd: str, timeout: float = SEAT_TIMEOUT) -> dict:
+    try:
+        return _seat_codex(prompt, cwd, timeout)
+    except Exception as e:  # noqa: BLE001 - a seat never raises into the round
+        return {"ok": False, "error": str(e)}
+
+
+def _seat_codex(prompt: str, cwd: str, timeout: float) -> dict:
+    p, acct = acp_agents.preset("codex"), _codex_acct()
+    ro = _read_only_mode(acct)
+    if not ro:
+        return {"ok": False, "error": "Codex has no read-only mode yet: run TEST on Codex in Settings"}
     job = types.SimpleNamespace(
         events=[], pending=[], texts=[], todos=[], awaiting=_Awaiting(), awaited=[],
         ctx_tokens=None, cost=None, result=None, error_msg=None, elapsed=None,
@@ -310,6 +333,8 @@ def seats_for(session: dict, s: dict) -> dict:
         codex = "not-allowed"
         if (session or {}).get("project") in s["codex_projects"]:
             ready = any(a["id"] == "codex" and a["installed"] for a in acp_agents.available())
-            ok = ready and acp_agents.options_for("codex", _codex_acct()).get("signed_in") is True
+            acct = _codex_acct()
+            ok = (ready and acp_agents.options_for("codex", acct).get("signed_in") is True
+                  and _read_only_mode(acct) is not None)
             codex = "on" if ok else "sign-in"
     return {"claude": "on" if s["claude"] else "off", "codex": codex}
