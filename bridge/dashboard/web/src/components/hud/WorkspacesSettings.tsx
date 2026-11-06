@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Plus, Trash2, Upload, Type } from "lucide-react";
+import { Plus, Sparkles, Trash2, Upload, Type } from "lucide-react";
+import { askConfirm } from "../ui/Ask";
 import { projectLogoUrl, type Workspace, type WorkspaceDisplay } from "../../api";
 import { projectMark } from "../../lib/surfaces";
 import { DEFAULT_WS, saveWorkspaces, setWorkspaceDisplay, shrinkPicture, switchWorkspace, useWorkspaces, workspaceOf } from "../../lib/workspaces";
@@ -94,11 +95,96 @@ export function WorkspacesSettings({ groups }: { groups: ProjectGroup[] }) {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [groups, q]);
 
+  // The board (2026-11-06, A · BOARD): a column per workspace, projects dragged
+  // between them. Each chip keeps a small picker too, for the keyboard.
+  const [over, setOver] = useState("");   // the column a drag is over
+  const byWs = useMemo(() => {
+    const m: Record<string, ProjectGroup[]> = {};
+    if (!set) return m;
+    for (const w of set.workspaces) m[w.id] = [];
+    for (const g of rows) (m[workspaceOf(set, g.rel)] ??= []).push(g);
+    return m;
+  }, [rows, set]);
+  // Split by folder: a workspace per folder that holds a few projects; a folder
+  // of one or two folds into its top folder, and what is left over is "Mine".
+  const folders = useMemo(() => {
+    const parent = (rel: string) => rel.split("/").filter(Boolean).slice(0, -1).join("/");
+    const m = new Map<string, string[]>();
+    const put = (k: string, rels: string[]) => m.set(k, [...(m.get(k) ?? []), ...rels]);
+    const first = new Map<string, string[]>();
+    for (const g of groups) first.set(parent(g.rel), [...(first.get(parent(g.rel)) ?? []), g.rel]);
+    for (const [k, rels] of first) put(rels.length < 3 && k.includes("/") ? k.split("/")[0] : k, rels);
+    const out = new Map<string, string[]>();
+    for (const [k, rels] of m) { const key = !k || rels.length < 3 ? "" : k; out.set(key, [...(out.get(key) ?? []), ...rels]); }
+    return [...out].map(([k, r]) => ({ name: k ? k.split("/").pop()! : "Mine", rels: r })).sort((a, b) => b.rels.length - a.rels.length);
+  }, [groups]);
+  async function split() {
+    const what = folders.map((f) => `${f.name} (${f.rels.length})`).join(", ");
+    if (!(await askConfirm(`Make a workspace for each folder: ${what}? You can rename them, and deleting one sends its projects back to Default.`, { ok: "Split" }))) return;
+    const ws = [...list];
+    const as = { ...assign };
+    for (const f of folders) {
+      const w = { id: newId(), name: f.name, image: null };
+      ws.push(w);
+      for (const rel of f.rels) as[rel] = w.id;
+    }
+    void save(ws, as);
+  }
+
   if (!set) return <div style={{ ...CARD, color: "var(--txd)", fontSize: "var(--t10)" }}>Reading the workspaces…</div>;
 
   return (
     <>
-      <Section title="YOUR WORKSPACES" desc="Click an avatar to give it a picture; without one it shows the name's first letter. Deleting a workspace sends its projects back to Default, which can be renamed but not deleted.">
+      <Section title="PROJECTS" desc="Drag a project to another workspace; each lives in exactly one, and the sidebar shows one workspace at a time.">
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a project" aria-label="find a project"
+          style={{ ...field, width: "100%", boxSizing: "border-box", marginBottom: 10 }} />
+        <div className="wsb">
+          {list.map((w) => {
+            const mine = byWs[w.id] ?? [];
+            return (
+              <div key={w.id} className="wsb-col" data-over={over === w.id || undefined}
+                onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (over !== w.id) setOver(w.id); }}
+                onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setOver((o) => (o === w.id ? "" : o)); }}
+                onDrop={(e) => {
+                  e.preventDefault(); setOver("");
+                  const rel = e.dataTransfer.getData("text/plain");
+                  if (rel && workspaceOf(set, rel) !== w.id) move(rel, w.id);
+                }}>
+                <div className="wsb-hd">
+                  <WorkspaceAvatar ws={w} size={24} />
+                  <div><b>{w.name}</b><span>{plural(mine.length)}{w.id === cur ? " · showing" : ""}</span></div>
+                </div>
+                <div className="wsb-bd">
+                  {mine.map((g) => (
+                    <div key={g.rel} className="wsb-chip" draggable title={g.rel}
+                      onDragStart={(e) => { e.dataTransfer.setData("text/plain", g.rel); e.dataTransfer.effectAllowed = "move"; }}>
+                      <ProjectTile project={g.rel} />
+                      <span>{g.name}</span>
+                      {list.length > 1 && (
+                        <select value={w.id} aria-label={`${g.name}: workspace`} className="wsb-sel" onChange={(e) => move(g.rel, e.target.value)}>
+                          {list.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                        </select>
+                      )}
+                    </div>
+                  ))}
+                  {mine.length === 0 && <div className="wsb-empty">{q ? "No project matches." : "Drop projects here."}</div>}
+                </div>
+              </div>
+            );
+          })}
+          <div className="wsb-col wsb-ghost">
+            <button type="button" onClick={add}><Plus size={14} aria-hidden />New workspace</button>
+            {list.length === 1 && folders.length > 1 && (
+              <>
+                <button type="button" onClick={() => void split()}><Sparkles size={13} aria-hidden />Split by folder</button>
+                <small>{folders.map((f) => f.name).join(" · ")}</small>
+              </>
+            )}
+          </div>
+        </div>
+      </Section>
+
+      <Section top title="YOUR WORKSPACES" desc="Click an avatar to give it a picture; without one it shows the name's first letter. Deleting a workspace sends its projects back to Default, which can be renamed but not deleted.">
         <div style={CARD}>
           {list.map((w, i) => (
             <Row key={w.id} first={i === 0} label={
@@ -161,27 +247,6 @@ export function WorkspacesSettings({ groups }: { groups: ProjectGroup[] }) {
         </div>
       </Section>
 
-      <Section top title="PROJECTS" desc="Which workspace each project lists in. A project is in exactly one; moving it takes it out of the others.">
-        <div style={CARD}>
-          <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a project" aria-label="find a project"
-            style={{ ...field, width: "100%", boxSizing: "border-box", marginBottom: 6 }} />
-          {rows.map((g, i) => (
-            <Row key={g.rel} first={i === 0} label={
-              <span style={{ display: "inline-flex", alignItems: "center", minWidth: 0 }}>
-                <ProjectTile project={g.rel} />
-                <span style={{ color: "var(--txb)" }}>{g.name}</span>
-                <span style={{ marginLeft: 8, color: "var(--txl)", letterSpacing: 0, overflowWrap: "anywhere" }}>{g.rel}</span>
-              </span>
-            }>
-              <select value={workspaceOf(set, g.rel)} aria-label={`${g.name}: workspace`}
-                onChange={(e) => move(g.rel, e.target.value)} style={{ ...field, padding: "4px 6px" }}>
-                {list.map((w) => <option key={w.id} value={w.id}>{w.name}</option>)}
-              </select>
-            </Row>
-          ))}
-          {!rows.length && <div style={{ fontSize: "var(--t10)", color: "var(--txd)" }}>No project matches.</div>}
-        </div>
-      </Section>
     </>
   );
 }

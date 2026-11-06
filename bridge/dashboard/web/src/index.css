@@ -8078,3 +8078,25 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .setpane .prj-det .prj-lbl { flex: 1 1 180px; }
 .setpane .prj-det .prj-field > :nth-child(n+3):not(button):not(.set-toggle) { flex: 1 1 100%; margin-left: 27px; min-width: 0; }
 @media (max-width: 900px) { .setpane .prj-split { grid-template-columns: 1fr; } }
+
+/* ── WORKSPACES · a board you drag projects across (2026-11-06, A · BOARD) ── */
+.wsb { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(200px, 1fr); gap: 10px; overflow-x: auto; padding-bottom: 4px; }
+.wsb-col { display: flex; flex-direction: column; min-height: 220px; max-height: 460px; min-width: 0;
+  background: var(--panel2); border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad, 0); overflow: hidden; }
+.wsb-col[data-over] { border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 16%, transparent); }
+.wsb-hd { display: flex; align-items: center; gap: 9px; padding: 10px 12px; border-bottom: 1px solid var(--line, var(--border)); }
+.wsb-hd > div > b { display: block; font: 600 var(--t10) var(--ui-font); color: var(--txb); }
+.wsb-hd > div > span { display: block; font: 400 var(--t85) var(--ui-font); color: var(--txl); }
+.wsb-bd { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 5px; }
+.wsb-chip { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 6px 0 8px; border-radius: 8px; cursor: grab;
+  background: color-mix(in srgb, var(--txl) 7%, transparent); font: 500 var(--t95, var(--t9)) var(--ui-font); color: var(--txh); }
+.wsb-chip:active { cursor: grabbing; }
+.wsb-chip .ptile { width: 18px; height: 18px; margin: 0; border-radius: 5px; font-size: 8px; flex: none; }
+.wsb-chip > span { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsb-sel { flex: none; width: 22px; padding: 0; border: 0; background: transparent; color: var(--txl); cursor: pointer; font-size: 11px; }
+.wsb-empty { margin: auto; padding: 20px 8px; text-align: center; font: 400 var(--t95, var(--t9)) var(--ui-font); color: var(--txl);
+  border: 1.5px dashed color-mix(in srgb, var(--acc) 35%, transparent); border-radius: 8px; width: 100%; box-sizing: border-box; }
+.wsb-ghost { background: transparent; border-style: dashed; align-items: center; justify-content: center; gap: 10px; padding: 14px; text-align: center; }
+.wsb-ghost button { appearance: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line2, var(--border-bright));
+  background: transparent; color: var(--txh); border-radius: 8px; padding: 6px 12px; font: 500 var(--t95, var(--t9)) var(--ui-font); }
+.wsb-ghost small { font: 400 var(--t85) var(--ui-font); color: var(--txl); }
