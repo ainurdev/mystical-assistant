@@ -21,8 +21,14 @@ Design choices (the why):
   read-only mode its live session must take before the prompt goes (run_turn's
   "must"), never the default it falls back to. A watchdog owns hangs, since
   ACP's session/prompt has no timeout of its own.
+- What a push would send is base..HEAD plus uncommitted and untracked work. The
+  base is the upstream; with none, the local default branch, then origin's: a
+  worktree branch's own commits are what its session wrote, and local master
+  may be far ahead of origin. On the default branch itself, origin's first.
 - A diff over DIFF_CAP drops whole-file sections, never cuts one mid-file, and
-  names what it left out so the reviewer knows its view is partial.
+  names what it left out so the reviewer knows its view is partial. The cap
+  counts bytes and each list in the prompt shows its first 50: the Claude seat
+  gets the prompt as one argv string, which Linux caps at 128 KiB.
 
 The loop: start -> _round -> fixing -> after_turn -> _round ...
 - A round runs on a thread of its own (_spawn), its seats side by side on
@@ -85,7 +91,7 @@ DEFAULTS = {"bar": 9.0, "max_rounds": 5, "stop_early": True,
 SEATS = ("claude", "codex")
 NEAR = 3
 SEAT_TIMEOUT = 900
-DIFF_CAP = 150_000
+DIFF_CAP = 100_000      # bytes: the whole prompt stays under ~120 KB (see the docstring)
 _SEV = ("must", "should", "nit")
 
 
@@ -233,7 +239,18 @@ def answers(text: str) -> dict:
             for m in re.finditer(r"^[ \t]*(\d+)[.)][ \t]*NO\b(?:[ \t]*[:-][ \t]*|[ \t]+)(\S.*)$", text, re.M)}
 
 
-def material(cwd: str) -> "dict | None":
+def _out(cwd: str, *args, **kw) -> str:
+    """A git call's output. A failed one raises: it is not "nothing to review"."""
+    rc, out, err = git._run(cwd, *args, **kw)
+    if rc != 0:
+        raise RuntimeError(f"git {args[0]}: {err.strip() or rc}")
+    return out
+
+
+def counts(cwd: str) -> "dict | None":
+    """What a push from `cwd` would send, without the diff text: its base, the
+    commits, numstat's totals and the untracked files. None when that's nothing.
+    The tab's idle poll reads only this; material() adds the diff."""
     rc, head, _ = git._run(cwd, "rev-parse", "HEAD")
     if rc != 0:
         return None
@@ -242,43 +259,53 @@ def material(cwd: str) -> "dict | None":
     rc, _, _ = git._run(cwd, "rev-parse", "--verify", "-q", "@{upstream}")
     cands = ["@{upstream}"] if rc == 0 else []
     if not cands:
+        # What this branch added to the local default (master may be far ahead of
+        # origin). On the default itself that is HEAD: then what origin lacks.
         d = git.default_branch(cwd)
-        cands = [f"origin/{d}", d]
+        on_d = git._run(cwd, "rev-parse", "--abbrev-ref", "HEAD")[1].strip() == d
+        cands = [f"origin/{d}", d] if on_d else [d, f"origin/{d}"]
     for c in cands:
         rc, out, _ = git._run(cwd, "merge-base", "HEAD", c)
         if rc == 0 and out.strip():
             base = out.strip()
             break
     base = base or head     # shortcut: no base found reviews only uncommitted work
-    def must(rc_out_err, what):    # a failed git call is not "nothing to review"
-        rc, out, err = rc_out_err
-        if rc != 0:
-            raise RuntimeError(f"git {what}: {err.strip() or rc}")
-        return out
-    log = must(git._run(cwd, "log", "--format=%h%x00%s", f"{base}..HEAD"), "log")
+    log = _out(cwd, "log", "--format=%h%x00%s", f"{base}..HEAD")
     commits = [l.split("\0", 1) for l in log.splitlines() if "\0" in l]
-    diff = must(git._run(cwd, "diff", base, timeout=60, errors="replace"), "diff")
-    stat = must(git._run(cwd, "diff", "--numstat", base, timeout=60, errors="replace"), "diff --numstat")
+    stat = _out(cwd, "diff", "--numstat", base, timeout=60, errors="replace")
     nums = [l.split("\t", 2) for l in stat.splitlines() if l.count("\t") == 2]
-    un = must(git._run(cwd, "ls-files", "--others", "--exclude-standard", errors="replace"), "ls-files")
+    un = _out(cwd, "ls-files", "--others", "--exclude-standard", errors="replace")
     untracked = [u for u in un.splitlines() if u]
-    if not (commits or diff.strip() or untracked):
+    if not (commits or nums or untracked):
         return None
-    kept, left_out, size = [], [], 0
-    for sec in re.split(r"(?m)^(?=diff --git )", diff):
-        if not sec:
-            continue
-        if size + len(sec) <= DIFF_CAP:
-            kept.append(sec)
-            size += len(sec)
-        else:
-            m = re.match(r"diff --git a/(.*?) b/", sec)
-            left_out.append(m.group(1) if m else "?")
     return {"base": base, "head": head, "commits": commits, "files": len(nums),
             "add": sum(int(n[0]) for n in nums if n[0].isdigit()),
-            "del": sum(int(n[1]) for n in nums if n[1].isdigit()),
-            "untracked": untracked, "diff": "".join(kept),
-            "truncated": bool(left_out), "left_out": left_out}
+            "del": sum(int(n[1]) for n in nums if n[1].isdigit()), "untracked": untracked}
+
+
+def material(cwd: str) -> "dict | None":
+    """counts() and the diff: whole-file sections up to DIFF_CAP bytes."""
+    m = counts(cwd)
+    if m is None:
+        return None
+    diff = _out(cwd, "diff", m["base"], timeout=60, errors="replace")
+    kept, left_out, size = [], [], 0
+    for sec in re.split(r"(?m)^(?=diff --git )", diff):
+        n = len(sec.encode())
+        if not n:
+            continue
+        if size + n <= DIFF_CAP:
+            kept.append(sec)
+            size += n
+        else:
+            f = re.match(r"diff --git a/(.*?) b/", sec)
+            left_out.append(f.group(1) if f else "?")
+    return {**m, "diff": "".join(kept), "truncated": bool(left_out), "left_out": left_out}
+
+
+def _few(lines: list, n: int = 50) -> list:
+    """The first n, then how many more: no list can push the prompt past the argv cap."""
+    return lines[:n] + [f"and {len(lines) - n} more"] * (len(lines) > n)
 
 
 def review_prompt(m: dict, settled: list, answered: list) -> str:
@@ -297,12 +324,12 @@ def review_prompt(m: dict, settled: list, answered: list) -> str:
     if answered:
         out += ["", "The author answered these last round; raise one again only if the answer is wrong:",
                 *answered]
-    out += ["", "Commits:", *([f"{sha} {subj}" for sha, subj in m["commits"]] or ["(none)"])]
+    out += ["", "Commits:", *(_few([f"{sha} {subj}" for sha, subj in m["commits"]]) or ["(none)"])]
     if m["untracked"]:
-        out += ["", "Untracked files (not in the diff; read them):", *m["untracked"]]
+        out += ["", "Untracked files (not in the diff; read them):", *_few(m["untracked"])]
     out += ["", "Diff:", m["diff"]]
     if m["truncated"]:
-        out.append("The diff was cut for size. Left out, read these yourself: " + ", ".join(m["left_out"]))
+        out.append("The diff was cut for size. Left out, read these yourself: " + ", ".join(_few(m["left_out"])))
     return "\n".join(out)
 
 
@@ -740,10 +767,10 @@ def brief(sid: str, cwd: "str | None" = None, full: bool = False) -> dict:
                "seats": {k: _seat(v) for k, v in seats_for(store.get_session(sid) or {}, s).items()}}
     if full and cwd:
         try:
-            m = material(cwd)
+            m = counts(cwd)
+            out["material"] = {k: m[k] for k in ("commits", "files", "add", "del")} if m else None
         except RuntimeError:
-            m = None
-        out["material"] = {k: m[k] for k in ("commits", "files", "add", "del")} if m else None
+            pass                    # not "nothing to review": no material, so the tab keeps its last
     return out
 
 

@@ -282,6 +282,7 @@ def rig(monkeypatch):
     monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None, **kw: r.kinds.append(kw["kind"]))
     monkeypatch.setattr(waits, "target_ended", r.woke.append)
     monkeypatch.setattr(council, "material", lambda cwd: r.mat)
+    monkeypatch.setattr(council, "counts", lambda cwd: r.mat)
     monkeypatch.setattr(council, "seat_claude", lambda *a, **k: r.claude.pop(0))
     monkeypatch.setattr(council, "seat_codex", lambda *a, **k: r.codex.pop(0))
     monkeypatch.setattr(council, "seats_for", lambda session, s: {"claude": "on", "codex": "on"})
@@ -570,3 +571,64 @@ def test_a_finished_run_wakes_the_sessions_waiting_on_it(rig):
     council.start(rig.session, "/tmp")
     council.after_turn(_job(rig, "j2", status="error"))               # its own end wakes them
     assert len(rig.woke) == 2
+
+
+# --- final review fixes ---------------------------------------------------
+
+def test_material_without_an_upstream_reads_from_the_local_default_first(tmp_path):
+    """#2: a branch cut from a local main that is ahead of origin reviews only its own commits."""
+    c = _clone(tmp_path)
+    (c / "m.txt").write_text("main only\n")
+    _git(c, "add", "."); _git(c, "commit", "-qm", "unpushed on main")
+    _git(c, "branch", "--unset-upstream")
+    # On the default branch itself the local one is HEAD: what origin lacks.
+    assert [s for _, s in council.material(str(c))["commits"]] == ["unpushed on main"]
+    _git(c, "checkout", "-qb", "feat")                                  # no upstream
+    (c / "f.txt").write_text("feature\n")
+    _git(c, "add", "."); _git(c, "commit", "-qm", "own")
+    m = council.material(str(c))
+    assert [s for _, s in m["commits"]] == ["own"] and "m.txt" not in m["diff"] and m["files"] == 1
+    # No local default branch: origin's.
+    _git(c, "remote", "set-head", "origin", "main")
+    _git(c, "branch", "-qD", "main")
+    assert [s for _, s in council.material(str(c))["commits"]] == ["own", "unpushed on main"]
+
+
+def test_the_reviewer_prompt_fits_one_argv_string(tmp_path):
+    """#4: the Claude seat's prompt is one argument, and Linux caps one at 128 KiB."""
+    c = _clone(tmp_path)
+    for i in range(300):
+        (c / f"tracked-{i:03}-{'t' * 60}.txt").write_text("é" * 1_000 + "\n")    # 2 bytes a char
+    _git(c, "add", "."); _git(c, "commit", "-qm", "many")
+    for i in range(300):
+        (c / f"untracked-{i:03}-{'u' * 60}.txt").write_text("u\n")
+    m = council.material(str(c))
+    assert len(m["untracked"]) == 300 and len(m["left_out"]) > 200
+    p = council.review_prompt(m, [], [])
+    assert len(p.encode()) < 120_000
+    assert "and 250 more" in p and f"and {len(m['left_out']) - 50} more" in p
+
+
+def test_the_full_brief_counts_without_reading_the_diff(tmp_path, monkeypatch):
+    """#6: the tab's idle poll, every 15 s, runs git log and --numstat, never the diff's text."""
+    c = _clone(tmp_path)
+    (c / "b.txt").write_text("two\nlines\n")
+    _git(c, "add", "."); _git(c, "commit", "-qm", "second")
+    (c / "a.txt").write_text("one\nmore\n")
+    calls, real = [], council.git._run
+    monkeypatch.setattr(council.git, "_run", lambda cwd, *a, **k: calls.append(a) or real(cwd, *a, **k))
+    sid = store.create_session(555, "/counciltest", origin="dashboard")["id"]
+    m = council.brief(sid, str(c), full=True)["material"]
+    assert [s for _, s in m["commits"]] == ["second"] and (m["files"], m["add"], m["del"]) == (2, 3, 0)
+    assert [a for a in calls if a[0] == "diff" and "--numstat" not in a] == []
+
+
+def test_a_git_failure_leaves_the_material_out_of_the_brief(rig, monkeypatch):
+    """#7: not null ("nothing to review"): no field at all, so the tab keeps its last read."""
+    def boom(cwd):
+        raise RuntimeError("git diff: git timed out")
+    monkeypatch.setattr(council, "counts", boom)
+    assert "material" not in council.brief(rig.sid, "/tmp", full=True)
+    rig.mat = None
+    monkeypatch.setattr(council, "counts", lambda cwd: rig.mat)
+    assert council.brief(rig.sid, "/tmp", full=True)["material"] is None
