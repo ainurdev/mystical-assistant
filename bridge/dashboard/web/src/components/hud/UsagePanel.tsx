@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { api, type WeeklyReport } from "../../api";
 import { projectName, projectTint } from "../../lib/surfaces";
 import { useStickyFlag } from "../../lib/prefs";
+import { notify } from "./Notifications";
 import { TabKick } from "./TabKick";
 import { WeekGrid } from "./WeekGrid";
-import { daysOf, dur, fmtTokens, pct } from "../../lib/week";
+import { daysOf, dur, fmtTokens, pct, timesheet } from "../../lib/week";
 
 /** The USAGE tab (drafts/usage-rail): where the week went. It replaced the week
  *  report that hung off the brand cap as a popover over the sessions list.
@@ -75,6 +76,13 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
     ? [[t.turns, "turns"], [dur(t.elapsed), "agent time"], [t.sessions, "sessions"], [days.filter((d) => d.turns).length, "days active"]]
     : [[td?.turns ?? 0, "turns today"], [dur(td?.elapsed ?? 0), "agent time today"], [t.turns, "turns this week"], [dur(t.elapsed), `this week${vs ? ` · ${vs}` : ""}`]]) : [];
 
+  const copy = () => {
+    if (!rep) return;
+    void navigator.clipboard?.writeText(timesheet(rep))
+      .then(() => notify("info", "Copied the week as a markdown table."))
+      .catch(() => notify("error", "Couldn't reach the clipboard."));
+  };
+
   const body = () => {
     if (stale) return <div className="us-note">the bridge needs a restart before it can answer this</div>;
     if (!rep || !t) return <div className="us-note">reading…</div>;
@@ -84,7 +92,7 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
         <div className="us-cards">{cards.map(([n, l]) => <div key={l}><b>{n}</b><small>{l}</small></div>)}</div>
         {rep.projects.length > 0 ? (
           <>
-            <div className="lbl2 us-went">WHERE IT WENT</div>
+            <div className="us-lbl us-went">WHERE IT WENT</div>
             <div className="us-stack">
               {shown.map((p) => <i key={p.project} title={projectName(p.project) || "No project"} style={{ flex: p.elapsed, background: projectTint(p.project).color }} />)}
               {restT > 0 && <i title={`${rest.length} more`} style={{ flex: restT, background: "var(--txl)" }} />}
@@ -107,10 +115,13 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
   };
 
   const seg = (
+    <>
+    {rep && rep.projects.length > 0 && <button className="gp-ib" title="copy the week as a timesheet (markdown)" onClick={copy}><Copy size={13} /></button>}
     <span className="us-seg">
       <button type="button" aria-pressed={back === 0} onClick={() => setBack(0)}>This</button>
       <button type="button" aria-pressed={back > 0} onClick={() => setBack(1)}>Last</button>
     </span>
+    </>
   );
 
   return (

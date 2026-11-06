@@ -10,7 +10,7 @@ export function WeekGrid({ hours, back }: { hours: number[][] | undefined; back:
   const today = (new Date().getDay() + 6) % 7;
   return (
     <>
-      <div className="lbl2">YOUR WEEK{busiest && <span className="r">busiest {DAYS[busiest.day]} {String(busiest.hour).padStart(2, "0")}:00</span>}</div>
+      <div className="us-lbl">YOUR WEEK{busiest && <span className="r">busiest {DAYS[busiest.day]} {String(busiest.hour).padStart(2, "0")}:00</span>}</div>
       <div className="wg">
         <div className="wg-hrs">
           {["0", "6", "12", "18", "24"].map((h, i) => <span key={h} style={i === 4 ? { right: 0 } : { left: `${i * 25}%`, transform: i ? undefined : "none" }}>{h}</span>)}

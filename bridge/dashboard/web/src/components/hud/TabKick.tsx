@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 export function TabKick({ name, chip, tools }: { name: string; chip?: ReactNode; tools?: ReactNode }) {
   return (
     <div className="tabkick" style={{ display: "flex", alignItems: "center", gap: 8, height: 36, flex: "none", padding: "0 12px" }}>
-      <span style={{ fontSize: "var(--t10)", fontWeight: 800, letterSpacing: "1px", textTransform: "uppercase", color: "var(--txl)" }}>{name}</span>
+      <span className="tk-name">{name}</span>
       {chip}
       {tools && <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>{tools}</span>}
     </div>

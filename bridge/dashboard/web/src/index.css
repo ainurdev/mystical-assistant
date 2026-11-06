@@ -6548,10 +6548,25 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* === USAGE TAB =================================================================
    The right rail's USAGE panel (hud/UsagePanel, drafts/usage-rail): the GIT
    tab's bones (.gp root, .gp-fold folds) plus these and the WeekGrid. */
+/* TabKick: the right-rail kicker, small caps. The pebble and middle-earth panel-head rules
+   above also match its first span and buttons; the .tabkick selectors here out-weigh them (doubled classes, as the later family rules tie otherwise). */
+.tk-name { font: 800 var(--t10)/1 var(--f); letter-spacing: 1.6px; text-transform: uppercase; color: var(--txl); }
+.tabkick button { font-family: var(--f); }
+[data-fam] .hudgrid > div:last-child .panel > .tabkick.tabkick { padding: 0 12px !important; }
+[data-fam] .hudgrid > div:last-child .panel > .tabkick.tabkick > .tk-name.tk-name {
+  display: inline; font: 800 var(--t10)/1 var(--f) !important; letter-spacing: 1.6px !important; text-transform: uppercase; color: var(--txl) !important;
+}
+[data-fam] .hudgrid > div:last-child .panel > .tabkick.tabkick > .tk-name.tk-name::first-letter { text-transform: uppercase; }
+[data-fam] .hudgrid > div:last-child .panel > .tabkick.tabkick button {
+  width: auto; height: auto; border-radius: 6px !important; border-color: transparent !important; background: transparent !important;
+}
+[data-fam] .hudgrid > div:last-child .panel > .tabkick.tabkick .gp-ib { width: 22px; height: 22px; }
+[data-fam] .hudgrid > div:last-child .panel > .tabkick.tabkick .us-seg { border-radius: 8px; }
+[data-fam] .hudgrid > div:last-child .panel > .tabkick.tabkick .us-seg button[aria-pressed="true"] { background: var(--wash) !important; }
 /* YOUR WEEK: day x hour grid. Cells are the accent at a strength set inline;
    empty ones are faint, future ones fainter, this hour is outlined. */
-.lbl2 { display: flex; align-items: center; gap: 6px; padding: 8px 12px 6px; font: 800 var(--t95)/1 var(--f); letter-spacing: 1.4px; color: var(--txl); }
-.lbl2 .r { margin-left: auto; letter-spacing: .2px; font-weight: 700; }
+.us-lbl { display: flex; align-items: center; gap: 6px; padding: 8px 12px 6px; font: 800 var(--t95)/1 var(--f); letter-spacing: 1.4px; color: var(--txl); }
+.us-lbl .r { margin-left: auto; letter-spacing: .2px; font-weight: 700; }
 .us-went { padding-top: 16px; }
 .wg { margin: 2px 12px 0; }
 .wg-hrs { position: relative; height: 12px; margin-left: 18px; font: 700 var(--t85)/1 var(--f); color: var(--txl); }
