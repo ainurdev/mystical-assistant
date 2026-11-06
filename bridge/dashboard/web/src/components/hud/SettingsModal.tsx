@@ -10,7 +10,7 @@ import {
   Monitor, Moon, Network, Palette, Play, Plug, Puzzle,
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
-  Upload, Waypoints, type LucideIcon,
+  Upload, Waypoints, RotateCw, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDrive, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, AlignLeft, Clock3, GitFork,
 } from "lucide-react";
@@ -161,44 +161,46 @@ export function normalizeTab(t: string | undefined): { tab: Tab | undefined; sec
 // `about` is the page's own first line: what the category is FOR, in a
 // sentence. The rail's hint names what's inside; nothing said why you'd open
 // it, so every page began on its first block and left you to work that out.
-const TABS: { key: Tab; label: string; hint: string; about: string; icon: LucideIcon; group: string }[] = [
-  { key: "appearance", label: "APPEARANCE", hint: "theme · type", icon: Palette, group: "THE HUD",
+// `lede` is the page head's one line (2026-11-06, LIVE RAIL): `about` ran two or three
+// lines on every page and pushed its first block below the fold; it now waits behind the ⓘ.
+const TABS: { key: Tab; label: string; hint: string; lede: string; about: string; icon: LucideIcon; group: string }[] = [
+  { key: "appearance", label: "APPEARANCE", hint: "theme · type", lede: "How the dashboard looks: theme, typeface, size.", icon: Palette, group: "THE HUD",
     about: "How the dashboard looks: its theme and colour, its typeface and size." },
-  { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", icon: ScrollText, group: "THE HUD",
+  { key: "transcript", label: "TRANSCRIPT", hint: "how a session draws", lede: "How a session reads, and what shows while it works.", icon: ScrollText, group: "THE HUD",
     about: "How a session reads: the chat layout, the composer's send key, the ground every turn is drawn on, whether results start open, and what shows while it works." },
-  { key: "notifications", label: "NOTIFY", hint: "events · quiet · sound", icon: Bell, group: "THE HUD",
+  { key: "notifications", label: "NOTIFY", hint: "events · quiet · sound", lede: "What interrupts you, and where.", icon: Bell, group: "THE HUD",
     about: "What interrupts you, and how: for each kind of news — a session, a Rivendell job, a PR — a pop-up, a sound, a Telegram message, or only the bell." },
   // Only inside the native app — Mystical.app or Mystical.exe (RAIL and the
   // search both skip it elsewhere): the switches that are the app's, not the
   // page's (lib/mac). One tab, named for the shell it's in.
-  { key: "mac", label: isWinApp() ? "WINDOWS APP" : "MAC APP", hint: isWinApp() ? "window · tray · hotkey" : "window · dock · panel",
+  { key: "mac", label: isWinApp() ? "WINDOWS APP" : "MAC APP", hint: isWinApp() ? "window · tray · hotkey" : "window · dock · panel", lede: isWinApp() ? "What only the Windows app can do." : "What only the Mac app can do.",
     icon: isWinApp() ? AppWindow : AppWindowMac, group: "THE HUD",
     about: isWinApp()
       ? "What only the Windows app can do: the window's title, the floating WAITING ON YOU panel, the Win+Ctrl+A summon, and rebuilding the app after an update."
       : "What only the Mac app can do: the window's title, the Dock icon, the floating WAITING ON YOU panel, and rebuilding the app after an update." },
   // First under THE WORK: where the work happens. It was the last fold of AI
   // MANAGEMENT, where a long list of repos had to share a page with logins.
-  { key: "projects", label: "PROJECTS", hint: "names · marks · sidebar", icon: FolderGit2, group: "THE WORK",
+  { key: "projects", label: "PROJECTS", hint: "names · marks · sidebar", lede: "Every repo the bridge can run in.", icon: FolderGit2, group: "THE WORK",
     about: "Every repo the bridge can run in, and what each keeps for itself: its name and mark, the profile its sessions start on, whether the sidebar lists it, its run command, design link and lessons." },
   // Beside PROJECTS: which of them the sidebar shows together. Right-clicking
   // the sidebar's workspace button lands here.
-  { key: "workspaces", label: "WORKSPACES", hint: "sidebar · project sets", icon: Layers, group: "THE WORK",
+  { key: "workspaces", label: "WORKSPACES", hint: "sidebar · project sets", lede: "Sets of projects the sidebar shows one at a time.", icon: Layers, group: "THE WORK",
     about: "Split the sidebar into sets of projects, like a browser's workspaces: personal and work apart. The sidebar shows one at a time; Default takes every project you haven't moved." },
   // Who runs a session. One page, four folds — it was tabs (SESSION, MCP,
   // ACCOUNTS, AI) that each held a piece of the same question, and the
   // sidebar's SKILLS panel besides.
-  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · agents · extras · claude mcp", icon: KeyRound, group: "THE WORK",
+  { key: "aimgmt", label: "AI MANAGEMENT", hint: "accounts · agents · extras · claude mcp", lede: "Who runs your sessions, and with what.", icon: KeyRound, group: "THE WORK",
     about: "Who runs your sessions and with what: the logins and the profiles bound to them, the extras and MCP servers they can reach, and the default profile." },
   // A fold of AI MANAGEMENT and a tab of the project window before; one page now,
   // with any repo's skills a pick away (.mystical/design-drafts/project-split).
   // Claude's: Kimi Code reads its own (~/.agents/skills, a project's .agents/skills).
-  { key: "skills", label: "CLAUDE SKILLS", hint: "project · machine · catalog", icon: Puzzle, group: "THE WORK",
+  { key: "skills", label: "CLAUDE SKILLS", hint: "project · machine · catalog", lede: "SKILL.md files a session can reach without you typing them.", icon: Puzzle, group: "THE WORK",
     about: "What a Claude session can reach that you didn't type: the SKILL.md files in a project or on this machine, the catalog to install from, and Claude Code plugins. Other agents keep their own — Kimi Code reads ~/.agents/skills and a project's .agents/skills." },
-  { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", icon: Waypoints, group: "THE WORK",
+  { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", lede: "Other systems the bridge does work for.", icon: Waypoints, group: "THE WORK",
     about: "Other systems the bridge does work for. Each one ships with Mystical but stays silent until you install it: no tab, no card, no rows, no worker." },
-  { key: "system", label: "SYSTEM", hint: "storage · bridge · updates", icon: Server, group: "THE WORK",
+  { key: "system", label: "SYSTEM", hint: "storage · bridge · updates", lede: "The bridge itself: startup, storage, updates, environment.", icon: Server, group: "THE WORK",
     about: "The bridge itself: what its sessions left on disk, its address, starting at login, the API inspector, updates, and every setting it reads from its environment." },
-  { key: "move", label: "MOVE", hint: "export · import", icon: Truck, group: "THE WORK",
+  { key: "move", label: "MOVE", hint: "export · import", lede: "Carry this bridge to another machine in one file.", icon: Truck, group: "THE WORK",
     about: "Carry this bridge to another machine. EXPORT packs your repos' unpushed work, MCP servers, plugins, Claude Code settings and chat history into one file; IMPORT replays a file from another machine here." },
 ];
 const RAIL = TABS.filter((t) => t.key !== "mac" || isNativeApp());
@@ -523,6 +525,7 @@ export function Row({ label, desc, info, first, children }: {
  *  for. The rail already said the first; nothing said the second. */
 function PageHead({ tab }: { tab: (typeof TABS)[number] }) {
   const voice = useVoice();
+  const [more, setMore] = useState(false);
   return (
     <div className="set-head" style={{ marginBottom: 30 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -531,9 +534,11 @@ function PageHead({ tab }: { tab: (typeof TABS)[number] }) {
           {voice(tab.label)}
         </h2>
       </div>
-      <p style={{ margin: "9px 0 0", maxWidth: 600, fontSize: "var(--t10)", lineHeight: 1.7, color: "var(--txm)" }}>
-        {tab.about}
+      <p style={{ margin: "9px 0 0", maxWidth: 600, fontSize: "var(--t10)", lineHeight: 1.7, color: "var(--txm)", display: "flex", alignItems: "center", gap: 8 }}>
+        <span>{tab.lede}</span>
+        <InfoDot on={more} about={`the ${tab.label.toLowerCase()} page`} onClick={() => setMore(!more)} />
       </p>
+      {more && <div style={{ ...ASIDE, maxWidth: 600 }}>{tab.about}</div>}
       {/* The panel's drawline: teal under the title, gone by the far edge. */}
       <div className="set-drawline" style={{
         height: 1, marginTop: 16,
@@ -4039,6 +4044,72 @@ function MovePanel() {
   );
 }
 
+// ---- LIVE RAIL ----------------------------------------------------------------
+// Each rail row says what its page is set to, so you can read your setup without
+// opening ten pages (2026-11-06, .mystical/design-drafts/settings-pages, A · LIVE RAIL).
+// Quiet grey text; amber only when the page wants you (a login signed out).
+// Fetched once per open, from the same GETs the pages make themselves.
+type Readout = { text: string; want?: boolean };
+// The storage scan walks every repo's .mystical/ (~2 s); once per page load is plenty.
+let storageScan: Promise<number> | null = null;
+const titled = (s: string) => s.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+
+function useRailReadouts(settings: HudSettings, projectCount: number, plugins: Record<string, boolean>,
+  project: string | null): Partial<Record<Tab, Readout>> {
+  const [live, setLive] = useState<{ accounts?: AccountInfo[]; workspaces?: number; skills?: number; storage?: number }>({});
+  useEffect(() => {
+    let on = true;
+    const put = (part: typeof live) => { if (on) setLive((l) => ({ ...l, ...part })); };
+    void api.accounts().then((r) => put({ accounts: r.accounts })).catch(() => {});
+    void api.workspaces().then((r) => put({ workspaces: r.workspaces.length })).catch(() => {});
+    void api.skills(project).then((r) => put({ skills: r.project.length + r.system.length })).catch(() => {});
+    void (storageScan ??= api.storage().then((r) => r.bytes))
+      .then((b) => put({ storage: b }))
+      .catch(() => { storageScan = null; });
+    return () => { on = false; };
+  }, [project]);
+  const out: Partial<Record<Tab, Readout>> = {
+    appearance: { text: titled(themeDef(settings.theme).name) },
+    transcript: { text: settings.layout === "compact" ? "Compact" : "Default" },
+    notifications: { text: settings.push ? (settings.pushSound ? "Pop-up · sound" : "Pop-up") : "Bell only" },
+    projects: { text: String(projectCount) },
+  };
+  const installed = Object.values(plugins).filter(Boolean).length;
+  if (installed) out.integrations = { text: `${installed} on` };
+  if (live.workspaces !== undefined) out.workspaces = { text: String(live.workspaces) };
+  if (live.skills !== undefined) out.skills = { text: String(live.skills) };
+  if (live.storage !== undefined) out.system = { text: fmtBytes(live.storage) };
+  if (live.accounts) {
+    const out_ = live.accounts.filter((a) => !a.disabled && !a.logged_in).length;
+    const n = live.accounts.length;
+    out.aimgmt = out_ ? { text: "sign in", want: true } : { text: `${n} login${n === 1 ? "" : "s"}` };
+  }
+  return out;
+}
+
+/** The rail's foot: the bridge you are talking to, and the way to restart it
+ *  (restartBridge asks first, as SYSTEM's own button does). */
+function RailFoot({ onOpen }: { onOpen: () => void }) {
+  const [branch, setBranch] = useState<string | null>(null);
+  useEffect(() => {
+    let on = true;
+    void api.update().then((u) => { if (on) setBranch(u.branch || null); }).catch(() => {});
+    return () => { on = false; };
+  }, []);
+  return (
+    <div className="set-railfoot">
+      <button className="set-railfoot-who" onClick={onOpen} title="open System">
+        <i aria-hidden />
+        <span>Bridge online</span>
+        {branch && <em>· {branch}</em>}
+      </button>
+      <button className="set-railfoot-go" onClick={() => void restartBridge()} title="restart the bridge" aria-label="restart the bridge">
+        <RotateCw size={14} strokeWidth={1.8} aria-hidden />
+      </button>
+    </div>
+  );
+}
+
 export function SettingsModal(props: SettingsModalProps) {
   const {
     host,
@@ -4088,6 +4159,16 @@ export function SettingsModal(props: SettingsModalProps) {
   const hidden = new Set(Object.entries(PLUGIN_SEC).filter(([id]) => !plugins[id]).map(([, sec]) => sec));
   if (!plugins.rivendell) hidden.add("ADD AN INSTANCE");
   const hits = search(q, env.filter((s) => !tunesOff(s.key, aiFeatures)), hidden);
+  const readouts = useRailReadouts(settings, props.projects.groups.length, plugins, project);
+  // The search sits at the top of the rail now; ⌘F (Ctrl+F) lands in it from anywhere in the dialog.
+  const searchBox = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") { e.preventDefault(); searchBox.current?.focus(); }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const shown: Tab | "search" = q.trim() ? "search" : tab;
   function go(h: Hit) {
     setTab(h.tab);
@@ -4203,19 +4284,6 @@ export function SettingsModal(props: SettingsModalProps) {
           <span className="set-crumb">Settings{crumbTab && <i><u>/</u> {sentence(crumbTab.label)}</i>}</span>
           <InfoDot on={scopeOpen} about="where these are stored" onClick={() => setScopeOpen(!scopeOpen)} />
           <span style={{ flex: 1 }}></span>
-          <input
-            type="search"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && hits.length) go(hits[0]);
-              // Otherwise Escape would close the whole modal from inside the box.
-              if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
-            }}
-            placeholder="Search settings"
-            className="set-search"
-            style={{ ...field, flex: "0 1 220px", minWidth: 140 }}
-          />
           <button
             className="set-close"
             title="close (Esc)"
@@ -4258,6 +4326,23 @@ export function SettingsModal(props: SettingsModalProps) {
             lets it turn from a side rail into a top strip on a phone. */}
         <div className="setbody">
           <div className="setrail" ref={rail}>
+            <label className="set-railsearch">
+              <input
+              type="search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && hits.length) go(hits[0]);
+                // Otherwise Escape would close the whole modal from inside the box.
+                if (e.key === "Escape" && q) { e.stopPropagation(); setQ(""); }
+              }}
+              placeholder="Search settings"
+              className="set-search"
+              ref={searchBox}
+              style={{ ...field }}
+              />
+              <kbd aria-hidden>⌘F</kbd>
+            </label>
             {RAIL.map((t, i) => (
               <Fragment key={t.key}>
                 {t.group !== RAIL[i - 1]?.group && <div className="setgroup">{sentence(t.group)}</div>}
@@ -4275,9 +4360,15 @@ export function SettingsModal(props: SettingsModalProps) {
                       {t.hint}
                     </div>
                   </div>
+                  {readouts[t.key] && (
+                    <span className="set-railro" data-want={readouts[t.key]!.want || undefined}>
+                      {readouts[t.key]!.want && <i aria-hidden />}{readouts[t.key]!.text}
+                    </span>
+                  )}
                 </button>
               </Fragment>
             ))}
+            <RailFoot onOpen={() => { setQ(""); setTab("system"); }} />
           </div>
 
           <div ref={pane} className={`mscroll mcol setpane${shown === "projects" ? " prj-fill" : ""}`} style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>

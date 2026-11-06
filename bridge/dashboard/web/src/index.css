@@ -7890,3 +7890,42 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tk-live { animation: tkpulse 1.6s ease-in-out infinite; }
 @keyframes tkpulse { 50% { opacity: .45; } }
 @media (prefers-reduced-motion: reduce) { .tk-live { animation: none; } }
+
+/* ── LIVE RAIL (2026-11-06, .mystical/design-drafts/settings-pages, A · LIVE RAIL) ──
+   SETTINGS' rail says what each page is set to, holds the search at its top and
+   the bridge at its foot. Quiet grey readouts; the ask tone only when a page
+   wants you. Gone on a phone, where the rail is a strip with no room for them. */
+.set-railsearch { position: relative; display: flex; align-items: center; margin: 0 0 10px; flex: none; }
+.set-railsearch .set-search, [data-fam] .set-railsearch .set-search { flex: 1 1 auto !important; width: 100%; min-width: 0; padding-right: 40px !important; }
+.set-railsearch kbd {
+  position: absolute; right: 9px; top: 50%; transform: translateY(-50%); pointer-events: none;
+  font: 500 10.5px var(--ui-font, inherit); color: var(--txl); line-height: 16px; padding: 0 5px; border-radius: 5px;
+  border: 1px solid var(--line2, color-mix(in srgb, var(--acc) 25%, transparent));
+}
+.set-railsearch .set-search:focus + kbd, .set-railsearch .set-search:not(:placeholder-shown) + kbd { display: none; }
+/* The label keeps its one line (AURORA's tracked capitals wrapped "AI MANAGEMENT"
+   beside a readout, and a two-line row breaks the rail's even rhythm); the readout
+   is what gives way, to an ellipsis. */
+.setrail button > div { flex: none; }
+.setrail .set-raillbl { white-space: nowrap; }
+.set-railro {
+  margin-left: auto; flex: 0 1 auto; min-width: 0; padding-left: 8px; display: block; overflow: hidden; text-overflow: ellipsis;
+  font-size: 11.5px; letter-spacing: 0; color: var(--txl); white-space: nowrap; text-transform: none;
+}
+.set-railro[data-want] { color: var(--ask, var(--warn)); }
+.set-railro i { display: inline-block; vertical-align: 1px; margin-right: 6px; width: 7px; height: 7px; border-radius: 50%; background: var(--ask, var(--warn)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ask, var(--warn)) 18%, transparent); }
+.set-railfoot {
+  margin-top: auto; padding: 10px 2px 0 10px; display: flex; align-items: center; gap: 6px; flex: none;
+  border-top: 1px solid var(--line, color-mix(in srgb, var(--acc) 16%, transparent));
+}
+.setrail .set-railfoot button { border: 0; background: none; padding: 0; color: var(--txm); }
+.setrail .set-railfoot-who { display: flex; align-items: center; gap: 8px; min-width: 0; height: 28px; font: inherit; font-size: 12px; }
+.setrail .set-railfoot-who:hover { color: var(--txb); background: none; }
+.set-railfoot-who i { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent); }
+.set-railfoot-who em { font-style: normal; color: var(--txl); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.setrail .set-railfoot-go { margin-left: auto; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px; flex: none; }
+.setrail .set-railfoot-go:hover { background: color-mix(in srgb, var(--acc) 8%, transparent); color: var(--txb); }
+@media (max-width: 600px) {
+  .set-railro, .set-railfoot, .set-railsearch kbd { display: none; }
+  .set-railsearch { margin: 6px 8px; flex: 0 0 160px; }
+}
