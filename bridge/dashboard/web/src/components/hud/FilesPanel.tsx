@@ -42,7 +42,7 @@ interface Props {
   branch?: string;
   // `changed` lets the caller land a dirty file on the GIT tab (diff) instead
   // of the editor, so its changed lines are visible.
-  onOpenFile: (path: string, changed: boolean) => void;
+  onOpenFile: (path: string, changed: boolean, line?: number) => void;
   // TEAM: send this file to a teammate (absent while there's no one to send to).
   onSendFile?: (path: string) => void;
   // The session's writes, relative to this tree (lib/sessionedits), and the one
@@ -311,7 +311,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
         tools={tools.map((t) => (
           <button key={t.k} className="gp-ib" onClick={t.on} title={t.t} aria-label={t.t}>{t.g}</button>
         ))} />
-      {project && turns && <WritingCard turns={turns} root={cwd} onOpen={(p) => onOpenFile(p, false)} />}
+      {project && turns && <WritingCard turns={turns} root={cwd} onOpen={(p, line) => onOpenFile(p, false, line)} />}
 
       {project && (
         // The sidebar's search, so every theme family draws it the same way.

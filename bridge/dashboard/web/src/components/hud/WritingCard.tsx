@@ -10,7 +10,7 @@ import { writing } from "../../lib/writing";
 const ago = (s: number) => (s < 90 ? `${Math.max(0, Math.round(s))}s` : `${Math.round(s / 60)}m`);
 
 export function WritingCard({ turns, root, onOpen }: {
-  turns: Parameters<typeof writing>[0]; root: string | null | undefined; onOpen: (path: string) => void;
+  turns: Parameters<typeof writing>[0]; root: string | null | undefined; onOpen: (path: string, line?: number) => void;
 }) {
   const [now, setNow] = useState(() => Date.now() / 1000);
   useEffect(() => { const i = setInterval(() => setNow(Date.now() / 1000), 5000); return () => clearInterval(i); }, []);
@@ -32,7 +32,7 @@ export function WritingCard({ turns, root, onOpen }: {
           </span>
         ))}
       </pre>
-      <button className="wr-f" onClick={() => onOpen(w.path)}>
+      <button className="wr-f" onClick={() => onOpen(w.path, w.line ?? undefined)}>
         <span>{w.line != null ? `Open at line ${w.line} ›` : "Open ›"}</span>
         <span className="wr-when">turn {w.turn} · {w.live ? "now" : `${ago(now - w.at)} ago`}</span>
       </button>

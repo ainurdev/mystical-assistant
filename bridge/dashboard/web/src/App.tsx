@@ -662,8 +662,8 @@ export function App() {
 
   // A changed file opens on the GIT tab (diff view) — an editor buffer hides
   // which lines actually changed. Clean files still open in the editor.
-  function openFileFromPanel(path: string, changed: boolean) {
-    if (sessionProject) openAnalyze(sessionProject, { path, branch: sessionBranch }, changed ? "changes" : undefined);
+  function openFileFromPanel(path: string, changed: boolean, line?: number) {
+    if (sessionProject) openAnalyze(sessionProject, { path, branch: sessionBranch, line }, changed ? "changes" : undefined);
   }
 
   // A session opened from outside the sidebar (a notification, ⌘K, NEXT UP,

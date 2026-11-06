@@ -19,7 +19,11 @@ const P2 = ["@@ -210,3 +210,4 @@", " a", " b", "-old", "+new1", "+new2", " c", "
 const live = writing([turn("running", [...edit("1", P, P1), ...edit("2", P, P2)])], ROOT, 120)!;
 ok(live.live && live.name === "skills.py" && live.dir === "bridge/" && live.path === "bridge/skills.py", "running turn: newest edit, path relative to root");
 ok(live.lines.length === 4 && live.lines.map((l) => l.sign).join("") === "-+++", "last 4 changed lines");
-ok(live.line === 301, "line = +c of the last hunk header");
+ok(live.line === 212, "line = the n of the first + among the shown lines");
+const low = writing([turn("running", edit("1", P, ["@@ -300,3 +300,4 @@", " a", " b", " c", "+z"]))], ROOT, 120)!;
+ok(low.line === 303, "a shown + line below the hunk start: its own n, not the hunk start");
+const del = writing([turn("running", edit("1", P, ["@@ -50,2 +60,1 @@", " a", "-b"]))], ROOT, 120)!;
+ok(del.line === 60, "no + line shown: the hunk start");
 ok(live.lines[3].n === 302 && live.lines[2].n === 213 && live.lines[1].n === 212 && live.lines[0].n === null, "n walks the hunk; - lines have none");
 ok(live.turn === 1, "turn number is 1-based");
 

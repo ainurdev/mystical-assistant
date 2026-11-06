@@ -41,7 +41,11 @@ export function writing(turns: T[], root: string | null | undefined, now: number
           if (s !== "-" && n != null) n++;
         }
       }
-      return { path, name: path.slice(cut), dir: path.slice(0, cut), lines: all.filter((l) => l.sign !== " ").slice(-4),
+      const lines = all.filter((l) => l.sign !== " ").slice(-4);
+      // The jump lands on a changed line shown here; the hunk start only when none of them is added.
+      const firstAdd = lines.find((l) => l.sign === "+")?.n;
+      if (line != null) line = firstAdd ?? line;
+      return { path, name: path.slice(cut), dir: path.slice(0, cut), lines,
                line, turn: ti + 1, at, live };
     }
   }
