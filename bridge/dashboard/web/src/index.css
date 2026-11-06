@@ -8009,3 +8009,12 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .aim-mini > span[data-low] i b { background: var(--ask, var(--warn)); }
 .aim-chip.warn { color: var(--ask, var(--warn)); background: color-mix(in srgb, var(--ask, var(--warn)) 12%, transparent); }
 @media (max-width: 600px) { .aim-mini { display: none; } }
+
+/* ── SYSTEM · five tabs instead of one long scroll (2026-11-06, B · TABS) ── */
+.sys-tabs { display: flex; gap: 2px; margin: -4px 0 18px; border-bottom: 1px solid var(--line, var(--border)); }
+.sys-tabs button { appearance: none; cursor: pointer; border: 0; background: none; position: relative; padding: 8px 12px 10px;
+  font: 500 var(--t10) var(--ui-font, inherit); color: var(--txd); letter-spacing: 0; }
+.sys-tabs button:hover { color: var(--txh); }
+.sys-tabs button[data-on] { color: var(--txb); }
+.sys-tabs button[data-on]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--acc); }
+[data-fam="aurora"] .sys-tabs button { text-transform: uppercase; letter-spacing: .14em; font-size: 11.5px; }

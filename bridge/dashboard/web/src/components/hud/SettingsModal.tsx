@@ -1555,7 +1555,7 @@ function StartupSection() {
  *  restart to reach. Same precedence as the AI tab: what you set here beats
  *  .env, and RESET puts a row back to whatever .env said rather than to a
  *  hardcoded default — so the file stays the floor under all of this. */
-function EnvPanel() {
+function EnvPanel({ only }: { only?: string[] }) {
   const [rows, setRows] = useState<EnvSetting[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   // Which row was refused, and why. A rejection belongs beside the field that
@@ -1584,7 +1584,7 @@ function EnvPanel() {
     return <Placeholder icon={TriangleAlert}>This bridge is running a build without the settings registry. Restart it.</Placeholder>;
 
   const shown = rows.filter((r) => !tunesOff(r.key, ai));
-  const groups = [...new Set(shown.map((r) => r.group))];
+  const groups = [...new Set(shown.map((r) => r.group))].filter((g) => !only || only.includes(g));
   const pending = rows.some((r) => r.source === "saved" && !r.live);
 
   return (
@@ -4110,6 +4110,29 @@ function MovePanel() {
   );
 }
 
+// ---- SYSTEM's tabs ------------------------------------------------------------
+// SYSTEM was fifteen sections in one 8-screen scroll; five tabs now (2026-11-06,
+// B · TABS): the bridge itself, how runs start, Telegram, disk, and the tuning
+// nobody needs daily. A search hit or a deep link names a section; it opens the
+// tab that holds it.
+type SysTab = "overview" | "runs" | "telegram" | "storage" | "advanced";
+const SYS_TABS: { key: SysTab; label: string }[] = [
+  { key: "overview", label: "Overview" }, { key: "runs", label: "Runs" }, { key: "telegram", label: "Telegram" },
+  { key: "storage", label: "Storage" }, { key: "advanced", label: "Advanced" },
+];
+const SYS_ENV: Record<SysTab, string[]> = {
+  overview: [], storage: [],
+  runs: ["RUNS", "PROJECTS", "BROWSER", "DEV SERVER", "UPLOADS"],
+  telegram: ["ACCESS", "SERVERS", "TUNNEL"],
+  advanced: ["AI TUNING"],
+};
+function sysTabOf(sec: string | null | undefined): SysTab {
+  if (!sec) return "overview";
+  if (sec === "STORAGE") return "storage";
+  if (sec === "HTTP INSPECTOR") return "advanced";
+  return (Object.keys(SYS_ENV) as SysTab[]).find((t) => SYS_ENV[t].includes(sec)) ?? "overview";
+}
+
 // ---- LIVE RAIL ----------------------------------------------------------------
 // Each rail row says what its page is set to, so you can read your setup without
 // opening ten pages (2026-11-06, .mystical/design-drafts/settings-pages, A · LIVE RAIL).
@@ -4204,6 +4227,7 @@ export function SettingsModal(props: SettingsModalProps) {
   const [start] = useState(() => normalizeTab(startTab));
   const startSec = start.sec;
   const [tab, setTab] = useState<Tab>(start.tab ?? "appearance");
+  const [sysTab, setSysTab] = useState<SysTab>(() => sysTabOf(start.sec));
   // SETTINGS ▸ Skills' repo: Projects ▸ a project ▸ Skills ▸ Open… picks it; else the session's.
   const [skillsFor, setSkillsFor] = useState<string | null>(null);
   const aiFeatures = useAiFeatures();   // the PONYTAIL level hides with its switch
@@ -4238,6 +4262,7 @@ export function SettingsModal(props: SettingsModalProps) {
   const shown: Tab | "search" = q.trim() ? "search" : tab;
   function go(h: Hit) {
     setTab(h.tab);
+    if (h.tab === "system") setSysTab(sysTabOf(h.sec));
     setQ("");
     setJump(h);
   }
@@ -4734,51 +4759,57 @@ export function SettingsModal(props: SettingsModalProps) {
 
             {shown === "system" && (
               <>
-                <StorageSection />
+                <div className="sys-tabs" role="tablist">
+                  {SYS_TABS.map((t) => (
+                    <button key={t.key} role="tab" aria-selected={sysTab === t.key} data-on={sysTab === t.key || undefined}
+                      onClick={() => setSysTab(t.key)}>{t.label}</button>
+                  ))}
+                </div>
 
-                <Section title="BRIDGE" top>
-                  <div style={CARD}>
-                    <Row first label="HOST">
-                      <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{host}</span>
-                    </Row>
-                    <Row label="PORT">
-                      <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--tx)" }}>
-                        {port}
-                      </span>
-                    </Row>
-                  </div>
-                </Section>
-
-                <StartupSection />
-
-                <UsageSharingSection />
-
-                <Section title="HTTP INSPECTOR" top>
-                  <div style={CARD}>
-                    <Row
-                      first
-                      label="API TRAFFIC"
-                      info="Every request a run makes to the Anthropic API — its token accounting, its SSE frames, its timings — through a local pass-through proxy. Off by default: it sits on the critical path of the turns it watches."
+                {sysTab === "overview" && (
+                  <>
+                    <Section title="BRIDGE">
+                      <div style={CARD}>
+                        <Row first label="HOST">
+                          <span style={{ fontSize: "var(--t11)", color: "var(--tx)" }}>{host}</span>
+                        </Row>
+                        <Row label="PORT">
+                          <span style={{ fontFamily: "'JetBrains Mono',monospace", fontSize: "var(--t11)", color: "var(--tx)" }}>
+                            {port}
+                          </span>
+                        </Row>
+                      </div>
+                    </Section>
+                    <Section
+                      title="PLATFORM"
+                      top
+                      info="Updating pulls the bridge's own checkout, rebuilds this dashboard and restarts the bridge; running turns resume on their own."
                     >
-                      <button onClick={onOpenInspector}
-                        style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 30%, transparent)", background: "transparent", color: "var(--acc)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 12px", flex: "none" }}>
-                        OPEN
-                      </button>
-                    </Row>
-                  </div>
-                </Section>
+                      <UpdatePanel onFeed={onFeed} />
+                    </Section>
+                    <StartupSection />
+                    <UsageSharingSection />
+                  </>
+                )}
 
-                <Section
-                  title="PLATFORM"
-                  top
-                  info="Updating pulls the bridge's own checkout, rebuilds this dashboard and restarts the bridge; running turns resume on their own."
-                >
-                  <UpdatePanel onFeed={onFeed} />
-                </Section>
+                {sysTab === "storage" && <StorageSection />}
 
-                {/* Everything config.py reads from the environment, which until
-                    now meant a text editor and a restart to change. */}
-                <EnvPanel />
+                {sysTab === "advanced" && (
+                  <Section title="HTTP INSPECTOR">
+                    <div style={CARD}>
+                      <Row
+                        first
+                        label="API TRAFFIC"
+                        info="Every request a run makes to the Anthropic API — its token accounting, its SSE frames, its timings — through a local pass-through proxy. Off by default: it sits on the critical path of the turns it watches."
+                      >
+                        <MiniBtn onClick={onOpenInspector}>Open</MiniBtn>
+                      </Row>
+                    </div>
+                  </Section>
+                )}
+
+                {/* Everything config.py reads from the environment, split by the tab it belongs to. */}
+                {SYS_ENV[sysTab].length > 0 && <EnvPanel key={sysTab} only={SYS_ENV[sysTab]} />}
               </>
             )}
             </div>
