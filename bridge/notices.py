@@ -54,6 +54,7 @@ CATALOG = {
     "resumed": ("resumed", "fyi", "session"),
     "retrying": ("resumed", "fyi", "session"),
     "waiting": ("resumed", "fyi", "session"),
+    "agent_note": ("done", "news", "session"),      # an agent's notify_me
     "channel_held": ("ask", "needs", "session"),   # bridge/channel.py: agents hit the hop limit
     "started": ("started", "fyi", "session"),
     "rv_started": ("started", "fyi", "rivendell"),

@@ -34,7 +34,8 @@ import threading
 import time
 import uuid
 
-from bridge import acp, agent_caps, channel, config, experimental, goals, mcp_client, mcp_share, profiles, store
+from bridge import (acp, agent_caps, channel, config, experimental, gateway_tools, goals, mcp_client, mcp_share,
+                    profiles, store, tool_policy)
 
 _tokens: dict = {}        # token -> {session_id}
 _lock = threading.Lock()
@@ -74,6 +75,26 @@ def acp_server(tok: str) -> dict:
     d = server_def(tok)
     return {"name": "mystical", "command": d["command"], "args": d["args"],
             "env": [{"name": k, "value": v} for k, v in d["env"].items()]}
+
+
+def hook_env(tok: str) -> dict:
+    """What bridge/hook_dispatch.py needs in the agent's environment. Same token and reach as
+    the relay: it's dead when the turn ends."""
+    return {"MYSTICAL_HOOK_TOKEN": tok, "MYSTICAL_HOOK_URL": f"http://127.0.0.1:{config.DASH_PORT}/local/hook"}
+
+
+def hook(tok: "str | None", body: dict) -> "tuple[dict, int]":
+    """POST /local/hook. A rule's answer; {} lets the action through."""
+    sid = session_of(tok)
+    s = store.get_session(sid) if sid else None
+    if not s:
+        return {"error": "unauthorized"}, 401
+    from bridge import rules
+    try:
+        return rules.evaluate(s, str(body.get("event") or ""), body.get("payload") or {}), 200
+    except Exception as e:  # noqa: BLE001 - a rule must never be what stops the work
+        print(f"[gateway] rule: {e!r}", file=sys.stderr)
+        return {}, 200
 
 
 def _env(tok: str) -> dict:
@@ -147,9 +168,10 @@ RV_LIST = _t("list_rivendell_tasks", "The open tasks on this repo's Rivendell bo
 RV_NEW = _t("create_rivendell_task", "Create a task on this repo's Rivendell board. Returns its key.",
             {"title": {"type": "string"}, "description": {"type": "string"}, "board": {"type": "string"}},
             ["title"])
-FIND = _t("find_tools", "Search the MCP tools other agents' servers share with you. Empty query lists servers.",
+FIND = _t("find_tools", "Find more tools: Mystical's rarer ones (reports, chat search, waiting, pinging the user, "
+          "secrets) and MCP servers shared with you. Empty query lists servers.",
           {"query": {"type": "string"}, "server": {"type": "string"}})
-CALL = _t("call_tool", "Call a tool that find_tools showed.",
+CALL = _t("call_tool", "Call a tool that find_tools showed. Use server `mystical` for Mystical's own.",
           {"server": {"type": "string"}, "tool": {"type": "string"}, "arguments": {"type": "object"}},
           ["server", "tool"])
 
@@ -181,9 +203,23 @@ def tools_for(s: dict) -> list:
             out += [GOAL_C, GOAL_U, GOAL_G]
         if _rivendell_on(s):
             out += [RV_LIST, RV_NEW]
-    if mcp_share.for_agent(agent, s.get("cwd")):
-        out += [FIND, CALL]
-    return out
+    out += list(gateway_tools.CORE_ALL)
+    # The rest are behind find_tools, so they cost nothing until wanted.
+    out += [FIND, CALL]
+    return _allowed(s, out)
+
+
+def _allowed(s: dict, tools: list) -> list:
+    """Less what's switched off here (SETTINGS > Agent Tools). find_tools and call_tool are how
+    the rest are reached, so they stay."""
+    off = tool_policy.gateway_off(_agent_of(s), s.get("project"), s, {t["name"] for t in tools})
+    return [t for t in tools if t["name"] not in off or t["name"] in ("find_tools", "call_tool")]
+
+
+def _extras(s: dict) -> list:
+    """Mystical's own tools that find_tools lists rather than tools/list."""
+    caps = agent_caps.caps(_agent_of(s))
+    return _allowed(s, list(gateway_tools.EXTRA_ALL) + ([] if caps["system_prompt"] else list(gateway_tools.EXTRA_AGENT)))
 
 
 def tool_names(s: dict) -> set:
@@ -193,6 +229,20 @@ def tool_names(s: dict) -> set:
 # ------- cards -------------------------------------------------------------
 
 def _card(job, s: dict, questions: list, on_answer) -> dict:
+    """Show a question card. See _show_card."""
+    ask = ((questions or [{}])[0].get("question") or "")[:300]
+    return _show_card(job, s, {"kind": "question", "tool_name": "ask_user", "questions": questions},
+                      {"type": "question", "questions": questions}, on_answer, ask, tappable=True)
+
+
+def card_of_kind(job, s: dict, kind: str, fields: dict, on_answer, ping: str) -> dict:
+    """A card that isn't a question (request_secret): its own event, `<kind>_request`.
+    It can't be answered from a Telegram message, so the ping just opens the chat."""
+    return _show_card(job, s, {"kind": kind, "tool_name": f"request_{kind}", **fields},
+                      {"type": f"{kind}_request", **fields}, on_answer, ping, tappable=False)
+
+
+def _show_card(job, s: dict, entry: dict, event: dict, on_answer, ask: str, tappable: bool) -> dict:
     """Show a card. Returns the tool's result: the answer when this agent's call can
     wait for one, else what to do meanwhile."""
     from bridge import runner
@@ -205,13 +255,12 @@ def _card(job, s: dict, questions: list, on_answer) -> dict:
         with _lock:
             _cards.pop(rid, None)
         return _text("This turn can't pause right now. Say what you need in your reply instead.")
-    job.add_pending({"request_id": rid, "kind": "question", "tool_name": "ask_user",
-                     "questions": questions, "gateway": True, "at": time.time()})
-    job.add({"type": "question", "request_id": rid, "questions": questions})
-    ask = ((questions or [{}])[0].get("question") or "")[:300]
+    job.add_pending({"request_id": rid, **entry, "gateway": True, "at": time.time()})
+    job.add({**event, "request_id": rid})
+    kw = {"job_id": job.id, "request_id": rid} if tappable else {}
     threading.Thread(target=runner.notify_awaiting, daemon=True,
                      args=(job.chat_id, job.store_session_id, "question"),
-                     kwargs={"body": ask, "job_id": job.id, "request_id": rid}).start()
+                     kwargs={"body": ask, **kw}).start()
     if not block:
         return _text("The card is shown. End your turn now, without doing anything else: the answer "
                      "arrives as your next message.")
@@ -229,7 +278,8 @@ def answer_card(job, entry: dict, answers: "list | None") -> None:
     """A click on a gateway card (Job.respond, AcpJob.respond)."""
     from bridge import runner
     rid = entry["request_id"]
-    job.add({"type": "question_answered", "request_id": rid, "answers": answers or []})
+    if entry.get("kind") == "question":
+        job.add({"type": "question_answered", "request_id": rid, "answers": answers or []})
     with _lock:
         row = _cards.get(rid)
     if row is None:
@@ -239,6 +289,11 @@ def answer_card(job, entry: dict, answers: "list | None") -> None:
     except Exception as e:  # noqa: BLE001
         print(f"[gateway] card: {e!r}", file=sys.stderr)
         text = f"That answer couldn't be acted on: {e}"
+    if entry.get("kind") != "question":
+        # After acting on it, so the card says what happened. Never the answers: a
+        # secret's value goes in neither the journal nor the chat.
+        ok, text = text if isinstance(text, tuple) else (False, text)
+        job.add({"type": f"{entry.get('kind')}_answered", "request_id": rid, "given": ok})
     row["text"] = text
     row["answers"] = answers
     row["done"].set()
@@ -269,7 +324,7 @@ def handle(tok: "str | None", method: str, params: dict) -> "tuple[dict, int]":
         return {"error": f"no method {method}"}, 400
     name = params.get("name") or ""
     args = params.get("arguments") or {}
-    if name not in tool_names(s):
+    if name not in tool_names(s) and name not in {t["name"] for t in _extras(s)}:
         return _text(f"{name} isn't available to this session.", error=True), 200
     try:
         return _call(s, name, args), 200
@@ -335,7 +390,14 @@ def _call(s: dict, name: str, a: dict) -> dict:
     if name == "find_tools":
         return _text(_find(s, a))
     if name == "call_tool":
+        if a.get("server") == "mystical":
+            inner = str(a.get("tool") or "")
+            if inner not in {t["name"] for t in _extras(s)}:
+                return _text(f"{inner} isn't available to this session.", error=True)
+            return gateway_tools.call(s, job, inner, a.get("arguments") or {})
         return _call_shared(s, a)
+    if name in gateway_tools.HANDLED:
+        return gateway_tools.call(s, job, name, a)
     return _text(f"Unknown tool: {name}", error=True)
 
 
@@ -415,16 +477,21 @@ def _rivendell(s: dict, name: str, a: dict) -> str:
 
 
 def _shared(s: dict) -> dict:
-    return mcp_share.for_agent(_agent_of(s), s.get("cwd"))
+    return mcp_share.for_agent(_agent_of(s), s.get("cwd"), s.get("project"), s)
 
 
 def _find(s: dict, a: dict) -> str:
     query, only = str(a.get("query") or "").lower(), str(a.get("server") or "")
     servers = _shared(s)
     if not query and not only:
-        return "Servers shared with you: " + (", ".join(sorted(servers)) or "none") \
+        return "Servers: mystical (Mystical's own tools), " + (", ".join(sorted(servers)) or "none shared") \
             + ". Call find_tools with a query or a server to see tools."
     lines, problems = [], []
+    if not only or only == "mystical":
+        for t in _extras(s):
+            hay = f"{t['name']} {t['description']}".lower()
+            if not query or query in hay:
+                lines.append(f"mystical / {t['name']}: {t['description'][:200]}\n  input: {shlex.quote(_schema(t))}")
     for name, d in servers.items():
         if only and name != only:
             continue

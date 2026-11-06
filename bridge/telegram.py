@@ -303,3 +303,22 @@ def get_updates(offset: int):
         print(f"[telegram] getUpdates exception: {e}", file=sys.stderr)
         time.sleep(3)
         return []
+
+
+def send_photo(chat_id: int, path: str, caption: str = "", thread: "int | None" = None) -> bool:
+    """Send a picture on disk, with a caption. Multipart by hand: stdlib has no builder,
+    and a local file can't go as a URL. Best-effort: False on any failure."""
+    b = "mysticalphoto"
+    fields = {"chat_id": str(chat_id), "caption": caption, **({"message_thread_id": str(thread)} if thread else {})}
+    body = b"".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+                    for k, v in fields.items())
+    try:
+        with open(path, "rb") as f:
+            body += (f'--{b}\r\nContent-Disposition: form-data; name="photo"; filename="picture"\r\n'
+                     f"Content-Type: application/octet-stream\r\n\r\n").encode() + f.read() + f"\r\n--{b}--\r\n".encode()
+        req = Request(f"{config.API}/sendPhoto", data=body,
+                      headers={"Content-Type": f"multipart/form-data; boundary={b}"})
+        with urlopen(req, timeout=60) as r:
+            return bool(json.loads(r.read()).get("ok"))
+    except (OSError, ValueError, HTTPError):
+        return False

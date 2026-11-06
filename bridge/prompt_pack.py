@@ -43,6 +43,16 @@ RUN = (
     "command. Mystical owns what it starts, so it outlives your turn and the human "
     "can follow it.")
 
+TIDY = (
+    "Keep the project's .mystical/ folder tidy: .mystical/scratch/ for throwaway scripts and probes, "
+    ".mystical/docs/ for reports and Markdown written to be read, .mystical/drafts/ for design drafts and "
+    "mockups. .mystical/images/ holds the pictures in the user's messages: leave it alone.")
+
+SHOW = (
+    "To show the user a picture as proof, call show_image with a one-line caption saying what it proves. A "
+    "picture you only read to check something stays in your work log, out of their way. Use run_checks to run "
+    "tests, drive_page instead of writing a browser script, and find_tools for the rest.")
+
 HELPERS = (
     "Mystical can start another agent for you, on any provider, with the delegate "
     "tool from the mystical MCP server. Use it only when the human asks for a helper. "
@@ -74,7 +84,7 @@ RIVENDELL = (
 
 def _fragments(session: dict, cwd: "str | None", tools: set, graph: str, rivendell: bool,
                extra: "tuple[str, ...]") -> list:
-    rows = [(ASK, "ask_user"), (RUN, "run_project"), *((e, None) for e in extra),
+    rows = [(ASK, "ask_user"), (RUN, "run_project"), (SHOW, "show_image"), (TIDY, None), *((e, None) for e in extra),
             (RIVENDELL if rivendell else "", "list_rivendell_tasks"), (HELPERS, "delegate")]
     out = [text for text, need in rows if text and (need is None or need in tools)]
     if graph.strip():

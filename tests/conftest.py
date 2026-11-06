@@ -51,6 +51,8 @@ os.environ["ACCOUNTS_DIR"] = os.path.join(tempfile.mkdtemp(), "accounts")
 os.environ["MCP_SHARE_FILE"] = os.path.join(tempfile.mkdtemp(), "mcp-share.json")
 os.environ["SKILL_SHARE_FILE"] = os.path.join(tempfile.mkdtemp(), "skill-share.json")
 os.environ["MCP_OAUTH_FILE"] = os.path.join(tempfile.mkdtemp(), "mcp-oauth.json")
+os.environ["TOOL_POLICY_FILE"] = os.path.join(tempfile.mkdtemp(), "tool-policy.json")
+os.environ["RULES_FILE"] = os.path.join(tempfile.mkdtemp(), "rules.json")
 # Backstop: a regression once reached the real `claude` binary during a test
 # run, against the developer's live login, and refreshed
 # ~/.claude/.credentials.json twice. Pin an absolute path that cannot exist:

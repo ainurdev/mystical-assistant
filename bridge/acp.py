@@ -314,6 +314,7 @@ class Turn:
         self.steers, self.answers = [], []
         self.paused = self.want_cancel = self.closing = False
         self.tool_after_text = False     # a tool ran after the last words: they aren't the answer
+        self.held_rows = {}              # toolCallId -> name, until its input is known
         # Guards the buffers, card creation and the done/interrupted flips: the
         # reader, the turn's end and Stop all touch them.
         self._lock = threading.RLock()
@@ -363,12 +364,21 @@ class Turn:
             self.tool_after_text = True
             tid, name = u.get("toolCallId"), u.get("title") or u.get("kind") or "tool"
             self.tools[tid] = (name, time.time(), u.get("kind"))
-            self._add({"type": "tool", "name": name, "id": tid, "summary": _summary(u)})
+            # Kimi Code streams the input as text and only states it (rawInput) in a later
+            # update, so a row written now could only say "Bash". It waits for that.
+            if u.get("rawInput") or u.get("locations") or u.get("status") in ("completed", "failed"):
+                self._add(self._tool_row(tid, name, u))
+            else:
+                self.held_rows[tid] = name
             if u.get("status") in ("completed", "failed"):
                 self._done(tid, u)
         elif kind == "tool_call_update":
+            tid = u.get("toolCallId")
+            if tid in self.held_rows and (u.get("rawInput") or u.get("locations")
+                                          or u.get("status") in ("completed", "failed")):
+                self._add(self._tool_row(tid, self.held_rows.pop(tid), u))
             if u.get("status") in ("completed", "failed"):
-                self._done(u.get("toolCallId"), u)
+                self._done(tid, u)
         elif kind == "plan":
             job.todos = _mask([{"content": e.get("content"), "status": e.get("status"),
                                 "activeForm": e.get("content")}
@@ -381,6 +391,20 @@ class Turn:
                 job.cost = cost.get("amount")
         elif kind == "config_option_update":
             self.options = u.get("configOptions") or self.options
+
+    def _tool_row(self, tid, name, u):
+        ev = {"type": "tool", "name": name, "id": tid, "summary": _summary(u)}
+        raw = u.get("rawInput") if isinstance(u.get("rawInput"), dict) else {}
+        cmd = raw.get("command") or raw.get("cmd")
+        if cmd:
+            ev["detail"] = " ".join(map(str, cmd)) if isinstance(cmd, list) else str(cmd)
+        return ev
+
+    def flush_held_rows(self):
+        """Whatever still waits for its input goes now, in order: a card is about to name it."""
+        for tid, name in list(self.held_rows.items()):
+            self._add({"type": "tool", "name": name, "id": tid, "summary": name})
+        self.held_rows.clear()
 
     def _done(self, tid, u):
         _, t0, kind = self.tools.pop(tid, (None, 0.0, None))
@@ -441,6 +465,7 @@ class Turn:
             if self.job.interrupted or self.done:
                 return {"outcome": {"outcome": "cancelled"}}
             self.flush()
+            self.flush_held_rows()
             tc = params.get("toolCall") or {}
             name = tc.get("title") or self.tools.get(tc.get("toolCallId"), ("tool",))[0]
             card = _mask({"request_id": f"acp-{rid}", "kind": "permission", "tool_name": name,
@@ -594,6 +619,7 @@ def _open(conn, turn, caps, cwd, sid, on_session, mcp_servers=()):
 
 def _finish(job, turn, stop):
     turn.flush()
+    turn.flush_held_rows()
     job.result = job.texts[-1] if job.texts else ""
     if turn.tool_after_text and experimental.enabled():
         job.result = ""                 # those words led to more work: not the answer
