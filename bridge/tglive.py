@@ -42,7 +42,7 @@ import threading
 import time
 import uuid
 
-from bridge import config, notices, profiles, runner, state, telegram
+from bridge import config, experimental, notices, profiles, runner, state, telegram
 
 TICK = 1.0          # how often the draft is looked at
 REFRESH = 20.0      # a draft Telegram keeps 30 s is sent again within this
@@ -79,13 +79,15 @@ def start(chat_id: int, session: dict, prompt: str, files: "list[str] | None" = 
     """Run the prompt in `session`, watched live. False (and says so) when the
     session already has a turn going, or the bridge is going down."""
     eff = profiles.effective(session)
-    if eff["agent"] != profiles.CLAUDE:
+    claude = eff["agent"] == profiles.CLAUDE
+    if not claude and not experimental.enabled():
         telegram.send(chat_id, "This session runs on another agent — continue it in the "
                                "Mini App or the dashboard.", thread=thread)
         return False
     job_id = uuid.uuid4().hex
     paths = runner.adopt_uploads(job_id, files)
-    mode, rest = bot_args()
+    # The bot's args are Claude's flags: an agent runs on its own profile's settings.
+    mode, rest = bot_args() if claude else (None, [])
     job = runner.start_streaming_job(chat_id, prompt, paths, project=project_dir(session),
                                      job_id=job_id, session_id=session["id"],
                                      # the session's (or its profile's) own mode wins

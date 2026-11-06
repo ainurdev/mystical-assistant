@@ -786,6 +786,25 @@ def test_bot_commands(tmp_path, monkeypatch, on):
     assert "experimental" in dispatch.handle_agents_command(CHAT, "/agents")
 
 
+def test_the_bot_runs_an_agent_chat_when_on(tmp_path, monkeypatch, on):
+    """A chat switched to another provider must not lock the bot out."""
+    from bridge import telegram, tglive
+    sent = []
+    monkeypatch.setattr(telegram, "send", lambda chat, text, *a, **k: sent.append(text) or True)
+    monkeypatch.setattr(telegram, "draft", lambda *a, **k: None)
+    monkeypatch.setattr(telegram, "react", lambda *a, **k: None)
+    _script(monkeypatch, {"turn": [chunk("answer from the agent")]})
+    s = _session(tmp_path)
+    assert tglive.start(CHAT, s, "hi") is True
+    job = runner.live_job(s["id"])
+    if job:
+        _wait(job)
+    end = time.time() + 5
+    while time.time() < end and not sent:
+        time.sleep(0.05)
+    assert sent and "answer from the agent" in sent[-1]
+
+
 def test_a_team_share_keeps_the_new_rows(tmp_path):
     from bridge import team
     for ev in ({"type": "switch", "from": "Claude", "to": "Kimi"},
