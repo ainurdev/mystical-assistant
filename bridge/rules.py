@@ -142,6 +142,13 @@ def set_rule(level: str, rule_id: str, on: "bool | None", fields: "dict | None",
         rules = cfg.setdefault("_rules", {})
         rules.pop(rule_id, None) if on is None else rules.__setitem__(rule_id, row)
         store.set_session_field(session["id"], "chat_config", json.dumps(cfg))
+        if on:
+            # Kimi's hooks are per login, so its block has to carry this event for one chat
+            # to use it. The bridge still decides per chat when the event arrives.
+            with _lock:
+                d = _load()
+                d.setdefault("chat_used", {})[rule_id] = True
+                _save(d)
     else:
         if level not in ("machine", "project") or (level == "project" and not project):
             raise ValueError("Pick a level, and a project for that level.")
@@ -391,7 +398,7 @@ def _kimi_events() -> list:
         if "kimi" not in r["agents"]:
             continue
         wanted = r["on"] and not any(r["id"] in s and not s[r["id"]].get("on") for s in scopes[:1])
-        if wanted or any(s.get(r["id"], {}).get("on") for s in scopes):
+        if wanted or any(s.get(r["id"], {}).get("on") for s in scopes) or (d.get("chat_used") or {}).get(r["id"]):
             out += [e for e in r["events"] if e in KIMI_EVENTS and e not in out]
     return out
 

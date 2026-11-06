@@ -326,3 +326,13 @@ def test_kimi_tool_rows_wait_for_their_input():
     t._update("tool_call", {"toolCallId": "b", "title": "Read", "status": "pending"})
     t._update("tool_call_update", {"toolCallId": "b", "status": "completed", "content": []})
     assert [e["type"] for e in job.events[-2:]] == ["tool", "tool_done"]
+
+
+def test_a_rule_on_in_one_chat_reaches_kimis_block(tmp_path):
+    s = _s(tmp_path, "kimi")
+    assert "PreToolUse" not in rules._kimi_events()
+    rules.set_rule("chat", "destructive", True, None, "/p", s)
+    assert "PreToolUse" in rules._kimi_events()
+    assert rules.evaluate(store.get_session(s["id"]), "PreToolUse", bash("rm -rf x")).get("block")
+    other = _s(tmp_path, "kimi")
+    assert rules.evaluate(other, "PreToolUse", bash("rm -rf x")) == {}

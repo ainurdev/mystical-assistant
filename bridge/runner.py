@@ -2780,6 +2780,11 @@ def _run_streaming(job: Job, prompt: str, image_paths: list[str], cwd: str,
             # On for this turn only — the session's own toggles are not written.
             denied = [r for r in (store.default_disabled_tools() if denied is None else denied)
                       if r != f"mcp__{job.mcp_on}"]
+        if policy_denied is not None and denied:
+            # A chat-level ON in Agent Tools beats the chat's own off switch and the default list.
+            from bridge import tool_policy
+            denied = [r for r in denied if tool_policy.lookup(
+                "tool", r, "claude", sess_row.get("project"), sess_row)[0] is not True]
         cmd = _base_cmd(full_prompt, job.chat_id, stream=True, interactive=True,
                         model=model, effort=effort, permission_mode=permission_mode,
                         claude_session_id=job.resume_id, cwd=cwd,
