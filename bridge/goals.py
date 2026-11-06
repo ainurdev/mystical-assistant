@@ -40,9 +40,9 @@ _NUDGE = (
     "\"complete\"); if you are stuck and need the user, call UpdateGoal(state="
     "\"blocked\", note=\"<what you need>\"). Do not stop for anything else."
 )
-# Prompts the bridge writes itself (a nudge, a wait's wake-up, a resume): none
-# of them is your answer to a blocked goal.
-_BRIDGE_PROMPTS = ("[goal", "⧖", "⏮")
+# Prompts the bridge writes itself (a nudge, a council's fix prompt, a wait's
+# wake-up, a resume): none of them is your answer to a blocked goal.
+_BRIDGE_PROMPTS = ("[goal", "[council", "⧖", "⏮")
 
 
 def get(session_id: str) -> dict | None:

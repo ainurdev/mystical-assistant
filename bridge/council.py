@@ -1,9 +1,9 @@
 """The council: reviewers rate the work a push would send (1-10) and list
 findings; the session that wrote the code fixes them until the score passes.
 
-This module is the pure core: settings, parsing a reviewer's answer, merging
-findings from several seats, and deciding whether to go on. Running the
-reviewers and the round loop live elsewhere. Spec: docs/superpowers/specs/council-tab.md.
+This module owns all of it: settings, what a push would send, the reviewer
+seats, merging their findings, and the round loop with the tab's actions.
+Spec: docs/superpowers/specs/council-tab.md.
 
 Design choices (the why):
 - One rubric prompt with a JSON answer serves every seat, so their scores share
@@ -22,17 +22,51 @@ Design choices (the why):
 - A diff over DIFF_CAP drops whole-file sections, never cuts one mid-file, and
   names what it left out so the reviewer knows its view is partial.
 
+The loop: start -> _round -> fixing -> after_turn -> _round ...
+- A round runs on a thread of its own (_spawn), its seats side by side on
+  threads joined against one deadline, so a reviewer that never answers costs
+  the round that seat, never the round.
+- A failed round queues one prompt on the session's own queue, as a goal nudge
+  does, so it waits behind what you type and keeps pause, reorder and steer.
+  runner._continue_after_turn asks after_turn before paths and goals; True
+  there (the next round started) skips that turn's DONE, flow step and goal
+  nudge: the verdict is the news, and one turn end never queues two.
+- Which turn end counts. The queue keeps an item that ran, done or failed with
+  its job_id, until you clear it, and notify_job_done runs before
+  _continue_after_turn. So the fix turn is the job that ran the item. An item
+  already done counts too: an auto-resume ends that turn without asking us, and
+  the resumed turn carries the fix on. So does one gone from the queue (steered
+  into the running turn, or removed). Queued, or running under another job
+  (your turn ended and the queue just started the fix), means wait.
+- One lock guards every read-modify-write of a run, and seats never read under
+  it. A round lands only if the run is still on it (since, round), so a Stop or
+  a new run while the seats read is never written over. Enqueueing happens
+  under it, so a fix turn that ends at once (a refused run) still finds the run
+  waiting on it.
+- Restarts: the state outlives the process, its threads don't. "reviewing" in
+  another pid is stopped as "interrupted by a restart"; so is "fixing" in
+  another pid whose item the persisted queue no longer has. One whose item
+  survived goes on when it runs.
+- "2 more rounds" after a stop that left findings unsent (no gain, the cap, a
+  failed fix turn) sends them first: the same code read again scores the same.
+- Findings you side with the session on are marked dismissed and left out of
+  fix prompts and advice, not only out of blocking.
+
 Not built: a chairman model, a push gate (RUN is the only start), a third
-reviewer, live updates over SSE, the Mini App and the bot.
+reviewer, live updates over SSE, the Mini App and the bot; cancelling a
+reviewer still reading when you Stop (its answer is dropped), and
+council_stopped in the live NEEDS YOU list (it is in the bell and Telegram).
 """
 import json
 import math
+import os
 import re
+import sys
 import threading
 import time
 import types
 
-from . import acp, acp_agents, git, native, runner, store
+from . import acp, acp_agents, git, native, profiles, queue_manager, runner, state, store
 
 DEFAULTS = {"bar": 9.0, "max_rounds": 5, "stop_early": True,
             "claude": True, "codex": True, "codex_projects": []}
@@ -136,13 +170,14 @@ def _from_id(i: str) -> dict:
     return {"file": file, "line": int(line) or None if line.isdigit() else None, "title": ""}
 
 
-def blocking(findings: list, ran: list, dismissed: list) -> list:
-    gone = [_from_id(d) for d in dismissed]
+def _gone(f: dict, dismissed: list) -> bool:
     # A line-less finding has id file:0, which only an identical id can dismiss.
+    return f["id"] in dismissed or any(g["line"] and same(f, g) for g in map(_from_id, dismissed))
+
+
+def blocking(findings: list, ran: list, dismissed: list) -> list:
     return [f for f in findings
-            if f["sev"] == "must" and all(s in f["by"] for s in ran)
-            and f["id"] not in dismissed
-            and not any(g["line"] and same(f, g) for g in gone)]
+            if f["sev"] == "must" and all(s in f["by"] for s in ran) and not _gone(f, dismissed)]
 
 
 def decide(c: dict) -> str:
@@ -156,6 +191,20 @@ def decide(c: dict) -> str:
     return "fixing"
 
 
+def _todo(rnd: dict) -> list:
+    """(index, finding) for what a fix prompt sends: open, and not one you dismissed."""
+    return [(i, f) for i, f in enumerate(rnd["findings"])
+            if f.get("state") == "open" and not f.get("dismissed")]
+
+
+def _at(f: dict) -> str:
+    return f"{f['file']}:{f['line']}" if f["line"] is not None else f["file"]
+
+
+def _line(n: int, f: dict) -> str:
+    return f"{n}. {f['sev'].upper()} · {_at(f)} · {'+'.join(f['by'])} · {f['title']}"
+
+
 def fix_prompt(c: dict) -> str:
     last = c["rounds"][-1]
     lines = [f"[council {c['round']}/{c['max_rounds']}] {last['score']:.1f} of {c['bar']:.1f}",
@@ -163,10 +212,7 @@ def fix_prompt(c: dict) -> str:
              "Fix each finding below. If one is wrong, answer it on its own line as "
              '"<number>. NO: <why>". Don\'t push; when you finish, the council reviews again.',
              ""]
-    open_ = [f for f in last["findings"] if f.get("state") == "open"]
-    for i, f in enumerate(open_, 1):
-        lines.append(f"{i}. {f['sev'].upper()} · {f['file']}:{f['line']} · "
-                     f"{'+'.join(f['by'])} · {f['title']}")
+    lines += [_line(n, f) for n, (_, f) in enumerate(_todo(last), 1)]
     return "\n".join(lines)
 
 
@@ -338,3 +384,350 @@ def seats_for(session: dict, s: dict) -> dict:
                   and _read_only_mode(acct) is not None)
             codex = "on" if ok else "sign-in"
     return {"claude": "on" if s["claude"] else "off", "codex": codex}
+
+
+# --- the loop ------------------------------------------------------------
+
+_lock = threading.Lock()
+
+
+def _spawn(fn, *args) -> None:
+    threading.Thread(target=fn, args=args, daemon=True).start()
+
+
+def _seat(st: str, score=None, summary: str = "", error: str = "") -> dict:
+    return {"state": st, "score": score, "summary": summary, "error": error}
+
+
+def _seats(session: dict, s: dict) -> dict:
+    """Each seat before its answer: running, or why it sits this one out."""
+    return {k: _seat("running" if v == "on" else v) for k, v in seats_for(session, s).items()}
+
+
+def _queued(sid: str, item_id) -> "dict | None":
+    return next((i for i in queue_manager.snapshot(sid).get("items") or [] if i.get("id") == item_id), None)
+
+
+def _busy(c) -> bool:
+    return bool(c) and c.get("status") in ("reviewing", "fixing")
+
+
+def _settle(sid: str) -> "dict | None":
+    """The stored run with the restart rules applied and saved. Under _lock."""
+    c = store.get_council(sid)
+    if c and c.get("pid") != os.getpid() and (
+            c.get("status") == "reviewing"
+            or c.get("status") == "fixing" and _queued(sid, c.get("item")) is None):
+        c.update(status="stopped", reason="interrupted by a restart", at=time.time())
+        store.set_council(sid, c)
+    return c
+
+
+def get(sid: str) -> "dict | None":
+    with _lock:
+        return _settle(sid)
+
+
+def _ran(rnd: dict) -> list:
+    return [k for k, v in rnd["seats"].items() if v["state"] == "done"]
+
+
+def _blocks(c: dict, rnd: dict) -> list:
+    return blocking(rnd["findings"], _ran(rnd), c["dismissed"])
+
+
+def _enqueue(sid: str, text: str) -> str:
+    sess = store.get_session(sid) or {}
+    return queue_manager.enqueue(
+        sid, text=text, prompt=text, images=[], model=None, effort=None,
+        permission_mode=None, width=None, sel=[], surface="council",
+        chat_id=sess.get("chat_id"), project=sess.get("project") or "")
+
+
+def _fix(sid: str, c: dict) -> None:
+    """Queue the last round's open findings for the session to fix. Under _lock;
+    `sent` keeps which ones, in the prompt's numbering, for after_turn."""
+    c.update(status="fixing", reason="", item=_enqueue(sid, fix_prompt(c)),
+             sent=[i for i, _ in _todo(c["rounds"][-1])])
+
+
+def start(session: dict, cwd: str) -> dict:
+    """RUN: review what a push from `cwd` would send, then loop."""
+    sid = session["id"]
+    if state.is_running(sid):
+        raise ValueError("running")
+    if _busy(get(sid)):
+        raise ValueError("busy")
+    try:
+        if material(cwd) is None:
+            raise ValueError("nothing")
+    except RuntimeError:
+        pass                        # a git failure is the round's to report, as its stop reason
+    s, now = settings(), time.time()
+    c = {"status": "reviewing", "round": 1, "rounds": [], "pid": os.getpid(), "cwd": cwd,
+         "bar": s["bar"], "max_rounds": s["max_rounds"], "stop_early": s["stop_early"],
+         "dismissed": [], "item": None, "since": now, "at": now, "seats": _seats(session, s)}
+    with _lock:
+        if _busy(_settle(sid)):
+            raise ValueError("busy")            # a second tap on RUN
+        store.set_council(sid, c)
+    _spawn(_round, sid)
+    return brief(sid)
+
+
+def _mine(sid: str, key: tuple) -> "dict | None":
+    """The run, if it is still on round `key` (its start, its number). Under _lock."""
+    c = store.get_council(sid)
+    return c if c and c.get("status") == "reviewing" and (c.get("since"), c.get("round")) == key else None
+
+
+def _land(sid: str, key: tuple, tell: bool = False, **kw) -> None:
+    with _lock:
+        c = _mine(sid, key)
+        if not c:
+            return
+        c.update(kw, at=time.time())
+        store.set_council(sid, c)
+    if tell:
+        _notice(sid, c)
+
+
+def _told(c: dict) -> tuple:
+    """What the reviewers hear: what you settled, and the author's answers last round."""
+    seen = {f["id"]: f for r in c["rounds"] for f in r["findings"]}
+    settled = [f"{_at(seen[d])} · {seen[d]['title']}" if d in seen else d for d in c["dismissed"]]
+    last = c["rounds"][-1]["findings"] if c["rounds"] else []
+    return settled, [f"{_at(f)} · {f['title']} — {f['answer']}" for f in last if f["state"] == "answered"]
+
+
+def _sit(on: list, prompt: str, cwd: str, session: dict) -> dict:
+    """Every seat at once, against one deadline: one still reading at it timed out."""
+    slot = profiles.claude_slot(profiles.effective(session)) if "claude" in on else None
+    run = {"claude": lambda: seat_claude(prompt, cwd, session.get("chat_id"), slot),
+           "codex": lambda: seat_codex(prompt, cwd)}
+    got = {}
+    ts = [threading.Thread(target=lambda k=k: got.update({k: run[k]()}), daemon=True) for k in on]
+    for t in ts:
+        t.start()
+    end = time.monotonic() + SEAT_TIMEOUT + 30
+    for t in ts:
+        t.join(max(0.0, end - time.monotonic()))
+    return {k: got.get(k) or {"ok": False, "error": "timed out"} for k in on}
+
+
+def _round(sid: str) -> None:
+    """One review round, on its own thread."""
+    c = get(sid)
+    if not c or c.get("status") != "reviewing":
+        return
+    key = (c.get("since"), c["round"])
+    try:
+        session = store.get_session(sid) or {}
+        seats = _seats(session, settings())
+        _land(sid, key, seats=seats)
+        m = material(c["cwd"])
+        if m is None:               # pushed, or committed elsewhere: nothing for you to do, so no ping
+            return _land(sid, key, status="stopped", reason="nothing left to review")
+        on = [k for k in SEATS if seats.get(k, {}).get("state") == "running"]
+        got = _sit(on, review_prompt(m, *_told(c)), c["cwd"], session)
+        for k in on:
+            r = got[k]
+            seats[k] = (_seat("done", r["score"], r["summary"]) if r["ok"]
+                        else _seat("error", error=r["error"]))
+        ran = [k for k in on if got[k]["ok"]]
+        if not ran:
+            why = next((got[k]["error"] for k in on), "no reviewer is switched on")
+            return _land(sid, key, True, seats=seats, status="stopped", reason=f"no reviewer answered: {why}")
+        findings = merge({k: got[k] for k in ran})
+        with _lock:
+            c = _mine(sid, key)
+            if not c:
+                return              # stopped, or a new run, while the seats read
+            for f in findings:
+                if _gone(f, c["dismissed"]):
+                    f["dismissed"] = True
+            c["rounds"].append({"n": key[1], "score": round(sum(got[k]["score"] for k in ran) / len(ran), 1),
+                                "blocking": len(blocking(findings, ran, c["dismissed"])),
+                                "seats": seats, "findings": findings, "at": time.time()})
+            c["seats"] = seats
+            v = decide(c)
+            if v == "fixing":
+                _fix(sid, c)
+            else:
+                c.update(status=v.split(":")[0], reason={
+                    "stopped:max_rounds": f"it used all {c['max_rounds']} rounds",
+                    "stopped:stalled": f"round {key[1]} didn't raise the score"}.get(v, ""))
+            c["at"] = time.time()
+            store.set_council(sid, c)
+        if c["status"] != "fixing":
+            _notice(sid, c)
+    except Exception as e:  # noqa: BLE001 - material's git failure is the reason; nothing stays "reviewing"
+        _land(sid, key, True, status="stopped", reason=str(e) or type(e).__name__)
+
+
+def after_turn(job) -> bool:
+    """A turn ended. If it ran the council's fix prompt, its answers go on the
+    last round and the next round starts: True, so that turn's DONE waits for
+    the verdict. Best-effort: never raises into the turn's end."""
+    try:
+        sid = job.store_session_id
+        if not sid:
+            return False
+        with _lock:
+            c = _settle(sid)
+            if not c or c.get("status") != "fixing":
+                return False
+            it = _queued(sid, c.get("item"))
+            if it and it.get("job_id") != job.id and it.get("status") in ("queued", "running"):
+                return False        # another turn: the fix waits, or has only just begun
+            if job.status != "done" or job.interrupted:
+                c.update(status="stopped", reason="the fix turn stopped")
+            else:
+                said, found = answers(job.result or ""), c["rounds"][-1]["findings"]
+                for n, i in enumerate(c.get("sent") or [], 1):     # the prompt's numbering
+                    found[i]["state"], found[i]["answer"] = (
+                        ("answered", said[n]) if n in said else ("fixed", ""))
+                c.update(status="reviewing", round=c["round"] + 1, pid=os.getpid(), item=None, sent=[])
+            c["at"] = time.time()
+            store.set_council(sid, c)
+        if c["status"] == "stopped":
+            _spawn(_notice, sid, c)
+            return False
+        _spawn(_round, sid)
+        return True
+    except Exception as e:  # noqa: BLE001 - never raise into the turn lifecycle
+        print(f"[council] after_turn failed: {e}", file=sys.stderr)
+        return False
+
+
+def act(session: dict, action: str, key: str = "") -> dict:
+    """A tap in the tab: stop | more | side | fix | advice."""
+    sid = session["id"]
+    with _lock:
+        c, then = _act(sid, action, key)
+    if then == "round":
+        _spawn(_round, sid)
+    elif then == "tell":
+        _spawn(_notice, sid, c)
+    return brief(sid)
+
+
+def _act(sid: str, action: str, key: str) -> tuple:
+    """act()'s change, under _lock: the saved run, and what follows it."""
+    c = _settle(sid)
+    last = ((c or {}).get("rounds") or [None])[-1]
+    then, was = None, (c or {}).get("status")
+    if action == "stop":
+        if not _busy(c):
+            return c, None          # nothing to stop: a second tap
+        it = _queued(sid, c.get("item"))
+        if it and it.get("status") == "queued":
+            queue_manager.remove(sid, it["id"])
+        c.update(status="stopped", reason="you stopped it")
+    elif action == "advice":
+        if _busy(c):
+            raise ValueError("busy")
+        blocked = _blocks(c, last) if last else []
+        tips = [f for f in last["findings"] if f not in blocked and not f.get("dismissed")] if last else []
+        if not tips:
+            raise ValueError("nothing")
+        _enqueue(sid, "\n".join(["[council advice]"] + [_line(n, f) for n, f in enumerate(tips, 1)]))
+        c["advice_sent"] = True
+    elif action not in ("more", "side", "fix") or (c or {}).get("status") != "stopped":
+        raise ValueError("action")
+    elif action == "more":
+        c["max_rounds"] += 2
+        if last and _todo(last):
+            _fix(sid, c)            # its findings were never sent: send them, then read again
+        else:
+            c.update(status="reviewing", reason="", round=c["round"] + 1, pid=os.getpid())
+            then = "round"
+    else:
+        i = next((i for i, f in enumerate(last["findings"]) if f["id"] == key), None) if last else None
+        if i is None:
+            raise ValueError("action")
+        if action == "side":
+            c["dismissed"].append(key)
+            for f in last["findings"]:
+                if _gone(f, c["dismissed"]):
+                    f["dismissed"] = True
+            last["blocking"] = len(_blocks(c, last))
+            if last["score"] >= c["bar"] and not last["blocking"]:
+                c.update(status="passed", reason="")
+                then = "tell"
+        else:
+            c["max_rounds"] += 1
+            text = (f"[council {c['round']}/{c['max_rounds']}] the user wants this fixed\n"
+                    + _line(1, last["findings"][i]))
+            c.update(status="fixing", reason="", item=_enqueue(sid, text), sent=[i])
+    if c["status"] != was:
+        c["at"] = time.time()       # `at` is when the status moved: a passed run's elapsed stays put
+    store.set_council(sid, c)
+    return c, then
+
+
+def _stuck(c: dict) -> "dict | None":
+    """The blocking finding they keep raising: it matches one in each of the k
+    rounds before the last (k >= 2), with the session's latest answer to it."""
+    rs, best = c["rounds"], None
+    for f in _blocks(c, rs[-1]) if rs else []:
+        k, answer = 0, ""
+        for r in reversed(rs[:-1]):
+            g = next((g for g in r["findings"] if same(f, g)), None)
+            if g is None:
+                break
+            k, answer = k + 1, answer or g["answer"]
+        if k >= 2 and (best is None or k > best["rounds"]):
+            best = {"finding": dict(f, blocking=True), "rounds": k, "answer": answer}
+    return best
+
+
+def brief(sid: str, cwd: "str | None" = None, full: bool = False) -> dict:
+    """What the tab draws: the run, or before one the settings and seats. Never stored."""
+    c = get(sid)
+    if c:
+        rs = c["rounds"]
+        last = rs[-1] if rs else None
+        blocked = _blocks(c, last) if last else []
+        found = [dict(f, blocking=f in blocked) for f in (last["findings"] if last else [])]
+        out = {"status": c["status"], "reason": c.get("reason") or "", "round": c["round"],
+               "max_rounds": c["max_rounds"], "bar": c["bar"], "score": last["score"] if last else None,
+               "rounds": [{"n": r["n"], "score": r["score"], "blocking": r["blocking"]} for r in rs],
+               "seats": c["seats"], "findings": found,
+               "previous": rs[-2]["findings"] if len(rs) > 1 else [], "stuck": _stuck(c),
+               "advice": [f for f in found if not f["blocking"] and not f.get("dismissed")],
+               "fixed_total": sum(f["state"] == "fixed" for r in rs for f in r["findings"]),
+               "advice_sent": bool(c.get("advice_sent")),
+               "elapsed": int((time.time() if _busy(c) else c["at"]) - c["since"])}
+    else:
+        s = settings()
+        out = {"status": "idle", "reason": "", "round": 0, "max_rounds": s["max_rounds"], "bar": s["bar"],
+               "score": None, "rounds": [], "findings": [], "previous": [], "stuck": None, "advice": [],
+               "fixed_total": 0, "advice_sent": False, "elapsed": 0,
+               "seats": {k: _seat(v) for k, v in seats_for(store.get_session(sid) or {}, s).items()}}
+    if full and cwd:
+        try:
+            m = material(cwd)
+        except RuntimeError:
+            m = None
+        out["material"] = {k: m[k] for k in ("commits", "files", "add", "del")} if m else None
+    return out
+
+
+def _notice(sid: str, c: dict) -> None:
+    """A run that passed or stopped says so once, through the house notifier, so
+    Telegram follows NOTIFY's choices. Best-effort."""
+    try:
+        rs = c.get("rounds") or []
+        score = rs[-1]["score"] if rs else None
+        label = runner._session_label(sid)                                  # noqa: SLF001
+        chat = (store.get_session(sid) or {}).get("chat_id")
+        if c["status"] == "passed":
+            body = f"{score:.1f} of {c['bar']:.1f} in {len(rs)} round{'s' * (len(rs) != 1)}"
+            runner._notify(chat, f"⚖ Council passed — {label}\n{body}", None,       # noqa: SLF001
+                           kind="council_passed", sid=sid, body=body, meta={"score": score})
+        else:
+            runner._notify(chat, f"⚖ Council needs you — {label}\n{c['reason']}", None,   # noqa: SLF001
+                           kind="council_stopped", sid=sid, body=c["reason"], meta={"score": score})
+    except Exception as e:  # noqa: BLE001 - the verdict stands either way
+        print(f"[council] notice failed: {e}", file=sys.stderr)

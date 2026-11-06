@@ -239,3 +239,257 @@ def test_material_survives_latin1_bytes(tmp_path):
     c = _clone(tmp_path)
     (c / "a.txt").write_bytes(b"caf\xe9\n")
     assert "\ufffd" in council.material(str(c))["diff"]
+
+
+# --- the loop ------------------------------------------------------------
+import os
+from types import SimpleNamespace
+
+from bridge import goals, notices, paths, queue_manager, state, tickets
+
+_MAT = {"base": "b", "head": "h", "commits": [["abc", "fix push"]], "files": 2, "add": 9, "del": 3,
+        "untracked": [], "diff": "DIFF", "truncated": False, "left_out": []}
+
+
+def _said(score, *found):
+    """A seat's answer; each finding is (sev, file, line)."""
+    return {"ok": True, "score": score, "summary": f"says {score}",
+            "findings": [{"sev": s, "file": f, "line": n, "title": f"{s} at {f}:{n}"} for s, f, n in found]}
+
+
+@pytest.fixture
+def rig(monkeypatch):
+    """No real reviewer, queue, turn or ping: rounds run inline, each seat answers
+    from its list, and the queue's snapshot lists `items`."""
+    r = SimpleNamespace(queued=[], items=[], removed=[], kinds=[], mat=_MAT, claude=[], codex=[])
+    monkeypatch.setattr(council, "_spawn", lambda fn, *a: fn(*a))
+    monkeypatch.setattr(council, "settings", lambda: dict(council.DEFAULTS))
+    monkeypatch.setattr(queue_manager, "enqueue", lambda sid, **kw: r.queued.append(kw) or "item-1")
+    monkeypatch.setattr(queue_manager, "snapshot", lambda sid: {"items": list(r.items)})
+    monkeypatch.setattr(queue_manager, "remove", lambda sid, iid: r.removed.append(iid))
+    monkeypatch.setattr(runner, "_notify", lambda chat, text, kb=None, **kw: r.kinds.append(kw["kind"]))
+    monkeypatch.setattr(council, "material", lambda cwd: r.mat)
+    monkeypatch.setattr(council, "seat_claude", lambda *a, **k: r.claude.pop(0))
+    monkeypatch.setattr(council, "seat_codex", lambda *a, **k: r.codex.pop(0))
+    monkeypatch.setattr(council, "seats_for", lambda session, s: {"claude": "on", "codex": "on"})
+    r.session = store.create_session(555, "/counciltest", origin="dashboard")
+    r.sid = r.session["id"]
+    return r
+
+
+def _job(rig, jid, result="", status="done"):
+    return SimpleNamespace(id=jid, store_session_id=rig.sid, status=status, interrupted=False,
+                           result=result, chat_id=555, runtime=None)
+
+
+def test_start_scores_a_round_and_queues_the_fix_prompt(rig):
+    rig.claude, rig.codex = [_said(7.0, ("must", "git.py", 584))], [_said(8.0, ("must", "git.py", 584))]
+    b = council.start(rig.session, "/tmp")
+    assert b["status"] == "fixing" and b["score"] == 7.5
+    assert len(rig.queued) == 1
+    assert rig.queued[0]["prompt"].startswith("[council 1/5] 7.5 of 9.0") and rig.queued[0]["surface"] == "council"
+    assert store.get_council(rig.sid)["item"] == "item-1"
+
+
+def test_round_that_passes_notifies_once(rig):
+    rig.claude, rig.codex = [_said(9.4, ("should", "a.py", 1))], [_said(9.2)]
+    assert council.start(rig.session, "/tmp")["status"] == "passed"
+    assert rig.kinds == ["council_passed"] and not rig.queued
+
+
+def test_a_round_without_gain_stops_and_notifies(rig):
+    rig.claude, rig.codex = [_said(7.0), _said(6.9)], [_said(7.0), _said(6.9)]
+    council.start(rig.session, "/tmp")
+    assert council.after_turn(_job(rig, "j1")) is True
+    c = council.get(rig.sid)
+    assert c["status"] == "stopped" and "didn't raise" in c["reason"]
+    assert rig.kinds[-1] == "council_stopped"
+
+
+def test_after_turn_waits_for_the_council_turn(rig):
+    rig.claude, rig.codex = [_said(7.0), _said(7.6), _said(8.2)], [_said(7.0), _said(7.6), _said(8.2)]
+    council.start(rig.session, "/tmp")
+    rig.items = [{"id": "item-1", "status": "queued", "job_id": None}]
+    assert council.after_turn(_job(rig, "j-yours")) is False          # your turn; the fix still waits
+    rig.items = [{"id": "item-1", "status": "running", "job_id": "j-fix"}]
+    assert council.after_turn(_job(rig, "j-yours")) is False          # yours ended as the fix began
+    assert council.get(rig.sid)["round"] == 1
+    rig.items = [{"id": "item-1", "status": "done", "job_id": "j-fix"}]
+    assert council.after_turn(_job(rig, "j-fix")) is True             # the fix turn's own end
+    assert council.get(rig.sid)["round"] == 2
+    rig.items = []                                                    # gone: steered in, or removed
+    assert council.after_turn(_job(rig, "j-other")) is True
+    assert council.get(rig.sid)["round"] == 3
+
+
+def test_after_turn_records_answers(rig):
+    rig.claude = [_said(7.0, ("must", "git.py", 584), ("should", "x.py", 10)), _said(8.0)]
+    rig.codex = [_said(7.0, ("must", "git.py", 584)), _said(8.0)]
+    council.start(rig.session, "/tmp")
+    council.after_turn(_job(rig, "j1", result="1. NO: not a bug"))
+    f = council.get(rig.sid)["rounds"][0]["findings"]
+    assert [(x["state"], x["answer"]) for x in f] == [("answered", "not a bug"), ("fixed", "")]
+
+
+def test_one_seat_failing_scores_on_the_other(rig, monkeypatch):
+    rig.claude = [_said(7.0, ("must", "a.py", 1), ("must", "b.py", 9))]
+    rig.codex = [{"ok": False, "error": "timed out"}]
+    b = council.start(rig.session, "/tmp")
+    assert b["score"] == 7.0 and b["seats"]["codex"]["state"] == "error"
+    assert b["rounds"][0]["blocking"] == 2
+    # A seat that never answers costs the round that seat, not the round.
+    gate = threading.Event()
+    monkeypatch.setattr(council, "SEAT_TIMEOUT", -29.8)              # the join waits 0.2 s
+    monkeypatch.setattr(council, "seat_codex", lambda *a, **k: gate.wait(5) and None)
+    rig.claude = [_said(8.0)]
+    council.after_turn(_job(rig, "j1"))
+    b = council.brief(rig.sid)
+    gate.set()
+    assert b["rounds"][-1]["score"] == 8.0 and b["seats"]["codex"]["error"] == "timed out"
+
+
+def test_restart_marks_a_live_looking_run_stopped(rig):
+    store.set_council(rig.sid, {"status": "reviewing", "pid": -1, "round": 2, "rounds": []})
+    c = council.get(rig.sid)
+    assert c["status"] == "stopped" and "restart" in c["reason"]
+    assert store.get_council(rig.sid)["status"] == "stopped"          # saved
+    store.set_council(rig.sid, {"status": "fixing", "pid": -1, "item": "gone", "round": 1, "rounds": []})
+    assert council.get(rig.sid)["status"] == "stopped"
+    # The queue outlives a restart: a fix prompt still in it runs, and its end goes on.
+    rig.items = [{"id": "kept", "status": "queued", "job_id": None}]
+    store.set_council(rig.sid, {"status": "fixing", "pid": -1, "item": "kept", "round": 1, "rounds": []})
+    assert council.get(rig.sid)["status"] == "fixing"
+    # In this process an item gone from the queue was steered in or removed: after_turn's to judge.
+    store.set_council(rig.sid, {"status": "fixing", "pid": os.getpid(), "item": "gone", "round": 1, "rounds": []})
+    assert council.get(rig.sid)["status"] == "fixing"
+
+
+def test_nothing_left_to_review_stops_quietly(rig):
+    rig.claude, rig.codex = [_said(7.0)], [_said(7.0)]
+    council.start(rig.session, "/tmp")
+    rig.mat = None
+    council.after_turn(_job(rig, "j1"))
+    c = council.get(rig.sid)
+    assert c["status"] == "stopped" and c["reason"] == "nothing left to review"
+    assert "council_stopped" not in rig.kinds
+
+
+def test_a_git_failure_stops_the_round_with_its_message(rig, monkeypatch):
+    def boom(cwd):
+        raise RuntimeError("git diff: git timed out")
+    monkeypatch.setattr(council, "material", boom)
+    b = council.start(rig.session, "/tmp")
+    assert b["status"] == "stopped" and b["reason"] == "git diff: git timed out"
+
+
+def test_start_refuses_when_running_busy_or_empty(rig, monkeypatch):
+    monkeypatch.setattr(state, "is_running", lambda sid: True)
+    with pytest.raises(ValueError, match="running"):
+        council.start(rig.session, "/tmp")
+    monkeypatch.setattr(state, "is_running", lambda sid: False)
+    rig.items = [{"id": "item-1", "status": "queued", "job_id": None}]
+    store.set_council(rig.sid, {"status": "fixing", "pid": os.getpid(), "item": "item-1", "round": 1, "rounds": []})
+    with pytest.raises(ValueError, match="busy"):
+        council.start(rig.session, "/tmp")
+    store.set_council(rig.sid, None)
+    rig.mat = None
+    with pytest.raises(ValueError, match="nothing"):
+        council.start(rig.session, "/tmp")
+
+
+def test_actions(rig):
+    rig.claude = [_said(9.5, ("must", "a.py", 1), ("should", "b.py", 9))]
+    rig.codex = [_said(9.5, ("must", "a.py", 1))]
+    council.start(rig.session, "/tmp")
+    rig.items = [{"id": "item-1", "status": "queued", "job_id": None}]
+    b = council.act(rig.session, "stop")
+    assert b["status"] == "stopped" and b["reason"] == "you stopped it" and rig.removed == ["item-1"]
+    b = council.act(rig.session, "side", "a.py:1")                    # the only blocker, at 9.5
+    assert b["status"] == "passed" and rig.kinds[-1] == "council_passed"
+    at = store.get_council(rig.sid)["at"]
+    b = council.act(rig.session, "advice")
+    assert rig.queued[-1]["prompt"].startswith("[council advice]\n1. SHOULD · b.py:9")
+    assert "a.py" not in rig.queued[-1]["prompt"] and b["advice_sent"] and b["status"] == "passed"
+    assert store.get_council(rig.sid)["at"] == at                     # the passed run's time stays put
+    rig.claude, rig.codex = [_said(7.0, ("must", "c.py", 3))], [_said(7.0, ("must", "c.py", 3))]
+    council.start(rig.session, "/tmp")
+    council.act(rig.session, "stop")
+    b = council.act(rig.session, "fix", "c.py:3")
+    assert rig.queued[-1]["prompt"].startswith("[council 1/6] the user wants this fixed\n1. MUST · c.py:3")
+    assert b["status"] == "fixing" and b["max_rounds"] == 6
+    rig.mat, rig.items = None, [{"id": "item-1", "status": "done", "job_id": "j1"}]
+    council.after_turn(_job(rig, "j1"))                               # round 2: nothing to read
+    rig.mat, rig.claude, rig.codex = _MAT, [_said(8.0)], [_said(8.0)]
+    b = council.act(rig.session, "more")
+    assert b["max_rounds"] == 8 and b["round"] == 3 and b["rounds"][-1]["score"] == 8.0
+    with pytest.raises(ValueError):
+        council.act(rig.session, "nope")
+
+
+def test_more_after_a_stall_sends_the_fix_first(rig):
+    """The stop left the last round's findings unsent: a re-read of the same code
+    would only stall again, so the loop goes on with the fix."""
+    must = ("must", "a.py", 1)
+    rig.claude, rig.codex = [_said(7.0), _said(6.9, must)], [_said(7.0), _said(6.9, must)]
+    council.start(rig.session, "/tmp")
+    council.after_turn(_job(rig, "j1"))
+    b = council.act(rig.session, "more")
+    assert b["status"] == "fixing" and b["max_rounds"] == 7 and b["round"] == 2
+    assert rig.queued[-1]["prompt"].startswith("[council 2/7] 6.9 of 9.0")
+
+
+def test_a_round_stopped_while_seats_read_is_dropped(rig, monkeypatch):
+    def claude(*a, **k):
+        council.act(rig.session, "stop")                                 # you tap Stop mid-read
+        return _said(9.5)
+    monkeypatch.setattr(council, "seat_claude", claude)
+    rig.codex = [_said(9.5)]
+    b = council.start(rig.session, "/tmp")
+    assert b["status"] == "stopped" and b["reason"] == "you stopped it" and b["rounds"] == []
+    assert rig.kinds == []
+
+
+def test_a_fix_turn_that_fails_stops_the_run(rig, monkeypatch):
+    rig.claude, rig.codex = [_said(7.0)], [_said(7.0)]
+    council.start(rig.session, "/tmp")
+    assert council.after_turn(_job(rig, "j1", status="error")) is False
+    c = council.get(rig.sid)
+    assert c["status"] == "stopped" and c["reason"] == "the fix turn stopped"
+    assert rig.kinds[-1] == "council_stopped"
+    monkeypatch.setattr(store, "get_council", lambda sid: 1 / 0)
+    assert council.after_turn(_job(rig, "j2")) is False               # never raises into a turn
+
+
+def test_brief_reads_the_run(rig):
+    b = council.brief(rig.sid)
+    assert b["status"] == "idle" and b["bar"] == 9.0 and b["score"] is None
+    assert b["seats"]["codex"]["state"] == "on"
+    must = ("must", "git.py", 578)
+    rig.claude = [_said(7.0, must, ("should", "x.py", 1)), _said(7.5, must), _said(8.0, must, ("nit", "y.py", 2))]
+    rig.codex = [_said(7.0, must), _said(7.5, must), _said(8.0, must)]
+    council.start(rig.session, "/tmp")
+    council.after_turn(_job(rig, "j1", result="1. NO: not a bug"))
+    council.after_turn(_job(rig, "j2", result="1. NO: still not"))
+    b = council.brief(rig.sid, "/tmp", full=True)
+    assert [r["score"] for r in b["rounds"]] == [7.0, 7.5, 8.0] and b["score"] == 8.0
+    assert [(f["file"], f["blocking"]) for f in b["findings"]] == [("git.py", True), ("y.py", False)]
+    assert [f["file"] for f in b["advice"]] == ["y.py"] and b["previous"][0]["state"] == "answered"
+    assert b["stuck"]["rounds"] == 2 and b["stuck"]["answer"] == "still not"
+    assert b["fixed_total"] == 1 and b["elapsed"] >= 0
+    assert b["material"] == {"commits": [["abc", "fix push"]], "files": 2, "add": 9, "del": 3}
+
+
+def test_council_prompts_do_not_rearm_goals():
+    assert "[council" in goals._BRIDGE_PROMPTS
+    assert notices.CATALOG["council_passed"] == ("done", "news", "session")
+    assert notices.CATALOG["council_stopped"] == ("ask", "needs", "session")
+
+
+def test_runner_asks_the_council_first(monkeypatch):
+    def boom(*a, **k):
+        raise AssertionError("asked after the council took the turn")
+    monkeypatch.setattr(tickets, "after_turn", lambda job: False)
+    monkeypatch.setattr(council, "after_turn", lambda job: True)
+    monkeypatch.setattr(paths, "continue_after_turn", boom)
+    monkeypatch.setattr(goals, "continue_after_turn", boom)
+    assert runner._continue_after_turn(SimpleNamespace(store_session_id="s")) is True   # noqa: SLF001

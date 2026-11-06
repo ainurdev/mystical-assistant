@@ -802,12 +802,15 @@ INTERRUPT_KILL = 2.0    # seconds after SIGTERM before SIGKILL
 
 
 def _continue_after_turn(job, effort=None) -> bool:
-    """The flow's recorded next step goes first; a goal re-prompts at the end of
-    that step's turn instead, so one turn end never queues two. A ticket's turn
-    end is judged first; the tickets it starts run in sessions of their own."""
-    from bridge import goals, tickets  # local import: runner<->* cycle
+    """The end of a council fix turn starts its next review round, and nothing
+    else follows it. Then the flow's recorded next step; a goal re-prompts at
+    the end of that step's turn instead, so one turn end never queues two. A
+    ticket's turn end is judged first; the tickets it starts run in sessions of
+    their own."""
+    from bridge import council, goals, tickets  # local import: runner<->* cycle
     tickets.after_turn(job)
-    return paths.continue_after_turn(job, effort) or goals.continue_after_turn(job, effort)
+    return (council.after_turn(job) or paths.continue_after_turn(job, effort)
+            or goals.continue_after_turn(job, effort))
 
 
 class Job:
