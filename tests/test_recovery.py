@@ -208,6 +208,36 @@ def test_recover_still_nudges_a_session_holding_only_composer_items():
         restore()
 
 
+def test_a_queued_turn_a_restart_cut_runs_once(tmp_path):
+    """A queued prompt's turn (a flow step, a composer send) that a restart cut is
+    carried on by boot recovery; the queue must not send the same prompt again when
+    that turn ends, and must go on to the next item. 2026-11-06: /retro ran twice."""
+    sid = _orphan("flow-step", claude_sid="c-flow", turn_ids=("cut",))
+    path = str(tmp_path / "queue.json")
+    before = queue_manager.PreviewQueue(run_fn=lambda item: f"{sid}-cut", persist_path=path)
+    for text in ("/mattpocock-skills:retro", "next"):     # the cut step, then one queued behind it
+        before.enqueue(sid, text=text, prompt=text, images=[], model=None, effort=None,
+                       permission_mode=None, width=0, sel=[], surface="flow",
+                       chat_id=CHAT, project="/tmp/proj")
+    busy, started = [True], []
+
+    def run_fn(item):                       # as runner's: None while the session's turn runs
+        if busy[0]:
+            return None
+        started.append(item.text)
+        return "J"
+    q = queue_manager.PreviewQueue(run_fn=run_fn, persist_path=path)   # boot reloads the queue
+    saved, queue_manager._instance = queue_manager._instance, q
+    try:
+        assert _recover(_Rec(job="CONT")) == 1    # the cut turn is carried on...
+        q.kick()                                   # ...then boot kicks the queue
+        busy[0] = False
+        q.notify_job_done(sid, "CONT", "done", "ok", 0, 1)   # the carried-on turn ends
+    finally:
+        queue_manager._instance = saved
+    assert started == ["next"]
+
+
 if __name__ == "__main__":
     fns = [v for k, v in sorted(globals().items())
            if k.startswith("test_") and callable(v)]
