@@ -10,7 +10,7 @@ import {
   Monitor, Moon, Network, Palette, Play, Plug, Puzzle,
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
-  Upload, Waypoints, RotateCw, type LucideIcon,
+  Upload, Waypoints, RotateCw, Send, type LucideIcon,
   ChevronDown, ChevronRight, FileArchive, FolderGit2, Layers, HardDrive, HardDriveDownload, HardDriveUpload, 
   ListChecks, Package, PackageOpen, Truck, AppWindow, AppWindowMac, Pin, AlignLeft, Clock3, GitFork,
 } from "lucide-react";
@@ -80,7 +80,7 @@ import { NYAN_MODES, nyanLabel, nyanThumb, type NyanSound } from "../../lib/nyan
 import { useAiFeatures } from "../../lib/ai";
 import { setIntegrations, useIntegrations } from "../../lib/integrations";
 import { askConfirm } from "../ui/Ask";
-import { TONES, chime, pushSupported, requestPush, type ToneKey } from "../../lib/push";
+import { TONES, chime, push, pushGranted, pushSupported, requestPush, type ToneKey } from "../../lib/push";
 import { isNativeApp, isWinApp, macRebuild, macSet, useMacSettings, type MacSwitch } from "../../lib/mac";
 import { EFFORTS, PERMS, PONYTAILS } from "../Composer";
 import { latestPerFamily } from "../../models";
@@ -1212,9 +1212,81 @@ function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p
   const save = (p: NoticePrefsPatch) =>
     void api.noticePrefs(p).then((r) => setPrefs(r.prefs), (e: Error) => notify("error", e.message));
   const q = prefs?.quiet;
+  // Where news can reach you comes first (2026-11-06, A · CHANNELS + GRID): this
+  // browser's banner, its sound, Telegram, each with its state and a way to try it.
+  // What each kind of news may do is the grid under them, as before.
+  const granted = settings.push && pushGranted();
   return (
     <>
-      <Section title="WHAT INTERRUPTS YOU">
+      <div className="ntf-ch" data-sec="THIS BROWSER">
+        <div className="ntf-chc">
+          <div className="t"><Monitor size={15} strokeWidth={1.7} aria-hidden />Pop-up
+            <span className="ntf-st" data-ok={granted || undefined}>{!pushSupported() ? "not here" : granted ? "allowed" : settings.push ? "blocked" : "off"}</span></div>
+          <div className="s">{pushSupported() ? "the system banner, while no dashboard window has focus" : "this browser has no banners; pop-ups stay inside"}</div>
+          <div className="f">
+            <Switch on={settings.push} label="system banners" onClick={() => {
+              if (settings.push) { onPatch({ push: false }); return; }
+              // Ask only on switch-on; a denial can't be re-asked, so the
+              // switch goes back off rather than sitting on and silent.
+              void requestPush().then((ok) => onPatch({ push: ok }));
+            }} />
+            <MiniBtn disabled={!granted} onClick={() => push("Mystical", "This is how a pop-up lands.", "ntf-test")}>Test</MiniBtn>
+          </div>
+        </div>
+        <div className="ntf-chc">
+          <div className="t"><AudioLines size={15} strokeWidth={1.7} aria-hidden />Sound
+            <span className="ntf-st" data-ok={settings.pushSound || undefined}>{settings.pushSound ? `${Math.round(settings.pushVolume * 100)}%` : "muted"}</span></div>
+          <div className="s">each event plays the tone picked in the grid</div>
+          <div className="f">
+            <Switch on={settings.pushSound} label="sounds" onClick={() => {
+              // Switching it on plays one — otherwise you find out how loud it
+              // is at the wrong moment.
+              if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
+              onPatch({ pushSound: !settings.pushSound });
+            }} />
+            {/* Preview when the drag ends, not on every step. */}
+            <span className="ntf-vol" onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
+              onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
+              <Volume value={settings.pushVolume} disabled={!settings.pushSound} onChange={(pushVolume) => onPatch({ pushVolume })} />
+            </span>
+          </div>
+        </div>
+        <div className="ntf-chc">
+          <div className="t"><Send size={15} strokeWidth={1.7} aria-hidden />Telegram
+            <span className="ntf-st" data-ok={(prefs && tg) || undefined}>{!prefs ? "…" : tg ? "on" : "off"}</span></div>
+          {prefs && tg ? (
+            <div className="s">“away” = no click or key in any dashboard for{" "}
+              <select value={prefs.away_min} aria-label="away after" style={{ ...field, padding: "1px 4px", letterSpacing: 0 }}
+                onChange={(e) => save({ away_min: Number(e.target.value) })}>
+                {[2, 5, 10, 15, 30].map((m) => <option key={m} value={m}>{m} min</option>)}
+              </select>
+            </div>
+          ) : (
+            <div className="s">{prefs ? "pings are off in System ▸ Telegram, so its column waits" : "reading…"}</div>
+          )}
+        </div>
+      </div>
+
+      {q && (
+        <div className="ntf-quiet" data-sec="QUIET HOURS">
+          <div className="k"><Moon size={14} strokeWidth={1.7} aria-hidden />Quiet hours</div>
+          <span className="h">{q.on ? `nothing pops up, sounds or reaches Telegram${q.needs ? " but what needs you" : ""}` : "off"}</span>
+          {q.on && (
+            <>
+              <input type="time" value={q.from} aria-label="quiet from" style={{ ...field, letterSpacing: 0 }}
+                onChange={(e) => e.target.value && save({ quiet: { from: e.target.value } })} />
+              <span className="h">–</span>
+              <input type="time" value={q.to} aria-label="quiet to" style={{ ...field, letterSpacing: 0 }}
+                onChange={(e) => e.target.value && save({ quiet: { to: e.target.value } })} />
+              <button className={`ntf-needs${q.needs ? " on" : ""}`} aria-pressed={q.needs} title="an approval at 23:00 still reaches you"
+                onClick={() => save({ quiet: { needs: !q.needs } })}>needs you gets through</button>
+            </>
+          )}
+          <Switch on={q.on} label="quiet hours" onClick={() => save({ quiet: { on: !q.on } })} />
+        </div>
+      )}
+
+      <Section title="WHAT INTERRUPTS YOU" top>
         {old || !prefs ? (
           <div style={{ ...CARD, fontSize: "var(--t10)", color: "var(--txd)", lineHeight: 1.6 }}>
             {old ? "This bridge started before per-event notifications. Restart it to choose them here." : "Reading…"}
@@ -1235,13 +1307,14 @@ function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p
                           <td><span className="ev">{label}{desc && <small>{desc}</small>}</span></td>
                           <td><button className={`ntf-ck${r.pop ? " on" : ""}`} role="checkbox" aria-checked={r.pop} aria-label={`${label}: pop up`}
                             onClick={() => save({ events: { [key]: { pop: !r.pop } } })}>{r.pop ? "✓" : ""}</button></td>
-                          <td><select value={r.sound} aria-label={`${label}: sound`} style={{ ...field, padding: "3px 6px", letterSpacing: 0 }}
+                          <td><select value={r.sound} aria-label={`${label}: sound`} className="ntf-tone" data-none={r.sound === "none" || undefined}
+                            style={{ ...field, padding: "3px 6px", letterSpacing: 0 }}
                             onChange={(e) => {
                               const sound = e.target.value as (typeof SOUND_OPTS)[number];
                               if (sound !== "none") chime(sound, settings.pushVolume);
                               save({ events: { [key]: { sound } } });
                             }}>
-                            {SOUND_OPTS.map((t) => <option key={t} value={t}>{t === "none" ? "none" : TONES[t].label.toLowerCase()}</option>)}
+                            {SOUND_OPTS.map((t) => <option key={t} value={t}>{t === "none" ? "—" : TONES[t].label.toLowerCase()}</option>)}
                           </select></td>
                           <td><span className={`ntf-tg${tg ? "" : " off"}`}>
                             {ROUTE_OPTS.map((o) => (
@@ -1257,82 +1330,10 @@ function NotifyPanel({ settings, onPatch }: { settings: HudSettings; onPatch: (p
               </tbody>
             </table>
             <div className="ntf-mxnote">
-              <b>Pop up</b> means a toast while a dashboard window has focus, and the system banner when none does — never both.{" "}
-              <b>Away</b> means no click or keypress in any dashboard window for{" "}
-              <select value={prefs.away_min} aria-label="away after" style={{ ...field, padding: "2px 4px", letterSpacing: 0 }}
-                onChange={(e) => save({ away_min: Number(e.target.value) })}>
-                {[2, 5, 10, 15, 30].map((m) => <option key={m} value={m}>{m} min</option>)}
-              </select>.
-              {!tg && <> Telegram pings are off in System ▸ Telegram, so that column waits.</>}
+              <b>Pop up</b> is a toast while a dashboard window has focus, and the system banner when none does — never both.
             </div>
           </div>
         )}
-      </Section>
-
-      {q && (
-        <Section title="QUIET HOURS" top>
-          <div style={CARD}>
-            <Row first label="QUIET HOURS" desc={q.on ? `Nothing pops up, sounds or reaches Telegram from ${q.from} to ${q.to}.` : undefined}>
-              <Switch on={q.on} onClick={() => save({ quiet: { on: !q.on } })} />
-            </Row>
-            {q.on && (
-              <>
-                <Row label="FROM · TO">
-                  <input type="time" value={q.from} aria-label="quiet from" style={{ ...field, letterSpacing: 0 }}
-                    onChange={(e) => e.target.value && save({ quiet: { from: e.target.value } })} />
-                  <input type="time" value={q.to} aria-label="quiet to" style={{ ...field, letterSpacing: 0 }}
-                    onChange={(e) => e.target.value && save({ quiet: { to: e.target.value } })} />
-                </Row>
-                <Row label="LET NEEDS YOU THROUGH" desc="An approval at 23:00 still reaches you.">
-                  <Switch on={q.needs} onClick={() => save({ quiet: { needs: !q.needs } })} />
-                </Row>
-              </>
-            )}
-          </div>
-        </Section>
-      )}
-
-      <Section title="THIS BROWSER" top>
-        <div style={CARD}>
-          <Row
-            first
-            label="OS NOTIFICATIONS"
-            info={pushSupported()
-              ? "The system banner for news that pops up while no dashboard window has focus. Telegram is set per event above."
-              : "This browser has no Notification API — pop-ups stay inside the dashboard."}
-          >
-            <Switch
-              on={settings.push}
-              onClick={() => {
-                if (settings.push) { onPatch({ push: false }); return; }
-                // Ask only on switch-on; a denial can't be re-asked, so the
-                // switch goes back off rather than sitting on and silent.
-                void requestPush().then((ok) => onPatch({ push: ok }));
-              }}
-            />
-          </Row>
-          <Row label="SOUNDS" desc="Each event plays the tone picked above; off mutes them all here.">
-            <Switch
-              on={settings.pushSound}
-              onClick={() => {
-                // Switching it on plays one — otherwise you find out how loud it
-                // is at the wrong moment.
-                if (!settings.pushSound) chime(settings.pushTone, settings.pushVolume);
-                onPatch({ pushSound: !settings.pushSound });
-              }}
-            />
-          </Row>
-          {settings.pushSound && (
-            <Row label="VOLUME">
-              {/* Preview when the drag ends, not on every step. */}
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}
-                onPointerUp={() => chime(settings.pushTone, settings.pushVolume)}
-                onKeyUp={() => chime(settings.pushTone, settings.pushVolume)}>
-                <Volume value={settings.pushVolume} onChange={(pushVolume) => onPatch({ pushVolume })} />
-              </div>
-            </Row>
-          )}
-        </div>
       </Section>
     </>
   );

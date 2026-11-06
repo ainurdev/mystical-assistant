@@ -7929,3 +7929,30 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   .set-railro, .set-railfoot, .set-railsearch kbd { display: none; }
   .set-railsearch { margin: 6px 8px; flex: 0 0 160px; }
 }
+
+/* ── NOTIFY · channels + grid (2026-11-06, A · CHANNELS + GRID) ──
+   Where news can reach you sits above what each kind may do: three channel
+   cards with their state and a way to try them, quiet hours as one row. */
+.ntf-ch { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.ntf-chc { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; min-width: 0;
+  background: var(--panel2); border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad, 0); }
+.ntf-chc .t { display: flex; align-items: center; gap: 8px; font: 600 var(--t11, var(--t10)) var(--ui-font); color: var(--txb); }
+.ntf-chc .t svg { color: var(--acc); flex: none; }
+.ntf-st { margin-left: auto; font: 500 var(--t85) var(--ui-font); padding: 2px 8px; border-radius: 6px; color: var(--txl);
+  background: color-mix(in srgb, var(--txl) 12%, transparent); white-space: nowrap; }
+.ntf-st[data-ok] { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.ntf-chc .s { font: 400 var(--t95, var(--t9))/1.5 var(--ui-font); color: var(--txd); min-height: 2.9em; }
+.ntf-chc .f { display: flex; align-items: center; gap: 10px; margin-top: auto; min-width: 0; }
+.ntf-vol { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.ntf-vol input { width: 74px !important; }
+.ntf-quiet { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding: 9px 14px; min-height: 46px;
+  background: var(--panel2); border: 1px solid var(--line, var(--border)); border-radius: var(--f-rad, 0); }
+.ntf-quiet .k { display: flex; align-items: center; gap: 8px; font: 500 var(--t10) var(--ui-font); color: var(--txb); }
+.ntf-quiet .k svg { color: var(--txl); }
+.ntf-quiet .h { font: 400 var(--t95, var(--t9)) var(--ui-font); color: var(--txd); }
+.ntf-quiet > :last-child { margin-left: auto; }
+.ntf-needs { appearance: none; cursor: pointer; border: 1px solid var(--line2, var(--border-bright)); background: transparent; color: var(--txl);
+  font: 500 var(--t85) var(--ui-font); padding: 3px 9px; border-radius: 6px; }
+.ntf-needs.on { color: var(--ask); border-color: color-mix(in srgb, var(--ask) 45%, transparent); background: color-mix(in srgb, var(--ask) 9%, transparent); }
+.ntf-tone[data-none] { color: var(--txl) !important; }
+@media (max-width: 760px) { .ntf-ch { grid-template-columns: 1fr; } .ntf-chc .s { min-height: 0; } }
