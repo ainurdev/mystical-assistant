@@ -99,3 +99,13 @@ export function parseCouncilPrompt(text: string): CouncilPrompt | null {
   m = /^\[council advice\]\n([\s\S]+)/.exec(text);
   return m ? { advice: true, body: m[1] } : null;
 }
+
+/** A council prompt's findings by severity, from its numbered lines (council.py
+ *  _line, "1. MUST · git.py:584 · claude · …"): "1 must · 3 should". A round's
+ *  folded stamp says this rather than its fix prompt's opening sentence, which
+ *  is the same every round. "" when no line reads as a finding. */
+export function sevCount(body: string): string {
+  return (["MUST", "SHOULD", "NIT"] as const)
+    .map((s) => [s, (body.match(new RegExp(`^\\d+\\. ${s} · `, "gm")) ?? []).length] as const)
+    .filter(([, n]) => n).map(([s, n]) => `${n} ${s.toLowerCase()}`).join(" · ");
+}

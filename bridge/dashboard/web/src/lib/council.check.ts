@@ -2,7 +2,7 @@
 // How the COUNCIL tab reads a run: the rail tile, the chart's columns, the two
 // pass rules and the hero's pill (design: council-tab, A · SCOREBOARD).
 import type { CouncilBrief, CouncilRound } from "../api.ts";
-import { columns, hero, parseCouncilPrompt, railTile, rules, tileKey } from "./council.ts";
+import { columns, hero, parseCouncilPrompt, railTile, rules, sevCount, tileKey } from "./council.ts";
 
 const ok = (cond: boolean, what: string) => {
   if (!cond) throw new Error(`FAIL: ${what}`);
@@ -94,3 +94,7 @@ eq(parseCouncilPrompt("[council advice]\n1. rename x\n2. add a test"),
   { advice: true, body: "1. rename x\n2. add a test" }, "the advice list");
 eq(parseCouncilPrompt("fix the council tab"), null, "a plain prompt is none of these");
 eq(parseCouncilPrompt("[council 2/5] 8.1 of 9.0"), null, "a header with no body is not one");
+eq(sevCount("The council reviewed it. Answer a wrong one as \"<number>. NO: <why>\".\n\n1. MUST · git.py:584 · claude+codex · a · b\n"
+  + "2. SHOULD · t.py:2 · claude · c\n3. SHOULD · t.py · codex · d\n4. NIT · x.py:1 · claude · e"),
+  "1 must · 2 should · 1 nit", "the stamp's tally counts the numbered findings, not the instructions");
+eq(sevCount("1. rename x\n2. add a test"), "", "lines without a severity count nothing");

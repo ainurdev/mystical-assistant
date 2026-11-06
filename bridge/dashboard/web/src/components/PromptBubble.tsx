@@ -8,7 +8,7 @@ import { runtimeBadge } from "../lib/agents";
 import { leadCommand } from "../lib/slash";
 import { hhmm, useClock12 } from "../lib/surfaces";
 import { saverTag } from "../lib/savers";
-import { parseCouncilPrompt } from "../lib/council";
+import { parseCouncilPrompt, sevCount } from "../lib/council";
 
 type Run = Pick<Turn, "model" | "effort" | "permission_mode">;
 
@@ -140,7 +140,7 @@ export function PromptBubble({ text, at, runtime, run, prev, steer, who, command
               <>
                 <div className="md">
                   <button className="pgoal-line" aria-expanded={brief} onClick={() => setBrief((b) => !b)}>
-                    <span><span className="pgoal-k">{"advice" in council ? "Council advice" : "fix" in council ? "Fix this" : "Fix the findings"}</span> — {council.body.split("\n")[0]}</span>
+                    <span><span className="pgoal-k">{"advice" in council ? "Council advice" : "fix" in council ? "Fix this" : "Fix the findings"}</span> — {("score" in council && sevCount(council.body)) || council.body.split("\n")[0]}</span>
                     <span className="pgoal-t">{brief ? "prompt ▴" : "prompt ▾"}</span>
                   </button>
                 </div>
