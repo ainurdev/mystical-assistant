@@ -49,6 +49,11 @@ ok(cont?.kind === "line" && cont.text === "Mahdi continued NR Kantoor Project St
 ok(!JSON.stringify(f).includes("Gone"), "a dismissed send is absent");
 ok(f.earlier[0].at >= f.earlier[1].at, "newest first");
 
+const q = teamFeed(team({ outbox: [snd({ id: "q1", queued: true, error: "no link" }), snd({ id: "q2", queued: true })] }), now).today;
+const qe = q.find((x) => x.kind === "line" && x.id === "q1"), qw = q.find((x) => x.kind === "line" && x.id === "q2");
+ok(qe?.kind === "line" && qe.status === "NOT SENT" && qe.tone === "err" && !!qe.tip?.includes("no link"), "a failed send keeps err tone and its reason");
+ok(qw?.kind === "line" && qw.status === "AFTER ITS TURN" && qw.tone === "warn" && !!qw.tip, "a queued send keeps warn tone and its tip");
+
 const w = teamFeed(team({ outbox: [snd({}), snd({ id: "d", deliveredAt: iso(500) })] }), now);
 const st = w.today.map((x) => (x.kind === "line" ? x.status : ""));
 ok(st.includes("WAITING") && st.includes("DELIVERED"), "WAITING and DELIVERED stay");

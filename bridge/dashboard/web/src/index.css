@@ -7761,6 +7761,8 @@ button.gt-wrow { width: 100%; border-left: 0; border-right: 0; border-bottom: 0;
 .tf-line[data-act]:hover { background: var(--wash); }
 .tf-ic { flex: none; display: flex; color: var(--txl); }
 .tf-tx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--t11); font-weight: 600; color: var(--txm); }
+.tf-btn { appearance: none; border: 0; padding: 0; background: transparent; text-align: left; font-family: inherit; cursor: pointer; }
+.tf-btn:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 4px; }
 .tf-tx b { color: var(--txh); font-weight: 700; }
 .tf-r { flex: none; min-width: 52px; display: flex; justify-content: flex-end; font: 700 var(--t8)/1 var(--mono); letter-spacing: .8px; white-space: nowrap; }
 button.tf-fold { display: block; width: 100%; text-align: left; padding: 7px 12px; border: 0; background: transparent; font-family: inherit; font-size: var(--t95); letter-spacing: .1em; color: var(--txl); }

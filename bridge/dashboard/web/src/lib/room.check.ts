@@ -10,7 +10,7 @@ const t = (id: string, online: boolean, ago?: number): Teammate => ({
 let r = room([t("b", false, 120), t("a", true, 30), t("c", false)], now);
 console.assert(r.shown.map((x) => x.id).join() === "a,b,c" && r.on === 1, "on now first");
 console.assert(r.caption.startsWith("a is on now") && r.caption.endsWith("b left 2m ago"), "caption: " + r.caption);
-for (const [n, shown, more] of [[4, 4, 0], [5, 3, 2], [9, 3, 6]]) {
+for (const [n, shown, more] of [[5, 5, 0], [6, 4, 2], [9, 4, 5]]) {
   r = room(Array.from({ length: n }, (_, i) => t("p" + i, i < 2)), now);
   console.assert(r.shown.length === shown && r.more === more && r.shown[0].online && r.shown[1].online, `${n} people: ${r.shown.length} shown, +${r.more}`);
 }

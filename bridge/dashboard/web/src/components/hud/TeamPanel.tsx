@@ -110,7 +110,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
         <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
           <Avatar id={r.from.id || r.from.name} name={r.from.name} src={face(r.from.id)} size={22} />
           <span style={{ minWidth: 0, fontFamily: UI, fontSize: "var(--t115)", color: "var(--txm)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-            <b style={{ color: "var(--txh)", fontWeight: 600 }}>{r.from.name}</b> sent you{r.at ? ` · ${hhmm(r.at, h12)}` : ""}
+            <b style={{ color: "var(--txh)", fontWeight: 600 }}>{r.from.name}</b> sent you{r.at ? ` · ${stamp(r.at)}` : ""}
           </span>
           <span style={{ flex: 1 }} />
                     <button type="button" title="Dismiss — it leaves your list; nothing ran" onClick={() => onDismiss(r)} style={{
@@ -186,17 +186,19 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
   // One line per event; the verb or title is the line's own words, `who` leads in bold. A line
   // from the inbox (opened or continued) keeps its old actions: click reopens, hover offers
   // CONTINUE HERE and remove (your copy goes).
-  const line = (it: Extract<FeedItem, { kind: "line" }>, i: number) => {
-    const r = it.r, key = `line:${i}`;
+  const line = (it: Extract<FeedItem, { kind: "line" }>) => {
+    const r = it.r, key = it.id;
     const Icon = it.icon === "send" ? Send : MessageSquare;
     const busy = r && step?.id === r.id ? step.text : null;
     const rest = it.text.startsWith(it.who) ? it.text.slice(it.who.length) : it.text;
+    const text = <><b>{it.who}</b>{rest}</>;
+    const col = it.tone === "ok" ? "var(--ok)" : it.tone === "warn" ? "var(--warn)" : it.tone === "err" ? "var(--err)" : "var(--txl)";
     return (
-      <div key={key} className="tf-line" data-act={r ? "" : undefined} title={`${it.text} · ${stamp(it.at)}`}
+      <div key={key} className="tf-line" data-act={r ? "" : undefined} title={`${it.text}${it.tip ? ` · ${it.tip}` : ""} · ${stamp(it.at)}`}
         onClick={r ? () => reopen(r) : undefined} onMouseEnter={() => setHov(key)} onMouseLeave={() => setHov(null)}
         onFocus={() => setHov(key)} onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setHov(null); }}>
         <span className="tf-ic"><Icon size={13} strokeWidth={2} /></span>
-        <span className="tf-tx"><b>{it.who}</b>{rest}</span>
+        {r ? <button type="button" className="tf-tx tf-btn">{text}</button> : <span className="tf-tx">{text}</span>}
         {r && hov === key && !busy ? (
           <span className="tf-r" style={{ display: "flex", gap: 2 }}>
             {r.yours
@@ -205,12 +207,12 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
             <RowBtn label="Remove: your copy goes" color="var(--txl)" onClick={() => onDismiss(r)}><X size={12} strokeWidth={2} /></RowBtn>
           </span>
         ) : (
-          <span className="tf-r" style={{ color: it.status && it.tone === "ok" ? "var(--ok)" : "var(--txl)" }}>{busy ?? it.status ?? stamp(it.at)}</span>
+          <span className="tf-r" style={{ color: it.status ? col : "var(--txl)" }}>{busy ?? it.status ?? stamp(it.at)}</span>
         )}
       </div>
     );
   };
-  const feedRow = (it: FeedItem, i: number) => it.kind === "share" ? card(it.r) : line(it, i);
+  const feedRow = (it: FeedItem) => it.kind === "share" ? card(it.r) : line(it);
 
   /** A share still arriving (bridge/team.py receiving): its bytes, then its turns filed. The tab
    *  looks again each second while one is here (App), so the bar moves as it comes. */
@@ -247,7 +249,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
         {feed.earlier.length > 0 && (
           <>
             <Sect label="EARLIER" top={14} />
-            {(allSeen ? feed.earlier : feed.earlier.slice(0, EARLIER_ROWS)).map((it, i) => feedRow(it, i + 1000))}
+            {(allSeen ? feed.earlier : feed.earlier.slice(0, EARLIER_ROWS)).map(feedRow)}
             {feed.earlier.length > EARLIER_ROWS && (
               <button type="button" onClick={() => setAllSeen((v) => !v)} className="tf-fold">{allSeen ? "show less ↑" : `${feed.earlier.length - EARLIER_ROWS} more ↓`}</button>
             )}
