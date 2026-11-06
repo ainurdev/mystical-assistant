@@ -8018,3 +8018,51 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .sys-tabs button[data-on] { color: var(--txb); }
 .sys-tabs button[data-on]::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--acc); }
 [data-fam="aurora"] .sys-tabs button { text-transform: uppercase; letter-spacing: .14em; font-size: 11.5px; }
+
+/* HOME, the right rail's first tab (components/hud/HomePanel.tsx). Its sky
+   continues the cap above it (RightCap `sky`): same gradient, offset by the
+   cap's height, faded out at the foot through a mask so any theme's ground
+   shows under the spine. */
+.home-top { position: relative; height: 195px; flex: none; overflow: hidden; padding: 0 16px;
+  -webkit-mask-image: linear-gradient(180deg, #000 62%, transparent); mask-image: linear-gradient(180deg, #000 62%, transparent); }
+.home-emblem { position: absolute; right: -74px; top: -75px; opacity: .32; pointer-events: none; }
+.home-emblem .ring { transform-origin: 80px 80px; animation: homeSpin 40s linear infinite; }
+.home-rune { position: absolute; font-family: var(--mono); line-height: 1; pointer-events: none; animation: twinkle 3.2s ease-in-out infinite; }
+.home-clock { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; margin: 0; padding: 0; border: 0;
+  background: transparent; text-align: left; color: #fff; font-family: inherit; cursor: pointer; appearance: none; }
+.home-time { font-size: 64px; font-weight: 800; line-height: 1; letter-spacing: -2.5px; font-variant-numeric: tabular-nums; text-shadow: 0 6px 30px rgba(0,0,0,.35); }
+.home-date { margin-top: 9px; font-size: var(--t125); font-weight: 700; line-height: 1.35; color: rgba(255,255,255,.88); }
+.home-wx { font-size: var(--t12); font-weight: 600; line-height: 1.35; color: rgba(255,255,255,.62); }
+.home-work { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 16px 14px; }
+.home-head { display: flex; align-items: baseline; gap: 8px; }
+.home-head .lab { font-size: var(--t9); font-weight: 800; letter-spacing: 1.6px; color: var(--txl); }
+.home-head .r { margin-left: auto; font-size: var(--t11); font-weight: 700; color: var(--txm); }
+.home-head .r b { font-size: var(--t15); font-weight: 800; color: var(--txb); }
+.home-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: var(--t10); font-weight: 700; color: var(--txl); }
+.home-legend span { display: flex; align-items: center; gap: 5px; }
+.home-legend i { width: 6px; height: 6px; border-radius: 50%; }
+.home-spine { margin-top: 10px; }
+.home-row { display: grid; grid-template-columns: 40px 16px minmax(0, 1fr); align-items: center; column-gap: 8px; width: 100%; height: 28px;
+  margin: 0; padding: 0; border: 0; background: transparent; text-align: left; font-family: inherit; color: var(--tx); cursor: pointer; appearance: none; }
+.home-row:hover .x { color: var(--txb); }
+.home-row time { font-size: var(--t11); font-weight: 700; color: var(--txl); font-variant-numeric: tabular-nums; }
+.home-row .mid { position: relative; align-self: stretch; display: flex; align-items: center; justify-content: center; }
+.home-row .mid::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--c, transparent); opacity: .75; }
+.home-row.last .mid::before { bottom: 50%; }
+.home-row .dot { position: relative; z-index: 1; width: 9px; height: 9px; border-radius: 50%; background: var(--panel3); box-shadow: inset 0 0 0 2px var(--p), 0 0 8px var(--p); }
+.home-row .dot.big { width: 11px; height: 11px; background: var(--p); box-shadow: 0 0 0 2px var(--panel3), 0 0 10px var(--p); }
+.home-row .x { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--t12); font-weight: 600; }
+.home-row .x b { font-weight: 800; }
+.home-row .x small { font-size: inherit; font-weight: 600; color: var(--txl); }
+.home-now, .home-away { height: 22px; cursor: default; }
+.home-now { font-size: var(--t9); font-weight: 800; letter-spacing: 1.3px; color: var(--acc); }
+.home-now .mid::before { top: 50%; }
+.home-now .dot { width: 11px; height: 11px; background: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 25%, transparent), 0 0 10px var(--acc); animation: twinkle 1.6s ease-in-out infinite; }
+.home-away { font-size: var(--t105); font-style: italic; font-weight: 600; color: var(--txg); }
+.home-away .mid::before { background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--txl) 70%, transparent) 0 3px, transparent 3px 6px); opacity: 1; }
+.home-none { margin-top: 14px; font-size: var(--t15); font-weight: 800; color: var(--txb); }
+.home-none small { display: block; margin-top: 6px; font-size: var(--t12); font-style: italic; font-weight: 500; color: var(--txl); }
+@keyframes homeSpin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .home-emblem .ring, .home-rune, .home-now .dot { animation: none; } }
+/* The cap merged into HOME: no rule under its left half, in every family. */
+.rcap[data-home], .rcap[data-home] > div:first-child { border-bottom-color: transparent !important; }

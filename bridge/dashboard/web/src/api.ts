@@ -1473,6 +1473,29 @@ export interface TodayInfo {
   cost: number | null;
 }
 
+/** Something that shipped today (bridge/wins.py): a merge, a commit (or a
+ *  turn's commits folded into one), a push, a PR opened, a test run that passed. */
+export interface Win {
+  ts: number;
+  kind: "merge" | "commit" | "commits" | "push" | "pr" | "tests";
+  text: string; // the branch, the subject, the PR number, the test count, or how many commits
+  detail?: string | null; // "commits": the last one's subject
+  project: string;
+  session: string;
+  turn: string;
+  big: boolean;
+}
+
+/** HOME's spine: today since local midnight, newest win first. */
+export interface TodayWins {
+  since: number;
+  now: number;
+  wins: Win[];
+  work: { project: string; start: number; end: number }[];
+  away: { start: number; end: number }[];
+  worked: number; // wall seconds
+}
+
 /** One week, grouped per project — time and tokens, no dollars (9f612a4). */
 export interface WeekProject {
   project: string;
@@ -2138,6 +2161,7 @@ export const api = {
     req<{ prefs: NoticePrefs }>("/local/notices", { method: "POST", body: { op: "prefs", patch } }),
   usage: () => req<UsageInfo>("/local/usage"),
   today: () => req<TodayInfo>("/local/today"),
+  wins: () => req<TodayWins>("/local/wins"),
   report: (back = 0) =>
     req<WeeklyReport>(`/local/report${back ? "?back=1" : ""}`),
   history: (archived = false) =>

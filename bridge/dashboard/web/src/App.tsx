@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
-  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Route, Users,
+  FolderTree, Gauge, GitBranch, GitFork, GraduationCap, House, ListOrdered, Route, Users,
 } from "lucide-react";
 import {
   api,
@@ -88,6 +88,8 @@ import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, LinuxClose, LinuxRailHead, RightCap, Strip } from "./components/hud/Strip";
+import { HomePanel } from "./components/hud/HomePanel";
+import { skyFor } from "./lib/home";
 import { PaletteButton } from "./components/hud/PaletteButton";
 import { UpdateButton } from "./components/hud/UpdateButton";
 import { ChangelogButton } from "./components/hud/ChangelogButton";
@@ -2392,7 +2394,14 @@ export function App() {
   // (chipWindow), printed as a number only once it runs low.
   const usageWin = chipWindow(loginWindows(spender));
   const waitsOnYou = turns.some((t) => t.pending.length > 0);
+  // HOME's sky follows the hour; the cap wears its top while HOME is open.
+  const homeSky = skyFor(parseInt(tele.clock.slice(0, 2), 10) || 0);
   const rightTabs: PanelTab[] = [
+    {
+      id: "home", label: "Home", icon: <House {...RAIL} />, ownScroll: true, group: "home",
+      hint: "the time, the sky and what shipped today",
+      render: () => <HomePanel clock={tele.clock} weather={weather} sky={homeSky} onOpen={(id) => { openSession(id); toChat(); }} />,
+    },
     {
       id: "turns", label: "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true, group: "session",
       ask: waitsOnYou, hint: waitsOnYou ? "one waits on you" : undefined,
@@ -3035,6 +3044,7 @@ export function App() {
   }
 
   const td = themeDef(settings.theme);
+  const homeOpen = settings.rightTab === "home" && rightShown;
   // One cluster, two homes: the right column's cap while the panel is open,
   // the chat header's end while it's folded to the rail (see Strip.tsx).
   const strip = (
@@ -3044,6 +3054,7 @@ export function App() {
       onSetCity={setCity}
       onSetUnit={setUnit}
       openSettings={wxSettings}
+      hideClock={homeOpen}
     />
   );
 
@@ -3272,7 +3283,7 @@ export function App() {
                 // nothing inside slides or reflows. Only then — the strip's
                 // popovers hang past this column at rest, so it can't clip always.
                 ...(rightMoving && { gridTemplateColumns: `calc(${rightBodyW} + 48px)`, justifyContent: "end", overflow: "hidden" }) }}>
-                <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined}>
+                <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined} sky={homeOpen ? homeSky.bg : undefined}>
                   {rightShown && strip}
                 </RightCap>
                 <RightPanel
