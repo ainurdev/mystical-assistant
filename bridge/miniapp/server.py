@@ -403,6 +403,11 @@ class Handler(BaseHTTPRequestHandler):
                     return self._api_history(chat_id, qs)
                 if path == "/api/running":
                     return self._api_running(chat_id)
+                if path == "/api/chat-images/file":
+                    got = multi_api.image_file(qs, chat_id)
+                    if not got:
+                        return self._json({"error": "not found"}, 404)
+                    return self._send_bytes(got[0], 200, got[1], cache="private, max-age=3600")
                 if (multi := multi_api.get(path[len("/api/"):], qs, chat_id)) is not None:
                     return self._json(*multi)
                 if path == "/api/agents":

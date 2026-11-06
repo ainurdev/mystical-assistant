@@ -11,11 +11,25 @@ import { widgetLang, widgetValue } from "../lib/widgetblock";
 import { collapseProgress, type Progress } from "../lib/progressline";
 import type { ToolStyle } from "../lib/toolwidget";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
+import { MdImage, MdLinked, MdTyped } from "./MdImage";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
-// `.md` block in index.css. Links open in a new tab.
+// `.md` block in index.css. Links open in a new tab. Images go through MdImage,
+// which decides what may load.
 // Memoized: re-parsing every past text block on each poll of a long, streaming
 // turn is the single most expensive thing the transcript does.
+
+/** remark hands an image's src over percent-encoded and sanitized; the address as
+ *  written rides along for MdImage, so `<a b.png>` asks the file route for "a b.png"
+ *  and a copy reads back what was typed. */
+type MdNode = { type: string; url?: string; children?: MdNode[]; data?: { hProperties?: Record<string, unknown> } };
+function remarkEmbedAddress() {
+  const walk = (n: MdNode) => {
+    if (n.type === "image" && n.url) n.data = { ...n.data, hProperties: { ...n.data?.hProperties, dataAddr: n.url } };
+    n.children?.forEach(walk);
+  };
+  return walk;
+}
 
 /** Everything inside a react-markdown node, flattened back to plain text. */
 function textOf(n: unknown): string {
@@ -191,13 +205,16 @@ function FileRefSpan({
 }
 
 export const Markdown = memo(function Markdown({
-  children, className = "", onOpenFile, toolStyle = "dossier", breaks = false,
+  children, className = "", onOpenFile, toolStyle = "dossier", breaks = false, typed = false,
 }: {
   children: string;
   className?: string;
   /** Every newline is a line break, as it was when typed — for your own
    *  prompts, written in a chat box, not for the model's paragraphed prose. */
   breaks?: boolean;
+  /** A person's own words, so an http(s) image they typed may load. Off for everything
+   *  an agent wrote: there a remote image is a plain link (MdImage). */
+  typed?: boolean;
   /** Given, inline code that parses as a repo path becomes a link. */
   onOpenFile?: OpenFile;
   /** The session's output style, for a ```widget:``` block the model typed —
@@ -216,15 +233,19 @@ export const Markdown = memo(function Markdown({
         e.clipboardData.setData("text/plain", md);
       }}
     >
+      <MdTyped.Provider value={typed}>
       <ReactMarkdown
-        remarkPlugins={breaks ? [remarkGfm, remarkBreaks] : [remarkGfm]}
+        remarkPlugins={breaks ? [remarkGfm, remarkBreaks, remarkEmbedAddress] : [remarkGfm, remarkEmbedAddress]}
         components={{
+          // One component, not a closure here: this object is rebuilt on every streamed
+          // chunk, and a new function would remount (and reload) each image each time.
+          img: MdImage,
           // The glyph after a link copies its URL; a footnote's own `#fn1` hop
           // is not a link anyone wants on the clipboard.
           // A `#t=` link is a moment in a recording (a video ASK answer, JobViews): a chip, not a link.
           a: ({ node, href, children, ...props }) => href?.startsWith("#t=") ? <span className="md-tc"><Play size={9} aria-hidden />{children}</span> : (
             <>
-              <a href={href} target="_blank" rel="noreferrer" {...props}>{children}</a>
+              <a href={href} target="_blank" rel="noreferrer" {...props}><MdLinked.Provider value>{children}</MdLinked.Provider></a>
               {href && !href.startsWith("#") && <CopyBtn title="Copy link" text={href} />}
             </>
           ),
@@ -311,6 +332,7 @@ export const Markdown = memo(function Markdown({
       >
         {children}
       </ReactMarkdown>
+      </MdTyped.Provider>
     </div>
   );
 });

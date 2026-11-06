@@ -9,9 +9,11 @@ while it's off, so a stale page reads a plain reason instead of acting.
 get() and post() return (body, status), or None for a path that isn't theirs.
 """
 
+import mimetypes
+import os
 import urllib.parse
 
-from bridge import (acp_agents, agent_tree, channel, experimental, handoff, mcp_oauth, mcp_share,
+from bridge import (acp_agents, agent_tree, channel, chat_images, config, experimental, handoff, mcp_oauth, mcp_share,
                     profiles, project_config, skill_share, store)
 
 _OFF = ({"error": "The experimental features are off. Turn them on in Settings."}, 409)
@@ -36,9 +38,39 @@ def _agents() -> list:
     return [*_AGENTS_EXTRA, *[p["id"] for p in acp_agents.available() if p.get("installed")]]
 
 
+def image_root(chat_id: int, session: "str | None", project: "str | None") -> "str | None":
+    """Where a chat's images live: its session's project, or for a chat that doesn't
+    exist yet, the project it will start in."""
+    s = _owned(chat_id, session)
+    if s:
+        return chat_images.root_of(s.get("cwd"))
+    rel = (project or "").lstrip("/")
+    if not rel:
+        return None
+    d = os.path.realpath(os.path.join(config.BASE_PATH, rel))
+    base = os.path.realpath(config.BASE_PATH)
+    return chat_images.root_of(d) if d.startswith(base + os.sep) else None
+
+
+def image_file(qs: dict, chat_id: int) -> "tuple[bytes, str] | None":
+    """The bytes behind an address in a message (GET chat-images/file), or None. Binary,
+    so each server sends it; only the checks live here."""
+    root = image_root(chat_id, _one(qs, "session"), _one(qs, "project"))
+    real = chat_images.resolve(_one(qs, "path"), root)
+    if not real:
+        return None
+    try:
+        with open(real, "rb") as f:
+            return f.read(), mimetypes.guess_type(real)[0] or "application/octet-stream"
+    except OSError:
+        return None
+
+
 def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
     if path == "experimental":
         return experimental.state(), 200
+    if path == "chat-images":
+        return {"mode": chat_images.mode()}, 200
     if path not in ("tree", "channel", "session/handoff", "session/brief", "project/helper",
                     "mcp-share", "skill-share"):
         return None
@@ -93,6 +125,13 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             except ValueError as e:
                 return {"error": str(e)}, 400
         return experimental.state(), 200
+    if path == "chat-images":
+        try:
+            return {"mode": chat_images.set_mode(str(body.get("mode") or ""))}, 200
+        except ValueError as e:
+            return {"error": str(e)}, 400
+    if path == "chat-images/upload":
+        return chat_images.upload(body, image_root(chat_id, body.get("session_id"), body.get("project")))
     if not path.startswith(("chat/", "channel/", "mcp-share", "skill-share", "project/helper")):
         return None
     if not experimental.enabled():

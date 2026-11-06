@@ -66,7 +66,7 @@ function tokensOf(st: StoreTurn): number | null {
   return parts.reduce((a: number, n) => a + (n ?? 0), 0);
 }
 
-function readAsDataUrl(file: File): Promise<string> {
+export function readAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
@@ -190,11 +190,13 @@ export interface HeldPrompt {
 }
 
 export interface ChatContextValue {
+  /** The active project, where a chat's images go before it has a session. */
+  project: string | null;
   turns: Turn[];
   draft: string;
   setDraft: (v: string) => void;
   draftAttachments: Attachment[];
-  addAttachments: (files: FileList | null) => Promise<void>;
+  addAttachments: (files: FileList | File[] | null) => Promise<void>;
   removeAttachment: (id: string) => void;
   activeTurn: Turn | null;
   isRunning: boolean;
@@ -631,7 +633,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const loadingSession =
     stateQuery.isLoading || (project !== null && resolving) || transcriptQ.isLoading;
 
-  async function addAttachments(files: FileList | null) {
+  async function addAttachments(files: FileList | File[] | null) {
     if (!files) return;
     const added: Attachment[] = [];
     for (const file of Array.from(files)) {
@@ -858,6 +860,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     renderFrom: older.from,
     transcriptNav,
     jumpToTurn,
+    project,
     draft,
     setDraft,
     draftAttachments,

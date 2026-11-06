@@ -30,7 +30,7 @@ import threading
 import time
 import uuid
 
-from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver,
+from bridge import (accounts, acp, acp_agents, agents, aifeatures, chat_images, config, devserver,
                     experimental, git, inspector, integrations, ladder, limits, machine,
                     native_activity, notices, profiles, pubsub, relevance, state, store, team,
                     tgask, tgtopics, transcript_jsonl, waits)
@@ -1214,14 +1214,15 @@ def steer(session_id: str, text: str, image_paths: list[str] | None = None) -> b
         job = next((j for j in _jobs.values()
                     if j.store_session_id == session_id and j.status == "running"), None)
     if isinstance(job, AcpJob) and experimental.enabled():
-        if not acp.soft_steer(job, _with_images(text, image_paths)):
+        if not acp.soft_steer(job, chat_images.note(text, job.cwd) + _with_images(text, image_paths)):
             return False
         job.add({"type": "steer", "text": text, "images": list(image_paths or [])})
         return True
     if job is None or job.proc is None or isinstance(job, AcpJob):
         return False
     if not job._write_stdin({"type": "user", "message": {"role": "user",
-                                                         "content": _with_images(text, image_paths)}}):
+                                                         "content": chat_images.note(text, job.cwd)
+                                                         + _with_images(text, image_paths)}}):
         return False
     job.add({"type": "steer", "text": text, "images": list(image_paths or [])})
     return True
@@ -3121,6 +3122,7 @@ def start_streaming_job(chat_id: int, prompt: str, image_paths: list[str],
         _ensure_journal_thread()
         if experimental.enabled() and not refusal:
             _multi_agent_turn_start(job, session, cwd, model, prompt)
+        job.prefix += chat_images.note(prompt, cwd)
         threading.Thread(target=_run_streaming,
                          args=(job, prompt, image_paths, cwd, model, effort, perm,
                                ponytail),

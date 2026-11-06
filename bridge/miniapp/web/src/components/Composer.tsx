@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Paperclip, ArrowUp, X, Sparkles, ChevronDown, Square, Minimize2 } from "lucide-react";
-import { useChat } from "../lib/chat";
+import { readAsDataUrl, useChat } from "../lib/chat";
+import { primeChatImage } from "../lib/chatimg";
+import { insertAt } from "../lib/embeds";
 import { loginSlot, loginWindows, useAccounts } from "../lib/accounts";
 import { api, type EffortLevel, type HandoffPreview, type ModelId, type Profile, type SlashCommand, type SwitchScope } from "../lib/api";
 import { isExact, rankCommands, slashQuery } from "../lib/slash";
@@ -13,6 +15,7 @@ import { Banner, Button } from "./ui";
 import { Textarea } from "./ui/textarea";
 import { UsageStrip } from "./UsageStrip";
 import { ImageLightbox, MediaThumb, isFileUrl } from "./ImageLightbox";
+import { ComposerImages } from "./ComposerImages";
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -168,6 +171,7 @@ export function Composer() {
     sessionId,
     experimental,
     openBrief,
+    project,
   } = useChat();
   const onAgent = sessionAgent !== "claude";
   // With the switch on the capability table answers what the agent's id used to.
@@ -297,6 +301,68 @@ export function Composer() {
     }
   }
   const sendDisabled = blocked || draft.trim().length === 0;
+
+  // --- images in the chat ---------------------------------------------------
+  // SYSTEM ▸ Send images, set on the dashboard: an image is saved in the project at once
+  // and its markdown goes at the caret (bridge/chat_images.py). Asked when a file arrives,
+  // not polled, so a change there is simply right the next time. Anything that goes
+  // wrong asking, a 404 from an older bridge above all, means attachments.
+  const imgScope = { session: sessionId, project };
+  const draftNow = useRef(draft);
+  draftNow.current = draft;
+  const sessionNow = useRef(sessionId);
+  sessionNow.current = sessionId;
+  const [uploading, setUploading] = useState(0);
+  const [imgErr, setImgErr] = useState<string | null>(null);
+  useEffect(() => setImgErr(null), [sessionId]);
+  const inlineMode = () =>
+    qc.fetchQuery({ queryKey: ["chat-images"], queryFn: () => api.chatImagesMode(), staleTime: 5000, retry: false })
+      .then((r) => r.mode === "inline", () => false);
+  /** At the caret as it is now, not as it was when the upload started: you can go on
+   *  typing while it travels. Read off the element, so a caret in a blurred textarea
+   *  (the file picker took focus) still counts. */
+  function insertImage(md: string) {
+    const el = taRef.current;
+    const text = draftNow.current;
+    const r = insertAt(text, el?.selectionStart ?? text.length, el?.selectionEnd ?? text.length, md);
+    draftNow.current = r.text;
+    setDraft(r.text);
+    setCaret(r.caret);
+    if (el) requestAnimationFrame(() => el.setSelectionRange(r.caret, r.caret));
+  }
+  async function uploadImage(file: File) {
+    const from = sessionId;
+    setUploading((n) => n + 1);
+    try {
+      const got = await api.chatImageUpload(imgScope, await readAsDataUrl(file));
+      // The address means nothing in another chat's project.
+      if (sessionNow.current !== from) {
+        setImgErr("You changed chats before that image finished, so it isn't in this message.");
+        return;
+      }
+      primeChatImage(imgScope, got.path, file);
+      insertImage(got.markdown);
+    } catch (e) {
+      setImgErr(e instanceof Error ? e.message : "Couldn't save that image.");
+    } finally {
+      setUploading((n) => n - 1);
+    }
+  }
+  /** A paste with text in it pastes the text natively as well: nothing here stops it.
+   *  In attachment mode a paste stays what it has always been here, which is text only. */
+  async function takeFiles(files: File[], picked: boolean) {
+    if (!files.length) return;
+    if (!(await inlineMode())) {
+      if (picked) await addAttachments(files);
+      return;
+    }
+    setImgErr(null);
+    const isImage = (f: File) => f.type.startsWith("image/");
+    const rest = files.filter((f) => !isImage(f));
+    if (rest.length) void addAttachments(rest);
+    // One at a time, so several land in the order you picked them.
+    for (const f of files.filter(isImage)) await uploadImage(f);
+  }
 
   // --- / commands ----------------------------------------------------------
   // A draft that is just `/word` opens the command list, as the CLI's input
@@ -473,11 +539,17 @@ export function Composer() {
           ))}
         </div>
       )}
+      {imgErr && <div className="mb-2"><Banner tone="error">{imgErr}</Banner></div>}
+      {uploading > 0 && (
+        <div role="status" className="mb-1.5 px-1 text-[10px] tracking-wide text-[var(--muted-2)]">SAVING IMAGE…</div>
+      )}
+      <ComposerImages draft={draft} setDraft={setDraft} scope={imgScope} />
       <Textarea
         ref={taRef}
         value={draft}
-        onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart); }}
+        onChange={(e) => { setDraft(e.target.value); setCaret(e.target.selectionStart); setImgErr(null); }}
         onSelect={(e) => setCaret(e.currentTarget.selectionStart)}
+        onPaste={(e) => { void takeFiles(Array.from(e.clipboardData.files), false); }}
         onKeyDown={(e) => {
           if (e.key === "Escape" && atOpen) { e.preventDefault(); setAtDismissed(true); return; }
           if (e.key === "Escape" && slashOpen) { e.preventDefault(); setSlashDismissed(true); return; }
@@ -512,7 +584,8 @@ export function Composer() {
           multiple
           className="hidden"
           onChange={(e) => {
-            void addAttachments(e.target.files);
+            // Copied first: clearing the input empties its FileList.
+            void takeFiles(Array.from(e.target.files ?? []), true);
             e.target.value = "";
           }}
         />

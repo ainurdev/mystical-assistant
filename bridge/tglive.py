@@ -42,7 +42,7 @@ import threading
 import time
 import uuid
 
-from bridge import config, experimental, notices, profiles, runner, state, telegram
+from bridge import chat_images, config, experimental, notices, profiles, runner, state, telegram
 
 TICK = 1.0          # how often the draft is looked at
 REFRESH = 20.0      # a draft Telegram keeps 30 s is sent again within this
@@ -84,6 +84,8 @@ def start(chat_id: int, session: dict, prompt: str, files: "list[str] | None" = 
         telegram.send(chat_id, "This session runs on another agent — continue it in the "
                                "Mini App or the dashboard.", thread=thread)
         return False
+    # In inline mode, photos go in the text like pasted images (bridge/chat_images.py).
+    files, prompt = chat_images.adopt_files(files, prompt, session.get("cwd"))
     job_id = uuid.uuid4().hex
     paths = runner.adopt_uploads(job_id, files)
     # The bot's args are Claude's flags: an agent runs on its own profile's settings.

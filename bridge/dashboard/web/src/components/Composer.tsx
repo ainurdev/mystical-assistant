@@ -21,6 +21,10 @@ import { MarkdownInput, type MarkdownInputHandle } from "./MarkdownInput";
 import { HelpersRow } from "./HelpersRow";
 import { rankProfiles, skillQuery, STEER_SOFT_WORDS, type Caps, type HelperConfig } from "../lib/multi";
 import { multi as multiApi } from "../lib/multistore";
+import { chatImagesInline, uploadChatImage, useChatImages } from "../lib/chatimages";
+import { isInlineImage } from "../lib/embeds";
+
+const STILL_SAVING = "An image is still saving. Send again in a moment.";
 
 export const EFFORTS: { id: EffortLevel | ""; label: string }[] = [
   { id: "", label: "Auto" },
@@ -600,6 +604,14 @@ export function Composer({
   const own = (k: string) => !!overrides?.includes(k);
   const fileRef = useRef<HTMLInputElement>(null);
   const taRef = useRef<MarkdownInputHandle>(null);
+  // Images on their way into the text (SYSTEM ▸ Send images: In the chat).
+  useChatImages();
+  const [embedErr, setEmbedErr] = useState<string | null>(null);
+  const [uploads, setUploads] = useState(0);
+  const uploadsRef = useRef(0);
+  const uploadOrder = useRef<Promise<unknown>>(Promise.resolve());
+  const sessionRef = useRef(sessionId);
+  sessionRef.current = sessionId;
 
   useEffect(() => {
     if (injectNonce) {
@@ -619,6 +631,7 @@ export function Composer({
   // first mount) so you can start typing immediately without clicking in.
   useEffect(() => {
     taRef.current?.focus();
+    setEmbedErr(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
@@ -824,9 +837,56 @@ export function Composer({
     if (e.key === "ArrowUp") return step(-1);
   }
 
+  /** An image going in the text: saved now, its markdown landing where it was pasted.
+   *  They upload at once but land in the order they came, whichever answers first. A
+   *  failure says why and puts nothing in. */
+  function embedFile(f: File) {
+    const id = taRef.current?.holdSpot();
+    if (id == null) return;
+    const session = sessionId;
+    const scope = { session, project };
+    setEmbedErr(null);
+    uploadsRef.current++;
+    setUploads(uploadsRef.current);
+    const saved = new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => reject(new Error("Couldn't read that image."));
+      r.readAsDataURL(f);
+    }).then((data) => uploadChatImage(data, scope));
+    const before = uploadOrder.current;
+    uploadOrder.current = saved.then((r) => ({ md: r.markdown, err: null as string | null }),
+      (e: Error) => ({ md: null, err: e.message || "The image didn't save." }))
+      .then(async (out) => {
+        await before;
+        // The box holds another chat's draft now: this one's text isn't there to go into.
+        if (sessionRef.current !== session) {
+          taRef.current?.dropSpot(id);
+          setEmbedErr(out.err ?? "The chat changed before the image went in. It's saved in the project's .mystical/images.");
+        } else if (out.md === null) {
+          taRef.current?.dropSpot(id);
+          setEmbedErr(out.err);
+        } else {
+          taRef.current?.fillSpot(id, out.md);
+        }
+        uploadsRef.current--;
+        setUploads(uploadsRef.current);
+        // Nothing left to wait for, so "send again" no longer applies.
+        if (uploadsRef.current === 0) setEmbedErr((m) => (m === STILL_SAVING ? null : m));
+      });
+  }
+
+  /** Sending now would leave out an image still on its way into the text. */
+  function stillSaving() {
+    setEmbedErr(uploadsRef.current ? STILL_SAVING : null);
+    return uploadsRef.current > 0;
+  }
+
   function addFiles(files: FileList | File[] | null) {
     if (!files) return;
+    const inline = chatImagesInline();
     Array.from(files).forEach((f) => {
+      if (inline && isInlineImage(f.type)) { embedFile(f); return; }
       const r = new FileReader();
       // The name rides in the data URL, so a .csv reaches the upload dir as a
       // .csv instead of being guessed into a .png the model can't read.
@@ -850,6 +910,7 @@ export function Composer({
       .filter((f): f is File => f !== null);
   }
   function submit() {
+    if (stillSaving()) return;
     const t = text.trim();
     if (ask?.send) {
       // The ask clears the box itself: a stepper hands it the next page's note.
@@ -865,6 +926,7 @@ export function Composer({
   // Land the text — and anything in the attachment tray — in the turn that's
   // already running.
   function steer() {
+    if (stillSaving()) return;
     const t = text.trim();
     if (!t || !onSteer) return;
     onSteer(t, images);
@@ -877,6 +939,7 @@ export function Composer({
   // turn. It sits with them rather than in the verb tier because it *is* the
   // send gesture — the verbs are commands that stand on their own.
   function design() {
+    if (stillSaving()) return;
     const t = text.trim();
     if (!t) return;
     onSend(`/design-first ${t}`, images);
@@ -1203,6 +1266,15 @@ export function Composer({
       ))}
     </div>
   );
+  const embedNote = (embedErr || uploads > 0) && (
+    embedErr
+      ? <div className="ma-set-err" role="alert" style={{ marginTop: 0, marginBottom: 6, display: "flex", gap: 8, alignItems: "baseline" }}>
+          <span style={{ flex: 1, minWidth: 0 }}>{embedErr}</span>
+          <button type="button" onClick={() => setEmbedErr(null)} aria-label="Dismiss"
+            style={{ appearance: "none", cursor: "pointer", border: 0, background: "transparent", color: "inherit", padding: 0, fontFamily: "inherit", fontSize: "inherit", lineHeight: 1 }}>×</button>
+        </div>
+      : <div className="ma-set-note" role="status" style={{ marginTop: 0, marginBottom: 6 }}>saving image…</div>
+  );
   const settingsChips = (right: boolean) => (<>{profileDrop(right)}{ponyDrop(right)}</>);
   const runTrigger = (
     <RunTrigger open={openDrop === "run"} onToggle={() => setOpenDrop((d) => (d === "run" ? "" : "run"))}
@@ -1297,6 +1369,8 @@ export function Composer({
     <MarkdownInput
       ref={taRef}
       value={text}
+      imageSession={sessionId}
+      imageProject={project}
       commands={noList ? [] : cmds}
       onChange={(t, c) => { setText(t); setCaret(c); }}
       onCaret={setCaret}
@@ -1345,6 +1419,7 @@ export function Composer({
     composer === "console" ? (
       <>
         {dock}
+        {embedNote}
         {attachRow}
         <div {...boxProps} className="cmdbox pb-cmd">
           {pfx}
@@ -1367,6 +1442,7 @@ export function Composer({
       <>
         <div className="pb-tabs pb-lead">{lead}{ctxBlock}</div>
         {dock}
+        {embedNote}
         <div {...boxProps} className="cmdbox pb-card">
           {ledger("")}
           {attachRow}
@@ -1438,6 +1514,7 @@ export function Composer({
           ))}
         </div>
       )}
+      {embedNote}
       {/* image attachments */}
       {attachRow && <div style={{ marginBottom: 9 }}>{attachRow}</div>}
 

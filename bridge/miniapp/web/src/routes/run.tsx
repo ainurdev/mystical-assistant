@@ -14,6 +14,7 @@ import { Banner, Skeleton } from "../components/ui";
 import { AgentsPill } from "../components/AgentsPill";
 import { SuggestNewSessionCard } from "../components/SuggestNewSessionCard";
 import { ImageLightbox, MediaThumb, isVideo, type Shown } from "../components/ImageLightbox";
+import { PromptText } from "../components/ChatImage";
 import { ContextChip, GoalPill, PolicyChip } from "../components/GoalPill";
 import { RunMonitor } from "../components/RunMonitor";
 import { AgentBar, type AgentTab } from "../components/AgentSwitch";
@@ -243,6 +244,26 @@ function RunPage({ barKey }: { barKey: string }) {
     !restoreTo.current && Date.now() > jumpT.current
     && item.start < (instance.scrollOffset ?? 0);
 
+  // An image in a message has its height only once it has loaded. The virtualizer's
+  // own observer would catch the row growing a frame later; asking now keeps the rows
+  // from overlapping for that frame. What it would never do is follow: this page follows
+  // new events, not growth, so while parked at the bottom a picture would push the
+  // latest out of view. load doesn't bubble, hence the capture.
+  useEffect(() => {
+    const list = listRef.current;
+    if (!list) return;
+    const onLoad = (e: Event) => {
+      const img = e.target as Element;
+      if (!img.closest?.(".chat-img")) return;
+      const row = img.closest<HTMLElement>("[data-index]");
+      if (row) virtualizer.measureElement(row);
+      // The next frame: the list's height comes from the render that measure causes.
+      if (stick.current) requestAnimationFrame(() => toBottom());
+    };
+    list.addEventListener("load", onLoad, true);
+    return () => list.removeEventListener("load", onLoad, true);
+  }, [virtualizer, toBottom]);
+
   keepPlace.current = () => {
     // Mid-restore the scrolling is ours, not yours — recording it would
     // overwrite the place we're on the way back to.
@@ -419,7 +440,7 @@ function RunPage({ barKey }: { barKey: string }) {
                 {resumed && <div className="ma-resumed" role="note">↻ {resumed}</div>}
                 {turn.prompt && !resumed && !(framed && !framed.own) && (
                   <div className="pbub whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
-                    {framed ? framed.body : turn.prompt}
+                    <PromptText text={framed ? framed.body : turn.prompt} />
                     {turn.started != null && <span className="pstamp">{hhmm(turn.started)}</span>}
                   </div>
                 )}

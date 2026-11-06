@@ -418,6 +418,11 @@ class Handler(BaseHTTPRequestHandler):
         if (owner := integrations.route_owner(path)) and not integrations.installed(owner):
             return self._json({"error": "not installed"}, 404)
         chat = _chat()
+        if path == "/local/chat-images/file":
+            got = multi_api.image_file(qs, chat)
+            if not got:
+                return self._json({"error": "not found"}, 404)
+            return self._send(got[0], 200, got[1], cache="private, max-age=3600")
         if path == "/local/mcp-share/callback":
             return self._html_text(multi_api.oauth_callback(qs))
         if (multi := multi_api.get(path[len("/local/"):], qs, chat)) is not None:

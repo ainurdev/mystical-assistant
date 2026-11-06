@@ -86,6 +86,7 @@ import { watchWco } from "./lib/wco";
 import { switchWorkspace, useWorkspaces, workspaceOf } from "./lib/workspaces";
 import { WorkspaceButton } from "./components/hud/WorkspaceButton";
 import { chatToMarkdown } from "./lib/chatmd";
+import { ChatImagesScope } from "./lib/chatimages";
 import { distinctDirs, fileRefCandidates, resolveFileRef } from "./lib/filepath";
 import { Composer } from "./components/Composer";
 import { AskDock, type AskMode } from "./components/AskDock";
@@ -2963,6 +2964,8 @@ export function App() {
   );
 
   return (
+    // An image address in any Markdown under here resolves against the open chat.
+    <ChatImagesScope session={sessionId} project={sessionProject}>
     <div className="flex h-full flex-col" style={{ background: "var(--panel3)", position: "relative" }}>
       {settings.scanlines && <div className="crt" />}
       {settings.sweep && <div className="sweep" />}
@@ -3305,5 +3308,6 @@ export function App() {
         <BootIntro theme={settings.theme} scanlines={settings.scanlines} intro={settings.intro} steps={bootSteps} onReveal={() => setShowDashboard(true)} onDone={() => { setShowDashboard(true); setBooting(false); }} />
       )}
     </div>
+    </ChatImagesScope>
   );
 }

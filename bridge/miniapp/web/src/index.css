@@ -405,6 +405,23 @@ input {
 .md .footnotes { margin-top: 1em; border-top: 1px dashed var(--ac-22); font-size: 0.9em; color: var(--txm); }
 .md .footnotes h2 { display: none; }
 .md img { max-width: 100%; border-radius: 8px; }
+/* An image written in a message (components/ChatImage). Inline, so a bubble's pre-wrap
+   line breaks stay the ones you typed; capped, so a tall screenshot doesn't take the
+   whole phone, and the lightbox is a tap away. */
+.chat-img {
+  display: inline-block; max-width: 100%; margin: 2px 0; padding: 0;
+  border: 0; background: none; line-height: 0; vertical-align: bottom; cursor: zoom-in;
+}
+.chat-img img {
+  display: block; width: auto; height: auto; max-width: 100%; max-height: min(320px, 50vh);
+  border: 1px solid var(--line); border-radius: var(--f-rad-s, 8px);
+}
+.chat-img-wait {
+  display: inline-block; width: 96px; height: 64px; max-width: 100%; margin: 2px 0;
+  vertical-align: bottom; border: 1px dashed var(--ac-22); border-radius: var(--f-rad-s, 8px);
+}
+/* Opacity, not a colour, so it reads on your bubble's fill and on the reply's ground. */
+.chat-img-gone { font-size: 11px; opacity: .6; overflow-wrap: anywhere; }
 
 /* === THE SESSION'S IDIOM ===================================================
    OUTPUT STYLE is how a whole session reads, not just how a tool widget draws.

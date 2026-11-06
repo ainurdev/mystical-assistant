@@ -23,6 +23,7 @@ import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
 import { StorageSection } from "./StorageSection";
 import { ExperimentalSection } from "./ExperimentalSection";
+import { ChatImagesSection } from "./ChatImagesSection";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WorkspacesSettings } from "./WorkspacesSettings";
 import {
@@ -237,6 +238,7 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "integrations", sec: "CLAUDE DESIGN", terms: "claude design system link pull sync skill tokens components" },
   { tab: "integrations", sec: "AVAILABLE", terms: "install integration plugin add rivendell claude design" },
   { tab: "system", sec: "STORAGE", terms: "storage disk space cache caches clear delete clean up free files mystical screenshots pictures uploads drafts scratch" },
+  { tab: "system", sec: "IMAGES", terms: "send images image picture screenshot paste attachment attach in the chat inline mystical" },
   { tab: "system", sec: "EXPERIMENTAL", terms: "experimental multi agent chats helpers subagents switch provider kimi delegate limits hops channel" },
   { tab: "system", sec: "SHARED MCP SERVERS", terms: "share mcp server model vendor kimi codex login tools secret sensitive" },
   { tab: "system", sec: "SHARED SKILLS", terms: "share skill skills agents kimi codex claude only conflict" },
@@ -602,7 +604,7 @@ function Volume({ value, disabled, onChange }: { value: number; disabled?: boole
  *  wrapping flex row: flex stretches whatever lands on the last line, so ten
  *  fonts read as six even cells and then four oversized ones. Every cell is the
  *  same width here, however the list divides. */
-function Segmented<T extends string>({
+export function Segmented<T extends string>({
   options,
   value,
   onPick,
@@ -4476,6 +4478,8 @@ export function SettingsModal(props: SettingsModalProps) {
             {shown === "system" && (
               <>
                 <StorageSection />
+
+                <ChatImagesSection />
 
                 <ExperimentalSection cwd={props.cwd} top />
 

@@ -694,6 +694,11 @@ export class ApiError extends Error {
   }
 }
 
+export type ChatImagesMode = "attachment" | "inline";
+/** Which chat an image address is relative to: its session, or for a chat that doesn't
+ *  exist yet, the project it will start in. */
+export interface ChatImageScope { session?: string | null; project?: string | null }
+
 // ---------------------------------------------------------------------------
 // Core fetch wrapper — same-origin, relative URLs, injects init data header.
 // ---------------------------------------------------------------------------
@@ -936,6 +941,37 @@ export const api = {
         `&agent=${encodeURIComponent(agentId)}&cursor=${cursor}` +
         (workflow ? `&workflow=${encodeURIComponent(workflow)}` : ""),
     ),
+
+  // Images in the chat (bridge/chat_images.py). Not behind the experimental switch. The
+  // setting is changed on the dashboard; a bridge older than it 404s, which reads as
+  // the attachments it has always had.
+  chatImagesMode: () =>
+    request<{ mode: ChatImagesMode }>("/api/chat-images").catch((e: unknown) => {
+      if (e instanceof ApiError && e.status === 404) return { mode: "attachment" as const };
+      throw e;
+    }),
+  chatImageUpload: (scope: ChatImageScope, data: string) =>
+    request<{ path: string; markdown: string }>("/api/chat-images/upload", {
+      method: "POST",
+      body: { ...(scope.session ? { session_id: scope.session } : { project: scope.project }), data },
+    }),
+  /** An image in a message, as an object URL, for the same reason as attachmentUrl. The
+   *  caller (lib/chatimg) keeps it and revokes it. */
+  chatImageUrl: async (scope: ChatImageScope, address: string) => {
+    const where = scope.session
+      ? `session=${encodeURIComponent(scope.session)}`
+      : `project=${encodeURIComponent(scope.project ?? "")}`;
+    let res: Response;
+    try {
+      res = await fetch(`/api/chat-images/file?path=${encodeURIComponent(address)}&${where}`, {
+        headers: { "X-Telegram-Init-Data": getInitData() },
+      });
+    } catch {
+      throw new ApiError(0, "Network error");
+    }
+    if (!res.ok) throw new ApiError(res.status, "image not found");
+    return URL.createObjectURL(await res.blob());
+  },
 
   // Multi-agent chats (bridge/multi_api.py). All but the first answer 409 while the
   // switch is off; a bridge older than them 404s every one.
