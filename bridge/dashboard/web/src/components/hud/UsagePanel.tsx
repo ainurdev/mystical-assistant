@@ -47,6 +47,7 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
   // A bridge still running pre-restart code has no /local/report route: say
   // "restart" instead of spinning forever.
   const [stale, setStale] = useState(false);
+  const [more, setMore] = useState(false);   // "N more" opens the legend in place
   const [stClosed, setStClosed] = useStickyFlag("usage-stopped-closed");
   const [tkClosed, setTkClosed] = useStickyFlag("usage-tokens-closed");
 
@@ -69,7 +70,7 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
   const td = days.find((d) => d.key === today);
   const vs = !back && rep && t && rep.prev.elapsed > 0 ? `${pct(t.elapsed, rep.prev.elapsed)} vs last` : "";
   // Five segments at most: the tail folds into one grey "N more".
-  const shown = rep ? (rep.projects.length > TOP ? rep.projects.slice(0, TOP - 1) : rep.projects) : [];
+  const shown = rep ? (rep.projects.length > TOP && !more ? rep.projects.slice(0, TOP - 1) : rep.projects) : [];
   const rest = rep ? rep.projects.slice(shown.length) : [];
   const restT = rest.reduce((n, p) => n + p.elapsed, 0);
   const cards: [string | number, string][] = t ? (back
@@ -106,7 +107,7 @@ export function UsagePanel({ onOpenProject }: { onOpenProject: (rel: string) => 
                   </button>
                 );
               })}
-              {rest.length > 0 && <button type="button" disabled><i style={{ background: "var(--txl)" }} /><span>{rest.length} more</span><b>{dur(restT)}</b></button>}
+              {rest.length > 0 && <button type="button" onClick={() => setMore(true)}><i style={{ background: "var(--txl)" }} /><span>{rest.length} more</span><b>{dur(restT)}</b></button>}
             </div>
           </>
         ) : <div className="us-note">nothing ran {back ? "last" : "this"} week</div>}

@@ -197,7 +197,7 @@ export function RightCap({ onOpenSettings, children, railTop }: {
     // position + z-index lift the cap's stacking context (its entry animation
     // makes one) above the panel under it, which would otherwise cover the
     // clock's popovers.
-    <div className="rcap wco-bar" data-bare={children ? undefined : ""} style={{ position: "relative", zIndex: 40, display: "flex", height: CAP_H, borderBottom: CAP_LINE, animation: CAP_IN }}>
+    <div className="rcap wco-bar" data-bare={children ? undefined : ""} style={{ position: "relative", zIndex: 40, display: "flex", minWidth: 0, height: CAP_H, borderBottom: CAP_LINE, animation: CAP_IN }}>
       {children && (
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", padding: "0 12px", borderLeft: "1px solid var(--border)" }}>
           {children}
@@ -320,7 +320,7 @@ export function Strip(props: StripProps) {
     <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flex: "1 1 auto", minWidth: 0 }}>
       <span
         ref={anchorRef}
-        style={{ display: "flex", alignItems: "center", gap: 9, flex: "none" }}
+        style={{ display: "flex", alignItems: "center", gap: 9, flex: "0 1 auto", minWidth: 0 }}
         data-ctx-type="weather" data-ctx-id="weather"
         data-ctx-label={[weather.cond, weather.loc].filter(Boolean).join(" · ")}
       >
@@ -336,7 +336,7 @@ export function Strip(props: StripProps) {
         </button>
         {/* Two small readouts stacked beside it: the weather (the clock's
             handle again) over Claude·FM. */}
-        <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <span style={{ display: "flex", flexDirection: "column", gap: 3, minWidth: 0 }}>
           <button
             className="wx capdate"
             onClick={(e) => openMenu(e.currentTarget)}

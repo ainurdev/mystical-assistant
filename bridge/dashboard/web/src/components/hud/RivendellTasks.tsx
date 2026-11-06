@@ -315,7 +315,8 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     const card = (later: boolean) => (t: RivendellTask) => cardView(t, later, showCol);
     // Todolist items that name no open task but a Sentry issue: FIX IT, as before.
     const sentry = nextUp(todo, new Set(tasks.map((t) => t.id))).filter((i) => !i.tasks.length && i.sentry);
-    const board = allOpen || (!top && !g.running.length && !g.needs.length);
+    const forced = !top && !g.running.length && !g.needs.length;   // nothing else to show: the board can't close
+    const board = allOpen || forced;
     return (
       <>
         {paused}
@@ -339,7 +340,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
             <Btn tone="ghost" onClick={() => onWorkOn(sentryPrompt(i.title, i.sentry!))} title={`Work on ${i.sentry!.label ?? "the Sentry issue"} in a new session`}>FIX IT</Btn>
           </div>
         ))}
-        <Section label="ALL TASKS" n={tasks.length} onClick={() => setAllOpen(!board)} chev={board ? "▾" : "▸"} />
+        <Section label="ALL TASKS" n={tasks.length} onClick={forced ? undefined : () => setAllOpen(!board)} chev={forced ? undefined : board ? "▾" : "▸"} />
         {board && <>
           {g.done.length > 0 && <Section label={`DONE${last}`} n={g.done.length} />}
           {g.done.map(card(false))}
@@ -367,7 +368,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
       <TaskDeck task={t} n={n} text={d ? excerpt(d.spec?.body || d.description || "") : ""} go={go} frozen={!!t.stale}
         onGo={() => arm(t)} onWork={() => void workOn(t)} onSkip={() => skip(t)}
         onLink={href ? () => window.open(href, "_blank", "noopener") : null}>
-        {!allOpen && armed === key(t) && armedView(t, busy.has(t.id))}
+        {armed === key(t) && armedView(t, busy.has(t.id))}
         {errs[t.id] && <div style={{ fontSize: "var(--t9)", color: "var(--err)" }}>{errs[t.id]}</div>}
       </TaskDeck>
     );
@@ -394,7 +395,7 @@ export function RivendellTasks({ project, onOpenSession, onWorkOn }: {
     const frozen = !!t.stale;                 // last known: nothing new may start from it
     const on = hov === id;
     const isOpen = open === id;
-    const isArmed = armed === id;
+    const isArmed = armed === id && !(top && id === key(top));   // the deck shows the top task's confirm
     const folded = later && !isOpen;
     const ask = t.run?.ask ?? null;
     const live = req?.status === "IN_PROGRESS" && !ask ? t.run?.live ?? null : null;

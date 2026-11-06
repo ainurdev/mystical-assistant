@@ -473,7 +473,7 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     </div>
   );
 
-    return (
+  return (
     <div className="panel gp" style={{ border: "1px solid color-mix(in srgb, var(--acc) 16%, transparent)", background: "color-mix(in srgb, var(--panel) 86%, transparent)", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       <TabKick name="GIT"
         chip={branchName && (

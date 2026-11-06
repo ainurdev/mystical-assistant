@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { CornerUpLeft, Download, Eye, File as FileIcon, Forward, Image as ImageIcon, Layers, MessageSquare, RefreshCw, Send, Users, X } from "lucide-react";
-import type { Received, Receiving, Share, TeamOverview, Teammate } from "../../api";
+import type { Received, Receiving, TeamOverview, Teammate } from "../../api";
 import { initials } from "../../lib/rivendelltasks";
 import { hhmm, useClock12 } from "../../lib/surfaces";
 import { room } from "../../lib/room";
@@ -113,7 +113,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
             <b style={{ color: "var(--txh)", fontWeight: 600 }}>{r.from.name}</b> sent you{r.at ? ` · ${stamp(r.at)}` : ""}
           </span>
           <span style={{ flex: 1 }} />
-                    <button type="button" title="Dismiss — it leaves your list; nothing ran" onClick={() => onDismiss(r)} style={{
+          <button type="button" title="Dismiss — it leaves your list; nothing ran" onClick={() => onDismiss(r)} style={{
             appearance: "none", cursor: "pointer", display: "grid", placeItems: "center", width: 22, height: 22, flex: "none", border: 0, borderRadius: 6,
             background: "transparent", color: "var(--txl)", padding: 0,
           }}><X size={11} strokeWidth={2} /></button>
@@ -180,7 +180,7 @@ export function TeamPanel({ data, fail, sessionTitle, onRefresh, onSendTo, onOpe
     onOpen(r);
   };
 
-  const stamp = (at: number) => at && new Date(at * 1000).toDateString() === new Date(now * 1000).toDateString()
+  const stamp = (at: number) => !at ? "" : new Date(at * 1000).toDateString() === new Date(now * 1000).toDateString()
     ? hhmm(at, h12) : new Date(at * 1000).toLocaleDateString([], { month: "short", day: "numeric" });
 
   // One line per event; the verb or title is the line's own words, `who` leads in bold. A line

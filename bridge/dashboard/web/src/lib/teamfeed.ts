@@ -14,7 +14,7 @@ const day = (sec: number) => new Date(sec * 1000).toDateString();
 export function teamFeed(team: TeamOverview, now: number): { today: FeedItem[]; earlier: FeedItem[] } {
   const items: FeedItem[] = [
     ...team.inbox.map((r): FeedItem => seen(r)
-      ? { kind: "line", id: r.id, icon: "msg", who: r.from.name, text: `${r.from.name} ${r.continued ? "continued" : "opened"} ${r.title}`, status: null, tone: "dim", at: r.at, r }
+      ? { kind: "line", id: r.id, icon: "msg", who: "You", text: `You ${r.continued ? "continued" : "opened"} ${r.from.name}'s ${r.title}`, status: null, tone: "dim", at: r.at, r }
       : { kind: "share", r, at: r.at }),
     ...foldSent(team.outbox).filter((s) => !s.dismissedAt).map((s): FeedItem => {
       const st = sentStatus(s, now);

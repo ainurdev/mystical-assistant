@@ -3,14 +3,18 @@
 // card follows edit by edit rather than keystroke by keystroke. It shows while
 // the turn runs and for a minute after. Pure — no clock of its own.
 
+import { resumeOf } from "./checkpoints.ts";
 import { toolKind } from "./tools.ts";
 
 type Ev = { type: string; name?: string; summary?: string; detail?: string; id?: string; patch?: string[]; at?: number };
-type T = { status: string; events: Ev[]; started?: number; elapsed?: number | null };
+type T = { prompt?: string; status: string; events: Ev[]; started?: number; elapsed?: number | null };
 export type WLine = { sign: "+" | "-" | " "; text: string; n: number | null };
 export type Writing = { path: string; name: string; dir: string; lines: WLine[]; line: number | null; turn: number; at: number; live: boolean };
 
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
+/** The number the TURNS tab gives turn `ti`: a resume or promptless turn folds into the row before it. */
+const turnNo = (turns: T[], ti: number) =>
+  turns.slice(0, ti + 1).reduce((n, t, i) => (i > 0 && (resumeOf((t.prompt || "").trim()) || !(t.prompt || "").trim()) ? n : n + 1), 0);
 export const WROTE_FOR = 60; // seconds a finished turn's last edit stays up
 
 export function writing(turns: T[], root: string | null | undefined, now: number): Writing | null {
@@ -41,12 +45,13 @@ export function writing(turns: T[], root: string | null | undefined, now: number
           if (s !== "-" && n != null) n++;
         }
       }
+      // shortcut: the backend caps a patch at 120 lines, so "last 4" is of the first 120 for a huge edit; upgrade if the cap grows or the card must show the true tail.
       const lines = all.filter((l) => l.sign !== " ").slice(-4);
       // The jump lands on a changed line shown here; the hunk start only when none of them is added.
       const firstAdd = lines.find((l) => l.sign === "+")?.n;
       if (line != null) line = firstAdd ?? line;
       return { path, name: path.slice(cut), dir: path.slice(0, cut), lines,
-               line, turn: ti + 1, at, live };
+               line, turn: turnNo(turns, ti), at, live };
     }
   }
   return null;

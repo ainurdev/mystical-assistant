@@ -159,7 +159,7 @@ export function BranchesPanel({ project, branch, sessions, status, nonce, onOpen
   const [data, setData] = useState<BranchStatus | null>(null);
   const [prs, setPrs] = useState<Record<string, BranchPr>>({});
   const [err, setErr] = useState("");
-    const [naming, setNaming] = useState(false);
+  const [naming, setNaming] = useState(false);
   const [name, setName] = useState("");
   const [from, setFrom] = useState("");
   const [busy, setBusy] = useState("");   // the row whose git step is running

@@ -26,6 +26,11 @@ const del = writing([turn("running", edit("1", P, ["@@ -50,2 +60,1 @@", " a", "-
 ok(del.line === 60, "no + line shown: the hunk start");
 ok(live.lines[3].n === 302 && live.lines[2].n === 213 && live.lines[1].n === 212 && live.lines[0].n === null, "n walks the hunk; - lines have none");
 ok(live.turn === 1, "turn number is 1-based");
+{
+  const mk = (prompt: string) => ({ ...turn("done", [], { elapsed: 1 }), prompt });
+  const ts = [mk("do it"), mk("⏮ You were interrupted mid-task by a bridge restart"), { ...mk("more"), events: edit("1", P, P1) }];
+  ok(writing(ts, ROOT, 140)!.turn === 2, "a resume folds into its turn, like the Turns tab");
+}
 
 const done = (el: number) => writing([turn("done", edit("1", P, P1), { elapsed: el })], ROOT, 100 + 30 + 30)!; // ended at 130
 ok(done(30).live === false, "ended 30s ago: WROTE, not live");

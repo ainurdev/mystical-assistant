@@ -87,7 +87,7 @@ function hit(r: TurnRow, q: string): boolean {
  *  ran the tests. The three newest turns with moments list up to three
  *  of them, older ones fold theirs into a count; a gap over half an hour says how
  *  long you were away. Every line jumps the chat to its place; the turn on screen
- *  is lit and followed. It replaced the B · LEDGER list, its TurnClock hero and
+ *  is lit and followed. It replaced the B · LEDGER list and
  *  the TIME dock (the Mini App's spend sheet still reads that breakdown). */
 export function TurnsPanel({
   turns, scrollRef, nav, following, onJump, onLatest, onCopy, onReuse,

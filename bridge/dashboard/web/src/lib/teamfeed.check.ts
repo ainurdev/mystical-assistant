@@ -45,7 +45,7 @@ const sent = lines.find((x) => x.kind === "line" && x.icon === "send");
 ok(sent?.kind === "line" && sent.status === "OPENED ✓✓" && sent.tone === "ok", "an opened send reads OPENED ✓✓, ok");
 ok(sent?.kind === "line" && sent.text === "You sent EFAS Pentest to Erfan", "send line text");
 const cont = lines.find((x) => x.kind === "line" && x.icon === "msg");
-ok(cont?.kind === "line" && cont.text === "Mahdi continued NR Kantoor Project Status · v2", "continued item line text");
+ok(cont?.kind === "line" && cont.text === "You continued Mahdi's NR Kantoor Project Status · v2", "continued item line text");
 ok(!JSON.stringify(f).includes("Gone"), "a dismissed send is absent");
 ok(f.earlier[0].at >= f.earlier[1].at, "newest first");
 
