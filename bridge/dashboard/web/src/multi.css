@@ -207,3 +207,6 @@ button.ma-card-open:hover { background: var(--ac-08, color-mix(in srgb, var(--ac
 .ma-set-tool { display: flex; align-items: center; gap: 8px; padding: 3px 0; }
 .ma-set-tool code { font-family: var(--mono); font-size: var(--t10); color: var(--tx); overflow-wrap: anywhere; }
 .ma-set-all { margin-top: 10px; }
+
+/* A turn the bridge sent to carry on: one line, not a message you wrote. */
+.ma-resumed { padding: 4px 0 4px var(--rail, 0); font-size: var(--t10); letter-spacing: .4px; color: var(--muted-2); }

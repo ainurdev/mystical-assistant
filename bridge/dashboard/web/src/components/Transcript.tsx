@@ -17,7 +17,7 @@ import { hhmm, useClock12 } from "../lib/surfaces";
 import { RuneSpirit } from "./hud/RuneSpirit";
 import { UnfinishedPlate } from "./TeamBar";
 import { LimitBlock, type LimitLive } from "./LimitCard";
-import { limitNudge } from "../lib/limit";
+import { limitNudge, resumeNudge } from "../lib/limit";
 import { parseFrame, promptLabel } from "../lib/multi";
 import { useMultiOn } from "../lib/multistore";
 import { IncomingNote } from "./MultiRows";
@@ -222,6 +222,7 @@ function TurnBlock({
   // stretch of work (data-limit / data-cont in index.css).
   const limitHit = turn.outcome?.code === "limit";
   const nudge = limitNudge(turn.prompt);
+  const resumed = useMultiOn() ? resumeNudge(turn.prompt) : null;
   // ⇄: the channel handing this turn another agent's words (lib/multi parseFrame).
   const frame = parseFrame(turn.prompt);
   // Notes get their own tier only on another agent's turn, whatever the session
@@ -245,11 +246,12 @@ function TurnBlock({
     // on the wrapper), where they make a turn one card: prompt, work, answer.
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
-      data-limit={limitHit && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge ? "" : undefined}
+      data-limit={limitHit && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge || resumed ? "" : undefined}
       data-ctx-label={promptLabel(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}
         style={sent ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
-        {turn.prompt && !nudge && (
+        {resumed && <div className="ma-resumed" role="note">↻ {resumed}</div>}
+        {turn.prompt && !nudge && !resumed && (
           <div data-prompt-idx={promptIdx}>
             {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
               : frame && frame.kind !== "user" ? <IncomingNote frame={frame} at={turn.started} />

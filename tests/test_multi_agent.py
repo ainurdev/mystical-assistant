@@ -780,6 +780,15 @@ def test_has_copy_is_whats_on_disk(tmp_path, monkeypatch, on):
     assert agent_tree.tree(chat)[0]["has_copy"] is False
 
 
+def test_a_background_agent_the_cli_marked_finished_is_done():
+    """CLI 2.1.318 no longer records the end as a user message; its meta file says so."""
+    from bridge import agents
+    meta = {"requestShape": "background", "finished": True}
+    assert agents._finished(meta, "agent-1", set()) is True
+    assert agents._finished({"requestShape": "background"}, "agent-1", set()) is False
+    assert agents._finished({"requestShape": "background"}, "agent-1", {"agent-1"}) is True
+
+
 def test_goal_is_offered_on_an_agent_only_when_on(tmp_path):
     s = _session(tmp_path)
     assert profiles.claude_only_refusal(s, "goal")

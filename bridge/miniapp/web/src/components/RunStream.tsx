@@ -43,6 +43,7 @@ import { DelegationRow, IncomingNote, MergeLine, SaidTier, SwitchDivider } from 
 import { useFoldsOpen } from "../lib/folds";
 import { ImageLightbox, MediaThumb, isVideo, type Clip } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
+import { useExperimental } from "../lib/multi";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { askBack } from "../lib/askback";
@@ -996,7 +997,7 @@ function FinalResult({
         <div className="text-xs text-[var(--tg-hint)]">
           {at != null ? `${hhmm(at)} · ` : ""}{elapsed.toFixed(1)}s
           {typeof tokens === "number" && tokens > 0
-            ? ` · ${tokens < 1000 ? tokens : `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k`} tok`
+            ? ` · ${tokens < 1000 ? tokens : tokens < 1e6 ? `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}k` : `${(tokens / 1e6).toFixed(1)}M`} tok`
             : ""}
         </div>
       )}
@@ -1144,6 +1145,11 @@ export const RunStream = memo(function RunStream({
   // as the run's result — so only the result card draws it. A native session
   // emits no result event, so its final text keeps rendering as text.
   const resultText = (events.find((e) => e.type === "result")?.result ?? "").trim();
+  // A turn can hold several results (a background agent's wake-up carries on in the
+  // same turn): only the last is the answer.
+  const multiOn = useExperimental();
+  const lastResult = multiOn ? events.findLastIndex((e) => e.type === "result") : -1;
+  const resultTexts = new Set(events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : [])));
 
   // Is the next thing the model does asking a question card?
   const asksNext = (i: number): boolean => {
@@ -1164,7 +1170,7 @@ export const RunStream = memo(function RunStream({
       case "text": {
         const text = event.text;
         if (!text) return null;
-        if (resultText && text.trim() === resultText) return null;
+        if (resultTexts.has(text.trim())) return null;
         // A turn ending on an AskUserQuestion emits no result event, so the
         // prose explaining the card used to render bare while every other
         // answer got a card. Box it like one.
@@ -1325,6 +1331,14 @@ export const RunStream = memo(function RunStream({
       case "merge":
         return <MergeLine key={i} name={event.name} state={event.state} />;
       case "result":
+        if (lastResult >= 0 && i !== lastResult) {
+          return (
+            <details key={i} className="ma-update">
+              <summary>Update · {event.result.split("\n")[0].slice(0, 80)}</summary>
+              <Markdown className="text-sm leading-normal">{event.result}</Markdown>
+            </details>
+          );
+        }
         return (
           <div key={i} className="relative -ml-3 pl-3">
             <RailNode />

@@ -19,7 +19,7 @@ import { RunMonitor } from "../components/RunMonitor";
 import { AgentBar, type AgentTab } from "../components/AgentSwitch";
 import { AgentGrid } from "../components/AgentGrid";
 import { IncomingNote } from "../components/MultiRows";
-import { parseFrame } from "../lib/frame";
+import { parseFrame, resumeLine } from "../lib/frame";
 import { providerName, useChannel } from "../lib/multi";
 import { useChatBg } from "../lib/toolwidget";
 import { hhmm } from "../lib/utils";
@@ -362,6 +362,7 @@ function RunPage({ barKey }: { barKey: string }) {
         const working = isActive && turn.status === "running" && activeTurn.pending.length === 0;
         // A turn another agent's message started: its prompt isn't your words.
         const framed = experimental ? parseFrame(turn.prompt) : null;
+        const resumed = experimental ? resumeLine(turn.prompt) : null;
         // Per turn, because a chat can change provider. No runtime means default
         // Claude, except on the live turn, which may not have its row filled in yet.
         const said = experimental && (turn.runtime ? turn.runtime.startsWith("acp:") : isActive && onAgent);
@@ -415,7 +416,8 @@ function RunPage({ barKey }: { barKey: string }) {
                     ))}
                   </div>
                 )}
-                {turn.prompt && !(framed && !framed.own) && (
+                {resumed && <div className="ma-resumed" role="note">↻ {resumed}</div>}
+                {turn.prompt && !resumed && !(framed && !framed.own) && (
                   <div className="pbub whitespace-pre-wrap rounded-2xl rounded-br-sm bg-[var(--tg-button)] px-3 py-2 text-sm text-[var(--tg-button-text)]">
                     {framed ? framed.body : turn.prompt}
                     {turn.started != null && <span className="pstamp">{hhmm(turn.started)}</span>}

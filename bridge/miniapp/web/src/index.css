@@ -1724,3 +1724,8 @@ button.ms-del:active { background: var(--ac-06); }
   box-shadow: 0 0 0 1px rgb(255 255 255 / .14);
 }
 .lb-close:active { background: rgb(0 0 0 / .8); }
+
+/* Bridge-sent turns and earlier results in a turn: quiet, not your words or the answer. */
+.ma-resumed { padding: 2px 0 6px; font-size: 11px; letter-spacing: .03em; color: var(--muted-2); }
+.ma-update { margin: 4px 0; font-size: 13px; color: var(--tg-hint); }
+.ma-update > summary { cursor: pointer; padding: 4px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

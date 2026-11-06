@@ -4209,12 +4209,13 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam] .isle-pill { border-radius: 999px !important; }
 [data-fam] .isle > div:last-child > * { transition: opacity .2s ease; }
 [data-fam] .isle-glass {
-  background: color-mix(in srgb, var(--panel) 42%, transparent) !important;
+  /* Enough ink that transcript text passing under can't be read through the title. */
+  background: color-mix(in srgb, var(--panel) 82%, transparent) !important;
   backdrop-filter: blur(14px) saturate(1.2) !important;
   transition: background-color .2s ease;
 }
 [data-fam] .isle button:first-child > span { font-family: var(--ui-font); }
-[data-fam] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .55; }
+[data-fam] .isle:not(:hover, :focus-within) > div:last-child > * { opacity: .7; }
 [data-fam] .isle:is(:hover, :focus-within) { border-color: var(--line2) !important; }
 [data-fam] .isle:is(:hover, :focus-within) .isle-glass { background: color-mix(in srgb, var(--panel) 80%, transparent) !important; }
 [data-fam] .np-meta { height: 20px !important; }

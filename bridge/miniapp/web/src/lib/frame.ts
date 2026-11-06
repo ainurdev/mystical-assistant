@@ -4,6 +4,16 @@
 // module's own wording: a frame it stops writing falls through to the generic note.
 // Pure.
 
+/** A turn the bridge sent after something cut it off (bridge/recovery.py, runner.py):
+ *  its words aren't yours, so it reads as one line. null for anything else. */
+export function resumeLine(prompt: string | null | undefined): string | null {
+  if (!prompt?.startsWith("⏮ ")) return null;
+  if (prompt.includes("bridge restart")) return "The bridge restarted. It carried on from here.";
+  if (prompt.includes("hang watchdog")) return "It went silent and was restarted. It carried on from here.";
+  if (prompt.includes("cut off by an error")) return "An error cut it off. It carried on from here.";
+  return null;
+}
+
 export const FRAME = "⇄";
 
 export type Framed = {

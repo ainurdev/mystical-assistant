@@ -12,6 +12,8 @@ import { selectionMd } from "../lib/selmd";
 import { PermissionCard } from "./PermissionCard";
 import { QuestionCard } from "./QuestionCard";
 import { AskMarker, AskRecord } from "./AskDock";
+import { fmtTokens } from "../lib/week";
+import { useMultiOn } from "../lib/multistore";
 import { ImageLightbox, MediaThumb, ZoomButton, type Clip, type Shown } from "./ImageLightbox";
 import { askBack, type AskBack } from "../lib/askback";
 import { hhmm, useClock12, wall } from "../lib/surfaces";
@@ -2392,6 +2394,11 @@ export const RunStream = memo(function RunStream({
   // as the run's result — so the same words used to print twice, the second time
   // in the RESULT box. Only the box is drawn. A native session emits no result
   // event, so its final text keeps rendering as text.
+  const multiOn = useMultiOn();
+  // A turn can hold several results: a background agent's wake-up carries on in the
+  // same process and turn. Only the last is the answer; the rest read as updates.
+  const lastResult = multiOn ? events.findLastIndex((e) => e.type === "result") : -1;
+  const resultTexts = new Set(events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : [])));
   const resultText = (events.find((e) => e.type === "result")?.result ?? "").trim();
   const dossier = toolStyle === "dossier";
   // A native session emits no result event, so its closing words are a plain
@@ -2430,7 +2437,7 @@ export const RunStream = memo(function RunStream({
   const wearsPause = (j: number): boolean => {
     const e = events[j];
     if (e?.type === "thinking") return !!e.text && !slow(e.ms);
-    return e?.type === "text" && !!e.text && !(resultText && e.text.trim() === resultText)
+    return e?.type === "text" && !!e.text && !resultTexts.has(e.text.trim())
       && !(asksNext(j) || (dossier && j === finalText));
   };
   const pauseAt = (j: number): number => {
@@ -2449,7 +2456,7 @@ export const RunStream = memo(function RunStream({
       case "text": {
         const text = event.text;
         if (!text) return null;
-        if (resultText && text.trim() === resultText) return null;
+        if (resultTexts.has(text.trim())) return null;
         if (asksNext(i) || (dossier && i === finalText))
           return (
             <FinalResult
@@ -2693,6 +2700,7 @@ export const RunStream = memo(function RunStream({
           <FinalResult
             key={i}
             result={event.result}
+            update={lastResult >= 0 && i !== lastResult}
             // A stored event knows when it landed; a live one doesn't carry
             // `at` yet, so the turn's own start plus its wall time says it.
             at={event.at ?? (turnStarted && event.elapsed ? turnStarted + event.elapsed : undefined)}
@@ -2939,7 +2947,7 @@ export const RunStream = memo(function RunStream({
       // run's divider, the answer's streamed copy, which draws nothing) keeps
       // its own row, and the tally gets one of its own.
       const wears = !!e && ((e.type === "thinking" && !!e.text)
-        || (e.type === "text" && !!e.text && !(resultText && e.text.trim() === resultText)));
+        || (e.type === "text" && !!e.text && !resultTexts.has(e.text.trim())));
       const quiet = !cats.length;
       return [
         head && !wears ? rowOf(head) : null,
@@ -3030,7 +3038,7 @@ export const RunStream = memo(function RunStream({
   // the answer, and not the streamed copy of a result, which draws nothing.
   const isNote = (seg: Seg): boolean => {
     const e = events[seg.idx[0]];
-    return seg.kind === "prose" && e.type === "text" && !!e.text && !(resultText && e.text.trim() === resultText);
+    return seg.kind === "prose" && e.type === "text" && !!e.text && !resultTexts.has(e.text.trim());
   };
   const zones = !dossier ? [] : saidTier ? zonesWithSaid(segs, isTop, isNote) : zonesOf(segs, isTop);
   // The last note of a turn that left no answer says so.
@@ -3194,8 +3202,11 @@ export function FinalResult({
   onQuote,
   view,
   askDocked = false,
+  update = false,
 }: {
   result: string;
+  /** An earlier result in a turn that went on after it: a progress update, not the answer. */
+  update?: boolean;
   /** Epoch seconds the answer landed, for the clock in the meta row. */
   at?: number;
   elapsed?: number;
@@ -3240,7 +3251,7 @@ export function FinalResult({
   const lines = body.split("\n").length;
   // A live result stays open — you're watching it land. Long ones from earlier in
   // the session arrive folded.
-  const [open, setOpen] = useState(land || lines <= RESULT_FOLD_LINES);
+  const [open, setOpen] = useState(update ? lines <= 3 : land || lines <= RESULT_FOLD_LINES);
   return (
     // `--tone` rather than four inline colours: the answer is the loudest thing
     // in a turn, so every language has to be able to re-draw it (a plate, a pair
@@ -3251,16 +3262,16 @@ export function FinalResult({
       <RailNode />
       <div ref={boxRef} className="res group/res" data-land={land ? "" : undefined}>
         <div className="res-head">
-          <span className="res-lab">{label ?? (dossier ? (bad ? "ANSWER // ERROR" : "ANSWER") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
+          <span className="res-lab">{update ? "UPDATE" : label ?? (dossier ? (bad ? "ANSWER // ERROR" : "ANSWER") : `RESULT // ${bad ? "ERROR" : "OK"}`)}</span>
           {drawn && view?.job.kind && <span className="res-kind"><JobTag job={view.job} /></span>}
           <span className="res-meta">
             {at != null && <span title="when the answer landed">{hhmm(at, h12)}</span>}
             {typeof elapsed === "number" && elapsed > 0 && (
               <span title="wall time">{wall(elapsed)}</span>
             )}
-            {typeof tokens === "number" && tokens > 0 && (
+            {!update && typeof tokens === "number" && tokens > 0 && (
               <span title="tokens this turn spent">
-                {tokens < 1000 ? tokens : `${(tokens / 1000).toFixed(tokens < 10_000 ? 1 : 0)}K`} TOK
+                {fmtTokens(tokens)} TOK
               </span>
             )}
           </span>
