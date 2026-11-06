@@ -48,6 +48,8 @@ interface Props {
   editing?: string | null;
   // Puts the path in the prompt box (a row's @, and its menu).
   onAddToPrompt?: (path: string) => void;
+  // The .mystical row's way to its panel, while the panel exists (the experimental switch).
+  onOpenMystical?: () => void;
 }
 
 type Row = { key: string; dir: boolean; depth: number; name: string; path: string };
@@ -79,7 +81,7 @@ function countAbove(paths: Iterable<string>): Map<string, number> {
   return out;
 }
 
-export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, editing, onAddToPrompt }: Props) {
+export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, editing, onAddToPrompt, onOpenMystical }: Props) {
   const [paths, setPaths] = useState<string[]>([]);
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
   const [ignored, setIgnored] = useState<string[]>([]);
@@ -358,7 +360,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
           const open = r.dir && !collapsed.has(r.path);
           const nMine = r.dir && !open ? mineDirs.get(r.path) : undefined;
           const nChg = r.dir ? changedDirs.get(r.path) : undefined;
-          return (
+          const row = (
             <button key={r.key} className="trow" onClick={() => (r.dir ? toggleDir(r.path) : onOpenFile(r.path, !!st))}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -404,6 +406,13 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
               )}
             </button>
           );
+          // A sibling of the row, not inside it: a button can't hold a button.
+          return r.dir && r.path === ".mystical" && onOpenMystical ? (
+            <div key={r.key} className="my-filerow">
+              {row}
+              <button type="button" className="my-open" title="See .mystical by kind: sizes, previews, what's safe to clear" onClick={onOpenMystical}>PANEL</button>
+            </div>
+          ) : row;
         })}
         </div>
         )}
