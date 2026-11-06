@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { type Weather } from "../../api";
 import { NotificationCenter } from "./Notifications";
+import { capDate } from "../../lib/capdate";
 import { setClock12 } from "../../lib/surfaces";
 import { isMacApp, linuxWindow, macWindow } from "../../lib/mac";
 import { Minus, PanelLeftClose, Plus, Settings, Square, X, type LucideIcon } from "lucide-react";
@@ -296,8 +297,7 @@ export function Strip(props: StripProps) {
   const clockMini = fmt12 ? `${h24 % 12 || 12}:${mm}` : `${hh}:${mm}`;
   const ampm = h24 < 12 ? "AM" : "PM";
   const wxTempStr = weather.temp === null ? "—" : `${weather.temp}°${weather.unit}`;
-  // The cap reads the number alone; the popover below says which unit.
-  const wxTemp = weather.temp === null ? "—" : `${weather.temp}°`;
+  const cap = capDate(new Date(), weather); // re-renders with the clock prop, so the date turns at midnight
 
   // The clock and the weather line beside it are one handle: a click re-fires
   // as a contextmenu under the instrument and App builds the rows. A popover
@@ -338,18 +338,15 @@ export function Strip(props: StripProps) {
             handle again) over Claude·FM. */}
         <span style={{ display: "flex", flexDirection: "column", gap: 3 }}>
           <button
-            className="wx"
+            className="wx capdate"
             onClick={(e) => openMenu(e.currentTarget)}
             aria-haspopup="menu"
             title={`${[weather.cond, weather.loc].filter(Boolean).join(" · ") || "weather"} — click for the menu`}
             {...clockHov}
-            style={{ ...bare, gap: 5, height: 13, color: "var(--txd)" }}
+            style={{ ...bare, flex: "0 1 auto", height: 26 }}
           >
-            <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" style={{ flex: "none" }}>
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.4 1.4M17.6 17.6L19 19M19 5l-1.4 1.4M6.4 17.6L5 19" />
-            </svg>
-            <span className="trim" style={{ fontFamily: "var(--mono)", fontSize: "var(--t95)", color: clockHover ? "var(--txh)" : "var(--txm)" }}>{wxTemp}</span>
+            <span style={{ fontSize: "var(--t9)", fontWeight: 800, letterSpacing: "1.4px", color: clockHover ? "var(--txh)" : "var(--txm)" }}>{cap.date}</span>
+            {cap.line2 && <span style={{ fontSize: "var(--t11)", color: "var(--txl)" }}>{cap.line2}</span>}
           </button>
         </span>
         {clockOpen && (

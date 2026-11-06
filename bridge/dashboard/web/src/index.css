@@ -4839,7 +4839,7 @@ a.flc-path:hover { color: var(--acc); border-bottom-color: var(--acc); }
 [data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button {
   width: 36px; height: 36px; margin: 0 auto; border: 0 !important; border-radius: 999px; transition: background .15s ease, color .15s ease;
 }
-[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile { width: 40px; height: 46px; }
+[data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile { width: 40px; height: 50px; }
 [data-fam="pebble"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"] {
   background: color-mix(in oklab, var(--acc) 18%, var(--panel)) !important; color: var(--acc) !important;
 }
@@ -6382,6 +6382,10 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
    height, so a word appearing never moves the rail. */
 .rtile-ico { position: relative; display: flex; }
 .rtile-v { font-size: var(--t9); font-weight: 800; line-height: 1; letter-spacing: .02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rtile-n { font-size: var(--t85); font-weight: 800; line-height: 1; letter-spacing: .6px; white-space: nowrap; color: var(--txg); }
+.rtile[aria-current="true"] .rtile-n { color: var(--acc); }
+.capdate { min-width: 0; border-left: 1px solid var(--line2); padding-left: 9px; flex-direction: column; align-items: flex-start !important; justify-content: center; gap: 1px; text-align: left; }
+.capdate > span { display: block; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .rtile[data-tone="acc"] .rtile-v { color: color-mix(in srgb, var(--acc) 72%, var(--txb)); }
 .rtile[data-tone="warn"] .rtile-v { color: var(--warn); }
 .rtile[data-tone="ask"] { --tone: var(--ask, var(--warn)); }
@@ -7090,7 +7094,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button[aria-current="true"] {
   background: var(--side-row) !important; color: var(--acc) !important;
 }
-[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile { width: 40px !important; height: 46px !important; }
+[data-fam="middle-earth"] .hudgrid > div:last-child > div:last-child > div:last-child > button.rtile { width: 40px !important; height: 50px !important; }
 [data-fam="middle-earth"] .hudgrid > div:last-child button > span.rounded-full { box-shadow: 0 0 0 2px var(--side); }
 [data-fam="middle-earth"] .rcap > div:last-child button { color: var(--txm) !important; }
 

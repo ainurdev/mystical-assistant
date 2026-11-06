@@ -2394,7 +2394,7 @@ export function App() {
   const waitsOnYou = turns.some((t) => t.pending.length > 0);
   const rightTabs: PanelTab[] = [
     {
-      id: "turns", label: "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true, group: "session",
+      id: "turns", short: "TURNS", label: "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true, group: "session",
       ask: waitsOnYou, hint: waitsOnYou ? "one waits on you" : undefined,
       render: () => (
         <TurnsPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
@@ -2413,12 +2413,12 @@ export function App() {
     },
     // Hidden while SKILL PATHS is off — no path is being set.
     ...(ai.router ? [{
-      id: "flow", label: "Flow", icon: <Route {...RAIL} />, ownScroll: true, group: "session",
+      id: "flow", short: "FLOW", label: "Flow", icon: <Route {...RAIL} />, ownScroll: true, group: "session",
       hint: "the path this session is on",
       render: () => <FlowPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} ctxTokens={contextTokens} />,
     }] : []),
     {
-      id: "files", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree", group: "session",
+      id: "files", short: "FILES", label: "Files", icon: <FolderTree {...RAIL} />, ownScroll: true, scope: "worktree", group: "session",
       hint: filesEdits.edited.size ? `${filesEdits.edited.size} edited this session` : undefined,
       render: () => (
         <FilesPanel
@@ -2438,11 +2438,11 @@ export function App() {
       ),
     },
     {
-      id: "git", label: "Git", group: "session",
+      id: "git", short: "GIT", label: "Git", group: "session",
       hint: [dirtyFiles ? `${dirtyFiles} changed` : "", gitSync ?? "", treeFetch?.busy ? "checking origin" : ""]
         .filter(Boolean).join(" · ") || undefined,
       icon: <GitBranch {...RAIL} />, ownScroll: true, scope: "worktree",
-      badge: dirtyFiles ? railCount(dirtyFiles) : gitSync, busy: !!treeFetch?.busy,
+      badge: dirtyFiles ? `${railCount(dirtyFiles)} EDITS` : gitSync, busy: !!treeFetch?.busy,
       render: () => (
         <GitPanel
           project={sessionProject} branch={sessionBranch} git={sessionGit} autoFetch={treeFetch}
@@ -2457,7 +2457,7 @@ export function App() {
     },
     // Every branch and its next step (lib/branchrows); ⋯ and right-click hold the rest.
     {
-      id: "branches", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project", group: "project",
+      id: "branches", short: "BRANCH", label: "Branches", icon: <GitFork {...RAIL} />, ownScroll: true, scope: "project", group: "project",
       render: () => (
         <BranchesPanel project={sessionProject} branch={sessionBranch}
           sessions={sessions} status={statusMap} nonce={gitNonce}
@@ -2473,7 +2473,7 @@ export function App() {
     },
     // Hidden while LESSONS is off — nothing is being written.
     ...(ai.learn ? [{
-      id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true, group: "project",
+      id: "learn", short: "LEARN", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true, group: "project",
       badge: unreadLessons ? railCount(unreadLessons) : null, hint: unreadLessons ? `${unreadLessons} unread` : undefined,
       render: () => (
         <LearnPanel project={sessionProject} read={lessonsRead}
@@ -2481,7 +2481,7 @@ export function App() {
       ),
     }] : []),
     ...(rivendellOn ? [{
-      id: "rivendell", label: "Rivendell tasks", hint: rivendellDown ? "link broken" : undefined, group: "project",
+      id: "rivendell", short: "TASKS", label: "Rivendell tasks", hint: rivendellDown ? "link broken" : undefined, group: "project",
       icon: <RivendellIcon {...RAIL} />, ownScroll: true, scope: "project" as const, alert: rivendellDown,
       render: () => (
         <RivendellTasks project={sessionProject} onOpenSession={(id) => { openSession(id); toChat(); }}
@@ -2489,8 +2489,8 @@ export function App() {
       ),
     }] : []),
     ...(rivendellOn ? [{
-      id: "team", label: "Team", hint: teamNew ? `${teamNew} new` : undefined, group: "you",
-      icon: <Users {...RAIL} />, ownScroll: true, badge: teamNew ? railCount(teamNew) : null,
+      id: "team", short: "TEAM", label: "Team", hint: teamNew ? `${teamNew} new` : undefined, group: "you",
+      icon: <Users {...RAIL} />, ownScroll: true, badge: teamNew ? `${railCount(teamNew)} NEW` : null,
       render: () => (
         <TeamPanel data={team} fail={teamFail}
           sessionTitle={selected && !isReadOnly(selected.origin) ? selected.title || "this session" : null}
@@ -2503,7 +2503,7 @@ export function App() {
       ),
     }] : []),
     {
-      id: "usage", label: "Usage", group: "you", ownScroll: true,
+      id: "usage", short: "USAGE", label: "Usage", group: "you", ownScroll: true,
       icon: usageWin ? <RailRing left={usageWin.left} /> : <Gauge {...RAIL} />,
       badge: usageWin && usageWin.left < 25 ? `${usageWin.left}%` : null, low: true,
       hint: usageWin ? `${usageWin.left}% of the ${usageWin.tag === "WK" ? "week" : "5-hour window"} left · refills in ${fmtReset(usageWin.resets_at)}` : undefined,
