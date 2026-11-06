@@ -3247,13 +3247,24 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
   // null = not read; the Codex seat's login as the last TEST or turn found it.
   const [codexIn, setCodexIn] = useState<boolean | null>(null);
   useEffect(() => {
-    void api.councilSettings().then(setS).catch(() => setErr("Couldn't read the council's settings."));
+    void api.councilSettings().then((r) => { latest.current = r; setS(r); }).catch(() => setErr("Couldn't read the council's settings."));
     void api.acpAgents().then((r) => setCodexIn(
       Object.entries(r.options).some(([k, o]) => k.startsWith("codex|") && o.signed_in === true))).catch(() => {});
   }, []);
-  async function save(patch: Partial<CouncilSettings>) {
+  // Each click steps from the latest value, not the rendered one, so fast clicks
+  // accumulate; only the newest request's answer (the clamped value) lands.
+  const latest = useRef<CouncilSettings | null>(null);
+  const seq = useRef(0);
+  async function save(patch: (c: CouncilSettings) => Partial<CouncilSettings>) {
+    if (!latest.current) return;
     setErr(null);
-    try { setS(await api.saveCouncilSettings(patch)); } catch { setErr("Couldn't save that."); }
+    latest.current = { ...latest.current, ...patch(latest.current) };
+    setS(latest.current);
+    const id = ++seq.current;
+    try {
+      const r = await api.saveCouncilSettings(latest.current);
+      if (id === seq.current) { latest.current = r; setS(r); }
+    } catch { if (id === seq.current) setErr("Couldn't save that."); }
   }
   const name = (rel: string) => projects.groups.find((g) => g.rel === rel)?.name ?? rel;
   const free = s ? projects.groups.filter((g) => !s.codex_projects.includes(g.rel)) : [];
@@ -3266,22 +3277,22 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
         <div className="aim-vfields" style={{ gridTemplateColumns: "1fr" }}>
           <div className="aim-vfield row">
             <div><b>Pass at</b><span>the average both reviewers have to reach, out of 10</span></div>
-            <Stepper label="the bar" text={s.bar.toFixed(1)} onStep={(d) => void save({ bar: s.bar + d * 0.5 })} />
+            <Stepper label="the bar" text={s.bar.toFixed(1)} onStep={(d) => void save((c) => ({ bar: c.bar + d * 0.5 }))} />
           </div>
           <div className="aim-vfield row">
             <div><b>Rounds at most</b><span>a round is two reviews, then one fix turn in the session</span></div>
-            <Stepper label="the rounds" text={String(s.max_rounds)} onStep={(d) => void save({ max_rounds: s.max_rounds + d })} />
+            <Stepper label="the rounds" text={String(s.max_rounds)} onStep={(d) => void save((c) => ({ max_rounds: c.max_rounds + d }))} />
           </div>
           <div className="aim-vfield row">
             <div><b>Stop early</b><span>when a round doesn't raise the score, and ask you</span></div>
-            <Switch on={s.stop_early} label="Stop early" onClick={() => void save({ stop_early: !s.stop_early })} />
+            <Switch on={s.stop_early} label="Stop early" onClick={() => void save((c) => ({ stop_early: !c.stop_early }))} />
           </div>
           <div className="aim-vfield">
             <b>Reviewers</b>
             <span>each reads the work fresh, in a session of its own</span>
             <div className="aim-vfield row" style={{ border: 0, padding: 0 }}>
               <div><b>Claude</b><span>/code-review · every project</span></div>
-              <Switch on={s.claude} label="Claude reviews" onClick={() => void save({ claude: !s.claude })} />
+              <Switch on={s.claude} label="Claude reviews" onClick={() => void save((c) => ({ claude: !c.claude }))} />
             </div>
             <div className="aim-vfield row" style={{ border: 0, padding: 0 }}>
               <div>
@@ -3289,7 +3300,7 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
                 <span>{codexIn ? "signed in" : codexIn === false ? "not signed in" : "sign in to use Codex"} · one sign-in with your ChatGPT plan</span>
               </div>
               {!codexIn && <button type="button" className="aim-xbtn" onClick={onSignIn}>Sign in</button>}
-              <Switch on={s.codex} label="Codex reviews" onClick={() => void save({ codex: !s.codex })} />
+              <Switch on={s.codex} label="Codex reviews" onClick={() => void save((c) => ({ codex: !c.codex }))} />
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
               <b>Codex may review</b>
@@ -3297,12 +3308,12 @@ function CouncilFold({ openSec, projects, onSignIn }: { openSec: string | null; 
               {s.codex_projects.map((rel) => (
                 <span key={rel} className="aim-chip">
                   {name(rel)}{" "}
-                  <button type="button" aria-label={`Stop Codex reviewing ${name(rel)}`} onClick={() => void save({ codex_projects: s.codex_projects.filter((r) => r !== rel) })}
+                  <button type="button" aria-label={`Stop Codex reviewing ${name(rel)}`} onClick={() => void save((c) => ({ codex_projects: c.codex_projects.filter((r) => r !== rel) }))}
                     style={{ all: "unset", cursor: "pointer" }}>×</button>
                 </span>
               ))}
               <select className="aim-sel" aria-label="Pick projects Codex may review" value="" style={{ width: "auto" }}
-                onChange={(e) => e.target.value && void save({ codex_projects: [...s.codex_projects, e.target.value] })}>
+                onChange={(e) => { const v = e.target.value; if (v) void save((c) => ({ codex_projects: [...c.codex_projects, v] })); }}>
                 <option value="">+ Pick projects</option>
                 {free.map((g) => <option key={g.rel} value={g.rel}>{g.name}</option>)}
               </select>
@@ -3589,6 +3600,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
       <CouncilFold openSec={openSec} projects={projects} onSignIn={() => {
         setGoto("AGENTS");
         setTimeout(() => document.querySelector("[data-sec=\"ACCOUNTS\"]")?.scrollIntoView({ block: "start" }), 50);
+        setTimeout(() => setGoto(null), 0);
       }} />
       {/* Claude's servers (`claude mcp`). Kimi Code reads its own ~/.kimi-code/mcp.json;
           a project's .mcp.json reaches both. */}
