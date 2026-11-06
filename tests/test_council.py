@@ -55,3 +55,28 @@ def test_store_council_column_round_trip():
     assert store.get_council(sid) == {"status": "passed"}
     store.set_council(sid, None)
     assert store.get_council(sid) is None
+
+
+def test_parse_review_never_raises():
+    assert council.parse_review('{"score": 8, "findings": 5}')["findings"] == []
+    assert council.parse_review('{"score": 8, "findings": [1, null, {"title": "t", "file": "a"}]}')["findings"][0]["title"] == "t"
+    assert council.parse_review('{"a":' + "[" * 100000) is None
+
+
+def test_lineless_finding_can_be_dismissed_by_its_id():
+    f = {"id": "a.py:0", "sev": "must", "file": "a.py", "line": None, "title": "T", "by": ["claude"]}
+    assert council.blocking([f], ["claude"], ["a.py:0"]) == []
+    assert council.blocking([f], ["claude"], []) == [f]
+
+
+def test_answers_do_not_cross_lines():
+    assert council.answers("1. NO:\n2. fixed") == {}
+    assert council.answers("1. NO: why\n2. NO: other") == {1: "why", 2: "other"}
+
+
+def test_save_settings_survives_bad_input():
+    before = council.save_settings({"bar": 8, "max_rounds": 4, "codex_projects": ["/a"]})
+    s = council.save_settings({"bar": "x", "max_rounds": "y", "codex_projects": 5, "stop_early": "yes"})
+    assert (s["bar"], s["max_rounds"], s["codex_projects"]) == (8.0, 4, ["/a"])
+    assert council.save_settings({"bar": float("nan")})["bar"] == 8.0
+    assert council.save_settings({"bar": float("inf")})["bar"] == 8.0

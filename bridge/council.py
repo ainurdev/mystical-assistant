@@ -20,6 +20,7 @@ Not built: a chairman model, a push gate (RUN is the only start), a third
 reviewer, live updates over SSE, the Mini App and the bot.
 """
 import json
+import math
 import re
 
 from . import store
@@ -44,14 +45,20 @@ def settings() -> dict:
 
 def save_settings(patch: dict) -> dict:
     s = settings()
-    if "bar" in patch:
-        s["bar"] = min(10.0, max(1.0, round(float(patch["bar"]) * 2) / 2))
-    if "max_rounds" in patch:
+    try:    # a bad value keeps the current setting; this sits behind an HTTP route
+        bar = float(patch["bar"])
+        if math.isfinite(bar):
+            s["bar"] = min(10.0, max(1.0, round(bar * 2) / 2))
+    except (KeyError, TypeError, ValueError):
+        pass
+    try:
         s["max_rounds"] = min(10, max(1, int(patch["max_rounds"])))
+    except (KeyError, TypeError, ValueError, OverflowError):
+        pass
     for k in ("stop_early", "claude", "codex"):
         if k in patch:
             s[k] = bool(patch[k])
-    if "codex_projects" in patch:
+    if isinstance(patch.get("codex_projects"), list):
         s["codex_projects"] = [p for p in patch["codex_projects"] if isinstance(p, str)]
     store.set_setting("council", json.dumps(s))
     return settings()
@@ -64,7 +71,7 @@ def parse_review(text: str) -> "dict | None":
             obj, _ = dec.raw_decode(text, i)
             if isinstance(obj, dict) and "score" in obj:
                 last = obj
-        except ValueError:
+        except (ValueError, RecursionError):
             pass
         i = text.find("{", i + 1)
     if last is None:
@@ -73,7 +80,8 @@ def parse_review(text: str) -> "dict | None":
     if isinstance(score, bool) or not isinstance(score, (int, float)) or not 1 <= score <= 10:
         return None
     findings = []
-    for f in last.get("findings") or []:
+    raw = last.get("findings")
+    for f in raw if isinstance(raw, list) else []:
         if not isinstance(f, dict) or not f.get("title"):
             continue
         line = f.get("line")
@@ -119,9 +127,11 @@ def _from_id(i: str) -> dict:
 
 def blocking(findings: list, ran: list, dismissed: list) -> list:
     gone = [_from_id(d) for d in dismissed]
+    # A line-less finding has id file:0, which only an identical id can dismiss.
     return [f for f in findings
             if f["sev"] == "must" and all(s in f["by"] for s in ran)
-            and not any(same(f, g) for g in gone)]
+            and f["id"] not in dismissed
+            and not any(g["line"] and same(f, g) for g in gone)]
 
 
 def decide(c: dict) -> str:
@@ -151,4 +161,4 @@ def fix_prompt(c: dict) -> str:
 
 def answers(text: str) -> dict:
     return {int(m.group(1)): m.group(2).strip()
-            for m in re.finditer(r"^\s*(\d+)[.)]\s*NO\b[:\s-]*(.+)$", text, re.M)}
+            for m in re.finditer(r"^[ \t]*(\d+)[.)][ \t]*NO\b(?:[ \t]*[:-][ \t]*|[ \t]+)(\S.*)$", text, re.M)}
