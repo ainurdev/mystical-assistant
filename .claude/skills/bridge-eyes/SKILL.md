@@ -1,13 +1,17 @@
 ---
 name: bridge-eyes
-description: Use when frontend work in this repo needs to be looked at rather than asserted — after changing anything under bridge/dashboard/web, bridge/miniapp/web or site/, or when the user says "screenshot it", "does it look right", "show me the dashboard", or asks you to verify a UI change. Covers headless capture in WSL and driving the live UIs over CDP.
+description: Use when frontend work in this repo needs to be looked at rather than asserted — after changing anything under bridge/dashboard/web, bridge/miniapp/web or site/, or when the user says "screenshot it", "does it look right", "show me the dashboard", or asks you to verify a UI change. Covers headless capture in WSL and on the Mac (before/after layout compares included), and driving the live UIs over CDP.
 user-invocable: true
 ---
 
 # Looking at the UIs headlessly
 
-There is no display here. Every visual claim has to come from a captured pixel,
-and the obvious way to capture one hangs forever on this project's own UIs.
+Every visual claim has to come from a captured pixel, and the obvious way to
+capture one hangs forever on this project's own UIs.
+
+**On macOS, read [MAC.md](MAC.md) instead of the capture sections below.** They
+drive WSL's Playwright build of chrome-headless-shell, which the Mac doesn't have;
+MAC.md has the Mac kit (`macos/eyes/`), including a before/after compare.
 
 ## Which port is which
 
@@ -17,8 +21,8 @@ and the obvious way to capture one hangs forever on this project's own UIs.
 | 8787 | Mini App | 390px wide. `/api/*` needs Telegram init-data. |
 | 8791 | Landing page | Static. |
 
-`DASH_TOKEN` is empty in this machine's `.env`, so local GETs need no auth. If it
-is set, append `?token=…`.
+`DASH_TOKEN` is empty in WSL's `.env`, so local GETs need no auth. Where it is set
+(the Mac's, in quotes), append `?token=…` without the quotes.
 
 ## Static pages: use the bridge's own helper
 
