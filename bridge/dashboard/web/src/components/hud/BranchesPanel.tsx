@@ -107,10 +107,14 @@ function Row({ r, base, card, sess, live, busy, onOpen, onNew, onStep }: {
       <div className="brow-l2 dv-l2">
         {!card && <DBar r={r} />}
         {live ? (
-          <span className="t" style={{ color: tone }}>
-            {card && <MessageSquare size={12} strokeWidth={2} aria-hidden style={{ display: "inline-block", verticalAlign: -2, marginRight: 6 }} />}
-            {live.title || "fresh session"} · {r.activity === "asking" ? "waits on you" : "working"}
-          </span>
+          <>
+            <span className="t" style={{ color: tone }}>
+              {card && <MessageSquare size={12} strokeWidth={2} aria-hidden style={{ display: "inline-block", verticalAlign: -2, marginRight: 6 }} />}
+              {live.title || "fresh session"}
+            </span>
+            {/* the status never truncates: only the title gives way */}
+            <span style={{ flex: "none", color: tone }}>{r.activity === "asking" ? "waits on you" : "working"}</span>
+          </>
         ) : (
           <span className="t">
             {facts(r, base).map((f, i) => (
