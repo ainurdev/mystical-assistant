@@ -38,6 +38,20 @@ resumed by recovery. Kimi Code times an MCP call out at 60 s, so a card pauses t
 same cancel instead of blocking the call. `delegation_grants` wasn't needed: the rule reads your
 last message.
 
+## Second round (agreed 2026-11-06)
+
+Built on the same branch, one commit per feature, in this order: transcript fixes, images in the chat,
+agent tools, rules and hooks and availability on the bridge side, transcript proof and receipts, .mystical,
+the Agent Tools page.
+
+- **Images:** Send images: As attachment (default) or In the chat, its own switch. See `bridge/chat_images.py`.
+- **Pictures an agent shows or looks at:** `figure` events and Attach/Record draw with the answer; the rest stay in WORK.
+- **Tools:** `bridge/gateway_tools.py`. Device runs stay Claude's: their route finds a session by its Claude id.
+- **Rules:** off by default except instructions after compaction and subagent status. `bridge/rules.py`.
+- **Availability:** machine, project, chat, nearest wins. `bridge/tool_policy.py`. Skills are machine-wide per link.
+- **Hooks:** dashboard only; the Mini App shows them. `bridge/hooks_config.py`.
+- **.mystical:** a layout agents are told about and a browser. Nothing moves, nothing cleans itself. `bridge/mystical_dir.py`.
+
 ## Goal
 
 A Mystical chat stops being "one Claude session" and becomes a place where one
