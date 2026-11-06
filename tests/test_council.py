@@ -80,3 +80,5 @@ def test_save_settings_survives_bad_input():
     assert (s["bar"], s["max_rounds"], s["codex_projects"]) == (8.0, 4, ["/a"])
     assert council.save_settings({"bar": float("nan")})["bar"] == 8.0
     assert council.save_settings({"bar": float("inf")})["bar"] == 8.0
+    assert council.save_settings({"bar": 1e308})["bar"] == 10.0
+    assert council.save_settings({"bar": -1e308})["bar"] == 1.0

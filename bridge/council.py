@@ -48,7 +48,7 @@ def save_settings(patch: dict) -> dict:
     try:    # a bad value keeps the current setting; this sits behind an HTTP route
         bar = float(patch["bar"])
         if math.isfinite(bar):
-            s["bar"] = min(10.0, max(1.0, round(bar * 2) / 2))
+            s["bar"] = round(min(10.0, max(1.0, bar)) * 2) / 2
     except (KeyError, TypeError, ValueError):
         pass
     try:
