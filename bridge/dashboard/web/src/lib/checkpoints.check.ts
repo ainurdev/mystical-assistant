@@ -86,6 +86,17 @@ eq(RESTART_NUDGE, RESTART, "Carry on sends recovery.NUDGE word for word");
     { kind: "question", turnId: "a", key: "q2", label: "Push", pick: null, note: null, open: true },
   ], "asks carry your pick, steers their index, the open one is open");
 }
+{
+  // A reply opens with what only you can do: the row names the answer under the box.
+  const [a, b] = turnRows([
+    turn("a", "is there a tool?", { events: [{ type: "result", cost: 0, elapsed: 3,
+      result: "> [!IMPORTANT]\n> - Press ⟳ on the right rail.\n\nYes, there's a **tool**.\nMore." }] }),
+    turn("b", "carry on", { started: 2000, events: [{ type: "result", cost: 0, elapsed: 1,
+      result: "> [!IMPORTANT]\n> - Log in to GitHub." }] }),
+  ]);
+  eq([a.answer, b.answer], ["Yes, there's a tool.", "Log in to GitHub."],
+    "the answer under a to-do box, or its first to-do when the box is all there is");
+}
 
 // --- outline from the bridge's summary ----------------------------------------
 {

@@ -33,7 +33,7 @@ import uuid
 from bridge import (accounts, acp, acp_agents, agents, aifeatures, config, devserver,
                     git, inspector, integrations, ladder, limits, machine, native_activity, notices,
                     paths, profiles, pubsub, relevance, savers, state, store, team, tgask, tgtopics,
-                    transcript_jsonl, ux_mcp, waits)
+                    transcript_jsonl, transcript_page, ux_mcp, waits)
 from bridge.browser import rel, within_base
 from bridge.telegram import panel_kb, send
 
@@ -1642,10 +1642,6 @@ def notify_awaiting(chat_id: int | None, session_id: str | None, kind: str,
             always=bool(job and job.tg_live))
 
 
-def _first_line(text: str) -> str:
-    return next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")[:200]
-
-
 def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool,
                      body: str = "") -> None:
     """Ping when a streaming run finishes (or errors), so you can step away. The
@@ -1659,7 +1655,7 @@ def notify_turn_done(chat_id: int | None, session_id: str | None, is_error: bool
         turn = {}
     out = turn.get("outcome") or {}
     line = (f"{out['label'].capitalize()}: {out.get('detail') or ''}".strip()[:200]
-            if is_error and out.get("label") else _first_line(body))
+            if is_error and out.get("label") else transcript_page.first_line(body)[:200])
     icon, verb = ("⚠️", "hit an error") if is_error else ("✅", "finished")
     why = f"\n{line}" if is_error and line else ""
     _notify(chat_id, f"{icon} Claude {verb} — {_session_label(session_id)}{why}",

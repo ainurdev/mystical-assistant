@@ -57,7 +57,18 @@ export interface TurnRow {
   ids: string[];               // every turn in the chain, for "which row am I reading"
 }
 
-const firstLine = (text: string) => text.split("\n").map((l) => l.trim()).find(Boolean) ?? "";
+// A callout box an answer opens with (`> [!IMPORTANT]`: what only you can do) isn't
+// the answer: the line under it is, else the box's first item. Mirrors
+// bridge/transcript_page.first_line, which outlines the turns the chat doesn't hold.
+const firstLine = (text: string) => {
+  let lines = text.trim().split("\n");
+  if (/^>\s*\[!(note|tip|important|warning|caution)\]$/i.test(lines[0].trim())) {
+    let end = lines.findIndex((l) => !l.trimStart().startsWith(">"));
+    if (end < 0) end = lines.length;
+    lines = [...lines.slice(end), ...lines.slice(1, end).map((l) => l.trim().replace(/^>\s*([-*+]\s+)?/, ""))];
+  }
+  return lines.map((l) => l.trim()).find(Boolean) ?? "";
+};
 // The head of an answer as a line of plain text: its markdown marks would print raw.
 const clean = (line: string) => line.replace(/^(#+|>|[-*+]|\d+[.)])\s+/, "").replace(/\*\*|__|`/g, "").trim();
 // An option's "(Recommended)" is the model's tag on it, not part of what you chose.

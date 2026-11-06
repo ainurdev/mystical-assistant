@@ -163,3 +163,15 @@ def test_summary_indexes_steers_as_the_chat_draws_them_and_reads_native_answers(
     assert s["t1"]["marks"] == [{"kind": "steer", "i": 1, "label": "faster"}]
     assert s["t1"]["tools"] == 1                      # the ask's row isn't a tool you'd count
     assert s["t2"]["answer"] == "The last word, at length."
+
+
+def test_summary_answer_is_the_line_under_the_to_do_box():
+    # A reply opens with what only you can do; the TURNS tab names the answer under
+    # it, or the first to-do when the box is all there is.
+    ev = [
+        {"seq": 1, "turn_id": "t1", "type": "result",
+         "result": "> [!IMPORTANT]\n> - Press ⟳ on the right rail.\n\nYes, there's a tool.\nMore."},
+        {"seq": 2, "turn_id": "t2", "type": "text", "text": "> [!IMPORTANT]\n> - Log in to GitHub.\n"},
+    ]
+    s = {t["id"]: t["sum"] for t in summarize(_data(ev, turns=["t1", "t2"]))["turns"]}
+    assert (s["t1"]["answer"], s["t2"]["answer"]) == ("Yes, there's a tool.", "Log in to GitHub.")

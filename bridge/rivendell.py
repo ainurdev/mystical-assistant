@@ -256,7 +256,7 @@ from datetime import datetime
 from urllib.parse import quote, urlsplit
 
 from bridge import (config, device_ask, device_share, device_side, device_view, git, integrations,
-                    notices, rivendell_jobs, team, wsutil)
+                    notices, rivendell_jobs, team, transcript_page, wsutil)
 
 _BACKOFF_MIN = 1.0        # first reconnect delay (doubles per failure)
 _BACKOFF_MAX = 60.0
@@ -903,7 +903,7 @@ class Worker:
             brief = ok and job_kind == "meeting-brief"
             kind = "rv_brief" if brief else ("rv_done" if ok else "rv_failed")
             line = (_brief_lead(text) if brief
-                    else next((ln.strip() for ln in (text or "").splitlines() if ln.strip()), "")[:200])
+                    else transcript_page.first_line(text)[:200])
             if ok and report:               # its summary, not the opening line of the JSON
                 line = str(report.get("summary") or "").strip()[:200]
             # The bell's word follows the kind (notices._RV_DONE): a design build reads BUILT only when it built one.
@@ -3574,7 +3574,7 @@ def _done_message(sess: dict, ok: bool, text: str, res: dict) -> tuple:
     from bridge.telegram import panel_kb         # local import: telegram pulls state
     pr = res.get("pr")
     why = None if ok else ((res.get("outcome") or {}).get("label")
-                           or (text.strip().splitlines() or ["failed"])[0][:80])
+                           or (transcript_page.first_line(text) or "failed")[:80])
     mins = round((res.get("wall_s") or 0) / 60)
     line = " · ".join(b for b in ((sess.get("origin") or "rivendell").replace(":", " · "),
                                   f"PR #{pr['number']}" if pr else "", why or "",

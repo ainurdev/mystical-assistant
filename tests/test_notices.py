@@ -242,6 +242,14 @@ def test_turn_done_emits_done_with_closing_line(monkeypatch, sent):
     assert (row["kind"], row["body"], row["meta"]["elapsed"]) == ("done", "All green — both shots attached.", 252)
 
 
+def test_turn_done_line_is_the_answer_under_the_to_do_box(monkeypatch, sent):
+    from bridge import runner
+    sid = _sess()
+    monkeypatch.setattr(store, "last_turn", lambda s: {"status": "done", "elapsed": 9, "outcome": None})
+    runner.notify_turn_done(555, sid, False, body="> [!IMPORTANT]\n> - Press ⟳ on the right rail.\n\nThe box is built.\nMore")
+    assert notices.feed()[0]["body"] == "The box is built."
+
+
 def test_plugin_session_turn_emits_nothing(monkeypatch, sent):
     from bridge import runner
     sid = _sess(origin="rivendell:prod")
