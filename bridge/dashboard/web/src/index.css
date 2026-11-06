@@ -6616,84 +6616,86 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 /* MIDDLE-EARTH reads natural case, as its PROFILE menu does (.pm-wtag, .pm-reset, .pm-tag) */
 
 /* === TURNS TAB =================================================================
-   The right rail's TURNS panel (hud/TurnsPanel, drafts/turns-tab B · LEDGER):
-   the GIT tab's bones (.gp root) plus one spine down the list,
-   a node per turn on it, three even lines a turn and a bar on a shared track
-   whose fill is the turn's share of the session's longest. Asks, steers and
-   resumes hang off the spine as 22px rows. */
-.tn { --askc: var(--ask, var(--warn)); }
+   The right rail's TURNS panel (hud/TurnsPanel; spec right-rail-reimagine,
+   Turns · MOMENTS): the GIT tab's bones (.gp root), a now bar while the latest
+   turn works or waits on you, then the stream newest first down one 2px line —
+   a 38px header per turn, its number tile on the line, and under it the moments
+   that mattered, 28px each, their icons on the line. --tn-bg is the column's
+   ground, which the tiles and icons cut the line with. FLOW shares the .tn root
+   and .tn-none (FlowPanel). */
+.tn { --askc: var(--ask, var(--warn)); --tn-bg: var(--canvas, var(--panel2)); }
+[data-fam="pebble"] .tn { --tn-bg: var(--panel2); }
 .tn .gp-title { margin-right: 0; }
-.tn-cnt { display: inline-flex; align-items: center; height: 18px; padding: 0 6px; border-radius: var(--r); background: var(--wash);
-  border: 1px solid var(--l); color: var(--txm); font: 500 var(--t10)/1 var(--m); }
-.tn-sp { flex: 1; }
 .tn .gp-ib.on { color: var(--acc); background: color-mix(in srgb, var(--acc) 13%, transparent); }
 .tn .mscroll { flex: 1; min-height: 0; overflow-y: auto; }
+.tn-none { padding: 18px 14px; font: italic 400 var(--t115)/1.5 var(--f); color: var(--txl); }
+.tn-cnt { display: inline-grid; place-items: center; min-width: 18px; height: 18px; box-sizing: border-box; padding: 0 5px; border-radius: 9px;
+  border: 1px solid var(--l2); font: 700 var(--t105)/1 var(--f); color: var(--txm); }
 .tn-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 6px currentColor; animation: tnpulse 1.4s ease-in-out infinite; }
 @keyframes tnpulse { 50% { opacity: .35; } }
-.tn-none { padding: 18px 14px; font: italic 400 var(--t115)/1.5 var(--f); color: var(--txl); }
-/* the spine */
-.tn-list { position: relative; padding: 2px 0 14px; }
-.tn-day { position: relative; display: flex; align-items: center; gap: 8px; padding: 13px 12px 6px 34px;
-  font: 600 var(--t95)/1 var(--f); letter-spacing: .08em; text-transform: uppercase; color: var(--txl); }
-.tn-day::after { content: ""; flex: 1; height: 1px; background: var(--l); }
-:is(.tn-day, .tn-t, .tn-s)::before { content: ""; position: absolute; left: 17px; top: 0; bottom: 0; width: 1px; background: var(--l2); }
-.tn-list > .tn-day:first-child::before { top: 50%; }
-.tn-list > :last-child::before { bottom: auto; height: 12px; }
-.tn-t { position: relative; isolation: isolate; padding: 7px 12px 11px 34px; cursor: pointer; }
-.tn-t:is(:hover, .sel)::after, .tn-t.on::after { content: ""; position: absolute; inset: 1px 6px; border-radius: var(--r); background: var(--wash); z-index: -1; }
-.tn-t.on::after { background: var(--side-row, var(--ac-08)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 22%, transparent); }
-.tn-o { position: absolute; left: 13px; top: 10px; width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; z-index: 1;
-  border: 1.5px solid var(--txl); background: var(--canvas, var(--panel2)); }
-.tn-t.on .tn-o { background: var(--acc); border-color: var(--acc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 28%, transparent); }
-.tn-t.err .tn-o { border-color: var(--err); background: color-mix(in srgb, var(--err) 30%, var(--canvas, var(--panel2))); }
-.tn-t.run .tn-o { border-color: var(--warn); background: var(--warn); animation: tnpulse 1.4s ease-in-out infinite; }
-.tn-t.ask .tn-o { border-color: var(--askc); background: var(--askc); box-shadow: 0 0 0 3px color-mix(in srgb, var(--askc) 26%, transparent); }
-.tn-l1 { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-.tn-n { flex: none; min-width: 14px; font: normal 500 var(--t10)/1 var(--m); color: var(--txl); text-align: right; }
-.tn-t.on .tn-n { color: var(--acc); }
-.tn-t.err .tn-n { color: var(--err); }
-.tn-p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 500 calc(var(--fsu) * 12.5)/1.35 var(--f); color: var(--txh); }
-.tn-t.on .tn-p { color: var(--txb); font-weight: 600; }
+/* the now bar: --c is the ask hue while the turn waits on you, the accent while it works */
+.tn-now { --c: var(--acc); display: flex; align-items: center; gap: 9px; flex: none; margin: 2px 12px 6px; padding: 9px 10px 9px 12px; border-radius: 11px;
+  background: color-mix(in srgb, var(--c) 8%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 32%, transparent);
+  font: 800 var(--t125)/1.25 var(--f); color: var(--txb); }
+.tn-now.ask { --c: var(--askc); }
+/* the title wraps at a narrow rail rather than lose its end ("Turn 6 waits…") */
+.tn-nt { flex: 1; min-width: 0; }
+.tn-nt > small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 2px;
+  font: 600 var(--t105)/1.25 var(--f); color: var(--txm); }
+.tn-nq { flex: none; display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; box-shadow: inset 0 0 0 1.8px var(--c);
+  font: 800 var(--t11)/1 var(--f); color: var(--c); }
+.tn-now > .tn-dot { margin: 0 3px; color: var(--c); }
+.tn .tn-now > button { flex: none; height: 24px; padding: 0 9px; border: 0; border-radius: 7px; cursor: pointer; white-space: nowrap;
+  font: 800 var(--t11)/1 var(--f); color: var(--c); background: color-mix(in srgb, var(--c) 16%, transparent); }
+.tn .tn-now.ask > button { color: var(--acc-on); background: var(--c); }
+.tn-now > button:hover { filter: brightness(1.08); }
+.tn-now > button:focus-visible { outline: 2px solid color-mix(in srgb, var(--c) 60%, transparent); outline-offset: 2px; }
+/* the stream, on one line down the tiles' and icons' centres */
+.tn-st { position: relative; padding: 4px 12px 16px 14px; }
+.tn-st::before { content: ""; position: absolute; left: 25px; top: 20px; bottom: 16px; width: 2px; border-radius: 1px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--acc) 55%, transparent), color-mix(in srgb, var(--acc) 26%, transparent) 30%, var(--l)); }
+/* a day line on top: the line still starts at the first tile */
+.tn-st.day::before { top: 49px; }
+.tn-h { position: relative; isolation: isolate; display: flex; align-items: center; gap: 8px; height: 38px; cursor: pointer;
+  font: 800 var(--t125)/1.25 var(--f); color: var(--txb); }
+.tn-h::after { content: ""; position: absolute; inset: 4px -6px 4px 30px; border-radius: 8px; z-index: -1; }
+/* .on: the turn the chat is showing */
+.tn-h:is(:hover, .sel, .on)::after { background: var(--wash); }
+.tn-n { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border-radius: 8px; box-shadow: 0 0 0 3px var(--tn-bg);
+  font: normal 800 var(--t11)/1 var(--f); color: var(--txb); background: color-mix(in srgb, var(--acc) 26%, var(--tn-bg)); }
+.tn-h.run .tn-n { color: var(--acc-on); background: var(--acc); animation: tnglow 1.6s ease-in-out infinite; }
+.tn-h.ask .tn-n { color: var(--acc-on); background: var(--askc); box-shadow: 0 0 0 3px var(--tn-bg), 0 0 14px color-mix(in srgb, var(--askc) 55%, transparent); }
+.tn-h.err .tn-n { color: var(--err); background: color-mix(in srgb, var(--err) 22%, var(--tn-bg)); }
+@keyframes tnglow { 50% { box-shadow: 0 0 0 3px var(--tn-bg), 0 0 14px color-mix(in srgb, var(--acc) 60%, transparent); } }
+.tn-p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tn-h.err .tn-p { color: var(--txl); }
+.tn-w { flex: none; font: 700 var(--t105)/1 var(--f); color: var(--txl); white-space: nowrap; }
+.tn-h.err .tn-w { color: var(--err); }
 /* copy · send again: over the line's end on hover, so the line never reflows */
-.tn-acts { position: absolute; right: 12px; top: 4px; display: none; gap: 1px; padding: 1px; border-radius: var(--r); background: var(--panel2);
-  box-shadow: 0 0 0 1px var(--l); }
-.tn-t:is(:hover, :focus-within) .tn-acts { display: flex; }
+.tn-acts { position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: none; gap: 1px; padding: 1px; border-radius: var(--r);
+  background: var(--panel2); box-shadow: 0 0 0 1px var(--l); }
+.tn-h:is(:hover, :focus-within) .tn-acts { display: flex; }
 .tn-acts .gp-ib { width: 20px; height: 20px; }
-.tn-l2 { margin: 3px 0 0 21px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 400 var(--t11)/1.35 var(--f); color: var(--txd); }
-.tn-l2 > i { font-style: normal; color: var(--txg); margin-right: 4px; }
-.tn-l2.none { font-style: italic; color: var(--txg); }
-.tn-l2.run { color: var(--warn); }
-.tn-t.ask .tn-l2.run { color: var(--askc); }
-.tn-l3 { display: flex; align-items: center; gap: 6px; margin: 5px 0 0 21px; font: 400 var(--t95)/1 var(--m); color: var(--txl); white-space: nowrap; overflow: hidden; }
-.tn-l3 > .s { color: var(--txg); }
-.tn-tag { display: inline-flex; align-items: center; gap: 3px; height: 15px; padding: 0 5px; border-radius: min(4px, var(--r)); font: 600 var(--t85)/1 var(--f);
-  letter-spacing: .06em; text-transform: uppercase; color: var(--txd); background: var(--wash); flex: none; }
-.tn-tag.err { color: var(--err); background: color-mix(in srgb, var(--err) 13%, transparent); }
-.tn-tag.ask { color: var(--askc); background: color-mix(in srgb, var(--askc) 15%, transparent); }
-.tn-tag.run { color: var(--warn); background: color-mix(in srgb, var(--warn) 13%, transparent); }
-.tn-here { margin-left: auto; font: normal 700 var(--t85)/1 var(--f); letter-spacing: .1em; text-transform: uppercase; color: var(--acc); }
-.tn-bar { position: absolute; left: 55px; right: 12px; bottom: 5px; height: 3px; display: flex; gap: 2px; border-radius: 2px;
-  background: color-mix(in oklab, var(--txl) 13%, transparent); overflow: hidden; }
-.tn-bar > i { display: block; height: 100%; flex: none; border-radius: 2px; background: color-mix(in srgb, var(--acc) 62%, transparent); }
-.tn-t.on .tn-bar > i { background: var(--acc); box-shadow: 0 0 6px color-mix(in srgb, var(--acc) 60%, transparent); }
-.tn-t.err .tn-bar > i { background: color-mix(in srgb, var(--err) 70%, transparent); }
-.tn-t:is(.run, .ask) .tn-bar > i { background: repeating-linear-gradient(90deg, var(--warn) 0 6px, color-mix(in srgb, var(--warn) 35%, transparent) 6px 12px); }
-/* what hangs off the spine */
-.tn-s { position: relative; display: flex; align-items: center; gap: 6px; height: 22px; margin-top: -4px; padding: 0 12px 4px 55px;
-  font: 400 var(--t105)/1 var(--f); color: var(--txd); white-space: nowrap; cursor: pointer; }
-.tn-s::after { content: ""; position: absolute; left: 18px; top: 9px; width: 28px; height: 1px; background: var(--l); }
-.tn-s:hover { color: var(--txh); }
-.tn-s > .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.tn-s b { font-weight: 600; color: var(--txm); }
-.tn-s .note { font-style: italic; }
-.tn-q { flex: none; display: inline-grid; place-items: center; width: 14px; height: 14px; box-sizing: border-box; border-radius: min(4px, var(--r));
-  border: 1px solid var(--l2); font: 700 var(--t8)/1 var(--f); color: var(--txl); }
-.tn-s.open, .tn-s.open b { color: var(--askc); }
-.tn-s.open .tn-q { border-color: color-mix(in srgb, var(--askc) 60%, transparent); background: color-mix(in srgb, var(--askc) 16%, transparent); color: var(--askc); }
-.tn-s.steer svg { color: var(--purple); }
-.tn-s.re { color: var(--txl); font-style: italic; }
-.tn-s.re svg { flex: none; margin: 0 1px 0 2px; }
-.tn-go { margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 2px; font: 600 var(--t95)/1 var(--f); color: var(--askc); }
+/* a moment: its icon on the line in its tone (--c), what it did, when */
+.tn-m { --c: var(--acc); position: relative; isolation: isolate; display: flex; align-items: center; gap: 9px; height: 28px; padding: 0 0 0 4px; cursor: pointer;
+  font: 600 var(--t115)/1.2 var(--f); color: var(--txm); }
+.tn-m.ask { --c: var(--askc); }
+.tn-m.ok { --c: var(--ok); }
+.tn-m.err { --c: var(--err); }
+.tn-m:hover::after { content: ""; position: absolute; inset: 2px -6px 2px 26px; border-radius: 7px; z-index: -1; background: var(--wash); }
+.tn-i { flex: none; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; color: var(--c); background: var(--tn-bg);
+  box-shadow: inset 0 0 0 1.5px currentColor; font: 800 var(--t9)/1 var(--f); }
+.tn-x { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tn-x b { font-weight: 700; color: var(--tx); }
+.tn-m.ask .tn-x, .tn-m.ask .tn-x b { color: var(--txb); }
+.tn-m.err .tn-x b { color: var(--err); }
+.tn-m > small { flex: none; font: 700 var(--t10)/1 var(--f); color: var(--txg); }
+/* +N more / N moments: unfolds the turn's moments in place */
+.tn .tn-m.more { --c: var(--txg); width: 100%; border: 0; border-radius: 0; background: none; text-align: left; appearance: none; color: var(--txg); font-weight: 700; }
+.tn-m.more:focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 55%, transparent); outline-offset: -2px; }
+/* AWAY 1H 41M · the day: what passed between a turn and the one before it */
+.tn-gap { display: flex; align-items: center; height: 26px; padding-left: 36px; overflow: hidden; white-space: nowrap;
+  font: 800 var(--t9)/1 var(--f); letter-spacing: 1.3px; text-transform: uppercase; color: var(--txg); }
 .tn mark { background: color-mix(in srgb, var(--warn) 30%, transparent); color: var(--txb); border-radius: 2px; padding: 0 1px; }
 /* find */
 .tn-find { display: flex; align-items: center; gap: 6px; height: 30px; flex: none; margin: 9px 10px 3px; padding: 0 4px 0 9px; border-radius: var(--r);
@@ -6704,49 +6706,7 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .tn-find > em { font: normal 400 var(--t95)/1 var(--m); color: var(--txl); white-space: nowrap; }
 .tn-hint { flex: none; padding: 4px 12px 2px; font: 400 var(--t95)/1.4 var(--f); color: var(--txl); }
 .tn-hint kbd { font: 500 var(--t85)/1 var(--m); padding: 1px 4px; border-radius: 3px; border: 1px solid var(--l2); color: var(--txd); }
-@media (prefers-reduced-motion: reduce) { .tn-dot, .tn-t.run .tn-o { animation: none; } }
-/* TIME, docked under the list (TurnsPanel TimeDock, drafts/usage-time B · DOCK): the
-   session's time by kind, and on a tap the tools and tokens behind it, raised over
-   the list's foot. A kind's colour is one --c, shared by its bar piece and legend key. */
-.tt { position: relative; flex: none; }
-.tt [data-k="think"] { --c: var(--acc); }
-.tt [data-k="gen"] { --c: color-mix(in oklab, var(--acc) 45%, var(--panel2)); }
-.tt [data-k="tools"] { --c: var(--info); }
-.tt [data-k="you"] { --c: var(--purple); }
-/* .tt > : over the families' rounded buttons — the dock is the panel's foot, not a button shape */
-.tt > .tt-dock { display: block; width: 100%; padding: 9px 10px 10px 12px; border: 0; border-top: 1px solid var(--l2); border-radius: 0;
-  background: var(--panel2); color: var(--txl); font: inherit; text-align: left; cursor: pointer; appearance: none; }
-.tt-dock:hover:not(:disabled) { background: color-mix(in srgb, var(--acc) 5%, var(--panel2)); }
-.tt-dock:disabled { cursor: default; }
-.tt-dock:focus-visible { outline: 2px solid color-mix(in srgb, var(--acc) 55%, transparent); outline-offset: -2px; }
-.tt-d1 { display: flex; align-items: center; gap: 8px; }
-.tt-d1 > b { font: 600 var(--t105)/1 var(--f); letter-spacing: .08em; text-transform: uppercase; color: var(--txm); }
-.tt-d1 > svg { flex: none; }
-.tt-bar { flex: 1; display: flex; gap: 1px; height: 6px; border-radius: 3px; overflow: hidden; background: color-mix(in oklab, var(--txl) 13%, transparent); }
-.tt-bar > i { display: block; flex: 1 1 0; min-width: 2px; background: var(--c); }
-.tt-leg { display: grid; grid-template-columns: 1fr 1fr; gap: 7px 14px; margin-top: 10px; }
-.tt-leg > span { display: flex; align-items: center; gap: 6px; min-width: 0; font: 400 var(--t105)/1 var(--f); color: var(--txm); }
-.tt-leg > span > i { width: 7px; height: 7px; flex: none; border-radius: 2px; background: var(--c); }
-.tt-leg > span > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-leg > span > b { margin-left: auto; font: 500 var(--t10)/1 var(--m); color: var(--txb); }
-.tt-sheet { position: absolute; left: 0; right: 0; bottom: 100%; z-index: 1; padding: 11px 12px 12px; background: var(--panel2);
-  border-top: 1px solid var(--l2); box-shadow: 0 -14px 30px var(--shadow-pop); animation: ttrise .18s cubic-bezier(.2, .8, .2, 1) both; }
-@keyframes ttrise { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
-.tt-sh { margin-bottom: 7px; font: 600 var(--t85)/1 var(--f); letter-spacing: .12em; text-transform: uppercase; color: var(--txl); }
-.tt-tr { display: grid; grid-template-columns: minmax(0, 1fr) 56px 50px; align-items: center; column-gap: 8px; font: 400 var(--t105)/1.2 var(--f); color: var(--txm); }
-.tt-tr + .tt-tr { margin-top: 7px; }
-.tt-tr > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-tr > span > em { margin-left: 5px; font: normal 400 var(--t95)/1 var(--m); color: var(--txl); }
-.tt-tr > i { display: block; height: 3px; border-radius: 2px; overflow: hidden; background: color-mix(in oklab, var(--txl) 16%, transparent); }
-.tt-tr > i > i { display: block; height: 100%; background: var(--info); }
-.tt-tr > b { font: 500 var(--t10)/1 var(--m); color: var(--txb); text-align: right; }
-.tt-more { margin-top: 7px; font: 400 var(--t10)/1.2 var(--f); color: var(--txl); }
-.tt-tok { display: flex; align-items: center; gap: 8px; margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--l); font: 400 var(--t105)/1 var(--f); color: var(--txl); }
-.tt-tok > b { margin-left: auto; font: 500 var(--t10)/1 var(--m); color: var(--txm); white-space: nowrap; }
-.tt-tok small { font-size: 1em; color: var(--txl); }
-@media (prefers-reduced-motion: reduce) { .tt-sheet { animation: none; } }
-/* MIDDLE-EARTH reads natural case, as its USAGE tab does */
-[data-fam="middle-earth"] .tn :is(.tn-tag, .tn-here, .tn-day, .tt-d1 > b, .tt-sh) { text-transform: none; letter-spacing: 0; }
+@media (prefers-reduced-motion: reduce) { .tn-dot, .tn-h.run .tn-n { animation: none; } }
 
 /* === THE FAMILIES · PEBBLE · STANDARD ======================================
    The roast's fixes (.mystical/design-drafts/pebble-standard). Keep this block
@@ -7697,31 +7657,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 .gpp-tick.g1.l { left: calc(var(--w) * 1.5 + 28px); }
 .gpp-tick.g1.r { left: calc(var(--w) * 2.5 + 56px); }
 .gpp-none { position: absolute; left: 0; right: 0; top: 66px; text-align: center; font-size: var(--t9); letter-spacing: .14em; text-transform: uppercase; color: var(--txl); }
-/* TurnClock: the Turns hero. Green is a turn at work, amber one that waits on you. */
-.tc-right { margin-left: auto; flex: none; display: inline-flex; }
-.tc-pill { display: inline-flex; align-items: center; gap: 5px; height: 16px; padding: 0 7px; border-radius: 8px; font-size: var(--t9); font-weight: 700; white-space: nowrap;
-  color: var(--txd); background: color-mix(in srgb, var(--txl) 14%, transparent); }
-.tc-pill b { font-weight: 800; color: inherit; }
-.tc-pill.run { color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, transparent); }
-.tc-pill.ask { color: var(--askc, var(--warn)); background: color-mix(in srgb, var(--askc, var(--warn)) 16%, transparent); }
-.tc-pill.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
-.tc { position: relative; margin-top: 4px; height: 82px; }
-.tc-strip { position: absolute; left: 6px; right: 6px; top: 0; height: 58px; }
-.tc-blk-w { position: absolute; top: 0; height: 40px; min-width: 4px; }
-.tc-dots { position: absolute; left: 3px; top: 0; height: 6px; display: flex; gap: 3px; }
-.tc-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--txl); }
-.tc-dots i.ask { background: var(--askc, var(--warn)); }
-.tc-blk { position: absolute; left: 0; right: 0; top: 10px; height: 28px; box-sizing: border-box; padding: 0 0 0 5px; display: flex; align-items: center; overflow: hidden;
-  font-size: var(--t10); font-weight: 800; color: var(--acc); border: 1px solid color-mix(in srgb, var(--acc) 80%, transparent); border-radius: 4px;
-  background: color-mix(in srgb, var(--acc) 22%, transparent); }
-.tc-blk.run { color: var(--ok); border-color: var(--ok); background: color-mix(in srgb, var(--ok) 24%, transparent); animation: rhpulse 1.8s ease-in-out infinite; }
-.tc-blk.ask { color: var(--askc, var(--warn)); border-color: var(--askc, var(--warn)); background: color-mix(in srgb, var(--askc, var(--warn)) 24%, transparent); animation: rhpulse 1.8s ease-in-out infinite; }
-.tc-axis { position: absolute; left: -6px; right: -6px; top: 44px; border-top: 1px solid color-mix(in srgb, var(--txl) 30%, transparent); }
-.tc-tick { position: absolute; top: 40px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: var(--t85); color: var(--txl); white-space: nowrap; }
-.tc-tick i { width: 0; height: 8px; border-left: 1px solid color-mix(in srgb, var(--txl) 50%, transparent); }
-.tc-cap { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: baseline; gap: 5px; font-size: var(--t95); color: var(--txd); white-space: nowrap; overflow: hidden; }
-.tc-cap b { color: var(--txb); font-weight: 800; }
-.tc-cap span { color: var(--txl); }
 /* Files FOOTPRINT. */
 .ff-n { margin-left: auto; flex: none; font-size: var(--t9); color: var(--txl); white-space: nowrap; }
 .ff-n b { font-size: calc(var(--fsu) * 15); line-height: 1; font-weight: 800; color: var(--txb); }

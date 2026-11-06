@@ -1189,30 +1189,6 @@ export interface EnrichedSession {
   model?: string | null;
   permission_mode?: string;
 }
-/** One tool's share of a session's wall clock. `union_s` counts overlapping calls
- *  once; `naive_s` just adds durations. Equal values mean the tool never ran
- *  concurrently with itself — which is what says whether parallelising is on the
- *  table. */
-export interface ToolSpend {
-  calls: number;
-  union_s: number;
-  naive_s: number;
-  avg_s: number;
-  unfinished: number; // started, never finished — the turn was killed mid-call
-}
-
-/** Where a session's time and tokens went. Dollars are deliberately absent: the
- *  CLI prices runs off API list rates while these go through a subscription. */
-export interface SessionBreakdown {
-  wall: number; // seconds across the session's turns
-  tools: Record<string, ToolSpend>;
-  thinking_s: number;
-  waiting_s: number; // AskUserQuestion — a human deciding, not the session being slow
-  model_s: number; // the remainder: generating
-  tokens: { in: number; out: number; cache_w: number; cache_r: number } | null;
-  capped: number; // turns the hang watchdog killed
-  turns: number;
-}
 export interface UsageBucket {
   percent: number;
   resets_at: string | null;
@@ -1827,8 +1803,6 @@ export const api = {
     req<Transcript>(`/local/sessions/${encodeURIComponent(id)}?cursor=${cursor}` +
       (opts?.tail ? `&tail=${opts.tail}` : "") +
       (opts?.before ? `&before=${opts.before}` : "")),
-  sessionBreakdown: (id: string) =>
-    req<SessionBreakdown>(`/local/sessions/${encodeURIComponent(id)}/breakdown`),
   // A rehydrated turn's attachments are server paths, not blobs — load them back
   // through the upload dir so the transcript can render (and zoom) them.
   attachmentUrl: (path: string) =>

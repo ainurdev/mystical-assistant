@@ -2396,7 +2396,7 @@ export function App() {
       id: "turns", short: "TURNS", label: "Turns", icon: <ListOrdered {...RAIL} />, ownScroll: true, group: "session",
       ask: waitsOnYou, hint: waitsOnYou ? "one waits on you" : undefined,
       render: () => (
-        <TurnsPanel key={sessionId ?? ""} sessionId={sessionId} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
+        <TurnsPanel key={sessionId ?? ""} turns={turns} scrollRef={scrollRef} nav={transcriptNav} following={atBottom}
           onJump={(id, key) => { toChat(); void jumpTo(id, key); }} onLatest={() => { toChat(); jumpToBottom(); }}
           onCopy={(text) => {
             try { void navigator.clipboard?.writeText(text); notify("info", "Prompt copied."); }
