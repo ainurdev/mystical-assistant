@@ -37,6 +37,17 @@ export function limitNudge(prompt: string | null | undefined): "account" | "rese
   return prompt.includes("resumed on another account") ? "account" : "reset";
 }
 
+/** A turn the bridge sent to carry on after something cut it off (bridge/recovery.py
+ *  NUDGE, bridge/runner.py RESUME_NUDGE and TIMEOUT_NUDGE). The words aren't yours,
+ *  so it reads as a line joining the two stretches. null for anything else. */
+export function resumeNudge(prompt: string | null | undefined): string | null {
+  if (!prompt?.startsWith("⏮ ") || limitNudge(prompt)) return null;
+  if (prompt.includes("bridge restart")) return "The bridge restarted. It carried on from here.";
+  if (prompt.includes("hang watchdog")) return "It went silent and was restarted. It carried on from here.";
+  if (prompt.includes("cut off by an error")) return "An error cut it off. It carried on from here.";
+  return null;
+}
+
 /** The login to offer instead of a dry one, picked the way the ladder picks
  *  (bridge/accounts.pick): most left first, and one whose meter won't read only
  *  as a last resort — "can't tell" isn't "empty". null when none is usable. */

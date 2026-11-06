@@ -2,6 +2,7 @@ import { createRootRoute, Outlet, useRouterState } from "@tanstack/react-router"
 import { SquarePen } from "lucide-react";
 import { ChatProvider, useChat } from "../lib/chat";
 import { ChatSwitcher } from "../components/ChatSwitcher";
+import { ChatSearchButton } from "../components/ChatSearch";
 import { CheckpointsButton } from "../components/CheckpointsSheet";
 import { SpendButton } from "../components/SpendSheet";
 import { TabBar } from "../components/TabBar";
@@ -23,6 +24,7 @@ function ChatHeader() {
       <div className="flex items-center gap-1">
         <ChatSwitcher />
         <span className="chead-fold chead-aux flex shrink-0 items-center gap-1">
+          <ChatSearchButton />
           <CheckpointsButton />
           <SpendButton sessionId={sessionId} running={isRunning} />
         </span>

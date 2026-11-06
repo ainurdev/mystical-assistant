@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, type Toolsets } from "../../api";
+import { atFocus } from "../../lib/agenttools";
+import { useMultiOn } from "../../lib/multistore";
+import { openSettings } from "../../lib/opensettings";
 
 /* TOOLS & MCP modal — per-session switches for the built-in tools and the MCP
    servers this machine has configured. Off means the deny rule goes to
@@ -23,11 +26,13 @@ const LABEL = { fontSize: "var(--t9)", letterSpacing: 1.5, color: "var(--txl)", 
 
 export function ToolsModal({
   title,
+  sessionId,
   disabled,
   onChange,
   onClose,
 }: {
   title: string;
+  sessionId?: string | null;
   disabled: string[];
   onChange: (rules: string[]) => void;
   onClose: () => void;
@@ -35,6 +40,7 @@ export function ToolsModal({
   const [sets, setSets] = useState<Toolsets | null>(null);
   const [saved, setSaved] = useState(false);
   const off = new Set(disabled);
+  const multiOn = useMultiOn();
 
   const saveDefault = () => {
     void api.setToolsetDefault(disabled).then((r) => {
@@ -84,6 +90,12 @@ export function ToolsModal({
           <span style={{ fontSize: "var(--t95)", letterSpacing: 2.5, color: "var(--txl)" }}>TOOLS</span>
           <span style={{ fontSize: "var(--t15)", color: "var(--txb)", letterSpacing: ".5px", minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
           <span style={{ flex: 1 }} />
+          {multiOn && (
+            <button className="ma-link" style={{ flex: "none", color: "var(--acc)" }} title="Every agent, at the machine, a project or this chat"
+              onClick={() => { onClose(); openSettings("agenttools", atFocus({ tab: "tools", level: sessionId ? "chat" : "machine", session: sessionId ?? undefined })); }}>
+              Open in Agent Tools
+            </button>
+          )}
           <button onClick={saveDefault} title="new sessions start with these switches"
             style={{ appearance: "none", cursor: "pointer", border: "1px solid color-mix(in srgb, var(--acc) 25%, transparent)", background: "transparent", color: saved ? "var(--ok)" : "var(--txm)", fontFamily: "inherit", fontSize: "var(--t9)", letterSpacing: 1.5, padding: "6px 10px" }}>
             {saved ? "SAVED ✓" : "SAVE AS DEFAULT"}

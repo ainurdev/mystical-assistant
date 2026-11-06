@@ -1,11 +1,14 @@
 import { memo, useState, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform, type Components, type UrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
+import { addressFromSrc, addressKind } from "../lib/embeds";
 import { selectionMd } from "../lib/selmd";
 import { ADMONITION_RE, stripMarker } from "../lib/admonition";
 import { widgetLang, widgetValue } from "../lib/widgetblock";
 import type { ToolStyle } from "../lib/toolwidget";
+import { ChatImage } from "./ChatImage";
+import { useExperimental } from "../lib/multi";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
@@ -74,6 +77,27 @@ const ADMONITIONS: Record<string, { label: string; color: string }> = {
  *  the dashboard's rule — the same reply has to read the same on both. */
 const LEAD_RE = /^[^\n]{2,24}:$/;
 
+/** An image in an agent's text. Local ones draw through the file route. A remote one
+ *  becomes a link, so an answer can't load a tracking pixel by being read; only your own
+ *  message draws those (ChatImage's `remote`). Out here because the `components` map is
+ *  rebuilt on each render: inline, every streamed chunk would remount the picture. */
+const MdImage: NonNullable<Components["img"]> = ({ src, alt }) => {
+  const address = addressFromSrc(typeof src === "string" ? src : "");
+  if (addressKind(address) !== "remote") return <ChatImage address={address} alt={alt ?? ""} />;
+  return (
+    <>
+      <a href={address} target="_blank" rel="noreferrer">{alt || address}</a>
+      <CopyBtn title="Copy link" text={address} />
+    </>
+  );
+};
+
+/** The default sanitizing, except that an image's address reaches MdImage as written.
+ *  It never goes in a src from there: a local one is a query on the file route, which
+ *  refuses schemes, and anything else is a link or "image not found". */
+const keepImageAddress: UrlTransform = (url, key, node) =>
+  node.tagName === "img" && key === "src" ? url : defaultUrlTransform(url);
+
 export const Markdown = memo(function Markdown({ children, className = "", toolStyle = "stamp" }: {
   children: string;
   className?: string;
@@ -82,6 +106,7 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
    *  other result does. Callers outside a transcript keep the default. */
   toolStyle?: ToolStyle;
 }) {
+  const multiOn = useExperimental();
   return (
     <div
       className={`md ${className}`}
@@ -95,7 +120,9 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
     >
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
+        urlTransform={multiOn ? keepImageAddress : undefined}
         components={{
+          ...(multiOn ? { img: MdImage } : {}),
           // The glyph after a link copies its URL; a footnote's own `#fn1` hop
           // is not a link anyone wants on the clipboard.
           a: ({ node, href, children, ...props }) => (

@@ -7,13 +7,19 @@ import { Markdown } from "./Markdown";
 export function AgentsModal({
   sessionId,
   agents,
+  initial,
+  workflowOf,
   onClose,
 }: {
   sessionId: string;
   agents: AgentInfo[];
+  /** Which agent it opens on: a tapped row's. Unset, the first. */
+  initial?: string;
+  /** The workflow run an agent id belongs to, for those that aren't direct subagents. */
+  workflowOf?: Record<string, string>;
   onClose: () => void;
 }) {
-  const [selected, setSelected] = useState<string | null>(agents[0]?.agent_id ?? null);
+  const [selected, setSelected] = useState<string | null>(initial ?? agents[0]?.agent_id ?? null);
   const cursorRef = useRef(0);
   const selectedRef = useRef(selected);   // current selection, for stale-free reads
   selectedRef.current = selected;
@@ -30,7 +36,7 @@ export function AgentsModal({
     enabled: selected !== null,
     queryFn: async () => {
       const forAgent = selected as string;
-      const a = await api.agentActivity(sessionId, forAgent, cursorRef.current);
+      const a = await api.agentActivity(sessionId, forAgent, cursorRef.current, workflowOf?.[forAgent]);
       // A fetch for the previously-selected agent can resolve after the effect
       // above reset events/cursor for a new agent; without seq dedupe it would
       // append the wrong agent's feed. Discard it if we've switched away.

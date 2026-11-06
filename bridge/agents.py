@@ -83,7 +83,9 @@ def _finished(meta: dict, agent_id: str, marks: set[str]) -> bool:
     background one gets that at launch ("Async agent launched"), so its mark is
     the task-notification the CLI appends when it ends (see _finished_marks)."""
     if meta.get("requestShape") == "background":
-        return agent_id in marks
+        # The CLI writes `finished` when it ends (2.1.318 does; older ones don't, and
+        # 2.1.318's notification no longer arrives as a user record, so marks miss it).
+        return meta.get("finished") is True or agent_id in marks
     tool_use_id = meta.get("toolUseId") or ""
     return bool(tool_use_id) and tool_use_id in marks
 

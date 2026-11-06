@@ -182,7 +182,7 @@ def should_continue(goal: dict | None) -> bool:
     return int(goal.get("iter") or 0) < MAX_ITER
 
 
-def _nudge(sid: str, goal: dict, chat_id, effort=None) -> None:
+def _nudge(sid: str, goal: dict, chat_id, effort=None, runtime=None) -> None:
     """Count the next auto-turn and queue its prompt on the session's queue."""
     from bridge import queue_manager, store
     goal["iter"] = int(goal.get("iter") or 0) + 1
@@ -190,6 +190,8 @@ def _nudge(sid: str, goal: dict, chat_id, effort=None) -> None:
     sess = store.get_session(sid) or {}
     text = _NUDGE.format(n=goal["iter"], max=MAX_ITER, title=title_of(goal),
                          objective=goal["objective"])
+    if (runtime or "").startswith("acp:"):
+        text = text.replace("UpdateGoal", "update_goal")   # the gateway's name for it
     queue_manager.enqueue(
         sid, text=text, prompt=text, images=[], model=None,
         effort=effort, permission_mode=None,
@@ -227,7 +229,8 @@ def continue_after_turn(job, effort=None) -> bool:
         sid = job.store_session_id
         if not sid or job.status != "done" or job.interrupted:
             return False
-        if (job.runtime or "").startswith("acp:"):
+        from bridge import experimental
+        if (job.runtime or "").startswith("acp:") and not experimental.enabled():
             return False              # no goals MCP on an agent: it could never mark the goal done
         from bridge import waits
         if waits.waiting(sid):        # it waits on another session; its wake-up is the next turn
@@ -235,7 +238,7 @@ def continue_after_turn(job, effort=None) -> bool:
         goal = get(sid)
         if not should_continue(goal):
             return False
-        _nudge(sid, goal, job.chat_id, effort)
+        _nudge(sid, goal, job.chat_id, effort, job.runtime)
         return True
     except Exception as e:  # noqa: BLE001 — never raise into the turn lifecycle
         print(f"[goals] continue failed: {e}", file=sys.stderr)

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type MutableRefObject, type ReactNode, type RefObject } from "react";
 import { flushSync } from "react-dom";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { api, type AccountInfo, type AnswerSelection, type RivendellJob, type SessionStatus, type SlashCommand, type TurnOutcome } from "../api";
+import { api, type AccountInfo, type CardAnswer, type RivendellJob, type SessionStatus, type SlashCommand, type TurnOutcome } from "../api";
 import type { PendingRequest, Turn } from "../chat";
 import type { HudSettings } from "../lib/theme";
 import { RunStream, TURN_TAIL } from "./RunStream";
@@ -19,7 +19,10 @@ import { hhmm, useClock12 } from "../lib/surfaces";
 import { RuneSpirit } from "./hud/RuneSpirit";
 import { UnfinishedPlate } from "./TeamBar";
 import { LimitBlock, LimitCredits, useLeaveIt, type LimitLive } from "./LimitCard";
-import { limitNudge } from "../lib/limit";
+import { limitNudge, resumeNudge } from "../lib/limit";
+import { parseFrame, promptLabel } from "../lib/multi";
+import { useMultiOn } from "../lib/multistore";
+import { IncomingNote } from "./MultiRows";
 
 // The plates draw a prompt that ran a /command as one (PromptBubble, lib/slash
 // leadCommand), checked against the project's command list: read once per
@@ -157,7 +160,7 @@ export function AgentRail() {
 
 type Respond = (
   requestId: string,
-  opts: { behavior?: "allow" | "deny"; answers?: AnswerSelection[] },
+  opts: { behavior?: "allow" | "deny"; answers?: CardAnswer[] },
 ) => void;
 
 /** Where a turn a bridge restart cut goes on (design-drafts/cli-signals row 7):
@@ -200,7 +203,7 @@ function Seam({ seam, turnId, last, onSend }: {
  *  within-turn cost flat while one is mounted. */
 function TurnBlock({
   turn, prev, next, isActive, isLast, promptIdx, hud, liveTurns, boot, who, unfinishedBy,
-  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked, job, jobTitle, cmds, limit, logins,
+  onRespond, onRunCommand, onQuote, onOpenFile, onAnswer, askDocked, job, jobTitle, cmds, limit, logins, agentSession, sessionId,
   bg, session, onSend, savers,
 }: {
   /** The last turn answered and Claude Code still runs background tasks in its
@@ -213,6 +216,10 @@ function TurnBlock({
   /** The Savers trials this session drew the saver in: its prompts' tag. */
   savers?: string[];
   turn: Turn;
+  /** The session it's in, for what a card has to read back (a report). */
+  sessionId?: string | null;
+  /** The session runs on another agent: its running turn may not carry a runtime yet. */
+  agentSession?: boolean;
   /** The turn before it, whose run your prompt's tag compares against. */
   prev?: Turn;
   /** The turn after it: a usage limit's receipt says how the work went on. */
@@ -273,6 +280,15 @@ function TurnBlock({
   // Stopped on credits_required: its card (LimitCredits) says it, CLI's words and all.
   const credits = turn.outcome?.code === "credits";
   const nudge = limitNudge(turn.prompt);
+  // A Claude continuation (CONTINUED) already has its seam; this covers the other ⏮ resumes.
+  const resumed = useMultiOn() && !seam ? resumeNudge(turn.prompt) : null;
+  // ⇄: the channel handing this turn another agent's words (lib/multi parseFrame).
+  const frame = parseFrame(turn.prompt);
+  // Notes get their own tier only on another agent's turn, whatever the session
+  // runs on now: a chat that switched keeps its Claude turns as they were.
+  const multiOn = useMultiOn();
+  const saidTier = multiOn && (turn.runtime ? turn.runtime.startsWith("acp:")
+    : turn.status === "running" && !!agentSession);
   const events = useMemo(() => {
     if (!limitHit && !credits) return turn.events;
     // The CLI's sentence comes as the error result, and often as a text event too.
@@ -289,15 +305,17 @@ function TurnBlock({
     // on the wrapper), where they make a turn one card: prompt, work, answer.
     <div id={ckId(turn.id)} className="dturn flex flex-col gap-2 scroll-mt-[86px]"
       data-ctx-type="turn" data-ctx-id={turn.id} data-last={isLast || undefined}
-      data-limit={(limitHit || credits) && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge || seam ? "" : undefined}
+      data-limit={(limitHit || credits) && limitNudge(next?.prompt) ? "" : undefined} data-cont={nudge || seam || resumed ? "" : undefined}
       data-cut={carriedOn ? "" : undefined}
-      data-ctx-label={(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
+      data-ctx-label={promptLabel(turn.prompt || "reply").replace(/\s+/g, " ").slice(0, 60)}>
       <div className="dprompt" data-job={job ? "" : undefined} data-who={who ? "" : undefined}
         style={sent ? { animation: "streamIn .34s cubic-bezier(.2,.8,.2,1) both" } : undefined}>
-        {turn.prompt && !nudge && !seam && (
+        {resumed && <div className="ma-resumed" role="note">↻ {resumed}</div>}
+        {turn.prompt && !nudge && !seam && !resumed && (
           <div data-prompt-idx={promptIdx}>
             {job ? <JobPlate job={job} prompt={turn.prompt} at={turn.started} title={jobTitle} />
-              : <PromptBubble text={turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} savers={savers} />}
+              : frame && frame.kind !== "user" ? <IncomingNote frame={frame} at={turn.started} />
+              : <PromptBubble text={frame ? frame.body : turn.prompt} at={turn.started} runtime={turn.runtime} run={turn} prev={prev} commands={cmds} who={who} savers={savers} />}
           </div>
         )}
         {turn.attachments && turn.attachments.length > 0 && (
@@ -337,6 +355,11 @@ function TurnBlock({
               view={view}
               bgN={bg?.n}
               bgSince={bg?.since}
+              saidTier={saidTier}
+              sessionId={sessionId}
+              turnNo={promptIdx + 1}
+              runtime={turn.runtime}
+              elapsed={turn.elapsed}
             />
           )}
         </div>
@@ -369,6 +392,7 @@ export interface TranscriptNav {
 }
 
 export function Transcript({
+  agentSession,
   turns,
   activeId,
   boot,
@@ -402,6 +426,8 @@ export function Transcript({
   onSend,
   savers,
 }: {
+  /** The session runs on another agent (TurnBlock). */
+  agentSession?: boolean;
   turns: Turn[];
   activeId: string | null;
   /** What the live turn is waiting on before its first token, or null. */
@@ -672,6 +698,8 @@ export function Transcript({
         onSend={onSend}
         savers={savers}
         isActive={row.turn.id === activeId}
+        sessionId={sessionKey}
+        agentSession={agentSession}
         boot={boot}
         isLast={index === visible.length - 1}
         promptIdx={cut + index}

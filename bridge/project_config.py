@@ -86,6 +86,16 @@ def set_profile(project: str, pid: "str | None") -> "str | None":
     return _set_field(project, None, "profile", pid or "")
 
 
+def helper(project: str) -> "str | None":
+    """The profile a helper in this project runs on when nobody names one
+    (bridge/channel.py). Unset: the chat's own."""
+    return _get_field(project, None, "helper")
+
+
+def set_helper(project: str, pid: "str | None") -> "str | None":
+    return _set_field(project, None, "helper", pid or "")
+
+
 def profiles_by_project() -> dict:
     with _lock:
         return {k: v["profile"] for k, v in _load().items()

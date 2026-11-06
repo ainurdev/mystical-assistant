@@ -36,7 +36,7 @@ export type Seg = { kind: SegKind; idx: number[]; start: number };
  *  because they end the turn and must never hide inside a fold; `divider` (a
  *  device run's "Mystical restarted") because a stretch with no tool in it
  *  draws nothing, and the line would go with it. */
-const PROSE = new Set(["text", "result", "steer", "permission", "question", "error", "stopped", "divider"]);
+const PROSE = new Set(["text", "result", "steer", "permission", "question", "error", "stopped", "divider", "switch", "delegation", "merge"]);
 
 /** Events that render a row when they land in a steps fold. `tool_done`,
  *  `permission_resolved` and a textless `thinking` inside a run draw nothing,

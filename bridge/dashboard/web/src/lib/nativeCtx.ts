@@ -2,7 +2,7 @@ import type { CtxItem } from "../components/hud/ContextMenu";
 import { confirmLeave } from "./leaveGuard";
 import { selectionMd } from "./selmd";
 import { isNativeApp } from "./mac";
-import { attachmentPath, revealItems } from "./reveal";
+import { attachmentPath, revealItems } from "./revealfile";
 
 /* The browser's own context-menu entries, rebuilt for the custom HUD menu —
    preventDefault() takes the native one away, so anything it offered has to be

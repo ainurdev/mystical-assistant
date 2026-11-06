@@ -38,7 +38,8 @@ export function WorkingIndicator({
     const id = setInterval(() => setTick((t) => t + 1), 90);
     return () => clearInterval(id);
   }, []);
-  const state = useMemo(() => (events ? workState(events, boot, started) : null), [events, boot, started]);
+  // The cast: a delegation row's `agent` is a name, and workState only reads a tool's.
+  const state = useMemo(() => (events ? workState(events as Parameters<typeof workState>[0], boot, started) : null), [events, boot, started]);
 
   const frame = SPIN[tick % SPIN.length];
   const elapsed = Math.floor((tick * 90) / 1000);

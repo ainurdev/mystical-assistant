@@ -36,3 +36,13 @@ console.assert(v.ctx === "Two ways to go." && v.ask === "Which one?", `newline: 
 
 console.assert(waited(100, 130) === "30s" && waited(100, 220) === "2m" && waited(undefined) === "", "waited");
 console.log("askdock ok");
+
+// A secret waits on the box like any card, and says only its name and why.
+{
+  const secret = turn("running", [{ type: "secret_request", request_id: "gw-1", name: "STRIPE_KEY", why: "Charges", at: 5 }], [{ request_id: "gw-1", kind: "secret", tool_name: "request_secret" }]);
+  const d = docked([secret], true);
+  if (d?.kind !== "secret" || d.requestId !== "gw-1" || d.name !== "STRIPE_KEY" || d.why !== "Charges" || d.of !== 1) throw new Error("a waiting secret docks");
+  const answered = turn("running", [{ type: "secret_request", request_id: "gw-1", name: "K", why: "" }, { type: "secret_answered", request_id: "gw-1", given: true }], []);
+  if (docked([answered], true) !== null) throw new Error("an answered secret doesn't");
+  console.log("ok - a secret docks until it's answered");
+}

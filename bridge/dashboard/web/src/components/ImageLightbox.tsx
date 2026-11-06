@@ -120,7 +120,9 @@ export type Clip = {
  *  tool shot's, for lib/seenshots: shown, it counts as seen. */
 export type Shown = { src: string; name?: string; clip?: Clip; path?: string; at?: number;
   /** A short badge on its filmstrip thumb: a question option's key. */
-  tag?: string };
+  tag?: string;
+  /** What it shows, the tool it came from and the turn it's in, said in the viewer. */
+  caption?: string; tool?: string; turn?: string };
 
 const hasPanel = (c?: Clip) =>
   !!(c && (c.notes || c.chapters?.length || c.todos?.length));
@@ -172,6 +174,11 @@ export function ImageLightbox({ src, all, onClose, action }: {
       {isVideo(cur.src) ? <VideoLightbox key={cur.src} src={cur.src} name={cur.name} title={title} strip={many} clip={cur.clip} onClose={onClose} />
                         : <StillLightbox src={cur.src} name={cur.name} title={title} strip={many} onClose={onClose} />}
       {many && <Filmstrip list={list} at={i} onPick={setI} onStep={go} />}
+      {(cur.caption || cur.tool || cur.turn) && createPortal(
+        <div className="ma-lb-meta">
+          {cur.caption}
+          {(cur.tool || cur.turn) && <small>{[cur.tool, cur.turn].filter(Boolean).join(" · ")}</small>}
+        </div>, document.body)}
       {sendPicture && !isVideo(cur.src) && uploadPath(cur) && createPortal(
         <button type="button" title="Send this picture to a teammate"
           onClick={() => { const p = uploadPath(cur); if (p) sendPicture?.({ path: p, url: cur.src, name: cur.name || p.split("/").pop() || "picture" }); }}

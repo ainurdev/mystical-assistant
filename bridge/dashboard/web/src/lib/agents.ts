@@ -25,6 +25,13 @@ export function agentLabel(id: string, labels: Record<string, string> = known): 
   return (labels[id] ?? id).toUpperCase();
 }
 
+/** A preset's id from its label, for what only carries the label (a tree row's
+ *  provider): "Kimi Code" -> "kimi". Unknown: the label, lowered. */
+export function agentIdOf(label: string, labels: Record<string, string> = known): string {
+  if (!label || label === "Claude") return "claude";
+  return Object.entries(labels).find(([, l]) => l === label)?.[0] ?? label.toLowerCase();
+}
+
 /** A turn's runtime tag as its transcript badge. "acp:<id>" is another agent;
  *  "claude:<slot>" another Claude login. */
 export function runtimeBadge(runtime: string, labels: Record<string, string> = known):

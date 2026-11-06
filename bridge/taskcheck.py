@@ -222,7 +222,20 @@ def answer_state(questions, answers) -> "str | None":
 def main(argv) -> int:
     """PreToolUse hook. argv: the board repo's id, its key prefixes comma-joined;
     the event on stdin. Exit 2 with the reason on stderr holds the call (Claude
-    reads the reason). Anything else, a broken event included, lets it run."""
+    reads the reason). Anything else, a broken event included, lets it run.
+
+    With --git-hook first it is a git pre-push hook instead (bridge/pushgate.py), for
+    an agent that has no PreToolUse: exit 1 holds the push, and git shows the reason."""
+    if argv[:1] == ["--git-hook"]:
+        try:
+            prefixes = [p for p in (argv[2] if len(argv) > 2 else "").split(",") if p]
+            msg = gate(os.getcwd(), "git push", argv[1] if len(argv) > 1 else "", prefixes)
+        except Exception:  # noqa: BLE001 — a broken hook must never block work
+            return 0
+        if msg:
+            print(msg, file=sys.stderr)
+            return 1
+        return 0
     try:
         ev = json.load(sys.stdin)
         if ev.get("tool_name") != "Bash":

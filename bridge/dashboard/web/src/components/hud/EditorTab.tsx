@@ -29,7 +29,7 @@ import { ChangesView, kindOf, OutlineView, RefsView } from "./EditorSide";
 import { clampFont, loadPrefs, savePrefs, type EditorPrefs } from "../../lib/editorprefs";
 import { askConfirm } from "../ui/Ask";
 import { registerEditor } from "../../lib/editorctx";
-import { revealItems } from "../../lib/reveal";
+import { revealItems } from "../../lib/revealfile";
 
 /* EDITOR tab — a real file editor (not the diff viewer it used to be). Browses
    the whole working tree of the selected branch/worktree, opens any file into an

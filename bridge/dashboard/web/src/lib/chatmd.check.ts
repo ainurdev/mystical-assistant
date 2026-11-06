@@ -29,4 +29,10 @@ console.assert(md.endsWith("\n") && !md.endsWith("\n\n"), "trailing newlines");
 // An empty session is empty, not "undefined".
 console.assert(chatToMarkdown([]).trim() === "", "empty session should be empty");
 
+// An image in a message stays the markdown it was written as.
+const shot = "before ![image](<my shots/a.png>) after";
+const withImage = chatToMarkdown([turn(shot, [{ type: "text", text: "see ![a](b.png)" }])]);
+console.assert(withImage.includes(`## ${shot}`), "image in a prompt lost its markdown");
+console.assert(withImage.includes("see ![a](b.png)"), "image in an answer lost its markdown");
+
 console.log("chatmd ok");

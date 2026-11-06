@@ -30,7 +30,8 @@ from collections import Counter
 
 from . import browser, config, git, movejob, state, store, team
 
-KEEP = frozenset({"learn", "docs", "tasks.json", "dev.log", ".gitignore"})
+# images: the pictures in your messages. Deleting them breaks old chats.
+KEEP = frozenset({"learn", "docs", "images", "tasks.json", "dev.log", ".gitignore"})
 
 
 def _du(path: str) -> tuple[int, float]:

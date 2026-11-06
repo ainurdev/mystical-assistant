@@ -11,7 +11,7 @@ import { TabKick } from "./TabKick";
 import { WritingCard } from "./WritingCard";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import { findFiles } from "../../lib/filefind";
-import { revealItems } from "../../lib/reveal";
+import { revealItems } from "../../lib/revealfile";
 
 /* FILES — a VS Code-ish explorer for the ACTIVE SESSION's working tree
    (project + its branch's worktree). Git-changed files carry their status
@@ -54,6 +54,8 @@ interface Props {
   // The opened session's turns and its checkout, for the writing card.
   turns?: Parameters<typeof WritingCard>[0]["turns"];
   cwd?: string | null;
+  // The .mystical row's way to its panel, while the panel exists (the experimental switch).
+  onOpenMystical?: () => void;
 }
 
 type Row = { key: string; dir: boolean; depth: number; name: string; path: string };
@@ -85,7 +87,7 @@ function countAbove(paths: Iterable<string>): Map<string, number> {
   return out;
 }
 
-export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, editing, onAddToPrompt, turns, cwd }: Props) {
+export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, editing, onAddToPrompt, turns, cwd, onOpenMystical }: Props) {
   const [paths, setPaths] = useState<string[]>([]);
   // .gitignore'd paths, as prefixes — listed like everything else, just dimmed.
   const [ignored, setIgnored] = useState<string[]>([]);
@@ -364,7 +366,7 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
           const open = r.dir && !collapsed.has(r.path);
           const nMine = r.dir && !open ? mineDirs.get(r.path) : undefined;
           const nChg = r.dir ? changedDirs.get(r.path) : undefined;
-          return (
+          const row = (
             <button key={r.key} className="trow" onClick={() => (r.dir ? toggleDir(r.path) : onOpenFile(r.path, !!st))}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -410,6 +412,13 @@ export function FilesPanel({ project, branch, onOpenFile, onSendFile, edited, ed
               )}
             </button>
           );
+          // A sibling of the row, not inside it: a button can't hold a button.
+          return r.dir && r.path === ".mystical" && onOpenMystical ? (
+            <div key={r.key} className="my-filerow">
+              {row}
+              <button type="button" className="my-open" title="See .mystical by kind: sizes, previews, what's safe to clear" onClick={onOpenMystical}>PANEL</button>
+            </div>
+          ) : row;
         })}
         </div>
         )}

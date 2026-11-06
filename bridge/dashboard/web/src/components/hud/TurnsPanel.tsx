@@ -193,6 +193,7 @@ export function TurnsPanel({
       <span className="tn-nq" aria-hidden>?</span>
       <span className="tn-nt">Turn {live.n} waits on you
         {wants && <small>{wants.kind === "question" ? wants.questions?.[0]?.question
+          : wants.kind === "secret" ? `Needs a secret: ${wants.summary}`
           : `Allow ${wants.tool_name}${wants.summary ? `: ${wants.summary}` : "?"}`}</small>}</span>
       <button type="button" onClick={() => (ask?.kind === "question" ? onJump(ask.turnId, ask.key) : onLatest())}>Answer ›</button>
     </div>

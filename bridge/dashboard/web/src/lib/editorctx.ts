@@ -25,7 +25,7 @@ export interface EditorEntry {
   view: ViewLike;
   /** The open file, for "Send selection to chat"; undefined for the composer. */
   path?: () => string | undefined;
-  /** The open file's absolute path, for Show in Finder (lib/reveal). */
+  /** The open file's absolute path, for Show in Finder (lib/revealfile). */
   file?: () => string | undefined;
   /** Owner-specific rows: composer = attach | mention | clear; editor = format | symbol | find. */
   actions?: Record<string, () => void>;

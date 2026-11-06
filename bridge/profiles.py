@@ -323,7 +323,23 @@ def save_pick(session: dict, field: str, value: "str | None") -> None:
     store.set_session_field(session["id"], field, None if follow else value)
 
 
-def bind(session: dict, pid: "str | None") -> "tuple[dict, int]":
+def _bind_moving(session: dict, new: "dict | None", scope: str) -> "dict | None":
+    """With the EXPERIMENTAL switch on, a provider or an agent's account can change
+    between turns (bridge/handoff.py). Returns a refusal, or None once the sessions
+    are swapped and the next turn is told what it missed."""
+    from bridge import handoff, runner   # lazy: both import this module
+    why = handoff.refusal(session)
+    if not why and session.get("parent_session"):
+        why = "A helper stays on the provider it was started on."
+    if not why and runner.live_job(session["id"]) is not None:
+        why = "A turn is running. Change this after it finishes."
+    if why:
+        return {"error": why}
+    handoff.prepare(session, new or {}, scope)
+    return None
+
+
+def bind(session: dict, pid: "str | None", scope: str = "whole") -> "tuple[dict, int]":
     """Bind (or with "" unbind) a session's profile. Binding clears the knobs
     set by hand so the new profile shows through; unbinding freezes what a
     Claude profile gave, so nothing changes under a running conversation, but
@@ -342,14 +358,22 @@ def bind(session: dict, pid: "str | None") -> "tuple[dict, int]":
     new_agent = (new or {}).get("agent") or CLAUDE
     history = (store.count_turns(session["id"]) or session.get("claude_session_id")
                or session.get("agent_session_id"))
-    if eff["agent"] != new_agent and history:
-        return {"error": "This session already ran on another agent. Start a "
-                         "new session with that profile."}, 409
-    # Same agent, other account: the agent's saved session lives in the old
-    # account's home, so the next turn couldn't resume it.
-    if session.get("agent_session_id") and ((new or {}).get("account") or "") != eff["account"]:
-        return {"error": "This session already ran under another account. Start a "
-                         "new session with that profile."}, 409
+    from bridge import experimental               # lazy, as above
+    moving = (eff["agent"] != new_agent and history) or (
+        session.get("agent_session_id") and ((new or {}).get("account") or "") != eff["account"])
+    if moving and experimental.enabled():
+        refused = _bind_moving(session, new, scope)
+        if refused:
+            return refused, 409
+    else:
+        if eff["agent"] != new_agent and history:
+            return {"error": "This session already ran on another agent. Start a "
+                             "new session with that profile."}, 409
+        # Same agent, other account: the agent's saved session lives in the old
+        # account's home, so the next turn couldn't resume it.
+        if session.get("agent_session_id") and ((new or {}).get("account") or "") != eff["account"]:
+            return {"error": "This session already ran under another account. Start a "
+                             "new session with that profile."}, 409
     store.set_session_field(session["id"], "profile_id", pid)
     freeze = pid is None and eff["agent"] == CLAUDE
     for col in KNOBS:
@@ -502,6 +526,9 @@ def claude_only_refusal(session: "dict | None", what: str) -> "str | None":
     agent = agent_for(session)
     if agent == CLAUDE:
         return None
+    from bridge import experimental             # lazy, as below
+    if what == "goal" and experimental.enabled():
+        return None                             # the gateway's goal tools (bridge/gateway.py)
     from bridge import acp_agents                # lazy, as add_agent_default
     label = (acp_agents.preset(agent) or {}).get("label", agent)
     return f"{CLAUDE_ONLY[what]}; this session runs on {label}."

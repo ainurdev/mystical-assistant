@@ -7,7 +7,7 @@ import {
   FolderTree, Gauge, GitBranch, 
   Globe,
   Handshake, Hourglass, KeyRound, ListMusic, ListTree, LoaderCircle, Lock,
-  Monitor, Moon, Network, Palette, Play, Plug, Puzzle,
+  Monitor, Moon, Network, Palette, Play, Plug, Puzzle, Wrench,
   Power, ScanLine, ScrollText, Search, Server, 
   SlidersHorizontal, Sparkles, SquareTerminal, TriangleAlert, Type,
   Upload, Waypoints, RotateCw, Send, type LucideIcon,
@@ -24,6 +24,12 @@ import { saverFoot } from "../../lib/savers";
 import { DeviceRunsPanel } from "./DeviceRunsPanel";
 import { UsageSharingSection } from "./UsageSharing";
 import { StorageSection } from "./StorageSection";
+import { ExperimentalSection } from "./ExperimentalSection";
+import { AgentToolsPage, type ChatInfo } from "./AgentToolsPage";
+import { useMultiOn } from "../../lib/multistore";
+import { openMysticalPanel } from "../../lib/mysticaldir";
+import { openSession } from "../../lib/devicerun";
+import { ChatImagesSection } from "./ChatImagesSection";
 import { ProfilePick, ProjectsSettings, type ProjectsSettingsProps } from "./ProjectsSettings";
 import { WorkspacesSettings } from "./WorkspacesSettings";
 import { MARK } from "./CouncilPanel";
@@ -98,6 +104,8 @@ import { PromptBubble } from "../PromptBubble";
 import { FinalResult } from "../RunStream";
 
 export interface SettingsModalProps {
+  /** The open session's folder: which project's servers and skills EXPERIMENTAL lists. */
+  cwd?: string | null;
   host: string;
   port: string;
   /** Which tab to land on, when the opener asked for one by name (a dead-login
@@ -130,6 +138,9 @@ export interface SettingsModalProps {
   weather: Weather;
   onSetUnit: (unit: string) => Promise<string | null>;
   onSetPlace: (p: Place) => Promise<string | null>;
+  /** The open session, and any chat by id: AGENT TOOLS' This chat and its activity's links. */
+  sessionId?: string | null;
+  chatInfo?: (id: string) => ChatInfo | undefined;
 }
 
 // ---- CATEGORIES -------------------------------------------------------------
@@ -144,7 +155,7 @@ export interface SettingsModalProps {
 // among the model/mode/effort knobs they have nothing to do with.
 
 export type Tab = "appearance" | "transcript" | "notifications"
-  | "projects" | "workspaces" | "aimgmt" | "skills"
+  | "projects" | "workspaces" | "aimgmt" | "skills" | "agenttools"
   | "integrations" | "system" | "move"
   | "mac";
 
@@ -208,6 +219,9 @@ const TABS: { key: Tab; label: string; hint: string; lede: string; about: string
   // Claude's: Kimi Code reads its own (~/.agents/skills, a project's .agents/skills).
   { key: "skills", label: "CLAUDE SKILLS", hint: "project · machine · catalog", lede: "SKILL.md files a session can reach without you typing them.", icon: Puzzle, group: "THE WORK",
     about: "What a Claude session can reach that you didn't type: the SKILL.md files in a project or on this machine, the catalog to install from, and Claude Code plugins. Other agents keep their own — Kimi Code reads ~/.agents/skills and a project's .agents/skills." },
+  // Behind the experimental switch it takes CLAUDE SKILLS' place in the rail (railFor).
+  { key: "agenttools", label: "AGENT TOOLS", hint: "mcp · skills · rules · hooks", lede: "What each agent can reach, and who said so.", icon: Wrench, group: "THE WORK",
+    about: "What each agent can reach and who said so: MCP servers, skills, built-in and Mystical tools, at the machine, a project or a chat. Rules and hooks for what should happen when they run." },
   { key: "integrations", label: "INTEGRATIONS", hint: "installed · available", lede: "Other systems the bridge does work for.", icon: Waypoints, group: "THE WORK",
     about: "Other systems the bridge does work for. Each one ships with Mystical but stays silent until you install it: no tab, no card, no rows, no worker." },
   { key: "system", label: "SYSTEM", hint: "storage · bridge · updates", lede: "The bridge itself: startup, storage, updates, environment.", icon: Server, group: "THE WORK",
@@ -216,6 +230,12 @@ const TABS: { key: Tab; label: string; hint: string; lede: string; about: string
     about: "Carry this bridge to another machine. EXPORT packs your repos' unpushed work, MCP servers, plugins, Claude Code settings and chat history into one file; IMPORT replays a file from another machine here." },
 ];
 const RAIL = TABS.filter((t) => t.key !== "mac" || isNativeApp());
+/** With multi-agent chats on, AGENT TOOLS replaces CLAUDE SKILLS and holds Claude's MCP
+ *  fold; off, nothing here changes. */
+const railFor = (multi: boolean) => RAIL.filter((t) => t.key !== (multi ? "skills" : "agenttools"))
+  .map((t) => (multi && t.key === "aimgmt" ? { ...t, hint: "accounts · agents · extras" } : t));
+/** Sections AGENT TOOLS holds while the switch is on, wherever the index files them. */
+const AT_SECS = new Set(["MCP SERVERS", "ADD A SERVER", "SKILLS"]);
 
 // ---- SEARCH -----------------------------------------------------------------
 // Ten categories deep, "where do I turn X off" is a hunt through all ten. One
@@ -253,6 +273,15 @@ const INDEX: { tab: Tab; sec: string; terms: string }[] = [
   { tab: "integrations", sec: "CLAUDE DESIGN", terms: "claude design system link pull sync skill tokens components" },
   { tab: "integrations", sec: "AVAILABLE", terms: "install integration plugin add rivendell claude design" },
   { tab: "system", sec: "STORAGE", terms: "storage disk space cache caches clear delete clean up free files mystical screenshots pictures uploads drafts scratch" },
+  { tab: "system", sec: "IMAGES", terms: "send images image picture screenshot paste attachment attach in the chat inline mystical" },
+  { tab: "system", sec: "EXPERIMENTAL", terms: "experimental multi agent chats helpers subagents switch provider kimi delegate limits hops channel" },
+  { tab: "agenttools", sec: "SHARED MCP SERVERS", terms: "agent tools share mcp server model vendor kimi codex login tools secret sensitive grid level machine project chat" },
+  { tab: "agenttools", sec: "SHARED SKILLS", terms: "agent tools share skill skills agents kimi codex claude only conflict" },
+  { tab: "agenttools", sec: "BUILT-IN TOOLS", terms: "agent tools disable deny built-in bash edit write disallowed level machine project chat" },
+  { tab: "agenttools", sec: "PATTERN RULES", terms: "deny pattern bash git push disallowed tools" },
+  { tab: "agenttools", sec: "MYSTICAL TOOLS", terms: "gateway mystical tools run checks drive page show image delegate" },
+  { tab: "agenttools", sec: "RULES", terms: "rules safety destructive protect paths secrets test format compaction subagent ping activity log" },
+  { tab: "agenttools", sec: "HOOKS", terms: "hooks hook shell command pretooluse stop event matcher kimi claude copy" },
   { tab: "system", sec: "BRIDGE", terms: "host port address" },
   { tab: "system", sec: "STARTUP", terms: "install app pwa start at login autostart window systemd" },
   { tab: "system", sec: "USAGE SHARING", terms: "share usage telemetry analytics posthog privacy tracking anonymous opt in out replay recording" },
@@ -274,14 +303,15 @@ const TUNES: Record<string, string> = { RELEVANCE_: "relevance", NEXTUP_: "nextu
 const tunesOff = (key: string, ai: Record<string, boolean>) =>
   Object.entries(TUNES).some(([pre, f]) => key.startsWith(pre) && !ai[f]);
 
-function search(q: string, env: EnvSetting[], hidden: Set<string>): Hit[] {
+function search(q: string, env: EnvSetting[], hidden: Set<string>, multi: boolean): Hit[] {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return [];
   const label = (t: Tab) => TABS.find((x) => x.key === t)!.label;
   const all: (Hit & { hay: string })[] = [
-    ...INDEX.filter((e) => !hidden.has(e.sec) && (e.tab !== "mac" || isNativeApp())).map((e) => ({
-      tab: e.tab, sec: e.sec, hay: `${label(e.tab)} ${e.sec} ${e.terms}`.toLowerCase(),
-    })),
+    ...INDEX.filter((e) => !hidden.has(e.sec) && (e.tab !== "mac" || isNativeApp()) && (e.tab !== "agenttools" || multi) && (e.sec !== "IMAGES" || multi)).map((e) => {
+      const tab = multi && AT_SECS.has(e.sec) ? "agenttools" : e.tab;
+      return { tab, sec: e.sec, hay: `${label(tab)} ${e.sec} ${e.terms}`.toLowerCase() };
+    }),
     ...env.map((s) => ({
       tab: "system" as Tab, sec: s.group, row: s.label, hint: s.hint,
       hay: `system ${s.group} ${s.label} ${s.key} ${s.hint}`.toLowerCase(),
@@ -620,7 +650,7 @@ function Volume({ value, disabled, onChange }: { value: number; disabled?: boole
  *  wrapping flex row: flex stretches whatever lands on the last line, so ten
  *  fonts read as six even cells and then four oversized ones. Every cell is the
  *  same width here, however the list divides. */
-function Segmented<T extends string>({
+export function Segmented<T extends string>({
   options,
   value,
   onPick,
@@ -2132,7 +2162,7 @@ function IntegrationsPanel() {
    what exists on the machine at all. */
 const REMOTE = /\((HTTP|SSE)\)\s*$/i;   // a stdio server has no OAuth to renew
 
-function McpPanel() {
+export function McpPanel() {
   const [info, setInfo] = useState<McpInfo | null>(null);
   // The client can be newer than the bridge: a dashboard built from this commit
   // against a process that started before it gets a 404 here, not a panel.
@@ -2829,7 +2859,7 @@ function AgentRow({ p, first, accounts, onChanged, options, signIn }: {
   );
 }
 
-function MiniBtn({
+export function MiniBtn({
   children,
   onClick,
   disabled,
@@ -3412,6 +3442,7 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
   openSec: string | null;
   projects: ProjectsSettingsProps;
 }) {
+  const multiOn = useMultiOn();   // AGENT TOOLS holds Claude's MCP fold while it's on
   const aiFeatures = useAiFeatures();
   const acc = useAccounts(onAccountsChanged);
   // Each fold head says where it stands without opening it (2026-11-06, A ·
@@ -3701,12 +3732,14 @@ function AiManagementPanel({ settings, onPatch, models, sessionTools, profiles, 
       }} />
       {/* Claude's servers (`claude mcp`). Kimi Code reads its own ~/.kimi-code/mcp.json;
           a project's .mcp.json reaches both. */}
-      <AimFold id="mcp" title="Claude MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec}
-        count={mcpN ? [`${mcpN.ok} connected`, mcpN.auth ? `${mcpN.auth} need a sign-in` : "", mcpN.bad ? `${mcpN.bad} failed` : ""].filter(Boolean).join(" · ") : null}
-        hint={mcpN ? undefined : "servers Claude sessions load"}
-        right={mcpN && mcpN.bad > 0 ? <span className="aim-chip warn">{mcpN.bad} failed</span> : undefined}>
-        <McpPanel />
-      </AimFold>
+      {!multiOn && (
+        <AimFold id="mcp" title="Claude MCP" secs={["MCP SERVERS", "ADD A SERVER", "MCP"]} openSec={openSec}
+          count={mcpN ? [`${mcpN.ok} connected`, mcpN.auth ? `${mcpN.auth} need a sign-in` : "", mcpN.bad ? `${mcpN.bad} failed` : ""].filter(Boolean).join(" · ") : null}
+          hint={mcpN ? undefined : "servers Claude sessions load"}
+          right={mcpN && mcpN.bad > 0 ? <span className="aim-chip warn">{mcpN.bad} failed</span> : undefined}>
+          <McpPanel />
+        </AimFold>
+      )}
       <AimFold id="defprofile" title="Default profile" secs={["PROFILES", "RUN DEFAULTS"]} openSec={openSec}
         count={defaultName ?? (profilesAvailable ? "the first login's" : null)} hint="what a session gets unless its project names one">
         {profilesBody}
@@ -4591,7 +4624,8 @@ export function SettingsModal(props: SettingsModalProps) {
   const plugins = useIntegrations();
   const hidden = new Set(Object.entries(PLUGIN_SEC).filter(([id]) => !plugins[id]).map(([, sec]) => sec));
   if (!plugins.rivendell) hidden.add("ADD AN INSTANCE");
-  const hits = search(q, env.filter((s) => !tunesOff(s.key, aiFeatures)), hidden);
+  const multiOn = useMultiOn();
+  const hits = search(q, env.filter((s) => !tunesOff(s.key, aiFeatures)), hidden, multiOn);
   const readouts = useRailReadouts(settings, props.projects.groups.length, plugins, project);
   // The search sits at the top of the rail now; ⌘F (Ctrl+F) lands in it from anywhere in the dialog.
   const searchBox = useRef<HTMLInputElement>(null);
@@ -4602,7 +4636,18 @@ export function SettingsModal(props: SettingsModalProps) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
-  const shown: Tab | "search" = q.trim() ? "search" : tab;
+  // The switch moves pages under an open dialog: a name for the other half lands on its twin.
+  const page: Tab = multiOn && tab === "skills" ? "agenttools" : !multiOn && tab === "agenttools" ? "system" : tab;
+  const shown: Tab | "search" = q.trim() ? "search" : page;
+  // Named for Claude's MCP fold, which AGENT TOOLS holds while the switch is on. Only the
+  // ask that opened this dialog: the rail still reaches AI MANAGEMENT itself.
+  const movedOnce = useRef(false);
+  useEffect(() => {
+    if (multiOn && !movedOnce.current && tab === "aimgmt" && startSec && AT_SECS.has(startSec)) {
+      movedOnce.current = true;
+      setTab("agenttools");
+    }
+  }, [multiOn, tab, startSec]);
   function go(h: Hit) {
     setTab(h.tab);
     if (h.tab === "system") setSysTab(sysTabOf(h.sec));
@@ -4777,12 +4822,12 @@ export function SettingsModal(props: SettingsModalProps) {
               />
               <kbd aria-hidden>⌘F</kbd>
             </label>
-            {RAIL.map((t, i) => (
+            {railFor(multiOn).map((t, i, rail) => (
               <Fragment key={t.key}>
-                {t.group !== RAIL[i - 1]?.group && <div className="setgroup">{sentence(t.group)}</div>}
+                {t.group !== rail[i - 1]?.group && <div className="setgroup">{sentence(t.group)}</div>}
                 <button
-                  className={tab === t.key ? "on" : undefined}
-                  aria-current={tab === t.key ? "page" : undefined}
+                  className={page === t.key ? "on" : undefined}
+                  aria-current={page === t.key ? "page" : undefined}
                   onClick={() => setTab(t.key)}
                   style={{ display: "flex", alignItems: "center", gap: 8 }}
                 >
@@ -5100,6 +5145,14 @@ export function SettingsModal(props: SettingsModalProps) {
                 projects={projects.groups.filter((g) => g.rel.startsWith("/")).map((g) => ({ rel: g.rel, name: g.name }))
                   .sort((a, b) => a.name.localeCompare(b.name))} />
             )}
+            {shown === "agenttools" && (
+              <AgentToolsPage currentProject={project} sessionId={props.sessionId ?? null} chatInfo={props.chatInfo ?? (() => undefined)}
+                startProject={skillsFor} openSec={jump?.sec ?? (tab === "skills" ? "SKILLS" : startSec)}
+                onOpenChat={openSession}
+                projects={projects.groups.filter((g) => g.rel.startsWith("/"))
+                  .map((g) => ({ rel: g.rel, name: g.name, cwd: g.sessions.find((x) => x.cwd)?.cwd ?? null }))
+                  .sort((a, b) => a.name.localeCompare(b.name))} />
+            )}
 
             {shown === "workspaces" && <WorkspacesSettings groups={projects.groups} />}
 
@@ -5145,10 +5198,13 @@ export function SettingsModal(props: SettingsModalProps) {
                     </Section>
                     <StartupSection />
                     <UsageSharingSection />
+                    {/* IMAGES and EXPERIMENTAL: sysTabOf files any section it doesn't name here. */}
+                    <ChatImagesSection />
+                    <ExperimentalSection top onOpenAgentTools={() => setTab("agenttools")} />
                   </>
                 )}
 
-                {sysTab === "storage" && <StorageSection />}
+                {sysTab === "storage" && <StorageSection onOpenMystical={multiOn ? () => openMysticalPanel({ project, session: project ? null : props.sessionId }) : undefined} />}
 
                 {sysTab === "advanced" && (
                   <Section title="HTTP INSPECTOR">
