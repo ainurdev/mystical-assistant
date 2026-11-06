@@ -1,5 +1,7 @@
 from bridge import council, store
 
+store.init()
+
 def test_parse_review_reads_the_last_json_block():
     t = 'Looks fine.\n```json\n{"score": 3}\n```\nFinal:\n```json\n{"score": 7.46, "summary": "one race", "findings": [{"sev": "must", "file": "bridge/git.py", "line": 584, "title": "push() hides exit 1"}]}\n```'
     r = council.parse_review(t)
