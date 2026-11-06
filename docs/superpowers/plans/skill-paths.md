@@ -173,7 +173,6 @@ If one fits, call SetPath with the path and a one-line why, then start its skill
 If none fits (a plain question, a small edit, a chat reply), just answer and start nothing.
 If the message begins "No path for this message.", start nothing.
 When you finish a step of a path and need nothing more from the user, call StepDone. After a grill, pass choice "here" if the work fits this one session, or "tickets" if it needs several. Never call StepDone while waiting on the user.
-The tracker is local files in this checkout: a spec goes to .mystical/tickets/<feature-slug>/SPEC.md, and its tickets beside it, one per file as <NN>-<slug>.md in the local ticket template, numbered from 01 in dependency order. Triage labels: needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix.
 ```
 
   Pass `paths_pack=paths.pack_for(claude_session_id)` at runner :661, in the same guarded call as the Rivendell note.

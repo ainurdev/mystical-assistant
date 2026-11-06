@@ -45,5 +45,4 @@ def test_spec_and_tickets_go_to_the_mystical_tickets_folder():
     assert ".scratch" not in tk
     assert "(local files: `.mystical/tickets/<feature-slug>/SPEC.md`)" in open(_skill_md("to-spec")).read()
     from bridge import paths
-    assert ".mystical/tickets/<feature-slug>/SPEC.md" in paths.PACK_TEXT
-    assert "<NN>-<slug>.md" in paths.PACK_TEXT
+    assert ".mystical/tickets" not in paths.PACK_TEXT   # the skills name the place; the pack must not write the spec itself
