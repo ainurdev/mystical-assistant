@@ -62,6 +62,7 @@ def quiet(monkeypatch):
                      "silent": silent})
         return {"message_id": sent[-1]["mid"]}
     monkeypatch.setattr(telegram, "send", send)
+    monkeypatch.setattr(telegram, "edit", lambda *a, **k: None)   # a break's "back" rewrite
     monkeypatch.setattr(runner, "_notify", lambda *a, **k: None)
     monkeypatch.setattr(config, "NOTIFY_ENABLE", True)
     monkeypatch.setattr(state, "miniapp_url", None)        # no OPEN SESSION button to count

@@ -9,9 +9,11 @@ and, worse, point tests at the real ~/.bridge_state DB and the real chat-id
 allow-list. We hard-assign (not setdefault) so a shell value can never leak in.
 """
 
+import ipaddress
 import json
 import os
 import shutil
+import socket
 import sys
 import tempfile
 
@@ -62,6 +64,30 @@ os.environ["ACCOUNTS_DIR"] = os.path.join(tempfile.mkdtemp(), "accounts")
 # toolsets._fill catches the OSError and returns [].
 os.environ["CLAUDE_BIN"] = os.path.join(tempfile.mkdtemp(), "no-real-claude")
 
+# Tests stay on this machine. Two Rivendell tests once called the real Telegram,
+# and on a network that dropped its IPv4 (2026-11-06) every full run sat in
+# SYN_SENT until killed. A connect to anything but loopback now fails at once,
+# and the test it happened in fails too, naming the host (_offline below).
+# shortcut: a thread a test leaves behind is blamed on the test running when it
+# connects; name the thread here if that ever misleads.
+_left: list = []
+_connect = socket.socket.connect
+
+
+def _stay_local(sock, address):
+    host = address[0] if isinstance(address, tuple) else None      # AF_UNIX: a path
+    try:
+        local = host is None or host in ("localhost", "0.0.0.0", "::") or ipaddress.ip_address(host).is_loopback
+    except ValueError:                                              # a name to resolve
+        local = False
+    if not local:
+        _left.append(f"{host}:{address[1]}")
+        raise ConnectionRefusedError(f"tests stay off the network: {host}:{address[1]}")
+    return _connect(sock, address)
+
+
+socket.socket.connect = _stay_local
+
 # bridge/credentials.py decides KEYCHAIN from sys.platform at import, so on a Mac
 # every test that touches a login ran the real `security` against the
 # developer's login Keychain: reading their live tokens, and leaving an item
@@ -98,6 +124,13 @@ acp_agents.HOMES = os.path.join(_acp_tmp, "agent-homes")
 # sessions to its first profile (profiles.default_profile), so each test gets
 # an empty list and no picked default.
 from bridge import profiles, store  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _offline():
+    _left.clear()
+    yield
+    assert not _left, f"this test reached the network ({', '.join(_left)}): stub the call"
 
 
 @pytest.fixture(autouse=True)
