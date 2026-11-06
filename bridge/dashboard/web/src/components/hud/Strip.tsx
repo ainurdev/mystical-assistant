@@ -6,7 +6,6 @@ import { capDate } from "../../lib/capdate";
 import { zoneTag, zoneTime } from "../../lib/almanac";
 import { useClock12 } from "../../lib/surfaces";
 import type { WorldClock } from "../../lib/theme";
-import { HOME_TOP } from "../../lib/home";
 import { isMacApp, linuxWindow, macWindow } from "../../lib/mac";
 import { Minus, PanelLeftClose, Plus, Settings, Square, X, type LucideIcon } from "lucide-react";
 
@@ -189,9 +188,10 @@ function FoldButton({ onClick }: { onClick: () => void }) {
 export function RightCap({ onOpenSettings, children, railTop, sky }: {
   onOpenSettings: () => void;
   children?: ReactNode;
-  /** HOME is open: the cap's left half wears the top of HOME's sky, with no
-   *  rule under it, so the cap and the tab read as one (HomePanel). */
-  sky?: string;
+  /** HOME is open: the cap's left half holds the top of HOME's sky (its
+   *  HomeSky, clipped to the cap), with no rule under it, so the cap and the
+   *  tab read as one picture (HomePanel). */
+  sky?: ReactNode;
   /** The Linux window: its close button takes the gear's cell, which then
    *  runs into the rail with no rule under it (the gear moves into the rail). */
   railTop?: ReactNode;
@@ -204,7 +204,8 @@ export function RightCap({ onOpenSettings, children, railTop, sky }: {
     <div className="rcap wco-bar" data-bare={children ? undefined : ""} data-home={sky ? "" : undefined} style={{ position: "relative", zIndex: 40, display: "flex", minWidth: 0, height: CAP_H, borderBottom: sky ? 0 : CAP_LINE, animation: CAP_IN }}>
       {children && (
         <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", padding: "0 12px", borderLeft: "1px solid var(--border)",
-          ...(sky && { backgroundImage: sky, backgroundSize: `100% ${CAP_H + HOME_TOP}px`, backgroundPosition: "0 0", backgroundRepeat: "no-repeat" }) }}>
+          ...(sky && { position: "relative", isolation: "isolate" }) }}>
+          {sky && <div className="home-sky-cap">{sky}</div>}
           {children}
         </div>
       )}

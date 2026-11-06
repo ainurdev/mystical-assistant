@@ -8400,19 +8400,44 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .wsb-ghost small { font: 400 var(--t85) var(--ui-font); color: var(--txl); }
 
 /* HOME, the right rail's first tab (components/hud/HomePanel.tsx). Its sky
-   continues the cap above it (RightCap `sky`): same gradient, offset by the
-   cap's height, faded out at the foot through a mask so any theme's ground
-   shows under the spine. */
-.home-top { position: relative; height: 195px; flex: none; overflow: hidden; padding: 0 16px;
-  -webkit-mask-image: linear-gradient(180deg, #000 62%, transparent); mask-image: linear-gradient(180deg, #000 62%, transparent); }
-.home-emblem { position: absolute; right: -74px; top: -75px; opacity: .32; pointer-events: none; }
+   (HomeSky) is one picture from the column's top edge, held twice: the cap
+   clips the top CAP_H px (RightCap `sky`), .home-top the rest, so the emblem
+   crosses the seam whole. Every colour is the theme's: on a dark ground the
+   accent darkened in oklch, so it keeps its chroma (the hour sets --l1/--c1/
+   --l2/--c2), on a light one a pale wash; the hour also places a soft light
+   (--hx/--hy/--hw/--hh/--ha). A mask fades it at the foot so any theme's
+   ground shows under the spine. */
+.home-top { position: relative; height: 195px; flex: none; overflow: hidden; padding: 0 16px; }
+.home-sky { position: absolute; left: 0; right: 0; pointer-events: none;
+  --sky-1: color-mix(in oklab, var(--acc) 34%, var(--canvas)); --sky-2: color-mix(in oklab, var(--acc) 14%, var(--canvas));
+  --sky-lit: color-mix(in oklab, var(--acc) 50%, var(--txb)); --sky-ink: color-mix(in oklab, var(--acc) 55%, var(--txb));
+  background-image:
+    radial-gradient(var(--hw) var(--hh) at var(--hx) var(--hy), color-mix(in oklab, var(--sky-lit) var(--ha), transparent), transparent 72%),
+    linear-gradient(160deg, var(--sky-1), var(--sky-2) 55%, var(--canvas));
+  -webkit-mask-image: linear-gradient(180deg, #000 66%, transparent); mask-image: linear-gradient(180deg, #000 66%, transparent); }
+/* Gated, not stacked as a fallback: a var() inside makes an unsupported colour fail at computed time, which drops the whole background. */
+@supports (color: oklch(from red l c h)) {
+  :root:not([data-light]) .home-sky {
+    --sky-1: oklch(from var(--acc) calc(l * var(--l1)) calc(c * var(--c1)) h);
+    --sky-2: oklch(from var(--acc) calc(l * var(--l2)) calc(c * var(--c2)) h);
+    --sky-lit: oklch(from var(--acc) calc(l * 1.3) calc(c * .55) h);
+  }
+}
+:root[data-light] .home-sky { --sky-1: color-mix(in oklab, var(--acc) 30%, var(--canvas)); --sky-2: color-mix(in oklab, var(--acc) 12%, var(--canvas)); --sky-lit: var(--panel); }
+/* The cap's share, under the bell: its own clip (the cap must not clip, its popovers hang below), one px over a transparent rule. */
+.home-sky-cap { position: absolute; inset: 0 0 -1px; z-index: -1; overflow: hidden; border-radius: inherit; pointer-events: none; }
+.home-emblem { position: absolute; left: 8px; top: -11px; opacity: .34; }
+:root[data-light] .home-emblem { opacity: .55; }
+.home-emblem :is(circle, rect) { fill: none; stroke: var(--sky-ink); }
+.home-emblem .core { fill: var(--sky-ink); stroke: none; }
 .home-emblem .ring { transform-origin: 80px 80px; animation: homeSpin 40s linear infinite; }
-.home-rune { position: absolute; font-family: var(--mono); line-height: 1; pointer-events: none; animation: twinkle 3.2s ease-in-out infinite; }
+.home-rune { position: absolute; font-family: var(--mono); line-height: 1; color: var(--sky-ink); animation: twinkle 3.2s ease-in-out infinite; }
 .home-clock { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: flex-start; margin: 0; padding: 0; border: 0;
-  background: transparent; text-align: left; color: #fff; font-family: inherit; cursor: pointer; appearance: none; }
-.home-time { font-size: 64px; font-weight: 800; line-height: 1; letter-spacing: -2.5px; font-variant-numeric: tabular-nums; text-shadow: 0 6px 30px rgba(0,0,0,.35); }
-.home-date { margin-top: 9px; font-size: var(--t125); font-weight: 700; line-height: 1.35; color: rgba(255,255,255,.88); }
-.home-wx { font-size: var(--t12); font-weight: 600; line-height: 1.35; color: rgba(255,255,255,.62); }
+  background: transparent; text-align: left; color: var(--txb); font-family: inherit; cursor: pointer; appearance: none; }
+.home-time { font-size: 64px; font-weight: 800; line-height: 1; letter-spacing: -2.5px; font-variant-numeric: tabular-nums; text-shadow: 0 6px 30px rgb(0 0 0 / .35); }
+:root[data-light] .home-time { text-shadow: none; }
+.home-date { margin-top: 9px; font-size: var(--t125); font-weight: 700; line-height: 1.35; color: var(--txh); }
+.home-wx { display: flex; align-items: center; gap: 5px; font-size: var(--t12); font-weight: 600; line-height: 1.35; color: var(--txm); }
 .home-work { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 16px 14px; }
 .home-head { display: flex; align-items: baseline; gap: 8px; }
 .home-head .lab { font-size: var(--t9); font-weight: 800; letter-spacing: 1.6px; color: var(--txl); }
@@ -8442,6 +8467,8 @@ button.sk-x:hover { color: var(--err); background: color-mix(in srgb, var(--err)
 .home-away .mid::before { background: repeating-linear-gradient(180deg, color-mix(in srgb, var(--txl) 70%, transparent) 0 3px, transparent 3px 6px); opacity: 1; }
 .home-none { margin-top: 14px; font-size: var(--t15); font-weight: 800; color: var(--txb); }
 .home-none small { display: block; margin-top: 6px; font-size: var(--t12); font-style: italic; font-weight: 500; color: var(--txl); }
+.home-yday { display: block; margin-top: 12px; font-size: var(--t11); font-weight: 700; color: var(--txm); }
+.home-yday b { font-weight: 800; color: var(--txb); }
 @keyframes homeSpin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .home-emblem .ring, .home-rune, .home-now .dot { animation: none; } }
 /* The cap merged into HOME: no rule under its left half, in every family. */

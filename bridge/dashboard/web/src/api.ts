@@ -1476,6 +1476,7 @@ export interface TodayWins {
   work: { project: string; start: number; end: number }[];
   away: { start: number; end: number }[];
   worked: number; // wall seconds
+  yesterday?: { wins: number; worked: number }; // only before today's first win
 }
 
 /** One week, grouped per project — time and tokens, no dollars (9f612a4). */

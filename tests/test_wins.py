@@ -99,6 +99,20 @@ def test_today_folds_a_turns_commits_and_test_runs():
     assert r["worked"] >= 0 and isinstance(r["away"], list)
 
 
+def test_an_empty_day_carries_yesterdays_tally():
+    store.init()
+    sid = store.create_session(config.DASH_CHAT_ID, "/proj-wins-yday")["id"]
+    now = time.time()
+    store.start_turn(sid, f"{sid}:1", "ship it", None)
+    store.append_event(sid, f"{sid}:1", {"type": "tool", "name": "Bash", "id": "toolu_y1", "detail": "git merge --ff-only feat/y"})
+    store.append_event(sid, f"{sid}:1", {"type": "tool_done", "id": "toolu_y1", "output": "Fast-forward", "is_error": False})
+    store.finish_turn(f"{sid}:1", "done", None, 30)
+
+    assert "yesterday" not in wins.today(config.DASH_CHAT_ID, now=now + 60)  # a day with wins reads one day only
+    r = wins.today(config.DASH_CHAT_ID, now=now + 86400)  # the next day, nothing shipped yet
+    assert r["wins"] == [] and r["yesterday"]["wins"] >= 1 and r["yesterday"]["worked"] >= 0
+
+
 def test_away_is_a_gap_of_half_an_hour_or_more():
     u = wins._union([(0, 100), (200, 300), (300 + wins.AWAY + 10, 400 + wins.AWAY)])
     assert u == [[0, 300], [300 + wins.AWAY + 10, 400 + wins.AWAY]]

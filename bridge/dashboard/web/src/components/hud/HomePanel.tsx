@@ -1,21 +1,50 @@
 // HOME, the right rail's first tab (/design-first right-rail-home, G2 · SIGIL
 // over the spine). While it is open the column's cap merges into it: the cap
-// hides its clock and weather and wears the top of this sky (RightCap's
-// `sky`), and the time, the date and the weather are drawn here, big. Under
+// hides its clock and weather and holds the top of this sky (RightCap's
+// `sky`, a HomeSky), and the time, the date and the weather are drawn here,
+// big. The sky is the theme's (/design-first home-theme, A · THEME SKY). Under
 // the sky, today's wins (bridge/wins.py) run down a spine: one time column,
 // even rows, the line in the project's colour, dashed where you were away.
 // Not shown, by the user's cuts over six rounds: anything another tab or the
 // chat already says (the running turn, session states, git state, meters).
 import { useEffect, useState, type CSSProperties } from "react";
+import { Cloud } from "lucide-react";
 import { api, type TodayWins, type Weather } from "../../api";
 import { HOME_TOP, dur, spine, type Sky } from "../../lib/home";
 import { projectName, projectTint, useClock12 } from "../../lib/surfaces";
+import { WX_ICON } from "./Almanac";
 import { CAP_H } from "./Strip";
 
+// x, y from the column's top edge (the cap's top), glyph, size, opacity.
 const RUNES: [number, number, string, number, number][] = [
-  [150, -18, "✦", 13, .55], [204, 128, "◈", 15, .35], [36, 146, "✧", 12, .45], [254, 166, "⟁", 14, .3],
-  [122, 160, "◇", 11, .35], [236, 80, "✦", 9, .6], [96, -26, "⌖", 12, .3],
+  [150, 22, "✦", 13, .55], [204, 168, "◈", 15, .35], [36, 186, "✧", 12, .45], [254, 212, "⟁", 14, .3],
+  [122, 206, "◇", 11, .35], [236, 120, "✦", 9, .6], [96, 14, "⌖", 12, .3],
 ];
+
+/** HOME's sky: the theme's accent over its own ground, lit where the hour's sun
+ *  stands, Mystical's emblem large and faint behind the time, a few runes. One
+ *  picture held twice, each holder clipping its share: the cap the top CAP_H px
+ *  (RightCap's `sky`), HOME's top the rest, so the emblem crosses the seam whole.
+ *  `top` is how far down the column its holder starts. */
+export function HomeSky({ sky, top }: { sky: Sky; top: number }) {
+  // Both copies turn and twinkle on the wall clock, so their halves meet at the seam whichever mounted first.
+  const [t0] = useState(() => Date.now() / 1000);
+  const style = { top: -top, height: CAP_H + HOME_TOP, "--hx": `${sky.x}%`, "--hy": `${sky.y}%`, "--hw": `${sky.w}px`, "--hh": `${sky.h}px`,
+    "--ha": `${sky.a}%`, "--l1": sky.l1, "--c1": sky.c1, "--l2": sky.l2, "--c2": sky.c2 } as CSSProperties;
+  return (
+    <div className="home-sky" style={style} aria-hidden>
+      <svg className="home-emblem" width="230" height="230" viewBox="0 0 160 160">
+        <g className="ring" style={{ animationDelay: `${-(t0 % 40)}s` }}><circle cx="80" cy="80" r="70" strokeWidth="1.2" strokeDasharray="4 7" /></g>
+        <circle cx="80" cy="80" r="56" strokeWidth=".8" opacity=".6" />
+        <rect x="52" y="52" width="56" height="56" transform="rotate(45 80 80)" strokeWidth="1.6" />
+        <rect className="core" x="69" y="69" width="22" height="22" transform="rotate(45 80 80)" opacity=".5" />
+      </svg>
+      {RUNES.map(([x, y, g, size, o], i) => (
+        <span key={i} className="home-rune" style={{ left: x, top: y, fontSize: size, opacity: o, animationDelay: `${i * .4 - (t0 % 3.2)}s` }}>{g}</span>
+      ))}
+    </div>
+  );
+}
 
 const clockOf = (ts: number, h12: boolean) => {
   const d = new Date(ts * 1000), m = String(d.getMinutes()).padStart(2, "0");
@@ -52,6 +81,7 @@ export function HomePanel({ clock, weather, sky, onClock, onOpen }: {
   const wx = weather.available
     ? [weather.cond.toLowerCase(), weather.temp === null ? "" : `${weather.temp}°`, city].filter((s) => s && s !== "—").join(" · ")
     : "";
+  const Wx = WX_ICON.find(([re]) => re.test(weather.cond))?.[1] ?? Cloud;
 
   const rows = day ? spine(day) : [];
   const lastWin = rows.map((r) => r.kind).lastIndexOf("win");
@@ -60,23 +90,13 @@ export function HomePanel({ clock, weather, sky, onClock, onOpen }: {
 
   return (
     <div className="home flex min-h-0 flex-1 flex-col">
-      {/* Longhands only: a `background` shorthand would reset the size and offset that line this up with the cap. */}
-      <div className="home-top" style={{ backgroundImage: sky.bg, backgroundSize: `100% ${CAP_H + HOME_TOP}px`, backgroundPosition: `0 -${CAP_H}px`, backgroundRepeat: "no-repeat" }}>
-        <svg className="home-emblem" width="250" height="250" viewBox="0 0 160 160" aria-hidden>
-          <g className="ring"><circle cx="80" cy="80" r="70" fill="none" stroke={sky.ink} strokeWidth="1.2" strokeDasharray="4 7" /></g>
-          <circle cx="80" cy="80" r="56" fill="none" stroke={sky.ink} strokeWidth=".8" opacity=".6" />
-          <rect x="52" y="52" width="56" height="56" transform="rotate(45 80 80)" fill="none" stroke={sky.ink} strokeWidth="1.6" />
-          <rect x="69" y="69" width="22" height="22" transform="rotate(45 80 80)" fill={sky.ink} opacity=".5" />
-        </svg>
-        {RUNES.map(([x, y, g, size, o], i) => (
-          <span key={i} className="home-rune" aria-hidden
-            style={{ left: x, top: y, fontSize: size, opacity: o, color: sky.rune, animationDelay: `${i * .4}s` }}>{g}</span>
-        ))}
+      <div className="home-top">
+        <HomeSky sky={sky} top={CAP_H} />
         <button type="button" className="home-clock" data-ctx-type="surface"
           title="the Almanac: calendar, weather, limit resets, world clocks" onClick={onClock}>
           <span className="home-time">{time}</span>
           <span className="home-date">{date}</span>
-          {wx && <span className="home-wx">{wx}</span>}
+          {wx && <span className="home-wx"><Wx size={13} strokeWidth={2} aria-hidden />{wx}</span>}
         </button>
       </div>
 
@@ -94,7 +114,10 @@ export function HomePanel({ clock, weather, sky, onClock, onOpen }: {
         ) : !day ? (
           <div className="home-none" style={{ color: "var(--txl)" }}>reading the day…</div>
         ) : day.wins.length === 0 ? (
-          <div className="home-none">Nothing shipped yet today<small>the day is unwritten — what shall we ship?</small></div>
+          <div className="home-none">Nothing shipped yet today<small>the day is unwritten — what shall we ship?</small>
+            {!!day.yesterday?.wins && (
+              <span className="home-yday">yesterday · <b>{day.yesterday.wins}</b> {day.yesterday.wins === 1 ? "win" : "wins"}{day.yesterday.worked >= 60 ? ` · ${dur(day.yesterday.worked)}` : ""}</span>
+            )}</div>
         ) : (
           <>
             <div className="home-legend">

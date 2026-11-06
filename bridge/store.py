@@ -1343,8 +1343,8 @@ def week_failures(chat_id: int, since: float, until: float) -> list[dict]:
     return out
 
 
-def day_tool_events(chat_id: int, since: float) -> list[dict]:
-    """Every `tool` and `tool_done` event since `since` in one chat's sessions,
+def day_tool_events(chat_id: int, since: float, until: float = float("inf")) -> list[dict]:
+    """Every `tool` and `tool_done` event in [since, until) in one chat's sessions,
     oldest first, each with its session's project: what wins.py reads a day's
     wins from. Narrowed through sessions.updated first (indexed with chat_id),
     since events carry no index on ts and the table runs to six figures."""
@@ -1352,22 +1352,22 @@ def day_tool_events(chat_id: int, since: float) -> list[dict]:
         rows = c.execute(
             "SELECT e.session_id, e.turn_id, e.type, e.payload, e.ts, s.project "
             "FROM events e JOIN sessions s ON s.id = e.session_id "
-            "WHERE s.chat_id=? AND s.updated >= ? AND e.ts >= ? "
+            "WHERE s.chat_id=? AND s.updated >= ? AND e.ts >= ? AND e.ts < ? "
             "AND e.type IN ('tool','tool_done') ORDER BY e.ts, e.seq",
-            (chat_id, since, since)).fetchall()
+            (chat_id, since, since, until)).fetchall()
     return [dict(r) for r in rows]
 
 
-def day_turn_spans(chat_id: int, since: float) -> list[dict]:
-    """Start and wall seconds of one chat's turns started since `since`, with
+def day_turn_spans(chat_id: int, since: float, until: float = float("inf")) -> list[dict]:
+    """Start and wall seconds of one chat's turns started in [since, until), with
     their project: the stretches wins.py calls work. A turn still running has
     no elapsed yet; the caller reaches it to now."""
     with closing(_connect()) as c:
         rows = c.execute(
             "SELECT t.started, t.elapsed, s.project FROM turns t "
             "JOIN sessions s ON s.id = t.session_id "
-            "WHERE s.chat_id=? AND t.started >= ? ORDER BY t.started",
-            (chat_id, since)).fetchall()
+            "WHERE s.chat_id=? AND t.started >= ? AND t.started < ? ORDER BY t.started",
+            (chat_id, since, until)).fetchall()
     return [dict(r) for r in rows]
 
 

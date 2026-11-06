@@ -89,7 +89,7 @@ import { DeviceRunPlate } from "./components/DeviceRunPlate";
 import { SuggestNewSessionCard } from "./components/SuggestNewSessionCard";
 import { CommandPalette, type Command } from "./components/CommandPalette";
 import { Brand, LinuxClose, LinuxRailHead, RightCap, Strip } from "./components/hud/Strip";
-import { HomePanel } from "./components/hud/HomePanel";
+import { HomePanel, HomeSky } from "./components/hud/HomePanel";
 import { skyFor } from "./lib/home";
 import { PaletteButton } from "./components/hud/PaletteButton";
 import { UpdateButton } from "./components/hud/UpdateButton";
@@ -2419,7 +2419,7 @@ export function App() {
   // (chipWindow), printed as a number only once it runs low.
   const usageWin = chipWindow(loginWindows(spender));
   const waitsOnYou = turns.some((t) => t.pending.length > 0);
-  // HOME's sky follows the hour; the cap wears its top while HOME is open.
+  // HOME's sky follows the hour; the cap holds its top while HOME is open.
   const [almanacAsk, setAlmanacAsk] = useState(0); // HOME's big clock bumps it: the cap's Almanac opens
   const homeSky = skyFor(parseInt(tele.clock.slice(0, 2), 10) || 0);
   const rightTabs: PanelTab[] = [
@@ -3309,7 +3309,7 @@ export function App() {
                 // nothing inside slides or reflows. Only then — the strip's
                 // popovers hang past this column at rest, so it can't clip always.
                 ...(rightMoving && { gridTemplateColumns: `calc(${rightBodyW} + 48px)`, justifyContent: "end", overflow: "hidden" }) }}>
-                <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined} sky={homeOpen ? homeSky.bg : undefined}>
+                <RightCap onOpenSettings={() => setSettingsOpen(true)} railTop={isLinuxApp() ? <LinuxClose /> : undefined} sky={homeOpen ? <HomeSky sky={homeSky} top={0} /> : undefined}>
                   {rightShown && strip}
                 </RightCap>
                 <RightPanel

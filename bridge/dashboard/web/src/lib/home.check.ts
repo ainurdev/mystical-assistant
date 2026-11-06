@@ -1,7 +1,7 @@
 // Run: node --experimental-strip-types src/lib/home.check.ts  (from web/)
 //
 // HOME's spine: newest win first, an away row only where a gap falls between
-// two wins, each win phrased with its bold verb; and the sky picked by the hour.
+// two wins, each win phrased with its bold verb; and the light the hour puts in the sky.
 import { dur, phrase, skyFor, spine } from "./home.ts";
 
 const ok = (cond: boolean, what: string) => {
@@ -28,5 +28,6 @@ ok(phrase(W(1, "pr", "#112")).verb === "opened PR #112", "a PR says its number i
 ok(phrase(W(1, "tests", "3,564")).aside === "3,564", "a test run's count is the aside");
 
 ok(dur(40 * 60) === "40m" && dur(101 * 60) === "1h 41m" && dur(120 * 60) === "2h", "durations read like the mockups");
-ok(skyFor(3).bg === skyFor(22).bg, "the small hours and late evening share the night sky");
-ok(skyFor(6).bg !== skyFor(12).bg && skyFor(12).bg !== skyFor(18).bg, "dawn, day and dusk each have their own sky");
+ok(skyFor(3) === skyFor(22), "the small hours and late evening share the night sky");
+ok(skyFor(6).x < 50 && skyFor(12).y === 0 && skyFor(18).x > 50, "the light rises on the left, stands overhead, sets on the right");
+ok(skyFor(12).l1 > skyFor(22).l1, "the day's sky runs brighter than the night's");

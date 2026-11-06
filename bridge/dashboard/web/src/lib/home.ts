@@ -1,22 +1,23 @@
-// HOME, the right rail's first tab: the sky its top wears for the hour, and
+// HOME, the right rail's first tab: what the hour does to its sky, and
 // today's wins laid out as a spine (one time column, even rows, the gaps you
 // were away between them). Pure, so lib/home.check.ts can hold it still.
 import type { TodayWins, Win } from "../api";
 
-export interface Sky { bg: string; ink: string; rune: string }
+/** The hour's part of HOME's sky; the colours are the theme's (index.css
+ *  .home-sky). Where the light sits (x/y in % of the sky), its size in px and
+ *  strength in %, and on a dark ground how deep the accent runs at the top
+ *  (l1/c1) and the middle (l2/c2): lightness and chroma, as factors. */
+export interface Sky { x: number; y: number; w: number; h: number; a: number; l1: number; c1: number; l2: number; c2: number }
 
-/** How tall HOME's sky runs under the cap (RightCap draws the cap's share). */
+/** How tall HOME's sky runs under the cap (the cap draws the sky's top CAP_H). */
 export const HOME_TOP = 195;
 
-// shortcut: the sky's own colours by the hour, not the theme's (it is a window
-// onto the time of day, the same in every theme); a light-theme sky when a
-// light theme user asks.
-const NIGHT: Sky = { bg: "linear-gradient(160deg,#1e2254,#2a1f50 55%,#12132b)", ink: "#a9b1ff", rune: "#c9ceff" };
+const NIGHT: Sky = { x: 90, y: 0, w: 230, h: 180, a: 20, l1: .42, c1: .85, l2: .2, c2: .5 }; // a dim glow, top right
 const SKIES: [number, Sky][] = [
   [5, NIGHT],
-  [8, { bg: "linear-gradient(160deg,#31508c,#a8807e 60%,#e0a07c)", ink: "#ffe3c2", rune: "#fff1dc" }],   // dawn
-  [17, { bg: "linear-gradient(160deg,#2a4f8f,#35548f 55%,#1b2a4a)", ink: "#cfe0ff", rune: "#e6efff" }],  // day
-  [20, { bg: "linear-gradient(160deg,#272a63,#4a2c5e 55%,#6b3d5a)", ink: "#ffc9d8", rune: "#ffe2ea" }],  // dusk
+  [9, { x: 4, y: 100, w: 330, h: 250, a: 62, l1: .56, c1: .8, l2: .3, c2: .55 }],   // sunrise, low on the left
+  [17, { x: 52, y: 0, w: 320, h: 220, a: 45, l1: .6, c1: .8, l2: .32, c2: .55 }],   // day, overhead
+  [20, { x: 96, y: 100, w: 330, h: 250, a: 50, l1: .48, c1: .85, l2: .24, c2: .55 }], // sunset, low on the right
   [24, NIGHT],
 ];
 

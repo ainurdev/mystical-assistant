@@ -34,7 +34,7 @@ const DOW = ["M", "T", "W", "T", "F", "S", "S"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 // open-meteo's WMO labels (bridge/weather.py _CODES) by the word that decides the icon.
-const WX_ICON: [RegExp, LucideIcon][] = [
+export const WX_ICON: [RegExp, LucideIcon][] = [
   [/THUNDER|HAIL/, CloudLightning], [/SNOW/, CloudSnow], [/DRIZZLE/, CloudDrizzle], [/RAIN|SHOWER/, CloudRain],
   [/FOG/, CloudFog], [/PARTLY|MAINLY/, CloudSun], [/OVERCAST/, Cloud], [/CLEAR/, Sun],
 ];

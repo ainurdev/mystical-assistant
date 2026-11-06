@@ -134,11 +134,25 @@ def _union(spans: list) -> list:
 
 def today(chat_id: int, now: "float | None" = None) -> dict:
     """Since local midnight: the wins (newest first), the stretches worked per
-    project, the gaps between them that read as away, and the time worked."""
+    project, the gaps between them that read as away, and the time worked.
+    Before the day's first win it also carries yesterday's tally (`wins`,
+    `worked`), which HOME's empty list prints; read only then, so a day with
+    wins never pays for a second day's events."""
     now = time.time() if now is None else now
     since = datetime.datetime.fromtimestamp(now).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
-    events = store.day_tool_events(chat_id, since)
-    spans = store.day_turn_spans(chat_id, since)
+    day = _day(chat_id, since, now)
+    if not day["wins"]:
+        # A naive local datetime steps a calendar day, so a DST change still lands on midnight.
+        start = (datetime.datetime.fromtimestamp(since) - datetime.timedelta(days=1)).timestamp()
+        y = _day(chat_id, start, since, until=since)
+        day["yesterday"] = {"wins": len(y["wins"]), "worked": y["worked"]}
+    return day
+
+
+def _day(chat_id: int, since: float, now: float, until: float = float("inf")) -> dict:
+    """One day's spine over [since, until); a turn still running reaches to `now`."""
+    events = store.day_tool_events(chat_id, since, until)
+    spans = store.day_turn_spans(chat_id, since, until)
     repos: dict = {}
     for p in {e["project"] for e in events} | {t["project"] for t in spans}:
         if not _WORKTREE.match(p):
