@@ -1748,6 +1748,9 @@ def _announce_end(job) -> None:
 #     session — a completed turn resets the cap — so a session whose resume
 #     itself keeps dying (or keeps timing out) can't burn tokens in a loop. That
 #     cap, not the watchdog, is the runaway-cost brake.
+#   - The answer is Claude Code's silent-turn reminder copied back: it reads
+#     "done" (end_turn), but the model stopped mid-task on an injected line
+#     nobody typed. It resumes like a crash, under the same cap.
 # Only a user Stop (job.interrupted) is never auto-resumed.
 
 RESUME_NUDGE = (
@@ -1758,6 +1761,14 @@ TIMEOUT_NUDGE = (
     "⏮ Your previous turn was killed by the bridge's hang watchdog (no output "
     "for too long) — not by the user. Review your recent transcript and continue "
     "exactly where you left off; finish the task you were doing. Don't start over.")
+ECHO_NUDGE = (
+    "⏮ Your previous turn ended right after you repeated a system reminder "
+    "(\"The user hasn't heard from you…\") as your answer — not by the user. "
+    "Review your recent transcript and continue exactly where you left off; "
+    "finish the task you were doing. Don't start over.")
+# How every wording of that reminder starts: Claude Code's own and the server's
+# (flag tengu_hushed_lark_text; CLAUDE_CODE_SILENT_TURN_REMINDER_TEXT overrides both).
+SILENT_REMINDER = "The user hasn't heard from you in a while"
 AUTO_RESUME_MAX = 5                 # consecutive dead turns before giving up
 _resume_fails: dict[str, int] = {}  # session id -> consecutive error-ended turns
 
@@ -1821,11 +1832,15 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
     sid = job.store_session_id
     if not sid:
         return False
+    echoed = False
     if job.status == "done":
-        _resume_fails.pop(sid, None)             # healthy turn resets the cap
-        limits.note_ok(sid)                      # ...and closes any limit episode
-        return False
-    if job.status != "error" or job.interrupted or job.refusal:
+        limits.note_ok(sid)                      # a completed turn closes any limit episode
+        echoed = not job.interrupted and (job.result or "").lstrip().startswith(SILENT_REMINDER)
+        if not echoed:
+            _resume_fails.pop(sid, None)         # healthy turn resets the cap
+            return False
+        # else resumed below; its text trips none of the error checks on the way
+    elif job.status != "error" or job.interrupted or job.refusal:
         return False                              # a refused turn is refused again
     rl = getattr(job, "rate_limit", None) or {}
     if rl.get("errorCode") == "credits_required" or limits.is_credits_error(job.result or job.error_msg):
@@ -1915,7 +1930,7 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         return False                              # died before init — nothing to resume
     try:
         job2 = start_streaming_job(
-            job.chat_id, TIMEOUT_NUDGE if job.timed_out else RESUME_NUDGE, [],
+            job.chat_id, ECHO_NUDGE if echoed else TIMEOUT_NUDGE if job.timed_out else RESUME_NUDGE, [],
             project=cwd, session_id=sid, model=model, effort=effort,
             account_slot=job.account_slot, runtime=job.runtime)
     except Exception as e:  # noqa: BLE001
@@ -1923,7 +1938,11 @@ def _maybe_auto_resume(job: "Job", cwd: str, model: str | None,
         return False
     if job2 is None:
         return False                              # slot taken (e.g. the queue advanced)
-    if job.timed_out:
+    if echoed:
+        _notify(job.chat_id, f"🔄 The turn stopped on a repeated system reminder "
+                             f"— resuming {_session_label(sid)}.",
+                kind="resumed", sid=sid, body="It stopped on a repeated system reminder. Resuming.")
+    elif job.timed_out:
         mins = (job.hang_timeout or config.RUN_TIMEOUT) // 60
         _notify(job.chat_id, f"⏱️ No output for {mins} min — "
                              f"killed as hung, resuming {_session_label(sid)}.",

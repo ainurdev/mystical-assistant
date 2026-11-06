@@ -1681,6 +1681,35 @@ def test_timeout_auto_resumes_capped(monkeypatch):
     assert timed_out_turn()
 
 
+def test_turn_ending_on_an_echoed_silent_reminder_resumes_capped(monkeypatch):
+    """Claude Code's silent-turn reminder, copied back as the whole answer, ends
+    the turn mid-task: it reads 'done', but nobody stopped it."""
+    s = store.create_session(555, "p-echo")
+    store.set_claude_session_id(s["id"], "csid-echo")
+    started = []
+    monkeypatch.setattr(runner, "start_streaming_job",
+                        lambda *a, **kw: (started.append((a, kw)), object())[1])
+    monkeypatch.setattr(runner, "_notify", lambda *a, **k: None)
+
+    def turn(result, interrupted=False):
+        job = runner.Job(f"je{len(started)}", 555, s["id"])
+        job.status, job.result, job.interrupted = "done", result, interrupted
+        return runner._maybe_auto_resume(job, "/tmp", None, None)
+
+    echo = ("The user hasn't heard from you in a while — say in a few words "
+            "what you're doing, then continue.")                      # the server's wording
+    stock = ("The user hasn't heard from you in a while. As you continue, keep them "
+             "updated when there's something to tell — a finding, a change of plan.")
+    assert not turn("Done: the tests pass.")      # a real answer is left alone
+    assert not turn(echo, interrupted=True)       # so is one the user stopped
+    assert all(turn(echo) for _ in range(runner.AUTO_RESUME_MAX))
+    assert not turn(echo)                         # a model that only echoes stops
+    assert len(started) == runner.AUTO_RESUME_MAX
+    assert started[0][0][1] == runner.ECHO_NUDGE
+    assert not turn("Done.")                      # a real answer resets the cap
+    assert turn(stock)                            # Claude Code's own wording too
+
+
 def test_midrun_no_resume_for_user_stop_or_shutdown(monkeypatch):
     from bridge import state
     s = store.create_session(555, "p-noresume")

@@ -593,7 +593,7 @@ def test_every_resume_nudge_starts_with_the_resume_mark():
     from bridge import ladder, limits, recovery
     from bridge import runner as r
     for text in (recovery.CONTINUED, recovery.NUDGE, limits.NUDGE, limits.SERVER_NUDGE, r.RESUME_NUDGE,
-                 r.TIMEOUT_NUDGE, r.AUTH_NUDGE, r.AGENT_AUTH_NUDGE, ladder.ACCOUNT_NUDGE):
+                 r.TIMEOUT_NUDGE, r.ECHO_NUDGE, r.AUTH_NUDGE, r.AGENT_AUTH_NUDGE, ladder.ACCOUNT_NUDGE):
         assert text.startswith(paths._RESUME), text   # noqa: SLF001
 
 
