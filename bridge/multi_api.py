@@ -13,8 +13,8 @@ import mimetypes
 import os
 import urllib.parse
 
-from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_images, chat_search, config, experimental,
-                    handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, skill_share, store,
+from bridge import (acp_agents, agent_tools, agent_tree, channel, chat_files, chat_images, chat_aside, chat_search, config, experimental,
+                    handoff, hooks_config, mcp_oauth, mcp_share, mystical_dir, profiles, project_config, rules, saved_views, skill_share, store,
                     tool_policy)
 
 _OFF = ({"error": "The experimental features are off. Turn them on in Settings."}, 409)
@@ -72,6 +72,10 @@ def image_file(qs: dict, chat_id: int) -> "tuple[bytes, str] | None":
 def get(path: str, qs: dict, chat_id: int) -> "tuple[dict, int] | None":
     if path == "experimental":
         return experimental.state(), 200
+    if path == "saved-views":
+        if not experimental.enabled():
+            return _OFF
+        return saved_views.listed(image_root(chat_id, _one(qs, "session"), _one(qs, "project")))
     if path == "chat-images":
         return {"mode": chat_images.mode()}, 200
     if path not in ("tree", "channel", "session/handoff", "session/brief", "project/helper",
@@ -175,6 +179,12 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
             return {"error": str(e)}, 400
     if path == "chat-images/upload":
         return chat_images.upload(body, image_root(chat_id, body.get("session_id"), body.get("project")))
+    if path.startswith("saved-views"):
+        if not experimental.enabled():
+            return _OFF
+        if path == "saved-views/send":
+            return saved_views.send(body, chat_id)
+        return saved_views.delete(image_root(chat_id, body.get("session_id"), body.get("project")), body.get("id"))
     if not path.startswith(("chat/", "channel/", "mcp-share", "skill-share", "project/helper", "tool-policy",
                             "rules", "mystical-dir", "hooks")):
         return None
@@ -201,6 +211,16 @@ def post(path: str, body: dict, chat_id: int) -> "tuple[dict, int] | None":
     if not s:
         return {"error": "not found"}, 404
     chat = _chat_of(s)
+    if path == "chat/file-refs":
+        return chat_files.refs(body, s)
+    if path == "chat/open-file":
+        return chat_files.open_file(body, s)
+    if path == "chat/translate":
+        return chat_aside.translate(body, chat_id, s.get("cwd"))
+    if path == "chat/explain":
+        return chat_aside.explain(body, chat_id, s.get("cwd"))
+    if path == "chat/view-save":
+        return saved_views.save(chat_images.root_of(s.get("cwd")), body.get("view"))
     if path == "chat/config":
         try:
             return {"ok": True, "config": channel.set_config(chat, body.get("config") or {})}, 200

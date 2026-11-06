@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import {
+import { Bookmark,
   FolderTree, Gauge, GitBranch, GitFork, GraduationCap, ListOrdered, Users,
 } from "lucide-react";
 import {
@@ -114,6 +114,7 @@ import { FilesPanel, requestFileFind } from "./components/hud/FilesPanel";
 import { BranchesPanel, branchMenu } from "./components/hud/BranchesPanel";
 import { LearnPanel, READ_KEY } from "./components/hud/LearnTab";
 import { RightPanel, type PanelTab } from "./components/RightPanel";
+import { SavedViews } from "./components/SavedViews";
 import { GitPanel } from "./components/hud/GitPanel";
 import { LANE_WORD, resolve, SessionsPanel, type PromptFlag } from "./components/hud/SessionsPanel";
 import { Terminal } from "./components/hud/Terminal";
@@ -610,6 +611,8 @@ export function App() {
     // lightbox, AgentsModal) sit under the same [data-theme]/[data-fam] rules
     // as the container they were opened from — a FLINT context menu is a FLINT one.
     root.dataset.theme = settings.theme;
+    // Corner radius is per theme and otherwise only on the wrapper: a portal needs it too.
+    root.style.setProperty("--prad", themePrad(settings.theme) || "0px");
     root.dataset.fam = family(settings.theme);
     // Themes override the design tokens on :root (not just the themed wrapper)
     // so the DERIVED tokens (--primary/--card/--border/--ac-*, defined via
@@ -2426,6 +2429,11 @@ export function App() {
           onAsk={(prompt, cwd) => { if (sessionProject) void startIn(sessionProject, prompt, { cwd, force: true }); }} />
       ),
     },
+    // What you pressed SAVE on in this project's chats (components/SavedViews).
+    ...(multiOn ? [{
+      id: "views", label: "Saved views", icon: <Bookmark {...RAIL} />, scope: "project" as const,
+      render: () => <SavedViews />,
+    }] : []),
     // Hidden while LESSONS is off — nothing is being written.
     ...(ai.learn ? [{
       id: "learn", label: "Learn", icon: <GraduationCap {...RAIL} />, ownScroll: true,

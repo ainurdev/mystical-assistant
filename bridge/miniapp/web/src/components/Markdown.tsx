@@ -8,6 +8,8 @@ import { widgetLang, widgetValue } from "../lib/widgetblock";
 import type { ToolStyle } from "../lib/toolwidget";
 import { ChatImage } from "./ChatImage";
 import { useExperimental } from "../lib/multi";
+import { refOf, remarkFileRefs } from "../lib/refs";
+import { FileRef, RefImages } from "./FileRef";
 import { BlockWidget, drawWidget } from "./ResultWidgets";
 
 // Renders assistant text as GitHub-flavored Markdown. Styling lives in the
@@ -113,6 +115,13 @@ const MdImage: NonNullable<Components["img"]> = ({ src, alt }) => {
 const keepImageAddress: UrlTransform = (url, key, node) =>
   node.tagName === "img" && key === "src" ? url : defaultUrlTransform(url);
 
+const PLAIN = [remarkGfm];
+const WITH_REFS = [remarkGfm, remarkFileRefs];
+/** A path in plain prose (lib/refs). Outside the memoized Markdown so a streamed chunk can't remount it. */
+const RefSpan = (p: { addr?: string; children?: ReactNode }) => (
+  <FileRef address={p.addr ?? ""} md={p.addr ?? ""}>{p.children}</FileRef>
+);
+
 export const Markdown = memo(function Markdown({ children, className = "", toolStyle = "stamp" }: {
   children: string;
   className?: string;
@@ -134,10 +143,10 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
       }}
     >
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={multiOn ? WITH_REFS : PLAIN}
         urlTransform={multiOn ? keepImageAddress : undefined}
         components={{
-          ...(multiOn ? { img: MdImage } : {}),
+          ...(multiOn ? { img: MdImage, "file-ref": RefSpan } : {}),
           // The glyph after a link copies its URL; a footnote's own `#fn1` hop
           // is not a link anyone wants on the clipboard.
           a: ({ node, href, children, ...props }) => (
@@ -188,6 +197,15 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
           // blocks never reach here — `pre` below draws its own <code>.
           code: ({ node, className: cls, children: kids, ...props }) => {
             const raw = textOf(kids);
+            const address = multiOn && !cls ? refOf(raw) : null;
+            if (address) {
+              return (
+                <FileRef address={address} md={`\`${raw}\``} link={<code {...props}>{kids}</code>}>
+                  <code {...props}>{kids}</code>
+                  {raw && <CopyBtn title="Copy code" text={raw} />}
+                </FileRef>
+              );
+            }
             return (
               <>
                 <code className={cls} {...props}>{kids}</code>
@@ -224,6 +242,7 @@ export const Markdown = memo(function Markdown({ children, className = "", toolS
       >
         {children}
       </ReactMarkdown>
+      {multiOn ? <RefImages text={children} /> : null}
     </div>
   );
 });

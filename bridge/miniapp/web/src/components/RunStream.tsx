@@ -44,6 +44,7 @@ import { useFoldsOpen } from "../lib/folds";
 import { ImageLightbox, MediaThumb, isVideo, type Clip } from "./ImageLightbox";
 import { Markdown } from "./Markdown";
 import { useExperimental } from "../lib/multi";
+import { DataView } from "./DataView";
 import { bashKind, bashLine, parseTests, testWords } from "../lib/bashkind";
 import { failureState, type Ev as FailEv } from "../lib/failures";
 import { figuresOf, isShowTool, nextNote, type Ev as FigEv } from "../lib/figures";
@@ -669,7 +670,7 @@ const MULTI_ROW = new Set(["switch", "delegation", "merge"]);
 
 /** The Mystical tools' rows: drawn only with the switch on, and each its own line in the
  *  flow. `secret_answered` is bookkeeping for its card, so it cuts nothing. */
-const EVIDENCE_ROW = new Set(["figure", "checks", "report", "secret_request", "rule"]);
+const EVIDENCE_ROW = new Set(["figure", "data", "checks", "report", "secret_request", "rule"]);
 const NEW_ROW = new Set([...EVIDENCE_ROW, "secret_answered"]);
 
 /** Tool kinds that draw a block of their own, so they never fold into a
@@ -1412,12 +1413,15 @@ export const RunStream = memo(function RunStream({
             />
           </div>
           {i === lastResult && figures.length > 0 ? <Figures items={figures} /> : null}
+          {i === lastResult ? events.map((e, j) => (e.type === "data" ? <DataView key={`data${j}`} ev={e} /> : null)) : null}
           </Fragment>
         );
       case "figure": {
         const f = figureAt.get(i);
         return f && lastResult < 0 ? <Figures key={i} items={[f]} /> : null;
       }
+      case "data":
+        return multiOn && lastResult < 0 ? <DataView key={i} ev={event} /> : null;
       case "checks":
         return <ChecksRow key={i} ev={event} />;
       case "report":

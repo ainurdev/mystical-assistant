@@ -1,3 +1,4 @@
+import type { DataEv } from "./dataview";
 import { getInitData } from "./telegram";
 import {
   scopeBody, scopeQuery,
@@ -384,6 +385,7 @@ export type RunEvent =
   // presented as a card, its path relative to the project; a request for a key, and
   // whether one was given (never its value). `rule`: bridge/rules.py fired.
   | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string }
+  | DataEv
   | { type: "checks"; command: string; ok: boolean; code: number; ms: number;
       passed: number | null; failed: number | null; skipped: number | null;
       new: string[]; known: string[]; log: string; tail: string }
@@ -729,7 +731,7 @@ export interface ChatImageScope { session?: string | null; project?: string | nu
 
 const logoCache = new Map<string, Promise<string>>();
 
-async function request<T>(
+export async function request<T>(
   path: string,
   options: { method?: string; body?: unknown } = {},
 ): Promise<T> {

@@ -283,6 +283,23 @@ Run through the whole build, as a regression suite written before workstream 2:
 - A live Kimi smoke per workstream that touches it.
 - `bridge-eyes` screenshots of the tree, grid and picker on dashboard and Mini App.
 
+## Reading what an agent wrote (added after the second round)
+
+Paths an agent names become links once the bridge confirms the file (bridge/chat_files.py), with
+the images among them drawn under the message. Pressing one opens it with the OS's own command,
+which refuses anything that would run. Selecting agent text offers quote, translate and copy
+(bridge/chat_translate.py, a press-only model call listed in the AI tab). `FileRef.tsx`,
+`SelectionPop.tsx`, `lib/refs.ts` and `chatread.css` are the same files in both apps.
+
+## Data views (added after the second round)
+
+`show_data` (bridge/data_views.py) lets any agent put a live sheet, chart, burndown, kanban
+board or row of figures on a turn. The bridge types the values and computes totals, burndown
+lines and counts, so a sum in a finance sheet is never the model's arithmetic. An ambiguous
+number like "1.000" is left blank and reported back, because a wrong guess is off by a factor of 1000.
+`components/DataView.tsx`, `lib/dataview.ts` and `dataview.css` are the same files in both
+apps. Telegram can't draw them: there, the agent's short answer is all you get.
+
 ## Risks
 
 - **Anthropic terms.** [Their page](https://code.claude.com/docs/en/legal-and-compliance)

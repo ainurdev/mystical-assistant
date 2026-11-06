@@ -51,6 +51,47 @@ SHOW = _t("show_image", "Put an image or video in front of the user, drawn large
           "and crop to the part that matters.",
           {"path": _IMG, "caption": {"type": "string", "description": "One line: what this shows."}},
           ["path", "caption"])
+DATA = {"name": "show_data", "description": (
+    "Draw a live sheet, chart, board or diagram in the chat. Use it in any conversation, whenever numbers or items "
+    "would otherwise be a list or a Markdown table: test coverage or bundle size by folder, benchmarks, options side "
+    "by side, a plan's status as a board, tasks, finances, a burndown; or a flowchart for how something works and a "
+    "timeline for what happened. Call it once per view; several in one answer are "
+    "fine. Totals, burndown lines and counts are computed for you. Then keep your reply to what stands out. Use real "
+    "data only, and say when it's partial."),
+    "inputSchema": {"type": "object", "required": ["view", "title"], "properties": {
+        "view": {"type": "string", "enum": ["table", "chart", "kanban", "stats", "diagram"]},
+        "title": {"type": "string", "description": "What this is, as you'd say it to the user."},
+        "caption": {"type": "string", "description": "Optional: one line on what stands out."},
+        "source": {"type": "string", "description": "Where the data came from: Rivendell board X, Snelstart, bank CSV."},
+        "as_of": {"type": "string", "description": "When it's from. Default: today."},
+        "currency": {"type": "string", "description": "ISO code for money, like EUR."},
+        "columns": {"type": "array", "items": {"type": "object"}, "description":
+                    "table: [{key, label, type: text|number|money|percent|progress|date|link, currency}]; progress "
+                    "draws a 0-100 value as a bar. "
+                    "kanban: [{name, limit, cards: [{title, key, assignee, due, priority, tags, note, url}]}], "
+                    "including empty columns."},
+        "rows": {"type": "array", "items": {"type": "object"}, "description":
+                 "table and chart: one object per row, keyed by column. Send amounts as plain JSON numbers. "
+                 "Up to 5000 for a table, 500 for a chart."},
+        "totals": {"type": "boolean", "description": "table: false hides the computed totals row."},
+        "nodes": {"type": "array", "items": {"type": "object"}, "description":
+                  "diagram, flow: [{id, label, note, shape: process|decision|terminal, group}]. Laid out for you."},
+        "edges": {"type": "array", "items": {"type": "object"}, "description": "diagram, flow: [{from, to, label}]."},
+        "direction": {"type": "string", "enum": ["right", "down"], "description": "diagram, flow. Default: fits the screen."},
+        "kind": {"type": "string", "enum": ["bar", "bar_stacked", "line", "area", "donut", "burndown", "flow", "timeline"], "description":
+                 "diagram: flow or timeline. chart: bar to compare, line or area over time, bar_stacked for parts of a whole over time, donut for "
+                 "a few parts of one whole, burndown for work remaining (the ideal line is computed)."},
+        "x": {"type": "string", "description": "chart: the row key for the x axis."},
+        "series": {"type": "array", "items": {}, "description":
+                   "chart: row keys to plot, or [{key, label}]. All on one axis, so same unit. Two different units "
+                   "are two charts."},
+        "format": {"type": "string", "enum": ["number", "money", "percent"], "description":
+                   "chart: how values read. For percent, 12 means 12%."},
+        "x_label": _S, "y_label": _S,
+        "ideal_end": {"type": "number", "description": "burndown: where the ideal line ends. Default 0."},
+        "items": {"type": "array", "items": {"type": "object"}, "description":
+                  "stats: [{label, value, format: number|money|percent|text, currency, delta, note}]. "
+                  "diagram, timeline: [{date, label, note, state: done|now|next}], in the order to show."}}}}
 COMPARE = _t("compare_images", "Show a before and an after side by side, with one caption saying what changed.",
              {"before": _IMG, "after": _IMG, "caption": _S}, ["before", "after", "caption"])
 CHECKS = _t("run_checks", "Run this project's tests or checks and record the result in the chat, compared with "
@@ -103,7 +144,7 @@ RECORD = _t("record", "Record a page to a video and put it in the chat. Returns 
             {"url": _S, "seconds": {"type": "integer"}, "caption": _S}, ["url"])
 
 # Listed for every session that gets the gateway.
-CORE_ALL = (SHOW, CHECKS, DRIVE)
+CORE_ALL = (SHOW, DATA, CHECKS, DRIVE)
 # Reached through find_tools: rarely used, so they don't cost every turn.
 EXTRA_ALL = (COMPARE, REPORT, SEARCH, READ_CHAT, WAIT, NOTIFY, LOGS, USAGE, SECRET)
 # Device runs aren't here: they run under a device's Claude account and their route finds
@@ -176,6 +217,22 @@ def _send_figure(s: dict, job, images: list, caption: str) -> None:
                 telegram.send_photo(job.chat_id, p, caption=caption[:900], thread=thread)
     except Exception as e:  # noqa: BLE001 - the chat still has it
         print(f"[gateway_tools] telegram figure: {e!r}", file=sys.stderr)
+
+
+def _show_data(s: dict, job, a: dict) -> dict:
+    """A sheet, chart or board on the turn (bridge/data_views.py)."""
+    from bridge import data_views
+    if job is None:
+        return _text("No turn is running to show this in.", error=True)
+    try:
+        ev, notes = data_views.build(a)
+    except data_views.Refused as e:
+        return _text(str(e), error=True)
+    job.add(ev)
+    said = f"It's in the chat: {data_views.describe(ev)}. Keep your reply short and don't repeat the data."
+    if notes:
+        said += f"\n{len(notes)} value(s) couldn't be read and show blank:\n" + "\n".join(notes[:10])
+    return _text(said)
 
 
 def _show_image(s: dict, job, a: dict) -> dict:
@@ -541,7 +598,7 @@ def _record(s: dict, job, a: dict) -> dict:
 
 
 _FUNCS = {
-    "show_image": _show_image, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
+    "show_image": _show_image, "show_data": _show_data, "compare_images": _compare, "run_checks": _run_checks, "drive_page": _drive,
     "show_report": _report, "search_chats": _search, "read_chat": _read_chat, "wait_for": _wait_for,
     "wait_for_session": _wait_session, "notify_me": _notify, "server_logs": _logs, "usage_left": _usage,
     "request_secret": _request_secret, "screenshot": _screenshot, "record": _record,

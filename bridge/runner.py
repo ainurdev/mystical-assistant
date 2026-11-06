@@ -194,7 +194,10 @@ _EXPERIMENTAL_NOTE = (
     "To show the user a picture as proof, call show_image from the mystical MCP server with a one-line caption "
     "saying what it proves, or compare_images for a before and after. A picture you only read to check something "
     "stays in your work log, out of their way. run_checks runs the tests and records the result against known "
-    "failures; drive_page replaces writing a browser script; find_tools lists the rest.")
+    "failures; drive_page replaces writing a browser script; find_tools lists the rest.\n\n"
+    "Whatever you're talking about, when you'd write a list of numbers or a table, like coverage by folder or a "
+    "comparison, call show_data from the mystical MCP server instead: it draws a live chart, sheet with progress "
+    "bars, kanban board, flowchart or timeline in the chat. Keep your reply to what stands out.")
 
 
 def _compose_system_prompt(graph: str = "", rivendell: str = "") -> str:

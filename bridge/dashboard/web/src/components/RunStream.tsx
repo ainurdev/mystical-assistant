@@ -31,6 +31,7 @@ import { clearReveal, revealKey, useRevealAsk } from "../lib/reveal";
 import { ROW_FILTERS, rowMatches, type RowFilter } from "../lib/rowfilter";
 import { ChecksRow, ReportCard, RuleRow, SecretCard, SecretRecord } from "./EvidenceRows";
 import { ProofBlock } from "./Proof";
+import { DataView } from "./DataView";
 import { TurnReceipt } from "./TurnReceipt";
 import { PromptBubble } from "./PromptBubble";
 import { WorkingIndicator } from "./hud/WorkingIndicator";
@@ -2519,7 +2520,7 @@ export const RunStream = memo(function RunStream({
    *  turn gathers them by its answer, and its work closes back up into one zone. */
   const shownLive = (i: number) => {
     const t = events[i].type;
-    return !ended && (t === "figure" || t === "report" || showAt(i));
+    return !ended && (t === "figure" || t === "report" || t === "data" || showAt(i));
   };
   // The rest of the bridge tools' rows are cut too: a stretch of nothing but them has
   // no STEP in it to draw for (lib/segments), and each is a row of its own anyway.
@@ -2527,7 +2528,7 @@ export const RunStream = memo(function RunStream({
     if (!mx) return pictureRun(i);
     const t = events[i].type;
     if (t === "checks" || t === "rule" || t === "secret_request" || shownLive(i)) return true;
-    return !showAt(i) && t !== "figure" && t !== "report" && pictureRun(i);
+    return !showAt(i) && t !== "figure" && t !== "report" && t !== "data" && pictureRun(i);
   };
 
   // The turn's closing text arrives twice — once streamed as a text block, once
@@ -2649,6 +2650,7 @@ export const RunStream = memo(function RunStream({
           return (
             <FinalResult
               key={i}
+              onOpenFile={onOpenFile}
               result={text}
               label={i === finalText ? "ANSWER" : dossier ? "ANSWER // ASK" : "RESULT // ASK"}
               animate={animate}
@@ -2877,6 +2879,8 @@ export const RunStream = memo(function RunStream({
         return mx ? <ChecksRow key={i} ev={event} /> : null;
       case "rule":
         return mx ? <RuleRow key={i} ev={event} /> : null;
+      case "data":
+        return mx && !ended ? <DataView key={i} ev={event} /> : null;
       case "report":
         return mx && !ended ? <ReportCard key={i} ev={event} session={sessionId} /> : null;
       case "secret_request": {
@@ -2919,6 +2923,7 @@ export const RunStream = memo(function RunStream({
         return (
           <FinalResult
             key={i}
+            onOpenFile={onOpenFile}
             result={event.result}
             update={lastResult >= 0 && i !== lastResult}
             // A stored event knows when it landed; a live one doesn't carry
@@ -3352,6 +3357,7 @@ export const RunStream = memo(function RunStream({
     rows.splice(answerZone >= 0 ? answerZone + 1 : rows.length, 0,
       <Fragment key="turn-end">
         {proofs.length ? <ProofBlock items={proofs} turn={turnWord} /> : null}
+        {events.map((e, i) => (e.type === "data" ? <DataView key={`data${i}`} ev={e} /> : null))}
         {reports}
         {receipt && !receiptEmpty(receipt) ? <TurnReceipt r={receipt} onJump={revealAt} /> : null}
       </Fragment>);
@@ -3485,10 +3491,12 @@ export function FinalResult({
   dossier = false,
   onAnswer,
   onQuote,
+  onOpenFile,
   view,
   askDocked = false,
   update = false,
 }: {
+  onOpenFile?: OpenFile;
   result: string;
   /** An earlier result in a turn that went on after it: a progress update, not the answer. */
   update?: boolean;
@@ -3567,7 +3575,7 @@ export function FinalResult({
         {drawn ?? (body && (
           <div className="res-body relative">
             <div className={open ? undefined : "max-h-[380px] overflow-hidden"}>
-              <Markdown className="leading-relaxed text-foreground-bright">{body}</Markdown>
+              <Markdown className="leading-relaxed text-foreground-bright" onOpenFile={onOpenFile}>{body}</Markdown>
             </div>
             {!open && <div className="res-fade" aria-hidden />}
           </div>

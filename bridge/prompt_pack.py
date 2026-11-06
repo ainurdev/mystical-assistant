@@ -51,7 +51,9 @@ TIDY = (
 SHOW = (
     "To show the user a picture as proof, call show_image with a one-line caption saying what it proves. A "
     "picture you only read to check something stays in your work log, out of their way. Use run_checks to run "
-    "tests, drive_page instead of writing a browser script, and find_tools for the rest.")
+    "tests, drive_page instead of writing a browser script, and find_tools for the rest. Whatever you're "
+    "talking about, when you'd write a list of numbers or a table, like coverage by folder or a comparison, call "
+    "show_data instead: it draws a live chart, sheet with progress bars, kanban board, flowchart or timeline in the chat.")
 
 HELPERS = (
     "Mystical can start another agent for you, on any provider, with the delegate "

@@ -78,6 +78,12 @@ def _turn_block(s: dict, t: dict, *, tools: bool) -> str:
             words.append(line)
         elif k == "tool_done" and tools and e.get("output"):
             words.append("```\n" + str(e["output"])[-_TOOL_OUT:] + "\n```")
+        elif k == "data":
+            from bridge import data_views
+            try:
+                words.append(f"- showed {data_views.describe(e)}")
+            except (KeyError, TypeError, ValueError):
+                pass
         elif k == "error" and e.get("message"):
             words.append(f"(error: {str(e['message'])[:300]})")
     if closing and closing not in words:

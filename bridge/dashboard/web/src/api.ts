@@ -1,3 +1,4 @@
+import type { DataEv } from "./lib/dataview";
 import type { Profile, ProfilesInfo, ProfileWrite } from "./lib/profiles";
 import type { Caps, HelperConfig, MemberInfo } from "./lib/multi";
 import type { BranchPr, BranchStatus } from "./lib/branchrows";
@@ -270,6 +271,8 @@ export type RunEvent =
   // A figure is the agent showing you something, with a caption: `images` are upload-dir
   // paths, served by /local/attachment. `compare` is [before, after].
   | { type: "figure"; kind: "shown" | "compare"; images: string[]; caption: string }
+  // show_data: a sheet, chart, board or figures (lib/dataview.ts, bridge/data_views.py).
+  | DataEv
   // run_checks. A count the runner's output didn't show is null. `new`: failures not on
   // the project's known list; `known`: the ones that are. `log` is relative to the project.
   | { type: "checks"; command: string; ok: boolean; code: number; ms: number; passed: number | null;

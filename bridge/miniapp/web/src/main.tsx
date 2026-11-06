@@ -15,6 +15,8 @@ import "@fontsource/geist/400.css";
 import "@fontsource/geist/500.css";
 import "@fontsource/geist/600.css";
 import "./index.css";
+import "./dataview.css";
+import "./chatread.css";
 
 initTelegram();
 applyTheme(loadTheme());

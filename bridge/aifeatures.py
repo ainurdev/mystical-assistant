@@ -68,6 +68,20 @@ FEATURES = (
               "across every repo you touched this week. Only a repo whose git "
               "state moved is re-scouted. Off, nothing is scouted and the screen "
               "still shows where the repo stands."},
+    {"key": "translate", "env": "TRANSLATE_ENABLE", "label": "TRANSLATE",
+     "hint": "translates what you select in a chat",
+     "cost": "1 haiku call per press",
+     "tokens": "~33k tokens",
+     "about": "Select words in an agent's message and press Translate. It reads the "
+              "sentence around them to pick the meaning, and a repeat is answered from "
+              "memory. Nothing runs until you press it. Part of the experimental chats."},
+    {"key": "explain", "env": "EXPLAIN_ENABLE", "label": "EXPLAIN THIS",
+     "hint": "explains what you select in a chat, right there",
+     "cost": "1 haiku call per press",
+     "tokens": "~33k tokens",
+     "about": "Select words in an agent's message and press Explain. It answers in a "
+              "popover from that message alone, and adds nothing to the chat. Nothing "
+              "runs until you press it. Part of the experimental chats."},
     {"key": "preview", "env": "PREVIEW_DETECT_AI", "label": "RUN COMMAND",
      "hint": "works out how to start a repo whose dev script isn't obvious",
      "cost": "1 haiku call per repo the heuristic can't read",

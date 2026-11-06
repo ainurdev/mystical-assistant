@@ -11,6 +11,8 @@ import type { Anchor } from "../../lib/scrollmem";
 import { projectName, projectTint } from "../../lib/surfaces";
 import { isJob } from "../../lib/jobs";
 import { ChatImagesScope } from "../../lib/chatimages";
+import { useAiFeatures } from "../../lib/ai";
+import { SelectionPop } from "../SelectionPop";
 import { chatPad, hairline } from "../../lib/shell";
 import { useLoadingPhase } from "../../lib/loadingPhase";
 import type { HudSettings } from "../../lib/theme";
@@ -314,6 +316,7 @@ export function Terminal({
   // Multi-agent chats (plan §6): the switch appears once a chat has agents, and a
   // helper's session wears the path back to its chat. A chat with none draws neither.
   const multiOn = useMultiOn();
+  const aiFeatures = useAiFeatures();
   const helperChat = selected?.parent_session ?? null;
   const chatId = helperChat ?? sessionId ?? null;
   const agentRows = useTreeRows(multiOn ? chatId : null);
@@ -501,12 +504,15 @@ export function Terminal({
             // Your own chat's plates can load what you typed; a teammate's session, a
             // device run, a job or a helper was briefed by someone else (MdImage).
             <ChatImagesScope remote={!theirs && !deviceRun && !selected?.parent_session && !(selected && isJob(selected))}>
+            {multiOn ? <SelectionPop root="[data-chat-read]" onQuote={theirs ? undefined : onQuote} canTranslate={aiFeatures.translate !== false} canExplain={aiFeatures.explain !== false} /> : null}
+            <div data-chat-read="" style={{ display: "contents" }}>
             <Transcript agentSession={!!selected?.agent && selected.agent !== "claude"} turns={turns} activeId={activeId} boot={boot} who={who} onRespond={onRespond} liveTurns={liveTurns} trailingWorking={trailingWorking} hud={hud} onRunCommand={theirs ? undefined : onRunCommand} onQuote={theirs ? undefined : onQuote} onOpenFile={onOpenFile} onAnswer={theirs ? undefined : onAnswer} askDocked={!theirs && !!askDocked} hasOlder={hasOlder} olderLoading={olderLoading} onLoadOlder={onLoadOlder} renderFrom={renderFrom} scrollRef={scrollRef} sessionKey={sessionId} navRef={navRef} restoringRef={restoringRef} correctingRef={correctingRef}
               job={selected && isJob(selected) && selected.job?.kind ? selected.job : null} jobTitle={selected?.title} project={sessionProject}
               top={theirs && selected?.team?.earlier
                 ? <EarlierPlate share={selected.team.share} facts={selected.team.earlier} by={selected.team.from.name} me={teamMe} /> : undefined}
               unfinished={theirs && selected?.team?.unfinished?.length ? { turns: selected.team.unfinished, by: selected.team.from.name } : null}
               limit={theirs ? null : limit} logins={logins} />
+            </div>
             </ChatImagesScope>
           )}
         </div>

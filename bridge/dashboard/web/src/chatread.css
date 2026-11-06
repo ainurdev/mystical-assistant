@@ -1,0 +1,37 @@
+/* A file an agent named, its menu, the pictures under a message, and the popover over a
+   selection (components/FileRef.tsx, SelectionPop.tsx). The same file is in both apps. */
+.rd-ref { cursor: pointer; color: var(--acc); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--acc) 35%, transparent); text-underline-offset: 2px; border-radius: 2px; }
+.rd-ref:hover { text-decoration-color: var(--acc); }
+.rd-ref:focus-visible { outline: 1px solid var(--border-bright); outline-offset: 1px; }
+.rd-ref code { color: inherit; }
+
+.rd-menu, .rd-pop {
+  /* the same surface as the app's own context menu, so it wears each theme the same way */
+  position: fixed; z-index: 9500; background: var(--panel2); border: 1px solid color-mix(in srgb, var(--acc) 40%, transparent);
+  border-radius: var(--prad, 0px); font-family: var(--ui-font, var(--page-font, var(--font-sans, inherit)));
+  font-size: var(--t12, 12px); color: var(--tx); box-shadow: 0 12px 44px var(--shadow-pop, rgba(0, 0, 0, 0.45));
+}
+.rd-menu { width: 260px; padding: 4px; }
+.rd-menu-path { padding: 5px 7px 6px; color: var(--txd); font-size: var(--t105, 10.5px); overflow-wrap: anywhere; }
+.rd-menu-img { padding: 0 7px 6px; }
+.rd-menu-img img { display: block; max-width: 100%; max-height: 180px; width: auto; height: auto; }
+.rd-menu button { display: block; width: 100%; min-height: 30px; padding: 4px 7px; background: none; border: 0; border-radius: var(--prad, 0px); color: var(--txb); font: inherit; text-align: left; cursor: pointer; }
+.rd-menu button:hover, .rd-menu button:focus-visible { background: color-mix(in srgb, var(--acc) 12%, transparent); outline: none; }
+.rd-menu-said { padding: 5px 7px; color: var(--txm); font-size: var(--t105, 10.5px); }
+
+.rd-imgs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.rd-img img { display: block; max-width: min(100%, 300px); max-height: 180px; width: auto !important; height: auto !important; }
+
+.rd-pop { transform: translateX(-50%); width: max-content; max-width: min(420px, calc(100vw - 16px)); overflow: hidden; }
+.rd-pop-row { display: flex; }
+.rd-pop-row button { flex: none; min-height: 32px; padding: 4px 11px; background: none; border: 0; border-left: 1px solid var(--border); color: var(--txb); font: inherit; white-space: nowrap; cursor: pointer; }
+.rd-pop-row button:first-child { border-left: 0; }
+.rd-pop-row button:hover:not(:disabled) { background: color-mix(in srgb, var(--acc) 12%, transparent); }
+.rd-pop-row button:disabled { color: var(--txd); cursor: default; }
+.rd-out { padding: 7px 11px 9px; border-top: 1px solid var(--border); max-height: 40vh; overflow-y: auto; }
+.rd-from { margin-bottom: 3px; color: var(--txd); font-size: var(--t10, 10px); letter-spacing: 0.08em; text-transform: uppercase; }
+.rd-text { color: var(--txb); line-height: 1.5; overflow-wrap: anywhere; white-space: pre-wrap; }
+.rd-out .md { font-size: inherit; color: var(--txb); line-height: 1.5; }
+.rd-out .md > :last-child { margin-bottom: 0; }
+.rd-wait { color: var(--txd); }
+.rd-err { color: var(--err); }

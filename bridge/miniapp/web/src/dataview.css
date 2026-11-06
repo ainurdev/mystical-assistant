@@ -1,0 +1,162 @@
+/* show_data's views (components/DataView.tsx). The same file is in both apps. Series
+   colours are the dataviz reference ramps, aqua first to sit with the phosphor, validated in
+   each mode against that mode's surface: run validate_palette.js again if one changes. Light
+   mode warns on contrast below 3:1 for the lighter hues, which is what the table view and
+   the legend answer. */
+.dv, .dv * { box-sizing: border-box; }
+.dv {
+  --dv-1: #199e70; --dv-2: #d95926; --dv-3: #3987e5; --dv-4: #c98500;
+  --dv-5: #d55181; --dv-6: #008300; --dv-7: #9085e9; --dv-8: #e66767;
+  --dv-surface: var(--panel);
+  --dv-grid: color-mix(in srgb, var(--txl) 22%, transparent);
+  --dv-zero: color-mix(in srgb, var(--txl) 65%, transparent);
+  --dv-hover: color-mix(in srgb, var(--acc) 8%, transparent);
+  --dv-r: var(--prad, 0px);
+  --dv-face: var(--ui-font, var(--page-font, var(--font-sans, inherit)));
+  margin: 10px 0; border: 1px solid var(--border); border-radius: var(--dv-r); background: var(--panel);
+  font-family: var(--dv-face); color: var(--tx); min-width: 0; max-width: 100%;
+}
+:root[data-light] .dv {
+  --dv-1: #1baf7a; --dv-2: #eb6834; --dv-3: #2a78d6; --dv-4: #eda100;
+  --dv-5: #e87ba4; --dv-6: #008300; --dv-7: #6250d6; --dv-8: #e34948;
+}
+.dv[data-full] { position: fixed; inset: 0; z-index: 9000; margin: 0; border: 0; border-radius: 0; display: flex; flex-direction: column; background: var(--canvas); --dv-surface: var(--canvas); }
+.dv[data-full] .dv-body { flex: 1; min-height: 0; overflow: auto; }
+
+.dv-head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; padding: 9px 12px 6px; }
+.dv-head h4 { margin: 0; flex: 1 1 180px; min-width: 0; font: inherit; font-size: var(--t13, 13px); font-weight: 500; color: var(--txb); overflow-wrap: anywhere; }
+.dv-tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.dv-btn {
+  appearance: none; background: none; border: 1px solid var(--border); border-radius: var(--dv-r); color: var(--txd);
+  font: inherit; font-size: var(--t10, 10px); letter-spacing: 0.08em; padding: 3px 7px; min-height: 24px; cursor: pointer;
+}
+.dv-btn:hover:not(:disabled), .dv-btn:focus-visible { color: var(--txb); border-color: var(--border-bright); }
+.dv-btn:disabled { opacity: 0.6; cursor: default; }
+.dv-said { font-size: var(--t105, 10.5px); color: var(--txm); }
+.dv-filter {
+  width: 120px; min-height: 24px; padding: 2px 7px; background: transparent; color: var(--tx); font: inherit; font-size: var(--t11, 11px);
+  border: 1px solid var(--border); border-radius: var(--dv-r);
+}
+.dv-filter:focus { outline: none; border-color: var(--border-bright); }
+.dv-caption { margin: 0; padding: 0 12px 8px; font-size: var(--t115, 11.5px); line-height: 1.5; color: var(--txm); }
+.dv-foot { display: flex; flex-wrap: wrap; gap: 2px 14px; padding: 6px 12px 8px; font-size: var(--t10, 10px); color: var(--txd); border-top: 1px solid var(--border); }
+.dv-foot:empty { display: none; }
+.dv-failed { margin: 8px 0; font-size: var(--t11, 11px); color: var(--txd); }
+.dv :focus-visible { outline: 1px solid var(--border-bright); outline-offset: -1px; }
+
+/* sheet: the header, the first column and the totals stay put, so they're opaque */
+.dv-sheet { overflow: auto; max-height: 420px; overscroll-behavior: contain; border-top: 1px solid var(--border); }
+.dv-sheet[data-full] { max-height: none; height: 100%; }
+.dv-sheet table { border-collapse: separate; border-spacing: 0; min-width: 100%; font-size: var(--t115, 11.5px); font-variant-numeric: tabular-nums; }
+.dv-sheet th, .dv-sheet td { height: 30px; padding: 0 12px; white-space: nowrap; max-width: 320px; overflow: hidden; text-overflow: ellipsis; text-align: left; background: var(--dv-surface); border-bottom: 1px solid var(--dv-grid); }
+.dv-sheet thead th { position: sticky; top: 0; z-index: 2; padding: 0; border-bottom: 1px solid var(--border); }
+.dv-sheet th button { all: unset; display: block; width: 100%; padding: 0 12px; line-height: 30px; box-sizing: border-box; font-size: var(--t10, 10px); letter-spacing: 0.06em; color: var(--txd); cursor: pointer; }
+.dv-sheet th button:hover, .dv-sheet th[aria-sort] button { color: var(--txb); }
+.dv-sheet th button:focus-visible { outline: 1px solid var(--border-bright); outline-offset: -1px; }
+.dv-sheet [data-n], .dv-sheet [data-n] button { text-align: right; }
+/* takes no width, so a numeric header lines up with its numbers; the arrow sits in the padding */
+.dv-sort { display: inline-block; width: 0; margin-left: 2px; font-size: 8px; text-align: left; }
+.dv-sheet th:first-child, .dv-sheet td:first-child { position: sticky; left: 0; z-index: 1; border-right: 1px solid var(--dv-grid); }
+.dv-sheet thead th:first-child { z-index: 3; }
+.dv-sheet tbody tr:hover td { background: color-mix(in srgb, var(--acc) 6%, var(--dv-surface)); color: var(--txb); }
+.dv-sheet tfoot td { position: sticky; bottom: 0; z-index: 2; color: var(--txb); font-weight: 500; border-top: 1px solid var(--border-bright); border-bottom: 0; }
+.dv-sheet tfoot td:first-child { z-index: 3; font-size: var(--t10, 10px); letter-spacing: 0.08em; color: var(--txd); font-weight: 400; }
+.dv-progress { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.dv-progress-n { min-width: 3.4em; text-align: right; }
+.dv-track { display: block; width: 80px; height: 6px; background: var(--dv-grid); border-radius: 3px; overflow: hidden; }
+.dv-track i { display: block; height: 100%; background: var(--dv-1); border-radius: 3px; }
+.dv-sheet a { color: var(--acc); text-decoration: none; }
+.dv-sheet a:hover { text-decoration: underline; }
+.dv-none { text-align: center !important; color: var(--txd); position: static !important; }
+
+/* chart */
+.dv-chart { padding: 2px 12px 8px; min-width: 0; }
+.dv-plot { position: relative; min-width: 0; }
+.dv-plot svg { display: block; }
+.dv-tick { font-size: var(--t10, 10px); fill: var(--txd); }
+.dv-node { font-size: var(--t115, 11.5px); fill: var(--txb); }
+.dv-end { font-size: var(--t10, 10px); fill: var(--txm); }
+.dv-axis-name { font-size: var(--t10, 10px); color: var(--txd); padding-bottom: 4px; }
+.dv-legend { list-style: none; margin: 0 0 6px; padding: 0; display: flex; flex-wrap: wrap; gap: 3px 12px; font-size: var(--t105, 10.5px); color: var(--txm); }
+.dv-legend li { display: flex; align-items: center; gap: 5px; }
+.dv-swatch { width: 9px; height: 9px; flex: none; border-radius: 2px; display: inline-block; }
+.dv-swatch[data-dashed] { height: 0; width: 12px; border-radius: 0; border-top: 2px dashed var(--txd); }
+.dv-swatch[data-none] { visibility: hidden; }
+.dv-tip {
+  position: absolute; top: 6px; z-index: 4; pointer-events: none; min-width: 130px; max-width: min(260px, 80%); padding: 6px 8px;
+  background: var(--popover, var(--panel)); border: 1px solid var(--border-bright); border-radius: var(--dv-r);
+  font-size: var(--t105, 10.5px); box-shadow: 0 4px 14px var(--shadow-pop, rgba(0, 0, 0, 0.4));
+}
+.dv-tip-x { color: var(--txb); margin-bottom: 3px; overflow-wrap: anywhere; }
+.dv-tip-row { display: flex; align-items: center; gap: 6px; color: var(--txm); line-height: 1.6; }
+.dv-tip-row span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-tip-row b { font-weight: 500; color: var(--txb); font-variant-numeric: tabular-nums; }
+.dv-tip-sum { border-top: 1px solid var(--border); margin-top: 2px; }
+
+.dv-donut { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 4px 12px 10px; }
+.dv-donut svg { width: 180px; height: 180px; flex: none; margin: 0 auto; }
+.dv-center { font-size: 18px; fill: var(--txb); font-weight: 500; }
+.dv-slices { list-style: none; margin: 0; padding: 0; flex: 1 1 200px; min-width: 0; font-size: var(--t115, 11.5px); }
+.dv-slices li { display: flex; align-items: center; gap: 7px; padding: 4px 4px; color: var(--txm); }
+.dv-slices li[data-on] { background: var(--dv-hover); color: var(--txb); }
+.dv-slice-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dv-slices b { font-weight: 500; color: var(--txb); font-variant-numeric: tabular-nums; }
+.dv-slice-pct { width: 44px; text-align: right; color: var(--txd); font-variant-numeric: tabular-nums; }
+
+/* board: each column scrolls by itself, and on a phone a swipe lands on one */
+.dv-board { display: flex; gap: 8px; padding: 2px 12px 10px; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; align-items: flex-start; }
+.dv-board[data-full] { height: 100%; }
+.dv-col { flex: 0 0 min(250px, 78vw); min-width: 0; scroll-snap-align: start; background: color-mix(in srgb, var(--txl) 7%, transparent); border: 1px solid var(--dv-grid); border-radius: var(--dv-r); }
+.dv-board[data-full] .dv-col { max-height: 100%; display: flex; flex-direction: column; }
+.dv-col > header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding: 7px 9px 6px; font-size: var(--t10, 10px); letter-spacing: 0.08em; }
+.dv-col-name { color: var(--txb); text-transform: uppercase; overflow-wrap: anywhere; }
+.dv-col-n { color: var(--txd); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dv-col-n[data-over] { color: var(--warn); }
+.dv-col ul { list-style: none; margin: 0; padding: 0 6px 6px; display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; overscroll-behavior-y: contain; }
+.dv-board[data-full] .dv-col ul { max-height: none; flex: 1; }
+.dv-empty { padding: 4px 9px 12px; font-size: var(--t105, 10.5px); color: var(--txd); }
+.dv-card { padding: 7px 8px; background: var(--dv-surface); border: 1px solid var(--border); border-radius: var(--dv-r); font-size: var(--t115, 11.5px); line-height: 1.4; }
+.dv-card-top { display: flex; justify-content: space-between; gap: 8px; font-size: var(--t10, 10px); color: var(--txd); margin-bottom: 3px; }
+.dv-prio { letter-spacing: 0.06em; }
+.dv-card-title { color: var(--txb); overflow-wrap: anywhere; }
+.dv-card-title a { color: inherit; text-decoration: none; }
+.dv-card-title a:hover { color: var(--acc); text-decoration: underline; }
+.dv-card-note { margin-top: 3px; font-size: var(--t105, 10.5px); color: var(--txd); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.dv-tags { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 5px; }
+.dv-tags span { padding: 0 5px; font-size: var(--t95, 9.5px); line-height: 16px; color: var(--txm); border: 1px solid var(--dv-grid); border-radius: var(--dv-r); }
+.dv-card-foot { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; margin-top: 5px; font-size: var(--t10, 10px); color: var(--txd); }
+.dv-card-foot [data-late] { color: var(--err); }
+
+/* figures */
+.dv-tiles { margin: 0; padding: 2px 12px 10px; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.dv-tile { padding: 8px 10px; border: 1px solid var(--dv-grid); border-radius: var(--dv-r); min-width: 0; }
+.dv-tile dt { font-size: var(--t10, 10px); letter-spacing: 0.08em; text-transform: uppercase; color: var(--txd); overflow-wrap: anywhere; }
+.dv-tile dd { margin: 3px 0 0; font-size: 19px; line-height: 1.25; color: var(--txb); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.dv-delta { margin-top: 2px; font-size: var(--t105, 10.5px); color: var(--txm); }
+.dv-note { margin-top: 2px; font-size: var(--t10, 10px); color: var(--txd); }
+
+/* diagrams */
+.dv-flow { overflow: auto; overscroll-behavior: contain; max-height: 70vh; }
+.dv[data-full] .dv-flow { max-height: none; }
+.dv-flow svg { display: block; margin: 0 auto; }
+.dv-time { list-style: none; margin: 0; padding: 4px 14px 12px; }
+.dv-time li { position: relative; padding: 0 0 14px 20px; border-left: 1px solid var(--border); margin-left: 5px; }
+.dv-time li:last-child { padding-bottom: 2px; border-left-color: transparent; }
+.dv-time-dot { position: absolute; left: -5px; top: 3px; width: 9px; height: 9px; border-radius: 50%; background: var(--dv-surface); border: 2px solid var(--txd); box-sizing: border-box; }
+.dv-time li[data-state="done"] .dv-time-dot { background: var(--dv-1); border-color: var(--dv-1); }
+.dv-time li[data-state="now"] .dv-time-dot { background: var(--dv-surface); border-color: var(--dv-1); box-shadow: 0 0 0 3px color-mix(in srgb, var(--dv-1) 30%, transparent); }
+.dv-time-when { display: flex; gap: 8px; align-items: baseline; font-size: var(--t105, 10.5px); color: var(--txd); }
+.dv-time-state { letter-spacing: 0.06em; text-transform: uppercase; font-size: var(--t95, 9.5px); color: var(--txm); }
+.dv-time-what { margin-top: 1px; font-size: var(--t125, 12.5px); line-height: 1.4; color: var(--txb); overflow-wrap: anywhere; }
+.dv-time-note { margin-top: 2px; font-size: var(--t115, 11.5px); line-height: 1.45; color: var(--txm); overflow-wrap: anywhere; }
+
+/* the off-screen copy a PNG is painted from: everything laid out, nothing scrolled away */
+.dv[data-print] { position: fixed; left: -30000px; top: 0; margin: 0; width: max-content; min-width: 640px; max-width: 2400px; }
+.dv[data-print][data-view="chart"] { width: 900px; }
+.dv[data-print][data-view="stats"] { width: 760px; }
+.dv[data-print] .dv-sheet, .dv[data-print] .dv-board, .dv[data-print] .dv-flow { overflow: visible; max-height: none; }
+.dv[data-print] .dv-sheet th, .dv[data-print] .dv-sheet td { position: static; max-width: none; }
+.dv[data-print] .dv-col ul { max-height: none; overflow: visible; }
+.dv[data-print] .dv-card-note { display: block; }
+.dv-saved { padding: 8px 10px; }
+.dv-saved-none { padding: 14px 4px; font-size: var(--t115, 11.5px); line-height: 1.5; color: var(--txd); font-family: var(--ui-font, var(--page-font, inherit)); }

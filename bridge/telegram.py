@@ -305,6 +305,25 @@ def get_updates(offset: int):
         return []
 
 
+def send_document(chat_id: int, path: str, filename: str, caption: str = "") -> bool:
+    """Send a file on disk as a document. Like send_photo: best-effort, False on any failure."""
+    b = "mysticaldocument"
+    safe = filename.replace('"', "").replace("\r", "").replace("\n", "")
+    fields = {"chat_id": str(chat_id), "caption": caption[:1024]}
+    body = b"".join(f'--{b}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+                    for k, v in fields.items())
+    try:
+        with open(path, "rb") as f:
+            body += (f'--{b}\r\nContent-Disposition: form-data; name="document"; filename="{safe}"\r\n'
+                     f"Content-Type: application/octet-stream\r\n\r\n").encode() + f.read() + f"\r\n--{b}--\r\n".encode()
+        req = Request(f"{config.API}/sendDocument", data=body,
+                      headers={"Content-Type": f"multipart/form-data; boundary={b}"})
+        with urlopen(req, timeout=60) as r:
+            return bool(json.loads(r.read()).get("ok"))
+    except (OSError, ValueError, HTTPError):
+        return False
+
+
 def send_photo(chat_id: int, path: str, caption: str = "", thread: "int | None" = None) -> bool:
     """Send a picture on disk, with a caption. Multipart by hand: stdlib has no builder,
     and a local file can't go as a URL. Best-effort: False on any failure."""

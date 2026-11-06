@@ -208,6 +208,8 @@ DREAM_ENABLE = os.environ.get("DREAM_ENABLE", "0").lower() \
 # dev server. A free heuristic reads the lockfile and scripts first; this decides
 # whether a repo the heuristic can't read may fall through to a model call. That
 # fall-through is automatic — nobody clicks it — so it defaults OFF.
+EXPLAIN_ENABLE = os.environ.get("EXPLAIN_ENABLE", "1").lower() not in ("0", "false", "off", "no")
+TRANSLATE_ENABLE = os.environ.get("TRANSLATE_ENABLE", "1").lower() not in ("0", "false", "off", "no")
 PREVIEW_DETECT_AI = os.environ.get("PREVIEW_DETECT_AI", "0").lower() \
     not in ("0", "false", "no", "")
 

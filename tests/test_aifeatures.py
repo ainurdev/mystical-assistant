@@ -75,7 +75,7 @@ def test_the_registry_covers_every_model_call_the_bridge_makes():
     don't delete this line."""
     assert set(KEYS) == {"title", "relevance", "nextup", "preview", "commitmsg",
                          "learn", "dream", "ponytail", "graph",
-                         "rvtrack", "changelog", "logostyle"}
+                         "rvtrack", "changelog", "logostyle", "translate", "explain"}
 
 
 def test_shipped_defaults_are_off_for_anything_automatic():
@@ -90,7 +90,7 @@ def test_shipped_defaults_are_off_for_anything_automatic():
     with open(config.__file__, encoding="utf-8") as f:
         src = f.read()
     shipped = {"TITLE_ENABLE": "0", "RELEVANCE_CHECK": "0", "NEXTUP_ENABLE": "0",
-               "PREVIEW_DETECT_AI": "0", "COMMIT_MSG_AI": "1", "LEARN_ENABLE": "0",
+               "PREVIEW_DETECT_AI": "0", "TRANSLATE_ENABLE": "1", "EXPLAIN_ENABLE": "1", "COMMIT_MSG_AI": "1", "LEARN_ENABLE": "0",
                "DREAM_ENABLE": "0",
                "PONYTAIL_ENABLE": "1", "GRAPH_ENABLE": "1",
                "RIVENDELL_TRACK": "1", "CHANGELOG_ENABLE": "1",
