@@ -1484,9 +1484,18 @@ input {
    less room for a setting than for the name of its category.
 
    A media query rather than a container query — unlike the composer, whose
-   width depends on which sidebars are open, this modal is min(976px, 94vw)
-   (rail + the 760px measure its rows keep, nothing spare), so under 1040px its
-   width IS the viewport. 94vw drops under 560px at a 600px viewport. */
+   width depends on which sidebars are open, this modal's width is 94vw, or the
+   viewport less 48px once that is wider, until it stops at 1440. 94vw drops
+   under 560px at a 600px viewport.
+
+   It sits 24px from the window's edges because its pages are long, so the room
+   is worth more than the margin. The width stops at 1440 because past that a
+   row is a neck exercise; the height has no cap, since a tall screen just shows
+   more of a page. Its pages fill it with no .mcol 760 cap, and their grids
+   reflow: Extras goes from 2 cards a row to 4. It is one size for every
+   category, because a dialog that resizes under the pointer costs more than
+   the void it saves. */
+.setdlg { width: min(1440px, max(94vw, 100vw - 48px)); height: calc(100vh - 48px); }
 .setbody { flex: 1; display: flex; min-height: 0; }
 
 /* The page a category opens: it rises and fades in, so switching reads as
@@ -1507,7 +1516,8 @@ input {
    apart to read as two things. The rows keep a measure and centre in the pane;
    the modal stays wide for its header and for anything grid-shaped inside it.
    Not for the modals whose rows are a table (the HTTP inspector): there the
-   middle column absorbs the width instead of leaving a hole in it. */
+   middle column absorbs the width instead of leaving a hole in it. Not for
+   Settings either: its pages are mostly grids, which reflow into the width. */
 .mcol > * {
   max-width: 760px;
   margin-left: auto;
@@ -1575,6 +1585,9 @@ input {
 }
 
 @media (max-width: 600px) {
+  /* The extra room was asked for desktop windows; a phone keeps its old 86vh
+     (and its 94vw, from the max() above). */
+  .setdlg { height: 86vh; }
   .setbody { flex-direction: column; }
   .setrail {
     width: auto;
@@ -7676,6 +7689,8 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 [data-wco] .wco-bar :is(button, a, input, select, textarea, label, [role=button], [contenteditable], [tabindex], [style*="position: absolute"]) {
   -webkit-app-region: no-drag; app-region: no-drag;
 }
+/* Settings reaches 24px from the top, over the caps: without this its top strip drags the window. */
+[data-wco] .setdlg { -webkit-app-region: no-drag; app-region: no-drag; }
 /* The corner Chrome's overlay takes: the PWA's only (data-wco=""). The Linux
    window's buttons are in the rail, and these grounds stacked a second
    translucent --panel3 under the gear's cell there, a lighter square. */
