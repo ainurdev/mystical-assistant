@@ -1144,11 +1144,10 @@ export const RunStream = memo(function RunStream({
   // The turn's closing text arrives twice — streamed as a text block, then again
   // as the run's result — so only the result card draws it. A native session
   // emits no result event, so its final text keeps rendering as text.
-  const resultText = (events.find((e) => e.type === "result")?.result ?? "").trim();
   // A turn can hold several results (a background agent's wake-up carries on in the
   // same turn): only the last is the answer.
   const multiOn = useExperimental();
-  const lastResult = multiOn ? events.findLastIndex((e) => e.type === "result") : -1;
+  const lastResult = multiOn ? events.map((e) => e.type).lastIndexOf("result") : -1;
   const resultTexts = new Set(events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : [])));
 
   // Is the next thing the model does asking a question card?

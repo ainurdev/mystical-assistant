@@ -2397,7 +2397,7 @@ export const RunStream = memo(function RunStream({
   const multiOn = useMultiOn();
   // A turn can hold several results: a background agent's wake-up carries on in the
   // same process and turn. Only the last is the answer; the rest read as updates.
-  const lastResult = multiOn ? events.findLastIndex((e) => e.type === "result") : -1;
+  const lastResult = multiOn ? events.map((e) => e.type).lastIndexOf("result") : -1;
   const resultTexts = new Set(events.flatMap((e) => (e.type === "result" ? [(e.result ?? "").trim()] : [])));
   const resultText = (events.find((e) => e.type === "result")?.result ?? "").trim();
   const dossier = toolStyle === "dossier";
