@@ -246,6 +246,34 @@ def test_upstream_distinguishes_unpushed_from_synced():
     assert st["ahead"] == 1 and st["behind"] == 0, st
 
 
+def test_upstream_that_origin_does_not_have_reads_as_unpushed():
+    """A branch can name an upstream that isn't on the remote: config copied
+    from another clone, or a branch deleted there. Porcelain v2 still prints
+    `# branch.upstream`; only a remote ref that exists adds `# branch.ab`.
+    The Git tab said such a branch was on origin when it never was."""
+    bare = tempfile.mkdtemp()
+    subprocess.run(["git", "init", "--bare", "-q", bare], check=True)
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    _run(d, "add", "-A")
+    _run(d, "commit", "-qm", "init")
+    branch = g.current_branch(d)
+    _run(d, "remote", "add", "origin", bare)
+    # configured, never pushed
+    _run(d, "config", f"branch.{branch}.remote", "origin")
+    _run(d, "config", f"branch.{branch}.merge", f"refs/heads/{branch}")
+    st = g.status(d)
+    assert st["upstream"] == "" and "unpublished" in st, st
+    assert g.badge(d)["upstream"] == ""
+    # pushed, then deleted on the remote (a side branch: a bare remote won't
+    # delete its default one): its tracking ref goes with it
+    _run(d, "checkout", "-q", "-b", "gone")
+    _run(d, "push", "-q", "-u", "origin", "gone")
+    assert g.status(d)["upstream"] == "origin/gone"
+    _run(d, "push", "-q", "origin", "--delete", "gone")
+    assert g.status(d)["upstream"] == ""
+
+
 def _published():
     """A repo whose branch is pushed to a bare origin: (bare, repo, branch)."""
     bare = tempfile.mkdtemp()

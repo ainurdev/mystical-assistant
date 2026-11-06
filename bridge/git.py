@@ -60,16 +60,23 @@ def _parse(raw: str):
     which is also when ahead/behind stay 0, so the two can't be told apart
     from the counts alone.
 
+    `# branch.upstream` only names the *configured* upstream: git prints it
+    even when the remote has no such branch (never pushed, deleted there,
+    config carried over from another clone). Only a remote ref that exists adds
+    `# branch.ab`, so without that line the upstream counts as "".
+
     `xy` is porcelain's raw pair: X is the index (staged) state, Y the working
     tree's, `.` meaning unchanged — that pair is the whole staged/unstaged
     split the CHANGES panel draws."""
     branch, upstream, ahead, behind, entries = "", "", 0, 0, []
+    tracked = False
     for line in raw.splitlines():
         if line.startswith("# branch.head"):
             branch = line[len("# branch.head"):].strip()
         elif line.startswith("# branch.upstream"):
             upstream = line[len("# branch.upstream"):].strip()
         elif line.startswith("# branch.ab"):
+            tracked = True
             for tok in line.split():
                 if tok.startswith("+"):
                     ahead = int(tok[1:] or 0)
@@ -91,7 +98,7 @@ def _parse(raw: str):
             entries.append(("U", line.rsplit(" ", 1)[-1], False, ".U"))
         elif line.startswith("? "):
             entries.append(("?", line[2:], True, "??"))
-    return branch, upstream, ahead, behind, entries
+    return branch, upstream if tracked else "", ahead, behind, entries
 
 
 def _numstat(cwd: str) -> dict:
