@@ -59,6 +59,8 @@ bridge-worktree skills, and go live through ⟳.
    - next meetings (calendar and briefs);
    - Circleback meetings and action items, open, in both directions by assignee;
    - local files.
+   The list comes back in order: anyone you owe a follow-up or meet in the next 7 days first (soonest meeting,
+   then the oldest follow-up you owe), each once; then by client, Personal, You. The endpoint tests cover it.
    Endpoints: `GET /local/comms/people`, plus `/local/comms/person/<id>`. First prove that the bridge's
    Rivendell token can read those routes; if it can't, add a read scope in Rivendell.
 2. **The dashboard.** A PEOPLE right-rail tab:

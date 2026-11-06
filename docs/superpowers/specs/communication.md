@@ -27,6 +27,8 @@ Designed and approved 2026-11-06.
 | People | **B · PEOPLE TAB, round 2**: a right-rail tab. People are Rivendell clients and contacts plus personal files. Each person shows NEXT meeting, FOLLOW UP (**both directions**), LAST MET, style, samples, a quiet "study a file" link, Draft follow-up / Draft |
 | Learning | Ask only when a correction sounds lasting or repeats, or when a sent text is pasted back. Scope: person, client or you |
 | Slack app | Not now |
+| What they want | A reply to someone's message opens with an IMPORTANT box: what they want from you, one line each, dates kept, then the draft. Nothing is saved from it (grill, 2026-11-06) |
+| People order | First, anyone you owe a follow-up or meet in the next 7 days: soonest meeting first, then the oldest follow-up you owe. Then the rest by client (grill, 2026-11-06) |
 
 ## Architecture
 
@@ -67,7 +69,8 @@ Templates are in `templates/`.
 
 The bridge-wide skill (`~/.claude/skills/writing-messages/SKILL.md`) reads the recipient's files before writing,
 in any session. This is flow B, "tell the client what we just fixed" from inside a project session.
-It never writes to the folder outside the Communication project.
+It never writes to the folder outside the Communication project. When it answers someone's message, the reply
+opens with a `> [!IMPORTANT]` box of what they want from you, which the dashboard and Mini App already draw.
 
 ### 4. Capture (A · IN THE BOX)
 
@@ -80,7 +83,7 @@ It never writes to the folder outside the Communication project.
   - person and project tokens follow the skill-router ghost rule: dashed when guessed, solid when known;
   - nothing is sent.
 - **The prompt.** It carries `<captured source="Slack" at="…">…</captured>`, with any closing tag inside the text removed.
-- **The add-ons.** Copy on a draft asks Mystical.app to bring the source app forward, and the rewrite chips send a follow-up.
+- **The add-ons.** Copy on a draft asks Mystical.app to bring the source app forward, and the rewrite chips send another prompt.
 
 ### 5. People tab (B, round 2)
 
@@ -91,8 +94,10 @@ A right-rail tab. A bridge endpoint merges three sources:
 - local files.
 
 **The list:**
-- People are grouped by client, then Personal, then You.
-- Each row has one badge: a meeting soon (ask colour), open follow-ups, or "last met Nd".
+- First, anyone you owe a follow-up or meet in the next 7 days, each shown once: soonest meeting first, then
+  the oldest follow-up you owe.
+- The rest are grouped by client, then Personal, then You.
+- Each row has one badge: a meeting soon (the next 7 days, ask colour), open follow-ups, or "last met Nd".
 
 **The open person:**
 - NEXT: the meeting, with "brief ›".
