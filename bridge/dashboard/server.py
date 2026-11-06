@@ -717,6 +717,17 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 limit = 200
             return self._json({"commits": git.log_graph(cwd, limit)})
+        if path == "/local/git/incoming":
+            # The GIT tab's COMING IN (origin's commits HEAD lacks) and, diverged,
+            # the dry run the hero shows before you press Merge.
+            cwd = _worktree_cwd(qs.get("project", [None])[0],
+                                (qs.get("branch", [""])[0] or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            st = git.status(cwd)
+            diverged = st.get("ahead", 0) > 0 and st.get("behind", 0) > 0
+            return self._json({"commits": git.incoming(cwd) if st.get("behind") else [],
+                               "clash": git.merge_check(cwd) if diverged else None})
         if path == "/local/git/show":
             # One commit from the graph: its changed files, or one file's diff.
             cwd = _worktree_cwd(qs.get("project", [None])[0],
@@ -1799,6 +1810,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": "invalid project"}, 400)
             ok, output = git.pull(cwd)
             return self._json({"ok": ok, "output": output})
+        if path == "/local/git/merge-upstream":
+            # The GIT tab's Merge on a diverged branch: a merge commit, never a
+            # rebase; a clash changes nothing and names its files.
+            cwd = _worktree_cwd(body.get("project"), (body.get("branch") or "").strip())
+            if cwd is None:
+                return self._json({"error": "invalid project"}, 400)
+            ok, output, clash = git.merge_upstream(cwd)
+            return self._json({"ok": ok, "output": output, "clash": clash})
         if path == "/local/update":
             # pull the platform's new commits; on success the bridge restarts
             # shortly after this response flushes.

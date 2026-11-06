@@ -8,10 +8,11 @@
 export type PipeSync = { kind: string; n?: number; ahead?: number; behind?: number };
 export type Station = { key: "mac" | "branch" | "origin"; big: string; sub: string; hot: boolean; warm: boolean };
 export type Flow = { gap: 0 | 1; dir: 1 | -1; tone: "acc" | "warn" };
-export type PipeAction = { verb: "Commit" | "Publish" | "Pull"; n: number; gap: 0 | 1; tone: "acc" | "warn" };
-/** Push/Publish kept reachable while Commit is the primary: edits plus unpushed commits, nothing incoming. */
-export type PipePush = { verb: "Publish" | "Push"; n: number };
-export type Pipe = { stations: Station[]; flows: Flow[]; action: PipeAction | null; push: PipePush | null; say: string };
+export type PipeAction = { verb: "Commit" | "Publish" | "Pull" | "Merge"; n: number; gap: 0 | 1; tone: "acc" | "warn" };
+/** The second button: Push/Publish under Commit (edits plus unpushed commits, nothing incoming); on a
+ *  diverged branch Merge & push beside Merge, or Merge under Commit. Merge & push's n is what the push sends. */
+export type PipeAlt = { verb: "Publish" | "Push" | "Merge" | "Merge & push"; n: number };
+export type Pipe = { stations: Station[]; flows: Flow[]; action: PipeAction | null; alt: PipeAlt | null; say: string };
 
 const cap = (n: number) => (n > 99 ? "99+" : String(n));
 const files = (n: number) => `${n} file${n === 1 ? "" : "s"}`;
@@ -35,21 +36,24 @@ export function pipe(sync: PipeSync, changed: number, hasUpstream: boolean, unch
   if (up) flows.push({ gap: 1, dir: 1, tone: "acc" });
   if (down) flows.push({ gap: 1, dir: -1, tone: "warn" });
   // Edits come first, except when only origin is ahead: a fast-forward is the move git allows, and the
-  // hero is the only pull entry. Diverged keeps Commit (the pull hand-off is not a button's job).
+  // hero is the only pull entry. Diverged can't fast-forward: Merge (a merge commit, never a rebase),
+  // with Merge & push beside it, so pushing is always its own choice; with edits, Commit then Merge.
+  const both = up > 0 && down > 0;
   const action: PipeAction | null = changed ? (down && !up ? { verb: "Pull", n: down, gap: 1, tone: "warn" } : { verb: "Commit", n: changed, gap: 0, tone: "acc" })
-    : down ? { verb: "Pull", n: down, gap: 1, tone: "warn" }
+    : down ? { verb: both ? "Merge" : "Pull", n: down, gap: 1, tone: "warn" }
     : up ? { verb: "Publish", n: up, gap: 1, tone: "acc" }
     : null;
-  const push: PipePush | null = changed && up && !down ? { verb: sync.kind === "publish" ? "Publish" : "Push", n: up } : null;
+  const alt: PipeAlt | null = both ? (changed ? { verb: "Merge", n: down } : { verb: "Merge & push", n: up + 1 })
+    : changed && up ? { verb: sync.kind === "publish" ? "Publish" : "Push", n: up } : null;
   const say = changed ? `${files(changed)} edited, not committed`
-    : down && up ? `${down} new on origin, then publish ${up}`
+    : both ? "You and origin both moved on"
     : down ? `${down} new on origin`
     : up ? `${commits(up)} only on this Mac`
     : sync.kind === "synced" ? (unchecked ? "Not checked against origin yet" : `Everything is on ${where}`)
     : sync.kind === "local" ? "No remote, this repo lives only here"
     : sync.kind === "detached" ? "Detached HEAD, no branch to push"
     : "Nothing to push";
-  return { stations, flows, action, push, say };
+  return { stations, flows, action, alt, say };
 }
 
 /** The delivery tracker's view of a Pipe: where the work is (`at`: 0 Mac, 1 committed, 2 origin; -1 = landed),
@@ -65,16 +69,21 @@ export function counts(sync: PipeSync) {
   };
 }
 
-export function track(p: Pipe, n: { changed: number; up: number; down: number }): Track {
+/** `clash`: diverged, how many files the merge's dry run says would clash (null/undefined: not known). */
+export function track(p: Pipe, n: { changed: number; up: number; down: number }, clash?: number | null): Track {
   const a = p.action;
-  const at = a ? ({ Commit: 0, Publish: 1, Pull: 2 } as const)[a.verb] : -1;
+  const at = a ? ({ Commit: 0, Publish: 1, Pull: 2, Merge: 2 } as const)[a.verb] : -1;
   const origin = p.stations[2];
   const pullFirst = a?.verb === "Pull" && n.changed > 0;
+  const both = n.up > 0 && n.down > 0;
   const next = !a ? ""
+    : both && n.changed ? `next hop: commit ${files(n.changed)}, then merge ${n.down}`
+    : both ? (clash ? `${files(clash)} changed on both sides` : `a merge joins them; your ${n.up} keep their ids`)
     : pullFirst ? `next hop: pull ${commits(a.n)}, then commit ${files(n.changed)}`
     : a.verb === "Commit" ? `next hop: commit ${files(n.changed)}${n.up && !n.down ? `, then publish ${commits(n.up)}` : ""}`
     : `next hop: ${a.verb.toLowerCase()} ${commits(a.n)}`;
   const say = pullFirst ? `${n.down} new on origin, your ${files(n.changed)} still here`
+    : both ? "You and origin both moved on"
     : n.changed ? "Your work is still on this Mac"
     : n.up && !n.down ? "Committed, not on origin yet"
     : p.say;

@@ -22,6 +22,14 @@ const long = pushFailedDraft("x", hook);
 ok(long.includes("…") && long.includes("error: the reason"), "long output keeps its tail");
 ok(long.length < 3400, `long output is capped (${long.length})`);
 
-const dv = divergedDraft("master", "origin/master", 3, 1);
+const dv = divergedDraft("master", "origin/master", 3, 1, { push: true });
 ok(dv.startsWith("`master` has diverged from `origin/master`: 3 commits here, 1 commit there"), "diverged names both sides and counts");
-ok(!dv.includes("failed") && dv.endsWith("then push."), "diverged claims no failed push, ends with the ask");
+ok(!dv.includes("failed") && dv.endsWith("then push."), "Merge & push: claims no failed push, ends with the push");
+ok(dv.includes("(a merge, not a rebase)"), "says merge, never rebase");
+const stay = divergedDraft("master", "origin/master", 3, 1, { push: false });
+ok(!stay.endsWith("then push.") && stay.includes("don't push"), "Merge: the draft stops before pushing");
+const files = Array.from({ length: 12 }, (_, i) => `f${i}.ts`);
+const cl = divergedDraft("x", "origin/x", 1, 1, { push: false, clash: files, dirty: 2 });
+ok(cl.includes("clashes in 12 files: `f0.ts`") && cl.includes("`f9.ts`, and 2 more") && !cl.includes("f10.ts"), "names the first 10 clashing files");
+ok(cl.includes("2 uncommitted files: keep them safe"), "warns about uncommitted files in the checkout");
+ok(!divergedDraft("x", "origin/x", 1, 1, { push: true, clash: ["a.ts"] }).includes("1 files"), "one file reads singular");

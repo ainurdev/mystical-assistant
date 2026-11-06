@@ -604,15 +604,46 @@ def pull(cwd: str, timeout: int = 60) -> tuple[bool, str]:
     return rc == 0, (out + err).strip()
 
 
+def merge_check(cwd: str) -> "list[str] | None":
+    """The files merging the upstream into HEAD would clash in, from a dry run:
+    `git merge-tree --write-tree` merges in memory and touches no file, index or
+    ref (the merged objects it writes are left for gc). [] = merges cleanly;
+    None = couldn't tell (git before 2.38, no upstream)."""
+    rc, out, _ = _run(cwd, "merge-tree", "-z", "--write-tree", "--name-only", "--no-messages",
+                      "HEAD", "@{u}", timeout=20)
+    return [p for p in out.split("\0")[1:] if p] if rc in (0, 1) else None
+
+
+def merge_upstream(cwd: str) -> tuple[bool, str, list[str]]:
+    """The GIT tab's Merge on a diverged branch: the upstream merged into HEAD as
+    a merge commit, never a rebase, so this branch's commits keep their shas.
+    A clash never starts: the dry run says so first, and one it missed (a race)
+    is undone at once (`merge --abort`). Either way its files come back and the
+    tree is as it was. Without a dry run (old git) it won't merge over
+    uncommitted edits, since an abort can't always give those back."""
+    clash = merge_check(cwd)
+    if clash:
+        return False, "Merging would clash, so nothing was changed.", clash
+    if clash is None and _run(cwd, "status", "--porcelain", "--untracked-files=no")[1].strip():
+        return False, ("This git can't test a merge before running it, so it won't merge "
+                       "over uncommitted changes. Commit or stash them first."), []
+    ok, output = merge(cwd, "@{u}")
+    if ok or _run(cwd, "rev-parse", "-q", "--verify", "MERGE_HEAD")[0] != 0:
+        return ok, output, []
+    _, names, _ = _run(cwd, "diff", "-z", "--name-only", "--diff-filter=U")
+    _run(cwd, "merge", "--abort")
+    return False, output, [p for p in names.split("\0") if p]
+
+
 def _commits(cwd: str, rng: str, limit: int) -> list[dict]:
-    rc, out, _ = _run(cwd, "log", f"-{limit}", "--format=%h\t%s", rng)
+    rc, out, _ = _run(cwd, "log", f"-{limit}", "--format=%h\t%ct\t%s", rng)
     if rc != 0:
         return []
     commits = []
     for line in out.splitlines():
-        sha, _, subject = line.partition("\t")
+        sha, ts, subject = (line.split("\t", 2) + ["", ""])[:3]
         if sha:
-            commits.append({"sha": sha, "subject": subject})
+            commits.append({"sha": sha, "subject": subject, "ts": int(ts or 0)})
     return commits
 
 

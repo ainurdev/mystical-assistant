@@ -12,12 +12,17 @@ export function pushFailedDraft(branch: string | null | undefined, output: strin
     + "Find out why and fix it (fetch, then rebase or merge onto the remote, and re-run the checks), then push.";
 }
 
-/** HANDLE IN A NEW SESSION on a diverged branch: no push was tried, since git
- *  would refuse it and a pull can't fast-forward. Merge, not rebase: the
- *  branch's commits keep their shas. */
-export function divergedDraft(branch: string, upstream: string, ahead: number, behind: number): string {
-  const n = (k: number) => `${k} commit${k === 1 ? "" : "s"}`;
-  return `\`${branch}\` has diverged from \`${upstream}\`: ${n(ahead)} here, ${n(behind)} there, as of the last fetch. `
-    + "A push would be refused and a pull can't fast-forward.\n\n"
-    + `Fetch, merge \`${upstream}\` into \`${branch}\`, re-run the checks, then push.`;
+/** The GIT tab's Merge / Merge & push handed to a new session (a merge that
+ *  would clash, or one that failed): merge, not rebase, so the branch's commits
+ *  keep their shas. It pushes only when `push` says so: Merge stops before it. */
+export function divergedDraft(branch: string, upstream: string, ahead: number, behind: number,
+  o: { push: boolean; clash?: string[]; dirty?: number }): string {
+  const n = (k: number, w = "commit") => `${k} ${w}${k === 1 ? "" : "s"}`;
+  const clash = o.clash ?? [];
+  const named = clash.slice(0, 10).map((f) => `\`${f}\``).join(", ") + (clash.length > 10 ? `, and ${clash.length - 10} more` : "");
+  return `\`${branch}\` has diverged from \`${upstream}\`: ${n(ahead)} here, ${n(behind)} there, as of the last fetch.`
+    + (clash.length ? ` Merging them clashes in ${n(clash.length, "file")}: ${named}.` : "")
+    + (o.dirty ? ` This checkout also has ${n(o.dirty, "uncommitted file")}: keep them safe.` : "")
+    + `\n\nFetch, merge \`${upstream}\` into \`${branch}\` (a merge, not a rebase), resolve any clashes keeping both sides' intent, `
+    + (o.push ? "re-run the checks, then push." : "and re-run the checks. Then stop: don't push, I'll do that myself.");
 }

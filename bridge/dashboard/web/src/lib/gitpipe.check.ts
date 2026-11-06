@@ -20,7 +20,9 @@ console.assert(st(ahead, "branch").hot && st(ahead, "branch").big === "2", "ahea
 console.assert(same(ahead.flows, [{ gap: 1, dir: 1, tone: "acc" }]), "ahead: one flow out");
 
 const div = pipe({ kind: "diverged", ahead: 1, behind: 3 }, 0, true);
-console.assert(same(div.action, { verb: "Pull", n: 3, gap: 1, tone: "warn" }), "diverged: Pull 3, warn");
+console.assert(same(div.action, { verb: "Merge", n: 3, gap: 1, tone: "warn" }), "diverged: Merge 3, warn (git can't fast-forward)");
+console.assert(same(div.alt, { verb: "Merge & push", n: 2 }), "diverged: Merge & push beside it, pushing yours + the merge");
+console.assert(div.say === "You and origin both moved on", "diverged: say");
 console.assert(st(div, "origin").hot && st(div, "origin").warm && st(div, "origin").sub === "incoming", "diverged: origin hot+warm");
 console.assert(same(div.flows, [{ gap: 1, dir: 1, tone: "acc" }, { gap: 1, dir: -1, tone: "warn" }]), "diverged: two flows on gap 1");
 
@@ -39,13 +41,13 @@ console.assert(pipe({ kind: "publish", n: 0 }, 0, false).action === null, "no up
 console.assert(pipe({ kind: "none" }, 0, false).action === null, "no repo: no action");
 
 const dBehind = pipe({ kind: "behind", n: 3 }, 2, true);
-console.assert(same(dBehind.action, { verb: "Pull", n: 3, gap: 1, tone: "warn" }) && dBehind.push === null, "dirty + behind: Pull is primary");
+console.assert(same(dBehind.action, { verb: "Pull", n: 3, gap: 1, tone: "warn" }) && dBehind.alt === null, "dirty + behind: Pull is primary");
 const dAhead = pipe({ kind: "ahead", n: 2 }, 4, true);
-console.assert(dAhead.action?.verb === "Commit" && same(dAhead.push, { verb: "Push", n: 2 }), "dirty + ahead: Commit primary, Push 2 secondary");
-console.assert(pipe({ kind: "publish", n: 1 }, 4, false).push?.verb === "Publish", "dirty + unpublished: Publish secondary");
+console.assert(dAhead.action?.verb === "Commit" && same(dAhead.alt, { verb: "Push", n: 2 }), "dirty + ahead: Commit primary, Push 2 secondary");
+console.assert(pipe({ kind: "publish", n: 1 }, 4, false).alt?.verb === "Publish", "dirty + unpublished: Publish secondary");
 const dDiv = pipe({ kind: "diverged", ahead: 1, behind: 2 }, 3, true);
-console.assert(dDiv.action?.verb === "Commit" && dDiv.push === null, "dirty + diverged: Commit, no secondary");
-console.assert(pipe({ kind: "ahead", n: 2 }, 0, true).push === null && pipe({ kind: "synced" }, 4, true).push === null, "no secondary when clean or nothing ahead");
+console.assert(dDiv.action?.verb === "Commit" && same(dDiv.alt, { verb: "Merge", n: 2 }), "dirty + diverged: Commit, Merge still yours to press");
+console.assert(pipe({ kind: "ahead", n: 2 }, 0, true).alt === null && pipe({ kind: "synced" }, 4, true).alt === null, "no secondary when clean or nothing ahead");
 console.assert(pipe({ kind: "synced" }, 0, true, false, "fork/x").say === "Everything is on fork/x", "a non-origin upstream is named");
 
 // track(): the delivery tracker's sentence, next hop, lit stop and three stops (these throw).
@@ -80,4 +82,13 @@ const tnu = tr({ kind: "publish", n: 0 }, 0, false);
 ok(tnu.at === -1 && tnu.stops[2].value === "not pushed" && tnu.stops[2].tone === "dim" && tnu.stops[1].tone === "ok", "no upstream, nothing to publish: origin dim");
 const tun = tr({ kind: "synced" }, 0, true, true);
 ok(tun.at === -1 && tun.stops[2].value === "not checked" && tun.stops[2].tone === "dim", "synced, never fetched: origin dim");
+// diverged: never a Pull (it can't fast-forward), and the next line says what a merge means.
+const tdv = tr({ kind: "diverged", ahead: 231, behind: 18 }, 0);
+ok(tdv.say === "You and origin both moved on" && tdv.at === 2, `diverged: say (${tdv.say})`);
+ok(tdv.next === "a merge joins them; your 231 keep their ids", `diverged: next (${tdv.next})`);
+const tdc = track(pipe({ kind: "diverged", ahead: 231, behind: 18 }, 0, true), { changed: 0, up: 231, down: 18 }, 19);
+ok(tdc.next === "19 files changed on both sides", `diverged + clash: next (${tdc.next})`);
+const tde = tr({ kind: "diverged", ahead: 2, behind: 3 }, 2);
+ok(tde.at === 0 && tde.say === "You and origin both moved on" && tde.next === "next hop: commit 2 files, then merge 3" && tde.then === null,
+  `diverged + edits: commit first, merge next (${tde.next})`);
 console.log("gitpipe.check ok");

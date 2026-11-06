@@ -2297,6 +2297,19 @@ export const api = {
       method: "POST",
       body: { project, ...(branch ? { branch } : {}) },
     }),
+  // Diverged: the upstream merged in as a merge commit, never a rebase. A clash
+  // changes nothing and names its files.
+  gitMergeUpstream: (project: string, branch?: string) =>
+    req<{ ok: boolean; output: string; clash: string[] }>("/local/git/merge-upstream", {
+      method: "POST",
+      body: { project, ...(branch ? { branch } : {}) },
+    }),
+  // COMING IN: origin's commits HEAD lacks. Diverged, the merge's dry run too:
+  // [] merges cleanly, files = they'd clash, null = couldn't tell.
+  gitIncoming: (project: string, branch?: string) =>
+    req<{ commits: { sha: string; subject: string; ts: number }[]; clash: string[] | null }>(
+      `/local/git/incoming?project=${encodeURIComponent(project)}${branch ? `&branch=${encodeURIComponent(branch)}` : ""}`,
+    ),
   // --- EDITOR tab: browse / read / write any file in the branch's working tree ---
   filesTree: (project: string, branch?: string) =>
     req<{ files: string[]; ignored?: string[]; root?: string }>(

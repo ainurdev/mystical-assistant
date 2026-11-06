@@ -325,6 +325,105 @@ def test_fetch_never_waits_on_a_password_prompt(monkeypatch):
     assert seen.get("GIT_TERMINAL_PROMPT") == "0"
 
 
+def _diverged(clash):
+    """A clone that has a commit origin lacks while origin got one it lacks,
+    fetched: the GIT tab's diverged state. `clash` makes both sides edit a.txt."""
+    bare, a, branch = _published()
+    b = tempfile.mkdtemp()
+    subprocess.run(["git", "clone", "-q", "-b", branch, bare, b], check=True)
+    for k, v in (("user.email", "t@example.com"), ("user.name", "Tester"), ("commit.gpgsign", "false")):
+        _run(b, "config", k, v)
+    _write(a, "a.txt", "theirs\n")
+    g.commit(a, "theirs")
+    _run(a, "push", "-q")
+    _write(b, "a.txt" if clash else "b.txt", "mine\n")
+    g.commit(b, "mine")
+    _run(b, "fetch", "-q")
+    st = g.status(b)
+    assert (st["ahead"], st["behind"]) == (1, 1), st
+    return b
+
+
+def _head(d):
+    return subprocess.run(["git", "-C", d, "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+
+
+def test_merge_check_is_a_dry_run():
+    """The hero's verdict before you press Merge: [] merges cleanly, a clash names
+    its files, and neither touches the tree or HEAD."""
+    clean = _diverged(clash=False)
+    before = _head(clean)
+    assert g.merge_check(clean) == []
+    assert _head(clean) == before and g.status(clean)["files"] == []
+    d = _diverged(clash=True)
+    before = _head(d)
+    assert g.merge_check(d) == ["a.txt"]
+    st = g.status(d)
+    assert _head(d) == before and st["files"] == [] and (st["ahead"], st["behind"]) == (1, 1), st
+    assert not os.path.exists(os.path.join(d, ".git", "MERGE_HEAD"))
+
+
+def test_merge_check_without_an_upstream_cannot_tell():
+    d = _mkrepo()
+    _write(d, "a.txt", "one\n")
+    g.commit(d, "init")
+    assert g.merge_check(d) is None
+
+
+def test_merge_upstream_makes_a_merge_commit_and_keeps_your_commits():
+    d = _diverged(clash=False)
+    mine = _head(d)
+    ok, out, clash = g.merge_upstream(d)
+    assert ok is True and clash == [], out
+    st = g.status(d)
+    assert (st["ahead"], st["behind"]) == (2, 0) and st["files"] == [], st
+    parents = subprocess.run(["git", "-C", d, "log", "-1", "--format=%P"], capture_output=True, text=True).stdout.split()
+    assert len(parents) == 2 and parents[0] == mine, parents     # a merge, not a rebase: your commit kept its sha
+
+
+def test_merge_upstream_never_starts_a_clash():
+    d = _diverged(clash=True)
+    before = _head(d)
+    ok, _out, clash = g.merge_upstream(d)
+    assert ok is False and clash == ["a.txt"]
+    assert _head(d) == before and g.status(d)["files"] == []
+    assert not os.path.exists(os.path.join(d, ".git", "MERGE_HEAD"))
+
+
+def test_merge_upstream_undoes_a_clash_the_dry_run_missed(monkeypatch):
+    """A race (or a git too old for merge-tree): the real merge clashes, so it is
+    aborted at once and its files come back; nothing is left half-merged."""
+    d = _diverged(clash=True)
+    before = _head(d)
+    monkeypatch.setattr(g, "merge_check", lambda cwd: [])
+    ok, out, clash = g.merge_upstream(d)
+    assert ok is False and clash == ["a.txt"] and "CONFLICT" in out, out
+    assert _head(d) == before and g.status(d)["files"] == []
+    assert not os.path.exists(os.path.join(d, ".git", "MERGE_HEAD"))
+
+
+def test_merge_upstream_keeps_your_edits_safe(monkeypatch):
+    """Edits to a file origin changed: git refuses before starting, so they stay.
+    With no dry run it won't merge over edits at all, since an abort could lose them."""
+    d = _diverged(clash=False)
+    _write(d, "a.txt", "my uncommitted edit\n")
+    ok, out, clash = g.merge_upstream(d)
+    assert ok is False and clash == [] and out, out
+    assert open(os.path.join(d, "a.txt")).read() == "my uncommitted edit\n"
+    d2 = _diverged(clash=False)
+    _write(d2, "b.txt", "edited, not committed\n")
+    monkeypatch.setattr(g, "merge_check", lambda cwd: None)
+    ok, out, clash = g.merge_upstream(d2)
+    assert ok is False and "uncommitted" in out and clash == []
+    assert open(os.path.join(d2, "b.txt")).read() == "edited, not committed\n"
+
+
+def test_incoming_commits_carry_their_time():
+    d = _diverged(clash=False)
+    got = g.incoming(d)
+    assert [c["subject"] for c in got] == ["theirs"] and got[0]["sha"] and got[0]["ts"] > 0, got
+
+
 def test_fetched_at_counts_a_fetch_from_any_worktree():
     """FETCH_HEAD is per worktree but the remote refs it moves are shared, so a
     fetch run in a worktree is as fresh for the main checkout, and back."""

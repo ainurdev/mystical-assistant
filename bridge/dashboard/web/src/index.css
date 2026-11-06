@@ -6525,8 +6525,6 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
   white-space: pre-wrap; word-break: break-word; font-variant-ligatures: none; }
 .gp-failbtns { display: flex; gap: 6px; }
 .gp-failbtns .gp-pb.tint { flex: 1; width: auto; }
-.gp-ronote { font: 400 var(--t105)/1.45 var(--f); color: var(--txd); }
-.gp-ronote code { font: 400 var(--t10)/1 var(--m); color: var(--txm); }
 @keyframes gpspin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .gp-ib.spin svg, .gp-pb.busy svg { animation: none; } }
 /* the folds: VS Code's pane heads */
@@ -7870,6 +7868,43 @@ mark.clg-m { padding: 0; border-radius: 2px; background: color-mix(in oklab, var
 button.gt-wrow { width: 100%; border-left: 0; border-right: 0; border-bottom: 0; background: none; color: var(--acc); cursor: pointer; appearance: none; text-align: left; }
 .gt-none { padding: 8px 12px; font: 400 var(--t105)/1.4 var(--f); color: var(--txl); }
 .gt-fold .gp-cbox { flex: none; border-top: 1px solid var(--l); border-bottom: 0; }
+/* Diverged: the hero's FORK (your lane and origin's joining at a merge node), the dry run's
+   line, the clash list, and COMING IN's amber rows. Geometry: lanes at y 27 / 61, node at 44. */
+.gt-fork { position: relative; height: 88px; margin-top: 14px; }
+.gt-lane { position: absolute; left: 0; display: flex; align-items: baseline; gap: 6px; max-width: calc(100% - 40px); white-space: nowrap; overflow: hidden; }
+.gt-lane.me { top: 0; } .gt-lane.them { bottom: 0; }
+.gt-lane b { font: 800 var(--t8, 9px)/1.2 var(--f); letter-spacing: 1px; text-transform: uppercase; color: var(--txl); }
+.gt-lane span { font: 800 var(--t115)/1 var(--f); overflow: hidden; text-overflow: ellipsis; }
+.gt-lane.me span { color: var(--acc); } .gt-lane.them span { color: var(--warn); }
+.gt-node { position: absolute; left: 0; width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; }
+.gt-node.me { top: 15px; color: var(--acc); background: color-mix(in srgb, var(--acc) 14%, var(--panel)); box-shadow: inset 0 0 0 2px var(--acc); }
+.gt-node.them { top: 49px; color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, var(--panel)); box-shadow: inset 0 0 0 2px var(--warn); }
+.gt-rail { position: absolute; left: 24px; right: 46px; height: 3px; }
+.gt-rail.me { top: 25.5px; color: var(--acc); background: var(--acc); } .gt-rail.them { top: 59.5px; color: var(--warn); background: var(--warn); }
+.gt-rail::after { content: ""; position: absolute; left: 14px; right: 6px; top: -3.5px; height: 10px;
+  background: radial-gradient(circle at 5px 5px, var(--panel2, var(--panel)) 0 2.2px, currentColor 2.6px 3.8px, transparent 4.2px) 0 0 / 32px 10px repeat-x; }
+.gt-rail.them::after { background-size: 42px 10px; background-position: 12px 0; }   /* off the top lane's beat: two histories, not a ladder */
+.gt-join { position: absolute; right: 0; top: 0; overflow: visible; }
+.gt-join path { fill: none; stroke-width: 3; stroke-linecap: round; }
+.gt-mnode { position: absolute; right: 2px; top: 29px; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--warn); color: var(--acc-on); box-shadow: 0 0 0 4px color-mix(in srgb, var(--warn) 25%, transparent), 0 0 14px var(--warn); }
+.gt-mnode.clash { background: color-mix(in srgb, var(--warn) 16%, var(--panel)); color: var(--warn); box-shadow: inset 0 0 0 2px var(--warn), 0 0 0 4px color-mix(in srgb, var(--warn) 14%, transparent); }
+.gt-mlbl { position: absolute; right: 0; top: 66px; width: 34px; text-align: center; font: 800 var(--t8, 9px)/1.2 var(--f); letter-spacing: .6px; text-transform: uppercase; color: var(--warn); }
+.gt-chk { display: flex; align-items: center; gap: 6px; margin-top: 10px; min-width: 0; font: 700 var(--t105)/1.25 var(--f); color: var(--txl); }
+.gt-chk svg { flex: none; } .gt-chk span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gt-chk.ok { color: var(--ok); } .gt-chk.warn { color: var(--warn); }
+.gt-wrow.in > i { background: color-mix(in srgb, var(--warn) 75%, transparent); }
+.gp-clash { display: flex; flex-direction: column; border-radius: 10px; overflow: hidden;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 38%, transparent); background: color-mix(in srgb, var(--warn) 6%, transparent); }
+.gp-clash-h { display: flex; align-items: center; gap: 7px; padding: 9px 10px 8px 12px; color: var(--warn); font: 800 var(--t95)/1 var(--f); letter-spacing: 1.2px; text-transform: uppercase; }
+.gp-clash-h em { margin-left: auto; font: 700 var(--t10)/1 var(--m); font-style: normal; color: var(--txl); letter-spacing: 0; text-transform: none; }
+.gp-clash-rows { max-height: 182px; overflow: auto; }
+.gp-clash .gp-row { height: 26px; border-top: 1px solid color-mix(in srgb, var(--warn) 16%, transparent); }
+.gp-clash .gp-st { color: var(--warn); }
+.gp-clash-more { appearance: none; border: 0; border-top: 1px solid color-mix(in srgb, var(--warn) 16%, transparent); padding: 7px 12px; background: none;
+  text-align: left; font: 600 var(--t10)/1 var(--f); color: var(--acc); cursor: pointer; }
+.gp-clash-note { padding: 8px 12px 10px; border-top: 1px solid color-mix(in srgb, var(--warn) 16%, transparent); font: 400 var(--t105)/1.45 var(--f); color: var(--txd); }
+.gp-clash-note b { color: var(--txh); font-weight: 700; }
 /* Files WRITING card. */
 .wr-card { margin: 4px 12px 2px; border-radius: 12px; overflow: hidden; flex: none; background: var(--panel);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--acc) 38%, transparent), 0 14px 30px -22px color-mix(in srgb, var(--acc) 80%, transparent); }

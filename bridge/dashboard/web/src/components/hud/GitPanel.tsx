@@ -18,7 +18,7 @@ import { syncOf } from "../../lib/gitsync";
 import { divergedDraft, pushFailedDraft } from "../../lib/pushfailed";
 import { ago } from "../../lib/surfaces";
 import { TaskLine } from "./TaskChip";
-import { GitTracker } from "./GitTracker";
+import { GitTracker, type Fork, type Verb } from "./GitTracker";
 import { TabKick } from "./TabKick";
 import { counts, pipe, track } from "../../lib/gitpipe";
 import { unpushed } from "../../lib/gitgraph";
@@ -61,16 +61,18 @@ interface Props {
   onSend?: (text: string) => void;
 }
 
-type OpKind = "push" | "publish" | "pull" | "fetch";
+type OpKind = "push" | "publish" | "pull" | "fetch" | "merge";
 // The hero's sync op, in flight or just over: done shows a few seconds,
-// failed stays with git's own words until dismissed or retried.
+// failed stays with git's own words until dismissed or retried. `push`: a
+// failed merge was Merge & push, which its hand-off draft keeps.
 type Op = { kind: OpKind; n: number; phase: "busy" }
   | { kind: OpKind; n: number; phase: "done"; text: string }
-  | { kind: OpKind; n: number; phase: "failed"; output: string; project: string; branch?: string };
-const FAILED: Record<OpKind, string> = { push: "Push refused", publish: "Publish refused", pull: "Pull failed", fetch: "Fetch failed" };
+  | { kind: OpKind; n: number; phase: "failed"; output: string; project: string; branch?: string; push?: boolean };
+const FAILED: Record<OpKind, string> = { push: "Push refused", publish: "Publish refused", pull: "Pull failed", fetch: "Fetch failed", merge: "Merge failed" };
 
 const ST_COLOR = (s: string) => (s === "A" || s === "?" ? "var(--ok)" : s === "D" ? "var(--err)" : "var(--warn)");
 const WAIT_ROWS = 6;
+const IN_ROWS = 3;   // COMING IN stays short: the hero above it is the point
 const byPath = (a: GitFile, b: GitFile) => a.path.localeCompare(b.path);
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const MOD = /Mac|iP/.test(navigator.platform) ? "⌘" : "Ctrl+";
@@ -215,6 +217,24 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
     }).catch(() => { if (live) setWaiting([]); });
     return () => { live = false; };
   }, [project, branch, up, git?.upstream, nonce]);
+  // COMING IN (origin's commits) and, diverged, the merge's dry run. The last
+  // answer stays up while the next loads, so the rows don't blink; its verdict
+  // only counts for the heads it was asked about (`key`).
+  type Incoming = { commits: { sha: string; subject: string; ts: number }[]; clash: string[] | null; key: string };
+  const [incoming, setIncoming] = useState<Incoming | null>(null);
+  const ikey = `${project}|${branch}|${up}|${down}|${git?.upstream}`;
+  useEffect(() => {
+    if (!project || !down) { setIncoming(null); return; }
+    let live = true;
+    void api.gitIncoming(project, branch || undefined).then((r) => { if (live) setIncoming({ ...r, key: ikey }); })
+      .catch(() => { if (live) setIncoming({ commits: [], clash: null, key: ikey }); });
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ikey, nonce]);
+  // A merge that clashed when it ran (no dry run on this git): its files, until the heads move.
+  const [clashSeen, setClashSeen] = useState<{ files: string[]; key: string } | null>(null);
+  const [clashAll, setClashAll] = useState(false);
+  const clashFiles = clashSeen?.key === ikey ? clashSeen.files : incoming?.key === ikey ? incoming.clash : undefined;
   useEffect(() => {
     if (op?.phase !== "done") return;
     const t = setTimeout(() => setOp(null), 4000);
@@ -233,7 +253,34 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
         ? { kind, n, phase: "done", text: kind === "pull" ? `Pulled ${plural(n, "commit")} from ${to}`
             : kind === "publish" ? `Published ${branchName} to origin` : `Pushed ${plural(n, "commit")} to ${to}` }
         : { kind, n, phase: "failed", output: r.output || `${FAILED[kind]}.`, project, branch });
+      // A refused push is most often origin moving on: fetch, so the hero offers the merge.
+      if (!r.ok && kind !== "pull") await api.gitFetch(project, branch || undefined).catch(() => undefined);
     } catch (e) { setOp({ kind, n, phase: "failed", output: (e as Error).message, project, branch }); }
+    finally { setBusy(false); onGitChanged(); setNonce((x) => x + 1); }
+  }
+
+  // Merge / Merge & push on a diverged branch, here: a merge commit, never a
+  // rebase. A clash changes nothing: its files come back and the two buttons
+  // turn into session hand-offs. Pushing happens only for Merge & push.
+  async function merge(andPush: boolean) {
+    if (!project || s.kind !== "diverged") return;
+    const { upstream, ahead, behind } = s;
+    let kind: OpKind = "merge";
+    setBusy(true);
+    setOp({ kind, n: behind, phase: "busy" });
+    try {
+      const r = await api.gitMergeUpstream(project, branch || undefined);
+      if (r.clash?.length) { setClashSeen({ files: r.clash, key: ikey }); setOp(null); return; }
+      if (!r.ok) { setOp({ kind, n: behind, phase: "failed", output: r.output || "Merge failed.", project, branch, push: andPush }); return; }
+      const merged = `Merged ${plural(behind, "commit")} from ${upstream}`;
+      if (!andPush) { setOp({ kind, n: behind, phase: "done", text: merged }); return; }
+      kind = "push";
+      setOp({ kind, n: ahead + 1, phase: "busy" });
+      const p = await api.gitPush(project, branch || undefined);
+      setOp(p.ok ? { kind, n: ahead + 1, phase: "done", text: `${merged} and pushed ${plural(ahead + 1, "commit")}` }
+        : { kind, n: ahead + 1, phase: "failed", output: p.output || "Push refused.", project, branch });
+      if (!p.ok) await api.gitFetch(project, branch || undefined).catch(() => undefined);
+    } catch (e) { setOp({ kind, n: kind === "push" ? ahead + 1 : behind, phase: "failed", output: (e as Error).message, project, branch, push: andPush }); }
     finally { setBusy(false); onGitChanged(); setNonce((x) => x + 1); }
   }
 
@@ -356,9 +403,9 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
 
   const noCommit = busy || !msg.trim() || !changed.size;
 
-  /* The hero's inputs: how fresh the status is (`when`), and the one move this
-     state allows. Diverged, git would refuse both push and pull, so the hero's
-     button hands off to a session instead. */
+  /* The hero's inputs: how fresh the status is (`when`), and the moves this
+     state allows. Diverged, a pull can't fast-forward: Merge / Merge & push
+     run here, or go to a session when the dry run says they'd clash. */
   const fetching = (op?.kind === "fetch" && op.phase === "busy") || !!autoFetch?.busy;
   const t = git?.fetched_at ? ago(git.fetched_at) : "";
   const when = !t ? "" : t === "now" ? "checked just now" : `checked ${t} ago`;
@@ -370,11 +417,14 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   const unchecked = !!git?.upstream && (git.fetched_at === null || !!autoErr);
   // The hero's one button. Commit never commits: it opens the message box.
   const msgRef = useRef<HTMLTextAreaElement>(null);
-  function heroAct(verb: "Commit" | "Publish" | "Pull", n: number) {
+  function heroAct(verb: Verb, n: number) {
     if (verb === "Commit") { setChClosed(false); requestAnimationFrame(() => msgRef.current?.focus()); }
-    else if (verb === "Pull" && s.kind === "diverged") {
-      // A fast-forward fails here, and a button must not merge by itself: hand off to a session.
-      if (onHandOff && project) onHandOff(project, branch, divergedDraft(branchName, s.upstream, s.ahead, s.behind));
+    else if (verb === "Merge" || verb === "Merge & push") {
+      // A clash never starts here: a new session merges, and its draft says whether to push.
+      if (s.kind === "diverged" && clashFiles?.length) {
+        if (onHandOff && project) onHandOff(project, branch, divergedDraft(branchName, s.upstream, s.ahead, s.behind,
+          { push: verb === "Merge & push", clash: clashFiles, dirty: changed.size }));
+      } else void merge(verb === "Merge & push");
     } else void sync(verb === "Pull" ? "pull" : s.kind === "publish" ? "publish" : "push", n);
   }
   // The kicker's short form of how fresh this is (the full words are in the title).
@@ -398,10 +448,19 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
             <SquarePen size={13} strokeWidth={2} />Handle in a new session
           </button>
         )}
-        <button className={`gp-pb ghost${pushy ? " sq" : ""}`} title="retry" disabled={busy}
-          onClick={() => void (op.kind === "fetch" ? fetchNow() : sync(op.kind, op.n))}>
-          <RotateCcw size={13} strokeWidth={2} />{!pushy && "Retry"}
-        </button>
+        {/* Nothing changed, so the hero's buttons are the retry; this hands the merge on. */}
+        {op.kind === "merge" && onHandOff && s.kind === "diverged" && (
+          <button className="gp-pb tint" title="Handle it in a new session on this branch, with the merge as an unsent draft"
+            onClick={() => { onHandOff(op.project, op.branch, divergedDraft(branchName, s.upstream, s.ahead, s.behind, { push: !!op.push, dirty: changed.size })); setOp(null); }}>
+            <SquarePen size={13} strokeWidth={2} />Handle in a new session
+          </button>
+        )}
+        {op.kind !== "merge" && (
+          <button className={`gp-pb ghost${pushy ? " sq" : ""}`} title="retry" disabled={busy}
+            onClick={() => void (op.kind === "fetch" ? fetchNow() : op.kind !== "merge" && sync(op.kind, op.n))}>
+            <RotateCcw size={13} strokeWidth={2} />{!pushy && "Retry"}
+          </button>
+        )}
       </div>
     </div>
   ) : op?.phase === "done" ? (
@@ -409,19 +468,28 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
   ) : op?.phase === "busy" && op.kind !== "fetch" ? (
     <button className="gp-pb busy" disabled>
       <LoaderCircle size={14} strokeWidth={2.2} />
-      {op.kind === "publish" ? "Publishing…" : `${op.kind === "pull" ? "Pulling" : "Pushing"} ${plural(op.n, "commit")}…`}
+      {op.kind === "publish" ? "Publishing…" : `${op.kind === "pull" ? "Pulling" : op.kind === "merge" ? "Merging" : "Pushing"} ${plural(op.n, "commit")}…`}
     </button>
-  ) : s.kind === "diverged" ? (
-    <>
-      <div className="gp-ronote">A push would be refused and a pull can't fast-forward. A new session can merge{" "}
-        <code>{s.upstream}</code> in and push; you send its first message.</div>
-      {onHandOff && project && (
-        <button className="gp-pb tint" title="Open a session on this branch with the merge as an unsent draft"
-          onClick={() => onHandOff(project, branch, divergedDraft(branchName, s.upstream, s.ahead, s.behind))}>
-          <SquarePen size={13} strokeWidth={2} />Handle in a new session
-        </button>
-      )}
-    </>
+  ) : s.kind === "diverged" && clashFiles?.length ? (
+    <div className="gp-clash">
+      <div className="gp-clash-h"><TriangleAlert size={12} strokeWidth={2.2} /><span>Would clash</span><em>{plural(clashFiles.length, "file")}</em></div>
+      <div className="gp-clash-rows">
+        {(clashAll ? clashFiles : clashFiles.slice(0, 3)).map((f) => {
+          const cut = f.lastIndexOf("/");
+          return (
+            <div key={f} className="trow gp-row" role="button" tabIndex={0} title={f}
+              onClick={() => onOpenFile(f, false)} onKeyDown={(e) => { if (e.key === "Enter") onOpenFile(f, false); }}>
+              <FileIcon name={f} size={14} />
+              <span className="gp-name">{cut < 0 ? f : f.slice(cut + 1)}</span>
+              <span className="gp-dir" dir="rtl">{cut < 0 ? "" : f.slice(0, cut)}</span>
+              <span className="gp-st">!</span>
+            </div>
+          );
+        })}
+      </div>
+      {clashFiles.length > 3 && !clashAll && <button className="gp-clash-more" onClick={() => setClashAll(true)}>+{clashFiles.length - 3} more</button>}
+      <div className="gp-clash-note">Nothing on disk changed. Each merge button opens a <b>new session</b> with the merge as an unsent draft; only <b>Merge &amp; push</b>'s draft ends in a push.</div>
+    </div>
   ) : null;
 
   const row = (f: GitFile, sec: boolean) => {
@@ -489,9 +557,10 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
 
       {project && (!ready || s.kind !== "none") && (() => {
         const p = pipe(s, changed.size, !!git?.upstream, unchecked, git?.upstream && git.upstream !== `origin/${branchName}` ? git.upstream : undefined);
+        const fork: Fork | null = s.kind === "diverged" ? { up, down, changed: changed.size, upstream: s.upstream, clash: clashFiles } : null;
         return (
-          <GitTracker t={track(p, { changed: changed.size, up, down })} p={p} loading={!ready} busy={syncing} onAction={heroAct}
-            title={p.action?.verb === "Pull" && s.kind === "diverged" ? `Opens a session to bring origin's ${p.action.n} commits in` : undefined} />
+          <GitTracker t={track(p, { changed: changed.size, up, down }, clashFiles?.length)} p={p} loading={!ready} busy={syncing}
+            fork={fork} onAction={heroAct} />
         );
       })()}
       {project && (
@@ -503,6 +572,20 @@ export function GitPanel({ project, branch, git, autoFetch, onGitChanged, onOpen
               {act && <div className="gp-act">{act}</div>}
             </div>
           )}
+        </div>
+      )}
+
+      {/* COMING IN: what origin has that this branch doesn't, newest first. */}
+      {project && down > 0 && !!incoming?.commits.length && (
+        <div className="gp-fold gt-fold" style={{ flex: "none" }}>
+          <div className="gp-fh gt-lbl" style={{ cursor: "default" }}>
+            <b>COMING IN</b><em>{down}</em>
+            <span className="gp-acts"><span className="gt-when">{git?.upstream}</span></span>
+          </div>
+          {incoming.commits.slice(0, IN_ROWS).map((c) => (
+            <div key={c.sha} className="gt-wrow in" title={c.subject}><i /><span>{c.subject}</span><em>{ago(c.ts)}</em></div>
+          ))}
+          {down > IN_ROWS && <button className="gt-wrow" onClick={() => setGrOpen(true)}><span>+{down - IN_ROWS} more</span></button>}
         </div>
       )}
 
